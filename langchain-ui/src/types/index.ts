@@ -17,7 +17,11 @@ export type {
   RunStatusResponse,
   RunSummary,
   SettingsView,
+  ServerHealth,
+  SprintDefectView,
   SprintRevision,
+  SprintView,
+  SprintsResponse,
   StartRunRequest,
   WizardModel,
   WizardNote,
@@ -47,6 +51,8 @@ export interface ReviewPayload {
   revision: number;
   comments: string | null;
   available_actions: string[];
+  /** The workspace path of the document the review is about, when it has one. */
+  document?: string | null;
 }
 
 export interface ReviewDecisionRequest {

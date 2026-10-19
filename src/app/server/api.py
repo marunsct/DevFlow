@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from app.server.events import EventBus
 from app.server.progress import create_progress_router
 from app.server.runner import WorkflowRunner
+from app.server.models import ServerHealth
 from app.server.runs import create_runs_router
 from app.server.context import set_correlation_id
 from app.server.uploads import ensure_upload_dir
@@ -253,6 +254,18 @@ def create_app(
             status["status"] = "error"
             raise HTTPException(status_code=503, detail=status)
         return status
+
+    @application.get("/api/health/server", tags=["health"], response_model=ServerHealth)
+    async def health_server(user: Any = Depends(get_current_active_user)) -> ServerHealth:
+        """The build model's server as it describes itself, and the runs on it. Never a model call."""
+        from starlette.concurrency import run_in_threadpool
+
+        from app.server.server_health import read_server_health
+
+        tenant = None if getattr(user, "role", "") == "admin" else getattr(user, "tenant_id", None)
+        records = runner.run_store.list_all(tenant_id=tenant, limit=200, offset=0)
+        busy = [record.run_id for record in records if record.status == "running"]
+        return await run_in_threadpool(read_server_health, busy)
 
     @application.get("/api/health/models", tags=["health"])
     async def health_models(_: Any = Depends(require_admin)) -> dict[str, Any]:

@@ -6,8 +6,14 @@
 import React, { useEffect, useState } from 'react';
 import { getSteering, sendSteering, type SteeringNote } from '../api';
 import { useFeedback } from './Feedback';
+import { describeStage } from '../lib/activity';
 
-export const SteeringBox: React.FC<{ runId: string }> = ({ runId }) => {
+/**
+ * Folded to one line until the owner opens it (plan BG.4), so the page leads
+ * with what the run is doing; it names the stage that reads the note next.
+ */
+export const SteeringBox: React.FC<{ runId: string; stage?: string | null }> = ({ runId, stage }) => {
+  const [open, setOpen] = useState(false);
   const [notes, setNotes] = useState<SteeringNote[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -34,11 +40,32 @@ export const SteeringBox: React.FC<{ runId: string }> = ({ runId }) => {
     }
   };
 
+  const unread = notes.filter((note) => !note.applied_stage).length;
+  if (!open) {
+    return (
+      <div className="glass-card rounded-2xl px-4 py-2.5 flex flex-wrap items-center gap-3 text-sm">
+        <button type="button" aria-expanded="false" onClick={() => setOpen(true)} className="font-medium text-primary hover:underline">
+          Steer this run…
+        </button>
+        <span className="text-xs text-text-muted">
+          {notes.length === 0
+            ? 'No direction sent'
+            : `${notes.length} direction${notes.length === 1 ? '' : 's'} sent${unread ? `, ${unread} not read yet` : ''}`}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <section className="glass-card rounded-2xl p-4" aria-labelledby="steering-heading">
-      <h2 id="steering-heading" className="text-sm font-semibold text-text-primary mb-1">Steer this run</h2>
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <h2 id="steering-heading" className="text-sm font-semibold text-text-primary">Steer this run</h2>
+        <button type="button" aria-expanded="true" onClick={() => setOpen(false)} className="text-xs text-text-muted hover:text-text-primary">
+          Fold
+        </button>
+      </div>
       <p className="text-xs text-text-muted mb-3">
-        A direction for the agents, followed from their next model call. Nothing in progress is interrupted.
+        A direction for the agents, followed from their next model call{stage ? `, in ${describeStage(stage).title} or the stage after it` : ''}. Nothing in progress is interrupted.
       </p>
       {notes.length > 0 && (
         <ul className="mb-3 space-y-1.5" aria-label="Directions sent">

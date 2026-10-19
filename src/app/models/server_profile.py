@@ -36,6 +36,8 @@ class ServerProfile:
     slots: int | None = None
     slot_context: int | None = None
     quantisation: str = ""
+    #: The model file the server holds, by its name.
+    model: str = ""
 
     @property
     def bits(self) -> int | None:
@@ -62,11 +64,13 @@ def from_props(props: dict[str, Any]) -> ServerProfile:
     slots = props.get("total_slots")
     context = (props.get("default_generation_settings") or {}).get("n_ctx")
     path = str(props.get("model_path") or "")
-    found = _QUANT.findall(path.rsplit("/", 1)[-1])
+    name = path.replace("\\", "/").rsplit("/", 1)[-1]
+    found = _QUANT.findall(name)
     return ServerProfile(
         slots=slots if isinstance(slots, int) and slots > 0 else None,
         slot_context=context if isinstance(context, int) and context > 0 else None,
         quantisation=found[-1].upper() if found else "",
+        model=name,
     )
 
 

@@ -7,7 +7,9 @@ import type {
   ModelProfile,
   RunListResponse,
   RunStatusResponse,
+  ServerHealth,
   SettingsView,
+  SprintsResponse,
   StartRunRequest,
   WizardModel,
 } from '../types';
@@ -123,6 +125,18 @@ export interface RunForecast {
 /** Finished runs with their time and score, and the typical time per delivery mode. */
 export const getOutcomes = async (): Promise<{ runs: RunOutcome[]; forecast: Record<string, RunForecast | null> }> => {
   const response = await api.get('/runs/outcomes');
+  return response.data;
+};
+
+/** The run's sprints, from the attempts the engine renders each sprint summary from (plan BG.6). */
+export const getSprints = async (runId: string): Promise<SprintsResponse> => {
+  const response = await api.get<SprintsResponse>(`/runs/${runId}/sprints`);
+  return response.data;
+};
+
+/** What the build model's server says of itself, read without a model call (plan BG.5). */
+export const getServerHealth = async (): Promise<ServerHealth> => {
+  const response = await api.get<ServerHealth>('/health/server');
   return response.data;
 };
 
@@ -325,6 +339,21 @@ export const downloadArtifact = async (runId: string, path: string): Promise<voi
  * Returns `null` if the artifact has not been generated yet (the server 404s
  * in that case) or if the request fails for any other reason.
  */
+/** What changed in a document since the version before, from the workspace's history (plan BG.3). */
+export interface DocumentDiff {
+  path: string;
+  /** The commit of the version before, or null when there is none. */
+  since: string | null;
+  since_at: string | null;
+  diff: string;
+  truncated: boolean;
+}
+
+export const getDocumentDiff = async (runId: string, path: string): Promise<DocumentDiff> => {
+  const response = await api.get<DocumentDiff>(`/runs/${runId}/artifacts/diff`, { params: { path } });
+  return response.data;
+};
+
 export const fetchArtifactContent = async (
   runId: string,
   path: string

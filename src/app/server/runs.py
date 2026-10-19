@@ -51,6 +51,7 @@ from app.server.models import (
     RunListResponse,
     RunStatusResponse,
     RunSummary,
+    SprintsResponse,
     SpinnerResponse,
     StartRunRequest,
     SprintRevision,
@@ -67,6 +68,8 @@ from app.server.runner import (
     RunRecord,
     WorkflowRunner,
     _api_status,
+    _max_run_cost_usd,
+    _max_run_tokens,
     _stage_meaning,
 )
 from app.server.object_store import archive_directory, archive_file, ensure_local
@@ -533,6 +536,19 @@ def create_runs_router(
         record = _require_run(runner, run_id, user)
         return await _build_status_response(record, runner)
 
+    @runs.get("/{run_id}/sprints", response_model=SprintsResponse)
+    async def get_sprints(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> SprintsResponse:
+        """The run's sprints as figures, from the attempts each sprint summary is rendered from (plan BG.6)."""
+        from app.agents.sprint_summary import sprint_views
+
+        record = _require_run(runner, run_id, user)
+        state = record.graph_state(runner.checkpointer)
+        return SprintsResponse(
+            sprints=sprint_views(state.get("sprint_plan"), state.get("sprint_attempts") or [])
+        )
+
     @runs.get("/{run_id}/wizard", response_model=WizardModel)
     async def get_wizard(
         run_id: str, user: UserInDB = Depends(get_current_active_user)
@@ -590,23 +606,8 @@ def create_runs_router(
         """
         record = _require_run(runner, run_id, user)
 
-        logical_mapping = {
-            "product-intake": "product_intake",
-            "tools-and-models": "tools_models",
-            "technical-specification": "technical_specification",
-            "architecture-review": "architecture_review",
-            "sprint-milestone": "milestone_plan",
-            "milestone-review": "milestone_review",
-        }
-        # Review points whose artifact is a document the workflow writes rather
-        # than a structured output: the acceptance suite in plain language, and
-        # the release evidence. See `app.graph.acceptance_nodes` and `delivery`.
-        review_documents = {
-            "acceptance-tests": "docs/acceptance_tests.md",
-            "release": "docs/reviews/release-evidence.md",
-            "escalation": "docs/reviews/escalation.md",
-        }
-        path = review_documents.get(path, path)
+        logical_mapping = _REVIEW_OUTPUTS
+        path = _REVIEW_DOCUMENTS.get(path, path)
         state = record.graph_state(runner.checkpointer)
         logical_key = logical_mapping.get(path) or path.replace("-", "_")
         if state.get(logical_key) is not None:
@@ -639,6 +640,26 @@ def create_runs_router(
             filename=full_path.name,
             media_type="application/octet-stream",
         )
+
+    @runs.get("/{run_id}/artifacts/diff")
+    async def get_document_diff(
+        run_id: str, path: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """What changed in one workspace document since its version before (plan BG.3)."""
+        from app.server.changes import ChangesUnavailable, document_diff
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root:
+            raise HTTPException(status_code=404, detail="This run has no workspace.")
+        try:
+            full_path = resolve_within_workspace(record.repo_root, path)
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        relative = full_path.relative_to(Path(record.repo_root).resolve()).as_posix()
+        try:
+            return await asyncio.to_thread(document_diff, record.repo_root, relative)
+        except ChangesUnavailable as error:
+            return {"path": relative, "since": None, "since_at": None, "diff": "", "truncated": False, "problem": str(error)}
 
     @runs.get("/{run_id}/handover")
     async def download_handover(
@@ -939,6 +960,7 @@ def create_runs_router(
             revision=review.revision if review else 0,
             comments="\n".join(review.comments) if review and review.comments else None,
             available_actions=["approve", "changes", "skip"],
+            document=_the_review_document(record.repo_root, review.artifact_id if review else ""),
         )
         return {"pending": True, "run_id": run_id, "review": payload.model_dump()}
 
@@ -1768,6 +1790,54 @@ async def build_wizard_model(record: RunRecord, runner: WorkflowRunner) -> Wizar
     return WizardModel(sections=sections, summary=summary_model, current_section_id=current_section_id)
 
 
+#: Review points whose artifact is a structured output in the graph state, by its key.
+_REVIEW_OUTPUTS = {
+    "product-intake": "product_intake",
+    "tools-and-models": "tools_models",
+    "technical-specification": "technical_specification",
+    "architecture-review": "architecture_review",
+    "sprint-milestone": "milestone_plan",
+    "milestone-review": "milestone_review",
+}
+#: Review points whose artifact is a document the workflow writes rather than a
+#: structured output: the acceptance suite in plain language, and the release
+#: evidence. See `app.graph.acceptance_nodes` and `delivery`.
+_REVIEW_DOCUMENTS = {
+    "acceptance-tests": "docs/acceptance_tests.md",
+    "release": "docs/reviews/release-evidence.md",
+    "escalation": "docs/reviews/escalation.md",
+}
+
+
+def _the_review_document(repo_root: str | None, artifact_id: str) -> str | None:
+    """The workspace document a review is about, when the workflow wrote one (plan BG.3).
+
+    A structured output is also rendered as `docs/<name>.md`; the page shows
+    that in place of asking the owner to download, edit and upload it.
+    """
+    if not repo_root or not artifact_id:
+        return None
+    logical = _REVIEW_OUTPUTS.get(artifact_id) or artifact_id.replace("-", "_")
+    for candidate in (_REVIEW_DOCUMENTS.get(artifact_id), f"docs/{logical}.md", f"docs/{artifact_id.replace('-', '_')}.md"):
+        if candidate and (Path(repo_root) / candidate).is_file():
+            return candidate
+    return None
+
+
+def _remediation_info(cycle: Any) -> RemediationInfo | None:
+    """Where the fix loop stands, with the defects still open; None outside one."""
+    if cycle is None:
+        return None
+    return RemediationInfo(
+        attempt=cycle.attempt,
+        max_attempts=cycle.max_attempts,
+        escalated=cycle.escalated,
+        defect_count=len(cycle.defects),
+        test_runs=len(cycle.test_runs),
+        open_defects=sum(1 for defect in cycle.defects if getattr(defect, "status", "open") == "open"),
+    )
+
+
 async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> RunStatusResponse:
     """Assemble the full status payload for one run."""
     # Derived from the event history rather than stored: the history is already
@@ -1796,16 +1866,7 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
             )
         )
 
-    remediation = None
-    cycle = state.get("remediation")
-    if cycle is not None:
-        remediation = RemediationInfo(
-            attempt=cycle.attempt,
-            max_attempts=cycle.max_attempts,
-            escalated=cycle.escalated,
-            defect_count=len(cycle.defects),
-            test_runs=len(cycle.test_runs),
-        )
+    remediation = _remediation_info(state.get("remediation"))
 
     artifacts = [
         ArtifactInfo(
@@ -1839,6 +1900,9 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         delivery_mode=str(getattr(record, "delivery_mode", "") or ""),
         use_frontier_model=not bool(getattr(record, "local_only", False)),
         cost=_cost_summary(record.run_id),
+        # The ceilings the worker holds the run to: the API reads the same environment.
+        max_run_tokens=_max_run_tokens() or None,
+        max_run_cost_usd=_max_run_cost_usd() or None,
     )
 
 

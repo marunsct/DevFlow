@@ -732,6 +732,12 @@
       "title": "Max Attempts",
       "type": "integer"
      },
+     "open_defects": {
+      "default": 0,
+      "description": "Defects found and still open.",
+      "title": "Open Defects",
+      "type": "integer"
+     },
      "test_runs": {
       "description": "Number of test runs performed.",
       "title": "Test Runs",
@@ -1098,6 +1104,30 @@
       "description": "When a gate that is waiting for a person approves itself (the run's approval timeout), or null when nothing waits or the gate waits for the person however long it takes.",
       "title": "Gate Deadline"
      },
+     "max_run_cost_usd": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The deployment's ceiling on a run's priced spend (`MAX_RUN_COST_USD`), or null when none is set.",
+      "title": "Max Run Cost Usd"
+     },
+     "max_run_tokens": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The deployment's bound on the tokens a run uses (`MAX_RUN_TOKENS`), or null when none is set.",
+      "title": "Max Run Tokens"
+     },
      "non_deliverable": {
       "default": "",
       "description": "What the workspace's NON-DELIVERABLE marker says, or '' when the workspace is marked deliverable. A terminal state other than a clean release writes it into the workspace root (Initiative J.6).",
@@ -1319,6 +1349,79 @@
      "created_at"
     ],
     "title": "RunSummary",
+    "type": "object"
+   },
+   "ServerHealth": {
+    "additionalProperties": false,
+    "description": "What the build model's server says of itself, read with one request for its status and never a model call (plan BG.5).",
+    "properties": {
+     "answered": {
+      "description": "The server answered its status request (`/props`) when it was read.",
+      "title": "Answered",
+      "type": "boolean"
+     },
+     "busy_runs": {
+      "description": "The runs running now, which hold the server's slots.",
+      "items": {
+       "type": "string"
+      },
+      "title": "Busy Runs",
+      "type": "array"
+     },
+     "checked_at": {
+      "description": "When the status was read; it is read again at most once a minute.",
+      "format": "date-time",
+      "title": "Checked At",
+      "type": "string"
+     },
+     "hosted": {
+      "description": "The build model is a hosted API, which has no server status to read.",
+      "title": "Hosted",
+      "type": "boolean"
+     },
+     "model": {
+      "default": "",
+      "description": "The model the server holds, from its file name; the configured name otherwise.",
+      "title": "Model",
+      "type": "string"
+     },
+     "quantisation": {
+      "default": "",
+      "description": "The quantisation its file name names, such as Q4_K_M; '' when none.",
+      "title": "Quantisation",
+      "type": "string"
+     },
+     "slot_context": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Context tokens each request gets, as the server was started, or null.",
+      "title": "Slot Context"
+     },
+     "slots": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "How many requests it serves at once, or null when not reported.",
+      "title": "Slots"
+     }
+    },
+    "required": [
+     "hosted",
+     "answered",
+     "checked_at"
+    ],
+    "title": "ServerHealth",
     "type": "object"
    },
    "SettingsUpdate": {
@@ -1683,6 +1786,34 @@
     "title": "SettingsView",
     "type": "object"
    },
+   "SprintDefectView": {
+    "additionalProperties": false,
+    "description": "One defect of a sprint's latest attempt, as its summary lists it.",
+    "properties": {
+     "description": {
+      "description": "What is wrong.",
+      "title": "Description",
+      "type": "string"
+     },
+     "owner": {
+      "description": "Who fixes it.",
+      "title": "Owner",
+      "type": "string"
+     },
+     "status": {
+      "description": "open, fixed or accepted_risk.",
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status",
+     "description",
+     "owner"
+    ],
+    "title": "SprintDefectView",
+    "type": "object"
+   },
    "SprintRevision": {
     "additionalProperties": false,
     "description": "One pass through a sprint. A rejected review starts a new revision of the same sprint.",
@@ -1733,6 +1864,148 @@
      "number"
     ],
     "title": "SprintRevision",
+    "type": "object"
+   },
+   "SprintView": {
+    "additionalProperties": false,
+    "description": "One sprint, from the attempts the engine renders its summary document from (plan BG.6).",
+    "properties": {
+     "attempt_history": {
+      "description": "One line per attempt, when there was more than one.",
+      "items": {
+       "type": "string"
+      },
+      "title": "Attempt History",
+      "type": "array"
+     },
+     "attempts": {
+      "description": "How many times this sprint was attempted. More than one is a re-run, not another sprint.",
+      "title": "Attempts",
+      "type": "integer"
+     },
+     "cases_failed": {
+      "default": 0,
+      "description": "Of those, failed.",
+      "title": "Cases Failed",
+      "type": "integer"
+     },
+     "cases_passed": {
+      "default": 0,
+      "description": "Of those, passed.",
+      "title": "Cases Passed",
+      "type": "integer"
+     },
+     "defects": {
+      "description": "The latest attempt's defects.",
+      "items": {
+       "$ref": "#/components/schemas/SprintDefectView"
+      },
+      "title": "Defects",
+      "type": "array"
+     },
+     "failure_reason": {
+      "default": "",
+      "description": "Why the latest attempt failed; '' when it did not.",
+      "title": "Failure Reason",
+      "type": "string"
+     },
+     "features": {
+      "description": "What the latest attempt implemented.",
+      "items": {
+       "type": "string"
+      },
+      "title": "Features",
+      "type": "array"
+     },
+     "fixed_bugs": {
+      "default": 0,
+      "description": "Of those, fixed.",
+      "title": "Fixed Bugs",
+      "type": "integer"
+     },
+     "goal": {
+      "description": "The sprint plan's goal for this sprint.",
+      "title": "Goal",
+      "type": "string"
+     },
+     "number": {
+      "description": "The sprint's place in the plan, from 1.",
+      "title": "Number",
+      "type": "integer"
+     },
+     "open_bugs": {
+      "default": 0,
+      "description": "Of those, not fixed.",
+      "title": "Open Bugs",
+      "type": "integer"
+     },
+     "planned": {
+      "description": "What the sprint promised, from the plan.",
+      "items": {
+       "type": "string"
+      },
+      "title": "Planned",
+      "type": "array"
+     },
+     "planned_total": {
+      "description": "How many sprints the plan has.",
+      "title": "Planned Total",
+      "type": "integer"
+     },
+     "status": {
+      "description": "The latest attempt's status: Completed, Failed or another the engine records.",
+      "title": "Status",
+      "type": "string"
+     },
+     "test_cases": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Test cases measured at the end of the latest attempt, or null when none were.",
+      "title": "Test Cases"
+     },
+     "test_rounds": {
+      "default": 0,
+      "description": "Test rounds the latest attempt ran.",
+      "title": "Test Rounds",
+      "type": "integer"
+     },
+     "total_bugs": {
+      "default": 0,
+      "description": "Defects found in the latest attempt.",
+      "title": "Total Bugs",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "number",
+     "planned_total",
+     "goal",
+     "status",
+     "attempts"
+    ],
+    "title": "SprintView",
+    "type": "object"
+   },
+   "SprintsResponse": {
+    "additionalProperties": false,
+    "description": "A run's sprints, in plan order; only those attempted so far.",
+    "properties": {
+     "sprints": {
+      "description": "The sprints attempted so far.",
+      "items": {
+       "$ref": "#/components/schemas/SprintView"
+      },
+      "title": "Sprints",
+      "type": "array"
+     }
+    },
+    "title": "SprintsResponse",
     "type": "object"
    },
    "StartRunRequest": {
@@ -2802,6 +3075,33 @@
     ]
    }
   },
+  "/api/health/server": {
+   "get": {
+    "description": "The build model's server as it describes itself, and the runs on it. Never a model call.",
+    "operationId": "health_server_api_health_server_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ServerHealth"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Health Server",
+    "tags": [
+     "health"
+    ]
+   }
+  },
   "/api/lessons": {
    "get": {
     "description": "Every lesson on record, proposals first, with the evidence each rests on.",
@@ -3317,6 +3617,65 @@
      }
     ],
     "summary": "Get Artifacts",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/artifacts/diff": {
+   "get": {
+    "description": "What changed in one workspace document since its version before (plan BG.3).",
+    "operationId": "get_document_diff_api_runs__run_id__artifacts_diff_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "path",
+      "required": true,
+      "schema": {
+       "title": "Path",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Document Diff Api Runs  Run Id  Artifacts Diff Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Get Document Diff",
     "tags": [
      "runs"
     ]
@@ -4298,6 +4657,54 @@
      }
     ],
     "summary": "Rewind Points",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/sprints": {
+   "get": {
+    "description": "The run's sprints as figures, from the attempts each sprint summary is rendered from (plan BG.6).",
+    "operationId": "get_sprints_api_runs__run_id__sprints_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SprintsResponse"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Get Sprints",
     "tags": [
      "runs"
     ]

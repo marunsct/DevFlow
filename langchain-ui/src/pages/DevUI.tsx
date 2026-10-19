@@ -7,6 +7,10 @@ import {
 import { ThemeToggle } from '../components/ThemeToggle';
 import { InboxPanel } from '../components/NeedsYouInbox';
 import { CommandPalette } from '../components/CommandPalette';
+import { ModelServerCard } from '../components/ModelServerCard';
+import { ServerDot } from '../components/ServerDot';
+import { RunFigures } from '../components/RunFigures';
+import type { RunStatusResponse, ServerHealth } from '../types';
 import type { RunSummary } from '../types';
 
 const sampleRun = (run_id: string, status: string, current_stage: string, extra: Partial<RunSummary> = {}): RunSummary => ({
@@ -22,6 +26,19 @@ const INBOX_WAITING = [
 const INBOX_STOPPED = [sampleRun('run-c3d4e5f6-1234', 'failed', 'acceptance_tests')];
 const loadSampleRuns = async () => ({ runs: [...INBOX_WAITING, ...INBOX_STOPPED], total: 4 });
 
+const SAMPLE_SERVER: ServerHealth = {
+  hosted: false, answered: true, model: 'Qwen3.6-35B-A3B-UD-Q4_K_M.gguf', quantisation: 'Q4_K_M', slots: 1,
+  slot_context: 126_464, checked_at: '2026-10-19T12:03:00Z', busy_runs: ['run-8b0c41d2-5e1f'],
+};
+
+const SAMPLE_RUN = {
+  max_run_tokens: 5_000_000, max_run_cost_usd: null,
+  cost: {
+    completion_tokens: 300_000, estimated_cost_usd: 0, fully_priced: false, priced_requests: 0, prices_as_of: '2026-10',
+    prompt_tokens: 900_000, successful_requests: 412, total_tokens: 1_200_000, unpriced_models: ['qwen'], unpriced_requests: 412,
+  },
+} as RunStatusResponse;
+
 /**
  * Every primitive of the kit on one page, in its states - the "kitchen sink"
  * the accessibility measure and the theme screenshots read. Served by the dev
@@ -36,6 +53,7 @@ export function DevUI() {
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-text-primary">Component kit</h1>
         <div className="flex items-center gap-1">
+          <ServerDot health={SAMPLE_SERVER} />
           <CommandPalette loadRuns={loadSampleRuns} />
           <ThemeToggle />
         </div>
@@ -121,6 +139,14 @@ export function DevUI() {
             notifying={false}
             onNotifying={() => undefined}
           />
+        </Card.Body>
+      </Card>
+
+      <Card>
+        <Card.Header title="Run figures and the model server" />
+        <Card.Body className="space-y-4">
+          <dl className="flex flex-wrap items-start gap-x-7 gap-y-3"><RunFigures run={SAMPLE_RUN} /></dl>
+          <ModelServerCard health={SAMPLE_SERVER} />
         </Card.Body>
       </Card>
 

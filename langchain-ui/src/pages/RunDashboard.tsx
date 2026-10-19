@@ -37,6 +37,9 @@ import { ApprovalGate } from '../components/ApprovalGate';
 import { WizardDashboard } from '../components/WizardDashboard';
 import { SprintSummaryPanel } from '../components/SprintSummaryPanel';
 import { DeliveryPanel } from '../components/DeliveryPanel';
+import { RunFigures } from '../components/RunFigures';
+import { fixLoop, useTypicalTime } from '../lib/runSummary';
+import { holdingTheModel, useServerHealth } from '../lib/serverHealth';
 import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Pause, Copy, ListChecks, LayoutGrid, RotateCcw, Download } from 'lucide-react';
 import { describeStage, describeStatus, RESUMABLE } from '../lib/activity';
 import { useNow } from '../lib/usePageVisible';
@@ -66,6 +69,9 @@ export const RunDashboard: React.FC = () => {
   const [streamDown, setStreamDown] = useState(false);
   const live = !!run && !['completed', 'failed', 'cancelled'].includes(run.status);
   const now = useNow(live);
+  const typical = useTypicalTime(run?.delivery_mode);
+  // On a server that serves one request at a time, another run on it holds this one's calls.
+  const waitingOn = holdingTheModel(useServerHealth(), runId);
   // The tab says what the run needs, so a gate is seen from another tab.
   useEffect(() => {
     if (!run) return;
@@ -513,6 +519,11 @@ export const RunDashboard: React.FC = () => {
             : 'Live updates paused - reconnecting. The page shows the last state it loaded.'}
         </div>
       )}
+      {live && waitingOn && (
+        <div role="status" className="rounded-xl border border-border bg-overlay px-4 py-2 text-sm text-text-secondary">
+          The model serves one request at a time and {waitingOn} is on it: this run's calls wait for it to free the model.
+        </div>
+      )}
       {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
@@ -626,6 +637,9 @@ export const RunDashboard: React.FC = () => {
             <p className="text-[13px] text-text-secondary leading-relaxed mt-2.5">
               {stageCopy.blurb}
             </p>
+            {fixLoop(run.remediation, run.current_stage) && (
+              <p className="mt-1.5 text-xs text-text-secondary tabular-nums">{fixLoop(run.remediation, run.current_stage)}</p>
+            )}
             {/* A completed run that knows what it did not prove says so here,
                 beside the green badge - the record must not read as a plain
                 success (Initiative J.4). */}
@@ -666,7 +680,10 @@ export const RunDashboard: React.FC = () => {
               <dt className="text-[11px] text-text-muted uppercase tracking-wider">
                 {isTerminal ? 'Took' : 'Running for'}
               </dt>
-              <dd className="mt-1 text-[13px] text-text-primary tabular-nums">{elapsed}</dd>
+              <dd className="mt-1 text-[13px] text-text-primary tabular-nums">
+                {elapsed}
+                {!isTerminal && typical && <span className="block max-w-56 text-[11px] text-text-muted">{typical}</span>}
+              </dd>
             </div>
             <div>
               <dt className="text-[11px] text-text-muted uppercase tracking-wider">Documents</dt>
@@ -674,28 +691,7 @@ export const RunDashboard: React.FC = () => {
                 {run.artifacts?.length ?? 0} produced
               </dd>
             </div>
-            {/* A partial total must not read as the whole spend: the
-                MAX_RUN_COST_USD ceiling counts only the calls it could price. */}
-            {run.cost && (
-              <div>
-                <dt className="text-[11px] text-text-muted uppercase tracking-wider">Spend</dt>
-                <dd
-                  className="mt-1 text-[13px] text-text-primary tabular-nums"
-                  title={
-                    run.cost.fully_priced
-                      ? undefined
-                      : `Partial: ${run.cost.unpriced_requests} call(s) had no known price ` +
-                        `(${run.cost.unpriced_models.join(', ') || 'no usage reported'}). ` +
-                        'The spending ceiling does not count them.'
-                  }
-                >
-                  ${run.cost.estimated_cost_usd.toFixed(2)}
-                  {!run.cost.fully_priced && (
-                    <span className="text-warning"> + {run.cost.unpriced_requests} unpriced</span>
-                  )}
-                </dd>
-              </div>
-            )}
+            <RunFigures run={run} />
           </dl>
         </div>
 
@@ -750,7 +746,7 @@ export const RunDashboard: React.FC = () => {
       )}
 
       {/* The owner's direction to a run that is still going. */}
-      {!isTerminal && run.status !== 'paused' && run.status !== 'waiting_for_budget' && <SteeringBox runId={runId!} />}
+      {!isTerminal && run.status !== 'paused' && run.status !== 'waiting_for_budget' && <SteeringBox runId={runId!} stage={run.current_stage} />}
       {run.status === 'paused' && (
         <p role="status" className="text-sm text-text-muted">Resume the run to send it a direction.</p>
       )}

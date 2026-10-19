@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen, ShieldCheck, CheckSquare } from 'lucide-react';
 import { createRun, startRun, getOutcomes, type RunForecast } from '../api';
+import { holdingTheModel, useServerHealth } from '../lib/serverHealth';
 
 export const Home: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
@@ -37,6 +38,7 @@ export const Home: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const navigate = useNavigate();
+  const holder = holdingTheModel(useServerHealth());
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -172,6 +174,11 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
           <p className="text-text-secondary text-sm max-w-md mx-auto">
             Upload your product documents to kick off the automated development pipeline.
           </p>
+          {holder && (
+            <p role="status" className="mt-3 text-xs text-warning max-w-md mx-auto">
+              The model serves one request at a time and {holder} is on it: a run started now waits for it to free the model.
+            </p>
+          )}
         </div>
 
         {/* Form */}

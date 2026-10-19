@@ -4,11 +4,14 @@ import { Home, Layers, List, Settings, LogOut } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { NeedsYouInbox } from './NeedsYouInbox';
 import { CommandPalette } from './CommandPalette';
+import { ServerDot } from './ServerDot';
+import { useServerHealth } from '../lib/serverHealth';
 import { endSession } from '../lib/session';
 
 export const Header: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const health = useServerHealth();
 
   const handleLogout = () => {
     endSession();
@@ -53,6 +56,7 @@ export const Header: React.FC = () => {
               <span className="hidden sm:inline">Settings</span>
             </Link>
             <NeedsYouInbox />
+            <ServerDot health={health} />
             <CommandPalette />
             <ThemeToggle />
             <div className="w-px h-6 bg-border mx-2" />

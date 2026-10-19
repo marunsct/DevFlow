@@ -74,6 +74,28 @@ def commits(root: str | Path, limit: int = MOST_COMMITS) -> list[dict[str, Any]]
     return found
 
 
+def document_diff(root: str | Path, path: str) -> dict[str, Any]:
+    """One file's change since its newest committed version that differs from it now (plan BG.3).
+
+    A review pauses with the revised document on disk, committed or not; the
+    version before is the newest commit whose copy differs from it. The path
+    is taken literally, never as a pattern.
+    """
+    nothing = {"path": path, "since": None, "since_at": None, "diff": "", "truncated": False}
+    # `git log` fails on a history with no commit yet; that is no earlier version, not an error.
+    if not _git(Path(root), "rev-list", "--max-count=1", "--all").strip():
+        return nothing
+    found = _git(Path(root), "--literal-pathspecs", "log", "--max-count=10", f"--format=%H{_SEPARATOR}%cI", "--", path)
+    for line in found.splitlines():
+        sha, _, at = line.partition(_SEPARATOR)
+        if not _A_HASH.match(sha):
+            continue
+        text = _git(Path(root), "--literal-pathspecs", "diff", "--no-color", "--no-textconv", "--no-ext-diff", sha, "--", path)
+        if text.strip():
+            return {"path": path, "since": sha, "since_at": at, "diff": text[:MOST_DIFF_CHARS], "truncated": len(text) > MOST_DIFF_CHARS}
+    return nothing
+
+
 def diff(root: str | Path, sha: str) -> dict[str, Any]:
     """One commit's unified diff against its parent, capped; the first commit against nothing."""
     if not _A_HASH.match(str(sha or "")):

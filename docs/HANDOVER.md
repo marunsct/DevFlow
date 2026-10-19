@@ -300,8 +300,12 @@ test that fails on the old code:
   (the needs-you inbox, tab badge, opt-in notifications; `/api/runs` carries `gate_deadline`) and
   UI-0 (types generated from the server's schema: after any API change run `npm run api:types` in
   `langchain-ui`, or `tests/test_the_ui_s_api_types_are_current.py` fails) and UI-S1/S2 (pages of
-  50, the `Ctrl K` command palette, the `?` shortcuts sheet). Next: BG.1, BG.5, BG.6 with their
-  backend enablers.
+  50, the `Ctrl K` command palette, the `?` shortcuts sheet), BG.1 (tokens, "not priced", typical
+  time, ceiling bars; the run payload carries `max_run_tokens`/`max_run_cost_usd`) and BG.5
+  (`GET /api/health/server`, never a model call; the header's server dot; Settings in tabs).
+  BG.6 (`GET /runs/{id}/sprints` from the graph state; the fix loop's open defects) and BG.3 (a
+  review shows its document and what changed; `GET /runs/{id}/artifacts/diff`). Next: BG.4 (the
+  rail / work area / ledger layout).
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).

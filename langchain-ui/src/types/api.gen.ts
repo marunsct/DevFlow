@@ -150,6 +150,8 @@ export interface RemediationInfo {
   escalated: boolean;
   /** Maximum allowed remediation attempts. */
   max_attempts: number;
+  /** Defects found and still open. */
+  open_defects: number;
   /** Number of test runs performed. */
   test_runs: number;
 }
@@ -252,6 +254,10 @@ export interface RunStatusResponse {
   error: string | null;
   /** When a gate that is waiting for a person approves itself (the run's approval timeout), or null when nothing waits or the gate waits for the person however long it takes. */
   gate_deadline: string | null;
+  /** The deployment's ceiling on a run's priced spend (`MAX_RUN_COST_USD`), or null when none is set. */
+  max_run_cost_usd: number | null;
+  /** The deployment's bound on the tokens a run uses (`MAX_RUN_TOKENS`), or null when none is set. */
+  max_run_tokens: number | null;
   /** What the workspace's NON-DELIVERABLE marker says, or '' when the workspace is marked deliverable. A terminal state other than a clean release writes it into the workspace root (Initiative J.6). */
   non_deliverable: string;
   /** Remediation information if applicable. */
@@ -300,6 +306,26 @@ export interface RunSummary {
   status: string;
   /** When the run last moved. */
   updated_at: string | null;
+}
+
+/** What the build model's server says of itself, read with one request for its status and never a model call (plan BG.5). */
+export interface ServerHealth {
+  /** The server answered its status request (`/props`) when it was read. */
+  answered: boolean;
+  /** The runs running now, which hold the server's slots. */
+  busy_runs: string[];
+  /** When the status was read; it is read again at most once a minute. */
+  checked_at: string;
+  /** The build model is a hosted API, which has no server status to read. */
+  hosted: boolean;
+  /** The model the server holds, from its file name; the configured name otherwise. */
+  model: string;
+  /** The quantisation its file name names, such as Q4_K_M; '' when none. */
+  quantisation: string;
+  /** Context tokens each request gets, as the server was started, or null. */
+  slot_context: number | null;
+  /** How many requests it serves at once, or null when not reported. */
+  slots: number | null;
 }
 
 /** Configuration an administrator may change at runtime. Credentials are **write-only**. They can be set here because a self-hosted endpoint that starts requiring a key is otherwise unfixable without a redeploy, but nothing ever reads one back: responses carry a masked hint only, the audit row records which credential changed and never its value, and the stored copy is encrypted. Three states per credential, which is what makes the form usable: omitted / null - leave whatever is stored alone "" - delete the stored credential; the deployment's own environment applies again a value - set it */
@@ -367,6 +393,16 @@ export interface SettingsView {
   thinking_mode: string;
 }
 
+/** One defect of a sprint's latest attempt, as its summary lists it. */
+export interface SprintDefectView {
+  /** What is wrong. */
+  description: string;
+  /** Who fixes it. */
+  owner: string;
+  /** open, fixed or accepted_risk. */
+  status: string;
+}
+
 /** One pass through a sprint. A rejected review starts a new revision of the same sprint. */
 export interface SprintRevision {
   /** 1 for the first pass; increments on each rejection. */
@@ -378,6 +414,50 @@ export interface SprintRevision {
   /** The run moved on to the next sprint after this revision (the review was approved and `sprint_advance` ran). Used to resolve the review's outcome for runs whose history predates decision events. */
   saw_advance: boolean;
   steps: WizardStep[];
+}
+
+/** One sprint, from the attempts the engine renders its summary document from (plan BG.6). */
+export interface SprintView {
+  /** One line per attempt, when there was more than one. */
+  attempt_history: string[];
+  /** How many times this sprint was attempted. More than one is a re-run, not another sprint. */
+  attempts: number;
+  /** Of those, failed. */
+  cases_failed: number;
+  /** Of those, passed. */
+  cases_passed: number;
+  /** The latest attempt's defects. */
+  defects: SprintDefectView[];
+  /** Why the latest attempt failed; '' when it did not. */
+  failure_reason: string;
+  /** What the latest attempt implemented. */
+  features: string[];
+  /** Of those, fixed. */
+  fixed_bugs: number;
+  /** The sprint plan's goal for this sprint. */
+  goal: string;
+  /** The sprint's place in the plan, from 1. */
+  number: number;
+  /** Of those, not fixed. */
+  open_bugs: number;
+  /** What the sprint promised, from the plan. */
+  planned: string[];
+  /** How many sprints the plan has. */
+  planned_total: number;
+  /** The latest attempt's status: Completed, Failed or another the engine records. */
+  status: string;
+  /** Test cases measured at the end of the latest attempt, or null when none were. */
+  test_cases: number | null;
+  /** Test rounds the latest attempt ran. */
+  test_rounds: number;
+  /** Defects found in the latest attempt. */
+  total_bugs: number;
+}
+
+/** A run's sprints, in plan order; only those attempted so far. */
+export interface SprintsResponse {
+  /** The sprints attempted so far. */
+  sprints: SprintView[];
 }
 
 /** Request to start a run. Credentials are deliberately absent. They used to be accepted here, which put provider API keys into request bodies and access logs; the worker now resolves them from its own environment or the secret store. ``artifact_directory`` is gone for the same class of reason: it named a server path that became the repository root for every agent tool and the sandbox bind mount, so a caller could point the whole run at any directory on the host. A label is accepted instead, and the server derives the path. */

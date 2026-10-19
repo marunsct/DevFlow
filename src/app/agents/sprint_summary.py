@@ -187,6 +187,79 @@ def _one_line(text: str) -> str:
     return window.rstrip(" ,;:") + "\u2026"
 
 
+def _attempt_history(attempts: Sequence[Mapping[str, Any]]) -> list[str]:
+    """One line per attempt when a sprint took more than one; [] when it took one."""
+    if len(attempts) <= 1:
+        return []
+    history = []
+    for attempt in attempts:
+        label = "re-run" if attempt.get("number", 1) > 1 else "first attempt"
+        reason = f": {attempt['reason']}" if attempt.get("reason") else ""
+        if attempt.get("accepted_at_escalation"):
+            reason += f" at escalation ({attempt['accepted_at_escalation']})"
+        tally = _defect_tally(attempt.get("defects") or ())
+        history.append(
+            f"**Attempt {attempt.get('number', '?')}** ({label}) - "
+            f"{attempt.get('status', 'Unknown')}{reason}. "
+            f"Test cases: {_cases_phrase(attempt.get('cases'))} over "
+            f"{attempt.get('rounds', 0)} round(s). "
+            f"Defects: {tally['found']} found, {tally['fixed']} fixed."
+        )
+    return history
+
+
+def sprint_views(sprint_plan: Any, attempts: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Each attempted sprint as figures, from the attempts its summary document is rendered from.
+
+    The run page drew its sprint timeline by parsing the rendered markdown back
+    into numbers (plan BG.6); this is the same state, unrendered. Goal and
+    promise come from the sprint plan, as in `_record_sprint_summary`.
+    """
+    sprints = list(getattr(sprint_plan, "sprints", None) or [])
+    by_sprint: dict[int, list[Mapping[str, Any]]] = {}
+    for attempt in attempts or ():
+        by_sprint.setdefault(int(attempt.get("sprint_index", 0)), []).append(attempt)
+    views = []
+    for index in sorted(by_sprint):
+        mine = by_sprint[index]
+        latest = mine[-1]
+        definition = sprints[index] if index < len(sprints) else None
+        goal = str(getattr(definition, "goal", "") or "")
+        planned = [str(item) for item in (getattr(definition, "in_scope", None) or [])]
+        if not planned:
+            planned = [str(item) for item in (getattr(definition, "acceptance_criteria", None) or [])]
+        cases = latest.get("cases") or None
+        tally = _defect_tally(latest.get("defects") or ())
+        status = str(latest.get("status", "Unknown"))
+        views.append({
+            "number": index + 1,
+            "planned_total": len(sprints),
+            "goal": goal or "Unknown goal",
+            "status": status,
+            "failure_reason": "" if status == "Completed" else str(latest.get("reason") or ""),
+            "attempts": len(mine),
+            "planned": planned or ([goal] if goal else []),
+            "features": [_one_line(feature) for feature in (latest.get("features") or ())],
+            "test_cases": cases["tests"] if cases else None,
+            "cases_passed": cases["passed"] if cases else 0,
+            "cases_failed": cases["failed"] if cases else 0,
+            "test_rounds": int(latest.get("rounds") or 0),
+            "total_bugs": tally["found"],
+            "fixed_bugs": tally["fixed"],
+            "open_bugs": tally["open"],
+            "defects": [
+                {
+                    "status": str(defect.get("status", "open")),
+                    "description": str(defect.get("description", "")),
+                    "owner": str(defect.get("owner", "unassigned")),
+                }
+                for defect in (latest.get("defects") or ())
+            ],
+            "attempt_history": _attempt_history(mine),
+        })
+    return views
+
+
 def render_sprint_summary(
     *,
     sprint_number: int,
@@ -239,21 +312,7 @@ def render_sprint_summary(
             "after the milestone review)"
         )
 
-    history: list[str] = []
-    if attempt_count > 1:
-        for attempt in attempts:
-            label = "re-run" if attempt.get("number", 1) > 1 else "first attempt"
-            reason = f": {attempt['reason']}" if attempt.get("reason") else ""
-            if attempt.get("accepted_at_escalation"):
-                reason += f" at escalation ({attempt['accepted_at_escalation']})"
-            tally = _defect_tally(attempt.get("defects") or ())
-            history.append(
-                f"**Attempt {attempt.get('number', '?')}** ({label}) - "
-                f"{attempt.get('status', 'Unknown')}{reason}. "
-                f"Test cases: {_cases_phrase(attempt.get('cases'))} over "
-                f"{attempt.get('rounds', 0)} round(s). "
-                f"Defects: {tally['found']} found, {tally['fixed']} fixed."
-            )
+    history = _attempt_history(attempts)
 
     from app.doc_templates import render_document
 

@@ -212,6 +212,46 @@ class RemediationInfo(BaseModel):
     escalated: bool = Field(description="Whether the remediation has been escalated.")
     defect_count: int = Field(description="Number of defects found.")
     test_runs: int = Field(description="Number of test runs performed.")
+    open_defects: int = Field(default=0, description="Defects found and still open.")
+
+
+class SprintDefectView(BaseModel):
+    """One defect of a sprint's latest attempt, as its summary lists it."""
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = Field(description="open, fixed or accepted_risk.")
+    description: str = Field(description="What is wrong.")
+    owner: str = Field(description="Who fixes it.")
+
+
+class SprintView(BaseModel):
+    """One sprint, from the attempts the engine renders its summary document from (plan BG.6)."""
+    model_config = ConfigDict(extra="forbid")
+
+    number: int = Field(description="The sprint's place in the plan, from 1.")
+    planned_total: int = Field(description="How many sprints the plan has.")
+    goal: str = Field(description="The sprint plan's goal for this sprint.")
+    status: str = Field(description="The latest attempt's status: Completed, Failed or another the engine records.")
+    failure_reason: str = Field(default="", description="Why the latest attempt failed; '' when it did not.")
+    attempts: int = Field(description="How many times this sprint was attempted. More than one is a re-run, not another sprint.")
+    planned: list[str] = Field(default_factory=list, description="What the sprint promised, from the plan.")
+    features: list[str] = Field(default_factory=list, description="What the latest attempt implemented.")
+    test_cases: int | None = Field(default=None, description="Test cases measured at the end of the latest attempt, or null when none were.")
+    cases_passed: int = Field(default=0, description="Of those, passed.")
+    cases_failed: int = Field(default=0, description="Of those, failed.")
+    test_rounds: int = Field(default=0, description="Test rounds the latest attempt ran.")
+    total_bugs: int = Field(default=0, description="Defects found in the latest attempt.")
+    fixed_bugs: int = Field(default=0, description="Of those, fixed.")
+    open_bugs: int = Field(default=0, description="Of those, not fixed.")
+    defects: list[SprintDefectView] = Field(default_factory=list, description="The latest attempt's defects.")
+    attempt_history: list[str] = Field(default_factory=list, description="One line per attempt, when there was more than one.")
+
+
+class SprintsResponse(BaseModel):
+    """A run's sprints, in plan order; only those attempted so far."""
+    model_config = ConfigDict(extra="forbid")
+
+    sprints: list[SprintView] = Field(default_factory=list, description="The sprints attempted so far.")
 
 
 class RunCostSummary(BaseModel):
@@ -314,6 +354,14 @@ class RunStatusResponse(BaseModel):
     )
     delivery_mode: str = Field(
         default="", description="`fast` or `thorough`: how this run delivers, chosen when it started.",
+    )
+    max_run_tokens: int | None = Field(
+        default=None,
+        description="The deployment's bound on the tokens a run uses (`MAX_RUN_TOKENS`), or null when none is set.",
+    )
+    max_run_cost_usd: float | None = Field(
+        default=None,
+        description="The deployment's ceiling on a run's priced spend (`MAX_RUN_COST_USD`), or null when none is set.",
     )
     use_frontier_model: bool = Field(
         default=True, description="Whether this run uses the frontier model; False is the build model only.",
@@ -556,6 +604,20 @@ class RunSummary(BaseModel):
     )
 
 
+class ServerHealth(BaseModel):
+    """What the build model's server says of itself, read with one request for its status and never a model call (plan BG.5)."""
+    model_config = ConfigDict(extra="forbid")
+
+    hosted: bool = Field(description="The build model is a hosted API, which has no server status to read.")
+    answered: bool = Field(description="The server answered its status request (`/props`) when it was read.")
+    model: str = Field(default="", description="The model the server holds, from its file name; the configured name otherwise.")
+    quantisation: str = Field(default="", description="The quantisation its file name names, such as Q4_K_M; '' when none.")
+    slots: int | None = Field(default=None, description="How many requests it serves at once, or null when not reported.")
+    slot_context: int | None = Field(default=None, description="Context tokens each request gets, as the server was started, or null.")
+    checked_at: datetime = Field(description="When the status was read; it is read again at most once a minute.")
+    busy_runs: list[str] = Field(default_factory=list, description="The runs running now, which hold the server's slots.")
+
+
 class RunListResponse(BaseModel):
     """A page of run summaries."""
     model_config = ConfigDict(extra="forbid")
@@ -592,6 +654,9 @@ class ReviewPayload(BaseModel):
     revision: int = Field(description="The revision being reviewed.")
     comments: str | None = Field(default=None, description="Existing comments context.")
     available_actions: list[str] = Field(description="List of actions the reviewer can take.")
+    document: str | None = Field(
+        default=None, description="The workspace path of the document the review is about, when the workflow wrote one."
+    )
 
 
 class ReviewDecisionRequest(BaseModel):

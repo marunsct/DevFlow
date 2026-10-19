@@ -57,6 +57,8 @@ def test_start_and_resume_both_check_before_dispatching() -> None:
 
 
 def test_the_dashboard_says_when_the_spend_is_partial() -> None:
-    page = Path(__file__).resolve().parents[1] / "langchain-ui/src/pages/RunDashboard.tsx"
-    source = page.read_text()
-    assert "run.cost.fully_priced" in source and "unpriced_requests" in source
+    """The run page draws its spend with `RunFigures`, whose words come from `lib/runSummary.ts`."""
+    ui = Path(__file__).resolve().parents[1] / "langchain-ui/src"
+    assert "<RunFigures run={run} />" in (ui / "pages/RunDashboard.tsx").read_text()
+    words = (ui / "lib/runSummary.ts").read_text()
+    assert "cost.fully_priced" in words and "unpriced_requests" in words and "not priced" in words

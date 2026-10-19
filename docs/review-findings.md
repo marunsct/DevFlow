@@ -4,7 +4,9 @@
 > session-4 review. This is the evidence log behind
 > `docs/improvement-plan.md`. Each finding carries a *Plan:* line linking the
 > plan items that answer it. Research moved to `docs/research-findings.md`
-> (the section stubs below say where).
+> (the section stubs below say where). `docs/logs.md`, cited in places
+> below, was removed on 2026-10-19; its review points are listed in
+> `docs/improvement-plan.md` Part 22.4.
 
 ## Finding index → plan
 

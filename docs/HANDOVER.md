@@ -23,7 +23,6 @@ Everything they held that is not a secret is in this file.
 | Unified improvement plan, with the master index and the ledger | `docs/improvement-plan.md` |
 | Research findings, each linked to plan items | `docs/research-findings.md` |
 | Review findings (evidence), each linked to plan items | `docs/review-findings.md` |
-| Owner's notes; never commit or alter | `docs/logs.md` |
 
 `docs/ui/` holds the theme screenshots that the UI parts of the plan refer
 to. The older files were merged into these on 2026-10-19:
@@ -62,13 +61,23 @@ before anything else:
 
 ```sh
 cd /home/arun/Desktop/langchain
-git status --short                      # only " M docs/logs.md" - the owner's file; never commit or touch it
+git status --short                      # clean (docs/logs.md was removed from git by the owner on 2026-10-19)
 export LOOP_USER=harness-test LOOP_PASSWORD=loop-test-only-pw-2026
 scripts/loop/loop.sh status             # the current run, and whether anything is live
 scripts/loop/loop.sh ready              # last line ALL READY, exit 0 - otherwise start nothing (§5)
 scripts/loop/loop.sh start tests/brief_medium.md   # only when nothing is live
 scripts/loop/loop.sh wait 10            # every ~10 min for 40 min, then `wait 18`
 ```
+
+**One-time step after 2026-10-19:** `docs/logs.md` was removed from git. A
+working tree that still has local edits to it stops `git pull` ("local
+changes would be overwritten"). Keep a copy outside the repository, then
+let the pull delete it:
+
+```sh
+cp docs/logs.md ~/logs-backup.md && git checkout -- docs/logs.md && git pull main harness-hardening-session
+```
+
 
 Execution mode is a global setting read at every dispatch (`runtime_settings`
 `execution_mode`); there is no per-run override. Switching to linear is the
@@ -201,7 +210,7 @@ read every product source file against the brief (monitoring §0.4.1). Check:
   the loop going. The exceptions are the owner's decisions in §7 and the
   model (§5).
 - **Commit and push after every change**, handover updates included. Never
-  leave the tree dirty between steps, apart from `docs/logs.md`.
+  leave the tree dirty between steps.
 - **Keep monitoring §0 current in the same commit** as any change to how runs
   are tested: the gate, the cadence, the scripts, the healthy numbers or the
   suite size.
@@ -1015,7 +1024,7 @@ scratchpads don't travel between agents.
 - Docker socket access is root-level; don't enable it more widely.
 - The loop account's password is in this file by the owner's decision
   (2026-10-07). It is the only credential that may be written down.
-- Never commit or alter `docs/logs.md`, the owner's own file.
+- `docs/logs.md` was removed from git by the owner on 2026-10-19; do not recreate it (plan Part 22.4 holds its points).
 - Never route shell work through another command-running tool to get around
   the tool-approval check.
 

@@ -42,7 +42,8 @@ Rules that are never optional (details and reasons in the handover):
   - work orders, templates and the Sprint Record.
 - **Commit and push after every change:** `git push main harness-hardening-session`.
   The remote is named `main`. Keep both handovers current in the same commit.
-- **Never commit or alter `docs/logs.md`.** It is the owner's file.
+- **`docs/logs.md` was removed by the owner on 2026-10-19.** Its review points are
+  covered in `docs/improvement-plan.md` Part 22.4. Do not recreate it in git.
 - **Secrets:**
   - Never print `.env` values.
   - Never use the admin account; the loop uses the operator account in

@@ -87,7 +87,7 @@ sets the model, its endpoint and parallel mode - now `openai/gpt-oss-20b` on
 LM Studio `:1234`, see 0.3.1), print values from `.env`, kill the owner's GPU
 processes (llama-server and friends), load a model yourself, add
 knowledge/doc credentials to `sandbox._ENV_PASSTHROUGH`, or commit or alter
-`docs/logs.md` (the owner's own file; it always shows as modified).
+`docs/logs.md` (removed from git by the owner on 2026-10-19; its points are in plan Part 22.4).
 
 ### 0.2 Where it stands
 

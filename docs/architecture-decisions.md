@@ -209,6 +209,14 @@ Record one decision per section. Do not silently replace a decision; supersede i
   - The harness **never** loads a model or changes the owner's model, server
     flags or sampling. Per-request sampling presets were dropped for this
     reason (plan M.3, owner decision 12).
+  - The only per-request fields the harness may send are:
+    - `max_tokens`;
+    - the thinking switch and effort (already sent);
+    - a reasoning budget (plan AX), like `max_tokens` a limit on this reply;
+    - `seed` (plan AY candidates).
+
+    Temperature, top-p, top-k, min-p and repetition penalties are never
+    sent (plan Part 22.1 #1).
   - The harness reads what the server reports (`/props`: slots, per-slot
     context) and adapts to it (M.1, O.2, AB).
   - `loop.sh ready` must print `ALL READY` before any run.

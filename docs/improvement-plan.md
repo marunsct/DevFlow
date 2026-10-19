@@ -2,7 +2,9 @@
 
 > **Unified plan (consolidated 2026-10-19).** This file is the only improvement plan.
 > - It carries the original plan (§1–4, Initiatives A–I) and Appendices 1–4
->   (Initiatives J–BJ, with the UI parts).
+>   (Initiatives J–BK, with the UI parts).
+> - **Before implementing: Part 21** is the single implementation order and
+>   **Part 22** resolves the contradictions and lists what not to implement.
 > - Section E holds the two earlier plan documents, merged here.
 > - **Appendix M** at the end indexes every improvement: a short description,
 >   its current status and a link to the section that explains it (the
@@ -1449,7 +1451,7 @@ agents/models, graph/acceptance/tools, UI+API, run history/packs/loop
 scripts, each verified by hand where cited); the run record as the docs
 carry it (no transcripts were reachable from the review sandbox — see
 `docs/review-findings.md` §13 for the per-finding ledger G1–G27); the
-external reviewer's report in `docs/logs.md`; and a fresh web-research pass
+external reviewer's report (formerly `docs/logs.md`, removed 2026-10-19; summarised in Part 22.4); and a fresh web-research pass
 on frontier harnesses, local-model serving and agent UI/UX (primary sources
 dated 2025-06 → 2026-10; summarised in `docs/research-findings.md` Part R2 (§13.6)).
 Findings are cited as **G-numbers**; research items as **R-numbers**.
@@ -1829,7 +1831,7 @@ item. Concrete scope, ordered so each step is independently shippable:
 
 <a id="plan-af"></a>
 #### Initiative AF: Suite-strength probe — mutation testing the locked suite
-- **Reasoning** (logs.md §2; `agents/testability.py` docstring already
+- **Reasoning** (external review item 2, Part 22.4; `agents/testability.py` docstring already
   argues it: "a mutation has to change what a function DOES"): criterion
   coverage is checked by `[AC-n]` tags in test names, which proves a label
   exists, not that the test fails when the behaviour is absent. A suite
@@ -1854,13 +1856,13 @@ item. Concrete scope, ordered so each step is independently shippable:
   *pack-supported / custom (agents supply setup + test contract) /
   unverified*, show the tier on the run card and in the release evidence,
   and have the stack selector prefer a pack-supported stack when the brief
-  allows (logs.md §3). Each pack's verification coverage becomes a
+  allows (external review item 3, Part 22.4). Each pack's verification coverage becomes a
   one-line declared field so the UI can render it. **Effort**: S (tiering)
   + the K.6 work it motivates.
 
 <a id="plan-ah"></a>
 #### Initiative AH: Promises that match guarantees — cost cap, retention/deletion, reviewer completeness
-(from the external review, `docs/logs.md` §4–§6; none covered by Appendix 1)
+(from the external review, items 4–6, Part 22.4; none covered by Appendix 1)
 - **Cost cap**: `_budget_exceeded` compares only priced spend; unpriced
   calls do not count toward `MAX_RUN_COST_USD`. Label the cap "known spend
   only" in UI and run record, and offer an independent hard bound (max
@@ -1874,7 +1876,7 @@ item. Concrete scope, ordered so each step is independently shippable:
   source is capped at 24k chars without a completeness report. Record the
   downgrade as a completion gap, and have every review emit reviewed/skipped
   file lists. **S**.
-- **Run-readiness check before model calls** (logs.md §1): `loop.sh ready`
+- **Run-readiness check before model calls** (external review item 1, Part 22.4): `loop.sh ready`
   covers the model; add command-execution readiness (sandbox mode available,
   runtime reachable) and label a deployment with execution disabled as
   planning-only. **S**.
@@ -2816,7 +2818,7 @@ web research in `docs/research-findings.md` Part R1 (and §15.3 of the review fi
 moves and by how much, so the W.2 baseline runs can confirm or refute it.
 Format per the owner's request: Goal → Evidence → Files → Steps → Tests
 (failing-first, named) → Acceptance → Effort → Depends on. Initiatives
-continue the lettering from AW: **AX … BJ**. Nothing here re-proposes a
+continue the lettering from AW: **AX … BK**. Nothing here re-proposes a
 DROPPED item.
 
 <a id="plan-part-17"></a>
@@ -2923,12 +2925,19 @@ attack is:
      test command runs after each successful write and its one-line result
      is appended to the tool result (no model call; the loop sees pass/fail
      immediately instead of running the whole suite itself).
-  4. **Per-defect ledger**: total calls across attempts ≤ 60 (configurable);
-     when exhausted, record the localisation's hypothesis as the defect's
-     diagnosis and leave it open — no fourth conversation.
-  5. **Read tool withheld from a fast fix stage whose files are in its
+  4. **Per-defect ledger**: a hard cap of 60 calls per defect across all
+     attempts (configurable); the target is a mean of ≤ 30 per fix stage
+     (Acceptance). When exhausted, record the localisation's hypothesis as
+     the defect's diagnosis and leave it open — no fourth conversation.
+  5. **Read tool not offered to a fast fix stage whose files are in its
      request** (they are: `fix_request` carries the files and the memory);
-     offer `grep` only.
+     offer `grep` only. The tool list is fixed from the visit's first call
+     and never changes mid-visit (BA; Part 22.1 #3).
+  6. **One attempt order per defect** (Part 22.1 #4): (1) localise +
+     same-model candidates; (2) a fresh-context agent loop with
+     verify-after-write; (3) the L.6 whole-file rewrite on the judgement tier
+     (BD), fresh context; then open with its diagnosis. L.4's escalation
+     after a revert jumps straight to (3).
 - **Research backing.** Repair gains come in the first 2–3 attempts and decay 60–80% after (Debugging Decay Index; "How Many Tries"; "Is Three the Magic Number"); fresh-context restarts beat continued debugging (Llama 3.1 8B 72.6→82.8%); test-selected rollouts lift small models 10+ pts without training (R2E-Gym hybrid 34→51; Agentic Rubrics Best@16 on Qwen3-Coder-30B-A3B 39.6→54.2); Factory Droid's minimal tool set is the single biggest harness win measured at fixed model (§15.1).
 - **Tests.** `tests/test_a_defect_is_localised_before_it_is_rewritten.py`
   (fails on old code: no localisation call exists);
@@ -2975,7 +2984,9 @@ attack is:
   rationale; fast delivery keeps one *sprint record* but runs the build/test
   loop per slice. (3) Slice-scoped requests: drafts and fixes receive only the
   specification sections and memory files that name the slice's files
-  (`digest_of` focus) — target ≤15k tokens of spec per request. (4) Gate: the
+  (`digest_of` focus) — target ≤15k tokens of spec per request; O.1's
+  even sharing applies across the sections the slice keeps (Part 22.1 #5).
+  (4) Gate: the
   next slice's drafting starts only when the current slice's due criteria
   pass and no earlier criterion regressed; otherwise the fix cycle (AY) runs
   on the slice's ≤6 defects. (5) Layout coherence: a work order naming a file
@@ -3015,8 +3026,10 @@ attack is:
   agent_toolkit.py` (tool descriptions byte-stable per run).
 - **Steps.** (1) Measure: BF's composition record + the server's
   `prompt_cache` usage fields per call. (2) Stable tool list per stage visit;
-  withholding becomes a refusal + turn end. (3) Serialise interleaving when
-  slots == 1. (4) Slot save/restore when available (advisory to the owner:
+  withholding becomes a refusal + turn end. (3) Extend AB's rule (fan-out =
+  server slots) to every fan-out — drafting, fix workers, review workers —
+  so one slot never interleaves conversations; the parallel/linear toggle
+  stays as it is (Part 22.1 #7). (4) Slot save/restore when available (advisory to the owner:
   `--slots --slot-save-path /path`; 2–3 slots of ~40k if VRAM allows, for
   the drafting pool). (5) Advise `--cache-reuse 256` for the compaction case.
 - **Tests.** `tests/test_a_withheld_tool_does_not_change_the_tool_list.py`
@@ -3065,12 +3078,13 @@ attack is:
 #### BD. Two tiers from one local server (and a model recommendation to the owner) — P1
 
 - **Goal.** An all-local run escalates to a *different behaviour*: the same
-  weights with a larger reasoning budget (AX) and lower temperature, or a
-  second model process when the owner runs one.
+  weights with a larger reasoning budget (AX), or a second model process
+  when the owner runs one. Sampling values stay the owner's: no temperature
+  or other sampling field is sent (ADR-0008; Part 22.1 #1).
 - **Evidence.** I9; HANDOVER §2 notes qwen cloud quota exhausted, so the
   local tier is the real one.
 - **Files.** `src/app/models/roles.py` (judgement profile = default endpoint +
-  `JUDGEMENT_THINKING_BUDGET`, `JUDGEMENT_SEED`), settings UI (profile
+  `JUDGEMENT_THINKING_BUDGET`), settings UI (profile
   picker already exists), `docs/HANDOVER.md` §5 (advice).
 - **Owner-facing advice (not code):** for the build tier a *non-thinking
   coder* model (e.g. Qwen3-Coder-30B-A3B-Instruct, 256k context, native tool
@@ -3086,7 +3100,13 @@ attack is:
 <a id="plan-be"></a>
 #### BE. One sandbox container per run — P2
 
-- **Goal.** Command start-up cost paid once per run, same isolation.
+- **Goal.** Command start-up cost paid once per run, with isolation kept by
+  explicit guards. One container per run would let processes and files
+  outside the workspace persist between commands, so (Part 22.1 #8): the
+  command's process group is killed after each command, only the workspace
+  is mounted, the same limits apply, and each stage gets a fresh container.
+  Per-command mode stays a setting. Confirm the live mode first: Compose
+  defaults to `container`.
 - **Evidence.** I8.
 - **Files.** `src/app/tools/sandbox.py` (`docker create … sleep infinity`
   per run with the same flags, `docker exec` per command, removed at run
@@ -3097,7 +3117,7 @@ attack is:
 - **Tests.** `tests/test_commands_of_one_run_share_one_container.py`,
   `tests/test_the_run_s_container_is_removed_at_the_end.py`.
 - **Acceptance.** non-model wall share 27% → ≤ 15% on brief_medium.
-- **Effort.** M.  **Depends on.** —.
+- **Effort.** M.  **Depends on.** BF (tool time by command category).
 
 <a id="plan-bf"></a>
 #### BF. Per-call prompt composition in the transcript — P1 (first, cheap)
@@ -3165,18 +3185,57 @@ attack is:
   `tests/test_what_the_budget_leaves_out_is_named.py`. Each new prompt line
   is tested against the banned words (task, tasks, to-do, todo, button,
   click, checkbox).
-- **Acceptance.** p95 request input ≤ 32k tokens on brief_medium with no
-  rise in `redundant_read_rate`, and fix ratio not lower than the baseline.
-  Judged on at least two runs (Part 20 rule).
+- **Acceptance.** injected blocks (everything but the conversation) ≤ 16k
+  tokens on every request of brief_medium, with no rise in
+  `redundant_read_rate` and a fix ratio not lower than the baseline. The p95
+  *total* request input is reported with a target of ≤ 32k, reached through
+  AY's bounded attempts and AZ's slices, not compaction (Z stays not built
+  unless BF shows conversation growth dominates; Part 22.1 #6). Judged on at
+  least two runs (Part 20 rule).
 - **Effort.** M.  **Depends on.** BF; works with AZ (slice scope) and BA
   (stable block order).
+
+<a id="plan-bk"></a>
+#### BK. A release without its packaged CI or container files is a completion gap — P1
+
+- **Goal.** When the release files a stack pack provides could not be
+  written, the run finishes as completed *with gaps*, not plain completed.
+  The handoff then says what is missing in the same place every other gap is
+  listed (`completion_gaps`, the evidence page, the bench export). A
+  custom-stack run (no pack) is unchanged: its support tier is already
+  stated on the evidence page (AG), and it was never promised release files.
+- **Why.** The external review of 2026-10-17 (item 6, recorded in Part 22)
+  found that release packaging is best-effort. It was checked against the
+  code on 2026-10-19:
+  - `stacks/release.py` catches the error and fills `outcome.missing`.
+  - `graph/delivery.py` puts that text into the release *decision's*
+    rationale only.
+  - `completion_gaps` is computed *before* the release files are written, so
+    a failed packaging step never reaches it. The run reads as plain
+    `completed`, and so do the run list, the evidence page's "Completion
+    gaps" section and the bench export.
+  - This is the J.4/J.5 rule ("records cite the verdict") applied to the
+    last step of the run.
+- **Evidence.** `src/app/stacks/release.py` (`write`, the `except` branch at
+  "a release is not held back by its packaging"); `src/app/graph/delivery.py`
+  (`release`: gaps assembled, then `release_files.write(root).describe()`).
+- **Files.** `src/app/graph/delivery.py` (write the release files before the
+  gaps are stored, and add `outcome.missing` to `gaps` when set),
+  `src/app/stacks/release.py` (unchanged behaviour: never hold the release
+  back).
+- **Tests.** `tests/test_a_release_whose_files_failed_is_completed_with_gaps.py`
+  (makes a file write inside `release.write` fail; fails on the old code because
+  `completion_gaps` stays empty).
+- **Acceptance.** a forced packaging failure shows in `completion_gaps`, the
+  evidence page and `score.py`'s export. No change on a clean release.
+- **Effort.** S.  **Depends on.** —.
 
 <a id="plan-bh"></a>
 #### BH. Model registry: parser, template, sampling, thinking and edit format per model family, measured by `fitness` — P1
 
 - **Goal.** The harness knows, per served model, which tool-call protocol the
   server parses (hermes / qwen3_coder XML / mistral / glm / harmony), which
-  thinking switch and budget it honours, its recommended sampling per mode,
+  thinking switch and budget it honours, its recommended sampling per mode (advisory only: printed by `ready`, never sent — ADR-0008),
   and — **measured, not assumed** — its well-formed rate for whole-file
   replies vs search/replace edits; `write_artifact` vs `edit_artifact` are
   then *preferred* per model (whole-file below ~300 lines when search/replace
@@ -3369,6 +3428,9 @@ or pull forward the open UI-S/UI-0/UI-P rows; none duplicates a DONE row.
 <a id="plan-part-20"></a>
 ### Part 20 — Implementation sequence
 
+Prerequisites: the W.2 baselines and the AR probe (Part 21, stage 0). The
+single order for all open items is Part 21.
+
 | wave | items | gate |
 |---|---|---|
 | 0 (1 week) | BF, AX, BC | brief_medium KPI: lost replies ≤5, identical calls ≤5% |
@@ -3393,6 +3455,112 @@ DATA_DIR alone" (`2d94b84`) tells every stage it starts with PORT and
 DATA_DIR only. "A shell builtin is refused with the reason" (`99e2fb7`)
 explains why a shell builtin carries nothing to the next command. AZ's
 skeleton proof should reuse these messages rather than add new ones.
+
+<a id="plan-part-21"></a>
+### Part 21 — One implementation order for every open item (2026-10-19)
+
+This order replaces the separate sequences in §4 (the original roadmap),
+Part 16 (Appendix 3) and Part 20 (Appendix 4); their gates still apply.
+Items marked done, dropped or not built in Appendix M are not listed. A
+stage starts when its prerequisites are met. The UI track can run beside
+stages 1–5 in a second session.
+
+| Stage | Items (in order) | Prerequisite | Gate to the next stage |
+|---|---|---|---|
+| 0 Baseline (owner) | **W.2** baselines in the decided order: fast notes-api-hono → fast fullstack-bookmarks-py → thorough; **AR** reasoning probe between runs | `loop.sh ready` = ALL READY | KPI JSON and ledger rows for each baseline; AR's table says whether the server honours a per-request budget |
+| 1 Measure, then cheap fixes | **BF** → **BC** → **BK** → **AQ** (instrumented reads) → **AO.9**, **AO.10** remainders → **AO.5** (needs the baseline data) | stage 0 | composition shares in the KPI JSON; identical-call rate ≤ 5% |
+| 2 Tokens nobody keeps | **AX** (only if AR shows the budget is honoured; otherwise advisory to the owner) → **BB** → **BH** → **BD** | BF, AR | lost replies ≤ 5; lead lost replies 0; tool failures ≤ 3% |
+| 3 The fix loop | **AY** → **BI** | AX, BF | fix ratio ≥ 0.5; mean calls per fix stage ≤ 30 |
+| 4 Context and cache | **BJ** → **BA** | BF, AY | injected blocks ≤ 16k tokens per request; cached share ≥ 0.85 |
+| 5 Complex products | **AZ** | AY, BJ, W.2 | brief_medium completes in ≤ 8 h with no false acceptance |
+| 6 Packs and contracts | **K.6 = AW** (one item, two rows) → **AU** → **B** remainder (overlap audit) → **U.1** service-backed bench | stage 5 gate, owner decision 10 | a second bench family scored under the same KPIs |
+| 7 Infrastructure | **BE** → **T** spike → **S** remainder (mid-run health telemetry) → **M.4–M.6** remainders | BF (tool time by category) | non-model wall share ≤ 15% |
+| 8 Optional | **Q-amend** (default off; benchmark before any default change); **G** Unicode half (4 of 280 misses, small) | — | — |
+| Last | **Part 12 / V** refactor track | two clean benchmark families | no behaviour change (suite green, KPIs within band) |
+| UI track | **UI-0** remainder → **UI-P** primitive kit → **UI-S1/S2** remainder → **BG.1, BG.2, BG.5, BG.6** with the Part 4 and 15.5 backend enablers → **UI-S4 = BG.3 + BG.4** (one piece of work) → **UI-T4–T6/S5** remainder → **BG.7–BG.9, BG.11–BG.13** → **UI-S3 = BG.10** → **UI-S6 + BG.14–BG.16** | UI-P before any new screen | axe ≤ 5 per theme; contrast script green; Playwright flows of Part 15.6 |
+
+Every stage keeps the standing rules (`AGENTS.md`):
+- every fix has a test proven to fail on the old code;
+- no stack specifics outside packs and `plugins/seed.py`;
+- no run ids in code, comments, prompts or tests;
+- banned words tested on every new prompt line;
+- both handovers updated in the same commit;
+- the model and its settings stay the owner's.
+
+Each stage's gate is judged by the two-run rule (Part 20).
+
+<a id="plan-part-22"></a>
+### Part 22 — Consistency review before implementing everything (2026-10-19)
+
+The whole plan was read for contradictions before the owner implements it.
+Each contradiction below has been resolved in the item's own text, so the
+initiative sections are the ones to follow.
+
+#### 22.1 Contradictions found and how each is resolved
+
+| # | Contradiction | Resolution (edited in place) |
+|---|---|---|
+| 1 | **BD** gave the judgement tier "lower temperature", and **AY** asks for candidates with different seeds. Per-request sampling was dropped by owner rule (M.3, decision 12). | ADR-0008 now lists which per-request fields the harness may send: `max_tokens`, the thinking switch and effort (already sent), a reasoning budget (AX) and `seed`. Temperature, top-p/k, min-p and penalties are never sent. BD's temperature is removed. BH's sampling-per-mode stays advisory only (printed by `ready`, never sent). |
+| 2 | **AY**'s Goal says ≤ 30 calls per defect, but its step 4 says ≤ 60. | A hard cap of 60 calls per defect across attempts; the target is a mean of ≤ 30 per fix stage (the acceptance). |
+| 3 | **AY** step 5 withholds the read tool from a fix stage, while **BA** requires a stable tool list. | Allowed when the list is fixed from the visit's first call. A tool is never removed mid-visit; mid-visit withholding is a refusal plus turn end (BA). |
+| 4 | **AY**'s "fresh context after 2–3 attempts" overlapped with L.6 (the last attempt changes strategy), L.4/`escalate_after()` (judgement escalation) and the existing retries. | One order per defect, written into AY: (1) localise + same-model candidates; (2) a fresh-context agent loop with verify-after-write; (3) the L.6 whole-file rewrite on the judgement tier (BD), fresh context; then the defect stays open with its diagnosis. |
+| 5 | **AZ** gives each request only the slice's specification sections (≤ 15k tokens), while **O.1** (done) shares the excerpt evenly across *every* section. | O.1 applies inside the slice: every section that names the slice's files is kept, sharing the slice budget evenly. A one-slice product keeps O.1 as built. |
+| 6 | **BJ** set p95 request input ≤ 32k tokens, but compaction (Z/O.4) is deliberately not built, so a long fix conversation could not meet it. | BJ's gate is on what the harness injects (≤ 16k tokens per request). The 32k p95 is a reported target, reached through AY's bounded attempts and AZ's slices. Z is revisited only if BF shows conversation growth dominates. |
+| 7 | **BA** step 3 "serialise when slots == 1" read as switching parallel mode off, and the parallel/linear toggle is an owner feature. | BA extends AB's existing rule (fan-out = server slots) to every fan-out: drafting, fix workers, review workers. The toggle stays and nothing is removed. |
+| 8 | **BE** says "same isolation", but one container per run lets processes and files outside the workspace persist between commands. | BE now states the trade-off and its guards. Kill the command's process group after each command, mount only the workspace, keep the same limits, and give each stage a fresh container. Per-command mode stays a setting. Depends on BF. |
+| 9 | **Part 20** wave 0 could start before the W.2 baselines exist, so the two-run comparison would have nothing to compare against. | Part 21 stage 0 makes W.2 and AR prerequisites. |
+| 10 | **AX** (budget on every request) vs fast delivery ("build stages run with reasoning off") and BB's outline call (no thinking). | No conflict once stated: AX's budgets apply only where thinking is on. Fast build stages and BB's outline stay off; the build/draft budget applies in thorough delivery and to fixes. |
+| 11 | **PRODUCT.md §7** said the deployment runs commands in-container. Compose and `.env.example` default to `container`, and the X.3 ledger row says the deployment uses container mode. **BE** depends on which one is true. | PRODUCT §7 corrected: container mode by default. The owner confirms the live `.env` with `loop.sh ready` before BE. |
+| 12 | Three sequences (§4, Part 16, Part 20) disagreed on order. | Part 21 is the single order. |
+
+#### 22.2 Duplicates — implement once
+
+| Same work | Rows |
+|---|---|
+| Stack-shaped checks as pack data | K.6 and AW |
+| Control room layout and gate composer | UI-S4 and BG.3, BG.4 |
+| Plan-first intake | UI-S3 and BG.10 |
+| Insights, palette and cross-run compare | UI-S6 and BG.7, BG.14–BG.16 |
+| Reasoning budget | N.1 (measure-first), AR (probe) and AX (the build) |
+| Candidate fixes | E1 #6 / pillar 8 history, AY step 2 and BI (BI ranks AY's candidates when tests cannot choose) |
+| Repeated reads | AQ (hypotheses), BC (stall stop) and AY step 5 |
+
+#### 22.3 Do not implement (rejected by measurement or by the owner)
+
+These stay in the plan for their history, but implementing them would
+contradict a recorded decision:
+- **L.2** file-granular revert (premise false);
+- **M.2** control-plane `response_format` (no parse failures measured);
+- **M.3** sampling presets (owner rule);
+- **AC.3** check memoisation (measured);
+- **AA.2** tool masking (refusals did not stop loops; BA's refusal + turn end replaces it);
+- **O.4/Z** compaction (never fires; would break the prefix cache) unless BF reverses that;
+- **Y** edit-format change (measured, no change; BH replaces it with a measured per-model preference);
+- **N.3** (premise false);
+- **U.4** automatic retention (owner decision 12).
+
+**M-bash** stays parked: it is only for models with no native tool calling,
+and the owner's current model has native tool calling.
+
+Superseded items of section E (E1 #2, #3; E2 pillars 5, 8) are built in
+their later form: AI/AT, fast delivery, L.1/AY.
+
+#### 22.4 The external review of 2026-10-17 (formerly `docs/logs.md`)
+
+The owner removed `docs/logs.md` on 2026-10-19. It held an external code
+review; every recommendation in it is covered here:
+
+| # | Recommendation | Covered by | Status |
+|---|---|---|---|
+| 1 | Fail early when a run cannot run commands; label planning-only deployments | AH.4 run-readiness check; `loop.sh ready` prints `READY commands` | DONE |
+| 2 | Independent test strength: mutation testing, hidden human-written tests, false acceptance measured, a broader corpus | AF mutation probe; `benchmarks/` hidden tests; `bench/report.py`; U.1 | DONE; U.1 PARTLY (stage 6) |
+| 3 | State the supported boundary as capability tiers | AG support tiers | DONE |
+| 4 | Partial pricing is not a hard cap | AH.1 labelled cap + `MAX_RUN_TOKENS` | DONE |
+| 5 | Deletion and retention cover transcripts and object-store copies | AH.2 (`run_retention`), U.4 not built by owner decision | DONE |
+| 6a | A judgement model that failed to build must show as a downgrade | AH.3, AO.7 | DONE |
+| 6b | The security review must report what it skipped | AH.3 (it lists the files its budget left out) | DONE |
+| 6c | Release packaging is best-effort and not reported as a gap | **BK** (new) | NOT STARTED |
+| — | No broad rewrite before the benchmark gate holds; refactor later behind typed contracts | Part 12 / V, last in Part 21 | NOT STARTED (by design) |
 
 <a id="plan-ledger-a4"></a>
 ### Appendix 4 rows (Implementation Progress Ledger continuation)
@@ -3421,6 +3589,9 @@ skeleton proof should reuse these messages rather than add new ones.
 | BG.14–BG.16 replay, pressure, palette/compare | P3 | NOT STARTED | |
 | BJ one input budget per request | P1 | NOT STARTED | after BF; added 2026-10-19 from the research coverage check |
 | Part 20 two-run gate rule | P0 (process) | ADOPTED 2026-10-19 | each wave gate judged on ≥2 runs against the W.2 baselines |
+| BK release packaging failure is a completion gap | P1 | NOT STARTED | from the external review (Part 22.4, item 6c); verified in code 2026-10-19 |
+| Part 21 one implementation order | P0 (process) | ADOPTED 2026-10-19 | replaces §4, Part 16 and Part 20 ordering |
+| Part 22 consistency review | P0 (process) | ADOPTED 2026-10-19 | 12 contradictions resolved in place; do-not-implement list |
 
 ---
 
@@ -4157,5 +4328,8 @@ the item: what it changes, why, and the evidence (review findings in
 | BG.14–BG.16 | replay, pressure, palette/compare | P3 | NOT STARTED | [BG.14–BG.16](#plan-bg-14) |
 | BJ | one input budget per request | P1 | NOT STARTED | [BJ](#plan-bj) |
 | Part 20 | two-run gate rule | P0 (process) | ADOPTED 2026-10-19 | [Part 20](#plan-part-20) |
+| BK | release packaging failure is a completion gap | P1 | NOT STARTED | [BK](#plan-bk) |
+| Part 21 | one implementation order for every open item | P0 (process) | ADOPTED 2026-10-19 | [Part 21](#plan-part-21) |
+| Part 22 | consistency review: contradictions, duplicates, do-not-implement, external review coverage | P0 (process) | ADOPTED 2026-10-19 | [Part 22](#plan-part-22) |
 | E1 | Harness Improvement Plan (October): RepoMap, persistent sandbox, linting before lock, self-learning, lean scopes | — | mostly DONE or superseded; see its status table | [Section E1](#plan-e1) |
 | E2 | High-steering pillars 1–10 (pre-lock gate, self-contained work orders, fix-before-exit, consolidated remediation, context bus, code index) | — | mostly DONE in substance; 9 and 10 not built | [Section E2](#plan-e2) |

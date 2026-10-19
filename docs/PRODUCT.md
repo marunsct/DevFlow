@@ -275,8 +275,9 @@ environment, a free `ACCEPTANCE_PORT` per command; timeouts scaled per toolchain
 Modes: `container` (separate container per command; needs a runtime socket, which
 is root-equivalent on the host) or `in-container` (inside the worker with rlimits).
 Execution is opt-in: Compose defaults to `ALLOW_COMMAND_EXECUTION=false` and
-`SANDBOX_EXECUTION_MODE=container`; this deployment's `.env` sets `true` and
-`in-container`. Fails closed. **Run readiness:** each worker records at startup
+`SANDBOX_EXECUTION_MODE=container`; the deployment enables execution and, as of
+2026-10-18, runs in container mode (plan X.3). Check the live setting with
+`loop.sh ready` before relying on either. Fails closed. **Run readiness:** each worker records at startup
 whether it can run commands (`app/server/execution_readiness.py`), and a run is
 refused before its first model call when it cannot, naming the setting to change.
 
@@ -420,7 +421,7 @@ benchmarks/     web-todo, web-todo-react, notes-api, notes-api-js, notes-api-hon
 scripts/        loop/loop.sh (operate the improvement loop), bench/score.py, audit_run.py
 docs/           PRODUCT.md (this), architecture-decisions.md, HANDOVER.md,
                 monitoring-handover.md (testing and auditing), improvement-plan.md,
-                research-findings.md, review-findings.md, logs.md (owner's)
+                research-findings.md, review-findings.md
 ```
 
 ---

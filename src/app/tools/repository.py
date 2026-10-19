@@ -216,6 +216,23 @@ def is_secret_path(path: Path) -> bool:
     return any(fnmatch(name, pattern) for pattern in SECRET_FILE_PATTERNS)
 
 
+def _the_refusal_of_a_secret_path(verb: str, relative_path: str) -> str:
+    """Why a credential file is not written, and where a setting it held goes.
+
+    A product that fails to start for want of a value reaches for a file that
+    holds it. That file is never read by the process that starts the product,
+    so writing it changes nothing; the refusal that only names the pattern
+    left the author repeating the call. The value belongs in the settings code,
+    as the default a development start uses.
+    """
+    return (
+        f"Refusing to {verb} '{relative_path}': the path matches a credential file pattern. "
+        "Nothing that starts the product reads such a file, so it would change nothing. "
+        "Give the setting a development default in the settings code instead, "
+        "so the product starts from `PORT` and `DATA_DIR` alone."
+    )
+
+
 #: The harness's own bookkeeping, written into the workspace beside the work.
 #: None of it is the product and none of it is evidence, so no listing, no
 #: digest, no cross-file check and no line count should ever see it.
@@ -2009,9 +2026,7 @@ def _guard_a_targeted_change(
     _assert_within_repo(root, target)
 
     if is_secret_path(target):
-        raise RepositoryToolError(
-            f"Refusing to edit '{relative_path}': the path matches a credential file pattern."
-        )
+        raise RepositoryToolError(_the_refusal_of_a_secret_path("edit", relative_path))
     cut_off = _cut_off_at_a_quote(relative_path, replacement, editing=True)
     if cut_off is not None:
         raise RepositoryToolError(cut_off)
@@ -6295,9 +6310,7 @@ def write_approved_artifact(
         content = _content_without_a_copied_gutter(content, 1)
 
     if is_secret_path(target):
-        raise RepositoryToolError(
-            f"Refusing to write '{relative_path}': the path matches a credential file pattern."
-        )
+        raise RepositoryToolError(_the_refusal_of_a_secret_path("write", relative_path))
     locked = _the_harness_s_own_or_the_locked_suite(artifact_root, target)
     if locked is not None:
         raise RepositoryToolError(locked)

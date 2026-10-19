@@ -3604,6 +3604,27 @@ review; every recommendation in it is covered here:
 ---
 
 <a id="plan-e-2"></a>
+## Appendix 5 (2026-10-20): efficiency audit - time saved without lowering quality
+
+Owner, 2026-10-20: "research the code and audit the run ... identify the performance improvement and
+efficiency possible without sacrificing the quality", and make such suggestions unasked from now on.
+Measured on the findings run run-e601377f (246 min, 370 calls) and clean gate run 1 run-01a1ab9c
+(first 99 min). The model server reads a prompt at about 2,243 tokens/s and writes at about 122
+tokens/s; on the findings run prompt reading was 67 of 164 model-minutes, writing 96.
+
+| ID | Waste, measured | Change | Quality risk | Status |
+|---|---|---|---|---|
+| EF.1 | A partial loop-breaker rung (the looking tools, the read tool, one repeated tool) takes tools off the offered list for a call and puts them back the next; the chat template puts the tool list first, so each change re-reads the whole prompt (about 70k tokens, 30 s): 44 re-reads, 22 min on the findings run; 31, 15 min in gate run 1's first 99 min | Keep the offered list as it is for the partial rungs and refuse a withheld tool when it is called (the refusal and the notices exist); only the answer-only rung still empties the list | Low - a weak model calls unoffered tools anyway, which is why the refusal exists; to be measured | Planned: after gate run 2, measured against the gate runs |
+| EF.2 | One model call at a time ("parallel overlap 1.0x") while the server has 2 slots: linear execution mode | The owner's parallel/linear toggle set to parallel for testing (the owner's 2026-10-12 direction was parallel first): independent work orders and consults use both slots | Low-medium - file conflicts are refused by work-order ownership | The owner's setting: suggested |
+| EF.3 | Writing is 59% of model time and 78% of the findings run's output was reasoning; 10 replies lost to the length cap held 28% of all output | The thinking budget per stage (M.4): low or off for fix and acceptance-writing stages | Medium - measured as group 2's M.4 | Accepted by the owner; group 2 |
+| EF.4 | 25-45% of wall time shows as "neither": the specification's parts and revisions and fast drafting are model calls outside any stage, unrecorded | Record them in the transcript | None to the product; changes what the KPIs count | Accepted; after the gate comparison |
+| EF.5 | The project memory is 34% of every request's characters (about 113k); each full re-read pays for it, and it brings compaction nearer | Measure a smaller `MEMORY_SHARE` (0.3 now) against the reads it then costs | Medium - the memory saves reads | Proposed: measured |
+| EF.6 | A builder asked again and again to change another work order's file (14 refused calls, about 5 min, in gate run 1) | After repeated refusals for the same file, the answer-only rung | Low | Proposed |
+| EF.7 | Each bug in a live run cost a new run (four restarts on 2026-10-20, 30-90 min each, plus one 4-hour run) | `loop.sh rewind` after the deploy (LF.57); pause, deploy, rewind instead of a 30-minute boundary wait | None | DONE (LF.57); first used 07:35 JST, kept about 80 min of work |
+| EF.8 | The loop's suite took about 290 s per fix | `pytest-xdist`, 12 workers: 64 s, same result | None | DONE (LF.58) |
+| EF.9 | Compactions every one or two calls after LF.36 | Carry budget and hysteresis (LF.47): 1-4 per stage since | None measured | DONE (LF.47) |
+| EF.10 | Validating a general fix only on 6-hour brief_medium runs | Between gate runs, check general fixes on `notes-api-hono` (about 40 min, scored by hidden tests) | None | Suggested |
+
 ## E. Earlier plans, merged into this document on 2026-10-19
 
 Two separate plan documents predate the appendices above. They are kept

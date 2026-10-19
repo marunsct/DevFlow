@@ -3928,6 +3928,40 @@ def _the_scaffold_s_layout(state: Any) -> str:
         return ""
 
 
+def _the_layout_repair(served: list[str], state: Any) -> str:
+    """What the architect is told when its file plan names none of the served files.
+
+    Each path from the workspace root, as the file plan writes them. Measured
+    live: told "the scaffold serves `src/App.tsx`, `pkg/main.py`" with no folder,
+    the architect planned `pkg/src/App.tsx` - the page inside the service's
+    package - and two repairs later the plan still built it where nothing
+    served it.
+    """
+    project = ""
+    try:
+        from app.tools.repository import pinned_project_directory
+
+        root = getattr(state.get("repository"), "root_path", None)
+        project = (pinned_project_directory(Path(root)) if root else None) or ""
+    except Exception:  # noqa: BLE001 - the paths as the check gave them
+        project = ""
+    named = [f"{project}/{path}" if project and not path.startswith(f"{project}/") else path for path in served]
+    where = (
+        f" (paths from the workspace root: the project folder is `{project}/`)" if project else ""
+    )
+    return (
+        "The project's scaffold serves "
+        + ", ".join(f"`{path}`" for path in named)
+        + where
+        + ": the acceptance suite runs the product through exactly these files, and the "
+        "file plan names none of them, so what it plans would be built where nothing serves "
+        "it. Plan the product in those files - or in modules they import - and keep the "
+        "project's layout. Return only `file_plan`, `component_boundaries` and "
+        "`implementation_order` with the paths corrected; unchanged sections are "
+        "automatically preserved."
+    )
+
+
 def _the_served_files_the_plan_leaves_out(specification: Any, state: Any) -> list[str]:
     """The files the stack's scaffold serves that the specification's file plan never names; [] if none or unknown.
 
@@ -7875,16 +7909,7 @@ def build_workflow_graph(
             if served and layout_repairs < MAX_SPECIFICATION_REPAIRS:
                 update["layout_repair_count"] = layout_repairs + 1
                 update["stage"] = "principal_architect"
-                update["revision_comments"] = [
-                    "The project's scaffold serves "
-                    + ", ".join(f"`{path}`" for path in served)
-                    + ": the acceptance suite runs the product through exactly these files, and the "
-                    "file plan names none of them, so what it plans would be built where nothing serves "
-                    "it. Plan the product in those files - or in modules they import - and keep the "
-                    "project's layout. Return only `file_plan`, `component_boundaries` and "
-                    "`implementation_order` with the paths corrected; unchanged sections are "
-                    "automatically preserved."
-                ]
+                update["revision_comments"] = [_the_layout_repair(served, state)]
             elif missing and repairs < MAX_SPECIFICATION_REPAIRS:
                 # Straight back to the architect with the exact field names,
                 # without spending an architecture-review cycle on it.

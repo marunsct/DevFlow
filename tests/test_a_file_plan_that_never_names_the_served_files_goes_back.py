@@ -65,3 +65,18 @@ def test_the_layout_is_checked_first_on_a_budget_of_its_own():
     assert layout < source.index("owed = what_the_specification_owes(")
     assert 'update["layout_repair_count"] = layout_repairs + 1' in source
     assert "layout_repair_count: int" in source
+
+
+def test_the_send_back_names_each_served_file_from_the_workspace_root(tmp_path):
+    """Measured live: told "the scaffold serves `src/App.tsx`, `pkg/main.py`" with no
+    folder, the architect planned `pkg/src/App.tsx` - the page inside the service's
+    package - and two repairs later the plan still built it where nothing served it."""
+    told = workflow._the_layout_repair(["src/App.tsx", "notes_app/main.py"], _state(tmp_path))
+
+    assert "`notes-app/src/App.tsx`" in told and "`notes-app/notes_app/main.py`" in told
+    assert "workspace root" in told
+    assert "Return only `file_plan`" in told and not BANNED.search(told)
+
+
+def test_the_architect_sends_it():
+    assert "_the_layout_repair(served, state)" in inspect.getsource(workflow)

@@ -2790,6 +2790,12 @@ def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
             runs = each_file(root, contract.read(root) or {}, sandbox_runner(root), naming=tags)
             if runs:
                 return all(run["outcome"] == "finished" for run in runs)
+        if not str(getattr(defect, "description", "") or "").startswith(UNIT_TESTS_FAIL):
+            # Passing unit tests answer only for a defect that was raised from
+            # failing ones. A finding from a test round or a review that names no
+            # criterion was closed on them - one naming the very setting to fix
+            # among them - and its fixer was never dispatched.
+            return None
         ok, _ = _run_unit_tests_procedurally(str(root))
         return ok
     except Exception:  # noqa: BLE001 - a check that cannot answer says nothing

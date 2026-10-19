@@ -53,3 +53,13 @@ def test_a_defect_about_unit_tests_is_still_answered_by_them(tmp_path, monkeypat
 
 def test_the_wording_uses_none_of_the_banned_words():
     assert not BANNED.search(acceptance_nodes.THE_PRODUCT_DOES_NOT_START)
+
+
+def test_a_finding_that_names_no_criterion_is_not_closed_by_unit_tests_either(tmp_path, monkeypatch):
+    monkeypatch.setattr(workflow, "_run_unit_tests_procedurally", lambda root: (True, ""))
+
+    answer = workflow._the_defect_s_tests_pass(
+        Path(tmp_path), _defect("The settings class has a required field with no default")
+    )
+
+    assert answer is None

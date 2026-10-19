@@ -324,8 +324,6 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.acceptance.interface_contract import what_the_contract_checks_find
 
     gaps.extend(what_the_contract_checks_find(root))
-    if gaps:
-        update["completion_gaps"] = gaps
     # What someone who did not write it needs to test and ship it, from the
     # stack pack's own verified commands. See `app.stacks.release`.
     from app.stacks import release as release_files
@@ -335,7 +333,14 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.graph.workflow import _clear_the_throwaways
 
     _clear_the_throwaways(root)
-    packaged = release_files.write(root).describe()
+    # Written before the gaps are stored: packaging that failed is a gap like
+    # any other, not a line only the release decision carries (Initiative BK).
+    release_outcome = release_files.write(root)
+    packaged = release_outcome.describe()
+    if release_outcome.a_gap:
+        gaps.append(release_outcome.a_gap)
+    if gaps:
+        update["completion_gaps"] = gaps
     record_decision(
         state, update, point="release",
         question="Is the product ready to release?",

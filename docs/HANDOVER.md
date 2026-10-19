@@ -276,7 +276,7 @@ test that fails on the old code:
   the branch until every baseline is scored and in `loop.sh kpi`.
 - **Stage 1, built on the branch, not deployed:** BF (each request's `blocks`; KPI
   `prompt_block_share_*`, `cache_miss_after_tool_change`); BC (two pointer answers in a row
-  stall the stage). Next: BK, AQ, AO.9/AO.10, AO.5.
+  stall the stage); BK (a failed release file is a completion gap). Next: AQ, AO.9/AO.10, AO.5.
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).
 
 ### 2.00000 Appendix 3 built (2026-10-19)

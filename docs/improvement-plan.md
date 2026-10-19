@@ -3559,7 +3559,7 @@ review; every recommendation in it is covered here:
 | 5 | Deletion and retention cover transcripts and object-store copies | AH.2 (`run_retention`), U.4 not built by owner decision | DONE |
 | 6a | A judgement model that failed to build must show as a downgrade | AH.3, AO.7 | DONE |
 | 6b | The security review must report what it skipped | AH.3 (it lists the files its budget left out) | DONE |
-| 6c | Release packaging is best-effort and not reported as a gap | **BK** (new) | NOT STARTED |
+| 6c | Release packaging is best-effort and not reported as a gap | **BK** | DONE 2026-10-19 (BK commit) |
 | — | No broad rewrite before the benchmark gate holds; refactor later behind typed contracts | Part 12 / V, last in Part 21 | NOT STARTED (by design) |
 
 <a id="plan-ledger-a4"></a>
@@ -3589,7 +3589,7 @@ review; every recommendation in it is covered here:
 | BG.14–BG.16 replay, pressure, palette/compare | P3 | NOT STARTED | |
 | BJ one input budget per request | P1 | NOT STARTED | after BF; added 2026-10-19 from the research coverage check |
 | Part 20 two-run gate rule | P0 (process) | ADOPTED 2026-10-19 | each wave gate judged on ≥2 runs against the W.2 baselines |
-| BK release packaging failure is a completion gap | P1 | NOT STARTED | from the external review (Part 22.4, item 6c); verified in code 2026-10-19 |
+| BK release packaging failure is a completion gap | P1 | DONE 2026-10-19 (BK commit) | the release files are written before `completion_gaps` is stored, and `ReleaseFiles.a_gap` (the failure text, never for a product no pack covers) joins the gaps, so the evidence page and the bench export carry it. Test `tests/test_a_release_whose_files_failed_is_completed_with_gaps.py` (2 of 3 fail on the old code). From the external review (Part 22.4, item 6c) |
 | Part 21 one implementation order | P0 (process) | ADOPTED 2026-10-19 | replaces §4, Part 16 and Part 20 ordering |
 | Part 22 consistency review | P0 (process) | ADOPTED 2026-10-19 | 12 contradictions resolved in place; do-not-implement list |
 
@@ -4328,7 +4328,7 @@ the item: what it changes, why, and the evidence (review findings in
 | BG.14–BG.16 | replay, pressure, palette/compare | P3 | NOT STARTED | [BG.14–BG.16](#plan-bg-14) |
 | BJ | one input budget per request | P1 | NOT STARTED | [BJ](#plan-bj) |
 | Part 20 | two-run gate rule | P0 (process) | ADOPTED 2026-10-19 | [Part 20](#plan-part-20) |
-| BK | release packaging failure is a completion gap | P1 | NOT STARTED | [BK](#plan-bk) |
+| BK | release packaging failure is a completion gap | P1 | DONE 2026-10-19 (BK commit) | [BK](#plan-bk) |
 | Part 21 | one implementation order for every open item | P0 (process) | ADOPTED 2026-10-19 | [Part 21](#plan-part-21) |
 | Part 22 | consistency review: contradictions, duplicates, do-not-implement, external review coverage | P0 (process) | ADOPTED 2026-10-19 | [Part 22](#plan-part-22) |
 | E1 | Harness Improvement Plan (October): RepoMap, persistent sandbox, linting before lock, self-learning, lean scopes | — | mostly DONE or superseded; see its status table | [Section E1](#plan-e1) |

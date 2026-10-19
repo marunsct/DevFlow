@@ -84,6 +84,14 @@ class ReleaseFiles:
     #: in the release record: a release that silently lacks its CI pipeline
     #: reads exactly like one that has it.
     missing: str = ""
+    #: True only when no pack covers the product: it was never promised release
+    #: files, and its support tier says so already (Initiative AG).
+    no_pack: bool = False
+
+    @property
+    def a_gap(self) -> str:
+        """What the handoff lacks that its stack pack promised, or "" (Initiative BK)."""
+        return self.missing if self.missing and not self.no_pack else ""
 
     def describe(self) -> str:
         if self.missing:
@@ -108,6 +116,7 @@ def write(repo_root: str | Path) -> ReleaseFiles:
     try:
         found = contract.the_pack(repo_root)
         if found is None:
+            outcome.no_pack = True
             outcome.missing = (
                 "No stack pack covers this product, so the release adds no CI pipeline or "
                 "container definition: the handoff carries only what the agents wrote, and "

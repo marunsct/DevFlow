@@ -1,6 +1,6 @@
 """Per-run cost accounting, and the ceiling that pauses a run at its spend.
 
-Items 3 and 8 of Part III of the hardening plan (`docs/harness-improvement-plan.md`). Both existed as ideas
+Items 3 and 8 of Part III of the hardening plan (`docs/improvement-plan.md §E1`). Both existed as ideas
 before this file did: the handler was fully written and attached to nothing, and
 the ceiling did not exist at all, so a harness wired to spend real money had no
 bound on what it could spend.

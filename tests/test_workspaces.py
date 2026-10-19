@@ -145,7 +145,7 @@ def test_workspace_root_falls_back_to_data_dir(monkeypatch, tmp_path):
 
 
 class TestTenantSegment:
-    """Item 9 of Part III of the hardening plan (`docs/harness-improvement-plan.md`).
+    """Item 9 of Part III of the hardening plan (`docs/improvement-plan.md §E1`).
 
     `tenant_id` is enforced in the API and in `run_store` queries and was not
     enforced here: every run landed in one flat root. Nothing reads another

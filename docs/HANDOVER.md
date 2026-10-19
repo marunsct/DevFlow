@@ -12,14 +12,37 @@ points here.
 The previous agent's private notes (Claude Code's memory) do not travel.
 Everything they held that is not a secret is in this file.
 
+**Documentation map (consolidated 2026-10-19; one file per topic).**
+
+| Topic | File |
+|---|---|
+| Product brief: what DevFlow is, how it works, feature status | `docs/PRODUCT.md` |
+| Architecture decisions and the reasons for them (ADR-0001…0011) | `docs/architecture-decisions.md` |
+| Agent handover: start here, the standing instruction, where it stands | `docs/HANDOVER.md` (this file) |
+| Testing, auditing and improvement-loop handover, with every script | `docs/monitoring-handover.md` |
+| Unified improvement plan, with the master index and the ledger | `docs/improvement-plan.md` |
+| Research findings, each linked to plan items | `docs/research-findings.md` |
+| Review findings (evidence), each linked to plan items | `docs/review-findings.md` |
+| Owner's notes; never commit or alter | `docs/logs.md` |
+
+`docs/ui/` holds the theme screenshots that the UI parts of the plan refer
+to. The older files were merged into these on 2026-10-19:
+- `harness-improvement-plan.md` and
+  `high-steering-software-company-implementation.md` became improvement plan
+  section E;
+- `redesign-software-company.md` became ADR-0005;
+- `review-findings-wip.md` and the session-4 review became
+  `review-findings.md`;
+- the research parts became `research-findings.md`.
+
 **2026-10-18:** the implementation phase for the deep-review appendix of
 `docs/improvement-plan.md` (Initiatives J–V + addenda, P0→P3) has started.
 Per-item status lives in the *Implementation Progress Ledger* at the end of
 that document and is updated in the same commit as every implementation
-change. Evidence archive for the review: `docs/review-findings-wip.md`.
+change. Evidence archive for the review: `docs/review-findings.md`.
 
 **2026-10-18 18:40 JST:** Appendix 2 (second review) of the same document is
-being implemented in its resume order (`docs/review-findings-wip.md` §13.8):
+being implemented in its resume order (`docs/review-findings.md` §13.8):
 the whole resume order is done - X.1/X.2, AD, AE, W.3, W.1, W.4, W.5 (ledger
 rows "Appendix 2 rows"). W.2 baseline runs are the owner's. New: `loop.sh kpi`
 (run by every `loop.sh score`) keeps each run's KPIs in `data/kpi/` and flags
@@ -76,7 +99,7 @@ The owner wants a loop that **never stops on its own**:
 5. Commit and push (`git push main harness-hardening-session` - the remote is
    named `main`), deploy (`loop.sh deploy`), and start the next run.
 
-**Gate** (since the 2026-10-03 redesign, `docs/redesign-software-company.md`,
+**Gate** (since the 2026-10-03 redesign, `docs/architecture-decisions.md`,
 `benchmarks/README.md`). A run is clean when its product scores 100% on its
 benchmark's hidden tests (`loop.sh score`), the run needed no harness fix, and
 the product audit (monitoring §0.4.1) passes. Any fix resets the current

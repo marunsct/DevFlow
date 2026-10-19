@@ -1,6 +1,6 @@
 """Every public class and function in `src/app` has a caller outside its own module.
 
-This is the test Part III of the hardening plan (`docs/harness-improvement-plan.md`) item 1 asks for, and it is
+This is the test Part III of the hardening plan (`docs/improvement-plan.md §E1`) item 1 asks for, and it is
 the §1-B rule from Part I applied to build configuration instead of source code:
 a rule defined over part of the set it governs. The coverage `omit` list used to
 be written per directory (`src/app/deploy/*`, `src/app/analysis/*`, ...), which
@@ -63,7 +63,7 @@ EXTERNAL_REFERENCERS = {
 }
 
 # Public symbols with no caller, recorded rather than fixed. Empty since the
-# review of 2026-10-04 removed the last of them (docs/harness-improvement-plan.md,
+# review of 2026-10-04 removed the last of them (docs/improvement-plan.md §E1,
 # R5); a new entry means a new unwired symbol, which is the failure this test
 # exists to catch, so it must stay empty.
 KNOWN_UNWIRED: set[str] = set()

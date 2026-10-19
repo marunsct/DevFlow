@@ -1,6 +1,6 @@
 """A restarted stage keeps the facts its dead attempt established.
 
-Item 9 of the hardening plan (B13, `docs/harness-improvement-plan.md`). `workflow.py` said so in its
+Item 9 of the hardening plan (B13, `docs/improvement-plan.md §E1`). `workflow.py` said so in its
 own comment: a stage that produces no structured response restarts on a fresh
 conversation, and every attempt re-read the same files and re-ran the same
 commands. One run spent 170 tool calls across three attempts of one stage.

@@ -4,7 +4,7 @@ Briefs across the kinds of product the harness builds, each with **hidden
 acceptance tests** written by a person from the brief and never shown to the
 harness. A benchmark run's score is the share of hidden tests its product
 passes; that, not a judgement after reading the code, is how the harness is
-measured. See `docs/redesign-software-company.md`.
+measured. See `docs/architecture-decisions.md ADR-0005`.
 
 | Benchmark | Kind | Language | Hidden tests | Runner |
 |---|---|---|---|---|

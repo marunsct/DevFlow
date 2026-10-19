@@ -5,6 +5,16 @@
 > deliberately not done. Facts here were taken from the code on 2026-10-04
 > (branch `harness-hardening-session`, around commit `467872b`). Where a detail
 > matters, the module that owns it is named so you can verify it.
+>
+> **Refreshed 2026-10-19:**
+> - the delivery modes, the model tiers and the current deployment;
+> - the stack-pack count, graph size and code size;
+> - the benchmark gate status;
+> - the features built since 2026-10-04 (§15);
+> - the documentation map (§13, §16).
+>
+> Sections not named above still describe the 2026-10-04 code, and the
+> module named in each lets you check it.
 
 ---
 
@@ -28,7 +38,8 @@ instructions**, never in the core.
 | Input | a product brief (Markdown, optionally with an uploaded codebase or git repository to build on) |
 | Output | a git repository: the product, its unit tests, a locked acceptance suite, generated documents (`docs/`), decision log, sprint records, evidence pages, CI workflow, container files for services |
 | Users | an operator/reviewer through a web UI (React) and an HTTP API |
-| Models | any OpenAI-compatible server (self-hosted e.g. LM Studio, vLLM, llama.cpp, or hosted), Anthropic, Gemini; a second **judgement model** optional for the judging stages |
+| Models | any OpenAI-compatible server (self-hosted e.g. LM Studio, vLLM, llama.cpp, or hosted), Anthropic, Gemini; a second **judgement model** optional for the judging stages. Built mainly for **local models** on one GPU (ADR-0008) |
+| Delivery | **fast** (deployment default: one sprint for small products, files drafted straight from the specification, harness-run test rounds, reasoning off while building) or **thorough** (the full pipeline), per run (ADR-0007) |
 | Runs on | Docker Compose: FastAPI app, Celery worker, Postgres, Redis |
 | Judged by | benchmark briefs with **hidden tests** the harness never sees (`benchmarks/`) |
 | Repository | `https://github.com/marunsct/DevFlow` (package `product-development-workflow`) |
@@ -183,7 +194,7 @@ deliver most of its criteria is stopped rather than shipped.
 | **Run** | One execution of the workflow on one brief; id `run-<uuid>`; a LangGraph thread checkpointed in Postgres |
 | **Workspace** | The run's own git repository: `DATA_DIR/workspaces/<tenant>/workspace-<run-id>/` |
 | **Project directory** | The product's folder inside the workspace (pinned in `.project-directory`) |
-| **Stack pack** | A product kind × language bundle: scaffold files, install/unit/acceptance commands, JUnit report paths, kept files, guides, check families, runtime (`browser`/`node`/`both`), release files. Packs: `browser-javascript`, `browser-react`, `node-http-api`, `fullstack-node`, `python-http-api`, `python-cli`, `python-library` |
+| **Stack pack** | A product kind × language bundle: scaffold files, install/unit/acceptance commands, JUnit report paths, kept files, guides, check families, runtime (`browser`/`node`/`both`), release files. 27 packs as of 2026-10-19 (`src/app/stacks/packs/`): browser apps (plain JavaScript, React, Vue, Svelte, Angular), HTTP services (Node, Nest, Python, Flask, Go, Gin, Rust/Axum, Java/Spring, C#/ASP.NET, PHP/Slim, PHP/Laravel, Ruby/Sinatra, Ruby/Rails), full-stack (Node, Next, Django), and Python/Node/Go/Rust command-line programs and libraries. `loop.sh nightly` scaffolds every pack for real |
 | **Project contract** | `.harness/stack-pack.json`: which pack, commands, paths; the harness puts back kept files/scripts a stage changed |
 | **Kept files** | Test setup the harness owns (e.g. `playwright.config.js`, `playwright.setup.mjs`, `test-setup.mjs` - a jsdom page for browser unit tests - `scripts/serve.mjs`, `pytest.ini`, `acceptance/conftest.py`); refused to agents, marked in the digest |
 | **Acceptance criteria** | `AC-1..n`, numbered from the brief (features, its interface section line by line, and acceptance criteria) or the intake |
@@ -217,6 +228,12 @@ deliver most of its criteria is stopped rather than shipped.
   per work order is enforced).
 - **Thinking**: `thinking_mode` (`default`/`on`/`off`) and `thinking_effort`;
   replies that spend the whole output budget reasoning are retried without reasoning.
+- **Delivery mode** (`DELIVERY_MODE`, per run): `fast` or `thorough` (`app/delivery.py`, ADR-0007).
+- **Steering**: a person can add notes to a live run (`GET|POST /runs/{id}/steering`);
+  the newest notes reach the next model calls through the plugin-instruction
+  injection, and the transcript records which call read each note first.
+- **Lessons**: recurring mistakes become short, owner-approved lessons in a
+  signed store (`plugins/lessons.py`); nothing agent-written reaches a prompt unapproved.
 
 ---
 
@@ -367,10 +384,10 @@ and says no for a model it cannot place), `judgement_provider`, `judgement_base_
 | Core libraries | LangGraph (+ Postgres checkpointer), LangChain core/OpenAI/Anthropic/Google, deepagents, FastAPI, Celery, Redis, psycopg 3, Pydantic 2, Jinja2, tree-sitter-language-pack |
 | Image tools | TypeScript 6.0.3 and Pyright 1.1.414 (global, for parsing and language services), Playwright 1.63.0 + Chromium (cached in the image) |
 | Frontend | React 19, Vite 8, Tailwind 4, TypeScript |
-| Default model (current deployment) | set by the owner in Settings and changed often; as of 2026-10-05 `AtomicChat/Ornith-1.5-35B-A3B-GGUF` on `host.docker.internal:8888`, no judgement model set |
-| Size | ~72k lines in `src/app`; ~490 test files, ~8,800 tests |
+| Default model (current deployment) | set by the owner in Settings and changed often; as of 2026-10-19 a Qwen3.6-35B-A3B (MTP GGUF) on a llama.cpp-style server at `host.docker.internal:8888`, one slot, ~126k context; no separate judgement model |
+| Size | ~99k lines in `src/app` (`graph/workflow.py` ~11.2k); ~727 test files |
 | Limits | architecture revisions 6; acceptance rounds 3; milestone revisions 3; remediation attempts 3; structured retries 2; release holds 2; suite repairs 2; escalations 3 |
-| Workflow graph | 33 nodes; state is a `TypedDict` of about 64 keys (`WorkflowGraphState`) |
+| Workflow graph | 43 nodes (including fan-out workers for specialists, defect fixes and reviews); state is a `TypedDict` (`WorkflowGraphState`) |
 
 ---
 
@@ -398,11 +415,12 @@ src/app/
   ci.py  decisions.py  documents.py  state.py  config.py  main.py (CLI)
 langchain-ui/   React frontend
 tests/          pytest suite (host); brief_low/medium/high.md
-benchmarks/     web-todo, notes-api, wordstats-cli, textkit-lib, fullstack-bookmarks
+benchmarks/     web-todo, web-todo-react, notes-api, notes-api-js, notes-api-hono, wordstats-cli,
+                textkit-lib, fullstack-bookmarks, fullstack-bookmarks-py
 scripts/        loop/loop.sh (operate the improvement loop), bench/score.py, audit_run.py
-docs/           PRODUCT.md (this), HANDOVER.md, monitoring-handover.md,
-                harness-improvement-plan.md, redesign-software-company.md,
-                architecture-decisions.md
+docs/           PRODUCT.md (this), architecture-decisions.md, HANDOVER.md,
+                monitoring-handover.md (testing and auditing), improvement-plan.md,
+                research-findings.md, review-findings.md, logs.md (owner's)
 ```
 
 ---
@@ -424,7 +442,7 @@ docs/           PRODUCT.md (this), HANDOVER.md, monitoring-handover.md,
   scores 100% on hidden tests and needed no harness fix. Stage 1 web-todo ×2
   clean → stage 2 notes-api, wordstats-cli, textkit-lib ×1 each → stage 3
   fullstack-bookmarks ×2 → then `tests/brief_medium.md`, `brief_high.md` by audit.
-  **Current: stage 1, 0 of 2** (one run scored 10/10 but needed a fix).
+  **Stage 1 gate passed 2026-10-17** (2 of 2 clean runs). Since then the loop measures the medium brief and the W.2 baselines with per-run KPIs (`loop.sh kpi`; `docs/monitoring-handover.md` §0.3a).
 - **Code rules**: no run ids in code, comments, prompts or tests; language/framework
   guidance only in stack packs or `plugins/seed.py`; agent rules phrased
   product-agnostically (tests ban product words); every rule enforced where it is
@@ -448,12 +466,23 @@ docs/           PRODUCT.md (this), HANDOVER.md, monitoring-handover.md,
 - Web UI, REST/WebSocket API, auth/tenancy/audit, metrics, cost tracking and ceiling, concurrency limit, orphan recovery, cancellation.
 - Benchmarks with hidden tests and scorer; improvement-loop tooling.
 
+### Built since 2026-10-04 (status of each in `docs/improvement-plan.md` Appendix M)
+- Fast delivery (ADR-0007): one sprint for small products, files drafted from the specification, harness-run test rounds.
+- Release integrity: vacuous-green gate (J.1), completion gaps on a finished run (J.4), records citing the verdict (J.5), interface-contract checks at release (C, J.3), mutation probe of the locked suite (AF), terminal-state hygiene (J.6).
+- Fix-loop guards: root-cause clustering (L.1), dispatch-time and settlement re-measures (L.3, AD), identical-call stop (L.5), a last attempt that changes strategy (L.6), escalation after a revert (L.4).
+- Context and cache: project memory taken once per stage visit, environment contract in the system prompt (O.3/AA), effective window = min(setting, server slot) (O.2), fan-out sized to server slots (AB), duplicate-call digest (R).
+- Measurement: per-run KPI JSON and cross-run ledger with a regression flag (W.4), brief-integrity check (W.1), layer economics (V).
+- Embedded database by default for products that store data (K.2, ADR-0009); dependency-drift gate (K.4); entrypoint wiring proof (K.3).
+- Steering v2, signed owner-approved lessons, run-wide token and cost budgets that survive a restart (AS, AT, AK).
+- UI: three themes (graphite, paper, contrast) with accents and densities, axe violations 455 → 5, runs table with filters in the address, Changes view, criteria panel.
+
 ### In progress / next
-- Reach the benchmark gate: web-todo ×2 clean, then the Python benchmarks and full-stack.
+- The plan's next waves (`docs/improvement-plan.md` Part 20): reasoning budget per role (AX), a bounded fix cycle (AY), a walking skeleton then vertical slices for complex briefs (AZ), one input budget per request (BJ), and the UI control room (BG).
+- The W.2 baseline runs (owner-operated) and the later benchmark stages (service, full-stack and the medium brief).
 - Small known wastes: the lead often under-counts carried-forward decisions; agents still try `node -e`; empty "verify tests" work orders.
 - Owner decisions pending: which stronger **judgement model** to configure; the **CRITERION severity policy** (minor vs blocking grading).
 
-### Deferred (with what would bring each back) — see `docs/harness-improvement-plan.md` §3
+### Deferred (with what would bring each back) — see `docs/improvement-plan.md` (Appendix M indexes every item and its status)
 - Language analysers beyond the language services (B1) — a defect only a cross-file check would find.
 - Measured chars-per-token (B7), digest by budget (B15) — an overflow or a >40-file product.
 - Full model profile probe; notice registry refactor.
@@ -467,10 +496,12 @@ docs/           PRODUCT.md (this), HANDOVER.md, monitoring-handover.md,
 
 | Question | Read |
 |---|---|
-| Current run, deployment, loop status | `docs/HANDOVER.md`, `docs/monitoring-handover.md` |
-| Why the company design | `docs/redesign-software-company.md` |
-| What was reviewed, fixed, deferred | `docs/harness-improvement-plan.md` |
-| Architecture decisions | `docs/architecture-decisions.md` (ADR-0001…0004) |
+| Current run, deployment, loop status | `docs/HANDOVER.md` |
+| How to test, audit and measure; every script | `docs/monitoring-handover.md` |
+| Why the product is built this way | `docs/architecture-decisions.md` (ADR-0001…0011; ADR-0005 = the company design) |
+| What is planned, done or dropped, and why | `docs/improvement-plan.md` (Appendix M = master index) |
+| The evidence behind the plan | `docs/review-findings.md` |
+| What other harnesses and the research say | `docs/research-findings.md` |
 | The graph itself | `src/app/graph/workflow.py` (`build_workflow_graph`) |
 | A stack pack | `src/app/stacks/packs/browser_javascript.py` (+ `_javascript.py`) |
 | How a benchmark is judged | `benchmarks/README.md`, `scripts/bench/score.py` |

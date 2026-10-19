@@ -1,4 +1,101 @@
-# WIP — Deep harness review findings (2026-10-18, review session)
+# Review findings (unified evidence log, 2026-10-18 → 2026-10-19)
+
+> Consolidated 2026-10-19 from `review-findings-wip.md` (sessions 1–3) and the
+> session-4 review. This is the evidence log behind
+> `docs/improvement-plan.md`. Each finding carries a *Plan:* line linking the
+> plan items that answer it. Research moved to `docs/research-findings.md`
+> (the section stubs below say where).
+
+## Finding index → plan
+
+| Finding | Title | Plan items |
+|---|---|---|
+| F1 | (CRITICAL): Fullstack entrypoint never wired to drafted code | [K](improvement-plan.md#plan-k), [U](improvement-plan.md#plan-u), [L.6](improvement-plan.md#plan-l-6), [Sweep table](improvement-plan.md#plan-sweep) |
+| F2 | (CRITICAL): No service provisioning; spec free to require PostgreSQL | [U](improvement-plan.md#plan-u) |
+| F2 | REFINED (CRITICAL, root cause located): capability knowledge asymmetry | [U](improvement-plan.md#plan-u) |
+| F3 | (HIGH): Dependency-manifest drift after drafting | [K](improvement-plan.md#plan-k) |
+| F4 | (HIGH): Sandbox python env ambiguity (venv vs user-site) | [K](improvement-plan.md#plan-k) |
+| F5 | (HIGH): All-or-nothing stage revert by CI gate | [L](improvement-plan.md#plan-l) |
+| F6 | (HIGH): Defect sprawl from single root cause (confirms plan Initiative F) | [Sweep table](improvement-plan.md#plan-sweep) |
+| F7 | (MEDIUM): Reasoning exhaustion still live | [Sweep table](improvement-plan.md#plan-sweep) |
+| F8 | (MEDIUM): Very large prompts on judgement stages | [O](improvement-plan.md#plan-o), [Sweep table](improvement-plan.md#plan-sweep) |
+| F9 | (MEDIUM): Streaming disabled by langchain incompatibility | [T](improvement-plan.md#plan-t) |
+| F10 | (MEDIUM): Parallel mode gets ~1.0-1.3x overlap; server is 1 slot | [S](improvement-plan.md#plan-s), [Sweep table](improvement-plan.md#plan-sweep), [AB](improvement-plan.md#plan-ab) |
+| F11 | (LOW/MED): integration_checks.py is JavaScript-shaped | [K.6](improvement-plan.md#plan-k-6), [Sweep table](improvement-plan.md#plan-sweep) |
+| F12 | (OBSERVATION): test_round "did not report 13 failing criteria; | [Sweep table](improvement-plan.md#plan-sweep) |
+| F13 | (MEDIUM): Seed instructions can contradict the environment | [Sweep table](improvement-plan.md#plan-sweep) |
+| F14 | (CONTEXT): Verified mechanisms relevant to plan (no gap, cite as strengths) | not cited by a plan item (context, status or observation) |
+| F15 | (HIGH): Opening requests on planning/judgement stages are 60-80k tokens | [O](improvement-plan.md#plan-o), [Sweep table](improvement-plan.md#plan-sweep) |
+| F16 | (STATUS): Visual review loop already exists (Initiative B ~80% built) | [Sweep table](improvement-plan.md#plan-sweep) |
+| F17 | (GAP): Benchmark corpus lacks fullstack-Python & service-backed briefs | [U](improvement-plan.md#plan-u), [Sweep table](improvement-plan.md#plan-sweep) |
+| F18 | (CONTEXT): Strong existing tooling to build measurements on | [O](improvement-plan.md#plan-o), [U](improvement-plan.md#plan-u), [L.6](improvement-plan.md#plan-l-6), [Sweep table](improvement-plan.md#plan-sweep) |
+| G1 | (HIGH, local-model): prompts order a tool the role is not given — and contradict themselve | [Appendix 2](improvement-plan.md#plan-appendix-2), [X](improvement-plan.md#plan-x) |
+| G2 | (HIGH, throughput): project memory sits at the head of the conversation and is rewritten f | [Appendix 2](improvement-plan.md#plan-appendix-2), [AA](improvement-plan.md#plan-aa), [Part 17](improvement-plan.md#plan-part-17), [BJ](improvement-plan.md#plan-bj) |
+| G3 | (MEDIUM, local-model): no sampling or cache parameters are ever sent | [M (concrete)](improvement-plan.md#plan-m-concrete), [AA](improvement-plan.md#plan-aa) |
+| G4 | (MEDIUM): tool list changes mid-conversation | [AA](improvement-plan.md#plan-aa) |
+| G5 | (MEDIUM): maintenance prose inside system prompts | [X](improvement-plan.md#plan-x) |
+| G6 | (LOW–MED): parallel-mode hazard — process-wide globals | [Part 12](improvement-plan.md#plan-part-12) |
+| G7 | (UI/plan correction): no steering endpoint exists | [Ledger](improvement-plan.md#plan-ledger), [Part 11](improvement-plan.md#plan-part-11) |
+| G8 | (UI/plan correction): artifact versioning has no real data | [Ledger](improvement-plan.md#plan-ledger) |
+| G9 | (UI): intake has no free-text brief, and a failed start orphans a run | [UI 15.4](improvement-plan.md#plan-ui-15-4), [Ledger.A3](improvement-plan.md#plan-ledger-a3) |
+| G10 | (UI, measured by mapper): still-open harms from Part 4 Phase 1 | [Part 11](improvement-plan.md#plan-part-11) |
+| G11 | (API/UI mismatches, mapper) | [Part 11](improvement-plan.md#plan-part-11) |
+| G12 | (EVIDENCE CORRECTION, HIGH): the local-model "quality cliff" (C8 → Initiative Q) is confou | [Appendix 2](improvement-plan.md#plan-appendix-2), [W](improvement-plan.md#plan-w) |
+| G13 | (EVIDENCE GAP, HIGH): no scored run exists after the P0 wave | [Appendix 2](improvement-plan.md#plan-appendix-2), [W](improvement-plan.md#plan-w) |
+| G14 | (A/B BLOCKER, MEDIUM): the toggles do not reach the container | [W](improvement-plan.md#plan-w) |
+| G15 | (LEDGER ACCURACY): U.2 claims not borne out | [W](improvement-plan.md#plan-w) |
+| G16 | (LANGUAGE-AGNOSTIC CLAIM): where the packs stop | [AG](improvement-plan.md#plan-ag) |
+| G17 | (DOCS DRIFT): HANDOVER §2 frozen at 10-12 (model row, suite count, | [AP](improvement-plan.md#plan-ap) |
+| G18 | (THROUGHPUT, parked items that matter most) | [Part 8](improvement-plan.md#plan-part-8) |
+| G19 | (HIGH, release integrity + treadmill): a fix is "fixed" on the fixer's say-so | [Appendix 2](improvement-plan.md#plan-appendix-2), [AD](improvement-plan.md#plan-ad) |
+| G20 | (MEDIUM): two different "tests that cannot pass" lists | [AE](improvement-plan.md#plan-ae), [Ledger.A2](improvement-plan.md#plan-ledger-a2) |
+| G21 | (MEDIUM, prompt/code disagreement): milestone `blocked` verdict | [Appendix 2](improvement-plan.md#plan-appendix-2), [X](improvement-plan.md#plan-x) |
+| G22 | (MEDIUM, local-model): tool description untrue in container mode | [Appendix 2](improvement-plan.md#plan-appendix-2), [X](improvement-plan.md#plan-x) |
+| G23 | (THROUGHPUT): parallelism is mostly nominal | [Appendix 2](improvement-plan.md#plan-appendix-2), [AB](improvement-plan.md#plan-ab) |
+| G24 | (THROUGHPUT, model calls that deterministic data can gate) | [AC](improvement-plan.md#plan-ac) |
+| G25 | (CORRECTNESS, status model): `completed_with_gaps` is a list on `completed` | [AE](improvement-plan.md#plan-ae) |
+| G26 | (MAINTAINABILITY, refactor evidence for V) | [Part 12](improvement-plan.md#plan-part-12) |
+| G27 | (not a bug, mapper over-flag): last-attempt shape change | [Appendix 2](improvement-plan.md#plan-appendix-2) |
+| H1 | (THEME FEASIBILITY, decisive): multi-theme is a token-redefinition job, not a rewrite | [I](improvement-plan.md#plan-i), [Appendix 3](improvement-plan.md#plan-appendix-3), [Part 15](improvement-plan.md#plan-part-15), [UI 15.2](improvement-plan.md#plan-ui-15-2), [BG.11](improvement-plan.md#plan-bg-11) |
+| H2 | (PRIMITIVES): one real primitive module | [I](improvement-plan.md#plan-i), [UI 15.3](improvement-plan.md#plan-ui-15-3) |
+| H3 | (NEW FEATURES, `ef982a2`): working, but thin | [AS](improvement-plan.md#plan-as), [UI 15.5](improvement-plan.md#plan-ui-15-5) |
+| H4 | (API ↔ UI): fields exist server-side, UI ignores them | [UI 15.5](improvement-plan.md#plan-ui-15-5) |
+| H5 | (PHASE-1 REMAINDER, verified): favicon badge, browser Notifications, | [UI 15.7](improvement-plan.md#plan-ui-15-7) |
+| H6 | (NARRATION DRIFT): 21 graph stages have no `STAGE_COPY` (title-case | [UI 15.1](improvement-plan.md#plan-ui-15-1), [UI 15.4](improvement-plan.md#plan-ui-15-4), [UI 15.5](improvement-plan.md#plan-ui-15-5) |
+| H7 | (IA): routes `/login`, `/` (intake), `/runs`, `/runs/:id`, `/settings`; | [Part 15](improvement-plan.md#plan-part-15), [UI 15.4](improvement-plan.md#plan-ui-15-4), [Ledger.A3](improvement-plan.md#plan-ledger-a3) |
+| H8 | (API data unused by the UI that would change behaviour): `/events?since` | [UI 15.4](improvement-plan.md#plan-ui-15-4) |
+| H9 | (GOVERNING GAP, unchanged from G13): ~25 fixes today, zero verified on a run | [Appendix 3](improvement-plan.md#plan-appendix-3), [AP](improvement-plan.md#plan-ap), [Ledger.A3](improvement-plan.md#plan-ledger-a3) |
+| H10 | (KPI CORRECTNESS): the new KPI script under-counts and mis-ratios | [AN](improvement-plan.md#plan-an) |
+| H11 | (LOOP SCRIPT BUGS): `loop.sh kpi` (`loop.sh:222`) redirects to | [AN](improvement-plan.md#plan-an) |
+| H12 | (THE 431 READS): the lead the ledger left open | [AQ](improvement-plan.md#plan-aq) |
+| H13 | (LEDGER DRIFT): stale NOT STARTED rows duplicate DONE rows (M L1348; | [AV](improvement-plan.md#plan-av) |
+| H14 | (DECISION/IMPLEMENTATION MISMATCHES): AF budget decided "per lock", | [AP](improvement-plan.md#plan-ap) |
+| H15 | (MEASUREMENTS TO CARRY INTO THE PLAN): 37 lost replies ≈40% of the | [AQ](improvement-plan.md#plan-aq), [AR](improvement-plan.md#plan-ar) |
+| I1 | (EFFICIENCY, critical): 35% of all output tokens were spent on replies that were thrown aw | [AX](improvement-plan.md#plan-ax), [BB](improvement-plan.md#plan-bb) |
+| I2 | (QUALITY, critical): the defect-fix loop does not converge on a complex product | [AY](improvement-plan.md#plan-ay), [BC](improvement-plan.md#plan-bc), [BI](improvement-plan.md#plan-bi) |
+| I3 | (EFFICIENCY, high): reading is still half of the loop's work | [AY](improvement-plan.md#plan-ay), [BC](improvement-plan.md#plan-bc), [BA](improvement-plan.md#plan-ba), [BJ](improvement-plan.md#plan-bj) |
+| I4 | (EFFICIENCY, high): decode, not prefill, is the clock | [AX](improvement-plan.md#plan-ax), [BB](improvement-plan.md#plan-bb), [BD](improvement-plan.md#plan-bd) |
+| I5 | (QUALITY, high): one sprint, thirty locked tests, one monolithic specification is the wron | [AZ](improvement-plan.md#plan-az), [BJ](improvement-plan.md#plan-bj) |
+| I6 | (EFFICIENCY, medium): the lead's plan is one 20k-token reply | [BB](improvement-plan.md#plan-bb) |
+| I7 | (EFFICIENCY, medium): parallel mode on a 1-slot server shares one KV cache | [BA](improvement-plan.md#plan-ba) |
+| I8 | (EFFICIENCY, medium): one throwaway container per command | [BE](improvement-plan.md#plan-be) |
+| I9 | (QUALITY, medium): local-only runs never get the "judgement" tier | [BD](improvement-plan.md#plan-bd) |
+| I10 | (EFFICIENCY, low): the 40-call budget is per attempt, not per defect | [AY](improvement-plan.md#plan-ay), [BC](improvement-plan.md#plan-bc) |
+| I11 | (TOOLING, medium): the harness cannot observe its own prompt composition per call | [BF](improvement-plan.md#plan-bf) |
+| I12 | (UI/UX): findings I12.1–I12.12 in §15.2 | [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg) |
+| I12.1 | (OWNER, high): no progress, no ETA, no tokens | [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg) |
+| I12.2 | (OWNER, high): gates are not legible | [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg) |
+| I12.3 | (OWNER, high): nothing tells an absent owner | [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg) |
+| I12.4 | (OWNER, medium): decisions and steering are buried | [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg) |
+| I12.5 | (OWNER, medium): intake has no pre-flight or review step | [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg) |
+| I12.6 | (DEVELOPER, high): per-stage time/tokens/KPIs exist only on the CLI | [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg) |
+| I12.7 | (DEVELOPER, medium): held-back reads and lost replies look like successes in the feed | [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg) |
+| I12.8 | (OPERATOR, high): no model-server surface | [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg) |
+| I12.9 | (DESIGN, medium): hierarchy inverted, plan not first-class | [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg) |
+| I12.10 | (DESIGN, low): visual residue and copy | [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg) |
+| I12.11 | (A11Y/PERF, medium): not yet in the ledger | [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg) |
+| I12.12 | (HOUSEKEEPING): regenerate `docs/ui/*-runs.png`; `vite.config.ts:11` | [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg) |
+
 
 **Status file.** This is the working evidence log for the deep review requested by
 the owner on 2026-10-18 (JST). The final deliverable is an improvement plan
@@ -36,7 +133,7 @@ it is the evidence archive referenced by the appended plan (keep while the plan 
   Biggest: Settings.tsx (912), RunDashboard.tsx (720), wizardData.ts (694),
   WizardDashboard.tsx (624), AgentActivity.tsx (507), Home.tsx (466).
 - Docs read: HANDOVER.md (§0,2,2.3,2.4,5,6,7), monitoring-handover.md
-  (§0.9,0.10,5,6,8,9,10), harness-improvement-plan.md (full), improvement-plan.md (full).
+  (§0.9,0.10,5,6,8,9,10), improvement-plan.md (full), improvement-plan.md (full).
 - Code read (full or key parts): agents/role_agent.py, agents/thinking.py,
   models/__init__.py, models/roles.py, agents/context_budget.py,
   agents/workspace_digest.py (injection = append-at-end, cache-friendly),
@@ -65,6 +162,8 @@ sandbox = argv-only, no shell, per-category network (install only), fail-closed.
 ## 3. My findings so far (with evidence) — LIVE run-bf43c7e2 (medium brief, fast, local Qwen3.6-35B-A3B on :8888)
 
 ### F1 (CRITICAL): Fullstack entrypoint never wired to drafted code
+
+*Plan:* [K](improvement-plan.md#plan-k), [U](improvement-plan.md#plan-u), [L.6](improvement-plan.md#plan-l-6), [Sweep table](improvement-plan.md#plan-sweep)
 - Pack `fullstack-react-fastapi` scaffolds stub `task_management_dashboard/main.py`
   (only `/api/health` + static dist serving) and `serve-acceptance.mjs` launches
   exactly that stub via uvicorn.
@@ -86,6 +185,8 @@ sandbox = argv-only, no shell, per-category network (install only), fail-closed.
   N criterion defects. Language-agnostic: contract declares health/route probe.
 
 ### F2 (CRITICAL): No service provisioning; spec free to require PostgreSQL
+
+*Plan:* [U](improvement-plan.md#plan-u)
 - brief_medium asks for PostgreSQL; spec mandates real Postgres ("not SQLite...
   TEXT[] arrays, GIN indexes, @> containment"), asyncpg + alembic + DATABASE_URL
   required (no default) + startup migration.
@@ -102,6 +203,8 @@ sandbox = argv-only, no shell, per-category network (install only), fail-closed.
   recorded as decision) when service can't be provided.
 
 ### F2-REFINED (CRITICAL, root cause located): capability knowledge asymmetry
+
+*Plan:* [U](improvement-plan.md#plan-u)
 - `stack_selector.describe_execution_environment()` (stack_selector.py:133)
   ALREADY tells the selector: "NOTHING IS RUNNING... no database server...
   A brief may still *require* PostgreSQL, and you should still choose it - but
@@ -126,6 +229,8 @@ sandbox = argv-only, no shell, per-category network (install only), fail-closed.
      for PostgreSQL; hidden-test parity). Decide after 1+2 measured.
 
 ### F3 (HIGH): Dependency-manifest drift after drafting
+
+*Plan:* [K](improvement-plan.md#plan-k)
 - Drafted code imports sqlalchemy/pydantic-settings/jose/passlib/asyncpg/alembic/
   bleach; `requirements.txt` still only fastapi+uvicorn. Nobody reconciles
   imports↔manifest before test rounds.
@@ -138,6 +243,8 @@ sandbox = argv-only, no shell, per-category network (install only), fail-closed.
   install command), append missing, re-run install (network category exists).
 
 ### F4 (HIGH): Sandbox python env ambiguity (venv vs user-site)
+
+*Plan:* [K](improvement-plan.md#plan-k)
 - Bare `pip`/`python3` in sandbox = system python; installs go to
   `.agent-home/.local` ("Defaulting to user installation because normal
   site-packages is not writeable") — invisible to `.venv/bin/python` the
@@ -147,6 +254,8 @@ sandbox = argv-only, no shell, per-category network (install only), fail-closed.
   pip/python when a venv exists, with a notice naming the venv interpreter.
 
 ### F5 (HIGH): All-or-nothing stage revert by CI gate
+
+*Plan:* [L](improvement-plan.md#plan-l)
 - "it broke 4 test(s) that passed before it" → ENTIRE fix stage reverted,
   discarding the (correct) dependency work and any good edits; next fixer starts
   from identical state; loop. Two consecutive reverts observed live.
@@ -155,6 +264,8 @@ sandbox = argv-only, no shell, per-category network (install only), fail-closed.
   manifest/dependency changes out of revert scope.
 
 ### F6 (HIGH): Defect sprawl from single root cause (confirms plan Initiative F)
+
+*Plan:* [Sweep table](improvement-plan.md#plan-sweep)
 - test_round_0 raised 13 defects (12 ACs "does not work yet" + 1 lint) at
   16:39:41 — one root cause (server stub doesn't implement API). Bundling
   exists (`_bundle_defects_by_specialist`) but bundles 10-12 defects into one
@@ -166,6 +277,8 @@ sandbox = argv-only, no shell, per-category network (install only), fail-closed.
   Initiative F generalized from "load errors" to "missing service wiring").
 
 ### F7 (MEDIUM): Reasoning exhaustion still live
+
+*Plan:* [Sweep table](improvement-plan.md#plan-sweep)
 - 17:18:43 UTC defect_fix_2_1: "Stage specialist_backend lost a reply to
   reasoning (1 in a row); asking again at once with thinking off" + "spent a
   whole reply's output budget on reasoning; thinking switched off for next
@@ -174,6 +287,8 @@ sandbox = argv-only, no shell, per-category network (install only), fail-closed.
   (bounded thinking budget up-front) — add evidence.
 
 ### F8 (MEDIUM): Very large prompts on judgement stages
+
+*Plan:* [O](improvement-plan.md#plan-o), [Sweep table](improvement-plan.md#plan-sweep)
 - acceptance_review_1 median prompt 203k chars (~65k tokens), acceptance_dispute
   188k, scrum_master 124k, principal_architect 100k. On a local server prefill
   is slow and context rot is real (research pending). Window is ~130k tokens
@@ -182,6 +297,8 @@ sandbox = argv-only, no shell, per-category network (install only), fail-closed.
   per-file or summarized), spec section windows, cache-friendly ordering.
 
 ### F9 (MEDIUM): Streaming disabled by langchain incompatibility
+
+*Plan:* [T](improvement-plan.md#plan-t)
 - models/__init__.py `_request_timeout` docstring: streaming would fix the
   timeout-vs-length tension but `streaming=True` breaks through
   langchain.agents ("Expected a dict or openai.BaseModel, got Stream") — "Revisit
@@ -190,6 +307,8 @@ sandbox = argv-only, no shell, per-category network (install only), fail-closed.
 - Streaming also unlocks live token streaming to the UI (UX win).
 
 ### F10 (MEDIUM): Parallel mode gets ~1.0-1.3x overlap; server is 1 slot
+
+*Plan:* [S](improvement-plan.md#plan-s), [Sweep table](improvement-plan.md#plan-sweep), [AB](improvement-plan.md#plan-ab)
 - Monitoring §0.9: "LM Studio's 8 slots go unused"; gated pauses drain one per
   superstep; HANDOVER §7: fixing = redesign of runner auto-approve loop.
 - Also queueing: parallel specialists against a 1-slot llama.cpp server just
@@ -200,6 +319,8 @@ sandbox = argv-only, no shell, per-category network (install only), fail-closed.
   scheduling so same-stage agents batch their calls.
 
 ### F11 (LOW/MED): integration_checks.py is JavaScript-shaped
+
+*Plan:* [K.6](improvement-plan.md#plan-k-6), [Sweep table](improvement-plan.md#plan-sweep)
 - Function inventory shows node/browser/CSS/DOM checks dominate
   (`_node_suites_nothing_runs`, `_dangling_class_selectors`, browser events...).
   harness-improvement-plan B1 admits "Multi-file symbol references for Go, Rust,
@@ -207,6 +328,8 @@ sandbox = argv-only, no shell, per-category network (install only), fail-closed.
   products get weaker static integration analysis than JS.
 
 ### F12 (OBSERVATION): test_round "did not report 13 failing criteria;
+
+*Plan:* [Sweep table](improvement-plan.md#plan-sweep)
 recording them as defects" + "left out 2 problems it was handed as proven" —
 harness-run test round works but the model round re-derives; fine. Also
 "3 defects describe one problem; merged into one" — merging exists for
@@ -214,6 +337,8 @@ identical problems (frontend/package.json two test runners) but NOT for
 common-root-cause criterion failures (F6).
 
 ### F13 (MEDIUM): Seed instructions can contradict the environment
+
+*Plan:* [Sweep table](improvement-plan.md#plan-sweep)
 - `plugins/seed.py` has a `postgres` key injected when the stack doc names
   PostgreSQL: guidance encourages pooled Postgres usage — while the sandbox
   provides no Postgres and `pg_isready` is refused. Python seed says "Do not
@@ -224,6 +349,8 @@ common-root-cause criterion failures (F6).
   capability profile as F2); sandbox PATH fix makes the python seed true.
 
 ### F14 (CONTEXT): Verified mechanisms relevant to plan (no gap, cite as strengths)
+
+*Plan:* not cited by a plan item (context, status or observation)
 - `analysis/compiler_check.py`: Go/Rust/Java/C#/Swift/PHP compile checks +
   TS/Pyright language service; degrades silently when toolchain missing.
   → Python import drift IS visible to Pyright as notes, but nothing forces
@@ -246,6 +373,8 @@ common-root-cause criterion failures (F6).
   problem; merged") but not for common root cause (F6).
 
 ### F15 (HIGH): Opening requests on planning/judgement stages are 60-80k tokens
+
+*Plan:* [O](improvement-plan.md#plan-o), [Sweep table](improvement-plan.md#plan-sweep)
 - Measured from live transcript (run-bf43c7e2, chars of full message list):
   scrum_master 241k (~80k tok), acceptance_review_2 191k (~64k),
   acceptance_author_1 183k, principal_architect 118k, architecture_review 116k,
@@ -268,6 +397,8 @@ common-root-cause criterion failures (F6).
   prefix-cache hits across stages. (3) Fix the stale 150k constant/docstring.
 
 ### F16 (STATUS): Visual review loop already exists (Initiative B ~80% built)
+
+*Plan:* [Sweep table](improvement-plan.md#plan-sweep)
 - `stacks/packs/_javascript.page_check` keeps page-desktop.png + page-phone.png
   every suite run; `agents/page_screenshots.py` sends both to milestone
   reviewer when `models/vision.reads_images` (name-family heuristic or
@@ -279,6 +410,8 @@ common-root-cause criterion failures (F6).
   likely non-vision → judgement model must be vision-capable for this to fire.
 
 ### F17 (GAP): Benchmark corpus lacks fullstack-Python & service-backed briefs
+
+*Plan:* [U](improvement-plan.md#plan-u), [Sweep table](improvement-plan.md#plan-sweep)
 - benchmarks/: web-todo, notes-api(-js/-hono), wordstats-cli, textkit-lib,
   fullstack-bookmarks, web-todo-react. Gate ladder covers JS/Python single-tier
   products. brief_medium (FastAPI+React+PostgreSQL) has NO hidden tests →
@@ -289,6 +422,8 @@ common-root-cause criterion failures (F6).
   both hold the fullstack packs to the same standard as the others.
 
 ### F18 (CONTEXT): Strong existing tooling to build measurements on
+
+*Plan:* [O](improvement-plan.md#plan-o), [U](improvement-plan.md#plan-u), [L.6](improvement-plan.md#plan-l-6), [Sweep table](improvement-plan.md#plan-sweep)
 - scripts/loop/: run_timing.py, redundant_reads.py, model_fitness.py,
   lessons.py, defects.py, failures.py, audit_live.py, product_audit.py,
   stage_trace.py, check_precision.py, verify_packs.py, pack_freshness.py.
@@ -297,38 +432,9 @@ common-root-cause criterion failures (F6).
   `entrypoint_wiring`, `manifest_drift`, `revert_treadmill` counters to
   audit_run/transcript_metrics).
 
-## 4. Research interim (subagent d2176eb1, local-LLM) — SUPERSEDED by §8 (full report)
+## 4. Research interim — removed
 
-- vLLM: `--enable-auto-tool-choice --tool-call-parser <model-matched>` (qwen3_xml
-  for Qwen3-Coder, hermes Qwen3, deepseek_v3, openai for gpt-oss, glm45/47);
-  `--reasoning-parser`; native `thinking_token_budget` + `--reasoning-config`.
-  (https://docs.vllm.ai/en/latest/features/tool_calling/,
-  https://docs.vllm.ai/en/latest/features/reasoning_outputs/)
-- Qwen3 thinking ON by default; per-request off via extra_body
-  `chat_template_kwargs {"enable_thinking": false}` (harness already does this);
-  Qwen3-Coder non-thinking, sampling temp 0.7/top_p 0.8/top_k 20/rep_pen 1.05,
-  65k max output recommended. (https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct)
-- gpt-oss requires harmony format; effort via system-prompt line.
-  (https://github.com/openai/harmony)
-- llama.cpp: `--jinja` needed for OpenAI tool calls; parallel tool calls exist
-  but disabled by default; JSON-schema constrained decoding limits (no
-  anyOf+properties mix, nested $refs broken, additionalProperties default false,
-  unsupported keywords silently skipped; schema NOT injected into prompt —
-  describe JSON in prompt too). (https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md,
-  https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md)
-- Prompt-cache discipline: llama-server per-slot prefix cache (--cache-prompt
-  default on; timings.cache_n); vLLM V1 prefix caching + chunked prefill default.
-  Keep prompts byte-stable append-only (harness already does reasoning carry-over).
-- Aider Architect/Editor split: 85.0% vs 79.7% solo baseline
-  (https://aider.chat/2024-09-26/architect.html); code-in-JSON degrades code
-  quality (https://aider.chat/2024-08-14/code-in-json.html) — relevant: harness
-  drafting takes file content from fenced blocks in plain replies (GOOD), but
-  write_artifact carries content as JSON tool arg (unavoidable; keep short).
-- Quantization/context: q2_K drops Qwen2.5-Coder-32B 72.2%→61.7%; 2k ctx →
-  51.9% w/ silent truncation (https://aider.chat/2024-11-21/quantization.html)
-  — verify the 8888 server's real ctx & max-output; harness window setting must
-  match reality (already a known rule).
-- Full report pending (benchmarks, context rot, routing).
+Superseded by §8, now `docs/research-findings.md` Part R4.
 
 ## 5. Forensics report (subagent f85b6e1b — COMPLETE, corrected numbers)
 
@@ -636,57 +742,8 @@ aria-pressed/unsaved guard; "..."→"…"; Intl.NumberFormat; dead code; vite pr
 :8001 vs :8000).
 
 ### C. Research-backed opportunities (all URLs verified by subagent)
-- C1 Mid-run steering/side chat (L): Devin Side Chats + takeover
-  (docs.devin.ai/work-with-devin/devin-session-tools); Claude Code web "actively
-  steer" (claude.com/resources/articles/claude-code-on-the-web). Harness dynamic
-  instruction injection = exact backend hook. Composer at waiting/escalation
-  points, injected at next stage boundary.
-- C2 Timeline scrubbing/checkpoint time-travel (M): Devin time navigation;
-  LangGraph time-travel docs (docs.langchain.com/oss/python/langchain/frontend/
-  time-travel). Rewind exists as bare <select>+confirm (:509-529) → visual
-  timeline w/ checkpoint ticks, scrub feed/artifacts, then rewind.
-- C3 Parallel-agent lanes (M): Cursor multi-agent (cursor.com/help/ai-features/
-  multi-agent, background-agents); Lovable subagents (docs.lovable.dev/features/
-  subagents). Events carry stage → per-agent columns + filter + "N agents working".
-- C4 In-gate artifact reading + diffs + versions (M): OpenHands Changes tab
-  (docs.openhands.dev/openhands/usage/key-features); Lovable history
-  (docs.lovable.dev/features/projects/history); Windsurf cascade diffs. Artifacts
-  track revision (types:15-21) — render in gate, diff revisions, version list.
-- C5 Proof-of-work delivery (S-M): Devin video recordings
-  (docs.devin.ai/work-with-devin/testing-and-recordings); Cursor attaches videos/
-  screenshots/logs. DeliveryPanel already shows criteria+screenshots (:182-192)
-  but 128px uncickable thumbs (:79) → lightbox, per-sprint evidence, test excerpts.
-- C6 Notifications & mobile monitoring (S): Claude Code iOS; Cursor Slack/GitHub/
-  Linear; Devin Slack (docs.devin.ai/integrations/slack). Gate self-approves
-  after timeout and UI never tells anyone (0 Notification/title/favicon code).
-  Minimum: tab-title "(⏸ needs review)" + favicon badge + browser Notification
-  on waiting/failed/completed; optional Slack/Telegram webhook.
-- C7 Cost/budget cockpit (S-M): Devin ACU caps+usage dashboard
-  (docs.devin.ai/admin/billing/usage); LangSmith rollups. Cost model already
-  honest (fully_priced, unpriced_requests, waiting_for_budget types:40-69) —
-  add spend-vs-ceiling bar, per-stage breakdown, parked-at-budget recovery flow.
-- C8 Intake expectation-setting (S-M): Lovable Design Guidance
-  (docs.lovable.dev/features/design-guidance); NN/g response times
-  (nngroup.com/articles/response-times-3-important-limits). Forecast line
-  ("typically 7.6h over 5 runs" Home:353-359) is a gem → step wizard + final
-  review screen + ETA/milestone progress + expected-vs-elapsed per stage.
-- C9 Trust/transparency (S-M): Microsoft Guidelines for Human-AI Interaction G1/
-  G2/G11/G15 (microsoft.com/en-us/research/publication/guidelines-for-human-ai-
-  interaction); Google PAIR Guidebook (pair.withgoogle.com/guidebook); Devin
-  Session Insights; NN/g big-ball-of-mud-ai + 3-agent-context-roles. Decision log
-  + plain-English already implement G11 → extend: why-at-gates, retry/escalation
-  counts as trust signals (data exists), post-run Insights panel (OutcomesPanel = seed).
-- C10 Keyboard-first (M): Devin CLI shortcuts (docs.devin.ai/cli/reference/
-  keyboard-shortcuts); ⌘K palette (jump to run/phase/artifact, toggle view,
-  pause/resume w/ typed confirm); gate shortcuts A/R.
-- C11 Streaming-build polish (S): bolt.new/v0/Lovable live preview. True token
-  streaming rejected for event volume (useStreamedText:3-18 — sound); extend
-  illusion: per-stage typing indicator in wizard rail, document.title w/ stage,
-  reveal artifacts on write_artifact events (type already distinguished
-  activity.ts:245-247).
-- C12 UX writing for waiting/failure (S): PAIR Errors; NN/g progress. activity.ts
-  nails steady state; failure paths don't → toasts w/ retry, "Last activity 12s
-  ago", "Reconnecting…" chip, error cards w/ Retry/Clone/next steps.
+
+Moved to `docs/research-findings.md` Part R5 on 2026-10-19 (with its links to the plan).
 
 ### D. Roadmap (subagent proposal; keep for final plan)
 Phase 1 quick wins (days): 1) live-region pass; 2) contrast tokens (197 axe
@@ -718,291 +775,7 @@ plain-English narration).
 
 ## 8. Full local-LLM research report (subagent d2176eb1 — COMPLETE, supersedes §4)
 
-Sources verified by direct fetch 2026-10-17/18 (web_search was unavailable; built
-from primary docs/papers/leaderboards).
-
-### 8.1 Constrained/guided decoding for tool calling and JSON
-- vLLM: structured outputs via xgrammar or guidance/llguidance
-  (--structured-outputs-config.backend, default auto); guided_* fields removed in
-  v0.12.0 → structured_outputs object: json/regex/grammar/choice/structural_tag
-  (schema enforced inside tags of free text). "Guaranteed validly-parsable — not
-  high-quality"; ALSO specify schema in the prompt; first use of a named tool
-  costs seconds of FSM compile (cached after). --tool-strict-level
-  strict|allowed|open: strict constrains tool NAMES + ARGUMENTS via structural
-  tags. https://docs.vllm.ai/en/latest/features/structured_outputs/ ,
-  https://docs.vllm.ai/en/latest/features/tool_calling/
-- Thinking vs grammar: Qwen3 Coder on vLLM DISABLES structured outputs while
-  reasoning by default; need --structured-outputs-config.enable_in_reasoning=True
-  (v0.11.2+). xgrammar uses the reasoning parser's end_token_id and SKIPS
-  enforcement during reasoning. Reasoning-parsers doc = authoritative
-  compatibility matrix: parsers per family (qwen3, glm45/glm47,
-  minimax_m2_append_think, deepseek_r1, deepseek_v3, openai for gpt-oss);
-  DeepSeek R1 tool calling ✗; native thinking_token_budget sampling param +
-  --reasoning-config (reasoning_start/end) = built-in mitigation for "reasoning
-  eats max_tokens"; server-wide --default-chat-template-kwargs
-  '{"enable_thinking": false}'. https://docs.vllm.ai/en/latest/features/reasoning_outputs/
-- llama.cpp/llama-server: GBNF grammars (root rule, token matching can permit
-  <think>); response_format json_schema → GBNF automatically. Documented limits:
-  additionalProperties defaults FALSE, unsupported features SILENTLY SKIPPED,
-  properties + anyOf/oneOf unsupported, nested $refs broken, min/max int-only,
-  patterns only as ^...$, schema NOT injected into prompt (model can't see it —
-  describe structure in prompt too). grammar_eval_n/grammar_max_tokens,
-  LLAMA_MAX_PARALLEL_GRAMMARS. https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md
-  Stronger: build with -DLLAMA_LLGUIDANCE=ON (follows JSON Schema closely,
-  additionalProperties default true, ERRORS instead of silently ignoring,
-  ~50µs mean mask compute). https://github.com/ggml-org/llama.cpp/blob/master/docs/llguidance.md
-- llama-server tool calls require --jinja; native handlers: Llama 3.1/3.2/3.3,
-  Hermes 2/3, Qwen 2.5(-Coder), GPT-OSS (Harmony), Command-R7B, Firefunction-v2;
-  DeepSeek R1 "WIP/reluctant"; generic fallback "may consume more tokens".
-  Parallel tool calls DISABLED by default (send parallel_tool_calls: true).
-  Extreme KV quantization (-ctk q4_0) "can significantly degrade tool call
-  performance". https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md
-  Per-request: reasoning_format, reasoning_effort (none disables),
-  reasoning_budget, chat_template_kwargs {"enable_thinking": false}.
-  https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md
-- Best practice for :8888: native tool parser + structural enforcement
-  (vLLM --tool-strict-level allowed|strict; llama-server --jinja + json_schema),
-  restate schema in prompt, keep code/file bodies in PLAIN-TEXT fields not
-  nested JSON strings (aider: 10–15% quality loss from JSON-wrapping code even
-  when schema-valid https://aider.chat/2024-08-14/code-in-json.html),
-  validate+retry client-side anyway
-  (https://docs.langchain.com/oss/python/langchain/structured-output).
-
-### 8.2 Per-model tool-call format quirks
-- Qwen3: enable_thinking = hard switch in chat template via chat_template_kwargs
-  (differs Transformers/vLLM/SGLang). Qwen vLLM page: --reasoning-parser qwen3
-  (v0.9.0+; v0.8.5 bug), custom non-thinking template, --enable-auto-tool-choice
-  --tool-call-parser hermes. https://qwen.readthedocs.io/en/latest/deployment/vllm.html
-  Function-calling guide recommends HERMES-STYLE template; stop-word (ReAct)
-  templates unreliable for reasoning models (stop word inside thoughts);
-  "corner cases where tool calls may be malformed… be prepared".
-  https://qwen.readthedocs.io/en/latest/framework/function_call.html
-  vLLM parser for Qwen3-Coder now qwen3_xml (renamed from qwen3_coder), parallel
-  supported; hermes/hermes3 for Qwen2.5/Qwen3.
-- Qwen3-Coder-30B-A3B-Instruct: 30.5B/3.3B-active, 128 experts/8; NON-THINKING
-  only; 262,144 native ctx (1M YaRN); temp 0.7/top_p 0.8/top_k 20/rep 1.05;
-  recommended max output 65,536; "if OOM reduce context to 32,768".
-  https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct
-- Qwen3-30B-A3B-Instruct-2507: non-thinking, 256K native; Aider-Polyglot 35.6,
-  BFCL-v3 65.1 (vs GPT-4o 66.5!), TAU2-Retail 57.0 (τ² telecom 12.3 vs 29.8 —
-  drops harder multi-turn); presence_penalty 0–2 for "endless repetition";
-  16,384 output; RULER decay avg 86.8: ~97@32K → 82.5@256K → 72.8@1M. Don't
-  enable YaRN if average ctx ≤32K ("may hurt short text").
-- gpt-oss-20b: harmony format ONLY ("will not work correctly otherwise").
-  Harmony: role hierarchy + channels analysis/commentary(final tool calls)/final;
-  "Reasoning: high" literal line in system prompt. 21B/3.6B-active, 131,072 ctx
-  YaRN, MXFP4; AIME'24 >20K CoT tokens/question avg; STRIP prior-turn reasoning
-  in multi-turn. vLLM: --reasoning-parser gpt_oss --tool-call-parser openai; no
-  parallel tool calls. https://huggingface.co/openai/gpt-oss-20b ,
-  https://arxiv.org/html/2508.10925v1 , https://github.com/openai/harmony
-- DeepSeek-R1 + distills: vLLM matrix tool calling ✗; llama.cpp "reluctant".
-  Distill guidance: temp 0.5–0.7 (0.6) "prevent endless repetition and
-  incoherent output"; AVOID system prompts (all instructions in user prompt);
-  32,768 max gen; sometimes skip thinking → prefill "<think>\n". R1-Distill-
-  Qwen-14B LiveCodeBench 53.1. Practical: run R1-distills as BASH-STYLE TEXT
-  agents, not function-callers.
-  https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-14B/raw/main/README.md
-- Llama 3.x: vLLM llama3_json parser; "may generate parameters in a malformed
-  format"; no parallel; pythonic parser "smaller Llama models frequently fail".
-- GLM-4.6: 200K, tool use during inference (interleaved), temp 1.0/top_p .95/
-  top_k 40; parsers glm45/glm47. MiniMax-M2 (230B/10B-active): MUST pass
-  assistant history back WITH <think> blocks intact (removing "negatively
-  affects"); SWE-bench Verified 69.4 (R2E-Gym/OpenHands, 128K, 100 steps),
-  Terminal-Bench 46.3, LiveCodeBench 83.0. Cross-model SWE-bench Verified:
-  GLM-4.6 68.0, Kimi-K2 69.2, DeepSeek-V3.2-Exp 67.8, Sonnet 4 72.7, Sonnet 4.5
-  77.2, GPT-5 74.9.
-- Harness-breaker summary: (1) reasoning consumes max_tokens → empty content
-  (fix: thinking_token_budget / --reasoning-budget / disable; watch
-  finish_reason=length); (2) malformed/hallucinated args despite "parseable"
-  guarantees; (3) parallel tool calls unsupported (many parsers; llama.cpp
-  default-off); (4) format mismatches (harmony-only; strip-vs-keep reasoning:
-  gpt-oss STRIP, MiniMax KEEP); (5) thinking+structured-output conflict
-  (enable_in_reasoning).
-
-### 8.3 Prompting/orchestration techniques for small models
-- Scaffolding compensates for size: SWE-agent ACI → 12.5% SWE-bench pass@1
-  (arXiv:2405.15793); Agentless 3-stage pipeline beat agent frameworks at
-  ~$0.70/task (arXiv:2407.01489); mini-swe-agent ~100 lines, BASH-ONLY tool,
-  strictly linear append-only history, >74% SWE-bench Verified w/ frontier,
-  "runnable with literally any model" (github.com/SWE-agent/mini-swe-agent);
-  AlphaCodium flow engineering 19%→44% pass@5 (arXiv:2401.08500).
-- Generator–verifier / planner–executor: aider Architect/Editor 85.0% vs 79.7%
-  baseline; EVERY pairing improved over solo (o1-mini 61.1→71.4 w/ DeepSeek
-  editor; gpt-4o-mini 55.6→60.2); aider recommends --editor-model/architect
-  "with models that have trouble following edit format instructions".
-  Cognition: Claude Code used Haiku as edit-apply engine; Devin/SWE-1.5 built on
-  RL'd small models for narrow well-specified subtasks
-  (cognition.com/blog/dont-build-multi-agents).
-- code-in-JSON degrades quality (Sonnet −13% even with zero syntax errors under
-  schema enforcement — the constraint itself distracts). "Errors are tools" =
-  12-Factor factor 7 (+ own your context window 3, tools are structured outputs
-  4, own control flow 5, small focused agents 1, stateless reducer 6, compact
-  errors 10). Anthropic Building Effective Agents: simplest composable pattern
-  (chaining, ROUTING, orchestrator-workers, EVALUATOR-OPTIMIZER); ACI/tool design
-  matters more than overall prompt (absolute paths fixed small-model tool-call
-  failures). Self-consistency +17.9% GSM8K (arXiv:2203.11171); Reflexion 91%
-  HumanEval (arXiv:2303.11366).
-- τ-bench: tool-calling beats ReAct for gpt-4o (airline pass^1 0.420 TC vs
-  0.325 ReAct); steep consistency decay pass^1→pass^4 0.460→0.225. BFCL V3
-  state-based multi-turn taxonomy = canonical description of small-model tool-loop
-  failure: missing implicit actions, poor environment-state tracking, loops
-  terminated at max steps, over-cautious clarification
-  (gorilla.cs.berkeley.edu/blogs/13_bfcl_v3_multi_turn.html). AgentBench: large
-  commercial vs ≤70B OSS gap in long-term reasoning/decision-making/instruction-
-  following (arXiv:2308.03688).
-- Orchestration philosophy: one coherent context thread, compress rather than
-  parallel-divergent (Cognition); Manus lessons: STABLE PROMPT PREFIXES for
-  KV-cache, append-only context, MASK-DON'T-REMOVE tools, file system as
-  externalized memory, RECITATION (rewrite plan each step into recent
-  attention), keep wrong turns visible, avoid inference-time few-shot
-  (manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus).
-  Cline local-model guide: compact prompts, focused tasks, fresh task when
-  context too large. plandex: plan-then-execute, diff sandbox, tree-sitter repo
-  maps, multi-layer edit validation. Terminal-Bench (ICLR 2026)/Harbor: harness
-  choice changes scores for the same model → route on YOUR benchmark.
-
-### 8.4 Serving performance for agentic workloads
-- Prefix caching: vLLM APC hashes KV blocks (parent-hash + tokens + cache_salt);
-  multi-round conversation = primary beneficiary; accelerates PREFILL only
-  (docs.vllm.ai/en/latest/features/automatic_prefix_caching/). llama-server
-  --cache-prompt DEFAULT ON (timings.cache_n reports reuse), --cache-reuse N
-  (KV shifting), --slot-prompt-similarity, --cache-ram 8GiB default, slot cache
-  save/restore, --context-shift disabled by default. Any prefix change
-  (timestamp, dynamic tool list, reordered history) invalidates — Manus: KV-cache
-  hit rate "the most important metric" for production agents (input:output
-  ~100:1; cached tokens ~10× cheaper). OpenHands local guide: vLLM
-  --enable-prefix-caching + Arctic suffix speculation ~2× speedups.
-- Batching/MoE/speculation: vLLM V1 chunked prefill default; tune
-  --max-num-batched-tokens (>8192 throughput), --max-num-seqs;
-  --enable-expert-parallel for MoE multi-GPU; --cpu-offload-gb/--swap-space.
-  Speculative decoding LOSSLESS: n-gram, suffix, EAGLE3, MTP, draft models;
-  gains largest at low-medium QPS. llama.cpp: -np parallel slots, continuous
-  batching, --kv-unified-per-slot, -fa, -ctk/-ctv (q4_0 KV degrades tool calls),
-  experimental --tools agent loop.
-- Context rot: Chroma (18 models incl. Qwen3-32B): degradation NON-UNIFORM with
-  input length even on trivial tasks; needle position + similar distractors
-  matter; NIAH overstates (research.trychroma.com/context-rot, arXiv:2507.13436).
-  Lost-in-the-Middle: U-shaped — critical instructions at BEGINNING or END
-  (arXiv:2307.03172). OpenHands: Ollama 4096 default "far too small"; ≥22K,
-  32,768 w/ max_input_tokens=30000 headroom. aider: Qwen2.5-Coder-32B 72.2%
-  BF16 → 51.9% @2K window (silent truncation; edit compliance 46.2%); q4_K_M/
-  q2_K cost 5–10 points (aider.chat/2024-11-21/quantization.html).
-  WORKING RECOMMENDATION: cap effective per-turn context ~32–64K even on
-  128–256K models; ≥4–8K output headroom; no YaRN unless truly >32K; ≥Q4_K_M/Q5
-  weights, f16/q8_0 KV.
-
-### 8.5 Small-model failure modes in multi-agent harnesses
-- Loops/repetition: BFCL V3 (max-step loops, state tracking). presence_penalty
-  0–2 (Qwen3), temp 0.5–0.7 (R1-distills), --reasoning-budget, harness stuck
-  detection + step caps.
-- Hallucinated tools/args: parseable ≠ correct; --tool-strict-level
-  strict|allowed; generic llama.cpp handler misfires; validate args in harness,
-  return error as tool result (12-factor).
-- Whitespace-exact edit failures: aider edit-errors guide (malformed blocks,
-  weak-model warnings, truncation; /undo, --editor-model, architect mode);
-  plandex multi-layer validation + diff sandbox; SWE-agent ACI (line-numbered
-  views, constrained edit commands). Mitigation stack: prefer whole-file or
-  line-anchored edits for weak editors, apply-and-verify, architect/editor split.
-- Multi-turn attention drift: "LLMs Get Lost in Multi-Turn Conversation"
-  (arXiv:2505.06120): avg 39% performance drop multi-turn; early assumptions,
-  premature final answers, "when they take a wrong turn, they get lost and do
-  not recover". Mitigations: consolidate/re-anchor (re-state full task in fresh
-  turns), condense history (OpenHands Context Condenser), fresh tasks per unit
-  (Cline), Manus recitation + file-system memory.
-- Thinking-budget exhaustion: gpt-oss >20K CoT; R1 skipping thinking.
-  thinking_token_budget/--reasoning-budget; thinking off on execution turns;
-  raise max_tokens (Qwen3-Coder 65,536); detect finish_reason=length → retry
-  think-off/larger budget.
-- History-format poisoning: strip prior reasoning for gpt-oss; KEEP <think> for
-  MiniMax-M2; inconsistent handling silently collapses quality.
-- Model-level regression: OpenHands "when it behaves like a chatbot only… the
-  problem may be the model itself" — verify tool calling works before blaming
-  harness; use community-confirmed models.
-
-### 8.6 Model routing (strong planner/reviewer + fast local executor)
-- FrugalGPT (arXiv:2305.05176): cascades match best single model with up to 98%
-  cost reduction or +4% accuracy at equal cost.
-- RouteLLM (arXiv:2406.18665, LMSYS): preference-trained routers >2× cost cut
-  without quality loss; transfer when models change.
-- aider architect/editor (above): reasoning model plans, cheaper model edits —
-  85.0% vs 79.7%; split also REPAIRS format compliance for weak editors.
-- Cognition: route DECISIONS to strong models, MECHANICAL STEPS to fast ones.
-- Anthropic: routing is first-class workflow pattern.
-- Production: OpenHands SDK MultimodalRouter (rule-based) + route_task_to_model
-  (LLM classifier, mid-conversation switch, history preserved)
-  (docs.openhands.dev/sdk/guides/llm-routing, /llm-task-routing); mini-swe-agent
-  model-agnostic via litellm. Benchmark caveat: same model + different harness =
-  different score (Harbor/Terminal-Bench).
-
-### 8.7 Top-12 recommendations ([S]=server, [H]=harness)
-1. [S] Match server tool/reasoning parsers to the model + turn on enforcement
-   (vLLM --enable-auto-tool-choice --tool-call-parser {qwen3_xml|hermes|glm45|
-   minimax_m2_append_think|openai} --reasoning-parser {...} --tool-strict-level
-   allowed (+enable_in_reasoning=True if thinking on); llama.cpp --jinja,
-   reasoning_format auto, json_schema). Removes largest failure class for zero
-   prompt changes.
-2. [H] Per-model thinking policy with budget guardrails: thinking off on
-   execution/tool-heavy nodes; thinking_token_budget/--reasoning-budget; size
-   max_tokens per vendor guidance; auto-retry on finish_reason=length with
-   thinking disabled.
-3. [H] Validate-and-retry with EXACT error feedback, capped 1–2, then escalate
-   to stronger model (cascade). LangGraph conditional edges.
-4. [H] Architect/Editor split: strongest model writes spec/plan/review; local
-   MoE emits file edits; simple edit formats for executor. aider 85.0 vs 79.7;
-   Cognition edit-apply precedent. Maps 1:1 onto PM/architect/lead vs specialist
-   roles — specialist edits = the only thing the local model must get right.
-5. [H] Keep code OUT of JSON strings; restate schemas in prompts (GBNF not shown
-   to model; prompt-schema alignment improves quality).
-6. [S+H] Cache-first context design: byte-stable system prompt + static tool
-   definitions FIRST, append-only history, no timestamps/dynamic ordering in the
-   cached prefix; verify via vLLM metrics or timings.cache_n; cache_salt for
-   isolation. Payoff 2–10× cheaper/faster TTFT → funds retries/verification.
-7. [H] Hard context budget ~32–64K effective + condense/recite: summarize older
-   turns (OpenHands Condenser), rewrite current plan into recent context each
-   step (Manus recitation), externalize to files, must-follow constraints at the
-   END (lost-in-the-middle; context rot incl. Qwen3; 39% multi-turn decay +
-   re-anchoring). Verify server real ctx (≥22–32K).
-8. [S] Serving quality gates: ≥Q4_K_M/Q5 weights (BF16 72.2→q2_K 61.7), flash
-   attention on, KV f16/q8_0 only, no YaRN under ~32K, vendor sampling presets
-   (Qwen .7/.8/20/1.05; GLM/MiniMax 1.0/.95/40), aider-polyglot-style smoke
-   benchmark after ANY server change.
-9. [H] One task per turn, deterministic control flow in graph edges not model
-   discretion; single coherent context per work item; compressed summaries
-   between roles, not parallel divergent contexts; compact focused role prompts.
-10. [S] Throughput for parallel agents: vLLM chunked prefill (default),
-    --max-num-batched-tokens ≥8192, --enable-expert-parallel (MoE), n-gram/
-    suffix/EAGLE/MTP speculation (lossless, biggest win at low QPS); llama.cpp
-    -np slots sized to KV memory, --cache-ram, cross-slot prompt-cache reuse.
-    OpenHands: ~2× from suffix speculation on Qwen3-Coder. Faster loops = more
-    verification budget per task.
-11. [H] Bash-first fallback executor for tool-call-unreliable models (R1
-    distills): mini-swe-agent-style one-bash-tool loop, YAML/plain-text
-    commands, linear append-only history, R1 sampling rules (temp 0.6, no system
-    prompt, "<think>\n" prefill). Unlocks a whole model class.
-12. [H] Router/cascade layer across the role graph: cheap-local-first with
-    verifier-gated escalation (FrugalGPT/RouteLLM); OpenHands-style classifier
-    per task type; planning/review on strongest accessible model, execution on
-    local MoE. Measure per-node pass rates on YOUR benchmark.
-
-Per-model cheat sheet: Qwen3-Coder-30B-A3B → vLLM qwen3_xml parser, no
-thinking, .7/.8/20/1.05, max_tokens 65536, ctx ≤32–64K working set.
-Qwen3-30B-A3B-2507 → same + presence_penalty ≤2 if looping. gpt-oss-20b →
-harmony only; gpt_oss/openai parsers; strip prior reasoning; "Reasoning: low/
-medium" per node. DeepSeek-R1-distill → bash-text loop, temp 0.6, no system
-prompt, 32K cap. GLM-4.6 → glm45, 1.0/.95/40, keep think blocks. MiniMax-M2 →
-minimax_m2_append_think, 1.0/.95/40, never strip <think>.
-
-Mapping to our evidence: rec 1+5 ↔ A9/A3 (structured-output degradation,
-hallucinated names); rec 2 ↔ A4/B3 (reasoning exhaustion — llama-server
---reasoning-budget and vLLM thinking_token_budget are the SERVER-side versions
-of Initiative I); rec 4 ↔ C8 (local model drafts fine, fixes/reviews weak —
-route fixes/reviews to judgement model); rec 6+7 ↔ B2/B4/F15 (prefill-bound,
-60–120k prompts, 45–73% cache hits; effective-context cap 32–64K vs current
-~100% of 126k window as input ceiling); rec 10 ↔ F10 (parallel vs 1-slot
-server; owner's model is MTP GGUF = speculation-ready); Manus mask-don't-remove
-↔ our tool-withholding changes the tool list mid-stage (cache invalidation +
-confusion — consider instruction-level withholding); rec 12 ↔ existing two-tier
-roles (extend: escalation for reverted fixes).
+Moved to `docs/research-findings.md` Part R4 on 2026-10-19 (with its links to the plan).
 
 ## 9. Release-integrity mechanics (my own verification, post-forensics)
 
@@ -1061,109 +834,7 @@ acceptance/suite.py (grep), acceptance/requests.py (header+smoke).
 
 ## 11. Frontier harness research (subagent 8408a576 — COMPLETE)
 
-Full report persisted on disk: .langchain/research/frontier-harness-report.md
-(+ raw notes .langchain/research/notes.md). Method: direct fetches of official
-docs/blogs/repos/arXiv (web_search unavailable); community-sourced claims
-labeled. Products: Claude Code+SDK, Codex CLI/Cloud, Gemini CLI, Jules,
-OpenHands SDK, SWE-agent/mini-swe-agent, Aider, Cline, Roo, Devin, Amp,
-Cursor, Factory, Copilot agent, Deep Agents/Open SWE, MetaGPT/ChatDev/
-Magentic-One, vLLM/llama.cpp, SWE-bench/Terminal-Bench/METR.
-
-Key points by theme (URLs in the saved report):
-- T1 Context: Claude Code startup budget (~4.2k sys prompt, memory index 25KB,
-  tool NAMES only, skill one-liners); compaction ~95% w/ structured summary +
-  DISK RE-INJECTION (CLAUDE.md, plan, 5 recent files as paths, skill bodies);
-  Anthropic compact-2026-01-12 API (trigger ≥150k default, min 50k); Codex
-  per-model 180k/244k, summary "for another LLM that resumes the task",
-  effective 95%; Gemini 70% compress; OpenHands condenser replaces first half
-  of events; tool-output management separate (clear old outputs FIRST, >10k
-  chars → file+preview; ClearToolUsesEdit keep-3); subagents = context
-  isolation (Codex cites context-rot); dissent: Amp compaction-free (Handoff/
-  Fork), Cline /newtask + /deep-planning fresh task, Cognition single thread +
-  fine-tuned compressor. ADOPTION: compact EARLIER (~50–60% of usable window
-  for small models), summary written for the resuming LLM, re-inject from
-  disk, cheap summarizer model, offload big outputs to files.
-- T2 Loop: plan-first (Claude plan mode, Jules plan approval, Cline Plan/Act,
-  Open SWE); LIVING TODO re-injected every ~6 msgs (Cline Focus Chain);
-  orchestration: single-threaded lead + READ-ONLY subagents, parallel writers
-  only w/ worktrees (Cognition+Codex+Claude converge); role pipelines w/
-  FILE ARTIFACTS as interface (MetaGPT SOP) beat chatty roles (ChatDev);
-  Magentic-One task/progress LEDGERS AS FILES + re-plan on error;
-  verification in-loop: runnable checks, Claude /goal separate evaluator
-  every turn, Stop hooks block turn-end until check passes; Devin "easy to
-  verify"; Copilot CI iteration; RubricMiddleware. Escalation: Gemini loop
-  detection, Jules auto-retry→fail+notify, Claude "corrected twice → /clear".
-- T3 Tools: mini-swe-agent BASH-ONLY, no tool-calling API, linear history,
-  >74% SWE-bench Verified w/ frontier, "any model"; SWE-agent ACI guardrails:
-  LINT-GATED EDITS (invalid rejected at tool level), 100-line windowed reads,
-  terse search (only files w/ ≥1 match), EXPLICIT empty-output message;
-  Aider edit-format compliance: whole-file ~100% at 32B vs ~73% diff;
-  read-before-edit + unique old_string (Claude Edit); repo maps (tree-sitter,
-  ~1k tokens, dynamic) over blind reads; Codex sandbox matrix + auto_review
-  classifier agent (fail-closed, open policy.md); Claude Auto mode separate
-  classifier model. ADOPTION: bash-first FALLBACK execution mode for
-  tool-call-unreliable models; whole-file default for weak editors; ACI
-  micro-guardrails; small classifier call for dangerous actions (20-40B can
-  classify itself cheaply).
-- T4 Robustness: grammar-enforce CONTROL-PLANE decisions (plan JSON, todo,
-  verdicts, finish) but NOT free-form coding turns; vLLM "guaranteed
-  parsable — not high-quality" + describe schema in prompt;
-  enable_in_reasoning caveat for Qwen3-Coder; --tool-strict-level
-  function|parameter; ToolErrorMiddleware pattern (exception → sanitized
-  error ToolMessage); OpenHands LLM_NUM_RETRIES=4 + LLM_DROP_PARAMS;
-  prefix-stable prompts + vLLM --enable-prefix-caching / llama.cpp slot
-  cache; ROUTING: Cursor Router (complexity predictor, 75% uplift bar,
-  cache-miss cost; above-Fable satisfaction at −68% cost), Codex per-subagent
-  model+effort, Amp Dial + role-pinned models + small system models for
-  compaction, Gemini pro→flash fallback, OpenHands Index guidance
-  (strongest for long/high-stakes, cheaper routine, stronger planning/
-  debugging/review); Cursor Composer = harness-RL-trained own model;
-  mini-roulette (random model switching per instance) BEAT either model alone.
-- T5 Quality: auto-lint/auto-test after EVERY edit w/ error feedback (Aider);
-  TDD-lite (/test-add failing tests first); adversarial reviewer subagent in
-  FRESH context w/ NARROW correctness-gap rubric (reviewers over-report —
-  restrict!); Writer/Reviewer split; /goal evaluator; Open SWE learns repo
-  review preferences from historical feedback; METR: RELIABILITY not raw
-  reasoning drives long-task completion (arXiv:2503.14499) — spend harness
-  complexity on gates, not fancier prompts.
-- T6 Local realities: OpenHands 2026 first local recommendation =
-  Qwen3.6-35B-A3B CLASS (owner's model!): ≥24GB VRAM quantized, ctx ≥22k
-  REQUIRED (4096 = broken), 32,768 + flash attention recommended, vLLM
-  --enable-prefix-caching, speculation ≤2× (ArcticInference); documented
-  failure "chatbot-only, refuses tools". Qwen3-Coder-30B-A3B: 60.4% SWE-bench
-  Verified @ ~19GB Q4 (best-in-24GB); Qwen3.6-35B-A3B: Terminal-Bench 24.6%
-  = 24GB champion; bash-only board: Qwen2.5-Coder-32B collapses to 9.0%
-  (scaffolding matters!); DeepSWE-Preview-32.8B 58.8% (harness-trained small
-  models closing gap). llama.cpp: -ctk q4_0 KV substantially degrades tool
-  calling; native handler list; gpt-oss harmony-required.
-
-Top-15 adoptable (ranked, full URLs in saved report): 1 grammar-enforced tool
-calls/control-plane; 2 bash-first minimal toolset + text-parsed fallback;
-3 ACI guardrails; 4 whole-file/validated search-replace + error-feedback
-retry; 5 early structured compaction + disk re-injection; 6 tool-output
-offload/clearing; 7 post-edit deterministic gates (lint→type→test, finish
-blocked until green); 8 re-injected living todo list; 9 read-only subagents +
-single writer per workstream; 10 role-pinned routing (cache-miss-aware);
-11 plan-file-first workflow; 12 repo-map structural context (~1k dynamic);
-13 evaluator/rubric loop for "done"; 14 AGENTS.md convention + prefix-stable
-prompts + prefix caching; 15 container sandbox + allowlisted escalation,
-fail-closed review.
-
-Harness-status mapping (mine): already have ≈ 7,9(partly: parallel writers
-exist but with work-order file separation),11(work orders/sprint record),
-13(locked suite+dispute),14(AGENTS.md n/a internally; digest append-at-end),
-15(argv-only sandbox stricter than bash). GAPS feeding the plan: #2 bash-first
-fallback mode (M), #3 ACI micro-guardrails incl. explicit empty-output notice
-(P), #4 whole-file default for weak editors w/ compliance data (P — the 100%
-vs 73% number is the citation for replace_lines demotion), #5 earlier
-compaction + disk re-injection (O — harness compaction trigger is 0.8×window;
-research says 50–60% of USABLE for small models), #6 tool-output offload (O),
-#8 todo cadence re-injection (R — verify task-list middleware cadence),
-#10 role-pinned routing w/ effort tiers (Q), #12 repo map (already Tier 2 in
-docs/harness-improvement-plan.md — reinforce), narrow correctness-gap reviewer
-rubric (Q/E2 milestone-review findings).
-Bottom line quote: frontier consensus is MORE valuable on 20–40B local MoE —
-"every mechanism substitutes harness engineering for model capability".
+Moved to `docs/research-findings.md` Part R3 on 2026-10-19 (with its links to the plan).
 
 ## 12. Final status (2026-10-18, ~03:05 JST)
 
@@ -1258,6 +929,8 @@ below are the ones verified by reading the code directly (G-numbered to keep
 them apart from session 1's F-series).
 
 #### G1 (HIGH, local-model): prompts order a tool the role is not given — and contradict themselves
+
+*Plan:* [Appendix 2](improvement-plan.md#plan-appendix-2), [X](improvement-plan.md#plan-x)
 - `agents/product_manager.py:352-360` says "Do not write a document … only
   through that response" and then "**Write the complete intake in ONE single
   write_artifact call.**"; the role is built with `can_write=False`
@@ -1275,6 +948,8 @@ them apart from session 1's F-series).
   banned-words tests).
 
 #### G2 (HIGH, throughput): project memory sits at the head of the conversation and is rewritten from disk every call
+
+*Plan:* [Appendix 2](improvement-plan.md#plan-appendix-2), [AA](improvement-plan.md#plan-aa), [Part 17](improvement-plan.md#plan-part-17), [BJ](improvement-plan.md#plan-bj)
 - `agents/project_memory.py:312-321` splices the memory text into the
   *opening* human message; the middleware re-reads it each call; budget up to
   30% of the window (`MEMORY_SHARE`). Any write changes the first message →
@@ -1292,6 +967,8 @@ them apart from session 1's F-series).
   `cached_tokens` per call (nothing reads it: `map-agents.md` §2).
 
 #### G3 (MEDIUM, local-model): no sampling or cache parameters are ever sent
+
+*Plan:* [M (concrete)](improvement-plan.md#plan-m-concrete), [AA](improvement-plan.md#plan-aa)
 - Stages send no `temperature`/`top_p`/`seed`/`cache_prompt`/`json_schema`
   (`models/__init__.py`); the only `temperature=0` is the framework-extraction
   call (`plugins/middleware.py:166`). Behaviour therefore depends entirely on
@@ -1302,6 +979,8 @@ them apart from session 1's F-series).
   under `src/`.
 
 #### G4 (MEDIUM): tool list changes mid-conversation
+
+*Plan:* [AA](improvement-plan.md#plan-aa)
 - Settled-answer withholding and the research-share cap remove tools
   mid-stage; the prefix changes (cache miss) and the schema the model
   learned from no longer matches (weak models keep calling the removed
@@ -1309,6 +988,8 @@ them apart from session 1's F-series).
   pointers (`map-agents.md` §6 item 4).
 
 #### G5 (MEDIUM): maintenance prose inside system prompts
+
+*Plan:* [X](improvement-plan.md#plan-x)
 - `technical_lead.py:674-777` and the environment contract carry "Measured
   across the stored runs…" statistics and ALL-CAPS/CRITICAL emphasis. Prompt
   sizes 1.7k–14k chars per role. For 20–40B models the research consistently
@@ -1317,11 +998,15 @@ them apart from session 1's F-series).
   in the tokens the model pays for every call.
 
 #### G6 (LOW–MED): parallel-mode hazard — process-wide globals
+
+*Plan:* [Part 12](improvement-plan.md#plan-part-12)
 - `settled_answer.py:573,584` `_LAST_FAILING_FIELDS` / `_LAST_FAILURE_KIND`
   are module globals read across stages; in parallel mode two specialists
   can read each other's failure state. Needs a per-thread/per-stage carrier.
 
 #### G7 (UI/plan correction): no steering endpoint exists
+
+*Plan:* [Ledger](improvement-plan.md#plan-ledger), [Part 11](improvement-plan.md#plan-part-11)
 - Session 1's Phase 3 "steering composer via the existing
   dynamic-instruction-injection hook" rests on a misreading:
   `plugins/middleware.py` injects *framework* guidance per stack; there is
@@ -1331,16 +1016,22 @@ them apart from session 1's F-series).
   boundary), and that is the right place for it architecturally.
 
 #### G8 (UI/plan correction): artifact versioning has no real data
+
+*Plan:* [Ledger](improvement-plan.md#plan-ledger)
 - `server/runs.py:1704-1713` hard-codes `revision=1` and the in-flight stage
   on every artifact. The planned diff/version viewer needs the workspace git
   history (every stage commits) exposed per path first.
 
 #### G9 (UI): intake has no free-text brief, and a failed start orphans a run
+
+*Plan:* [UI 15.4](improvement-plan.md#plan-ui-15-4), [Ledger.A3](improvement-plan.md#plan-ledger-a3)
 - Intake accepts documents only; `createRun` then `startRun` — a failure in
   the second leaves a `created` run with no owner action. Access token
   expires at 60 min with no refresh → a full reload mid-run.
 
 #### G10 (UI, measured by mapper): still-open harms from Part 4 Phase 1
+
+*Plan:* [Part 11](improvement-plan.md#plan-part-11)
 - None of Phase 1 landed (no `aria-live`/`role=status`, 17 native
   `alert()/confirm()`, modal without dialog role, 31 hex literals + 115 raw
   slate/white classes, RunList polls 5 s even when hidden, no WS→poll
@@ -1350,6 +1041,8 @@ them apart from session 1's F-series).
   rewind UI, outcomes+forecast, approval-timeout input.
 
 #### G11 (API/UI mismatches, mapper)
+
+*Plan:* [Part 11](improvement-plan.md#plan-part-11)
 - `document_names` (list) vs UI `document_name`; `approval_timeout_minutes`
   stored but absent from `RunStatusResponse`; token counts, `reviews[]`,
   `remediation` typed but never rendered; `delivery_mode`,
@@ -1361,6 +1054,8 @@ them apart from session 1's F-series).
 ### 13.3 Checkpoint 4 (12:25 JST) — run history / packs / loop map landed (`map-runs-packs.md`)
 
 #### G12 (EVIDENCE CORRECTION, HIGH): the local-model "quality cliff" (C8 → Initiative Q) is confounded
+
+*Plan:* [Appendix 2](improvement-plan.md#plan-appendix-2), [W](improvement-plan.md#plan-w)
 - The brief_low runs scored 1/10, 1/10, 5/10 (94d2c449, 3642baf8, 866e972e)
   against `benchmarks/web-todo/hidden`, whose tests require the `## Interface`
   labels present only in `benchmarks/web-todo/brief.md`, not in
@@ -1376,6 +1071,8 @@ them apart from session 1's F-series).
   it was given (or the score is tagged `brief_mismatch`).
 
 #### G13 (EVIDENCE GAP, HIGH): no scored run exists after the P0 wave
+
+*Plan:* [Appendix 2](improvement-plan.md#plan-appendix-2), [W](improvement-plan.md#plan-w)
 - run-8b0c94df is the only run documented after the 2026-10-18 fixes; its
   brief, mode, model, duration and outcome are recorded nowhere (mentioned
   only at IP:1340/1344/1350, RF:1218). K.3-extension and L.1 refinement were
@@ -1387,6 +1084,8 @@ them apart from session 1's F-series).
   scored post-P0 run on the real bench briefs.
 
 #### G14 (A/B BLOCKER, MEDIUM): the toggles do not reach the container
+
+*Plan:* [W](improvement-plan.md#plan-w)
 - `docker-compose.yml` `x-app-env` does not pass `LINE_EDITS`,
   `ENVIRONMENT_CONTRACT`, `WORKSPACE_DIGEST`, `PROJECT_MEMORY`,
   `HARNESS_TASK_LIST`, `JUDGEMENT_*`, `ESCALATE_AFTER_ATTEMPTS`,
@@ -1397,6 +1096,8 @@ them apart from session 1's F-series).
   `HARNESS_MAX_PARALLEL=6` default against a 1-slot server.
 
 #### G15 (LEDGER ACCURACY): U.2 claims not borne out
+
+*Plan:* [W](improvement-plan.md#plan-w)
 - "duplicate-call rate already in audit_live.py" — audit_live counts
   replayed call_ids; the identical-call measure lives only in
   `scripts/audit_run.py`, which `loop.sh` never calls. Not counted anywhere:
@@ -1408,6 +1109,8 @@ them apart from session 1's F-series).
   intake/architecture, unrelated to bench scores.
 
 #### G16 (LANGUAGE-AGNOSTIC CLAIM): where the packs stop
+
+*Plan:* [AG](improvement-plan.md#plan-ag)
 - 35 packs / 5 kinds. Only the two fullstack-*-fastapi packs declare
   `entrypoints` (K.3's stub check covers nobody else, incl. fullstack-next/
   django, python-http/flask). Ten service packs have empty `check_families`
@@ -1421,12 +1124,16 @@ them apart from session 1's F-series).
   at intake.
 
 #### G17 (DOCS DRIFT): HANDOVER §2 frozen at 10-12 (model row, suite count,
+
+*Plan:* [AP](improvement-plan.md#plan-ap)
 "27 packs" vs 35); improvement-plan §4 still says bf43c7e2 is running (it
 failed 06:49 JST in `defect_fix_2_19`, `ValueError` from the venv symlink
 outside the workspace root — itself a K.5 regression candidate); line 15
 calls gpt-oss-20b "frontier".
 
 #### G18 (THROUGHPUT, parked items that matter most)
+
+*Plan:* [Part 8](improvement-plan.md#plan-part-8)
 - Parallel mode ≈1.0–1.3× on 1 slot (auto-approve loop redesign parked);
   reads ≈70% of calls; task list built, off, never measured; thinking budget
   is the biggest single time lever and is an owner decision — the plan
@@ -1448,6 +1155,8 @@ calls gpt-oss-20b "frontier".
 ### 13.4 Checkpoint 5 (12:55 JST) — graph/acceptance/tools map landed (`map-graph.md`); Fable-verified
 
 #### G19 (HIGH, release integrity + treadmill): a fix is "fixed" on the fixer's say-so
+
+*Plan:* [Appendix 2](improvement-plan.md#plan-appendix-2), [AD](improvement-plan.md#plan-ad)
 - `graph/workflow.py:8895-8960` `_settle_the_fix`: with no blockers and a
   named test, the defect is marked fixed; `verified_by` (what the execution
   ledger confirms ran and passed) is only an info log ("does not gate the
@@ -1465,6 +1174,8 @@ calls gpt-oss-20b "frontier".
   same class: unknown treated as passed.
 
 #### G20 (MEDIUM): two different "tests that cannot pass" lists
+
+*Plan:* [AE](improvement-plan.md#plan-ae), [Ledger.A2](improvement-plan.md#plan-ledger-a2)
 - `acceptance_nodes.py:376-401` (review, 18 checks) vs `:1141-1153` (per
   round, 11): the round list lacks `locators_nobody_sees`,
   `locators_that_pick_one`, `tests_that_assert_an_unstated_order`,
@@ -1475,12 +1186,16 @@ calls gpt-oss-20b "frontier".
   list, one function.
 
 #### G21 (MEDIUM, prompt/code disagreement): milestone `blocked` verdict
+
+*Plan:* [Appendix 2](improvement-plan.md#plan-appendix-2), [X](improvement-plan.md#plan-x)
 - `agents/milestone_reviewer.py:99-105` tells the model `blocked` ends the
   run; `workflow.py:9756-9768` re-plans instead, with no visible cap on that
   branch. Same class as G1 (instruct, then do otherwise) — and a weak model
   that believes `blocked` is terminal will avoid saying it.
 
 #### G22 (MEDIUM, local-model): tool description untrue in container mode
+
+*Plan:* [Appendix 2](improvement-plan.md#plan-appendix-2), [X](improvement-plan.md#plan-x)
 - `agent_toolkit.py:585` says everything except install runs with the
   network off; in-container mode applies no network restriction
   (`sandbox.py:4364-4437`) and builds its environment differently (venv
@@ -1488,6 +1203,8 @@ calls gpt-oss-20b "frontier".
   reasons from; it must be rendered from the active mode.
 
 #### G23 (THROUGHPUT): parallelism is mostly nominal
+
+*Plan:* [Appendix 2](improvement-plan.md#plan-appendix-2), [AB](improvement-plan.md#plan-ab)
 - Per-workspace command lock serialises every command (`sandbox.py:3732`);
   `HARNESS_MAX_PARALLEL=6`; `fix_by_candidates` fires 3× the file count of
   concurrent model calls (`rewritten_fixes.py:278`) — against a 1-slot
@@ -1496,6 +1213,8 @@ calls gpt-oss-20b "frontier".
   reads `/props`).
 
 #### G24 (THROUGHPUT, model calls that deterministic data can gate)
+
+*Plan:* [AC](improvement-plan.md#plan-ac)
 - Thorough mode runs a judgement-model testing agent every round although
   the fast "harness round" gathers the same measurements; architecture and
   milestone reviews run even when the harness found no breakage and the
@@ -1505,6 +1224,8 @@ calls gpt-oss-20b "frontier".
   several times per round with no caching.
 
 #### G25 (CORRECTNESS, status model): `completed_with_gaps` is a list on `completed`
+
+*Plan:* [AE](improvement-plan.md#plan-ae)
 - Stored as `completed` + `completion_gaps` + `NON-DELIVERABLE.json`
   (delivery.py:259-293, runner.py:1448-1490). Never reaching the gaps list:
   fast-mode review findings recorded as risks, escalation `known_issues`,
@@ -1513,6 +1234,8 @@ calls gpt-oss-20b "frontier".
   enum constraint; the three missing sources are new.)
 
 #### G26 (MAINTAINABILITY, refactor evidence for V)
+
+*Plan:* [Part 12](improvement-plan.md#plan-part-12)
 - `build_workflow_graph` is one 3,672-line closure (46 nodes, string-routed
   through `_route_from_stage` on 35 of them); `_review_the_milestone` 463
   lines with its revise-or-escalate branch repeated 5×; `_run_gated_agent`
@@ -1526,6 +1249,8 @@ calls gpt-oss-20b "frontier".
   stage) but worth stating as the invariant that keeps L.2 dropped.
 
 #### G27 (not a bug, mapper over-flag): last-attempt shape change
+
+*Plan:* [Appendix 2](improvement-plan.md#plan-appendix-2)
 - Fires at `failed_fix_tries >= escalate_after()` (=2) → attempt 3, which
   with three charged attempts *is* the last rung. No action.
 
@@ -1577,123 +1302,8 @@ session 2"; initiative letters continue after V):
   per item when the research report lands.
 
 ### 13.6 Research report digest (landed 17:45 JST) — frontier harnesses, local serving, agent UX
-Full report from the web-research task (primary sources 2025-06→2026-10).
-Kept here because the research tool's output is not otherwise persisted.
-R-numbers are cited from `docs/improvement-plan.md` Appendix 2.
 
-**Headline**: "one writer, many advisors." Local-model failures are
-*interface* failures (tool-call format, edit format, context truncation,
-quantization) more than reasoning failures.
-
-- R1 Anthropic "Effective harnesses for long-running agents" (2025-11-26):
-  initializer writes `init.sh`, progress file, initial commit, JSON feature
-  list with every feature `passes:false`; each session reads progress, runs
-  a basic e2e first, implements ONE feature, commits, logs. Adopt as
-  backbone.
-- R2 Anthropic "Harness design for long-running apps" (≈2026-03-24):
-  planner (told NOT to over-specify implementation — errors cascade) /
-  generator / evaluator negotiating "sprint contracts"; evaluator drives
-  the app via Playwright; context *resets* needed (Sonnet 4.5 "context
-  anxiety"); ~6 h/$200 per 16-feature app; evaluator "unnecessary
-  overhead" when the task is within the generator's ability → for weaker
-  local models the evaluator gives *more* lift.
-- R3 Cognition "Multi-agents: what's actually working" (2026-04-22): works
-  "when writes stay single-threaded"; clean-context Devin Review catches
-  ~2 bugs/PR, 58% severe, even on Devin's own PRs; weak-primary +
-  strong-advisor failed ("quality ceiling set by the primary"); Manager
-  Devins: over-prescription and assumed shared state are the failure
-  modes. "Don't build multi-agents" (2025-06-12): edit-apply lesson — a
-  small model rewriting a whole file from a markdown explanation beat a
-  large model emitting a diff (R15).
-- R4 MAST (arXiv 2503.13657): 14 failure modes; spec/design 41.8%,
-  inter-agent misalignment 36.9%, verification 21.3%; ChatDev 33.3% on
-  ProgramDev, +9.4% from better prompts/topology; verifiers do low-level
-  checks (compiles?) and miss the requirement.
-- R5 "Flat score, amplified failures" (arXiv 2607.27275): INT4 looked free
-  on τ²-bench scores but out-of-list tool-call names rose 19.5%→38.3%;
-  community: Qwen3.6 Q4 breaks tool JSON/diffs, Q5_K_M/Q6 fix most,
-  collapse past ~30k ctx (anecdotal). Single-turn HumanEval unaffected by
-  Q4. → Q6/Q8/FP8 for the tool-calling implementer; Q4 OK for summarisers.
-- R6 Ollama: since commit 0334ffa6 (2026-02-02) default `num_ctx` is
-  VRAM-based (4,096 <24 GiB; 32,768 24–48; 262,144 above); docs recommend
-  ≥64k for agents; `/v1` ignores `num_ctx` → set `OLLAMA_CONTEXT_LENGTH`.
-  "#1 silent failure for local agents."
-- R7 Cline v3.35 (2025-10-31): native tool calling only for frontier
-  families; tool defs as API params cut tokens ~15%/request; local models
-  get XML-in-prompt; issues #10843 (Qwen emits JSON into XML parser →
-  loop), #13008 (syntax change broke Ollama+Qwen3.6-35B-A3B), #7424
-  (Compact Prompt for local), PR #12835 (explicit xml tool mode). Lesson:
-  tolerant multi-format parser; version-stable tool syntax.
-- R8 aider: edit formats whole/diff/diff-fenced/udiff/patch/editor-*;
-  unknown models default to `whole` ("easiest format"); leaderboard
-  reports well-formed-edit % separately; llama3-70b 73.5% well-formed on
-  diff (secondary); v0.19 udiff took GPT-4 Turbo 20%→61% on the laziness
-  bench; `--architect`/`--editor-model`/`--weak-model`.
-- R9 JetBrains "The Complexity Trap" (arXiv 2508.21433, 2025-08-29): LLM
-  summarisation +15% trajectory length vs raw, +13% vs observation
-  masking; masking halves cost at equal solve rate.
-- R10 mini-SWE-agent (~100 lines, bash-only, >74% SWE-bench Verified) as
-  control harness; same-harness open-model run 2026-02-17: MiniMax M2.5
-  75.8%, GLM-5 72.8%, Kimi K2.5 70.8%, DeepSeek V3.2 70.0% vs Opus 4.5
-  76.8%; vendor claims Qwen3.6-27B 77.2%, Qwen3.6-35B-A3B 73.4%, Devstral
-  Small 2 68.0% (harness-dependent; OpenAI stopped reporting SWE-bench
-  Verified 2026-02).
-- R11 OpenHands condenser: up to 2× per-turn cost cut, event-sourced and
-  replayable; default max_size=80 keep_first=4; SDK paper arXiv 2511.03690.
-- R12/R13 Claude Code: plan mode = write tools not exposed; permission
-  mode ladder; ExitPlanMode gate; hooks are enforcement, CLAUDE.md is
-  advice; checkpoints miss bash side-effects → use git per step; subagents
-  for read-only work.
-- R14 vLLM `--enable-auto-tool-choice --tool-call-parser <family>`
-  (qwen3_coder/qwen3_xml/llama3_json…); Qwen3.5/3.6 recipe: MTP-1 spec
-  decoding for low-concurrency latency (disable prefix caching in that
-  mode); llama.cpp `--jinja`, native handlers per family else Generic
-  (more tokens), lazy GBNF grammars after tool trigger (PR #9639),
-  `--chat-template-file` overrides; JSON Schema→GBNF automatic. Security:
-  vLLM GHSA-79j6-g2m3-jgfw (`qwen3_coder` parser `eval()` RCE) — pin.
-- R16 Ralph loop (Huntley 2025-07-14): fresh context per iteration, state
-  in files/git, mandatory `--max-iterations` + completion promise.
-- R17 Anthropic "Effective context engineering" (2025-09-29): attention
-  budget, context rot, just-in-time retrieval, compaction + notes +
-  subagents; Manus: KV-cache hit rate the key production metric, mask
-  don't remove tools; Lost-in-the-middle (TACL 2024), Chroma context rot.
-- R18 Cursor 2.0 (2025-10-29) 8 parallel agents; Plan mode 1.7/2.1 with
-  clarifying-question UI → adapt only at planning on a single GPU.
-- R19 Memory as plain markdown files navigated with file tools; `LESSONS.md`
-  reviewer-appends/planner-reads.
-- R20 UX: Jules plan approval + browser notifications + Planning Critic
-  (−9.5% failures, vendor); Devin Interactive Planning (2025-04-03), Devin
-  Review hunk grouping with confidence/severity (2026-01-21); Copilot draft
-  PR as work surface, mission-control steering (2025-10-28); Codex
-  evidence citations of terminal logs/tests; Lovable/Bolt/v0 live preview +
-  versioned rollback mapped to commits.
-- R21 Huang et al. arXiv 2512.14012 (2025-12-16): professional devs
-  "control the agents through planning and supervision"; "The Work Behind
-  Delegation" arXiv 2609.24234: supervisory demand to understand unwritten
-  work; Chen et al. arXiv 2507.08149.
-- Top-20 ranked recommendations from the report (verbatim order): 1 fix
-  context sizing and verify at startup; 2 single writer; 3 feature list
-  as source of truth; 4 one feature per fresh context with caps; 5
-  clean-context evaluator that executes; 6 per-model tool-call adapter;
-  7 grammar/JSON-schema constrained decoding for structured artifacts;
-  8 per-model edit format by calibration; 9 architect/editor split; 10
-  avoid INT4 for the tool-calling implementer; 11 remove tools instead of
-  forbidding; 12 hooks over prompts; 13 stable short system prompt +
-  prefix caching; 14 condensation with template + resets at 60–70%; 15
-  loop detection → reset → escalate → human; 16 plan critic; 17 git
-  per step + no-network container; 18 append-only event log → OTel; 19 UI
-  essentials; 20 model selection on your own harness.
-- Not verified by the report (do not copy specifics): Goose, Amp,
-  Windsurf, Augment, Factory, Replit, Gemini CLI internals,
-  CrewAI/LangGraph patterns, AgentCoder, Roo/Kilo internals, BFCL/Tau
-  tables, OTel GenAI conventions, Langfuse.
-
-Mapping to Appendix 2: #1→M.1/W.3; #2 already (work orders); #3→Part 11
-plan-first (criteria as feature list) + existing locked suite; #4→Z.3;
-#5→AD/AF (+ existing acceptance); #6/#7→M.1–M.2; #8/#9→Y; #10→M.6;
-#11/#12→X; #13→AA/X.4; #14→Z; #15→existing L.5 + Z.3; #16→existing
-L.7/validator (plan critic = judgement-model plan review, Q-amend);
-#17→existing; #18→W.4; #19→Part 11; #20→W.
+Moved to `docs/research-findings.md` Part R2 on 2026-10-19 (with its links to the plan).
 
 ### 13.7 Final status (18:05 JST)
 - `docs/improvement-plan.md` Appendix 2 appended: Initiatives W, X, M
@@ -1746,6 +1356,8 @@ theme options; no code changes; check the live Docker app.
 (H-numbers: third session; G-numbers: second.)
 
 #### H1 (THEME FEASIBILITY, decisive): multi-theme is a token-redefinition job, not a rewrite
+
+*Plan:* [I](improvement-plan.md#plan-i), [Appendix 3](improvement-plan.md#plan-appendix-3), [Part 15](improvement-plan.md#plan-part-15), [UI 15.2](improvement-plan.md#plan-ui-15-2), [BG.11](improvement-plan.md#plan-bg-11)
 - 17 colour tokens in `@theme` (`index.css:4-23`), dark values only;
   `color-scheme: dark` hard-set (`index.css:27`, `index.html:8`); no
   `data-theme`, no `prefers-color-scheme`, no theme context. Tailwind 4 does
@@ -1765,6 +1377,8 @@ theme options; no code changes; check the live Docker app.
   and fails offline, on a product whose whole point is running locally.
 
 #### H2 (PRIMITIVES): one real primitive module
+
+*Plan:* [I](improvement-plan.md#plan-i), [UI 15.3](improvement-plan.md#plan-ui-15-3)
 - `components/Feedback.tsx:28` (`FeedbackProvider`/`useFeedback`: toasts +
   confirm dialog with focus trap/Escape/scroll lock/focus restore) is the
   only shared primitive. No Button/Card/Badge/Tabs/Input/Select/Dialog/
@@ -1774,6 +1388,8 @@ theme options; no code changes; check the live Docker app.
   per render, inputs likely lose focus per keystroke.
 
 #### H3 (NEW FEATURES, `ef982a2`): working, but thin
+
+*Plan:* [AS](improvement-plan.md#plan-as), [UI 15.5](improvement-plan.md#plan-ui-15-5)
 - ChangesPanel: `?view=changes&change=<sha>`; `GET /runs/{id}/changes`
   (≤200 commits) and `/changes/{sha}` (≤200k chars); token-based diff
   colours. No loading state (empty reads "Nothing has been changed yet"),
@@ -1792,6 +1408,8 @@ theme options; no code changes; check the live Docker app.
   approval_timeout_minutes` (approximation of the real sweep).
 
 #### H4 (API ↔ UI): fields exist server-side, UI ignores them
+
+*Plan:* [UI 15.5](improvement-plan.md#plan-ui-15-5)
 - `RunStatusResponse` now carries `gate_deadline`, `approval_timeout_minutes`,
   `completion_gaps`, `non_deliverable`, `delivery_mode`, `use_frontier_model`,
   `auto_approve`, `cost`; the UI type lacks the last three → a run page
@@ -1804,6 +1422,8 @@ theme options; no code changes; check the live Docker app.
   fallback), `/codebase` + `source` (brownfield unreachable).
 
 #### H5 (PHASE-1 REMAINDER, verified): favicon badge, browser Notifications,
+
+*Plan:* [UI 15.7](improvement-plan.md#plan-ui-15-7)
 WS→poll fallback, log virtualization/buffer cap (log re-sorted per
 message), `waiting_for_budget` styling (missing from `RunDashboard.tsx:468`
 and `RunList.tsx:86`; `describeStatus` says "Up next"), "Documents N
@@ -1815,10 +1435,14 @@ tests. Partly: title badge (run page only), ArtifactViewer Escape/restore
 without trap, tabs lack `role="tab"`.
 
 #### H6 (NARRATION DRIFT): 21 graph stages have no `STAGE_COPY` (title-case
+
+*Plan:* [UI 15.1](improvement-plan.md#plan-ui-15-1), [UI 15.4](improvement-plan.md#plan-ui-15-4), [UI 15.5](improvement-plan.md#plan-ui-15-5)
 fallback); `activity.ts:139` renders `specialist_gather`/`specialist_worker`
 as "Building the gather part".
 
 #### H7 (IA): routes `/login`, `/` (intake), `/runs`, `/runs/:id`, `/settings`;
+
+*Plan:* [Part 15](improvement-plan.md#plan-part-15), [UI 15.4](improvement-plan.md#plan-ui-15-4), [Ledger.A3](improvement-plan.md#plan-ledger-a3)
 no 404, no global "needs you" indicator, no help, no post-login redirect;
 model settings only in `/settings` and Home never checks a model is
 configured; no skeletons; OutcomesPanel/DeliveryPanel/SprintSummaryPanel/
@@ -1827,12 +1451,16 @@ steering, sprint summary and delivery stack full-width above the 3-column
 workspace → workspace below the fold at 768 px.
 
 #### H8 (API data unused by the UI that would change behaviour): `/events?since`
+
+*Plan:* [UI 15.4](improvement-plan.md#plan-ui-15-4)
 exists → WS→poll fallback is a UI-only change; `approval_timeout_minutes`
 in payload → the stall/countdown surfaces need no backend.
 
 ### 14.2 Checkpoint 3 (23:05 JST) — evidence/KPI map landed (`map-evidence-v2.md`); findings H9–H15 (verified where marked ✓)
 
 #### H9 (GOVERNING GAP, unchanged from G13): ~25 fixes today, zero verified on a run
+
+*Plan:* [Appendix 3](improvement-plan.md#plan-appendix-3), [AP](improvement-plan.md#plan-ap), [Ledger.A3](improvement-plan.md#plan-ledger-a3)
 - run-8b0c94df's outcome is still recorded nowhere (last note: "cancel if
   ≥20 of 30 acceptance tests still fail"); no run has started on the
   post-fix code; HANDOVER §2.2 "Verify on the next run" not updated for
@@ -1840,6 +1468,8 @@ in payload → the stall/countdown surfaces need no backend.
   fullstack-bookmarks-py → thorough) is the gate for everything below.
 
 #### H10 ✓ (KPI CORRECTNESS): the new KPI script under-counts and mis-ratios
+
+*Plan:* [AN](improvement-plan.md#plan-an)
 - `scripts/loop/kpi.py:123,134` look for guard markers only in the first
   600 chars of a tool result; the harness *appends* its notes after file
   content, so `redundant_read_rate` misses them and can disagree with
@@ -1853,6 +1483,8 @@ in payload → the stall/countdown surfaces need no backend.
   24.06%, not 23.9%.
 
 #### H11 ✓ (LOOP SCRIPT BUGS): `loop.sh kpi` (`loop.sh:222`) redirects to
+
+*Plan:* [AN](improvement-plan.md#plan-an)
 `data/kpi/<run>.json` *before* the worker command succeeds → a failing
 worker leaves an error JSON in place of the run's KPIs (ledger step
 skipped). `loop.sh lessons` (`loop.sh:294`) passes only `${2:-3}` → `list`
@@ -1860,6 +1492,8 @@ works, `propose|approve|reject` fail through `loop.sh` (HANDOVER already
 notes it). The per-run proposal list for the owner is not automated.
 
 #### H12 (THE 431 READS): the lead the ledger left open
+
+*Plan:* [AQ](improvement-plan.md#plan-aq)
 - Read ladder today: memory pointer → note at 3rd read → withhold at 3
   repeats → name the exit at 6 → refuse at 12; read tool removed at 3
   refusals/held-backs or 8 pointers. Two plausible causes, neither
@@ -1869,6 +1503,8 @@ notes it). The per-run proposal list for the owner is not automated.
   measure repeated reads per stage *before vs after* R on the W.2 baseline.
 
 #### H13 (LEDGER DRIFT): stale NOT STARTED rows duplicate DONE rows (M L1348;
+
+*Plan:* [AV](improvement-plan.md#plan-av)
 O.1–O.4 L1358–1361; Z/AA/AB L2022–2024; UI rows L2036–2040); AJ row
 "IDENTIFIED" though item 1 landed in `2f68304` (NullPool/`dispose()`
 seeding and timeout stdout diagnostics not built — direct pytest runs can
@@ -1876,12 +1512,16 @@ still hang); M.4–M.6 row says out-of-list tool-name KPI NOT STARTED but
 `unknown_tool_name_rate` exists; HANDOVER §2 table still 2026-10-12.
 
 #### H14 (DECISION/IMPLEMENTATION MISMATCHES): AF budget decided "per lock",
+
+*Plan:* [AP](improvement-plan.md#plan-ap)
 implemented at release (correctly — the suite locks before the build — but
 the decision text should say so); J.3 "gap for 2 runs then blocker" and E
 "measure over 2 runs" have no run behind them; `gate_deadline` derived from
 `updated_at` may not match the real timeout sweep.
 
 #### H15 (MEASUREMENTS TO CARRY INTO THE PLAN): 37 lost replies ≈40% of the
+
+*Plan:* [AQ](improvement-plan.md#plan-aq), [AR](improvement-plan.md#plan-ar)
 medium run's output tokens; 5,556 edits / 21.7% refused (guards working);
 72% `cache_read` on the medium run; 495 pointer answers / 93 withholdings /
 85 held-back reads; ~45 "Context size exceeded" at 20–48k input under a 100k
@@ -1993,3 +1633,425 @@ confirm the per-stage withheld flag resets on stage revisit.
 - Each item carries Goal/Evidence/Files/Steps/Tests/Acceptance/Effort.
 - No code changed. No run started. The live app was not reachable; a
   screenshot pass per theme is the first UI task once a session is linked.
+
+---
+
+## 15. Fourth review session — progress log (started 2026-10-19 07:15 JST)
+
+Scope: a fresh read of `harness-hardening-session` at `9275b8f` (2026-10-19 06:50 JST),
+the host's `data/kpi/` and `data/bench/` records, and web research on how the
+2026 generation of coding harnesses (Claude Code / Agent SDK, Codex, OpenHands,
+Aider, SWE-agent, Cline) and local inference servers (llama.cpp, vLLM) handle
+the same problems. The question the owner asked: *how do local models handle
+complex products efficiently?* Nothing below re-proposes an item the ledger
+marks DROPPED (M.2, M.3, O.4/Z, Y, AA.2, AC.3, U.4, M-bash) without new
+evidence. Findings are numbered I1…; the plan built from them is Appendix 4 of
+`docs/improvement-plan.md` (initiatives AX…).
+
+### 15.0 Checkpoint 1 (08:10 JST) — the shape of the problem
+
+The harness **works for small products and does not converge on complex
+ones**. The same model (`unsloth/Qwen3.6-35B-A3B-MTP-GGUF`, 1-slot llama.cpp
+server, 126k context, fast delivery, no frontier model) delivered:
+
+| run | brief | wall | model calls | output tokens | result |
+|---|---|---|---|---|---|
+| 77c6650e | web-todo (low) | 82 min | 172 | 0.40M | 10/10 hidden, 15/15 locked |
+| 8b0c94df | brief_medium (full-stack: JWT auth, teams, tasks, analytics) | **24.1 h** (1,448.9 min) | **2,593** | **5.22M** | sprint 1 attempt 4: 9 of 30 acceptance tests; 62 defects raised, **8 fixed**, 67 open, 6 fixes reverted |
+
+Source: `data/kpi/run-8b0c94df-eff4-47f2-82c8-0ad06b7c5285.json` (W.4 KPI,
+written 2026-10-18 22:12 JST) and `data/bench/run-77c6650e….json`. The medium
+run's budget went where the table below says. Every finding in this session
+is a reading of that file against the code that produced it.
+
+#### I1 (EFFICIENCY, critical): 35% of all output tokens were spent on replies that were thrown away ✓
+
+*Plan:* [AX](improvement-plan.md#plan-ax), [BB](improvement-plan.md#plan-bb)
+
+`replies_lost_to_length = 92`, `lost_reply_output_share = 0.3522`,
+`output_tokens = 5,224,684` → **≈1.84M tokens, ≈20k tokens per lost reply**.
+At the measured ~100 tok/s decode that is ≈300 model-minutes, ≈21% of the whole
+run's wall clock, producing nothing. `reasoning_share_estimated = 0.32`
+(1.70M tokens), so the lost replies are overwhelmingly reasoning that ran into
+the 20k output ceiling the server was started with. Per stage: `technical_lead`
+lost 12 replies (112 calls, 364k output), every `defect_fix_*` lost 2–6.
+
+Mechanism (code): `agents/thinking.py` can only send `reasoning_effort`
+(ignored by Qwen templates) or switch thinking on/off via
+`chat_template_kwargs`; there is no token *budget*. `models/__init__.py`
+`after_a_failed_call` re-asks a cut-off reply at half the cap — a reasoning
+model that spiralled at 20k spirals again at 10k. `settled_answer` turns
+thinking off only after two lost replies (`LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
+= 2`), i.e. after ~40k wasted tokens per stage visit.
+
+What changed since the last session: llama.cpp **honours a per-request
+`reasoning_budget_tokens` (and `reasoning_budget_message`) since build b9982**
+(server changelog, PR #23116), on top of the `--reasoning-budget N` launch flag
+that has existed since #13771. N.1 ("per-request thinking budget if the server
+honours one") is therefore implementable today; it needs only a `/props`
+version check. See AX.
+
+#### I2 (QUALITY, critical): the defect-fix loop does not converge on a complex product ✓
+
+*Plan:* [AY](improvement-plan.md#plan-ay), [BC](improvement-plan.md#plan-bc), [BI](improvement-plan.md#plan-bi)
+
+25 `defect_fix_*` stages consumed 2,255 of the run's 2,593 model calls (87%)
+and 144M of its 160M input tokens. Each stage name aggregates up to
+`MAX_REMEDIATION_ATTEMPTS` restarts × `MODEL_CALLS_PER_STAGE = 40` calls, so a
+single defect legitimately costs 100–200 calls at ≈62k input tokens each
+before it is "left open". Outcome: 8 of 62 defects fixed. Monitoring §0.2
+(06:55 JST) records the behaviour: "one made 123 model calls and 1 edit in 47
+minutes, saying 'I have all the information I need' before each further
+read; another 118 tool calls and none."
+
+Root causes visible in the code and the record:
+
+1. **The fix target is not localised before the model is asked.** The fast
+   path (`graph/rewritten_fixes.py`) names files from `affected_files` and
+   regexes over the failure text (`files_to_fix`), then rewrites up to 4 whole
+   files with 60k chars of project memory each. When no file can be named, or
+   the rewrite does not make the defect's tests pass, the agent loop takes
+   over with the full tool set and a 40-call budget — the expensive path is the
+   fallback for exactly the defects the cheap path could not place.
+2. **Fixes are measured only at the end of the stage.** `_fix_one` runs
+   `engineering.after_a_fix` once, after the stage; inside the loop the model
+   runs tests itself (`run_terminal_command`) with no harness-enforced
+   "run the defect's own test after every write".
+3. **Candidate fixes (Agentless-style `fix_by_candidates`) exist but are gated
+   on a judgement model** (`_fixed_by_rewriting`: `judgement_model is not
+   model`), so a local-only run never gets best-of-N selection — the one
+   technique that is cheapest on a local server (N short rewrites ≪ one 40-call
+   loop).
+4. **The product's foundation was broken** (login failing → 24 of 30 tests
+   fail behind it; two app layouts side by side — monitoring §0.2 "Still
+   open"). Root-cause clustering (L.1) reduces the count, but a file-level fix
+   cannot repair a layout/plan incoherence; that is a planning defect
+   (see I5).
+
+#### I3 (EFFICIENCY, high): reading is still half of the loop's work ✓
+
+*Plan:* [AY](improvement-plan.md#plan-ay), [BC](improvement-plan.md#plan-bc), [BA](improvement-plan.md#plan-ba), [BJ](improvement-plan.md#plan-bj)
+
+`redundant_read_rate = 0.47`, `identical_call_rate = 0.12`, `tool_calls =
+4,411`, `layer_memory_pointer = 774`, `layer_read_held_back = 170`,
+`layer_tool_withheld = 158`. The project memory already hands every stage
+the project at its start (`agents/project_memory.py`), and reads of held
+files are answered with a pointer — but **each pointer answer still costs a
+model call** (≈62k-token prefill + a reply). The guards stop the loop after
+3/8/12 repeats; by then 3–12 calls are gone. Two consequences:
+
+- A local model that keeps re-reading is not "finding something out"; it is
+  stalling on a decision. The cheaper response to a repeated read is to end
+  the turn and ask for the answer (what `settled_answer` does at 12), or
+  better, to never offer a `read_file` tool in a stage whose project is
+  already in its memory (fast fix stages: the files are in the request).
+- **Every tool-list change invalidates the whole prompt cache on llama.cpp.**
+  Tools are rendered into the system prompt by the chat template, so
+  withholding a tool (158 times this run) or restoring it changes the first
+  bytes of the prompt; the next call re-prefills the entire 60k context.
+  The measured `cached_token_share` of 0.726 is consistent with this: 27% of
+  160M = 43.9M uncached tokens.
+
+#### I4 (EFFICIENCY, high): decode, not prefill, is the clock ✓
+
+*Plan:* [AX](improvement-plan.md#plan-ax), [BB](improvement-plan.md#plan-bb), [BD](improvement-plan.md#plan-bd)
+
+Model-busy time ≈ 0.7319 × 1,448.9 = 1,060 min. Output 5.22M tokens at the
+~100 tok/s measured on 77c6650e and 3642baf8 ≈ 870 min → **decode is ≈82% of
+model time**; the 43.9M uncached input tokens fit in the remaining ≈190 min
+(≈3.8k tok/s prefill, plausible for a 3B-active MoE). So on this server the
+levers are, in order: (1) tokens *not* generated (lost replies, reasoning
+spirals, monolithic JSON plans), (2) calls not made (fix loop, re-reads),
+(3) prefill not repeated (cache discipline). Prompt diets (X.4) matter less
+than the earlier sessions assumed; they still matter for context rot.
+
+#### I5 (QUALITY, high): one sprint, thirty locked tests, one monolithic specification is the wrong shape for a complex brief ✓
+
+*Plan:* [AZ](improvement-plan.md#plan-az), [BJ](improvement-plan.md#plan-bj)
+
+Fast delivery plans one sprint for ≤20 criteria (`scrum_master.
+max_sprints_for_criteria_count`); brief_medium produced 30 locked acceptance
+tests and 16+ work orders drafted in one wave from a ~200k-character
+specification (`review-findings.md` §G, "spec often ~200k"). After the
+wave, 26 of 30 tests failed at once, the test round raised 10–14 defects per
+round (L.1 later grouped them to 8), and the fix loop started on a product
+whose server/login did not work. The thorough mode's sprints are vertical
+slices, but each sprint still carries the full ceremony (lead plan, dispatch,
+CI, review, security, advice, milestone) and the whole spec.
+
+Contrast with the pattern every 2026 long-running harness uses: a **walking
+skeleton** first (server starts, one page renders, one route round-trips,
+the test runner runs — proven before anything else), then **one feature slice
+at a time**, each with its own small contract, drafts, compile, unit tests
+and the *subset* of acceptance tests it owns; the next slice starts only when
+the previous one is green. Context per slice stays small (a slice's spec is
+≤15k tokens instead of 65k), defects are few and local, and a fix loop has a
+narrow target. Anthropic's long-running-agent guidance (feature list as a
+JSON/markdown checklist, one feature per session, mark done only when
+verified) and OpenHands/Codex task decomposition are the same idea.
+
+#### I6 (EFFICIENCY, medium): the lead's plan is one 20k-token reply ✓
+
+*Plan:* [BB](improvement-plan.md#plan-bb)
+
+`technical_lead`: 112 calls, 364k output tokens, 12 lost replies — the
+largest lost-reply count of any stage. `MilestonePlanOutput` is one structured
+answer carrying every work order (title, files, interfaces, steps, edge
+cases, test cases, verification, out-of-scope). A 10-order plan is 8–15k
+tokens of JSON *after* reasoning; with thinking on it runs into the ceiling.
+The specification already moved to "parts" (`specification_parts`); the plan
+has not ("two-step lead planning" parked, monitoring §0.5.1). Plan in two
+steps — an outline (order titles + files + owner) in one short call, then one
+work order per call, several at once — removes the ceiling collisions and
+makes each order independently retryable.
+
+#### I7 (EFFICIENCY, medium): parallel mode on a 1-slot server shares one KV cache ✓
+
+*Plan:* [BA](improvement-plan.md#plan-ba)
+
+`HARNESS_MAX_PARALLEL` is already `min(setting, slots)` (AB), so fan-out is 1
+on this server. But `defect_fix` batches (`_fixes_run_side_by_side`), parallel
+reviews and the drafting pool (`ThreadPoolExecutor`) still interleave
+*different conversations* through the single slot; llama.cpp keeps one KV
+cache per slot and evicts LRU, so alternating two 60k-token conversations
+re-prefills both every time (tutorial #13606: "with more distinct prompts
+than slots, eviction forces full reprocessing"). Two remedies, neither
+touching the owner's model: run conversation-switching work strictly in
+sequence while `slots == 1`, and/or use llama-server's slot save/restore
+(`--slots --slot-save-path`, `POST /slots/0?action=save|restore`, ~ms per
+op) around each switch. If VRAM allows, 2–3 slots of ~40k each is the better
+trade for fast-mode drafting, where many short independent prompts dominate.
+
+#### I8 (EFFICIENCY, medium): one throwaway container per command ✓
+
+*Plan:* [BE](improvement-plan.md#plan-be)
+
+`SANDBOX_EXECUTION_MODE=container` (compose default) starts `docker run --rm
+…` for every command (`tools/sandbox.py` ≈L4766). With 4,411 tool calls and
+the test runners started hundreds of times, container start-up, cold
+node/python caches and Playwright browser launches add minutes to hours of
+the 27% non-model time (≈390 min this run; pytest lingering alone cost 300 s
+per fix stage before the 21:45 JST fix). A persistent per-run sandbox
+container (`docker exec` into one container that lives for the run, same
+`--read-only`/caps/limits, workspace mounted once) keeps the isolation and
+removes the per-command start. The in-container mode exists but changes the
+trust boundary; a per-run container does not.
+
+#### I9 (QUALITY, medium): local-only runs never get the "judgement" tier ✓
+
+*Plan:* [BD](improvement-plan.md#plan-bd)
+
+With `FRONTIER=false`, `judgement_model is model`: every escalation path
+(`_the_build_model` after `ESCALATE_AFTER_ATTEMPTS`, `fix_by_candidates`,
+the architect and reviews) runs on the same model with the same settings.
+Escalation then only buys a fresh conversation. A local deployment can still
+have two tiers on one server: the same weights with thinking on vs off
+(and a different reasoning budget), or a second GGUF loaded in a second
+process. The roles module already supports a separate `JUDGEMENT_*`
+endpoint; what is missing is guidance and a profile for the all-local case
+(see BD), and the candidate-fix path should not require a *different*
+model — three candidates from the same model with different sampling seeds
+is the Agentless result.
+
+#### I10 (EFFICIENCY, low): the 40-call budget is per attempt, not per defect ✓
+
+*Plan:* [AY](improvement-plan.md#plan-ay), [BC](improvement-plan.md#plan-bc)
+
+`MODEL_CALLS_PER_STAGE = 40` is re-armed on every restart
+(`_restart_on_a_fresh_conversation`, structured-retry restarts, escalation to
+the judgement model), so one defect saw 198 calls. AK made budgets survive a
+*worker* restart; nothing bounds the sum across attempts of one defect. A
+per-defect call ledger (sum over attempts, e.g. 60) with the remainder going
+to a whole-file rewrite is cheaper than a fourth 40-call conversation.
+
+#### I11 (TOOLING, medium): the harness cannot observe its own prompt composition per call
+
+*Plan:* [BF](improvement-plan.md#plan-bf)
+
+Transcripts record characters sent and `input_tokens`, but not *which block*
+each request's bytes came from (system prompt, tool schemas, project memory,
+spec excerpt, conversation). The sessions keep estimating composition from
+constants (X.4 ceilings, `MEMORY_SHARE`). A per-request composition record
+(block name → chars) in `observability/transcript.py` would turn I3/I4/I7
+into measured numbers and make the prefix-cache hypothesis testable
+(expected: cache misses correlate with tool-list changes and memory
+re-renders).
+
+#### I12 (UI/UX): findings I12.1–I12.12 in §15.2
+
+*Plan:* [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg)
+
+### 15.1 What the 2026 frontier harnesses do about the same problems
+
+Moved to `docs/research-findings.md` Part R1 (tables R1.a and R1.b) on 2026-10-19.
+
+### 15.2 UI/UX audit (fourth pass)
+
+Scope: `langchain-ui/src` (50 files, ~9.5k LOC), the 12 screenshots in
+`docs/ui/`, the FastAPI routes in `src/app/server/*.py`, and ledger rows
+UI-0/T1-T6/P/S1-S6. Everything DONE in the ledger is not re-proposed.
+
+**What the UI is today.** Routes (`App.tsx:94-108`): `/login`, `/` (intake),
+`/runs`, `/runs/:runId`, `/settings`. Shell (`Layout.tsx:31-78`): sticky
+glass header, "N need you" pill (`useNeedsYou.ts:29-56`, polls the full
+`/runs` list every 30 s), theme toggle, skip link, `aria-current`. Intake
+(`Home.tsx`): dropzone + workspace label left; supervision / delivery (with
+the measured forecast line :361-367) / models / approvals / six review-gate
+checkboxes right; `createRun` then `startRun` as two calls (:81, :117).
+Runs (`RunList.tsx`): a real table, URL-held search and status filter,
+needs-you rows first, 5 s poll while visible; `OutcomesPanel` after it
+(`docs/ui/graphite-runs.png` predates that reorder). Run page
+(`RunDashboard.tsx`): a vertical stack of equal-weight cards — action bar
+(:517-602) → summary (:607-735) → gate/review panel (:739-750) →
+`SteeringBox` (:753) → `SprintSummaryPanel` (:759) → `DeliveryPanel` (:763)
+→ the workspace grid (stepper / tabbed centre / `AgentActivity`,
+:771-817). WebSocket with ticket auth, resume from `last_sequence`,
+backoff, 700 ms coalesced refetch (:231-317); view and selection in the URL
+(:82-98). Settings (`Settings.tsx`, 920 lines, one page).
+
+**Keep (it works):** the narration layer (`lib/activity.ts:244-302`,
+`AgentActivity.tsx:84-153`), feed ergonomics (pin-to-bottom, "N new
+updates", sticky stage headers, "Thinking…" heartbeat), honest cost copy
+(`RunDashboard.tsx:677-698`), the gate-deadline sentence (:824-843), one
+status map (`lib/status.ts`), the theme system with CI-checked contrast, the
+measured forecast on intake, criteria→tests (`DeliveryPanel.tsx:143-163`),
+steering's "Read by the run in <stage>" (`SteeringBox.tsx:49-52`).
+
+**What a first-time user sees** (`docs/ui/graphite-run.png`): the H1 is
+"Defect Fix 2 10" (title-cased stage id, `activity.ts:148` fallback) over
+"Working through this step." After 19 h 2 m: Spend $0.00, Documents 125,
+Sprint 1 Failed / re-run ×2 / 4/30 / 23 bugs as unlabeled icons, Delivery 0
+of 13 untested. Nothing above the fold says how far along the run is, how
+much longer, how many tokens it burned, or whether it is stuck; the steering
+composer takes 140 px of prime space; the workspace (stepper/log/feed) is
+below the fold at 900 px. `graphite-home.png`: "14 need you" counts every
+historical waiting run (`useNeedsYou.ts:40`), so the one signal that
+matters is devalued.
+
+#### I12.1 (OWNER, high): no progress, no ETA, no tokens
+
+*Plan:* [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg)
+`RunCostSummary.total_tokens/prompt_tokens/completion_tokens`
+(`types/index.ts:41-44`) are in the payload and rendered nowhere (grep: zero
+`.tsx` uses); a local run reads "$0.00" instead of "not priced"; the
+`/runs/outcomes` forecast (`api/index.ts:118`), `RunStage.duration_seconds`
+and `SprintSummaryPanel.plannedTotal` (:77) are never combined into
+"sprint x of y · stage · elapsed vs typical". `waiting_for_budget` exists
+(`types/index.ts:65`) but no budget bar.
+
+#### I12.2 (OWNER, high): gates are not legible
+
+*Plan:* [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg)
+`ReviewPanel.tsx:33-56` shows `artifact_id` + `revision` + Download and
+asks for download→edit→re-upload (:116-118); `ApprovalGate.tsx:69-74` is a
+`max-h-32 <pre>`. The owner approves a specification they cannot read in
+place although `fetchArtifactContent` (`api/index.ts:322`) and the
+`Markdown`/`ArtifactViewer` components exist.
+
+#### I12.3 (OWNER, high): nothing tells an absent owner
+
+*Plan:* [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg)
+Title badge only on the run page (`RunDashboard.tsx:70-76`); no favicon
+badge, no `Notification`; gates self-approve at `gate_deadline` with nobody
+told (UI-0 open items). For a 6–20 h run this is the largest wasted-hours
+risk in the UI.
+
+#### I12.4 (OWNER, medium): decisions and steering are buried
+
+*Plan:* [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg)
+Decisions sit third-from-bottom in `DeliveryPanel` titled `DR-1`, toggled
+without `aria-expanded` (:202-213); the server already emits a
+`review_decision` event (`runs.py:1637`) that the feed does not render.
+Steering notes have no history and "for the next stage only" names no
+stage (`SteeringBox.tsx:43-56`).
+
+#### I12.5 (OWNER, medium): intake has no pre-flight or review step
+
+*Plan:* [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg)
+`Home.tsx:70-124` never reads `/settings` or `/api/health/ready`; `createRun`
+can succeed and `startRun` fail, leaving an orphan; `reviewer: "Product
+Manager"` is hard-coded (:84). (= UI-S3, open.)
+
+#### I12.6 (DEVELOPER, high): per-stage time/tokens/KPIs exist only on the CLI
+
+*Plan:* [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg)
+`scripts/loop/kpi.py:189-225` and `run_timing.py` compute per-stage calls,
+tokens, lost replies, redundant reads, model-busy share — from the worker
+transcript via `docker compose exec`; no route serves them (`runs.py:486-944`
+has `evidence`, `changes`, `steering`, `decisions`, `outcomes`; no `usage`,
+`kpi`, `transcript`). `RemediationInfo` (`types/index.ts:32-38`) is sent and
+unused; sprint data is regex-parsed from markdown with 10 artifact probes
+every 30 s (`SprintSummaryPanel.tsx:55-150`).
+
+#### I12.7 (DEVELOPER, medium): held-back reads and lost replies look like successes in the feed
+
+*Plan:* [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg)
+`AgentActivity.tsx:140-143` marks only failed tools; a read refused as
+redundant (`kpi.py:34-43` `LAYERS` markers) renders as success. Changes view
+is one `<pre>` per commit without per-file navigation (`ChangesPanel.tsx:46-81`)
+although `files[]` is sent (`api/index.ts:380-385`). No replay/scrubber
+(rewind is a `<select>`, `RunDashboard.tsx:565-585`).
+
+#### I12.8 (OPERATOR, high): no model-server surface
+
+*Plan:* [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg)
+`/api/health/models` is admin-only and triggers billable calls
+(`api.py:257-263`); `loop.sh ready`'s `/props` probe (`model_ready.py:50-69`:
+slots, context, model, quant) reaches no screen; two runs can be started on a
+one-slot server with no "waits for run X" notice; nothing shows tok/s,
+model-busy share, or the last call's input vs the server context (the
+condition behind lost replies, I1).
+
+#### I12.9 (DESIGN, medium): hierarchy inverted, plan not first-class
+
+*Plan:* [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg)
+Equal-weight cards; a gate (a request) looks like a sprint summary (a
+report). The plan (criteria + sprint goals, `WizardDashboard.tsx:117-135`) is
+shown after the fact; mission-control UIs (Claude Code web, Codex cloud,
+Devin, Cursor background agents) show task list left, feed centre with a
+live checklist, diff right, plan approval before expensive work, a small
+actionable inbox, cost/time per step, replay. Parallel specialists
+interleave in one scroll (`AgentActivity.tsx:156-168`) though events carry
+`stage`.
+
+#### I12.10 (DESIGN, low): visual residue and copy
+
+*Plan:* [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg)
+`.glass-card` with `backdrop-filter` and `.gradient-btn` (`index.css:255-275`)
+on the header (`Layout.tsx:31`), New Run (`RunList.tsx:134`), Start
+(`Home.tsx:293`) and cards; centred hero (`Home.tsx:167-175`); type sizes
+`text-[10px]`…`[13px]` below the plan's 12 px floor; the contrast theme
+borders every element including `<dt>` labels (`contrast-run.png`); copy
+("Workflow Runs", "Write Approval Required", "Artifact:") not in the
+product vocabulary.
+
+#### I12.11 (A11Y/PERF, medium): not yet in the ledger
+
+*Plan:* [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg)
+Tabs are buttons (`RunDashboard.tsx:783-795`: no `role=tab`, arrow keys,
+`aria-selected`); `ActionRow` chevron `opacity-0 group-hover` with no
+`group-focus-within` (`AgentActivity.tsx:282`); `aria-live="polite"` on a
+5,000-row `role="log"` (`AgentActivity.tsx:423-424`, `LogViewer.tsx:65-66`);
+unlabeled rewind `<select>`; WebSocket replay from `last_event_id=0` plus
+`/logs` paging on every coalesced refresh deliver history twice and re-sort
+the whole map (`RunDashboard.tsx:145,191-195`); four panel polls per 30 s on
+top; screenshot blobs without `loading="lazy"` (`DeliveryPanel.tsx:59-88`);
+`backdrop-filter` on the sticky header over a scrolling feed.
+
+#### I12.12 (HOUSEKEEPING): regenerate `docs/ui/*-runs.png`; `vite.config.ts:11`
+
+*Plan:* [Part 19](improvement-plan.md#plan-part-19), [BG](improvement-plan.md#plan-bg)
+proxies :8001 while compose exposes :8000; dead `wizardData.ts`,
+`DynamicWorkflowUI.tsx`, `App.css`.
+
+### 15.3 Sources
+
+Primary sources are listed in `docs/research-findings.md`
+(research report of this session). The llama.cpp facts used in I1/I7 were
+verified directly: server release b9982 ("honour per-request
+reasoning_budget_tokens / reasoning_budget_message", PR #23116);
+`--reasoning-budget` from #13771; PR #25961 (soft/intro budget messages,
+open); discussion #13606 (slot save/restore, `-sps`, `cache_prompt`, LRU).
+Host evidence: `data/kpi/run-8b0c94df-eff4-47f2-82c8-0ad06b7c5285.json`,
+`data/kpi/ledger.csv`, `data/bench/*.json` (33 runs), `docs/HANDOVER.md` §2,
+`docs/monitoring-handover.md` §0.2/§0.9.

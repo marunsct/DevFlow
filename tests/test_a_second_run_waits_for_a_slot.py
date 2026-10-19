@@ -1,6 +1,6 @@
 """Runs are bounded at dispatch, so two do not contend for one model server.
 
-Item 6 of Part III of the hardening plan (`docs/harness-improvement-plan.md`), and the gate on Part I's
+Item 6 of Part III of the hardening plan (`docs/improvement-plan.md §E1`), and the gate on Part I's
 item 2. Nothing bounded this: `_dispatch` handed every run to Celery, which
 accepted the message and held it, so a second run looked started and was in
 fact competing.

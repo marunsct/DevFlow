@@ -6,7 +6,7 @@ looking reached: the deploy generators, the old scaffolder and a build
 verifier were each imported by a test and by nothing the harness runs. The
 routing tests even patched two of them "defensively", which read as though the
 graph called them. All were removed in the review of 2026-10-04
-(docs/harness-improvement-plan.md, R5); this fails on the next one.
+(docs/improvement-plan.md §E1, R5); this fails on the next one.
 
 A module counts as reached when another module under `src/app` imports it, when
 it is an entry point a process is started with, or when a script in this

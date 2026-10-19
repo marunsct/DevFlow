@@ -1,4 +1,4 @@
-# How this harness is monitored, what that has found, and where to look next
+# Testing, auditing and the improvement loop: how the harness is tested, monitored and measured
 
 **Written for:** whoever continues the harness-hardening loop from here, on a
 different account and with none of this conversation's context.
@@ -19,7 +19,7 @@ moves with every implementation commit. Section 0's mechanics are unchanged
 until a ledger row says otherwise.
 
 **What this document is not.** It is not a list of what to change. That lives
-in `docs/harness-improvement-plan.md` (the current plan) and in the git
+in `docs/improvement-plan.md` (the unified plan; Appendix M indexes every item) and in the git
 log of this branch, where every fix's commit message says what a run did and
 why the change answers it.
 
@@ -221,6 +221,67 @@ Records the harness keeps for an audit (from `969d6e6`..`70c50cc`, 2026-10-07):
   adds a shadow score to each check. Off by default - a score in view mid-run
   invites tuning the harness to the benchmark. `score` deletes the hidden tests
   and its working copy from the worker as soon as it finishes.
+
+#### 0.3a Every script in the repository (catalogue, 2026-10-19)
+
+The table above covers the scripts used in a live check. This catalogue
+lists every script in `scripts/`, so testing and auditing need no other
+document. Each script's own header is the authority on its arguments.
+
+**`loop.sh` subcommands**
+
+| subcommand | purpose |
+|---|---|
+| `status` | the current run and whether anything is live |
+| `ready` | model and judgement model served at the configured address, command execution available; last line must be `ALL READY` |
+| `fitness` | five short tool-calling requests to the build model: FIT / USABLE / UNFIT (`model_fitness.py`); never while a run is live |
+| `reasoning-probe [run]` | does the server honour a request for less thinking (`reasoning_probe.py`, 10 calls); between runs only |
+| `start [brief]` | start a run on a brief file |
+| `bench <benchmark>` | start a benchmark gate run |
+| `wait N` | block up to N minutes, then status, key log lines and the audit |
+| `cancel [run]` | cancel a run |
+| `audit`, `stage`, `reads`, `timing`, `defects`, `asked`, `failures` | the live checks in the table above |
+| `product [run]` | the product half of the audit (§0.4.1) |
+| `score [run] [benchmark]` | hidden-test score, harness verdict, false-acceptance flag; also runs `kpi` |
+| `kpi [run]` | per-run KPI JSON and ledger row (`kpi.py` + `kpi_ledger.py`) |
+| `mutate [run] [n]` | break the product n ways; how many the locked suite catches (`bench/mutate.py`) |
+| `bench-report` | false acceptances per benchmark (`bench/report.py`) |
+| `checks [labels.json]` | how often each cross-file check fires, and its precision (`check_precision.py`) |
+| `freshness` | pack pins a major version behind their registry (`pack_freshness.py`) |
+| `lessons` | recurring failed tool calls by language across transcripts (`lessons.py`) |
+| `nightly` | verify every pack in the worker, then the freshness report, into `data/loop/nightly-<date>.log`; skipped while a run is live |
+| `suite` | the full pytest suite (~2.5 min); only the three S3 tests in `tests/test_codebase_seeding_api.py` may fail |
+| `deploy` | rebuild and restart app and worker |
+| `resumed` | after a mid-run deploy, wait for orphan recovery to resume (`await_resume.sh`) |
+
+**Scripts not described in the table above**
+
+| script | purpose | where it runs |
+|---|---|---|
+| `scripts/loop/kpi.py` | one run's KPIs as JSON (Initiative W.4) | worker, piped on stdin |
+| `scripts/loop/kpi_ledger.py` | appends a run to `data/kpi/ledger.csv` and flags KPIs past 1.5× the five-run mean; `compare A.json B.json` for A/B | host |
+| `scripts/loop/check_precision.py` | fire rate and precision of each cross-file check over stored workspaces | worker |
+| `scripts/loop/model_fitness.py` | can the build model call tools well enough for a run | worker |
+| `scripts/loop/reasoning_probe.py` | per-request reasoning control measured from replies (Initiative AR) | worker; model must be free |
+| `scripts/loop/pack_freshness.py` | stack-pack pins behind their registries | host |
+| `scripts/loop/lessons.py` | repeated refusals by language: candidates for `plugins/seed.py` guidance | worker |
+| `scripts/loop/run_timing.py` | where a run's wall time goes, per phase and stage family | worker |
+| `scripts/bench/score.py` | scores a product against a benchmark's hidden tests (`bench.json` says how) | worker |
+| `scripts/bench/report.py` | false acceptances across every scored run | host |
+| `scripts/bench/mutate.py` | mutation probe of a run's locked suite | worker |
+| `scripts/bench/brief_match.py` | whether a run's brief is the benchmark's brief, ignoring whitespace (W.1) | host |
+| `scripts/ui/axe_measure.mjs` | axe accessibility violations on Home, Runs, Settings and a run dashboard | host (needs `npm install --prefix scripts/ui playwright-core axe-core`) |
+| `scripts/ui/theme_contrast.mjs` | contrast of every token pair in every theme; exit 1 on a failure | host |
+| `scripts/setup-env.sh` | generates the secrets a first deployment needs, never overwriting one | host, once |
+
+**Where the measurements land:**
+- `data/kpi/` (per-run KPI JSON and `ledger.csv`)
+- `data/bench/` (scored results)
+- `data/transcripts/<run>.jsonl` (every call)
+- `data/ledger/` (every command)
+
+The improvement plan's KPIs (Parts 17–20) are named after the fields in
+these files.
 
 ### 0.3.1 Taking over: the account, the model, and what does not travel
 
@@ -842,7 +903,7 @@ locked test whose locator nearly matches the page (six stages in run-5cfba2c8;
 the "Nearly there" line should end it); agents adding their own scripts to
 the manifest; a fullstack run churning on unit tests of its page
 code (`fullstack-node` has no unit DOM yet; see
-`docs/harness-improvement-plan.md` §3).
+`docs/improvement-plan.md` §3).
 
 ## 1. The loop, in the order it must happen
 

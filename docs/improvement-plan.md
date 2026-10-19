@@ -1,5 +1,18 @@
 # Harness Improvement Plan: High-Quality Product Delivery with Local & MoE Models
 
+> **Unified plan (consolidated 2026-10-19).** This file is the only improvement plan.
+> - It carries the original plan (§1–4, Initiatives A–I) and Appendices 1–4
+>   (Initiatives J–BJ, with the UI parts).
+> - Section E holds the two earlier plan documents, merged here.
+> - **Appendix M** at the end indexes every improvement: a short description,
+>   its current status and a link to the section that explains it (the
+>   reasons and the evidence).
+> - Per-item status is kept in the Implementation Progress Ledger tables.
+>   Change a ledger row and its Appendix M row in the same commit.
+> - Evidence: `docs/review-findings.md`. Research: `docs/research-findings.md`.
+>   Decisions: `docs/architecture-decisions.md`.
+
+
 **Target Architecture:** LangGraph / Deep Agents Benchmark Harness  
 **Current Benchmark:** Low Brief (`tests/brief_low.md`) across Fast Mode (`DELIVERY=fast`) & Thorough Mode (`DELIVERY=thorough`)  
 **Active Model:** `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (Local MoE via port 8888, `FRONTIER=false`)  
@@ -48,6 +61,7 @@ flowchart TD
 
 ## 3. Technology-Agnostic Harness Improvement Initiatives
 
+<a id="plan-a"></a>
 ### Initiative A: Procedural Design System & Token Seeding (`stacks/packs` & `seed.py`)
 - **Reasoning**: Smaller and MoE models suffer from spatial blindness and attention drift; when required to invent CSS styles and design systems from an empty file, they default to primitive browser styling, low color contrast, or unstyled tables. Seeding deterministic design variables ensures instant visual polish without consuming model reasoning tokens.
 - **Empirical Evidence**:
@@ -74,6 +88,7 @@ flowchart TD
   - Pre-configure accessible focus indicators (`:focus-visible`) and WCAG-compliant contrast pairings.
 - **Impact**: Specialists immediately write modern, beautiful, and accessible layouts without burning model cycles or defect rounds on visual primitives.
 
+<a id="plan-b"></a>
 ### Initiative B: Procedural Visual & Layout Audits (`page_view.py`)
 - **Reasoning**: LLMs cannot perceive 2D rendered screens; they only see code text. Without computed layout feedback, models cannot detect when buttons overlap, flex elements wrap undesirably, or mobile viewports trigger horizontal scrolling.
 - **Empirical Evidence**:
@@ -88,6 +103,7 @@ flowchart TD
   - Return these computed diagnostics directly into the model's next turn prompt as a feedback notice.
 - **Impact**: Eliminates visual trial-and-error by providing instant, machine-verifiable layout feedback.
 
+<a id="plan-c"></a>
 ### Initiative C: Contract-Strict Interface Extraction in Specification
 - **Reasoning**: When a user brief specifies behavior without exact UI element contracts (e.g. "filter by status"), smaller models pick reasonable semantic elements (e.g. `<select>`), whereas hidden acceptance suites expect `<button>` elements or specific `getByLabel` selectors. Extracting a formal DOM contract during architecture aligns implementation and acceptance suites perfectly.
 - **Empirical Evidence**:
@@ -101,6 +117,7 @@ flowchart TD
     - Expected ID or data attribute.
 - **Impact**: Guarantees that implementation specialists and QA acceptance authors share identical DOM contracts, ensuring 10/10 benchmark scores even on underspecified briefs.
 
+<a id="plan-d"></a>
 ### Initiative D: Pre-Execution Linter and Assertion Normalizer Gate
 - **Reasoning**: Smaller and MoE models frequently mix up assertions across frameworks (e.g., `assert.notMatch` from Chai vs `assert.doesNotMatch` in Node.js `node:test`) or commit minor syntax errors during edits. Catching these via AST before running full test rounds saves container startup overhead.
 - **Empirical Evidence**:
@@ -112,6 +129,7 @@ flowchart TD
   - Provide instant error feedback when invalid syntax is detected without waiting for container runner timeouts.
 - **Impact**: Prevents wasted test rounds caused purely by framework-assertion syntax mismatches.
 
+<a id="plan-e"></a>
 ### Initiative E: Narrow, Single-File Work Orders
 - **Reasoning**: Smaller models experience rapid attention degradation when asked to implement or edit multiple disparate files in a single prompt turn, leading to hallucinations, partial writes, or overwritten progress. Restricting work orders to single files maintains high code quality.
 - **Empirical Evidence**:
@@ -123,6 +141,7 @@ flowchart TD
   - Keep prompt sizes under 4,000 tokens during specialist execution.
 - **Impact**: Drastically reduces build-stage duration from 30 minutes to 3 minutes while eliminating cross-file regression errors.
 
+<a id="plan-f"></a>
 ### Initiative F: Root-Crash & Load-Error Pre-Check Gate (Prevent Defect Sprawl)
 - **Reasoning**: When an application has a fatal initialization or script loading error, every single acceptance criterion that touches the UI fails simultaneously. Queueing a separate defect for every individual acceptance test creates massive defect sprawl and redundant fixer executions for what is fundamentally a single root bug.
 - **Empirical Evidence**:
@@ -132,6 +151,7 @@ flowchart TD
   - Treat this root load error as a blocking prerequisite defect. Defer queueing downstream element selector defects (e.g., button, filter, checkbox checks) until the application initializes cleanly.
 - **Impact**: Prevents cascading defect sprawl, saving 10–14 redundant fixer invocations and ~20 minutes of wall-clock time per sprint.
 
+<a id="plan-g"></a>
 ### Initiative G: Lenient Whitespace and Unicode Normalization in `edit_artifact`
 - **Reasoning**: Exact substring matching in `edit_artifact` requires identical whitespace and byte-for-byte character equality. Smaller and MoE models frequently emit minor variations in indentation, trailing spaces, or Unicode comment characters (`─` vs `-`), causing avoidable tool failures and retry loops.
 - **Empirical Evidence**:
@@ -146,6 +166,7 @@ flowchart TD
   - If a single unambiguous match is found, apply the replacement cleanly.
 - **Impact**: Eliminates recurring tool retries in testing specialists and acceptance authoring, saving 2–3 turns per editing stage.
 
+<a id="plan-h"></a>
 ### Initiative H: Pre-Flight State Verification Before Defect Fixer Dispatch
 - **Reasoning**: When multiple defects are logged in a test round, a fix applied by an earlier fixer stage often inadvertently or intentionally resolves defects queued for later stages. If the harness dispatches those subsequent fixers without re-checking the filesystem, the fixer burns model calls inspecting code that is already correct.
 - **Empirical Evidence**:
@@ -157,6 +178,7 @@ flowchart TD
   - If the requested change is already present, immediately close the defect and advance without launching the model node.
 - **Impact**: Saves 10–12 model calls and 3–5 minutes per sprint by bypassing already-resolved defect tickets.
 
+<a id="plan-i"></a>
 ### Initiative I: Reasoning Token Budget Governor for Synthesis & Planning Roles
 - **Reasoning**: When thinking/reasoning is enabled on MoE models, planning stages with broad system instructions can spend their entire output token budget producing verbose internal reasoning chains, leaving 0 tokens remaining to emit the required structured output or tool call.
 - **Empirical Evidence**:
@@ -207,6 +229,7 @@ flowchart TD
 
 ---
 
+<a id="plan-appendix-1"></a>
 ## Appendix (2026-10-18): Deep Review — Release Integrity, Local-Model Quality, Throughput, UI/UX
 
 > **Implementation status** of every item below is tracked in the
@@ -220,7 +243,7 @@ postgres run/bench data; the live medium-brief run `run-bf43c7e2` observed from
 00:54 JST 2026-10-18 through its fix treadmill; three web-research passes on
 frontier agent harnesses, local-model serving, and agent-product UI/UX, all
 source-verified on 2026-10-17/18). Working notes and both research reports were
-kept in `docs/review-findings-wip.md`; the frontier-harness report in full is at
+kept in `docs/review-findings.md`; the frontier-harness report in full is at
 `.langchain/research/frontier-harness-report.md`. Every item below carries its
 reasoning and evidence, per the review mandate. All mechanisms are language-,
 framework- and product-agnostic at the harness level; anything stack-specific
@@ -258,8 +281,10 @@ reason Initiative J below is ranked first.
 
 ---
 
+<a id="plan-part-1"></a>
 ### Part 1 — Systemic gaps: environment, release integrity, and the fix treadmill (P0)
 
+<a id="plan-j"></a>
 #### Initiative J: Release-integrity gate — a green suite must be a *verifiably* green suite
 - **Reasoning**: The release path trusts one artifact: the locked acceptance
   suite. Three mechanisms can make that suite green while the product is
@@ -333,6 +358,7 @@ reason Initiative J below is ranked first.
   > **Strongly Endorsed (P0)**: The vacuous-green gate (J.1) and honest completion state `completed_with_gaps` (J.4) are critical and should be implemented immediately.
   > **Caution on J.3 (Release-time per-criterion probe)**: Probes derived purely from natural-language criterion text without referring to the architect's formal API/DOM contract risk false-negative rejections (e.g. probing `/api/tasks` when the architect specified `/api/v1/tasks`). Probes MUST be compiled from the formal `ui_contract` and API specification rather than raw ungrounded brief text.
 
+<a id="plan-k"></a>
 #### Initiative K: Environment-truth contract — the architect, the acceptance author, and the sandbox must agree on what exists
 - **Reasoning**: The harness tells the *stack selector* the truth about the
   execution environment — `describe_execution_environment()` in
@@ -410,6 +436,7 @@ reason Initiative J below is ranked first.
   > **Strongly Endorsed**: Delivering environment truth to architect/QA (K.1), entrypoint wiring proof (K.3), manifest drift detection (K.4), and venv coherence (K.5) will resolve the dominant failure mode observed in `run-bf43c7e2`.
   > **Caution on K.2 (Dynamic Docker Sidecar Provisioning)**: Provisioning live database/queue sidecars per run adds host resource contention (competing for RAM against local GPU inference), requires elevated Docker socket permissions, and risks dirty state across test rounds. We recommend prioritizing **in-process or embedded service adapters** (e.g. SQLite in PostgreSQL-compatibility mode, or a single persistent local test Postgres container with per-run isolated schema namespaces) rather than orchestrating dynamic multi-container sidecars per run.
 
+<a id="plan-l"></a>
 #### Initiative L: Fix-treadmill circuit breakers — clustering, granularity, dispatch-time truth, escalation
 - **Reasoning**: When a real defect exists, the current loop can thrash:
   13 defects queued from one root cause (bundling exists for *identical*
@@ -484,12 +511,14 @@ reason Initiative J below is ranked first.
 
 ---
 
+<a id="plan-part-2"></a>
 ### Part 2 — Local-model output quality (complements Initiatives A–I; no duplication)
 
 Research base: the full local-LLM serving/orchestration report (primary
-sources verified 2026-10-17/18) is reproduced in `docs/review-findings-wip.md`
+sources verified 2026-10-17/18) is reproduced in `docs/review-findings.md`
 §8; key citations inline below.
 
+<a id="plan-m"></a>
 #### Initiative M: Model-profile contract — per-family serving metadata, not per-run improvisation
 - **Reasoning**: The harness has accreted ≥6 repair layers for malformed tool
   calls (unwrapped-args, list-it-held, offered-tool-meant, arg-fit name
@@ -558,6 +587,7 @@ sources verified 2026-10-17/18) is reproduced in `docs/review-findings-wip.md`
   > **Strongly Endorsed**: Declarative model profiles with probe-time server capability verification and grammar-enforced control plane JSON are essential best practices for open-weight serving.
   > **Caution on Bash-First Degraded Mode**: We strongly concur with the author's caveat that Qwen-Coder models collapse on bash-only loops (9.0% on SWE-bench). In addition, parsing freeform terminal text introduces fragility and security sandbox classification ambiguities. Bash-first execution should be strictly restricted to models with zero native tool-calling ability (e.g. DeepSeek-R1 raw reasoning models) and should never be enabled for Qwen or Hermes model profiles.
 
+<a id="plan-n"></a>
 #### Initiative N: Reasoning-budget guardrails *before* the loss, not after (extends Initiative I)
 - **Reasoning**: Initiative I correctly bounds thinking for planning roles
   via context_budget, but today's policy is still reactive at the call level:
@@ -600,6 +630,7 @@ sources verified 2026-10-17/18) is reproduced in `docs/review-findings-wip.md`
   minutes at observed decode speeds, twice).
 - **Effort**: S–M (parameter plumbing + retry-path condition).
 
+<a id="plan-o"></a>
 #### Initiative O: Context diet and prefix-cache discipline — the harness is prefill-bound
 - **Reasoning**: Measured across runs: input:output ≈ 31:1 (88.2M in / 2.8M
   out in one run; avg request 53–70k tokens), model wait is 85–93% of wall
@@ -689,6 +720,7 @@ sources verified 2026-10-17/18) is reproduced in `docs/review-findings-wip.md`
   > **Strongly Endorsed**: Section-aware spec distribution (O.1) and byte-stable cache prefix placement (O.3) are high-impact architectural wins that will directly cut prefill latency without information loss.
   > **Caution on O.4 (Compaction Trigger at 50–60% of Window)**: Lowering the compaction trigger to 50–60% on a 32k window triggers compaction every ~16k tokens, burning high output generation tokens on generating summaries repeatedly and dropping recent conversational context. We recommend keeping the trigger at `0.75–0.80` while using O.1 (section slicing) to prevent requests from ever bloating near the trigger threshold.
 
+<a id="plan-p"></a>
 #### Initiative P: Edit-tool reliability — demote `replace_lines`, escape the parser-refusal trap (reinforces Initiative G)
 - **Reasoning**: `replace_lines` fails 40–68% of calls across five runs
   (68% worst) while `edit_artifact` fails 0–20% — the line-number interface
@@ -732,6 +764,7 @@ sources verified 2026-10-17/18) is reproduced in `docs/review-findings-wip.md`
   fewer burned calls in the stages that already exhaust their budgets.
 - **Effort**: S–M.
 
+<a id="plan-q"></a>
 #### Initiative Q: Route the weak links to the judgement model — fixing, reviewing, test-round reporting
 - **Reasoning**: The two-tier design (local build + judgement) already exists
   with escalation after 2 failed attempts; the new evidence says the *roles*
@@ -787,8 +820,10 @@ sources verified 2026-10-17/18) is reproduced in `docs/review-findings-wip.md`
 
 ---
 
+<a id="plan-part-3"></a>
 ### Part 3 — Throughput without quality loss
 
+<a id="plan-r"></a>
 #### Initiative R: Duplicate-call elimination at the source (recitation + fresh-state digests)
 - **Reasoning**: 17–47% of all tool calls are exact duplicates (same stage,
   tool, args) — 3–17M wasted prefill tokens per run — and 395 pointer-answers
@@ -833,6 +868,7 @@ sources verified 2026-10-17/18) is reproduced in `docs/review-findings-wip.md`
   canonical small-model multi-turn failure).
 - **Effort**: M (digest extension + placement rule).
 
+<a id="plan-s"></a>
 #### Initiative S: Server-side throughput checklist (owner-operated; harness verifies)
 - **Reasoning**: With one shared slot, parallel mode measured only ~1.0–1.3×
   overlap — the harness fans out 6 specialists against a server that
@@ -879,6 +915,7 @@ sources verified 2026-10-17/18) is reproduced in `docs/review-findings-wip.md`
   quality risk, and it makes the harness's own parallel feature honest.
 - **Effort**: S (probe reads + docs + advisory wiring).
 
+<a id="plan-t"></a>
 #### Initiative T: Re-test streaming on current langchain versions
 - **Reasoning**: Streaming is disabled harness-wide (`models/__init__.py`
   `_request_timeout` docstring) because of a documented langchain
@@ -903,12 +940,13 @@ sources verified 2026-10-17/18) is reproduced in `docs/review-findings-wip.md`
 
 ---
 
+<a id="plan-part-4"></a>
 ### Part 4 — UI/UX (owner request: "improve the UI and UX as much as possible")
 
 The full audit (28 files line-by-line, live DOM probes, axe-core scan, 9
 screens, ~40 Vercel Web Interface Guidelines violations with file:line, and
 12 research-backed opportunities with verified competitor sources) is in
-`docs/review-findings-wip.md` §7. Condensed plan:
+`docs/review-findings.md` §7. Condensed plan:
 
 **What's already strong (protect during the work):** the plain-English
 activity narration (`lib/activity.ts` — better UX writing than most frontier
@@ -972,8 +1010,10 @@ rollups for the cockpit (transcript metrics already compute most of it).
 
 ---
 
+<a id="plan-part-5"></a>
 ### Part 5 — Benchmarks and measurement (so the loop can verify all of the above)
 
+<a id="plan-u"></a>
 #### Initiative U: Benchmark corpus gaps + KPI extensions
 - **Reasoning**: The corpus (web-todo, notes-api ×3, wordstats-cli,
   textkit-lib, fullstack-bookmarks, web-todo-react) never exercised a
@@ -1040,6 +1080,7 @@ The review opinion named eight structural gaps. Mapping to this appendix:
 | The loop's audits depend on manual forensics | U.1–U.3 | Covered |
 | The plan's own records can log a false acceptance as a verified success | J.4 gives the status; record-keeping rule was missing | **Addendum J.5 below** |
 
+<a id="plan-v"></a>
 #### Initiative V: Layer-economics audit — every mitigation proves its marginal value or goes
 - **Reasoning**: The repair layers, middlewares and guards each earned their
   place individually, but nothing ever measures them *in aggregate*: project
@@ -1071,6 +1112,7 @@ The review opinion named eight structural gaps. Mapping to this appendix:
 - **Effort**: M, recurring (the ledger is the deliverable; the refactor track
   is separately scoped).
 
+<a id="plan-j-5"></a>
 #### Addendum J.5: Records cite the verdict, not just the suite
 - Every durable record of a run's outcome — this plan's phase notes, the
   handovers, the delivery panel, the bench export — must state the
@@ -1080,6 +1122,7 @@ The review opinion named eight structural gaps. Mapping to this appendix:
   "verified" again. (Process rule, zero code beyond J.4's status plumbing;
   the corrected 94d2c449 entry above is the worked example.)
 
+<a id="plan-l-6"></a>
 #### Addendum L.6: The last attempt changes strategy, not just model
 - L.4/L.5 change *who* fixes (judgement model) and *when the loop stops*, but
   the opinion review's sharper point was "terminate with a different
@@ -1109,6 +1152,7 @@ closed below as new sub-items or explicit amendments. Everything else maps to
 an existing initiative, was already fixed in code, or is accepted design
 (table at the end).
 
+<a id="plan-j-6"></a>
 #### J.6: Terminal-state hygiene — the workspace must tell the truth after the run ends
 - **Gap (E8, parked items)**: failed runs' workspaces are not marked
   non-deliverable (monitoring-handover §8.3); release evidence (suite report,
@@ -1126,6 +1170,7 @@ an existing initiative, was already fixed in code, or is accepted design
   the database is half an honesty mechanism; the artifacts themselves must
   carry it. Effort: S.
 
+<a id="plan-j-1-amendment"></a>
 #### J.1 amendment: the vacuous-green gate covers the scaffold setup proof too
 - **Gap (E5, C6)**: `run-3642baf8`'s setup proof caught the zero-test smoke
   (`exit 0, 0 passed`) and then continued "left to the agents"; the run
@@ -1139,6 +1184,7 @@ an existing initiative, was already fixed in code, or is accepted design
   K.6, detected at proof time by the count rule itself. Effort: S (folds
   into J.1's implementation).
 
+<a id="plan-k-6"></a>
 #### K.6: Stack-shaped checks become pack data — every stack gets the visual/interface guarantees
 - **Gap (F11, C6)**: `analysis/interface_checks.py` and the integration
   checks are JS/browser-shaped; products on other stacks get no equivalent
@@ -1155,6 +1201,7 @@ an existing initiative, was already fixed in code, or is accepted design
 - **Impact**: makes the existing visual/interface loop language-agnostic, as
   the product requires. Effort: M (contract + port existing checks to data).
 
+<a id="plan-l-7"></a>
 #### L.7: Plan-validator-first repair — stop the ping-pong before it starts
 - **Gap (B7, E3)**: `Milestone plan is not ready… sending it back to the
   lead` ×5 in one day with the *same* structural cause across three runs
@@ -1175,6 +1222,7 @@ an existing initiative, was already fixed in code, or is accepted design
   runs; the validator, not the model, owns what the validator can decide.
   Effort: S–M.
 
+<a id="plan-p-4"></a>
 #### P.4: Lookup-tool hygiene — no more 404 round-trips for deterministic mistakes
 - **Gap (B8)**: 29 registry 404s in one day: capitalized package names
   (`Playwright` ×9), README casing ladders (`README.md|Readme.md|readme.md`
@@ -1190,6 +1238,7 @@ an existing initiative, was already fixed in code, or is accepted design
   turn, since the tool result is what the model reacts to.
 - **Effort**: S.
 
+<a id="plan-q-4"></a>
 #### Q.4: Write-receipt reconciliation — phantom claims answered deterministically, not with a model call
 - **Gap (A8)**: ×11/day `Stage X reported changing <files>, which nothing in
   it wrote; asking it once to make the change or say what it did` — the
@@ -1205,6 +1254,7 @@ an existing initiative, was already fixed in code, or is accepted design
   profile selection (M) and routing (Q).
 - **Effort**: S (replaces an existing model-call path with code).
 
+<a id="plan-q-amendment"></a>
 #### Q amendment: optional judgement-model diff review in fast mode
 - **Gap (E1)**: fast mode skips model code review entirely (`Code review left
   to the tests and checks (fast delivery)`), and the tests are exactly what
@@ -1218,6 +1268,7 @@ an existing initiative, was already fixed in code, or is accepted design
   judgement-model tokens in fast runs, and U's KPIs will show whether it
   moves hidden-test scores.
 
+<a id="plan-o-1-amendment"></a>
 #### O.1 amendment: section-scoped spec revisions, and file bodies never inside grammar-enforced JSON
 - **Gap (A9, B7-history)**: spec *revisions* regenerate whole documents and
   blank entire sections ×10/day (`error_catalogue, implementation_order,
@@ -1233,12 +1284,14 @@ an existing initiative, was already fixed in code, or is accepted design
   plain-text field outside any grammar enforcement — enforcement stays on
   the control plane per M.
 
+<a id="plan-m-amendment"></a>
 #### M amendment: drafting excluded from enforcement (explicit)
 - Recorded here so M's refinement (a) is unambiguous at implementation time:
   grammar/structural-tag enforcement applies to tool-call envelopes and
   structured control-plane schemas only; code-generation calls are
   unconstrained plain text (see O.1 amendment, research §8.1/8.7 item 5).
 
+<a id="plan-s-amendment"></a>
 #### S amendment: mid-run endpoint health telemetry
 - **Gap (D3)**: connection errors, a model server serving a different model
   than the run expects (LM Studio 404 "downloaded but not loaded" ×6), and a
@@ -1249,6 +1302,7 @@ an existing initiative, was already fixed in code, or is accepted design
   event stream, where the UI's notification path (Part 4 Phase 1 item 6) can
   alert the operator instead of the run silently burning retries. Effort: S.
 
+<a id="plan-u-4"></a>
 #### U.4: Retention policy for transcripts and run data
 - **Gap (D7)**: transcripts reach 181 MB/run; `data/postgres` is at 4.0 GB
   and growing with every run's events — unbounded on a single machine.
@@ -1258,6 +1312,7 @@ an existing initiative, was already fixed in code, or is accepted design
   the same tier; never prune bench-scored runs' evidence bundles (J.6
   commits them into workspaces, which have their own lifecycle). Effort: S.
 
+<a id="plan-part-4-enabler"></a>
 #### Part 4 enabler amendment: stalled-gate visibility
 - **Gap (D5)**: runs parked 12–13 h in `awaiting_approval` with
   `approval_timeout_minutes` NULL — no UI surface distinguishes "waiting for
@@ -1269,6 +1324,7 @@ an existing initiative, was already fixed in code, or is accepted design
   also protects against the paused-run resurrection competing for worker slots
   noted in the forensics (D5).
 
+<a id="plan-sweep"></a>
 #### Sweep table — every remaining evidence item and its disposition
 
 | Evidence item | Disposition |
@@ -1306,7 +1362,7 @@ an existing initiative, was already fixed in code, or is accepted design
 | F11 JS-shaped checks | **K.6 (new)** |
 | F16 visual-loop depth | Pre-existing Initiatives A/B (not duplicated, per mandate); K.6 extends them to all stacks |
 | Local-LLM research recs 1–12 | M(1,3,5,11), N(2), Q(4,12), O(6,7), S(8,10), existing graph determinism(9) |
-| Frontier top-15 #1–#15 | #1 M, #2 M bash-mode, #3/#4 P (+P.4), #5/#6 O(.4 + amendment), #7 existing CI/compiler gates, #8 R (task_list experiment noted), #9 existing single-writer work orders, #10 Q/M, #11 existing work-order flow, #12 pre-existing Tier 2 repo-map item in docs/harness-improvement-plan.md (reinforced, not duplicated), #13 existing locked-suite/dispute, #14 O.3, #15 existing sandbox (stricter than bash) |
+| Frontier top-15 #1–#15 | #1 M, #2 M bash-mode, #3/#4 P (+P.4), #5/#6 O(.4 + amendment), #7 existing CI/compiler gates, #8 R (task_list experiment noted), #9 existing single-writer work orders, #10 Q/M, #11 existing work-order flow, #12 pre-existing Tier 2 repo-map item in docs/improvement-plan.md (reinforced, not duplicated), #13 existing locked-suite/dispute, #14 O.3, #15 existing sandbox (stricter than bash) |
 | UI audit B1–B7, C1–C12 | Part 4 Phases 1–3 (complete by construction — the roadmap was built from the audit) |
 
 With this pass, every item in the review's evidence inventory is either an
@@ -1316,6 +1372,7 @@ unmapped.
 
 ---
 
+<a id="plan-ledger"></a>
 ### Implementation Progress Ledger
 
 Started 2026-10-18 (JST). Rules: update this ledger in the same commit as
@@ -1370,12 +1427,13 @@ implementation constraints and are restated in the Notes column.
 | K.2 services provisioning | P3 | OPTION A DONE 2026-10-18 (owner: embedded first) | The environment contract every stage gets now says a product that stores data runs on an embedded database by default, in a file under `DATA_DIR` (the acceptance server gets a fresh one per run), with the brief's server kept as the production target behind one connection setting. No compose change; a Postgres service (option b) only when a brief demands it, and with the owner's yes. Originally: **Antigravity constraint**: prefer embedded/in-process adapters or one persistent shared service with per-run schema isolation over dynamic per-run sidecars |
 
 Committed plan artifacts: appendix + addenda + this ledger live in
-`docs/improvement-plan.md`; the evidence archive is `docs/review-findings-wip.md`;
+`docs/improvement-plan.md`; the evidence archive is `docs/review-findings.md`;
 the frontier research report is `.langchain/research/frontier-harness-report.md`
 (git-ignored, local only).
 
 ---
 
+<a id="plan-appendix-2"></a>
 ## Appendix 2 (2026-10-18, second review session): Measurement-first hardening, local-model interface quality, throughput, release-integrity residuals, UI/UX
 
 > **Status tracking**: new rows for every item below are appended to the
@@ -1390,10 +1448,10 @@ the codebase at `3fcd36d`/`3435fb0` (four cheap-model inventories covering
 agents/models, graph/acceptance/tools, UI+API, run history/packs/loop
 scripts, each verified by hand where cited); the run record as the docs
 carry it (no transcripts were reachable from the review sandbox — see
-`docs/review-findings-wip.md` §13 for the per-finding ledger G1–G27); the
+`docs/review-findings.md` §13 for the per-finding ledger G1–G27); the
 external reviewer's report in `docs/logs.md`; and a fresh web-research pass
 on frontier harnesses, local-model serving and agent UI/UX (primary sources
-dated 2025-06 → 2026-10; summarised in `docs/review-findings-wip.md` §13.6).
+dated 2025-06 → 2026-10; summarised in `docs/research-findings.md` Part R2 (§13.6)).
 Findings are cited as **G-numbers**; research items as **R-numbers**.
 
 **What the research adds to Appendix 1's consensus.** Since the first pass,
@@ -1434,8 +1492,10 @@ measurement-first.
 
 ---
 
+<a id="plan-part-6"></a>
 ### Part 6 — Measurement first (P0): nothing else in this appendix can be verified without it
 
+<a id="plan-w"></a>
 #### Initiative W: Score the harness as it is now, and make every later claim falsifiable
 - **Reasoning**: The P0/P1 wave shipped ~18 behaviour changes on
   2026-10-18; the only run after them (run-8b0c94df) has no recorded brief,
@@ -1491,8 +1551,10 @@ measurement-first.
 
 ---
 
+<a id="plan-part-7"></a>
 ### Part 7 — Local-model interface quality (P0/P1)
 
+<a id="plan-x"></a>
 #### Initiative X: Prompt-contract integrity — what the prompt names, the schema must offer; what the code does, the prompt must say
 - **Reasoning**: The harness's largest format-waste class (A3: `edit_file`
   ×53, tools named after file paths) has a prompt-side cause that Appendix 1
@@ -1533,6 +1595,7 @@ measurement-first.
 - **Impact**: removes a *cause* of A3 rather than another repair layer; the
   prompt diet is the cheapest prefill cut available. **Effort**: S.
 
+<a id="plan-m-concrete"></a>
 #### Initiative M (made concrete): the model-profile contract, step by step
 Appendix 1's M is NOT STARTED and is still the highest-leverage local-model
 item. Concrete scope, ordered so each step is independently shippable:
@@ -1572,6 +1635,7 @@ item. Concrete scope, ordered so each step is independently shippable:
      owner's.
 - **Effort**: M total; steps 1–3 are each S–M and can land one at a time.
 
+<a id="plan-y"></a>
 #### Initiative Y: Edit-ACI calibration — pick the edit format per model from a replay bench, not by argument
 - **Reasoning**: Appendix 1 demoted `replace_lines` (P.1, 62% failure) and
   kept `edit_artifact` + whole-file rewrite; the repair chain in
@@ -1605,6 +1669,7 @@ item. Concrete scope, ordered so each step is independently shippable:
   measured, per-model setting; also the prerequisite for any claim about
   "local models can't edit". **Effort**: M.
 
+<a id="plan-z"></a>
 #### Initiative Z: Compaction that keeps state — mask first, summarise with a template, reset at boundaries
 - **Reasoning**: Compaction today is deepagents' `SummarizationMiddleware`
   with the *run's own model* as summariser at 0.8×ceiling, args truncated
@@ -1647,8 +1712,10 @@ item. Concrete scope, ordered so each step is independently shippable:
 
 ---
 
+<a id="plan-part-8"></a>
 ### Part 8 — Throughput without quality loss (P1)
 
+<a id="plan-aa"></a>
 #### Initiative AA: Prefix-cache layout — stable first, volatile last, measured every call
 - **Reasoning**: Project memory is spliced into the *opening* human message
   and rewritten from disk on every call, up to 30% of the window
@@ -1682,6 +1749,7 @@ item. Concrete scope, ordered so each step is independently shippable:
   cache-hit gain is worth more wall-clock than any decode speed-up the
   owner could buy. **Effort**: S–M.
 
+<a id="plan-ab"></a>
 #### Initiative AB: Honest parallelism — fan-out equals server slots
 - **Reasoning**: `HARNESS_MAX_PARALLEL=6` by default; a per-workspace command
   lock serialises every sandbox command (`sandbox.py:3732`);
@@ -1700,6 +1768,7 @@ item. Concrete scope, ordered so each step is independently shippable:
   that on a single local GPU best-of-N costs throughput and belongs only
   at the planning stage (R18). **Effort**: S.
 
+<a id="plan-ac"></a>
 #### Initiative AC: Deterministic gating of review/testing model calls, and check caching
 - **Reasoning**: Thorough mode runs a judgement-model testing agent every
   round although the fast "harness round" gathers the same measurements;
@@ -1719,8 +1788,10 @@ item. Concrete scope, ordered so each step is independently shippable:
 
 ---
 
+<a id="plan-part-9"></a>
 ### Part 9 — Release-integrity residuals (P0/P1)
 
+<a id="plan-ad"></a>
 #### Initiative AD: Measure at settlement — the mirror of L.3
 - **Reasoning**: `_settle_the_fix` (`workflow.py:8895-8960`) marks a defect
   fixed when the fixer names a test and no blocker; `verified_by` — what
@@ -1744,6 +1815,7 @@ item. Concrete scope, ordered so each step is independently shippable:
   only. **Effort**: S. **Impact**: closes the self-report hole and
   shortens every treadmill by one round.
 
+<a id="plan-ae"></a>
 #### Initiative AE: One "cannot pass" list; gaps completeness; release re-checks
 - `acceptance_nodes.py:376-401` (18 checks) vs `:1141-1153` (11): repaired
   tests re-enter through the shorter list, so a test only the long list
@@ -1755,6 +1827,7 @@ item. Concrete scope, ordered so each step is independently shippable:
   checks once more at release and record them in the evidence page (J.5).
   **Effort**: S.
 
+<a id="plan-af"></a>
 #### Initiative AF: Suite-strength probe — mutation testing the locked suite
 - **Reasoning** (logs.md §2; `agents/testability.py` docstring already
   argues it: "a mutation has to change what a function DOES"): criterion
@@ -1771,6 +1844,7 @@ item. Concrete scope, ordered so each step is independently shippable:
   data (K.6). **Effort**: M. **Impact**: the first *independent* measure of
   suite strength; feeds `completion_gaps` when sampling cannot run.
 
+<a id="plan-ag"></a>
 #### Initiative AG: Capability tiers at intake (the honest language-agnostic claim)
 - 35 packs, but only two declare `entrypoints` for K.3; ten service packs
   have empty `check_families`; dependency-drift covers JS/TS+Python only;
@@ -1784,6 +1858,7 @@ item. Concrete scope, ordered so each step is independently shippable:
   one-line declared field so the UI can render it. **Effort**: S (tiering)
   + the K.6 work it motivates.
 
+<a id="plan-ah"></a>
 #### Initiative AH: Promises that match guarantees — cost cap, retention/deletion, reviewer completeness
 (from the external review, `docs/logs.md` §4–§6; none covered by Appendix 1)
 - **Cost cap**: `_budget_exceeded` compares only priced spend; unpriced
@@ -1806,8 +1881,10 @@ item. Concrete scope, ordered so each step is independently shippable:
 
 ---
 
+<a id="plan-part-10"></a>
 ### Part 10 — Cross-run learning (P2)
 
+<a id="plan-ai"></a>
 #### Initiative AI: Structured, provenance-tagged lesson store
 - **Reasoning**: Cross-run memory was dropped once over prompt-injection
   risk; the only survivor is `scripts/loop/lessons.py`, a human-driven
@@ -1826,6 +1903,7 @@ item. Concrete scope, ordered so each step is independently shippable:
   be disabled per run; nothing agent-written reaches a prompt without the
   confirmation step. **Effort**: M.
 
+<a id="plan-aj"></a>
 #### Initiative AJ: Test Subprocess Lifecycle & Async Connection Disposal — eliminate non-daemon thread hangs in unit test runners
 - **Reasoning (given by Antigravity)**: When service unit tests utilize async databases or connection pools (such as `sqlite+aiosqlite:///:memory:` or async SQLAlchemy engines), background worker threads like `aiosqlite`'s `_connection_worker_thread` remain alive unless the engine is explicitly disposed (`await engine.dispose()`) or connection pooling is disabled (`poolclass=NullPool`). Because Python waits for all non-daemon threads to terminate during interpreter shutdown, a test run that completes in 0.25s hangs indefinitely at exit in `futex_do_wait`. Furthermore, scaffolded test runners (`scripts/unit-tests.mjs`) call `spawnSync` without an internal execution timeout. This forces the test runner to stall until the outer harness sandbox hits its maximum 300-second category timeout (`Command timed out after 300 seconds`), burning 5–10 minutes per defect attempt, triggering conversation budget exhaustion, and forcing fresh retries.
 - **Empirical Evidence**:
@@ -1847,6 +1925,7 @@ item. Concrete scope, ordered so each step is independently shippable:
 
 ---
 
+<a id="plan-part-11"></a>
 ### Part 11 — UI/UX, second pass
 
 **Corrections to Appendix 1 Part 4 (from the code, G7–G11):**
@@ -1928,6 +2007,7 @@ primitives + run page (2–3 weeks) → plan-first intake + gates (1–2 weeks)
 
 ---
 
+<a id="plan-part-12"></a>
 ### Part 12 — Refactor evidence for Initiative V
 
 `build_workflow_graph` is one 3,672-line closure registering 46 nodes,
@@ -1947,6 +2027,7 @@ wrong order.
 
 ---
 
+<a id="plan-appendix-2-2"></a>
 ### Appendix 2 sequencing
 
 | Priority | Items | Why |
@@ -1960,7 +2041,7 @@ Cross-cutting rules unchanged: every mechanism at the contract/pack/profile
 level; stack-specific data in packs/profiles/seed; every change with a test
 that fails on the old code; no run ids in code or prompts.
 
-### Research citations (R-numbers; full notes in `docs/review-findings-wip.md` §13.6)
+### Research citations (R-numbers; full notes in `docs/research-findings.md` Part R2 (§13.6))
 R1 Anthropic, "Effective harnesses for long-running agents" (2025-11-26) ·
 R2 Anthropic, "Harness design for long-running apps" (≈2026-03-24) ·
 R3 Cognition, "Multi-agents: what's actually working" (2026-04-22) and
@@ -1982,6 +2063,7 @@ mission control (2025-10-28), Lovable/Bolt/v0 version history ·
 R21 Huang et al., arXiv 2512.14012 (2025-12-16); "The Work Behind
 Delegation", arXiv 2609.24234.
 
+<a id="plan-ledger-a2"></a>
 ### Appendix 2 rows (Implementation Progress Ledger continuation)
 
 | Item | Priority | Status | Notes |
@@ -2056,10 +2138,11 @@ Delegation", arXiv 2609.24234.
 
 ---
 
+<a id="plan-appendix-3"></a>
 ## Appendix 3 (2026-10-18, third review session): Review of the day's implementations, remaining gaps, and the UI/UX revamp with a multi-theme design system
 
 > **Status tracking**: rows for every item below are in the "Appendix 3
-> rows" block at the end. Evidence ledger: `docs/review-findings-wip.md`
+> rows" block at the end. Evidence ledger: `docs/review-findings.md`
 > §14 (findings H1–H33, each with file:line; ✓ marks what this session
 > verified by reading the code). The live Docker app could not be reached
 > from the review session (no shell/file bridge; the Chrome extension was
@@ -2089,8 +2172,10 @@ Effort → Depends on.
 
 ---
 
+<a id="plan-part-13"></a>
 ### Part 13 — Fix what today built (P0 before the W.2 baseline, so the baseline measures the intended code)
 
+<a id="plan-ak"></a>
 #### Initiative AK: Run-wide budgets survive the process — `MAX_RUN_TOKENS` / `MAX_RUN_COST_USD`  **[DONE 2026-10-19]**
 - **Goal**: a token or cost ceiling bounds the *run*, not the current worker
   segment.
@@ -2123,6 +2208,7 @@ Effort → Depends on.
   persisted total ± the last flush interval.
 - **Effort**: S–M. **Depends on**: nothing.
 
+<a id="plan-al"></a>
 #### Initiative AL: The mutation probe cannot leave a broken product behind  **[DONE 2026-10-19]**
 - **Goal**: AF's deliberate breaks are impossible to ship.
 - **Evidence (H17 ✓)**: `acceptance/mutation.py:175` — `original =
@@ -2160,6 +2246,7 @@ Effort → Depends on.
   the site list so false positives can be read.
 - **Effort**: S–M. **Depends on**: nothing.
 
+<a id="plan-am"></a>
 #### Initiative AM: One owner of a file's "seen" digest  **[DONE 2026-10-19]**
 - **Goal**: the edit tool's view of what the model last saw is never
   overwritten by the memory middleware.
@@ -2190,6 +2277,7 @@ Effort → Depends on.
   path (W.4 can count this pair).
 - **Effort**: S. **Depends on**: nothing.
 
+<a id="plan-an"></a>
 #### Initiative AN: Correctness of the measurement layer (W.4 / W.1 / loop.sh)  **[DONE 2026-10-19]**
 - **Goal**: the KPIs the loop now depends on count what they claim.
 - **Evidence (H10 ✓, H11 ✓, H28)**: `scripts/loop/kpi.py:123,134` scan only
@@ -2235,6 +2323,7 @@ Effort → Depends on.
 - **Effort**: S–M. **Depends on**: nothing; do before W.2 so the baseline
   is measured correctly.
 
+<a id="plan-ao"></a>
 #### Initiative AO: Lifecycle correctness of today's medium items (bundle)  **[AO.1-AO.4, AO.6-AO.8 DONE 2026-10-19; AO.5, AO.9, AO.10 PARTLY]**
 One commit each, in this order; all S:
 1. **AD edge cases (H27)**: `skipped` ≠ failed for the defect's own tests;
@@ -2278,6 +2367,7 @@ One commit each, in this order; all S:
     sentence, AA note and AE.2 gap strings; replace the two tests that pass
     on old code.
 
+<a id="plan-ap"></a>
 #### Initiative AP: Ledger and handover hygiene (process, half a day)  **[DONE 2026-10-19]**
 - Remove the duplicate NOT STARTED rows (M L1348; O.1–O.4 L1358–1361;
   Z/AA/AB L2022–2024; UI rows L2036–2040); AJ row → "item 1 DONE
@@ -2288,8 +2378,10 @@ One commit each, in this order; all S:
 
 ---
 
+<a id="plan-part-14"></a>
 ### Part 14 — Remaining harness gaps (after the baseline)
 
+<a id="plan-aq"></a>
 #### Initiative AQ: The 431 repeated reads — instrumented hypotheses, not another guard
 - **Evidence (H12, H15)**: 24% identical calls on the medium run, 431 of
   them `read_file`, *after* pointers (495), withholdings (93) and held-back
@@ -2307,6 +2399,7 @@ One commit each, in this order; all S:
   pointer form. **Acceptance**: build-stage identical-read rate <10% on the
   second baseline run. **Effort**: S + measurement.
 
+<a id="plan-ar"></a>
 #### Initiative AR: Lost replies — the owner's biggest time lever, measured properly  **[SCRIPT DONE; run waits for a free server]**
 - **Evidence (H15)**: 37 lost replies ≈40% of the medium run's output; the
   owner's llama server reports no reasoning tokens, so N.1 (a per-request
@@ -2322,6 +2415,7 @@ One commit each, in this order; all S:
 - **Acceptance**: lost-reply share on the next thorough run below 10% of
   output tokens, or a documented "server ignores budgets" result closing N.1.
 
+<a id="plan-as"></a>
 #### Initiative AS: Steering v2 (the backend half of the UI composer)  **[DONE 2026-10-19]**
 - **Evidence (H3, H33)**: notes reach the system prompt end; no event, no
   acknowledgement, no scope, box shown while paused.
@@ -2331,6 +2425,7 @@ One commit each, in this order; all S:
   `steering_notes`; (5) a banned-word test for the injected header.
 - **Effort**: S. **Depends on**: typed events (15.5).
 
+<a id="plan-at"></a>
 #### Initiative AT: Lessons v2 (trust boundary for agent-derived text)  **[DONE 2026-10-19]**
 - **Evidence (H29)**: owner approval is the only gate; the file sits on an
   agent-writable volume; `role` unused; no injection framing.
@@ -2342,6 +2437,7 @@ One commit each, in this order; all S:
   `role_agent`; (4) REST routes for the UI (15.5); (5) KPI: lessons shown
   per call. **Effort**: S–M.
 
+<a id="plan-au"></a>
 #### Initiative AU: Interface contract for every surface (C/J.3 completion)
 - **Evidence (H23)**: browser-only compiler; CLI/library packs skip
   silently; `command` lines never executed; parameterised routes false.
@@ -2353,6 +2449,7 @@ One commit each, in this order; all S:
   resolved from the suite's own fixtures or marked unchecked. **Effort**: M.
   **Depends on**: K.6.
 
+<a id="plan-av"></a>
 #### Initiative AV: AJ completion — tests that cannot hang the worker  **[DONE 2026-10-19]**
 - **Evidence (H13)**: only the "report printed, process lingers" half
   landed (`2f68304`, `4abd460`); the `NullPool` / `engine.dispose()`
@@ -2363,6 +2460,7 @@ One commit each, in this order; all S:
   stdout/stderr tail with "ended at the time limit" rather than nothing.
   **Effort**: S.
 
+<a id="plan-aw"></a>
 #### Initiative AW: K.6 (stack-shaped checks as pack data) — scoped after the baselines, per decision 10
 - Deliverables, in order: per-pack `check_families` for the ten empty
   service packs (go×2, java-spring, aspnet, rust-axum, ruby×2, php×2,
@@ -2372,6 +2470,7 @@ One commit each, in this order; all S:
   (`Gemfile`), PHP (`composer.json`); a per-pack `coverage` field rendered
   by AG's tier on the evidence page and in S3. **Effort**: M–L, incremental.
 
+<a id="plan-part-15"></a>
 ### Part 15 — UI/UX revamp: "the control room", with a multi-theme design system
 
 **Why a revamp and not more patches.** Phase 1 removed the measured harms
@@ -2389,6 +2488,7 @@ understanding of work they had not written" (R21) — so the job of the UI is
 legibility of plan, evidence and diff, and getting the owner back to the one
 thing that needs them.
 
+<a id="plan-ui-15-1"></a>
 #### 15.1 Design brief and plan (reviewed against the generic default)
 
 - **Subject**: a self-hosted "AI software company" control room. One owner
@@ -2454,6 +2554,7 @@ thing that needs them.
   density control instead of fixed card padding; light and high-contrast
   as first-class families, not a `dark:` afterthought.
 
+<a id="plan-ui-15-2"></a>
 #### 15.2 The theme system (multiple theme options)
 
 **Mechanism** (H1 makes this cheap: Tailwind 4 keeps `@theme` variables as
@@ -2531,6 +2632,7 @@ header toggle + server preference (1 day, needs the small API); T5 Paper
 and Contrast tuning against the contrast script (1 day); T6 screenshots of
 each theme into `docs/ui/` for the handover (half a day).
 
+<a id="plan-ui-15-3"></a>
 #### 15.3 Primitives (UI-P): the component kit the revamp is built from
 
 `langchain-ui/src/ui/` — one file each, all token-only, all with keyboard
@@ -2549,6 +2651,7 @@ move out of the Settings render (H2). Each primitive gets a Storybook-free
 "kitchen sink" route `/dev/ui` (dev build only) used by axe and the theme
 screenshots.
 
+<a id="plan-ui-15-4"></a>
 #### 15.4 Screens (UI-S), in build order
 
 - **S1 Shell + navigation**: header = DevFlow, *Runs*, *Start a build*,
@@ -2607,6 +2710,7 @@ screenshots.
   cache share, lost replies, reverts, gaps; regression flags; two runs side
   by side (U.3's compare already exists as a script).
 
+<a id="plan-ui-15-5"></a>
 #### 15.5 Backend enablers the screens need (small, listed so the parts connect)
 
 | Enabler | Shape | Needed by |
@@ -2622,6 +2726,7 @@ screenshots.
 | Start | `POST /runs/start` (create+start) or compensating delete | S3 |
 | Generated client | TS client + types generated from the FastAPI OpenAPI schema at build (`openapi-typescript`), replacing hand-kept `types/` — ends the `document_names` class of drift | all |
 
+<a id="plan-ui-15-6"></a>
 #### 15.6 Quality floor and measurement
 
 - axe per theme per page ≤ 5 violations, none colour-contrast; keyboard-only
@@ -2632,6 +2737,7 @@ screenshots.
   Library for primitives and the status map, Playwright for the three
   flows (start a build, approve a gate, review evidence).
 
+<a id="plan-ui-15-7"></a>
 #### 15.7 Order and effort
 
 | Step | Scope | Effort |
@@ -2647,6 +2753,7 @@ screenshots.
 
 ---
 
+<a id="plan-part-16"></a>
 ### Part 16 — Implementation sequence (detailed)
 
 | Wave | Items | Gate to next wave |
@@ -2662,6 +2769,7 @@ stack specifics outside packs/seed/profiles; no run ids in code; both
 handovers updated in the same commit; the model and its settings are the
 owner's.
 
+<a id="plan-ledger-a3"></a>
 ### Appendix 3 rows (Implementation Progress Ledger continuation)
 
 | Item | Priority | Status | Notes |
@@ -2696,3 +2804,1358 @@ owner's.
 | UI-T4–T6 / S5 appearance + settings | P2 | PARTLY 2026-10-19 | Done: the Appearance panel (theme cards with live miniatures, accents, density), `PATCH /api/auth/me/preferences` with the stored choice winning on sign-in, screenshots of each theme in `docs/ui/`, the Lessons panel (approve/reject). Open: a test-call button for the models, run defaults |
 | UI-S3 plan-first intake | P2 | NOT STARTED | G9, H7 |
 | UI-S6 insights | P3 | NOT STARTED | after W.2 |
+
+---
+
+<a id="plan-appendix-4"></a>
+## Appendix 4 (2026-10-19, fourth review session): local models on complex products
+
+Evidence base: `docs/review-findings.md` §15 (findings I1–I12),
+`data/kpi/run-8b0c94df….json`, the 33 scored runs in `data/bench/`, and the
+web research in `docs/research-findings.md` Part R1 (and §15.3 of the review findings). Every initiative below states what KPI (W.4) it
+moves and by how much, so the W.2 baseline runs can confirm or refute it.
+Format per the owner's request: Goal → Evidence → Files → Steps → Tests
+(failing-first, named) → Acceptance → Effort → Depends on. Initiatives
+continue the lettering from AW: **AX … BJ**. Nothing here re-proposes a
+DROPPED item.
+
+<a id="plan-part-17"></a>
+### Part 17 — Where the next 10× is (reading the medium run)
+
+On the 1-slot local server the run clock is the model's **decode** time
+(I4): 5.22M output tokens ≈ 870 of the ~1,060 model-minutes. Of those output
+tokens, 35% were lost replies (I1) and 32% reasoning. Of the 2,593 calls, 87%
+were defect-fix loops that fixed 8 of 62 defects (I2). So the order of
+attack is:
+
+| lever | finding | expected effect on brief_medium | initiative |
+|---|---|---|---|
+| stop generating tokens nobody keeps | I1, I6 | −30–40% output tokens, −20% wall | AX, BB |
+| stop making calls that fix nothing | I2, I3, I10 | fix-stage calls 100–200 → ≤30 per defect | AY, BC |
+| build complex products in slices so the fix loop has a target | I5 | the medium brief converges; defects per round single-digit | AZ |
+| re-prefill less | I3, I7 | cached share 0.73 → ≥0.85 | BA |
+| keep every request inside the model's effective context | I3, I5, G2 | p95 request input ≤32k tokens | BJ |
+| spend less wall time outside the model | I8 | non-model time −50% | BE |
+| give an all-local run two tiers | I9 | escalation buys a different behaviour, not a replay | BD |
+| know the model you serve; edit the way it can | tool failures 7.3%, P.1 | tool failures ≤3% | BH |
+| verify the hard cases with a rubric, never narration | I2 | second-failure fixes > 0 | BI |
+| measure composition per call | I11 | makes the above falsifiable | BF |
+| UI/UX | I12 | (Part 19) | BG |
+
+<a id="plan-part-18"></a>
+### Part 18 — Initiatives
+
+<a id="plan-ax"></a>
+#### AX. Reasoning budget per role, enforced by the server per request (N.1 made concrete) — P0
+
+- **Goal.** No reply is ever lost to a reasoning spiral. Each role gets a
+  thinking budget in tokens, sent on every request; when the budget is
+  reached the server closes the reasoning block and the model answers.
+- **Evidence.** I1: 92 lost replies, 1.84M tokens, ≈21% of wall. llama.cpp
+  honours per-request `reasoning_budget_tokens` and `reasoning_budget_message`
+  since b9982 (PR #23116); `--reasoning-budget` has existed since #13771.
+  The owner's rule "launch flags are the owner's" is respected: this is a
+  request field, like `max_tokens`, and the owner's server default stands
+  for any call that sends none. Caveat from PR #25961's measurements: hard
+  cut-offs occasionally fail on some models; the harness must still keep its
+  lost-reply fallback (thinking off after the budget is exceeded twice).
+- **Files.** `src/app/agents/thinking.py` (budget in `ThinkingPolicy`,
+  `openai_arguments(local=…)` adds `extra_body.reasoning_budget_tokens`),
+  `src/app/models/server_profile.py` (read `/props` build number; feature flag
+  `supports_reasoning_budget`), `src/app/models/roles.py` (per-role budget
+  table: build/draft/fix 2–4k, lead/architect 8k, reviews 6k; overridable
+  by `THINKING_BUDGET_<ROLE>`), `src/app/agents/settled_answer.py`
+  (`LOST_REPLIES_BEFORE_THINKING_STAYS_OFF` becomes "budget exceeded twice"),
+  `scripts/loop/reasoning_probe.py` (AR: measure adherence per budget).
+- **Steps.** (1) Probe: run `loop.sh reasoning-probe` with budgets 1k/4k/8k on
+  the owner's server; record reply length and answer validity. (2) Add the
+  capability flag from `/props` (build ≥ b9982 → per-request; older → log a
+  one-line advisory naming `--reasoning-budget`). (3) Send the role's budget
+  on every call where thinking is on; keep `max_tokens` = budget + answer
+  room (`MIN_ANSWER_TOKENS`). (4) On a reply that still ends with
+  `finish_reason: length` and only reasoning, retry once at half budget,
+  then thinking off for the visit (existing path). (5) KPI: add
+  `reasoning_budget_hits` and keep `replies_lost_to_length`.
+- **Tests.** `tests/test_a_reasoning_budget_is_sent_per_request.py` (payload
+  carries `reasoning_budget_tokens` only when the server profile says so;
+  fails on old code because `openai_arguments` never emits it);
+  `tests/test_a_role_s_budget_fits_its_reply_ceiling.py` (budget + answer ≤
+  ceiling); banned-words test on any new prompt text.
+- **Acceptance.** On the next brief_medium run: `replies_lost_to_length ≤ 5`
+  and `lost_reply_output_share ≤ 0.05` (from 92 / 0.35); hidden score not
+  lower than the baseline.
+- **Research backing.** Effort is a real dial on open models (gpt-oss low/medium/high = 37/53/61 SWE-bench Verified; DeepSeek V4 Flash non-think → think-max +5 pts) *and* unbounded default thinking scored worst in Aider's Qwen3 run (49.8%, 58 malformed outputs, ~3× cost); every 2026 harness sets thinking per role/turn (§15.1).
+- **Effort.** S (2 days incl. probe).  **Depends on.** server build check;
+  AR probe.
+
+<a id="plan-ay"></a>
+#### AY. The fix cycle: localise → rewrite → verify, bounded per defect — P0
+
+- **Goal.** A defect costs ≤30 model calls in total and either passes its
+  own tests or is left open with a diagnosis; the 40-call agent loop is the
+  last resort, not the second step.
+- **Evidence.** I2 (8/62 fixed; 100–200 calls per defect; candidates gated
+  on a judgement model), I3 (47% redundant reads inside those loops), I10
+  (budget re-armed per attempt). The best-performing open harnesses on
+  SWE-bench-class tasks all separate *localisation* (where) from *repair*
+  (what) and select among several short candidates by running the tests
+  (Agentless; the "rollouts + test selection" pattern of 2026 leaderboard
+  entries — §15.1). The harness already has every piece: `files_to_fix`,
+  `fix_by_rewriting`, `fix_by_candidates`, `_the_defect_s_tests_pass`,
+  the language service diagnostics, `after_a_fix`.
+- **Files.** `src/app/graph/rewritten_fixes.py`, `src/app/graph/workflow.py`
+  (`_fixed_by_rewriting`, `_fix_one`), `src/app/agents/specialists.py`
+  (`build_defect_fix_request`), `src/app/sprint/__init__.py` (per-defect call
+  ledger), `src/app/agents/settled_answer.py`.
+- **Steps.**
+  1. **Localise with a cheap structured call before any rewrite**: one
+     non-thinking call (≤1.5k output) that returns `{files: [...], symbols:
+     [...], hypothesis: "..."}` from the failure text, the stack trace and
+     the project map (`project_memory.map_of`), when `files_to_fix` names
+     nothing or more than 2 files. Grep the named symbols to confirm.
+  2. **Candidates from the same model**: drop the `judgement_model is not
+     model` gate; ask 3 candidates with different seeds (llama.cpp honours
+     `seed` per request) and `temperature` left at the server's default;
+     apply each, run *only the defect's tests* (`_the_defect_s_tests_pass`)
+     plus the compiler check, keep the first green, put back otherwise.
+  3. **Verify after every write inside the agent loop**: when the loop is
+     reached, wrap `write_artifact`/`edit_artifact` so that the defect's own
+     test command runs after each successful write and its one-line result
+     is appended to the tool result (no model call; the loop sees pass/fail
+     immediately instead of running the whole suite itself).
+  4. **Per-defect ledger**: total calls across attempts ≤ 60 (configurable);
+     when exhausted, record the localisation's hypothesis as the defect's
+     diagnosis and leave it open — no fourth conversation.
+  5. **Read tool withheld from a fast fix stage whose files are in its
+     request** (they are: `fix_request` carries the files and the memory);
+     offer `grep` only.
+- **Research backing.** Repair gains come in the first 2–3 attempts and decay 60–80% after (Debugging Decay Index; "How Many Tries"; "Is Three the Magic Number"); fresh-context restarts beat continued debugging (Llama 3.1 8B 72.6→82.8%); test-selected rollouts lift small models 10+ pts without training (R2E-Gym hybrid 34→51; Agentic Rubrics Best@16 on Qwen3-Coder-30B-A3B 39.6→54.2); Factory Droid's minimal tool set is the single biggest harness win measured at fixed model (§15.1).
+- **Tests.** `tests/test_a_defect_is_localised_before_it_is_rewritten.py`
+  (fails on old code: no localisation call exists);
+  `tests/test_candidate_fixes_run_without_a_judgement_model.py`;
+  `tests/test_a_write_in_a_fix_loop_is_followed_by_the_defect_s_test.py`;
+  `tests/test_a_defect_s_calls_are_bounded_across_attempts.py`.
+- **Acceptance.** brief_medium: `defects_fixed / defects_raised ≥ 0.5`,
+  mean calls per fix stage ≤ 30, `redundant_read_rate ≤ 0.15`. No
+  regression on web-todo (10/10, ≤ 90 min).
+- **Effort.** M (1 week).  **Depends on.** AX (budgets) for the loop's
+  remaining calls; BF for measurement.
+
+<a id="plan-az"></a>
+#### AZ. Walking skeleton first, then vertical slices (complexity scaling) — P0
+
+- **Goal.** A complex brief is built as an ordered list of slices; slice 0 is
+  a proven walking skeleton (server starts, one page renders, one route
+  round-trips, both test runners run); each later slice owns a few
+  acceptance criteria, gets its own slice-scoped specification excerpt and
+  drafts, and must be green (its criteria + no regression) before the next
+  slice starts. The locked suite stays locked once; only the *scheduling* of
+  criteria changes.
+- **Evidence.** I5 (30 tests failing at once; fix loop on a broken
+  foundation; two app layouts), I2 root cause 4; web-todo's 82-minute
+  success is a one-slice product. Anthropic's long-running-agent guidance,
+  Codex/OpenHands task decomposition, and SWE-agent's "small, verifiable
+  steps" all converge on this (§15.1).
+- **Already partly done upstream.** `2d94b84` (every stage told it starts from PORT and DATA_DIR alone) and `99e2fb7` (a shell builtin refused with its reason) cover part of the PATH/"command not found" class; the skeleton proof reuses them (Part 20 note).
+- **Research backing.** Anthropic's long-running harness (JSON feature ledger, `init.sh`, session-start smoke test, one feature per session, only the verifier flips `passes`); Terminal-Bench failure taxonomy (PATH/"command not found" 24% of failures — the skeleton proof catches it first); NoLiMa/RULER/Context Rot show open models' effective context is a fraction of the window, so ≤24–32K live context per turn must come from scoping, not compaction (§15.1).
+- **Files.** `src/app/agents/scrum_master.py` (`max_sprints_for_criteria_count`
+  → slice planner), `src/app/graph/planned_work.py`, `src/app/graph/drafting.py`,
+  `src/app/acceptance/sprint_scope.py` (criteria due per slice),
+  `src/app/graph/acceptance_nodes.py` (skeleton proof after scaffold),
+  `src/app/stacks/contract.py` (the pack's layout is the plan's layout —
+  refuse a plan whose top-level folders differ from the scaffold's),
+  `src/app/agents/project_memory.py` (focus = slice files first),
+  `src/app/agents/specialists.py` (`specification_for_the_work_order` scoped to
+  the slice's sections).
+- **Steps.** (1) Skeleton proof: after `scaffold`, the harness itself starts
+  the product the way the brief says, requests one route/page, runs both
+  runners on the smoke tests — a failure here is fixed before any work order
+  (fast: by rewriting). (2) Slice plan: the scrum master (build model, no
+  thinking) orders criteria into slices of ≤6 with a one-line dependency
+  rationale; fast delivery keeps one *sprint record* but runs the build/test
+  loop per slice. (3) Slice-scoped requests: drafts and fixes receive only the
+  specification sections and memory files that name the slice's files
+  (`digest_of` focus) — target ≤15k tokens of spec per request. (4) Gate: the
+  next slice's drafting starts only when the current slice's due criteria
+  pass and no earlier criterion regressed; otherwise the fix cycle (AY) runs
+  on the slice's ≤6 defects. (5) Layout coherence: a work order naming a file
+  outside the scaffold's top-level folders is rewritten to the scaffold's
+  layout before dispatch (planner-side, product-agnostic: the rule is "the
+  scaffold's folders", not any framework's).
+- **Tests.** `tests/test_a_skeleton_is_proven_before_the_first_work_order.py`,
+  `tests/test_a_complex_brief_is_planned_in_slices.py` (fails on old code:
+  one sprint for 30 criteria), `tests/test_a_slice_s_request_holds_only_its_sections.py`,
+  `tests/test_the_next_slice_waits_for_green.py`,
+  `tests/test_a_plan_outside_the_scaffold_s_layout_is_corrected.py`; banned
+  words on every new prompt line.
+- **Acceptance.** brief_medium completes (status completed, no false
+  acceptance) in ≤ 8 h on the local model; acceptance per round rises
+  monotonically; `defects_raised` per test round ≤ 8. web-todo unchanged.
+- **Effort.** L (2–3 weeks).  **Depends on.** AY; the W.2 baselines for a
+  before/after.
+
+<a id="plan-ba"></a>
+#### BA. Prefix-cache discipline on a 1-slot server — P1
+
+- **Goal.** `cached_token_share ≥ 0.85` on the local server without touching
+  the owner's launch flags.
+- **Evidence.** I3 (158 tool-list changes; each one re-renders the system
+  prompt on llama.cpp), I7 (conversation interleaving on one slot). The
+  llama-server tutorial (#13606) documents prefix-similarity slot selection,
+  LRU eviction and the `/slots` save/restore API.
+- **Files.** `src/app/agents/settled_answer.py` (withholding: keep the tool
+  in the list, refuse at `wrap_tool_call` — note AA.2 dropped *masking*
+  because refusals did not stop loops; this is different: refuse *and*
+  end the turn with the answer-only notice, so the loop ends while the
+  prefix stays stable), `src/app/graph/workflow.py` (serialise
+  conversation-switching work while `slots == 1`: fix batches, review
+  workers), `src/app/models/server_profile.py` (`/slots` capability),
+  `src/app/models/__init__.py` (optional `id_slot` + save/restore around a
+  stage visit when `--slot-save-path` is advertised), `src/app/tools/
+  agent_toolkit.py` (tool descriptions byte-stable per run).
+- **Steps.** (1) Measure: BF's composition record + the server's
+  `prompt_cache` usage fields per call. (2) Stable tool list per stage visit;
+  withholding becomes a refusal + turn end. (3) Serialise interleaving when
+  slots == 1. (4) Slot save/restore when available (advisory to the owner:
+  `--slots --slot-save-path /path`; 2–3 slots of ~40k if VRAM allows, for
+  the drafting pool). (5) Advise `--cache-reuse 256` for the compaction case.
+- **Tests.** `tests/test_a_withheld_tool_does_not_change_the_tool_list.py`
+  (fails on old code), `tests/test_fix_batches_run_in_sequence_on_one_slot.py`.
+- **Acceptance.** `cached_token_share` 0.73 → ≥ 0.85 on brief_medium;
+  effective input tokens −40%.
+- **Effort.** M.  **Depends on.** BF.
+
+<a id="plan-bb"></a>
+#### BB. The lead plans in parts — P1
+
+- **Goal.** No lead reply carries more than one work order.
+- **Evidence.** I6 (364k output tokens, 12 lost replies in one stage; the
+  specification already moved to parts and its lost replies stopped).
+- **Files.** `src/app/agents/technical_lead.py`, `src/app/graph/workflow.py`
+  (`technical_lead_node`), `src/app/graph/planned_work.py`.
+- **Steps.** (1) Outline call (no thinking): `[{title, files, owner,
+  criteria}]`. (2) One work order per call, several at once on a multi-slot
+  server, in sequence on one slot; each validated (definition of ready) on
+  arrival and re-asked alone if invalid. (3) The sprint record is rendered
+  from the parts, unchanged in shape.
+- **Tests.** `tests/test_the_lead_s_plan_is_asked_for_one_order_at_a_time.py`
+  (fails on old code: one structured call), definition-of-ready tests
+  unchanged.
+- **Acceptance.** `technical_lead` lost replies 12 → 0; output tokens per
+  plan −50%.
+- **Effort.** S–M.  **Depends on.** AX.
+
+<a id="plan-bc"></a>
+#### BC. Stop stalls one call earlier — P1
+
+- **Goal.** A repeated read, listing or search is answered *and the turn
+  ends with the answer-only notice* instead of costing further calls.
+- **Evidence.** I3: 774 pointer answers, 170 held-back reads, each a full
+  prefill + reply; stall rules fire at 3/5/8/12.
+- **Files.** `src/app/agents/settled_answer.py` (`NOTHING_NEW_BEFORE_THE_ANSWER`
+  5 → 2 for a stage whose project memory holds the file; the pointer reply
+  carries the answer-only notice), `src/app/agents/project_memory.py`.
+- **Tests.** `tests/test_a_second_pointer_answer_ends_the_turn.py` (fails on
+  old code).
+- **Acceptance.** `identical_call_rate` 0.12 → ≤ 0.05; `redundant_read_rate`
+  0.47 → ≤ 0.15 (with AY).
+- **Effort.** S.  **Depends on.** —.
+
+<a id="plan-bd"></a>
+#### BD. Two tiers from one local server (and a model recommendation to the owner) — P1
+
+- **Goal.** An all-local run escalates to a *different behaviour*: the same
+  weights with a larger reasoning budget (AX) and lower temperature, or a
+  second model process when the owner runs one.
+- **Evidence.** I9; HANDOVER §2 notes qwen cloud quota exhausted, so the
+  local tier is the real one.
+- **Files.** `src/app/models/roles.py` (judgement profile = default endpoint +
+  `JUDGEMENT_THINKING_BUDGET`, `JUDGEMENT_SEED`), settings UI (profile
+  picker already exists), `docs/HANDOVER.md` §5 (advice).
+- **Owner-facing advice (not code):** for the build tier a *non-thinking
+  coder* model (e.g. Qwen3-Coder-30B-A3B-Instruct, 256k context, native tool
+  calling) and for the judgement tier the thinking model with an 8k budget —
+  to be A/B'd on web-todo + notes-api-hono with `loop.sh fitness` and KPIs.
+  Rationale: fast delivery's build stages already run with thinking off; a
+  model trained for that mode spends no tokens pretending.
+- **Tests.** `tests/test_an_all_local_judgement_tier_differs_from_the_build_tier.py`.
+- **Acceptance.** escalation success rate measurable (defects fixed after
+  escalation > 0 on brief_medium).
+- **Effort.** S.  **Depends on.** AX.
+
+<a id="plan-be"></a>
+#### BE. One sandbox container per run — P2
+
+- **Goal.** Command start-up cost paid once per run, same isolation.
+- **Evidence.** I8.
+- **Files.** `src/app/tools/sandbox.py` (`docker create … sleep infinity`
+  per run with the same flags, `docker exec` per command, removed at run
+  end/orphan reclaim), `src/app/server/runner.py` (lifecycle), `scripts/loop/
+  run_timing.py` (tool-time by command category).
+- **Steps.** measure tool time per category first (BF); implement; keep the
+  per-command mode as a fallback setting.
+- **Tests.** `tests/test_commands_of_one_run_share_one_container.py`,
+  `tests/test_the_run_s_container_is_removed_at_the_end.py`.
+- **Acceptance.** non-model wall share 27% → ≤ 15% on brief_medium.
+- **Effort.** M.  **Depends on.** —.
+
+<a id="plan-bf"></a>
+#### BF. Per-call prompt composition in the transcript — P1 (first, cheap)
+
+- **Goal.** Every `model_request` record names its blocks and their sizes:
+  system prompt, tool schemas, project memory, spec excerpt, carried notes,
+  conversation; plus the server's cache fields.
+- **Evidence.** I11.
+- **Files.** `src/app/observability/transcript.py`, `src/app/agents/
+  project_memory.py`, `src/app/agents/environment_contract.py`, `scripts/
+  loop/kpi.py` (new KPIs: `prompt_block_share_*`, `cache_miss_after_tool_change`).
+- **Tests.** `tests/test_a_request_record_names_its_blocks.py`.
+- **Acceptance.** the next KPI JSON carries block shares; BA/AY/AZ cite them.
+- **Effort.** S.  **Depends on.** —.
+
+<a id="plan-bj"></a>
+#### BJ. One budget for everything a call carries: memory, rules, plugin instructions and the specification — P1 (after BF)
+
+- **Goal.** Every model request has one input budget for what the harness
+  injects, sized for the served model's *effective* context, not its
+  advertised window. Project memory, role rules, plugin instructions, the
+  environment contract, the workspace digest and the specification excerpt
+  share that budget in a fixed priority order; whatever does not fit is
+  dropped lowest-priority first and named in one line ("left out: …, ask
+  with read_file"), never cut silently.
+- **Why.** Each block has its own ceiling today, but nothing caps their sum.
+  AZ caps only the specification slice (≤15k tokens). Project memory alone may
+  take 30% of the window (`MEMORY_SHARE = 0.3`, up to `MOST_CHARACTERS =
+  240_000`); the specification excerpt has a 150k-character default
+  (`text_budget.DEFAULT_SPECIFICATION_BUDGET`); role rules and plugin
+  instructions sit on top (X.4 measured specialists at ~12.7k characters of
+  prompt before any memory). The medium run's largest requests were 73–101k
+  tokens (ledger row O.4/Z), far past where open models stay reliable.
+- **Evidence.**
+  - Research (`docs/research-findings.md` Part R1, techniques #4 and #12):
+    open models' effective context is a fraction of the advertised window.
+    Qwen3-30B-A3B's RULER effective length is about 64K. NoLiMa and Chroma's
+    "Context Rot" show focused short inputs beating long ones on every model
+    tested. Frontier harnesses cap injected instructions: Codex
+    `project_doc_max_bytes` (32 KiB), Windsurf rule caps, Cline's compact
+    prompt for local models (~10% of the full prompt).
+  - Review finding G2 (`docs/review-findings.md` §13): memory at the head of
+    the conversation was the largest prefix-cache leak and sat in front of
+    the brief.
+  - Findings I3 and I5: reading is half of the fix loop's work, and the
+    medium run's foundation was built from a ~200k-character specification.
+- **Files.** `src/app/agents/context_budget.py` (one `InputBudget` per
+  request: `effective_window = min(setting, server slot, model registry
+  effective length)`, target ≤ 32k tokens for ≤35B models unless measured
+  otherwise), `src/app/agents/project_memory.py` (memory takes what is left
+  after higher-priority blocks, not a fixed 30%),
+  `src/app/plugins/middleware.py` (plugin instructions under a cap, with
+  role- and path-scoped selection), `src/app/agents/text_budget.py`,
+  `src/app/agents/role_agent.py` (a compact rules variant for local models,
+  chosen by the BH registry, not by model name in code).
+- **Steps.** (1) BF first: record each block's size per call. (2) Set the
+  priority: work order and failing evidence > role rules > environment
+  contract > specification slice > memory of named files > plugin
+  instructions > rest of memory > digest tail. (3) Enforce the sum in
+  middleware; name what was left out. (4) Add the compact rules variant and
+  A/B it with `kpi_ledger.py compare`.
+- **Tests.** `tests/test_no_request_carries_more_than_its_input_budget.py`
+  (builds a role agent with a large memory, many plugin keys and a long
+  specification; fails on the old code where the sum exceeds the budget);
+  `tests/test_what_the_budget_leaves_out_is_named.py`. Each new prompt line
+  is tested against the banned words (task, tasks, to-do, todo, button,
+  click, checkbox).
+- **Acceptance.** p95 request input ≤ 32k tokens on brief_medium with no
+  rise in `redundant_read_rate`, and fix ratio not lower than the baseline.
+  Judged on at least two runs (Part 20 rule).
+- **Effort.** M.  **Depends on.** BF; works with AZ (slice scope) and BA
+  (stable block order).
+
+<a id="plan-bh"></a>
+#### BH. Model registry: parser, template, sampling, thinking and edit format per model family, measured by `fitness` — P1
+
+- **Goal.** The harness knows, per served model, which tool-call protocol the
+  server parses (hermes / qwen3_coder XML / mistral / glm / harmony), which
+  thinking switch and budget it honours, its recommended sampling per mode,
+  and — **measured, not assumed** — its well-formed rate for whole-file
+  replies vs search/replace edits; `write_artifact` vs `edit_artifact` are
+  then *preferred* per model (whole-file below ~300 lines when search/replace
+  well-formed rate < 95%).
+- **Evidence.** HANDOVER §2 "returns an invented tool name even with
+  `tool_choice: required`"; `replace_lines` 40–68% failed (P.1); Aider:
+  `whole` 100% well-formed vs `diff` 92–95% on Qwen3-235B, lenient matching
+  ≈9× fewer edit errors; vLLM/llama.cpp require the family's parser and warn
+  "protocol adherence isn't guaranteed"; Kilo/Cline: local models are "more
+  prone to loops, tool-use failures, and syntax errors" (§15.1).
+- **Files.** `src/app/models/fitness.py` (extend the five scripted calls with
+  a 10-edit well-formed probe: whole vs search/replace on 3 sample files),
+  `src/app/models/server_profile.py` (family detection from `/props` model
+  name + template), new `src/app/models/registry.py` (data file, per family:
+  parser, thinking switch, budget support, sampling-by-mode advisory, edit
+  preference), `src/app/agents/role_agent.py` (`_WRITING_RULES` rendered per
+  edit preference — "revise by rewriting the whole file" for a model whose
+  edits malform), `src/app/plugins/seed.py` untouched (no stack specifics).
+- **Steps.** (1) registry data + detection; (2) fitness probe writes the
+  measured rates to `/app/data/model-fitness/<model>.json`; (3) tool
+  preference and prompt text follow the measurement; (4) `loop.sh ready`
+  prints the profile (family, parser, thinking budget support, edit
+  preference, context ≥ 32k).
+- **Tests.** `tests/test_a_model_s_edit_preference_follows_its_measured_rate.py`
+  (fails on old code: no preference exists), `tests/test_an_unknown_family_gets_the_generic_profile.py`.
+- **Acceptance.** `tool_failure_rate` 0.073 → ≤ 0.03; `layer_edit_*`
+  interventions −50%.
+- **Effort.** M.  **Depends on.** —.
+
+<a id="plan-bi"></a>
+#### BI. Rubric-graded verification for the hardest work orders — P2
+
+- **Goal.** For a work order or defect that failed twice, the architect
+  writes a repo-grounded weighted rubric (file-change / spec-alignment /
+  integrity / runtime axes) at dispatch; k=2–3 short candidates are graded
+  by the deterministic tests first and the rubric second (thinking judge,
+  pairwise); the judge never marks anything passing alone.
+- **Evidence.** Agentic Rubrics: rubric + weak judge is the best verifier
+  (+4 pts Best@16 over tests alone at ~half the cost); execution-free judges
+  overweight the agent's narration; CodeJudgeBench: thinking judges, pairwise
+  > pointwise (§15.1). The harness already distrusts narration (Q.4 write
+  receipts, J.1 vacuous-green gate).
+- **Files.** `src/app/agents/principal_architect.py` (rubric field per work
+  order, strict lines), `src/app/graph/rewritten_fixes.py` (`fix_by_candidates`
+  ranks by tests then rubric), new `src/app/agents/rubric_judge.py`.
+- **Tests.** `tests/test_a_rubric_never_passes_a_candidate_the_tests_fail.py`,
+  `tests/test_candidates_are_ranked_by_tests_then_rubric.py`.
+- **Acceptance.** on brief_medium, defects fixed after a second failure > 0;
+  no rise in false acceptance (W.1 rule).
+- **Effort.** M.  **Depends on.** AY.
+
+<a id="plan-bg"></a>
+#### BG. UI/UX — see Part 19.
+
+<a id="plan-part-19"></a>
+### Part 19 — UI/UX (fourth pass): from a status page to a control room
+
+Evidence: §15.2 (I12.1–I12.12). Effort S ≤ 1 day, M 2–4 days, L ≥ 1 week.
+"Backend" names the 15.5 enabler or the new route an item needs. Items refine
+or pull forward the open UI-S/UI-0/UI-P rows; none duplicates a DONE row.
+
+<a id="plan-bg-1"></a>
+#### BG.1 Progress, tokens and "not priced" in the summary card — P1, S, no backend now
+- **Goal.** Above the fold: "Sprint 1 of 3 · Testing (round 2) · 2 h 14 m
+  elapsed · typically 7.6 h for fast runs here (1.4–12.7)"; a token `Stat`
+  pair ("1.2 M tokens · 0.9 M in · 0.3 M out") and "Spend: not priced (local
+  model)" when `!fully_priced`; a budget bar when `MAX_RUN_TOKENS` /
+  `MAX_RUN_COST_USD` are set (ceiling added to the run payload, S backend).
+- **Files.** `RunDashboard.tsx:656-699`, `SprintSummaryPanel.tsx:77`,
+  `types/index.ts:41-44`, `api/index.ts:118`; later `/usage` (15.5).
+- **Tests.** Vitest: summary renders tokens and "not priced" for an unpriced
+  run; forecast line uses `/outcomes` medians. **Acceptance.** a 19-hour
+  screenshot answers "how far, how long, how much" without scrolling.
+
+<a id="plan-bg-2"></a>
+#### BG.2 Needs-you inbox + notifications — P1, M, no backend (completes UI-0, UI-S1)
+- Dropdown with one actionable row per waiting run ("run-8b0c… · Release
+  review · approves itself at 09:40", one-tap Approve); count only live runs
+  (`useNeedsYou.ts:40`); favicon badge (canvas); opt-in browser
+  `Notification` on `waiting_*`, `failed`, `completed` from any page.
+- **Tests.** count excludes terminal/dismissed runs; notification requested
+  only after opt-in. **Acceptance.** a self-approving gate is never silent.
+
+<a id="plan-bg-3"></a>
+#### BG.3 Gates as a composer with the artifact inline — P1, M (UI-S4 composer, pulled forward)
+- Render the reviewed document in place (`fetchArtifactContent`, `Markdown`/
+  `ArtifactViewer`), revision diff when `revision > 1` (artifact versions
+  endpoint, 15.5), comment box, approve / request changes / skip as the
+  composer; steering folded into the same composer with the upcoming stage
+  named and the note echoed in the feed when `applied_stage` is set.
+- **Files.** `ReviewPanel.tsx`, `ApprovalGate.tsx`, `SteeringBox.tsx`.
+- **Acceptance.** no gate asks for download→edit→re-upload.
+
+<a id="plan-bg-4"></a>
+#### BG.4 Rail / work area / ledger layout with real tabs — P1, L (= UI-S4 layout)
+- Left rail: run identity, progress strip (BG.1), stage stepper with
+  per-stage time (+ tokens once `/usage` exists), newest-commit chip from
+  `/changes` ("3 files · +120/−8"); centre: tabs (Activity / Changes / Log /
+  Artifacts / Audit) with `role=tablist` + arrow keys; right: the criteria
+  ledger (Delivery) and decisions; gates render as a banner above the work
+  area. Collapse steering to a one-line "Steer…" until BG.3 lands.
+- **Acceptance.** everything actionable visible at 1366×768 without scroll;
+  axe ≤ 5 per theme kept.
+
+<a id="plan-bg-5"></a>
+#### BG.5 Model-server surface — P1, S UI + S backend (refines UI-S5)
+- New read-only `GET /api/health/server` returning the cached `/props` probe
+  (model, quant, slots, context as started, last probe time, which run holds
+  the slot) — no model call. Header dot + tooltip; Settings → Models first
+  (tabs: Models / Appearance / Runs / Lessons / Account) with a "Test call"
+  button; intake and run page say "waits for run X to free the model" when
+  slots = 1 and another run is `running`.
+- **Files.** `src/app/models/server_profile.py`, `src/app/server/api.py`,
+  `Settings.tsx`, `Layout.tsx`, `Home.tsx`.
+
+<a id="plan-bg-6"></a>
+#### BG.6 Fix-loop and sprint data from structured endpoints — P1, S UI + S backend (new row)
+- Render `RemediationInfo` ("Fix attempt 2 of 3 · 23 defects, 9 open · tests
+  4/30 → 9/30") while `current_stage` matches `defect_fix*`/`test_round*`;
+  label the sprint-row icons; replace `parseSummary` with
+  `GET /runs/{id}/sprints` (the engine renders the summary — emit the JSON
+  it is rendered from).
+
+<a id="plan-bg-7"></a>
+#### BG.7 Audit tab — P2, M UI (refines UI-S6; pull the per-run half forward)
+- Stage × (wall, model-busy, calls, in/out/cached tokens, lost replies,
+  redundant reads, tool failures) from `/usage` + `/kpi` (15.5), worst cell
+  per column highlighted; "Download transcript" beside "Handover pack"
+  (`GET /runs/{id}/transcript`); "Open in transcript" per feed row. This is
+  the UI for AX/AY/BA/BF's acceptance numbers.
+
+<a id="plan-bg-8"></a>
+#### BG.8 Feed: live classification and lanes — P2, S, no backend (new)
+- Classify tool results with the `LAYERS` markers (shared constant): muted
+  "held back: already read", "reply cut off" chips; lane chips "backend ·
+  frontend · testing" filtering by the event's `stage` prefix; render
+  `review_decision` events in order ("chose FastAPI because …").
+
+<a id="plan-bg-9"></a>
+#### BG.9 Changes per file + criterion link — P2, M (= UI-S4 Changes, extended)
+- File tree per commit, collapsible hunks, syntax colouring; link from a
+  criterion's first passing test to the commit (commit↔criterion mapping
+  from the suite result timestamps, S backend).
+
+<a id="plan-bg-10"></a>
+#### BG.10 Plan-first intake with pre-flight — P2, L (= UI-S3)
+- Brief as text and/or files; pre-flight card from `/health/ready` +
+  `/settings` ("Build model … 1 slot, 126 k context — ready"); review step
+  showing the criteria ledger as "not yet" rows and the slice plan (AZ)
+  before Start; one `POST /runs/start`.
+
+<a id="plan-bg-11"></a>
+#### BG.11 Copy and stage names from the graph — P2, S (= UI-S4 open)
+- `STAGE_COPY` generated from the graph's node list so no H1 renders a raw
+  stage id; product vocabulary (brief, build, run, gate) across screens.
+
+<a id="plan-bg-12"></a>
+#### BG.12 Visual residue — P2, S (refines UI-T5)
+- Remove `.glass-card`/`backdrop-filter`/`.gradient-btn`/hero; type scale
+  12 px floor; contrast theme borders only interactive/container elements;
+  every number labelled with its source.
+
+<a id="plan-bg-13"></a>
+#### BG.13 Accessibility and polling — P2, S
+- Real tabs; `group-focus-within` on hover-only affordances;
+  `aria-expanded` on disclosure rows; `aria-live` off on the log with a
+  separate live region for `agent_message` headlines and status; label the
+  rewind control; `/events?since` on reconnect only and no `/logs` paging
+  after replay; one `/runs/{id}/summary` aggregate replacing four panel
+  polls; `loading="lazy"` on screenshot thumbnails.
+
+<a id="plan-bg-14"></a>
+#### BG.14 Timeline scrubber / replay — P3, M, no backend (new)
+- Stage ticks, gate markers, steering notes, rewind points above the feed;
+  clicking scrolls the feed and filters Changes to that moment.
+
+<a id="plan-bg-15"></a>
+#### BG.15 Context pressure and throughput — P3, S UI (refines UI-S6)
+- "Last call used 94 k of 126 k context" (red > 90%), output tok/s sparkline
+  over the last hour, "model busy 71% of the last 10 min" in the rail — needs
+  per-call fields in `/usage`.
+
+<a id="plan-bg-16"></a>
+#### BG.16 Command palette, shortcuts, cross-run compare — P3, M (= UI-S1, UI-S6)
+
+**Housekeeping.** Regenerate `docs/ui/*-runs.png`; `vite.config.ts:11` →
+:8000; delete `wizardData.ts`, `DynamicWorkflowUI.tsx`, `App.css`;
+`Home.tsx:84` reviewer hard-code.
+
+<a id="plan-part-20"></a>
+### Part 20 — Implementation sequence
+
+| wave | items | gate |
+|---|---|---|
+| 0 (1 week) | BF, AX, BC | brief_medium KPI: lost replies ≤5, identical calls ≤5% |
+| 1 (1–2 weeks) | AY, BB, BD, BH, BJ | fix ratio ≥0.5, lead lost replies 0, tool failures ≤3%, p95 request input ≤32k tokens |
+| 2 (2–3 weeks) | AZ, BA, BG.1–BG.6 | brief_medium completes ≤8 h, cache ≥0.85 |
+| 3 | BE, BI, BG.7–BG.16 | non-model share ≤15% |
+
+**How a wave's gate is judged (added 2026-10-19).** Agent runs on the same
+brief vary widely: the scored results in `data/bench/` differ a lot between
+runs of the same benchmark, and model sampling alone changes a run's path.
+A single run therefore cannot pass or fail a wave. Each gate needs **at least two runs** of
+brief_medium on the new code, compared with the W.2 baselines through
+`kpi_ledger.py compare`. A KPI counts as moved only when both runs move it in
+the same direction, past the 1.5× regression band W.4 already uses. When the
+two runs disagree, a third run decides. Model time is the owner's: these
+runs follow owner decision 2 (between owner runs, never during one).
+
+**Already partly done upstream (2026-10-19).** Two commits after this review
+close part of the largest Terminal-Bench failure class ("command not found" /
+PATH, 24% of failures). "every stage is told it starts from PORT and
+DATA_DIR alone" (`2d94b84`) tells every stage it starts with PORT and
+DATA_DIR only. "A shell builtin is refused with the reason" (`99e2fb7`)
+explains why a shell builtin carries nothing to the next command. AZ's
+skeleton proof should reuse these messages rather than add new ones.
+
+<a id="plan-ledger-a4"></a>
+### Appendix 4 rows (Implementation Progress Ledger continuation)
+
+| Item | Priority | Status | Notes |
+|---|---|---|---|
+| AX reasoning budget per role | P0 | NOT STARTED | needs server build ≥ b9982 for per-request; else advisory |
+| AY bounded fix cycle | P0 | NOT STARTED | |
+| AZ skeleton + slices | P0 | NOT STARTED | after AY |
+| BA prefix-cache discipline | P1 | NOT STARTED | after BF |
+| BB lead plans in parts | P1 | NOT STARTED | |
+| BC stalls end one call earlier | P1 | NOT STARTED | |
+| BD two local tiers + model advice | P1 | NOT STARTED | owner's A/B |
+| BE one container per run | P2 | NOT STARTED | |
+| BF prompt composition record | P1 | NOT STARTED | first |
+| BH model registry + measured edit preference | P1 | NOT STARTED | extends `fitness` |
+| BI rubric-graded candidates | P2 | NOT STARTED | after AY |
+| BG.1 progress/tokens in summary | P1 | NOT STARTED | S, no backend |
+| BG.2 needs-you inbox + notifications | P1 | NOT STARTED | completes UI-0/S1 |
+| BG.3 gates as composer, artifact inline | P1 | NOT STARTED | UI-S4 pulled forward |
+| BG.4 rail/work-area/ledger + real tabs | P1 | NOT STARTED | = UI-S4 layout |
+| BG.5 model-server surface | P1 | NOT STARTED | new `GET /api/health/server` |
+| BG.6 fix-loop + sprints structured | P1 | NOT STARTED | new `/runs/{id}/sprints` |
+| BG.7 Audit tab | P2 | NOT STARTED | needs `/usage`, `/kpi` |
+| BG.8–BG.13 feed, changes, intake, copy, visual, a11y | P2 | NOT STARTED | |
+| BG.14–BG.16 replay, pressure, palette/compare | P3 | NOT STARTED | |
+| BJ one input budget per request | P1 | NOT STARTED | after BF; added 2026-10-19 from the research coverage check |
+| Part 20 two-run gate rule | P0 (process) | ADOPTED 2026-10-19 | each wave gate judged on ≥2 runs against the W.2 baselines |
+
+---
+
+<a id="plan-e-2"></a>
+## E. Earlier plans, merged into this document on 2026-10-19
+
+Two separate plan documents predate the appendices above. They are kept
+here in full, so the history and the reasons stay in one place, and code
+comments that cite "the hardening plan" still resolve. Status was
+re-assessed on 2026-10-19 against the code and the ledger. Where an item
+was later absorbed by a lettered initiative, the row points to it.
+
+<a id="plan-e1"></a>
+### E1. Harness Improvement Plan (October 2026; formerly `docs/harness-improvement-plan.md`)
+
+Status of its items (2026-10-19):
+
+| Item | Status | Where it went |
+|---|---|---|
+| R1–R7 (harness-owned files, auto decisions, endpoint handling, pack release files, dead code, docs cleanup, language services) | DONE | E1 §2 below; ADR-0004 |
+| Sprint cap, batch remediation, file ownership in prompts, conditional reviews, untested-criteria disputes | DONE (`0b28a91`, `2702c9d`) | E1 §2 below |
+| B1 cross-file checks beyond JavaScript | PARTLY | K.6 / AW (stack-shaped checks as pack data) |
+| Part III 1 coverage omit filter | PARTLY | — |
+| #1 Acceptance suite static linting before lock | DONE in substance | D, J.1 (suite integrity checks before lock, `assertions_that_do_not_exist`) |
+| #2 Self-learning engine | SUPERSEDED → DONE | AI, AT (owner-approved, signed lesson store) |
+| #3 Adaptive workflow complexity (lean scopes) | SUPERSEDED → DONE | fast delivery (ADR-0007), sprint cap; AZ for complex scopes |
+| #4 Tree-sitter repository map | OPEN | E2 pillar 10 gate; AQ (repeated reads) measures first |
+| #5 Fast-fail test timeouts | DONE | JavaScript packs set 3 s action/expect timeouts (`stacks/packs/_javascript.py`) |
+| #5 Persistent sandbox session | OPEN | BE (one sandbox container per run) |
+| #6 Failure packets with the page | DONE in substance | each failing test carries the page it failed on (`docs/PRODUCT.md` §8) |
+| #7 Cross-run regression tracking | DONE | W.4 (KPI ledger, 1.5× flag) |
+| B7 measured chars per token, B15 digest budget | OPEN, low | BJ (one input budget) |
+
+**What this is.** The master improvement plan for the LangGraph / Deep Agents harness. It incorporates lessons learned from live benchmark runs, audits the status of previous plans (Parts I–III and the 2026-10-04 plan), conducts a comparative architectural benchmark against leading open-source agentic coding frameworks (SWE-agent, OpenHands / OpenDevin, Aider, DeepSeek harness), and lays out an actionable implementation roadmap prioritized by measurable ROI and time savings.
+
+---
+
+#### 1. Comparative Architectural Benchmark: Current Harness vs. SOTA Frameworks
+
+To achieve consistent, production-grade performance and reduce benchmark execution times from 2–3+ hours down to 30–60 minutes for standard applications, the harness was evaluated against industry state-of-the-art (SOTA) agentic coding systems:
+
+| Dimension | Current Harness | Leading SOTA Systems (SWE-agent, OpenHands, Aider, DeepSeek) | Architectural Gap & Opportunity |
+|---|---|---|---|
+| **Organizational Topology** | Rigid 14-stage corporate workflow (Architect → Arch Review → QA Author → QA Review → Scrum Master → Tech Lead → Dev → Test → Code Review → Acceptance → Defect Remediation → Milestone Review → Sprint Summary). 400–600 model calls per run. | **Dynamic / Adaptive Topology** (Aider, OpenHands): Single Planner + Executor loop, or lean Architect + Coder pair. Specialized roles invoked dynamically only when needed. Benchmark runs finish in 15–40 steps. | **High**: Simple applications (e.g. 10–16 criteria) suffer massive roundtrip latency. The harness should dynamically collapse stages for small/medium scopes. |
+| **Acceptance Suite Verification** | Suite authoring produces tests with un-awaited promises or CSS selectors. Flaws trigger runtime crashes after development, invoking the **Acceptance Dispute Engine** (reopening suite for 3+ rounds, costing 30–45 mins). | **Pre-Emptive Static AST Validation** (SWE-bench / DeepSeek): Strict linters, AST tree-sitter checks, and floating-promise detectors validate tests *before* suite is accepted or executed. | **Critical (P0)**: Catch test defects statically before locking. Eliminates the multi-round dispute loop entirely. |
+| **Context & Repo Representation** | Flat file lists in workspace digest (`MAX_FILES = 40`). High redundant read rate (12–18% of reads spent re-inspecting files). Agents frequently call `read_file` to find symbol definitions. | **Tree-Sitter RepoMap** (Aider): Dense topological map of exported symbols, signatures, and classes generated in <1,000 tokens using Tree-Sitter and PageRank. | **High (P1)**: Provide symbols and signatures in prompt context, slashing redundant tool calls and token spend. |
+| **Execution Latency & Sandboxing** | Isolated command execution per tool call; default Playwright locator timeout of 30s causes failing test runs to burn 5–8 minutes per round. | **Persistent Daemon & Fast-Fail Timeouts** (OpenHands, SWE-agent): Persistent shell session with sub-second turnaround; strict 3–5s timeouts on UI element checks. | **High (P1)**: Fast-fail on UI mismatches; persist sandbox environment. |
+| **Cross-Run Learning & Memory** | **Tabula Rasa**: Cross-run memory was previously dropped (Phase 4) due to prompt-injection concerns. Agents repeat known framework gotchas (e.g., missing `await` on custom helpers, unconfigured JSDOM globals) on every single run. | **Deterministic Skill & Case Distillation** (Voyager, Reflexion, ExpeL): Post-run reflection distills verified traps, patterns, and templates into deterministic, injection-safe rule stores. | **Critical (P0)**: Implement a Self-Learning Engine that extracts verified rules from Decision Records and saves them into Stack Pack knowledge bases. |
+
+---
+
+#### 2. Audit of Existing Plan Items (Status as of October 2026)
+
+Each item from previous plans was re-verified directly against the codebase:
+
+##### Completed & Implemented Items
+- **R1 — Harness-Owned Files Enforced at Planning (`88356da`)**: Work orders cannot target kept files or locked suites; enforced in `app.stacks.contract.owned_by_the_harness` and workspace digest.
+- **R2 — Auto Mode Decides at Sticking Points (`d12b138`)**: Unresolved architecture reviews and assignment stops route through `app.graph.escalation` with automated decision records.
+- **R3 — Model Endpoint Handling (`139cf0f`)**: `app.models.endpoints.is_self_hosted` differentiates local vs. hosted OpenAI endpoints; llama.cpp flags and retries apply only to self-hosted servers.
+- **R4 — Stack Pack Release Files (`c9b5400`)**: Stack packs declare container and CI workflow files; dead `app/deploy` package eliminated (ADR-0004).
+- **R5 — Dead Code Elimination (`05b01a3`)**: Cleaned unused legacy packages (`app/scaffolding`, `app/build/verifier.py`, `app/tools/testing/runner.py`).
+- **R6 — Documentation Cleanup**: Obsolete plans and scratch files removed from `docs/`.
+- **R7 — IDE-Grade Language Service Checks**: Tree-sitter CSS validation, Pyright for Python, TypeScript compiler service for JavaScript/TypeScript (`app.analysis.language_service`).
+- **Dynamic Sprint Count Cap (`0b28a91`)**: Scope-based sprint capping (`_cap_sprints_for_scope` in `scrum_master.py`) ensures <=10 criteria apps run in 1–2 sprints instead of 4.
+- **Batch Defect Remediation (`0b28a91`)**: Open defects belonging to the same specialist role are bundled into a single invocation (`_bundle_defects_by_specialist`) instead of sequential 1-defect rounds.
+- **Explicit Specialist File Ownership (`0b28a91`)**: Specialist prompts include explicit allowed file targets to prevent work-order rejection churn.
+- **Conditional Post-Sprint Reviews (`0b28a91`)**: Security and advice reviews are skipped when sprints touch zero architectural or security-sensitive files.
+- **Untested Criteria Dispute Resolution (`2702c9d`)**: Acceptance test requests require explicit criterion tags in titles (`[AC-X]`); dispute engine detects missing/untested criteria and reopens the suite for QA correction rather than deadlocking developers.
+
+##### Partially Implemented Items
+- **B1 — Cross-File Checks Beyond JavaScript**:
+  - *Current Status*: Size counting and CSS/TS/Pyright language checks exist. Multi-file symbol references and imports for Go, Rust, and polyglot setups are still heuristics.
+  - *What Needs to be Done*: Extend Tree-Sitter AST symbol resolution across all supported stack languages.
+- **Part III 1 — Coverage Omit Filter**:
+  - *Current Status*: Per-file omit list exists, but test runner still counts imports inside `tests/` as caller references.
+  - *What Needs to be Done*: Filter out `tests/` directory imports when verifying whether application modules are referenced by production code.
+- **Pre-Emptive Acceptance Test Linting**:
+  - *Current Status*: Some regex and method checks exist (`locators_that_do_not_exist`, invalid role checks), but tests can still be locked with un-awaited promises on async helper functions and brittle CSS selectors.
+  - *What Needs to be Done*: Implement AST-level floating-promise checking and CSS selector banning in `app/acceptance/suite.py` before locking (see P0 below).
+
+##### Open / Retained Items
+- **B7 — Measured Chars Per Token**: Low priority; context compaction has prevented context overflows on current models.
+- **B15 — Digest Budget for Large Codebases**: Active when repository exceeds 40 files; small benchmark apps remain well under the ceiling.
+- **Fast-Fail on Test Timeouts**: Reduce Playwright default locator timeouts to 3–5 seconds to prevent failed assertions from waiting 30 seconds each.
+
+---
+
+#### 3. Prioritized Implementation Plan (Ranked by ROI & Value)
+
+##### Tier 1 (P0): Eliminating the Longest Failure Loops (Expected Savings: 60–90 mins)
+
+###### 1. Pre-Emptive Acceptance Suite Static Linting (AST Validation Before Locking)
+- **Problem**: In live runs, QA authoring frequently generates Playwright tests with async helper calls missing `await` (e.g. `const item = getTaskItemByTitle(...)` where `item` is a Promise, causing `TypeError: item.getByRole is not a function`) or using brittle CSS selectors (e.g. `locator('input[type="checkbox"]').filter({ hasText: 'Done' })`). Because these flaws are only detected when the product runs, they trigger the **Acceptance Dispute Engine** (DR-5, DR-7), reopening the locked suite and forcing multiple QA authoring rounds that consume 30–45 minutes of model time.
+- **Solution**:
+  1. Add an AST-based static validator in `app/acceptance/suite.py` that runs during `suite.gaps()` / `acceptance_review`:
+     - **Floating Promise Detection**: Parse test files using Tree-Sitter or ESLint to verify that calls to async helper functions are awaited before method chaining.
+     - **Locator Contract Enforcement**: Reject raw CSS tag selectors (`input[type=...]`, `div.task`) in favor of accessible queries (`getByRole`, `getByLabel`, `getByText`).
+     - **API Method Validation**: Verify all chained locator methods exist on Playwright `Locator` / `Page` prototypes.
+  2. If any test violates these rules, reject it immediately during `acceptance_author` rounds with actionable feedback before the suite can ever be locked.
+- **Expected Impact**: Completely eliminates acceptance suite dispute reopenings, saving 30–45 minutes per run.
+
+###### 2. Self-Learning Agents: Deterministic Distillation & Stack-Pack Knowledge Store
+- **Problem**: Phase 4 cross-run memory was previously dropped because raw agent-written prose shared across runs is vulnerable to prompt injection, hallucination, and behavioral drift. However, operating completely *tabula rasa* forces every run to repeat the exact same discovery mistakes (such as discovering that Node `--test` needs `--import ./test-setup.mjs` for browser globals, or discovering Playwright async helper patterns).
+- **Solution**: Implement a **Structured, Injection-Safe Self-Learning Engine**:
+  1. **Post-Run Distillation Node (`app/learning/distiller.py`)**:
+     - At the end of every run (successful or failed), an automated distillation stage audits the run's Decision Records (`DR-1`..`DR-N`), resolved defect diffs, and lint errors.
+     - It extracts structured, schema-validated lessons:
+       - `framework_gotchas`: Specific flags or imports required by the toolchain.
+       - `test_patterns`: Valid locator idioms and assertion conventions for the stack.
+       - `component_templates`: Verified structural patterns that passed acceptance tests.
+  2. **Stack-Pack Heuristics Store (`app/stacks/heuristics/<pack>.json`)**:
+     - Distilled lessons are validated against an allowlist schema (rejecting arbitrary system prompt overrides) and committed to the stack pack's knowledge store.
+  3. **Contextual Heuristics Injection**:
+     - When a specialist or QA agent starts a stage, `app/stacks/seed.py` injects only the high-confidence, verified heuristics matching that stack and role.
+- **Expected Impact**: Prevents regression loops on known framework quirks, saving 20–35 minutes across development and testing.
+
+###### 3. Adaptive Workflow Complexity (Dynamic Fast-Path for Lean Scopes)
+- **Problem**: For simple or focused applications (<=15 acceptance criteria), executing 14 separate corporate stages generates 400+ LLM roundtrips. Raw model inference and tool roundtrip wait times account for 60–90 minutes even when no code bugs occur.
+- **Solution**:
+  1. Classify project scope during `product_intake`:
+     - **Tier 1 (Lean, <=15 criteria)**: Simple utilities, single-page web apps, CRUD tools.
+     - **Tier 2 (Standard, >15 criteria)**: Multi-service applications, complex architectures.
+  2. For **Tier 1** workflows:
+     - Collapse `scrum_master` and `technical_lead` into a unified Single-Sprint Planner (`lean_planner`).
+     - Bypass `architecture_review` if the stack pack's standard verified architecture is accepted unchanged.
+     - Consolidate development into a Fullstack Specialist invocation with integrated test verification.
+- **Expected Impact**: Reduces LLM call count by 40–50%, saving 35–50 minutes per benchmark run.
+
+---
+
+##### Tier 2 (P1): Tool Latency & Context Efficiency (Expected Savings: 25–40 mins)
+
+###### 4. Tree-Sitter Repository Map (RepoMap) & Context Compaction
+- **Problem**: Agents exhibit a 12–18% redundant read rate, repeatedly invoking `read_file` or `ls` to discover what functions or classes exist across files.
+- **Solution**:
+  1. Integrate an Aider-style Tree-Sitter RepoMap in `app/analysis/project_memory.py`:
+     - Extract all declarations, exported functions, classes, and types with their parameter signatures.
+     - Format as a compact hierarchical outline (~500–800 tokens).
+  2. Include the RepoMap in the workspace digest so all specialists have immediate visibility into the complete codebase structure without executing exploratory tool calls.
+- **Expected Impact**: Reduces redundant reads to <5%, saving 10–15 minutes and ~20% token overhead.
+
+###### 5. Persistent Sandbox Sessions & Fast-Fail Test Timeouts
+- **Problem**: Each `run_terminal_command` spawns an isolated subprocess. When Playwright tests fail to find an element, Playwright's default 30-second timeout per test causes a single acceptance run of 16 tests to take 5–8 minutes.
+- **Solution**:
+  1. Configure harness Playwright templates with aggressive local timeouts:
+     - Set `actionTimeout: 3000` (3 seconds) and `expect: { timeout: 3000 }`.
+     - Fast-fail immediately if the base URL / server returns connection refused or 404.
+  2. Keep a persistent container shell session for sub-second command dispatch.
+- **Expected Impact**: Slashes acceptance test execution time from 5–8 minutes down to 10–20 seconds per run, saving 15–20 minutes across multiple test rounds.
+
+---
+
+##### Tier 3 (P2): Remediation Precision & Observability (Expected Savings: 15–20 mins)
+
+###### 6. Targeted Test-Driven Defect Remediation with DOM Diffs
+- **Problem**: During defect remediation, specialists receive general error messages but lack the exact runtime failure state, leading to speculative code edits.
+- **Solution**:
+  1. When an acceptance test fails, extract the Playwright call log, the failing assertion line, and the simplified HTML/accessibility snapshot of the page at the exact moment of failure.
+  2. Inject this structured failure packet directly into the defect remediation prompt, instructing the agent to fix the specific attribute or event handler.
+- **Expected Impact**: Increases first-attempt defect remediation success rate from ~60% to >90%, eliminating second and third remediation cycles.
+
+###### 7. Automated Cross-Run Benchmark Regression Tracking
+- **Problem**: Run timing and performance regressions are currently audited manually by checking timing logs after runs conclude.
+- **Solution**:
+  1. Add an automated regression reporter in `scripts/loop/audit_live.py`:
+     - Compare current run metrics (total wall-clock time, model calls per stage, failure rate, redundant read percentage) against moving averages of the last 5 clean runs.
+     - Highlight any stage whose call count or duration exceeds 1.5x the baseline.
+- **Expected Impact**: Immediate visibility into performance regressions during live monitoring.
+
+---
+
+#### 4. Execution Roadmap & Milestones
+
+| Phase | Initiative | Primary Target Modules | Est. Time Savings | Status |
+|---|---|---|---|---|
+| **Phase 1 (Immediate)** | Pre-Emptive Acceptance Suite AST Linting | `src/app/acceptance/suite.py`, `src/app/acceptance/requests.py` | 30–45 mins | Ready for implementation |
+| **Phase 1 (Immediate)** | Fast-Fail Test Timeouts (3s Playwright locators) | `src/app/stacks/`, `src/app/tools/sandbox.py` | 10–15 mins | Ready for implementation |
+| **Phase 2 (Near-Term)** | Self-Learning Engine: Deterministic Distillation & Stack Pack Rules | `src/app/learning/`, `src/app/stacks/seed.py` | 20–30 mins | Architecture defined |
+| **Phase 2 (Near-Term)** | Adaptive Workflow Complexity (Lean Scope Fast-Path) | `src/app/graph/workflow.py`, `src/app/agents/scrum_master.py` | 30–45 mins | Architecture defined |
+| **Phase 3 (Follow-Up)** | Tree-Sitter RepoMap in Workspace Digest | `src/app/analysis/project_memory.py`, `src/app/analysis/digest.py` | 10–15 mins | Design ready |
+| **Phase 3 (Follow-Up)** | Targeted Defect Remediation with DOM Snapshots | `src/app/acceptance/failures.py`, `src/app/agents/specialists.py` | 10–15 mins | Design ready |
+
+---
+
+#### 5. Development Invariants & Standards
+
+- **Agility without Quality Compromise**: All optimizations preserve the owner's core features (acceptance test definition of done, CI gates, code review, dynamic instructions, parallel/linear modes, decision records).
+- **Technology-Agnostic Rules**: Stack-specific rules live strictly in stack packs (`src/app/stacks/`); harness graph logic remains framework- and product-agnostic.
+- **Deterministic Self-Learning**: Cross-run learning must use structured schema distillation (traps, flags, linter rules) rather than unstructured prompts to prevent drift and injection risks.
+- **Test-First Verification**: Every harness optimization must include a regression test proving the failure on old code before deployment.
+
+---
+
+<a id="plan-e2"></a>
+### E2. High-steering specification (2026-10-09; formerly `docs/high-steering-software-company-implementation.md`)
+
+The principles behind this specification are recorded as ADR-0006 in
+`docs/architecture-decisions.md`. Its comparison of other harnesses (its
+§2) is in `docs/research-findings.md`, Part R6. Its diagnosis, lifecycle,
+pillars, roadmap and invariants follow.
+
+Status of its pillars (2026-10-19):
+
+| Pillar | Status | Where it went |
+|---|---|---|
+| 1 Pre-lock suite static and load gate | DONE in substance | suite integrity checks before lock: tests broken by their own code, Playwright's refusals of a spec's shape, tests the runner never ran (`docs/PRODUCT.md` §8); J.1 vacuous-green gate |
+| 2 Self-contained work orders | DONE in substance | work orders carry files, interfaces, steps and test cases; fast mode drafts each file from the specification (ADR-0007); AZ adds slice scope |
+| 3 Context-anchored editing, exact paths | DONE | `edit_artifact` find/replace with lenient whitespace (G); P.1 demoted `replace_lines`; workspace path middleware |
+| 4 Fast-fail timeouts, readiness polling | DONE (timeouts) | JavaScript packs: 3 s action/expect |
+| 5 Self-learning by distillation | DONE (redesigned) | AI, AT |
+| 6 Dual-track steering by model capability | PARTLY | `fitness` probe, two tiers (ADR-0008); BD, BH |
+| 7 Fix-before-exit (parse refusal, diagnostics) | DONE | parser refusal at every write; language-service diagnostics as notes, and as defects at CI |
+| 8 Consolidated role-based remediation | CHANGED | one fix per defect, run as a fan-out (`defect_fix_worker`), clustered by root error (L.1); AY bounds each defect's cycle |
+| 9 Curated context bus | NOT BUILT | project memory and carry-over cover most of it; BJ budgets it |
+| 10 Code and test index | NOT BUILT (gated on measurement) | AQ measures repeated reads first |
+
+**What this is.** The architectural specification and engineering blueprint for the LangGraph / Deep Agents harness that builds software products from a brief. It establishes how to transform the harness into an autonomous **Software Company** capable of delivering production-grade, tested, and verified software in **30–45 minutes** (down from 2–3 hours), with high reliability across both **local / lower-tier models (8B–32B parameters)** and **frontier models (Claude 3.7 Sonnet, GPT-4o, DeepSeek-V3/R1)**.
+
+---
+
+#### 1. Executive Summary & Empirical Diagnosis
+
+##### 1.1 The Benchmark Reality: 8 Minutes to Build, 114 Minutes of Rework
+On 2026-10-09, `run-42b84547-f159-4f2e-9ff8-868afee6e877` was benchmarked on `web-todo` (16 acceptance criteria). An empirical timing audit (`scripts/loop/loop.sh timing`) revealed the exact anatomy of harness execution time:
+
+| Stage Family | Calls | Model Time | Output Tokens | Reasoning % | Wall Clock Reality |
+|---|---|---|---|---|---|
+| **Specialists (Actual Build)** | **70** | **8 min** | **43,686** | **82%** | **The app was fully built in 8 minutes!** |
+| **Acceptance Authoring** | 166 | 15 min | 82,937 | 79% | Authored suite with hidden syntax defect |
+| **Technical Lead Replanning** | 27 | 11 min | 73,189 | 91% | Replanned sprint 4 times due to test failures |
+| **Defect Remediation** | 313 | 42 min | 246,199 | 88% | 18 defect stages attempting to fix locked suite |
+| **Test Rounds & Verification** | 62 | 6 min | 29,254 | 80% | 12 test rounds repeatedly crashing on suite load |
+| **Code & Architecture Review** | 41 | 5 min | 32,501 | 90% | Advisory reviews |
+| **TOTALS** | **694** | **92 min** | **538,939** | **84%** | **122 min wall-clock before manual cancellation** |
+
+##### 1.2 The Root Cause: The "Locked-In Defect" Catastrophe
+At minute 122 of `run-42b84547`, inspection of the product (`scripts/loop/loop.sh product`) proved:
+1. **The application code was 100% complete and functionally correct**: 249 lines of clean JavaScript and HTML; all **27 unit tests passed with exit code 0** (`pass 27, fail 0`).
+2. **The entire run stalled because of a single line in acceptance testing**:
+   - During acceptance authoring, QA wrote:
+     ```javascript
+     const { test, expect } = require('@playwright/test'); // CommonJS
+     ```
+   - While `package.json` declared:
+     ```json
+     { "type": "module" } // ES Module
+     ```
+   - Node and Playwright crashed instantly upon file execution:
+     `ReferenceError: require is not defined in ES module scope, you can use import instead`.
+3. **The Lock Guard Trapped the System**:
+   - The harness locked the acceptance suite into `.harness/acceptance-locks/` without first verifying that the test files could even load!
+   - Once locked, the suite was immutable. When developer specialists attempted to fix `package.json` or `todo-misc.spec.js`, the harness write guard and contract checks automatically reverted their edits.
+   - Result: 0 tests ran, all 16 criteria were reported as `untested`, 23 defects were opened, and the harness spent **114 minutes** in an endless, unrecoverable defect remediation loop.
+
+---
+
+#### 2. (moved) Comparative research
+
+Now in `docs/research-findings.md`, Part R6.
+
+#### 3. High-Steering Lifecycle Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                            HIGH-STEERING LIFECYCLE                               │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+   [ USER BRIEF ]
+         │
+         ▼
+ 1. PRODUCT INTAKE & SPECIFICATION
+    ├── Product Brief & Tech Spec drafted
+    ├── Acceptance Criteria numbered (AC-1..AC-N)
+    └── Stack Pack scaffolded & verified by smoke tests
+         │
+         ▼
+ 2. PRE-VERIFIED QA SUITE (Deterministic Gate)
+    ├── QA Authors Playwright tests
+    ├── AST Check: Enforce `await` on helpers & ban brittle locators
+    ├── Module System Matcher: Verify `import` vs `require` against `package.json`
+    ├── [DRY RUN] `npx playwright test --list`: Ensure specs load cleanly
+    └── SUITE LOCKED (Zero syntax or load defects guaranteed before lock)
+         │
+         ▼
+ 3. ADAPTIVE SPRINT PLANNING (The Agile PM & Tech Lead)
+    ├── Scope-based sprint caps (≤10 AC -> 1 sprint; ≤20 AC -> 2 sprints)
+    └── Self-Contained Work Orders:
+        └── Bundles relevant file snippets & symbol signatures in prompt
+         │
+         ▼
+ 4. GUIDED SPECIALIST EXECUTION ("Fix-Before-Exit")
+    ├── Tool-Level Write Gate: Immediate parse check (node --check / py_compile)
+    ├── Resilient Context-Anchored Editing: Matching old text uniquely
+    └── Stage-Exit Diagnostic Interceptor: Intercepts stage completion if 
+        new ReferenceErrors or missing exports exist
+         │
+         ▼
+ 5. AUTOMATED CI GATE & CONSOLIDATED REMEDIATION
+    ├── Fast-Fail Test Timeouts (3s Playwright action/expect timeout)
+    ├── Breaking changes automatically reverted by harness guard
+    └── True Role-Based Consolidated Defect Remediation:
+        └── Bundles ALL open defects for a specialist role into 1 session
+         │
+         ▼
+ 6. RELEASE GATE & SELF-LEARNING DISTILLATION
+    ├── Deployment container & CI workflow verified
+    └── Post-Run Distillation Node:
+        └── Distills run traps and verified patterns into Stack Pack heuristics
+```
+
+---
+
+#### 4. Detailed Technical Specifications (The 8 Pillars)
+
+##### Pillar 1: Pre-Lock Acceptance Suite Static & Load Gate
+- **Target Module**: `src/app/acceptance/suite.py`, `src/app/acceptance/requests.py`
+- **Objective**: Guarantee that an acceptance suite can compile, import, and execute before it is locked into `.harness/acceptance-locks/`. Eliminate the 114-minute ESM loader failure mode forever.
+- **Implementation**:
+  1. **Module System Matcher**:
+     - Inspect `package.json` in the project root. If `"type": "module"` is present:
+     - Scan all test files (`*.spec.js`, `*.test.js`). If any file contains CommonJS `require(` syntax:
+       Reject locking immediately:
+       > *"Acceptance test file `todo-misc.spec.js` uses CommonJS `require` syntax, but `package.json` specifies `\"type\": \"module\"`. You must use ES module `import { test, expect } from '@playwright/test'`."*
+  2. **AST Static Quality Checks**:
+     - **Floating Promise Detector**: Detect calls to asynchronous helper functions or locators (e.g. `getTaskItemByTitle(...)`) that are not awaited before chained calls.
+     - **Semantic Role Enforcer**: Reject raw CSS selectors (e.g. `.todo-item > div > button.btn-danger`) and require accessible locators (`page.getByRole('button', { name: 'Delete' })`).
+  3. **The Dry-Run Collection Gate (`test --list`)**:
+     - Before writing locks, the harness executes a dry-run test discovery command in the container sandbox:
+       ```bash
+       npx playwright test --list
+       ```
+     - If the command exits with non-zero exit code or prints an uncaught `ReferenceError`, `SyntaxError`, or loader failure:
+       **REFUSE TO LOCK**. Pass the exact stderr back to the QA specialist in the authoring loop. The QA agent fixes the import in 5 seconds while authoring is still live.
+
+---
+
+##### Pillar 2: Self-Contained Work Orders (Prompt Scaffolding as External Working Memory)
+- **Target Module**: `src/app/analysis/work_orders.py`, `src/app/agents/technical_lead.py`
+- **Objective**: Provide cognitive scaffolding for lower-tier models (8B–32B) so they do not get lost exploring large codebases, while cutting redundant tool reads from 23% to <3%.
+- **Implementation**:
+  1. **Enriched Work Order Payload**:
+     ```python
+     @dataclass(frozen=True)
+     class EnrichedWorkOrder:
+         id: str
+         title: str
+         assigned_specialist: str
+         target_files: list[str]
+         criteria_addressed: list[str]
+         instructions: str
+         file_context: dict[str, str]  # {relative_path: relevant_symbol_or_excerpt}
+         symbol_signatures: list[str]  # e.g. ["function addTask(title, desc)", "export const state = ..."]
+     ```
+  2. **Context Budgeting**: The Tech Lead extracts relevant function signatures and interface definitions from existing files into the prompt. Specialists receive the exact symbols they must implement or call, eliminating hallucinated function names and redundant `read_file` calls.
+
+---
+
+##### Pillar 3: Resilient Context-Anchored Editing & Exact Path Validation
+- **Target Module**: `src/app/tools/agent_toolkit.py`, `src/app/tools/repository.py`
+- **Objective**: Eliminate edit conflicts, line number drift, and path rejections.
+- **Implementation**:
+  1. **Context-Anchored Chunk Replacement**:
+     - Models often fail at specifying exact line numbers after previous edits change line counts.
+     - Provide an edit mode that anchors replacement by matching a unique snippet of preceding and following lines (`context_before`, `old_chunk`, `context_after`), similar to Aider's search-and-replace blocks.
+  2. **Exact Workspace-Relative Path Resolution**:
+     - Reject tool calls with ambiguous paths (e.g., `src/ui.js` when the file is `simple-to-do-list-app/ui.js`) with an explicit path correction hint:
+       > *"Path 'ui.js' does not exist. Did you mean 'simple-to-do-list-app/ui.js'?"*
+     - Never silently redirect or guess files without explicit agent confirmation.
+
+---
+
+##### Pillar 4: Measured Test Timeouts & Sandbox Startup Optimization
+- **Target Module**: `src/app/stacks/browser-javascript/`, `src/app/tools/sandbox.py`
+- **Objective**: Prevent failing Playwright assertions from hanging for 30 seconds per test.
+- **Implementation**:
+  1. **Fast-Fail Playwright Configuration**:
+     - In `playwright.config.js` scaffold:
+       ```javascript
+       export default {
+         timeout: 10000,           // 10s max per test (down from 30s)
+         expect: { timeout: 3000 },// 3s max per expect (down from 10s)
+         use: {
+           actionTimeout: 3000,    // 3s max per click/fill
+           navigationTimeout: 5000,// 5s max per page.goto
+         }
+       };
+       ```
+     - When an element is missing, the test fails in 3 seconds instead of 30 seconds. A 10-test failure round drops from 5 minutes to 30 seconds.
+  2. **Sandbox Server Readiness Ping**:
+     - Replace static `sleep` calls with active polling against `http://127.0.0.1:<port>` with 100ms intervals, proceeding the instant the HTTP 200 response is received.
+
+---
+
+##### Pillar 5: Continuous Self-Learning Engine via Deterministic Distillation
+- **Target Module**: `src/app/learning/distiller.py`, `src/app/stacks/seed.py`
+- **Objective**: Enable the harness to "learn" across runs without accumulating unstructured prompt drift or hallucinated rules.
+- **Implementation**:
+  1. **Post-Run Distillation Node**:
+     - At the end of every run (successful or failed), execute an offline distillation step that audits:
+       - Every git revert performed by `engineering.py` (e.g., `defect_fix_1_10 broke 14 tests`).
+       - Every syntax failure caught by the pre-lock AST gate.
+       - Every Decision Record (`DR-n`) agreed upon during sprint planning.
+  2. **Deterministic Schema Verification**:
+     - Distilled heuristics are validated against strict JSON schema:
+       ```json
+       {
+         "stack_pack": "browser-javascript",
+         "heuristics": [
+           {
+             "category": "acceptance_testing",
+             "rule": "Always use ES module `import` syntax when package.json contains `type: module`.",
+             "evidence_type": "loader_crash_revert"
+           }
+         ]
+       }
+       ```
+     - Validated heuristics are merged into `src/app/stacks/heuristics/<pack>.json` and injected into stack-pack guidance for future runs. Core harness logic remains 100% agnostic.
+
+---
+
+##### Pillar 6: Dual-Track Cognitive Steering (Local Models vs. Frontier Models)
+- **Target Module**: `src/app/models/steering.py`, `src/app/agents/`
+- **Objective**: Steer local / lower-tier models (8B–32B) through rigorous structural constraints while allowing frontier models (Claude 3.7, GPT-4o) maximum reasoning autonomy.
+- **Implementation**:
+  1. **Local Model Steering Track (8B–32B)**:
+     - **Explicit Step-by-Step Prompt Scaffolding**: Decompose broad tasks into numbered sub-actions (1. Read target function, 2. Make minimal edit, 3. Run unit test).
+     - **Structured Tool Grammar**: Enforce strict tool parameter schemas to prevent malformed JSON arguments.
+     - **Narrow Work Orders**: Limit work orders for lower-tier models to single files and ≤2 criteria per order.
+  2. **Frontier Model Track**:
+     - Maintain concise prompts that maximize the model's internal reasoning budget (80%+ reasoning tokens).
+     - Group related criteria into broader work orders for efficient implementation.
+  3. **Non-Mutating Policy**: Never modify the user's selected model or settings. Steering adaptations are purely prompt- and harness-level structures.
+
+---
+
+##### Pillar 7: Immediate In-Stage IDE Linting & Syntax Gate ("Fix-Before-Exit")
+- **Target Module**: `src/app/tools/repository.py`, `src/app/analysis/language_service.py`, `src/app/agents/specialists.py`
+- **Objective**: Catch syntax, type, and import errors at the moment of creation, resolving them before the agent exits its stage.
+- **Implementation**:
+  1. **Layer 1: Hard Syntax Rejection at Write Time (`repository.py`)**:
+     - When `write_file` or `edit_file` is invoked, execute a syntax check before writing to disk:
+       - For JavaScript/TypeScript: `node --check <file>` or TypeScript language service parse.
+       - For Python: `python -m py_compile <file>`.
+     - If the file cannot be parsed:
+       **Reject the tool call**. Return an explicit error:
+       ```json
+       {
+         "error": "SyntaxError in 'ui.js' line 42: Unexpected token '}'. The file was NOT modified. Please correct the syntax and call edit_file again."
+       }
+       ```
+  2. **Layer 2: Pre-Exit Diagnostic Interceptor (`specialists.py`)**:
+     - When a specialist agent attempts to complete its stage by returning `SpecialistOutput`:
+     - The harness intercepts the exit and runs `language_service.underlined_any` over all files touched by the specialist.
+     - If high-confidence diagnostics (ReferenceError, missing exports, undeclared functions) are detected:
+       **Pause stage completion and reprompt the specialist (1-turn bound)**:
+       > *"Stage completion blocked: The language service detected 1 high-confidence error in `state.js`:\nLine 15: `validateTitle` is imported from `./model.js` but `./model.js` does not export it.\nFix this error in `model.js` or `state.js` before completing your work."*
+     - If the specialist resolves it, the stage completes cleanly. If unresolved after 1 turn, the stage completes and the existing CI gate handles triage.
+
+---
+
+##### Pillar 8: True Role-Based Consolidated Defect Remediation
+- **Target Module**: `src/app/graph/workflow.py`
+- **Objective**: Eliminate sequential defect ping-pong. In `run-42b84547`, Sprint 2 ran 9 sequential defect stages, and Sprint 1 attempt 4 started 13 sequential defect stages.
+- **Implementation**:
+  1. **Role Grouping**:
+     - When `test_round` completes with failures, group all open defects by specialist role:
+       - `ui_ux_specialist`: Defects #1, #2, #3, #4, #5, #6, #7, #8, #9 (all UI acceptance criteria).
+       - `backend_specialist`: Defects #11 (state persistence).
+       - `testing_specialist`: Defects #10 (test harness script).
+  2. **Consolidated Remediation Invocation**:
+     - For each role with open defects, spawn **AT MOST ONE** remediation session per test round.
+     - The specialist prompt contains:
+       - The consolidated list of all failing criteria for that role.
+       - The failure stack trace and DOM snapshot from Playwright.
+       - The instructions to fix the implementation and run `npm test` to verify.
+  3. **Verification**:
+     - A single run of `npm test` and `npm run test:acceptance` verifies all fixes simultaneously.
+     - Reduces 10–20 sequential agent invocations down to **1 or 2 consolidated stages**, saving 30–45 minutes of wall-clock time per sprint.
+
+---
+
+##### Pillar 9: Curated Context Bus (idea 1, evaluated: GOOD, as a small extension)
+- **Verdict**: Sound, but most of it already exists. Work orders (`analysis/work_orders.py`), the workspace digest, the project snapshot, `carry_over.py` (facts, not reasoning, survive a restart) and `stage_memory.py` already pass context to agents. What is missing is one *versioned, role-scoped* record of the facts that must never be lost between stages.
+- **Design (proposed)**: a small harness-owned file of typed entries: `requirement`, `decision`, `interface_contract`, `convention`, `known_trap`. Each entry has an id, a source artifact, a version and the roles that need it.
+  1. Entries are written only by the harness from harness-owned artifacts (the locked acceptance suite, Decision Records, stack-pack conventions), never from `docs/` text a run can rewrite.
+  2. Each stage receives only its slice, with a hard character budget, ranked by role relevance and recency. Over budget: drop lowest rank and name what was dropped.
+  3. A trap is added only after the same failure class recurs; stack-specific traps live in the stack pack, not core.
+- **Why not a free-form shared memory**: unvalidated notes drift and poison weaker models. Carrying prior *reasoning* between stages was measured and rejected.
+- **Success criterion**: fewer repeated tool calls and fewer "contract mismatch" defects against the current baseline on the same brief. **Rollback**: a flag that disables injection; stages fall back to work orders alone.
+
+##### Pillar 10: Code and Test Index (idea 2, evaluated: GOOD if kept bounded)
+- **Verdict**: `analysis/project_memory.py` already is a language-agnostic file index (purpose, up to 8 signatures per file, who created or changed each file). The proposal is to extend it, not build a second index.
+- **Evidence**: Aider sends a compact repository map (files plus key symbols with signatures, extracted with tree-sitter), ranks it with a graph algorithm when the repository is large, and lets the model request specific files afterwards (https://aider.chat/2023/10/22/repomap.html). This supports an outline plus on-demand reads. The repo's own measurement rejects whole-file inlining (only 13% of reads are whole small files).
+- **Delta (proposed)**:
+  1. Import and reference edges between files (reuse `analysis/local_imports.py`).
+  2. A test-to-criterion-to-file map (reuse `analysis/test_discovery.py` and the acceptance suite) so a defect points at the files and tests involved.
+  3. A ranked, size-capped outline per stage, and a read-only `find_symbol` style query tool. Regex extraction stays the fallback where no tree-sitter grammar exists.
+- **Gate before building**: measure the current share of read and search calls that return nothing used. Build only if it is large; otherwise the digest already suffices.
+- **Rollback**: outline injection behind a flag; the index file is advisory and never blocks a stage.
+
+##### Tiered Steering by Model Capability
+Plan-first structure stays for every model, because a short plan before execution helps weaker ones. Steering intensity varies by a *measured* signal, not a model name:
+- **Strong tier** (few repeated calls, parses structured output first time): compact work orders, fewer gates.
+- **Weak tier** (restarts, repeated identical calls, parse failures): full work order with excerpts and signatures, in-stage syntax gate, tighter retry budget, smaller scopes per stage.
+The tier is chosen per stage from `stage_memory` counters, can move up or down mid-run, and never changes the owner's model or settings.
+
+##### Efficiency for Long Runs
+Bounded retries and time budgets per stage; stage collapsing for small scopes (exists: `_cap_sprints_for_scope`); one remediation session per role (Pillar 8); and a context budget that stays flat as the project grows (outline, not file dumps).
+
+---
+
+#### 5. Efficiency Model (HYPOTHESES, NOT MEASURED)
+> The table below is an estimate built from one run. Every "High-Steering Run" figure is an unverified target. Replace each with a measured value from `scripts/loop/audit_live.py` after the pillar ships, or delete it. Do not quote the 67% figure.
+
+
+Based on empirical data from `run-42b84547` and historical runs, we model the wall-clock impact of the 8 Pillars on a standard 16-criteria `web-todo` application:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   WALL-CLOCK EFFICIENCY MODEL                                   │
+├───────────────────────────────┬──────────────────────┬────────────────────┬─────────────────────┤
+│ Lifecycle Phase               │ Baseline Run         │ High-Steering Run  │ Mechanism           │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 1. Intake & Architecture      │ 4 min (13 calls)     │ 3 min (8 calls)    │ Scope fast-path     │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 2. Acceptance Authoring       │ 15 min (166 calls)   │ 8 min (40 calls)   │ AST check + Dry-run │
+│    & Quality Lock Gate        │                      │                    │ prevents bad lock   │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 3. Sprint Planning            │ 11 min (27 calls)    │ 3 min (6 calls)    │ Dynamic sprint cap  │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 4. Specialist Implementation  │ 8 min (70 calls)     │ 8 min (50 calls)   │ Self-contained WOs  │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 5. CI Gate & Test Execution   │ 6 min (62 calls)     │ 2 min (15 calls)   │ 3s fast-fail limits │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 6. Defect Remediation         │ 42 min (313 calls)   │ 8 min (25 calls)   │ True Consolidated   │
+│    (Rework Loop)              │ (18 separate stages) │ (2 role sessions)  │ Batching + In-Stage │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 7. Milestone Review & Release │ 5 min (15 calls)     │ 3 min (6 calls)    │ Direct release gate │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ Overhead / Turn Latency       │ 31 min (idle / wait) │ 5 min              │ Fast-fail timeouts  │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ TOTAL RUNTIME                 │ 122 min (cancelled)  │ 40 min (COMPLETE)  │ 67% Time Reduction  │
+└───────────────────────────────┴──────────────────────┴────────────────────┴─────────────────────┘
+```
+
+---
+
+#### 6. Prioritized Implementation Roadmap
+
+| Milestone | Deliverables | Target Modules | Value & Impact |
+|---|---|---|---|
+| **M1: Pre-Lock Acceptance Suite AST & Load Gate** | 1. Module System Matcher (`import` vs `require`).<br>2. Floating promise AST detector.<br>3. `npx playwright test --list` dry-run verification before lock. | `src/app/acceptance/suite.py`<br>`src/app/acceptance/requests.py` | **P0 (Critical)**: Eliminates the 114-minute ESM crash that doomed `run-42b84547`. |
+| **M2: In-Stage "Fix-Before-Exit" Syntax Gate** | 1. Hard parse rejection on write tool (`node --check` / `py_compile`).<br>2. Pre-exit diagnostic interception in specialist node. | `src/app/tools/repository.py`<br>`src/app/agents/specialists.py` | **P0 (Critical)**: Resolves syntax errors in 1 turn before defect triage starts. |
+| **M3: True Role-Based Consolidated Remediation** | Collapse sequential defect cursor into single consolidated remediation session per specialist role. | `src/app/graph/workflow.py` | **P0 (Critical)**: Cuts 10–18 defect stages down to 1–2 stages, saving 35+ mins. |
+| **M4: Measured Fast-Fail Test Timeouts** | Explicit 3s Playwright action/expect timeouts and active sandbox readiness polling. | `src/app/stacks/browser-javascript/`<br>`src/app/tools/sandbox.py` | **P1 (High)**: Reduces test failure wait times from 30s to 3s per test. |
+| **M5: Self-Contained Work Orders** | Embed file excerpts and symbol signatures into work-order prompts for local model steering. | `src/app/analysis/work_orders.py`<br>`src/app/agents/technical_lead.py` | **P1 (High)**: Prevents local models from getting lost; cuts redundant reads. |
+| **M6: Continuous Self-Learning Engine** | Offline distillation of Decision Records and reverts into `src/app/stacks/heuristics/<pack>.json`. | `src/app/learning/distiller.py`<br>`src/app/stacks/` | **P2 (Strategic)**: Safely distills engineering wisdom across runs. |
+
+---
+
+#### 7. Verification & Safety Invariants
+
+1. **Owner Features Preserved**:
+   - Dynamic agent-instruction injection preserved.
+   - Parallel/linear toggles preserved.
+   - Sprint summaries and Decision Records preserved.
+2. **Technology-Agnostic Core**:
+   - All language- and stack-specific rules live strictly in `src/app/stacks/`.
+   - Core harness graph logic in `src/app/graph/workflow.py` remains 100% agnostic.
+3. **No Run IDs in Code, Prompts, or Tests**:
+   - Strictly verified by `tests/test_no_run_ids_in_the_source.py`.
+4. **Banned Word Rules in Prompts**:
+   - Any new prompt additions tested to ban the whole words `task`, `tasks`, `to-do`, `todo`, `button`, `click`, and `checkbox`.
+5. **Test-First Verification**:
+   - Every fix verified by a test proven to fail on the old code.
+   - Full test suite passing (`scripts/loop/loop.sh suite`).
+
+---
+
+#### 8. Sources and Open Verification
+- Verified: Aider repository map (https://aider.chat/2023/10/22/repomap.html).
+- Unverified, treat as hypotheses until sourced: SWE-agent agent-computer interface, OpenHands, persistent sandbox startup, DOM-snapshot failure packets, all runtime-reduction numbers.
+- Order of work: measure (read churn, context-miss failures) then Pillars 1, 7, 8, then 9, then 10.
+
+---
+
+<a id="plan-appendix-m"></a>
+## Appendix M — Master index of every improvement (2026-10-19)
+
+One row per improvement, taken from the ledger tables above (Appendices 1–4)
+and the earlier plans (section E). The link goes to the section that explains
+the item: what it changes, why, and the evidence (review findings in
+`docs/review-findings.md`, research in `docs/research-findings.md`).
+
+- **Status vocabulary:** DONE (with date and commit), PARTLY, NOT STARTED,
+  DROPPED or NOT BUILT (with the measurement or owner decision that stopped
+  it), MEASURING, ADOPTED (process rules).
+- **Keeping it current:** update the ledger row first, then this index, in
+  the same commit.
+
+| ID | Improvement (short description) | Priority | Status | Detail |
+|---|---|---|---|---|
+| J.1 | vacuous-green hard gate | P0 | DONE 2026-10-18 | [J.1](#plan-j) |
+| J.4 | `completed_with_gaps` status | P0 | DONE 2026-10-18 | [J.4](#plan-j) |
+| J.5 | records cite the verdict | P0 | DONE 2026-10-18 | [J.5](#plan-j-5) |
+| K.1 | environment contract to architect/QA | P0 | DONE 2026-10-18 | [K.1](#plan-k) |
+| L.3 | dispatch-time re-measure | P0 | DONE 2026-10-18 | [L.3](#plan-l) |
+| L.5 | identical-call hard stop | P0 | DONE 2026-10-18 | [L.5](#plan-l) |
+| L.6 | final attempt changes strategy | P0 | DONE 2026-10-18 | [L.6](#plan-l-6) |
+| Q.4 | write-receipt reconciliation | P1 | DONE 2026-10-18 | [Q.4](#plan-q-4) |
+| J.2 | reclassification cap + second opinion | P1 | DONE 2026-10-18 | [J.2](#plan-j) |
+| J.3 | release-time per-criterion probe | P1 | DONE 2026-10-18 (Playwright packs) | [J.3](#plan-j) |
+| J.6 | terminal-state hygiene | P1 | DONE 2026-10-18 | [J.6](#plan-j-6) |
+| K.3 | entrypoint wiring proof | P1 | DONE 2026-10-18 | [K.3](#plan-k) |
+| K.4 | dependency-drift gate | P1 | DONE 2026-10-18 | [K.4](#plan-k) |
+| K.5 | sandbox install coherence | P1 | DONE 2026-10-18 | [K.5](#plan-k) |
+| K.6 | stack-shaped checks as pack data | P1 | NOT STARTED | [K.6](#plan-k-6) |
+| L.1 | root-cause clustering | P1 | DONE 2026-10-18 | [L.1](#plan-l) |
+| L.2 | file-granular revert | P1 | DROPPED 2026-10-18 (validation) | [L.2](#plan-l) |
+| L.4 | judgement escalation after revert | P1 | DONE 2026-10-18 | [L.4](#plan-l) |
+| L.7 | validator-first plan repair | P1 | DONE 2026-10-18 | [L.7](#plan-l-7) |
+| M-bash | bash-first degraded mode | P3 | NOT STARTED | [M-bash](#plan-m) |
+| N | reasoning-budget guardrails | P1 | N.2 DONE 2026-10-18; N.1 measure-first; N.3 premise false | [N](#plan-n) |
+| P.1 | demote `replace_lines` | P1 | DONE 2026-10-18 | [P.1](#plan-p) |
+| P.2/P.3 | parser-refusal escape | P1 | ALREADY IN CODE (validated 2026-10-18) | [P.2/P.3](#plan-p) |
+| P.4 | lookup-tool hygiene | P1 | MOSTLY DONE 2026-10-15 | [P.4](#plan-p-4) |
+| Q.1 | route fixes to judgement model | P1 | COVERED by L.4 + `escalate_after()` | [Q.1](#plan-q) |
+| Q.2 | procedural test-round reports | P1 | DONE in substance (verified 2026-10-18) | [Q.2](#plan-q) |
+| Q.3 | dispute routing + rubric anchoring | P1 | DONE in substance (verified 2026-10-18) | [Q.3](#plan-q) |
+| Q-amend | fast-mode diff review flag | P2 | NOT STARTED | [Q-amend](#plan-q-amendment) |
+| O.5 | stale budget constants | P2 | DONE 2026-10-18 | [O.5](#plan-o) |
+| R | duplicate-call elimination | P1 | DONE 2026-10-18 (`3c9c931`) | [R](#plan-r) |
+| S | server checklist + health telemetry | P2 | PARTLY DONE 2026-10-18 | [S](#plan-s) |
+| T | streaming re-test spike | P2 | NOT STARTED | [T](#plan-t) |
+| U.2 | KPI plumbing | P2 | DONE 2026-10-18 via W.4 | [U.2](#plan-u) |
+| U.4 | retention policy | P2 | NOT BUILT 2026-10-18 (owner decision) | [U.4](#plan-u-4) |
+| UI Phase 1 | harm removal | P2 | MOSTLY DONE 2026-10-18 | [UI Phase 1](#plan-part-4) |
+| UI Phase 2 | structural | P2 | PARTLY DONE 2026-10-18 (owner scope) | [UI Phase 2](#plan-part-4) |
+| UI Phase 3 | differentiators | P3 | STEERING DONE 2026-10-18 | [UI Phase 3](#plan-part-4) |
+| Part 4 | backend enablers | P2/P3 | NOT STARTED | [Part 4](#plan-part-4-enabler) |
+| U.1 | bench corpus additions | P3 | PARTLY DONE 2026-10-18 (`1ef5dd8`) | [U.1](#plan-u) |
+| U.3 | A/B wiring | P3 | DONE 2026-10-18 (`3d8789f`) | [U.3](#plan-u) |
+| V | layer-economics ledger | P3 | MEASURING since 2026-10-18 (`3d8789f`) | [V](#plan-v) |
+| K.2 | services provisioning | P3 | OPTION A DONE 2026-10-18 (owner: embedded first) | [K.2](#plan-k) |
+| W.1 | bench-brief integrity rule | P0 | DONE 2026-10-18 (`a98d9ec`) | [W.1](#plan-w) |
+| W.2 | post-P0 baseline runs | P0 | NOT STARTED | [W.2](#plan-w) |
+| W.3 | toggles through compose + config unification | P0 | DONE 2026-10-18 (`54ab3bd`) except `/props` defaults | [W.3](#plan-w) |
+| W.4 | per-run KPI JSON + cross-run ledger + regression flag | P0 | DONE 2026-10-18 (`bdc464c`) | [W.4](#plan-w) |
+| W.5 | ledger rows for Initiatives A–I; correct U.2 row | P0 | DONE 2026-10-18 | [W.5](#plan-w) |
+| A | design tokens seeded by pack | pre-ledger | DONE 2026-10-18 (owner decision) | [A](#plan-a) |
+| B | procedural visual/layout audits | pre-ledger | PARTLY | [B](#plan-b) |
+| C | contract-strict interface extraction | pre-ledger | DONE 2026-10-18 | [C](#plan-c) |
+| D | pre-execution linter / assertion normalizer | pre-ledger | DONE in substance | [D](#plan-d) |
+| E | narrow single-file work orders | pre-ledger | DONE 2026-10-18 (owner decision), MEASURE over 2 runs | [E](#plan-e) |
+| F | root-crash / load-error gate | pre-ledger | DONE | [F](#plan-f) |
+| G | lenient whitespace in `edit_artifact` | pre-ledger | PARTLY; Unicode half NOT BUILT (measured 2026-10-18) | [G](#plan-g) |
+| H | pre-flight verification before a fixer | pre-ledger | DONE | [H](#plan-h) |
+| I | reasoning budget governor | pre-ledger | DONE | [I](#plan-i) |
+| X.1 | tool-name/offer test + four prompt fixes | P0 | DONE 2026-10-18 (`5c74429`) | [X.1](#plan-x) |
+| X.2 | verdict-semantics test (`blocked`) | P0 | DONE 2026-10-18 (`3af2de9`) | [X.2](#plan-x) |
+| X.3 | mode-rendered tool descriptions | P1 | DONE 2026-10-18 (`9aaaaf4`) | [X.3](#plan-x) |
+| X.4 | prompt diet + prompt-size KPI | P1 | DONE 2026-10-18 (`8cacab9`), partly | [X.4](#plan-x) |
+| M.1 | probe-time capability detection | P1 | DONE 2026-10-18 (`adcc719`), narrowed | [M.1](#plan-m) |
+| M.2 | control-plane `response_format` where supported | P1 | DROPPED 2026-10-18 (premise false here) | [M.2](#plan-m) |
+| M.3 | sampling presets per family | P1 | DROPPED 2026-10-18 (owner rule) | [M.3](#plan-m) |
+| O.1 | (amended) spec excerpt keeps every section | P1 | DONE 2026-10-18 (`b04b688`) | [O.1](#plan-o) |
+| O.2 | effective context ceiling | P1 | DONE 2026-10-18 (`adcc719`) | [O.2](#plan-o) |
+| O.3 | / AA prefix-cache layout | P1 | DONE 2026-10-18 (`d2c48b2`, `58f3bfa`) | [O.3](#plan-o) |
+| O.4 | / Z compaction | P1 | NOT BUILT 2026-10-18 (measured) | [O.4](#plan-o) |
+| AB | fan-out = server slots | P1 | DONE 2026-10-18 (`adcc719`) | [AB](#plan-ab) |
+| M.4–M.6 | reasoning policy, arg-fit map, quant advisory | P2 | PARTLY | [M.4–M.6](#plan-m) |
+| Y | edit-ACI calibration bench + architect/editor option | P1 | MEASURED 2026-10-18, no change | [Y](#plan-y) |
+| AC | deterministic gating of reviews/test agent; check memoisation | P1 | DONE in substance / AC.3 DROPPED (measured 2026-10-18) | [AC](#plan-ac) |
+| AD | measure at settlement | P0 | DONE 2026-10-18 (`e8593db`) | [AD](#plan-ad) |
+| AE | one cannot-pass list; gaps sources; release re-checks | P0 | DONE 2026-10-18 (`d3962eb`, `372ff53`) | [AE](#plan-ae) |
+| AF | mutation probe for suite strength | P2 | DONE 2026-10-18 (redesigned) | [AF](#plan-af) |
+| AG | capability tiers at intake + per-pack coverage field | P1 | DONE in substance 2026-10-18 (`115282c`) | [AG](#plan-ag) |
+| AH.1 | honest cost cap + independent hard bound | P1 | DONE 2026-10-18 (`f227a69`) | [AH.1](#plan-ah) |
+| AH.2 | retention/deletion contract incl. transcripts | P1 | ALREADY DONE (premise stale) | [AH.2](#plan-ah) |
+| AH.3 | reviewer completeness + judgement-model downgrade as gap | P1 | DONE 2026-10-18 (`5c0ba55`) | [AH.3](#plan-ah) |
+| AH.4 | execution-readiness check in `loop.sh ready` / run start | P1 | DONE 2026-10-18 (`6dccea0`) | [AH.4](#plan-ah) |
+| AI | structured lesson store | P2 | DONE 2026-10-18 (owner approves) | [AI](#plan-ai) |
+| AJ | test subprocess lifecycle & async engine cleanup | P1 | ITEM 1 DONE 2026-10-18 (`2f68304`, `4abd460`) | [AJ](#plan-aj) |
+| Part 12 | refactor track (V) | P3 | NOT STARTED | [Part 12](#plan-part-12) |
+| AK | run-wide budgets persisted | P0 | DONE 2026-10-19 (`a276433`) | [AK](#plan-ak) |
+| AL | crash-safe mutation probe | P0 | DONE 2026-10-19 (`b18425e`) | [AL](#plan-al) |
+| AM | one owner of the seen digest | P0 | DONE 2026-10-19 (`7207531`) | [AM](#plan-am) |
+| AN | measurement correctness | P0 | DONE 2026-10-19 (`f724c00`, `804e29a`) | [AN](#plan-an) |
+| AO.1 | AD edge cases | P0 | DONE 2026-10-19 (`094fbfd`) | [AO.1](#plan-ao) |
+| AO.2 | M.1 fail-closed semantics | P0 | DONE 2026-10-19 (`dc31ad0`) | [AO.2](#plan-ao) |
+| AO.3 | E split parts | P1 | DONE 2026-10-19 (`AO.3` commit) | [AO.3](#plan-ao) |
+| AO.4 | X.3 on 3.13 + CI matrix | P1 | DONE 2026-10-19 | [AO.4](#plan-ao) |
+| AO.5 | AE reopen precision | P1 | PARTLY 2026-10-19 | [AO.5](#plan-ao) |
+| AO.6 | K.2 DATA_DIR for every pack + seed text | P1 | DONE 2026-10-19 | [AO.6](#plan-ao) |
+| AO.7 | AH.3 persisted downgrade | P1 | DONE 2026-10-19 | [AO.7](#plan-ao) |
+| AO.8 | changes API hygiene + `.git/` write guard | P1 | DONE 2026-10-19 | [AO.8](#plan-ao) |
+| AO.9 | R digest precision | P1 | PARTLY 2026-10-19 | [AO.9](#plan-ao) |
+| AO.10 | repo-rule drift | P1 | PARTLY 2026-10-19 | [AO.10](#plan-ao) |
+| AP | ledger/handover hygiene | P0 | DONE 2026-10-19 | [AP](#plan-ap) |
+| AQ | repeated-read hypotheses | P1 | PARTLY 2026-10-19 | [AQ](#plan-aq) |
+| AR | lost-reply probe → N.1 | P1 | SCRIPT DONE 2026-10-19; RUN WAITS | [AR](#plan-ar) |
+| AS | steering v2 | P1 | DONE 2026-10-19 | [AS](#plan-as) |
+| AT | lessons v2 | P2 | DONE 2026-10-19 | [AT](#plan-at) |
+| AU | interface contract for every surface | P2 | NOT STARTED | [AU](#plan-au) |
+| AV | AJ completion | P1 | DONE 2026-10-19 | [AV](#plan-av) |
+| AW | K.6 scoped | P2 | NOT STARTED | [AW](#plan-aw) |
+| UI-0 | Phase-1 remainder + generated client | P1 | PARTLY 2026-10-19 | [UI-0](#plan-part-15) |
+| UI-T1–T3 | theme system (tokens, Plex, codemod, contrast CI) | P1 | DONE 2026-10-19 | [UI-T1–T3](#plan-ui-15-2) |
+| UI-P | primitive kit | P1 | NOT STARTED | [UI-P](#plan-ui-15-3) |
+| UI-S1/S2 | shell + runs table | P1 | PARTLY 2026-10-19 | [UI-S1/S2](#plan-ui-15-4) |
+| UI-S4 | control room + 15.5 enablers | P1 | PARTLY 2026-10-19 | [UI-S4](#plan-ui-15-4) |
+| UI-T4–T6 | / S5 appearance + settings | P2 | PARTLY 2026-10-19 | [UI-T4–T6](#plan-ui-15-2) |
+| UI-S3 | plan-first intake | P2 | NOT STARTED | [UI-S3](#plan-ui-15-4) |
+| UI-S6 | insights | P3 | NOT STARTED | [UI-S6](#plan-ui-15-4) |
+| AX | reasoning budget per role | P0 | NOT STARTED | [AX](#plan-ax) |
+| AY | bounded fix cycle | P0 | NOT STARTED | [AY](#plan-ay) |
+| AZ | skeleton + slices | P0 | NOT STARTED | [AZ](#plan-az) |
+| BA | prefix-cache discipline | P1 | NOT STARTED | [BA](#plan-ba) |
+| BB | lead plans in parts | P1 | NOT STARTED | [BB](#plan-bb) |
+| BC | stalls end one call earlier | P1 | NOT STARTED | [BC](#plan-bc) |
+| BD | two local tiers + model advice | P1 | NOT STARTED | [BD](#plan-bd) |
+| BE | one container per run | P2 | NOT STARTED | [BE](#plan-be) |
+| BF | prompt composition record | P1 | NOT STARTED | [BF](#plan-bf) |
+| BH | model registry + measured edit preference | P1 | NOT STARTED | [BH](#plan-bh) |
+| BI | rubric-graded candidates | P2 | NOT STARTED | [BI](#plan-bi) |
+| BG.1 | progress/tokens in summary | P1 | NOT STARTED | [BG.1](#plan-bg-1) |
+| BG.2 | needs-you inbox + notifications | P1 | NOT STARTED | [BG.2](#plan-bg-2) |
+| BG.3 | gates as composer, artifact inline | P1 | NOT STARTED | [BG.3](#plan-bg-3) |
+| BG.4 | rail/work-area/ledger + real tabs | P1 | NOT STARTED | [BG.4](#plan-bg-4) |
+| BG.5 | model-server surface | P1 | NOT STARTED | [BG.5](#plan-bg-5) |
+| BG.6 | fix-loop + sprints structured | P1 | NOT STARTED | [BG.6](#plan-bg-6) |
+| BG.7 | Audit tab | P2 | NOT STARTED | [BG.7](#plan-bg-7) |
+| BG.8–BG.13 | feed, changes, intake, copy, visual, a11y | P2 | NOT STARTED | [BG.8–BG.13](#plan-bg-8) |
+| BG.14–BG.16 | replay, pressure, palette/compare | P3 | NOT STARTED | [BG.14–BG.16](#plan-bg-14) |
+| BJ | one input budget per request | P1 | NOT STARTED | [BJ](#plan-bj) |
+| Part 20 | two-run gate rule | P0 (process) | ADOPTED 2026-10-19 | [Part 20](#plan-part-20) |
+| E1 | Harness Improvement Plan (October): RepoMap, persistent sandbox, linting before lock, self-learning, lean scopes | — | mostly DONE or superseded; see its status table | [Section E1](#plan-e1) |
+| E2 | High-steering pillars 1–10 (pre-lock gate, self-contained work orders, fix-before-exit, consolidated remediation, context bus, code index) | — | mostly DONE in substance; 9 and 10 not built | [Section E2](#plan-e2) |

@@ -190,7 +190,12 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
         return None
     chosen = sections_to_revise(specification, required_changes, model)
     if not chosen:
-        return None
+        # Not a reason to hand the whole document back to one reply. Measured
+        # live on a medium brief: the architect's full rewrite was cut at the
+        # 20,000-token output cap three times running, two and a half minutes
+        # each. Every section, a few at a time, fits where one reply does not.
+        logger.info("Could not tell which sections the review's changes touch; revising every section in parts")
+        chosen = _names(specification)
     groups = [tuple(chosen[n:n + SECTIONS_PER_REVISION]) for n in range(0, len(chosen), SECTIONS_PER_REVISION)]
     parameters = convert_to_openai_tool(type(specification))["function"]["parameters"]
     core = {name: getattr(specification, name, None) for name in CORE}

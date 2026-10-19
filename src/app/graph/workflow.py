@@ -3837,6 +3837,23 @@ _REQUIRED_SPECIFICATION_SECTIONS = (
 )
 
 
+def _a_model_to_revise_with(judgement_model: Any) -> Any:
+    """The judgement model, or the deployment's own when none is named; never raises.
+
+    No model named is a local-only run, not a reason to skip the in-place
+    revision: the parts writer resolves the same `None` the same way.
+    """
+    if judgement_model is not None:
+        return judgement_model
+    try:
+        from app.models import build_default_chat_model
+
+        return build_default_chat_model()
+    except Exception:  # noqa: BLE001 - the architect revises as before
+        logger.warning("Could not build a model to revise the specification in place", exc_info=True)
+        return None
+
+
 def _with_the_sections_it_dropped(revised: Any, previous: Any) -> Any:
     """A repaired specification, with any section it left empty taken from the one before.
 
@@ -7667,15 +7684,22 @@ def build_workflow_graph(
         update = None
         # Fast delivery revises in place: only the sections the review's
         # changes touch are rewritten. See `specification_parts.revised_in_place`.
+        # No model named means the deployment's own, as the parts writer below
+        # already resolves it. Measured live on a local-only run: with none
+        # named this path never ran, and the architect's whole-document
+        # revision was cut at the output cap three times running.
+        revision_model = (
+            _a_model_to_revise_with(judgement_model) if _fast_delivery() and required_changes else judgement_model
+        )
         if (
             _fast_delivery() and required_changes and previous_specification is not None
-            and hasattr(previous_specification, "model_dump") and isinstance(judgement_model, BaseChatModel)
+            and hasattr(previous_specification, "model_dump") and isinstance(revision_model, BaseChatModel)
         ):
             from app.graph.specification_parts import revised_in_place
 
             revised = revised_in_place(
                 previous_specification, "\n".join(f"- {change}" for change in required_changes),
-                judgement_model, parts_context(),
+                revision_model, parts_context(),
             )
             if revised is not None:
                 update = {"technical_specification": revised, "stage": "architecture_review"}

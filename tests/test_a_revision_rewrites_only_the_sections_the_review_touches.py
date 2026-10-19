@@ -59,8 +59,22 @@ def test_a_section_that_comes_back_empty_leaves_the_revision_to_the_architect():
     assert specification_parts.revised_in_place(PREVIOUS, "- change", model, "") is None
 
 
-def test_a_model_that_cannot_name_the_sections_leaves_it_to_the_architect():
+def test_a_model_that_cannot_name_the_sections_and_cannot_revise_leaves_it_to_the_architect():
     assert specification_parts.revised_in_place(PREVIOUS, "- change", _Model([], {}), "") is None
+
+
+def test_a_model_that_cannot_name_the_sections_revises_every_section_in_parts():
+    """Measured live: with no sections named, the architect rewrote the whole
+    specification in one reply, cut at the output cap three times running."""
+    everything = {"product_scope": "Notes over HTTP, kept in a store.", "file_plan": ["src/app.ts: routes", "src/store.ts: store"],
+                  "testing": ["node:test"], "decisions": ["a store module"]}
+    model = _Model([], everything)
+
+    revised = specification_parts.revised_in_place(PREVIOUS, "- AC-6: a store module is missing", model, "")
+
+    assert revised is not None and revised.file_plan == everything["file_plan"]
+    rewrites = [asked for asked in model.asked if "--- The sections to rewrite" in asked]
+    assert len(rewrites) == 2  # four sections, three at a time
 
 
 def test_the_architect_node_revises_in_place_first_in_fast_delivery():
@@ -68,3 +82,17 @@ def test_the_architect_node_revises_in_place_first_in_fast_delivery():
     at = source.index("revised = revised_in_place(")
     assert source.index("_fast_delivery() and required_changes and previous_specification is not None") < at
     assert at < source.index('stage_name="principal_architect"')
+
+
+def test_a_run_with_no_judgement_model_named_revises_in_place_with_the_deployment_s_own(monkeypatch):
+    """Measured live: a local-only run names no judgement model, the in-place
+    revision required one, and the architect rewrote the whole specification."""
+    import app.models
+
+    built = object()
+    monkeypatch.setattr(app.models, "build_default_chat_model", lambda: built)
+
+    assert workflow._a_model_to_revise_with(None) is built
+    named = object()
+    assert workflow._a_model_to_revise_with(named) is named
+    assert "_a_model_to_revise_with(judgement_model)" in inspect.getsource(workflow)

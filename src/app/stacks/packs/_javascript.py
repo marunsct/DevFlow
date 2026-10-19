@@ -187,6 +187,35 @@ export default async function pageCheck(config) {
       layout.phoneOverflow = await page.evaluate(
         () => Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
       );
+      // At a phone's width too: controls drawn over each other, and controls
+      // too small to tap (WCAG 2.5.8: 24 by 24 CSS pixels). A model sees the
+      // markup, never the rendered boxes; these are the boxes, measured.
+      Object.assign(layout, await page.evaluate(() => {
+        const name = (el) => (el.getAttribute('aria-label') || el.textContent || el.getAttribute('placeholder')
+          || el.getAttribute('name') || el.id || '').trim().replace(/\\s+/g, ' ').slice(0, 40);
+        const label = (el) => `${el.tagName.toLowerCase()} "${name(el)}"`;
+        const controls = [...document.querySelectorAll('a[href], button, input:not([type=hidden]), select, textarea, [role=button]')]
+          .filter((el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
+            return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; });
+        const smallTargets = controls
+          .filter((el) => !(el.tagName === 'A' && el.closest('p, li')))  // a link in running text is exempt
+          .filter((el) => { const r = el.getBoundingClientRect(); return r.width < 24 || r.height < 24; })
+          .slice(0, 5).map((el) => { const r = el.getBoundingClientRect();
+            return `${label(el)} is ${Math.round(r.width)}x${Math.round(r.height)}px`; });
+        const overlaps = [];
+        for (let i = 0; i < controls.length && overlaps.length < 5; i += 1) {
+          for (let j = i + 1; j < controls.length && overlaps.length < 5; j += 1) {
+            const a = controls[i]; const b = controls[j];
+            if (a.contains(b) || b.contains(a)) continue;
+            const r = a.getBoundingClientRect(); const q = b.getBoundingClientRect();
+            const w = Math.min(r.right, q.right) - Math.max(r.left, q.left);
+            const h = Math.min(r.bottom, q.bottom) - Math.max(r.top, q.top);
+            const smaller = Math.min(r.width * r.height, q.width * q.height);
+            if (w > 0 && h > 0 && w * h >= 0.25 * smaller) overlaps.push(`${label(a)} and ${label(b)}`);
+          }
+        }
+        return { smallTargets, overlaps };
+      }));
       await page.screenshot({ path: join(root, 'test-results/page-phone.png'), fullPage: true });
     } catch (error) {
       // A measurement that cannot be taken says nothing; the tests still run.
@@ -207,6 +236,15 @@ export default async function pageCheck(config) {
   }
   if (shows) {
     console.log(`\\nThe page, loaded with nothing driving it, shows:\\n${shows}\\n`);
+  }
+  if (layout.overlaps?.length || layout.smallTargets?.length) {
+    console.log(
+      '\\nAt a phone\\'s width (375px), measured in the browser:\\n'
+      + (layout.overlaps || []).map((pair) => `  - drawn over each other: ${pair}`).join('\\n')
+      + ((layout.overlaps || []).length && (layout.smallTargets || []).length ? '\\n' : '')
+      + (layout.smallTargets || []).map((small) => `  - too small to tap (under 24x24px): ${small}`).join('\\n')
+      + '\\n',
+    );
   }
   if (layout.accessibility?.length) {
     console.log(

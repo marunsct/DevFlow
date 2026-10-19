@@ -383,6 +383,9 @@ class AcceptanceResult:
     #: How many pixels wider than a phone's screen (375px) the page is, from
     #: the same report; 0 when it fits or was not measured.
     phone_overflow: int = 0
+    #: At a phone's width: controls drawn over each other, and ones under 24x24px (Initiative B).
+    overlaps: list[str] = field(default_factory=list)
+    small_targets: list[str] = field(default_factory=list)
     #: The serious and critical rules an accessibility engine found broken on
     #: the page as it loads - id, impact, help, count, where - from the same
     #: report; [] when none, or when it could not run.
@@ -460,6 +463,8 @@ class AcceptanceResult:
             "runtime_problems": self.runtime_problems,
             "shows": self.shows,
             "phone_overflow": self.phone_overflow,
+            "overlaps": self.overlaps,
+            "small_targets": self.small_targets,
             "accessibility": self.accessibility,
         }
 
@@ -593,6 +598,7 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
             result.problem = never_started
     result.runtime_problems, result.shows = _read_runtime_report(runtime_file)
     result.phone_overflow = _read_phone_overflow(runtime_file)
+    result.overlaps, result.small_targets = _read_layout_findings(runtime_file)
     result.accessibility = _read_accessibility(runtime_file)
     _with_the_pages_they_failed_on(repo_root, project, result)
     return _judged(repo_root, result, save)
@@ -698,6 +704,22 @@ def _read_phone_overflow(path: Path | None) -> int:
         return max(0, int(layout.get("phoneOverflow") or 0))
     except (OSError, ValueError, AttributeError, TypeError):
         return 0
+
+
+def _read_layout_findings(path: Path | None) -> tuple[list[str], list[str]]:
+    """(controls drawn over each other, controls too small to tap) at a phone's width, from the runtime report."""
+    if path is None:
+        return [], []
+    try:
+        layout = json.loads(path.read_text(encoding="utf-8")).get("layout") or {}
+    except (OSError, ValueError, AttributeError):
+        return [], []
+
+    def kept(key: str) -> list[str]:
+        found = layout.get(key) if isinstance(layout, dict) else None
+        return [str(item)[:160] for item in (found if isinstance(found, list) else [])[:5]]
+
+    return kept("overlaps"), kept("smallTargets")
 
 
 def _read_accessibility(path: Path | None) -> list[dict[str, Any]]:

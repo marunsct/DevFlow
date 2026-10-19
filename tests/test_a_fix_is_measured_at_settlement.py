@@ -148,3 +148,24 @@ def test_a_defect_naming_no_file_is_still_measured_by_every_unit_test(tmp_path) 
         unit={f"tests/render.test.ts{WHERE}draws the list": "failed"},
     )
     assert defect.status != "fixed"
+
+
+def test_a_fix_whose_own_tests_still_fail_is_recorded_as_that_even_naming_no_test(tmp_path, monkeypatch) -> None:
+    """Measured live: three fixes of "the unit tests fail" were each recorded as
+    "the fix named no regression test" while the measurement after each showed its
+    unit tests still failing - the record named the lesser reason."""
+    from app.graph.workflow import UNIT_TESTS_FAIL
+    from app.observability import defect_ledger
+
+    noted = []
+    monkeypatch.setattr(defect_ledger, "note", lambda event, stage, **kw: noted.append((event, kw.get("detail"))))
+    ci.save(tmp_path, ci.Snapshot(label=LABEL, unit={"tests/test_auth.py::test_login": "failed"}, unit_ran=True))
+    defect = _defect(f"{UNIT_TESTS_FAIL} The runner's output ends: 1 failed")
+    defect.regression_test_required = True
+    cycle = RemediationCycle(sprint_goal="g", defects=[defect])
+    state = {"repository": SimpleNamespace(root_path=str(tmp_path)), "specialist_outputs": {}}
+    fix = SpecialistOutput(changed_files=["app/schemas.py"], tests=[])
+
+    _settle_the_fix(state, cycle, 0, "defect_fix_1_0", fix, measured=LABEL)
+
+    assert noted == [("left open", "its own tests still fail, measured after the fix")]

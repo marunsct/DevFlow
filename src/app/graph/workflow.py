@@ -2922,6 +2922,18 @@ def _settle_the_fix(
             sprint=state.get("current_sprint_index", 0),
             detail="the fix stage changed nothing and reported: " + "; ".join(map(str, fix_result.blockers))[:300],
         )
+    elif (measured_now := _the_defect_s_tests_in(state["repository"].root_path, measured, defect)) is False:
+        # Its own tests still fail, measured after the fix. Closed, the next
+        # round found it again and charged the attempt a round late. Ahead of
+        # the regression-test rule: measured live, three fixes whose unit tests
+        # still failed were each recorded as "named no regression test", the
+        # lesser reason.
+        update["remediation"] = cycle
+        defect_ledger.note(
+            "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+            sprint=state.get("current_sprint_index", 0),
+            detail="its own tests still fail, measured after the fix",
+        )
     elif defect.regression_test_required and not regression_test and not _the_suite_already_guards_it(
         state, measured, defect
     ):
@@ -2933,15 +2945,6 @@ def _settle_the_fix(
             "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
             sprint=state.get("current_sprint_index", 0),
             detail="the fix named no regression test",
-        )
-    elif (measured_now := _the_defect_s_tests_in(state["repository"].root_path, measured, defect)) is False:
-        # Its own tests still fail, measured after the fix. Closed, the next
-        # round found it again and charged the attempt a round late.
-        update["remediation"] = cycle
-        defect_ledger.note(
-            "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
-            sprint=state.get("current_sprint_index", 0),
-            detail="its own tests still fail, measured after the fix",
         )
     else:
         if measured_now is None:

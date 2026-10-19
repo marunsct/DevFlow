@@ -1669,6 +1669,20 @@ _INSTEAD_OF: dict[str, str] = {
 }
 
 
+#: A word of the form `NAME=value` where a program should be: the shell's way of
+#: setting a variable for one command, written by an author who expects a shell.
+AN_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+#: What to do instead of `NAME=value program ...`, said once for every place that
+#: meets one: a plan's verification command and a command a stage sends.
+ASSIGNMENT_ADVICE = (
+    "A `NAME=value` before a command is a shell's way of setting a variable, and there is no "
+    "shell here, so it sets nothing and is not a program. Every command already gets `PORT` and "
+    "`DATA_DIR`; a value the code needs belongs in the project's own configuration or the "
+    "test's setup, with a development default, and the command is run without it."
+)
+
+
 def _what_to_do_instead(executable: str) -> str:
     """The tool that does what this refused command was trying to do, or "".
 
@@ -1685,6 +1699,8 @@ def _what_to_do_instead(executable: str) -> str:
     """
     if executable.endswith(".sh"):
         return f" {_INSTEAD_OF['sh']}"
+    if AN_ASSIGNMENT.match(executable):
+        return f" {ASSIGNMENT_ADVICE}"
     suggestion = _INSTEAD_OF.get(executable)
     return f" {suggestion}" if suggestion else ""
 

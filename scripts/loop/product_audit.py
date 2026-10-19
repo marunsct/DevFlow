@@ -25,6 +25,7 @@ project's manifest declares and counts lines in every source file it finds.
 """
 import glob
 import json
+import os
 import re
 import subprocess
 import sys
@@ -135,7 +136,17 @@ if command is None:
     raise SystemExit(0)
 print(f"  $ {' '.join(command)}  (in {project.relative_to(root)})")
 try:
-    done = subprocess.run(command, cwd=project, capture_output=True, text=True, timeout=240)
+    # The environment a stage's own command gets, not this process's: the worker
+    # holds the harness's settings (a CORS list, a signing secret, a data
+    # directory), and a product that reads a variable of the same name started
+    # here with the harness's value - failing when the run's own commands pass,
+    # or passing where the run's would not start.
+    try:
+        from app.tools.sandbox import _child_environment
+        environment = _child_environment(str(root), None)
+    except Exception:  # noqa: BLE001 - off the worker, the PATH alone is a clean start
+        environment = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")}
+    done = subprocess.run(command, cwd=project, capture_output=True, text=True, timeout=240, env=environment)
     out = (done.stdout or "") + (done.stderr or "")
     keep = [line for line in out.splitlines()
             if re.search(r"(?i)\b(pass|fail|passed|failed|tests?:|error|skipped)\b", line)]

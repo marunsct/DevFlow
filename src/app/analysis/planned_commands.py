@@ -106,6 +106,7 @@ def commands_the_sandbox_would_refuse(
 ) -> list[str]:
     """One sentence per command in `text` this role would be refused. Never raises."""
     try:
+        from app.tools import sandbox
         from app.tools.sandbox import CommandNotAllowed, validate_command
 
         known = _known_programs()
@@ -115,11 +116,18 @@ def commands_the_sandbox_would_refuse(
     seen: set[str] = set()
     for span in _spans(text):
         commands, shell = _commands_in(span)
+        # A variable set in front of a program is the shell's; with none here the
+        # program is never reached and the word is refused for not being one.
+        assigned = [
+            argv for argv in commands
+            if len(argv) > 1 and sandbox.AN_ASSIGNMENT.match(argv[0])
+            and os.path.basename(argv[1]) in known
+        ]
         commands = [argv for argv in commands if os.path.basename(argv[0]) in known]
-        if not commands or span in seen:
+        if not (commands or assigned) or span in seen:
             continue
         seen.add(span)
-        reasons: list[str] = []
+        reasons: list[str] = [sandbox.ASSIGNMENT_ADVICE] if assigned else []
         for argv in commands:
             try:
                 validate_command(argv, role_name, repo_root)

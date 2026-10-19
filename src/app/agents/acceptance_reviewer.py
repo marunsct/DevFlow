@@ -84,8 +84,9 @@ criterion leaves open. Name every pair of tests whose expectations contradict,
 and every test that asserts something its criterion leaves open.
 
 Do not ask for style changes, more comments, or tests of things no criterion
-asks for. Do not judge the product: it has not been built yet, and the tests
-are expected to fail now.
+asks for. Do not judge the product: whatever part of it is built, it is not the
+standard, and tests of later features are expected to fail now. Never open its
+files to decide what a test should expect.
 
 Read the test files with your tools. Return `approved: true` only when every
 criterion that is not deferred is properly tested.

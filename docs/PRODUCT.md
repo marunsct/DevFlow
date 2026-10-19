@@ -228,7 +228,7 @@ deliver most of its criteria is stopped rather than shipped.
   per work order is enforced).
 - **Thinking**: `thinking_mode` (`default`/`on`/`off`) and `thinking_effort`;
   replies that spend the whole output budget reasoning are retried without reasoning.
-- **Delivery mode** (`DELIVERY_MODE`, per run): `fast` or `thorough` (`app/delivery.py`, ADR-0007).
+- **Delivery mode** (`DELIVERY_MODE`, per run): `fast` or `thorough` (`app/delivery.py`, ADR-0007). `FAST_CODE_REVIEW=true` keeps the judgement model's code review in fast delivery (off by default).
 - **Steering**: a person can add notes to a live run (`GET|POST /runs/{id}/steering`);
   the newest notes reach the next model calls through the plugin-instruction
   injection, and the transcript records which call read each note first.

@@ -78,3 +78,24 @@ def mode(environment: Mapping[str, str] | None = None) -> str:
 def fast(environment: Mapping[str, str] | None = None) -> bool:
     """Whether this deployment delivers fast. See the module docstring."""
     return mode(environment) == FAST
+
+
+def reviews_code_when_fast(environment: Mapping[str, str] | None = None) -> bool:
+    """Whether fast delivery still runs the judgement model's code review over each batch's diff (Q amendment).
+
+    Off unless the owner sets `FAST_CODE_REVIEW`: fast delivery leaves the
+    review to the tests and checks, and the tests are what a weak suite makes
+    weak. On, it is one review per batch over the diff since the last accepted
+    state - bounded, fresh context, its findings anchored to a criterion, a
+    test or a check as in thorough delivery. Benchmarked before any default
+    changes.
+    """
+    if environment is None:
+        try:
+            from app.server.runtime_settings import effective_environment
+
+            environment = effective_environment()
+        except Exception:  # noqa: BLE001 - the deployed environment still stands
+            environment = os.environ
+    return str(environment.get("FAST_CODE_REVIEW") or "").strip().lower() in {"1", "true", "yes", "on"}
+

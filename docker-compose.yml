@@ -39,6 +39,7 @@ x-app-env: &app-env
   HARNESS_MAX_PARALLEL: ${HARNESS_MAX_PARALLEL:-6}
   # fast or thorough (app.delivery); the settings page overrides it.
   DELIVERY_MODE: ${DELIVERY_MODE:-fast}
+  FAST_CODE_REVIEW: ${FAST_CODE_REVIEW:-false}
   # Harness switches, for A/B runs set from .env. Empty means the code's own
   # default, at every one of these (tests/test_the_toggles_reach_the_container.py).
   LINE_EDITS: ${LINE_EDITS:-}

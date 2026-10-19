@@ -393,7 +393,7 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     root = _root(state)
     from app import delivery
 
-    if delivery.fast():
+    if delivery.fast() and not delivery.reviews_code_when_fast():
         # Only a finding a test or a check shows ever became a defect here
         # (`what_shows_it`), and the test round runs those tests and checks
         # itself. One run's review took 16 minutes of a frontier model and

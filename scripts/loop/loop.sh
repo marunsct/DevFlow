@@ -362,12 +362,17 @@ nightly)
   ;;
 suite)
   log="$STATE/suite.log"
-  echo "suite -> $log (about 2.5 minutes)"
+  # Across workers when pytest-xdist is installed (owner, 2026-10-20: testing
+  # efficient): measured, the whole suite in 64 s on 12 workers against 290 s
+  # on one, with the same result - every fix waited on it before its deploy.
+  workers=""
+  "$PY" -c "import xdist" 2>/dev/null && workers="-n ${SUITE_WORKERS:-12}"
+  echo "suite -> $log (${workers:+about 1 minute on ${SUITE_WORKERS:-12} workers}${workers:-about 5 minutes})"
   # The venv on PATH: tests marked for a bare `python` (the in-container
   # sandbox resolves it with shutil.which) were skipped without it, and one
   # went stale unseen.
   PATH="$ROOT/.venv/bin:$PATH" ENV=development timeout 900 "$PY" -m pytest tests/ -q --no-cov -p no:cacheprovider \
-      -o console_output_style=count > "$log" 2>&1 || true
+      $workers -o console_output_style=count > "$log" 2>&1 || true
   grep -E "^(FAILED|ERROR)" "$log" | head -20 || true
   tail -1 "$log"
   echo "(the three tests/test_codebase_seeding_api.py failures need S3 credentials this host lacks)"

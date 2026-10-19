@@ -274,7 +274,9 @@ test that fails on the old code:
   completed with 3 gaps (the owner paused it 14:25-14:27; read `active_minutes`). AR probe
   14:30 JST: the server honours only thinking on/off (per-request budget +7%, effort low
   +13%, high +18%, thinking off -30%), so AX is not built - advice to the owner in the
-  ledger. Baseline 2, fast `fullstack-bookmarks-py`, run-c00868a9, 14:32 JST. Then thorough.
+  ledger. Baseline 2, fast `fullstack-bookmarks-py`, run-c00868a9: failed 15:53 JST after 5
+  acceptance rounds, 0/8 hidden tests (see the plan's W.2 row). Baseline 3, thorough
+  `notes-api-hono` (the same bench as baseline 1, so the two modes compare), run-606ff231, 16:00 JST.
   The model server now reports 2 slots (the owner's change). **Nothing is deployed while a baseline runs**, and stage-1 code waits on
   the branch until every baseline is scored and in `loop.sh kpi`.
 - **Stage 1, built on the branch, not deployed:** BF (each request's `blocks`; KPI

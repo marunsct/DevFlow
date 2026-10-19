@@ -290,7 +290,10 @@ def build_runtime_tool(repo_root: str) -> Any:
     from langchain_core.tools import tool
 
     @tool
-    def use_runtime(runtime: str, version: str) -> dict[str, Any]:
+    # `language`, not `runtime`: LangGraph's tool node takes a parameter named
+    # `runtime` for its own injected runtime, so every call failed with an empty
+    # error (measured live: 4 of 4 in one fix stage).
+    def use_runtime(language: str, version: str) -> dict[str, Any]:
         """Run this project's commands on another version of a runtime.
 
         The environment has one version of each runtime. When a package needs
@@ -300,17 +303,17 @@ def build_runtime_tool(repo_root: str) -> Any:
         checked, and from then on every command of this project runs on it.
 
         Args:
-            runtime: node, go, java or python.
+            language: node, go, java or python.
             version: the version needed: a major version (22), or a more exact
                 one (22.22, 1.27.2).
         """
         try:
-            return use(repo_root, runtime, version)
+            return use(repo_root, language, version)
         except RuntimeUnavailable as exc:
             return {"error": str(exc)}
         except Exception as exc:  # noqa: BLE001 - a failed download is an answer, not a crash
-            logger.warning("Could not provide %s %s", runtime, version, exc_info=True)
-            return {"error": f"{runtime} {version} could not be provided ({type(exc).__name__}): {exc}"}
+            logger.warning("Could not provide %s %s", language, version, exc_info=True)
+            return {"error": f"{language} {version} could not be provided ({type(exc).__name__}): {exc}"}
 
     return use_runtime
 

@@ -147,9 +147,35 @@ def test_a_suite_that_did_not_run_shows_no_criterion_missing(tmp_path, monkeypat
 
 
 def test_a_suite_that_ran_still_shows_a_criterion_with_no_test(tmp_path, monkeypatch):
-    _saved(tmp_path, ran=True, criteria={"AC-1": {"status": "untested", "text": "Adds", "tests": []}})
+    _saved(tmp_path, ran=True, criteria={
+        "AC-1": {"status": "untested", "text": "Adds", "tests": []},
+        "AC-2": {"status": "passed", "text": "Lists", "tests": [{"name": "[AC-2] lists", "outcome": "passed"}]},
+    })
 
     assert [name for name, _, _ in _failing(tmp_path, monkeypatch, ["AC-1"])] == ["[AC-1] (missing from locked suite)"]
+
+
+def test_a_measurement_with_no_results_shows_no_criterion_missing(tmp_path, monkeypatch):
+    """Measured live: a dispute held 100 ms after a fix was reverted told QA six
+    due criteria had no test, against 25 tests in the suite naming them."""
+    _saved(tmp_path, ran=True, criteria={
+        "AC-1": {"status": "untested", "text": "Adds", "tests": []},
+        "AC-2": {"status": "untested", "text": "Removes", "tests": []},
+    })
+
+    assert _failing(tmp_path, monkeypatch, ["AC-1", "AC-2"]) == []
+
+
+def test_a_criterion_the_suite_s_files_name_is_never_called_missing(tmp_path, monkeypatch):
+    _saved(tmp_path, ran=True, criteria={
+        "AC-1": {"status": "untested", "text": "Adds", "tests": []},
+        "AC-2": {"status": "passed", "text": "Lists", "tests": [{"name": "[AC-2] lists", "outcome": "passed"}]},
+    })
+    spec = tmp_path / "auth.spec.js"
+    spec.write_text("test('[AC-1] adds an item', async () => {});\n")
+    monkeypatch.setattr(acceptance_suite, "suite_files", lambda root: [spec])
+
+    assert _failing(tmp_path, monkeypatch, ["AC-1"]) == []
 
 
 def test_one_test_carrying_two_criteria_is_one_failure_naming_both(tmp_path, monkeypatch):

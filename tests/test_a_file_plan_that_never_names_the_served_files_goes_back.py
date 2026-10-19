@@ -53,3 +53,15 @@ def test_a_served_path_inside_another_folder_is_not_the_served_file(tmp_path):
     spec = SimpleNamespace(file_plan=["notes-app/frontend/src/App.tsx: the page", "notes-app/notes_app/main.py: routes"])
 
     assert _the_served_files_the_plan_leaves_out(spec, _state(tmp_path)) == ["src/App.tsx"]
+
+
+def test_the_layout_is_checked_first_on_a_budget_of_its_own():
+    """Measured live: the check came last in a chain sharing two repairs, both
+    went to earlier problems, and a plan building where nothing served it was
+    approved; 28 files were drafted there."""
+    source = inspect.getsource(workflow)
+    layout = source.index("served = [] if missing else _the_served_files_the_plan_leaves_out(")
+    assert layout < source.index("elif missing and repairs < MAX_SPECIFICATION_REPAIRS:")
+    assert layout < source.index("owed = what_the_specification_owes(")
+    assert 'update["layout_repair_count"] = layout_repairs + 1' in source
+    assert "layout_repair_count: int" in source

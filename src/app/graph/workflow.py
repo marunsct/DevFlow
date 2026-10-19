@@ -494,6 +494,7 @@ class WorkflowGraphState(TypedDict, total=False):
     # against a specification. See `_a_success_measure_the_specification_drops`.
     specification_coverage_checked: bool
     specification_repair_count: int
+    layout_repair_count: int
     # Per-stage count of attempts that ended without a structured response.
     structured_retries: dict[str, int]
     # Per-stage note from the attempt that just died, read once by the
@@ -6702,6 +6703,20 @@ def _carried_to_this_plan(state: Any) -> list[str]:
 _UNTESTED_DECLINES = "technical_lead:untested_declines"
 
 
+def _criteria_the_suite_names(root: Any) -> set[str]:
+    """Every criterion id a test in the locked suite's own files carries; empty when unreadable."""
+    try:
+        from app.acceptance import suite as acceptance_suite
+        from app.acceptance.junit import tags_in
+
+        return {
+            tag for path in acceptance_suite.suite_files(root)
+            for tag in tags_in(path.read_text(encoding="utf-8", errors="replace"))
+        }
+    except Exception:  # noqa: BLE001 - unknown: nothing is called missing on its account
+        return set()
+
+
 def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
     """(test name, criterion, failure) for each locked test the last measurement shows failing."""
     from app.acceptance import suite as acceptance_suite
@@ -6723,6 +6738,16 @@ def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
     due = set(criteria_due(state) or [])
     failing: list[tuple[str, str, str]] = []
     seen: dict[str, int] = {}
+    # A measurement in which no test reported at all - the product did not
+    # start, a reverted fix left nothing measured - shows every criterion
+    # "untested" while `ran` is true. Measured live: a dispute held 100 ms after
+    # a fix was reverted told QA six due criteria had no test, against 25 tests
+    # in the suite naming them, and QA rewrote the suite. Only a measurement
+    # with results can show a test missing, and never one the suite names.
+    reported = sum(int(saved.get(key) or 0) for key in ("passed", "failed", "skipped")) or sum(
+        len(c.get("tests") or []) for c in (saved.get("criteria") or {}).values() if isinstance(c, dict)
+    )
+    named = _criteria_the_suite_names(root)
     for cid, criterion in (saved.get("criteria") or {}).items():
         if not isinstance(criterion, dict) or cid in deferred or cid not in due:
             continue
@@ -6732,7 +6757,7 @@ def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
             # Only a suite that ran can show a criterion has no test: when the
             # runner wrote no report, every criterion reads "untested", and
             # QA would be sent to add tests that are there.
-            if not saved.get("ran"):
+            if not saved.get("ran") or not reported or cid in named:
                 continue
             name = f"[{cid}] (missing from locked suite)"
             text = f"{cid}: {criterion.get('text', '')}"
@@ -7757,7 +7782,29 @@ def build_workflow_graph(
 
             missing = _incomplete_specification_sections(update.get("technical_specification"))
             repairs = state.get("specification_repair_count", 0)
-            if missing and repairs < MAX_SPECIFICATION_REPAIRS:
+            # The layout first, on a budget of its own: a file plan that puts the
+            # product where the scaffold serves nothing dooms every stage after
+            # it. Measured live: this check came last in a chain sharing two
+            # repairs, both went to earlier problems, and a specification
+            # planning `backend/app/` and `frontend/src/` against a scaffold
+            # serving the package's `main.py` and `src/App.tsx` was approved -
+            # 28 files were drafted where nothing served them.
+            served = [] if missing else _the_served_files_the_plan_leaves_out(update.get("technical_specification"), state)
+            layout_repairs = state.get("layout_repair_count", 0) or 0
+            if served and layout_repairs < MAX_SPECIFICATION_REPAIRS:
+                update["layout_repair_count"] = layout_repairs + 1
+                update["stage"] = "principal_architect"
+                update["revision_comments"] = [
+                    "The project's scaffold serves "
+                    + ", ".join(f"`{path}`" for path in served)
+                    + ": the acceptance suite runs the product through exactly these files, and the "
+                    "file plan names none of them, so what it plans would be built where nothing serves "
+                    "it. Plan the product in those files - or in modules they import - and keep the "
+                    "project's layout. Return only `file_plan`, `component_boundaries` and "
+                    "`implementation_order` with the paths corrected; unchanged sections are "
+                    "automatically preserved."
+                ]
+            elif missing and repairs < MAX_SPECIFICATION_REPAIRS:
                 # Straight back to the architect with the exact field names,
                 # without spending an architecture-review cycle on it.
                 update["specification_repair_count"] = repairs + 1
@@ -7811,20 +7858,6 @@ def build_workflow_graph(
                         "The document `docs/technical_specification.md` on disk already holds the completed sections. "
                         "Do not return the whole specification from the beginning. "
                         "Return only `testing` with those checks corrected; unchanged sections are automatically preserved."
-                    ]
-                elif (served := _the_served_files_the_plan_leaves_out(update.get("technical_specification"), state)) \
-                        and repairs < MAX_SPECIFICATION_REPAIRS:
-                    update["specification_repair_count"] = repairs + 1
-                    update["stage"] = "principal_architect"
-                    update["revision_comments"] = [
-                        "The project's scaffold serves "
-                        + ", ".join(f"`{path}`" for path in served)
-                        + ": the acceptance suite runs the product through exactly these files, and the "
-                        "file plan names none of them, so what it plans would be built where nothing serves "
-                        "it. Plan the product in those files - or in modules they import - and keep the "
-                        "project's layout. Return only `file_plan`, `component_boundaries` and "
-                        "`implementation_order` with the paths corrected; unchanged sections are "
-                        "automatically preserved."
                     ]
                 else:
                     update["specification_repair_count"] = 0

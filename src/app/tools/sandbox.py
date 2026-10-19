@@ -772,9 +772,34 @@ def _process_memory(workspace: str | Path | None) -> int:
         found = contract.the_pack(workspace)
     except Exception:  # noqa: BLE001 - then the configured limit stands
         return configured
-    if not found or not found[0].process_memory:
+    if not found:
         return configured
-    return max(configured, _bytes_of(found[0].process_memory, 0))
+    pack, record = found
+    need = _bytes_of(pack.process_memory, 0) if pack.process_memory else 0
+    if _its_tests_run_on_node(pack, record):
+        need = max(need, NODE_TOOLCHAIN_MEMORY)
+    return max(configured, need)
+
+
+#: The data limit a toolchain that runs its tests on Node needs. Measured in the
+#: worker through the sandbox: four Node worker threads would not start under a
+#: 1 or a 2 GB data limit ("Failed to reserve virtual memory for CodeRange", in
+#: `node::worker::Worker::Run`) and ran at 3 GB - each thread's V8 instance
+#: reserves a code range the limit counts. On the gate run, once the page built,
+#: Playwright's runner stopped there on every acceptance file and the round
+#: recorded 13 criteria as not working. The tree watcher still bounds real use.
+NODE_TOOLCHAIN_MEMORY = 4 * 1024**3
+
+#: The programs that start a Node toolchain.
+_NODE_LAUNCHERS = frozenset({"npm", "npx", "node", "pnpm", "yarn"})
+
+
+def _its_tests_run_on_node(pack: Any, record: dict) -> bool:
+    for key in ("unit_test", "acceptance_test"):
+        argv = list(record.get(key) or getattr(pack, key, None) or [])
+        if argv and Path(str(argv[0])).name in _NODE_LAUNCHERS:
+            return True
+    return False
 
 
 MAX_WRITE_BYTES = int(os.environ.get("SANDBOX_MAX_FILE_BYTES", str(2 * 1024**3)))

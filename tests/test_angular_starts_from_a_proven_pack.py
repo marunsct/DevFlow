@@ -101,9 +101,11 @@ def test_a_larger_configured_limit_stands(tmp_path, monkeypatch):
 
 
 def test_a_pack_that_says_nothing_gets_the_configured_limit(tmp_path, monkeypatch):
+    """A pack that runs no Node; one that does is given room for its threads
+    (`tests/test_a_node_toolchain_gets_room_for_its_threads.py`)."""
     monkeypatch.setattr(sandbox, "MEMORY_LIMIT", "1g")
 
-    assert sandbox._process_memory(_contracted(tmp_path, "browser-vue")) == 1024**3
+    assert sandbox._process_memory(_contracted(tmp_path, "python-http-api")) == 1024**3
 
 
 @pytest.mark.skipif(not hasattr(__import__("resource"), "RLIMIT_DATA"), reason="Linux only")

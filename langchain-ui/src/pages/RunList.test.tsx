@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { RunList } from './RunList';
 import { FeedbackProvider } from '../components/Feedback';
+import { listRuns } from '../api';
 
 const runs = [
   { run_id: 'run-old-done', status: 'completed', current_stage: 'complete', created_at: '2026-10-17T01:00:00Z', updated_at: '2026-10-17T03:00:00Z', document_names: ['notes.md'], delivery_mode: 'fast', local_only: true, completion_gaps: 1, criteria_proven: 9, criteria_total: 10 },
@@ -12,6 +13,7 @@ const runs = [
 ];
 
 vi.mock('../api', () => ({
+  RUNS_PER_PAGE: 50,
   listRuns: vi.fn(async () => ({ runs, total: runs.length })),
   deleteRun: vi.fn(), cloneRun: vi.fn(), resumeRun: vi.fn(), pauseRun: vi.fn(),
   getOutcomes: vi.fn(async () => ({ runs: [], forecast: {} })),
@@ -20,6 +22,29 @@ vi.mock('../api', () => ({
 const show = (path = '/runs') => render(
   <MemoryRouter initialEntries={[path]}><FeedbackProvider><RunList /></FeedbackProvider></MemoryRouter>,
 );
+
+describe('the pages of runs', () => {
+  it('asks for the page in the address, says which runs it shows, and moves to older ones', async () => {
+    vi.mocked(listRuns).mockResolvedValue({ runs: runs as never, total: 120 });
+    show('/runs?page=2');
+
+    expect(await screen.findByText('Runs 51-100 of 120')).toBeTruthy();
+    expect(listRuns).toHaveBeenLastCalledWith(2);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Older' }));
+    expect(listRuns).toHaveBeenLastCalledWith(3);
+    expect(await screen.findByText('Page 3 of 3')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Older' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('shows no pager when every run fits on one page', async () => {
+    vi.mocked(listRuns).mockResolvedValue({ runs: runs as never, total: runs.length });
+    show();
+    await screen.findAllByRole('row');
+
+    expect(screen.queryByRole('navigation', { name: 'Pages of runs' })).toBeNull();
+  });
+});
 
 describe('the runs table', () => {
   it('lists the run that needs the owner first, then the newest', async () => {

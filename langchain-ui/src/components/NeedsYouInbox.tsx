@@ -1,9 +1,9 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Bell, X } from 'lucide-react';
-import { submitApproval, submitReview } from '../api';
 import type { RunSummary } from '../types';
 import { Button, Checkbox, IconButton, useFeedback } from '../ui';
+import { approveInOneTap } from '../lib/commands';
 import { inboxLine, inboxParts, oneTapAnswer } from '../lib/needsYou';
 import { browserCanNotify, notificationsWanted, wantNotifications } from '../lib/notify';
 import { useNeedsYou } from '../lib/useNeedsYou';
@@ -46,8 +46,7 @@ export const NeedsYouInbox: React.FC = () => {
   const approve = async (run: RunSummary) => {
     setAnswering(run.run_id);
     try {
-      if (oneTapAnswer(run) === 'review') await submitReview(run.run_id, { action: 'approve', comment: null });
-      else await submitApproval(run.run_id, { action: 'approve', reason: null });
+      await approveInOneTap(run);
       notify('Approved: the run goes on.', 'info');
       needsYou.refresh();
     } catch {

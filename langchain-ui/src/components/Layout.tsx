@@ -3,6 +3,7 @@ import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { Home, Layers, List, Settings, LogOut } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { NeedsYouInbox } from './NeedsYouInbox';
+import { CommandPalette } from './CommandPalette';
 import { endSession } from '../lib/session';
 
 export const Header: React.FC = () => {
@@ -52,6 +53,7 @@ export const Header: React.FC = () => {
               <span className="hidden sm:inline">Settings</span>
             </Link>
             <NeedsYouInbox />
+            <CommandPalette />
             <ThemeToggle />
             <div className="w-px h-6 bg-border mx-2" />
             <button

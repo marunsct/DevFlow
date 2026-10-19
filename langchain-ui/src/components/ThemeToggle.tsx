@@ -2,6 +2,7 @@
 import React, { useEffect, useSyncExternalStore } from 'react';
 import { Moon, Sun, Contrast, Monitor } from 'lucide-react';
 import { getAppearance, nextTheme, setAppearance, subscribe, type Theme } from '../lib/appearance';
+import { typing } from '../lib/commands';
 
 const LABEL: Record<Theme, string> = {
   graphite: 'Dark theme',
@@ -10,11 +11,6 @@ const LABEL: Record<Theme, string> = {
   system: 'Follows the system',
 };
 const ICON: Record<Theme, React.ElementType> = { graphite: Moon, paper: Sun, contrast: Contrast, system: Monitor };
-
-const typing = (target: EventTarget | null): boolean => {
-  const el = target as HTMLElement | null;
-  return !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
-};
 
 export const ThemeToggle: React.FC = () => {
   const theme = useSyncExternalStore(subscribe, () => getAppearance().theme);

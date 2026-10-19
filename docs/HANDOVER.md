@@ -299,8 +299,9 @@ test that fails on the old code:
   Not deployed: rebuilding the app restarts it, so UI work ships with group 1. Done since: BG.2
   (the needs-you inbox, tab badge, opt-in notifications; `/api/runs` carries `gate_deadline`) and
   UI-0 (types generated from the server's schema: after any API change run `npm run api:types` in
-  `langchain-ui`, or `tests/test_the_ui_s_api_types_are_current.py` fails). Next: the UI-S1/S2
-  remainder, then BG.1, BG.5, BG.6.
+  `langchain-ui`, or `tests/test_the_ui_s_api_types_are_current.py` fails) and UI-S1/S2 (pages of
+  50, the `Ctrl K` command palette, the `?` shortcuts sheet). Next: BG.1, BG.5, BG.6 with their
+  backend enablers.
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).

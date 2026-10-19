@@ -89,8 +89,14 @@ export const cloneRun = async (
 };
 
 
-export const listRuns = async (): Promise<RunListResponse> => {
-  const response = await api.get<RunListResponse>('/runs');
+/** How many runs one page of the list holds. */
+export const RUNS_PER_PAGE = 50;
+
+/** One page of runs, newest first; page 1 unless asked. */
+export const listRuns = async (page = 1): Promise<RunListResponse> => {
+  const response = await api.get<RunListResponse>('/runs', {
+    params: { limit: RUNS_PER_PAGE, offset: (Math.max(1, page) - 1) * RUNS_PER_PAGE },
+  });
   return response.data;
 };
 

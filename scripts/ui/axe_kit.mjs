@@ -27,8 +27,16 @@ for (const theme of themes) {
   await page.getByRole('button', { name: 'Open a dialog' }).click(); await page.waitForTimeout(200);
   const dialogViolations = await measure();
   await page.keyboard.press('Escape');
-  const all = [...pageViolations, ...dialogViolations];
+  // The command palette with its runs listed, and the shortcuts sheet.
+  await page.keyboard.press('Control+k'); await page.getByRole('listbox', { name: 'Commands' }).getByRole('option').first().waitFor();
+  const paletteViolations = await measure();
+  await page.keyboard.press('Escape');
+  await page.locator('body').focus(); await page.keyboard.press('?'); await page.waitForTimeout(200);
+  const sheetViolations = await measure();
+  await page.keyboard.press('Escape');
+  const all = [...pageViolations, ...dialogViolations, ...paletteViolations, ...sheetViolations];
   out[theme] = { total: all.reduce((sum, v) => sum + v.nodes, 0), page: pageViolations, dialog: dialogViolations,
+    palette: paletteViolations, sheet: sheetViolations,
     theme_attr: await page.evaluate(() => document.documentElement.dataset.theme) };
   if (process.env.SHOTS) { fs.mkdirSync('docs/ui', { recursive: true }); await page.screenshot({ path: `docs/ui/kit-${theme}.png`, fullPage: true }); }
 }

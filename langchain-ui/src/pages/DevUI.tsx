@@ -6,6 +6,7 @@ import {
 } from '../ui';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { InboxPanel } from '../components/NeedsYouInbox';
+import { CommandPalette } from '../components/CommandPalette';
 import type { RunSummary } from '../types';
 
 const sampleRun = (run_id: string, status: string, current_stage: string, extra: Partial<RunSummary> = {}): RunSummary => ({
@@ -19,6 +20,7 @@ const INBOX_WAITING = [
   sampleRun('run-77aa01bc-0c0d', 'waiting_for_budget', 'defect_fix_2'),
 ];
 const INBOX_STOPPED = [sampleRun('run-c3d4e5f6-1234', 'failed', 'acceptance_tests')];
+const loadSampleRuns = async () => ({ runs: [...INBOX_WAITING, ...INBOX_STOPPED], total: 4 });
 
 /**
  * Every primitive of the kit on one page, in its states - the "kitchen sink"
@@ -33,7 +35,10 @@ export function DevUI() {
     <main className="mx-auto max-w-5xl space-y-8 p-6">
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-text-primary">Component kit</h1>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <CommandPalette loadRuns={loadSampleRuns} />
+          <ThemeToggle />
+        </div>
       </header>
 
       <Card>

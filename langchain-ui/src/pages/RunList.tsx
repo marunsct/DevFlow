@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { listRuns, deleteRun, cloneRun, resumeRun, pauseRun } from '../api';
+import { listRuns, deleteRun, cloneRun, resumeRun, pauseRun, RUNS_PER_PAGE } from '../api';
 import type { RunSummary } from '../types';
 import { Activity, AlertCircle, Inbox, Plus, Trash2, Copy, Pause, Search } from 'lucide-react';
 import { describeStage, RESUMABLE } from '../lib/activity';
@@ -10,38 +10,53 @@ import { markRunsSeen } from '../lib/useNeedsYou';
 import { OutcomesPanel } from '../components/OutcomesPanel';
 import { useNow, usePageVisible } from '../lib/usePageVisible';
 import { useFeedback } from '../components/Feedback';
+import { Button } from '../ui';
 
 export const RunList: React.FC = () => {
   const { notify, confirm: askConfirm } = useFeedback();
   const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  const fetchRuns = async () => {
-    try {
-      const response = await listRuns();
-      const sortedRuns = response.runs.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      setRuns(sortedRuns);
-    } catch (err: any) {
-      console.error(err);
-      setError("Failed to load past runs.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // The view lives in the address, so a link or a reload opens the same list.
+  const [params, setParams] = useSearchParams();
+  const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1);
+
+  // Read again now, as after a delete or a resume; the poll goes on as before.
+  const [reads, setReads] = useState(0);
+  const fetchRuns = useCallback(() => setReads((n) => n + 1), []);
 
   // Polled only while the tab is visible: a hidden tab polling every 5 s
   // spent the server's request budget for nobody.
   const visible = usePageVisible();
   useEffect(() => {
     if (!visible) return;
-    fetchRuns();
-    const interval = setInterval(fetchRuns, 5000);
-    return () => clearInterval(interval);
-  }, [visible]);
+    let live = true;
+    const read = async () => {
+      try {
+        const response = await listRuns(page);
+        if (!live) return;
+        const sortedRuns = response.runs.sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        setRuns(sortedRuns);
+        setTotal(response.total ?? sortedRuns.length);
+      } catch (err: any) {
+        console.error(err);
+        if (live) setError("Failed to load past runs.");
+      } finally {
+        if (live) setLoading(false);
+      }
+    };
+    void read();
+    const interval = setInterval(read, 5000);
+    return () => {
+      live = false;
+      clearInterval(interval);
+    };
+  }, [visible, page, reads]);
 
   const handleDelete = async (runId: string) => {
     if (!(await askConfirm({
@@ -52,7 +67,7 @@ export const RunList: React.FC = () => {
     }))) return;
     try {
       await deleteRun(runId);
-      await fetchRuns();
+      fetchRuns();
     } catch (err: any) {
       notify('Failed to delete: ' + (err.response?.data?.detail || err.message));
     }
@@ -70,7 +85,7 @@ export const RunList: React.FC = () => {
   const handlePause = async (runId: string) => {
     try {
       await pauseRun(runId);
-      await fetchRuns();
+      fetchRuns();
     } catch (err: any) {
       notify("Failed to pause: " + (err.response?.data?.detail || err.message));
     }
@@ -79,21 +94,22 @@ export const RunList: React.FC = () => {
   const handleResume = async (runId: string) => {
     try {
       await resumeRun(runId);
-      await fetchRuns();
+      fetchRuns();
     } catch (err: any) {
       notify("Failed to resume: " + (err.response?.data?.detail || err.message));
     }
   };
 
-  // The view lives in the address, so a link or a reload opens the same list.
-  const [params, setParams] = useSearchParams();
   const filter = params.get('status') ?? 'all';
   const query = (params.get('q') ?? '').trim().toLowerCase();
   const change = (key: string, value: string) => {
     const next = new URLSearchParams(params);
-    if (value && value !== 'all') next.set(key, value); else next.delete(key);
-    setParams(next, { replace: true });
+    if (value && value !== 'all' && !(key === 'page' && value === '1')) next.set(key, value); else next.delete(key);
+    setParams(next, { replace: key !== 'page' });
   };
+  const pages = Math.max(1, Math.ceil(total / RUNS_PER_PAGE));
+  const first = (page - 1) * RUNS_PER_PAGE + 1;
+  const last = Math.min(total, page * RUNS_PER_PAGE);
 
   useEffect(() => { markRunsSeen(); }, []);
   const now = useNow(true, 30_000);
@@ -147,7 +163,7 @@ export const RunList: React.FC = () => {
           <AlertCircle className="h-10 w-10 text-danger mx-auto mb-4" />
           <p className="text-danger">{error}</p>
         </div>
-      ) : runs.length === 0 ? (
+      ) : total === 0 && runs.length === 0 ? (
         <div className="glass-card rounded-2xl p-16 text-center">
           <Inbox className="h-14 w-14 text-text-muted mx-auto mb-4" aria-hidden="true" />
           <h2 className="text-lg font-semibold text-text-primary mb-2">No runs yet</h2>
@@ -259,6 +275,19 @@ export const RunList: React.FC = () => {
               </tbody>
             </table>
           </div>
+          )}
+          {pages > 1 && (
+            <nav aria-label="Pages of runs" className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-text-secondary">
+              <p>
+                Runs {first}-{last} of {total}
+                {(filter !== 'all' || query) && ' (search and filters look at this page)'}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button size="sm" disabled={page <= 1} onClick={() => change('page', String(page - 1))}>Newer</Button>
+                <span aria-current="page">Page {page} of {pages}</span>
+                <Button size="sm" disabled={page >= pages} onClick={() => change('page', String(page + 1))}>Older</Button>
+              </div>
+            </nav>
           )}
         </div>
       )}

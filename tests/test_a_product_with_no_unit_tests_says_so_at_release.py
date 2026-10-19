@@ -39,3 +39,26 @@ def test_the_release_asks_for_it():
     import inspect
 
     assert "_no_unit_tests_ran(root)" in inspect.getsource(delivery)
+
+
+def _a_pack_with_a_unit_dir(tmp_path, monkeypatch):
+    pack = SimpleNamespace(unit_report="junit-unit.xml", unit_dir="tests/unit", unit_pattern="*.test.ts")
+    monkeypatch.setattr(contract, "the_pack", lambda root: (pack, {}))
+    monkeypatch.setattr(contract, "read", lambda root: {"project": "app"})
+    (tmp_path / "app" / "tests").mkdir(parents=True)
+
+
+def test_no_report_and_no_unit_test_file_is_a_gap(tmp_path, monkeypatch):
+    """A runner that matched nothing wrote no report; the one unit test sat outside its directory."""
+    _a_pack_with_a_unit_dir(tmp_path, monkeypatch)
+    (tmp_path / "app" / "tests" / "routes.test.ts").write_text("test('x', () => {})")
+
+    assert "ships no unit tests" in delivery._no_unit_tests_ran(tmp_path)
+
+
+def test_no_report_yet_with_a_unit_test_file_says_nothing(tmp_path, monkeypatch):
+    _a_pack_with_a_unit_dir(tmp_path, monkeypatch)
+    (tmp_path / "app" / "tests" / "unit").mkdir()
+    (tmp_path / "app" / "tests" / "unit" / "db.test.ts").write_text("test('x', () => {})")
+
+    assert delivery._no_unit_tests_ran(tmp_path) == ""

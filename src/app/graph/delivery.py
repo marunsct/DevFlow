@@ -314,6 +314,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     gaps.extend(f"An escalation left this open: {issue}" for issue in state.get("known_issues") or [])
     gaps.extend(_findings_recorded_as_risks(state))
     gaps.extend(_reviews_that_were_not_independent(config["configurable"].get(APP_RUN_ID_KEY)))
+    gaps.extend(_code_no_review_read(config["configurable"].get(APP_RUN_ID_KEY)))
     gaps.extend(_what_the_release_re_check_finds(state, root))
     gaps.extend(_code_the_product_does_not_run(root))
     # Plan item AF: whether the suite would notice the product breaking.
@@ -484,6 +485,34 @@ def _reviews_that_were_not_independent(run_id: str | None = None) -> list[str]:
     return [downgrade] if downgrade else []
 
 
+#: The stages that read the product's code and judge it.
+_CODE_REVIEWS = ("code_review", "milestone_review", "security_review")
+
+
+def _code_no_review_read(run_id: str | None) -> list[str]:
+    """A gap when the run released code no review stage ever read; [] otherwise or when unknown.
+
+    Measured on one run: the setup stage wrote the whole product, every sprint
+    was then accepted without new work because its criteria already passed, and
+    no code, milestone or security review ran - the release read as reviewed
+    work. Passing the suite is evidence; it is not a review.
+    """
+    if not run_id:
+        return []
+    try:
+        from app.observability.transcript import read_transcript
+
+        stages = {str(r.get("stage") or "") for r in read_transcript(run_id, kinds={"model_request"})}
+    except Exception:  # noqa: BLE001 - the release says nothing it cannot measure
+        return []
+    if not stages or any(stage.startswith(_CODE_REVIEWS) for stage in stages):
+        return []
+    return [
+        "No review read the product's code: every sprint was accepted on its locked suite "
+        "alone, so no code, milestone or security review ran."
+    ]
+
+
 def _no_unit_tests_ran(root: Any) -> str:
     """A gap when the product's own unit command ran no test at all; "" otherwise or when unknown.
 
@@ -499,13 +528,37 @@ def _no_unit_tests_ran(root: Any) -> str:
 
         found = contract.the_pack(root)
         record = contract.read(root) or {}
-        report = str(getattr(found[0], "unit_report", "") or "") if found else ""
+        pack = found[0] if found else None
+        report = str(getattr(pack, "unit_report", "") or "")
         project = str(record.get("project") or "")
         if not report or not project:
             return ""
         parsed = junit.read(Path(root) / project / report)
+        if not parsed.found:
+            # A runner that matched no file writes no report at all. Measured on
+            # one run: the only unit test sat outside the runner's directory,
+            # was never run, was cleared at release as a throwaway, and the
+            # product shipped with no unit test and no gap saying so.
+            if _a_unit_test_file_exists(Path(root) / project, pack):
+                return ""
+            return (
+                "The product ships no unit tests: its unit test directory holds no test file the "
+                "unit runner collects, so the command ran none."
+            )
     except Exception:  # noqa: BLE001 - the release says nothing it cannot measure
         return ""
-    if not parsed.found or parsed.tests:
+    if parsed.tests:
         return ""
     return "The product ships no unit tests: its unit test command ran none and exited as a pass."
+
+
+def _a_unit_test_file_exists(project: Any, pack: Any) -> bool:
+    """Whether the pack's unit directory holds a file its unit pattern names; True when the pack does not say."""
+    unit_dir = str(getattr(pack, "unit_dir", "") or "")
+    pattern = str(getattr(pack, "unit_pattern", "") or "")
+    if not unit_dir or not pattern:
+        return True  # nothing to look for: claim nothing
+    folder = project / unit_dir
+    return folder.is_dir() and any(
+        "node_modules" not in found.parts for found in folder.rglob(pattern)
+    )

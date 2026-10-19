@@ -275,7 +275,8 @@ test that fails on the old code:
   between runs. **Nothing is deployed while a baseline runs**, and stage-1 code waits on
   the branch until every baseline is scored and in `loop.sh kpi`.
 - **Stage 1, built on the branch, not deployed:** BF (each request's `blocks`; KPI
-  `prompt_block_share_*`, `cache_miss_after_tool_change`). Next: BC, BK, AQ, AO.9/AO.10, AO.5.
+  `prompt_block_share_*`, `cache_miss_after_tool_change`); BC (two pointer answers in a row
+  stall the stage). Next: BK, AQ, AO.9/AO.10, AO.5.
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).
 
 ### 2.00000 Appendix 3 built (2026-10-19)

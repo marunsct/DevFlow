@@ -36,6 +36,11 @@ logger = logging.getLogger(__name__)
 #: How a read of a file the memory holds is answered; `settled_answer` counts it.
 HELD_POINTER = "is in the project memory at the start of this conversation"
 
+#: The last sentence of a pointer: a second one ends the stage's reading (Initiative BC).
+POINTER_ENDS_READING = (
+    "A second read the memory answers ends reading for this stage: make your change or give your answer."
+)
+
 #: The share of a model's window the memory may take.
 MEMORY_SHARE = 0.3
 #: The most it takes on any model, in characters.
@@ -468,7 +473,8 @@ def build_project_memory_middleware(repo_root: str) -> Any:
 
                     return ToolMessage(
                         content=f"`{path}` {HELD_POINTER}, whole and as "
-                                "it is now; it has not changed since. Use it, and any lines of it, from there.",
+                                "it is now; it has not changed since. Use it, and any lines of it, from there. "
+                                + POINTER_ENDS_READING,
                         tool_call_id=call.get("id") or "",
                         name="read_file",
                     )

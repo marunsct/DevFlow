@@ -872,6 +872,12 @@ def _running_out_of_room(messages: list[Any], limit: int, schema: Any = None) ->
 #: withheld and the answer is the only move left.
 NOTHING_NEW_BEFORE_THE_ANSWER = 5
 
+#: Pointer answers in a row - reads of files the project memory already holds -
+#: before the stall fires. The files are in the conversation, so the second such
+#: read is the stall the five-result rule waited three more full prefills and
+#: replies to see; one run's stages were answered with 774 pointers (Initiative BC).
+POINTERS_BEFORE_THE_ANSWER = 2
+
 #: How a tool result says it gave nothing new: a repeat refused or answered
 #: with a pointer, the same bytes or listing again.
 _NOTHING_NEW = re.compile(
@@ -893,6 +899,22 @@ _STALLED_WITH_WRITERS_NOTICE = (
     "withheld, and the ones that change files are still yours. Make the change now, then return "
     "your structured response saying what you changed."
 )
+
+
+def _pointed_lately(messages: list[Any]) -> bool:
+    """True when the stage's last `POINTERS_BEFORE_THE_ANSWER` tool results were all pointers to the memory."""
+    from app.agents.project_memory import HELD_POINTER
+
+    seen = 0
+    for message in reversed(messages):
+        if getattr(message, "type", None) != "tool":
+            continue
+        if HELD_POINTER not in str(getattr(message, "content", "") or ""):
+            return False
+        seen += 1
+        if seen >= POINTERS_BEFORE_THE_ANSWER:
+            return True
+    return False
 
 
 def _nothing_new_lately(messages: list[Any], count: int = NOTHING_NEW_BEFORE_THE_ANSWER) -> bool:
@@ -1793,7 +1815,7 @@ def build_settled_answer_middleware(
                             "answer from what it has",
                             stage_name or "?",
                         )
-                stalled = schema is not None and _nothing_new_lately(messages)
+                stalled = schema is not None and (_nothing_new_lately(messages) or _pointed_lately(messages))
                 # A fix stage that has read for many calls and changed nothing is
                 # made to write - only when it has the tools to (a stage with no
                 # writers would be left with only its answer).

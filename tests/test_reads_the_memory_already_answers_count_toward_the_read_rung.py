@@ -40,8 +40,24 @@ def test_enough_pointers_take_the_read_tool_away() -> None:
     assert {"edit_artifact", "run_terminal_command", "grep"} <= kept
 
 
+def _each_followed_by_a_write(pointers: int) -> list:
+    """Pointer answers with a write that returned something new after each one."""
+    messages: list = [HumanMessage(content="write the tests")]
+    for i in range(pointers):
+        messages.append(AIMessage(content="", id=f"a{i}"))
+        messages.append(ToolMessage(content=f"`app/models/m{i}.py` {HELD_POINTER}, whole and as it is now.",
+                                    tool_call_id=f"r{i}"))
+        messages.append(AIMessage(content="", id=f"w{i}"))
+        messages.append(ToolMessage(content='{"path": "tests/conftest.py", "summary": "written"}',
+                                    tool_call_id=f"w{i}"))
+    messages.append(AIMessage(content="reading again", id="last"))
+    return messages
+
+
 def test_a_few_pointers_take_nothing_away() -> None:
-    captured = _call(_cycles(POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL - 1))
+    # Two in a row are a stall since Initiative BC; apart, with work between
+    # them, they are counted toward the read rung and take nothing yet.
+    captured = _call(_each_followed_by_a_write(POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL - 1))
 
     assert "read_file" in _names(captured) if "tools" in captured else True
 

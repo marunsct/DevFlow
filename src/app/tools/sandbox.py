@@ -3570,6 +3570,44 @@ def _written_since(
     return False
 
 
+#: The most changed files a command's result names; past it, a count.
+MOST_FILES_CHANGED_NAMED = 20
+
+
+def files_changed_since(repo_root: str, moment: float) -> list[str]:
+    """Workspace-relative files modified after `moment`, dependency and runner output pruned. Never raises.
+
+    The same walk as `_changed_since`, which answers only whether anything
+    changed. A list past `MOST_FILES_CHANGED_NAMED` ends with how many more.
+    """
+    found: list[str] = []
+    more = 0
+    try:
+        for directory, subdirectories, files in os.walk(repo_root):
+            subdirectories[:] = [
+                name for name in subdirectories
+                if name not in IGNORED_DIRECTORIES and name not in _RUNNER_OUTPUT_DIRECTORIES
+                and not name.startswith(".")
+            ]
+            for name in files:
+                if name.startswith("."):
+                    continue
+                path = os.path.join(directory, name)
+                try:
+                    if os.stat(path).st_mtime <= moment:
+                        continue
+                except OSError:
+                    continue
+                if len(found) < MOST_FILES_CHANGED_NAMED:
+                    found.append(os.path.relpath(path, repo_root).replace(os.sep, "/"))
+                else:
+                    more += 1
+    except Exception:  # noqa: BLE001 - nothing known is nothing claimed
+        return []
+    found.sort()
+    return found + ([f"... and {more} more"] if more else [])
+
+
 def _resolve_a_working_directory(repo_root: str, working_directory: str | None) -> str:
     """The absolute directory a command runs in, or the workspace root.
 
@@ -4590,13 +4628,22 @@ class SandboxExecutor:
         elif category == "default" and _runs_tests(command):
             category = "test"
         token = _FOR_THE_HARNESS.set(bool(for_the_harness))
+        begun = time.time()
         try:
             with _the_lock_for(repo_root):
-                return cls._execute_serialised(
+                outcome = cls._execute_serialised(
                     command, repo_root, role_name, category, extra_env, working_directory, started
                 )
         finally:
             _FOR_THE_HARNESS.reset(token)
+        # What the command wrote, so a conversation that read a file before a
+        # formatter, a generator or an install rewrote it is not told it still
+        # holds it (Initiative AO.9). Only for a command that ran.
+        if isinstance(outcome, dict) and "returncode" in outcome and not for_the_harness:
+            changed = files_changed_since(repo_root, begun)
+            if changed:
+                outcome = {**outcome, "files_changed": changed}
+        return outcome
 
     @classmethod
     def _execute_serialised(

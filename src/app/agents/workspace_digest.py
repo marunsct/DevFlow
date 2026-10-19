@@ -22,6 +22,7 @@ the model needs on each call, not a message that should accumulate.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -476,6 +477,21 @@ def _joined(ranges: list[tuple[int, int]]) -> str:
     return ", ".join(f"{a}\u2013{b}" for a, b in merged)
 
 
+_FILES_CHANGED = re.compile(r'"files_changed":\s*(\[[^\]]*\])')
+
+
+def _files_a_command_changed(content: str) -> list[str]:
+    """The workspace files a command's result says it changed; [] when it names none."""
+    found = _FILES_CHANGED.search(content or "")
+    if not found:
+        return []
+    try:
+        named = json.loads(found.group(1))
+    except ValueError:
+        return []
+    return [str(p).lstrip("/") for p in named if isinstance(p, str) and not p.startswith("... and ")]
+
+
 def already_known(messages: list[Any]) -> str:
     """What this conversation already holds, from its own calls: a line for the end of each call; "" if nothing.
 
@@ -497,6 +513,7 @@ def already_known(messages: list[Any]) -> str:
     read_at: dict[str, int] = {}
     read_lines: dict[str, list[tuple[int, int]]] = {}
     written_at: dict[str, int] = {}
+    by_a_command: set[str] = set()
     ran: dict[str, tuple[int, str]] = {}
     for message in messages:
         if not (_get(message, "type") == "tool" or _get(message, "role") == "tool"):
@@ -516,12 +533,18 @@ def already_known(messages: list[Any]) -> str:
                 read_lines.setdefault(path, []).append(shown)
         elif name in _WRITERS and path and not failed:
             written_at[path] = n
+            by_a_command.discard(path)
             read_lines.pop(path, None)  # what was read is no longer what is there
         elif name == "run_terminal_command":
             command = args.get("command")
             text = " ".join(command) if isinstance(command, list) else str(command or "")
-            found = re.search(r'"returncode":\s*(-?\d+)', content)
+            found = re.search(r'"returncode":\s*"?(-?\d+)', content)
             ran[text[:100]] = (n, f"exit {found.group(1)}" if found else ("refused" if failed else "ran"))
+            # A file the command rewrote is no longer what was read (Initiative AO.9).
+            for changed in _files_a_command_changed(content):
+                written_at[changed] = n
+                by_a_command.add(changed)
+                read_lines.pop(changed, None)
     if not read_at and not ran:
         return ""
     lines = []
@@ -529,7 +552,7 @@ def already_known(messages: list[Any]) -> str:
         shown = sorted(read_at.items(), key=lambda kv: -kv[1])[:MOST_KNOWN]
         lines.append("Files already in this conversation (scroll up rather than read again): " + ", ".join(
             f"{p} (call {n}{'; lines ' + _joined(read_lines[p]) if read_lines.get(p) else ''}"
-            f"{'; changed by your write at call ' + str(written_at[p]) if written_at.get(p, 0) > n else ''})"
+            f"{'; changed by your ' + ('command' if p in by_a_command else 'write') + ' at call ' + str(written_at[p]) if written_at.get(p, 0) > n else ''})"
             for p, n in shown
         ))
     if ran:

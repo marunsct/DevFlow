@@ -51,9 +51,24 @@ def _described(schema: Any, names: tuple[str, ...]) -> str:
     )
 
 
+def _sections_as_json(specification: Any, names: Any) -> dict[str, Any]:
+    """The named sections as the specification's own JSON.
+
+    Measured live: shown through `json.dumps(..., default=str)`, each decision
+    record arrived as `title='...' decision='...'`; the reviser handed them back
+    so, and the revision - five minutes of model time - could not be joined
+    ("11 validation errors") and was thrown away.
+    """
+    try:
+        dumped = specification.model_dump(mode="json")
+    except Exception:  # noqa: BLE001 - a plain object: its attributes as they are
+        dumped = {}
+    return {name: dumped.get(name, getattr(specification, name, None)) for name in names}
+
+
 def part_request(specification: Any, names: tuple[str, ...], context: str) -> str:
     """What one part's call is asked."""
-    core = {name: getattr(specification, name, None) for name in CORE}
+    core = _sections_as_json(specification, CORE)
     return "\n\n".join(part for part in (
         "These are sections of a software product's technical specification. Its core is below, "
         "written by its architect; write the sections named here so they agree with it exactly - "
@@ -198,10 +213,10 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
         chosen = _names(specification)
     groups = [tuple(chosen[n:n + SECTIONS_PER_REVISION]) for n in range(0, len(chosen), SECTIONS_PER_REVISION)]
     parameters = convert_to_openai_tool(type(specification))["function"]["parameters"]
-    core = {name: getattr(specification, name, None) for name in CORE}
+    core = _sections_as_json(specification, CORE)
 
     def revise(names: tuple[str, ...]) -> dict[str, Any] | None:
-        current = {name: getattr(specification, name, None) for name in names}
+        current = _sections_as_json(specification, names)
         request = "\n\n".join(part for part in (
             "A software product's technical specification was reviewed. Rewrite the sections below so "
             "they make the required changes, change nothing else in them, and agree with the rest of "

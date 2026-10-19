@@ -96,3 +96,44 @@ def test_a_run_with_no_judgement_model_named_revises_in_place_with_the_deploymen
     named = object()
     assert workflow._a_model_to_revise_with(named) is named
     assert "_a_model_to_revise_with(judgement_model)" in inspect.getsource(workflow)
+
+
+class Decision(BaseModel):
+    title: str
+    decision: str
+
+
+class SpecWithRecords(BaseModel):
+    product_scope: str = Field(description="What the release covers.")
+    file_plan: list[str] = Field(description="Every file and what it holds.")
+    decisions: list[Decision] = Field(description="Decisions and why.")
+
+
+class _Echo:
+    """Returns the named sections as it was shown them, with one file added - a reviser that keeps what it is not asked to change."""
+
+    def __init__(self):
+        self.asked = []
+
+    def invoke(self, messages):
+        text = str(messages[-1].content)
+        self.asked.append(text)
+        if '{"sections"' in text:
+            return SimpleNamespace(content=json.dumps({"sections": ["file_plan", "decisions"]}))
+        shown = json.loads(text.split("--- The sections to rewrite, as they stand ---\n", 1)[1].split("\n\nReply with", 1)[0])
+        shown["file_plan"] = [*shown["file_plan"], "src/health.ts: the health route"]
+        return SimpleNamespace(content=json.dumps(shown))
+
+
+def test_sections_of_records_are_shown_as_json_and_join_again():
+    """Measured live: the decision records were shown as `title='...' decision='...'`,
+    the reviser handed them back so, and the revision - five minutes of model time -
+    could not be joined ("11 validation errors") and was thrown away."""
+    previous = SpecWithRecords(product_scope="Notes.", file_plan=["src/app.ts: routes"],
+                               decisions=[Decision(title="Store", decision="A JSON file under DATA_DIR")])
+
+    revised = specification_parts.revised_in_place(previous, "- a health route is missing", _Echo(), "")
+
+    assert revised is not None
+    assert revised.file_plan[-1] == "src/health.ts: the health route"
+    assert revised.decisions == previous.decisions

@@ -90,6 +90,16 @@ const Screenshot: React.FC<{ runId: string; path: string }> = ({ runId, path }) 
   );
 };
 
+/** The measurement a criterion first passed in, in words: its snapshot's label is "after X", "before X" or a moment. */
+function whenMeasured(label: string): string {
+  const [, which, stage] = /^(after|before) (.+)$/.exec(label) ?? [];
+  if (which === 'after') return `after ${describeStage(stage).title}`;
+  if (which === 'before') return `by the start of ${describeStage(stage).title}`;
+  if (label === 'suite locked') return 'when the suite was locked';
+  if (label === 'accepted') return 'when the sprint was accepted';
+  return `at ${label}`;
+}
+
 /**
  * When a criterion first passed and after which step, and the change that did
  * it: the first commit made from that moment on (plan BG.9).
@@ -99,7 +109,6 @@ const FirstPassed: React.FC<{
   first: { test: string; after: string; at: string };
   onOpenChange?: (sha: string) => void;
 }> = ({ runId, first, onOpenChange }) => {
-  const step = describeStage(first.after.replace(/^after /, '')).title;
   const when = new Date(first.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const open = async () => {
     const { commits } = await getChanges(runId);
@@ -109,7 +118,7 @@ const FirstPassed: React.FC<{
   };
   return (
     <span className="block text-xs text-text-muted" title={first.test}>
-      first passed after {step}, {when}
+      first passed {whenMeasured(first.after)}, {when}
       {onOpenChange && (
         <>
           {' \u00B7 '}

@@ -32,3 +32,17 @@ describe('a criterion in the ledger', () => {
     expect(onOpenChange).toHaveBeenCalledWith('thefix');
   });
 });
+
+describe('the measurement a criterion first passed in', () => {
+  it('says a measurement taken before a step as such', async () => {
+    get.mockImplementation(async (url: string) => (url.endsWith('/decisions') ? { data: { decisions: [] } } : {
+      data: {
+        acceptance: { ran: true, criteria: { 'AC-1': { id: 'AC-1', text: 'Sign in', status: 'passed', tests: [] } } },
+        deferred: {}, screenshots: [], pages: [],
+        first_passed: { 'AC-1': { test: 't', after: 'before defect_fix_2_16', at: '2026-10-19T10:00:00Z' } },
+      },
+    }));
+    render(<DeliveryPanel runId="run-1" />);
+    expect(await screen.findByText(/first passed by the start of Fixing problem 17 \(test round 2\)/)).toBeTruthy();
+  });
+});

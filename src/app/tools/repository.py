@@ -216,6 +216,39 @@ def is_secret_path(path: Path) -> bool:
     return any(fnmatch(name, pattern) for pattern in SECRET_FILE_PATTERNS)
 
 
+#: Withheld with the credentials - a database can hold the product's users and
+#: their password hashes - but not one, and the stage that reaches for it needs
+#: to hear something else.
+DATABASE_FILE_PATTERNS = ("*.sqlite", "*.sqlite3", "*.db")
+
+
+def _the_refusal_of_a_database_file(verb: str, shown: str) -> str:
+    """Why a database file is not deleted or moved, and the cause a leftover one points at.
+
+    Measured live: a fixer whose suite failed on a uniqueness constraint tried
+    to delete the project's database file, was told it "looks like credential
+    material", and spent its next calls looking for the file. The suite had
+    started the product with a fresh `DATA_DIR`; the product's database was a
+    file in the working directory, outside it.
+    """
+    return (
+        f"'{shown}' is a database file, and no stage may {verb} one: it can hold the product's "
+        "users and their data. The product keeps its database under `DATA_DIR`, which is set for "
+        "every start; rows that survive from an earlier start mean this database is kept somewhere "
+        "else - the working directory or a fixed path. Make the product's database location come "
+        "from `DATA_DIR` (a file under it by default), and a leftover file stops mattering."
+    )
+
+
+def _the_refusal_of_a_withheld_file(verb: str, path: Path, shown: str) -> str | None:
+    """The refusal to delete or move a withheld file, or None for a file that is not one."""
+    if any(fnmatch(path.name, pattern) for pattern in DATABASE_FILE_PATTERNS):
+        return _the_refusal_of_a_database_file(verb, shown)
+    if is_secret_path(path):
+        return f"'{shown}' looks like credential material and cannot be {verb}d."
+    return None
+
+
 def _the_refusal_of_a_secret_path(verb: str, relative_path: str) -> str:
     """Why a credential file is not written, and where a setting it held goes.
 
@@ -7069,10 +7102,9 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
         raise RepositoryToolError(locked)
     shown = target.relative_to(root).as_posix()
 
-    if is_secret_path(target):
-        raise RepositoryToolError(
-            f"'{shown}' looks like credential material and cannot be deleted."
-        )
+    withheld = _the_refusal_of_a_withheld_file("delete", target, shown)
+    if withheld is not None:
+        raise RepositoryToolError(withheld)
     # The pin is the only thing every stage shares about where code lives, and
     # it looks exactly like the dotfile clutter an agent tidying the workspace
     # root would remove. Losing it does not fail loudly; it makes the next
@@ -7234,10 +7266,9 @@ def move_approved_artifact(
             )
 
     for path, shown in ((source, from_shown), (target, to_shown)):
-        if is_secret_path(path):
-            raise RepositoryToolError(
-                f"'{shown}' looks like credential material and cannot be moved."
-            )
+        withheld = _the_refusal_of_a_withheld_file("move", path, shown)
+        if withheld is not None:
+            raise RepositoryToolError(withheld)
         if path.name == PROJECT_MARKER:
             raise RepositoryToolError(
                 f"'{shown}' records which directory this project lives in. "

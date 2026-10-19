@@ -895,6 +895,13 @@ _NEVER_STARTED = re.compile(
 #: The start of every "the product did not start" problem.
 PRODUCT_DID_NOT_START = "The product did not start for the acceptance suite"
 
+#: A line of a failed start that says what went wrong, rather than where.
+_STATES_A_CAUSE = re.compile(
+    r"\berror\b|\bfailed\b|cannot find|could not|not found|not exported|unresolved|no module named|"
+    r"syntaxerror|typeerror|referenceerror|importerror|is not defined|required",
+    re.I,
+)
+
 #: A start that failed for want of a setting: a required field, an unset variable, a missing secret.
 _A_MISSING_SETTING = re.compile(
     r"Field required|environment variable[^\n]{0,60}(?:not set|is required|missing)|"
@@ -924,7 +931,15 @@ def the_product_did_not_start(output: str) -> str:
     # the frames of uvicorn's start.
     head = lines[first:first + 3]
     ending = [line for line in lines[-8:] if line not in head]
-    excerpt = ("\n".join(head) + ("\n...\n" + "\n".join(ending) if ending else ""))[:1800]
+    # And between them, the lines that say what went wrong. Measured live: a
+    # page's build failed, the head was Playwright's own "was not able to
+    # start" and the ending a Node error object's file list; the build's line
+    # naming its cause - an import that does not resolve - sat between and was
+    # cut, so its fixers were told the build failed and not why.
+    between = lines[first + 3:max(first + 3, len(lines) - 8)]
+    causes = [line[:300] for line in between if _STATES_A_CAUSE.search(line)][:6]
+    middle = ("\n...\n" + "\n".join(causes)) if causes else ""
+    excerpt = ("\n".join(head) + middle + ("\n...\n" + "\n".join(ending) if ending else ""))[:2_400]
     hint = ""
     if _A_MISSING_SETTING.search(text):
         hint = (

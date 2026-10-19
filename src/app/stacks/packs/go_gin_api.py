@@ -52,6 +52,7 @@ PACK = service_pack(
     unit_report="test-results/unit.xml",
     unit_dir=".",
     unit_pattern="*_test.go",
+    entrypoint="server.go",
     start="go build -o bin/server . && exec ./bin/server",
     server_timeout_ms=180_000,
     smoke_unit=("scaffold_smoke_test.go", SMOKE_UNIT),

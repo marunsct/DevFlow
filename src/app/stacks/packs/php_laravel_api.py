@@ -235,6 +235,7 @@ PACK = service_pack(
     unit_report="test-results/unit.xml",
     unit_dir="tests",
     unit_pattern="*Test.php",
+    entrypoint="routes/api.php",
     start=START,
     server_timeout_ms=90_000,
     smoke_unit=("tests/Feature/ScaffoldSmokeTest.php", SMOKE_UNIT),

@@ -178,6 +178,7 @@ PACK = service_pack(
     unit_report="test-results/unit",
     unit_dir="test",
     unit_pattern="*_test.rb",
+    entrypoint="config/routes.rb",
     start="bundle exec rails db:prepare && exec bundle exec rails server -b 127.0.0.1 -p $PORT",
     server_timeout_ms=180_000,
     smoke_unit=("test/integration/scaffold_smoke_test.rb", SMOKE_UNIT),

@@ -113,6 +113,7 @@ PACK = service_pack(
     unit_report="test-results/unit.xml",
     unit_dir="tests",
     unit_pattern="*Tests.cs",
+    entrypoint="src/App/Program.cs",
     start="exec dotnet run --project src/App --no-launch-profile",
     server_timeout_ms=240_000,
     smoke_unit=("tests/UnitTests/ScaffoldSmokeTests.cs", SMOKE_UNIT),

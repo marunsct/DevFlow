@@ -217,6 +217,7 @@ PACK = StackPack(
     acceptance_dir="acceptance",
     acceptance_pattern="*.spec.js",
     unit_pattern="*.test.tsx",
+    entrypoints=("app/page.tsx",),
     kept_files=("playwright.config.js", "playwright.setup.mjs", "vitest.config.ts"),
     unit_dom="Vitest's `jsdom` environment in `vitest.config.ts`",
     kept_scripts={"test": UNIT_SCRIPT, "test:acceptance": "playwright test"},

@@ -227,6 +227,31 @@ class StackPack:
         stay free of any one tool (Initiative AO.10, AU).
         """
         return "playwright" if "playwright.config.js" in self.files else ""
+
+    @property
+    def coverage(self) -> tuple[str, ...]:
+        """What the harness checks for a product on this pack, from the pack's own data (Initiative AW).
+
+        Derived, not written by hand: a pack that gains a runner, an entrypoint
+        or a page report says so here without anyone remembering to.
+        """
+        found = [
+            f"unit tests: `{self.unit_pattern}` in `{self.unit_dir}/`, run by the pack's command",
+            f"acceptance tests: `{self.acceptance_pattern}` in `{self.acceptance_dir}/`, locked before building",
+        ]
+        if self.runtime_report:
+            found.append("errors the page reports while it loads")
+        if self.kind in {"browser_app", "fullstack"} and self.evidence_dir:
+            found.append("the page in a browser, with screenshots kept as evidence")
+        stubs = [e for e in (self.entrypoint, *self.entrypoints) if e]
+        if stubs:
+            found.append("that the served code is the run's own, not the scaffold's stub (" + ", ".join(f"`{e}`" for e in stubs) + ")")
+        if self.language in {"javascript", "typescript", "python"}:
+            found.append("imports against the packages the manifests declare")
+        if self.probe_runner:
+            found.append(f"the architect's interface contract, probed through {self.probe_runner}")
+        return tuple(found)
+
     def render(self, project: str, title: str, package: str | None = None) -> dict[str, str]:
         """The scaffold's files with this project's names filled in."""
         return _filled(self.files, project, title, package)
@@ -577,7 +602,7 @@ def support_tier(pack: StackPack | None) -> str:
         return (
             f"Support tier: {PACK_SUPPORTED} - the {pack.name} pack's scaffold, install and "
             "test commands, and release files (CI pipeline, and a container definition for "
-            "a service)."
+            "a service). What the harness checks on it: " + "; ".join(pack.coverage) + "."
         )
     return (
         f"Support tier: {CUSTOM_STACK} - no pack fits, so a setup stage creates the project "

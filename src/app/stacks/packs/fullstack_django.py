@@ -291,6 +291,7 @@ PACK = StackPack(
     acceptance_dir="acceptance",
     acceptance_pattern="*.spec.js",
     unit_pattern="test_*.py",
+    entrypoints=("{{package}}/urls.py", "{{package}}/templates/{{package}}/home.html"),
     unit_test_names=_python.UNIT_TEST_NAMES,
     test_helpers=_python.TEST_HELPERS,
     kept_files=("playwright.config.js", "playwright.setup.mjs", "pytest.ini"),

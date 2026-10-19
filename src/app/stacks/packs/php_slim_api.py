@@ -139,6 +139,7 @@ PACK = service_pack(
     unit_report="test-results/unit.xml",
     unit_dir="tests",
     unit_pattern="*Test.php",
+    entrypoint="src/Service.php",
     start="exec php -S 127.0.0.1:$PORT -t public public/index.php",
     server_timeout_ms=60_000,
     smoke_unit=("tests/ScaffoldSmokeTest.php", SMOKE_UNIT),

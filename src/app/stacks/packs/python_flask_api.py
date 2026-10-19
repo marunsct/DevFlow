@@ -100,6 +100,7 @@ PACK = StackPack(
     acceptance_dir="acceptance",
     acceptance_pattern="test_*.py",
     unit_pattern="test_*.py",
+    entrypoint="{{package}}/app.py",
     unit_test_names=_python.UNIT_TEST_NAMES,
     test_helpers=_python.TEST_HELPERS,
     kept_files=("pytest.ini", "acceptance/conftest.py"),

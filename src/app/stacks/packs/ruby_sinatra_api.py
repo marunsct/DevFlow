@@ -100,6 +100,7 @@ PACK = service_pack(
     unit_report="test-results/unit.xml",
     unit_dir="spec",
     unit_pattern="*_spec.rb",
+    entrypoint="app.rb",
     start="exec bundle exec rackup -p $PORT -o 127.0.0.1",
     server_timeout_ms=90_000,
     smoke_unit=("spec/scaffold_smoke_spec.rb", SMOKE_UNIT),

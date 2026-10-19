@@ -444,6 +444,28 @@ docs/           PRODUCT.md (this), architecture-decisions.md, HANDOVER.md,
   clean → stage 2 notes-api, wordstats-cli, textkit-lib ×1 each → stage 3
   fullstack-bookmarks ×2 → then `tests/brief_medium.md`, `brief_high.md` by audit.
   **Stage 1 gate passed 2026-10-17** (2 of 2 clean runs). Since then the loop measures the medium brief and the W.2 baselines with per-run KPIs (`loop.sh kpi`; `docs/monitoring-handover.md` §0.3a).
+- **The model server is the owner's** (Initiative S). The harness reads what a
+  llama.cpp-style server says of itself (`/props`: slots, tokens per slot,
+  quantisation) at each run segment and every five minutes during a run, and
+  records a change or an outage in the run's transcript (`server_changed`,
+  `server_unreachable`, counted by `loop.sh kpi`); `loop.sh ready` prints the
+  facts. It never changes the server. What the owner can tune, with the
+  measurement behind each (sources in `docs/research-findings.md`):
+  - **Context per slot ≥ 32k tokens** (the server splits its context across
+    slots): calls failed with "context size has been exceeded" at 20-48k input
+    when six stages ran on a split context. `-c` / `-np` together decide it.
+  - **Slots = the parallelism that actually overlaps.** One slot serialises every
+    fan-out (measured overlap 1.0-1.3x); more slots only help with the KV memory
+    to give each one the context above.
+  - **Prompt-cache reuse:** `--cache-prompt` is on by default; `--cache-reuse 256`
+    lets a shifted prefix be reused (W.2 baselines: 58-78% of input from cache).
+  - **KV cache at f16 or q8_0, not q4_0** (q4_0 KV degrades tool calls); weights
+    at more than 4 bits for a tool-calling model (`ready` warns at 4 or fewer).
+  - **Thinking:** the server honours only the thinking switch per request; a
+    per-request reasoning budget and `reasoning_effort` are ignored (AR probe,
+    2026-10-19), so a reasoning budget is the server's own flag.
+  - **Speculative decoding / MTP draft** where the model ships one (this model is
+    an MTP GGUF): up to about 2x decode.
 - **Code rules**: no run ids in code, comments, prompts or tests; language/framework
   guidance only in stack packs or `plugins/seed.py`; agent rules phrased
   product-agnostically (tests ban product words); every rule enforced where it is

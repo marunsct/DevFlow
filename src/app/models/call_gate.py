@@ -107,6 +107,14 @@ def a_model_call(server: str = "") -> Iterator[None]:
     """
     _wait_while_held()
     run, stage = _this_run()
+    if run:
+        # The server's own facts, asked again now and then (Initiative S).
+        try:
+            from app.models import server_profile
+
+            server_profile.check_again(run)
+        except Exception:  # noqa: BLE001 - telemetry never stops a call
+            pass
     key = _server_key(server)
     marker = None
     try:

@@ -154,6 +154,8 @@ def kpis(records: list[dict]) -> dict:
             count["resumes"] += 1
         elif kind == "steering_applied":
             count["steering_notes"] += 1
+        elif kind in ("server_changed", "server_unreachable"):
+            count[kind] += 1
         elif kind == "tool_call":
             count["tool_calls"] += 1
             calls[r.get("call_id")] = r
@@ -231,6 +233,8 @@ def kpis(records: list[dict]) -> dict:
         "closed_without_a_fixer": defects["closed without a fixer"],
         **{layer: count[layer] for layer in [*LAYERS, "layer_tool_withheld"]},
         "cache_miss_after_tool_change": count["cache_miss_after_tool_change"],
+        "server_changed": count["server_changed"],
+        "server_unreachable": count["server_unreachable"],
         # Each block's share of every character the requests carried; absent
         # for a run recorded before requests named their blocks.
         **{f"prompt_block_share_{name}": _share(size, sum(blocks.values())) for name, size in sorted(blocks.items())},

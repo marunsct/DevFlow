@@ -275,7 +275,7 @@ document. Each script's own header is the authority on its arguments.
 | script | purpose | where it runs |
 |---|---|---|
 | `loop.sh checks --write` | each check's precision against the scored runs' hidden tests into the worker's `DATA_DIR/loop/check_precision.json` (AO.5); a check under 0.9 over 5+ scored products stops blocking. Run it after each `loop.sh score` | worker (copies host `data/bench` in) |
-| `scripts/loop/kpi.py` | one run's KPIs as JSON (Initiative W.4); since BF also `prompt_block_share_<block>` (what requests carried, from each `model_request`'s `blocks`) and `cache_miss_after_tool_change` | worker, piped on stdin |
+| `scripts/loop/kpi.py` | one run's KPIs as JSON (Initiative W.4); since BF also `prompt_block_share_<block>` (what requests carried, from each `model_request`'s `blocks`) and `cache_miss_after_tool_change`; since S `server_changed` and `server_unreachable` (the model server checked again every 5 minutes during a run) | worker, piped on stdin |
 | `scripts/loop/kpi_ledger.py` | appends a run to `data/kpi/ledger.csv` and flags KPIs past 1.5× the five-run mean; `compare A.json B.json` for A/B | host |
 | `scripts/loop/check_precision.py` | fire rate and precision of each cross-file check over stored workspaces | worker |
 | `scripts/loop/model_fitness.py` | can the build model call tools well enough for a run | worker |

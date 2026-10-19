@@ -119,6 +119,78 @@ def record() -> ServerProfile | None:
     return _RECORDED
 
 
+#: How often, at most, a running worker asks the server about itself again.
+HEALTH_CHECK_SECONDS = 300
+_LAST_CHECK = 0.0
+_UNREACHABLE = False
+
+
+def what_changed(before: ServerProfile, after: ServerProfile) -> list[str]:
+    """The server facts that differ between two profiles, in words; [] when none do."""
+    changes = []
+    if before.slots != after.slots:
+        changes.append(f"slots {before.slots or '?'} -> {after.slots or '?'}")
+    if before.slot_context != after.slot_context:
+        changes.append(f"tokens per slot {before.slot_context or '?'} -> {after.slot_context or '?'}")
+    if before.quantisation != after.quantisation:
+        changes.append(f"quantisation {before.quantisation or '?'} -> {after.quantisation or '?'}")
+    return changes
+
+
+def check_again(run_id: str = "", *, clock: Any = None, reader: Any = None) -> str:
+    """Ask the server about itself again during a run, at most every `HEALTH_CHECK_SECONDS`; never raises.
+
+    Read once per segment, the profile went stale whenever the owner restarted
+    the server: measured on one day, the server went from one slot to two
+    between runs, and a run would have kept budgeting for the old slot's
+    context until a deploy re-read it. A change, or a server that stopped
+    answering after it had answered, is logged and recorded in the run's
+    transcript (`server_changed` / `server_unreachable`), and the new facts are
+    used from the next call on (Initiative S). Returns what it noticed, or "".
+    """
+    global _RECORDED, _LAST_CHECK, _UNREACHABLE
+    import time
+
+    now = (clock or time.monotonic)()
+    if not _TRIED or _RECORDED is None or now - _LAST_CHECK < HEALTH_CHECK_SECONDS:
+        return ""
+    _LAST_CHECK = now
+    try:
+        if reader is not None:
+            fresh = reader()
+        else:
+            from app.models import _runtime_settings
+
+            settings = _runtime_settings()
+            fresh = read(settings.openai_base_url or "", settings.openai_api_key or "")
+    except Exception:  # noqa: BLE001 - telemetry never stops a call
+        return ""
+    noticed, kind, details = "", "", {}
+    if fresh is None:
+        if not _UNREACHABLE:
+            _UNREACHABLE = True
+            noticed, kind = "The model server did not answer its /props check", "server_unreachable"
+    else:
+        if _UNREACHABLE:
+            _UNREACHABLE = False
+            noticed, kind = "The model server answers again", "server_reachable"
+        changes = what_changed(_RECORDED, fresh)
+        if changes:
+            noticed = "The model server changed during the run: " + ", ".join(changes)
+            kind, details = "server_changed", {"changes": changes}
+            _RECORDED = fresh
+    if noticed:
+        logger.warning(noticed)
+        if run_id:
+            try:
+                from app.observability.transcript import record as write
+
+                write(run_id, "-", kind, text=noticed, **details)
+            except Exception:  # noqa: BLE001
+                pass
+    return noticed
+
+
 def current() -> ServerProfile | None:
     """The profile recorded for this process, or None. No network."""
     return _RECORDED
@@ -130,9 +202,11 @@ def asked() -> bool:
 
 
 def forget() -> None:
-    global _RECORDED, _TRIED
+    global _RECORDED, _TRIED, _LAST_CHECK, _UNREACHABLE
     _RECORDED = None
     _TRIED = False
+    _LAST_CHECK = 0.0
+    _UNREACHABLE = False
 
 
-__all__ = ["ServerProfile", "asked", "current", "forget", "from_props", "read", "record"]
+__all__ = ["ServerProfile", "asked", "check_again", "current", "forget", "from_props", "read", "record", "what_changed"]

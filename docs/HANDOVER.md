@@ -324,7 +324,7 @@ test that fails on the old code:
   2026-10-20** on the owner's word (no longer useful: 426 min, 34 defects, 3 fixed, 8 fixes reverted; KPIs in
   `data/kpi/`). App and worker deployed at ee47e4e4 (the worker carries `run_kpis`). The first gate run, run-7622ead3,
   was cancelled at 00:51 JST (LF.40: its specification planned server-only column types for a product tested
-  on the file database; not a measurement). **The gate run restarts on the LF.39/LF.40 deploy**: `tests/brief_medium.md`,
+  on the file database; not a measurement). **The gate run is run-ffa6599b**, started 00:56 JST on 6fa17284 (LF.39/LF.40): `tests/brief_medium.md`,
   `DELIVERY=fast FRONTIER=false`, compared with the baselines by `kpi_ledger.py compare` when it ends.
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).

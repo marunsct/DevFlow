@@ -64,11 +64,13 @@ def test_a_repeated_read_says_so_and_keeps_every_number(project) -> None:
     read_file, paths = _tools(project)
 
     _read(read_file, paths, offset=5, limit=10)
-    again = _read(read_file, paths, offset=5, limit=10)
+    # Lines inside the served ones, not the same window: that one is answered
+    # with where its lines are, without them (Initiative AQ).
+    again = _read(read_file, paths, offset=5, limit=8)
 
     assert again.startswith("["), again[:200]
     rows = _numbered(again)
-    assert rows[6] == "line 6" and rows[15] == "line 15"
+    assert rows[6] == "line 6" and rows[13] == "line 13"
     assert all(text == f"line {number}" for number, text in rows.items())
 
 

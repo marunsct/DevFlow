@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from app.agents.workspace_backend import WorkspaceBackend, _is_hidden, _path_of
+from app.agents.workspace_backend import READ_WITHHELD_MARKER, WorkspaceBackend, _is_hidden, _path_of
 
 
 @pytest.fixture
@@ -357,7 +357,9 @@ def test_a_range_already_served_is_told_so(tmp_path) -> None:
 
     def seen(offset: int, limit: int) -> bool:
         result = backend.read("/index.html", offset=offset, limit=limit)
-        return "already read lines" in result.file_data["content"]
+        # The same window again is answered with where its lines are (Initiative AQ).
+        content = result.file_data["content"]
+        return "already read lines" in content or READ_WITHHELD_MARKER in content
 
     assert not seen(0, 100)
     assert not seen(310, 80)
@@ -376,16 +378,15 @@ def test_a_write_clears_what_was_seen(tmp_path) -> None:
     backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
 
     backend.read("/index.html", offset=0, limit=100)
-    assert "already read lines" in backend.read(
+    assert READ_WITHHELD_MARKER in backend.read(
         "/index.html", offset=0, limit=100
     ).file_data["content"]
 
     time.sleep(0.01)
     page.write_text("\n".join(f"CHANGED {i}" for i in range(1, 250)), encoding="utf-8")
 
-    assert "already read lines" not in backend.read(
-        "/index.html", offset=0, limit=100
-    ).file_data["content"]
+    again = backend.read("/index.html", offset=0, limit=100).file_data["content"]
+    assert "already read lines" not in again and READ_WITHHELD_MARKER not in again
 
 
 def test_the_check_keys_on_the_file_not_the_returned_slice(tmp_path) -> None:

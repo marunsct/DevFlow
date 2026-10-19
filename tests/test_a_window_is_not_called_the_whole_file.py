@@ -40,7 +40,8 @@ def _the_notice(backend, path, **window):
 def test_a_window_of_a_longer_file_is_named_as_a_window(backend):
     text = _the_notice(backend, "/spec.md", offset=0, limit=120)
 
-    assert "same bytes this file gave you" in text
+    # A window read again is answered with where its lines are (Initiative AQ).
+    assert "has given you these same bytes" in text
     assert "this is the whole file" not in text
     assert "lines 1-120 of 423" in text
 

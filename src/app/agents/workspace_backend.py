@@ -293,6 +293,12 @@ REPEATS_BEFORE_SAYING_SO = 2
 #: lines, so a stage whose context was compacted away still has an anchor.
 READS_BEFORE_WITHHOLDING = 3
 
+#: Earlier reads of the same window of an unchanged file before the next is
+#: answered with where those lines already are, not the lines (Initiative AQ):
+#: one, so the second asking is the first one spared. Measured on a medium run,
+#: 431 identical `read_file` calls came after every other guard.
+WINDOWED_REPEATS_BEFORE_POINTING = 1
+
 #: Repeated reads across ALL files in a stage before the notice stops being
 #: about the file and starts being about the stage.
 #:
@@ -779,6 +785,19 @@ class _NoticingRepeats:
         seen[where] = (identity, counts)
         if count >= REPEATS_BEFORE_SAYING_SO:
             self._count_a_repeated_read()
+        if window and count >= WINDOWED_REPEATS_BEFORE_POINTING:
+            # A window of an unchanged file, asked for again: the lines are in
+            # the conversation already, so the bytes are not sent a second time
+            # (Initiative AQ step 3). A whole file waits for the rungs below.
+            self._withheld = True  # noqa: SLF001 - own attribute, read by `read`
+            return (
+                f"[Unchanged: this file {READ_WITHHELD_MARKER} before in this stage - {window} - "
+                "and has not changed since, so those lines are in your context above. If you "
+                "need lines you have not seen, ask for a range outside them. Otherwise use "
+                "what you have and move on.]"
+                + _an_anchor_to_what_was_withheld(text)
+                + self._the_way_out()
+            )
         if count >= READS_BEFORE_WITHHOLDING:
             self._withheld = True  # noqa: SLF001 - own attribute, read by `read`
             return (

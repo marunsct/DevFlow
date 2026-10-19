@@ -1295,6 +1295,13 @@ def _who_changed_it(root: Path, relative_path: str) -> str:
         writer, me = "", ""
     if writer and me and writer != me:
         return f"'{writer}', a stage working alongside you, changed it since"
+    if writer and me and writer == me:
+        # Its own edit - often another edit of the same file sent in the same
+        # batch - or a command it ran after writing: the record cannot tell
+        # which. Measured live: seven parallel edits to one test file, and the
+        # one that missed was told only that a command it never ran rewrote it.
+        return ("your own edit of it (earlier in this stage, or another edit in the same batch of calls) "
+                "or a command you ran changed it")
     return "a command you ran (an installer, a formatter, a generator) rewrote it"
 
 
@@ -3388,8 +3395,7 @@ def edit_approved_artifact(
                 raise RepositoryToolError(
                     f"Could not find that text in '{relative_path}' because the file "
                     f"changed after you last read it - {_who_changed_it(root, relative_path)}. "
-                    "The passage you sent was correct for the version you had. Read "
-                    "the file again and copy the passage from what you read."
+                    "Read the file again and copy the passage from what it holds now."
                 )
 
             # What differs, before what is nearby: a model that is three

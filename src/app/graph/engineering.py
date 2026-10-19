@@ -560,6 +560,13 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list
     after = ci.take(root, f"after {stage_name}")
     lost = ci.regressions(before, after)
     broken = _broken_tests(lost, before, after)
+    if broken and after.problem:
+        # Every test "broke" because none could run: the cause goes first, or
+        # the next fixer reads a list of tests and never the build error.
+        # Measured live: one rewrite of the served page broke its build twice,
+        # reverted each time as "broke 3 test(s)", the same rewrite again next round.
+        cause = " ".join(after.problem.split())[:400]
+        broken = [f"the product no longer builds or starts after it ({cause})", *broken]
     if broken and ci.revert_to(root, base):
         logger.warning("Reverted %s: it broke %d test(s) that passed before it", stage_name, len(broken))
         return broken

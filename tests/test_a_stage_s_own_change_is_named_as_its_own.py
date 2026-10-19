@@ -83,3 +83,17 @@ def test_an_edit_another_stage_made_is_not_claimed_as_this_one_s(tmp_path, monke
     assert result["status"] == "already_applied"
     assert "It was applied earlier" in result["detail"]
     assert "yourself" not in result["detail"]
+
+
+def test_a_file_the_stage_s_own_edit_changed_is_not_blamed_on_a_command(workspace, monkeypatch):
+    """Measured live: seven parallel edits to one test file, and the one that
+    missed was told a command it never ran had rewritten the file, and that its
+    passage was correct for the version it had - which nothing had checked."""
+    from app.tools import repository
+
+    _as_stage(monkeypatch, "specialist_backend_2")
+    said = repository._who_changed_it(workspace, "app/app.js")
+
+    assert "your own edit" in said and "same batch" in said
+    source = open(repository.__file__).read()
+    assert "The passage you sent was correct for the version you had" not in source

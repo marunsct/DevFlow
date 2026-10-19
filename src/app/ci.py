@@ -44,6 +44,9 @@ class Snapshot:
     acceptance: dict[str, str] = field(default_factory=dict)
     unit_ran: bool = False
     acceptance_ran: bool = False
+    #: Why the acceptance suite reached no test, when it reached none: the
+    #: product did not build or start (`suite.the_product_did_not_start`).
+    problem: str = ""
 
     def passing(self) -> set[str]:
         return {
@@ -175,6 +178,7 @@ def take(
         acceptance=tests,
         unit_ran=unit_ran,
         acceptance_ran=bool(acceptance is not None and acceptance.ran),
+        problem=str(acceptance.problem or "")[:1500] if acceptance is not None and not acceptance.report.tests else "",
     )
 
 

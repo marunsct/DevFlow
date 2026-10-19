@@ -411,14 +411,26 @@ def build_project_memory_middleware(repo_root: str) -> Any:
 
         def __init__(self) -> None:
             super().__init__()
-            self._held: dict[str, str] = {}
-            self._first_held: dict[str, str] = {}
-            # The memory as this visit's first call rendered it, kept byte for
-            # byte: rendered again on every call it changed with every write,
-            # at the very start of the conversation, and the server's prefix
-            # cache missed for everything after it on the next call.
-            self._snapshot: str | None = None
-            self._snapshot_files: dict[str, str] = {}
+            # This instance's own visit, used outside a graph run.
+            self._own: dict[str, Any] = {}
+
+        def _visit(self) -> dict[str, Any]:
+            """The visit's memory: the snapshot, the files it holds, the files as the visit began.
+
+            The memory as this visit's first call rendered it, kept byte for
+            byte: rendered again on every call it changed with every write, at
+            the very start of the conversation, and the server's prefix cache
+            missed for everything after it on the next call. Kept in the stage's
+            memory, not on this instance: every gated tool call interrupts the
+            graph and the node builds the agent afresh on resume (see
+            `app.agents.stage_memory`), so on the instance it lasted one write.
+            Measured on one gate run, 48 calls re-read 2.4M tokens of prompt the
+            server had cached, about 18 minutes, behind a memory rendered again
+            with the stage's new file in the middle of it.
+            """
+            from app.agents.stage_memory import store
+
+            return store("project_memory", self._own)
 
         def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
             messages = getattr(request, "messages", None)
@@ -427,23 +439,26 @@ def build_project_memory_middleware(repo_root: str) -> Any:
             try:
                 opening = next((str(getattr(m, "content", "") or (m.get("content") if isinstance(m, dict) else ""))
                                 for m in messages), "")
-                if self._snapshot is None:
-                    self._snapshot, self._held = render(repo_root, budget_for(getattr(request, "model", None)), opening)
-                    self._snapshot_files = dict(current(repo_root))
-                memory = self._snapshot
+                visit = self._visit()
+                if visit.get("snapshot") is None:
+                    visit["snapshot"], visit["held"] = render(repo_root, budget_for(getattr(request, "model", None)), opening)
+                    visit["files"] = dict(current(repo_root))
+                memory = visit["snapshot"]
+                held = visit.get("held") or {}
                 # Each file as this visit first held it, so a read of one that
                 # changed since - by this stage's own edit - is answered with
                 # the file, not "it has not changed since the start".
-                for held_path, held_content in self._held.items():
-                    self._first_held.setdefault(held_path, held_content)
-                if self._held:
+                first_held = visit.setdefault("first_held", {})
+                for held_path, held_content in held.items():
+                    first_held.setdefault(held_path, held_content)
+                if held:
                     from app.tools.seen_content import remember_if_unseen
 
-                    for held_path, held_content in self._held.items():
+                    for held_path, held_content in held.items():
                         remember_if_unseen(held_path, held_content)
                 changed = _with_memory(messages, memory) if memory else None
                 if changed is not None:
-                    note = changes_since(self._snapshot_files, current(repo_root))
+                    note = changes_since(visit.get("files") or {}, current(repo_root))
                     if note:
                         changed = [*changed, {"role": "user", "content": note}]
                     request = request.override(messages=changed)
@@ -457,14 +472,15 @@ def build_project_memory_middleware(repo_root: str) -> Any:
             # Any read of a file the memory holds, a window of it included: a
             # third of all reads were windows (`offset`), and every one went
             # to disk for lines already in the conversation.
-            if call.get("name") == "read_file" and self._held:
+            visit = self._visit()
+            if call.get("name") == "read_file" and visit.get("held"):
                 path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
-                held = self._held.get(path)
+                held = visit["held"].get(path)
                 # A file changed since this visit began is read for real once:
                 # measured on one run, a fix stage edited a file, read it to see
                 # its change, was told six times "it has not changed since",
                 # and fell back to `cat`.
-                changed_this_visit = self._first_held.get(path, held) != held
+                changed_this_visit = (visit.get("first_held") or {}).get(path, held) != held
                 if held is not None and not changed_this_visit and current(repo_root).get(path) == held:
                     from app.tools.seen_content import remember
 

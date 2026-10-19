@@ -312,8 +312,9 @@ test that fails on the old code:
   test holds the table to the graph) and BG.12 (contrast borders on controls only; a 12 px floor).
   BG.13 (no `/logs` paging while the stream is open; the feed announces headlines only; disclosures
   say their state) and UI-S3 = BG.10 (a written brief, its criteria shown before the run, existing
-  code, no orphans), BG.15 (model pressure in the rail) and the BG.16 housekeeping. Next: BG.14, then
-  UI-S6 with BG.16's cross-run compare.
+  code, no orphans), BG.15 (model pressure in the rail), BG.14 (the run's timeline above the feed)
+  and the BG.16 housekeeping. Next: UI-S6 with BG.16's cross-run compare (needs the per-run KPI
+  files where the API can read them - they are in the host's `data/kpi/`, outside its volume).
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).

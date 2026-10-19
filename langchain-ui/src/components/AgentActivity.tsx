@@ -31,6 +31,8 @@ interface AgentActivityProps {
   isRunning?: boolean;
   /** Inside another card (a tab of the run's work area): no card of its own. */
   bare?: boolean;
+  /** A moment to show: the feed scrolls to its first entry from then (the timeline, plan BG.14). */
+  focusAt?: string | null;
 }
 
 const ACTIVITY_TYPES = new Set(['agent_message', 'tool_call', 'tool_result', 'review_decision', 'approval_decision']);
@@ -347,7 +349,7 @@ const DecisionRow: React.FC<{ item: Item }> = ({ item }) => (
  * Each action carries its own state, so an unfinished one reads as in progress
  * instead of looking identical to a finished one.
  */
-export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = false, bare = false }) => {
+export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = false, bare = false, focusAt = null }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pinned, setPinned] = useState(true);
   const all = useMemo(() => buildItems(logs), [logs]);
@@ -443,6 +445,15 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
     );
   }, [streamingKey]);
 
+  // Taken to a moment from the timeline: the first entry from then, centred.
+  useEffect(() => {
+    if (!focusAt || !scrollRef.current) return;
+    const from = Date.parse(focusAt);
+    const target = [...scrollRef.current.querySelectorAll<HTMLElement>('[data-at]')]
+      .find((element) => Date.parse(element.dataset.at ?? '') >= from);
+    target?.scrollIntoView?.({ block: 'center' });
+  }, [focusAt]);
+
   const live = items.length > 0;
   // Only the newest action can still be in flight; anything earlier was settled
   // by whatever came after it, whether or not its own result was recorded.
@@ -532,7 +543,7 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
 
                       <div className="space-y-0.5 pt-1">
                         {group.items.map((item) => (
-                          <div key={item.key} className="animate-activity-in">
+                          <div key={item.key} data-at={item.at} className="animate-activity-in">
                             {item.type === 'decision' ? (
                               <DecisionRow item={item} />
                             ) : item.type === 'message' ? (

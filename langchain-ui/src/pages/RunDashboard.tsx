@@ -31,6 +31,7 @@ import { LogViewer } from '../components/LogViewer';
 import { LatestChange } from '../components/LatestChange';
 import { AuditTable } from '../components/AuditTable';
 import { ModelPressure } from '../components/ModelPressure';
+import { Timeline } from '../components/Timeline';
 import { Tabs } from '../ui';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { SteeringBox } from '../components/SteeringBox';
@@ -77,6 +78,8 @@ export const RunDashboard: React.FC = () => {
   const typical = useTypicalTime(run?.delivery_mode);
   // On a server that serves one request at a time, another run on it holds this one's calls.
   const health = useServerHealth();
+  // A moment chosen on the timeline, for the feed to show.
+  const [focusAt, setFocusAt] = useState<string | null>(null);
   const waitingOn = holdingTheModel(health, runId);
   // The tab says what the run needs, so a gate is seen from another tab.
   useEffect(() => {
@@ -811,7 +814,25 @@ export const RunDashboard: React.FC = () => {
             selected={centreTab}
             onSelect={(id) => setCentreTab(id as CentreTab)}
             items={[
-              { id: 'activity', label: 'Activity', content: <AgentActivity logs={logs} isRunning={!isTerminal} bare /> },
+              {
+                id: 'activity',
+                label: 'Activity',
+                content: (
+                  <div className="flex h-full flex-col">
+                    <Timeline
+                      runId={runId!}
+                      startedAt={run.created_at}
+                      endedAt={isTerminal && run.updated_at ? Date.parse(run.updated_at) : now}
+                      stages={run.stages || []}
+                      logs={logs}
+                      onPick={setFocusAt}
+                    />
+                    <div className="flex-1 min-h-0">
+                      <AgentActivity logs={logs} isRunning={!isTerminal} bare focusAt={focusAt} />
+                    </div>
+                  </div>
+                ),
+              },
               {
                 id: 'changes',
                 label: 'Changes',

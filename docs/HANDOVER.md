@@ -313,11 +313,11 @@ test that fails on the old code:
   BG.13 (no `/logs` paging while the stream is open; the feed announces headlines only; disclosures
   say their state) and UI-S3 = BG.10 (a written brief, its criteria shown before the run, existing
   code, no orphans), BG.15 (model pressure in the rail), BG.14 (the run's timeline above the feed)
-  the BG.16 housekeeping and UI-S6 (a run's KPIs on its page; `/runs/compare`). The UI track of
-  group 1 is built. **Deployed e0c73cc at 13:28 UTC into the shakedown run (resumed); the commits
-  after it (BG.14, UI-S6) need one more app + worker deploy - do it when the shakedown run ends,
-  before `loop.sh kpi` (which now imports `app.observability.run_kpis` in the worker).** Then the
-  gate run (group 2 before/after).
+  the BG.16 housekeeping and UI-S6 (a run's KPIs on its page; `/runs/compare`). **Group 1 is
+  built.** Deployed e0c73cc (app + worker) at 13:28 UTC into the shakedown run, which resumed; the
+  app alone again at c6e04398 (13:50 UTC, UI and API only). **Before the next `loop.sh kpi`, deploy the
+  worker** (`loop.sh deploy` when the shakedown ends): `kpi.py` now imports
+  `app.observability.run_kpis`. Then the gate run (group 2 before/after).
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).

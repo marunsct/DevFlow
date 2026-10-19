@@ -2,6 +2,7 @@ import { endSession, refreshNow, scheduleRefresh } from '../lib/session';
 import axios from 'axios';
 import type {
   ApprovalDecisionRequest,
+  BriefPreview,
   CreateRunResponse,
   EventResponse,
   ModelProfile,
@@ -246,6 +247,20 @@ export const rewindRun = async (
 
 export const cancelRun = async (runId: string) => {
   const response = await api.post(`/runs/${runId}/cancel`);
+  return response.data;
+};
+
+/** The acceptance criteria a brief gives a run, before it starts (plan BG.10). */
+export const previewBrief = async (brief: string): Promise<BriefPreview> => {
+  const response = await api.post<BriefPreview>('/runs/preview', { brief });
+  return response.data;
+};
+
+/** Seed a created run's workspace from an existing codebase, as an archive. */
+export const uploadCodebase = async (runId: string, archive: File): Promise<unknown> => {
+  const formData = new FormData();
+  formData.append('file', archive);
+  const response = await api.post(`/runs/${runId}/codebase`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
   return response.data;
 };
 

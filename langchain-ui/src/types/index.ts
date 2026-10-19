@@ -6,6 +6,7 @@
  */
 export type {
   ApprovalDecisionRequest,
+  BriefPreview,
   ArtifactInfo,
   CreateRunResponse,
   ModelProfile,

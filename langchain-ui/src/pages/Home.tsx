@@ -1,8 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen, ShieldCheck, CheckSquare } from 'lucide-react';
-import { createRun, startRun, getOutcomes, type RunForecast } from '../api';
-import { holdingTheModel, useServerHealth } from '../lib/serverHealth';
+import { createRun, deleteRun, startRun, getOutcomes, uploadCodebase, type RunForecast } from '../api';
+import { describeServer, holdingTheModel, useServerHealth } from '../lib/serverHealth';
+import { CriteriaPreview } from '../components/CriteriaPreview';
+import { Textarea } from '../ui';
+
+const DRAFT = 'devflow.briefDraft';
+const readDraft = (): string => {
+  try {
+    return localStorage.getItem(DRAFT) ?? '';
+  } catch {
+    return '';
+  }
+};
+const keepDraft = (text: string): void => {
+  try {
+    if (text) localStorage.setItem(DRAFT, text);
+    else localStorage.removeItem(DRAFT);
+  } catch {
+    /* the draft lives in this page only */
+  }
+};
 import { readRunDefaults, saveRunDefaults } from '../lib/runDefaults';
 
 export const Home: React.FC = () => {
@@ -64,7 +83,26 @@ export const Home: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const navigate = useNavigate();
-  const holder = holdingTheModel(useServerHealth());
+  const health = useServerHealth();
+  const holder = holdingTheModel(health);
+  // The brief as text, beside or instead of its files (plan BG.10); kept as a
+  // draft in this browser until a run starts from it.
+  const [briefText, setBriefText] = useState<string>(readDraft);
+  // The text of the brief's text files, for the criteria preview.
+  const [fileText, setFileText] = useState('');
+  useEffect(() => {
+    let live = true;
+    const readable = files.filter((file) => /\.(md|txt)$/i.test(file.name));
+    Promise.all(readable.map((file) => file.text()))
+      .then((texts) => live && setFileText(texts.join('\n\n')))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [files]);
+  // An existing codebase to start from, as an archive (a brownfield run).
+  const [codebase, setCodebase] = useState<File | null>(null);
+  const hasBrief = files.length > 0 || briefText.trim().length > 0;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -97,16 +135,22 @@ export const Home: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (files.length === 0) {
-      setError("Please select at least one file to upload.");
+    if (!hasBrief) {
+      setError('Write the brief or add its documents.');
       return;
     }
 
     setIsUploading(true);
     setError(null);
 
+    // A run that was created but could not start is deleted, not left behind
+    // as an orphan in the list (plan BG.10, G9).
+    let created: string | null = null;
     try {
-      const runData = await createRun(files);
+      const written = briefText.trim() ? [new File([briefText], 'brief.md', { type: 'text/markdown' })] : [];
+      const runData = await createRun([...files, ...written]);
+      created = runData.run_id;
+      if (codebase) await uploadCodebase(runData.run_id, codebase);
       
       const payload: any = {
         reviewer: "Product Manager",
@@ -159,9 +203,11 @@ export const Home: React.FC = () => {
           escalation: reviewEscalation,
         },
       });
+      keepDraft('');
       navigate(`/runs/${runData.run_id}`);
     } catch (err: any) {
       console.error(err);
+      if (created) await deleteRun(created).catch(() => undefined);
       setError(err.response?.data?.detail || err.message || "An error occurred during upload.");
       setIsUploading(false);
     }
@@ -214,7 +260,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
           </div>
           <h1 className="text-2xl font-bold text-text-primary mb-2">Start New Workflow</h1>
           <p className="text-text-secondary text-sm max-w-md mx-auto">
-            Upload your product documents to kick off the automated development pipeline.
+            Write the brief or add its documents: see what the build will be held to, choose how it runs, and start it.
           </p>
           {holder && (
             <p role="status" className="mt-3 text-xs text-warning max-w-md mx-auto">
@@ -300,6 +346,31 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
               )}
             </div>
 
+              <Textarea
+                label="Or write the brief here"
+                hint="Beside the documents or instead of them. Kept in this browser until a run starts."
+                rows={6}
+                value={briefText}
+                onChange={(event) => { setBriefText(event.target.value); keepDraft(event.target.value); }}
+                placeholder={'# What to build\n\n## Features\n- ...'}
+              />
+
+              <CriteriaPreview brief={[briefText, fileText].filter((part) => part.trim()).join('\n\n')} />
+
+              <div>
+                <label htmlFor="codebase-upload" className="block text-sm font-semibold text-text-primary mb-1">
+                  Start from existing code <span className="font-normal text-text-muted">(optional)</span>
+                </label>
+                <input
+                  id="codebase-upload"
+                  type="file"
+                  accept=".zip,.tar,.tar.gz,.tgz,.tar.bz2,.tbz2,.tar.xz"
+                  onChange={(event) => setCodebase(event.target.files?.[0] ?? null)}
+                  className="text-sm text-text-secondary"
+                />
+                <p className="text-xs text-text-muted mt-1">An archive of the repository; the run builds on it instead of starting empty.</p>
+              </div>
+
               {/* Workspace label */}
               <div>
                 <label htmlFor="workspace-label" className="flex items-center gap-2 text-sm font-semibold text-text-primary mb-2">
@@ -331,13 +402,25 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
               </div>
             )}
 
+            {/* Pre-flight and what is about to start, read before Start. */}
+            <div className="rounded-xl border border-border bg-surface p-3 text-sm space-y-1">
+              <p className={describeServer(health).tone === 'warn' ? 'text-warning' : 'text-text-secondary'}>{describeServer(health).said}</p>
+              <p className="text-text-secondary">
+                {deliveryMode === 'fast' ? 'Fast' : 'Thorough'} delivery
+                {forecast[deliveryMode] ? ` (typically ${forecast[deliveryMode]!.typical_hours.toFixed(1)} h here)` : ''}
+                {' \u00B7 '}{useFrontierModel ? 'local model with the judgement model' : 'local model only'}
+                {' \u00B7 '}{unattended ? 'unattended: no stops for review' : 'stops where you asked to review'}
+                {codebase ? ' \u00B7 from existing code' : ''}
+              </p>
+            </div>
+
             {/* Submit */}
             <div>
               <button
                 type="submit"
-                disabled={files.length === 0 || isUploading}
+                disabled={!hasBrief || isUploading}
                 className={`w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-primary-foreground transition-all ${
-                  files.length === 0 || isUploading
+                  !hasBrief || isUploading
                     ? 'bg-surface-overlay text-text-muted cursor-not-allowed'
                     : 'gradient-btn'
                 }`}

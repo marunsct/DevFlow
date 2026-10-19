@@ -46,6 +46,20 @@ export interface Body_upload_codebase_api_runs__run_id__codebase_post {
   file: Blob;
 }
 
+/** The acceptance criteria a brief gives a run, read without a model call (plan BG.10). */
+export interface BriefPreview {
+  /** AC-1..n from the brief, in its order. */
+  criteria: PreviewCriterion[];
+  /** Whether the brief lists them: with fewer than two, the run draws them from its product intake instead. */
+  from_brief: boolean;
+}
+
+/** A brief, before any run exists, to preview what it will be held to. */
+export interface BriefPreviewRequest {
+  /** The brief's text, as written or read from its files. */
+  brief: string;
+}
+
 /** Response after storing a codebase archive for a run. */
 export interface CodebaseUploadResponse {
   /** Stored size in bytes. */
@@ -135,6 +149,14 @@ export interface Preferences {
   density?: "comfortable" | "compact" | null;
   run_defaults?: RunDefaults | null;
   theme?: "graphite" | "paper" | "contrast" | "system" | null;
+}
+
+/** One acceptance criterion as the run will number it. */
+export interface PreviewCriterion {
+  /** AC-1, AC-2, ... */
+  id: string;
+  /** The behaviour, in the brief's own words. */
+  text: string;
 }
 
 export interface RefreshRequest {

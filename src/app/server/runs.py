@@ -52,6 +52,9 @@ from app.server.models import (
     RunStatusResponse,
     RunSummary,
     RunUsage,
+    BriefPreview,
+    BriefPreviewRequest,
+    PreviewCriterion,
     SprintsResponse,
     SpinnerResponse,
     StartRunRequest,
@@ -274,6 +277,19 @@ def create_runs_router(
             upload_id=Path(result.stored_path).name,
             original_name=result.original_name,
             file_size_bytes=result.file_size_bytes,
+        )
+
+    @runs.post("/preview", response_model=BriefPreview)
+    async def preview_brief(
+        body: BriefPreviewRequest, user: UserInDB = Depends(get_current_active_user)
+    ) -> BriefPreview:
+        """The acceptance criteria a brief gives a run, before it starts: the same numbering, no model call (plan BG.10)."""
+        from app.acceptance.criteria import from_brief, number
+
+        listed = len(from_brief(body.brief)) >= 2
+        found = number(body.brief) if listed else []
+        return BriefPreview(
+            criteria=[PreviewCriterion(id=c.id, text=c.text) for c in found], from_brief=listed,
         )
 
     @runs.post("/{run_id}/start", status_code=202)

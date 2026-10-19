@@ -247,6 +247,31 @@ class SprintView(BaseModel):
     attempt_history: list[str] = Field(default_factory=list, description="One line per attempt, when there was more than one.")
 
 
+class BriefPreviewRequest(BaseModel):
+    """A brief, before any run exists, to preview what it will be held to."""
+    model_config = ConfigDict(extra="forbid")
+
+    brief: str = Field(max_length=400_000, description="The brief's text, as written or read from its files.")
+
+
+class PreviewCriterion(BaseModel):
+    """One acceptance criterion as the run will number it."""
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(description="AC-1, AC-2, ...")
+    text: str = Field(description="The behaviour, in the brief's own words.")
+
+
+class BriefPreview(BaseModel):
+    """The acceptance criteria a brief gives a run, read without a model call (plan BG.10)."""
+    model_config = ConfigDict(extra="forbid")
+
+    criteria: list[PreviewCriterion] = Field(default_factory=list, description="AC-1..n from the brief, in its order.")
+    from_brief: bool = Field(
+        description="Whether the brief lists them: with fewer than two, the run draws them from its product intake instead."
+    )
+
+
 class StageUsage(BaseModel):
     """One stage's time, tokens and failures, from the run's transcript (plan BG.7)."""
     model_config = ConfigDict(extra="forbid")

@@ -199,6 +199,47 @@
     "title": "Body_upload_codebase_api_runs__run_id__codebase_post",
     "type": "object"
    },
+   "BriefPreview": {
+    "additionalProperties": false,
+    "description": "The acceptance criteria a brief gives a run, read without a model call (plan BG.10).",
+    "properties": {
+     "criteria": {
+      "description": "AC-1..n from the brief, in its order.",
+      "items": {
+       "$ref": "#/components/schemas/PreviewCriterion"
+      },
+      "title": "Criteria",
+      "type": "array"
+     },
+     "from_brief": {
+      "description": "Whether the brief lists them: with fewer than two, the run draws them from its product intake instead.",
+      "title": "From Brief",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "from_brief"
+    ],
+    "title": "BriefPreview",
+    "type": "object"
+   },
+   "BriefPreviewRequest": {
+    "additionalProperties": false,
+    "description": "A brief, before any run exists, to preview what it will be held to.",
+    "properties": {
+     "brief": {
+      "description": "The brief's text, as written or read from its files.",
+      "maxLength": 400000,
+      "title": "Brief",
+      "type": "string"
+     }
+    },
+    "required": [
+     "brief"
+    ],
+    "title": "BriefPreviewRequest",
+    "type": "object"
+   },
    "CodebaseUploadResponse": {
     "additionalProperties": false,
     "description": "Response after storing a codebase archive for a run.",
@@ -703,6 +744,28 @@
      }
     },
     "title": "Preferences",
+    "type": "object"
+   },
+   "PreviewCriterion": {
+    "additionalProperties": false,
+    "description": "One acceptance criterion as the run will number it.",
+    "properties": {
+     "id": {
+      "description": "AC-1, AC-2, ...",
+      "title": "Id",
+      "type": "string"
+     },
+     "text": {
+      "description": "The behaviour, in the brief's own words.",
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "text"
+    ],
+    "title": "PreviewCriterion",
     "type": "object"
    },
    "RefreshRequest": {
@@ -3555,6 +3618,53 @@
      }
     ],
     "summary": "Run Outcomes",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/preview": {
+   "post": {
+    "description": "The acceptance criteria a brief gives a run, before it starts: the same numbering, no model call (plan BG.10).",
+    "operationId": "preview_brief_api_runs_preview_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BriefPreviewRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BriefPreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Preview Brief",
     "tags": [
      "runs"
     ]

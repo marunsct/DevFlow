@@ -49,7 +49,7 @@ describe('the measurement a criterion first passed in', () => {
 
 describe('the criteria summary', () => {
   it('counts the criteria by where they stand, above the list', async () => {
-    get.mockImplementation(async (url: string) => (url.endsWith('/decisions') ? { data: { decisions: [] } } : {
+    get.mockImplementation((async (url: string) => (url.endsWith('/decisions') ? { data: { decisions: [] } } : {
       data: {
         acceptance: { ran: true, criteria: {
           'AC-1': { id: 'AC-1', text: 'Sign in', status: 'passed', tests: [] },
@@ -59,7 +59,7 @@ describe('the criteria summary', () => {
         } },
         deferred: {}, screenshots: [], pages: [],
       },
-    }));
+    })) as never);
     render(<DeliveryPanel runId="run-1" />);
 
     const bar = await screen.findByRole('progressbar', { name: 'Acceptance criteria passing' });

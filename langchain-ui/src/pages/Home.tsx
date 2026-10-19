@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen, ShieldCheck, CheckSquare } from 'lucide-react';
-import { createRun, deleteRun, startRun, getOutcomes, uploadCodebase, type RunForecast } from '../api';
+import { api, createRun, deleteRun, startRun, getOutcomes, uploadCodebase, type RunForecast } from '../api';
 import { describeServer, holdingTheModel, useServerHealth } from '../lib/serverHealth';
 import { CriteriaPreview } from '../components/CriteriaPreview';
 import { Textarea } from '../ui';
@@ -100,6 +100,15 @@ export const Home: React.FC = () => {
       live = false;
     };
   }, [files]);
+  // Who reviews the run: the person starting it.
+  const [reviewer, setReviewer] = useState('');
+  useEffect(() => {
+    let live = true;
+    api.get('/auth/me').then((me) => live && setReviewer(String(me.data?.username ?? ''))).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   // An existing codebase to start from, as an archive (a brownfield run).
   const [codebase, setCodebase] = useState<File | null>(null);
   const hasBrief = files.length > 0 || briefText.trim().length > 0;
@@ -153,7 +162,8 @@ export const Home: React.FC = () => {
       if (codebase) await uploadCodebase(runData.run_id, codebase);
       
       const payload: any = {
-        reviewer: "Product Manager",
+        // The person starting the run reviews it.
+        reviewer: reviewer || undefined,
         workspace_label: workspaceLabel || undefined,
         allow_subdirectories: allowSubdirectories,
         auto_approve: unattended || autoApprove,

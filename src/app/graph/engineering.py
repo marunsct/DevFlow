@@ -568,7 +568,15 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list
         cause = " ".join(after.problem.split())[:400]
         broken = [f"the product no longer builds or starts after it ({cause})", *broken]
     if broken and ci.revert_to(root, base):
-        logger.warning("Reverted %s: it broke %d test(s) that passed before it", stage_name, len(broken))
+        # What the reverted fix had gained as well, so whether a whole fix
+        # should go for one broken test can be measured: the snapshot after a
+        # reverted fix is not kept. Measured live: a fix that rewrote the served
+        # page was reverted for one broken test, with no record of what it fixed.
+        gained = after.passing() - (before.passing() if before is not None else set())
+        logger.warning(
+            "Reverted %s: it broke %d test(s) that passed before it, and had made %d pass that did not",
+            stage_name, len(broken), len(gained),
+        )
         return broken
     ci.save(root, after)
     ci.commit(root, f"Fix: {description[:60]}")

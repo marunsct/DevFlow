@@ -11,9 +11,11 @@ build its tools from here instead of redefining its own wrappers.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 
+from pathlib import Path
 from typing import Any
 
 from langchain_core.tools import BaseTool, tool
@@ -32,6 +34,8 @@ from app.tools.repository import (
     replace_approved_lines,
     write_approved_artifact,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def build_repository_read_tools(repo_root: str, allow_subdirectories: bool = True) -> list[BaseTool]:
@@ -619,7 +623,7 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         """
         from app.tools.sandbox import SandboxExecutor
 
-        held_back = _a_look_with_the_looking_tools_withheld(command)
+        held_back = _a_look_with_the_looking_tools_withheld(command, repo_root, working_directory)
         if held_back:
             return {"error": held_back}
         return SandboxExecutor.execute(
@@ -638,14 +642,82 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
 #: `ls` do, by another door.
 _PROGRAMS_THAT_ONLY_LOOK = frozenset({"cat", "head", "tail", "less", "more", "nl", "ls", "tree", "find", "stat"})
 
+#: Of those, the ones that show a file's lines rather than its name.
+_PROGRAMS_THAT_SHOW_LINES = frozenset({"cat", "head", "tail", "less", "more", "nl"})
 
-def _a_look_with_the_looking_tools_withheld(command: Any) -> str:
+#: Entries under one folder looked at before it is taken as more than the memory shows.
+_MOST_ENTRIES_CHECKED = 2_000
+
+
+def _what_it_looks_at(argv: list[str], repo_root: str, working_directory: str | None) -> list[Path] | None:
+    """The workspace paths `argv` names that are there; None when one lies outside the workspace."""
+    root = Path(repo_root).resolve()
+    here = (root / str(working_directory or "").strip().lstrip("/")).resolve()
+    found: list[Path] = []
+    for word in argv[1:]:
+        word = str(word)
+        if not word or word.startswith("-"):
+            continue
+        path = (here / word).resolve()
+        if not path.exists():
+            # A flag's value (`-n 20`, `-type f`) or a path that is not there:
+            # the command says which itself.
+            continue
+        if path != root and root not in path.parents:
+            return None
+        found.append(path)
+    if not found and not any(str(w) and not str(w).startswith("-") for w in argv[1:]):
+        found.append(here)
+    return found
+
+
+def _the_memory_shows(path: Path, root: Path, held: dict[str, str], shows_lines: bool) -> bool:
+    """Whether the stage already has what a look at `path` gives back.
+
+    A file's lines: this stage has seen the file as it is now - the memory held
+    it whole, or the stage read or wrote it. A name, or a folder's listing:
+    every file under it is a text file the memory names, held or listed as left
+    out. An installed or built folder, a database or anything else the memory
+    never names is new to the stage, and the look runs.
+    """
+    from app.tools.seen_content import has_seen_this_version
+
+    relative = path.relative_to(root).as_posix()
+    if path.is_file():
+        if relative not in held:
+            return False
+        return has_seen_this_version(relative, held[relative]) if shows_lines else True
+    if shows_lines or not path.is_dir():
+        return False
+    from app.agents.project_memory import _ignored
+
+    looked_at = 0
+    for folder, directories, files in os.walk(path):
+        folder_path = Path(folder)
+        if folder_path != root and _ignored(folder_path.relative_to(root).parts):
+            return False
+        for name in files:
+            looked_at += 1
+            if looked_at > _MOST_ENTRIES_CHECKED or (folder_path / name).relative_to(root).as_posix() not in held:
+                return False
+        looked_at += len(directories)
+        if looked_at > _MOST_ENTRIES_CHECKED:
+            return False
+    return True
+
+
+def _a_look_with_the_looking_tools_withheld(command: Any, repo_root: str = "", working_directory: str | None = None) -> str:
     """The refusal for a command that only looks, once this stage's reading is withheld; else "".
 
     Measured live: a fixer had its read tools withheld for re-reading files it
     held, then read the same files with `cat` and listed the same folders with
     `ls` through this tool - about ten calls in two minutes - until its budget
     ran out with nothing written.
+
+    Refused only when everything it looks at is already the stage's: measured
+    on a later run, 49 of 70 refusals were of looks at what the memory never
+    shows - an installed `.venv`, a built `dist`, a folder holding a database -
+    and each was told the look only showed what it already had.
     """
     argv = command if isinstance(command, list) else str(command or "").split()
     if not argv:
@@ -657,6 +729,21 @@ def _a_look_with_the_looking_tools_withheld(command: Any) -> str:
 
     if not the_read_tool_is_withheld():
         return ""
+    if repo_root:
+        try:
+            from app.agents import project_memory
+
+            looked_at = _what_it_looks_at([str(word) for word in argv], repo_root, working_directory)
+            if not looked_at:
+                return ""
+            root = Path(repo_root).resolve()
+            held = project_memory.current(root)
+            shows_lines = program in _PROGRAMS_THAT_SHOW_LINES
+            if not all(_the_memory_shows(path, root, held, shows_lines) for path in looked_at):
+                return ""
+        except Exception:  # noqa: BLE001 - the look runs, as it would have
+            logger.debug("Could not tell what a look shows", exc_info=True)
+            return ""
     return (
         f"Not running `{program}`: reading is done for this stage, and this command only shows "
         "what the project memory and your earlier reads already gave you. Make the change with "

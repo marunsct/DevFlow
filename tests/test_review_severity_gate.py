@@ -122,7 +122,7 @@ def test_both_reviewers_route_on_it() -> None:
     # than blocking. Matched on the call rather than its exact arguments so
     # the next argument added here does not read as the routing being lost.
     assert "_findings_that_block(review" in source[architecture:architecture + 4000]
-    assert "_findings_that_block(review" in source[milestone:milestone + 8000]
+    assert "_findings_that_block(review" in source[milestone:milestone + 12000]
 
 
 def test_both_reviewers_are_given_the_workspace_to_judge_scope() -> None:
@@ -134,6 +134,6 @@ def test_both_reviewers_are_given_the_workspace_to_judge_scope() -> None:
     source = inspect.getsource(workflow)
     for node in ("def architecture_review_node", "def milestone_review_node"):
         start = source.index(node)
-        window = source[start:start + 8000]
+        window = source[start:start + 12000]
         call = window[window.index("_findings_that_block(review"):][:120]
         assert "root_path" in call, f"{node} judges scope without the workspace"

@@ -896,14 +896,14 @@ def specification_for_the_work_order(specification: Any, work_order: Any) -> str
     """
     if specification is None or work_order is None:
         return ""
-    # Whoever writes the tests gets the product's API whole: the entries naming
-    # a test file are few, and a test against a guessed shape fails a right product.
-    reference = ""
-    if str(getattr(work_order, "specialist_role", "") or "") == "testing":
-        from app.acceptance.api_reference import api_reference
+    # Every work order and every fix gets the product's API whole. The entries
+    # that name a file are few for an endpoint or a test, and a guessed shape
+    # fails a right product: measured on one run, the service drifted to
+    # `username` where the specification said `full_name`, and the tests, the
+    # disputes and the fixes then argued over which was right.
+    from app.acceptance.api_reference import api_reference
 
-        reference = api_reference(specification)
-    return reference + _the_entries_about_its_files(specification, work_order)
+    return api_reference(specification) + _the_entries_about_its_files(specification, work_order)
 
 
 def _the_entries_about_its_files(specification: Any, work_order: Any) -> str:

@@ -3883,6 +3883,46 @@ def _with_the_sections_it_dropped(revised: Any, previous: Any) -> Any:
     return revised.model_copy(update=kept) if kept else revised
 
 
+def _the_scaffold_s_layout(state: Any) -> str:
+    """The files the chosen pack's scaffold serves and where its tests live, for the architect; "" when no pack fits.
+
+    The architect wrote the file plan knowing the stack, not the layout the
+    harness would set up for it. Measured on one run: the plan put the service
+    in `backend/app/` and the page in `frontend/src/` while the scaffold served
+    the package's `main.py` and `src/App.tsx`; 28 files were drafted where
+    nothing served them. Never raises.
+    """
+    try:
+        from app.stacks import choose_pack, python_package_name
+        from app.tools.repository import pinned_project_directory
+
+        stack = getattr(state.get("stack_selection"), "technology_stack", None)
+        pack = choose_pack(stack, getattr(state.get("document"), "text", "") or "") if stack is not None else None
+        if pack is None:
+            return ""
+        root = getattr(state.get("repository"), "root_path", None)
+        project = (pinned_project_directory(Path(root)) if root else None) or ""
+        package = python_package_name(project) if project and pack.language == "python" else None
+        served = [pack.filled(e, project, "", package) for e in (pack.entrypoint, *pack.entrypoints) if e]
+        prefix = f"{project}/" if project else ""
+        lines = [f"- The project lives in `{prefix or './'}`."]
+        if served:
+            lines.append("- What the product serves, and the acceptance suite runs through: "
+                         + ", ".join(f"`{prefix}{path}`" for path in served)
+                         + ". Plan the product in these files, or in modules they import.")
+        lines.append(f"- Unit tests: `{pack.unit_pattern}` in `{prefix}{pack.unit_dir}/`; acceptance tests: "
+                     f"`{pack.acceptance_pattern}` in `{prefix}{pack.acceptance_dir}/`.")
+        kept = [path for path in pack.kept_files if path not in served]
+        if kept:
+            lines.append("- Kept by the harness, not the product's to write: "
+                         + ", ".join(f"`{prefix}{path}`" for path in kept[:8]) + ".")
+        return ("\n\n--- The layout the project is set up with (write the file plan in it) ---\n"
+                + "\n".join(lines) + "\n")
+    except Exception:  # noqa: BLE001 - the architect plans as before
+        logger.debug("Could not describe the scaffold's layout", exc_info=True)
+        return ""
+
+
 def _the_served_files_the_plan_leaves_out(specification: Any, state: Any) -> list[str]:
     """The files the stack's scaffold serves that the specification's file plan never names; [] if none or unknown.
 
@@ -6880,6 +6920,19 @@ def _a_locked_test_two_fixes_broke(cycle: Any) -> str:
     return next((name for name, count in counts.most_common() if count >= 2), "")
 
 
+def _with_the_api(request: dict, state: Any) -> dict:
+    """A request with the product's API, as the specification decides it, at its end. Never raises."""
+    try:
+        from app.acceptance.api_reference import api_reference
+
+        reference = api_reference(state.get("technical_specification"))
+        if reference:
+            request["messages"][-1]["content"] += "\n\n" + reference
+    except Exception:  # noqa: BLE001 - the request stands without it
+        pass
+    return request
+
+
 def _with_the_reason(request: dict, reason: str) -> dict:
     """A dispute request with why it is being held now, when there is a reason to give."""
     if reason.strip():
@@ -7678,6 +7731,10 @@ def build_workflow_graph(
             from app.graph.specification_parts import CORE_NOTE
 
             request["messages"][-1]["content"] += CORE_NOTE
+        # The layout the scaffold will set up, before the file plan is written:
+        # cheaper than the repair after it, which on one run never ran.
+        if not required_changes:
+            request["messages"][-1]["content"] += _the_scaffold_s_layout(state)
         # The reading done first, by the harness and the build model, and
         # handed over: the architect's reasoning goes on the specification,
         # not on which page to read next. See `app.agents.research_brief`.
@@ -9859,10 +9916,10 @@ def build_workflow_graph(
             config,
             stage_name="acceptance_dispute",
             agent=agent,
-            initial_request=_with_the_reason(
+            initial_request=_with_the_api(_with_the_reason(
                 build_dispute_request(failing, code, getattr(state.get("document"), "text", "") or ""),
                 str(state.get("dispute_reason") or ""),
-            ),
+            ), state),
             output_key="__suite_dispute__",
             next_stage="acceptance_dispute",
         )
@@ -10134,6 +10191,10 @@ def build_workflow_graph(
         )
         request["messages"][-1]["content"] += _fixes_a_review_must_not_undo(state)
         request["messages"][-1]["content"] += _the_code_review_s_advice(state)
+        # The contract the code is held to, whole: a service that drifted from
+        # it (`username` where the specification said `full_name`) is the
+        # review's to catch, and it saw only the specification's headings.
+        _with_the_api(request, state)
         # The page as a person sees it, for a reviewer whose model can see. See
         # `app.agents.page_screenshots`; a model that cannot is not sent them.
         from app.models.vision import the_reviewer_reads_images

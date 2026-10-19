@@ -47,9 +47,26 @@ def test_the_acceptance_author_is_given_it(tmp_path):
     assert "full_name" in request["messages"][-1]["content"]
 
 
-def test_the_testing_work_order_is_given_it_and_a_builder_is_not():
-    testing = SimpleNamespace(specialist_role="testing", files=["tests/test_auth.py"], interfaces=[])
-    backend = SimpleNamespace(specialist_role="backend", files=["app/auth.py"], interfaces=[])
+def test_every_work_order_is_given_it():
+    for role, files in (("testing", ["tests/test_auth.py"]), ("backend", ["app/auth.py"]), ("ui_ux", ["src/App.tsx"])):
+        order = SimpleNamespace(specialist_role=role, files=files, interfaces=[])
+        assert "The product's API" in specialists.specification_for_the_work_order(SPEC, order), role
 
-    assert "The product's API" in specialists.specification_for_the_work_order(SPEC, testing)
-    assert "The product's API" not in specialists.specification_for_the_work_order(SPEC, backend)
+
+def test_the_fixers_reviewers_and_the_dispute_are_given_it():
+    import inspect
+
+    from app.graph import acceptance_nodes, workflow
+
+    request = workflow._with_the_api({"messages": [{"role": "user", "content": "judge these"}]},
+                                     {"technical_specification": SPEC})
+    assert "The product's API" in request["messages"][-1]["content"]
+    assert workflow._with_the_api({"messages": [{"content": "x"}]}, {})["messages"][-1]["content"] == "x"
+
+    source = inspect.getsource(workflow)
+    assert "initial_request=_with_the_api(_with_the_reason(" in source          # the QA lead's dispute
+    assert "_with_the_api(request, state)" in source                            # the milestone review
+    assert "api_reference(state.get(\"technical_specification\"))" in inspect.getsource(acceptance_nodes)
+    fix = workflow._the_specification_for_the_fix(
+        {"technical_specification": SPEC}, SimpleNamespace(affected_files=["app/auth.py"], description="x"), [])
+    assert "The product's API" in fix

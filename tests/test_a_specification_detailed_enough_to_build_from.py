@@ -68,8 +68,11 @@ def test_a_work_order_is_handed_the_entries_about_its_files_and_names():
     assert not BANNED.search(detail.split("\n", 2)[1])
 
 
-def test_a_work_order_with_nothing_in_the_specification_gets_nothing():
-    assert specification_for_the_work_order(_spec(), SimpleNamespace(files=["other/x.go"], interfaces=[])) == ""
+def test_a_work_order_with_nothing_in_the_specification_gets_only_the_api():
+    # Every work order is handed the product's API (`app.acceptance.api_reference`);
+    # one whose files the specification never names gets no file entries besides.
+    given = specification_for_the_work_order(_spec(), SimpleNamespace(files=["other/x.go"], interfaces=[]))
+    assert "The specification for your files" not in given
     assert specification_for_the_work_order(None, SimpleNamespace(files=["a.py"], interfaces=[])) == ""
 
 

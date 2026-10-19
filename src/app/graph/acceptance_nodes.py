@@ -452,6 +452,10 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             brief=getattr(state.get("document"), "text", "") or "",
             testability=_the_testability_advice(state),
         )
+        # What the tests are judged against, whole (see `app.acceptance.api_reference`).
+        from app.acceptance.api_reference import api_reference
+
+        request["messages"][-1]["content"] += "\n" + api_reference(state.get("technical_specification"))
         update = _run_gated_agent(
             state, config,
             stage_name=f"acceptance_review_{rounds}",

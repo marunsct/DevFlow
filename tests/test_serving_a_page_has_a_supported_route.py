@@ -126,14 +126,15 @@ def test_the_tool_says_code_goes_in_a_file() -> None:
     """`node -e` was refused 54 times across fourteen runs - the largest class
     of command failure. The refusal works: 27 of those were followed
     immediately by a `write_artifact`. It costs a model call each time, and
-    the tool's own description never mentioned it."""
+    the tool's own description never mentioned it. Since the owner's decision of
+    2026-10-20 the code is saved to a file and run, and the description says so."""
     from app.tools.agent_toolkit import build_terminal_command_tool
 
     description = build_terminal_command_tool(".", "backend_specialist").description or ""
 
     assert "node -e" in description
-    assert "write_artifact" in description
-    assert "reviewable" in description
+    assert "tmp-inline-" in description
+    assert "readable afterwards" in description
 
 
 def test_the_tool_says_where_a_server_belongs() -> None:

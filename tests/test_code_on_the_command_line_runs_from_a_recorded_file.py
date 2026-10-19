@@ -72,3 +72,26 @@ def test_other_commands_run_as_they_are(workspace, ran):
     _run(workspace, ["npm", "test"], working_directory="shop")
 
     assert ran == [(["npm", "test"], "shop")]
+
+
+def test_the_saved_file_is_swept_before_the_next_test_round(workspace, ran):
+    """Measured on one gate run: seven `tmp-inline-` files sat in the product. The
+    sweep removes only a file the project memory says a stage wrote, and these
+    were written by the command itself."""
+    from app.tools.repository import clear_the_throwaways_left_behind
+
+    _run(workspace, ["python3", "-c", "print(1)"])
+    [(argv, _)] = ran
+    assert (workspace / argv[1]).exists()
+
+    assert clear_the_throwaways_left_behind(workspace) == [argv[1]]
+    assert not (workspace / argv[1]).exists()
+
+
+def test_the_tool_says_what_it_does_with_code_on_the_command_line(workspace):
+    """It said such code was refused and to write, run and delete a file - three
+    calls for what one now does."""
+    description = build_terminal_command_tool(str(workspace), "backend").description
+
+    assert "are refused" not in description and "tmp-inline-" in description
+    assert not BANNED.search(description[description.index("Code passed"):description.index("next test round")])

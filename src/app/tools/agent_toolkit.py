@@ -599,11 +599,10 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         project's tests from a project directory named `myapp`:
         `command=["npx", "jest"], working_directory="myapp"`.
 
-        Code has to arrive in a file, so `node -e`, `python -c` and the like
-        are refused: write the snippet with `write_artifact`, run the file,
-        then remove it with `delete_artifact`. The reason is that a file is
-        reviewable and an argv is not - everything this run executes should be
-        readable afterwards in the workspace, not only in a command line.
+        Code passed on the command line (`python -c`, `node -e`, `node -p`)
+        is saved as a `tmp-inline-` file in the project and run from there, so
+        what ran is readable afterwards; the harness removes the file before
+        the next test round.
 
         A command that runs until something stops it - a dev server, a
         watcher, `serve` - has nothing here to stop it and will sit until the
@@ -624,7 +623,7 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         from app.tools.sandbox import SandboxExecutor
 
         command, working_directory, moved = _a_cd_taken_as_the_working_directory(command, working_directory)
-        command, saved = _code_on_the_command_line_as_a_file(command, repo_root, working_directory)
+        command, saved = _code_on_the_command_line_as_a_file(command, repo_root, working_directory, role_name)
         moved = " ".join(part for part in (moved, saved) if part)
         held_back = _a_look_with_the_looking_tools_withheld(command, repo_root, working_directory)
         if held_back:
@@ -660,7 +659,7 @@ def _the_interpreter(program: str) -> str:
 
 
 def _code_on_the_command_line_as_a_file(
-    command: Any, repo_root: str, working_directory: str | None
+    command: Any, repo_root: str, working_directory: str | None, author: str = ""
 ) -> tuple[Any, str]:
     """`python -c CODE` / `node -e CODE` as the same interpreter run on a `tmp-` file holding CODE; else unchanged and "".
 
@@ -669,7 +668,10 @@ def _code_on_the_command_line_as_a_file(
     run, 35 on another, each a model call, and the advice was rarely followed.
     The file is saved where the advice said, in the project, so what ran can
     be read afterwards; a `tmp-` name is swept before the next test round and
-    at release (`file_kinds.is_scratch`).
+    at release (`file_kinds.is_scratch`). The sweep removes only a file the
+    project memory says a stage of this run wrote, so the file is recorded as
+    the calling stage's: measured on one gate run, seven of them, never
+    recorded, sat in the product.
     """
     import hashlib
 
@@ -701,6 +703,13 @@ def _code_on_the_command_line_as_a_file(
         return command, ""
     rewritten = [str(part) for part in command[:at]] + [shown] + [str(part) for part in command[at + 2:]]
     recorded = os.path.relpath(target, root).replace(os.sep, "/")
+    try:
+        from app.analysis import project_memory
+        from app.observability.transcript import _stage_from_config
+
+        project_memory.record(root, recorded, _stage_from_config(author or "run_terminal_command"))
+    except Exception:  # noqa: BLE001 - bookkeeping must never fail the command
+        pass
     return rewritten, (
         f"Ran the code you passed on the command line from `{recorded}`, saved there so what ran can be "
         "read afterwards; a `tmp-` file is removed before the next test round and at release."

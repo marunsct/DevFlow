@@ -317,8 +317,9 @@ test that fails on the old code:
   built.** Deployed e0c73cc (app + worker) at 13:28 UTC into the shakedown run, which resumed; the
   app alone since, last at cf75b399 (14:15 UTC: the owner's LF.31-LF.34 - estimates by brief size, the
   frontier model checked before a run, flush sticky headings, the Delivery pane by its own width). LF.35 (a look
-  through the command tool refused only when the stage already has what it shows) needs the worker: deployed
-  into the shakedown at a stage boundary. **Before the next `loop.sh kpi`, deploy the
+  through the command tool refused only when the stage already has what it shows) and LF.36 (a compacted
+  stage keeps its request; the summary is never empty) need the worker: deployed together into the
+  shakedown at a stage boundary. **Before the next `loop.sh kpi`, deploy the
   worker** (`loop.sh deploy` when the shakedown ends): `kpi.py` now imports
   `app.observability.run_kpis`. Then the gate run (group 2 before/after).
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in

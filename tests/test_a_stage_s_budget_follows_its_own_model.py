@@ -46,7 +46,7 @@ def triggers(monkeypatch):
         seen.append(kwargs["trigger"][1])
         return object()
 
-    monkeypatch.setattr("app.agents.role_agent.SummarizationMiddleware", record)
+    monkeypatch.setattr("app.agents.role_agent.RequestKeepingSummarization", record)
     return seen
 
 

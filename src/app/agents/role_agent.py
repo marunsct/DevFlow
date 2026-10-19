@@ -41,6 +41,7 @@ from app.agents.text_tool_calls import build_text_tool_call_middleware
 from app.observability.transcript import build_transcript_middleware
 from app.agents.environment_contract import build_environment_contract_middleware
 from app.agents.workspace_digest import build_workspace_digest_middleware
+from app.agents.compaction import RequestKeepingSummarization
 from app.agents.project_memory import build_project_memory_middleware
 from app.plugins.middleware import build_plugin_instructions_middleware
 from app.agents.line_batches import build_line_batch_middleware
@@ -49,7 +50,6 @@ from deepagents.middleware.filesystem import (
     FilesystemMiddleware,
     FilesystemPermission,
 )
-from deepagents.middleware.summarization import SummarizationMiddleware
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import BaseTool
@@ -394,7 +394,7 @@ def _compaction_middleware(agent_name: str, model: Any = None) -> list:
             summariser = build_default_chat_model()
 
         return [
-            SummarizationMiddleware(
+            RequestKeepingSummarization(
                 summariser,
                 backend=build_context_backend(agent_name),
                 trigger=("tokens", policy.trigger_tokens),

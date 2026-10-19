@@ -907,6 +907,16 @@ _STATES_A_CAUSE = re.compile(
     re.I,
 )
 
+#: A stack frame, as Python (`File "x.py", line 3`) and Node (`at f (x.js:3:5)`) print one.
+_A_FRAME = re.compile(r'File "[^"]+", line \d+|\bat\s.*?[^\s()]+\.[A-Za-z]{1,6}:\d+:\d+')
+#: A frame in a dependency or the runtime, not in the product's own code.
+_IN_A_DEPENDENCY = re.compile(r"site-packages|dist-packages|node_modules|[/\\]\.venv[/\\]|^\.venv|/usr/(?:local/)?lib/|<frozen|\(node:|node:internal")
+#: The product's frames kept from a failed start, the ones nearest the error.
+MOST_PRODUCT_FRAMES = 4
+
+#: A start that failed opening its data file.
+_A_DATA_FILE_NOT_OPENED = re.compile(r"unable to open database file|SQLITE_CANTOPEN|ENOENT[^\n]{0,120}\.(?:db|sqlite3?)\b", re.I)
+
 #: A start that failed for want of a setting: a required field, an unset variable, a missing secret.
 _A_MISSING_SETTING = re.compile(
     r"Field required|environment variable[^\n]{0,60}(?:not set|is required|missing)|"
@@ -942,11 +952,31 @@ def the_product_did_not_start(output: str) -> str:
     # naming its cause - an import that does not resolve - sat between and was
     # cut, so its fixers were told the build failed and not why.
     between = lines[first + 3:max(first + 3, len(lines) - 8)]
-    causes = [line[:300] for line in between if _STATES_A_CAUSE.search(line)][:6]
+    kept = {i for i, line in enumerate(between) if _STATES_A_CAUSE.search(line)}
+    kept = set(sorted(kept)[:6])
+    # And the frames in the product's own code, with the line each ran.
+    # Measured live: a service stopped at start-up on "unable to open database
+    # file"; the excerpt kept only frames inside its installed packages, and
+    # the one product file it named was a deprecation warning's - which the
+    # fix then rewrote, while the cause sat in the module that opens the
+    # database.
+    frames = [i for i, line in enumerate(between) if _A_FRAME.search(line) and not _IN_A_DEPENDENCY.search(line)]
+    for i in frames[-MOST_PRODUCT_FRAMES:]:
+        kept.add(i)
+        if i + 1 < len(between) and not _A_FRAME.search(between[i + 1]):
+            kept.add(i + 1)
+    causes = [between[i][:300] for i in sorted(kept)]
     middle = ("\n...\n" + "\n".join(causes)) if causes else ""
     excerpt = ("\n".join(head) + middle + ("\n...\n" + "\n".join(ending) if ending else ""))[:2_400]
     hint = ""
-    if _A_MISSING_SETTING.search(text):
+    if _A_DATA_FILE_NOT_OPENED.search(text):
+        hint = (
+            "\nThe product could not open its data file. The suite starts it with `DATA_DIR` set to a fresh folder "
+            "for each run; the product keeps its data under `DATA_DIR`, builds the file's path from it, and creates "
+            "the folder if it is missing. A relative path such as `data/app.db` names a folder that need not exist "
+            "where it starts."
+        )
+    elif _A_MISSING_SETTING.search(text):
         hint = (
             "\nThe product needs a setting that the suite does not give it: the suite sets only `PORT` and "
             "`DATA_DIR`. A secret or key the product needs to start has a development default, or is "

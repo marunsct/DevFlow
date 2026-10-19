@@ -43,6 +43,19 @@ _AN_ERROR_LOCATION = re.compile(r"([\w./@-]+\.[A-Za-z0-9]{1,8})(?:\((\d+),\d+\)|
 _A_FILE_NAMED = re.compile(r"(?<![\w/.@-])((?:[\w@-]+/)*[\w@-]+\.[A-Za-z][A-Za-z0-9]{0,7})(?![\w/-])")
 
 
+#: A line that warns and does not fail: `FooWarning:`, `warning:`, `(node:12) Warning:`.
+_WARNS = re.compile(r"warning\b", re.I)
+_FAILS = re.compile(r"\berror\b|\bfailed\b|exception|traceback", re.I)
+
+
+def _only_warns(text: str, at: int) -> bool:
+    """Whether the line of `text` holding position `at` is a warning and nothing worse."""
+    start = text.rfind("\n", 0, at) + 1
+    end = text.find("\n", at)
+    line = text[start:end if end >= 0 else len(text)]
+    return bool(_WARNS.search(line)) and not _FAILS.search(line)
+
+
 def what_failed(defect: Any, repo_root: str | Path, last_failure: Any = None) -> str:
     """What the defect's failing tests and last failing command printed, as one text."""
     parts: list[str] = []
@@ -88,10 +101,15 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
         t.startswith(("AC-", "CR-")) for t in tags_in(str(getattr(defect, "description", "") or ""))
     )
     named = [str(f).strip().lstrip("./") for f in getattr(defect, "affected_files", None) or [] if str(f).strip()]
-    # In the order the failure names them, with a line or without.
+    # In the order the failure names them, with a line or without - but not
+    # where a line only warns. Measured live: a service failed at start-up in
+    # the module that opens its database, the one product file its output
+    # named was a deprecation warning's, and the rewrite fixed that file.
     mentioned = sorted(
-        [(m.start(), m.group(1)) for m in _AN_ERROR_LOCATION.finditer(failure)]
-        + [(m.start(), m.group(1)) for m in _A_FILE_NAMED.finditer(failure)],
+        (m.start(), m.group(1))
+        for pattern in (_AN_ERROR_LOCATION, _A_FILE_NAMED)
+        for m in pattern.finditer(failure)
+        if not _only_warns(failure, m.start())
     )
     named += [name.lstrip("./") for _, name in mentioned]
     found: list[str] = []

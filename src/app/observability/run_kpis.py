@@ -73,8 +73,30 @@ def _share(part: float, whole: float) -> float:
     return round(part / whole, 4) if whole else 0.0
 
 
+def live_branch(records: list[dict]) -> list[dict]:
+    """The records of the run as it stands: the work each rewind discarded left out.
+
+    A rewind (`loop.sh rewind`, owner 2026-10-20) takes a run back to the start
+    of a stage and runs it on from there; the transcript keeps what the
+    abandoned branch did. Measured whole, a rewound run counts that work twice.
+    Each `rewound` record names the moment it went back to: what was recorded
+    between that moment and the rewind is left out.
+    """
+    cuts = [(_seconds(r["point_at"]), _seconds(r["at"])) for r in records
+            if r.get("kind") == "rewound" and r.get("point_at") and r.get("at")]
+    if not cuts:
+        return records
+    return [
+        r for r in records
+        if r.get("kind") == "rewound" or not r.get("at")
+        or not any(start <= _seconds(r["at"]) < end for start, end in cuts)
+    ]
+
+
 def kpis(records: list[dict]) -> dict:
-    """The run's KPIs from its transcript records."""
+    """The run's KPIs from its transcript records, as the run stands (see `live_branch`)."""
+    rewinds = sum(1 for r in records if r.get("kind") == "rewound")
+    records = live_branch(records)
     times = [_seconds(r["at"]) for r in records if r.get("at")]
     calls: dict[str, dict] = {}
     seen_calls: collections.Counter = collections.Counter()
@@ -200,6 +222,7 @@ def kpis(records: list[dict]) -> dict:
         "model_calls": count["model_calls"],
         "model_errors": count["model_errors"],
         "resumes": count["resumes"],
+        "rewinds": rewinds,
         "steering_notes": count["steering_notes"],
         "input_tokens": tokens["input"],
         "output_tokens": tokens["output"],

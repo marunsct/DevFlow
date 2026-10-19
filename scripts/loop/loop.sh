@@ -185,6 +185,39 @@ cancel)
   echo
   echo "cancel requested for $run at $(jst +%H:%M) JST: $("${DB[@]}" "select status from runs where run_id='$run'")"
   ;;
+
+rewind)
+  # Rewind a run to the start of a stage, its files as they were then, and run
+  # it on from there (owner, 2026-10-20): after a fix, instead of a new run that
+  # redoes the work the fix did not touch. A live run is paused first; a paused,
+  # failed or cancelled one is rewound as it is. Deploy between the pause and
+  # the rewind, and the rewound stage runs on the new code:
+  #   loop.sh rewind --pause-only; BOUNDARY_WAIT=0 loop.sh deploy; loop.sh rewind <stage>
+  #   loop.sh rewind <graph stage> [run-id] [at or before, e.g. 2026-10-19T22:20]
+  : "${LOOP_USER:?set LOOP_USER to the loop operator account}"
+  : "${LOOP_PASSWORD:?set LOOP_PASSWORD for that account}"
+  stage="${2:?usage: loop.sh rewind <graph stage>|--pause-only [run-id] [at-or-before]}"
+  run="${3:-$(current)}"
+  token=$(curl -s -X POST "$API/api/auth/token" --data-urlencode "username=$LOOP_USER" \
+            --data-urlencode "password=$LOOP_PASSWORD" |
+          "$PY" -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  status() { "${DB[@]}" "select status from runs where run_id='$run'" | tr -d '[:space:]'; }
+  if [ "$(status)" = "running" ] || [ "$(status)" = "queued" ]; then
+    curl -s -X POST "$API/api/runs/$run/pause" -H "Authorization: Bearer $token" >/dev/null
+    waited=0
+    while [ "$(status)" != "paused" ] && [ "$waited" -lt 600 ]; do sleep 5; waited=$((waited + 5)); done
+    echo "paused $run after ${waited}s ($(jst +%H:%M) JST): $(status)"
+  fi
+  [ "$stage" = "--pause-only" ] && exit 0
+  checkpoint=$(curl -s "$API/api/runs/$run/rewind-points" -H "Authorization: Bearer $token" |
+               "$PY" "$HERE/rewind_point.py" "$stage" "${4:-}") || exit 1
+  answer=$(curl -s -w '\n%{http_code}' -X POST "$API/api/runs/$run/rewind" -H "Authorization: Bearer $token" \
+       -H "Content-Type: application/json" -d "{\"checkpoint_id\": \"$checkpoint\"}")
+  code=$(echo "$answer" | tail -n 1)
+  echo "$answer" | sed '$d'; echo
+  [ "$code" = "202" ] || { echo "not rewound: the server answered HTTP $code" >&2; exit 1; }
+  echo "rewound $run to $stage at $(jst +%H:%M) JST: $(status)"
+  ;;
 wait)
   minutes="${2:-18}"
   run="${3:-$(current)}"

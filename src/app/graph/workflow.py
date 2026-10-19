@@ -11198,7 +11198,7 @@ def rewind_to(graph: Any, thread_id: str, checkpoint_id: str, repo_root: str | N
         "Rewound to %s; the workspace %s", node,
         "was put back as it was then" if restored else "was left as it is (no snapshot of it then)",
     )
-    return {"stage": node, "files_restored": restored}
+    return {"stage": node, "files_restored": restored, "point_at": str(getattr(target, "created_at", "") or "")}
 
 _REWIND_TARGETS: dict[str, str] = {
     # A node that failed because it exhausted a bounded budget cannot be

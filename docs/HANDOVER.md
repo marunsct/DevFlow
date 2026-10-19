@@ -331,7 +331,15 @@ test that fails on the old code:
   **Clean gate run 1 is run-01a1ab9c**, started 06:00 JST on a39807de: `tests/brief_medium.md`, `DELIVERY=fast FRONTIER=false`;
   gate run 2 follows it on the same code, then `kpi_ledger.py compare` against the baselines, then group 2.
   **Both gate runs measure one code version (a39807de):** fixes found meanwhile are pushed but deployed only after gate
-  run 2, unless a bug would spoil the measurement. Held so far: LF.56 (bd4d602c).
+  run 2, unless a bug would spoil the measurement. Held so far: LF.56 (bd4d602c), LF.57 (the rewind record and
+  KPI filter in the worker; the `loop.sh rewind` command itself works on the deployed API).
+- **A bug in a live run is fixed, then the run rewound - not cancelled and started again (owner, 2026-10-20):**
+  `loop.sh rewind --pause-only` → `BOUNDARY_WAIT=0 loop.sh deploy` → `loop.sh rewind <stage> [run] [at-or-before]`.
+  Rewind to the earliest stage whose behaviour the fix changes (a specification fix: `principal_architect`; the
+  suite: `acceptance_author`; drafting or a builder: `specialist_dispatch`; a measurement or the environment:
+  `test_and_triage`), with its files and `.harness/` as they were then; the stages before it are kept. In a gate
+  run only when the fix changes nothing before that stage (say so in the ledger); the KPIs then measure the run as it
+  stands (`run_kpis.live_branch`). A new run only when the fix reaches the intake or the stack, or no snapshot exists.
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).

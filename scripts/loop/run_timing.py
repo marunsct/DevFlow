@@ -62,6 +62,13 @@ def analyse(prefix):
             recs.append(json.loads(line))
         except Exception:
             continue
+    try:
+        # The run as it stands: what a rewind discarded is left out (`run_kpis.live_branch`).
+        from app.observability.run_kpis import live_branch
+
+        recs = live_branch(recs)
+    except Exception:  # noqa: BLE001 - measured whole, as before
+        pass
     times = [ts(r["at"]) for r in recs if r.get("at")]
     wall = max(times) - min(times)
     open_req = {}

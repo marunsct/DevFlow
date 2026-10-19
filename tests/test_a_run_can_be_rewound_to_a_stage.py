@@ -106,7 +106,8 @@ def test_a_finished_run_is_rewound_to_a_stage_and_run_again_from_there(agents, t
     (tmp_path / "made_after.txt").write_text("a later stage's file")
     done = rewind_to(graph, "run-rewind", target["checkpoint_id"], str(tmp_path))
 
-    assert done == {"stage": "scrum_master", "files_restored": True}
+    assert {k: done[k] for k in ("stage", "files_restored")} == {"stage": "scrum_master", "files_restored": True}
+    assert done["point_at"]  # where it went back to, for the KPIs (`run_kpis.live_branch`)
     assert not (tmp_path / "made_after.txt").exists()
     _script(agents)
     again = graph.invoke(None, config={"configurable": {"thread_id": "run-rewind"}, "recursion_limit": 500})

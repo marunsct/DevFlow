@@ -1107,6 +1107,15 @@ class WorkflowRunner:
             )
         graph = self._graph_for(record)
         done = await asyncio.to_thread(rewind_to, graph, record.thread_id, checkpoint_id, record.repo_root)
+        # Where it went back to, in the transcript: what the abandoned branch
+        # did stays recorded, and the KPIs leave it out (`run_kpis.live_branch`).
+        try:
+            from app.observability.transcript import record as transcript_record
+
+            transcript_record(run_id, done["stage"], "rewound", point_at=done.get("point_at", ""),
+                              files_restored=done.get("files_restored"))
+        except Exception:  # noqa: BLE001 - the rewind stands without its record
+            logger.debug("Could not record the rewind in the transcript", exc_info=True)
         now = datetime.now(timezone.utc).isoformat()
         if record.status == "completed":
             self.run_store.compare_and_set_status(run_id, "completed", "paused", updated_at=now, clear_error=True)

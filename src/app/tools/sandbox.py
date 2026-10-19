@@ -1600,6 +1600,20 @@ def project_stack(repo_root: str | Path | None) -> frozenset[str]:
     return frozenset(line.strip() for line in text.splitlines() if line.strip())
 
 
+#: A word of the form `NAME=value` where a program should be: the shell's way of
+#: setting a variable for one command, written by an author who expects a shell.
+AN_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+#: What to do instead of `NAME=value program ...`, said once for every place that
+#: meets one: a plan's verification command and a command a stage sends.
+ASSIGNMENT_ADVICE = (
+    "A `NAME=value` before a command is a shell's way of setting a variable, and there is no "
+    "shell here, so it sets nothing and is not a program. Every command already gets `PORT` and "
+    "`DATA_DIR`; a value the code needs belongs in the project's own configuration or the "
+    "test's setup, with a development default, and the command is run without it."
+)
+
+
 #: What to do instead, for the commands a model reaches for that this
 #: environment will never allow. The allowlist tells it what it may run; that
 #: is not the same as telling it how to do the thing it was trying to do, and a
@@ -1652,6 +1666,8 @@ _INSTEAD_OF: dict[str, str] = {
         "`source` is a shell builtin and there is no shell here. Run the commands in the file "
         "directly, one `run_terminal_command` each."
     ),
+    # `env NAME=value program` is the same wish through a program that is not here.
+    "env": ASSIGNMENT_ADVICE,
     "unset": "`unset` is a shell builtin and there is no shell here; nothing carries from one command to the next.",
     # Accurate rather than absolute: `NETWORK_CATEGORIES` grants a network to
     # the `install` category, which is how `npm install jsdom` succeeds. What is
@@ -1667,20 +1683,6 @@ _INSTEAD_OF: dict[str, str] = {
         "<package>` with category 'install'. Nothing else can fetch a URL."
     ),
 }
-
-
-#: A word of the form `NAME=value` where a program should be: the shell's way of
-#: setting a variable for one command, written by an author who expects a shell.
-AN_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-
-#: What to do instead of `NAME=value program ...`, said once for every place that
-#: meets one: a plan's verification command and a command a stage sends.
-ASSIGNMENT_ADVICE = (
-    "A `NAME=value` before a command is a shell's way of setting a variable, and there is no "
-    "shell here, so it sets nothing and is not a program. Every command already gets `PORT` and "
-    "`DATA_DIR`; a value the code needs belongs in the project's own configuration or the "
-    "test's setup, with a development default, and the command is run without it."
-)
 
 
 def _what_to_do_instead(executable: str) -> str:

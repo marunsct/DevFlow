@@ -39,3 +39,10 @@ def test_a_stage_s_refused_assignment_says_why(tmp_path):
 
 def test_the_advice_uses_none_of_the_banned_words():
     assert not BANNED.search(sandbox.ASSIGNMENT_ADVICE)
+
+
+def test_env_in_front_of_a_command_is_refused_with_the_same_advice(tmp_path):
+    with pytest.raises(sandbox.CommandNotAllowed) as refused:
+        sandbox.validate_command(["env", "SECRET_VALUE=abc", "node", "x.mjs"], "testing_specialist", tmp_path)
+
+    assert "sets nothing" in str(refused.value)

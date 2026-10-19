@@ -11,10 +11,12 @@ import {
   Search,
   Sparkles,
   Terminal,
+  UserCheck,
 } from 'lucide-react';
 import {
   describeAction,
   describeStage,
+  laneOf,
   pathFromResult,
   readRangeFromResult,
   shortenPath,
@@ -31,7 +33,14 @@ interface AgentActivityProps {
   bare?: boolean;
 }
 
-const ACTIVITY_TYPES = new Set(['agent_message', 'tool_call', 'tool_result']);
+const ACTIVITY_TYPES = new Set(['agent_message', 'tool_call', 'tool_result', 'review_decision', 'approval_decision']);
+
+/**
+ * A result the harness gave instead of what was asked - a read of something the
+ * agent already has, a listing after reading is done (plan BG.8). Not a
+ * failure of the work, and shown as what it is.
+ */
+const HELD_BACK = /is in the project memory at the start of this conversation|You have already read lines|same bytes|Refusing to read .{0,200}? again|reading is done for this stage|Not looking/;
 
 const KIND_ICON = {
   write: FileText,
@@ -43,7 +52,7 @@ const KIND_ICON = {
 
 interface Item {
   key: string;
-  type: 'message' | 'action';
+  type: 'message' | 'action' | 'decision';
   stage: string;
   at: string;
   text: string;
@@ -57,6 +66,8 @@ interface Item {
   failed?: boolean;
   /** An action whose result has not arrived yet. */
   pending?: boolean;
+  /** The harness answered with what the agent already had, instead of what it asked. */
+  heldBack?: boolean;
 }
 
 /** Consecutive items from the same workflow step, shown under one heading. */
@@ -92,6 +103,18 @@ function buildItems(logs: LogEntry[]): Item[] {
     const stage = entry.stage || '';
     const at = entry.timestamp;
 
+    if (entry.event_type === 'review_decision' || entry.event_type === 'approval_decision') {
+      // The owner's own decisions, in their place in the feed.
+      const action = String(entry.metadata?.action ?? '');
+      const point = String(entry.metadata?.review_point ?? '');
+      const verb = action === 'approve' ? 'approved' : action === 'changes' ? 'asked for changes to' : action === 'skip' ? 'skipped'
+        : action === 'reject' ? 'rejected' : action;
+      const what = point ? describeStage(point).title : 'the request';
+      const comment = (entry.message || '').split(' — ').slice(1).join(' — ');
+      items.push({ key, type: 'decision', stage, at, text: `You ${verb} ${what}`, detail: comment || undefined });
+      continue;
+    }
+
     if (entry.event_type === 'agent_message') {
       const raw = (entry.message || '').trim();
       if (!raw) continue;
@@ -116,10 +139,12 @@ function buildItems(logs: LogEntry[]): Item[] {
     // feed one line per action; only a failure changes what is displayed,
     // because a successful result adds nothing a reader needs.
     const previous = items[items.length - 1];
-    const failed = entry.metadata?.failed === true || /^Failed:/i.test(entry.message || '');
+    const heldBack = HELD_BACK.test(entry.message || '');
+    const failed = !heldBack && (entry.metadata?.failed === true || /^Failed:/i.test(entry.message || ''));
     if (previous && previous.type === 'action') {
       previous.detail = entry.message;
       previous.pending = false;
+      previous.heldBack = heldBack;
       // Fill in a filename the call itself could not supply, so a write stops
       // being narrated as "Saved a document".
       if (!failed && !previous.target && previous.kind === 'write') {
@@ -250,6 +275,8 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
             <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
           ) : item.failed ? (
             <span className="h-1.5 w-1.5 rounded-full bg-danger" />
+          ) : item.heldBack ? (
+            <span className="h-1.5 w-1.5 rounded-full bg-text-muted" />
           ) : (
             <Check className="h-3.5 w-3.5 text-success/70" />
           )}
@@ -261,6 +288,11 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
           <span className={`block text-[13px] leading-snug ${item.failed ? 'text-danger' : 'text-text-secondary'}`}>
             {item.text}
           </span>
+          {item.heldBack && (
+            <span className="mt-0.5 inline-block rounded bg-overlay px-1.5 py-px text-[10px] font-medium text-text-muted">
+              held back: already read
+            </span>
+          )}
           {(item.target || item.range) && (
             <span className="mt-0.5 flex items-center gap-1.5 min-w-0">
               {item.target && (
@@ -281,7 +313,7 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
 
         {item.detail && (
           <ChevronRight
-            className={`mt-0.5 h-3.5 w-3.5 flex-none text-text-muted transition-transform ${open ? 'rotate-90' : ''} opacity-0 group-hover:opacity-100`}
+            className={`mt-0.5 h-3.5 w-3.5 flex-none text-text-muted transition-transform ${open ? 'rotate-90' : ''} opacity-0 group-hover:opacity-100 group-focus-within:opacity-100`}
           />
         )}
       </button>
@@ -295,6 +327,17 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
   );
 };
 
+/** One of the owner's decisions - an approval, a review answered - in its place in the feed. */
+const DecisionRow: React.FC<{ item: Item }> = ({ item }) => (
+  <div className="my-1 flex items-start gap-2 rounded-lg border border-primary/30 bg-accent-soft py-1.5 pl-2 pr-2">
+    <UserCheck className="mt-0.5 h-3.5 w-3.5 flex-none text-primary" aria-hidden="true" />
+    <span className="min-w-0 text-[13px] leading-snug text-text-primary">
+      {item.text}
+      {item.detail && <span className="block text-[12px] text-text-secondary">“{item.detail}”</span>}
+    </span>
+  </div>
+);
+
 /**
  * A running narration of what the workflow is doing, newest at the bottom.
  *
@@ -307,7 +350,12 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
 export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = false, bare = false }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pinned, setPinned] = useState(true);
-  const items = useMemo(() => buildItems(logs), [logs]);
+  const all = useMemo(() => buildItems(logs), [logs]);
+  // Lanes, when the feed has more than one (plan BG.8): the roles working side
+  // by side in parallel mode, or planning, testing and fixes in order.
+  const lanes = useMemo(() => [...new Set(all.map((item) => laneOf(item.stage)))], [all]);
+  const [lane, setLane] = useState<string | null>(null);
+  const items = useMemo(() => (lane ? all.filter((item) => laneOf(item.stage) === lane) : all), [all, lane]);
   const groups = useMemo(() => groupByStage(items), [items]);
 
   // How many arrived while the reader was scrolled away, so the catch-up
@@ -411,6 +459,23 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
         </div>
         {live && <span className="ml-auto text-[11px] text-text-muted tabular-nums">{items.length}</span>}
       </div>
+      {lanes.length > 1 && (
+        <div role="group" aria-label="Show one lane" className="flex-none flex flex-wrap gap-1.5 px-4 py-2 border-b border-border/40">
+          {[null, ...lanes].map((name) => (
+            <button
+              key={name ?? 'all'}
+              type="button"
+              aria-pressed={lane === name}
+              onClick={() => setLane(name)}
+              className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium capitalize ${
+                lane === name ? 'border-primary/50 bg-accent-soft text-primary' : 'border-border text-text-secondary hover:bg-overlay'
+              }`}
+            >
+              {name ?? 'All'}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 flex flex-col">
         {/* The scroller is absolutely positioned inside a relative box rather
@@ -463,7 +528,9 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
                       <div className="space-y-0.5 pt-1">
                         {group.items.map((item) => (
                           <div key={item.key} className="animate-activity-in">
-                            {item.type === 'message' ? (
+                            {item.type === 'decision' ? (
+                              <DecisionRow item={item} />
+                            ) : item.type === 'message' ? (
                               <MessageRow
                                 item={item}
                                 stream={item.key === streamingKey}

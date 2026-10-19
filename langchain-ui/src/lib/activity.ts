@@ -375,3 +375,12 @@ export function splitToolMessage(message: string): { tool: string; args: string 
  * keeps everything it has done.
  */
 export const RESUMABLE: string[] = ['failed', 'waiting_for_budget', 'paused', 'cancelled'];
+
+/** Which lane a stage works in, for the lane filter: its role, or the kind of step. */
+export function laneOf(stage: string): string {
+  const role = /^specialist_(.+?)(?:_\d+)?$/.exec(stage);
+  if (role) return role[1].replace(/_specialist$/, '').replace(/_/g, ' ');
+  if (/^defect_fix|^fix_/.test(stage)) return 'fixes';
+  if (/^(acceptance|test_round|qa)/.test(stage)) return 'testing';
+  return 'planning';
+}

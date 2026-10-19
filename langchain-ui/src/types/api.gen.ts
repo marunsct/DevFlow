@@ -60,6 +60,20 @@ export interface BriefPreviewRequest {
   brief: string;
 }
 
+/** One model call: when it ended, which stage made it, its tokens, and how long it took (plan BG.15). */
+export interface CallUsage {
+  /** When the reply arrived. */
+  at: string;
+  /** Tokens sent: how full the context was. */
+  input_tokens: number;
+  /** Tokens the reply had, reasoning included. */
+  output_tokens: number;
+  /** From the request to the reply. */
+  seconds: number;
+  /** The stage that made the call. */
+  stage: string;
+}
+
 /** Response after storing a codebase archive for a run. */
 export interface CodebaseUploadResponse {
   /** Stored size in bytes. */
@@ -342,8 +356,10 @@ export interface RunSummary {
   updated_at: string | null;
 }
 
-/** A run's usage by stage, in the order the stages first ran. */
+/** A run's usage by stage, in the order the stages first ran, and its calls of the last hour. */
 export interface RunUsage {
+  /** The model calls of the run's last hour of calls, oldest first, at most 300. */
+  recent_calls: CallUsage[];
   /** One row per stage; empty before the transcript has any. */
   stages: StageUsage[];
 }

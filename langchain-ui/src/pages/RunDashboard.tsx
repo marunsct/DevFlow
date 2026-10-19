@@ -30,6 +30,7 @@ import {
 import { LogViewer } from '../components/LogViewer';
 import { LatestChange } from '../components/LatestChange';
 import { AuditTable } from '../components/AuditTable';
+import { ModelPressure } from '../components/ModelPressure';
 import { Tabs } from '../ui';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { SteeringBox } from '../components/SteeringBox';
@@ -75,7 +76,8 @@ export const RunDashboard: React.FC = () => {
   const now = useNow(live);
   const typical = useTypicalTime(run?.delivery_mode);
   // On a server that serves one request at a time, another run on it holds this one's calls.
-  const waitingOn = holdingTheModel(useServerHealth(), runId);
+  const health = useServerHealth();
+  const waitingOn = holdingTheModel(health, runId);
   // The tab says what the run needs, so a gate is seen from another tab.
   useEffect(() => {
     if (!run) return;
@@ -793,6 +795,7 @@ export const RunDashboard: React.FC = () => {
         <div className="relative min-h-0 h-[22rem] sm:h-[26rem] lg:h-[32rem] xl:h-auto">
           <div className="flex h-full flex-col gap-3 xl:absolute xl:inset-0">
             <LatestChange runId={runId!} refreshKey={stageKey} onOpen={selectChange} />
+            <ModelPressure runId={runId!} live={live} slotContext={health?.slot_context} />
             <div className="flex-1 min-h-0">
               <ExecutionFlow stages={run.stages || []} currentStage={run.current_stage} isTerminal={isTerminal} />
             </div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunCostSummary } from '../types';
-import { ceilings, fixLoop, spend, tokens, typicalTime } from './runSummary';
+import { ceilings, fixLoop, pressure, spend, tokens, typicalTime } from './runSummary';
 
 const cost = (extra: Partial<RunCostSummary> = {}): RunCostSummary => ({
   completion_tokens: 300_000,
@@ -58,5 +58,22 @@ describe('the fix loop', () => {
     expect(fixLoop(null, 'defect_fix_1_0')).toBe('');
     const older = { ...remediation, open_defects: undefined as unknown as number };
     expect(fixLoop(older, 'defect_fix_2_3')).toBe('2 of 3 fix cycles run · 23 defects · 7 test runs');
+  });
+});
+
+describe('the pressure on the model', () => {
+  const at = (minutesAgo: number) => new Date(Date.parse('2026-10-19T12:00:00Z') - minutesAgo * 60_000).toISOString();
+  const call = (minutesAgo: number, input: number, output: number, seconds: number) => ({ at: at(minutesAgo), stage: 's', input_tokens: input, output_tokens: output, seconds });
+
+  it('says how full the last call was, how busy the last ten minutes were, and the pace', () => {
+    const found = pressure([call(30, 50_000, 900, 30), call(8, 90_000, 600, 120), call(1, 118_000, 300, 180)], 126_464, Date.parse('2026-10-19T12:00:00Z'))!;
+    expect(found.lastInput).toBe(118_000);
+    expect(found.slotContext).toBe(126_464);
+    expect(found.busy).toBeCloseTo(0.5);
+    expect(found.pace).toEqual([30, 5, 300 / 180]);
+  });
+
+  it('says nothing before any call', () => {
+    expect(pressure([], 126_464)).toBeNull();
   });
 });

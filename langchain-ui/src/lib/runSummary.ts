@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { getOutcomes, type RunForecast } from '../api';
-import type { RemediationInfo, RunCostSummary } from '../types';
+import type { CallUsage, RemediationInfo, RunCostSummary } from '../types';
 
 /** "950", "12.4 k", "1.2 M". */
 export function tokens(count: number): string {
@@ -119,4 +119,30 @@ export function fixLoop(remediation: RemediationInfo | null | undefined, stage: 
     plural(remediation.test_runs, 'test run'),
     ...(remediation.escalated ? ['escalated'] : []),
   ].join(' · ');
+}
+
+export interface Pressure {
+  /** Tokens the last call sent, and of how many the slot holds (null when the server does not say). */
+  lastInput: number;
+  slotContext: number | null;
+  /** Share of the last 10 minutes spent waiting on replies, 0..1. */
+  busy: number;
+  /** Output tokens per second of each recent call, oldest first. */
+  pace: number[];
+}
+
+/** How close the run's calls come to the slot's context, how busy the model is, and its pace (plan BG.15). */
+export function pressure(calls: CallUsage[], slotContext: number | null | undefined, now = Date.now()): Pressure | null {
+  if (calls.length === 0) return null;
+  const last = calls[calls.length - 1];
+  const window = 10 * 60 * 1000;
+  const busySeconds = calls
+    .filter((call) => now - new Date(call.at).getTime() <= window)
+    .reduce((sum, call) => sum + call.seconds, 0);
+  return {
+    lastInput: last.input_tokens,
+    slotContext: slotContext ?? null,
+    busy: Math.min(1, busySeconds / (window / 1000)),
+    pace: calls.filter((call) => call.seconds > 0).map((call) => call.output_tokens / call.seconds),
+  };
 }

@@ -289,11 +289,25 @@ class StageUsage(BaseModel):
     redundant_reads: int = Field(description="Reads answered with 'you already have this'.")
 
 
+class CallUsage(BaseModel):
+    """One model call: when it ended, which stage made it, its tokens, and how long it took (plan BG.15)."""
+    model_config = ConfigDict(extra="forbid")
+
+    at: datetime = Field(description="When the reply arrived.")
+    stage: str = Field(description="The stage that made the call.")
+    input_tokens: int = Field(description="Tokens sent: how full the context was.")
+    output_tokens: int = Field(description="Tokens the reply had, reasoning included.")
+    seconds: float = Field(description="From the request to the reply.")
+
+
 class RunUsage(BaseModel):
-    """A run's usage by stage, in the order the stages first ran."""
+    """A run's usage by stage, in the order the stages first ran, and its calls of the last hour."""
     model_config = ConfigDict(extra="forbid")
 
     stages: list[StageUsage] = Field(default_factory=list, description="One row per stage; empty before the transcript has any.")
+    recent_calls: list[CallUsage] = Field(
+        default_factory=list, description="The model calls of the run's last hour of calls, oldest first, at most 300."
+    )
 
 
 class SprintsResponse(BaseModel):

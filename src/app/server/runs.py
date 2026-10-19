@@ -571,12 +571,12 @@ def create_runs_router(
         run_id: str, user: UserInDB = Depends(get_current_active_user)
     ) -> RunUsage:
         """Time, tokens and failures per stage, from the run's transcript (plan BG.7)."""
-        from app.observability.stage_usage import stage_usage
+        from app.observability.stage_usage import recent_calls, stage_usage
         from app.observability.transcript import read_transcript
 
         _require_run(runner, run_id, user)
         entries = await asyncio.to_thread(read_transcript, run_id)
-        return RunUsage(stages=stage_usage(entries))
+        return RunUsage(stages=stage_usage(entries), recent_calls=recent_calls(entries))
 
     @runs.get("/{run_id}/transcript")
     async def download_transcript(

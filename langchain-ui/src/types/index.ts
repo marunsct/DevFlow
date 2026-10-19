@@ -7,6 +7,7 @@
 export type {
   ApprovalDecisionRequest,
   BriefPreview,
+  CallUsage,
   ArtifactInfo,
   CreateRunResponse,
   ModelProfile,

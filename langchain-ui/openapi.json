@@ -240,6 +240,47 @@
     "title": "BriefPreviewRequest",
     "type": "object"
    },
+   "CallUsage": {
+    "additionalProperties": false,
+    "description": "One model call: when it ended, which stage made it, its tokens, and how long it took (plan BG.15).",
+    "properties": {
+     "at": {
+      "description": "When the reply arrived.",
+      "format": "date-time",
+      "title": "At",
+      "type": "string"
+     },
+     "input_tokens": {
+      "description": "Tokens sent: how full the context was.",
+      "title": "Input Tokens",
+      "type": "integer"
+     },
+     "output_tokens": {
+      "description": "Tokens the reply had, reasoning included.",
+      "title": "Output Tokens",
+      "type": "integer"
+     },
+     "seconds": {
+      "description": "From the request to the reply.",
+      "title": "Seconds",
+      "type": "number"
+     },
+     "stage": {
+      "description": "The stage that made the call.",
+      "title": "Stage",
+      "type": "string"
+     }
+    },
+    "required": [
+     "at",
+     "stage",
+     "input_tokens",
+     "output_tokens",
+     "seconds"
+    ],
+    "title": "CallUsage",
+    "type": "object"
+   },
    "CodebaseUploadResponse": {
     "additionalProperties": false,
     "description": "Response after storing a codebase archive for a run.",
@@ -1519,8 +1560,16 @@
    },
    "RunUsage": {
     "additionalProperties": false,
-    "description": "A run's usage by stage, in the order the stages first ran.",
+    "description": "A run's usage by stage, in the order the stages first ran, and its calls of the last hour.",
     "properties": {
+     "recent_calls": {
+      "description": "The model calls of the run's last hour of calls, oldest first, at most 300.",
+      "items": {
+       "$ref": "#/components/schemas/CallUsage"
+      },
+      "title": "Recent Calls",
+      "type": "array"
+     },
      "stages": {
       "description": "One row per stage; empty before the transcript has any.",
       "items": {

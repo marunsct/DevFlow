@@ -59,3 +59,22 @@ def test_the_routes_answer_from_the_transcript(client, tmp_path: Path, monkeypat
     download = client.get(f"/api/runs/{run_id}/transcript")
     assert download.status_code == 200 and download.text.startswith("[10:00:00]")
     assert "attachment" in download.headers["content-disposition"]
+
+
+def test_the_last_hour_of_calls_with_their_context_and_pace():
+    from app.observability.stage_usage import recent_calls
+
+    calls = recent_calls(ENTRIES)
+
+    assert [(c["stage"], c["input_tokens"], c["output_tokens"], c["seconds"]) for c in calls] == [
+        ("architect", 1000, 50, 10.0), ("architect", 1100, 20000, 28.0),
+    ]
+
+
+def test_calls_older_than_the_hour_are_left_out():
+    from datetime import datetime, timezone
+
+    from app.observability.stage_usage import recent_calls
+
+    later = datetime(2026, 10, 19, 11, 0, 30, tzinfo=timezone.utc)
+    assert [c["output_tokens"] for c in recent_calls(ENTRIES, now=later)] == [20000]

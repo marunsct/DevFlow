@@ -107,4 +107,37 @@ def stage_usage(entries: Iterable[dict]) -> list[dict[str, Any]]:
     return out
 
 
-__all__ = ["stage_usage"]
+#: How far back the recent calls go, and at most how many.
+RECENT_SECONDS = 3600
+MOST_RECENT_CALLS = 300
+
+
+def recent_calls(entries: Iterable[dict], now: datetime | None = None) -> list[dict[str, Any]]:
+    """The model calls of the last hour, oldest first: when, which stage, tokens in and out, seconds (plan BG.15)."""
+    calls: list[dict[str, Any]] = []
+    asked_at: dict[str, datetime] = {}
+    for entry in entries:
+        stage = str(entry.get("stage") or "")
+        at = _when(entry)
+        if at is None:
+            continue
+        if entry.get("kind") == "model_request":
+            asked_at[stage] = at
+        elif entry.get("kind") == "model_response":
+            started = asked_at.pop(stage, None)
+            usage = entry.get("usage") or {}
+            calls.append({
+                "at": at.isoformat(),
+                "stage": stage,
+                "input_tokens": int(usage.get("input_tokens") or 0),
+                "output_tokens": int(usage.get("output_tokens") or 0),
+                "seconds": round(max(0.0, (at - started).total_seconds()), 1) if started else 0.0,
+            })
+    if not calls:
+        return []
+    last = now or max(datetime.fromisoformat(call["at"]) for call in calls)
+    kept = [call for call in calls if (last - datetime.fromisoformat(call["at"])).total_seconds() <= RECENT_SECONDS]
+    return kept[-MOST_RECENT_CALLS:]
+
+
+__all__ = ["recent_calls", "stage_usage"]

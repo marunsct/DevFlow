@@ -49,6 +49,11 @@ class Context:
 
 
 
+#: The defect raised when the product does not start for the suite. The unit tests
+#: cannot answer for it - the suite starts the product on its own - so no probe of
+#: them closes it.
+THE_PRODUCT_DOES_NOT_START = "The product does not start for the acceptance suite, so no test can reach it."
+
 #: What opens the page snapshot in an acceptance defect's failure text
 #: (`workflow._one_defect_per_root_error` reads it).
 THE_PAGE_WHEN_IT_FAILED = "\nThe page when it failed:\n"
@@ -961,7 +966,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     if never_started.startswith(suite.PRODUCT_DID_NOT_START):
         # One defect for the one cause: nothing could be measured while it stands.
         defects.append(ReportedDefect(
-            description="The product does not start for the acceptance suite, so no test can reach it.",
+            description=THE_PRODUCT_DOES_NOT_START,
             severity="blocking",
             reproduction_steps=f"Run `{command}` in the project directory: the product fails before any test runs.",
             expected_behavior="The product builds and starts, and the acceptance suite's tests run against it.",

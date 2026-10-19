@@ -2778,6 +2778,13 @@ def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
         from app.stacks import contract
         from app.stacks.scaffold import sandbox_runner
 
+        from app.graph.acceptance_nodes import THE_PRODUCT_DOES_NOT_START
+
+        if str(getattr(defect, "description", "") or "").startswith(THE_PRODUCT_DOES_NOT_START):
+            # The suite starts the product its own way; unit tests that pass say
+            # nothing about whether it does. Closing this on them left the same
+            # defect to be raised again every round while no fixer ever saw it.
+            return None
         tags = {t for t in tags_in(str(getattr(defect, "description", "") or "")) if t.startswith(("AC-", "CR-"))}
         if tags:
             runs = each_file(root, contract.read(root) or {}, sandbox_runner(root), naming=tags)

@@ -367,11 +367,24 @@ _ON_A_CONDITION = re.compile(
 )
 
 
+#: How the disabled state looks, not a rule that disables anything: "a light gray
+#: background when disabled", "the disabled state", "disabled inputs are dimmed".
+#: Measured on one run: input styling advice - "a red border when invalid, and a
+#: light gray background when disabled" - was left out as if it disabled a control
+#: until the input was valid.
+_THE_DISABLED_STATE = re.compile(
+    r"\b(?:when|while|if)\s+(?:it\s+is\s+|they\s+are\s+)?disabled\b"
+    r"|\bdisabled\s+(?:state|styles?|styling|appearance|look|inputs?|fields?|controls?)\b",
+    re.I,
+)
+
+
 def disables_on_a_condition(text: str) -> bool:
-    """Whether any line of `text` disables a control on a condition."""
+    """Whether any line of `text` disables a control on a condition; how a disabled control looks is not one."""
     return any(
-        _DISABLES.search(line) and _ON_A_CONDITION.search(line)
+        _DISABLES.search(cleaned) and _ON_A_CONDITION.search(cleaned)
         for line in re.split(r"(?<=[.;])\s+|\n", str(text or ""))
+        for cleaned in [_THE_DISABLED_STATE.sub(" ", line)]
     )
 
 

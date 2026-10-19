@@ -6478,9 +6478,26 @@ def _the_files_this_milestone_changed(
                 if name.strip() and not name.strip().startswith("docs/")
             }
             reported |= observed
+        elif index == 0 and not reported:
+            # The first sprint with nothing reported: everything there is new
+            # to it - most often code a setup stage wrote before any sprint
+            # planned work, which a review must still read.
+            reported |= set(_the_whole_product(root))
     except Exception:  # noqa: BLE001 - evidence is best-effort, never fatal
         logger.warning("Could not read what this sprint changed", exc_info=True)
     return sorted(reported)
+
+
+def _the_whole_product(root: str) -> list[str]:
+    """Every product file in the workspace: no workflow document, no harness record, no dotfile."""
+    from app.tools.repository import HARNESS_FILES, list_repository_files
+
+    return [
+        name for name in list_repository_files(root)
+        if not name.startswith("docs/")
+        and not any(part.startswith(".") for part in name.split("/"))
+        and name.rsplit("/", 1)[-1] not in HARNESS_FILES
+    ]
 
 
 def _the_ledger(repo_root: str, limit: int) -> list[dict[str, Any]]:
@@ -6855,6 +6872,16 @@ def _only_what_was_carried(why: str) -> str:
     )
 
 
+def _no_review_has_read_the_code(state: Any) -> bool:
+    """Whether the run has code and no security or milestone review has run on any of it yet."""
+    if state.get("milestone_review") is not None or state.get("security_review") is not None:
+        return False
+    try:
+        return _changes_any_code(_the_whole_product(state["repository"].root_path))
+    except Exception:  # noqa: BLE001 - unknown: close the sprint as before
+        return False
+
+
 def _close_a_sprint_with_nothing_to_build(state: WorkflowGraphState, why: str) -> dict[str, Any]:
     """Accept a sprint whose criteria already pass, the way an accepted sprint is closed.
 
@@ -6870,6 +6897,38 @@ def _close_a_sprint_with_nothing_to_build(state: WorkflowGraphState, why: str) -
     index = int(state.get("current_sprint_index") or 0)
     goal = str(getattr(sprints[index], "goal", "") or "") if index < len(sprints) else ""
     accepted: dict[str, Any] = {}
+    if _no_review_has_read_the_code(state):
+        # Passing the suite is evidence, not a review. Measured on one run: a
+        # setup stage wrote the whole product, this sprint was accepted without
+        # new work, and no code, milestone or security review ever read it. The
+        # sprint goes through the reviews instead, with a plan of no work
+        # orders: a review that asks for changes sends it to the lead as any
+        # review does.
+        record_decision(
+            state, accepted, point="sprint",
+            question=f"Is sprint {index + 1} done?",
+            options=["accept without new work", "review it before accepting"],
+            decision="review it before accepting",
+            rationale="Every criterion due already passes, but no review has read this code yet.\n" + why,
+        )
+        logger.info("Sprint %d needs no new work, but no review has read its code; reviewing it first", index + 1)
+        from app.agents.technical_lead import MilestonePlanOutput
+
+        return _handing_on(
+            **accepted,
+            stage="security_review",
+            milestone_plan=MilestonePlanOutput(
+                selected_sprint_goal=goal,
+                # Context, not scope: a scope with no work order is refused as
+                # a plan nobody builds, and nothing here is to be built.
+                integration_notes=[
+                    "No new work: every criterion due already passes. The code was written "
+                    "before this sprint planned any, and no review has read it yet."
+                ],
+            ),
+            specialist_outputs={},
+            nothing_left_but_carried=None,
+        )
     record_decision(
         state, accepted, point="sprint",
         question=f"Is sprint {index + 1} done?",

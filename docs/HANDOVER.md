@@ -281,7 +281,9 @@ test that fails on the old code:
   `prompt_block_share_*`, `cache_miss_after_tool_change`); BC (two pointer answers in a row
   stall the stage); BK (a failed release file is a completion gap); AQ step 3 (a window read again is a pointer); AO.9 (a command's result names the files it
   changed). From the baseline-1 analysis: a missing unit report with no unit test file is the
-  "ships no unit tests" gap, and a run no review stage read gets a gap. Next: AO.10, AO.5; AQ steps 1-2 need the baseline KPIs.
+  "ships no unit tests" gap, and a run no review stage read gets a gap; BL (owner's yes): a sprint
+  accepted on its suite with no review yet goes through the reviews first, and the custom setup
+  is held to the smallest app and to tests its runners collect. Next: AO.10, AO.5; AQ steps 1-2 need the baseline KPIs.
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).
 
 ### 2.00000 Appendix 3 built (2026-10-19)

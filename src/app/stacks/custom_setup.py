@@ -166,7 +166,9 @@ product is built, set up `{project}/` so that a unit test and an acceptance test
    }}
 
 `build` is the command that compiles or builds the project before it runs, when it is built
-at all; leave it out when nothing is. Build nothing of the product itself. The harness then
+at all; leave it out when nothing is. Build nothing of the product itself: write only the
+smallest app the two smoke tests need, because the sprints build the rest, where it is
+reviewed. The harness then
 runs the install, the build and both smoke tests through exactly these commands; a setup whose smoke tests pass is kept as the project's
 test setup for the rest of the run, and the smoke tests are removed.
 {planned}{again}"""
@@ -267,6 +269,58 @@ def problems_with(text: str, project_root: Path) -> str:
     return _declared(text, project_root, "", files_written=False)[1]
 
 
+#: Folders no runner's tests live in: dependencies, builds, the runners' own output.
+_NOT_THE_PROJECT_S_TESTS = frozenset({
+    "node_modules", ".venv", "venv", "dist", "build", "target", "coverage", "__pycache__",
+    "test-results", "playwright-report",
+})
+
+
+def _within(name: str, directory: str) -> bool:
+    folder = directory.strip("/")
+    return bool(folder) and (name == folder or name.startswith(folder + "/"))
+
+
+def _tests_the_runners_never_collect(
+    project_root: Path, paths: dict[str, Any], patterns: dict[str, str], smoke: list[Any],
+) -> list[str]:
+    """Problems for a smoke test outside its runner's directory, and for any test file no runner collects.
+
+    Measured on one run: the setup wrote a unit test outside the declared unit
+    directory. The unit runner matched nothing and wrote no report, the file was
+    cleared at release as a throwaway, and the product shipped with no unit test.
+    """
+    from fnmatch import fnmatch
+
+    unit_dir, acceptance_dir = str(paths.get("unit_dir") or ""), str(paths.get("acceptance_dir") or "")
+    unit_pattern, acceptance_pattern = patterns.get("unit_pattern", ""), patterns.get("acceptance_pattern", "")
+    problems: list[str] = []
+    named = [name for name in smoke if name]
+    if named and unit_dir and not (_within(named[0], unit_dir) and fnmatch(PurePosixPath(named[0]).name, unit_pattern)):
+        problems.append(
+            f"the unit smoke test `{named[0]}` must sit in `{unit_dir}` and match `{unit_pattern}`, "
+            "where the unit runner collects it"
+        )
+    if len(named) > 1 and acceptance_dir and not _within(named[1], acceptance_dir):
+        problems.append(f"the acceptance smoke test `{named[1]}` must sit in `{acceptance_dir}`")
+    stray: list[str] = []
+    for directory, subdirectories, files in os.walk(project_root):
+        subdirectories[:] = [d for d in subdirectories if d not in _NOT_THE_PROJECT_S_TESTS and not d.startswith(".")]
+        for file_name in files:
+            relative = (Path(directory) / file_name).relative_to(project_root).as_posix()
+            if _within(relative, unit_dir) or _within(relative, acceptance_dir):
+                continue
+            if any(p and fnmatch(file_name, p) for p in (unit_pattern, acceptance_pattern)):
+                stray.append(relative)
+    if stray:
+        problems.append(
+            "these test files sit outside both declared test directories, so no runner ever runs "
+            "them: " + ", ".join(f"`{name}`" for name in sorted(stray)[:5])
+            + "; move each into the directory of its runner, or remove it"
+        )
+    return problems
+
+
 def _declared(text: str, project_root: Path, fallback_kind: str, *, files_written: bool) -> tuple[Declaration | None, str]:
     try:
         data = json.loads(text)
@@ -309,6 +363,8 @@ def _declared(text: str, project_root: Path, fallback_kind: str, *, files_writte
         problems.append("`build` must be one command, a list of strings")
     if paths.get("acceptance_dir") and paths.get("acceptance_dir") == paths.get("unit_dir"):
         problems.append("acceptance tests need a directory of their own, apart from the unit tests")
+    if files_written and not problems:
+        problems += _tests_the_runners_never_collect(project_root, paths, patterns, smoke)
     if problems:
         return None, f"`{DECLARATION_FILE}` cannot be used: " + "; ".join(problems) + "."
     return Declaration(

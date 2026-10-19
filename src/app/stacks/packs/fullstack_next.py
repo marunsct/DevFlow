@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
 from app.stacks.packs import browser_react as react
+from app.stacks.packs._service import ON_THE_FILE_DATABASE
 
 UNIT_SCRIPT = react.UNIT_SCRIPT
 
@@ -148,8 +149,15 @@ as route handlers under `app/api/` (`app/api/<name>/route.ts` exporting `GET`,
 Vitest and Testing Library in a simulated DOM. Run them with `npm test`. Data the
 service keeps lives under the directory in `DATA_DIR` (default `data/`); a product
 meant for a database server reads its address from `DATABASE_URL` and, when that is
-unset, keeps a file database under `DATA_DIR`, which is what every test runs on. Never
+unset, keeps a file database under `DATA_DIR`, which is what every test runs on. """ + ON_THE_FILE_DATABASE + """ Never
 start a server yourself: the acceptance suite's configuration builds and starts it."""
+
+#: Where the data lives, for the architect (`StackPack.data_store`).
+DATA_STORE = (
+    "Data the service keeps lives under the directory in `DATA_DIR` (default `data/`); a product "
+    "meant for a database server reads its address from `DATABASE_URL` and, when that is unset, "
+    "keeps a file database under `DATA_DIR`, which is what every test runs on. " + ON_THE_FILE_DATABASE
+)
 
 ACCEPTANCE_GUIDE = """Acceptance tests go in `acceptance/`, named `<feature>.spec.js`, using
 `@playwright/test` (`import { test, expect } from '@playwright/test'`). The
@@ -226,6 +234,7 @@ PACK = StackPack(
         "acceptance/scaffold-smoke.spec.js": SMOKE_ACCEPTANCE,
     },
     guide=GUIDE,
+    data_store=DATA_STORE,
     acceptance_guide=ACCEPTANCE_GUIDE,
     stack={
         "language": "TypeScript",

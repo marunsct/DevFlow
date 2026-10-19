@@ -490,6 +490,9 @@ class WorkflowGraphState(TypedDict, total=False):
     technical_specification: TechnicalSpecificationOutput
     architecture_review: ArchitectureReviewOutput
     architecture_revision_count: int
+    # The `architecture_revision_count` of the review whose findings the architect
+    # has applied. See `_the_review_s_findings_are_open`.
+    architecture_review_applied: int
     # Set once the workflow has raised its one success-measure coverage finding
     # against a specification. See `_a_success_measure_the_specification_drops`.
     specification_coverage_checked: bool
@@ -3912,6 +3915,8 @@ def _the_scaffold_s_layout(state: Any) -> str:
                          + ". Plan the product in these files, or in modules they import.")
         lines.append(f"- Unit tests: `{pack.unit_pattern}` in `{prefix}{pack.unit_dir}/`; acceptance tests: "
                      f"`{pack.acceptance_pattern}` in `{prefix}{pack.acceptance_dir}/`.")
+        if getattr(pack, "data_store", ""):
+            lines.append("- Where the data lives: " + " ".join(str(pack.data_store).split()))
         kept = [path for path in pack.kept_files if path not in served]
         if kept:
             lines.append("- Kept by the harness, not the product's to write: "
@@ -5190,6 +5195,23 @@ def _milestone_changes_requested(review: Any) -> str | None:
     return None
 
 
+def _the_review_s_findings_are_open(state: Any) -> bool:
+    """Whether the architecture review asks for changes the architect has not yet made.
+
+    A review's findings are applied once. Measured live: after a review-driven
+    revision the architect's own checks sent it back for one section, and the
+    repair pass was handed the review's findings again beside "return only
+    `specialist_advice_decisions`" - it rewrote ten sections a second time, four
+    minutes of model time, where the same repair with nothing else asked had
+    rewritten one. A later review raises the revision count, so its findings
+    are open again.
+    """
+    review = state.get("architecture_review")
+    if review is None or getattr(review, "status", None) != "changes_required":
+        return False
+    return state.get("architecture_review_applied") != state.get("architecture_revision_count", 0)
+
+
 def _collect_required_changes(state: WorkflowGraphState) -> list[str]:
     """Gather everything the Principal Architect must fix in its next revision.
 
@@ -5205,7 +5227,7 @@ def _collect_required_changes(state: WorkflowGraphState) -> list[str]:
     changes: list[str] = []
 
     review = state.get("architecture_review")
-    if review is not None and review.status == "changes_required":
+    if _the_review_s_findings_are_open(state):
         # Only blocking and major findings gate approval, so they are listed
         # first and marked as the ones that decide the outcome. Handing the
         # architect one flat list put a note about naming beside a missing
@@ -7814,6 +7836,8 @@ def build_workflow_graph(
             # Consumed: the revision request above already delivered them, so
             # a later rerun must not re-apply stale comments.
             update["revision_comments"] = []
+            if _the_review_s_findings_are_open(state):
+                update["architecture_review_applied"] = state.get("architecture_revision_count", 0)
 
             # And after a review: a revision sends the sections it changes, and
             # the rest are the previous specification's. One run's architect,

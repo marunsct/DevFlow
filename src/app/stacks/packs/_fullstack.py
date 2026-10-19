@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
 from app.stacks.packs import _python
+from app.stacks.packs._service import ON_THE_FILE_DATABASE
 
 
 @dataclass(frozen=True)
@@ -610,7 +611,7 @@ records rather than counting all of them.
 
 DATA_GUIDE = """Data the service keeps lives under the directory in `DATA_DIR` (default `data/`). A
 product meant for a database server reads its address from `DATABASE_URL`; when that is
-unset it keeps a file database under `DATA_DIR`, which is what every test runs on. The
+unset it keeps a file database under `DATA_DIR`, which is what every test runs on. """ + ON_THE_FILE_DATABASE + """ The
 page reaches the service with `fetch('/api/...')`. Never start a server yourself: the
 acceptance suite's configuration builds the page and starts the service."""
 
@@ -688,6 +689,7 @@ def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
             "acceptance/scaffold-smoke.spec.js": SMOKE_ACCEPTANCE,
         },
         guide=f"{frontend.guide}\n{service.guide}\nRun every unit test with `npm test`. {DATA_GUIDE}",
+        data_store=DATA_GUIDE,
         entrypoints=tuple(e for e in (frontend.entry, service.entry) if e),
         acceptance_guide=ACCEPTANCE_GUIDE,
         stack={

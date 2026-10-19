@@ -49,10 +49,17 @@ the same service, so a test must create what it reads and look for its own
 records rather than counting all of them.
 """ + js.NAMING
 
+#: What "every test runs on the file database" means for the schema.
+ON_THE_FILE_DATABASE = (
+    "The schema, its column types, its queries and its migrations must work on that file "
+    "database as well as on the server: the tests never reach a database server, so a type "
+    "or a query only the server has stops the product before any test runs."
+)
+
 DATA_GUIDE = """A service that stores data keeps it under the directory in the `DATA_DIR`
 environment variable (default `data/`), never in memory only; one meant for a
 database server reads its address from `DATABASE_URL` and, when that is unset,
-keeps a file database under `DATA_DIR`, which is what every test runs on. The
+keeps a file database under `DATA_DIR`, which is what every test runs on. """ + ON_THE_FILE_DATABASE + """ The
 service listens on the port in `PORT` and the interface in `HOST`. Never start
 it yourself: the acceptance suite's configuration builds and starts it."""
 
@@ -113,6 +120,7 @@ def service_pack(
         entrypoint=entrypoint,
         smoke_files={smoke_unit[0]: smoke_unit[1], "acceptance/scaffold-smoke.spec.js": SMOKE_ACCEPTANCE},
         guide=f"{guide}\n{DATA_GUIDE}",
+        data_store=DATA_GUIDE,
         acceptance_guide=ACCEPTANCE_GUIDE,
         stack=stack,
         evidence_dir="test-results/evidence",

@@ -569,6 +569,45 @@ def test_rejected_architecture_returns_to_the_architect_with_the_findings(
     assert "first draft" in revision_request, "the rejected specification should come back for revision"
 
 
+def test_a_repair_after_a_revision_is_not_handed_the_review_s_findings_again(
+    agents: ScriptedAgents, tmp_path: Any
+) -> None:
+    """A review's findings are applied once.
+
+    Measured live: the architect's own check sent a review-driven revision back
+    for one section, and the repair pass was handed the review's findings again
+    beside "return only" that section - it rewrote ten sections a second time.
+    """
+    agents.script("product_manager", [responds_with(_intake())])
+    agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
+    agents.script(
+        "principal_architect",
+        [
+            responds_with(_spec("first draft")),
+            responds_with(_spec("revised with auth", testing=["Manually verify the booking page in a browser"])),
+            responds_with(_spec("revised with auth")),
+        ],
+    )
+    agents.script(
+        "architecture_review",
+        [responds_with(_rejected_review("No authentication described")), responds_with(_approved_review())],
+    )
+    _script_through_sprint(agents)
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-repair-after-review")
+
+    assert state["stage"] == "complete", state.get("error")
+    revision, repair = (
+        "\n\n".join(str(m["content"]) for m in request["messages"])
+        for request in agents.requests["principal_architect"][1:3]
+    )
+    assert "No authentication described" in revision
+    assert "Manually verify the booking page" in repair
+    assert "No authentication described" not in repair
+    assert "MUST FIX" not in repair
+
+
 def _script_rejections(agents: ScriptedAgents) -> None:
     agents.script("product_manager", [responds_with(_intake())])
     agents.script("tools_models", [responds_with(_tools())])

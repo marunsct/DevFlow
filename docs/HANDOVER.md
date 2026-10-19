@@ -322,9 +322,10 @@ test that fails on the old code:
   shakedown (a828a9f, 14:56 UTC). LF.37 (an empty folder's listing runs) and LF.38 (a product that did not
   start loses no acceptance test by name) followed. The shakedown run-894282e3 was **cancelled at 00:08 JST
   2026-10-20** on the owner's word (no longer useful: 426 min, 34 defects, 3 fixed, 8 fixes reverted; KPIs in
-  `data/kpi/`). App and worker deployed at ee47e4e4 (the worker carries `run_kpis`). **The evaluation (gate) run
-  is run-7622ead3**, started 00:10 JST 2026-10-20: `tests/brief_medium.md`, `DELIVERY=fast FRONTIER=false`,
-  compared with the baselines by `kpi_ledger.py compare` when it ends.
+  `data/kpi/`). App and worker deployed at ee47e4e4 (the worker carries `run_kpis`). The first gate run, run-7622ead3,
+  was cancelled at 00:51 JST (LF.40: its specification planned server-only column types for a product tested
+  on the file database; not a measurement). **The gate run restarts on the LF.39/LF.40 deploy**: `tests/brief_medium.md`,
+  `DELIVERY=fast FRONTIER=false`, compared with the baselines by `kpi_ledger.py compare` when it ends.
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).

@@ -117,6 +117,11 @@ class StackPack:
     #: `backend/app/`, the served page stayed the scaffold's `src/App.tsx`, and
     #: every page test failed its first control while 13 fixers chased criteria.
     entrypoints: tuple[str, ...] = ()
+    #: Where the product's data lives as the tests run it, said to the architect
+    #: before the scaffold exists. Measured live: told the files and not the
+    #: data, it planned a server's column types and search for a product every
+    #: test runs on the file database. "" when the pack keeps no data.
+    data_store: str = ""
     #: What a failure looks like when the test's own code broke, rather than
     #: the product being unbuilt or wrong - for this pack's runner. Before
     #: anything is built every test fails; only these failures are the test's.

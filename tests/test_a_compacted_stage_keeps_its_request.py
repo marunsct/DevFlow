@@ -142,3 +142,48 @@ def test_a_stage_agent_has_this_summariser_and_no_other(tmp_path, monkeypatch):
     stack = _apply_custom_middleware([default], ours, core_names={default.name})
     summarisers = [m for m in stack if isinstance(m, SummarizationMiddleware)]
     assert summarisers == ours
+
+
+def test_the_opening_turn_is_carried_within_a_budget_keeping_its_request_whole(tmp_path):
+    """Measured live: carrying the whole opening turn - a 27,000-character snapshot of
+    the files at the stage's start, then the request - left a compacted conversation
+    so near the trigger that one fix stage was compacted 10 times in 28 calls."""
+    big_files = "The project's files as they stood when this stage started:\n" + ("x = 1\n" * 12_000)
+    messages = [HumanMessage(content=big_files, id="files"), HumanMessage(content=BRIEF, id="opening"),
+                *_conversation()[2:]]
+    sent, _ = _sent(_built(RequestKeepingSummarization, tmp_path), messages)
+
+    assert BRIEF in sent[0].content
+    assert "x = 1\nx = 1" not in sent[0].content
+
+
+def test_a_conversation_just_compacted_is_not_compacted_again_at_once(tmp_path):
+    """Its kept tail already sits near the trigger: two calls later it was compacted again."""
+    middleware = RequestKeepingSummarization(
+        _summariser(), backend=FilesystemBackend(root_dir=str(tmp_path)),
+        trigger=("messages", 5), keep=("messages", 4), trim_tokens_to_summarize=1_000,
+    )
+    messages = _conversation()
+    _, result = _sent(middleware, messages)
+    event = result.command.update["_summarization_event"]
+
+    two_more = messages + [AIMessage(content="One more.", id="ai-x"), HumanMessage(content="next", id="h-x")]
+    sent, again = _sent(middleware, two_more, state={"messages": two_more, "_summarization_event": event})
+
+    assert not hasattr(again, "command")  # no new compaction: the summary stands
+    assert sent[0].content == event["summary_message"].content
+
+
+def test_a_conversation_that_has_grown_again_is_compacted_again(tmp_path):
+    middleware = RequestKeepingSummarization(
+        _summariser(), backend=FilesystemBackend(root_dir=str(tmp_path)),
+        trigger=("messages", 5), keep=("messages", 4), trim_tokens_to_summarize=1_000,
+    )
+    messages = _conversation()
+    _, result = _sent(middleware, messages)
+    event = result.command.update["_summarization_event"]
+
+    grown = messages + _conversation()[2:]
+    _, again = _sent(middleware, grown, state={"messages": grown, "_summarization_event": event})
+
+    assert hasattr(again, "command")

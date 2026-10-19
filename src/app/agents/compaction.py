@@ -41,6 +41,20 @@ _PATH_ARGUMENTS = ("relative_path", "path", "file_path")
 
 MOST_FILES_NAMED = 40
 
+#: The most of the opening turn carried, in characters: its last message - the
+#: request - always whole, the ones before it only while they fit. Measured
+#: live: carrying a 27,000-character snapshot of the files at the stage's start
+#: as well as the request left a compacted conversation so near the trigger
+#: that one fix stage was compacted 10 times in 28 calls. The project memory
+#: hands every call the files as they are now.
+MOST_CARRIED_CHARACTERS = 48_000
+
+#: Messages a compacted conversation must gain past its kept tail before it is
+#: compacted again. Its kept tail sits near the trigger, so it fired again two
+#: calls later; a request too large for the window is still compacted at once
+#: (the summariser's own overflow fallback).
+NEW_MESSAGES_BEFORE_COMPACTING_AGAIN = 8
+
 _THE_WORK_SO_FAR = "What follows is the latest of this stage's work, to be summarised."
 
 
@@ -112,9 +126,13 @@ class RequestKeepingSummarization(SummarizationMiddleware):
             turn = 0
             while turn < len(rest) and getattr(rest[turn], "type", None) in ("human", "system"):
                 turn += 1
-            request = "\n\n".join(
-                _without_memory(message) for message in rest[:turn] if getattr(message, "type", None) == "human"
-            )
+            opening = [_without_memory(m) for m in rest[:turn] if getattr(m, "type", None) == "human"]
+            carried: list[str] = []
+            for text in reversed(opening):
+                if carried and sum(map(len, carried)) + len(text) > MOST_CARRIED_CHARACTERS:
+                    continue
+                carried.insert(0, text)
+            request = "\n\n".join(carried)
             rest = rest[turn:]
         for path in _files_written(rest):
             if path not in files:
@@ -134,6 +152,16 @@ class RequestKeepingSummarization(SummarizationMiddleware):
             rest, max_tokens=room, token_counter=self.token_counter, strategy="last", allow_partial=True,
         )
         return [opening, *latest]
+
+    def _should_summarize(self, messages: list[AnyMessage], total_tokens: int) -> bool:
+        if not super()._should_summarize(messages, total_tokens):
+            return False
+        if messages and getattr(messages[0], "type", None) == "human" and self._is_summary_message(messages[0]):
+            keep = getattr(self._lc_helper, "keep", None)
+            kept = keep[1] if isinstance(keep, tuple) and len(keep) == 2 and keep[0] == "messages" else 0
+            if len(messages) - 1 < int(kept) + NEW_MESSAGES_BEFORE_COMPACTING_AGAIN:
+                return False
+        return True
 
     def _create_summary(self, messages_to_summarize: list[AnyMessage]) -> str:
         return super()._create_summary(self._prepare(messages_to_summarize))

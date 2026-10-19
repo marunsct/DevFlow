@@ -326,8 +326,10 @@ test that fails on the old code:
   was cancelled at 00:51 JST (LF.40: its specification planned server-only column types for a product tested
   on the file database; not a measurement). run-ffa6599b (00:56 JST) was cancelled at 15 min for LF.41 (the layout repair named the
   served files without their folder). run-46d7cb71 (01:17 JST) was cancelled at 29 min for LF.42 (the review undid the
-  file-database fallback). **The gate run is run-e601377f**, started 01:53 JST on 7b1a4f2b (LF.42), LF.43 deployed into it at 02:36 JST, LF.44 at 03:25, LF.45-LF.47 at 03:55, LF.48 at 04:10, LF.49-LF.50 at 04:58 JST: `tests/brief_medium.md`,
-  `DELIVERY=fast FRONTIER=false`, compared with the baselines by `kpi_ledger.py compare` when it ends.
+  file-database fallback). run-e601377f (the findings run: 8 mid-run deploys, LF.43-LF.55) was cancelled at 05:59 JST 2026-10-20 after its first real
+  acceptance result - the product's own import error (`models.user` that does not exist) stops its service; KPIs in `data/kpi/`.
+  **Clean gate run 1 is run-01a1ab9c**, started 06:00 JST on a39807de: `tests/brief_medium.md`, `DELIVERY=fast FRONTIER=false`;
+  gate run 2 follows it on the same code, then `kpi_ledger.py compare` against the baselines, then group 2.
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).

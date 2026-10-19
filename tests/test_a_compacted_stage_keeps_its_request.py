@@ -32,8 +32,13 @@ BRIEF = (
 )
 
 
+#: A stage opens with more than one message of its own: measured live, the files
+#: as they stood when it started, then the defect it is to fix.
+FILES_AT_START = "The project's files as they stood when this stage started:\n" + "shop/src/App.tsx: export const App = () => null;\n" * 200
+
+
 def _conversation() -> list:
-    messages: list = [HumanMessage(content=BRIEF, id="opening")]
+    messages: list = [HumanMessage(content=FILES_AT_START, id="files"), HumanMessage(content=BRIEF, id="opening")]
     for n in range(12):
         messages.append(AIMessage(content=f"Writing part {n}.", id=f"ai{n}", tool_calls=[{
             "id": f"call{n}", "name": "write_artifact",
@@ -87,6 +92,12 @@ def test_the_request_is_carried_whole(compacted):
     assert sum("Fix defect 17" in str(m.content) for m in sent) == 1
 
 
+def test_every_message_of_the_opening_turn_is_carried(compacted):
+    """The defect brief was the second of the stage's opening messages, and the first kept was the other."""
+    sent, _ = compacted
+    assert sent[0].content.index(FILES_AT_START) < sent[0].content.index(BRIEF)
+
+
 def test_the_summary_says_what_was_done(compacted):
     sent, _ = compacted
     assert "too long to summarize" not in sent[0].content
@@ -112,7 +123,7 @@ def test_a_second_compaction_still_carries_it(tmp_path):
 
 def test_the_words_it_adds_hold_to_the_house_rules(compacted):
     sent, _ = compacted
-    added = sent[0].content.replace(BRIEF, "")
+    added = sent[0].content.replace(BRIEF, "").replace(FILES_AT_START, "")
     assert not BANNED.search(added)
 
 

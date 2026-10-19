@@ -98,18 +98,24 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         """What the summariser is handed; records the request and the files for the message."""
         self._kept = None
         request, files, earlier, rest = "", [], "", list(messages)
-        for index, message in enumerate(rest):
-            if getattr(message, "type", None) != "human":
-                continue
-            if self._is_summary_message(message):
-                kwargs = message.additional_kwargs or {}
-                request = str(kwargs.get(KEPT_REQUEST) or "")
-                files = list(kwargs.get(FILES_WRITTEN) or [])
-                earlier = str(kwargs.get(SUMMARY) or "")
-            else:
-                request = _without_memory(message)
-            rest = rest[:index] + rest[index + 1:]
-            break
+        if rest and getattr(rest[0], "type", None) == "human" and self._is_summary_message(rest[0]):
+            kwargs = rest[0].additional_kwargs or {}
+            request = str(kwargs.get(KEPT_REQUEST) or "")
+            files = list(kwargs.get(FILES_WRITTEN) or [])
+            earlier = str(kwargs.get(SUMMARY) or "")
+            rest = rest[1:]
+        else:
+            # The stage's whole opening turn, every message of it before the
+            # model's first reply: measured live, a stage opens with the files
+            # as they stood, then the defect it is to fix - and keeping only
+            # the first message kept the files and lost the defect.
+            turn = 0
+            while turn < len(rest) and getattr(rest[turn], "type", None) in ("human", "system"):
+                turn += 1
+            request = "\n\n".join(
+                _without_memory(message) for message in rest[:turn] if getattr(message, "type", None) == "human"
+            )
+            rest = rest[turn:]
         for path in _files_written(rest):
             if path not in files:
                 files.append(path)

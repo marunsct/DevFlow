@@ -624,6 +624,8 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         from app.tools.sandbox import SandboxExecutor
 
         command, working_directory, moved = _a_cd_taken_as_the_working_directory(command, working_directory)
+        command, saved = _code_on_the_command_line_as_a_file(command, repo_root, working_directory)
+        moved = " ".join(part for part in (moved, saved) if part)
         held_back = _a_look_with_the_looking_tools_withheld(command, repo_root, working_directory)
         if held_back:
             return {"error": held_back}
@@ -640,6 +642,69 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
 
     run_terminal_command.description = with_the_network_as_it_is(run_terminal_command.description)
     return run_terminal_command
+
+
+#: Interpreters whose code on the command line is saved to a file and run from it,
+#: by the flags that take the code: (extension, whether it prints the value).
+_CODE_FLAGS: dict[str, dict[str, tuple[str, bool]]] = {
+    "python": {"-c": (".py", False)},
+    "node": {"-e": (".cjs", False), "--eval": (".cjs", False), "-p": (".cjs", True), "--print": (".cjs", True)},
+}
+
+
+def _the_interpreter(program: str) -> str:
+    name = os.path.basename(program)
+    if re.fullmatch(r"python(?:3(?:\.\d+)?)?", name):
+        return "python"
+    return name
+
+
+def _code_on_the_command_line_as_a_file(
+    command: Any, repo_root: str, working_directory: str | None
+) -> tuple[Any, str]:
+    """`python -c CODE` / `node -e CODE` as the same interpreter run on a `tmp-` file holding CODE; else unchanged and "".
+
+    The owner's decision, 2026-10-20: code on the command line was refused ("Put
+    the code in a file ... named `tmp-<what it checks>`") - 10 refusals on one
+    run, 35 on another, each a model call, and the advice was rarely followed.
+    The file is saved where the advice said, in the project, so what ran can
+    be read afterwards; a `tmp-` name is swept before the next test round and
+    at release (`file_kinds.is_scratch`).
+    """
+    import hashlib
+
+    if not isinstance(command, list) or len(command) < 3:
+        return command, ""
+    flags = _CODE_FLAGS.get(_the_interpreter(str(command[0])))
+    if not flags:
+        return command, ""
+    at = next((i for i, part in enumerate(command[1:], 1) if str(part) in flags), None)
+    if at is None or at + 1 >= len(command):
+        return command, ""
+    extension, prints = flags[str(command[at])]
+    code = str(command[at + 1])
+    if prints:
+        code = f"console.log(eval({json.dumps(code)}));"
+    try:
+        from app.tools.repository import pinned_project_directory
+
+        root = Path(repo_root)
+        here = root / str(working_directory or "").strip().strip("/")
+        project = pinned_project_directory(root) if not working_directory else None
+        folder = (root / project) if project and (root / project).is_dir() else here
+        name = f"tmp-inline-{hashlib.sha1(code.encode()).hexdigest()[:8]}{extension}"
+        target = folder / name
+        target.write_text(code.rstrip("\n") + "\n", encoding="utf-8")
+        shown = os.path.relpath(target, here).replace(os.sep, "/")
+    except Exception:  # noqa: BLE001 - the command goes on as it was, and is refused as before
+        logger.debug("Could not save code from the command line", exc_info=True)
+        return command, ""
+    rewritten = [str(part) for part in command[:at]] + [shown] + [str(part) for part in command[at + 2:]]
+    recorded = os.path.relpath(target, root).replace(os.sep, "/")
+    return rewritten, (
+        f"Ran the code you passed on the command line from `{recorded}`, saved there so what ran can be "
+        "read afterwards; a `tmp-` file is removed before the next test round and at release."
+    )
 
 
 #: Shell operators a `cd` may be followed by before its command.

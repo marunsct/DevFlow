@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen, ShieldCheck, CheckSquare } from 'lucide-react';
 import { api, createRun, deleteRun, startRun, getFrontierStatus, getOutcomes, uploadCodebase, type FrontierStatus, type RunForecast } from '../api';
@@ -42,6 +42,8 @@ export const Home: React.FC = () => {
   // Whether the stages that need judgement use the frontier model. Off, every
   // stage runs on the local build model.
   const [useFrontierModel, setUseFrontierModel] = useState<boolean>(true);
+  // Set once the server says no frontier model is configured. See the check below.
+  const noFrontierModel = useRef(false);
   // Minutes a review gate waits for a person before approving itself; blank
   // waits however long it takes.
   const [approvalTimeout, setApprovalTimeout] = useState<string>('');
@@ -63,7 +65,7 @@ export const Home: React.FC = () => {
     readRunDefaults().then((saved) => {
       if (!live || !saved) return;
       if (saved.delivery_mode) setDeliveryMode(saved.delivery_mode);
-      if (saved.use_frontier_model !== undefined) setUseFrontierModel(saved.use_frontier_model);
+      if (saved.use_frontier_model !== undefined) setUseFrontierModel(saved.use_frontier_model && !noFrontierModel.current);
       if (saved.unattended !== undefined) setUnattended(saved.unattended);
       if (saved.auto_approve !== undefined) setAutoApprove(saved.auto_approve);
       if (saved.approval_timeout_minutes) setApprovalTimeout(String(saved.approval_timeout_minutes));
@@ -115,6 +117,23 @@ export const Home: React.FC = () => {
   const [criteriaCount, setCriteriaCount] = useState<number | null>(null);
   // Whether the frontier model is configured and answering, asked when the box is ticked.
   const [frontier, setFrontier] = useState<FrontierStatus | null>(null);
+  // With no frontier model configured the box starts unticked (owner, 2026-10-20):
+  // a ticked box could only block the start. Asked once; a saved default cannot
+  // tick it back. One that is configured and not answering stays ticked and says why.
+  useEffect(() => {
+    let live = true;
+    getFrontierStatus()
+      .then((found) => {
+        if (!live || !found || found.configured) return;
+        noFrontierModel.current = true;
+        setFrontier(found);
+        setUseFrontierModel(false);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   useEffect(() => {
     if (!useFrontierModel) return;
     let live = true;

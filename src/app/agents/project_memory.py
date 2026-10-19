@@ -402,23 +402,6 @@ def changes_since(snapshot: dict[str, str], now: dict[str, str]) -> str:
     return ("[Project memory update]\n" + "\n".join(lines)) if lines else ""
 
 
-def _the_visit_s_memory() -> dict | None:
-    """Where this stage visit keeps the memory it first took; None outside a stage.
-
-    Every approved write rebuilds the stage's agent, and with it this
-    middleware. Measured live: each new instance took the memory afresh, and
-    the opening request changed 18 times in one fix stage's 33 calls - a
-    prefix-cache miss for the whole request each time. Kept per visit in
-    `app.agents.stage_memory`, which an approval survives and a restart of the
-    worker does not, so a resumed run still takes it anew.
-    """
-    from app.agents import stage_memory
-
-    if stage_memory.current_stage_key() is None:
-        return None
-    return stage_memory.store("project memory as this visit first took it", {})
-
-
 def build_project_memory_middleware(repo_root: str) -> Any:
     """Middleware that hands each call the project memory, and answers a read of what it already holds."""
     from langchain.agents.middleware import AgentMiddleware
@@ -445,16 +428,8 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                 opening = next((str(getattr(m, "content", "") or (m.get("content") if isinstance(m, dict) else ""))
                                 for m in messages), "")
                 if self._snapshot is None:
-                    kept = _the_visit_s_memory()
-                    if kept is not None and kept.get("snapshot") is not None:
-                        self._snapshot, self._held = kept["snapshot"], kept["held"]
-                        self._snapshot_files, self._first_held = kept["files"], kept["first_held"]
-                    else:
-                        self._snapshot, self._held = render(repo_root, budget_for(getattr(request, "model", None)), opening)
-                        self._snapshot_files = dict(current(repo_root))
-                        if kept is not None:
-                            kept.update(snapshot=self._snapshot, held=self._held,
-                                        files=self._snapshot_files, first_held=self._first_held)
+                    self._snapshot, self._held = render(repo_root, budget_for(getattr(request, "model", None)), opening)
+                    self._snapshot_files = dict(current(repo_root))
                 memory = self._snapshot
                 # Each file as this visit first held it, so a read of one that
                 # changed since - by this stage's own edit - is answered with

@@ -58,15 +58,26 @@ describe('the frontier model', () => {
     expect(await screen.findByText('Ready: claude-x on anthropic answers.')).toBeTruthy();
   });
 
-  it('blocks the start with the reason when it is not configured or not answering', async () => {
-    mocks.getFrontierStatus.mockResolvedValue({ configured: false, active: false, model: '', provider: '', problem: 'No frontier model is configured.' });
+  it('blocks the start with the reason when it is configured and not answering', async () => {
+    mocks.getFrontierStatus.mockResolvedValue({ configured: true, active: false, model: 'claude-x', provider: 'anthropic', problem: 'The frontier model claude-x on anthropic could not be reached.' });
     show();
-    expect(await screen.findByText(/No frontier model is configured\./)).toBeTruthy();
+    expect(await screen.findByText(/could not be reached\./)).toBeTruthy();
 
     await userEvent.type(screen.getByLabelText(/Or write the brief here/), 'A brief');
     await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
 
     expect(mocks.createRun).not.toHaveBeenCalled();
-    expect(screen.getAllByText(/No frontier model is configured\./).length).toBeGreaterThan(1);
+    expect(screen.getAllByText(/could not be reached\./).length).toBeGreaterThan(1);
+  });
+
+  it('starts unticked when no frontier model is configured, and says why when ticked', async () => {
+    mocks.getFrontierStatus.mockResolvedValue({ configured: false, active: false, model: '', provider: '', problem: 'No frontier model is configured.' });
+    show();
+    // Looked up each time: the page renders its checkboxes afresh.
+    const box = () => screen.getByLabelText(/Use the frontier model/) as HTMLInputElement;
+    await waitFor(() => expect(box().checked).toBe(false));
+
+    await userEvent.click(box());
+    expect(await screen.findByText(/No frontier model is configured\./)).toBeTruthy();
   });
 });

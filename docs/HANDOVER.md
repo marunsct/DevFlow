@@ -1097,12 +1097,38 @@ scratchpads don't travel between agents.
 
 **The owner's decisions - do not change these on your own:**
 
+**Decided by the owner on 2026-10-20 (05:30 JST), on the agent's recommendations:**
+
+- **The gate measurement:** run-e601377f (8 mid-run deploys, LF.43-LF.50) is a
+  findings run, not the "before". Once it has its first real acceptance result
+  it is cancelled, and two clean `tests/brief_medium.md` gate runs (fast, local
+  only) are run one after the other on the current code.
+- **The thinking budget:** low reasoning (or thinking off) for fix and
+  acceptance-writing stages, planning and review as now - built and measured as
+  group 2's M.4 against the clean gate runs, not switched on mid-gate.
+- **`python -c` / `node -e`:** no longer refused. The harness saves the snippet
+  as a recorded `tmp-` file in the project and runs that file.
+- **LF.46** (the memory kept across agent rebuilds) is removed: it moved no
+  measured number.
+- **Recording the specification's model calls** in the transcript: after the
+  gate comparison, with a ledger note (it changes what the KPIs count).
+- **Kept as they are:** a regression test for every fix (LF.49 made the reason
+  accurate); `tests/brief_medium.md` unchanged (its repeated criteria stay, for
+  comparison with the baselines); the severity policy, browser coverage and the
+  CLI UI/UX consult; the sandbox's configured memory limit (LF.50 gives Node
+  packs 4 GB).
+- **Yes:** `loop.sh nightly` in cron; the start page leaves "use the frontier
+  model" unticked when no frontier model is configured.
+- **Group 2** starts after the two clean gate runs.
+
+The decisions below that these settle are marked; the rest stand.
+
 - **The thinking budget** (thinking effort / thinking mode per role). This is
   the biggest time lever (§2.4).
 - **Whether every fix must add a regression test.** A run-7b219f82 attempt
   failed over a code-review defect two fixers left without one.
 - **The CRITERION severity policy** (minor vs blocking grading).
-- **The `node -e` policy.** One-off command-line code is refused.
+- ~~**The `node -e` policy.**~~ Settled 2026-10-20: run from a recorded `tmp-` file.
 - **Whether a browser test must cover every action the brief names.**
 - **Whether CLI products get the UI/UX consultation.**
 - **Deleting the `harness-test` account** when the loop ends.

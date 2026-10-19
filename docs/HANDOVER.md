@@ -333,7 +333,7 @@ test that fails on the old code:
   **Both gate runs measure one code version (a39807de):** fixes found meanwhile are pushed but deployed only after gate
   run 2, unless a bug would spoil the measurement. LF.56/LF.57 were deployed into gate run 1 at 07:35 JST
   (73aaa5ef): the pip false positive kept the product from starting; the run was rewound to its round-1 test round.
-  Gate run 2 runs on 73aaa5ef.
+  Gate run 2 runs on 73aaa5ef. Pushed, held for deploy after gate run 2: LF.58 (loop only), LF.59.
 - **A bug in a live run is fixed, then the run rewound - not cancelled and started again (owner, 2026-10-20):**
   `loop.sh rewind --pause-only` → `BOUNDARY_WAIT=0 loop.sh deploy` → `loop.sh rewind <stage> [run] [at-or-before]`.
   Rewind to the earliest stage whose behaviour the fix changes (a specification fix: `principal_architect`; the

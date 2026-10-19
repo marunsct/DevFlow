@@ -153,9 +153,10 @@ def regression_defects(state: Any, lost: list[str], after: Any = None) -> list[A
     return defects
 
 
-#: How many of the batch's files the language service reads at the gate, and
-#: how many of its findings become defects. Each file costs about a second.
-MOST_FILES_UNDERLINED = 12
+#: How many of the batch's files the language service reads one at a time at
+#: the gate - each costs about a second - and how many of its findings become
+#: defects. Python files are not counted: one Pyright run reads them all.
+MOST_FILES_UNDERLINED = 24
 MOST_UNDERLINED_DEFECTS = 6
 
 
@@ -212,7 +213,7 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
     certain, and named by file and line. See `app.analysis.language_service`.
     """
     from app.agents.specialists import ReportedDefect
-    from app.analysis.language_service import ALL_SUFFIXES, underlined_any
+    from app.analysis.language_service import ALL_SUFFIXES, python_underlined_together, underlined_any
 
     try:
         from app.tools.repository import pinned_project_directory
@@ -221,26 +222,41 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
     except Exception:  # noqa: BLE001
         pinned = None
     project = Path(root) / pinned if pinned else None
-    from app.analysis.file_kinds import is_scratch
+    from app.analysis.file_kinds import classify_file, is_scratch
 
     # A stage's throwaway script is not the product, and the harness removes
     # it: one run's round raised two defects against `tmp_test_run.js` and
     # `tmp_import_from_tests.mjs`, closed only because they were gone by then.
-    files = [
-        p for p in ci.changed_since(root, since)
-        if p.lower().endswith(ALL_SUFFIXES) and not is_scratch(Path(p).name)
-    ][:MOST_FILES_UNDERLINED]
-    defects = []
+    # The product's own code first, so the cap falls on tests and configuration
+    # rather than on whatever sorts last by name.
+    files = sorted(
+        (p for p in ci.changed_since(root, since)
+         if p.lower().endswith(ALL_SUFFIXES) and not is_scratch(Path(p).name)),
+        key=lambda p: classify_file(p) != "application",
+    )
+    findings: dict[str, list[dict]] = {}
+    by_project: dict[Path, list[str]] = {}
     for relative in files:
+        if relative.lower().endswith(".py"):
+            by_project.setdefault(project or (Path(root) / relative).parent, []).append(relative)
+    for where, group in by_project.items():
+        try:
+            together = python_underlined_together(where, [Path(root) / relative for relative in group])
+        except Exception:  # noqa: BLE001 - a check that cannot run finds nothing
+            together = None
+        for relative in group:
+            findings[relative] = (together or {}).get(Path(root) / relative) or []
+    for relative in [p for p in files if not p.lower().endswith(".py")][:MOST_FILES_UNDERLINED]:
         target = Path(root) / relative
         try:
             found = underlined_any(root, target, target.read_text(encoding="utf-8", errors="replace"), project)
         except Exception:  # noqa: BLE001 - a check that cannot run finds nothing
             found = None
-        if found is None:
-            continue
+        findings[relative] = found.here if found is not None else []
+    defects = []
+    for relative in files:
         grouped: dict[str, list[dict]] = {}
-        for finding in found.here:
+        for finding in findings.get(relative) or []:
             grouped.setdefault(finding["message"], []).append(finding)
         for message, where in grouped.items():
             lines = ", ".join(str(f["line"]) for f in where[:6])
@@ -249,7 +265,7 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
                 severity="major",
                 reproduction_steps=f"Read {relative} at line {lines}: `{where[0]['text']}`.",
                 expected_behavior="Every name the code uses is defined or imported, and every import names something its module exports.",
-                actual_behavior=f"{message} (the TypeScript language service, as an IDE would underline it)",
+                actual_behavior=f"{message} ({'Pyright' if relative.lower().endswith('.py') else 'the TypeScript language service'}, as an IDE would underline it)",
                 affected_files=[relative],
                 owner=_owner_of(state, ""),
             ))

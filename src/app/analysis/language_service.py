@@ -428,27 +428,14 @@ def _a_local_import(message: str, project: Path) -> bool:
     return (project / top).is_dir() or (project / f"{top}.py").is_file() or (project / "src" / top).is_dir()
 
 
-def python_underlined(repo_root: str | Path, target: Path, content: str, project: Path | None = None) -> Underlined | None:
-    """Pyright's certain findings for a Python file already written as `content`; None when it cannot run.
-
-    Pyright reads files from disk, so this answers for the file as written: a
-    caller asking about content not yet on disk gets None.
-    """
+def _pyright_diagnostics(project: Path) -> list[dict] | None:
+    """Pyright's diagnostics for every file of `project`, from one run; None when it cannot run."""
+    import os
     import tempfile
 
-    if target.suffix.lower() != ".py":
-        return None
     node, pyright = shutil.which("node"), _pyright()
     if node is None or pyright is None:
         return None
-    try:
-        if target.read_text(encoding="utf-8", errors="replace") != content:
-            return None
-    except OSError:
-        return None
-    import os
-
-    project = project or target.parent
     try:
         with tempfile.TemporaryDirectory() as scratch:
             # Outside the product, so nothing is added to it; Pyright takes
@@ -472,23 +459,55 @@ def python_underlined(repo_root: str | Path, target: Path, content: str, project
         output = result.stdout or "{}"
         found = json.loads(output[output.find("{"):] if "{" in output else "{}")
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing
-        logger.debug("Pyright could not run on %s", target, exc_info=True)
+        logger.debug("Pyright could not run on %s", project, exc_info=True)
+        return None
+    return list(found.get("generalDiagnostics") or [])
+
+
+def _kept(diagnostic: dict, project: Path) -> tuple[int, str] | None:
+    """The line and message of a finding that fails when the code runs, or None."""
+    if diagnostic.get("rule") not in _PYTHON_RULES or diagnostic.get("severity") != "error":
+        return None
+    message = str(diagnostic.get("message") or "").strip()
+    if not _a_local_import(message, project):
+        return None
+    return int(((diagnostic.get("range") or {}).get("start") or {}).get("line", 0)) + 1, message
+
+
+def _finding(diagnostic: dict, line: int, message: str, lines: list[str]) -> dict:
+    text = lines[line - 1].strip()[:160] if 0 < line <= len(lines) else ""
+    return {"line": line, "code": diagnostic.get("rule"), "message": message, "text": text}
+
+
+def python_underlined(repo_root: str | Path, target: Path, content: str, project: Path | None = None) -> Underlined | None:
+    """Pyright's certain findings for a Python file already written as `content`; None when it cannot run.
+
+    Pyright reads files from disk, so this answers for the file as written: a
+    caller asking about content not yet on disk gets None.
+    """
+    if target.suffix.lower() != ".py":
+        return None
+    try:
+        if target.read_text(encoding="utf-8", errors="replace") != content:
+            return None
+    except OSError:
+        return None
+    project = project or target.parent
+    diagnostics = _pyright_diagnostics(project)
+    if diagnostics is None:
         return None
     wanted = target.resolve()
     stem = target.stem
     lines = content.splitlines()
     here, elsewhere = [], []
-    for diagnostic in found.get("generalDiagnostics") or []:
-        if diagnostic.get("rule") not in _PYTHON_RULES or diagnostic.get("severity") != "error":
+    for diagnostic in diagnostics:
+        kept = _kept(diagnostic, project)
+        if kept is None:
             continue
-        message = str(diagnostic.get("message") or "").strip()
-        if not _a_local_import(message, project):
-            continue
-        line = int(((diagnostic.get("range") or {}).get("start") or {}).get("line", 0)) + 1
+        line, message = kept
         file = Path(str(diagnostic.get("file") or ""))
         if file.resolve() == wanted:
-            text = lines[line - 1].strip()[:160] if 0 < line <= len(lines) else ""
-            here.append({"line": line, "code": diagnostic.get("rule"), "message": message, "text": text})
+            here.append(_finding(diagnostic, line, message, lines))
         elif diagnostic.get("rule") == "reportAttributeAccessIssue" and "unknown import symbol" in message:
             try:
                 source = file.read_text(encoding="utf-8", errors="replace").splitlines()[line - 1]
@@ -500,6 +519,35 @@ def python_underlined(repo_root: str | Path, target: Path, content: str, project
     return Underlined(here=here, elsewhere=elsewhere)
 
 
+def python_underlined_together(project: Path, targets: list[Path]) -> dict[Path, list[dict]] | None:
+    """Each Python file's own findings, from one Pyright run over `project`; None when it cannot run.
+
+    Pyright reads the whole project whichever file it is asked about, so asking
+    file by file read it once a file: measured at the gate, 2 s a file and 45 s
+    for one batch of 22 - which is why the gate read only the first 12 by name,
+    and never read the router three test rounds then failed on, one missing
+    name a round.
+    """
+    diagnostics = _pyright_diagnostics(project)
+    if diagnostics is None:
+        return None
+    wanted = {target.resolve(): target for target in targets}
+    found: dict[Path, list[dict]] = {target: [] for target in targets}
+    lines_of: dict[Path, list[str]] = {}
+    for diagnostic in diagnostics:
+        kept = _kept(diagnostic, project)
+        target = wanted.get(Path(str(diagnostic.get("file") or "")).resolve())
+        if kept is None or target is None:
+            continue
+        if target not in lines_of:
+            try:
+                lines_of[target] = target.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                lines_of[target] = []
+        found[target].append(_finding(diagnostic, *kept, lines_of[target]))
+    return found
+
+
 def underlined_any(repo_root: str | Path, target: Path, content: str, project: Path | None = None) -> Underlined | None:
     """The language service for this file's language, or None when there is none here."""
     if target.suffix.lower() == ".py":
@@ -508,5 +556,5 @@ def underlined_any(repo_root: str | Path, target: Path, content: str, project: P
 
 
 __all__ = [
-    "BOTH", "BROWSER", "NODE", "SUFFIXES", "Underlined", "python_underlined", "runs_in", "underlined", "underlined_any",
+    "BOTH", "BROWSER", "NODE", "SUFFIXES", "Underlined", "python_underlined", "python_underlined_together", "runs_in", "underlined", "underlined_any",
 ]

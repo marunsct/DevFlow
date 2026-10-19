@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { getUsage } from '../api';
+import { Link } from 'react-router-dom';
+import { getKpis, getUsage } from '../api';
+import { CARD_KPIS, kpiLabel, kpiValue } from '../lib/kpis';
 import type { RunUsage, StageUsage } from '../types';
 import { describeStage } from '../lib/activity';
 import { tokens } from '../lib/runSummary';
@@ -37,8 +39,10 @@ const COLUMNS: Column[] = [
  */
 export const AuditTable: React.FC<{ runId: string; refreshKey: string }> = ({ runId, refreshKey }) => {
   const [usage, setUsage] = useState<RunUsage | null | undefined>(undefined);
+  const [kpis, setKpis] = useState<Record<string, unknown> | null>(null);
   useEffect(() => {
     let live = true;
+    getKpis(runId).then((found) => live && setKpis(found)).catch(() => undefined);
     getUsage(runId)
       .then((found) => live && setUsage(found))
       .catch(() => live && setUsage(null));
@@ -59,6 +63,19 @@ export const AuditTable: React.FC<{ runId: string; refreshKey: string }> = ({ ru
   );
   return (
     <div className="h-full overflow-auto" tabIndex={0} role="region" aria-label="Usage by stage">
+      {kpis && (
+        <div className="flex flex-wrap items-start gap-x-6 gap-y-2 border-b border-border/40 px-3 py-2">
+          <dl className="flex flex-wrap gap-x-6 gap-y-2">
+            {CARD_KPIS.filter((key) => key in kpis).map((key) => (
+              <div key={key}>
+                <dt className="text-xs text-text-muted">{kpiLabel(key)}</dt>
+                <dd className="text-sm text-text-primary tabular-nums">{kpiValue(key, kpis[key])}</dd>
+              </div>
+            ))}
+          </dl>
+          <Link to={`/runs/compare?a=${runId}`} className="ml-auto text-xs font-medium text-primary hover:underline">Compare with another run</Link>
+        </div>
+      )}
       <table className="w-full text-xs tabular-nums">
         <caption className="sr-only">Time, tokens and failures per stage, from the run's transcript; the worst of each column is marked</caption>
         <thead className="sticky top-0 bg-surface">

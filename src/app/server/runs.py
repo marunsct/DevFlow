@@ -532,6 +532,35 @@ def create_runs_router(
             total=runner.run_store.count(tenant),
         )
 
+    @runs.get("/compare")
+    async def compare_runs(
+        a: str, b: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """Two runs' KPIs side by side, each change marked worse by the ledger's rule (plan UI-S6).
+
+        Declared before `/{run_id}`, which would otherwise take "compare" for a run.
+        """
+        from app.observability.run_kpis import kpis, worse
+        from app.observability.transcript import read_transcript
+
+        _require_run(runner, a, user)
+        _require_run(runner, b, user)
+        first, second = await asyncio.gather(
+            asyncio.to_thread(read_transcript, a), asyncio.to_thread(read_transcript, b)
+        )
+        left, right = kpis(first), kpis(second)
+        rows = []
+        for key in sorted(set(left) & set(right)):
+            x, y = left[key], right[key]
+            if isinstance(x, bool) or isinstance(y, bool) or not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+                continue
+            rows.append({
+                "key": key, "a": x, "b": y,
+                "change": None if x == 0 else round((y - x) / abs(x), 4),
+                "worse": worse(key, float(x), float(y)),
+            })
+        return {"a": a, "b": b, "rows": rows}
+
     @runs.get("/outcomes")
     async def run_outcomes(user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
         """Finished runs with their time and score, and the typical time per delivery mode."""
@@ -577,6 +606,18 @@ def create_runs_router(
         _require_run(runner, run_id, user)
         entries = await asyncio.to_thread(read_transcript, run_id)
         return RunUsage(stages=stage_usage(entries), recent_calls=recent_calls(entries))
+
+    @runs.get("/{run_id}/kpis")
+    async def get_kpis(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """The run's KPIs from its transcript, as the loop's ledger keeps them (plan UI-S6)."""
+        from app.observability.run_kpis import kpis
+        from app.observability.transcript import read_transcript
+
+        _require_run(runner, run_id, user)
+        entries = await asyncio.to_thread(read_transcript, run_id)
+        return {"run": run_id, **kpis(entries)}
 
     @runs.get("/{run_id}/transcript")
     async def download_transcript(

@@ -316,6 +316,28 @@ export const getUsage = async (runId: string): Promise<RunUsage> => {
   return response.data;
 };
 
+/** A run's KPIs from its transcript, as the loop's ledger keeps them (plan UI-S6). */
+export const getKpis = async (runId: string): Promise<Record<string, unknown>> => {
+  const response = await api.get(`/runs/${runId}/kpis`);
+  return response.data;
+};
+
+export interface KpiRow {
+  key: string;
+  a: number;
+  b: number;
+  /** (b - a) / a, or null when a is 0. */
+  change: number | null;
+  /** A regression by the ledger's rule. */
+  worse: boolean;
+}
+
+/** Two runs' KPIs side by side, each change marked worse by the ledger's rule. */
+export const compareRuns = async (a: string, b: string): Promise<{ a: string; b: string; rows: KpiRow[] }> => {
+  const response = await api.get('/runs/compare', { params: { a, b } });
+  return response.data;
+};
+
 /** The run's whole transcript as text: every model call, reply, tool call and result. */
 export const downloadTranscript = async (runId: string): Promise<void> => {
   const response = await api.get(`/runs/${runId}/transcript`, { responseType: 'blob' });

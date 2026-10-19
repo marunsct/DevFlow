@@ -6,6 +6,7 @@ import { Layout } from './components/Layout';
 import { Home } from './pages/Home';
 import { RunDashboard } from './pages/RunDashboard';
 import { RunList } from './pages/RunList';
+import { Compare } from './pages/Compare';
 import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
 import React, { useEffect, useState } from 'react';
@@ -105,6 +106,7 @@ function App() {
           >
             <Route index element={<Home />} />
             <Route path="runs" element={<RunList />} />
+            <Route path="runs/compare" element={<Compare />} />
             <Route path="runs/:runId" element={<RunDashboard />} />
             <Route path="settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />

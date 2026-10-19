@@ -72,6 +72,7 @@ export const CommandPalette: React.FC<{
       { id: 'start', title: 'Start a build', hint: 'Home', keywords: 'new run brief', run: go('/') },
       { id: 'runs', title: 'Runs', hint: 'Every run', keywords: 'list history', run: go('/runs') },
       { id: 'settings', title: 'Settings', hint: 'Models and keys', keywords: 'model provider', run: go('/settings') },
+      { id: 'compare', title: 'Compare two runs', hint: 'Their measures side by side', keywords: 'kpi ledger before after', run: go('/runs/compare') },
       {
         id: 'theme', title: 'Switch the theme', hint: 'Dark, light, high contrast, the system\'s', keywords: 'appearance colour color dark light',
         run: () => setAppearance({ theme: nextTheme(getAppearance().theme) }),

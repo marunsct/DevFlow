@@ -71,7 +71,8 @@ def test_a_paused_run_refuses_a_note_and_the_kpi_counts_applied_notes():
 
     source = inspect.getsource(runs)
     assert 'record.status in ("paused", "waiting_for_budget")' in source and "Resume it first" in source
-    kpi = (steering.__file__ and __import__("pathlib").Path(__file__).resolve().parents[1] / "scripts/loop/kpi.py").read_text()
+    # The KPI computation lives in the application (`scripts/loop/kpi.py` imports it).
+    kpi = (__import__("pathlib").Path(__file__).resolve().parents[1] / "src/app/observability/run_kpis.py").read_text()
     assert 'kind == "steering_applied"' in kpi and '"steering_notes"' in kpi
 
 

@@ -326,7 +326,7 @@ test that fails on the old code:
   was cancelled at 00:51 JST (LF.40: its specification planned server-only column types for a product tested
   on the file database; not a measurement). run-ffa6599b (00:56 JST) was cancelled at 15 min for LF.41 (the layout repair named the
   served files without their folder). run-46d7cb71 (01:17 JST) was cancelled at 29 min for LF.42 (the review undid the
-  file-database fallback). **The gate run is run-e601377f**, started 01:53 JST on 7b1a4f2b (LF.42): `tests/brief_medium.md`,
+  file-database fallback). **The gate run is run-e601377f**, started 01:53 JST on 7b1a4f2b (LF.42), LF.43 deployed into it at 02:36 JST: `tests/brief_medium.md`,
   `DELIVERY=fast FRONTIER=false`, compared with the baselines by `kpi_ledger.py compare` when it ends.
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).

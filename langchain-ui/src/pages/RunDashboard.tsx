@@ -21,6 +21,7 @@ import {
   rewindRun,
   cloneRun,
   downloadHandover,
+  downloadTranscript,
   startRun,
   type RewindPoint,
   getStreamTicket,
@@ -28,6 +29,7 @@ import {
 } from '../api';
 import { LogViewer } from '../components/LogViewer';
 import { LatestChange } from '../components/LatestChange';
+import { AuditTable } from '../components/AuditTable';
 import { Tabs } from '../ui';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { SteeringBox } from '../components/SteeringBox';
@@ -89,9 +91,9 @@ export const RunDashboard: React.FC = () => {
   // Kept in the address, so a link or a reload opens the same view and change.
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get('view');
-  type CentreTab = 'activity' | 'results' | 'log' | 'changes';
+  type CentreTab = 'activity' | 'results' | 'log' | 'changes' | 'audit';
   const centreTab: CentreTab =
-    viewParam === 'log' || viewParam === 'changes' || viewParam === 'results' ? viewParam : 'activity';
+    viewParam === 'log' || viewParam === 'changes' || viewParam === 'results' || viewParam === 'audit' ? viewParam : 'activity';
   const selectedChange = searchParams.get('change');
   const setCentreTab = (tab: CentreTab) => {
     const next = new URLSearchParams(searchParams);
@@ -608,6 +610,11 @@ export const RunDashboard: React.FC = () => {
             className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}>
             <Download className="h-3.5 w-3.5" /> Handover pack
           </button>
+          <button onClick={() => void downloadTranscript(runId!)}
+            title="Every model call, reply, tool call and result of the run, as text"
+            className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}>
+            <Download className="h-3.5 w-3.5" /> Transcript
+          </button>
           {!isTerminal && (
             <button onClick={handleCancel}
               className={`${actionButton} text-danger border-danger/30 hover:border-danger/60 hover:bg-danger/5`}>
@@ -807,6 +814,7 @@ export const RunDashboard: React.FC = () => {
                 label: <>Artifacts <span className="text-[11px] tabular-nums text-text-muted">{run.artifacts?.length ?? 0}</span></>,
                 content: <ArtifactList artifacts={run.artifacts} runId={runId!} />,
               },
+              { id: 'audit', label: 'Audit', content: <AuditTable runId={runId!} refreshKey={stageKey} /> },
             ]}
           />
         </div>

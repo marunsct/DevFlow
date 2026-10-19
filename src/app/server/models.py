@@ -247,6 +247,30 @@ class SprintView(BaseModel):
     attempt_history: list[str] = Field(default_factory=list, description="One line per attempt, when there was more than one.")
 
 
+class StageUsage(BaseModel):
+    """One stage's time, tokens and failures, from the run's transcript (plan BG.7)."""
+    model_config = ConfigDict(extra="forbid")
+
+    stage: str = Field(description="The stage's name; a stage that ran more than once is one row.")
+    wall_seconds: float = Field(description="From the stage's first record to its last.")
+    model_seconds: float = Field(description="Time spent waiting on model replies.")
+    model_calls: int = Field(description="Model replies.")
+    input_tokens: int = Field(description="Input tokens sent.")
+    cached_tokens: int = Field(description="Of those, tokens the server had cached.")
+    output_tokens: int = Field(description="Output tokens, reasoning included.")
+    lost_replies: int = Field(description="Replies cut off at the output limit with no text and no call kept.")
+    tool_calls: int = Field(description="Tool calls made.")
+    tool_failures: int = Field(description="Tool calls that failed or were refused.")
+    redundant_reads: int = Field(description="Reads answered with 'you already have this'.")
+
+
+class RunUsage(BaseModel):
+    """A run's usage by stage, in the order the stages first ran."""
+    model_config = ConfigDict(extra="forbid")
+
+    stages: list[StageUsage] = Field(default_factory=list, description="One row per stage; empty before the transcript has any.")
+
+
 class SprintsResponse(BaseModel):
     """A run's sprints, in plan order; only those attempted so far."""
     model_config = ConfigDict(extra="forbid")

@@ -51,6 +51,7 @@ from app.server.models import (
     RunListResponse,
     RunStatusResponse,
     RunSummary,
+    RunUsage,
     SprintsResponse,
     SpinnerResponse,
     StartRunRequest,
@@ -547,6 +548,37 @@ def create_runs_router(
         state = record.graph_state(runner.checkpointer)
         return SprintsResponse(
             sprints=sprint_views(state.get("sprint_plan"), state.get("sprint_attempts") or [])
+        )
+
+    @runs.get("/{run_id}/usage", response_model=RunUsage)
+    async def get_usage(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> RunUsage:
+        """Time, tokens and failures per stage, from the run's transcript (plan BG.7)."""
+        from app.observability.stage_usage import stage_usage
+        from app.observability.transcript import read_transcript
+
+        _require_run(runner, run_id, user)
+        entries = await asyncio.to_thread(read_transcript, run_id)
+        return RunUsage(stages=stage_usage(entries))
+
+    @runs.get("/{run_id}/transcript")
+    async def download_transcript(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> Response:
+        """The run's whole transcript as text: every model call, reply, tool call and result."""
+        from app.observability.transcript import render_transcript
+
+        _require_run(runner, run_id, user)
+        text = await asyncio.to_thread(render_transcript, run_id)
+        record_audit(
+            actor=user.username, tenant_id=user.tenant_id, action="run.transcript.download",
+            subject=run_id, detail={},
+        )
+        return Response(
+            content=text,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{run_id}-transcript.txt"'},
         )
 
     @runs.get("/{run_id}/wizard", response_model=WizardModel)

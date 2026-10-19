@@ -320,6 +320,12 @@ export interface RunSummary {
   updated_at: string | null;
 }
 
+/** A run's usage by stage, in the order the stages first ran. */
+export interface RunUsage {
+  /** One row per stage; empty before the transcript has any. */
+  stages: StageUsage[];
+}
+
 /** What the build model's server says of itself, read with one request for its status and never a model call (plan BG.5). */
 export interface ServerHealth {
   /** The server answered its status request (`/props`) when it was read. */
@@ -470,6 +476,32 @@ export interface SprintView {
 export interface SprintsResponse {
   /** The sprints attempted so far. */
   sprints: SprintView[];
+}
+
+/** One stage's time, tokens and failures, from the run's transcript (plan BG.7). */
+export interface StageUsage {
+  /** Of those, tokens the server had cached. */
+  cached_tokens: number;
+  /** Input tokens sent. */
+  input_tokens: number;
+  /** Replies cut off at the output limit with no text and no call kept. */
+  lost_replies: number;
+  /** Model replies. */
+  model_calls: number;
+  /** Time spent waiting on model replies. */
+  model_seconds: number;
+  /** Output tokens, reasoning included. */
+  output_tokens: number;
+  /** Reads answered with 'you already have this'. */
+  redundant_reads: number;
+  /** The stage's name; a stage that ran more than once is one row. */
+  stage: string;
+  /** Tool calls made. */
+  tool_calls: number;
+  /** Tool calls that failed or were refused. */
+  tool_failures: number;
+  /** From the stage's first record to its last. */
+  wall_seconds: number;
 }
 
 /** Request to start a run. Credentials are deliberately absent. They used to be accepted here, which put provider API keys into request bodies and access logs; the worker now resolves them from its own environment or the secret store. ``artifact_directory`` is gone for the same class of reason: it named a server path that became the repository root for every agent tool and the sandbox bind mount, so a caller could point the whole run at any directory on the host. A label is accepted instead, and the server derives the path. */

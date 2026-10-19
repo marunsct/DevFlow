@@ -306,7 +306,8 @@ test that fails on the old code:
   BG.6 (`GET /runs/{id}/sprints` from the graph state; the fix loop's open defects) and BG.3 (a
   review shows its document and what changed; `GET /runs/{id}/artifacts/diff`) and BG.4 (rail,
   work area in real tabs, ledger; each column scrolls inside itself) and UI-S5 run defaults (the
-  start form opens as the owner last started a run). Next: BG.7-BG.9, BG.11-BG.13.
+  start form opens as the owner last started a run) and BG.7 (the Audit tab: `GET /runs/{id}/usage`
+  and `/transcript`). Next: BG.8, BG.9, BG.11-BG.13.
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).

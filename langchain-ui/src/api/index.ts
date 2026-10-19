@@ -7,6 +7,7 @@ import type {
   ModelProfile,
   RunListResponse,
   RunStatusResponse,
+  RunUsage,
   ServerHealth,
   SettingsView,
   SprintsResponse,
@@ -286,6 +287,28 @@ export const downloadHandover = async (runId: string): Promise<void> => {
     const link = document.createElement('a');
     link.href = url;
     link.download = `${runId}-handover.zip`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+};
+
+/** Time, tokens and failures per stage, from the run's transcript (plan BG.7). */
+export const getUsage = async (runId: string): Promise<RunUsage> => {
+  const response = await api.get<RunUsage>(`/runs/${runId}/usage`);
+  return response.data;
+};
+
+/** The run's whole transcript as text: every model call, reply, tool call and result. */
+export const downloadTranscript = async (runId: string): Promise<void> => {
+  const response = await api.get(`/runs/${runId}/transcript`, { responseType: 'blob' });
+  const url = URL.createObjectURL(response.data as Blob);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${runId}-transcript.txt`;
     document.body.appendChild(link);
     link.click();
     link.remove();

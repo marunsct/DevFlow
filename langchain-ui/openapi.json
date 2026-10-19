@@ -1454,6 +1454,22 @@
     "title": "RunSummary",
     "type": "object"
    },
+   "RunUsage": {
+    "additionalProperties": false,
+    "description": "A run's usage by stage, in the order the stages first ran.",
+    "properties": {
+     "stages": {
+      "description": "One row per stage; empty before the transcript has any.",
+      "items": {
+       "$ref": "#/components/schemas/StageUsage"
+      },
+      "title": "Stages",
+      "type": "array"
+     }
+    },
+    "title": "RunUsage",
+    "type": "object"
+   },
    "ServerHealth": {
     "additionalProperties": false,
     "description": "What the build model's server says of itself, read with one request for its status and never a model call (plan BG.5).",
@@ -2109,6 +2125,82 @@
      }
     },
     "title": "SprintsResponse",
+    "type": "object"
+   },
+   "StageUsage": {
+    "additionalProperties": false,
+    "description": "One stage's time, tokens and failures, from the run's transcript (plan BG.7).",
+    "properties": {
+     "cached_tokens": {
+      "description": "Of those, tokens the server had cached.",
+      "title": "Cached Tokens",
+      "type": "integer"
+     },
+     "input_tokens": {
+      "description": "Input tokens sent.",
+      "title": "Input Tokens",
+      "type": "integer"
+     },
+     "lost_replies": {
+      "description": "Replies cut off at the output limit with no text and no call kept.",
+      "title": "Lost Replies",
+      "type": "integer"
+     },
+     "model_calls": {
+      "description": "Model replies.",
+      "title": "Model Calls",
+      "type": "integer"
+     },
+     "model_seconds": {
+      "description": "Time spent waiting on model replies.",
+      "title": "Model Seconds",
+      "type": "number"
+     },
+     "output_tokens": {
+      "description": "Output tokens, reasoning included.",
+      "title": "Output Tokens",
+      "type": "integer"
+     },
+     "redundant_reads": {
+      "description": "Reads answered with 'you already have this'.",
+      "title": "Redundant Reads",
+      "type": "integer"
+     },
+     "stage": {
+      "description": "The stage's name; a stage that ran more than once is one row.",
+      "title": "Stage",
+      "type": "string"
+     },
+     "tool_calls": {
+      "description": "Tool calls made.",
+      "title": "Tool Calls",
+      "type": "integer"
+     },
+     "tool_failures": {
+      "description": "Tool calls that failed or were refused.",
+      "title": "Tool Failures",
+      "type": "integer"
+     },
+     "wall_seconds": {
+      "description": "From the stage's first record to its last.",
+      "title": "Wall Seconds",
+      "type": "number"
+     }
+    },
+    "required": [
+     "stage",
+     "wall_seconds",
+     "model_seconds",
+     "model_calls",
+     "input_tokens",
+     "cached_tokens",
+     "output_tokens",
+     "lost_replies",
+     "tool_calls",
+     "tool_failures",
+     "redundant_reads"
+    ],
+    "title": "StageUsage",
     "type": "object"
    },
    "StartRunRequest": {
@@ -5084,6 +5176,100 @@
      }
     ],
     "summary": "Post Steering",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/transcript": {
+   "get": {
+    "description": "The run's whole transcript as text: every model call, reply, tool call and result.",
+    "operationId": "download_transcript_api_runs__run_id__transcript_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Download Transcript",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/usage": {
+   "get": {
+    "description": "Time, tokens and failures per stage, from the run's transcript (plan BG.7).",
+    "operationId": "get_usage_api_runs__run_id__usage_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RunUsage"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Get Usage",
     "tags": [
      "runs"
     ]

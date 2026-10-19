@@ -460,6 +460,10 @@ class AcceptanceResult:
             "change_requests": {k: vars(v) for k, v in self.change_requests.items()},
             "repairs": self.repairs,
             "problem": self.problem,
+            # What the runner said: a problem that reads "its output is below"
+            # was saved with no output, and its cause had to be found by
+            # running the command again by hand.
+            "output": self.output,
             "runtime_problems": self.runtime_problems,
             "shows": self.shows,
             "phone_overflow": self.phone_overflow,

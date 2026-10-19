@@ -477,6 +477,7 @@ def _joined(ranges: list[tuple[int, int]]) -> str:
     return ", ".join(f"{a}\u2013{b}" for a, b in merged)
 
 
+_SAVED_AS = re.compile(r"full output saved as ([\w.\-/]+?)(?=[\s\]\"\\;,]|$)")
 _FILES_CHANGED = re.compile(r'"files_changed":\s*(\[[^\]]*\])')
 
 
@@ -539,7 +540,12 @@ def already_known(messages: list[Any]) -> str:
             command = args.get("command")
             text = " ".join(command) if isinstance(command, list) else str(command or "")
             found = re.search(r'"returncode":\s*"?(-?\d+)', content)
-            ran[text[:100]] = (n, f"exit {found.group(1)}" if found else ("refused" if failed else "ran"))
+            how = f"exit {found.group(1)}" if found else ("refused" if failed else "ran")
+            # Where its whole output is, when it was cut: measured live, a stage
+            # read "call 7" from this line and asked `read_command_output` for
+            # "call 7", which names no output.
+            saved = _SAVED_AS.search(content)
+            ran[text[:100]] = (n, f"{how}; full output: read_command_output('{saved.group(1)}')" if saved else how)
             # A file the command rewrote is no longer what was read (Initiative AO.9).
             for changed in _files_a_command_changed(content):
                 written_at[changed] = n

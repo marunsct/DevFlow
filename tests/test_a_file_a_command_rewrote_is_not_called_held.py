@@ -45,3 +45,19 @@ def test_a_read_file_a_command_changed_is_said_to_have_changed():
 
     assert "app/main.py (call 1; changed by your command at call 2)" in known
     assert "`npm run format` -> exit 0 (call 2)" in known
+
+
+def test_a_command_whose_output_was_cut_names_where_the_whole_output_is():
+    """Measured live: a stage read "call 7" from this list and asked
+    `read_command_output` for "call 7", which names no output."""
+    result = json.dumps({"stdout": "1 failing\n\n...[8000 bytes omitted; full output saved as 1792-run-x-testing-npm-stdout-ab12.log]\nend",
+                         "stderr": "", "returncode": "1"})
+    messages = [
+        HumanMessage(content="fix it"),
+        AIMessage(content="", tool_calls=[{"id": "a", "name": "run_terminal_command", "args": {"command": ["npm", "test"]}}]),
+        ToolMessage(content=result, tool_call_id="a"),
+    ]
+
+    known = already_known(messages)
+
+    assert "`npm test` -> exit 1; full output: read_command_output('1792-run-x-testing-npm-stdout-ab12.log') (call 1)" in known

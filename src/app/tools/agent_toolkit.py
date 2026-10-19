@@ -692,18 +692,22 @@ def _the_memory_shows(path: Path, root: Path, held: dict[str, str], shows_lines:
     from app.agents.project_memory import _ignored
 
     looked_at = 0
+    files_seen = 0
     for folder, directories, files in os.walk(path):
         folder_path = Path(folder)
         if folder_path != root and _ignored(folder_path.relative_to(root).parts):
             return False
         for name in files:
             looked_at += 1
+            files_seen += 1
             if looked_at > _MOST_ENTRIES_CHECKED or (folder_path / name).relative_to(root).as_posix() not in held:
                 return False
         looked_at += len(directories)
         if looked_at > _MOST_ENTRIES_CHECKED:
             return False
-    return True
+    # An empty folder's listing costs nothing and settles the question: measured
+    # live, refusing `ls -la tests/` on one sent the same command four times.
+    return files_seen > 0
 
 
 def _a_look_with_the_looking_tools_withheld(command: Any, repo_root: str = "", working_directory: str | None = None) -> str:

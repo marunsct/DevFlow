@@ -133,3 +133,14 @@ class TestALookAtWhatTheMemoryDoesNotHoldStillRuns:
 
         assert ran == [["cat", "app/src/App.tsx"]]
 
+
+    def test_an_empty_folder_is_listed(self, tmp_path, ran):
+        """Measured live: `ls -la tests/` on an empty folder was refused four times
+        running, and the stage spent the rest of its calls telling itself to stop
+        trying the command. Listing nothing shows nothing held, and costs nothing."""
+        _workspace(tmp_path)
+        (tmp_path / "app" / "tests").mkdir()
+
+        _run(tmp_path, ["ls", "-la", "app/tests/"])
+
+        assert ran == [["ls", "-la", "app/tests/"]]

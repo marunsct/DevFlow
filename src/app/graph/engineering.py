@@ -111,9 +111,17 @@ def regression_defects(state: Any, lost: list[str], after: Any = None) -> list[A
 
     `after` is the measurement that found them; with it, a test that did not run
     at all is described as gone rather than failing.
+
+    When the product did not build or start for the acceptance suite, its lost
+    acceptance tests are not regressions one by one: the test round raises the
+    start failure once. Measured live, each was raised as "gone - removed or
+    renamed" and queued ahead of that one cause, and a fixer went looking for a
+    renamed test in a locked suite.
     """
     from app.agents.specialists import ReportedDefect
 
+    if after is not None and getattr(after, "problem", ""):
+        lost = [name for name in lost if not name.startswith("acceptance:")]
     owner = _owner_of(state, "")
     defects = []
     for name in lost[:MOST_REGRESSION_DEFECTS]:

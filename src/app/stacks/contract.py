@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 #: `repository.HARNESS_DIRECTORIES`) and kept out of the run's git history.
 HARNESS_DIR = ".harness"
 CONTRACT_FILE = f"{HARNESS_DIR}/stack-pack.json"
+#: The project's dependency manifests as last installed. See `install_if_the_manifests_changed`.
+INSTALLED_FILE = f"{HARNESS_DIR}/installed.json"
 
 
 def write(
@@ -67,6 +69,80 @@ def write(
         **(extra or {}),
     }
     path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+
+def _the_manifests(repo_root: str | Path, project: str) -> str:
+    """A digest of the project's dependency manifests as they are now."""
+    import hashlib
+
+    from app.tools.repository import PACKAGE_MANIFESTS
+
+    folder = Path(repo_root) / project
+    digest = hashlib.sha256()
+    for name in sorted(PACKAGE_MANIFESTS):
+        path = folder / name
+        try:
+            content = path.read_bytes() if path.is_file() else b""
+        except OSError:
+            content = b""
+        if content:
+            digest.update(name.encode() + b"\0" + content + b"\0")
+    return digest.hexdigest()
+
+
+def installed(repo_root: str | Path, runner: Any = None) -> None:  # noqa: ARG001 - the same shape as the installer
+    """Record the manifests as installed now: the scaffold calls it after its own install. Never raises."""
+    try:
+        record = read(repo_root)
+        if record is None:
+            return
+        path = Path(repo_root) / INSTALLED_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"manifests": _the_manifests(repo_root, str(record.get("project") or ""))}) + "\n",
+                        encoding="utf-8")
+    except Exception:  # noqa: BLE001 - the next measurement installs once more
+        logger.debug("Could not record the install", exc_info=True)
+
+
+def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) -> list[str]:
+    """Install the project's dependencies again when a manifest changed since the last install. Never raises.
+
+    Measured live: fast delivery drafted `package.json` with a router in it, in
+    one model call with no command after it, and nothing installed it; every
+    test round built the page against the scaffold's `node_modules`, the build
+    failed to resolve the import, and the product "did not start" round after
+    round while its manifest was right. Run before each of the harness's own
+    measurements; a failed install is tried again at the next one.
+    """
+    try:
+        record = read(repo_root)
+        commands = [list(argv) for argv in (record or {}).get("install") or []]
+        if record is None or not commands:
+            return []
+        project = str(record.get("project") or "")
+        now = _the_manifests(repo_root, project)
+        try:
+            kept = json.loads((Path(repo_root) / INSTALLED_FILE).read_text(encoding="utf-8")).get("manifests")
+        except (OSError, ValueError, AttributeError):
+            kept = None
+        if kept == now:
+            return []
+        if runner is None:
+            from app.stacks.scaffold import sandbox_runner
+
+            runner = sandbox_runner(repo_root)
+        for argv in commands:
+            outcome = runner(argv, "install", project) or {}
+            code = str(outcome.get("returncode", outcome.get("exit_code", "0")))
+            if code not in ("0", "None", ""):
+                logger.warning("A changed manifest could not be installed: `%s` exited %s", " ".join(argv), code)
+                return [f"`{' '.join(argv)}` failed after the project's manifest changed."]
+        installed(repo_root)
+        logger.info("The project's manifest changed since its last install; installed again")
+        return ["The project's dependencies were installed again: a manifest changed since the last install."]
+    except Exception:  # noqa: BLE001 - the measurement goes on as it would have
+        logger.debug("Could not check the project's install", exc_info=True)
+        return []
 
 
 def read(repo_root: str | Path | None) -> dict[str, Any] | None:

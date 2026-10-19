@@ -148,6 +148,7 @@ def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], 
         from app.stacks.scaffold import sandbox_runner
 
         runner = sandbox_runner(root)
+    contract.install_if_the_manifests_changed(root, runner)
     runner(list(record.get("unit_test") or pack.unit_test), "test", project)
     parsed = junit.read(report)
     return outcomes_of(parsed.tests), parsed.found

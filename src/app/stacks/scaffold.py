@@ -398,6 +398,9 @@ def scaffold(
         if code != 0:
             result.problem = f"`{' '.join(argv)}` failed in {project}/."
             return _unproven(root, pack, project, title, package, result)
+    from app.stacks import contract as _contract
+
+    _contract.installed(root)
 
     smoke = pack.rendered_smoke_files(project, title, package)
     for relative, content in smoke.items():

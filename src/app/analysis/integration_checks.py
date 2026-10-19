@@ -6605,10 +6605,40 @@ def _behaviour_is_measured(root: Path) -> bool:
         return False
 
 
-def _grade(entry: tuple, problem: str, measured: bool) -> str:
-    """BREAKS, CRITERION, untidy - or "hint" for an inference where behaviour is measured."""
+#: A check whose measured precision is below this, over at least
+#: `FIRINGS_BEFORE_PRECISION_COUNTS` scored products, is review-only: its
+#: findings are hints, never findings that block (Initiative AO.5). Measured by
+#: `scripts/loop/check_precision.py --write` from products whose hidden tests
+#: all passed - a check that called such a product broken was wrong.
+MIN_PRECISION = 0.9
+FIRINGS_BEFORE_PRECISION_COUNTS = 5
+
+
+def checks_too_imprecise_to_block() -> frozenset[str]:
+    """The checks the stored precision measurement puts under `MIN_PRECISION`; empty when none is stored."""
+    import os
+
+    path = Path(os.environ.get("DATA_DIR") or "data") / "loop" / "check_precision.json"
+    try:
+        measured = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return frozenset()
+    if not isinstance(measured, dict):
+        return frozenset()
+    return frozenset(
+        str(name) for name, row in measured.items()
+        if isinstance(row, dict)
+        and int(row.get("fired") or 0) >= FIRINGS_BEFORE_PRECISION_COUNTS
+        and float(row.get("precision", 1.0)) < MIN_PRECISION
+    )
+
+
+def _grade(entry: tuple, problem: str, measured: bool, imprecise: frozenset[str] = frozenset()) -> str:
+    """BREAKS, CRITERION, untidy - or "hint" for an inference where behaviour is measured, or a check measured imprecise."""
     grade = _floor_of(entry) or _severity_of(problem)
-    if measured and entry[0] not in _MECHANICAL and grade in {"BREAKS", "CRITERION"}:
+    if grade in {"BREAKS", "CRITERION"} and (
+        (measured and entry[0] not in _MECHANICAL) or entry[0] in imprecise
+    ):
         return "hint"
     return grade
 
@@ -6902,10 +6932,11 @@ def summarise_integration(
         # bucketing below cannot put a declared-breaking finding under "untidy
         # rather than broken" because of how its sentence happens to read.
         measured = _behaviour_is_measured(root)
+        imprecise = checks_too_imprecise_to_block()
         graded_problems: list[tuple[str, str]] = []
         for entry in _CHECKS:
             for problem in entry[1](files, root, stack, brief):
-                graded_problems.append((problem, _grade(entry, problem, measured)))
+                graded_problems.append((problem, _grade(entry, problem, measured, imprecise)))
         problems = [problem for problem, _ in graded_problems]
     except Exception:  # noqa: BLE001
         return "The cross-file checks could not complete on this workspace."
@@ -7006,11 +7037,12 @@ def problems_that_break_the_product(
         # floor still comes first: a check that declares itself breaking is
         # breaking however its message is worded.
         measured = _behaviour_is_measured(root)
+        imprecise = checks_too_imprecise_to_block()
         breaking: list[str] = []
         for entry in _CHECKS:
             found = entry[1](files, root, stack, brief)
             for problem in found:
-                if _grade(entry, problem, measured) == "BREAKS":
+                if _grade(entry, problem, measured, imprecise) == "BREAKS":
                     breaking.append(problem)
     except Exception:  # noqa: BLE001 - proof that cannot be gathered is not proof
         return []

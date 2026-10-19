@@ -23,7 +23,7 @@
 #   scripts/loop/loop.sh bench <name>        start a run from benchmarks/<name>/brief.md (needs LOOP_USER/LOOP_PASSWORD)
 #   scripts/loop/loop.sh score [run] [name]  score a run's product against the benchmark's hidden tests
 #                                            (scripts/bench/score.py); the result lands in data/bench/<run>.json
-#   scripts/loop/loop.sh checks [labels]     how often each cross-file check fires over the stored
+#   scripts/loop/loop.sh checks [labels] [--write]  how often each cross-file check fires over the stored
 #                                            workspaces, and its precision against labels (check_precision.py)
 #   scripts/loop/loop.sh defects [run-id]    each round's defect queue: the check that raised each
 #                                            defect and what became of it (defects.py)
@@ -233,7 +233,12 @@ kpi)
   fi
   ;;
 product) in_worker product_audit.py "${2:-$(current)}" ;;
-checks) in_worker check_precision.py "${2:-}" ;;
+checks)
+  shift
+  # The scored runs are the host's (data/bench); the measurement runs in the worker.
+  case " $* " in *" --write "*) (cd "$ROOT" && docker compose cp data/bench worker:/app/data/ >/dev/null) ;; esac
+  in_worker check_precision.py "$@"
+  ;;
 ready)  in_worker model_ready.py ;;
 fitness) in_worker model_fitness.py ;;
 reasoning-probe) shift; in_worker reasoning_probe.py "${@:-plan}" ;;

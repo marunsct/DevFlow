@@ -424,6 +424,12 @@ def _an_anchor_to_what_was_withheld(text: str) -> str:
     )
 
 
+#: What a stage's record of its reads is kept under in `stage_memory`: the lines
+#: and the bytes its tool results gave it, and how often a read gave nothing new.
+#: A compaction takes those results out of the conversation, so it forgets them.
+WHAT_THE_CONVERSATION_WAS_GIVEN = ("read_spans", "read_digests", "repeated_reads")
+
+
 class _NoticingRepeats:
     """Say when a file comes back byte-identical to the last time it was read.
 

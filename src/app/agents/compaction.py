@@ -170,6 +170,17 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         return await super()._acreate_summary(self._prepare(messages_to_summarize))
 
     def _build_new_messages_with_path(self, summary: str, file_path: str | None) -> list[AnyMessage]:
+        # The tool results the stage read are summarised away, so a read of the
+        # same lines after this is not a repeat. Measured on one gate run: 40 of
+        # 57 reads counted as redundant came after a compaction, each told "this
+        # returned nothing you did not already have" about text it no longer had.
+        try:
+            from app.agents.stage_memory import forget
+            from app.agents.workspace_backend import WHAT_THE_CONVERSATION_WAS_GIVEN
+
+            forget(*WHAT_THE_CONVERSATION_WAS_GIVEN)
+        except Exception:  # noqa: BLE001 - the summary is made either way
+            pass
         built = super()._build_new_messages_with_path(summary, file_path)
         kept, self._kept = self._kept, None
         if not kept or not built:

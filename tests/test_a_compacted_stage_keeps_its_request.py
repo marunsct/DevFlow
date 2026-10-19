@@ -187,3 +187,27 @@ def test_a_conversation_that_has_grown_again_is_compacted_again(tmp_path):
     _, again = _sent(middleware, grown, state={"messages": grown, "_summarization_event": event})
 
     assert hasattr(again, "command")
+
+
+def test_a_read_after_a_compaction_is_not_told_it_already_has_the_lines(tmp_path, monkeypatch):
+    """Measured on one gate run: 40 of 57 reads counted as redundant came after a
+    compaction, each told "this returned nothing you did not already have" about
+    text the summary had taken out of the conversation."""
+    from app.agents import stage_memory
+    from app.agents.workspace_backend import WorkspaceBackend
+
+    monkeypatch.setattr(stage_memory, "current_stage_key", lambda: "thread-1")
+    root = tmp_path / "workspace"
+    root.mkdir()
+    (root / "app.py").write_text("value = 1\n" * 40)
+
+    def read():
+        return str(WorkspaceBackend(root_dir=str(root), virtual_mode=True).read("/app.py"))
+
+    read()
+    assert "already read" in read()
+
+    _sent(_built(RequestKeepingSummarization, tmp_path), _conversation())
+
+    after = read()
+    assert "already read" not in after and "same bytes" not in after and "value = 1" in after

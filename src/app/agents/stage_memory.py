@@ -154,6 +154,15 @@ def store(purpose: str, fallback: dict) -> dict:
     return slot
 
 
+def forget(*purposes: str) -> None:
+    """Drop what the running stage remembered for `purposes`; nothing outside a graph run."""
+    key = current_stage_key()
+    if key is None:
+        return
+    for purpose in purposes:
+        _MEMORY.pop((key, purpose), None)
+
+
 def forget_everything() -> None:
     """Drop all remembered stages. For tests, which must not leak into each other."""
     _MEMORY.clear()
@@ -162,6 +171,7 @@ def forget_everything() -> None:
 __all__ = [
     "MAX_STAGES_REMEMBERED",
     "current_stage_key",
+    "forget",
     "forget_everything",
     "remembering",
     "store",

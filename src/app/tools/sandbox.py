@@ -1636,6 +1636,23 @@ _INSTEAD_OF: dict[str, str] = {
         "`cd` is not a program. Pass `working_directory` to "
         "`run_terminal_command` to run somewhere else."
     ),
+    # A builtin of a shell nobody has here: `export X=1 && npm test` set nothing
+    # for a later command, and the refusal that listed the allowed programs did
+    # not say why (measured live, run after run).
+    "export": (
+        "`export` is a shell builtin and there is no shell here, so it cannot set anything for a "
+        "command that follows. Every command already gets `PORT` and `DATA_DIR`; a value the code "
+        "needs belongs in the project's own configuration or in the test's setup, not on the command line."
+    ),
+    "set": (
+        "`set` is a shell builtin and there is no shell here. Put a setting in the project's own "
+        "configuration, and run each command by itself."
+    ),
+    "source": (
+        "`source` is a shell builtin and there is no shell here. Run the commands in the file "
+        "directly, one `run_terminal_command` each."
+    ),
+    "unset": "`unset` is a shell builtin and there is no shell here; nothing carries from one command to the next.",
     # Accurate rather than absolute: `NETWORK_CATEGORIES` grants a network to
     # the `install` category, which is how `npm install jsdom` succeeds. What is
     # unavailable is fetching something by hand.

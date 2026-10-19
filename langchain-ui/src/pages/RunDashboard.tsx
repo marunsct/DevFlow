@@ -826,7 +826,7 @@ export const RunDashboard: React.FC = () => {
           <div className="space-y-4 xl:absolute xl:inset-0 xl:overflow-y-auto">
             {/* Acceptance criteria, screenshots and the decision log, then the
                 sprints - refreshed as the run moves between stages. */}
-            <DeliveryPanel runId={runId!} refreshKey={stageKey} />
+            <DeliveryPanel runId={runId!} refreshKey={stageKey} onOpenChange={selectChange} />
             <SprintSummaryPanel runId={runId!} />
           </div>
         </div>

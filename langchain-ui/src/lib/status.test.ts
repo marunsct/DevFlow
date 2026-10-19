@@ -29,3 +29,15 @@ describe('the status map', () => {
     }
   });
 });
+
+describe('the words for a stage', () => {
+  it('names the stages a run numbers as it goes', async () => {
+    const { describeStage } = await import('./activity');
+    expect(describeStage('defect_fix_2_12').title).toBe('Fixing problem 13 (test round 2)');
+    expect(describeStage('test_round_1').title).toBe('Testing, round 1');
+    expect(describeStage('acceptance_author_0').title).toBe('Writing the acceptance tests');
+    expect(describeStage('acceptance_author_1').title).toBe('Revising the acceptance tests (pass 2)');
+    expect(describeStage('consult_ui_ux').title).toBe('Asking the interface specialist');
+    expect(describeStage('scaffold').title).toBe('Setting up the project');
+  });
+});

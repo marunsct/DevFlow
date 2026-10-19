@@ -892,6 +892,7 @@ def create_runs_router(
         if not record.repo_root:
             return {"run_id": run_id, "acceptance": {}, "screenshots": [], "pages": []}
         from app.acceptance import suite
+        from app.ci import first_passes
         from app.graph.delivery import screenshots
 
         root = Path(record.repo_root)
@@ -909,6 +910,8 @@ def create_runs_router(
             # What the release knew it did not prove, and how well the stack's own checks cover it.
             "completion_gaps": [str(gap) for gap in (getattr(record, "completion_gaps", None) or [])],
             "support_tier": _support_tier_of(root),
+            # Each criterion's first passing test, after which step and when (plan BG.9).
+            "first_passed": first_passes(root),
         }
 
     @runs.get("/{run_id}/changes")

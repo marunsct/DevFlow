@@ -5,7 +5,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { getChange, getChanges, type WorkspaceCommit } from '../api';
-import { DiffText } from './DiffText';
+import { FileDiffs } from './FileDiffs';
 
 
 export const ChangesPanel: React.FC<{
@@ -63,7 +63,7 @@ export const ChangesPanel: React.FC<{
         {!selected && <p className="p-4 text-sm text-text-muted">Choose a change to see what it did.</p>}
         {selected && !diff && <p className="p-4 text-sm text-text-muted" role="status">Loading…</p>}
         {diff && (
-          <DiffText text={diff.text} truncated={diff.truncated} />
+          <FileDiffs text={diff.text} truncated={diff.truncated} />
         )}
       </div>
     </div>

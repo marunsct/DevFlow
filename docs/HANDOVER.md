@@ -307,7 +307,9 @@ test that fails on the old code:
   review shows its document and what changed; `GET /runs/{id}/artifacts/diff`) and BG.4 (rail,
   work area in real tabs, ledger; each column scrolls inside itself) and UI-S5 run defaults (the
   start form opens as the owner last started a run) and BG.7 (the Audit tab: `GET /runs/{id}/usage`
-  and `/transcript`) and BG.8 (feed: held-back chips, decisions, lanes). Next: BG.9, BG.11-BG.13.
+  and `/transcript`), BG.8 (feed: held-back chips, decisions, lanes) and BG.9 (per-file diffs; a
+  criterion links to the change that first made it pass) and BG.11 (every graph node has words; a
+  test holds the table to the graph). Next: BG.12, BG.13, then UI-S3 = BG.10.
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).

@@ -12,7 +12,8 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, getChanges } from '../api';
+import { describeStage } from '../lib/activity';
 import { ClipboardCheck, Gavel, Image as ImageIcon, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface CriterionResult {
@@ -36,6 +37,8 @@ interface Evidence {
   pages: string[];
   completion_gaps?: string[];
   support_tier?: string;
+  /** Each criterion's first passing test: after which step, and when (plan BG.9). */
+  first_passed?: Record<string, { test: string; after: string; at: string }>;
 }
 
 interface Decision {
@@ -87,7 +90,42 @@ const Screenshot: React.FC<{ runId: string; path: string }> = ({ runId, path }) 
   );
 };
 
-export const DeliveryPanel: React.FC<{ runId: string; refreshKey?: string }> = ({ runId, refreshKey }) => {
+/**
+ * When a criterion first passed and after which step, and the change that did
+ * it: the first commit made from that moment on (plan BG.9).
+ */
+const FirstPassed: React.FC<{
+  runId: string;
+  first: { test: string; after: string; at: string };
+  onOpenChange?: (sha: string) => void;
+}> = ({ runId, first, onOpenChange }) => {
+  const step = describeStage(first.after.replace(/^after /, '')).title;
+  const when = new Date(first.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const open = async () => {
+    const { commits } = await getChanges(runId);
+    const from = new Date(first.at).getTime();
+    const made = [...commits].reverse().find((commit) => new Date(commit.at).getTime() >= from - 1000);
+    if (made) onOpenChange?.(made.sha);
+  };
+  return (
+    <span className="block text-xs text-text-muted" title={first.test}>
+      first passed after {step}, {when}
+      {onOpenChange && (
+        <>
+          {' \u00B7 '}
+          <button type="button" onClick={() => void open()} className="text-primary hover:underline">see the change</button>
+        </>
+      )}
+    </span>
+  );
+};
+
+export const DeliveryPanel: React.FC<{
+  runId: string;
+  refreshKey?: string;
+  /** Open the Changes tab on a commit: the one that made a criterion pass. */
+  onOpenChange?: (sha: string) => void;
+}> = ({ runId, refreshKey, onOpenChange }) => {
   const [evidence, setEvidence] = useState<Evidence | null>(null);
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [open, setOpen] = useState(true);
@@ -139,6 +177,9 @@ export const DeliveryPanel: React.FC<{ runId: string; refreshKey?: string }> = (
                       {c.text}
                       {evidence?.deferred?.[c.id] && (
                         <span className="block text-xs text-text-muted">deferred: {evidence.deferred[c.id]}</span>
+                      )}
+                      {evidence?.first_passed?.[c.id] && (
+                        <FirstPassed runId={runId} first={evidence.first_passed[c.id]} onOpenChange={onOpenChange} />
                       )}
                       {(c.tests?.length ?? 0) > 0 && (
                         <details className="mt-1">

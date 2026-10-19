@@ -103,7 +103,111 @@ const STAGE_COPY: Record<string, StageCopy> = {
     title: 'Stopped',
     blurb: 'Something went wrong and the run needs a person to look at it.',
   },
+  // Every node of the graph has its words here: a test fails when one is added
+  // without them (tests/test_every_stage_has_words_on_the_page.py, plan BG.11).
+  scaffold: {
+    title: 'Setting up the project',
+    blurb: 'Laying down the project folder, its build and test commands, and the files every stage relies on.',
+  },
+  acceptance_author: {
+    title: 'Writing the acceptance tests',
+    blurb: 'Turning each acceptance criterion into a test that proves the product does it.',
+  },
+  acceptance_review: {
+    title: 'Checking the acceptance tests',
+    blurb: 'Reading the tests against the criteria before they are locked.',
+  },
+  user_review_acceptance: {
+    title: 'Your review',
+    blurb: 'Paused for you to read the acceptance tests in plain words and say whether to continue.',
+  },
+  user_review_product_intake: {
+    title: 'Your review',
+    blurb: 'Paused for you to check what the run understood of your product.',
+  },
+  user_review_release: {
+    title: 'Your review',
+    blurb: 'Paused for you to look at the release and what it proves.',
+  },
+  user_review_escalation: {
+    title: 'Your decision',
+    blurb: 'The run could not finish this sprint on its own and asks you how to go on.',
+  },
+  specialist_worker: {
+    title: 'Building it',
+    blurb: 'Writing the code and tests for one piece of this sprint.',
+  },
+  specialist_gather: {
+    title: 'Putting the pieces together',
+    blurb: 'Collecting what each piece of the sprint produced.',
+  },
+  defect_fix_worker: {
+    title: 'Fixing a problem',
+    blurb: 'Changing the code so a failing check passes, then measuring it again.',
+  },
+  defect_fix_gather: {
+    title: 'Collecting the fixes',
+    blurb: 'Gathering the fixes made side by side and measuring them together.',
+  },
+  ci_gate: {
+    title: 'Checking the build',
+    blurb: 'Building the product and running its checks before anyone reviews it.',
+  },
+  code_review: {
+    title: 'Reviewing the code',
+    blurb: 'Reading the change for mistakes, missing tests and anything unsafe.',
+  },
+  review_worker: {
+    title: 'Reviewing the code',
+    blurb: 'One reviewer reading its part of the change.',
+  },
+  review_gather: {
+    title: 'Collecting the reviews',
+    blurb: 'Putting the reviewers’ findings together.',
+  },
+  change_request: {
+    title: 'Taking in your change',
+    blurb: 'Adding what you asked for to the plan.',
+  },
+  escalation: {
+    title: 'Deciding how to go on',
+    blurb: 'A sprint did not pass after its fixes; working out whether to retry, accept or stop.',
+  },
+  escalation_accept: {
+    title: 'Going on as it is',
+    blurb: 'Accepting the sprint as it stands, with what it did not prove written down.',
+  },
+  escalation_retry: {
+    title: 'Trying the sprint again',
+    blurb: 'Planning the sprint again with what the last attempt learned.',
+  },
+  release: {
+    title: 'Releasing',
+    blurb: 'Writing the release files and the evidence of what the release proves.',
+  },
+  noop: {
+    title: 'Moving on',
+    blurb: 'Nothing to do at this step.',
+  },
 };
+
+/** Stage names a run makes as it goes, with a number in them: a round, a pass, a role. */
+const NUMBERED_COPY: Array<[RegExp, (match: RegExpExecArray) => StageCopy]> = [
+  [/^defect_fix_(\d+)_(\d+)$/, (m) => ({
+    title: `Fixing problem ${Number(m[2]) + 1} (test round ${m[1]})`,
+    blurb: 'Changing the code so a failing check passes, then measuring it again.',
+  })],
+  [/^test_round_(\d+)$/, (m) => ({ title: `Testing, round ${m[1]}`, blurb: 'Running every test and writing down what failed.' })],
+  [/^acceptance_author_(\d+)$/, (m) => ({
+    title: Number(m[1]) > 0 ? `Revising the acceptance tests (pass ${Number(m[1]) + 1})` : 'Writing the acceptance tests',
+    blurb: 'Turning each acceptance criterion into a test that proves the product does it.',
+  })],
+  [/^acceptance_review_(\d+)$/, () => ({ title: 'Checking the acceptance tests', blurb: 'Reading the tests against the criteria before they are locked.' })],
+  [/^consult_(.+)$/, (m) => ({
+    title: `Asking the ${m[1].replace(/_/g, ' ').replace(/\bui ux\b/, 'interface')} specialist`,
+    blurb: 'Getting this specialist’s advice before the technical plan is written.',
+  })],
+];
 
 /** Specialist stages are numbered per task (`specialist_backend_0`). */
 const SPECIALIST_COPY: Record<string, StageCopy> = {
@@ -133,6 +237,11 @@ export function describeStage(rawName: string | null | undefined): StageCopy {
   const name = rawName.replace(/^awaiting_(approval|user_review):/, '');
 
   if (STAGE_COPY[name]) return STAGE_COPY[name];
+
+  for (const [pattern, copy] of NUMBERED_COPY) {
+    const match = pattern.exec(name);
+    if (match) return copy(match);
+  }
 
   const specialist = /^specialist_(.+?)(?:_\d+)?$/.exec(name);
   if (specialist) {

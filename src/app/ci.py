@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -192,8 +194,37 @@ def save(root: str | Path, snapshot: Snapshot, *, accepted: bool = False) -> Non
     data["latest"] = snapshot.as_dict()
     if accepted:
         data["accepted"] = snapshot.as_dict()
+    # When each test first passed, and after which step, so a criterion can be
+    # traced to the change that made it pass (plan BG.9). A test that fails
+    # again and passes later keeps its first time.
+    first = data.get("first_passed") if isinstance(data.get("first_passed"), dict) else {}
+    now = datetime.now(timezone.utc).isoformat()
+    for key in sorted(snapshot.passing()):
+        first.setdefault(key, {"after": snapshot.label, "at": now})
+    data["first_passed"] = first
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+_A_CRITERION = re.compile(r"\[([A-Z]+-\d+)\]")
+
+
+def first_passes(root: str | Path) -> dict[str, dict[str, str]]:
+    """Each acceptance criterion's first passing test: after which step and when (plan BG.9).
+
+    The earliest of the tests that carry the criterion's id in their name.
+    """
+    try:
+        first = json.loads((Path(root) / CI_FILE).read_text(encoding="utf-8")).get("first_passed") or {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+    found: dict[str, dict[str, str]] = {}
+    for key, when in sorted(first.items(), key=lambda item: str((item[1] or {}).get("at", ""))):
+        if not key.startswith("acceptance: ") or not isinstance(when, dict):
+            continue
+        for criterion in _A_CRITERION.findall(key):
+            found.setdefault(criterion, {"test": key.removeprefix("acceptance: "), **{k: str(v) for k, v in when.items()}})
+    return found
 
 
 def load(root: str | Path, which: str = "latest") -> Snapshot | None:

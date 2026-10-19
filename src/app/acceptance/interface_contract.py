@@ -16,8 +16,11 @@ recorded when the suite is locked. At release, a check that fails is a
 completion gap for the first runs, not a block - a page control behind a
 sign-in, say, is not shown at a bare visit, and the record says so.
 
-Runs where the pack's acceptance runner is Playwright, which starts the
-product the same way for every web pack. Other runners are not checked yet.
+Routes and page controls run through the pack's probe runner (Playwright,
+which starts the product the same way for every web pack). Commands run as
+themselves, through the sandbox, on every pack. A line nothing can check - a
+route on a pack with no probe runner, a route with a parameter in it - is said
+to be unchecked at release, never left out in silence (Initiative AU).
 """
 
 from __future__ import annotations
@@ -44,6 +47,10 @@ REPORT_FILE = "test-results/contract.xml"
 
 #: Checks run at most, so a long contract stays a seconds-long release step.
 MOST_CHECKS = 40
+
+#: A route with a parameter in it, `/api/notes/{id}` or `/notes/:id`: probed as
+#: written it asks for a record called "{id}", so it is unchecked rather than failed.
+_A_TEMPLATE = re.compile(r"\{[^}]*\}|/:[A-Za-z_]")
 
 
 @dataclass(frozen=True)
@@ -154,46 +161,128 @@ PROBE_RUNNERS: dict[str, dict[str, Any]] = {
 }
 
 
+def _what_git_sees_changed(root: Path) -> dict[str, str]:
+    """Path -> its `git status` code, for every file that differs from the last commit; {} when unknown."""
+    from app.tools.version_control import _git
+
+    done = _git(root, "status", "--porcelain", "--untracked-files=all")
+    if done is None or done.returncode != 0:
+        return {}
+    return {line[3:].strip(): line[:2] for line in done.stdout.splitlines() if len(line) > 3}
+
+
+def _put_back_what_the_commands_wrote(root: Path, before: dict[str, str]) -> None:
+    """Remove the files the contract's commands created and restore the ones they changed. Never raises.
+
+    A command line runs the product itself - `notes add milk` adds a note - and
+    the release must not ship what its own check wrote.
+    """
+    from app.tools.version_control import _git
+
+    try:
+        for path, code in _what_git_sees_changed(root).items():
+            if path in before:
+                continue
+            if code == "??":
+                (root / path).unlink(missing_ok=True)
+            else:
+                _git(root, "checkout", "--", path)
+    except Exception:  # noqa: BLE001 - a file left behind is better than a release that fails
+        logger.debug("Could not put back what the contract's commands wrote", exc_info=True)
+
+
+def _the_commands_kept(checks: list[Check], root: Path, project: str, runner: Any) -> tuple[list[str], list[str]]:
+    """(failures, unchecked) for the contract's command lines, each run as itself in the project."""
+    failed: list[str] = []
+    unchecked: list[str] = []
+    before = _what_git_sees_changed(root) if checks else {}
+    try:
+        _run_each_command(checks, project, runner, failed, unchecked)
+    finally:
+        if checks:
+            _put_back_what_the_commands_wrote(root, before)
+    return failed, unchecked
+
+
+def _run_each_command(checks: list[Check], project: str, runner: Any, failed: list[str], unchecked: list[str]) -> None:
+    import shlex
+
+    for check in checks:
+        try:
+            argv = shlex.split(check.command)
+        except ValueError:
+            unchecked.append(f"{check.line} (the command does not parse)")
+            continue
+        outcome = runner(argv, "test", project) or {}
+        if outcome.get("error") and "returncode" not in outcome:
+            unchecked.append(f"{check.line} ({str(outcome['error'])[:120]})")
+            continue
+        try:
+            code = int(str(outcome.get("returncode")))
+        except ValueError:
+            unchecked.append(f"{check.line} (no exit code came back)")
+            continue
+        if code != check.exit_code:
+            failed.append(f"[{check.criterion}] {check.line} - it exited {code}")
+
+
 def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) -> list[str]:
-    """A completion gap for each contract check the product fails at release; [] when none, or none can run."""
+    """A completion gap for each contract check the product fails at release, and one for what went unchecked; [] when none."""
     try:
         from app.acceptance import junit, suite
         from app.stacks import contract
 
         root = Path(repo_root)
+        locked = the_locked_contract(root)[:MOST_CHECKS]
+        if not locked:
+            return []
         found = contract.the_pack(root)
-        checks = [c for c in the_locked_contract(root) if c.kind in ("http", "page")][:MOST_CHECKS]
-        if found is None or not checks:
-            return []
-        pack, record = found
-        probe = PROBE_RUNNERS.get(pack.probe_runner)
+        record = found[1] if found else (contract.read(root) or {})
+        project_name = str(record.get("project") or "")
+        project = root / project_name
+        run = runner or suite._sandbox_runner(root)  # noqa: SLF001 - the suite's own runner
+        probe = PROBE_RUNNERS.get(found[0].probe_runner) if found else None
+        templated = [c for c in locked if c.kind in ("http", "page") and _A_TEMPLATE.search(c.path)]
+        web = [c for c in locked if c.kind in ("http", "page") and c not in templated]
+        unchecked = [f"{c.line} (a route with a parameter in it)" for c in templated]
         if probe is None:
-            return []
-        project = root / str(record.get("project") or "")
-        (project / CHECK_DIR).mkdir(parents=True, exist_ok=True)
-        (project / CHECK_DIR / "contract.spec.js").write_text(probe["checks"](checks), encoding="utf-8")
-        (project / CONFIG_FILE).write_text(probe["config"](probe["base_config"]), encoding="utf-8")
-        report_file = project / REPORT_FILE
-        junit.clear(report_file)
-        try:
-            (runner or suite._sandbox_runner(root))(  # noqa: SLF001 - the suite's own runner
-                list(probe["command"]), "test", str(record.get("project") or ""),
-            )
-            report = junit.read(report_file)
-        finally:
-            shutil.rmtree(project / CHECK_DIR, ignore_errors=True)
-            (project / CONFIG_FILE).unlink(missing_ok=True)
+            unchecked += [f"{c.line} (no runner on this stack probes a {c.kind} line)" for c in web]
+            web = []
+        report = None
+        if web:
+            (project / CHECK_DIR).mkdir(parents=True, exist_ok=True)
+            (project / CHECK_DIR / "contract.spec.js").write_text(probe["checks"](web), encoding="utf-8")
+            (project / CONFIG_FILE).write_text(probe["config"](probe["base_config"]), encoding="utf-8")
+            report_file = project / REPORT_FILE
+            junit.clear(report_file)
+            try:
+                run(list(probe["command"]), "test", project_name)
+                report = junit.read(report_file)
+            finally:
+                shutil.rmtree(project / CHECK_DIR, ignore_errors=True)
+                (project / CONFIG_FILE).unlink(missing_ok=True)
+        failures, not_run = _the_commands_kept([c for c in locked if c.kind == "command"], root, project_name, run)
+        unchecked += not_run
     except Exception:  # noqa: BLE001 - the release says nothing it cannot measure
         logger.debug("Could not run the interface contract's checks", exc_info=True)
         return []
-    if not report.found:
-        return ["The interface contract's checks could not run at release: their runner wrote no report."]
-    failed = [t for t in report.tests if getattr(t, "outcome", "") not in ("passed", "skipped")]
-    logger.info("Interface contract at release: %d of %d check(s) failed", len(failed), len(report.tests))
-    return [
-        (
-            f"At release the product does not keep its interface contract: {t.name}"
-            + (" - at a bare visit; the control may be shown only to a signed-in user" if " page /" in t.name else "")
-        )[:400]
-        for t in failed[:10]
-    ]
+    gaps: list[str] = []
+    if report is not None and not report.found:
+        gaps.append("The interface contract's checks could not run at release: their runner wrote no report.")
+    elif report is not None:
+        failed = [t for t in report.tests if getattr(t, "outcome", "") not in ("passed", "skipped")]
+        logger.info("Interface contract at release: %d of %d check(s) failed", len(failed), len(report.tests))
+        gaps += [
+            (
+                f"At release the product does not keep its interface contract: {t.name}"
+                + (" - at a bare visit; the control may be shown only to a signed-in user" if " page /" in t.name else "")
+            )[:400]
+            for t in failed[:10]
+        ]
+    gaps += [f"At release the product does not keep its interface contract: {failure}"[:400] for failure in failures[:10]]
+    if unchecked:
+        gaps.append(
+            f"{len(unchecked)} line(s) of the interface contract were not checked at release: "
+            + "; ".join(unchecked[:5]) + ("; ..." if len(unchecked) > 5 else "")
+        )
+    return gaps

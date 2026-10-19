@@ -67,6 +67,9 @@ def test_a_failed_check_at_release_is_a_gap_and_the_files_are_removed(tmp_path, 
 
     def runner(argv, category, working_directory):
         project = tmp_path / working_directory
+        if argv[0] == "notes":  # the contract's command line, run as itself (Initiative AU)
+            seen["command"] = argv
+            return {"returncode": "0"}
         seen["spec"] = (project / ic.CHECK_DIR / "contract.spec.js").read_text()
         seen["config"] = (project / ic.CONFIG_FILE).read_text()
         (project / "test-results").mkdir(exist_ok=True)
@@ -81,17 +84,33 @@ def test_a_failed_check_at_release_is_a_gap_and_the_files_are_removed(tmp_path, 
     gaps = ic.what_the_contract_checks_find(tmp_path, runner=runner)
 
     assert len(gaps) == 1 and "AC-1" in gaps[0] and "signed-in user" in gaps[0]
+    assert seen["command"] == ["notes", "add", "milk"]
     assert not BANNED.search(gaps[0])
     assert "import base from './playwright.config.js'" in seen["config"]
     assert not (tmp_path / "app" / ic.CHECK_DIR).exists() and not (tmp_path / "app" / ic.CONFIG_FILE).exists()
 
 
-def test_a_pack_without_playwright_is_not_checked(tmp_path, monkeypatch):
+def test_a_pack_without_a_probe_runner_says_its_routes_went_unchecked_and_still_runs_commands(tmp_path, monkeypatch):
+    """Initiative AU: a line nothing can check is said to be unchecked, never left out in silence."""
     _locked_project(tmp_path, monkeypatch)
     ic.record_at_lock(tmp_path, LINES)
     monkeypatch.setattr(contract, "the_pack", lambda root: (SimpleNamespace(files={}, probe_runner=""), {"project": "app"}))
 
-    assert ic.what_the_contract_checks_find(tmp_path, runner=lambda *a: 1 / 0) == []
+    gaps = ic.what_the_contract_checks_find(tmp_path, runner=lambda argv, category, where: {"returncode": "3"})
+
+    assert any("AC-5" in gap and "exited 3" in gap for gap in gaps)
+    [unchecked] = [gap for gap in gaps if "were not checked" in gap]
+    assert "AC-3 GET /api/notes" in unchecked and "no runner on this stack probes" in unchecked
+    assert not BANNED.search(" ".join(gaps))
+
+
+def test_a_route_with_a_parameter_is_unchecked_not_failed(tmp_path, monkeypatch):
+    _locked_project(tmp_path, monkeypatch)
+    ic.record_at_lock(tmp_path, ["AC-2 GET /api/notes/{id} -> 200"])
+
+    gaps = ic.what_the_contract_checks_find(tmp_path, runner=lambda *a: 1 / 0)
+
+    assert gaps == ["1 line(s) of the interface contract were not checked at release: AC-2 GET /api/notes/{id} -> 200 (a route with a parameter in it)"]
 
 
 def test_the_architect_writes_it_and_the_acceptance_author_reads_it(tmp_path):
@@ -127,3 +146,24 @@ def test_a_pack_declares_its_runner_by_what_it_ships_and_the_checks_name_no_tool
     assert set(declared.values()) <= set(ic.PROBE_RUNNERS) | {""}
     body = __import__("inspect").getsource(ic.what_the_contract_checks_find)
     assert "playwright" not in body.lower().replace("probe_runners", "")
+
+
+def test_what_a_command_line_writes_is_not_shipped(tmp_path, monkeypatch):
+    import subprocess
+
+    _locked_project(tmp_path, monkeypatch)
+    ic.record_at_lock(tmp_path, ["AC-5 command notes add milk -> exit 0"])
+    for args in (["init", "-q"], ["config", "user.email", "t@t"], ["config", "user.name", "t"]):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True)
+    (tmp_path / "app" / "notes.txt").write_text("kept\n")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=tmp_path, check=True)
+
+    def runner(argv, category, where):
+        (tmp_path / "app" / "notes.txt").write_text("kept\nmilk\n")
+        (tmp_path / "app" / "new-store.json").write_text("[]")
+        return {"returncode": "0"}
+
+    assert ic.what_the_contract_checks_find(tmp_path, runner=runner) == []
+    assert (tmp_path / "app" / "notes.txt").read_text() == "kept\n"
+    assert not (tmp_path / "app" / "new-store.json").exists()

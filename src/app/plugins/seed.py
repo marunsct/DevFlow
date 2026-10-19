@@ -334,6 +334,20 @@ for _key in ("react", "vue", "angular", "nextjs"):
 for _key, _line in _TESTING_BY_LANGUAGE.items():
     SEED_INSTRUCTIONS[_key] += "\n" + _line
 
+#: Password hashing in Python. Measured on one gate run: a service declared
+#: `passlib[bcrypt]` and `bcrypt>=4.0.0`, the install took bcrypt 5.0.0, and
+#: every hash failed - passlib 1.7.4, its last release, hashes a 255-byte secret
+#: in its own start-up check and bcrypt 5 refuses one over 72 bytes - so the
+#: unit tests that hash a password failed while the fixer read it as a version
+#: mismatch to work around.
+_PYTHON_PASSWORDS = (
+    "- Password hashing: `passlib` 1.7.4, its last release, fails on every hash with `bcrypt` 5 "
+    "(\"password cannot be longer than 72 bytes\", from passlib's own start-up check). Hash with "
+    "`bcrypt` directly - `bcrypt.hashpw(password.encode(), bcrypt.gensalt())` and "
+    "`bcrypt.checkpw(password.encode(), hashed)` - or, keeping passlib, declare `bcrypt<5` beside it."
+)
+SEED_INSTRUCTIONS["python"] += "\n" + _PYTHON_PASSWORDS
+
 #: Installing a Python application set up without a pack. Measured on one run:
 #: a setup declared `pip install -e .` over a `pyproject.toml` with setuptools at
 #: a project root that also held its tests, its data and `node_modules`, and the

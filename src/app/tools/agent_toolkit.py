@@ -623,19 +623,52 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         """
         from app.tools.sandbox import SandboxExecutor
 
+        command, working_directory, moved = _a_cd_taken_as_the_working_directory(command, working_directory)
         held_back = _a_look_with_the_looking_tools_withheld(command, repo_root, working_directory)
         if held_back:
             return {"error": held_back}
-        return SandboxExecutor.execute(
+        result = SandboxExecutor.execute(
             command=command,
             repo_root=repo_root,
             role_name=role_name,
             category=category,
             working_directory=working_directory,
         )
+        if moved and isinstance(result, dict):
+            result = {**result, "note": moved}
+        return result
 
     run_terminal_command.description = with_the_network_as_it_is(run_terminal_command.description)
     return run_terminal_command
+
+
+#: Shell operators a `cd` may be followed by before its command.
+_AFTER_A_CD = frozenset({"&&", ";"})
+
+
+def _a_cd_taken_as_the_working_directory(command: Any, working_directory: str | None) -> tuple[Any, str | None, str]:
+    """`["cd", folder, *command]` as `command` run in `folder`; else the call unchanged and "".
+
+    Measured live: `["cd", "task-management-dashboard", ".venv/bin/python", "-m",
+    "pip", "list"]` was refused three times in one run and five in another
+    ("`cd` is not a program. Pass `working_directory`") - each a model call to
+    say what the argv already said. The folder is resolved, and confined, by
+    the sandbox exactly as a `working_directory` is.
+    """
+    if not isinstance(command, list) or len(command) < 3 or os.path.basename(str(command[0])) != "cd":
+        return command, working_directory, ""
+    folder, rest = str(command[1]), [str(part) for part in command[2:]]
+    if rest and rest[0] in _AFTER_A_CD:
+        rest = rest[1:]
+    if not rest or not folder.strip() or folder.startswith("-"):
+        return command, working_directory, ""
+    base = str(working_directory or "").strip().strip("/")
+    joined = os.path.normpath(os.path.join(base, folder)) if base else os.path.normpath(folder)
+    moved = (
+        f"Ran `{' '.join(rest)}` in `{joined}`: `cd` is not a program here, so the folder was taken as "
+        f"`working_directory`, which is how to run a command elsewhere."
+    )
+    return rest, joined, moved
 
 
 #: Programs that only show what is in the workspace: what `read_file` and

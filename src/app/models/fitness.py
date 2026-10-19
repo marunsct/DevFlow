@@ -76,7 +76,21 @@ class Fitness:
             return "usable"
         return "unfit"
 
-    def advice(self) -> str:
+    def advice(self, model_name: str = "") -> str:
+        said = self._advice()
+        if self.verdict != "fit" and model_name:
+            # Which server setting is likely missing, from the family (Initiative M):
+            # a tool-call failure is mostly a server that does not parse the family's calls.
+            from app.models.registry import profile_for
+
+            profile = profile_for(model_name)
+            if profile.family != "generic":
+                said += (f"; check that the server parses this {profile.family} model's tool calls: "
+                         f"{profile.parser} (llama.cpp: --jinja with the model's own chat template; "
+                         "vLLM: --tool-call-parser)")
+        return said
+
+    def _advice(self) -> str:
         if self.verdict == "fit":
             return "fit for every stage"
         if self.verdict == "usable":

@@ -507,6 +507,28 @@ def _bare(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", cleaned.lower())
 
 
+def _taken_as_the_tool_it_learned_elsewhere(call: dict[str, Any], parameters: dict[str, Any]) -> None:
+    """A call to a tool known by another harness's name, renamed to the offered one it means (M.5). Never raises."""
+    try:
+        from app.models.registry import TOOL_ALIASES
+
+        name = str(call.get("name") or "")
+        if name in parameters or name not in TOOL_ALIASES or not isinstance(call.get("args"), dict):
+            return
+        target, renames = TOOL_ALIASES[name]
+        schema = parameters.get(target)
+        if schema is None:
+            return
+        args = {renames.get(key, key): value for key, value in call["args"].items()}
+        wanted = set((schema or {}).get("properties") or {})
+        if not set((schema or {}).get("required") or []) <= set(args) or not set(args) <= wanted:
+            return
+        logger.info("A call to `%s`, a name from elsewhere, taken as `%s`", name, target)
+        call["name"], call["args"] = target, args
+    except Exception:  # noqa: BLE001 - the refusal stands
+        return
+
+
 def _the_offered_tool_meant(name: str, parameters: dict[str, Any], args: Any = None) -> str | None:
     """The one offered tool a call to `name`, which is not offered, plainly means; None if none or unclear.
 
@@ -568,6 +590,7 @@ def decode_structured_arguments(result: Any, tools: Any) -> Any:
         except Exception:  # noqa: BLE001 - a recovery that cannot run changes nothing
             logger.info("Invalid tool calls could not be recovered", exc_info=True)
         for call in getattr(message, "tool_calls", None) or []:
+            _taken_as_the_tool_it_learned_elsewhere(call, parameters)
             offered = _the_offered_tool_meant(str(call.get("name") or ""), parameters, call.get("args"))
             if offered is not None:
                 logger.info("A call to `%s`, which is not offered, taken as `%s`", call.get("name"), offered)

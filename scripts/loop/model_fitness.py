@@ -18,17 +18,19 @@ import sys
 from app.models import build_default_chat_model
 from app.models.fitness import probe
 
+from app.models import _runtime_settings
+
 result = probe(build_default_chat_model())
-print(f"{result.verdict.upper()} build model: {result.passed}/{result.total} probes - {result.advice()}")
+name = str(_runtime_settings().model_name or "")
+print(f"{result.verdict.upper()} build model: {result.passed}/{result.total} probes - {result.advice(name)}")
 for miss in result.misses:
     print(f"  miss {miss}")
 
 if "--edits" in sys.argv:
-    from app.models import _runtime_settings
     from app.models.fitness import edit_probe
     from app.models.registry import describe, record_edit_rates
 
-    name = _runtime_settings().model_name or "unknown"
+    name = name or "unknown"
     rates = edit_probe(build_default_chat_model())
     print(f"edits: {rates} -> {record_edit_rates(name, rates)}")
     print(describe(name))

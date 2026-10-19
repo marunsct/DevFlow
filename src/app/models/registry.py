@@ -66,6 +66,23 @@ WELL_FORMED_EDITS = 0.95
 WHOLE_FILE_LINES = 300
 
 
+#: Tools models call by names they learned elsewhere, as data (Initiative M.5): the
+#: offered tool each one means, and how its argument names map. Measured across the
+#: stored runs: `edit_file` with `path`, `context` and `replacement` was refused
+#: 209 times in four runs, every time as "not a valid tool". A name here is only
+#: taken when the tool it means is offered and every argument that tool requires
+#: is given; otherwise the refusal stands.
+TOOL_ALIASES: dict[str, tuple[str, dict[str, str]]] = {
+    "edit_file": ("edit_artifact", {"path": "relative_path", "file_path": "relative_path",
+                                    "context": "find", "old_string": "find", "old_str": "find",
+                                    "replacement": "replace", "new_string": "replace", "new_str": "replace"}),
+    "str_replace": ("edit_artifact", {"path": "relative_path", "file_path": "relative_path",
+                                      "old_str": "find", "old_string": "find", "new_str": "replace", "new_string": "replace"}),
+    "create_file": ("write_artifact", {"path": "relative_path", "file_path": "relative_path",
+                                       "file_text": "content", "contents": "content"}),
+}
+
+
 def profile_for(model_name: str) -> FamilyProfile:
     """The family profile for a served model's name; the generic one when no family matches."""
     for pattern, profile in FAMILIES:
@@ -120,5 +137,5 @@ def describe(model_name: str) -> str:
             f"recommended sampling (advice, never sent): {profile.sampling}")
 
 
-__all__ = ["FAMILIES", "FamilyProfile", "GENERIC", "WELL_FORMED_EDITS", "describe", "edit_preference",
+__all__ = ["TOOL_ALIASES", "FAMILIES", "FamilyProfile", "GENERIC", "WELL_FORMED_EDITS", "describe", "edit_preference",
            "measured_edit_rates", "profile_for", "record_edit_rates"]

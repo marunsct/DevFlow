@@ -276,6 +276,7 @@ document. Each script's own header is the authority on its arguments.
 | `scripts/bench/mutate.py` | mutation probe of a run's locked suite | worker |
 | `scripts/bench/brief_match.py` | whether a run's brief is the benchmark's brief, ignoring whitespace (W.1) | host |
 | `scripts/ui/axe_measure.mjs` | axe accessibility violations on Home, Runs, Settings and a run dashboard | host (needs `npm install --prefix scripts/ui playwright-core axe-core`) |
+| `scripts/ui/axe_kit.mjs` | axe on the component kit's `/dev/ui` page in every theme, page and open dialog; exit 1 past 5 per theme (UI-P gate). Needs no login or deploy: start `npx vite --port 5179` in `langchain-ui/` first | host (same install as above) |
 | `scripts/ui/theme_contrast.mjs` | contrast of every token pair in every theme; exit 1 on a failure | host |
 | `scripts/setup-env.sh` | generates the secrets a first deployment needs, never overwriting one | host, once |
 

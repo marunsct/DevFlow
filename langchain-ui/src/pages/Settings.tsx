@@ -1,3 +1,5 @@
+import { CredentialInput } from '../components/CredentialInput';
+import { InfoRow } from '../ui';
 import { LessonsPanel } from '../components/LessonsPanel';
 import { AppearanceSettings } from '../components/AppearanceSettings';
 import React, { useEffect, useState } from 'react';
@@ -173,35 +175,6 @@ export const Settings: React.FC = () => {
       setMessage(err.response?.data?.detail ?? 'Could not remove the saved model.');
     }
   };
-
-  const CredentialField = ({ label, field, configured, hint, placeholder }: {
-    label: string; field: CredentialField; configured: boolean;
-    hint?: string | null; placeholder: string;
-  }) => (
-    <div>
-      <div className="flex justify-between items-baseline mb-1">
-        <label className="text-sm font-medium text-text-secondary">{label}</label>
-        <span className={configured ? 'text-xs font-mono text-success' : 'text-xs text-text-muted'}>
-          {configured ? (hint ?? 'configured') : 'not configured'}
-        </span>
-      </div>
-      <input
-        type="password"
-        autoComplete="new-password"
-        value={credentials[field]}
-        onChange={(e) => setCredentials({ ...credentials, [field]: e.target.value })}
-        className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary font-mono focus:outline-none focus:border-primary"
-        placeholder={configured ? 'Leave blank to keep the stored key' : placeholder}
-      />
-    </div>
-  );
-
-  const InfoRow = ({ label, value }: { label: string; value: string }) => (
-    <div className="flex justify-between items-center py-3 border-b border-border/30 last:border-0">
-      <span className="text-sm text-text-secondary">{label}</span>
-      <span className="text-sm font-medium text-text-primary font-mono">{value}</span>
-    </div>
-  );
 
   /** Ask the server what its context window actually is.
    *
@@ -665,12 +638,13 @@ export const Settings: React.FC = () => {
                     ? 'This endpoint has a key saved.'
                     : 'No key is saved for this endpoint yet.'}
                 </p>
-                <CredentialField
+                <CredentialInput
                   label={buildKeyLabel}
-                  field={buildKeyField}
                   configured={buildKeyConfigured}
                   hint={buildKeyHint}
                   placeholder="leave empty to keep the saved key"
+                  value={credentials[buildKeyField]}
+                  onChange={(value) => setCredentials((current) => ({ ...current, [buildKeyField]: value }))}
                 />
               </div>
 
@@ -807,12 +781,13 @@ export const Settings: React.FC = () => {
                   </div>
                 </div>
                 <div className="mt-3">
-                  <CredentialField
+                  <CredentialInput
                     label="API key for this model's endpoint"
-                    field="judgement_api_key"
                     configured={settings.judgement_api_key_configured ?? false}
                     hint={settings.judgement_api_key_hint ?? null}
                     placeholder="leave empty to keep the saved key"
+                    value={credentials.judgement_api_key}
+                    onChange={(value) => setCredentials((current) => ({ ...current, judgement_api_key: value }))}
                   />
                   <p className="text-xs text-text-muted mt-1">
                     {settings.judgement_endpoint_key_saved
@@ -880,11 +855,11 @@ export const Settings: React.FC = () => {
           <User className="h-5 w-5 text-primary" />
           <h2 className="font-semibold text-text-primary">Account</h2>
         </div>
-        <div className="px-6 py-2">
+        <dl className="px-6 py-2">
           <InfoRow label="Username" value={user?.username || 'Loading...'} />
           <InfoRow label="Role" value={user?.role ?? "-"} />
           <InfoRow label="Session" value="Active" />
-        </div>
+        </dl>
       </div>
 
       {/* Security */}
@@ -893,11 +868,11 @@ export const Settings: React.FC = () => {
           <Shield className="h-5 w-5 text-primary" />
           <h2 className="font-semibold text-text-primary">Security</h2>
         </div>
-        <div className="px-6 py-2">
+        <dl className="px-6 py-2">
           <InfoRow label="Authentication" value="JWT Bearer Token" />
           <InfoRow label="Token Expiry" value="60 minutes (refresh enabled)" />
           <InfoRow label="Approval Gate" value="Writes and command execution" />
-        </div>
+        </dl>
       </div>
 
       {/* About */}
@@ -906,12 +881,12 @@ export const Settings: React.FC = () => {
           <Info className="h-5 w-5 text-primary" />
           <h2 className="font-semibold text-text-primary">About</h2>
         </div>
-        <div className="px-6 py-2">
+        <dl className="px-6 py-2">
           <InfoRow label="Application" value="DevFlow.ai" />
           <InfoRow label="Version" value="0.2.0" />
           <InfoRow label="Backend" value="FastAPI + LangGraph" />
           <InfoRow label="Frontend" value="React + Vite + Tailwind" />
-        </div>
+        </dl>
       </div>
       </div>
       </div>

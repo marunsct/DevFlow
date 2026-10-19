@@ -1,4 +1,5 @@
 import { NotFound } from './pages/NotFound';
+import { DevUI } from './pages/DevUI';
 import { adoptServerPreferences } from './lib/appearance';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
@@ -92,6 +93,8 @@ function App() {
       <ErrorBoundary>
         <Routes>
           <Route path="/login" element={<Login />} />
+          {/* The component kit's page, for the accessibility measure and the theme screenshots; never in a production build. */}
+          {import.meta.env.DEV && <Route path="/dev/ui" element={<DevUI />} />}
           <Route
             path="/"
             element={

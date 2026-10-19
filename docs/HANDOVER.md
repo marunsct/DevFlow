@@ -284,6 +284,10 @@ test that fails on the old code:
   "ships no unit tests" gap, and a run no review stage read gets a gap; BL (owner's yes): a sprint
   accepted on its suite with no review yet goes through the reviews first, and the custom setup
   is held to the smallest app and to tests its runners collect. Next: AO.10, AO.5; AQ steps 1-2 need the baseline KPIs.
+- **UI track (owner, 2026-10-19: start it while the baselines run):** UI-P, the component kit in
+  `langchain-ui/src/ui/` with `/dev/ui` and `scripts/ui/axe_kit.mjs` (0 violations per theme).
+  Not deployed: rebuilding the app restarts it, so UI work ships with stage 1. Next: UI-S1/S2
+  remainder, then BG.1, BG.2, BG.5, BG.6.
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).
 
 ### 2.00000 Appendix 3 built (2026-10-19)

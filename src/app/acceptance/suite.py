@@ -485,6 +485,67 @@ def _command(repo_root: str | Path) -> tuple[list[str], str, str] | None:
     return argv, report, where[0]
 
 
+#: The shape a suite's own declaration of how it runs must have.
+_THE_DECLARED_SHAPE = '{"command": ["<executable>", "<argument>", ...], "report": "<file>"}'
+
+
+def _what_the_declaration_gets_wrong(declared: Any) -> str:
+    """What makes a parsed `run.json` unusable, naming the shape; "" when nothing does."""
+    if not isinstance(declared, dict):
+        return f"must be one JSON object, {_THE_DECLARED_SHAPE}"
+    wrong: list[str] = []
+    argv = declared.get("command")
+    if not (isinstance(argv, list) and argv and all(isinstance(a, str) for a in argv)):
+        wrong.append(
+            "`command` must be one command as a list of strings"
+            + (" - not a `commands` list: when the suite needs several runners, one script runs "
+               "them all and writes one report, and `command` runs that script"
+               if "commands" in declared else "")
+        )
+    report = declared.get("report")
+    if not isinstance(report, str) or not report.strip() or report.rstrip().endswith("/"):
+        wrong.append("`report` must be the path of one JUnit XML file the command writes, relative to the project")
+    return ("; ".join(wrong) + f". The shape is {_THE_DECLARED_SHAPE}") if wrong else ""
+
+
+def problems_with_the_declared_command(text: str) -> str:
+    """What makes a `run.json` about to be written unusable; "" if nothing. Checked as it is written."""
+    try:
+        declared = json.loads(text)
+    except ValueError as error:
+        return f"it is not valid JSON ({error}); it must be {_THE_DECLARED_SHAPE}"
+    return _what_the_declaration_gets_wrong(declared)
+
+
+def _why_no_command(repo_root: str | Path) -> str:
+    """Why no command is known for this suite, naming what to change; never raises.
+
+    "no command is known for this suite" was the whole of it. Measured on one
+    run whose setup was left to the agents: the suite's `run.json` held a
+    `commands` list of two runners and a report directory, and QA was sent back
+    twice with that sentence and nothing it could act on.
+    """
+    base = "no command is known for this suite"
+    try:
+        suite_dir = directory(repo_root)
+        if suite_dir is None or location(repo_root) is None:
+            return base + ": no acceptance directory is set up for it yet"
+        where = suite_dir / DECLARED_COMMAND_FILE
+        shown = where.relative_to(Path(repo_root)).as_posix()
+        if not where.is_file():
+            return f"{base}: `{shown}` is not written; it says how the suite runs, as {_THE_DECLARED_SHAPE}"
+        try:
+            declared = json.loads(where.read_text(encoding="utf-8"))
+        except ValueError as error:
+            return f"{base}: `{shown}` is not valid JSON ({error}); it must be {_THE_DECLARED_SHAPE}"
+        wrong = _what_the_declaration_gets_wrong(declared)
+        if wrong:
+            return f"{base}: `{shown}` {wrong}"
+    except Exception:  # noqa: BLE001 - the short answer is still an answer
+        return base
+    return base
+
+
 def _sandbox_runner(repo_root: str | Path) -> Runner:
     from app.stacks.scaffold import sandbox_runner
 
@@ -500,7 +561,7 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         logger.debug("Could not enforce the project contract", exc_info=True)
     command = _command(repo_root)
     if command is None:
-        result = AcceptanceResult(ran=False, repairs=repairs, problem="no command is known for this suite")
+        result = AcceptanceResult(ran=False, repairs=repairs, problem=_why_no_command(repo_root))
         return _judged(repo_root, result, save)
     argv, report_path, project = command
     report_file = Path(repo_root) / project / report_path

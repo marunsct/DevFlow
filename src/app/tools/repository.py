@@ -6495,6 +6495,20 @@ def write_approved_artifact(
                 "write it again with those fixed."
             )
 
+    if target.name == "run.json":
+        # The suite's own declaration of how it runs, when no setup declares it:
+        # checked as it is written, like the setup's (`suite.problems_with_the_declared_command`).
+        from app.acceptance import suite as acceptance_suite
+
+        suite_dir = acceptance_suite.directory(artifact_root)
+        if suite_dir is not None and target == (suite_dir / acceptance_suite.DECLARED_COMMAND_FILE).resolve():
+            problem = acceptance_suite.problems_with_the_declared_command(content)
+            if problem:
+                raise RepositoryToolError(
+                    f"Refusing to write '{relative_path}': it {problem} Nothing was changed; "
+                    "write it again with that fixed."
+                )
+
     forked = _the_same_module_already_here(target, content)
     if forked is not None:
         raise RepositoryToolError(

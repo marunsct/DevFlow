@@ -119,7 +119,14 @@ _FAMILIES = {
     "python": (".py",),
     "script": (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte"),
 }
-_UNIT_TEST = re.compile(r"(^test_.*\.py$|_test\.py$|\.(test|spec)\.[cm]?[jt]sx?$)")
+
+
+def _a_unit_test(name: str, pack: Any) -> bool:
+    """Whether a file name is one the pack's unit runners collect (pack data, Initiative AO.10)."""
+    from fnmatch import fnmatch
+
+    names = (*(getattr(pack, "unit_test_names", ()) or ()), getattr(pack, "unit_pattern", "") or "")
+    return any(glob and fnmatch(name, glob) for glob in names)
 
 
 def _family(path: str) -> str:
@@ -203,6 +210,9 @@ def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
         root = Path(repo_root) / project
         if not entrypoints or not root.is_dir():
             return []
+        from app.stacks import contract, pack_named
+
+        pack = pack_named(str((contract.read(repo_root) or {}).get("pack") or ""))
         from app.acceptance import suite
         from app.analysis.walk import files_under
 
@@ -220,15 +230,15 @@ def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
                 f"`{project}/{entrypoint}`. Change the served copy; the other is never built or run."
             )
         for family in sorted({_family(e) for e in entrypoints} - {""}):
-            tests = [f for f in files if _family(f) == family and _UNIT_TEST.search(Path(f).name)]
+            tests = [f for f in files if _family(f) == family and _a_unit_test(Path(f).name, pack)]
             served_folders = {
                 Path(e).parent.name for e in entrypoints
                 if _family(e) == family and Path(e).parent.as_posix() not in ("", ".")
             }
             if not tests or not served_folders:
                 continue
-            # Fixtures count: a Python test reaches the app through `conftest.py`.
-            helpers = [f for f in files if Path(f).name == "conftest.py"]
+            # Fixtures count: a test can reach the app through a helper the pack names.
+            helpers = [f for f in files if Path(f).name in (getattr(pack, "test_helpers", ()) or ())]
             texts = [(root / f).read_text(encoding="utf-8", errors="replace") for f in [*tests, *helpers]]
             if not any(re.search(rf"\b{re.escape(n)}\b", text) for n in served_folders for text in texts):
                 problems.append(

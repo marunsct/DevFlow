@@ -93,6 +93,14 @@ class StackPack:
     stack: Mapping[str, str]
     #: Families of cross-file checks that apply (see `integration_checks`).
     check_families: frozenset[str] = field(default_factory=frozenset)
+    #: Every name a unit test file of this pack's runners takes, beyond
+    #: `unit_pattern`: pytest collects `*_test.py` too, and a fullstack pack's
+    #: one unit command runs the page's runner and the service's. Read by the
+    #: check that unit tests name the served code (`scaffold`, Initiative AO.10).
+    unit_test_names: tuple[str, ...] = ()
+    #: Files a unit test reaches the code through without naming it in the
+    #: test itself: pytest's `conftest.py` fixtures.
+    test_helpers: tuple[str, ...] = ()
     #: Where screenshots and other evidence the acceptance run leaves are found.
     evidence_dir: str = ""
     #: The file the drafted service's routes or handlers live in, which the

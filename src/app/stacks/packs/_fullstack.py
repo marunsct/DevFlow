@@ -64,6 +64,9 @@ class Service:
     testing: str
     ci_setup: tuple[str, ...] = ()
     release_files: dict[str, str] = field(default_factory=dict)
+    #: The names its unit test files take, and the files its tests reach the code through.
+    unit_names: tuple[str, ...] = ()
+    test_helpers: tuple[str, ...] = ()
     dependencies: dict[str, str] = field(default_factory=dict)
     dev_dependencies: dict[str, str] = field(default_factory=dict)
     check_families: frozenset[str] = frozenset()
@@ -277,6 +280,7 @@ createApp().listen(port, host, () => {
 """
 
 EXPRESS = Service(
+    unit_names=("*.test.js",),
     entry="server/app.js",
     name="express",
     words=("express",),
@@ -457,6 +461,8 @@ process.exit(failed ? 1 : 0);
 """
 
 FASTAPI = Service(
+    unit_names=_python.UNIT_TEST_NAMES,
+    test_helpers=_python.TEST_HELPERS,
     entry="{{package}}/main.py",
     name="fastapi",
     words=("fastapi", "starlette", "uvicorn"),
@@ -669,6 +675,8 @@ def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
         acceptance_dir="acceptance",
         acceptance_pattern="*.spec.js",
         unit_pattern=unit_glob,
+        unit_test_names=(unit_glob, *service.unit_names),
+        test_helpers=service.test_helpers,
         kept_files=(
             "playwright.config.js", "playwright.setup.mjs", "vite.config.ts", "scripts/serve-acceptance.mjs",
             *service.kept,

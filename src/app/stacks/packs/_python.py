@@ -93,6 +93,10 @@ criterion id in its name proves nothing the harness can count."""
 #: fixture that does not exist, a file that does not parse. An ImportError or
 #: AttributeError is left out: before anything is built, the product's module
 #: or function not existing yet is exactly what a test should fail on.
+#: The unit test files pytest collects by default, and where its fixtures live.
+UNIT_TEST_NAMES = ("test_*.py", "*_test.py")
+TEST_HELPERS = ("conftest.py",)
+
 TEST_BUGS = (
     r"\bNameError\b",
     r"\b(?:SyntaxError|IndentationError)\b",

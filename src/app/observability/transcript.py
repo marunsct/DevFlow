@@ -303,7 +303,7 @@ _A_SECTION = re.compile(r"^(?:-{3}|={3}) .+ (?:-{3}|={3})[^\n]*$", re.M)
 #: The sections that carry the specification: a header naming it, and not one of
 #: the advice or gap lists that only mention it.
 _THE_SPECIFICATION = re.compile(r"specification", re.I)
-_ONLY_MENTIONS_IT = re.compile(r"advice|defers|already decided", re.I)
+_ONLY_MENTIONS_IT = re.compile(r"advi[cs]e|defers|already decided", re.I)
 
 
 def _specification_in(text: str) -> int:
@@ -359,9 +359,15 @@ def prompt_blocks(messages: list[dict[str, Any]], kwargs: dict[str, Any] | None 
     tools = ((kwargs or {}).get("invocation_params") or {}).get("tools") or []
     if tools:
         add("tool_schemas", len(json.dumps(tools, default=str)))
-    asked = False
+    # The stage's opening turn: every human message before the model's first
+    # reply. A request can arrive as several messages (the ask, the documents,
+    # the research), and counting only the first as the request put the rest
+    # under conversation - 60k characters of an architect's opening request.
+    answered = False
     for message in messages or []:
         role = str(message.get("role") or "")
+        if role in ("ai", "assistant", "tool"):
+            answered = True
         text = _text_of(message.get("content"))
         calls = message.get("tool_calls")
         size = len(text) + (len(json.dumps(calls, default=str)) if calls else 0)
@@ -384,8 +390,8 @@ def prompt_blocks(messages: list[dict[str, Any]], kwargs: dict[str, Any] | None 
             kind = "workspace"
         elif stripped.startswith("[Project memory"):
             kind = "project_memory"
-        elif not asked:
-            kind, asked = "request", True
+        elif not answered:
+            kind = "request"
         elif stripped.startswith("["):
             kind = "notes"
         else:

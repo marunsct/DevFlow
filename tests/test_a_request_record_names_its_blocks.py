@@ -99,3 +99,27 @@ def test_a_record_from_before_blocks_were_named_reports_no_share():
     got = _kpi().kpis([{"at": "2026-10-19T00:00:00+00:00", "stage": "s", "kind": "model_request", "tools": ["a"]}])
 
     assert not any(key.startswith("prompt_block_share_") for key in got)
+
+
+def test_an_opening_request_in_several_messages_is_all_request():
+    """Measured live: an architect's opening turn came as several human messages,
+    and all but the first were counted as conversation."""
+    whole = transcript._messages_of([
+        SystemMessage(content="You are the architect."),
+        HumanMessage(content="Write the specification."),
+        HumanMessage(content="--- Original uploaded documents ---\n" + "brief " * 100),
+        AIMessage(content="", tool_calls=[{"name": "read_file", "args": {"file_path": "a"}, "id": "c1"}]),
+        ToolMessage(content="contents", tool_call_id="c1"),
+    ])
+
+    blocks = transcript.prompt_blocks(whole, {})
+
+    assert blocks["request"] > 600
+    assert blocks["conversation"] < 100
+
+
+def test_the_specialists_advice_is_not_counted_as_the_specification():
+    text = ("--- What the specialists advise, before you write the specification ---\n" + "advice " * 50
+            + "\n--- Approved technical specification (/docs/technical_specification.md) ---\nTHE SPEC\n")
+
+    assert transcript._specification_in(text) == len(text) - text.index("--- Approved technical")

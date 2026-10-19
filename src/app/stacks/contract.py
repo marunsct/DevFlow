@@ -331,9 +331,64 @@ def enforce(repo_root: str | Path) -> list[str]:
             )
     if pack.kept_scripts:
         repairs.extend(_put_back_the_scripts(root, project, pack))
+    repairs.extend(_put_back_the_toolchain(root, project, pack, rendered))
     if repairs:
         logger.warning("Project contract repaired: %s", "; ".join(repairs))
     return repairs
+
+
+#: A package a file imports: `from 'x'`, `import 'x'`, `import('x')`, `require('x')`.
+_IMPORTED = re.compile(r"""(?:\bfrom\s+|\bimport\s*\(?\s*|\brequire\s*\(\s*)['"]([^'"./][^'"]*)['"]""")
+
+
+def _the_package(specifier: str) -> str:
+    parts = specifier.split("/")
+    return "/".join(parts[:2]) if specifier.startswith("@") else parts[0]
+
+
+def _put_back_the_toolchain(root: Path, project: str, pack: StackPack, rendered: dict[str, str]) -> list[str]:
+    """Put back the pack's version of every package the harness's own kept files import.
+
+    Measured live: a drafted manifest pinned `@playwright/test` 1.45.0, `vite`
+    5.4.2 and `vitest` 2.0.0 over the scaffold's 1.64.0, ^7 and ^3.2; once it
+    was installed, Playwright 1.45 hung under the runtime here and every
+    acceptance run timed out with no output. The kept files were written for
+    the pack's versions, as its scripts were. The product's own packages are
+    left as they are.
+    """
+    try:
+        wanted_manifest = json.loads(rendered.get("package.json") or "")
+        manifest = root / "package.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, dict) or not isinstance(wanted_manifest, dict):
+        return []
+    imported = {
+        _the_package(found)
+        for relative in pack.kept_files
+        for found in _IMPORTED.findall(rendered.get(relative) or "")
+    }
+    sections = ("dependencies", "devDependencies")
+    changed: list[str] = []
+    for section in sections:
+        for name, version in (wanted_manifest.get(section) or {}).items():
+            if name not in imported:
+                continue
+            here = next((s for s in sections if name in (data.get(s) or {})), None)
+            if here == section and data[section][name] == version:
+                continue
+            if here is not None and here != section:
+                del data[here][name]
+            data.setdefault(section, {})[name] = version
+            changed.append(f"{name} {version}")
+    if not changed:
+        return []
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return [
+        f"{project}/package.json had changed the toolchain the harness's own files import; put back "
+        + ", ".join(changed) + "."
+    ]
 
 
 def _put_back_the_scripts(root: Path, project: str, pack: StackPack) -> list[str]:

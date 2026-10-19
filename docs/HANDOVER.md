@@ -315,7 +315,8 @@ test that fails on the old code:
   code, no orphans), BG.15 (model pressure in the rail), BG.14 (the run's timeline above the feed)
   the BG.16 housekeeping and UI-S6 (a run's KPIs on its page; `/runs/compare`). **Group 1 is
   built.** Deployed e0c73cc (app + worker) at 13:28 UTC into the shakedown run, which resumed; the
-  app alone again at c6e04398 (13:50 UTC, UI and API only). **Before the next `loop.sh kpi`, deploy the
+  app alone since, last at cf75b399 (14:15 UTC: the owner's LF.31-LF.34 - estimates by brief size, the
+  frontier model checked before a run, flush sticky headings, the Delivery pane by its own width). **Before the next `loop.sh kpi`, deploy the
   worker** (`loop.sh deploy` when the shakedown ends): `kpi.py` now imports
   `app.observability.run_kpis`. Then the gate run (group 2 before/after).
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in

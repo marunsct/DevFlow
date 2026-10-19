@@ -3572,7 +3572,7 @@ review; every recommendation in it is covered here:
 | AZ skeleton + slices | P0 | NOT STARTED | after AY |
 | BA prefix-cache discipline | P1 | NOT STARTED | after BF |
 | BB lead plans in parts | P1 | NOT STARTED | |
-| BC stalls end one call earlier | P1 | DONE 2026-10-19 (BC commit) | two pointer answers in a row (`POINTERS_BEFORE_THE_ANSWER = 2`, `settled_answer._pointed_lately`) stall the stage: a writer keeps only its writers, a reader only its answer; the pointer itself now says a second one ends reading. Test `tests/test_a_second_pointer_answer_ends_the_turn.py` (the two stall tests fail on the old code); `test_a_few_pointers_take_nothing_away` now spaces its pointers with writes. Deployed after the W.2 baselines |
+| BC stalls end one call earlier | P1 | DONE 2026-10-19 `f47f685` | two pointer answers in a row (`POINTERS_BEFORE_THE_ANSWER = 2`, `settled_answer._pointed_lately`) stall the stage: a writer keeps only its writers, a reader only its answer; the pointer itself now says a second one ends reading. Test `tests/test_a_second_pointer_answer_ends_the_turn.py` (the two stall tests fail on the old code); `test_a_few_pointers_take_nothing_away` now spaces its pointers with writes. Deployed after the W.2 baselines |
 | BD two local tiers + model advice | P1 | NOT STARTED | owner's A/B |
 | BE one container per run | P2 | NOT STARTED | |
 | BF prompt composition record | P1 | DONE 2026-10-19 `ab2afae` | every `model_request` carries `blocks` (system, environment_contract, tool_schemas, project_memory, workspace, specification, request, notes, conversation; characters, summing to the request); the memory marks its length in `additional_kwargs` (never sent); `kpi.py` adds `prompt_block_share_*` and `cache_miss_after_tool_change`. Test `tests/test_a_request_record_names_its_blocks.py`: 4 of 5 fail on the old code. Deployed after the W.2 baselines |
@@ -4311,7 +4311,7 @@ the item: what it changes, why, and the evidence (review findings in
 | AZ | skeleton + slices | P0 | NOT STARTED | [AZ](#plan-az) |
 | BA | prefix-cache discipline | P1 | NOT STARTED | [BA](#plan-ba) |
 | BB | lead plans in parts | P1 | NOT STARTED | [BB](#plan-bb) |
-| BC | stalls end one call earlier | P1 | DONE 2026-10-19 (BC commit) | [BC](#plan-bc) |
+| BC | stalls end one call earlier | P1 | DONE 2026-10-19 `f47f685` | [BC](#plan-bc) |
 | BD | two local tiers + model advice | P1 | NOT STARTED | [BD](#plan-bd) |
 | BE | one container per run | P2 | NOT STARTED | [BE](#plan-be) |
 | BF | prompt composition record | P1 | DONE 2026-10-19 `ab2afae` | [BF](#plan-bf) |

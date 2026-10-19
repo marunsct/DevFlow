@@ -330,6 +330,8 @@ test that fails on the old code:
   acceptance result - the product's own import error (`models.user` that does not exist) stops its service; KPIs in `data/kpi/`.
   **Clean gate run 1 is run-01a1ab9c**, started 06:00 JST on a39807de: `tests/brief_medium.md`, `DELIVERY=fast FRONTIER=false`;
   gate run 2 follows it on the same code, then `kpi_ledger.py compare` against the baselines, then group 2.
+  **Both gate runs measure one code version (a39807de):** fixes found meanwhile are pushed but deployed only after gate
+  run 2, unless a bug would spoil the measurement. Held so far: LF.56 (bd4d602c).
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).

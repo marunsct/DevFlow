@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen, ShieldCheck, CheckSquare } from 'lucide-react';
 import { createRun, startRun, getOutcomes, type RunForecast } from '../api';
 import { holdingTheModel, useServerHealth } from '../lib/serverHealth';
+import { readRunDefaults, saveRunDefaults } from '../lib/runDefaults';
 
 export const Home: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
@@ -34,6 +35,31 @@ export const Home: React.FC = () => {
   const [reviewSprint, setReviewSprint] = useState<boolean>(true);
   const [reviewRelease, setReviewRelease] = useState<boolean>(true);
   const [reviewEscalation, setReviewEscalation] = useState<boolean>(true);
+  // The form opens as the owner last started a run (plan UI-S5): read once, and
+  // only what was saved replaces the defaults above.
+  useEffect(() => {
+    let live = true;
+    readRunDefaults().then((saved) => {
+      if (!live || !saved) return;
+      if (saved.delivery_mode) setDeliveryMode(saved.delivery_mode);
+      if (saved.use_frontier_model !== undefined) setUseFrontierModel(saved.use_frontier_model);
+      if (saved.unattended !== undefined) setUnattended(saved.unattended);
+      if (saved.auto_approve !== undefined) setAutoApprove(saved.auto_approve);
+      if (saved.approval_timeout_minutes) setApprovalTimeout(String(saved.approval_timeout_minutes));
+      if (saved.allow_subdirectories !== undefined) setAllowSubdirectories(saved.allow_subdirectories);
+      const reviews = saved.reviews ?? {};
+      const take = (key: string, set: (on: boolean) => void) => { if (key in reviews) set(reviews[key]); };
+      take('product_intake', setReviewIntake);
+      take('technical_specification', setReviewTechSpec);
+      take('acceptance_tests', setReviewAcceptance);
+      take('sprint', setReviewSprint);
+      take('release', setReviewRelease);
+      take('escalation', setReviewEscalation);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -117,6 +143,22 @@ export const Home: React.FC = () => {
       // this form just isn't one of them.
 
       await startRun(runData.run_id, payload);
+      await saveRunDefaults({
+        delivery_mode: deliveryMode,
+        use_frontier_model: useFrontierModel,
+        unattended,
+        auto_approve: autoApprove,
+        approval_timeout_minutes: parseInt(approvalTimeout, 10) > 0 ? parseInt(approvalTimeout, 10) : null,
+        allow_subdirectories: allowSubdirectories,
+        reviews: {
+          product_intake: reviewIntake,
+          technical_specification: reviewTechSpec,
+          acceptance_tests: reviewAcceptance,
+          sprint: reviewSprint,
+          release: reviewRelease,
+          escalation: reviewEscalation,
+        },
+      });
       navigate(`/runs/${runData.run_id}`);
     } catch (err: any) {
       console.error(err);

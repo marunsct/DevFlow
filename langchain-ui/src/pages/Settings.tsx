@@ -1,6 +1,7 @@
 import { CredentialInput } from '../components/CredentialInput';
 import { InfoRow, Tabs } from '../ui';
 import { ModelServerCard } from '../components/ModelServerCard';
+import { RunDefaultsCard } from '../components/RunDefaultsCard';
 import { useServerHealth } from '../lib/serverHealth';
 import { LessonsPanel } from '../components/LessonsPanel';
 import { AppearanceSettings } from '../components/AppearanceSettings';
@@ -866,6 +867,7 @@ export const Settings: React.FC = () => {
             ),
           },
           { id: 'appearance', label: 'Appearance', content: <AppearanceSettings /> },
+          { id: 'runs', label: 'Runs', content: <RunDefaultsCard /> },
           { id: 'lessons', label: 'Lessons', content: <LessonsPanel /> },
           {
             id: 'account',

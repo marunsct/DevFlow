@@ -638,7 +638,7 @@
     "type": "object"
    },
    "Preferences": {
-    "description": "The owner's appearance. Every field is optional: a patch changes only what it names.",
+    "description": "The owner's appearance and run defaults. Every field is optional: a patch changes only what it names.",
     "properties": {
      "accent": {
       "anyOf": [
@@ -673,6 +673,16 @@
        }
       ],
       "title": "Density"
+     },
+     "run_defaults": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/RunDefaults"
+       },
+       {
+        "type": "null"
+       }
+      ]
      },
      "theme": {
       "anyOf": [
@@ -895,6 +905,99 @@
      "prices_as_of"
     ],
     "title": "RunCostSummary",
+    "type": "object"
+   },
+   "RunDefaults": {
+    "description": "How the owner last started a run, so the start form opens with it (plan UI-S5).\n\nEvery field is optional; an empty object forgets them. Kept with the user,\nso they follow the owner to another browser.",
+    "properties": {
+     "allow_subdirectories": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Allow Subdirectories"
+     },
+     "approval_timeout_minutes": {
+      "anyOf": [
+       {
+        "maximum": 10080.0,
+        "minimum": 1.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Approval Timeout Minutes"
+     },
+     "auto_approve": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Auto Approve"
+     },
+     "delivery_mode": {
+      "anyOf": [
+       {
+        "enum": [
+         "fast",
+         "thorough"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Delivery Mode"
+     },
+     "reviews": {
+      "anyOf": [
+       {
+        "additionalProperties": {
+         "type": "boolean"
+        },
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reviews"
+     },
+     "unattended": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unattended"
+     },
+     "use_frontier_model": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Use Frontier Model"
+     }
+    },
+    "title": "RunDefaults",
     "type": "object"
    },
    "RunListResponse": {

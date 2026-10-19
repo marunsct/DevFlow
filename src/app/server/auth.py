@@ -13,7 +13,7 @@ from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import logging
 
@@ -292,12 +292,30 @@ class User(BaseModel):
     preferences: dict = {}
 
 
+class RunDefaults(BaseModel):
+    """How the owner last started a run, so the start form opens with it (plan UI-S5).
+
+    Every field is optional; an empty object forgets them. Kept with the user,
+    so they follow the owner to another browser.
+    """
+
+    delivery_mode: Optional[Literal["fast", "thorough"]] = None
+    use_frontier_model: Optional[bool] = None
+    unattended: Optional[bool] = None
+    auto_approve: Optional[bool] = None
+    approval_timeout_minutes: Optional[int] = Field(default=None, ge=1, le=10_080)
+    allow_subdirectories: Optional[bool] = None
+    #: Review point -> whether the run stops there for the owner.
+    reviews: Optional[dict[str, bool]] = None
+
+
 class Preferences(BaseModel):
-    """The owner's appearance. Every field is optional: a patch changes only what it names."""
+    """The owner's appearance and run defaults. Every field is optional: a patch changes only what it names."""
 
     theme: Optional[Literal["graphite", "paper", "contrast", "system"]] = None
     accent: Optional[Literal["blue", "violet", "teal", "amber", "rose", "neutral"]] = None
     density: Optional[Literal["comfortable", "compact"]] = None
+    run_defaults: Optional[RunDefaults] = None
 
 
 class UserInDB(User):

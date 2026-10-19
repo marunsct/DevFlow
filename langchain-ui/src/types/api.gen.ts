@@ -129,10 +129,11 @@ export interface ModelProfile {
   updated_by: string | null;
 }
 
-/** The owner's appearance. Every field is optional: a patch changes only what it names. */
+/** The owner's appearance and run defaults. Every field is optional: a patch changes only what it names. */
 export interface Preferences {
   accent?: "blue" | "violet" | "teal" | "amber" | "rose" | "neutral" | null;
   density?: "comfortable" | "compact" | null;
+  run_defaults?: RunDefaults | null;
   theme?: "graphite" | "paper" | "contrast" | "system" | null;
 }
 
@@ -200,6 +201,17 @@ export interface RunCostSummary {
   unpriced_models: string[];
   /** Calls whose model had no published rate; their cost is unknown, not zero. */
   unpriced_requests: number;
+}
+
+/** How the owner last started a run, so the start form opens with it (plan UI-S5). Every field is optional; an empty object forgets them. Kept with the user, so they follow the owner to another browser. */
+export interface RunDefaults {
+  allow_subdirectories?: boolean | null;
+  approval_timeout_minutes?: number | null;
+  auto_approve?: boolean | null;
+  delivery_mode?: "fast" | "thorough" | null;
+  reviews?: Record<string, boolean> | null;
+  unattended?: boolean | null;
+  use_frontier_model?: boolean | null;
 }
 
 /** A page of run summaries. */

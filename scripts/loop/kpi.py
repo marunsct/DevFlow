@@ -102,6 +102,8 @@ def kpis(records: list[dict]) -> dict:
     # prompt's prefix, and the server has to read it again.
     blocks = collections.Counter()
     tools_changed: dict[str, bool] = {}
+    calls_by_tool: collections.Counter = collections.Counter()
+    failed_by_tool: collections.Counter = collections.Counter()
     for r in records:
         stage, kind = r.get("stage") or "", r.get("kind")
         if stage and (not stages or stages[-1] != stage):
@@ -158,6 +160,7 @@ def kpis(records: list[dict]) -> dict:
             count[kind] += 1
         elif kind == "tool_call":
             count["tool_calls"] += 1
+            calls_by_tool[str(r.get("tool") or "?")] += 1
             calls[r.get("call_id")] = r
             if r.get("tool") in READS:
                 count["reads"] += 1
@@ -172,6 +175,7 @@ def kpis(records: list[dict]) -> dict:
             if (isinstance(raw, dict) and raw.get("error")) or (isinstance(raw, str) and FAIL.match(raw)):
                 count["tool_failures"] += 1
                 per_stage[stage]["tool_failures"] += 1
+                failed_by_tool[str(call.get("tool") or "?")] += 1
             if call.get("tool") in READS and any(m in ends for m in REDUNDANT):
                 count["redundant_reads"] += 1
                 per_stage[stage]["redundant_reads"] += 1
@@ -220,6 +224,12 @@ def kpis(records: list[dict]) -> dict:
         "replies_lost_to_length": count["replies_lost_to_length"],
         "tool_calls": count["tool_calls"],
         "tool_failure_rate": _share(count["tool_failures"], count["tool_calls"]),
+        # Each tool's own failure rate, the busiest first (Initiative U.1): a
+        # whole-run rate hides that `edit_artifact` fails and `read_file` does not.
+        "tool_failure_rate_by_tool": {
+            name: _share(failed_by_tool[name], calls)
+            for name, calls in sorted(calls_by_tool.items(), key=lambda item: -item[1])
+        },
         "redundant_read_rate": _share(count["redundant_reads"], count["reads"]),
         "identical_call_rate": _share(sum(n - 1 for n in seen_calls.values()), count["tool_calls"]),
         "unknown_tool_name_rate": _share(count["unknown_tool_names"], count["tool_calls"]),

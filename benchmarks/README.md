@@ -17,11 +17,12 @@ measured. See `docs/architecture-decisions.md ADR-0005`.
 | `notes-api-js` | HTTP service | JavaScript | 9 (`notes-api`'s) | pytest + httpx |
 | `notes-api-hono` | HTTP service | TypeScript, Hono (no pack) | 9 (`notes-api`'s) | pytest + httpx |
 | `fullstack-bookmarks-py` | page + its own service | Python service, HTML/JS page | 8 (`fullstack-bookmarks`'s) | Playwright (page and API) |
+| `tasks-api` | HTTP service with accounts and per-user data | Python | 10 | pytest + httpx |
 
 The last two hold the `browser-react` and `node-http-api` stack packs to the
 same hidden tests as their siblings: the briefs differ only in the stack they
 ask for, and the tests reach the product only through the brief's interface.
-They are coverage, not part of the gate below. `fullstack-bookmarks-py` does the same for a Python service behind the page (its standard-library reference scores 8 of 8). `notes-api-hono` asks for a stack no pack covers, so its run goes through
+They are coverage, not part of the gate below. `tasks-api` is the class the medium brief failed on live: sign-up, sign-in with a token, items per person, persistence, and a service started from `PORT` and `DATA_DIR` alone (its standard-library reference scores 10 of 10). `fullstack-bookmarks-py` does the same for a Python service behind the page (its standard-library reference scores 8 of 8). `notes-api-hono` asks for a stack no pack covers, so its run goes through
 the setup stage (`app.stacks.custom_setup`): the agents set the project up and
 the harness proves it; its reference (Hono on Node, TypeScript run directly)
 scores 9 of 9.

@@ -298,6 +298,8 @@ test that fails on the old code:
   `langchain-ui/src/ui/` with `/dev/ui` and `scripts/ui/axe_kit.mjs` (0 violations per theme).
   Not deployed: rebuilding the app restarts it, so UI work ships with stage 1. Next: UI-S1/S2
   remainder, then BG.1, BG.2, BG.5, BG.6.
+- **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
+  the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).
 
 ### 2.00000 Appendix 3 built (2026-10-19)

@@ -4191,7 +4191,10 @@ the item: what it changes, why, and the evidence (review findings in
   DROPPED or NOT BUILT (with the measurement or owner decision that stopped
   it), MEASURING, ADOPTED (process rules).
 - **Keeping it current:** update the ledger row first, then this index, in
-  the same commit.
+  the same commit. **Every completed fix gets a row here** (owner,
+  2026-10-19): plan items in the table below, and fixes found by the loop's
+  audits (no plan item of their own) in *M.2 Fixes from the loop's audits* at
+  the end, with the commit, in the fix's own commit.
 
 | ID | Improvement (short description) | Priority | Status | Detail |
 |---|---|---|---|---|
@@ -4335,3 +4338,28 @@ the item: what it changes, why, and the evidence (review findings in
 | Part 22 | consistency review: contradictions, duplicates, do-not-implement, external review coverage | P0 (process) | ADOPTED 2026-10-19 | [Part 22](#plan-part-22) |
 | E1 | Harness Improvement Plan (October): RepoMap, persistent sandbox, linting before lock, self-learning, lean scopes | — | mostly DONE or superseded; see its status table | [Section E1](#plan-e1) |
 | E2 | High-steering pillars 1–10 (pre-lock gate, self-contained work orders, fix-before-exit, consolidated remediation, context bus, code index) | — | mostly DONE in substance; 9 and 10 not built | [Section E2](#plan-e2) |
+
+<a id="plan-m-2"></a>
+### M.2 Fixes from the loop's audits (no plan item of their own)
+
+Each found by a routine audit or a deep analysis of a live run, fixed in
+general with a test that fails on the old code. The measured cause and the
+run are in `docs/monitoring-handover.md` §0 under the day.
+
+| ID | Fix | Status | Detail |
+|---|---|---|---|
+| LF.1 | a fix stage that has read for twelve calls and changed nothing has its looking tools withheld (write-forcing rung) | DONE 2026-10-19 `9275b8f` | [monitoring handover §0](monitoring-handover.md) |
+| LF.2 | a fix for a failing unit-test run, measured green, needs no named regression test | DONE 2026-10-19 `ca0bb47` | [monitoring handover §0](monitoring-handover.md) |
+| LF.3 | a shell builtin (`export`, `set`, `source`, `unset`) is refused with the reason: there is no shell | DONE 2026-10-19 `99e2fb7` | [monitoring handover §0](monitoring-handover.md) |
+| LF.4 | a product that cannot start says why from the end of its traceback; every stage is told it starts from `PORT` and `DATA_DIR` alone | DONE 2026-10-19 `2d94b84` | [monitoring handover §0](monitoring-handover.md) |
+| LF.5 | a refused credential file says where the setting goes: a development default in the settings code | DONE 2026-10-19 `f194f91` | [monitoring handover §0](monitoring-handover.md) |
+| LF.6 | the product audit runs the product's tests in a stage's environment; the acceptance reviewer does not judge built code; `NAME=value` before a command is said to set nothing | DONE 2026-10-19 `1f52757` | [monitoring handover §0](monitoring-handover.md) |
+| LF.7 | `env` in front of a command is refused with the same reason | DONE 2026-10-19 `be96b76` | [monitoring handover §0](monitoring-handover.md) |
+| LF.8 | a "product does not start" defect is dispatched to a fixer, and passing unit tests close only a defect raised from failing unit tests | DONE 2026-10-19 `373ffd4, e608003` | [monitoring handover §0](monitoring-handover.md) |
+| LF.9 | a release says when no unit test file exists for the runner to collect, and when no review read the code | DONE 2026-10-19 `0970364` | [monitoring handover §0](monitoring-handover.md) |
+| LF.10 | a failed custom-setup install names its cause (the most telling error line plus the end); Python setups are told how a setuptools install names its package | DONE 2026-10-19 `a3c24a6` | [monitoring handover §0](monitoring-handover.md) |
+| LF.11 | a suite's `run.json` in the wrong shape is refused as written, and the send-back names the shape | DONE 2026-10-19 `c6c3284` | [monitoring handover §0](monitoring-handover.md) |
+| LF.12 | a custom setup writes its declaration first and keeps it current | DONE 2026-10-19 `b5c2f30` | [monitoring handover §0](monitoring-handover.md) |
+| LF.13 | how a disabled control looks is not read as advice to disable it | DONE 2026-10-19 `4cdddf5` | [monitoring handover §0](monitoring-handover.md) |
+| LF.14 | BF's record: an opening request in several messages is all request; the specialists' advice is not the specification | DONE 2026-10-19 `765173d` | [monitoring handover §0](monitoring-handover.md) |
+| LF.15 | a local-only run revises its specification in place, and every section in parts when none can be named | DONE 2026-10-19 `dc7eeae` | [monitoring handover §0](monitoring-handover.md) |

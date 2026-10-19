@@ -138,7 +138,13 @@ def _manager_of(command: Sequence[str]) -> str | None:
     """
     if not command:
         return None
-    return os.path.basename(str(command[0])) or None
+    program = os.path.basename(str(command[0]))
+    # `python -m pip ...` drives pip as surely as `pip ...` does. Measured live:
+    # `python3 -m pip install fastapi uvicorn[standard]` was refused twice as a
+    # server it would start, because the install carve-out never saw pip.
+    if re.fullmatch(r"python(?:3(?:\.\d+)?)?", program) and len(command) > 2 and str(command[1]) == "-m":
+        return os.path.basename(str(command[2])) or None
+    return program or None
 
 
 def _a_package_this_command_would_add(command: Sequence[str]) -> list[str]:
@@ -2527,7 +2533,9 @@ def _starts_a_server(argv: Sequence[str]) -> str | None:
         if wanted and parts[index + 1] in wanted:
             return f"{part} {parts[index + 1]}"
     for index, part in enumerate(parts):
-        if part in _SERVER_MODULES and "-m" in parts[:index]:
+        # The module `-m` runs is the word right after it: in `python -m pip
+        # install uvicorn`, pip runs and uvicorn is only installed.
+        if part in _SERVER_MODULES and index > 0 and parts[index - 1] == "-m":
             return part
         if part not in _SERVER_COMMANDS:
             continue

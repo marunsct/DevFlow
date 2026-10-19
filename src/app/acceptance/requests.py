@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from app.acceptance import suite
+from app.acceptance.api_reference import api_reference
 from app.acceptance.criteria import Criterion
 from app.stacks import contract
 
@@ -142,6 +143,7 @@ def build_author_request(
     brief: str = "",
     testability: Sequence[str] = (),
     interface_contract: Sequence[str] = (),
+    specification: Any = None,
 ) -> dict[str, list[dict[str, str]]]:
     """The QA stage's brief: write the acceptance suite before anything is built.
 
@@ -198,6 +200,7 @@ def build_author_request(
         + (f"--- The brief, as the customer wrote it ---\n{brief.strip()[:BRIEF_CHARS]}\n\n" if brief.strip() else "")
         + _the_names_the_brief_gives(brief)
         + _the_interface_contract(interface_contract)
+        + api_reference(specification)
         + "--- What to build them against ---\n"
         "Where the brief states the interface - the labels on controls, endpoints, commands, "
         "names - the tests use exactly those words: they are what the customer will check. "

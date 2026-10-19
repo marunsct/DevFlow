@@ -299,6 +299,7 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         brief=getattr(state.get("document"), "text", "") or "",
         testability=_the_testability_advice(state),
         interface_contract=getattr(state.get("technical_specification"), "interface_contract", None) or (),
+        specification=state.get("technical_specification"),
     )
     update = _run_gated_agent(
         state, config,

@@ -714,6 +714,16 @@ async def update_frontier_model_settings(
     return _current_view()
 
 
+@settings_router.get("/frontier/status")
+async def frontier_status(user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+    """Whether the frontier model a run would use is configured and answering - a model listing, never a model call."""
+    from starlette.concurrency import run_in_threadpool
+
+    from app.models.frontier_check import check_frontier
+
+    return await run_in_threadpool(check_frontier)
+
+
 @settings_router.get("/models", response_model=list[ModelProfile])
 async def list_model_profiles(
     target: str | None = None,

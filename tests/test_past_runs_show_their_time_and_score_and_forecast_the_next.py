@@ -52,10 +52,14 @@ def test_a_completed_run_s_gaps_ride_the_outcome_row():
 def test_the_forecast_is_the_typical_completed_run_of_that_mode_and_none_with_too_few():
     rows = outcomes.outcomes(RUNS)
 
-    assert outcomes.forecast(rows, "fast") == {
+    fast = outcomes.forecast(rows, "fast")
+    assert {k: fast[k] for k in ("delivery_mode", "typical_hours", "shortest_hours", "longest_hours", "runs")} == {
         "delivery_mode": "fast", "typical_hours": 9.0, "shortest_hours": 6.0, "longest_hours": 12.0, "runs": 3,
     }
-    assert outcomes.forecast(rows, "thorough") is None
+    # One thorough run: how many there were, and no time made of it.
+    assert outcomes.forecast(rows, "thorough")["typical_hours"] is None
+    assert outcomes.forecast(rows, "thorough")["runs"] == 1
+    assert outcomes.forecast(rows, "other") is None
 
 
 def test_the_route_is_reached_before_a_run_id_would_take_it():
@@ -65,3 +69,34 @@ def test_the_route_is_reached_before_a_run_id_would_take_it():
 
     source = inspect.getsource(runs)
     assert source.index('@runs.get("/outcomes")') < source.index('@runs.get("/{run_id}", response_model')
+
+
+def _row(mode, hours, criteria, status="completed"):
+    return {"status": status, "delivery_mode": mode, "hours": hours, "criteria": criteria}
+
+
+def test_two_runs_are_too_few_to_call_a_time_typical():
+    """Measured live: two thorough runs - a small benchmark and the low brief - made a
+    "typical" 1.5 h beside a fast 4.7 h from larger briefs, so thorough read as faster."""
+    rows = [_row("thorough", 0.77, 18), _row("thorough", 2.27, 8)]
+
+    found = outcomes.forecast(rows, "thorough")
+
+    assert found["runs"] == 2 and found["typical_hours"] is None and found["hours_per_criterion"] is None
+
+
+def test_the_time_per_criterion_compares_briefs_of_different_sizes():
+    rows = [_row("fast", 1.0, 8), _row("fast", 4.0, 16), _row("fast", 9.0, 18), _row("fast", 2.0, 10)]
+
+    found = outcomes.forecast(rows, "fast")
+
+    assert found["hours_per_criterion"] == round(sorted([1 / 8, 4 / 16, 9 / 18, 2 / 10])[1:3][0] / 2 + sorted([1 / 8, 4 / 16, 9 / 18, 2 / 10])[1:3][1] / 2, 3)
+    assert (found["fewest_criteria"], found["most_criteria"]) == (8, 18)
+
+
+def test_only_the_most_recent_runs_count():
+    rows = [_row("fast", 1.0, 10)] * outcomes.RECENT_RUNS + [_row("fast", 50.0, 10)] * 5
+
+    found = outcomes.forecast(rows, "fast")
+
+    assert found["runs"] == outcomes.RECENT_RUNS and found["longest_hours"] == 1.0

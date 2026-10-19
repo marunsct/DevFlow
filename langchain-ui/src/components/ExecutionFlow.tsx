@@ -74,12 +74,14 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
           </p>
         </div>
       ) : (
-        <div tabIndex={0} role="region" aria-label="The run's steps" className="flex-1 min-h-0 overflow-y-auto px-4 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
+        <div tabIndex={0} role="region" aria-label="The run's steps" className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
           {groups.map((group) => {
             const groupDone = group.stages.filter((s) => s.status === 'completed').length;
             return (
               <section key={`sprint-${group.sprint}`} className="mb-5 last:mb-0">
-                <header className="flex items-baseline gap-2 mb-2.5">
+                {/* Sticks while its steps scroll, flush with the top: the scroller
+                    has no padding above it, so nothing shows through. */}
+                <header className="sticky top-0 z-10 -mx-4 mb-2.5 flex items-baseline gap-2 bg-surface px-4 pb-1.5 pt-3">
                   <h3 className="text-xs font-semibold tracking-wide uppercase text-text-secondary">
                     {sprintTitle(group.sprint)}
                   </h3>

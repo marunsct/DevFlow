@@ -1382,6 +1382,30 @@
       "title": "Created At",
       "type": "string"
      },
+     "criteria_proven": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Acceptance criteria passing in the last measurement, or null before one.",
+      "title": "Criteria Proven"
+     },
+     "criteria_total": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Acceptance criteria of the run, or null before the suite is written.",
+      "title": "Criteria Total"
+     },
      "current_stage": {
       "anyOf": [
        {
@@ -5844,6 +5868,35 @@
      }
     ],
     "summary": "Update Frontier Model Settings",
+    "tags": [
+     "settings"
+    ]
+   }
+  },
+  "/api/settings/frontier/status": {
+   "get": {
+    "description": "Whether the frontier model a run would use is configured and answering - a model listing, never a model call.",
+    "operationId": "frontier_status_api_settings_frontier_status_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Frontier Status Api Settings Frontier Status Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Frontier Status",
     "tags": [
      "settings"
     ]

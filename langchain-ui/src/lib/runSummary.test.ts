@@ -34,9 +34,23 @@ describe('the summary card', () => {
     expect(spend(cost(), true).shown).toBe('$0.00 · local model');
   });
 
-  it('gives the typical time from the finished runs of the same mode', () => {
-    expect(typicalTime({ delivery_mode: 'fast', typical_hours: 7.62, shortest_hours: 1.4, longest_hours: 12.7, runs: 5 }))
-      .toBe('typically 7.6 h for fast runs here (1.4-13 h, 5 runs)');
+  const forecast = (extra = {}) => ({
+    delivery_mode: 'fast', runs: 6, typical_hours: 4.7, shortest_hours: 0.7, longest_hours: 12.7,
+    hours_per_criterion: 0.4, fewest_criteria: 8, most_criteria: 18, ...extra,
+  });
+
+  it('estimates a brief of its size, which compares the modes like with like', () => {
+    expect(typicalTime(forecast(), 13)).toBe('about 5.2 h for 13 criteria (last 6 fast runs here: about 24 min a criterion)');
+  });
+
+  it('without a size, says the typical time and what it was measured on', () => {
+    expect(typicalTime(forecast())).toBe('typically 4.7 h (last 6 fast runs here: 0.7-13 h, briefs of 8-18 criteria)');
+  });
+
+  it('calls two runs too few, rather than a typical time', () => {
+    // Measured live: two thorough runs made a "typical" 1.5 h beside a fast 4.7 h.
+    expect(typicalTime(forecast({ delivery_mode: 'thorough', runs: 2, typical_hours: null, hours_per_criterion: null }), 13))
+      .toBe('only 2 thorough runs finished here: too few to estimate');
     expect(typicalTime(null)).toBe('');
   });
 

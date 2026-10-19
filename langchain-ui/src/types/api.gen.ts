@@ -328,6 +328,10 @@ export interface RunStatusResponse {
   cost: RunCostSummary | null;
   /** Timestamp when the run was created. */
   created_at: string;
+  /** Acceptance criteria passing in the last measurement, or null before one. */
+  criteria_proven: number | null;
+  /** Acceptance criteria of the run, or null before the suite is written. */
+  criteria_total: number | null;
   /** The currently active stage. */
   current_stage: string | null;
   /** `fast` or `thorough`: how this run delivers, chosen when it started. */

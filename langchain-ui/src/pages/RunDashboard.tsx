@@ -75,7 +75,7 @@ export const RunDashboard: React.FC = () => {
   const [streamDown, setStreamDown] = useState(false);
   const live = !!run && !['completed', 'failed', 'cancelled'].includes(run.status);
   const now = useNow(live);
-  const typical = useTypicalTime(run?.delivery_mode);
+  const typical = useTypicalTime(run?.delivery_mode, run?.criteria_total);
   // On a server that serves one request at a time, another run on it holds this one's calls.
   const health = useServerHealth();
   // A moment chosen on the timeline, for the feed to show.

@@ -7,7 +7,10 @@ import type { RunStatusResponse } from '../types';
 vi.mock('../api', () => ({
   getOutcomes: vi.fn(async () => ({
     runs: [],
-    forecast: { fast: { delivery_mode: 'fast', typical_hours: 7.6, shortest_hours: 1.4, longest_hours: 12.7, runs: 5 }, thorough: null },
+    forecast: {
+      fast: { delivery_mode: 'fast', runs: 5, typical_hours: 7.6, shortest_hours: 1.4, longest_hours: 12.7, hours_per_criterion: 0.5, fewest_criteria: 8, most_criteria: 18 },
+      thorough: null,
+    },
   })),
 }));
 
@@ -16,7 +19,7 @@ const run = (extra: Partial<RunStatusResponse> = {}): RunStatusResponse => ({
   created_at: '2026-10-19T00:00:00Z', updated_at: '2026-10-19T01:00:00Z', stages: [], artifacts: [], reviews: [],
   remediation: null, error: null, auto_approve: false, completion_gaps: [], gate_deadline: null,
   approval_timeout_minutes: null, non_deliverable: '', delivery_mode: 'fast', use_frontier_model: false,
-  max_run_tokens: null, max_run_cost_usd: null,
+  max_run_tokens: null, max_run_cost_usd: null, criteria_proven: null, criteria_total: null,
   cost: {
     completion_tokens: 300_000, estimated_cost_usd: 0, fully_priced: false, priced_requests: 0, prices_as_of: '2026-10',
     prompt_tokens: 900_000, successful_requests: 412, total_tokens: 1_200_000, unpriced_models: ['qwen'], unpriced_requests: 412,
@@ -45,8 +48,8 @@ describe('the run figures', () => {
     expect(screen.getByText('1.2 M of 5.0 M tokens')).toBeTruthy();
   });
 
-  it('gives the typical time of finished runs in the same mode', async () => {
-    const { result } = renderHook(() => useTypicalTime('fast'));
-    await waitFor(() => expect(result.current).toBe('typically 7.6 h for fast runs here (1.4-13 h, 5 runs)'));
+  it('gives what a run of this mode and size takes here', async () => {
+    const { result } = renderHook(() => useTypicalTime('fast', 10));
+    await waitFor(() => expect(result.current).toBe('about 5.0 h for 10 criteria (last 5 fast runs here: about 30 min a criterion)'));
   });
 });

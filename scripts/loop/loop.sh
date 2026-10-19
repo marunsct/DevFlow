@@ -100,9 +100,18 @@ start)
           "$PY" -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
   run=$(curl -s -X POST "$API/api/runs" -H "Authorization: Bearer $token" -F "files=@$brief" |
         "$PY" -c "import sys,json; d=json.load(sys.stdin); print(d.get('run_id') or d.get('id'))")
-  curl -s -X POST "$API/api/runs/$run/start" -H "Authorization: Bearer $token" \
-       -H "Content-Type: application/json" -d "{\"auto_approve\": true${DELIVERY:+, \"delivery_mode\": \"$DELIVERY\"}${FRONTIER:+, \"use_frontier_model\": $FRONTIER}}"
-  echo
+  # A refused start (a frontier model asked for and not answering, a run
+  # already started) said "started" before; it names the refusal now, and the
+  # run it created is not left behind as the current one.
+  answer=$(curl -s -w '\n%{http_code}' -X POST "$API/api/runs/$run/start" -H "Authorization: Bearer $token" \
+       -H "Content-Type: application/json" -d "{\"auto_approve\": true${DELIVERY:+, \"delivery_mode\": \"$DELIVERY\"}${FRONTIER:+, \"use_frontier_model\": $FRONTIER}}")
+  code=$(echo "$answer" | tail -n 1)
+  echo "$answer" | sed '$d'
+  if [ "$code" != "202" ]; then
+    echo "not started: the server answered HTTP $code" >&2
+    curl -s -X DELETE "$API/api/runs/$run" -H "Authorization: Bearer $token" >/dev/null
+    exit 1
+  fi
   echo "$run" > "$STATE/current_run.txt"
   echo "$brief" > "$STATE/current_brief.txt"
   echo "started $run from $brief at $(jst +%H:%M) JST"

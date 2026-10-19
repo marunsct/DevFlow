@@ -11,7 +11,11 @@ const PAUSE_MS = 600;
  * the acceptance criteria the run numbers from it, each "not yet" until the run
  * proves it - read with the run's own numbering and no model call.
  */
-export const CriteriaPreview: React.FC<{ brief: string }> = ({ brief }) => {
+export const CriteriaPreview: React.FC<{
+  brief: string;
+  /** How many criteria the brief gives the run, or null when it lists too few: the start form's estimate scales with it. */
+  onCount?: (count: number | null) => void;
+}> = ({ brief, onCount }) => {
   const [preview, setPreview] = useState<BriefPreview | null>(null);
 
   useEffect(() => {
@@ -19,14 +23,18 @@ export const CriteriaPreview: React.FC<{ brief: string }> = ({ brief }) => {
     let live = true;
     const timer = setTimeout(() => {
       previewBrief(brief)
-        .then((found) => live && setPreview(found))
+        .then((found) => {
+          if (!live) return;
+          setPreview(found);
+          onCount?.(found.from_brief ? found.criteria.length : null);
+        })
         .catch(() => undefined);
     }, PAUSE_MS);
     return () => {
       live = false;
       clearTimeout(timer);
     };
-  }, [brief]);
+  }, [brief, onCount]);
 
   if (!brief.trim() || !preview) return null;
   return (

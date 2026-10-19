@@ -50,11 +50,26 @@ export function spend(cost: RunCostSummary, localOnly = false): Spend {
 
 const hours = (value: number): string => (value >= 10 ? value.toFixed(0) : value.toFixed(1));
 
-/** "typically 7.6 h for fast runs here (1.4-12.7 h, 5 runs)", or "" before any run of that mode finished. */
-export function typicalTime(forecast: RunForecast | null | undefined): string {
+/**
+ * What a run of this mode takes here, in words. With the brief's number of
+ * criteria it is an estimate for a brief that size - "about 5.2 h for 13
+ * criteria" - which compares fast and thorough like with like; without it, the
+ * typical time and what it was measured on. Two runs make no typical: it says
+ * so rather than calling one small benchmark the norm.
+ */
+export function typicalTime(forecast: RunForecast | null | undefined, criteria?: number | null): string {
   if (!forecast || forecast.runs < 1) return '';
-  const range = forecast.runs > 1 ? ` (${hours(forecast.shortest_hours)}-${hours(forecast.longest_hours)} h, ${forecast.runs} runs)` : ' (1 run)';
-  return `typically ${hours(forecast.typical_hours)} h for ${forecast.delivery_mode} runs here${range}`;
+  const mode = forecast.delivery_mode;
+  if (forecast.typical_hours === null) {
+    return `only ${forecast.runs} ${mode} run${forecast.runs === 1 ? '' : 's'} finished here: too few to estimate`;
+  }
+  const basis = `last ${forecast.runs} ${mode} runs here`;
+  if (criteria && forecast.hours_per_criterion) {
+    const minutes = Math.round(forecast.hours_per_criterion * 60);
+    return `about ${hours(criteria * forecast.hours_per_criterion)} h for ${criteria} criteria (${basis}: about ${minutes} min a criterion)`;
+  }
+  const sizes = forecast.fewest_criteria ? `, briefs of ${forecast.fewest_criteria}-${forecast.most_criteria} criteria` : '';
+  return `typically ${hours(forecast.typical_hours)} h (${basis}: ${hours(forecast.shortest_hours ?? 0)}-${hours(forecast.longest_hours ?? 0)} h${sizes})`;
 }
 
 export interface Ceiling {
@@ -88,8 +103,8 @@ export function ceilings(
   return found;
 }
 
-/** "typically 7.6 h for fast runs here (...)" from the finished runs, or "" before there are any. */
-export function useTypicalTime(deliveryMode: string | null | undefined): string {
+/** What a run of this mode and size takes here (see `typicalTime`), or "" before any finished. */
+export function useTypicalTime(deliveryMode: string | null | undefined, criteria?: number | null): string {
   const [forecast, setForecast] = useState<Record<string, RunForecast | null>>({});
   useEffect(() => {
     let live = true;
@@ -100,7 +115,7 @@ export function useTypicalTime(deliveryMode: string | null | undefined): string 
       live = false;
     };
   }, []);
-  return deliveryMode ? typicalTime(forecast[deliveryMode]) : '';
+  return deliveryMode ? typicalTime(forecast[deliveryMode], criteria) : '';
 }
 
 /**

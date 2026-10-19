@@ -309,6 +309,18 @@ def create_runs_router(
 
         body = body or StartRunRequest()
 
+        # Asked for the frontier model, it must be there and answering before
+        # anything is prepared (owner, 2026-10-19): otherwise the run's
+        # specification and reviews would quietly run on the local model, or it
+        # would fail at its first judgement stage. Omitted keeps the run on
+        # whatever is configured, as before.
+        if body.use_frontier_model is True:
+            from app.models.frontier_check import check_frontier
+
+            frontier = await asyncio.to_thread(check_frontier)
+            if frontier["problem"]:
+                raise HTTPException(status_code=409, detail=frontier["problem"])
+
         # On a single node the files are already here and this is a no-op. On
         # more than one, the upload may have landed on a different replica's
         # disk, so pull it back from object storage before reading.
@@ -1995,6 +2007,8 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         # The ceilings the worker holds the run to: the API reads the same environment.
         max_run_tokens=_max_run_tokens() or None,
         max_run_cost_usd=_max_run_cost_usd() or None,
+        # Its size, so the page can say what a run of this size takes here.
+        **_how_many_criteria_hold(record),
     )
 
 

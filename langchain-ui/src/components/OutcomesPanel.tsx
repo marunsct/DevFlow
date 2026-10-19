@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getOutcomes, type RunOutcome, type RunForecast } from '../api';
+import { typicalTime } from '../lib/runSummary';
 
 /** Finished runs side by side: how each ended, how long it took and what it scored. */
 export const OutcomesPanel: React.FC = () => {
@@ -24,7 +25,7 @@ export const OutcomesPanel: React.FC = () => {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-text-primary">Outcomes of finished runs</h2>
         <p className="text-xs text-text-muted">
-          {typical.map((f) => `${f.delivery_mode}: typically ${f.typical_hours} h (${f.runs} runs)`).join(' · ')}
+          {typical.map((f) => `${f.delivery_mode}: ${typicalTime(f)}`).join(' · ')}
         </p>
       </div>
       <div className="overflow-x-auto">

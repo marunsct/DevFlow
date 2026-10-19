@@ -435,6 +435,8 @@ class RunStatusResponse(BaseModel):
         default=None,
         description="The deployment's bound on the tokens a run uses (`MAX_RUN_TOKENS`), or null when none is set.",
     )
+    criteria_proven: int | None = Field(default=None, description="Acceptance criteria passing in the last measurement, or null before one.")
+    criteria_total: int | None = Field(default=None, description="Acceptance criteria of the run, or null before the suite is written.")
     max_run_cost_usd: float | None = Field(
         default=None,
         description="The deployment's ceiling on a run's priced spend (`MAX_RUN_COST_USD`), or null when none is set.",

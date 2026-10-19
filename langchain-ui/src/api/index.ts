@@ -116,12 +116,20 @@ export interface RunOutcome {
   score: { benchmark?: string; passed?: number; total?: number; score?: number } | null;
 }
 
+/**
+ * What completed runs of a delivery mode took here, from its most recent ones.
+ * The times are null with fewer than three runs: two runs make no "typical".
+ */
 export interface RunForecast {
   delivery_mode: string;
-  typical_hours: number;
-  shortest_hours: number;
-  longest_hours: number;
   runs: number;
+  typical_hours: number | null;
+  shortest_hours: number | null;
+  longest_hours: number | null;
+  /** Hours per acceptance criterion: compares briefs of different sizes. */
+  hours_per_criterion: number | null;
+  fewest_criteria: number | null;
+  most_criteria: number | null;
 }
 
 /** Finished runs with their time and score, and the typical time per delivery mode. */
@@ -247,6 +255,21 @@ export const rewindRun = async (
 
 export const cancelRun = async (runId: string) => {
   const response = await api.post(`/runs/${runId}/cancel`);
+  return response.data;
+};
+
+/** Whether the frontier model is configured and answering - a listing of its models, never a model call. */
+export interface FrontierStatus {
+  configured: boolean;
+  active: boolean;
+  model: string;
+  provider: string;
+  /** Why a run asking for it would be refused; null when it is ready. */
+  problem: string | null;
+}
+
+export const getFrontierStatus = async (): Promise<FrontierStatus> => {
+  const response = await api.get<FrontierStatus>('/settings/frontier/status');
   return response.data;
 };
 

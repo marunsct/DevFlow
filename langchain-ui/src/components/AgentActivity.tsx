@@ -526,7 +526,10 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
             aria-live="off"
             aria-label="Agent activity"
             tabIndex={0}
-            className="absolute inset-0 overflow-y-auto px-2 py-3 flex flex-col"
+            // No padding above: a step's heading sticks to the scroller's top
+            // edge, and with padding there the entries scrolled visibly through
+            // the strip between the heading and the toolbar above it.
+            className="absolute inset-0 overflow-y-auto px-2 pb-3 flex flex-col"
           >
             {!live ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 text-center">

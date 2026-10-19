@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen, ShieldCheck, CheckSquare } from 'lucide-react';
-import { api, createRun, deleteRun, startRun, getOutcomes, uploadCodebase, type RunForecast } from '../api';
+import { api, createRun, deleteRun, startRun, getFrontierStatus, getOutcomes, uploadCodebase, type FrontierStatus, type RunForecast } from '../api';
+import { Link } from 'react-router-dom';
+import { typicalTime } from '../lib/runSummary';
 import { describeServer, holdingTheModel, useServerHealth } from '../lib/serverHealth';
 import { CriteriaPreview } from '../components/CriteriaPreview';
 import { Textarea } from '../ui';
@@ -109,6 +111,18 @@ export const Home: React.FC = () => {
       live = false;
     };
   }, []);
+  // The brief's size, from its criteria preview: the estimates scale with it.
+  const [criteriaCount, setCriteriaCount] = useState<number | null>(null);
+  // Whether the frontier model is configured and answering, asked when the box is ticked.
+  const [frontier, setFrontier] = useState<FrontierStatus | null>(null);
+  useEffect(() => {
+    if (!useFrontierModel) return;
+    let live = true;
+    getFrontierStatus().then((found) => live && setFrontier(found)).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [useFrontierModel]);
   // An existing codebase to start from, as an archive (a brownfield run).
   const [codebase, setCodebase] = useState<File | null>(null);
   const hasBrief = files.length > 0 || briefText.trim().length > 0;
@@ -147,6 +161,13 @@ export const Home: React.FC = () => {
     if (!hasBrief) {
       setError('Write the brief or add its documents.');
       return;
+    }
+    if (useFrontierModel) {
+      const status = frontier ?? (await getFrontierStatus().catch(() => null));
+      if (status?.problem) {
+        setError(status.problem);
+        return;
+      }
     }
 
     setIsUploading(true);
@@ -365,7 +386,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                 placeholder={'# What to build\n\n## Features\n- ...'}
               />
 
-              <CriteriaPreview brief={[briefText, fileText].filter((part) => part.trim()).join('\n\n')} />
+              <CriteriaPreview onCount={setCriteriaCount} brief={[briefText, fileText].filter((part) => part.trim()).join('\n\n')} />
 
               <div>
                 <label htmlFor="codebase-upload" className="block text-sm font-semibold text-text-primary mb-1">
@@ -417,8 +438,8 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
               <p className={describeServer(health).tone === 'warn' ? 'text-warning' : 'text-text-secondary'}>{describeServer(health).said}</p>
               <p className="text-text-secondary">
                 {deliveryMode === 'fast' ? 'Fast' : 'Thorough'} delivery
-                {forecast[deliveryMode] ? ` (typically ${forecast[deliveryMode]!.typical_hours.toFixed(1)} h here)` : ''}
-                {' \u00B7 '}{useFrontierModel ? 'local model with the judgement model' : 'local model only'}
+                {typicalTime(forecast[deliveryMode], criteriaCount) ? ` (${typicalTime(forecast[deliveryMode], criteriaCount)})` : ''}
+                {' \u00B7 '}{useFrontierModel ? `local model with the frontier model${frontier?.model ? ` ${frontier.model}` : ''}` : 'local model only'}
                 {' \u00B7 '}{unattended ? 'unattended: no stops for review' : 'stops where you asked to review'}
                 {codebase ? ' \u00B7 from existing code' : ''}
               </p>
@@ -497,16 +518,18 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                           ? 'One sprint for a small product, files written from the specification, harness-run checks'
                           : 'Every sprint planned, built, tested and reviewed in full'}
                       </span>
+                      {/* Each mode's own estimate for this brief's size, side by side. */}
+                      {typicalTime(forecast[choice], criteriaCount) && (
+                        <span className="block text-xs font-normal mt-1 text-text-secondary">{typicalTime(forecast[choice], criteriaCount)}</span>
+                      )}
                     </button>
                   ))}
                 </div>
-                {forecast[deliveryMode] && (
-                  <p className="text-xs text-text-secondary">
-                    A completed {deliveryMode} run here has typically taken {forecast[deliveryMode]!.typical_hours} h
-                    ({forecast[deliveryMode]!.shortest_hours}-{forecast[deliveryMode]!.longest_hours} h over{' '}
-                    {forecast[deliveryMode]!.runs} runs).
-                  </p>
-                )}
+                <p className="text-xs text-text-muted">
+                  {criteriaCount
+                    ? 'Estimates are for a brief of this size, from the most recent runs of each kind here.'
+                    : 'Write or add the brief to see an estimate for its size; until then, times are what recent runs of each kind took here.'}
+                </p>
                 <p className="text-xs text-text-muted leading-relaxed">
                   Both keep the project in memory for every stage and check each edit as it is written.
                 </p>
@@ -521,6 +544,17 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                   label="Use the frontier model"
                   description="The specification, the reviews and escalated fixes run on the frontier model set in Settings. Unchecked, every stage of this run - planning, building, testing and reviews - runs on the local model only."
                 />
+                {/* Ticked, the frontier model must be configured and answering (owner,
+                    2026-10-19): said here, and Start waits for it. */}
+                {useFrontierModel && frontier && (
+                  frontier.problem ? (
+                    <p role="alert" className="text-xs text-warning">
+                      {frontier.problem} <Link to="/settings?tab=models" className="font-medium underline">Open the model settings</Link>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-success">Ready: {frontier.model} on {frontier.provider} answers.</p>
+                  )
+                )}
               </div>
 
               {/* Only meaningful when the run is supervised */}

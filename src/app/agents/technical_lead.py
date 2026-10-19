@@ -565,6 +565,7 @@ def _the_contracts(specification: Any) -> str:
 #: Open defects of a failed attempt quoted to the lead, and how much of each.
 MOST_OPEN_DEFECTS_QUOTED = 8
 _MOST_DEFECT_CHARACTERS = 600
+_MOST_CAUSE_CHARACTERS = 900
 
 
 def _what_the_last_attempt_left(attempt: Any) -> str:
@@ -578,30 +579,61 @@ def _what_the_last_attempt_left(attempt: Any) -> str:
     of its three re-plans was "run the existing test suite", by a lead that had
     no way to know there was anything to fix. The same defect closed the run.
 
+    What the last test round still found comes first, each with what it
+    showed; what only an earlier round raised follows, marked so. Measured on
+    one gate run: the re-plan was given round 0's "the unit tests fail" - which
+    the last round's unit tests no longer did - and "the product does not
+    start" twice and without its cause, and planned the unit tests' setup
+    while the product went on failing to start.
+
     `attempt` is the sprint record's own entry for that attempt: its reason and
     its defects with their status.
     """
     if not isinstance(attempt, dict):
         return ""
     reason = str(attempt.get("reason") or "").strip()
-    still_open = [
-        defect for defect in attempt.get("defects") or []
-        if isinstance(defect, dict) and str(defect.get("status") or "open") == "open"
-        and str(defect.get("description") or "").strip()
-    ]
+    latest: dict[str, dict] = {}
+    for defect in attempt.get("defects") or []:
+        if not isinstance(defect, dict) or str(defect.get("status") or "open") != "open":
+            continue
+        key = " ".join(str(defect.get("description") or "").split())
+        if key:
+            # The latest of one description stands for all of them.
+            latest.pop(key, None)
+            latest[key] = defect
+    still_open = list(latest.values())
     if not reason and not still_open:
         return ""
+    rounds = [d.get("found_in_round") for d in still_open if isinstance(d.get("found_in_round"), int)]
+    last = max(rounds) if rounds else None
+
+    def earlier(defect: dict) -> bool:
+        found = defect.get("found_in_round")
+        return last is not None and isinstance(found, int) and found < last
+
     lines = [
         "--- This sprint has already been attempted and was not accepted ---",
         f"Attempt {attempt.get('number', '?')} ended: {reason or 'not accepted'}.",
     ]
-    if still_open:
-        lines.append("Defects it left open:")
-        for defect in still_open[:MOST_OPEN_DEFECTS_QUOTED]:
+    current = [d for d in still_open if not earlier(d)]
+    before = [d for d in still_open if earlier(d)]
+    quoted = 0
+    for heading, group in (("Defects its last test round still found:", current),
+                           ("Raised by an earlier round and not found again by the last one - check each before "
+                            "working on it:", before)):
+        shown = group[:max(0, MOST_OPEN_DEFECTS_QUOTED - quoted)]
+        if not shown:
+            continue
+        lines.append(heading)
+        for defect in shown:
             text = " ".join(str(defect["description"]).split())[:_MOST_DEFECT_CHARACTERS]
             lines.append(f"- [owner: {defect.get('owner') or 'unassigned'}] {text}")
-        if len(still_open) > MOST_OPEN_DEFECTS_QUOTED:
-            lines.append(f"- ... and {len(still_open) - MOST_OPEN_DEFECTS_QUOTED} more")
+            showed = " ".join(str(defect.get("actual_behavior") or "").split())[:_MOST_CAUSE_CHARACTERS]
+            if showed and showed not in text:
+                lines.append(f"  What it showed: {showed}")
+        quoted += len(shown)
+    if len(still_open) > quoted:
+        lines.append(f"- ... and {len(still_open) - quoted} more")
     lines.append(
         "What that attempt built is still in the workspace. This plan finishes the "
         "sprint; it does not start it again. Give every defect above to a work order "

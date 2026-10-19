@@ -71,6 +71,10 @@ class Defect(BaseModel):
             "controller, never by a specialist."
         ),
     )
+    found_in_round: int | None = Field(
+        default=None,
+        description="The test round that raised it. Set by the controller, never by a specialist.",
+    )
     status: DefectStatus = Field(default="open")
     fix_attempts: int = Field(
         default=0, ge=0,

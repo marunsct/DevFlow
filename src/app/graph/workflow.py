@@ -4294,6 +4294,10 @@ def _the_accepted_counts(root: str, which: str = "accepted") -> dict[str, int] |
     return {"tests": len(outcomes), "passed": passed, "failed": failed}
 
 
+#: Characters of a defect's actual behaviour an attempt's record keeps.
+DEFECT_CAUSE_KEPT = 1_200
+
+
 def _what_a_plan_did(plan: Any, cycle: Any) -> dict[str, Any]:
     """A plan's work orders, as feature lines, and its cycle's defects, as the summary keeps them."""
     return {
@@ -4308,6 +4312,10 @@ def _what_a_plan_did(plan: Any, cycle: Any) -> dict[str, Any]:
                 "owner": getattr(defect, "owner", "unassigned"),
                 "source": getattr(defect, "source", "") or "",
                 "resolution": getattr(defect, "resolution", "") or "",
+                # What it showed, so a sprint planned again knows its cause, not
+                # only its name: "the product does not start" says nothing of why.
+                "actual_behavior": str(getattr(defect, "actual_behavior", "") or "")[:DEFECT_CAUSE_KEPT],
+                "found_in_round": getattr(defect, "found_in_round", None),
             }
             for defect in (getattr(cycle, "defects", None) or [])
         ],
@@ -9309,6 +9317,7 @@ def build_workflow_graph(
                 caught_by=caught_by,
                 source=str(getattr(item, "source", "") or ""),
                 failing_criteria=_failing_criteria_it_names(state, item),
+                found_in_round=test_round,
             )
             for item in reported
         ]

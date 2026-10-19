@@ -16,22 +16,31 @@ shows here as several lines with the same story and different sources.
 import collections
 import glob
 import json
+import os
 import sys
 
 run = sys.argv[1]
-paths = sorted(glob.glob(f"/app/data/transcripts/{run}*.jsonl"))
+paths = sorted(glob.glob(f"{os.environ.get('TRANSCRIPTS_DIR', '/app/data/transcripts')}/{run}*.jsonl"))
 if not paths:
     print("no transcript yet")
     raise SystemExit(0)
 
-events = []
+records = []
 for line in open(paths[0], errors="replace"):
     try:
-        record = json.loads(line)
+        records.append(json.loads(line))
     except Exception:
         continue
-    if record.get("kind") == "defect":
-        events.append(record)
+# Only the run as it stands: a rewind keeps the abandoned branch in the
+# transcript, and its attempts were counted as the live run's - one gate run's
+# re-plan showed as "attempt 3" when its record held two.
+try:
+    from app.observability.run_kpis import live_branch
+
+    records = live_branch(records)
+except Exception:
+    pass
+events = [record for record in records if record.get("kind") == "defect"]
 if not events:
     print("no defect records in this run's transcript (it predates the ledger, or no round has run)")
     raise SystemExit(0)

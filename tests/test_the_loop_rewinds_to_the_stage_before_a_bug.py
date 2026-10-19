@@ -95,3 +95,27 @@ def test_the_loop_s_suite_runs_across_workers_when_it_can():
     suite = text[text.index("\nsuite)"):]
     assert "import xdist" in suite and '$workers' in suite and "-n ${SUITE_WORKERS:-12}" in suite
     assert "pytest-xdist" in (HERE.parents[1] / "pyproject.toml").read_text()
+
+
+def test_the_defect_queue_shows_only_the_run_as_it_stands(tmp_path):
+    """One gate run's re-plan showed as "attempt 3" while its record held two: the attempt
+    a rewind discarded was still counted."""
+    def raised(at, index, description):
+        return {"at": at, "kind": "defect", "event": "raised", "sprint": 0, "index": index, "round": 0,
+                "source": "test round", "owner": "backend", "description": description, "stage": "test_round_0"}
+
+    records = [
+        raised("2026-10-20T01:00:00+00:00", 0, "discarded by the rewind"),
+        {"at": "2026-10-20T02:00:00+00:00", "kind": "rewound", "stage": "test_and_triage",
+         "point_at": "2026-10-20T00:30:00+00:00"},
+        raised("2026-10-20T03:00:00+00:00", 0, "the run as it stands"),
+    ]
+    (tmp_path / "run-x.jsonl").write_text("\n".join(json.dumps(r) for r in records) + "\n")
+    import os
+
+    shown = subprocess.run([sys.executable, str(HERE / "defects.py"), "run-x"], capture_output=True, text=True,
+                           env={**os.environ, "TRANSCRIPTS_DIR": str(tmp_path),
+                                "PYTHONPATH": str(HERE.parents[1] / "src")}).stdout
+
+    assert "the run as it stands" in shown and "discarded by the rewind" not in shown
+    assert "attempt 2" not in shown

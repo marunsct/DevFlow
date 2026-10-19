@@ -66,3 +66,48 @@ def test_the_attempt_is_the_current_sprint_s_last_and_only_if_it_failed() -> Non
         {"current_sprint_index": 0, "sprint_attempts": [FAILED, accepted]}
     ) is None
     assert _the_last_failed_attempt_at_this_sprint({"current_sprint_index": 0}) is None
+
+
+BANNED = __import__("re").compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", __import__("re").I)
+NOT_STARTED = "The product does not start for the acceptance suite, so no test can reach it."
+ROUNDS = {
+    "sprint_index": 0, "number": 2, "status": "Failed", "reason": "exhausted remediation attempts",
+    "defects": [
+        {"status": "open", "description": "The unit tests fail. ImportError while importing tests/test_items.py",
+         "owner": "backend", "found_in_round": 0, "actual_behavior": "ImportError: cannot import name 'Item'"},
+        {"status": "open", "description": NOT_STARTED, "owner": "backend", "found_in_round": 1,
+         "actual_behavior": "sqlalchemy.exc.OperationalError: unable to open database file (round 1)"},
+        {"status": "open", "description": NOT_STARTED, "owner": "backend", "found_in_round": 2,
+         "actual_behavior": "sqlalchemy.exc.OperationalError: unable to open database file (round 2)"},
+    ],
+}
+
+
+def test_what_the_last_round_found_comes_first_with_what_it_showed() -> None:
+    """Measured on one gate run: the re-plan was given round 0's unit-test failure, which the
+    last round no longer found, and the start failure twice without its cause - and planned
+    the unit tests' setup while the product went on failing to start."""
+    body = _request(ROUNDS)
+    section = body[body.index("was not accepted"):body.index("What that attempt built")]
+
+    assert section.count(NOT_STARTED) == 1
+    assert "What it showed: sqlalchemy.exc.OperationalError: unable to open database file (round 2)" in section
+    assert section.index("Defects its last test round still found:") < section.index(NOT_STARTED)
+    assert section.index(NOT_STARTED) < section.index("Raised by an earlier round and not found again")
+    assert section.index("Raised by an earlier round") < section.index("The unit tests fail.")
+    assert not BANNED.search(section)
+
+
+def test_an_attempt_s_record_keeps_each_defect_s_round_and_what_it_showed() -> None:
+    from types import SimpleNamespace
+
+    from app.graph.workflow import _what_a_plan_did
+    from app.sprint import Defect
+
+    defect = Defect(description=NOT_STARTED, severity="blocking", reproduction_steps="run it",
+                    expected_behavior="it starts", actual_behavior="unable to open database file",
+                    owner="backend", found_in_round=2)
+
+    (recorded,) = _what_a_plan_did(None, SimpleNamespace(defects=[defect]))["defects"]
+
+    assert recorded["found_in_round"] == 2 and recorded["actual_behavior"] == "unable to open database file"

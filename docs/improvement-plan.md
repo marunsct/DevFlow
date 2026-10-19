@@ -3575,7 +3575,7 @@ review; every recommendation in it is covered here:
 | BC stalls end one call earlier | P1 | NOT STARTED | |
 | BD two local tiers + model advice | P1 | NOT STARTED | owner's A/B |
 | BE one container per run | P2 | NOT STARTED | |
-| BF prompt composition record | P1 | DONE 2026-10-19 (commit in Appendix M) | every `model_request` carries `blocks` (system, environment_contract, tool_schemas, project_memory, workspace, specification, request, notes, conversation; characters, summing to the request); the memory marks its length in `additional_kwargs` (never sent); `kpi.py` adds `prompt_block_share_*` and `cache_miss_after_tool_change`. Test `tests/test_a_request_record_names_its_blocks.py`: 4 of 5 fail on the old code. Deployed after the W.2 baselines |
+| BF prompt composition record | P1 | DONE 2026-10-19 `ab2afae` | every `model_request` carries `blocks` (system, environment_contract, tool_schemas, project_memory, workspace, specification, request, notes, conversation; characters, summing to the request); the memory marks its length in `additional_kwargs` (never sent); `kpi.py` adds `prompt_block_share_*` and `cache_miss_after_tool_change`. Test `tests/test_a_request_record_names_its_blocks.py`: 4 of 5 fail on the old code. Deployed after the W.2 baselines |
 | BH model registry + measured edit preference | P1 | NOT STARTED | extends `fitness` |
 | BI rubric-graded candidates | P2 | NOT STARTED | after AY |
 | BG.1 progress/tokens in summary | P1 | NOT STARTED | S, no backend |
@@ -4314,7 +4314,7 @@ the item: what it changes, why, and the evidence (review findings in
 | BC | stalls end one call earlier | P1 | NOT STARTED | [BC](#plan-bc) |
 | BD | two local tiers + model advice | P1 | NOT STARTED | [BD](#plan-bd) |
 | BE | one container per run | P2 | NOT STARTED | [BE](#plan-be) |
-| BF | prompt composition record | P1 | DONE 2026-10-19 (BF commit) | [BF](#plan-bf) |
+| BF | prompt composition record | P1 | DONE 2026-10-19 `ab2afae` | [BF](#plan-bf) |
 | BH | model registry + measured edit preference | P1 | NOT STARTED | [BH](#plan-bh) |
 | BI | rubric-graded candidates | P2 | NOT STARTED | [BI](#plan-bi) |
 | BG.1 | progress/tokens in summary | P1 | NOT STARTED | [BG.1](#plan-bg-1) |

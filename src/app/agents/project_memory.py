@@ -327,9 +327,18 @@ def _with_memory(messages: list[Any], memory: str) -> list[Any] | None:
     """`messages` with `memory` at the start of the opening request, or None if there is none to put it in."""
     from langchain_core.messages import HumanMessage
 
+    from app.observability.transcript import MEMORY_CHARS
+
     for index, message in enumerate(messages):
         if getattr(message, "type", None) == "human" and isinstance(getattr(message, "content", None), str):
-            return [*messages[:index], HumanMessage(content=memory + "\n\n" + message.content), *messages[index + 1:]]
+            # How much of the message is memory, for the transcript's record of
+            # what a request carried; the provider never sends it.
+            marked = {**(getattr(message, "additional_kwargs", None) or {}), MEMORY_CHARS: len(memory) + 2}
+            return [
+                *messages[:index],
+                HumanMessage(content=memory + "\n\n" + message.content, additional_kwargs=marked),
+                *messages[index + 1:],
+            ]
         if isinstance(message, dict) and message.get("role") == "user" and isinstance(message.get("content"), str):
             return [*messages[:index], {**message, "content": memory + "\n\n" + message["content"]}, *messages[index + 1:]]
     return None

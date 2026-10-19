@@ -293,6 +293,109 @@ def _last_lines(content: str, limit: int) -> str:
     return "... (earlier output omitted)\n" + "\n".join(lines[-limit:])
 
 
+#: The key, in a message's `additional_kwargs`, under which the project memory says
+#: how many leading characters of that message it put there. The provider never
+#: sends it (only `name` is read from there), so the prompt is unchanged.
+MEMORY_CHARS = "project_memory_chars"
+
+#: A request's own section header, `--- Title ---`, and a memory file's, `=== path ===`.
+_A_SECTION = re.compile(r"^(?:-{3}|={3}) .+ (?:-{3}|={3})[^\n]*$", re.M)
+#: The sections that carry the specification: a header naming it, and not one of
+#: the advice or gap lists that only mention it.
+_THE_SPECIFICATION = re.compile(r"specification", re.I)
+_ONLY_MENTIONS_IT = re.compile(r"advice|defers|already decided", re.I)
+
+
+def _specification_in(text: str) -> int:
+    """Characters of `text` inside sections whose header names the specification."""
+    headers = list(_A_SECTION.finditer(text))
+    size = 0
+    for index, header in enumerate(headers):
+        title = header.group(0)
+        if not _THE_SPECIFICATION.search(title) or _ONLY_MENTIONS_IT.search(title):
+            continue
+        end = headers[index + 1].start() if index + 1 < len(headers) else len(text)
+        size += end - header.start()
+    return size
+
+
+def _contract_in(text: str) -> int:
+    """Characters of the environment contract inside a system prompt, or 0."""
+    try:
+        from app.agents.environment_contract import environment_contract_text
+
+        contract = environment_contract_text()
+    except Exception:  # noqa: BLE001 - no contract, nothing to attribute
+        return 0
+    return len(contract) if contract and contract in text else 0
+
+
+def _text_of(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            str(part.get("text", "")) if isinstance(part, dict) else str(part) for part in content
+        )
+    return str(content or "")
+
+
+def prompt_blocks(messages: list[dict[str, Any]], kwargs: dict[str, Any] | None = None) -> dict[str, int]:
+    """What one request carried, by block, in characters (Initiative BF).
+
+    `system` (less the `environment_contract` it ends with), `tool_schemas`,
+    `project_memory`, `workspace` (the digest), `specification` (wherever it
+    sits), `request` (the stage's opening ask), `notes` (the harness's
+    bracketed notices later in the conversation) and `conversation` (the
+    model's turns, tool results, anything else). The sizes sum to the whole
+    request, so a share is a share of what the server had to read.
+    """
+    blocks: dict[str, int] = {}
+
+    def add(name: str, size: int) -> None:
+        if size > 0:
+            blocks[name] = blocks.get(name, 0) + size
+
+    tools = ((kwargs or {}).get("invocation_params") or {}).get("tools") or []
+    if tools:
+        add("tool_schemas", len(json.dumps(tools, default=str)))
+    asked = False
+    for message in messages or []:
+        role = str(message.get("role") or "")
+        text = _text_of(message.get("content"))
+        calls = message.get("tool_calls")
+        size = len(text) + (len(json.dumps(calls, default=str)) if calls else 0)
+        if role == "system":
+            contract = _contract_in(text)
+            add("environment_contract", contract)
+            add("system", size - contract)
+            continue
+        if role not in ("human", "user"):
+            add("conversation", size)
+            continue
+        memory = min(int(message.get(MEMORY_CHARS) or 0), len(text))
+        if memory:
+            spec = _specification_in(text[:memory])
+            add("specification", spec)
+            add("project_memory", memory - spec)
+            text, size = text[memory:], size - memory
+        stripped = text.lstrip()
+        if stripped.startswith("The workspace as it stands"):
+            kind = "workspace"
+        elif stripped.startswith("[Project memory"):
+            kind = "project_memory"
+        elif not asked:
+            kind, asked = "request", True
+        elif stripped.startswith("["):
+            kind = "notes"
+        else:
+            kind = "conversation"
+        spec = _specification_in(text)
+        add("specification", spec)
+        add(kind, size - spec)
+    return blocks
+
+
 def _messages_of(payload: Any) -> list[dict[str, Any]]:
     """Messages in a shape that reads the same for every provider."""
     rendered: list[dict[str, Any]] = []
@@ -315,6 +418,9 @@ def _messages_of(payload: Any) -> list[dict[str, Any]]:
             ]
         if getattr(message, "tool_call_id", None):
             entry["tool_call_id"] = message.tool_call_id
+        memory = (getattr(message, "additional_kwargs", None) or {}).get(MEMORY_CHARS)
+        if memory:
+            entry[MEMORY_CHARS] = memory
         rendered.append(entry)
     return rendered
 
@@ -449,6 +555,9 @@ def build_transcript_callback(run_id: str | None, stage: str) -> Any:
                         carried=carried,
                         model=(serialized or {}).get("name"),
                         tools=offered,
+                        # The whole request by block, so a run can say what
+                        # its input was spent on (Initiative BF).
+                        blocks=prompt_blocks(whole, kwargs),
                     )
             except Exception:  # noqa: BLE001 - a record must not fail a call
                 logger.debug("Could not record a model request", exc_info=True)

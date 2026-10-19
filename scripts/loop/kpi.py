@@ -97,6 +97,11 @@ def kpis(records: list[dict]) -> dict:
     per_stage: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
     offered: dict[str, set] = {}
     extra = collections.Counter()
+    # What requests carried, by block (Initiative BF), and whether a request's
+    # tools differ from the stage's previous one - a changed tool list moves the
+    # prompt's prefix, and the server has to read it again.
+    blocks = collections.Counter()
+    tools_changed: dict[str, bool] = {}
     for r in records:
         stage, kind = r.get("stage") or "", r.get("kind")
         if stage and (not stages or stages[-1] != stage):
@@ -109,8 +114,12 @@ def kpis(records: list[dict]) -> dict:
             tools = set(tools) if isinstance(tools, list) else set(re.findall(r"'([^']+)'", str(tools or "")))
             if stage in offered and tools and tools < offered[stage]:
                 count["layer_tool_withheld"] += 1
+            tools_changed[stage] = bool(stage in offered and tools and tools != offered[stage])
             if tools:
                 offered[stage] = tools
+            for name, size in (r.get("blocks") or {}).items():
+                if isinstance(size, (int, float)):
+                    blocks[name] += int(size)
         elif kind == "model_response":
             count["model_calls"] += 1
             if stage in opened:
@@ -126,6 +135,8 @@ def kpis(records: list[dict]) -> dict:
             row["input"] += usage.get("input_tokens") or 0
             row["cached"] += cached
             row["output"] += output
+            if tools_changed.pop(stage, False) and cached < 0.5 * (usage.get("input_tokens") or 0):
+                count["cache_miss_after_tool_change"] += 1
             # What the server does not report: the reasoning's length, kept by
             # the transcript since 2026-10-18, at about four characters a token.
             extra["reasoning_tokens_estimated"] += min(output, int(r.get("reasoning_chars") or 0) // 4)
@@ -219,6 +230,10 @@ def kpis(records: list[dict]) -> dict:
         "fixes_reverted": defects["reverted"],
         "closed_without_a_fixer": defects["closed without a fixer"],
         **{layer: count[layer] for layer in [*LAYERS, "layer_tool_withheld"]},
+        "cache_miss_after_tool_change": count["cache_miss_after_tool_change"],
+        # Each block's share of every character the requests carried; absent
+        # for a run recorded before requests named their blocks.
+        **{f"prompt_block_share_{name}": _share(size, sum(blocks.values())) for name, size in sorted(blocks.items())},
         # One block per stage (a `defect_fix_2_3` is its own), the busiest first.
         "stages": [
             {"name": name, **{key: row[key] for key in STAGE_COUNTERS}}

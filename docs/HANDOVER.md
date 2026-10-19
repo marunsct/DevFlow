@@ -267,6 +267,17 @@ test that fails on the old code:
 - Remaining plan work: K.6 after the W.2 baselines (Fast notes-api-hono,
   then fast fullstack-bookmarks-py), the UI timeline, and log virtualization.
 
+### 2.000000 Part 21 in progress (2026-10-19, owner: "implement every open item, in Part 21's order")
+
+- **Stage 0 (owner's):** run-846b8d62 cancelled at the owner's choice. W.2 baseline 1, fast
+  `notes-api-hono`, is run-419b8ff6 (13:48 JST, on the deployed `e608003`). Then fast
+  `fullstack-bookmarks-py`, then thorough; the AR probe (`loop.sh reasoning-probe run`) only
+  between runs. **Nothing is deployed while a baseline runs**, and stage-1 code waits on
+  the branch until every baseline is scored and in `loop.sh kpi`.
+- **Stage 1, built on the branch, not deployed:** BF (each request's `blocks`; KPI
+  `prompt_block_share_*`, `cache_miss_after_tool_change`). Next: BC, BK, AQ, AO.9/AO.10, AO.5.
+- Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).
+
 ### 2.00000 Appendix 3 built (2026-10-19)
 
 Wave 0 and most of Wave 2 are done and ledgered (`docs/improvement-plan.md`,

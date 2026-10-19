@@ -175,7 +175,35 @@ class TestTheRefusalsCarryIt:
         result = tool.invoke({"reference": "todo-app/app.js"})
 
         assert "`read_file`" in result["error"]
+        # A file of the workspace was meant: the saved outputs are not listed
+        # in front of the sentence that helps (they were, until a fixer missed it).
+        assert "1790418892-run-x-npm-stdout-43b36066.log" not in result["error"]
+
+    def test_a_path_found_nowhere_still_lists_what_was_saved(self, tmp_path, monkeypatch):
+        from app.tools import agent_toolkit, journal
+
+        monkeypatch.setattr(journal, "read_entry", lambda name: None)
+        monkeypatch.setattr(journal, "list_entries", lambda scope="", limit=10: ["1790418892-run-x-npm-stdout-43b36066.log"])
+        tool = agent_toolkit.build_journal_read_tool(str(tmp_path))
+
+        result = tool.invoke({"reference": "todo-app/missing.js"})
+
         assert "1790418892-run-x-npm-stdout-43b36066.log" in result["error"]
+
+    def test_a_search_of_a_workspace_file_leads_with_grep(self, tmp_path, monkeypatch):
+        from app.tools import agent_toolkit, journal
+
+        monkeypatch.setattr(journal, "read_entry", lambda name: None)
+        monkeypatch.setattr(journal, "list_entries", lambda scope="", limit=10: [f"17904188{i:02d}-run-x-npm-stdout-43b36066.log" for i in range(30)])
+        tool = agent_toolkit.build_journal_read_tool(str(tmp_path))
+        (tmp_path / "svc").mkdir()
+        (tmp_path / "svc" / "service.py").write_text("def list_items(): ...\n")
+
+        result = tool.invoke({"reference": "svc/service.py", "search": "list_items"})
+
+        assert result["error"].startswith("No journalled output named 'svc/service.py'.")
+        assert 'call `grep` with pattern "list_items"' in result["error"]
+        assert len(result["error"]) < 400
 
     def test_a_real_reference_still_reads(self, tmp_path, monkeypatch):
         """The tool must keep doing its job."""

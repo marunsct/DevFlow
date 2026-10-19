@@ -1019,6 +1019,14 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
             # passing tests as your own is worse than the error it replaced.
             from app.tools.journal import list_entries, scope_of
 
+            redirect = _and_a_path_is_read_with_read_file(reference, repo_root, search)
+            if redirect and repo_root and _somewhere_in_the_workspace(repo_root, str(reference)):
+                # A file of the workspace: the stage meant the file, and the list
+                # of saved outputs in front of the one sentence that helps was
+                # noise. Measured live: a fixer searching a source file was given
+                # thirty log names first and the `grep` it needed last, and did
+                # not use it.
+                return {"error": f"No journalled output named '{reference}'.{redirect}{repeated}"}
             available = (
                 listed_once if listed_once is not None else list_entries(scope=scope_of(repo_root))
             )

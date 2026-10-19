@@ -319,9 +319,12 @@ test that fails on the old code:
   frontier model checked before a run, flush sticky headings, the Delivery pane by its own width). LF.35 (a look
   through the command tool refused only when the stage already has what it shows) and LF.36 (a compacted
   stage keeps its request; the summary is never empty) need the worker: deployed together into the
-  shakedown at a stage boundary. **Before the next `loop.sh kpi`, deploy the
-  worker** (`loop.sh deploy` when the shakedown ends): `kpi.py` now imports
-  `app.observability.run_kpis`. Then the gate run (group 2 before/after).
+  shakedown (a828a9f, 14:56 UTC). LF.37 (an empty folder's listing runs) and LF.38 (a product that did not
+  start loses no acceptance test by name) followed. The shakedown run-894282e3 was **cancelled at 00:08 JST
+  2026-10-20** on the owner's word (no longer useful: 426 min, 34 defects, 3 fixed, 8 fixes reverted; KPIs in
+  `data/kpi/`). App and worker deployed at ee47e4e4 (the worker carries `run_kpis`). **The evaluation (gate) run
+  is run-7622ead3**, started 00:10 JST 2026-10-20: `tests/brief_medium.md`, `DELIVERY=fast FRONTIER=false`,
+  compared with the baselines by `kpi_ledger.py compare` when it ends.
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).

@@ -126,7 +126,7 @@ const buildComponents = (density: Density): Components => {
     ),
 
     img: ({ src, alt }) => (
-      <img src={typeof src === 'string' ? src : undefined} alt={alt ?? ''} className="my-2 max-w-full rounded-lg" />
+      <img src={typeof src === 'string' ? src : undefined} alt={alt ?? ''} loading="lazy" className="my-2 max-w-full rounded-lg" />
     ),
   };
 };

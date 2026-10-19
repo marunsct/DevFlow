@@ -137,6 +137,8 @@ export const RunDashboard: React.FC = () => {
   // past history the user had never seen.
   const logsById = useRef<Map<string, LogEntry>>(new Map());
   const historyCursor = useRef(0);
+  // Whether the live stream is open: while it is, it carries every event.
+  const streamOpen = useRef(false);
   const lastSequence = useRef(0);
 
   const mergeLogs = (incoming: LogEntry[]) => {
@@ -198,11 +200,15 @@ export const RunDashboard: React.FC = () => {
       }
 
       // History paging uses its own cursor, independent of what the live
-      // stream has already delivered.
-      const logsData = await getLogs(runId, 200, historyCursor.current);
-      if (logsData.logs?.length) {
-        historyCursor.current += logsData.logs.length;
-        mergeLogs(logsData.logs);
+      // stream has already delivered - and only while the stream is down: an
+      // open stream replays everything after the last event it saw, so paging
+      // the same events again cost a request each refresh and gave nothing.
+      if (!streamOpen.current) {
+        const logsData = await getLogs(runId, 200, historyCursor.current);
+        if (logsData.logs?.length) {
+          historyCursor.current += logsData.logs.length;
+          mergeLogs(logsData.logs);
+        }
       }
 
       setError(null);
@@ -267,6 +273,7 @@ export const RunDashboard: React.FC = () => {
 
       ws.onopen = () => {
         attempt = 0;
+        streamOpen.current = true;
         setStreamDown(false);
       };
 
@@ -299,6 +306,7 @@ export const RunDashboard: React.FC = () => {
 
       ws.onerror = () => ws?.close();
       ws.onclose = () => {
+        streamOpen.current = false;
         if (isSubscribed) {
           setStreamDown(true);
           scheduleReconnect();
@@ -582,7 +590,7 @@ export const RunDashboard: React.FC = () => {
           )}
           {rewindPoints !== null && (
             <span className="flex items-center gap-2 flex-wrap">
-              <select value={rewindTo} onChange={(e) => setRewindTo(e.target.value)}
+              <select aria-label="The stage to go back to" value={rewindTo} onChange={(e) => setRewindTo(e.target.value)}
                 className="bg-surface/50 border border-border/50 rounded-lg px-2 py-1 text-xs text-text-primary max-w-[16rem]">
                 {rewindPoints.map((p) => (
                   <option key={p.checkpoint_id} value={p.checkpoint_id}>
@@ -726,6 +734,8 @@ export const RunDashboard: React.FC = () => {
             </p>
             {run.error.length > 160 && (
               <button
+                type="button"
+                aria-expanded={errorOpen}
                 onClick={() => setErrorOpen((v) => !v)}
                 className="mt-1.5 text-[12px] font-medium text-danger hover:text-danger underline underline-offset-2"
               >
@@ -771,7 +781,7 @@ export const RunDashboard: React.FC = () => {
           it, so a 1366x768 screen shows all three without scrolling. */}
       {viewMode === 'wizard' ? (
         <>
-          <SprintSummaryPanel runId={runId!} />
+          <SprintSummaryPanel runId={runId!} refreshKey={stageKey} />
           <DeliveryPanel runId={runId!} refreshKey={stageKey} />
           <WizardDashboard run={run} model={wizard} />
         </>
@@ -827,7 +837,7 @@ export const RunDashboard: React.FC = () => {
             {/* Acceptance criteria, screenshots and the decision log, then the
                 sprints - refreshed as the run moves between stages. */}
             <DeliveryPanel runId={runId!} refreshKey={stageKey} onOpenChange={selectChange} />
-            <SprintSummaryPanel runId={runId!} />
+            <SprintSummaryPanel runId={runId!} refreshKey={stageKey} />
           </div>
         </div>
       </div>

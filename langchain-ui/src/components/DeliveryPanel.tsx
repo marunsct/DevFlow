@@ -81,7 +81,7 @@ const Screenshot: React.FC<{ runId: string; path: string }> = ({ runId, path }) 
   return (
     <figure className="rounded-lg overflow-hidden border border-border/50 bg-surface/40">
       {url ? (
-        <img src={url} alt={label} className="w-full h-32 object-cover object-top" />
+        <img src={url} alt={label} loading="lazy" className="w-full h-32 object-cover object-top" />
       ) : (
         <div className="h-32 flex items-center justify-center text-text-muted text-xs">loading</div>
       )}
@@ -147,6 +147,8 @@ export const DeliveryPanel: React.FC<{
   return (
     <div className="glass-card rounded-2xl overflow-hidden">
       <button
+        type="button"
+        aria-expanded={open}
         onClick={() => setOpen(!open)}
         className="w-full px-5 py-3 flex items-center justify-between border-b border-border/40 text-left"
       >
@@ -241,6 +243,8 @@ export const DeliveryPanel: React.FC<{
                 {decisions.map((d) => (
                   <li key={d.id} className="text-sm">
                     <button
+                      type="button"
+                      aria-expanded={openDecision === d.id}
                       onClick={() => setOpenDecision(openDecision === d.id ? null : d.id)}
                       className="w-full text-left flex items-start gap-2 hover:bg-overlay rounded px-1 py-0.5"
                     >

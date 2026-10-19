@@ -357,6 +357,8 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
   const [lane, setLane] = useState<string | null>(null);
   const items = useMemo(() => (lane ? all.filter((item) => laneOf(item.stage) === lane) : all), [all, lane]);
   const groups = useMemo(() => groupByStage(items), [items]);
+  // What a screen reader hears: the newest progress update, not every action.
+  const headline = useMemo(() => [...all].reverse().find((item) => item.type === 'message')?.text ?? '', [all]);
 
   // How many arrived while the reader was scrolled away, so the catch-up
   // control can say what it is offering instead of just "go to the end".
@@ -477,6 +479,7 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
         </div>
       )}
 
+      <p role="status" aria-live="polite" className="sr-only">{headline}</p>
       <div className="flex-1 min-h-0 flex flex-col">
         {/* The scroller is absolutely positioned inside a relative box rather
             than being a flex child. As a flex child its height resolved against
@@ -488,7 +491,9 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
             ref={scrollRef}
             onScroll={onScroll}
             role="log"
-            aria-live="polite"
+            // Off: every action read aloud as it lands drowned the reader. The
+            // newest headline is announced by the status line below instead.
+            aria-live="off"
             aria-label="Agent activity"
             tabIndex={0}
             className="absolute inset-0 overflow-y-auto px-2 py-3 flex flex-col"

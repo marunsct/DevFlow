@@ -46,3 +46,11 @@ describe('the activity feed', () => {
     expect(laneOf('principal_architect')).toBe('planning');
   });
 });
+
+describe('what a screen reader hears', () => {
+  it('the newest progress update, not every action', () => {
+    render(<AgentActivity logs={logs} />);
+    expect(screen.getByRole('log').getAttribute('aria-live')).toBe('off');
+    expect(screen.getByRole('status').textContent).toBe('The session cookie is now set on sign-in.');
+  });
+});

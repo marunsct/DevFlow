@@ -27,6 +27,8 @@ interface SprintSummaryPanelProps {
   runId: string;
   /** How many sprints the plan has; we probe up to this number. */
   maxSprints?: number;
+  /** Changes when the run moves on: the panel reads the sprints again then, instead of polling. */
+  refreshKey?: string;
 }
 
 interface ParsedSprint {
@@ -139,7 +141,7 @@ function parseSummary(raw: string, sprintNum: number): ParsedSprint {
   };
 }
 
-export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, maxSprints = 10 }) => {
+export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, maxSprints = 10, refreshKey }) => {
   const [sprints, setSprints] = useState<ParsedSprint[]>([]);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -172,11 +174,12 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
       }
     };
 
+    // Read again when the run moves to another stage (plan BG.13): a sprint's
+    // record only changes as a stage ends, and a 30-second poll asked for it
+    // a hundred times a run for nothing.
     fetchAll();
-    // Refresh every 30s while loading might still produce new sprints
-    const interval = setInterval(fetchAll, 30000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [runId, maxSprints, visible]);
+    return () => { cancelled = true; };
+  }, [runId, maxSprints, visible, refreshKey]);
 
   const toggle = (n: number) => {
     setExpanded((prev) => {
@@ -226,6 +229,8 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
             <div key={sprint.number}>
               {/* Header row - always visible */}
               <button
+                type="button"
+                aria-expanded={isOpen}
                 onClick={() => toggle(sprint.number)}
                 className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-overlay transition-colors"
               >

@@ -81,3 +81,22 @@ def test_the_gate_names_no_language_of_its_own():
     assert ".py" not in source and "Pyright" not in source and "TypeScript" not in source
     assert service.service_name("app/x.py") == "Pyright"
     assert service.service_name("web/x.ts") == "the TypeScript language service"
+
+
+def test_the_cap_counts_files_so_one_file_s_findings_leave_room_for_the_rest(tmp_path, monkeypatch):
+    """Measured on one gate run: a schemas module's twelve unknown imports would take every place, and the
+    router that stopped the service was met a round later."""
+    names = ["shop/shop_pkg/schemas/__init__.py", "shop/shop_pkg/routers/auth.py"]
+    _batch(tmp_path, monkeypatch, names)
+    many = [{"file": str(tmp_path / names[0]), "rule": "reportAttributeAccessIssue", "severity": "error",
+             "message": f'"Schema{n}" is unknown import symbol', "range": {"start": {"line": n}}}
+            for n in range(engineering.MOST_UNDERLINED_DEFECTS + 4)]
+    router = {"file": str(tmp_path / names[1]), "rule": "reportAttributeAccessIssue", "severity": "error",
+              "message": '"get_db" is unknown import symbol', "range": {"start": {"line": 0}}}
+    monkeypatch.setattr(service, "_pyright_diagnostics", lambda project: [*many, router], raising=False)
+    monkeypatch.setattr("app.tools.repository.pinned_project_directory", lambda root: "shop")
+
+    found = engineering.underlined_in_the_batch({}, str(tmp_path), "base")
+
+    assert any("get_db" in d.description for d in found)
+    assert sum("Schema" in d.description for d in found) == engineering.MOST_UNDERLINED_DEFECTS + 4

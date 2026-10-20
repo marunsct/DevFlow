@@ -158,7 +158,7 @@ def regression_defects(state: Any, lost: list[str], after: Any = None) -> list[A
 #: defects. A language read in one project-wide run is not counted
 #: (`language_service.underlined_in`).
 MOST_FILES_UNDERLINED = 24
-MOST_UNDERLINED_DEFECTS = 6
+MOST_UNDERLINED_DEFECTS = 6  # files
 
 
 #: How an underlined defect's description ends, so it can be read back.
@@ -269,8 +269,13 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
     # The bundled manifest-drift defect rides after the cap: it is one defect
     # however many imports it names, and truncating it would hide the root
     # cause behind its symptoms (Initiative K.4).
+    # Capped by file, not by finding: one file's findings are one fixer's
+    # (`workflow._one_defect_per_cause`). Measured on one gate run: a schemas
+    # module's twelve unknown imports would have taken every place, and the
+    # router that stopped the service was met only a round later.
+    kept_files = list(dict.fromkeys(d.affected_files[0] for d in defects if d.affected_files))[:MOST_UNDERLINED_DEFECTS]
     return [
-        *defects[:MOST_UNDERLINED_DEFECTS],
+        *[d for d in defects if not d.affected_files or d.affected_files[0] in kept_files],
         *_what_the_manifests_do_not_declare(state, root, since, pinned or ""),
     ]
 

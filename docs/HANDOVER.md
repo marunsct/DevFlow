@@ -353,6 +353,7 @@ test that fails on the old code:
   manifests) followed; paused 19:29, deployed, rewound to the CI gate.
   LF.96 (the gate's findings merged into one defect through a failing test) followed; paused 19:50, deployed, rewound
   to the CI gate.
+  LF.97 (the gate's cap counts files) followed at 19:54, the same way.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

@@ -601,11 +601,19 @@ def create_runs_router(
     ) -> SprintsResponse:
         """The run's sprints as figures, from the attempts each sprint summary is rendered from (plan BG.6)."""
         from app.agents.sprint_summary import sprint_views
+        from app.graph.workflow import the_attempt_in_progress
 
         record = _require_run(runner, run_id, user)
         state = record.graph_state(runner.checkpointer)
+        # A live run's current sprint is the attempt under way, not the one it
+        # last recorded; a finished run has none under way.
+        live = record.status not in ("completed", "failed", "cancelled") and state.get("sprint_plan")
         return SprintsResponse(
-            sprints=sprint_views(state.get("sprint_plan"), state.get("sprint_attempts") or [])
+            sprints=sprint_views(
+                state.get("sprint_plan"),
+                state.get("sprint_attempts") or [],
+                the_attempt_in_progress(state) if live else None,
+            )
         )
 
     @runs.get("/{run_id}/usage", response_model=RunUsage)

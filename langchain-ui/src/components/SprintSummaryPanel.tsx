@@ -21,6 +21,7 @@ import {
   Rocket,
   ChevronDown,
   ChevronRight,
+  Loader2,
 } from 'lucide-react';
 
 interface SprintSummaryPanelProps {
@@ -221,9 +222,11 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
         {sprints.map((sprint) => {
           const isOpen = expanded.has(sprint.number);
           const passed = sprint.status.toLowerCase() === 'completed';
-          const StatusIcon = passed ? CheckCircle2 : XCircle;
-          const statusColor = passed ? 'text-success' : 'text-danger';
-          const statusBg = passed ? 'bg-success-bg' : 'bg-danger-bg';
+          // The attempt the run is working through: not yet a pass or a failure.
+          const underWay = sprint.status.toLowerCase() === 'in progress';
+          const StatusIcon = passed ? CheckCircle2 : underWay ? Loader2 : XCircle;
+          const statusColor = passed ? 'text-success' : underWay ? 'text-primary' : 'text-danger';
+          const statusBg = passed ? 'bg-success-bg' : underWay ? 'bg-primary/10' : 'bg-danger-bg';
 
           return (
             <div key={sprint.number}>

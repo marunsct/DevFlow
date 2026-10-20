@@ -187,6 +187,10 @@ def _one_line(text: str) -> str:
     return window.rstrip(" ,;:") + "\u2026"
 
 
+# The status of the attempt a run is working through now. See `sprint_views`.
+IN_PROGRESS = "In progress"
+
+
 def _attempt_history(attempts: Sequence[Mapping[str, Any]]) -> list[str]:
     """One line per attempt when a sprint took more than one; [] when it took one."""
     if len(attempts) <= 1:
@@ -198,6 +202,13 @@ def _attempt_history(attempts: Sequence[Mapping[str, Any]]) -> list[str]:
         if attempt.get("accepted_at_escalation"):
             reason += f" at escalation ({attempt['accepted_at_escalation']})"
         tally = _defect_tally(attempt.get("defects") or ())
+        if attempt.get("status") == IN_PROGRESS:
+            history.append(
+                f"**Attempt {attempt.get('number', '?')}** ({label}) - {IN_PROGRESS}, "
+                f"round {attempt.get('rounds', 0)}. "
+                f"Defects so far: {tally['found']} found, {tally['fixed']} fixed."
+            )
+            continue
         history.append(
             f"**Attempt {attempt.get('number', '?')}** ({label}) - "
             f"{attempt.get('status', 'Unknown')}{reason}. "
@@ -208,17 +219,39 @@ def _attempt_history(attempts: Sequence[Mapping[str, Any]]) -> list[str]:
     return history
 
 
-def sprint_views(sprint_plan: Any, attempts: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def sprint_views(
+    sprint_plan: Any,
+    attempts: Sequence[Mapping[str, Any]],
+    in_progress: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Each attempted sprint as figures, from the attempts its summary document is rendered from.
 
     The run page drew its sprint timeline by parsing the rendered markdown back
     into numbers (plan BG.6); this is the same state, unrendered. Goal and
     promise come from the sprint plan, as in `_record_sprint_summary`.
+
+    `in_progress` is the attempt the run is working through now, not yet
+    recorded: `sprint_index`, `rounds`, `features` and `defects`. An attempt is
+    recorded only when it ends, so without it a sprint planned again showed the
+    attempt that failed as its current state. Measured live: a re-run had
+    passed every acceptance criterion and unit test, and the panel still read
+    "Failed: exhausted remediation attempts" with one bug open - attempt 2's
+    figures, while attempt 3 was under way. A sprint whose last attempt is
+    Completed is not re-opened by it.
     """
     sprints = list(getattr(sprint_plan, "sprints", None) or [])
     by_sprint: dict[int, list[Mapping[str, Any]]] = {}
     for attempt in attempts or ():
         by_sprint.setdefault(int(attempt.get("sprint_index", 0)), []).append(attempt)
+    if in_progress is not None:
+        index = int(in_progress.get("sprint_index", 0))
+        mine = by_sprint.get(index, [])
+        # Past the plan's end is the run closing, not a sprint under way.
+        if index < len(sprints) and (not mine or mine[-1].get("status") != "Completed"):
+            by_sprint[index] = [
+                *mine,
+                {**in_progress, "number": len(mine) + 1, "status": IN_PROGRESS, "cases": None},
+            ]
     views = []
     for index in sorted(by_sprint):
         mine = by_sprint[index]
@@ -236,7 +269,7 @@ def sprint_views(sprint_plan: Any, attempts: Sequence[Mapping[str, Any]]) -> lis
             "planned_total": len(sprints),
             "goal": goal or "Unknown goal",
             "status": status,
-            "failure_reason": "" if status == "Completed" else str(latest.get("reason") or ""),
+            "failure_reason": "" if status in ("Completed", IN_PROGRESS) else str(latest.get("reason") or ""),
             "attempts": len(mine),
             "planned": planned or ([goal] if goal else []),
             "features": [_one_line(feature) for feature in (latest.get("features") or ())],

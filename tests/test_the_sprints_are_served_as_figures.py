@@ -76,3 +76,48 @@ def test_the_route_serves_a_new_run_s_sprints_as_none_yet(client, tmp_path: Path
     response = client.get(f"/api/runs/{run_id}/sprints")
 
     assert response.status_code == 200 and response.json() == {"sprints": []}
+
+
+UNDER_WAY = {
+    "sprint_index": 0, "rounds": 1, "features": ["Register", "Sign in"],
+    "defects": [{"status": "fixed", "description": "Sign-in accepts an empty password", "owner": "backend"}],
+}
+
+
+def test_a_sprint_planned_again_shows_the_attempt_under_way_not_the_one_that_failed():
+    # A re-run that had passed everything still read "Failed" with one bug
+    # open: the failed attempt's figures, because an attempt is recorded only
+    # when it ends.
+    (view,) = sprint_views(PLAN, [FAILED], UNDER_WAY)
+
+    assert (view["status"], view["failure_reason"], view["attempts"]) == ("In progress", "", 2)
+    assert (view["total_bugs"], view["fixed_bugs"], view["open_bugs"]) == (1, 1, 0)
+    assert view["test_cases"] is None and view["test_rounds"] == 1
+    assert view["attempt_history"][0].startswith("**Attempt 1** (first attempt) - Failed")
+    assert view["attempt_history"][1].startswith("**Attempt 2** (re-run) - In progress")
+
+
+def test_a_completed_sprint_and_the_end_of_the_plan_are_not_reopened():
+    (view,) = sprint_views(PLAN, [PASSED], UNDER_WAY)
+    assert (view["status"], view["attempts"]) == ("Completed", 1)
+
+    views = sprint_views(PLAN, [PASSED], {**UNDER_WAY, "sprint_index": 2})
+    assert [view["number"] for view in views] == [1]
+
+
+def test_the_attempt_under_way_is_read_from_the_run_state():
+    from app.graph.workflow import the_attempt_in_progress
+
+    state = {
+        "current_sprint_index": 1,
+        "test_round": 2,
+        "milestone_plan": SimpleNamespace(delegated_tasks=[SimpleNamespace(title="Add an item")]),
+        "remediation": SimpleNamespace(defects=[SimpleNamespace(status="open", description="Items vanish", owner="backend")]),
+        "sprint_earlier_plans": [{"features": ["Item model"], "defects": [{"status": "fixed", "description": "No id"}]}],
+    }
+
+    attempt = the_attempt_in_progress(state)
+
+    assert (attempt["sprint_index"], attempt["rounds"]) == (1, 2)
+    assert attempt["features"] == ["Item model", "Add an item"]
+    assert [defect["status"] for defect in attempt["defects"]] == ["fixed", "open"]

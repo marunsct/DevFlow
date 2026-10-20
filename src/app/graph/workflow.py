@@ -4456,6 +4456,23 @@ def _what_a_plan_did(plan: Any, cycle: Any) -> dict[str, Any]:
     }
 
 
+def the_attempt_in_progress(state: Mapping[str, Any]) -> dict[str, Any]:
+    """The attempt at the current sprint the run is working through, as `_record_sprint_summary` would record it.
+
+    For the run page while the run is live (`sprint_summary.sprint_views`): an
+    attempt is recorded only when it ends, so between two records the page had
+    nothing newer than the attempt before this one.
+    """
+    earlier = list(state.get("sprint_earlier_plans") or [])
+    now = _what_a_plan_did(state.get("milestone_plan"), state.get("remediation"))
+    return {
+        "sprint_index": state.get("current_sprint_index", 0),
+        "rounds": state.get("test_round", 0),
+        "features": [feature for done in earlier for feature in done.get("features") or []] + now["features"],
+        "defects": [defect for done in earlier for defect in done.get("defects") or []] + now["defects"],
+    }
+
+
 def _record_sprint_summary(
     state: WorkflowGraphState, status: str, failure_reason: str | None = None
 ) -> dict[str, Any]:

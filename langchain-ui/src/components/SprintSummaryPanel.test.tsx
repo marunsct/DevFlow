@@ -36,4 +36,13 @@ describe('the sprint milestones', () => {
 
     expect(await screen.findByText('From the document')).toBeTruthy();
   });
+
+  it('draws a sprint under way as in progress, not as a failure', async () => {
+    getSprints.mockResolvedValue({ sprints: [{ ...view, status: 'In progress', open_bugs: 0 }] });
+    const { container } = render(<SprintSummaryPanel runId="run-1" />);
+
+    const badge = await screen.findByText('In progress');
+    expect(badge.className).toContain('text-primary');
+    expect(container.querySelector('.text-danger')).toBeNull();
+  });
 });

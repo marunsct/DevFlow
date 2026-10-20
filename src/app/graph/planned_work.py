@@ -68,7 +68,13 @@ def work_orders_from_the_specification(
     from app.graph.drafting import planned_files
     from app.stacks.contract import owned_by_the_harness
 
-    files = [path for path in planned_files(specification) if not owned_by_the_harness(repo_root, path)]
+    from app.analysis.work_orders import inside_the_project
+
+    # Named from the workspace root first: the file plan names them as the
+    # project sees them, and what the harness keeps is named from the root -
+    # `vite.config.ts` was given to a work order, and the plan sent back for it.
+    files = [inside_the_project(path, repo_root) for path in planned_files(specification)]
+    files = list(dict.fromkeys(path for path in files if not owned_by_the_harness(repo_root, path)))
     if not files:
         return None
     if repo_root and sum((Path(repo_root) / path).is_file() for path in files) >= BUILT_SHARE * len(files):

@@ -408,6 +408,15 @@ def _inside_the_project(path: str, project_dir: str, root: Path) -> str:
     first = clean.split("/", 1)[0]
     if first in {project_dir, "docs", "..", "."}:
         return path
+    # The project's own first: measured on one gate run, its package
+    # `task_management_dashboard/` (the project's name as a module) read as a
+    # near-spelling of `task-management-dashboard/`, and the `.gitignore` at the
+    # workspace's top as the one meant - 31 files "outside the project".
+    try:
+        if (root / project_dir / first).exists():
+            return f"{project_dir}/{clean}"
+    except OSError:
+        pass
     if SequenceMatcher(None, first.lower(), project_dir.lower()).ratio() >= _NEAR_SPELLING:
         return path
     try:
@@ -421,6 +430,12 @@ def _inside_the_project(path: str, project_dir: str, root: Path) -> str:
 #: How alike a first directory and the project's name must be to be read as a
 #: misspelling of it rather than a directory inside it.
 _NEAR_SPELLING = 0.8
+
+
+def inside_the_project(path: str, repo_root: str | Path | None) -> str:
+    """`path` named from the workspace root, as `with_paths_inside_the_project` names a work order's files."""
+    project_dir = _pinned_project_directory(repo_root)
+    return _inside_the_project(path, project_dir, Path(repo_root or "")) if project_dir else path
 
 
 def _pinned_project_directory(repo_root: str | Path | None) -> str:

@@ -348,6 +348,7 @@ test that fails on the old code:
   LF.91 (a UI-only fix, the app alone redeployed at 18:15 JST) went in during it; the owner counts it as clean.
   LF.92 (the file plan read as its headings) was found at 18:45 JST; owner: pause, fix, deploy, rewind - rewound
   to `technical_lead` at about 18:55 JST, so its fast work orders are made from the real file plan.
+  The rewound plan then showed LF.93 (32 path problems); paused, fixed, deployed and rewound again (~19:00 JST).
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

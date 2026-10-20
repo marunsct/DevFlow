@@ -387,7 +387,8 @@ test that fails on the old code:
   `DELIVERY=fast FRONTIER=false`). LF.120 (modules nothing imports are named to fixers and at release) deployed into it at
   about 07:40 JST. Group 2 (CM.1-CM.5 first, then M.4, EF.11) is built from now on and deployed after this gate run.
   Each group 2 item is behind its own switch, off by default (any mid-run deploy carries the branch); CM.1 =
-  `SHARED_FACTS` (`app.agents.shared_facts.ON_BY_DEFAULT`); CM.2/EF.11 = `DECISION_LEDGER` (`app.agents.ledger.ON_BY_DEFAULT`). After the gate run: turn the built ones on, deploy, measure.
+  `SHARED_FACTS` (`app.agents.shared_facts.ON_BY_DEFAULT`); CM.2/EF.11 = `DECISION_LEDGER` (`app.agents.ledger.ON_BY_DEFAULT`); AY = `FIX_CYCLE` (`app.graph.bounded_fixes.ON_BY_DEFAULT`).
+  `.gitignore` matches `fix_*.py`: name no source module so (`tests/test_no_source_module_is_ignored_by_git.py`). After the gate run: turn the built ones on, deploy, measure.
   LF.121 (a suite file left out of a request points at the memory) deployed into it at about 08:00 JST.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).

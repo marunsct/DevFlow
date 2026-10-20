@@ -9824,11 +9824,16 @@ def build_workflow_graph(
         from app.graph.rewritten_fixes import fix_by_candidates, fix_by_rewriting
         from app.tools.repository import _the_harness_s_own_or_the_locked_suite
 
+        from app.graph.bounded_fixes import the_candidate_model
+
         root = Path(state["repository"].root_path)
-        if failed_tries >= 1 and judgement_model is not model and judgement_model is not None:
+        # A judgement model of its own, or with the fix cycle on the fix's own
+        # model (plan AY step 2); None asks for no candidates.
+        candidate_model = the_candidate_model(judgement_model, model, fix_model)
+        if failed_tries >= 1 and candidate_model is not None:
             try:
                 kept = fix_by_candidates(
-                    defect, root, judgement_model, lambda: _the_defect_s_tests_pass(root, defect),
+                    defect, root, candidate_model, lambda: _the_defect_s_tests_pass(root, defect),
                     specification=state.get("technical_specification"),
                     stack=getattr(state.get("stack_selection"), "technology_stack", None),
                     last_failure=_what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),

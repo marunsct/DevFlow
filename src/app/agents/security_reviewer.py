@@ -210,6 +210,16 @@ And the harness's own test setup - the files the project contract names as
 kept - is not the product: a finding about one of them is not this review's."""
 
 
+#: Measured on one run: this review asked for `SECRET_KEY` to be moved to the
+#: environment, the work order made the product refuse to start without it,
+#: and every acceptance test failed - the suite starts the product with only
+#: `PORT` and `DATA_DIR` set, as the environment contract tells every stage.
+SECRETS_HERE = """A secret is read from the environment with a development default, or generated
+at first start and kept under `DATA_DIR`: the tests start the product with
+only `PORT` and `DATA_DIR` set. A production secret in the code is a finding;
+a remediation keeps the product starting when the variable is unset."""
+
+
 _SYSTEM_PROMPT = f"""You are the Security Reviewer for this workflow.
 
 Your role is to independently review changed files and tool permissions for
@@ -225,6 +235,8 @@ Responsibilities:
 {SCOPE_DISCIPLINE}
 
 {BROWSER_KEPT_DATA}
+
+{SECRETS_HERE}
 
 Constraints:
 - Do not modify application source code; you only review and record findings.

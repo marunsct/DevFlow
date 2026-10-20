@@ -346,3 +346,30 @@ def test_a_throwaway_script_is_not_the_product_s(tmp_path, monkeypatch) -> None:
 
     assert engineering.underlined_in_the_batch({"milestone_plan": None}, str(tmp_path), before) == []
     assert seen == []
+
+
+def test_a_merged_finding_is_not_closed_while_the_file_is_still_underlined(tmp_path, monkeypatch) -> None:
+    """Measured on one gate run: a defect merged with the other findings in its file was read as one message
+    running to the end of theirs, matched nothing, and was closed as fixed while Pyright still reported it."""
+    from types import SimpleNamespace
+
+    from app.graph import engineering
+
+    (tmp_path / "shop").mkdir()
+    (tmp_path / "shop" / "database.py").write_text("settings.DB_URL\nsettings.DB_POOL\n")
+    monkeypatch.setattr("app.tools.repository.pinned_project_directory", lambda root: "")
+    still = [{"message": 'Cannot access attribute "DB_URL" for class "Settings"'},
+             {"message": 'Cannot access attribute "DB_POOL" for class "Settings"'}]
+    monkeypatch.setattr("app.analysis.language_service.underlined_any",
+                        lambda root, target, content, project=None: SimpleNamespace(here=still))
+    first = f'shop/database.py line 1: {still[0]["message"]}{engineering.FAILS_WHEN_IT_RUNS}'
+    merged = (first + engineering.SAME_PROBLEM_ELSEWHERE
+              + f'- [language service] shop/database.py line 2: {still[1]["message"]}{engineering.FAILS_WHEN_IT_RUNS}')
+
+    assert engineering.no_longer_underlined(str(tmp_path), merged) == ""
+
+    still[:] = [still[1]]
+    assert engineering.no_longer_underlined(str(tmp_path), merged) == "", "another finding of the merge is left"
+
+    still[:] = []
+    assert "no longer underlines" in engineering.no_longer_underlined(str(tmp_path), merged)

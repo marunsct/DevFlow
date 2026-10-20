@@ -4724,6 +4724,9 @@ def _the_same_cause(one: Any, other: Any) -> bool:
     return spelled_out(names, other_text, not files) or spelled_out(other_names, text, not theirs)
 
 
+from app.graph.engineering import SAME_PROBLEM_ELSEWHERE  # noqa: E402 - the merge and the recheck share it
+
+
 def _names_a_cause(defect: Any) -> bool:
     """Whether the defect is a check's finding of a cause, not a symptom of one.
 
@@ -4813,7 +4816,7 @@ def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
             for other in others
         )
         merged.append(item.model_copy(update={
-            "description": f"{item.description}\n\nThe same problem, as other checks reported it:\n{also}",
+            "description": f"{item.description}{SAME_PROBLEM_ELSEWHERE}{also}",
             "affected_files": files,
             "severity": severity,
         }))

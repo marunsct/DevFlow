@@ -163,6 +163,9 @@ MOST_UNDERLINED_DEFECTS = 6  # files
 
 #: How an underlined defect's description ends, so it can be read back.
 FAILS_WHEN_IT_RUNS = " - this fails when the code runs."
+#: Where a merged defect's own text ends and what other checks said begins
+#: (`workflow._one_defect_per_cause`).
+SAME_PROBLEM_ELSEWHERE = "\n\nThe same problem, as other checks reported it:\n"
 _AN_UNDERLINED_DEFECT = re.compile(r"^(?P<file>\S+) line [\d, ]+: (?P<message>.+)" + re.escape(FAILS_WHEN_IT_RUNS) + "$", re.S)
 
 
@@ -188,7 +191,12 @@ def no_longer_underlined(root: str, description: str) -> str:
             return "" if left else "The harness's manifest reconciliation finds every package it named declared now."
     except Exception:  # noqa: BLE001 - a defect not closed goes to a fixer as before
         pass
-    found = _AN_UNDERLINED_DEFECT.match(str(description or "").strip())
+    # Its own finding only: measured on one gate run, a defect merged with the
+    # findings in its file was read as one message running to the end of what
+    # the others said, matched nothing, and was closed as fixed - four of
+    # them, while Pyright still reported every one.
+    own, merged, _ = str(description or "").partition(SAME_PROBLEM_ELSEWHERE)
+    found = _AN_UNDERLINED_DEFECT.match(own.strip())
     if found is None:
         return ""
     try:
@@ -206,11 +214,17 @@ def no_longer_underlined(root: str, description: str) -> str:
             errors = compiler_check.findings(root, pinned or "", [found.group("file")])
             if any(e["file"] == found.group("file") and e["message"] == found.group("message") for e in errors):
                 return ""
+            if merged and any(e["file"] == found.group("file") for e in errors):
+                return ""
             return f"The compiler no longer reports it in {found.group('file')}."
         now = underlined_any(root, target, target.read_text(encoding="utf-8", errors="replace"), project)
         if now is None:
             return ""
         if any(finding["message"] == found.group("message") for finding in now.here):
+            return ""
+        if merged and now.here:
+            # What the others said is shortened in the merge; while the file is
+            # still underlined, one of theirs may be what is left.
             return ""
         return f"The language service no longer underlines it in {found.group('file')}."
     except Exception:  # noqa: BLE001 - a defect not closed goes to a fixer as before

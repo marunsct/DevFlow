@@ -1119,6 +1119,14 @@ class WorkflowRunner:
         now = datetime.now(timezone.utc).isoformat()
         if record.status == "completed":
             self.run_store.compare_and_set_status(run_id, "completed", "paused", updated_at=now, clear_error=True)
+        # The stage it is rewound to, before the resume reads it. Still naming
+        # the gate it was paused on, the resume answered that gate on the
+        # rewound state, and the rewound stage ran with no request.
+        rewound = self.run_store.load(run_id)
+        if rewound is not None:
+            rewound.current_stage = done["stage"]
+            rewound.updated_at = now
+            self.run_store.save(rewound)
         await self.event_bus.publish(
             run_id,
             RunEvent(

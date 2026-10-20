@@ -3498,10 +3498,19 @@ def _run_gated_agent(
     activity = build_activity_callbacks(config["configurable"].get(APP_RUN_ID_KEY), stage_name)
 
     pending_decision = state.get("pending_decision")
+    if pending_decision is not None and not state.get("pending_inner_thread_id"):
+        # A decision with no gate waiting for it answers nothing. Resumed on a
+        # conversation made up for it, the stage ran with no request at all:
+        # measured on one run, rewound while parked on another stage's gate,
+        # the resume answered that gate, and the rewound review was handed
+        # only the project memory - it read the specification for itself and
+        # never saw the request built for it. It starts as a stage starts.
+        logger.warning(
+            "Stage %s was handed a decision with no gate waiting for it; it starts afresh", stage_name,
+        )
+        pending_decision = None
     if pending_decision is not None:
         inner_thread_id = state.get("pending_inner_thread_id")
-        if not inner_thread_id:
-            inner_thread_id = f"{outer_thread_id}:{stage_name}:{uuid.uuid4().hex[:8]}"
         try:
             result = resume_with_decision(
                 agent,
@@ -11499,7 +11508,11 @@ def rewind_to(graph: Any, thread_id: str, checkpoint_id: str, repo_root: str | N
         from app.graph import abandoned_threads
 
         abandoned_threads.forget_every_stage(repo_root, thread_id)
-    graph.update_state(target.config, {"error": None})
+    # The start of a stage answers no gate: whatever a later point was parked
+    # on is not this one's.
+    graph.update_state(target.config, {
+        "error": None, "pending_decision": None, "pending_inner_thread_id": None, "pending_approval": None,
+    })
     logger.info(
         "Rewound to %s; the workspace %s", node,
         "was put back as it was then" if restored else "was left as it is (no snapshot of it then)",

@@ -285,3 +285,45 @@ def test_a_rewound_stage_starts_its_own_conversation_not_one_a_note_left(tmp_pat
     rewind_to(graph, "thread", "c7", repo_root=str(tmp_path))
 
     assert list(abandoned_threads._read(tmp_path)) == ["other|architecture_review"]
+
+
+def test_a_rewound_point_answers_no_gate_a_later_point_was_parked_on(tmp_path):
+    from types import SimpleNamespace
+
+    from app.graph.workflow import rewind_to
+
+    written = []
+    target = SimpleNamespace(config={"configurable": {"checkpoint_id": "c9"}}, next=("architecture_review",),
+                             created_at="2026-10-20T22:45:51+00:00")
+    graph = SimpleNamespace(get_state=lambda config: target,
+                            update_state=lambda config, values: written.append(values))
+
+    rewind_to(graph, "thread", "c9")
+
+    assert written == [{"error": None, "pending_decision": None, "pending_inner_thread_id": None,
+                        "pending_approval": None}]
+
+
+@pytest.mark.asyncio
+async def test_a_rewound_run_names_the_stage_it_went_back_to_before_it_resumes(runner, monkeypatch):
+    """Still naming the gate it was paused on, the resume answered that gate on the rewound state."""
+    record = runner.register_run(
+        run_id="run-back", thread_id="thread-back", document_names=["brief.md"],
+        document_paths=["/tmp/brief.md"], owner="alice", tenant_id="acme",
+    )
+    record.status = "paused"
+    record.current_stage = "awaiting_approval:acceptance_author_0"
+    runner.run_store.save(record)
+    monkeypatch.setattr("app.graph.workflow.rewind_to",
+                        lambda graph, thread, checkpoint, root=None: {"stage": "architecture_review", "files_restored": False})
+    monkeypatch.setattr(runner, "_graph_for", lambda record: object())
+    seen = []
+
+    async def resume(run_id):
+        seen.append(runner.run_store.load(run_id).current_stage)
+
+    monkeypatch.setattr(runner, "resume_run", resume)
+
+    await runner.rewind_run("run-back", "c1")
+
+    assert seen == ["architecture_review"]

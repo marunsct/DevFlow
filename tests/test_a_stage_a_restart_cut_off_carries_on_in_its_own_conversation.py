@@ -99,3 +99,23 @@ def test_a_note_this_process_left_is_a_new_attempt_not_a_cut_off(tmp_path):
     )
 
     assert agent.calls[0][0] is not None and agent.calls[0][1] != "outer:technical_lead:old"
+
+
+def test_a_decision_with_no_gate_waiting_for_it_starts_the_stage_with_its_request(tmp_path):
+    """Measured on one run: rewound while its record still named another stage's gate,
+    the resume answered that gate, and the rewound review ran on a made-up conversation
+    holding only the project memory - never the request built for it."""
+    agent = _Agent()
+
+    update = _run_gated_agent(
+        {"stage": "architecture_review", "repository": SimpleNamespace(root_path=str(tmp_path)),
+         "pending_decision": {"type": "approve"}, "pending_inner_thread_id": None},
+        {"configurable": {"thread_id": "outer"}},
+        stage_name="architecture_review", agent=agent,
+        initial_request={"messages": [{"role": "user", "content": "review this"}]},
+        output_key="out", next_stage="scrum_master",
+    )
+
+    request, thread = agent.calls[0]
+    assert request == {"messages": [{"role": "user", "content": "review this"}]}
+    assert thread.startswith("outer:architecture_review:") and update["out"] == "answer"

@@ -2677,6 +2677,43 @@ _ONLY_SAYS_WHERE = re.compile(r'^\s*(?:File "|at\s|\S+:\d+: in\b|<frozen\b|_{5,}
 MOST_CAUSE_LINES = 8
 
 
+def _first_sentence(text: Any) -> str:
+    """A defect's first sentence: its check's own words, the same each time it is raised."""
+    return re.split(r"(?<=[.!?])\s|\n", " ".join(str(text or "").split()), maxsplit=1)[0]
+
+
+def _refreshed_by_the_round(cycle: Any, raised: list[Any], test_round: int) -> tuple[Any, list[Any]]:
+    """`cycle` with each open defect this round raises again refreshed from it, and the ones raised again.
+
+    Measured on one run: "The unit tests fail." was raised by round 0 and again
+    by round 1 with a longer output, both stayed open, and round 2 sent two fix
+    stages of forty calls each, one after the other, at the one failure. Raised
+    again means the same first sentence from the same check while still open;
+    the newer description, output and round replace the older.
+    """
+    defects = list(getattr(cycle, "defects", None) or [])
+    repeated: list[Any] = []
+    for item in raised:
+        key = (_first_sentence(getattr(item, "description", "")), str(getattr(item, "source", "") or ""))
+        at = next((index for index, defect in enumerate(defects)
+                   if defect.status == "open"
+                   and (_first_sentence(defect.description), str(defect.source or "")) == key), None)
+        if at is None:
+            continue
+        defects[at] = defects[at].model_copy(update={
+            "description": item.description,
+            "actual_behavior": item.actual_behavior,
+            "reproduction_steps": item.reproduction_steps,
+            "affected_files": list(item.affected_files or defects[at].affected_files),
+            "failing_criteria": list(item.failing_criteria or defects[at].failing_criteria),
+            "found_in_round": test_round,
+        })
+        repeated.append(item)
+    if not repeated:
+        return cycle, []
+    return cycle.model_copy(update={"defects": defects}), repeated
+
+
 def _what_the_failure_says(output: str) -> str:
     """The lines of a runner's output that state what went wrong, the last of them; "" when none does.
 
@@ -9385,6 +9422,16 @@ def build_workflow_graph(
 
         from app.observability import defect_ledger
 
+        # A defect this round raises again - one check's, still open from an
+        # earlier round - refreshes that one instead of queueing a second fixer
+        # for it. Both still count as this round's findings.
+        cycle, repeated = _refreshed_by_the_round(cycle, new_defects, test_round)
+        new_defects = [item for item in new_defects if not any(item is again for again in repeated)]
+        measured = [*new_defects, *repeated]
+        for again in repeated:
+            defect_ledger.note("raised again", f"test_round_{test_round}", defect=again, round_=test_round,
+                                index=-1, sprint=state.get("current_sprint_index", 0),
+                                detail="the same check's open defect was refreshed with this round's output")
         for position, item in enumerate(new_defects, start=len(cycle.defects)):
             defect_ledger.note("raised", f"test_round_{test_round}", defect=item, round_=test_round, index=position,
                                 sprint=state.get("current_sprint_index", 0))
@@ -9392,10 +9439,10 @@ def build_workflow_graph(
             cycle = record_test_run(
                 cycle,
                 command=["specialist", "testing", f"round-{test_round}"],
-                passed=not new_defects,
-                summary=f"{len(new_defects)} defect(s) found" if new_defects else "all applicable tests passed",
+                passed=not measured,
+                summary=f"{len(measured)} defect(s) found" if measured else "all applicable tests passed",
                 new_defects=new_defects,
-                charge_the_budget=_a_round_that_found_a_product_defect(new_defects),
+                charge_the_budget=_a_round_that_found_a_product_defect(measured),
             )
         except RemediationLimitExceeded as exc:
             # The same exit as every other exhausted sprint: planned again,

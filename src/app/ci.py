@@ -275,6 +275,24 @@ def revert_to(root: str | Path, commit_id: str) -> bool:
     return True
 
 
+def restore_paths(root: str | Path, commit_id: str, paths: Sequence[str]) -> bool:
+    """Put `paths` back as they were at `commit_id`: a file it did not have is removed."""
+    if not commit_id:
+        return False
+    for path in paths:
+        existed = _git(root, "cat-file", "-e", f"{commit_id}:{path}")
+        if existed is not None and existed.returncode == 0:
+            done = _git(root, "checkout", "--quiet", commit_id, "--", path)
+            if done is None or done.returncode != 0:
+                return False
+        else:
+            try:
+                (Path(root) / path).unlink(missing_ok=True)
+            except OSError:
+                return False
+    return True
+
+
 def changed_since(root: str | Path, commit_id: str) -> list[str]:
     """Workspace-relative paths changed between `commit_id` and HEAD that still exist."""
     if not commit_id:

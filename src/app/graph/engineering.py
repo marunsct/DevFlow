@@ -559,6 +559,42 @@ def _broken_tests(lost: list[str], before: ci.Snapshot | None, after: ci.Snapsho
     return broken_acceptance
 
 
+def _its_tests_without_its_product_change(
+    root: str, base: str, before: ci.Snapshot | None, broken: list[str], stage_name: str,
+) -> ci.Snapshot | None:
+    """The fix's test changes kept, its product changes put back, measured; None when that part breaks too.
+
+    Only when nothing but acceptance tests broke: the acceptance suite runs the
+    product, so a change to the project's own unit tests cannot be what broke
+    it. Measured live: a fix for "the unit tests fail" rewrote the unit test
+    file - 24 tests passed that did not - and changed one router, which broke 13
+    sign-in acceptance tests; the whole fix was reverted, the test repair with
+    it. The defect's own tests in this measurement then settle it as before.
+    """
+    from app.analysis.file_kinds import classify_file
+
+    if not broken or not all(item.startswith("acceptance:") for item in broken):
+        return None
+    try:
+        ci.commit(root, f"{stage_name} as written, before it is split")
+        changed = ci.changed_since(root, base)
+        tests = [path for path in changed if classify_file(path) == "test"]
+        product = [path for path in changed if path not in tests]
+        if not tests or not product or not ci.restore_paths(root, base, product):
+            return None
+        after = ci.take(root, f"after {stage_name}")
+        if after.problem or _broken_tests(ci.regressions(before, after), before, after):
+            return None
+        logger.warning(
+            "Kept %s's change to its tests and put back its change to %s, which broke %d acceptance test(s)",
+            stage_name, ", ".join(product), len(broken),
+        )
+        return after
+    except Exception:  # noqa: BLE001 - the whole fix is reverted as before
+        logger.warning("Could not keep part of %s", stage_name, exc_info=True)
+        return None
+
+
 def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list[str]:
     """Measure the fix. A fix that broke what passed before it is reverted; returns what it broke."""
     if not base or not ci_applies(root):
@@ -574,6 +610,12 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list
         # reverted each time as "broke 3 test(s)", the same rewrite again next round.
         cause = " ".join(after.problem.split())[:400]
         broken = [f"the product no longer builds or starts after it ({cause})", *broken]
+    if broken:
+        kept = _its_tests_without_its_product_change(root, base, before, broken, stage_name)
+        if kept is not None:
+            ci.save(root, kept)
+            ci.commit(root, f"Fix, its tests only: {description[:50]}")
+            return []
     if broken and ci.revert_to(root, base):
         # What the reverted fix had gained as well, so whether a whole fix
         # should go for one broken test can be measured: the snapshot after a

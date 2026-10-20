@@ -11,12 +11,46 @@
 
 | Part | Topic | Date | Main plan items |
 |---|---|---|---|
+| [R8](#r8) | MinIO replacement: open-source S3-compatible storage | 2026-10-20 | [OS](improvement-plan.md#plan-os) |
+| [R7](#r7) | Agent-to-agent communication in multi-agent systems | 2026-10-20 | [CM](improvement-plan.md#plan-cm) |
 | [R1](#r1) | Frontier coding-agent harnesses and local-model techniques | 2026-10-19 | [AX](improvement-plan.md#plan-ax), [AY](improvement-plan.md#plan-ay), [AZ](improvement-plan.md#plan-az), [BA](improvement-plan.md#plan-ba), [BH](improvement-plan.md#plan-bh), [BJ](improvement-plan.md#plan-bj) |
 | [R2](#r2) | Research digest R1–R21 (long-running harnesses, local serving, agent UX) | 2026-10-18 | [W](improvement-plan.md#plan-w), [X](improvement-plan.md#plan-x), [Y](improvement-plan.md#plan-y), [Z](improvement-plan.md#plan-z), [AA](improvement-plan.md#plan-aa), [AI](improvement-plan.md#plan-ai) |
 | [R3](#r3) | Frontier harness research T1–T6 | 2026-10-18 | [M](improvement-plan.md#plan-m), [O](improvement-plan.md#plan-o), [Z](improvement-plan.md#plan-z), [L.7](improvement-plan.md#plan-l-7) |
 | [R4](#r4) | Local-LLM research §8.1–8.7 | 2026-10-17/18 | [M](improvement-plan.md#plan-m), [N](improvement-plan.md#plan-n), [O](improvement-plan.md#plan-o), [S](improvement-plan.md#plan-s), [Q](improvement-plan.md#plan-q) |
 | [R5](#r5) | UI/UX research-backed opportunities | 2026-10-18 | [Part 4](improvement-plan.md#plan-part-4), [Part 15](improvement-plan.md#plan-part-15), [Part 19](improvement-plan.md#plan-part-19) |
 | [R6](#r6) | Earlier comparisons with other harnesses | 2026-10-04/09 | [E1](improvement-plan.md#plan-e1), [E2](improvement-plan.md#plan-e2) |
+
+---
+
+<a id="r8"></a>
+## Part R8 — MinIO replacement: open-source S3-compatible object storage (2026-10-20, session 5)
+
+Plan items: [OS](improvement-plan.md#plan-os). Full comparison: [`object-storage-plan.md`](object-storage-plan.md).
+
+| Finding | Evidence | Plan |
+|---|---|---|
+| MinIO CE is no longer a viable dependency: images and binaries stopped Oct 2025, maintenance mode Dec 2025, repo archived Feb/Apr 2026; AIStor Free is commercial and single-node | [glukhov.org](https://glukhov.org/data-infrastructure/object-storage/minio-dead/), [WZ-IT (updated 2026-10-12)](https://wz-it.com/en/blog/minio-successor-s3-storage-comparison/) | OS.2 removes it |
+| SeaweedFS: Apache-2.0, since 2015, release 4.45 on 2026-08-31; `weed mini` gives a single-process S3 with credentials and a pre-created bucket, documented for small production setups; S3 coverage includes versioning, object lock, bucket policy, presigned, multipart | [repo](https://github.com/seaweedfs/seaweedfs), [releases](https://github.com/seaweedfs/seaweedfs/releases), [weed mini](https://github.com/seaweedfs/seaweedfs/wiki/Quick-Start-with-weed-mini), [S3 API](https://github.com/seaweedfs/seaweedfs/wiki/Amazon-S3-API) | OS.0–OS.1 |
+| RustFS: Apache-2.0, MinIO-like UX, but 1.0 GA only on 2026-09-16; critical advisories CVE-2025-68926 (hard-coded gRPC token, 9.8) and CVE-2026-62378 (console stored XSS leaking keys, 9.0) | [Linuxiac](https://linuxiac.com/rustfs-1-0-s3-compatible-object-storage-reaches-ga/), [GitLab advisory](https://advisories.gitlab.com/cargo/rustfs/CVE-2025-68926/), [Halo](https://cve.halosecurity.com/cve-advisory/cve-2026-62378-rustfs-console-stored-xss-exposes-credentials) | OS.8 re-evaluation |
+| Garage: AGPL-3.0; no versioning, object lock or bucket policies; partial lifecycle | [S3 compatibility](https://garagehq.deuxfleurs.fr/documentation/reference-manual/s3-compatibility/) | not chosen |
+| Ceph RGW: mature but disproportionate for one host | [WZ-IT](https://wz-it.com/en/blog/minio-successor-s3-storage-comparison/) | not chosen |
+
+<a id="r7"></a>
+## Part R7 — Agent-to-agent communication in multi-agent systems (2026-10-20, session 5)
+
+Plan items: [CM](improvement-plan.md#plan-cm). Full assessment: [`agent-communication-feasibility.md`](agent-communication-feasibility.md).
+
+| Finding | Evidence | Plan |
+|---|---|---|
+| Inter-agent misalignment is about a third of multi-agent failures, and communication-protocol fixes alone are insufficient; the largest single gain was objective-level verification (+15.6% on ProgramDev), and role or topology fixes gave +9.4% | MAST, NeurIPS 2025 — [arXiv 2503.13657](https://arxiv.org/html/2503.13657v3) | CM.1, CM.2 (facts, not chat) |
+| Two coding agents with real-time messaging lost nearly half a single agent's capability; messaging had almost no effect (unanswered questions, broken commitments, overwrites after warnings) | CooperBench — [Stanford HAI, 2026-06-01](https://hai.stanford.edu/news/ai-coding-agents-fail-at-teamwork) | peer mailbox rejected |
+| Every multi-agent variant degraded sequential planning 39–70%; tool-heavy tasks pay a disproportionate overhead; centralised control contains error amplification (4.4× vs 17.2×); diminishing returns past ~45% single-agent baseline | Google Research/MIT, 2026-01-28 — [blog](https://research.google/blog/towards-a-science-of-scaling-agent-systems-when-and-why-agent-systems-work/), [arXiv 2512.08296](https://arxiv.org/html/2512.08296v2) | harness stays the hub |
+| Structured documents through a publish-subscribe pool beat free dialogue ("idle chatter", telephone-game distortion); revisions fall as roles are added | MetaGPT — [arXiv 2308.00352](https://arxiv.org/pdf/2308.00352) | CM.2 |
+| Majority voting explains most of multi-agent debate's gains; debate is a martingale over beliefs | "Debate or Vote" — [arXiv 2508.17536](https://arxiv.org/abs/2508.17536v1) | debate rejected |
+| A blackboard with a controller selecting who acts: removing the controller raised tokens ≈3.7× for a similar score (not tested on code or tools) | LbMAS — [arXiv 2507.01701](https://arxiv.org/html/2507.01701v1) | CM.2 routing is harness-controlled |
+| Frontier practice: writes single-threaded; clean-context reviewers and escalation to a stronger model work; parallel-writer swarms do not | Cognition — [2026-04-22](https://cognition.com/blog/multi-agents-working), [Don't build multi-agents](https://cognition.com/blog/dont-build-multi-agents); Anthropic — [research system](https://www.anthropic.com/engineering/multi-agent-research-system) (subagents only via lead; most coding tasks a poor fit; ~15× chat tokens) | CM.5 |
+| Claude Code agent teams (Feb 2026, experimental) add a mailbox and shared task list but are advised against for sequential work and same-file edits, at 3–5× tokens | [overview](https://www.morphllm.com/claude-code-agent-teams) | peer mailbox rejected |
+| An uncertainty-triggered clarification step lifted resolve rate about +14 points on underspecified SWE-bench Verified for both Claude Sonnet 4.5 and Kimi K2.6; Kimi over-asked (8.7 questions per task) | "Ask or Assume?" — [arXiv 2603.26233](https://www.alphaxiv.org/abs/2603.26233) | CM.4 (bounded, retrieval first) |
 
 ---
 

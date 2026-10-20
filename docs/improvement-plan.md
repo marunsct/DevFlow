@@ -1,8 +1,8 @@
 # Harness Improvement Plan: High-Quality Product Delivery with Local & MoE Models
 
 > **Unified plan (consolidated 2026-10-19).** This file is the only improvement plan.
-> - It carries the original plan (§1–4, Initiatives A–I) and Appendices 1–4
->   (Initiatives J–BK, with the UI parts).
+> - It carries the original plan (§1–4, Initiatives A–I) and Appendices 1–6
+>   (Initiatives J–BL, EF, CM and OS, with the UI parts).
 > - **Before implementing: Part 21** is the single implementation order and
 >   **Part 22** resolves the contradictions and lists what not to implement.
 > - Section E holds the two earlier plan documents, merged here.
@@ -3489,6 +3489,12 @@ Every stage keeps the standing rules (`AGENTS.md`):
 
 Each stage's gate is judged by the two-run rule (Part 20).
 
+*Added 2026-10-20 (Appendix 6):*
+- **CM.1** → stage 1.
+- **CM.2**, **CM.3** → stage 4 after BJ.
+- **CM.4** → stage 8.
+- **OS.0–OS.6** → stage 7.
+
 <a id="plan-part-22"></a>
 ### Part 22 — Consistency review before implementing everything (2026-10-19)
 
@@ -3628,6 +3634,93 @@ tokens/s; on the findings run prompt reading was 67 of 164 model-minutes, writin
 | EF.12 | The suite is written before any code exists, so its author cannot see a page, a route or a message, and a failing test leaves the fixer unsure whether the test or the product is wrong; the suite then needs repair rounds | Owner's proposal, 2026-10-20: the criteria and the interface contract stay locked at the specification (the definition of done); the suite is written once the sprint's unit tests pass, from the locked criteria and contract and the running product's surface (the rendered page, its routes, the command's help) - never its source - then run on its own. Every test names its criterion; a criterion without a test, or a test that contradicts its contract line, stops the lock. Replaces R2 and R3 of the acceptance-first review | Tests shaped to the code as built; guarded by the source being withheld, the locked contract and the per-criterion coverage | Planned, group 2, after EF.11 is measured |
 | EF.13 | A product that does not start fails one name per test round (three rounds in gate run 1, one missing import each) | Attach every name the language service underlines to the start defect, so one fix stage sees them all | None | Planned; LF.59 already reads every file at the gate |
 | EF.14 | Builders that spend their 40 model calls without answering are started over on a fresh conversation, up to three times, re-reading what the first wrote - measured on the findings run: two testing work orders, six attempts, about 50 minutes, each attempt ending at the budget. Fix stages are recorded from their writes instead (`workflow._a_fix_recorded_from_its_writes`, deliberately fix stages only) | Measure recording a builder from its writes after its first budget stop, with the CI gate and the test round deciding, against today's three attempts | A half-built work order goes to the fix loop rather than to its own author | Proposed: group 2, measured |
+
+<a id="plan-appendix-6"></a>
+## Appendix 6 (2026-10-20): agent-to-agent communication and object storage
+
+Owner's questions, 2026-10-20:
+- Would communication between the specialist agents improve effectiveness, efficiency and performance?
+- What replaces MinIO, which is no longer open source?
+
+Full assessments, with evidence and sources:
+- [`docs/agent-communication-feasibility.md`](agent-communication-feasibility.md)
+- [`docs/object-storage-plan.md`](object-storage-plan.md)
+
+Research: [R7](research-findings.md#r7), [R8](research-findings.md#r8). Decisions (proposed): ADR-0012 and ADR-0013 in `docs/architecture-decisions.md`.
+
+<a id="plan-cm"></a>
+### CM — Agent communication through harness-owned records, not peer messages
+
+**Finding.** Agents never talk directly. Each stage gets one prompt assembled from state.
+- Of 15 documented failures traced, about 11 were one agent missing a fact another agent or the harness already had: LF.24, LF.25, LF.40, LF.42, LF.44, LF.80/82, LF.90, spec-name drift, unread specialist outputs, sprint scope, contradicted advice.
+- Each was patched one at a time.
+- A builder's `decisions`/`blockers` reach only the milestone reviewer (`milestone_reviewer.what_the_specialists_reported`).
+
+**Research.** Free peer messaging and debate do not pay:
+- CooperBench (2026): paired coding agents lost nearly half a single agent's capability, and real-time messaging had almost no effect.
+- MAST (NeurIPS 2025): protocol fixes are insufficient on their own.
+- Google/MIT (2026): sequential tasks degrade 39–70% under every multi-agent variant.
+- Debate ≈ majority voting.
+
+Structured, harness-controlled hand-off does pay (MetaGPT, blackboard-with-controller), and bounded clarification questions gained about +14 points on underspecified SWE-bench Verified.
+
+| ID | Change | Model calls added | Measure | Priority | Status |
+|---|---|---|---|---|---|
+| CM.1 | Fact parity: every judging stage (architecture, security, acceptance and milestone reviews, disputes) is given the same environment contract, data-store facts, scaffold layout and sprint scope as the builder it judges. One function feeds both prompts, and a parity test fails when they diverge | 0 | reviewer findings withdrawn or contradicted by the environment; reverted fixes | P0 | PROPOSED |
+| CM.2 | Typed decision-and-contract ledger (builds Pillar 9). Harness-written entries `interface_contract`, `decision`, `blocker`, `known_trap`, `requirement` come from existing structured outputs. Role-sliced, ≤4k chars per stage under BJ, dropped entries named. Never reasoning or model-written notes. Start with EF.11's contract lines | 0 | contract-mismatch defects per milestone; fix attempts per defect; spec/code name drift | P1 | PROPOSED |
+| CM.3 | Route blockers and interface-changing decisions to the work order that can act on them: at its next visit in linear mode, at the gather join in parallel mode, where two work orders changing one interface become a defect at once. Complements EF.6 | 0 | fix rounds per milestone; time from blocker to fix | P1 | PROPOSED |
+| CM.4 | Bounded `ask_specification` tool for builders and fixers, behind a flag, off by default. Answers by retrieval from spec, ledger and locked suite first; one architect-role call only when retrieval misses. Answer stored in the ledger; ≤2 per work order, 1 per fix, a per-run ceiling | ≤2 per work order, only on a retrieval miss | questions per work order; share answered by retrieval; underspecification defects | P2 | PROPOSED: measure on the owner's model first (over-asking risk) |
+| CM.5 | Reviewers keep a clean context: artefacts and facts, never the builder's reasoning or transcript | 0 | — | P0 (process) | ADOPTED as a principle |
+
+**Rejected:**
+- a peer mailbox;
+- specialist debate or negotiation rounds;
+- broadcasting builders' reasoning;
+- parallel builders coordinating edits by message (the write guards and file holdback already do this deterministically).
+
+**Kill rule:** an item that raises tokens per accepted criterion by more than 5% without lowering at least one defect metric is turned off (ADR-0010, two-run rule Part 20).
+
+<a id="plan-os"></a>
+### OS — S3-compatible object storage: SeaweedFS replaces MinIO
+
+**Finding.**
+- MinIO's community edition stopped binaries and images in Oct 2025, went into maintenance mode in Dec 2025, and was archived in 2026. Its free tier is commercial and single-node.
+- In DevFlow the `minio` service is commented out. The Local backend therefore writes its "durable copy" to `DATA_DIR/objects` on the **same** `appdata` volume as the workspaces.
+- Archived artifacts are never read back: `download_artifact` reads the workspace only.
+
+**Choice.** SeaweedFS (Apache-2.0, since 2015), single-process `weed mini`, as an opt-in compose profile.
+- Runner-up: RustFS. It is Apache-2.0, but reached GA on 16 Sep 2026 and had critical CVEs in Dec 2025 and Jul 2026. Re-evaluate around Q2 2027.
+- Not chosen: Garage (AGPL, no versioning or object lock, CLI bootstrap), Ceph RGW (too heavy for one host).
+
+**Priority:** P2. It protects run output and enables multi-node workers; it does not change build quality.
+
+| ID | Change | Status |
+|---|---|---|
+| OS.0 | Spike: SeaweedFS against the existing store tests. Check boto3 1.43 default checksums, bucket create, pagination past 1,000 keys, non-ASCII keys, and the health endpoint | PROPOSED |
+| OS.1 | `seaweedfs` compose service under profile `storage`: bind mount `./data/seaweedfs`, admin UI on loopback only, 1 GB limit, healthcheck; `depends_on ... required: false` | PROPOSED |
+| OS.2 | Rename `MINIO_*` settings to `OBJECT_STORE_ACCESS_KEY/SECRET_KEY`, `SEAWEED_ADMIN_PORT` (old names read for one release); remove the commented MinIO blocks | PROPOSED |
+| OS.3 | Harden `object_store.py`: checksum mode, timeouts, connection pool ≥ `HARNESS_MAX_PARALLEL`; refuse an S3 endpoint with empty credentials (allow-all mode); storage status on the health page; archive metrics; skip unchanged files | PROPOSED |
+| OS.4 | Read-back: `download_artifact` falls back to `runs/<id>/<path>` in the store when the workspace file is gone; listing from the store for pruned runs | PROPOSED |
+| OS.5 | `manage.py object-store backfill` and `verify` (uses `iter_missing`); import the Local backend's `DATA_DIR/objects` | PROPOSED |
+| OS.6 | Store tests parametrised over both backends (S3 variant marked, runs when an endpoint is set); new tests for read-back, empty-secret refusal and degraded health, each failing on the old code | PROPOSED |
+| OS.7 | Docs: ADR-0012, R8 and this appendix done 2026-10-20; HANDOVER operations section (enable, rotate, back up, restore, roll back) at implementation | PARTLY (docs) |
+| OS.8 | Optional: off-site `rclone` mirror, bucket lifecycle matching run retention, RustFS re-evaluation | PROPOSED |
+
+**Acceptance criteria:**
+1. The default `up` without the profile is unchanged.
+2. A run's files appear under `runs/<id>/`.
+3. A pruned workspace still downloads from the run page.
+4. Deleting a run deletes its objects.
+5. A store outage never fails a run and shows as degraded.
+6. `down -v` leaves `./data/seaweedfs`.
+
+**Rollback:** leave `OBJECT_STORE_BUCKET` unset.
+
+**Placement in Part 21:**
+- **CM.1** joins stage 1 (cheap fixes).
+- **CM.2** and **CM.3** join stage 4 after BJ, since they share its input budget.
+- **CM.4** joins stage 8 (optional, flag-gated).
+- **OS.0–OS.6** join stage 7 (infrastructure).
 
 ## E. Earlier plans, merged into this document on 2026-10-19
 
@@ -4377,6 +4470,14 @@ the item: what it changes, why, and the evidence (review findings in
 | Part 22 | consistency review: contradictions, duplicates, do-not-implement, external review coverage | P0 (process) | ADOPTED 2026-10-19 | [Part 22](#plan-part-22) |
 | E1 | Harness Improvement Plan (October): RepoMap, persistent sandbox, linting before lock, self-learning, lean scopes | — | mostly DONE or superseded; see its status table | [Section E1](#plan-e1) |
 | E2 | High-steering pillars 1–10 (pre-lock gate, self-contained work orders, fix-before-exit, consolidated remediation, context bus, code index) | — | mostly DONE in substance; 9 and 10 not built | [Section E2](#plan-e2) |
+| CM.1 | fact parity: reviewers get the builder's environment facts | P0 | PROPOSED 2026-10-20 | [CM](#plan-cm) |
+| CM.2 | typed decision-and-contract ledger (Pillar 9) | P1 | PROPOSED 2026-10-20 | [CM](#plan-cm) |
+| CM.3 | blockers and interface decisions routed to the work order that can act | P1 | PROPOSED 2026-10-20 | [CM](#plan-cm) |
+| CM.4 | bounded ask-the-specification tool (flag, off by default) | P2 | PROPOSED 2026-10-20 | [CM](#plan-cm) |
+| CM.5 | reviewers keep a clean context | P0 (process) | ADOPTED 2026-10-20 | [CM](#plan-cm) |
+| OS.0–OS.6 | SeaweedFS object storage replacing MinIO (spike, compose profile, config, hardening, read-back, backfill, tests) | P2 | PROPOSED 2026-10-20 | [OS](#plan-os) |
+| OS.7 | object-storage docs and operations handover | P2 | PARTLY 2026-10-20 (ADR, research, plan) | [OS](#plan-os) |
+| OS.8 | off-site mirror, lifecycle, RustFS re-evaluation | P3 | PROPOSED 2026-10-20 | [OS](#plan-os) |
 
 <a id="plan-m-2"></a>
 ### M.2 Fixes from the loop's audits (no plan item of their own)

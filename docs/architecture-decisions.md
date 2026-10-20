@@ -267,6 +267,59 @@ Record one decision per section. Do not silently replace a decision; supersede i
   medium run. Frontier guidance (Anthropic prompt caching, Claude Code's
   static/dynamic split, llama.cpp `--cache-reuse`) all use this layout.
 
+## ADR-0012: S3-compatible object storage is SeaweedFS; MinIO is dropped
+
+- **Status:** Proposed (2026-10-20; plan [OS](improvement-plan.md#plan-os))
+- **Context:**
+  - MinIO's community edition is archived and source-only, and its free tier is not open source.
+  - The compose `minio` service was already commented out, so the Local backend keeps the "durable copy" on the same volume as the workspaces.
+- **Options considered:**
+  - SeaweedFS (Apache-2.0)
+  - RustFS (Apache-2.0, GA 2026-09)
+  - Garage (AGPL-3.0)
+  - Ceph RGW
+  - MinIO AIStor Free
+- **Decision:**
+  - SeaweedFS in single-process `weed mini` mode, as an opt-in compose profile on a bind mount.
+  - The code keeps speaking plain S3 through boto3, so the backend stays replaceable by configuration.
+- **Rationale:**
+  - It is permissively licensed, mature and actively released, a one-command single-node deployment, and strong with many small objects (archived workspaces).
+  - RustFS is too new and had critical CVEs in Dec 2025 and Jul 2026.
+  - Garage lacks versioning and object lock and needs a CLI bootstrap.
+  - Ceph is too heavy for one host.
+- **Security impact:** an empty secret puts SeaweedFS in allow-all mode, so the app must refuse an S3 endpoint with empty credentials, and the admin UI is bound to loopback.
+- **Consequences:**
+  - One more container and roughly double the disk for archived output.
+  - Rollback is unsetting `OBJECT_STORE_BUCKET`.
+  - RustFS is to be re-evaluated around Q2 2027.
+- **Validation evidence:** research [R8](research-findings.md#r8); the OS.0 spike result goes here when Accepted.
+
+## ADR-0013: Agents communicate through harness-owned records, not peer messages
+
+- **Status:** Proposed (2026-10-20; plan [CM](improvement-plan.md#plan-cm))
+- **Context:**
+  - About 11 of 15 traced failures were one agent missing a fact another agent or the harness already had.
+  - Builders' `decisions` and `blockers` reach only the milestone reviewer.
+  - The local server has one or two slots, and per-request budgets are already saturated.
+- **Options considered:**
+  - a peer mailbox or chat between agents;
+  - debate or negotiation rounds;
+  - broadcasting reasoning;
+  - harness-written typed records routed by role, plus a bounded question tool.
+- **Decision:**
+  - Information moves between agents only as harness-written, typed, role-sliced and budgeted records (ADR-0010 measurement applies).
+  - Agents may ask the specification a bounded number of questions, answered by retrieval first.
+  - Reviewers keep a clean context.
+  - No peer messaging between agents.
+- **Rationale:**
+  - CooperBench measured no gain from real-time messaging between coding agents.
+  - MAST found protocol fixes insufficient on their own.
+  - Sequential, tool-heavy work degrades under multi-agent coordination.
+  - Debate's gains are mostly voting.
+  - Structured hand-off (MetaGPT) and controller-mediated blackboards hold up.
+- **Consequences:** Pillar 9 is built as CM.2. Prompt growth is capped under BJ, and any item that raises tokens per accepted criterion by more than 5% without lowering a defect metric is switched off.
+- **Validation evidence:** research [R7](research-findings.md#r7); A/B results go here when Accepted.
+
 ## Decision Log Template
 
 ### ADR-XXXX: <Decision Title>

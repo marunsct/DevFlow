@@ -1,12 +1,12 @@
 # Agent-to-agent communication in DevFlow: feasibility and expected gain
 
-*2026-10-20 · status: RESEARCH + PLAN (no code changed) · plan IDs AC.1–AC.5 proposed, not yet in `improvement-plan.md`*
+*2026-10-20 · status: RESEARCH + PLAN (no code changed) · plan IDs CM.1–CM.5 proposed, not yet in `improvement-plan.md`*
 
 ## 1. Verdict
 
 | Form of communication | Valid for DevFlow? | Why |
 |---|---|---|
-| **Free-form peer messaging** (mailbox, agents chat or negotiate while working) | **No** | Measured to give ~no gain on shared codebases; adds serial calls on a one-slot server; weaker models handle it worst |
+| **Free-form peer messaging** (mailbox, agents chat or negotiate while working) | **No** | Measured to give ~no gain on shared codebases; adds near-serial calls on a one- or two-slot server; weaker models handle it worst |
 | **Debate rounds** between specialists | **No** | Gains are almost entirely explained by voting; debate itself does not improve expected correctness |
 | **Harness-mediated, typed communication** (a shared ledger of decisions, contracts and blockers that the harness writes and routes) | **Yes — the highest-value form** | ~11 of 15 documented failures were "agent B lacked a fact agent A or the harness already had" |
 | **Bounded ask-the-owner questions** (a builder or fixer asks the specification's owner, capped) | **Yes, behind a flag** | +14 points measured on underspecified coding tasks, but needs a cap: one open model over-asked 8.7×/task |
@@ -33,7 +33,7 @@
   - writes to another work order's files are refused;
   - sandbox commands are serialised.
   - Conflicts are found afterwards, at the CI gate, code review and the test round.
-- **The deployment constraint is a single model slot.** The owner's llama.cpp server has one slot (~126–190k context; `PRODUCT.md:388`, `HANDOVER.md:525`). Parallel fan-out on one slot was measured at 1.0–1.3× overlap (Initiative AB), so every extra message is an extra serial call.
+- **The deployment constraint is one or two model slots.** The owner's llama.cpp server had one slot with ~126–190k context (`PRODUCT.md:388`, `HANDOVER.md:525`); EF.2 (2026-10-20) reports 2 slots, but linear mode still measured 1.0× overlap, and fan-out was measured at 1.0–1.3× (Initiative AB). In practice every extra message is close to an extra serial call.
 - **Budgets are already saturated:**
   - reasoning is 59–98% of output;
   - replies are lost at the ~30k output cap;
@@ -94,13 +94,13 @@ Each was fixed one at a time by piping the fact into the second agent's prompt. 
 
 All items are flag-gated and measured per ADR-0010. IDs are proposals for the plan.
 
-### AC.1 Fact parity for every judging stage — P0
+### CM.1 Fact parity for every judging stage — P0
 - **Change:** a reviewer, dispute or acceptance stage receives the same environment contract, data-store facts, scaffold layout and sprint scope as the builder whose work it judges.
 - **How:** implement this as one function both prompts call, plus a parity test that fails when the builder's fact blocks and the reviewer's diverge.
 - **Cost:** 0 model calls, a few hundred tokens per prompt.
 - **Evidence:** LF.40, LF.42, LF.90 (two cancelled runs, two reverted fixes).
 
-### AC.2 Typed decision-and-contract ledger (builds Pillar 9) — P1
+### CM.2 Typed decision-and-contract ledger (builds Pillar 9) — P1
 - **What it is:** a harness-owned file with typed, versioned entries — `requirement`, `interface_contract`, `decision`, `blocker`, `known_trap` — each with id, source, roles and version.
 - **Writers:** the harness only, from structured outputs that already exist.
   - Spec API reference and locked suite → `interface_contract`.
@@ -112,14 +112,16 @@ All items are flag-gated and measured per ADR-0010. IDs are proposals for the pl
   - a later fixer sees earlier attempts on the same defect (LF.80/82).
 - **Not included:** reasoning, prose notes, model-written memory. Pillar 9 already rejected these because they drift and poison weaker models.
 - **Cost:** 0 extra model calls; prompt growth capped (start at 4k chars per stage).
+- **Overlaps:** EF.11 (builders shown the locked interface-contract lines) is the `interface_contract` slice of this ledger; build it as the first entry type. BJ's per-request input budget applies.
 - **Evidence:** unread outputs, LF.80/82, spec drift, LF.24, the scope failure.
 
-### AC.3 Mid-milestone blocker routing — P1
-- **Linear mode:** a builder's `blocker` naming another work order's file or interface is routed to that work order's next visit (via AC.2), instead of waiting for the milestone review.
+### CM.3 Mid-milestone blocker routing — P1
+- **Linear mode:** a builder's `blocker` naming another work order's file or interface is routed to that work order's next visit (via CM.2), instead of waiting for the milestone review.
 - **Parallel mode:** routing happens at the gather join. A conflicting `decision` (two work orders changing one interface) becomes a defect immediately, before the CI gate.
 - **Cost:** 0 calls; it may save a whole fix round.
+- **Overlaps:** EF.6 (a later work order adding an export or alias to a finished work order's file). CM.3 routes the need to the owner; EF.6 lets the later work order make it in linear mode. They are complementary: do EF.6 first, CM.3 covers parallel mode.
 
-### AC.4 Bounded "ask the specification" tool — P2, behind a flag
+### CM.4 Bounded "ask the specification" tool — P2, behind a flag
 - **What it is:** a builder or fixer may call `ask_specification(question)`.
   1. The harness first answers by retrieval from the spec, the ledger and the locked suite. That costs 0 model calls and resolves most questions about names and shapes.
   2. Only when retrieval finds nothing does one call go to the architect role. It has read-only context and must answer within the specification.
@@ -127,11 +129,11 @@ All items are flag-gated and measured per ADR-0010. IDs are proposals for the pl
 - **Caps:** at most 2 questions per work order and 1 per fix, a per-run ceiling, and the counters live in `stage_memory`.
 - **Why behind a flag:** the evidence for asking is strong (+14 points), but weaker models over-ask. The owner's local model must be measured first.
 
-### AC.5 Keep reviewers context-clean — ADOPTED principle
-Reviewers keep receiving artefacts and facts, never the builder's reasoning or transcript. Clean context is a measured strength (Cognition's reviewer loop). AC.1 adds facts, not history.
+### CM.5 Keep reviewers context-clean — ADOPTED principle
+Reviewers keep receiving artefacts and facts, never the builder's reasoning or transcript. Clean context is a measured strength (Cognition's reviewer loop). CM.1 adds facts, not history.
 
 ### Rejected
-- **Peer mailbox:** CooperBench measured no gain, it costs serial calls on one slot, and it removes harness control.
+- **Peer mailbox:** CooperBench measured no gain, it costs near-serial calls on one or two slots, and it removes harness control.
 - **Specialist debate or negotiation rounds:** debate ≈ voting.
 - **Broadcasting builders' reasoning:** it was already measured and rejected in Pillar 9 and the carry-over work.
 - **Letting parallel builders coordinate edits by message:** the write guards and file-holdback already do this deterministically and cheaper.
@@ -140,12 +142,12 @@ Reviewers keep receiving artefacts and facts, never the builder's reasoning or t
 
 | Item | Should reduce | Extra model calls | Prompt cost |
 |---|---|---|---|
-| AC.1 | Reviewer findings that contradict the environment; cancelled runs and reverted fixes of the LF.40/42/90 class | 0 | +0.5–1k chars per judging stage |
-| AC.2 | Contract-mismatch defects; repeated fixes of one defect; spec-vs-code naming drift | 0 | ≤4k chars per stage (capped) |
-| AC.3 | Fix rounds per milestone; time from blocker to fix | 0 | small |
-| AC.4 | Builder guesses on underspecified points | ≤2 per work order, only when retrieval misses | small |
+| CM.1 | Reviewer findings that contradict the environment; cancelled runs and reverted fixes of the LF.40/42/90 class | 0 | +0.5–1k chars per judging stage |
+| CM.2 | Contract-mismatch defects; repeated fixes of one defect; spec-vs-code naming drift | 0 | ≤4k chars per stage (capped) |
+| CM.3 | Fix rounds per milestone; time from blocker to fix | 0 | small |
+| CM.4 | Builder guesses on underspecified points | ≤2 per work order, only when retrieval misses | small |
 
-- **Efficiency:** AC.1–AC.3 add no model calls, so on the one-slot server they should be close to free in wall-clock time. The saving comes from avoided rework: each avoided fix round is one or more full specialist calls plus a CI gate and test round.
+- **Efficiency:** CM.1–CM.3 add no model calls, so on the owner's local server they should be close to free in wall-clock time. The saving comes from avoided rework: each avoided fix round is one or more full specialist calls plus a CI gate and test round.
 - **Quality:** the target is the failure class that cancelled runs, not polish.
 - **What to measure (same brief, ≥3 runs per arm, flag on vs off):**
   - contract-mismatch defects per milestone;
@@ -154,18 +156,18 @@ Reviewers keep receiving artefacts and facts, never the builder's reasoning or t
   - reviewer findings later withdrawn or contradicted by the environment;
   - wall-clock per accepted criterion;
   - tokens per accepted criterion;
-  - for AC.4: questions per work order and the share answered by retrieval.
+  - for CM.4: questions per work order and the share answered by retrieval.
 - **Kill criteria:** any item that raises tokens per accepted criterion by more than 5% without lowering at least one defect metric is turned off.
 
 ## 6. Implementation order and effort
 
 | Step | Work | Effort |
 |---|---|---|
-| 1 | AC.1 fact-parity function and parity test | ½ day |
-| 2 | AC.2 ledger schema, harness writers from existing structured outputs, role slicing, budget and drop note, flag | 2 days |
-| 3 | AC.3 blocker and decision routing (linear visit and parallel gather) | 1 day |
-| 4 | A/B on one benchmark brief (AC.1–3), then a decision | per loop cadence |
-| 5 | AC.4 retrieval-first ask tool with caps, then A/B on the owner's local model | 1½ days + A/B |
+| 1 | CM.1 fact-parity function and parity test | ½ day |
+| 2 | CM.2 ledger schema, harness writers from existing structured outputs, role slicing, budget and drop note, flag | 2 days |
+| 3 | CM.3 blocker and decision routing (linear visit and parallel gather) | 1 day |
+| 4 | A/B on one benchmark brief (CM.1–3), then a decision | per loop cadence |
+| 5 | CM.4 retrieval-first ask tool with caps, then A/B on the owner's local model | 1½ days + A/B |
 
 Each step follows the repo rules:
 - a test proven to fail on the old code;

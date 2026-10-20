@@ -49,3 +49,26 @@ def test_the_review_is_told():
 
     section = _what_the_brief_requires_that_this_defers(BRIEF, "## Deferred scope\n- Reminder system\n")
     assert "`reminders`. The brief: \"- Due dates and reminders\"" in section
+
+
+def test_a_specification_as_json_is_read_line_by_line_and_the_deferring_sentence_quoted():
+    # Handed to the review as JSON while written, one "line" held a whole section,
+    # and the check quoted the first 200 characters of the scope as its evidence.
+    spec = ('{"product_scope": "**IN SCOPE (MVP):**\\n- User registration with email and password.\\n'
+            '- Task CRUD with due dates.\\n**DEFERRED:** Users want reminders. Reminders are deferred to a later release."}')
+
+    (found,) = brief_features_the_text_defers(BRIEF, spec)
+
+    assert found[0] == "reminders" and "reminders" in found[2].lower()
+    assert "registration" not in found[2] and len(found[2]) < 60
+
+
+def test_a_deferred_action_in_a_json_specification_is_quoted_by_its_sentence():
+    from app.analysis.integration_checks import brief_actions_the_text_defers
+
+    spec = ('{"product_scope": "**IN SCOPE (MVP):**\\n- Task creation and listing.\\n'
+            '- Bulk delete is deferred to a later release. Single deletes ship now."}')
+
+    (found,) = brief_actions_the_text_defers(BRIEF, spec)
+
+    assert found[0] == "delete" and found[2] == "- Bulk delete is deferred to a later release."

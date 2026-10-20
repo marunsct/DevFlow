@@ -5749,12 +5749,13 @@ def brief_actions_the_text_defers(brief: str, text: str) -> list[tuple[str, str,
     found: list[tuple[str, str, str]] = []
     for action in sorted(required):
         words = _SAME_ACTION.get(action, (action,))
-        for line in _without_html_comments(text).splitlines():
-            if any(
-                _names_the_action(part, words, inflected=True)
-                for part in _what_a_line_defers(line)
-            ):
-                found.append((action, required[action], line.strip()[:200]))
+        for line in _the_lines_of(text):
+            naming = next(
+                (part for part in _what_a_line_defers(line) if _names_the_action(part, words, inflected=True)),
+                None,
+            )
+            if naming is not None:
+                found.append((action, required[action], _the_sentence_of(line, naming)))
                 break
     return found
 
@@ -5793,7 +5794,7 @@ def brief_features_the_text_defers(brief: str, text: str) -> list[tuple[str, str
                     required[key] = line
     found: list[tuple[str, str, str]] = []
     under_a_deferral = False
-    for raw in _without_html_comments(text).splitlines():
+    for raw in _the_lines_of(text):
         line = raw.strip()
         if line.startswith("#"):
             under_a_deferral = bool(_A_DEFERRAL.search(line))
@@ -5804,9 +5805,28 @@ def brief_features_the_text_defers(brief: str, text: str) -> list[tuple[str, str
         for word, brief_line in required.items():
             if any(word == done for done, _, _ in found):
                 continue
-            if any(names_the_word(word, part) for part in parts):
-                found.append((word, brief_line, line[:200]))
+            naming = next((part for part in parts if names_the_word(word, part)), None)
+            if naming is not None:
+                found.append((word, brief_line, _the_sentence_of(line, naming)))
     return found
+
+
+def _the_lines_of(text: str) -> list[str]:
+    """`text`'s lines, a JSON rendering's escaped line breaks included.
+
+    The architecture review is handed the specification as its JSON while it
+    is being written: one "line" held a whole section, and a check quoted the
+    first 200 characters of the scope as the line that deferred a feature.
+    """
+    return _without_html_comments(text).replace("\\n", "\n").splitlines()
+
+
+def _the_sentence_of(line: str, part: str) -> str:
+    """The sentence of `line` that holds `part`, as a quotation of at most 200 characters."""
+    for sentence in re.split(r"(?<=[.;!?])\s+", line):
+        if part.strip() and part.strip() in sentence:
+            return sentence.strip()[:200]
+    return line.strip()[:200]
 
 
 def _without_html_comments(text: str) -> str:

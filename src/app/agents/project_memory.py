@@ -36,6 +36,18 @@ logger = logging.getLogger(__name__)
 #: How a read of a file the memory holds is answered; `settled_answer` counts it.
 HELD_POINTER = "is in the project memory at the start of this conversation"
 
+#: A window of a held file this many lines or fewer is read from the file: the
+#: memory holds its text without line numbers, and a line an error names cannot
+#: be found in it. Measured on one run: a testing stage was told "line 146" by a
+#: SyntaxError, asked for lines 135-195, was pointed at the memory, and spent
+#: three attempts of forty calls without making its fix.
+MOST_WINDOW_LINES = 80
+#: Said in a pointer, so the way to the numbered lines is known.
+NUMBERED_LINES = (
+    f"If you need its line numbers - for a line an error names - read just those lines with `offset` and "
+    f"`limit`, up to {MOST_WINDOW_LINES} of them: those are read from the file. "
+)
+
 #: The last sentence of a pointer: a second one ends the stage's reading (Initiative BC).
 POINTER_ENDS_READING = (
     "A second read the memory answers ends reading for this stage: make your change or give your answer."
@@ -402,6 +414,19 @@ def changes_since(snapshot: dict[str, str], now: dict[str, str]) -> str:
     return ("[Project memory update]\n" + "\n".join(lines)) if lines else ""
 
 
+def _a_narrow_window(args: dict, text: str) -> bool:
+    """Whether a read asks for a few lines of a file by position (see `MOST_WINDOW_LINES`)."""
+    offset, limit = args.get("offset"), args.get("limit")
+    if offset in (None, "", 0) and limit in (None, ""):
+        return False
+    try:
+        start = max(int(offset or 1), 1)
+        wanted = int(limit) if limit not in (None, "") else text.count("\n") + 1 - start + 1
+    except (TypeError, ValueError):
+        return False
+    return 0 < wanted <= MOST_WINDOW_LINES
+
+
 def build_project_memory_middleware(repo_root: str) -> Any:
     """Middleware that hands each call the project memory, and answers a read of what it already holds."""
     from langchain.agents.middleware import AgentMiddleware
@@ -476,6 +501,8 @@ def build_project_memory_middleware(repo_root: str) -> Any:
             if call.get("name") == "read_file" and visit.get("held"):
                 path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
                 held = visit["held"].get(path)
+                if held is not None and _a_narrow_window(args, held):
+                    return handler(request)
                 # A file changed since this visit began is read for real once:
                 # measured on one run, a fix stage edited a file, read it to see
                 # its change, was told six times "it has not changed since",
@@ -490,7 +517,7 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     return ToolMessage(
                         content=f"`{path}` {HELD_POINTER}, whole and as "
                                 "it is now; it has not changed since. Use it, and any lines of it, from there. "
-                                + POINTER_ENDS_READING,
+                                + NUMBERED_LINES + POINTER_ENDS_READING,
                         tool_call_id=call.get("id") or "",
                         name="read_file",
                     )

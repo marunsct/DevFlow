@@ -121,7 +121,8 @@ def test_a_read_with_the_path_middleware_s_default_limit_is_a_pointer_too(worksp
                                       "args": {"file_path": "notes-api/src/store.ts", "offset": 1, "limit": 1}})
 
     assert isinstance(middleware.wrap_tool_call(whole, lambda request: "the file again"), ToolMessage)
-    assert isinstance(middleware.wrap_tool_call(part, lambda request: "a window"), ToolMessage)
+    # A few lines by position come from the file: the memory has no line numbers (MOST_WINDOW_LINES).
+    assert middleware.wrap_tool_call(part, lambda request: "a window") == "a window"
 
 
 def test_a_window_of_a_held_file_is_a_pointer_and_of_any_other_file_is_read(workspace):
@@ -135,11 +136,12 @@ def test_a_window_of_a_held_file_is_a_pointer_and_of_any_other_file_is_read(work
 
     middleware.wrap_model_call(Request(messages=[HumanMessage(content="Build it")], model=None), lambda r: None)
 
-    def window(path):
-        return SimpleNamespace(tool_call={"name": "read_file", "id": "w", "args": {"file_path": path, "offset": 40, "limit": 20}})
+    def window(path, limit=project_memory.MOST_WINDOW_LINES + 20):
+        return SimpleNamespace(tool_call={"name": "read_file", "id": "w", "args": {"file_path": path, "offset": 40, "limit": limit}})
 
     pointer = middleware.wrap_tool_call(window("/notes-api/tests/store.test.ts"), lambda request: "lines 40-60")
     assert isinstance(pointer, ToolMessage) and "any lines of it" in pointer.content
+    assert "`offset` and `limit`" in pointer.content
     assert not BANNED.search(pointer.content)
     assert middleware.wrap_tool_call(window("docs/huge.md"), lambda request: "lines 40-60") == "lines 40-60"
     (workspace / "notes-api" / "tests" / "store.test.ts").write_text("// changed\n")
@@ -210,3 +212,21 @@ def test_a_file_the_stage_changed_is_read_for_real_not_called_unchanged(workspac
     (workspace / "notes-api" / "src" / "store.ts").write_text("export const store = 2;\n")
     call()
     assert middleware.wrap_tool_call(read, lambda r: "the file as it is now") == "the file as it is now"
+
+
+def test_a_few_lines_by_position_are_read_from_the_file_with_their_numbers(workspace):
+    """The memory holds a file's text without line numbers. Measured on one run: a SyntaxError
+    named line 146, the stage asked for lines 135-195, was pointed at the memory, and spent
+    three attempts of forty calls without its fix."""
+    middleware = project_memory.build_project_memory_middleware(str(workspace))
+
+    class Request(SimpleNamespace):
+        def override(self, **changes):
+            return Request(**{**self.__dict__, **changes})
+
+    middleware.wrap_model_call(Request(messages=[HumanMessage(content="Fix it")], model=None), lambda r: None)
+    narrow = SimpleNamespace(tool_call={"name": "read_file", "id": "n",
+                                        "args": {"file_path": "notes-api/src/store.ts", "offset": 1, "limit": 60}})
+
+    assert middleware.wrap_tool_call(narrow, lambda request: "   1\texport const store = 1;") == "   1\texport const store = 1;"
+    assert not BANNED.search(project_memory.NUMBERED_LINES)

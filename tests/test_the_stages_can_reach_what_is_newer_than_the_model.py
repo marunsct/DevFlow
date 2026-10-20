@@ -138,7 +138,15 @@ def test_only_the_library_s_own_remote_server_is_taken():
         ("dev.svelte/mcp", "https://mcp.svelte.dev/mcp", "streamable_http")]
 
 
+def test_the_suite_itself_never_searches(tmp_path):
+    (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = ["anthropic>=0.40"]\n')
+
+    assert mcp_registry.official_servers(tmp_path) == {}
+    assert not (tmp_path / mcp_registry.FOUND_FILE).exists()
+
+
 def test_the_search_never_holds_up_a_stage_and_its_finding_is_kept(tmp_path, monkeypatch):
+    monkeypatch.setenv("HARNESS_MCP_DISCOVERY", "true")
     (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"svelte": "^5.1.0"}}))
     monkeypatch.setattr(mcp_registry, "servers_for", lambda e, n, fetch=None: [
         {"server": "dev.svelte/mcp", "transport": "streamable_http", "url": "https://mcp.svelte.dev/mcp",

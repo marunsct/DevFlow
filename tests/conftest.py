@@ -83,6 +83,20 @@ def isolated_runtime_dirs(tmp_path_factory):
 
 
 @pytest.fixture(scope="session", autouse=True)
+def no_research_reaches_the_network():
+    """The web search and the MCP Registry search stay off unless a test turns them on.
+
+    A suite run built an agent with this repository as its workspace, and the
+    registry search (`app.tools.mcp_registry`) read the repository's own
+    manifest, asked PyPI and the registry from inside the tests, and wrote what
+    it found into the source tree as `.harness/mcp-official.json`.
+    """
+    os.environ["HARNESS_MCP_DISCOVERY"] = "false"
+    os.environ.pop("SEARXNG_URL", None)
+    yield
+
+
+@pytest.fixture(scope="session", autouse=True)
 def an_openai_key_that_is_not_a_secret():
     """A dummy `OPENAI_API_KEY` for the tests that build a real client.
 

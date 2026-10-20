@@ -333,7 +333,13 @@ test that fails on the old code:
   **Both gate runs measure one code version (a39807de):** fixes found meanwhile are pushed but deployed only after gate
   run 2, unless a bug would spoil the measurement. LF.56/LF.57 were deployed into gate run 1 at 07:35 JST
   (73aaa5ef): the pip false positive kept the product from starting; the run was rewound to its round-1 test round.
-  Gate run 2 runs on 73aaa5ef. Pushed, held for deploy after gate run 2: LF.58 (loop only), LF.59-LF.74 (the redundant-read KPI is not comparable across LF.63).
+  **10:35 JST: run-01a1ab9c is a findings run now, not gate run 1.** Its locked suite holds tests no product can pass
+  (a helper calling `http://localhost`, LF.74) and the fixers began bending the product to them (a port-80 proxy in
+  `main.py`), so the run could not measure delivery - the owner's rule for a major bug: fix, deploy, rewind.
+  LF.59-LF.74 (and LF.58) deployed at 3d8b0a3c; rewound to attempt 3's round-1 test round (00:02 UTC), so the
+  round re-measures with the fixes and sends the suite back to QA. The two clean gate runs both run on the new code
+  after it (the redundant-read KPI is not comparable across LF.63). Listing the rewind points took over 2 minutes on
+  this run's history; `loop.sh rewind` waits for it (its curl has no timeout) - a manual call needs `-m 600`.
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or
   framework goes through the harness's existing dynamic setup - a stack pack, the plugin instructions in
   `plugins/seed.py`, a per-language table or service (`sandbox.CODE_AS_A_FILE`, `language_service`) - never

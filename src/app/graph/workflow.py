@@ -62,6 +62,7 @@ from langgraph.graph import END, START, StateGraph
 # `langgraph.types.Send`.
 from langgraph.types import Send
 
+from app.agents.shared_facts import with_the_facts
 from app.agents.approval import extract_pending_approval, resume_with_decision
 from app.agents.stage_memory import remembering
 from app.agents.stack_selector import (
@@ -4011,22 +4012,11 @@ def _the_scaffold_s_facts(state: Any) -> list[str]:
         root = getattr(state.get("repository"), "root_path", None)
         project = (pinned_project_directory(Path(root)) if root else None) or ""
         package = python_package_name(project) if project and pack.language == "python" else None
-        served = [pack.filled(e, project, "", package) for e in (pack.entrypoint, *pack.entrypoints) if e]
-        prefix = f"{project}/" if project else ""
-        lines = [f"- The project lives in `{prefix or './'}`."]
-        if served:
-            lines.append("- What the product serves, and the acceptance suite runs through: "
-                         + ", ".join(f"`{prefix}{path}`" for path in served)
-                         + ". Plan the product in these files, or in modules they import.")
-        lines.append(f"- Unit tests: `{pack.unit_pattern}` in `{prefix}{pack.unit_dir}/`; acceptance tests: "
-                     f"`{pack.acceptance_pattern}` in `{prefix}{pack.acceptance_dir}/`.")
-        if getattr(pack, "data_store", ""):
-            lines.append("- Where the data lives: " + " ".join(str(pack.data_store).split()))
-        kept = [path for path in pack.kept_files if path not in served]
-        if kept:
-            lines.append("- Kept by the harness, not the product's to write: "
-                         + ", ".join(f"`{prefix}{path}`" for path in kept[:8]) + ".")
-        return lines
+        # The same lines every builder and judge reads once the scaffold is
+        # set up (plan CM.1): one function, so the two cannot drift.
+        from app.agents.shared_facts import layout_facts
+
+        return layout_facts(pack, project, package)
     except Exception:  # noqa: BLE001 - the architect plans as before
         logger.debug("Could not describe the scaffold's layout", exc_info=True)
         return []
@@ -9096,6 +9086,8 @@ def build_workflow_graph(
                 earlier_fixes=_the_fixes_to_keep(state, task),
                 specification_detail=specification_for_the_work_order(state.get("technical_specification"), task),
             )
+            # The facts the work is built and judged under (plan CM.1).
+            request = with_the_facts(request, state["repository"].root_path, built=False)
             update = _run_gated_agent(
                 state,
                 config,
@@ -9157,6 +9149,8 @@ def build_workflow_graph(
             earlier_fixes=_the_fixes_to_keep(state, task),
             specification_detail=specification_for_the_work_order(state.get("technical_specification"), task),
         )
+        # The facts the work is built and judged under (plan CM.1).
+        request = with_the_facts(request, state["repository"].root_path, built=False)
         
         # A worker may only answer its *own* approval gate.
         #
@@ -9443,6 +9437,8 @@ def build_workflow_graph(
                 brief=getattr(state.get("document"), "text", "") or "",
                 acceptance=acceptance_text,
             )
+            # The facts the work is built and judged under (plan CM.1).
+            request = with_the_facts(request, state["repository"].root_path)
             update = _run_gated_agent(
                 state,
                 config,
@@ -9805,6 +9801,9 @@ def build_workflow_graph(
         request["messages"][-1]["content"] += _the_stub_still_served_section(state["repository"].root_path)
         request["messages"][-1]["content"] += _the_unserved_code_section(state["repository"].root_path)
         request["messages"][-1]["content"] += _the_database_section(state["repository"].root_path)
+        # The layout the judges read too (plan CM.1); the stub and the code the
+        # product does not run are the two sections above.
+        request = with_the_facts(request, state["repository"].root_path, built=False)
         return request, co_defects
 
     def _fixed_by_rewriting(state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0) -> Any:
@@ -10176,6 +10175,8 @@ def build_workflow_graph(
             "Permissions: All tools have read/write access to the repository scope. Validation tools are restricted to a safe list of commands.",
             state["repository"].root_path,
         )
+        # The facts the work is built and judged under (plan CM.1).
+        request = with_the_facts(request, state["repository"].root_path)
         update = _run_gated_agent(
             state,
             config,
@@ -10260,10 +10261,11 @@ def build_workflow_graph(
             config,
             stage_name="acceptance_dispute",
             agent=agent,
-            initial_request=_with_the_api(_with_the_reason(
+            # The facts the work is built and judged under (plan CM.1).
+            initial_request=with_the_facts(_with_the_api(_with_the_reason(
                 build_dispute_request(failing, code, getattr(state.get("document"), "text", "") or ""),
                 str(state.get("dispute_reason") or ""),
-            ), state),
+            ), state), state["repository"].root_path),
             output_key="__suite_dispute__",
             next_stage="acceptance_dispute",
         )
@@ -10332,6 +10334,8 @@ def build_workflow_graph(
             _this_sprint_s_scope_for_review(state),
             changed_files,
         )
+        # The facts the work is built and judged under (plan CM.1).
+        request = with_the_facts(request, state["repository"].root_path)
         request["messages"][-1]["content"] += _fixes_a_review_must_not_undo(state)
         if role == "ui_ux":
             # The design QA loop: the page as a person sees it, for a model that can see.
@@ -10533,6 +10537,8 @@ def build_workflow_graph(
             acceptance=acceptance_text,
             specialist_findings=_this_review_s_advice_findings(state),
         )
+        # The facts the work is built and judged under (plan CM.1).
+        request = with_the_facts(request, state["repository"].root_path)
         request["messages"][-1]["content"] += _fixes_a_review_must_not_undo(state)
         request["messages"][-1]["content"] += _the_code_review_s_advice(state)
         # The contract the code is held to, whole: a service that drifted from

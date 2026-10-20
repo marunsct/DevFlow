@@ -386,6 +386,8 @@ test that fails on the old code:
   would not start. LF.108-LF.119 went into it. **The next gate run is run-f4f0030b** (07:25 JST on d3de13a3, brief_medium,
   `DELIVERY=fast FRONTIER=false`). LF.120 (modules nothing imports are named to fixers and at release) deployed into it at
   about 07:40 JST. Group 2 (CM.1-CM.5 first, then M.4, EF.11) is built from now on and deployed after this gate run.
+  Each group 2 item is behind its own switch, off by default (any mid-run deploy carries the branch); CM.1 =
+  `SHARED_FACTS` (`app.agents.shared_facts.ON_BY_DEFAULT`). After the gate run: turn the built ones on, deploy, measure.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

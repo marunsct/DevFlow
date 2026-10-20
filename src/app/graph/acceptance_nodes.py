@@ -25,6 +25,7 @@ from langchain_core.runnables import RunnableConfig
 from app.acceptance import requests as acceptance_requests
 from app.acceptance import suite
 from app.acceptance.criteria import number
+from app.agents.shared_facts import with_the_facts
 from app.stacks import contract, pack_named
 
 logger = logging.getLogger(__name__)
@@ -517,6 +518,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             brief=getattr(state.get("document"), "text", "") or "",
             testability=_the_testability_advice(state),
         )
+        # The facts the work is built and judged under (plan CM.1).
+        request = with_the_facts(request, state["repository"].root_path)
         # What the tests are judged against, whole (see `app.acceptance.api_reference`).
         from app.acceptance.api_reference import api_reference
 

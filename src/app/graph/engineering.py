@@ -27,6 +27,7 @@ from langchain_core.runnables import RunnableConfig
 
 from app import ci
 from app.acceptance import suite
+from app.agents.shared_facts import with_the_facts
 from app.agents.specialists import raised_by
 from app.stacks import contract
 
@@ -544,7 +545,11 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         state, config,
         stage_name=f"code_review_{attempt[0]}_{attempt[1]}",
         agent=agent,
-        initial_request=build_code_review_request(diff, orders, criteria, str(state.get("ci_report") or ""), later),
+        # The facts the work is built and judged under (plan CM.1).
+        initial_request=with_the_facts(
+            build_code_review_request(diff, orders, criteria, str(state.get("ci_report") or ""), later),
+            state["repository"].root_path,
+        ),
         output_key="__code_review__",
         next_stage="code_review",
     )

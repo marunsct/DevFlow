@@ -64,7 +64,7 @@ def test_the_fixers_reviewers_and_the_dispute_are_given_it():
     assert workflow._with_the_api({"messages": [{"content": "x"}]}, {})["messages"][-1]["content"] == "x"
 
     source = inspect.getsource(workflow)
-    assert "initial_request=_with_the_api(_with_the_reason(" in source          # the QA lead's dispute
+    assert "_with_the_api(_with_the_reason(" in source                          # the QA lead's dispute
     assert "_with_the_api(request, state)" in source                            # the milestone review
     assert "api_reference(state.get(\"technical_specification\"))" in inspect.getsource(acceptance_nodes)
     fix = workflow._the_specification_for_the_fix(

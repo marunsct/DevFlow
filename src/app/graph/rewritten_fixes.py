@@ -177,6 +177,7 @@ def _the_files(
 def fix_request(root: Path, path: str, defect: Any, failure: str, specification: Any,
                 stack: Any, others: list[str], diagnostics: list[str]) -> str:
     """What one file's rewrite is asked."""
+    from app.agents.shared_facts import the_facts_section
     from app.agents.specialists import specification_for_the_work_order
     from app.graph.drafting import _neighbours, _stack_line
     from types import SimpleNamespace
@@ -201,6 +202,8 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
         detail.strip(),
         f"--- The project ---\n{neighbours}" if neighbours else "",
         f"--- `{path}` as it is now ---\n{now}",
+        # The facts every builder and judge reads (plan CM.1).
+        the_facts_section(root).strip(),
         f"Reply with the complete corrected content of `{path}` and nothing else, in one fenced "
         "code block. Change only what the failure needs; keep every name, signature and "
         "message the specification gives. If this file needs no change for this failure, "

@@ -228,6 +228,7 @@ def _neighbours(root: Path, path: str, task: Any, detail: str) -> str:
 def draft_request(root: Path, path: str, task: Any, specification: Any, stack: Any,
                   diagnostics: list[str] | None = None) -> str:
     """What one file's draft is asked; `diagnostics` are what the compiler reported on its last draft."""
+    from app.agents.shared_facts import the_facts_section
     from app.agents.specialists import specification_for_the_work_order
 
     detail = specification_for_the_work_order(
@@ -251,6 +252,8 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         f"--- The files it works with ---\n{neighbours}" if neighbours else "",
         f"--- `{path}` as it is now; keep what still holds ---\n{now}" if now.strip() else "",
         ("--- The compiler reports, in the draft above ---\n" + "\n".join(diagnostics)) if diagnostics else "",
+        # The layout every builder and judge reads (plan CM.1).
+        the_facts_section(root, built=False).strip(),
         f"Reply with the complete content of `{path}` and nothing else, in one fenced code block. "
         "Every name, signature, message, import and library call is the one the specification "
         "gives; where it gives none, write the plainest code that meets the work order.",

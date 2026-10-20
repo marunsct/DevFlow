@@ -1249,4 +1249,9 @@ TEST_BUGS = (
     r"^(?!.*\bevaluate\b).*Cannot read propert(?:y|ies) of (?:undefined|null)",
     r"^(?!.*\bevaluate\b).*\bis not a function\b",
     r"^(?!.*\bevaluate\b).*\bis not defined\b",
+    # A request to an address the suite never serves: it starts the product on
+    # a port of its own and gives tests that address as `baseURL`. Measured on
+    # one gate run: a helper built `new URL('/api/tasks', 'http://localhost')`
+    # and every test using it failed on `connect ECONNREFUSED ::1:80`.
+    r"\bconnect ECONNREFUSED (?:\[?::1\]?|127\.0\.0\.1|localhost):(?:80|443)\b",
 )

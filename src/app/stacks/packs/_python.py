@@ -101,4 +101,6 @@ TEST_BUGS = (
     r"\bNameError\b",
     r"\b(?:SyntaxError|IndentationError)\b",
     r"fixture '[^']+' not found",
+    # A request to an address the suite never serves (see the JavaScript packs').
+    r"host='(?:localhost|127\.0\.0\.1|::1)', port=(?:80|443)\)",
 )

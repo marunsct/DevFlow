@@ -333,7 +333,7 @@ test that fails on the old code:
   **Both gate runs measure one code version (a39807de):** fixes found meanwhile are pushed but deployed only after gate
   run 2, unless a bug would spoil the measurement. LF.56/LF.57 were deployed into gate run 1 at 07:35 JST
   (73aaa5ef): the pip false positive kept the product from starting; the run was rewound to its round-1 test round.
-  Gate run 2 runs on 73aaa5ef. Pushed, held for deploy after gate run 2: LF.58 (loop only), LF.59-LF.73 (the redundant-read KPI is not comparable across LF.63).
+  Gate run 2 runs on 73aaa5ef. Pushed, held for deploy after gate run 2: LF.58 (loop only), LF.59-LF.74 (the redundant-read KPI is not comparable across LF.63).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or
   framework goes through the harness's existing dynamic setup - a stack pack, the plugin instructions in
   `plugins/seed.py`, a per-language table or service (`sandbox.CODE_AS_A_FILE`, `language_service`) - never

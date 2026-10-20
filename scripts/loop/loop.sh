@@ -326,7 +326,10 @@ deploy)
     # Only markers younger than the longest a model call may run: one left by a
     # process that died mid-call (a power loss, 2026-10-20) is never removed,
     # and the deploy waited its whole GATE_WAIT on it.
-    n=$(docker compose exec -T worker sh -c "find $gate/inflight -type f -mmin -40 2>/dev/null | wc -l" | tr -d '[:space:]')
+    # And only markers whose process still runs: a pause or cancel stops its
+    # task with SIGTERM mid-call, the marker stays, and the worker that would
+    # forget it at its start is not restarted (2026-10-20: 13 minutes held).
+    n=$(docker compose exec -T worker sh -c "for f in \$(find $gate/inflight -type f -mmin -40 2>/dev/null); do p=\${f##*__}; p=\${p%%-*}; [ -d /proc/\$p ] && echo \$f; done | wc -l" | tr -d '[:space:]')
     [ "${n:-0}" = 0 ] && break
     [ "$waited" -ge "${GATE_WAIT:-1800}" ] && { echo "still $n model call(s) in flight after ${waited}s; deploying anyway"; break; }
     [ "$waited" = 0 ] && echo "waiting for $n model call(s) in flight to finish ($(jst '+%H:%M JST'))"

@@ -40,6 +40,9 @@ _HTTP = re.compile(_CRITERION + r"\s+(GET|POST|PUT|PATCH|DELETE)\s+(/\S*)\s*->\s
 _PAGE = re.compile(_CRITERION + r"\s+page\s+(/\S*)\s+([a-z]+)\s+\"([^\"]+)\"\s*$")
 _COMMAND = re.compile(_CRITERION + r"\s+command\s+(.+?)\s*->\s*exit\s+(\d+)\s*$")
 
+#: A parenthesised note at the end of a line: "-> 200 (updates the field)".
+_A_TRAILING_NOTE = re.compile(r"\s+\([^()]*\)\s*$")
+
 #: Where the compiled checks are written, inside the project, for one release run.
 CHECK_DIR = "harness-contract"
 CONFIG_FILE = "playwright.contract.config.mjs"
@@ -77,6 +80,10 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
         line = " ".join(str(raw).split()).strip(" -*`")
         if not line:
             continue
+        # A note after the form says what the line is for, and is no part of
+        # the check: one specification wrote "AC-11 PUT /tasks/{id} -> 200
+        # (updates reminder_at field)", and the line was dropped at the lock.
+        line = _A_TRAILING_NOTE.sub("", line)
         if match := _HTTP.match(line):
             checks.append(Check(match[1], "http", line, method=match[2], path=match[3], status=int(match[4])))
         elif match := _PAGE.match(line):
@@ -92,11 +99,20 @@ def record_at_lock(repo_root: str | Path, lines: list[str] | tuple[str, ...]) ->
     """Keep the contract beside the locked suite; what was kept."""
     from app.acceptance import suite
 
-    checks, _ = parse(lines)
+    checks, unreadable = parse(lines)
     state = suite._state(repo_root)  # noqa: SLF001 - one state file for the suite and its contract
     state["interface_contract"] = [asdict(check) for check in checks]
+    # Kept too, so the release names them rather than losing them at the lock.
+    state["interface_contract_unreadable"] = list(unreadable)
     suite._save_state(repo_root, state)  # noqa: SLF001
     return checks
+
+
+def the_unreadable_lines(repo_root: str | Path) -> list[str]:
+    """The contract's lines that followed none of its forms at the last lock, or []."""
+    from app.acceptance import suite
+
+    return [str(line) for line in suite._state(repo_root).get("interface_contract_unreadable") or []]  # noqa: SLF001
 
 
 def the_locked_contract(repo_root: str | Path) -> list[Check]:
@@ -234,8 +250,15 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
 
         root = Path(repo_root)
         locked = the_locked_contract(root)[:MOST_CHECKS]
+        # Lines no check can be compiled from: said at release, never dropped
+        # in silence. Measured on one run: three of a feature's four lines.
+        unreadable = [f"{line} (follows none of the contract's three forms)" for line in the_unreadable_lines(root)]
         if not locked:
-            return []
+            return (
+                [f"{len(unreadable)} line(s) of the interface contract were not checked at release: "
+                 + "; ".join(unreadable[:5]) + ("; ..." if len(unreadable) > 5 else "")]
+                if unreadable else []
+            )
         found = contract.the_pack(root)
         record = found[1] if found else (contract.read(root) or {})
         project_name = str(record.get("project") or "")
@@ -244,7 +267,7 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
         probe = PROBE_RUNNERS.get(found[0].probe_runner) if found else None
         templated = [c for c in locked if c.kind in ("http", "page") and _A_TEMPLATE.search(c.path)]
         web = [c for c in locked if c.kind in ("http", "page") and c not in templated]
-        unchecked = [f"{c.line} (a route with a parameter in it)" for c in templated]
+        unchecked = [*unreadable, *(f"{c.line} (a route with a parameter in it)" for c in templated)]
         if probe is None:
             unchecked += [f"{c.line} (no runner on this stack probes a {c.kind} line)" for c in web]
             web = []

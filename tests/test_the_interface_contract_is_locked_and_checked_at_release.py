@@ -83,7 +83,9 @@ def test_a_failed_check_at_release_is_a_gap_and_the_files_are_removed(tmp_path, 
 
     gaps = ic.what_the_contract_checks_find(tmp_path, runner=runner)
 
-    assert len(gaps) == 1 and "AC-1" in gaps[0] and "signed-in user" in gaps[0]
+    assert len(gaps) == 2 and "AC-1" in gaps[0] and "signed-in user" in gaps[0]
+    # The prose line is named as unchecked, not dropped at the lock.
+    assert "the notes page lists every note (follows none of the contract's three forms)" in gaps[1]
     assert seen["command"] == ["notes", "add", "milk"]
     assert not BANNED.search(gaps[0])
     assert "import base from './playwright.config.js'" in seen["config"]
@@ -167,3 +169,21 @@ def test_what_a_command_line_writes_is_not_shipped(tmp_path, monkeypatch):
     assert ic.what_the_contract_checks_find(tmp_path, runner=runner) == []
     assert (tmp_path / "app" / "notes.txt").read_text() == "kept\n"
     assert not (tmp_path / "app" / "new-store.json").exists()
+
+
+def test_a_note_after_a_line_s_form_is_no_part_of_its_check():
+    # One specification wrote a feature's route lines with a note after the status,
+    # and the lock dropped them.
+    checks, unreadable = ic.parse(["AC-11 PUT /api/tasks/7 -> 200 (updates reminder_at field)"])
+
+    assert unreadable == [] and (checks[0].method, checks[0].path, checks[0].status) == ("PUT", "/api/tasks/7", 200)
+
+
+def test_a_line_that_follows_no_form_is_named_at_release_not_dropped_at_the_lock(tmp_path, monkeypatch):
+    _locked_project(tmp_path, monkeypatch)
+    ic.record_at_lock(tmp_path, ["AC-11 page /dashboard card task reminder bell icon"])
+
+    gaps = ic.what_the_contract_checks_find(tmp_path, runner=lambda *a: 1 / 0)
+
+    assert gaps == ["1 line(s) of the interface contract were not checked at release: "
+                    "AC-11 page /dashboard card task reminder bell icon (follows none of the contract's three forms)"]

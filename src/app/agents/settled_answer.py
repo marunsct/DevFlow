@@ -1080,8 +1080,18 @@ _REASONED_PAST_THE_BUDGET_AGAIN_NOTICE = (
 
 
 def _replies_that_were_all_reasoning(messages: list[Any]) -> int:
-    """How many replies in this visit spent their whole output budget on reasoning."""
-    count = 0
+    """How many replies in this visit spent their whole output budget on reasoning.
+
+    With those a compaction summarised away, carried on its summary: measured
+    on one gate run, a stage lost a reply, was compacted, lost another, and was
+    treated as losing its first - thinking came back on for the reply after.
+    """
+    from app.agents.compaction import LOST_BEFORE
+
+    count = max(
+        (int((getattr(message, "additional_kwargs", None) or {}).get(LOST_BEFORE) or 0) for message in messages),
+        default=0,
+    )
     for message in messages:
         if getattr(message, "type", None) != "ai":
             continue

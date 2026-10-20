@@ -268,3 +268,16 @@ def test_a_stage_s_call_budget_counts_the_calls_a_summary_replaced(tmp_path):
     kept_ai = sum(1 for m in sent if getattr(m, "type", None) == "ai")
 
     assert _model_calls_used(sent) == 12, f"12 calls made, {kept_ai} still in the conversation"
+
+
+def test_replies_lost_to_reasoning_are_counted_across_a_compaction(tmp_path):
+    """Measured on one gate run: a stage lost a reply, was compacted, lost another, and was treated as
+    losing its first - thinking came back on for the reply after."""
+    from app.agents.settled_answer import _replies_that_were_all_reasoning
+
+    middleware = _built(RequestKeepingSummarization, tmp_path)
+    messages = _conversation()
+    messages.insert(3, AIMessage(content="", id="lost", response_metadata={"finish_reason": "length"}))
+    sent, _ = _sent(middleware, messages)
+
+    assert _replies_that_were_all_reasoning(sent) == 1

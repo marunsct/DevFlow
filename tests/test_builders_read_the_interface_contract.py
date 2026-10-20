@@ -73,3 +73,30 @@ def test_no_contract_is_no_block():
 def test_the_new_lines_name_no_ui_control_or_unit_of_work():
     said = " ".join(re.findall(r'f?"([^"\n]*)"', inspect.getsource(ledger)))
     assert not BANNED.search(said), BANNED.findall(said)
+
+
+def test_a_later_work_order_reads_what_earlier_ones_reported_about_its_files():
+    # Plan CM.3: a builder's blockers and decisions reached only the milestone
+    # review, after every work order had run.
+    outputs = {
+        "specialist_backend_specialist_0": SimpleNamespace(
+            blockers=["The page imports `listItems` from app/src/api.ts, which does not export it yet"],
+            decisions=["Renamed the session cookie to `sid` in app/board/auth.py", "Kept the defaults"],
+        ),
+    }
+    page = SimpleNamespace(files=["app/src/api.ts", "app/src/App.tsx"])
+    plan = [SimpleNamespace(files=["app/board/auth.py"]), page]
+    request = {"messages": [{"role": "user", "content": "Build the page."}]}
+
+    text = ledger.with_the_reports(request, outputs, page, plan, leave_out="specialist_frontend_specialist_1")["messages"][-1]["content"]
+
+    assert "--- What earlier work orders reported about your files ---" in text
+    assert "- blocker (specialist_backend_specialist_0): The page imports `listItems`" in text
+    assert "sid" not in text and "Kept the defaults" not in text
+    assert not BANNED.search(ledger.REPORTS_HEADING)
+
+
+def test_the_linear_dispatch_routes_the_reports():
+    from app.graph import workflow
+
+    assert "ledger.with_the_reports(request, done, task, tasks, leave_out=stage_name)" in inspect.getsource(workflow)

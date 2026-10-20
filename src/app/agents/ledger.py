@@ -31,6 +31,11 @@ ON_BY_DEFAULT = False
 SLICE_CHARACTERS = 4_000
 
 INTERFACE_CONTRACT = "interface_contract"
+BLOCKER = "blocker"
+DECISION = "decision"
+
+#: A file name shorter than this is too common a word to route a report by.
+SHORTEST_NAME = 5
 
 _CRITERION = re.compile(r"^\s*((?:AC|CR)-\d+)\b")
 
@@ -86,20 +91,28 @@ def the_slice(entries: Iterable[Entry], role: str = "", files: Iterable[str] = (
     ]
 
 
-def rendered(entries: list[Entry], budget: int = SLICE_CHARACTERS) -> str:
+CONTRACT_HEADING = (
+    "--- The interface contract: the acceptance suite and the release check these lines ---\n"
+    "Each line is a route and its status, a page control and its accessible name, or a command and "
+    "its exit code, exactly as the product must offer it. Build to them word for word.\n"
+)
+
+REPORTS_HEADING = (
+    "--- What earlier work orders reported about your files ---\n"
+    "Recorded by the harness from their structured answers. A blocker is for you to clear in these "
+    "files; a decision is one to build on, not to undo.\n"
+)
+
+
+def rendered(entries: list[Entry], budget: int = SLICE_CHARACTERS, heading: str = CONTRACT_HEADING) -> str:
     """The slice as a block within `budget` characters, the entries left out named; "" when empty."""
     if not entries:
         return ""
-    heading = (
-        "--- The interface contract: the acceptance suite and the release check these lines ---\n"
-        "Each line is a route and its status, a page control and its accessible name, or a command and "
-        "its exit code, exactly as the product must offer it. Build to them word for word.\n"
-    )
     kept: list[str] = []
     used = len(heading)
     left_out: list[str] = []
     for entry in entries:
-        line = f"- {entry.text}\n"
+        line = f"- {entry.text}\n" if entry.kind == INTERFACE_CONTRACT else f"- {entry.kind} ({entry.source}): {entry.text}\n"
         if used + len(line) > budget:
             left_out.append(entry.id)
             continue
@@ -107,7 +120,8 @@ def rendered(entries: list[Entry], budget: int = SLICE_CHARACTERS) -> str:
         used += len(line)
     tail = (
         f"({len(left_out)} more line(s) left out for room: {', '.join(left_out[:12])}"
-        f"{' ...' if len(left_out) > 12 else ''}; all are in /docs/technical_specification.md)\n"
+        f"{' ...' if len(left_out) > 12 else ''}"
+        f"{'; all are in /docs/technical_specification.md' if heading == CONTRACT_HEADING else ''})\n"
         if left_out else ""
     )
     return heading + "".join(kept) + tail
@@ -122,3 +136,44 @@ def for_a_work_order(specification: Any, work_order: Any, role: str = "") -> str
     )
     block = rendered(entries)
     return block + "\n" if block else ""
+
+
+def from_the_builders(outputs: Any, known_files: Iterable[str], leave_out: str = "") -> list[Entry]:
+    """A blocker or decision each finished work order reported, routed by the planned files it names (plan CM.3).
+
+    A builder's `blockers` and `decisions` reached only the milestone review
+    (`milestone_reviewer.what_the_specialists_reported`), after every work
+    order had run: a later work order building on a file an earlier one had
+    changed, or was blocked on, learnt of it a whole review later. One naming
+    no planned file has nothing to route by and stays the review's.
+    """
+    known = sorted({str(f).strip().lstrip("./") for f in known_files if str(f).strip()})
+    entries = []
+    for key, output in sorted((outputs or {}).items()):
+        if key == leave_out:
+            continue
+        for kind, name in ((BLOCKER, "blockers"), (DECISION, "decisions")):
+            for at, item in enumerate(getattr(output, name, None) or []):
+                text = " ".join(str(item).split())
+                named = tuple(
+                    path for path in known
+                    if path in text or (len(path.rsplit("/", 1)[-1]) >= SHORTEST_NAME and path.rsplit("/", 1)[-1] in text)
+                )
+                if text and named:
+                    entries.append(Entry(kind, f"{key}:{kind}{at + 1}", text, f"{key}", files=named))
+    return entries
+
+
+def with_the_reports(request: dict[str, Any], outputs: Any, work_order: Any, plan: Iterable[Any], leave_out: str = "") -> dict[str, Any]:
+    """`request` with what earlier work orders reported about this one's files; as it was when off or nothing applies."""
+    if not enabled():
+        return request
+    try:
+        known = [f for order in plan for f in (getattr(order, "files", None) or [])]
+        entries = the_slice(from_the_builders(outputs, known, leave_out), "", getattr(work_order, "files", None) or ())
+        block = rendered(entries, heading=REPORTS_HEADING)
+        if block and request.get("messages") and isinstance(request["messages"][-1].get("content"), str):
+            request["messages"][-1]["content"] += "\n\n" + block
+    except Exception:  # noqa: BLE001 - the request stands as it was
+        pass
+    return request

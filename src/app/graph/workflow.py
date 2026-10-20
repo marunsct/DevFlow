@@ -9088,6 +9088,10 @@ def build_workflow_graph(
             )
             # The facts the work is built and judged under (plan CM.1).
             request = with_the_facts(request, state["repository"].root_path, built=False)
+            # And what the work orders before it reported about its files (plan CM.3).
+            from app.agents import ledger
+
+            request = ledger.with_the_reports(request, done, task, tasks, leave_out=stage_name)
             update = _run_gated_agent(
                 state,
                 config,

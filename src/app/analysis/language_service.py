@@ -25,7 +25,9 @@ the code fails when it runs:
                                                 -> ReferenceError ("Cannot access
                                                    'x' before initialization")
     2305, 2614  an import of a missing export   -> SyntaxError at load
-    1192        a default import of none        -> SyntaxError at load
+    1192, 2613  a default import of none (2613 when a named export of
+                that name exists: `import X` for `export const X`)
+                                                -> SyntaxError at load
     2306        an import from a file that is not a module
     2307        a relative import of a file that does not exist
     2339, 2551  a call of a method no built-in type has, on a value of a
@@ -127,7 +129,7 @@ process.stdin.on('data', d => content += d).on('end', () => {
   };
   const program = ts.createProgram(roots, options, host);
   const NAMES = new Set([2304, 2552, 2448, 2449, 2450]);
-  const IMPORTS = new Set([2305, 2614, 1192, 2306, 2307]);
+  const IMPORTS = new Set([2305, 2614, 1192, 2613, 2306, 2307]);
   // A call of a method on a built-in type that no built-in type has at all.
   const MISSING_MEMBER = new Set([2339, 2551]);
   const checker = program.getTypeChecker();
@@ -243,7 +245,7 @@ process.stdin.on('data', d => content += d).on('end', () => {
       for (const d of diagnostics) if (keep(d, sf, checkNames === '1')) here.push(describe(d, sf));
     } else {
       for (const d of diagnostics) {
-        if (![2305, 2614, 1192].includes(d.code) || !keep(d, sf, false)) continue;
+        if (![2305, 2614, 1192, 2613].includes(d.code) || !keep(d, sf, false)) continue;
         // Another file of the same name - `frontend/src/api/client.js` beside
         // `src/api/client.js` - is not this one: its importers are not blamed.
         const loads = importedFile(sf, d.start);

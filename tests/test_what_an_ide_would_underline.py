@@ -373,3 +373,18 @@ def test_a_merged_finding_is_not_closed_while_the_file_is_still_underlined(tmp_p
 
     still[:] = []
     assert "no longer underlines" in engineering.no_longer_underlined(str(tmp_path), merged)
+
+
+@needs_the_compiler
+def test_a_default_import_of_a_module_with_only_a_named_one_is_underlined(tmp_path) -> None:
+    """Measured on one gate run: `import EmptyState from './EmptyState'` for `export const EmptyState`
+    (TS2613, not TS1192) stopped the page's build, and the language service said nothing."""
+    project = _project(tmp_path, {
+        "src/EmptyState.tsx": "export const EmptyState = () => null;\n",
+        "src/TaskList.tsx": "",
+    })
+    page = "import EmptyState from './EmptyState';\nexport const TaskList = () => EmptyState();\n"
+
+    found = service.underlined(tmp_path, project / "src" / "TaskList.tsx", page, project)
+
+    assert any("no default export" in f["message"] for f in found.here)

@@ -55,6 +55,47 @@ class Context:
 THE_PRODUCT_DOES_NOT_START = "The product does not start for the acceptance suite, so no test can reach it."
 
 
+def _the_install_that_failed(saved: dict[str, Any], state: Any) -> list[Any]:
+    """A defect for the project's dependencies not installing, from the suite's last run; [] when they did.
+
+    Measured on one gate run: a JavaScript package written into
+    `requirements.txt` failed every install after it; nothing the manifest
+    declared was installed, the product could not start, and no defect named
+    the manifest - the note was logged and dropped.
+    """
+    from app.agents.specialists import ReportedDefect
+    from app.analysis.manifests import MANIFEST_NAMES
+    from app.stacks.contract import INSTALL_FAILED
+
+    failed = [str(line) for line in saved.get("repairs") or [] if INSTALL_FAILED in str(line)]
+    if not failed:
+        return []
+    root = Path(_root(state))
+    try:
+        from app.tools.repository import pinned_project_directory
+
+        project = pinned_project_directory(root) or ""
+    except Exception:  # noqa: BLE001
+        project = ""
+    base = root / project if project else root
+    manifests = sorted(
+        f"{project}/{path.name}" if project else path.name
+        for path in (base.iterdir() if base.is_dir() else [])
+        if path.is_file() and path.name in MANIFEST_NAMES
+    )
+    return [ReportedDefect(
+        description="The project's dependencies do not install, so nothing its manifests declare is there: "
+                    + failed[-1][:900],
+        severity="blocking",
+        reproduction_steps="Run the project's install command: it fails before the product can start.",
+        expected_behavior="Every manifest lists only packages its own installer can find - each language's "
+                          "packages in that language's manifest - and the install succeeds.",
+        actual_behavior=failed[-1][:1500],
+        affected_files=manifests,
+        owner=_owner_for(state, failed[-1]),
+    )]
+
+
 def _what_the_language_service_finds(state: Any) -> list[Any]:
     """The language service's certain findings in what this sprint changed, as the gate raises them; [] when none.
 
@@ -1003,7 +1044,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             affected_files=[],
             owner=_owner_for(state, never_started),
         ))
-        return defects + _what_the_language_service_finds(state)
+        return defects + _the_install_that_failed(saved, state) + _what_the_language_service_finds(state)
     if problems:
         defects.append(ReportedDefect(
             description="The product reports errors by itself while it loads, before any test touches it.",

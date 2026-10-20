@@ -568,7 +568,9 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         repairs += contract.enforce(repo_root)
     except Exception:  # noqa: BLE001 - a repair that fails leaves the run as it was
         logger.debug("Could not enforce the project contract", exc_info=True)
-    contract.install_if_the_manifests_changed(repo_root, runner)
+    # Kept with the run's repairs: an install that failed is why nothing it
+    # declares is there, and the round raises it (`acceptance_nodes`).
+    repairs += contract.install_if_the_manifests_changed(repo_root, runner)
     command = _command(repo_root)
     if command is None:
         result = AcceptanceResult(ran=False, repairs=repairs, problem=_why_no_command(repo_root))

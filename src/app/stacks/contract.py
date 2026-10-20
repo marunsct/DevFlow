@@ -104,6 +104,10 @@ def installed(repo_root: str | Path, runner: Any = None) -> None:  # noqa: ARG00
         logger.debug("Could not record the install", exc_info=True)
 
 
+#: How a failed install's note reads after its command, so the round can find it.
+INSTALL_FAILED = "failed after the project's manifest changed"
+
+
 def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) -> list[str]:
     """Install the project's dependencies again when a manifest changed since the last install. Never raises.
 
@@ -142,7 +146,7 @@ def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) 
                 # What the installer said: measured on one gate run, a JavaScript
                 # package written into `requirements.txt` failed every install,
                 # and the note said only that the command failed.
-                return [f"`{' '.join(argv)}` failed after the project's manifest changed"
+                return [f"`{' '.join(argv)}` {INSTALL_FAILED}"
                         + (f"; it ended:\n{tail}" if tail else ".")]
         installed(repo_root)
         logger.info("The project's manifest changed since its last install; installed again")

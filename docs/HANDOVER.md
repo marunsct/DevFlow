@@ -381,6 +381,10 @@ test that fails on the old code:
   04:08 JST: 33 of 34. LF.116 (lost replies counted across a compaction) at 04:40, no rewind.
   LF.117 (a failed test's own source is read for test bugs) at 05:25, no rewind.
   06:42 JST: 34 of 34. LF.118 (a unit failure's cause from the whole run) at 06:55; attempt 3 re-planning. 07:08: test round 2 of attempt 3 passed everything; milestone reviews. LF.119 at 07:20 (the sprint panel showed the failed attempt 2 as the sprint's state; owner report): the attempt under way is served while the run is live.
+  **07:15 JST: run-d48f049e completed** (351 min, 3 attempts, accepted): acceptance 34/34, unit 30/30; 59% of its product
+  lines are modules nothing imports (the fixers built a working copy in `main.py` and `App.tsx`), and its compose stack
+  would not start. LF.108-LF.119 went into it. **The next gate run is run-f4f0030b** (07:25 JST on d3de13a3, brief_medium,
+  `DELIVERY=fast FRONTIER=false`). Proposed next fix: a source file no entry point reaches is a defect (product review).
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or
@@ -866,6 +870,8 @@ Stack packs and the image:
    `use_runtime` calls appear in transcripts without failing.
 
 ### 2.3 Recent runs (newest first; full history in monitoring §0.2)
+
+- **run-d48f049e** (gate run 2, `tests/brief_medium.md`, Fast, local; 2026-10-21 00:18 → completed 07:15 JST, 351 min). Acceptance 34/34, unit 30/30, release accepted on attempt 3. 470 model calls, 75% reasoning, cache 74%, 25 defects / 8 fixed. Product audit: 1,883 of 3,167 lines unreached (duplicates in `main.py`/`App.tsx`), compose names an undeclared async driver, no migration, no reminders. LF.108-LF.119 deployed into it.
 
 - **run-8b0c94df** (Medium brief `tests/brief_medium.md`, Fast, local only; 2026-10-18 07:02 → cancelled 2026-10-19 07:11 JST, 24.1 h). **Hand score: 9 of 30 locked acceptance tests passing (13 criteria: AC-8 4/6, AC-1 3/5, AC-13 3/7, AC-12 2/3, the other nine 0); unit tests 17 of 42; 4,455 lines of product plus an unserved second copy (`frontend/`, `backend/`).** Cancelled at the owner's threshold (20 or more of 30 failing after a test round) on sprint-1 attempt 4. KPIs: 2,593 model calls, 160 M input tokens (73% cached), 5.2 M output (about 32% reasoning where measurable, 35% of output in replies lost to length), redundant reads 47%, 10 test rounds, 25 fix stages, 62 defects raised, 8 fixed, 6 fixes reverted. Causes, in order: the file plan built a second app beside the pack's served one (fixed at the source by `8cacab9` for future runs); fixers read without writing (now withheld after 12 calls, `9275b8f`); a specification naming PostgreSQL on a sandbox with none (fixers now told the store is the embedded file, `d7902be`). Twelve harness fixes came out of it; see monitoring-handover §0.2 2026-10-18/19.
 

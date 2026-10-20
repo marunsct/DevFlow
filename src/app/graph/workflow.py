@@ -4744,6 +4744,18 @@ def _still_underlined(root: str, defect: Any) -> bool:
     return still_underlined(root, str(getattr(defect, "description", "") or ""))
 
 
+def _the_criteria_due(state: Any) -> list[str]:
+    """The locked criteria this sprint is held to, as `id: text`; [] when none can be read."""
+    try:
+        from app.graph import acceptance_nodes
+
+        due = set(acceptance_nodes.criteria_due(state) or [])
+        return [f"{c.id}: {c.text}" for c in acceptance_nodes.suite.criteria(state["repository"].root_path)
+                if not due or c.id in due]
+    except Exception:  # noqa: BLE001 - the readiness check still reports it
+        return []
+
+
 def _names_a_cause(defect: Any) -> bool:
     """Whether the defect is a check's finding of a cause, not a symptom of one.
 
@@ -8675,7 +8687,9 @@ def build_workflow_graph(
             with_the_project_directory_cd_dropped(
                 with_paths_inside_the_project(update["milestone_plan"], state["repository"].root_path),
                 state["repository"].root_path,
-            )
+            ),
+            state.get("technical_specification"),
+            _the_criteria_due(state),
         )
         if not revising:
             from app.analysis.work_orders import with_named_tests_given_to_testing

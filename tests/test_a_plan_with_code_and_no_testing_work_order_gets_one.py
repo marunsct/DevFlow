@@ -58,3 +58,28 @@ def test_the_lead_is_told_every_rule_the_harness_checks():
     source = open(technical_lead.__file__, encoding="utf-8").read()
     assert "a file the sprint's scope names that no work order lists" in source
     assert "one the\n  harness keeps" in source
+
+
+def test_each_file_s_test_is_named_by_its_own_language_s_pattern(monkeypatch, tmp_path):
+    """Measured on one gate run: a page-and-Python-service pack named `config.py`'s test `tests/config.test.tsx`."""
+    pack = SimpleNamespace(unit_dir="tests", unit_pattern="*.test.tsx", unit_test=("npm", "test"),
+                           unit_test_names=("*.test.tsx", "test_*.py"))
+    monkeypatch.setattr(contract, "the_pack", lambda root: (pack, {}))
+    monkeypatch.setattr(work_orders, "_pinned_project_directory", lambda root: "shop")
+
+    plan, added = with_a_testing_work_order(_plan(_backend(["shop/shop_pkg/config.py", "shop/src/App.tsx"])), tmp_path)
+
+    assert added and plan.delegated_tasks[-1].files == ["shop/tests/test_config.py", "shop/tests/App.test.tsx"]
+
+
+def test_a_work_order_with_nothing_to_test_from_takes_the_sprint_s_criteria() -> None:
+    """Measured on one gate run: a re-plan's one work order had neither test cases nor criteria, and went back."""
+    from app.analysis.work_orders import with_test_cases_from_its_criteria
+
+    order = SpecialistTask(specialist_role="backend", title="Wire it", task_description="Wire the service.",
+                           files=["shop/shop_pkg/main.py"], interfaces=["the app"], test_cases=[])
+    spec = SimpleNamespace(test_cases=["given a note, the list shows it (store.py)"])
+
+    plan = with_test_cases_from_its_criteria(_plan(order), spec, ["AC-1: a user signs in"])
+
+    assert plan.delegated_tasks[0].test_cases == ["AC-1: a user signs in"]

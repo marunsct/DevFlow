@@ -205,12 +205,18 @@ def with_a_testing_work_order(milestone: Any, repo_root: str | Path | None) -> t
         if not unit_dir or "*" not in pattern:
             return milestone, False
         files: list[str] = []
+        # The pattern of the file's own language: measured on one gate run, a
+        # pack with a page and a Python service named `config.py`'s test
+        # `tests/config.test.tsx`, the page's pattern.
+        patterns = [p for p in (*(getattr(pack, "unit_test_names", None) or ()), pattern) if "*" in str(p)]
         for task in behaviour:
             for path in getattr(task, "files", None) or []:
                 if classify_file(str(path)) != "application":
                     continue
-                stem = PurePosixPath(str(path)).name.split(".", 1)[0]
-                test = "/".join(part for part in (project, unit_dir, pattern.replace("*", stem, 1)) if part)
+                name = PurePosixPath(str(path)).name
+                stem, suffix = name.split(".", 1)[0], PurePosixPath(name).suffix
+                mine = next((p for p in patterns if suffix and str(p).endswith(suffix)), pattern)
+                test = "/".join(part for part in (project, unit_dir, mine.replace("*", stem, 1)) if part)
                 if test not in files:
                     files.append(test)
         if not files:
@@ -239,7 +245,7 @@ def with_a_testing_work_order(milestone: Any, repo_root: str | Path | None) -> t
         return milestone, False
 
 
-def with_test_cases_from_its_criteria(milestone: Any) -> Any:
+def with_test_cases_from_its_criteria(milestone: Any, specification: Any = None, sprint_criteria: Any = ()) -> Any:
     """The plan with each code work order that has no test cases given its
     acceptance criteria as them.
 
@@ -251,8 +257,11 @@ def with_test_cases_from_its_criteria(milestone: Any) -> Any:
     the third time with concrete, checkable acceptance criteria on every one -
     and the plan was dispatched unready after about seven minutes of re-planning.
 
-    Only where there are criteria to take them from: a code work order with
-    neither is still sent back. Never raises.
+    Without criteria, the specification's own test cases that name one of its
+    files, else the sprint's criteria due - every work order of the sprint
+    serves them: measured on one gate run, a re-plan's one work order had
+    neither, and the plan went back to a lead that had just lost a reply to
+    reasoning. A code work order with none of these is still sent back. Never raises.
     """
     try:
         tasks = list(getattr(milestone, "delegated_tasks", None) or [])
@@ -262,15 +271,28 @@ def with_test_cases_from_its_criteria(milestone: Any) -> Any:
             role = _role(task)
             criteria = [str(c) for c in getattr(task, "acceptance_criteria", None) or [] if str(c).strip()]
             cases = [str(c) for c in getattr(task, "test_cases", None) or [] if str(c).strip()]
-            if role not in _NOT_CODE and role != _TESTING and not cases and criteria:
-                task = task.model_copy(update={"test_cases": criteria})
-                changed = True
+            if role not in _NOT_CODE and role != _TESTING and not cases:
+                found = criteria or _the_specification_s_cases_for(
+                    specification, [str(f) for f in getattr(task, "files", None) or []]
+                ) or [str(c) for c in sprint_criteria or () if str(c).strip()]
+                if found:
+                    task = task.model_copy(update={"test_cases": found})
+                    changed = True
             rewritten.append(task)
         if not changed:
             return milestone
         return milestone.model_copy(update={"delegated_tasks": rewritten})
     except Exception:  # noqa: BLE001 - the readiness check still reports it
         return milestone
+
+
+def _the_specification_s_cases_for(specification: Any, files: list[str]) -> list[str]:
+    """The specification's test cases that name one of `files`, by path or by file name."""
+    names = {name for path in files for name in (path, PurePosixPath(path).name) if name}
+    return [
+        str(case) for case in getattr(specification, "test_cases", None) or []
+        if any(name in str(case) for name in names)
+    ]
 
 
 def with_paths_inside_the_project(milestone: Any, repo_root: str | Path | None) -> Any:

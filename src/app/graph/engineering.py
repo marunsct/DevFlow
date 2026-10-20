@@ -285,9 +285,12 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
                 reproduction_steps=f"Read {relative} at line {lines}: `{where[0]['text']}`.",
                 expected_behavior=expected,
                 actual_behavior=f"{message} ({service_name(relative)}, as an IDE would underline it)",
-                # The module first when several files import the name from it:
-                # one definition there fixes them all.
-                affected_files=[module, relative] if module and len(importers) > 1 else [relative],
+                # The module alone when several files import the name from it:
+                # one definition there fixes them all, and its importers named
+                # as files would join every module they import from into one
+                # defect - measured: two modules and nine routers, sixteen
+                # findings, one rewrite of four files.
+                affected_files=[module] if module and len(importers) > 1 else [relative],
                 owner=_owner_of(state, ""),
             ))
     defects.extend(_what_the_compiler_says(state, root, since, pinned or ""))

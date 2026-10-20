@@ -121,5 +121,30 @@ def test_a_name_several_files_import_from_a_module_that_lacks_it_names_the_modul
 
     assert len(found) == 2
     for defect in found:
-        assert defect.affected_files[0] == "shop/shop_pkg/config.py"
+        assert defect.affected_files == ["shop/shop_pkg/config.py"], "the importers are named in its text, not as its files"
         assert "`Settings`, `settings`" in defect.expected_behavior and "2 file(s)" in defect.expected_behavior
+
+
+def test_two_modules_imported_by_one_router_stay_two_defects(tmp_path, monkeypatch):
+    """Measured: a router imported names two modules lacked; through it, both modules' findings became one defect."""
+    from app.graph.workflow import _one_defect_per_cause
+
+    names = ["shop/shop_pkg/routers/auth.py", "shop/shop_pkg/routers/tasks.py"]
+    _batch(tmp_path, monkeypatch, names)
+    (tmp_path / "shop/shop_pkg/__init__.py").write_text("")
+    (tmp_path / "shop/shop_pkg/config.py").write_text("settings = 1\n")
+    (tmp_path / "shop/shop_pkg/database.py").write_text("engine = 1\n")
+    for name in names:
+        (tmp_path / name).write_text("from shop_pkg.config import get_settings\nfrom shop_pkg.database import get_db\n")
+    monkeypatch.setattr(service, "_pyright_diagnostics", lambda project: [
+        {"file": str(tmp_path / name), "rule": "reportAttributeAccessIssue", "severity": "error",
+         "message": f'"{symbol}" is unknown import symbol', "range": {"start": {"line": line}}}
+        for name in names for line, symbol in ((0, "get_settings"), (1, "get_db"))
+    ], raising=False)
+    monkeypatch.setattr("app.tools.repository.pinned_project_directory", lambda root: "shop")
+
+    found = engineering.underlined_in_the_batch({}, str(tmp_path), "base")
+    merged = _one_defect_per_cause([d.model_copy(update={"source": "language service"}) for d in found])
+
+    assert sorted(d.affected_files[0] for d in merged) == ["shop/shop_pkg/config.py", "shop/shop_pkg/database.py"]
+

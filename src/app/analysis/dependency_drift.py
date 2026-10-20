@@ -318,12 +318,36 @@ def still_undeclared(project: Path, description: str) -> list[str] | None:
     return [name for name in named if name.lower() in now]
 
 
-def the_bundled_defect(found: Sequence[tuple[str, str, str]], *, owner: str) -> Any:
+#: Where each language's packages are declared, in the order a project is
+#: likeliest to keep them; the first that exists is the one to change.
+MANIFESTS = {
+    "javascript": ("package.json",),
+    "python": ("requirements.txt", "pyproject.toml"),
+}
+
+
+def _the_manifests(found: Sequence[tuple[str, str, str]], project: Path | None) -> list[str]:
+    """The manifest each language in `found` is declared in, relative to the project."""
+    chosen: list[str] = []
+    for language in dict.fromkeys(language for _, _, language in found):
+        names = MANIFESTS.get(language, ())
+        here = next((n for n in names if project is not None and (Path(project) / n).is_file()), None)
+        if here is None and project is not None and language == "python":
+            here = next((m.name for m in sorted(Path(project).glob("requirements*.txt"))), None)
+        if here or names:
+            chosen.append(here or names[0])
+    return list(dict.fromkeys(chosen))
+
+
+def the_bundled_defect(found: Sequence[tuple[str, str, str]], *, owner: str, project: Path | None = None) -> Any:
     """One defect naming every undeclared import, for the fixer to declare.
 
     Bundled, because thirteen defects from one root cause were the measured
     failure this replaces: one missing declaration is one declaration to add,
-    whoever added the imports.
+    whoever added the imports. Its files are the manifests, where the change
+    is: measured on one gate run, it named the importing files, and the fix
+    rewrote `database.py`, `main.py` and a page component and left the
+    manifests as they were - the defect open by construction.
     """
     from app.agents.specialists import ReportedDefect
 
@@ -345,9 +369,9 @@ def the_bundled_defect(found: Sequence[tuple[str, str, str]], *, owner: str) -> 
         actual_behavior=(
             f"Undeclared: {named}{extra} (the harness's manifest reconciliation)"
         ),
-        affected_files=[file for _, file, _ in found[:8]],
+        affected_files=_the_manifests(found, project),
         owner=owner,
     )
 
 
-__all__ = ["CODE_SUFFIXES", "OPENING", "still_undeclared", "the_bundled_defect", "undeclared"]
+__all__ = ["CODE_SUFFIXES", "MANIFESTS", "OPENING", "still_undeclared", "the_bundled_defect", "undeclared"]

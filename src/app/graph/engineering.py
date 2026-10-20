@@ -306,7 +306,7 @@ def _what_the_manifests_do_not_declare(state: Any, root: str, since: str, projec
         "The CI gate found %d package(s) the code imports that no manifest declares: %s",
         len(found), ", ".join(name for name, _, _ in found[:8]),
     )
-    return [dependency_drift.the_bundled_defect(found, owner=_owner_of(state, ""))]
+    return [dependency_drift.the_bundled_defect(found, owner=_owner_of(state, ""), project=directory)]
 
 
 def _what_the_compiler_says(state: Any, root: str, since: str, project: str) -> list[Any]:

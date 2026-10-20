@@ -169,7 +169,7 @@ def test_the_defect_text_is_plain_language() -> None:
     assert "jsdom" in defect.description and "pyyaml" in defect.description
     assert "no manifest declares" in defect.description
     assert defect.severity == "major"
-    assert defect.affected_files == ["src/app.js", "tools/notes.py"]
+    assert defect.affected_files == ["package.json", "requirements.txt"]
     text = " ".join(str(v) for v in defect.model_dump().values() if v)
     for word in BANNED:
         assert not re.search(rf"\b{word}\b", text, re.IGNORECASE), word
@@ -222,3 +222,36 @@ def test_a_bundled_defect_raised_before_is_closed_once_the_reconciliation_finds_
 
     assert "declared now" in engineering.no_longer_underlined(str(tmp_path), stale.description)
     assert engineering.no_longer_underlined(str(tmp_path), real.description) == ""
+
+
+def test_the_defect_names_the_manifests_where_the_change_is(tmp_path) -> None:
+    """Measured on one gate run: it named the importing files, and the fix rewrote them, not the manifests."""
+    (tmp_path / "requirements-dev.txt").write_text("pytest\n")
+    (tmp_path / "package.json").write_text("{}")
+
+    defect = dependency_drift.the_bundled_defect(
+        [("sqlalchemy", "shop/database.py", "python"), ("axios", "src/api.ts", "javascript"),
+         ("bcrypt", "shop/auth.py", "python")],
+        owner="backend", project=tmp_path,
+    )
+
+    assert defect.affected_files == ["requirements-dev.txt", "package.json"]
+
+
+def test_a_cause_leads_the_symptoms_it_is_merged_with() -> None:
+    from app.agents.specialists import ReportedDefect
+    from app.graph.workflow import _one_defect_per_cause
+
+    symptom = ReportedDefect(
+        description="`shop/acceptance/orders.spec.js` fails. Its output ends: No module named `sqlalchemy`",
+        severity="major", reproduction_steps="Run the suite.", expected_behavior="It passes.",
+        actual_behavior="ModuleNotFoundError", affected_files=["shop/database.py"], owner="backend")
+    cause = dependency_drift.the_bundled_defect([("sqlalchemy", "shop/database.py", "python")], owner="backend")
+    cause = cause.model_copy(update={"affected_files": ["requirements.txt", "shop/database.py"]})
+
+    merged = _one_defect_per_cause([symptom, cause])
+
+    assert len(merged) == 1
+    assert merged[0].description.startswith(dependency_drift.OPENING)
+    assert merged[0].affected_files[0] == "requirements.txt"
+

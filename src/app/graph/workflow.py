@@ -4724,6 +4724,13 @@ def _the_same_cause(one: Any, other: Any) -> bool:
     return spelled_out(names, other_text, not files) or spelled_out(other_names, text, not theirs)
 
 
+def _names_a_cause(defect: Any) -> bool:
+    """Whether the defect is a check's finding of a cause, not a symptom of one."""
+    from app.analysis import dependency_drift
+
+    return str(getattr(defect, "description", "") or "").startswith(dependency_drift.OPENING)
+
+
 def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
     """`reported` with the defects that describe one problem merged into one, in order.
 
@@ -4760,6 +4767,12 @@ def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
         if len(group) == 1:
             merged.append(item)
             continue
+        # A defect that names its cause leads the symptoms it explains: its
+        # files are where the change is. Measured on one gate run: packages no
+        # manifest declared were merged under "the suite fails ... importlib",
+        # and the fix rewrote the code that imports them.
+        group = sorted(group, key=lambda i: not _names_a_cause(reported[i]))
+        item = reported[group[0]]
         others = [reported[i] for i in group[1:]]
         files = list(dict.fromkeys(
             str(f) for member in (item, *others) for f in getattr(member, "affected_files", None) or []

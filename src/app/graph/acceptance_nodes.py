@@ -54,6 +54,30 @@ class Context:
 #: them closes it.
 THE_PRODUCT_DOES_NOT_START = "The product does not start for the acceptance suite, so no test can reach it."
 
+
+def _what_the_language_service_finds(state: Any) -> list[Any]:
+    """The language service's certain findings in what this sprint changed, as the gate raises them; [] when none.
+
+    Measured on one gate run: the product stopped on a name its module did not
+    define, round after round; each round raised only "the suite fails ...",
+    whose traceback names the importer, so every fix rewrote the importer.
+    The gate had named the module, but it runs once per batch, not per round.
+    """
+    try:
+        from app import ci
+        from app.graph import engineering
+
+        root = _root(state)
+        accepted = ci.load(root, "accepted")
+        since = (accepted.commit if accepted else "") or ci.first_commit(root)
+        return [
+            defect.model_copy(update={"source": "language service"})
+            for defect in engineering.underlined_in_the_batch(state, root, since)
+        ]
+    except Exception:  # noqa: BLE001 - the round raises what it measured, as before
+        logger.debug("Could not ask the language service at the test round", exc_info=True)
+        return []
+
 #: What opens the page snapshot in an acceptance defect's failure text
 #: (`workflow._one_defect_per_root_error` reads it).
 THE_PAGE_WHEN_IT_FAILED = "\nThe page when it failed:\n"
@@ -979,7 +1003,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             affected_files=[],
             owner=_owner_for(state, never_started),
         ))
-        return defects
+        return defects + _what_the_language_service_finds(state)
     if problems:
         defects.append(ReportedDefect(
             description="The product reports errors by itself while it loads, before any test touches it.",

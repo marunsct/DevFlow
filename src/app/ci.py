@@ -293,6 +293,15 @@ def restore_paths(root: str | Path, commit_id: str, paths: Sequence[str]) -> boo
     return True
 
 
+def first_commit(root: str | Path) -> str:
+    """The workspace's first commit, or "" when it has none."""
+    result = _git(root, "rev-list", "--max-parents=0", "HEAD")
+    if result is None or result.returncode != 0:
+        return ""
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return lines[-1] if lines else ""
+
+
 def changed_since(root: str | Path, commit_id: str) -> list[str]:
     """Workspace-relative paths changed between `commit_id` and HEAD that still exist."""
     if not commit_id:

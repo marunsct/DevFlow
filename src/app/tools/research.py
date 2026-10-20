@@ -24,12 +24,15 @@ MOST_DOCUMENTATION_READS = 8
 #: Packages one stage visit may look up in the registries.
 MOST_PACKAGE_LOOKUPS = 12
 
+#: Web searches and pages read, together, in one stage visit (`app.tools.web_search`).
+MOST_WEB_LOOKUPS = 8
+
 #: Characters of one documentation answer handed to a fresh attempt.
 MOST_CARRIED_CHARACTERS = 400
 
 _PURPOSE = "research"
 
-_SHARES = {"documentation": MOST_DOCUMENTATION_READS, "packages": MOST_PACKAGE_LOOKUPS}
+_SHARES = {"documentation": MOST_DOCUMENTATION_READS, "packages": MOST_PACKAGE_LOOKUPS, "web": MOST_WEB_LOOKUPS}
 
 
 def _ledger() -> dict[str, Any]:
@@ -65,8 +68,10 @@ def researched(done: bool = True) -> Iterator[None]:
         _RESEARCHED.reset(token)
 
 
-#: The tool that spends each share, by the share it spends.
-_TOOL_OF = {"documentation": "read_docs", "packages": "look_up_package"}
+#: The tools that spend each share, by the share they spend.
+_TOOL_OF = {
+    "documentation": ("read_docs",), "packages": ("look_up_package",), "web": ("search_the_web", "read_web_page"),
+}
 
 
 def spent(kind: str) -> bool:
@@ -88,7 +93,7 @@ def build_research_share_middleware() -> Any:
 
         def wrap_model_call(self, request: Any, handler: Any) -> Any:
             try:
-                gone = {tool for kind, tool in _TOOL_OF.items() if spent(kind)}
+                gone = {tool for kind, tools in _TOOL_OF.items() if spent(kind) for tool in tools}
                 tools = list(getattr(request, "tools", None) or [])
                 if gone and tools:
                     kept = [t for t in tools if _named(t) not in gone]
@@ -113,6 +118,8 @@ def found(label: str, answer: Any) -> None:
         return
     if isinstance(answer, dict) and "excerpt" in answer:
         text = str(answer.get("excerpt") or "")[:MOST_CARRIED_CHARACTERS]
+    elif isinstance(answer, dict) and isinstance(answer.get("results"), list):
+        text = "; ".join(f"{r.get('title')} <{r.get('url')}>" for r in answer["results"] if isinstance(r, dict))
     elif isinstance(answer, dict):
         text = ", ".join(f"{key}: {value}" for key, value in answer.items() if key not in ("description",))
     else:

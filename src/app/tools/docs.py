@@ -17,7 +17,9 @@ Two sources, both published by the project itself, never a search engine:
 
 What comes back is cut to the sections about the topic and labelled for what
 it is: reference text from that site, not instructions. A wider source - an MCP
-documentation server such as Context7 - is configured in `app.tools.mcp_tools`.
+documentation server such as Context7, or a library's own official one - is in
+`app.tools.mcp_tools`; what no project's documentation says (a release that
+broke a library built on it) is found on the web, `app.tools.web_search`.
 """
 
 from __future__ import annotations

@@ -82,6 +82,21 @@ def _json(body: bytes) -> Any:
     return json.loads(body.decode("utf-8"))
 
 
+def _homes(*places: Any) -> list[str]:
+    """A package's homepage and repository as URLs, as its registry gives them."""
+    found: list[str] = []
+    for place in places:
+        if isinstance(place, dict):
+            place = place.get("url")
+        url = str(place or "").strip()
+        url = re.sub(r"^git\+|\.git$", "", url).replace("git://", "https://").replace("ssh://git@", "https://")
+        if url.startswith("github:"):
+            url = "https://github.com/" + url[len("github:"):]
+        if url.startswith(("http://", "https://")) and url not in found:
+            found.append(url)
+    return found[:4]
+
+
 def _go_escaped(module: str) -> str:
     """A module path as the Go proxy spells it: each capital as "!" and its lower case."""
     return re.sub(r"[A-Z]", lambda m: "!" + m.group(0).lower(), module)
@@ -104,6 +119,7 @@ def _npm(name: str, fetch: Fetch) -> dict[str, Any]:
         "needs_runtime": _listed(data.get("engines") or {}),
         "peer_dependencies": _listed(data.get("peerDependencies") or {}),
         "module_type": data.get("type") or "commonjs",
+        "homes": _homes(data.get("homepage"), data.get("repository")),
     }
 
 
@@ -119,6 +135,7 @@ def _pypi(name: str, fetch: Fetch) -> dict[str, Any]:
         "dependencies": _listed(
             [d for d in (info.get("requires_dist") or []) if "extra ==" not in str(d)]
         ),
+        "homes": _homes(info.get("home_page"), *(info.get("project_urls") or {}).values()),
     }
 
 
@@ -136,6 +153,7 @@ def _crates(name: str, fetch: Fetch) -> dict[str, Any]:
         "version": version,
         "description": _short(crate.get("description")),
         "needs_runtime": {"rust": rust or "not stated"},
+        "homes": _homes(crate.get("homepage"), crate.get("repository")),
     }
 
 
@@ -143,7 +161,7 @@ def _go(name: str, fetch: Fetch) -> dict[str, Any]:
     status, body = fetch(f"https://proxy.golang.org/{_go_escaped(name)}/@latest")
     if status != 200:
         return {"status": status}
-    return {"version": _json(body).get("Version")}
+    return {"version": _json(body).get("Version"), "homes": _homes(f"https://{name}")}
 
 
 def _maven(name: str, fetch: Fetch) -> dict[str, Any]:
@@ -158,7 +176,9 @@ def _maven(name: str, fetch: Fetch) -> dict[str, Any]:
     root = ElementTree.fromstring(body)
     versions = [v.text or "" for v in root.iter("version")]
     stable = [v for v in versions if _is_stable(v)]
-    return {"version": root.findtext("versioning/release") if not stable else stable[-1]}
+    # A group is its publisher's domain reversed, and Maven Central checks it.
+    return {"version": root.findtext("versioning/release") if not stable else stable[-1],
+            "homes": _homes("https://" + ".".join(reversed(group.split(".")))) if group.count(".") >= 1 else []}
 
 
 def _rubygems(name: str, fetch: Fetch) -> dict[str, Any]:
@@ -172,6 +192,7 @@ def _rubygems(name: str, fetch: Fetch) -> dict[str, Any]:
         "dependencies": _listed(
             [f"{d.get('name')} {d.get('requirements')}" for d in (data.get("dependencies") or {}).get("runtime") or []]
         ),
+        "homes": _homes(data.get("homepage_uri"), data.get("source_code_uri")),
     }
 
 
@@ -188,6 +209,7 @@ def _packagist(name: str, fetch: Fetch) -> dict[str, Any]:
         "version": latest.get("version"),
         "description": _short(latest.get("description")),
         "needs_runtime": {"php": requires.get("php", "not stated")} if isinstance(requires, dict) else {},
+        "homes": _homes(latest.get("homepage"), (latest.get("source") or {}).get("url")),
     }
 
 

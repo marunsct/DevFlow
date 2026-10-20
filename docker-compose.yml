@@ -31,6 +31,12 @@ x-app-env: &app-env
   # owner's choice and off until configured (app/tools/mcp_tools.py).
   PACKAGE_LOOKUP_ENABLED: ${PACKAGE_LOOKUP_ENABLED:-true}
   DOCS_LOOKUP_ENABLED: ${DOCS_LOOKUP_ENABLED:-true}
+  # The web, for what is newer than the model (app/tools/web_search.py): the
+  # private SearXNG below. And the official MCP server of a library the product
+  # uses, found in the MCP Registry (app/tools/mcp_registry.py): remote, read-only.
+  WEB_SEARCH_ENABLED: ${WEB_SEARCH_ENABLED:-true}
+  SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
+  HARNESS_MCP_DISCOVERY: ${HARNESS_MCP_DISCOVERY:-true}
   SANDBOX_RUNTIMES_ENABLED: ${SANDBOX_RUNTIMES_ENABLED:-true}
   PAGE_VIEW_ENABLED: ${PAGE_VIEW_ENABLED:-true}
   CUSTOM_STACK_SETUP: ${CUSTOM_STACK_SETUP:-true}
@@ -215,6 +221,31 @@ services:
         limits:
           cpus: "2"
           memory: 2g
+
+  # Web search for the stages (app/tools/web_search.py). Private: no port on the
+  # host, reachable only by the app and the worker on the compose network, JSON
+  # API on and no rate limiter (docker/searxng/settings.yml). SEARXNG_SECRET is
+  # in .env; without it SearXNG does not start and the search tool says so.
+  searxng:
+    image: searxng/searxng:2026.10.4-d48c4b555
+    restart: unless-stopped
+    expose:
+      - "8080"
+    volumes:
+      - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      SEARXNG_SECRET: "${SEARXNG_SECRET:-}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz | grep -q OK"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512m
 
   worker:
     build: .

@@ -3,9 +3,11 @@
 `read_docs` reads documentation the harness knows the address of. An MCP
 server reaches further: Context7 serves the documentation of thousands of
 libraries by version, a framework's own server (Nuxt publishes one) answers
-searches of its docs. Which servers a run may use is the owner's decision, so
-nothing is configured by default; `HARNESS_MCP_SERVERS` holds a JSON object,
-one entry per server:
+searches of its docs. Two kinds reach a stage. The official server of a
+library the product uses, found in the MCP Registry and verified as the
+library's own (`app.tools.mcp_registry`): remote only, and only its tools that
+declare themselves read-only. And the owner's, `HARNESS_MCP_SERVERS`, a JSON
+object, one entry per server:
 
     {"context7": {
         "transport": "streamable_http",
@@ -152,12 +154,36 @@ def _wrapped(server: str, original: Any) -> Any:
     )
 
 
-def tools_for(role: str) -> list[Any]:
-    """The configured MCP tools a stage of `role` is given (see `ROLES`)."""
+def _reads_only(tool: Any) -> bool:
+    """Whether the server declares the tool read-only (MCP's `readOnlyHint`); unannotated is not."""
+    return (getattr(tool, "metadata", None) or {}).get("readOnlyHint") is True
+
+
+def _servers(repo_root: str | None) -> dict[str, dict[str, Any]]:
+    """The owner's servers, then the official ones found for the product's libraries (`app.tools.mcp_registry`)."""
+    servers = dict(configured())
+    if not repo_root:
+        return servers
+    try:
+        from app.tools.mcp_registry import official_servers
+
+        known = {str(entry.get("url") or "") for entry in servers.values()}
+        for name, entry in official_servers(repo_root).items():
+            if name not in servers and str(entry.get("url") or "") not in known:
+                # A server the owner did not choose is given only what it says
+                # only reads, to every stage that reads documentation.
+                servers[name] = {**entry, "roles": list(ROLES), "read_only": True}
+    except Exception:  # noqa: BLE001 - the owner's servers stand on their own
+        logger.debug("Could not add the official MCP servers", exc_info=True)
+    return servers
+
+
+def tools_for(role: str, repo_root: str | None = None) -> list[Any]:
+    """The MCP tools a stage of `role` is given (see `ROLES`): the owner's, and the product's libraries' official ones."""
     if role not in ROLES:
         return []
     chosen: list[Any] = []
-    for name, entry in configured().items():
+    for name, entry in _servers(repo_root).items():
         if role not in (entry.get("roles") or ()):
             continue
         allowed = entry.get("tools")
@@ -172,7 +198,8 @@ def tools_for(role: str) -> list[Any]:
                 _LOADED[name] = loaded
         chosen.extend(
             _wrapped(name, tool) for tool in loaded
-            if allowed == "*" or (isinstance(allowed, list) and tool.name in allowed)
+            if (allowed == "*" or (isinstance(allowed, list) and tool.name in allowed))
+            and (not entry.get("read_only") or _reads_only(tool))
         )
     return chosen
 

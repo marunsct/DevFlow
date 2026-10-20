@@ -333,13 +333,17 @@ test that fails on the old code:
   **Both gate runs measure one code version (a39807de):** fixes found meanwhile are pushed but deployed only after gate
   run 2, unless a bug would spoil the measurement. LF.56/LF.57 were deployed into gate run 1 at 07:35 JST
   (73aaa5ef): the pip false positive kept the product from starting; the run was rewound to its round-1 test round.
-  Gate run 2 runs on 73aaa5ef. Pushed, held for deploy after gate run 2: LF.58 (loop only), LF.59-LF.71 (the redundant-read KPI is not comparable across LF.63).
+  Gate run 2 runs on 73aaa5ef. Pushed, held for deploy after gate run 2: LF.58 (loop only), LF.59-LF.73 (the redundant-read KPI is not comparable across LF.63).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or
   framework goes through the harness's existing dynamic setup - a stack pack, the plugin instructions in
   `plugins/seed.py`, a per-language table or service (`sandbox.CODE_AS_A_FILE`, `language_service`) - never
   a special case in generic code, and a fix for one stack must not hinder another: check it against the
   others before it ships (LF.70).
 - **Owner, 2026-10-20: the routine audit runs every 10 minutes** (cron `3,13,23,33,43,53 * * * *`).
+- **Owner, 2026-10-20: the stages reach what is newer than the model.** The `searxng` service (private,
+  compose network only; `SEARXNG_SECRET` in `.env`) backs `search_the_web` / `read_web_page`; a library's official
+  remote MCP server is found in the MCP Registry and attached read-only (LF.72, LF.73). Package MCP servers are not
+  run: they would execute third-party code in the worker outside the sandbox - the owner's decision.
 - **A bug in a live run is fixed, then the run rewound - not cancelled and started again (owner, 2026-10-20):**
   `loop.sh rewind --pause-only` → `BOUNDARY_WAIT=0 loop.sh deploy` → `loop.sh rewind <stage> [run] [at-or-before]`.
   Rewind to the earliest stage whose behaviour the fix changes (a specification fix: `principal_architect`; the

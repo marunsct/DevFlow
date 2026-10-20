@@ -1,0 +1,105 @@
+# SearXNG for the harness's stages (`app.tools.web_search`): a private
+# instance on the compose network only, answering the worker in JSON. The
+# engines kept are the general web plus where a developer looks for what a
+# model's training data is too old to know - code hosts, Q&A, the package
+# registries, MDN and Microsoft Learn, and the vulnerability database.
+use_default_settings:
+  engines:
+    keep_only:
+      - duckduckgo
+      - brave
+      - bing
+      - google
+      - startpage
+      - mojeek
+      - wikipedia
+      - github
+      - gitlab
+      - codeberg
+      - stackoverflow
+      - askubuntu
+      - superuser
+      - mdn
+      - microsoft learn
+      - pypi
+      - npm
+      - crates.io
+      - lib.rs
+      - rubygems
+      - packagist
+      - pkg.go.dev
+      - hex
+      - pub.dev
+      - metacpan
+      - docker hub
+      - hackernews
+      - lobste.rs
+      - discuss.python
+      - arch linux wiki
+      - national vulnerability database
+
+general:
+  instance_name: "harness search"
+  enable_metrics: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  # JSON is what the worker reads; the page is for a person checking it by hand.
+  formats:
+    - html
+    - json
+
+server:
+  # Only the worker reaches it, so nothing to rate-limit, and no public features.
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+
+outgoing:
+  request_timeout: 5.0
+  max_request_timeout: 10.0
+
+engines:
+  - name: bing
+    disabled: false
+  - name: google
+    disabled: false
+  - name: startpage
+    disabled: false
+  - name: mojeek
+    disabled: false
+  - name: gitlab
+    disabled: false
+  - name: codeberg
+    disabled: false
+  - name: microsoft learn
+    disabled: false
+  - name: npm
+    disabled: false
+  - name: crates.io
+    disabled: false
+  - name: lib.rs
+    disabled: false
+  - name: rubygems
+    disabled: false
+  - name: packagist
+    disabled: false
+  - name: pkg.go.dev
+    disabled: false
+  - name: hex
+    disabled: false
+  - name: pub.dev
+    disabled: false
+  - name: metacpan
+    disabled: false
+  - name: hackernews
+    disabled: false
+  - name: lobste.rs
+    disabled: false
+  - name: discuss.python
+    disabled: false
+  - name: national vulnerability database
+    disabled: false

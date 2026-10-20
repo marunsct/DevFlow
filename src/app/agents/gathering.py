@@ -96,7 +96,7 @@ def gatherer_for(model: Any) -> Any:
 #: turns - writes and test runs - on the build model it had been escalated from.
 GATHERING_TOOLS = frozenset({
     "ls", "read_file", "glob", "grep", "read_docs", "look_up_package", "inspect_repository",
-    "read_repository_file", "read_command_output",
+    "read_repository_file", "read_command_output", "search_the_web", "read_web_page",
 })
 
 

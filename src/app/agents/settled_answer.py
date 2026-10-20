@@ -885,6 +885,10 @@ _NOTHING_NEW = re.compile(
     r"You have already read|nothing you did not already have|nothing you have not already been given|"
     r"is in the project memory at the start of this conversation|has had its share of|"
     r"There is nothing to compare against|"
+    # A write refused for changing nothing: measured on one gate run, an
+    # acceptance author wrote the same files again and again, each refused
+    # with this, and none counted - it ran on toward its whole budget.
+    r"already contain(?:s|ed) exactly this content|"
     r"is not a valid tool",
     re.S,
 )

@@ -332,6 +332,22 @@ def with_paths_inside_the_project(milestone: Any, repo_root: str | Path | None) 
         return milestone
 
 
+#: What a command line adds at its end only to shorten what it shows: `2>&1`,
+#: `| tail -5`, `| head -n 20`. The command's own output comes back whole.
+_OUTPUT_TRIMMING = re.compile(r"(?:\s*2>&1|\s*\|\s*(?:tail|head)(?:\s+-n)?\s+-?\d+)+\s*$")
+
+
+def _without_output_trimming(command: str) -> str:
+    """`command` without the trailing output trimming a shell would have done; else unchanged.
+
+    Measured on one gate run: `npm run build 2>&1 | tail -5` sent a plan back
+    as "will not run as written" - the command itself runs as it is.
+    """
+    stripped = str(command).strip().strip("`")
+    trimmed = _OUTPUT_TRIMMING.sub("", stripped)
+    return trimmed if trimmed != stripped and trimmed.strip() else command
+
+
 #: `cd <dir> && <command>` or `cd <dir>; <command>`, the whole line.
 _CD_THEN = re.compile(r"^\s*cd\s+(['\"]?)([^\s'\"&;]+)\1\s*(?:&&|;)\s*(\S.*)$")
 
@@ -364,9 +380,8 @@ def with_the_project_directory_cd_dropped(milestone: Any, repo_root: str | Path 
             for command in commands:
                 found = _CD_THEN.match(command.strip().strip("`"))
                 if found and found.group(2).rstrip("/") in here:
-                    kept.append(found.group(3).strip())
-                else:
-                    kept.append(command)
+                    command = found.group(3).strip()
+                kept.append(_without_output_trimming(command))
             if kept != commands:
                 changed = True
                 task = task.model_copy(update={"verification": kept})

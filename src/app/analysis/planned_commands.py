@@ -101,6 +101,20 @@ def _commands_in(span: str) -> tuple[list[list[str]], bool]:
     return commands, shell
 
 
+def _runs_its_code_from_a_file(argv: list[str]) -> bool:
+    """Whether the command tool would run this argv's inline code from a file (`sandbox.CODE_AS_A_FILE`)."""
+    try:
+        from app.tools.sandbox import CODE_AS_A_FILE
+
+        name = os.path.basename(str(argv[0]))
+        if re.fullmatch(r"python(?:3(?:\.\d+)?)?", name):
+            name = "python"
+        flags = CODE_AS_A_FILE.get(name) or {}
+        return any(str(part) in flags for part in argv[1:-1])
+    except Exception:  # noqa: BLE001 - checked as before
+        return False
+
+
 def commands_the_sandbox_would_refuse(
     text: str, role_name: str, repo_root: str | Path | None = None
 ) -> list[str]:
@@ -129,6 +143,12 @@ def commands_the_sandbox_would_refuse(
         seen.add(span)
         reasons: list[str] = [sandbox.ASSIGNMENT_ADVICE] if assigned else []
         for argv in commands:
+            if _runs_its_code_from_a_file(argv):
+                # The command tool saves code given on the command line as a
+                # file and runs that (`agent_toolkit`): measured on one gate
+                # run, a plan's six `python -c` checks were refused here and
+                # sent back, though the tool would have run each.
+                continue
             try:
                 validate_command(argv, role_name, repo_root)
             except CommandNotAllowed as refused:

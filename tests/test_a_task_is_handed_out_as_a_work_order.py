@@ -93,9 +93,9 @@ class TestTheDefinitionOfReady:
 
     def test_a_refused_verification_command_is_not_ready(self, enforced, project):
         problems = readiness_problems(
-            _plan(_order("backend", verification=["node -e \"console.log(1)\""]), _order("testing")), project
+            _plan(_order("backend", verification=["npx playwright install --with-deps"]), _order("testing")), project
         )
-        assert any("`verification`" in p and "not permitted" in p for p in problems)
+        assert any("`verification`" in p and "will not run as written" in p for p in problems)
 
     def test_documentation_needs_no_files_or_cases(self, enforced, project):
         assert readiness_problems(_plan(_order("documentation", files=[], test_cases=[], verification=[])), project) == []

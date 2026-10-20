@@ -33,15 +33,16 @@ def _plan(*descriptions: str) -> MilestonePlanOutput:
     )
 
 
-def test_an_inline_code_command_is_noted_on_its_task(project):
+def test_a_refused_command_is_noted_on_its_task(project):
+    """Inline code (`node -e`) is no longer one: the command tool runs it from a file (LF.60, LF.104)."""
     plan = with_refused_commands_noted(_plan(
-        "Write index.html. Then run `node -e \"require('fs').readFileSync('app/index.html')\"`.",
+        "Write index.html. Then run `npx playwright install --with-deps`.",
     ), project)
 
     text = plan.delegated_tasks[0].task_description
     assert "Checked against this sandbox before you started" in text
     assert "will not run as written" in text
-    assert "not permitted" in text
+    assert "installs system packages as root" in text
 
 
 def test_a_command_the_role_may_run_is_left_alone(project):
@@ -66,9 +67,9 @@ def test_a_shell_chain_is_named_as_needing_a_shell(project):
 
 def test_a_fenced_command_is_checked_too(project):
     notes = commands_the_sandbox_would_refuse(
-        "Verify with:\n```sh\npython3 -c \"print(1)\"\n```\n", "backend_specialist", project
+        "Verify with:\n```sh\nnpx playwright install --with-deps\n```\n", "backend_specialist", project
     )
-    assert notes and "python3 -c" in notes[0]
+    assert notes and "playwright install" in notes[0]
 
 
 def test_it_never_raises_on_a_malformed_plan(project):

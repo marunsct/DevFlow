@@ -597,9 +597,70 @@ def decode_structured_arguments(result: Any, tools: Any) -> Any:
                 call["name"] = offered
             schema = parameters.get(str(call.get("name") or ""))
             if schema is not None:
+                call["args"] = with_the_written_parameters_apart(call.get("args"), schema)
+                if isinstance(call["args"], dict) and CUT_OFF in call["args"]:
+                    # Kept like any cut-off answer's whole fields: the stage is
+                    # told what arrived and asked for the rest (`cut_off_notice`).
+                    key = _answer_key(str(call.get("name") or ""))
+                    stopped_in = call["args"].pop(CUT_OFF)
+                    _HELD[key] = {**_HELD.get(key, {}), **with_structure_decoded(call["args"], schema)}
+                    call["args"] = {**_HELD[key], CUT_OFF: stopped_in}
+                    continue
                 call["args"] = with_structure_decoded(call.get("args"), schema)
                 _joined_to_what_was_kept(call)
     return result
+
+
+#: One field written in the model's tag form, `<parameter=name>value</parameter>`,
+#: the last one possibly cut off before its closing tag.
+_A_WRITTEN_PARAMETER = re.compile(r"<parameter=([\w-]+)>\s*(.*?)(?:</parameter>|$)", re.S)
+#: Where one call written in the tag form ends and the next begins.
+_BETWEEN_CALLS = re.compile(r"</function>\s*</tool_call>\s*<tool_call>\s*<function=[\w.-]+>\s*", re.S)
+
+
+def with_the_written_parameters_apart(args: Any, schema: Any) -> Any:
+    """`args` with fields the model wrote in tag form inside another field's value taken apart.
+
+    Measured on one gate run: the architect wrote its specification as
+    `<parameter=product_scope>...</parameter></function></tool_call><tool_call>
+    <function=TechnicalSpecificationOutput><parameter=data_contracts>...`, the
+    server's parser put all 111,127 characters of it into `product_scope`, and
+    every section after the first was lost inside it, with the model's own
+    tags in the text. Each field is taken back out by its tag; one the reply
+    stopped inside (no closing tag) is marked cut off, so the rest is asked for.
+    """
+    if not isinstance(args, dict):
+        return args
+    fields = set((schema or {}).get("properties") or {}) if isinstance(schema, dict) else set()
+    taken: dict[str, Any] = {}
+    stopped_in = ""
+    for key, value in list(args.items()):
+        if not isinstance(value, str) or ("</parameter>" not in value and "<parameter=" not in value):
+            continue
+        first, closed, rest = value.partition("</parameter>")
+        if not closed:
+            first, _, rest = value.partition("<parameter=")
+            rest = "<parameter=" + rest
+        taken[key] = first.rstrip()
+        rest = _BETWEEN_CALLS.sub("", rest)
+        for match in _A_WRITTEN_PARAMETER.finditer(rest):
+            name, text = match.group(1), match.group(2)
+            if fields and name not in fields:
+                continue
+            if not match.group(0).rstrip().endswith("</parameter>"):
+                stopped_in = name
+                continue
+            taken[name] = text.strip()
+    if not taken:
+        return args
+    logger.warning(
+        "A call carried %d field(s) written in tag form inside another; taken apart%s",
+        len(taken), f", stopped in `{stopped_in}`" if stopped_in else "",
+    )
+    merged = {**args, **taken}
+    if stopped_in:
+        merged[CUT_OFF] = stopped_in
+    return merged
 
 
 def _joined_to_what_was_kept(call: dict[str, Any], key: tuple[str, str, str] | None = None) -> None:

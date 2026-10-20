@@ -369,6 +369,8 @@ test that fails on the old code:
   LF.107 (TS2613, a default import of a named-only module, is kept) at 23:20, no rewind.
   **00:15 JST 2026-10-21: run-b7a20bad failed** (4 attempts, acceptance 0/31, reached the product only in the last
   round); with LF.91-LF.107 deployed into it, it was a findings run. Gate run 2 starts on 5c19b81 next.
+  **Gate run 2 = run-d48f049e** (00:18 JST); LF.108 (fields written in tag form taken apart) found at 00:29, rewound
+  to `principal_architect` - inside its first 40 minutes, so it still measures one version from there.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

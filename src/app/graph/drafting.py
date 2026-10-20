@@ -45,13 +45,49 @@ def the_content_in(reply: str) -> str:
     return stripped + "\n" if stripped else ""
 
 
+#: One line of a file plan: its indent, an optional list marker, then its first word.
+_PLAN_LINE = re.compile(r"^(?P<indent>[ \t]*)(?:[-*+]|\d+[.)])?[ \t]*(?P<head>\S+)")
+#: What a path is made of, once its markup is stripped.
+_PATH_CHARACTERS = re.compile(r"[\w./@+-]+")
+
+
 def planned_files(specification: Any) -> list[str]:
-    """The paths the specification's file plan names, in its order."""
+    """The paths the specification's file plan names, in its order.
+
+    An entry is `path: purpose`, `path - purpose`, or a list item
+    (``- **`path`** - purpose``). A directory entry (`pkg/services/`) heads the
+    bare names indented under it, in the same entry or the ones after it; a
+    line that names no path - a heading such as "Backend source code" - names
+    no file, and ends the directory above it.
+
+    Measured on one gate run: every entry was a list item, so the first word
+    of each was its `-`, and the plan read as its five headings ("Root-level",
+    "Frontend", ...). The work orders made from it held none of the product's
+    files, and three services listed only under their directory were given
+    to nobody - three re-plans of the lead.
+    """
     found: list[str] = []
+    directories: list[tuple[int, str]] = []
     for entry in getattr(specification, "file_plan", None) or []:
-        head = str(entry).strip().split(" ", 1)[0].strip("`*-:")
-        if head and head not in found:
-            found.append(head)
+        for line in str(entry).expandtabs(4).splitlines():
+            match = _PLAN_LINE.match(line)
+            if match is None:
+                continue
+            indent = len(match.group("indent"))
+            while directories and directories[-1][0] >= indent:
+                directories.pop()
+            raw = match.group("head")
+            head = raw.strip("`*:,;")
+            if not _PATH_CHARACTERS.fullmatch(head) or not ("/" in head or "." in head or "`" in raw):
+                continue
+            above = directories[-1][1] if directories else ""
+            if above and not head.startswith(above):
+                head = above + head.lstrip("./")
+            if head.endswith("/"):
+                directories.append((indent, head))
+                continue
+            if head not in found:
+                found.append(head)
     return found
 
 

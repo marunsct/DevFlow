@@ -346,6 +346,8 @@ test that fails on the old code:
   the case for EF.11/EF.12. **Clean gate run 1 = run-b7a20bad** (`tests/brief_medium.md`, `DELIVERY=fast
   FRONTIER=false`), started 18:00 JST on e6a86dee; gate run 2 follows on the same code, then `kpi_ledger.py compare`.
   LF.91 (a UI-only fix, the app alone redeployed at 18:15 JST) went in during it; the owner counts it as clean.
+  LF.92 (the file plan read as its headings) was found at 18:45 JST; owner: pause, fix, deploy, rewind - rewound
+  to `technical_lead` at about 18:55 JST, so its fast work orders are made from the real file plan.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

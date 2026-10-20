@@ -41,7 +41,7 @@ from app.agents.text_tool_calls import build_text_tool_call_middleware
 from app.observability.transcript import build_transcript_middleware
 from app.agents.environment_contract import build_environment_contract_middleware
 from app.agents.workspace_digest import build_workspace_digest_middleware
-from app.agents.compaction import RequestKeepingSummarization
+from app.agents.compaction import KEPT_TAIL_SHARE, RequestKeepingSummarization
 from app.agents.project_memory import build_project_memory_middleware
 from app.plugins.middleware import build_plugin_instructions_middleware
 from app.agents.line_batches import build_line_batch_middleware
@@ -399,6 +399,7 @@ def _compaction_middleware(agent_name: str, model: Any = None) -> list:
                 backend=build_context_backend(agent_name),
                 trigger=("tokens", policy.trigger_tokens),
                 keep=("messages", policy.keep_recent_messages),
+                most_kept_tokens=int(policy.trigger_tokens * KEPT_TAIL_SHARE),
                 trim_tokens_to_summarize=policy.trim_tokens_to_summarize,
                 # Shorten large tool-call arguments in older messages before
                 # resorting to summarisation. Left unset - which it was - the

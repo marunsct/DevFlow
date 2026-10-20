@@ -55,6 +55,11 @@ MOST_CARRIED_CHARACTERS = 48_000
 #: (the summariser's own overflow fallback).
 NEW_MESSAGES_BEFORE_COMPACTING_AGAIN = 8
 
+#: The kept tail's ceiling, as a share of the compaction trigger (`role_agent`).
+KEPT_TAIL_SHARE = 0.15
+#: Messages a compaction always leaves whole.
+MOST_KEPT_FEWEST = 2
+
 _THE_WORK_SO_FAR = "What follows is the latest of this stage's work, to be summarised."
 
 
@@ -102,8 +107,11 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         # second summariser beside the default one.
         return "SummarizationMiddleware"
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, most_kept_tokens: int | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        # The most of the conversation a compaction leaves whole (see
+        # `_determine_cutoff_index`); None keeps the message count alone.
+        self._most_kept_tokens = most_kept_tokens
         # Set while one summary is made, read when its message is built: the
         # two run in turn within one model call.
         self._kept: tuple[str, list[str]] | None = None
@@ -152,6 +160,31 @@ class RequestKeepingSummarization(SummarizationMiddleware):
             rest, max_tokens=room, token_counter=self.token_counter, strategy="last", allow_partial=True,
         )
         return [opening, *latest]
+
+    def _determine_cutoff_index(self, messages: list[AnyMessage]) -> int:
+        """Where the summarised part ends: the kept tail as configured, cut to `most_kept_tokens`.
+
+        The tail is kept by count, and a count of messages is no measure of
+        their size. Measured live: a fix stage's last fifteen messages held three
+        file reads, the request after each compaction was still at or above the
+        trigger - the project memory and the request are re-sent whole and only
+        the conversation can shrink - and it compacted eight times in 26
+        minutes, re-reading the same files after each. Cut only before a model
+        message, so no tool call is parted from its result, and keep at least
+        `MOST_KEPT_FEWEST` messages.
+        """
+        cutoff = super()._determine_cutoff_index(messages)
+        cap = self._most_kept_tokens
+        if not cap or cutoff <= 0:
+            return cutoff
+        while len(messages) - cutoff > MOST_KEPT_FEWEST and self.token_counter(messages[cutoff:]) > cap:
+            moved = cutoff + 1
+            while moved < len(messages) and getattr(messages[moved], "type", None) == "tool":
+                moved += 1
+            if len(messages) - moved < MOST_KEPT_FEWEST:
+                break
+            cutoff = moved
+        return cutoff
 
     def _should_summarize(self, messages: list[AnyMessage], total_tokens: int) -> bool:
         if not super()._should_summarize(messages, total_tokens):
@@ -207,4 +240,4 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         )]
 
 
-__all__ = ["RequestKeepingSummarization", "KEPT_REQUEST", "FILES_WRITTEN"]
+__all__ = ["KEPT_TAIL_SHARE", "RequestKeepingSummarization", "KEPT_REQUEST", "FILES_WRITTEN"]

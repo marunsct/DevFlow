@@ -211,3 +211,47 @@ def test_a_read_after_a_compaction_is_not_told_it_already_has_the_lines(tmp_path
 
     after = read()
     assert "already read" not in after and "same bytes" not in after and "value = 1" in after
+
+
+def _heavy_tail() -> list:
+    """A stage whose last reads are large: measured live, three test files read again after each compaction."""
+    messages = _conversation()
+    for n in range(3):
+        messages.append(AIMessage(content=f"Reading file {n}.", id=f"read-ai{n}", tool_calls=[{
+            "id": f"read{n}", "name": "read_file", "args": {"file_path": f"shop/tests/test_{n}.py"}}]))
+        messages.append(ToolMessage(content=("line of a test file\n" * 900), tool_call_id=f"read{n}", id=f"read-out{n}"))
+    return messages
+
+
+def test_a_compaction_leaves_a_tail_that_fits_its_ceiling(tmp_path):
+    """Measured live: the fifteen messages kept held three file reads, every compaction left the
+    request at or above its trigger, and a fix stage compacted eight times in 26 minutes."""
+    middleware = RequestKeepingSummarization(
+        _summariser(), backend=FilesystemBackend(root_dir=str(tmp_path)), trigger=("messages", 10),
+        keep=("messages", 8), trim_tokens_to_summarize=1_000, most_kept_tokens=6_000,
+    )
+    messages = _heavy_tail()
+
+    cutoff = middleware._determine_cutoff_index(messages)
+    kept = messages[cutoff:]
+
+    assert middleware.token_counter(kept) <= 6_000 or len(kept) <= 2
+    assert getattr(kept[0], "type", None) != "tool", "a tool result is never parted from its call"
+    assert cutoff > len(messages) - 8, "more is summarised than the count alone would"
+
+
+def test_without_a_ceiling_the_count_alone_decides(tmp_path):
+    middleware = _built(RequestKeepingSummarization, tmp_path)
+    messages = _heavy_tail()
+
+    assert middleware._determine_cutoff_index(messages) == middleware._lc_helper._determine_cutoff_index(messages)
+
+
+def test_every_stage_s_compaction_has_the_ceiling():
+    from app.agents.compaction import KEPT_TAIL_SHARE
+    from app.agents.context_policy import ContextPolicy
+    from app.agents.role_agent import _compaction_middleware
+
+    (middleware,) = _compaction_middleware("specialist_testing")
+
+    assert middleware._most_kept_tokens == int(ContextPolicy.from_environment().trigger_tokens * KEPT_TAIL_SHARE)

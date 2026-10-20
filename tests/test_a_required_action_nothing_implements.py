@@ -472,3 +472,32 @@ class TestASuiteIsNotTheProduct:
             "</script></body></html>\n"
         )
         assert _problems(project) == []
+
+
+def test_an_action_built_in_a_server_language_is_built(tmp_path):
+    """Measured on one gate run: search, priority and status filters lived in a Python router,
+    the check read browser scripts alone, and a finished sprint was sent back as never having
+    built `filter`."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "product_intake.md").write_text(
+        "# Intake\n## Acceptance criteria\n- Users can add, delete and filter tasks\n")
+    (tmp_path / "shop" / "routers").mkdir(parents=True)
+    (tmp_path / "shop" / "routers" / "items.py").write_text(
+        "def add_item(body): ...\ndef delete_item(item_id): ...\n"
+        "def list_items(priority=None):\n    # Priority filter\n    return filter_by(priority)\n")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.ts").write_text("export const api = '/api';\n")
+
+    assert _problems(tmp_path) == []
+
+
+def test_a_component_s_markup_is_still_not_the_feature(tmp_path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "product_intake.md").write_text(
+        "# Intake\n## Acceptance criteria\n- Users can add, delete and filter tasks\n")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "List.vue").write_text(
+        '<template><button class="filter-btn">Filter</button></template>\n'
+        "<script>export function addItem() {}\nexport function deleteItem() {}</script>\n")
+
+    assert any("`filter`" in problem for problem in _problems(tmp_path))

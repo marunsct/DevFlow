@@ -141,6 +141,19 @@ _PRESENTATION = re.compile(
 )
 
 
+#: Files whose text is a program's behaviour, in every language the harness
+#: builds in - not markup, not styling. What a product does is said here, in
+#: whichever language does it: a filter a Python router applies is as much
+#: the product filtering as one a browser script applies.
+BEHAVIOUR_SUFFIXES = frozenset({
+    ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx",
+    ".py", ".rb", ".go", ".rs", ".java", ".kt", ".kts", ".scala", ".php", ".cs", ".fs",
+    ".swift", ".ex", ".exs", ".dart",
+})
+#: Files that hold markup and script together: only their `<script>` blocks are behaviour.
+SCRIPTED_MARKUP_SUFFIXES = frozenset({".html", ".htm", ".vue", ".svelte", ".astro"})
+
+
 def is_presentation(relative_path: str) -> bool:
     """Whether this file is styling or a static asset rather than behaviour."""
     return bool(_PRESENTATION.search(str(relative_path or "")))

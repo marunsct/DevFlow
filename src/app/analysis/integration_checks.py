@@ -26,7 +26,13 @@ it could not be scanned.
 
 from __future__ import annotations
 
-from app.analysis.file_kinds import SCRATCH_NAME, is_application, is_test
+from app.analysis.file_kinds import (
+    BEHAVIOUR_SUFFIXES,
+    SCRATCH_NAME,
+    SCRIPTED_MARKUP_SUFFIXES,
+    is_application,
+    is_test,
+)
 
 import json
 import re
@@ -5992,9 +5998,14 @@ def _a_required_action_nothing_implements(
         # filter buttons an alibi from the Playwright spec that located them.
         if is_test(str(path.relative_to(root))):
             continue
-        if suffix in _CLIENT_LOGIC_SUFFIXES:
+        # Behaviour in any language: it read browser scripts alone, and one
+        # gate run's product, whose search, priority and status filters live in
+        # a Python router, was sent back from a finished sprint as never having
+        # built `filter`. A component file counts by its `<script>`, as a page
+        # does, so a class name in its markup is still not a feature.
+        if suffix in BEHAVIOUR_SUFFIXES:
             pieces.append(_read(path))
-        elif suffix in {".html", ".htm"}:
+        elif suffix in SCRIPTED_MARKUP_SUFFIXES:
             pieces.extend(_INLINE_SCRIPT.findall(_read(path)))
     if not pieces:
         return []

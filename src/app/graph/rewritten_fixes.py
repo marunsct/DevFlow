@@ -56,6 +56,13 @@ def _only_warns(text: str, at: int) -> bool:
     return bool(_WARNS.search(line)) and not _FAILS.search(line)
 
 
+#: Where the run's last failing command begins in `what_failed`: whatever stage ran
+#: it, which need not be this defect's.
+THE_LAST_FAILING_COMMAND = "The last failing command printed:"
+#: How a defect raised from the unit tests' own failure begins (`workflow.UNIT_TESTS_FAIL`).
+_THE_UNIT_TESTS_FAIL = "The unit tests fail."
+
+
 def what_failed(defect: Any, repo_root: str | Path, last_failure: Any = None) -> str:
     """What the defect's failing tests and last failing command printed, as one text."""
     parts: list[str] = []
@@ -79,18 +86,15 @@ def what_failed(defect: Any, repo_root: str | Path, last_failure: Any = None) ->
     if isinstance(last_failure, dict):
         printed = "\n".join(str(last_failure.get(k) or "") for k in ("command", "stdout", "stderr")).strip()
         if printed:
-            parts.append(f"The last failing command printed:\n{printed}")
+            parts.append(f"{THE_LAST_FAILING_COMMAND}\n{printed}")
     return "\n\n".join(parts)[:MOST_FAILURE_CHARACTERS]
 
 
 def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Callable[[str], bool]) -> list[str]:
     """The workspace files a fix rewrites: the ones the defect names, then the ones its failure points at."""
-    from app.analysis.file_kinds import is_scratch
-    from app.tools.repository import IGNORED_DIRECTORIES
+    from app.acceptance.junit import tags_in
 
     root = Path(repo_root)
-    from app.acceptance.junit import tags_in
-    from app.analysis.file_kinds import classify_file
 
     # A criterion the acceptance suite judges is the product's, never a unit
     # test's: the suite runs the product. Measured live: a login criterion's
@@ -104,19 +108,49 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
     # A trace that prints absolute paths - most runtimes but Python's - names
     # the workspace's files under its root.
     failure = failure.replace(str(root).rstrip("/") + "/", "")
-    # In the order the failure names them, with a line or without - but not
-    # where a line only warns. Measured live: a service failed at start-up in
-    # the module that opens its database, the one product file its output
-    # named was a deprecation warning's, and the rewrite fixed that file.
-    mentioned = sorted(
-        (m.start(), m.group(1))
-        for pattern in (_AN_ERROR_LOCATION, _A_FILE_NAMED)
-        for m in pattern.finditer(failure)
-        if not _only_warns(failure, m.start())
-    )
-    named += [name.lstrip("./") for _, name in mentioned]
+    # The defect's own evidence first; the run's last failing command only when
+    # that names no file. Measured live: a page check's "the interface is not
+    # styled" was rewritten as its stylesheet and `tests/test_tasks.py` - named
+    # by another fixer's unit-test run, the run's last failure - the test file
+    # broke 17 tests, and the revert took the stylesheet with it.
+    own, _, last = failure.partition(THE_LAST_FAILING_COMMAND)
+    # A test is rewritten from failure text only for a defect the unit tests
+    # themselves raised, whose test may be the thing that is wrong; any defect
+    # still rewrites a test it names as its own.
+    tests_from_the_text = str(getattr(defect, "description", "") or "").startswith(_THE_UNIT_TESTS_FAIL)
+
+    def mentioned_in(text: str) -> list[str]:
+        # In the order the text names them, with a line or without - but not
+        # where a line only warns. Measured live: a service failed at start-up
+        # in the module that opens its database, the one product file its
+        # output named was a deprecation warning's, and the rewrite fixed that.
+        return [name.lstrip("./") for _, name in sorted(
+            (m.start(), m.group(1))
+            for pattern in (_AN_ERROR_LOCATION, _A_FILE_NAMED)
+            for m in pattern.finditer(text)
+            if not _only_warns(text, m.start())
+        )]
+
+    def files(mentioned: list[str]) -> list[str]:
+        return _the_files(root, named, mentioned, judged_by_the_suite, tests_from_the_text, may_write)
+
+    found = files(mentioned_in(own))
+    if last and len(found) == len(files([])):
+        found = files(mentioned_in(own) + mentioned_in(last))
+    return found
+
+
+def _the_files(
+    root: Path, named: list[str], mentioned: list[str], judged_by_the_suite: bool, tests_from_the_text: bool,
+    may_write: Callable[[str], bool],
+) -> list[str]:
+    """The workspace files to rewrite: those the defect names, then those its failure text mentions."""
+    from app.analysis.file_kinds import classify_file, is_scratch
+    from app.tools.repository import IGNORED_DIRECTORIES
+
+    own = set(named)
     found: list[str] = []
-    for name in dict.fromkeys(named):
+    for name in dict.fromkeys([*named, *mentioned]):
         candidates = [root / name, *root.glob(f"*/{name}")]
         target = next((c for c in candidates if c.is_file()), None)
         if target is None or any(part in IGNORED_DIRECTORIES for part in target.parts):
@@ -126,7 +160,10 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
         # one fixer's `tmp-check-*.py` failed, its traceback reached two later
         # fixes as what failed, and each rewrote the probe and was recorded
         # as having fixed its defect.
-        if is_scratch(relative) or (judged_by_the_suite and classify_file(relative) == "test"):
+        is_a_test = classify_file(relative) == "test"
+        if is_scratch(relative) or (judged_by_the_suite and is_a_test):
+            continue
+        if is_a_test and name not in own and not tests_from_the_text:
             continue
         if relative not in found and may_write(relative):
             found.append(relative)

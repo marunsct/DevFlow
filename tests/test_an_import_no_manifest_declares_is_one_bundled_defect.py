@@ -255,3 +255,28 @@ def test_a_cause_leads_the_symptoms_it_is_merged_with() -> None:
     assert merged[0].description.startswith(dependency_drift.OPENING)
     assert merged[0].affected_files[0] == "requirements.txt"
 
+
+def test_a_symptom_does_not_join_causes_in_different_files() -> None:
+    """Measured on one gate run: unknown imports in five files and the undeclared packages, merged under one failing test."""
+    from app.agents.specialists import ReportedDefect
+    from app.graph.workflow import _one_defect_per_cause
+
+    def finding(path: str, name: str) -> ReportedDefect:
+        return ReportedDefect(
+            description=f"shop/{path} line 3: \"{name}\" is unknown import symbol - this fails when the code runs.",
+            severity="major", reproduction_steps="Read it.", expected_behavior="It resolves.",
+            actual_behavior="unknown import symbol", affected_files=[f"shop/{path}"], owner="backend",
+            source="language service")
+
+    symptom = ReportedDefect(
+        description="`shop/acceptance/orders.spec.js` fails. Its output ends: cannot import \"get_db\", \"tag_response\", \"tag_create\"",
+        severity="major", reproduction_steps="Run the suite.", expected_behavior="It passes.",
+        actual_behavior="ImportError", affected_files=[], owner="backend")
+    auth = finding("routers/auth.py", "get_db")
+    schemas = [finding("schemas/__init__.py", "tag_response"), finding("schemas/__init__.py", "tag_create")]
+
+    merged = _one_defect_per_cause([symptom, auth, *schemas])
+
+    assert len(merged) == 2
+    assert {tuple(d.affected_files) for d in merged} == {("shop/routers/auth.py",), ("shop/schemas/__init__.py",)}
+

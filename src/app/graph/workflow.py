@@ -4725,10 +4725,18 @@ def _the_same_cause(one: Any, other: Any) -> bool:
 
 
 def _names_a_cause(defect: Any) -> bool:
-    """Whether the defect is a check's finding of a cause, not a symptom of one."""
+    """Whether the defect is a check's finding of a cause, not a symptom of one.
+
+    The language service's findings (a name at a file and line, a package no
+    manifest declares) are certain and say where the change is; a failing
+    test only says something is wrong.
+    """
     from app.analysis import dependency_drift
 
-    return str(getattr(defect, "description", "") or "").startswith(dependency_drift.OPENING)
+    return (
+        str(getattr(defect, "source", "") or "") == "language service"
+        or str(getattr(defect, "description", "") or "").startswith(dependency_drift.OPENING)
+    )
 
 
 def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
@@ -4752,10 +4760,29 @@ def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
             index = parent[index]
         return index
 
+    # The files of the causes each group holds. A symptom that names no file
+    # joins any cause it shares a name with, and so joined every cause to
+    # every other: measured on one gate run, a dozen unknown imports in five
+    # files and the undeclared packages were merged under one failing test,
+    # one fixer rewrote four files, and each round met the next import. Two
+    # causes share a group only when they share a file.
+    caused: dict[int, set[str]] = {
+        i: {PurePosixPath(str(f)).name.lower() for f in getattr(d, "affected_files", None) or []}
+        for i, d in enumerate(reported) if _names_a_cause(d)
+    }
+    caused_here = {i: set(files) for i, files in caused.items()}
     for i in range(len(reported)):
         for j in range(i + 1, len(reported)):
-            if root(i) != root(j) and _the_same_cause(reported[i], reported[j]):
-                parent[root(j)] = root(i)
+            ri, rj = root(i), root(j)
+            # Two causes in one file are one fixer's: it rewrites that file.
+            in_one_file = i in caused_here and j in caused_here and bool(caused_here[i] & caused_here[j])
+            if ri == rj or not (in_one_file or _the_same_cause(reported[i], reported[j])):
+                continue
+            if ri in caused and rj in caused and not caused[ri] & caused[rj]:
+                continue
+            parent[rj] = ri
+            if rj in caused:
+                caused[ri] = caused.get(ri, set()) | caused.pop(rj)
     groups: dict[int, list[int]] = {}
     for index in range(len(reported)):
         groups.setdefault(root(index), []).append(index)

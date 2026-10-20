@@ -159,3 +159,26 @@ def test_the_same_check_s_defect_from_two_rounds_is_shown_once() -> None:
 
     assert section.count("The unit tests fail.") == 1 and "Raised by an earlier round" not in section
     assert "SyntaxError: 'await' outside async function" in section
+
+
+def test_the_failure_is_named_when_another_runner_s_output_follows_it() -> None:
+    """Measured on one gate run: the project's command ran the page's tests, then the service's; the
+    defect's tail began at the page runner's timing line, and the failing test and its error were in none of it."""
+    from types import SimpleNamespace
+
+    from app.graph.workflow import UNIT_FAILURE_TAIL_CHARACTERS, _the_unit_tests_fail
+
+    page = (
+        " FAIL  |page| tests/client/app.test.tsx > App > loads\n"
+        "Error: Invalid Chai property: toBeVisible\n"
+        + "<div data-testid=\"app-root\">App loaded</div>\n" * 40
+        + " Test Files  1 failed (1)\n Duration  1.34s (transform 19ms, collect 55ms, tests 1.01s)\n"
+    )
+    service = "tests/test_main.py::test_health PASSED\n" * 200 + "200 passed in 2.1s\n"
+    milestone = SimpleNamespace(delegated_tasks=[SimpleNamespace(specialist_role="ui_ux")])
+
+    defect = _the_unit_tests_fail(milestone, page + service)
+
+    assert len(page + service) > UNIT_FAILURE_TAIL_CHARACTERS
+    assert "Invalid Chai property: toBeVisible" in defect.description
+    assert "Invalid Chai property: toBeVisible" in defect.actual_behavior

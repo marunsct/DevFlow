@@ -380,6 +380,7 @@ test that fails on the old code:
   03:18 JST: the product starts, 31 of 34 tests pass. LF.115 (a failed install raised in every round) at 03:45.
   04:08 JST: 33 of 34. LF.116 (lost replies counted across a compaction) at 04:40, no rewind.
   LF.117 (a failed test's own source is read for test bugs) at 05:25, no rewind.
+  06:42 JST: 34 of 34. LF.118 (a unit failure's cause from the whole run) at 06:55; attempt 3 re-planning.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

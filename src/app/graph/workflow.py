@@ -2739,9 +2739,14 @@ def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
     roles = [str(getattr(t, "specialist_role", "")) for t in (getattr(milestone, "delegated_tasks", None) or [])]
     owner = next((role for role in roles if role and role not in {"testing", "documentation"}), "testing")
     tail = str(output or "").strip()[-UNIT_FAILURE_TAIL_CHARACTERS:]
-    causes = _what_the_failure_says(tail)
+    # From the whole run, not its tail: measured on one gate run, the project's
+    # command ran the page's tests and then the service's, the tail was the
+    # service's passing output from the page runner's timing line on, and the
+    # failing test and its error - before it - were in no defect.
+    causes = _what_the_failure_says(str(output or ""))
     return ReportedDefect(
-        description=UNIT_TESTS_FAIL + " The runner's output ends:\n" + (tail or "(no output)"),
+        description=UNIT_TESTS_FAIL + (f" It says:\n{causes}\n" if causes else "")
+        + " The runner's output ends:\n" + (tail or "(no output)"),
         severity="major",
         reproduction_steps="Run the project's unit test command.",
         expected_behavior="Every unit test passes.",

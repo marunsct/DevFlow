@@ -82,6 +82,25 @@ def forget(root: str | Path | None, outer_thread_id: str, stage_name: str) -> No
             _write(root, data)
 
 
+def forget_every_stage(root: str | Path | None, outer_thread_id: str) -> None:
+    """Cross out every conversation this run wrote down: a rewind starts its stage as a new attempt.
+
+    Measured on one run: rewound to a review, with its workspace put back as it
+    was then - this file included, holding the note of the visit a deploy had
+    cut off before. The rewound visit read the note as its own cut-off, carried
+    on that old conversation, and never sent the request built on the new code
+    the rewind was made to run it on.
+    """
+    if not root:
+        return
+    prefix = f"{outer_thread_id}|"
+    with _LOCK:
+        data = _read(root)
+        kept = {key: note for key, note in data.items() if not key.startswith(prefix)}
+        if len(kept) != len(data):
+            _write(root, kept)
+
+
 def cut_off(root: str | Path | None, outer_thread_id: str, stage_name: str, agent: Any) -> tuple[str, bool] | None:
     """(the conversation a stopped worker cut off, whether it had already finished), or None.
 

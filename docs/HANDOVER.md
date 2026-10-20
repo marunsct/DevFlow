@@ -392,6 +392,7 @@ test that fails on the old code:
   LF.121 (a suite file left out of a request points at the memory) deployed into it at about 08:00 JST.
   LF.122 (every direct model call recorded), LF.123 (the restart sweep's grace 120 -> 60 s) and LF.124 (a brief
   feature the specification defers goes to the architecture review) at about 08:25 JST; rewound to `architecture_review`.
+  LF.125 (a rewind crosses out the stage notes the restored files hold) at about 08:35 JST; rewound to it again.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

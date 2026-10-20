@@ -260,3 +260,28 @@ def test_a_rewind_reads_its_one_checkpoint_not_the_history():
         pass
     else:
         raise AssertionError("a checkpoint the run does not have is refused")
+
+
+def test_a_rewound_stage_starts_its_own_conversation_not_one_a_note_left(tmp_path):
+    """Measured on one run: the files a rewind put back held the note of a visit a deploy
+    had cut off, and the rewound review carried that conversation on instead of sending
+    the request built on the new code."""
+    import json
+    from types import SimpleNamespace
+
+    from app.graph import abandoned_threads
+    from app.graph.workflow import rewind_to
+
+    notes = tmp_path / abandoned_threads.FILE
+    notes.parent.mkdir(parents=True)
+    notes.write_text(json.dumps({
+        "thread|architecture_review": {"thread": "thread:architecture_review:old", "process": "gone-1"},
+        "other|architecture_review": {"thread": "other:architecture_review:x", "process": "gone-2"},
+    }))
+    target = SimpleNamespace(config={"configurable": {"checkpoint_id": "c7"}}, next=("architecture_review",),
+                             created_at="2026-10-20T22:45:51+00:00")
+    graph = SimpleNamespace(get_state=lambda config: target, update_state=lambda config, values: None)
+
+    rewind_to(graph, "thread", "c7", repo_root=str(tmp_path))
+
+    assert list(abandoned_threads._read(tmp_path)) == ["other|architecture_review"]

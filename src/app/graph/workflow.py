@@ -11494,6 +11494,11 @@ def rewind_to(graph: Any, thread_id: str, checkpoint_id: str, repo_root: str | N
         ]
         if taken:
             restored = restore_snapshot(repo_root, taken[0])
+        # A rewound stage is a new attempt, never a conversation a stopped
+        # worker cut off - whatever notes the files put back hold.
+        from app.graph import abandoned_threads
+
+        abandoned_threads.forget_every_stage(repo_root, thread_id)
     graph.update_state(target.config, {"error": None})
     logger.info(
         "Rewound to %s; the workspace %s", node,

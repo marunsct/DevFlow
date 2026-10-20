@@ -194,3 +194,13 @@ def test_a_refused_resume_for_an_absent_model_server_is_waited_on_not_dropped(mo
 
 class RunConflict(Exception):
     """The runner's own refusal, by its name: importing the runner needs the server's secrets."""
+
+
+def test_a_recovered_run_waits_long_enough_for_a_cold_start():
+    """Measured on 2026-10-20: the host lost power, the stack was back within minutes, the
+    local model server answered only after the 15 minutes this waited, and the run was left
+    failed until a person resumed it. A try is one readiness call every `MODEL_RETRY_SECONDS`."""
+    from app.server import manage
+
+    assert manage.MODEL_WAIT_SECONDS >= 60 * 60
+    assert manage.MODEL_RETRY_SECONDS <= 60

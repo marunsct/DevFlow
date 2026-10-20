@@ -346,6 +346,10 @@ test that fails on the old code:
   a special case in generic code, and a fix for one stack must not hinder another: check it against the
   others before it ships (LF.70).
 - **Owner, 2026-10-20: the routine audit runs every 10 minutes** (cron `3,13,23,33,43,53 * * * *`).
+  After a restart of this session the crons are gone and must be re-created: the 10-minute audit and the two
+  90-minute deep analyses (`13 0,3,6,9,12,15,18,21` and `43 1,4,7,10,13,16,19,22`). After a host restart check
+  `loop.sh status`: a run recovery could not resume is `failed` with "the worker ... stopped" - resume it with
+  `POST /api/runs/<id>/resume` once `loop.sh ready` says ALL READY.
 - **Owner, 2026-10-20: the stages reach what is newer than the model.** The `searxng` service (private,
   compose network only; `SEARXNG_SECRET` in `.env`) backs `search_the_web` / `read_web_page`; a library's official
   remote MCP server is found in the MCP Registry and attached read-only (LF.72, LF.73). Package MCP servers are not

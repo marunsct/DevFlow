@@ -342,8 +342,12 @@ def resume_runs_a_restart_abandoned(run_ids: list[str]) -> int:
     return queued
 
 
-#: How long, and how often, a recovered run waits for its model server.
-MODEL_WAIT_SECONDS = 15 * 60
+#: How long, and how often, a recovered run waits for its model server. Long
+#: enough for a cold start: measured on 2026-10-20, the power to the host was
+#: cut, the stack was back within minutes, the local model server answered only
+#: after the 15 minutes this used to wait, and the run was left failed until a
+#: person resumed it. A try is one readiness call every `MODEL_RETRY_SECONDS`.
+MODEL_WAIT_SECONDS = 2 * 60 * 60
 MODEL_RETRY_SECONDS = 30
 
 

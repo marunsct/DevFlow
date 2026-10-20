@@ -2866,6 +2866,14 @@ def _the_defect_s_tests_in(root: str, label: str, defect: Any) -> bool | None:
         snapshot = ci.load(root, "latest")
         if snapshot is None or snapshot.label != label:
             return None
+        from app.graph.acceptance_nodes import THE_PRODUCT_DOES_NOT_START
+
+        if str(getattr(defect, "description", "") or "").startswith(THE_PRODUCT_DOES_NOT_START):
+            # Whether the suite reached the product, and nothing else: the unit
+            # tests say nothing about how the suite starts it.
+            if not snapshot.acceptance_ran:
+                return None
+            return bool(snapshot.acceptance) and not snapshot.problem
         tags = {t for t in tags_in(str(getattr(defect, "description", "") or "")) if t.startswith(("AC-", "CR-"))}
         if tags:
             mine = [outcome for key, outcome in snapshot.acceptance.items() if tags & set(tags_in(key))]
@@ -5456,11 +5464,39 @@ def _a_page_check_that_passes_now(state: Any, defect: Any, *, measured_since: bo
     return "" if still or not kind else "the page check no longer finds it"
 
 
+def _the_product_starts_now(root: str, defect: Any) -> str:
+    """Why a "the product does not start" defect is resolved by the suite's last run, or "".
+
+    The suite reached the product: some test ran against it, and no start
+    failure was recorded. A start defect names no criterion and no unit test,
+    so nothing else closes it. Measured on one gate run: round 1's suite
+    passed 47 of 62 tests, and round 0's start defect stayed open - its fixer
+    spent 20 minutes on it and left it open because the unit tests, which say
+    nothing about the start, failed for another reason.
+    """
+    try:
+        from app.acceptance import suite as acceptance_suite
+        from app.graph.acceptance_nodes import THE_PRODUCT_DOES_NOT_START
+
+        if not str(getattr(defect, "description", "") or "").startswith(THE_PRODUCT_DOES_NOT_START):
+            return ""
+        last = acceptance_suite.last_result(root)
+        reached = int(last.get("passed") or 0) + int(last.get("failed") or 0)
+        if str(last.get("problem") or "").strip() or reached <= 0:
+            return ""
+        return f"the product starts: the suite's last run reached it ({last.get('passed') or 0} of {reached} tests passed)"
+    except Exception:  # noqa: BLE001 - a check that cannot answer says nothing
+        return ""
+
+
 def _resolved_by_a_measurement(state: Any, defect: Any, *, measured_since: bool = True) -> tuple[str, str]:
     """(what proves it, why it is resolved) for a defect a measurement shows resolved; else ("", "")."""
     regressed = _a_regressed_test_passing_since(state, defect)
     if regressed:
         return regressed, f"{regressed} passes again"
+    started = _the_product_starts_now(state["repository"].root_path, defect)
+    if started:
+        return "the locked acceptance suite's run", started
     page = _a_page_check_that_passes_now(state, defect, measured_since=measured_since)
     if page:
         return "the harness's page check", page

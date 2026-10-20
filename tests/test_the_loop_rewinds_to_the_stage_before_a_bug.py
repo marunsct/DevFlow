@@ -119,3 +119,23 @@ def test_the_defect_queue_shows_only_the_run_as_it_stands(tmp_path):
 
     assert "the run as it stands" in shown and "discarded by the rewind" not in shown
     assert "attempt 2" not in shown
+
+
+def test_a_rewound_run_s_wall_clock_leaves_out_the_time_the_rewind_discarded():
+    """The records left still span the abandoned branch - the first before it, the last
+    after - so the wall clock counted its hours: one findings run read 138 minutes of
+    "neither model nor tool" after a rewind that discarded 89 of them."""
+    from app.observability.run_kpis import discarded_seconds, kpis
+
+    records = [
+        *_call("2026-10-20T01:00:00+00:00", "test_round_0"),
+        *_call("2026-10-20T02:00:00+00:00", "defect_fix_1_0"),
+        {"at": "2026-10-20T03:00:00+00:00", "stage": "test_and_triage", "kind": "rewound",
+         "point_at": "2026-10-20T01:30:00+00:00"},
+        *_call("2026-10-20T03:10:00+00:00", "test_round_0"),
+    ]
+
+    assert discarded_seconds(records) == 90 * 60
+    measured = kpis(records)
+    assert abs(measured["wall_minutes"] - 40) < 0.5, measured["wall_minutes"]
+    assert measured["orphan_gap_minutes"] < 90

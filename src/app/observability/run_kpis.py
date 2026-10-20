@@ -93,9 +93,28 @@ def live_branch(records: list[dict]) -> list[dict]:
     ]
 
 
+def discarded_seconds(records: list[dict]) -> float:
+    """How much of the run's span the rewinds discarded: from each point gone back to, to the rewind.
+
+    The records left (`live_branch`) still span that time - the first is before
+    it, the last after - so a wall clock read off them counted the abandoned
+    branch's hours as the run's own. Overlapping rewinds are counted once.
+    """
+    cuts = sorted((_seconds(r["point_at"]), _seconds(r["at"])) for r in records
+                  if r.get("kind") == "rewound" and r.get("point_at") and r.get("at"))
+    total, reach = 0.0, float("-inf")
+    for start, end in cuts:
+        start = max(start, reach)
+        if end > start:
+            total += end - start
+        reach = max(reach, end)
+    return total
+
+
 def kpis(records: list[dict]) -> dict:
     """The run's KPIs from its transcript records, as the run stands (see `live_branch`)."""
     rewinds = sum(1 for r in records if r.get("kind") == "rewound")
+    discarded = discarded_seconds(records)
     records = live_branch(records)
     times = [_seconds(r["at"]) for r in records if r.get("at")]
     calls: dict[str, dict] = {}
@@ -208,11 +227,12 @@ def kpis(records: list[dict]) -> dict:
                     per_stage[stage]["identical_calls"] += 1
         elif kind == "defect":
             defects[str(r.get("event") or "")] += 1
-    wall = (max(times) - min(times)) if times else 0.0
+    wall = max((max(times) - min(times)) - discarded, 0.0) if times else 0.0
     model_busy = _busy(model_iv)
     ordered = sorted(times)
     gaps = [b - a for a, b in zip(ordered, ordered[1:])]
-    orphan = sum(g for g in gaps if g > ORPHAN_GAP_SECONDS)
+    # A rewind's own gap is discarded time, already taken off the wall.
+    orphan = max(sum(g for g in gaps if g > ORPHAN_GAP_SECONDS) - discarded, 0.0)
     effective_input = tokens["input"] - tokens["cached"]
     return {
         "wall_minutes": round(wall / 60, 1),

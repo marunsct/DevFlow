@@ -62,6 +62,15 @@ def analyse(prefix):
             recs.append(json.loads(line))
         except Exception:
             continue
+    discarded = 0.0
+    try:
+        # The time a rewind discarded (`run_kpis.discarded_seconds`); apart from
+        # the records below, so a worker deployed before it still filters those.
+        from app.observability.run_kpis import discarded_seconds
+
+        discarded = discarded_seconds(recs)
+    except Exception:  # noqa: BLE001 - the wall as it spans
+        pass
     try:
         # The run as it stands: what a rewind discarded is left out (`run_kpis.live_branch`).
         from app.observability.run_kpis import live_branch
@@ -70,7 +79,7 @@ def analyse(prefix):
     except Exception:  # noqa: BLE001 - measured whole, as before
         pass
     times = [ts(r["at"]) for r in recs if r.get("at")]
-    wall = max(times) - min(times)
+    wall = max(max(times) - min(times) - discarded, 1.0)
     open_req = {}
     model_iv, tool_iv = [], []
     calls = {}

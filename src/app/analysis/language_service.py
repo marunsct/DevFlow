@@ -548,6 +548,59 @@ def python_underlined_together(project: Path, targets: list[Path]) -> dict[Path,
     return found
 
 
+_FROM_IMPORT = __import__("re").compile(r"^\s*from\s+(\.*[\w.]*)\s+import\b")
+
+
+def _python_module_defines(project: Path, importer: Path, line: str) -> tuple[Path, list[str]] | None:
+    """The module a `from M import ...` line reads, and the top-level names it defines; None when not found here."""
+    import ast
+
+    found = _FROM_IMPORT.match(line or "")
+    if found is None:
+        return None
+    spec = found.group(1)
+    dots = len(spec) - len(spec.lstrip("."))
+    parts = [part for part in spec.lstrip(".").split(".") if part]
+    base = importer.parent
+    for _ in range(max(0, dots - 1)):
+        base = base.parent
+    for start in ([base] if dots else [project, project / "src"]):
+        stem = start.joinpath(*parts) if parts else start
+        for candidate in (stem.with_suffix(".py"), stem / "__init__.py"):
+            if candidate.is_file():
+                try:
+                    tree = ast.parse(candidate.read_text(encoding="utf-8", errors="replace"))
+                except SyntaxError:
+                    return candidate, []
+                names: list[str] = []
+                for node in tree.body:
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                        names.append(node.name)
+                    elif isinstance(node, ast.Assign):
+                        names += [t.id for t in node.targets if isinstance(t, ast.Name)]
+                    elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                        names.append(node.target.id)
+                    elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                        names += [(a.asname or a.name).split(".")[0] for a in node.names if a.name != "*"]
+                return candidate, sorted(dict.fromkeys(names))
+    return None
+
+
+#: What a module defines, by the importer's suffix: `(project, importer, import line) -> (module, names)`.
+_MODULE_DEFINES: dict[str, Callable[[Path, Path, str], tuple[Path, list[str]] | None]] = {
+    ".py": _python_module_defines,
+}
+
+
+def what_the_module_defines(project: Path, importer: Path, line: str) -> tuple[Path, list[str]] | None:
+    """The module an import line reads and the names it defines, for a language that can say; else None."""
+    reader = _MODULE_DEFINES.get(importer.suffix.lower())
+    try:
+        return reader(project, importer, line) if reader else None
+    except Exception:  # noqa: BLE001 - a finding goes out as it was
+        return None
+
+
 #: The service that reads each suffix, as a finding names it; the rest are the TypeScript service's.
 _SERVICE_NAMES = {".py": "Pyright"}
 #: Suffixes whose service reads the whole project in one run, so a batch of
@@ -611,5 +664,5 @@ _READ_TOGETHER[".py"] = lambda project, targets: python_underlined_together(proj
 
 __all__ = [
     "BOTH", "BROWSER", "NODE", "SUFFIXES", "Underlined", "python_underlined", "python_underlined_together", "runs_in",
-    "service_name", "underlined", "underlined_any", "underlined_in",
+    "service_name", "underlined", "underlined_any", "underlined_in", "what_the_module_defines",
 ]

@@ -261,11 +261,13 @@ def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any,
                diagnostics: list[str] | None = None) -> str:
     from langchain_core.messages import HumanMessage, SystemMessage
 
+    from app.observability.direct_calls import config_for_this_run
+
     reply = model.invoke([
         SystemMessage(content="You write source files for a software product from its specification. "
                               "You reply with one file's complete content in one fenced code block."),
         HumanMessage(content=draft_request(root, path, task, specification, stack, diagnostics)),
-    ])
+    ], **config_for_this_run("drafting"))
     return the_content_in(getattr(reply, "content", "") if not isinstance(reply, str) else reply)
 
 
@@ -359,8 +361,10 @@ def draft_work_orders(
             logger.info("Draft of %s left to the agent loop: %s", path, str(error)[:200])
             return index, path, False
 
+    from app.observability.direct_calls import mapped_in_this_context
+
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        results = list(pool.map(run, jobs))
+        results = mapped_in_this_context(pool, run, jobs)
     if diagnose is not None:
         _repaired_where_the_compiler_says(results, jobs, diagnose, model, root, repo_root, specification, stack, write)
     drafted: dict[int, Any] = {}

@@ -100,3 +100,26 @@ def test_the_cap_counts_files_so_one_file_s_findings_leave_room_for_the_rest(tmp
 
     assert any("get_db" in d.description for d in found)
     assert sum("Schema" in d.description for d in found) == engineering.MOST_UNDERLINED_DEFECTS + 4
+
+
+def test_a_name_several_files_import_from_a_module_that_lacks_it_names_the_module(tmp_path, monkeypatch):
+    """Measured on one gate run: five routers imported `get_settings` from a settings module that defined
+    `Settings` and `settings`; three rounds rewrote the importers and never the module."""
+    names = ["shop/shop_pkg/routers/auth.py", "shop/shop_pkg/routers/tasks.py"]
+    _batch(tmp_path, monkeypatch, names)
+    (tmp_path / "shop/shop_pkg/__init__.py").write_text("")
+    (tmp_path / "shop/shop_pkg/config.py").write_text("class Settings:\n    pass\n\nsettings = Settings()\n")
+    for name in names:
+        (tmp_path / name).write_text("from shop_pkg.config import get_settings\n")
+    monkeypatch.setattr(service, "_pyright_diagnostics", lambda project: [
+        {"file": str(tmp_path / name), "rule": "reportAttributeAccessIssue", "severity": "error",
+         "message": '"get_settings" is unknown import symbol', "range": {"start": {"line": 0}}} for name in names
+    ], raising=False)
+    monkeypatch.setattr("app.tools.repository.pinned_project_directory", lambda root: "shop")
+
+    found = engineering.underlined_in_the_batch({}, str(tmp_path), "base")
+
+    assert len(found) == 2
+    for defect in found:
+        assert defect.affected_files[0] == "shop/shop_pkg/config.py"
+        assert "`Settings`, `settings`" in defect.expected_behavior and "2 file(s)" in defect.expected_behavior

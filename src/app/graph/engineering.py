@@ -263,6 +263,7 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
         key=lambda p: classify_file(p) != "application",
     )
     findings = underlined_in(root, files, project, MOST_FILES_UNDERLINED)
+    missing = _names_their_modules_lack(root, project, findings)
     defects = []
     for relative in files:
         grouped: dict[str, list[dict]] = {}
@@ -270,13 +271,23 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
             grouped.setdefault(finding["message"], []).append(finding)
         for message, where in grouped.items():
             lines = ", ".join(str(f["line"]) for f in where[:6])
+            module, defined, importers = missing.get((relative, message), ("", [], []))
+            expected = "Every name the code uses is defined or imported, and every import names something its module exports."
+            if module:
+                expected += (
+                    f" `{module}` defines {', '.join(f'`{n}`' for n in defined[:20]) or 'nothing at its top level'}; "
+                    f"{len(importers)} file(s) import this name from it ({', '.join(importers[:6])}): define it in "
+                    f"`{module}`, or import a name it defines."
+                )
             defects.append(ReportedDefect(
                 description=f"{relative} line {lines}: {message}{FAILS_WHEN_IT_RUNS}",
                 severity="major",
                 reproduction_steps=f"Read {relative} at line {lines}: `{where[0]['text']}`.",
-                expected_behavior="Every name the code uses is defined or imported, and every import names something its module exports.",
+                expected_behavior=expected,
                 actual_behavior=f"{message} ({service_name(relative)}, as an IDE would underline it)",
-                affected_files=[relative],
+                # The module first when several files import the name from it:
+                # one definition there fixes them all.
+                affected_files=[module, relative] if module and len(importers) > 1 else [relative],
                 owner=_owner_of(state, ""),
             ))
     defects.extend(_what_the_compiler_says(state, root, since, pinned or ""))
@@ -292,6 +303,39 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
         *[d for d in defects if not d.affected_files or d.affected_files[0] in kept_files],
         *_what_the_manifests_do_not_declare(state, root, since, pinned or ""),
     ]
+
+
+_UNKNOWN_IMPORT = re.compile(r'"([^"]+)" is unknown import symbol')
+
+
+def _names_their_modules_lack(root: str, project: Path | None, findings: dict[str, list[dict]]) -> dict:
+    """(file, message) -> (module, names it defines, files importing the name from it), for each unknown import.
+
+    Measured on one gate run: five routers imported `get_settings` from a
+    settings module that defined `Settings` and `settings`; each defect named
+    an importer, and three rounds of rewrites changed the importers and never
+    the module - one definition there.
+    """
+    from app.analysis.language_service import what_the_module_defines
+
+    base = project or Path(root)
+    seen: dict[tuple[str, str], tuple[str, list[str], list[str]]] = {}
+    importers: dict[tuple[str, str], list[str]] = {}
+    for relative, found in findings.items():
+        for finding in found or []:
+            name = _UNKNOWN_IMPORT.search(str(finding.get("message") or ""))
+            if name is None:
+                continue
+            answer = what_the_module_defines(base, Path(root) / relative, str(finding.get("text") or ""))
+            if answer is None:
+                continue
+            module = answer[0].relative_to(Path(root)).as_posix() if answer[0].is_relative_to(Path(root)) else str(answer[0])
+            key = (module, name.group(1))
+            importers.setdefault(key, [])
+            if relative not in importers[key]:
+                importers[key].append(relative)
+            seen[(relative, str(finding["message"]))] = (module, answer[1], importers[key])
+    return seen
 
 
 def _what_the_manifests_do_not_declare(state: Any, root: str, since: str, project: str) -> list[Any]:

@@ -23,6 +23,8 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
+from app.observability.direct_calls import config_for_this_run, mapped_in_this_context
+
 logger = logging.getLogger(__name__)
 
 #: Files one defect's fix rewrites at most.
@@ -253,7 +255,7 @@ def fix_by_rewriting(
                                           "one file's complete content in one fenced code block."),
                     HumanMessage(content=fix_request(root, path, defect, failure, specification, stack,
                                                      [f for f in files if f != path], diagnostics)),
-                ])
+                ], **config_for_this_run("defect_fix"))
                 content = the_content_in(getattr(reply, "content", reply) if not isinstance(reply, str) else reply)
                 if not content.strip():
                     continue
@@ -346,14 +348,14 @@ def fix_by_candidates(
                                       "one file's complete content in one fenced code block."),
                 HumanMessage(content=fix_request(root, path, defect, failure, specification, stack,
                                                  [f for f in files if f != path], [])),
-            ])
+            ], **config_for_this_run("defect_fix"))
             return index, path, the_content_in(getattr(reply, "content", reply) if not isinstance(reply, str) else reply)
         except Exception as error:  # noqa: BLE001 - one candidate fewer
             logger.info("A candidate rewrite of %s failed: %s", path, str(error)[:200])
             return index, path, ""
 
     with ThreadPoolExecutor(max_workers=max(1, candidates * len(files))) as pool:
-        written = list(pool.map(one, [(path, index) for index in range(candidates) for path in files]))
+        written = mapped_in_this_context(pool, one, [(path, index) for index in range(candidates) for path in files])
     versions: list[dict[str, str]] = [{} for _ in range(candidates)]
     for index, path, content in written:
         if content.strip():

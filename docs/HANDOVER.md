@@ -365,6 +365,7 @@ test that fails on the old code:
   LF.103 (test cases from the sprint's criteria; tests named by their language's pattern) at 21:09.
   LF.104 (a plan's checks judged as the tool runs them) at 21:18.
   LF.105 (a round that finds the product not starting raises the language service's findings) at 22:45, no rewind.
+  LF.106 (another spelling of a kept file is the harness's; a shadow is removed) at 23:10, no rewind.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

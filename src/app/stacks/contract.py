@@ -233,7 +233,8 @@ def owned_by_the_harness(repo_root: str | Path | None, relative_path: str) -> st
         return ""
     if path == HARNESS_DIR or path.startswith(HARNESS_DIR + "/"):
         return HARNESS_RECORDS
-    if path in kept_paths(repo_root):
+    kept = kept_paths(repo_root)
+    if path in kept or _another_spelling_of_a_kept(path, kept):
         return KEPT_SETUP
     try:
         from app.acceptance import suite
@@ -295,6 +296,34 @@ def released_because_it_fails(repo_root: str | Path | None, relative_path: str) 
     return True
 
 
+def _another_spelling_of_a_kept(relative: str, kept: Any) -> str:
+    """The kept file `relative` is another spelling of - same folder and name, another extension; else ""."""
+    path = PurePosixPath(relative)
+    stem = path.name.rsplit(".", 1)[0] if "." in path.name else ""
+    if not stem or "." not in stem:
+        # Only a name with a kind before its extension (`playwright.config`,
+        # `vite.config`): `index.js` and `index.css` are two different files.
+        return ""
+    for name in kept:
+        other = PurePosixPath(str(name))
+        if other != path and other.parent == path.parent and other.name.rsplit(".", 1)[0] == stem:
+            return str(name)
+    return ""
+
+
+def _the_files_that_shadow(root: Path, relative: str) -> list[Path]:
+    """Files beside the kept `relative` with its name and another extension."""
+    path = PurePosixPath(relative)
+    folder = root / str(path.parent)
+    if not folder.is_dir():
+        return []
+    return [
+        candidate for candidate in sorted(folder.iterdir())
+        if candidate.is_file() and candidate.name != path.name
+        and _another_spelling_of_a_kept(str(PurePosixPath(str(path.parent)) / candidate.name).lstrip("./"), [relative])
+    ]
+
+
 def enforce(repo_root: str | Path) -> list[str]:
     """Put back any runner configuration or manifest script a stage changed.
 
@@ -328,6 +357,18 @@ def enforce(repo_root: str | Path) -> list[str]:
             repairs.append(
                 f"{project}/{relative} was {'missing' if current is None else 'changed'}; "
                 "it is the harness's test configuration and has been put back."
+            )
+    for relative in pack.kept_files:
+        for shadow in _the_files_that_shadow(root, relative):
+            # Another spelling of a kept file is read in its place: measured on
+            # one gate run, a drafted `playwright.config.ts` beside the kept
+            # `playwright.config.js` was the one Playwright loaded - no base
+            # URL, no report - and every test failed "Invalid URL" with the
+            # harness counting none of them.
+            shadow.unlink(missing_ok=True)
+            repairs.append(
+                f"{project}/{shadow.relative_to(root).as_posix()} was read in place of the harness's "
+                f"{project}/{relative}; it has been removed - the harness's configuration is the one that runs."
             )
     if pack.kept_scripts:
         repairs.extend(_put_back_the_scripts(root, project, pack))

@@ -340,6 +340,13 @@ test that fails on the old code:
   round re-measures with the fixes and sends the suite back to QA. The two clean gate runs both run on the new code
   after it (the redundant-read KPI is not comparable across LF.63). Listing the rewind points took over 2 minutes on
   this run's history; `loop.sh rewind` waits for it (its curl has no timeout) - a manual call needs `-m 600`.
+  **17:57 JST: run-01a1ab9c completed** (555 min, four rewinds, LF.58-LF.90 deployed into it): acceptance 62/62,
+  unit 118/118 (52 page + 66 service). Every acceptance test goes through the API; the page kept 1 of 10 interface
+  contract lines at release (labels not tied to inputs, views not routes) and only the release evidence says so -
+  the case for EF.11/EF.12. **Clean gate run 1 = run-b7a20bad** (`tests/brief_medium.md`, `DELIVERY=fast
+  FRONTIER=false`), started 18:00 JST on e6a86dee; gate run 2 follows on the same code, then `kpi_ledger.py compare`.
+  The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
+  `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or
   framework goes through the harness's existing dynamic setup - a stack pack, the plugin instructions in
   `plugins/seed.py`, a per-language table or service (`sandbox.CODE_AS_A_FILE`, `language_service`) - never

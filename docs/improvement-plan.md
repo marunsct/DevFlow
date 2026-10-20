@@ -3722,6 +3722,9 @@ Structured, harness-controlled hand-off does pay (MetaGPT, blackboard-with-contr
 - **CM.4** joins stage 8 (optional, flag-gated).
 - **OS.0–OS.6** join stage 7 (infrastructure).
 
+*Owner, 2026-10-20 22:20 JST:* CM.1–CM.5 are implemented with group 2 (Part 21's validated items), in the
+stage order above; OS.0–OS.8 are implemented later, after group 2.
+
 ## E. Earlier plans, merged into this document on 2026-10-19
 
 Two separate plan documents predate the appendices above. They are kept

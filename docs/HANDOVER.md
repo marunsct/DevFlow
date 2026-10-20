@@ -330,6 +330,9 @@ test that fails on the old code:
   acceptance result - the product's own import error (`models.user` that does not exist) stops its service; KPIs in `data/kpi/`.
   **Clean gate run 1 is run-01a1ab9c**, started 06:00 JST on a39807de: `tests/brief_medium.md`, `DELIVERY=fast FRONTIER=false`;
   gate run 2 follows it on the same code, then `kpi_ledger.py compare` against the baselines, then group 2.
+  **Owner, 2026-10-20 22:20 JST: group 2 also takes CM.1-CM.5** (agent communication through harness-owned
+  records, `docs/agent-communication-feasibility.md`, plan Appendix 6); **OS.0-OS.8 (object storage, SeaweedFS) is
+  implemented later**, after group 2.
   **Both gate runs measure one code version (a39807de):** fixes found meanwhile are pushed but deployed only after gate
   run 2, unless a bug would spoil the measurement. LF.56/LF.57 were deployed into gate run 1 at 07:35 JST
   (73aaa5ef): the pip false positive kept the product from starting; the run was rewound to its round-1 test round.

@@ -622,7 +622,7 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         """
         from app.tools.sandbox import SandboxExecutor
 
-        command, working_directory, moved = _a_cd_taken_as_the_working_directory(command, working_directory)
+        command, working_directory, moved = _a_cd_taken_as_the_working_directory(command, working_directory, repo_root)
         command, saved = _code_on_the_command_line_as_a_file(command, repo_root, working_directory, role_name)
         moved = " ".join(part for part in (moved, saved) if part)
         held_back = _a_look_with_the_looking_tools_withheld(command, repo_root, working_directory)
@@ -725,7 +725,9 @@ def _code_on_the_command_line_as_a_file(
 _AFTER_A_CD = frozenset({"&&", ";"})
 
 
-def _a_cd_taken_as_the_working_directory(command: Any, working_directory: str | None) -> tuple[Any, str | None, str]:
+def _a_cd_taken_as_the_working_directory(
+    command: Any, working_directory: str | None, repo_root: str = "",
+) -> tuple[Any, str | None, str]:
     """`["cd", folder, *command]` as `command` run in `folder`; else the call unchanged and "".
 
     Measured live: `["cd", "task-management-dashboard", ".venv/bin/python", "-m",
@@ -743,6 +745,16 @@ def _a_cd_taken_as_the_working_directory(command: Any, working_directory: str | 
         return command, working_directory, ""
     base = str(working_directory or "").strip().strip("/")
     joined = os.path.normpath(os.path.join(base, folder)) if base else os.path.normpath(folder)
+    if repo_root and base and not (Path(repo_root) / joined).is_dir():
+        # A `cd` into the folder the command already runs in, named again from
+        # the workspace's root. Measured live: `cd task-management-dashboard &&
+        # npx vitest` with that folder as `working_directory` was refused twice
+        # as `task-management-dashboard/task-management-dashboard`.
+        alone = os.path.normpath(folder.strip("/"))
+        if (Path(repo_root) / alone).is_dir():
+            joined = alone
+        elif base == alone or base.endswith("/" + alone):
+            joined = base
     moved = (
         f"Ran `{' '.join(rest)}` in `{joined}`: `cd` is not a program here, so the folder was taken as "
         f"`working_directory`, which is how to run a command elsewhere."

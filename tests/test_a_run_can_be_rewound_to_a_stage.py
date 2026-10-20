@@ -196,3 +196,34 @@ def test_a_stage_whose_work_goes_out_side_by_side_is_one_point(agents, tmp_path,
 
     stages = [point["stage"] for point in rewind_points(graph, "run-side-by-side")]
     assert stages.count("defect_remediation") == 1, stages
+
+
+def test_the_points_are_listed_one_checkpoint_at_a_time():
+    """Measured on 2026-10-20: a run 11 hours long had thousands of checkpoints, and listing
+    them whole got the API's workers killed for memory three times - no rewind could be made."""
+    import gc
+    import weakref
+    from types import SimpleNamespace
+
+    from app.graph.workflow import rewind_points
+
+    alive: list = []
+    most = [0]
+
+    class Snapshot(SimpleNamespace):
+        pass
+
+    def history(_config):
+        for n in range(200, 0, -1):
+            snapshot = Snapshot(next=("test_and_triage" if n % 2 else "defect_remediation",),
+                                values={"sprint_plan": object(), "current_sprint_index": 0, "big": "x" * 10_000},
+                                config={"configurable": {"checkpoint_id": f"c{n}"}}, created_at=f"t{n:04d}")
+            alive.append(weakref.ref(snapshot))
+            gc.collect()
+            most[0] = max(most[0], sum(1 for ref in alive if ref() is not None))
+            yield snapshot
+
+    points = rewind_points(SimpleNamespace(get_state_history=history), "thread")
+
+    assert len(points) == 200 and points[0]["at"] == "t0001" and points[0]["sprint"] == 1
+    assert most[0] <= 3, f"{most[0]} snapshots held at once"

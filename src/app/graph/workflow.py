@@ -11247,14 +11247,27 @@ def rewind_points(graph: Any, thread_id: str) -> list[dict[str, Any]]:
     A stage entered again straight after itself (an approval answered, a retry)
     is the same point.
     """
-    history = list(graph.get_state_history(_run_config(thread_id, DEFAULT_RECURSION_LIMIT)))
+    # One checkpoint at a time, kept as the few fields a point needs. Measured
+    # on 2026-10-20: a run 11 hours long had thousands of checkpoints, and
+    # holding every snapshot whole got the API's workers killed for memory
+    # three times over - the rewind it was asked for could not be made.
+    entries: list[tuple[str | None, bool, str, int | None, str]] = []
+    for snapshot in graph.get_state_history(_run_config(thread_id, DEFAULT_RECURSION_LIMIT)):
+        values = snapshot.values or {}
+        entries.append((
+            snapshot.next[0] if len(snapshot.next or ()) == 1 else None,
+            bool(snapshot.next),
+            snapshot.config["configurable"]["checkpoint_id"],
+            int(values.get("current_sprint_index") or 0) + 1 if values.get("sprint_plan") else None,
+            str(getattr(snapshot, "created_at", "") or ""),
+        ))
+        del snapshot, values
     points: list[dict[str, Any]] = []
     previous: str | None = None
-    for snapshot in reversed(history):
-        node = snapshot.next[0] if len(snapshot.next or ()) == 1 else None
+    for node, has_next, checkpoint_id, sprint, at in reversed(entries):
         # Each resume and each answered approval begins with a bookkeeping
         # checkpoint of its own; the stage it goes back into is the same entry.
-        if node in _SYNTHETIC_NODES or not snapshot.next:
+        if node in _SYNTHETIC_NODES or not has_next:
             continue
         # The side-by-side workers and the step gathering them belong to the
         # stage that sent them: a dispatch that goes round its workers forty
@@ -11267,13 +11280,7 @@ def rewind_points(graph: Any, thread_id: str) -> list[dict[str, Any]]:
         if node == previous:
             continue
         previous = node
-        values = snapshot.values or {}
-        points.append({
-            "checkpoint_id": snapshot.config["configurable"]["checkpoint_id"],
-            "stage": node,
-            "sprint": int(values.get("current_sprint_index") or 0) + 1 if values.get("sprint_plan") else None,
-            "at": str(getattr(snapshot, "created_at", "") or ""),
-        })
+        points.append({"checkpoint_id": checkpoint_id, "stage": node, "sprint": sprint, "at": at})
     return points
 
 

@@ -48,6 +48,29 @@ def in_flight() -> list[str]:
         return []
 
 
+def forget_calls_from_before(started: float) -> int:
+    """Remove the markers of calls registered before `started`: their process is gone.
+
+    A marker is removed when its call returns, so one left behind belongs to a
+    process that died mid-call. Measured on 2026-10-20: the host lost power
+    during a call, the marker survived on the data volume, and the next deploy
+    waited its full gate time for a call that no longer existed. Called by a
+    worker as it starts, with its own start time; returns how many were removed.
+    """
+    removed = 0
+    try:
+        for path in (gate_directory() / "inflight").iterdir():
+            try:
+                if path.stat().st_mtime < started:
+                    path.unlink()
+                    removed += 1
+            except OSError:
+                continue
+    except OSError:
+        return removed
+    return removed
+
+
 def _wait_while_held(sleep=time.sleep, clock=time.monotonic) -> None:
     if not held():
         return

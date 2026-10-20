@@ -323,7 +323,10 @@ deploy)
   docker compose exec -T worker sh -c "mkdir -p $gate/inflight && touch $gate/hold"
   waited=0
   while :; do
-    n=$(docker compose exec -T worker sh -c "ls $gate/inflight 2>/dev/null | wc -l" | tr -d '[:space:]')
+    # Only markers younger than the longest a model call may run: one left by a
+    # process that died mid-call (a power loss, 2026-10-20) is never removed,
+    # and the deploy waited its whole GATE_WAIT on it.
+    n=$(docker compose exec -T worker sh -c "find $gate/inflight -type f -mmin -40 2>/dev/null | wc -l" | tr -d '[:space:]')
     [ "${n:-0}" = 0 ] && break
     [ "$waited" -ge "${GATE_WAIT:-1800}" ] && { echo "still $n model call(s) in flight after ${waited}s; deploying anyway"; break; }
     [ "$waited" = 0 ] && echo "waiting for $n model call(s) in flight to finish ($(jst '+%H:%M JST'))"

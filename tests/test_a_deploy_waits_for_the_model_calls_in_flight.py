@@ -53,7 +53,7 @@ def test_the_deploy_holds_waits_and_lifts():
     script = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()
     deploy = script[script.index("\ndeploy)"):script.index("\nfreshness)")]
     assert deploy.index("touch $gate/hold") < deploy.index("docker compose up -d app worker")
-    assert "ls $gate/inflight" in deploy and "rm -f $gate/inflight/* $gate/hold" in deploy
+    assert "find $gate/inflight -type f -mmin -40" in deploy and "rm -f $gate/inflight/* $gate/hold" in deploy
 
 
 def test_a_long_call_on_a_server_another_run_uses_is_reported_to_the_run(tmp_path, monkeypatch):
@@ -74,3 +74,28 @@ def test_a_long_call_on_a_server_another_run_uses_is_reported_to_the_run(tmp_pat
 
     assert len(told) == 1 and told[0][0] == "run-mine"
     assert "took 400s" in told[0][1] and "1 other run(s) (run-theirs)" in told[0][1]
+
+
+def test_a_call_a_dead_worker_left_is_forgotten_when_the_next_one_starts(tmp_path, monkeypatch):
+    """Measured on 2026-10-20: the host lost power during a call, its marker survived on the
+    data volume, and the next deploy waited its whole gate time for a call that no longer existed."""
+    import os
+    import time
+
+    monkeypatch.setenv("MODEL_CALL_GATE_DIR", str(tmp_path))
+    (tmp_path / "inflight").mkdir()
+    left = tmp_path / "inflight" / "run-x__key__16-dead"
+    left.write_text("1")
+    os.utime(left, (time.time() - 7200, time.time() - 7200))
+    started = time.time() - 5
+    live = tmp_path / "inflight" / "run-x__key__17-live"
+    live.write_text("2")
+
+    assert call_gate.forget_calls_from_before(started) == 1
+    assert call_gate.in_flight() == ["run-x__key__17-live"]
+
+
+def test_the_deploy_counts_only_calls_younger_than_a_call_can_run():
+    text = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()
+
+    assert "find $gate/inflight -type f -mmin -40" in text

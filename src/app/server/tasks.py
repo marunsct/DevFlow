@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import os
 from datetime import datetime, timezone
 
@@ -82,6 +83,23 @@ _runner_owner: int | None = None
 #: starting beside this one does not repeat the work, short enough that a
 #: worker killed mid-recovery does not block the next start for long.
 _RECOVERY_LOCK_SECONDS = 120
+
+
+#: When this worker started, for telling its own calls from a dead process's.
+_WORKER_STARTED = time.time()
+
+
+@worker_ready.connect
+def _forget_the_calls_of_a_previous_worker(**_kwargs) -> None:
+    """Drop in-flight markers a dead worker left, so a deploy does not wait on them. See `call_gate`."""
+    try:
+        from app.models.call_gate import forget_calls_from_before
+
+        removed = forget_calls_from_before(_WORKER_STARTED)
+        if removed:
+            logger.info("Removed %d model-call marker(s) a previous worker left behind", removed)
+    except Exception:  # noqa: BLE001 - the deploy's own age limit still applies
+        logger.debug("Could not clear old model-call markers", exc_info=True)
 
 
 @worker_ready.connect

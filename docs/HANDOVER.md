@@ -371,6 +371,7 @@ test that fails on the old code:
   round); with LF.91-LF.107 deployed into it, it was a findings run. Gate run 2 starts on 5c19b81 next.
   **Gate run 2 = run-d48f049e** (00:18 JST); LF.108 (fields written in tag form taken apart) found at 00:29, rewound
   to `principal_architect` - inside its first 40 minutes, so it still measures one version from there.
+  LF.109 (a misspelt, unwritten project folder is the project) deployed at 00:55 before its plan step, no rewind.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

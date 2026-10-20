@@ -83,3 +83,15 @@ def test_a_file_the_harness_keeps_is_no_work_order_s_when_the_plan_names_it_from
     plan = planned_work.work_orders_from_the_specification(spec, "goal", ["AC-1: x"], ["npm test"], root)
 
     assert [f for task in plan.delegated_tasks for f in task.files] == ["shop-app/shop_app/main.py", "shop-app/src/App.tsx"]
+
+
+def test_a_misspelt_project_folder_nothing_has_written_is_the_project(tmp_path):
+    """Measured on one gate run: the specification planned `task_management-dashboard/.../schemas.py`
+    beside forty files under `task-management-dashboard/`."""
+    from app.analysis.work_orders import inside_the_project
+
+    root = _workspace(tmp_path)
+
+    assert inside_the_project("shop-ap/shop_app/schemas.py", root) == "shop-app/shop_app/schemas.py"
+    (root / "shop_ap").mkdir()
+    assert inside_the_project("shop_ap/main.py", root) == "shop_ap/main.py", "one that exists is a second project"

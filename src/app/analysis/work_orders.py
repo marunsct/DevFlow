@@ -455,6 +455,18 @@ def _inside_the_project(path: str, project_dir: str, root: Path) -> str:
     except OSError:
         pass
     if SequenceMatcher(None, first.lower(), project_dir.lower()).ratio() >= _NEAR_SPELLING:
+        # A near-spelling nothing has written yet is the project, misspelt:
+        # measured on one gate run, the specification planned
+        # `task_management-dashboard/.../schemas.py` beside forty files under
+        # `task-management-dashboard/`, and the plan would have gone back to
+        # the lead for it. One that exists on disk is a second project, and
+        # the readiness check says so.
+        try:
+            if not (root / first).exists():
+                rest = clean.split("/", 1)[1] if "/" in clean else ""
+                return f"{project_dir}/{rest}" if rest else project_dir
+        except OSError:
+            pass
         return path
     try:
         if (root / first).exists():

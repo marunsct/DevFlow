@@ -252,11 +252,18 @@ class TestPathsTheWayTheProjectSeesThem:
 
         assert self._files(project, "tools/build.src") == ["tools/build.src"]
 
-    def test_a_near_spelling_of_the_project_is_left_for_the_readiness_check(self, tmp_path):
+    def test_a_near_spelling_of_the_project_on_disk_is_left_for_the_readiness_check(self, tmp_path):
         (tmp_path / "shop-app").mkdir()
+        (tmp_path / "shop_ap").mkdir()
         (tmp_path / ".project-directory").write_text("shop-app", encoding="utf-8")
 
         assert self._files(tmp_path, "shop_ap/core.src") == ["shop_ap/core.src"]
+
+    def test_a_near_spelling_nothing_has_written_is_the_project(self, tmp_path):
+        (tmp_path / "shop-app").mkdir()
+        (tmp_path / ".project-directory").write_text("shop-app", encoding="utf-8")
+
+        assert self._files(tmp_path, "shop_ap/core.src") == ["shop-app/core.src"]
 
     def test_without_a_project_directory_nothing_changes(self, tmp_path):
         from app.analysis.work_orders import with_paths_inside_the_project

@@ -806,7 +806,16 @@ def _model_calls_used(messages: list[Any]) -> int:
     approval resume because the messages do, and they need no agreement with
     LangGraph's internals.
     """
-    return sum(1 for message in messages if getattr(message, "type", None) == "ai")
+    # And the calls a compaction summarised away, carried on its summary:
+    # measured on one gate run, a fix stage made 41 calls against a budget of
+    # 40 and went on - the count had restarted from the summary.
+    from app.agents.compaction import CALLS_BEFORE
+
+    before = max(
+        (int((getattr(message, "additional_kwargs", None) or {}).get(CALLS_BEFORE) or 0) for message in messages),
+        default=0,
+    )
+    return before + sum(1 for message in messages if getattr(message, "type", None) == "ai")
 
 
 def _running_out_of_room(messages: list[Any], limit: int, schema: Any = None) -> str:

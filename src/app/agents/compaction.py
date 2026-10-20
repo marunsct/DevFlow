@@ -31,6 +31,9 @@ from langchain_core.messages.utils import trim_messages
 KEPT_REQUEST = "harness_kept_request"
 FILES_WRITTEN = "harness_files_written"
 SUMMARY = "harness_summary"
+#: How many model calls the messages a summary replaced had made, so a stage's
+#: call budget counts across a compaction (`settled_answer._model_calls_used`).
+CALLS_BEFORE = "harness_calls_before"
 
 #: The tools that change a file, and the argument naming it.
 _WRITING_TOOLS = frozenset({
@@ -114,17 +117,19 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         self._most_kept_tokens = most_kept_tokens
         # Set while one summary is made, read when its message is built: the
         # two run in turn within one model call.
-        self._kept: tuple[str, list[str]] | None = None
+        self._kept: tuple[str, list[str], int] | None = None
 
     def _prepare(self, messages: list[AnyMessage]) -> list[AnyMessage]:
         """What the summariser is handed; records the request and the files for the message."""
         self._kept = None
         request, files, earlier, rest = "", [], "", list(messages)
+        calls = 0
         if rest and getattr(rest[0], "type", None) == "human" and self._is_summary_message(rest[0]):
             kwargs = rest[0].additional_kwargs or {}
             request = str(kwargs.get(KEPT_REQUEST) or "")
             files = list(kwargs.get(FILES_WRITTEN) or [])
             earlier = str(kwargs.get(SUMMARY) or "")
+            calls = int(kwargs.get(CALLS_BEFORE) or 0)
             rest = rest[1:]
         else:
             # The stage's whole opening turn, every message of it before the
@@ -145,7 +150,8 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         for path in _files_written(rest):
             if path not in files:
                 files.append(path)
-        self._kept = (request, files[-MOST_FILES_NAMED:])
+        calls += sum(1 for message in rest if getattr(message, "type", None) == "ai")
+        self._kept = (request, files[-MOST_FILES_NAMED:], calls)
 
         opening = HumanMessage(
             content=_THE_WORK_SO_FAR + (f"\n\nThe summary of the work before it:\n{earlier}" if earlier else "")
@@ -218,7 +224,7 @@ class RequestKeepingSummarization(SummarizationMiddleware):
         kept, self._kept = self._kept, None
         if not kept or not built:
             return built
-        request, files = kept
+        request, files, calls = kept
         message = built[0]
         parts = []
         if request:
@@ -236,8 +242,9 @@ class RequestKeepingSummarization(SummarizationMiddleware):
                 KEPT_REQUEST: request,
                 FILES_WRITTEN: files,
                 SUMMARY: summary,
+                CALLS_BEFORE: calls,
             },
         )]
 
 
-__all__ = ["KEPT_TAIL_SHARE", "RequestKeepingSummarization", "KEPT_REQUEST", "FILES_WRITTEN"]
+__all__ = ["CALLS_BEFORE", "KEPT_TAIL_SHARE", "RequestKeepingSummarization", "KEPT_REQUEST", "FILES_WRITTEN"]

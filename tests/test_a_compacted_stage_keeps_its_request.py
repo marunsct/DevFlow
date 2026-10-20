@@ -255,3 +255,16 @@ def test_every_stage_s_compaction_has_the_ceiling():
     (middleware,) = _compaction_middleware("specialist_testing")
 
     assert middleware._most_kept_tokens == int(ContextPolicy.from_environment().trigger_tokens * KEPT_TAIL_SHARE)
+
+
+def test_a_stage_s_call_budget_counts_the_calls_a_summary_replaced(tmp_path):
+    """Measured on one gate run: a fix stage made 41 calls against a budget of 40 and went on -
+    after a compaction the count started again from the summary."""
+    from app.agents.settled_answer import _model_calls_used
+
+    middleware = _built(RequestKeepingSummarization, tmp_path)
+    messages = _conversation()
+    sent, _ = _sent(middleware, messages)
+    kept_ai = sum(1 for m in sent if getattr(m, "type", None) == "ai")
+
+    assert _model_calls_used(sent) == 12, f"12 calls made, {kept_ai} still in the conversation"

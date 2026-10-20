@@ -367,6 +367,8 @@ test that fails on the old code:
   LF.105 (a round that finds the product not starting raises the language service's findings) at 22:45, no rewind.
   LF.106 (another spelling of a kept file is the harness's; a shadow is removed) at 23:10, no rewind.
   LF.107 (TS2613, a default import of a named-only module, is kept) at 23:20, no rewind.
+  **00:15 JST 2026-10-21: run-b7a20bad failed** (4 attempts, acceptance 0/31, reached the product only in the last
+  round); with LF.91-LF.107 deployed into it, it was a findings run. Gate run 2 starts on 5c19b81 next.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

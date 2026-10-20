@@ -393,7 +393,7 @@ test that fails on the old code:
   LF.122 (every direct model call recorded), LF.123 (the restart sweep's grace 120 -> 60 s) and LF.124 (a brief
   feature the specification defers goes to the architecture review) at about 08:25 JST; rewound to `architecture_review`.
   LF.125 (a rewind crosses out the stage notes the restored files hold) at about 08:35 JST; rewound to it again.
-  LF.126 (a rewound stage is handed no stray decision; the record names the stage rewound to) at about 08:50 JST;
+  LF.126 (a rewound stage is handed no stray decision; the record names the stage rewound to) at about 08:38 JST;
   rewound to the FIRST `architecture_review` (22:37 UTC): a gate whose revisions are spent cannot send work back.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).

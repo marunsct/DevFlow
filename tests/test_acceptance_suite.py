@@ -511,3 +511,32 @@ def test_author_request_requires_testing_persistence_of_all_changes():
     import re
     for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox", "completion"):
         assert not re.search(rf"\b{word}\b", rules.split("- write only inside", 1)[0]), word
+
+
+def test_a_test_whose_own_source_keeps_a_promise_is_sent_back(project) -> None:
+    """Measured on one gate run: `const id = (await request.get(...)).json().then((r) => r.id)` stored a
+    Promise, the request was sent with `assignee_id: {}`, the service rightly answered 422 - an ordinary
+    assertion failure - and fixers bent the product to coerce it for an hour."""
+    from app.acceptance.junit import Report, TestResult
+
+    _write(project, "notes/acceptance/assign.spec.js", (
+        "import { test, expect } from '@playwright/test';\n"
+        "test('[AC-3] assigns to another user', async ({ request }) => {\n"
+        "  const other = (await request.get('/api/me')).json().then((r) => r.id);\n"
+        "  const res = await request.post('/api/notes', { data: { assignee_id: other } });\n"
+        "  expect(res.status()).toBe(201);\n"
+        "});\n"
+        "test('[AC-4] lists assigned notes', async ({ request }) => {\n"
+        "  const me = await (await request.get('/api/me')).json();\n"
+        "  expect(me.id).toBeTruthy();\n"
+        "});\n"
+    ))
+    report = Report(found=True, tests=[
+        TestResult(name="[AC-3] assigns to another user", outcome="failed", message="Expected: 201\nReceived: 422"),
+        TestResult(name="[AC-4] lists assigned notes", outcome="failed", message="Expected: truthy\nReceived: undefined"),
+    ])
+
+    broken = suite.tests_that_broke_themselves(project, suite.AcceptanceResult(ran=True, report=report))
+
+    assert [b.split("`")[1] for b in broken] == ["[AC-3] assigns to another user"]
+    assert "await it" in broken[0]

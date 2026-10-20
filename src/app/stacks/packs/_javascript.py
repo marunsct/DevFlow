@@ -1242,6 +1242,15 @@ harness can count."""
 #: past: one run's locked suite left a test unclosed, so the next two were
 #: written inside its body and the runner failed it with "did not expect
 #: test() to be called here" - read as the product failing, round after round.
+#: A test's own code that no product can pass, read from the test's source -
+#: its failure is an ordinary assertion and says nothing. Measured on one gate
+#: run: `const id = (await request.get(...)).json().then((r) => r.id)` stores a
+#: Promise, the request was sent with `assignee_id: {}`, the service rightly
+#: answered 422, and fixers bent the product to coerce it for an hour.
+TEST_SOURCE_BUGS = (
+    r"\b(?:const|let|var)\s+\w+\s*=\s*\(\s*await\b[^;]*?\)\s*\.json\(\)\s*\.then\(",
+)
+
 TEST_BUGS = (
     r"Playwright Test did not expect \S+ to be called here",
     r"First argument must use the object destructuring pattern",

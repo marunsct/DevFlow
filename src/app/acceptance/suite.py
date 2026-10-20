@@ -796,6 +796,33 @@ def _judged(repo_root: str | Path, result: AcceptanceResult, save: bool) -> Acce
     return result
 
 
+def _source_bugs_by_suffix() -> dict[str, tuple[str, ...]]:
+    """Per test-file suffix, the patterns of a test's own source that no product can pass."""
+    from app.stacks.packs import _javascript
+
+    return {suffix: _javascript.TEST_SOURCE_BUGS for suffix in (".js", ".mjs", ".cjs", ".ts", ".mts", ".tsx", ".jsx")}
+
+
+_SOURCE_BUGS = _source_bugs_by_suffix()
+#: Where a test's body begins in a spec file: `test('name'`, `it("name"`.
+_A_TEST_STARTS = re.compile(r"""^\s*(?:test|it)(?:\.\w+)?\(\s*(['"`])(.+?)\1""", re.M)
+
+
+def _the_tests_sources(repo_root: str | Path) -> dict[str, tuple[str, str]]:
+    """Each acceptance test's own body by its name, with its file's suffix; {} when it cannot be read."""
+    found: dict[str, tuple[str, str]] = {}
+    try:
+        for path in suite_files(repo_root):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            starts = list(_A_TEST_STARTS.finditer(text))
+            for index, match in enumerate(starts):
+                end = starts[index + 1].start() if index + 1 < len(starts) else len(text)
+                found.setdefault(match.group(2).strip(), (text[match.start():end], path.suffix.lower()))
+    except Exception:  # noqa: BLE001 - the failure messages alone, as before
+        return {}
+    return found
+
+
 def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Failures caused by the tests' own code, by the pack's own patterns.
 
@@ -806,14 +833,25 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
     definition of done no product can meet.
     """
     found = contract.the_pack(repo_root)
-    if found is None or not found[0].test_bugs:
+    if found is None:
         return []
     patterns = [re.compile(pattern, re.I | re.M) for pattern in found[0].test_bugs]
+    sources = _the_tests_sources(repo_root)
     broken = []
     for test in result.report.tests:
         if test.outcome != "failed":
             continue
         message = test.message or ""
+        body, suffix = sources.get(str(test.name or "").strip(), ("", ""))
+        written = next((p for p in _SOURCE_BUGS.get(suffix, ()) if re.search(p, body)), None)
+        if written is not None:
+            line = next((l.strip() for l in body.splitlines() if re.search(written, l)), "")
+            broken.append(
+                f"`{test.name}` cannot pass whatever is built: its own code `{line[:200]}` keeps a "
+                "promise as a value where the value was meant - await it. Fix the test so that it "
+                "can pass once the product works."
+            )
+            continue
         if any(pattern.search(message) for pattern in patterns):
             first = next((line.strip() for line in message.splitlines() if line.strip()), "")
             broken.append(

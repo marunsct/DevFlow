@@ -165,13 +165,24 @@ export const RunDashboard: React.FC = () => {
   };
 
   const fetchInFlight = useRef(false);
+  // A refresh asked for while one is in flight. Dropping it left the page on
+  // the stage the in-flight read saw, until the next event or a reload.
+  const fetchAgain = useRef(false);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The stage the last streamed event came from. The runner announces a
+  // `stage_change` only at a gate; the stages between two gates (the specialist
+  // consults, say) arrive as agent events alone, and the header, the progress
+  // panel and the artifacts stayed on the first of them until a reload.
+  const lastEventStage = useRef('');
 
   const fetchState = async () => {
     if (!runId) return;
     // One refresh at a time. Without this an event burst stacks overlapping
     // round-trips, each of which is two or three API calls.
-    if (fetchInFlight.current) return;
+    if (fetchInFlight.current) {
+      fetchAgain.current = true;
+      return;
+    }
     fetchInFlight.current = true;
     try {
       const runData = await getRun(runId);
@@ -228,6 +239,10 @@ export const RunDashboard: React.FC = () => {
       setLoading(false);
     } finally {
       fetchInFlight.current = false;
+      if (fetchAgain.current) {
+        fetchAgain.current = false;
+        scheduleRefetch();
+      }
     }
   };
 
@@ -301,7 +316,9 @@ export const RunDashboard: React.FC = () => {
           const logEntry: LogEntry = JSON.parse(message.data);
           mergeLogs([logEntry]);
 
-          if (['stage_change', 'error', 'complete', 'approval_request', 'review_request', 'approval_auto'].includes(logEntry.event_type)) {
+          const movedOn = !!logEntry.stage && logEntry.stage !== lastEventStage.current;
+          if (logEntry.stage) lastEventStage.current = logEntry.stage;
+          if (movedOn || ['stage_change', 'artifact', 'error', 'complete', 'approval_request', 'review_request', 'approval_auto'].includes(logEntry.event_type)) {
             scheduleRefetch();
           }
         } catch (err) {

@@ -55,7 +55,10 @@ class FakeSocket {
   close() {}
 }
 
-beforeEach(() => vi.stubGlobal('WebSocket', FakeSocket));
+beforeEach(() => {
+  vi.stubGlobal('WebSocket', FakeSocket);
+  for (const fn of Object.values(known)) if (typeof fn === 'function' && 'mockClear' in fn) fn.mockClear();
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe('the run page', () => {
@@ -79,4 +82,49 @@ describe('the run page', () => {
     await waitFor(() => expect(known.getRun.mock.calls.length).toBeGreaterThan(readBefore), { timeout: 3000 });
     expect(known.getLogs.mock.calls.length).toBe(pagedBefore);
   });
+
+  it('refreshes the run when events start coming from another stage, not only at a gate', async () => {
+    // Measured live: the specialist consults run between two gates and send
+    // agent events only; the activity moved on to the testing specialist while
+    // the header and the progress panel still said the backend one.
+    renderPage();
+    await screen.findByText('Fixing problem 4 (test round 2)');
+    await waitFor(() => expect(FakeSocket.last?.onmessage).toBeTruthy());
+    send({ event_id: 'a1', event_type: 'tool_call', stage: 'consult_backend', sequence: 1 });
+    await waitFor(() => expect(known.getRun.mock.calls.length).toBe(2), { timeout: 3000 });
+    send({ event_id: 'a2', event_type: 'tool_result', stage: 'consult_backend', sequence: 2 });
+    send({ event_id: 'a3', event_type: 'tool_call', stage: 'consult_testing', sequence: 3 });
+
+    await waitFor(() => expect(known.getRun.mock.calls.length).toBe(3), { timeout: 3000 });
+  });
+
+  it('runs a refresh asked for while another is in flight once that one ends', async () => {
+    renderPage();
+    await screen.findByText('Fixing problem 4 (test round 2)');
+    await waitFor(() => expect(FakeSocket.last?.onmessage).toBeTruthy());
+    let finish: (value: unknown) => void = () => {};
+    known.getRun.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    send({ event_id: 'b1', event_type: 'stage_change', stage: 'consult_ui_ux', sequence: 1 });
+    await waitFor(() => expect(known.getRun.mock.calls.length).toBe(2), { timeout: 3000 });
+    send({ event_id: 'b2', event_type: 'stage_change', stage: 'consult_database', sequence: 2 });
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    finish(run);
+
+    await waitFor(() => expect(known.getRun.mock.calls.length).toBe(3), { timeout: 3000 });
+  });
 });
+
+function renderPage() {
+  render(
+    <MemoryRouter initialEntries={['/runs/run-1']}>
+      <FeedbackProvider>
+        <Routes><Route path="/runs/:runId" element={<RunDashboard />} /></Routes>
+      </FeedbackProvider>
+    </MemoryRouter>,
+  );
+}
+
+function send(event: Record<string, unknown>) {
+  const entry = { run_id: 'run-1', timestamp: '2026-10-19T01:00:01Z', message: '', ...event };
+  FakeSocket.last!.onmessage!({ data: JSON.stringify({ event: 'message', data: JSON.stringify(entry) }) });
+}

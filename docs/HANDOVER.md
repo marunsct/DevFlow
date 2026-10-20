@@ -345,6 +345,7 @@ test that fails on the old code:
   contract lines at release (labels not tied to inputs, views not routes) and only the release evidence says so -
   the case for EF.11/EF.12. **Clean gate run 1 = run-b7a20bad** (`tests/brief_medium.md`, `DELIVERY=fast
   FRONTIER=false`), started 18:00 JST on e6a86dee; gate run 2 follows on the same code, then `kpi_ledger.py compare`.
+  LF.91 (a UI-only fix, the app alone redeployed at 18:15 JST) went in during it; the owner counts it as clean.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

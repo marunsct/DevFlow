@@ -106,7 +106,9 @@ def _topics(libraries: list[str], brief: str, model: Any) -> list[tuple[str, str
         '"topic": "<a few words>"}]}'
     )
     try:
-        reply = model.invoke([HumanMessage(content=request)])
+        from app.observability.direct_calls import config_for_this_run
+
+        reply = model.invoke([HumanMessage(content=request)], **config_for_this_run("research_brief"))
         text = str(getattr(reply, "content", reply) or "")
         match = re.search(r"\{.*\}", text, re.S)
         parsed = json.loads(match.group(0)) if match else {}

@@ -5759,6 +5759,56 @@ def brief_actions_the_text_defers(brief: str, text: str) -> list[tuple[str, str,
     return found
 
 
+#: A list item of the brief: "- Due dates and reminders", "2. Task categories and tags".
+_A_BRIEF_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+
+
+def brief_features_the_text_defers(brief: str, text: str) -> list[tuple[str, str, str]]:
+    """Each feature the brief lists that `text` defers, as (feature, brief line, text line).
+
+    The nouns beside `brief_actions_the_text_defers`'s verbs. Measured on two
+    gate runs of one brief, whose features include "Due dates and reminders":
+    both intakes put "Reminder system" under "Deferred scope", the
+    specification carried it as an open question "(Deferred scope)", no
+    criterion named reminders, and both products shipped without them - while
+    the verb check, finding no user action in "reminders", reported nothing.
+
+    Only the items of an "and" list in one of the brief's list items, each of
+    which the brief requires; an "or" list offers a choice. A line counts as
+    deferring an item when its deferring part names it, or when it sits under
+    a heading that defers ("## Deferred scope").
+    """
+    from app.agents.success_measures import enumerations, names_the_word
+
+    actions = set(_actions_the_brief_requires(brief))
+    required: dict[str, str] = {}
+    for raw in (brief or "").splitlines():
+        if not _A_BRIEF_ITEM.match(raw):
+            continue
+        line = raw.strip()
+        for every_item, words in enumerations(line):
+            for word in words if every_item else ():
+                key = word.lower()
+                if len(key) >= 4 and key not in actions and key not in required:
+                    required[key] = line
+    found: list[tuple[str, str, str]] = []
+    under_a_deferral = False
+    for raw in _without_html_comments(text).splitlines():
+        line = raw.strip()
+        if line.startswith("#"):
+            under_a_deferral = bool(_A_DEFERRAL.search(line))
+            continue
+        if not line:
+            continue
+        parts = _what_a_line_defers(line) + ([line] if under_a_deferral else [])
+        for word, brief_line in required.items():
+            if any(word == done for done, _, _ in found):
+                continue
+            if any(names_the_word(word, part) for part in parts):
+                found.append((word, brief_line, line[:200]))
+    return found
+
+
 def _without_html_comments(text: str) -> str:
     """`text` without its HTML comments.
 

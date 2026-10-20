@@ -184,15 +184,17 @@ def _ask(model: Any, messages: list[Any]) -> Any:
     """`model.invoke(messages)`, asked again without `reasoning_effort` if the
     server refused the request because of it."""
     from app.agents.thinking import the_server_refused_the_request, without_the_effort_field
+    from app.observability.direct_calls import config_for_this_run
 
+    recorded = config_for_this_run("plugin_instructions")
     try:
-        return model.invoke(messages)
+        return model.invoke(messages, **recorded)
     except Exception as error:
         extra = getattr(model, "extra_body", None)
         plainer = without_the_effort_field({"extra_body": extra}) if extra else None
         if plainer is None or not the_server_refused_the_request(error):
             raise
-        return model.model_copy(update=plainer).invoke(messages)
+        return model.model_copy(update=plainer).invoke(messages, **recorded)
 
 
 def _framework_names(reply: str) -> List[str]:

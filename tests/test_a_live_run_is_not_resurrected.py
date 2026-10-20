@@ -154,3 +154,10 @@ def test_a_recent_run_is_reported_rather_than_silently_skipped():
     source = inspect.getsource(recover_orphaned_runs)
     assert "too recent to call abandoned" in source
     assert "the next sweep will see it" in source
+
+
+def test_the_grace_covers_the_measured_race_and_no_more_than_a_minute():
+    # The race measured: a sweep eleven seconds after a hand-off. Every deploy
+    # into a live run restarts the worker and waits this grace twice over the
+    # two looks, so a long one left the run idle minutes per deploy.
+    assert 4 * 11 <= RECENTLY_TOUCHED_SECONDS <= 60

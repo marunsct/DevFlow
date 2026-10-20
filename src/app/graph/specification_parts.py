@@ -19,6 +19,8 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from app.observability.direct_calls import config_for_this_run, mapped_in_this_context
+
 logger = logging.getLogger(__name__)
 
 #: What the architect writes itself.
@@ -127,7 +129,7 @@ def with_the_parts_written(specification: Any, model: Any, context: str) -> Any:
                 SystemMessage(content="You write sections of software technical specifications as JSON."),
                 HumanMessage(content=part_request(specification, names, context)),
             ]
-            reply = call_model.invoke(messages)
+            reply = call_model.invoke(messages, **config_for_this_run("principal_architect"))
             found = _the_object_in(reply) or {}
             decoded = with_structure_decoded({k: v for k, v in found.items() if k in names}, parameters)
             written = {k: v for k, v in decoded.items() if isinstance(v, list) and v}
@@ -144,7 +146,7 @@ def with_the_parts_written(specification: Any, model: Any, context: str) -> Any:
             return {}
 
     with ThreadPoolExecutor(max_workers=len(wanted)) as pool:
-        written = list(pool.map(write, wanted))
+        written = mapped_in_this_context(pool, write, wanted)
     update = {k: v for part in written for k, v in part.items()}
     try:
         joined = type(specification).model_validate({**specification.model_dump(), **update})
@@ -186,7 +188,9 @@ def sections_to_revise(specification: Any, required_changes: str, model: Any) ->
         'Reply with one JSON object and nothing else: {"sections": ["<section name>", ...]}'
     )
     try:
-        found = _the_object_in(model.invoke([HumanMessage(content=request)])) or {}
+        found = _the_object_in(model.invoke(
+            [HumanMessage(content=request)], **config_for_this_run("principal_architect"),
+        )) or {}
     except Exception as error:  # noqa: BLE001 - the architect revises as before
         logger.info("Could not tell which sections a revision touches: %s", str(error)[:200])
         return []
@@ -232,7 +236,7 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
             reply = model.invoke([
                 SystemMessage(content="You revise sections of software technical specifications as JSON."),
                 HumanMessage(content=request),
-            ])
+            ], **config_for_this_run("principal_architect"))
             found = _the_object_in(reply) or {}
             decoded = with_structure_decoded({k: v for k, v in found.items() if k in names}, parameters)
             written = {k: v for k, v in decoded.items() if v not in (None, "", [], {})}
@@ -246,7 +250,7 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
             return None
 
     with ThreadPoolExecutor(max_workers=len(groups)) as pool:
-        written = list(pool.map(revise, groups))
+        written = mapped_in_this_context(pool, revise, groups)
     if any(part is None for part in written):
         return None
     update = {k: v for part in written for k, v in part.items()}

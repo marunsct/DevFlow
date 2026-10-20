@@ -440,8 +440,12 @@ def _touched_within(record: Any, seconds: float) -> bool:
 #: server. The docstring below already named that damage - "guessing wrong here
 #: puts two writers on one thread" - and the guess was still available to make.
 #:
-#: 120 seconds is far longer than the dispatch race and far shorter than any
-#: real abandonment, and nothing is lost by waiting: the sweep looks again.
+#: 60 seconds is five times the dispatch race measured, and far shorter than
+#: any real abandonment. It was 120 on the reasoning that nothing is lost by
+#: waiting, since the sweep looks again - but the second look waits this long
+#: too, and every deploy into a live run restarts the worker: measured on one
+#: gate run, each of two deploys left the run idle about three minutes, two of
+#: them this wait.
 #:
 #: Applied by the automatic startup sweep and not by the CLI, which defaults to
 #: no grace at all. The two callers are asking different questions. The sweep
@@ -449,7 +453,7 @@ def _touched_within(record: Any, seconds: float) -> bool:
 #: hand-off. A human running `manage.py recover-orphans` has looked and
 #: decided, and making them wait two minutes to act on their own judgement
 #: would be answering a question they did not ask.
-RECENTLY_TOUCHED_SECONDS = 120
+RECENTLY_TOUCHED_SECONDS = 60
 
 
 def recover_orphaned_runs(

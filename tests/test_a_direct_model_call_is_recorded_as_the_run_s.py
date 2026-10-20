@@ -54,3 +54,58 @@ def test_a_pool_thread_sees_the_caller_s_run():
         seen.reset(token)
 
     assert got == [(1, "run-abc"), (2, "run-abc"), (3, "run-abc")]
+
+
+def test_the_specification_s_parts_are_recorded_as_the_run_s(monkeypatch):
+    # Measured on one gate run: the parts were written for six minutes with
+    # nothing in the transcript, and the run read "neither model nor tool busy".
+    import json as _json
+
+    from pydantic import BaseModel
+
+    from app.graph import specification_parts
+
+    class Spec(BaseModel):
+        overview: str = "x"
+        file_plan: list[str] = []
+
+    class _Writer(_Model):
+        def invoke(self, messages, config=None):
+            self.configs.append(config)
+            return SimpleNamespace(content=_json.dumps({"file_plan": ["app/main.py"]}))
+
+    monkeypatch.setattr("app.server.agent_stream.build_activity_callbacks", lambda run, stage: [f"{run}:{stage}"])
+    monkeypatch.setattr(specification_parts, "PARTS", (("file_plan",),))
+    monkeypatch.setattr("app.agents.thinking.without_reasoning", lambda model: model)
+    model = _Writer()
+    token = _TASK_RUN.set("run-abc")
+    try:
+        written = specification_parts.with_the_parts_written(Spec(), model, "")
+    finally:
+        _TASK_RUN.reset(token)
+
+    assert written.file_plan == ["app/main.py"]
+    assert model.configs == [{"callbacks": ["run-abc:principal_architect"]}]
+
+
+def test_every_direct_model_call_in_the_source_is_recorded():
+    import re
+
+    root = Path(__file__).resolve().parent.parent / "src" / "app"
+    # Probes and a health check run outside any run, where nothing is recorded.
+    outside_a_run = {"models/fitness.py", "models/router.py", "agents/thinking.py"}
+    unrecorded = []
+    for path in root.rglob("*.py"):
+        relative = path.relative_to(root).as_posix()
+        if relative in outside_a_run:
+            continue
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for at, line in enumerate(lines):
+            if line.lstrip().startswith("#") or not re.search(r"\.invoke\(", line):
+                continue
+            if re.search(r"\b(?:agent|graph)\.invoke\(|`[^`]*\.invoke\(", line):
+                continue
+            statement = "\n".join(lines[at:at + 8])
+            if "config_for_this_run" not in statement and "**recorded" not in statement:
+                unrecorded.append(f"{relative}:{at + 1}")
+    assert not unrecorded, unrecorded

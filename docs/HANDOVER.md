@@ -390,6 +390,8 @@ test that fails on the old code:
   `SHARED_FACTS` (`app.agents.shared_facts.ON_BY_DEFAULT`); CM.2/EF.11 = `DECISION_LEDGER` (`app.agents.ledger.ON_BY_DEFAULT`); AY = `FIX_CYCLE` (`app.graph.bounded_fixes.ON_BY_DEFAULT`).
   `.gitignore` matches `fix_*.py`: name no source module so (`tests/test_no_source_module_is_ignored_by_git.py`). After the gate run: turn the built ones on, deploy, measure.
   LF.121 (a suite file left out of a request points at the memory) deployed into it at about 08:00 JST.
+  LF.122 (every direct model call recorded), LF.123 (the restart sweep's grace 120 -> 60 s) and LF.124 (a brief
+  feature the specification defers goes to the architecture review) at about 08:25 JST; rewound to `architecture_review`.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

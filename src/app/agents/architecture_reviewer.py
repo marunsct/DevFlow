@@ -207,9 +207,13 @@ def _what_the_brief_requires_that_this_defers(document_text: str, specification:
         from app.analysis.integration_checks import (
             brief_actions_the_text_defers,
             brief_actions_the_text_never_describes,
+            brief_features_the_text_defers,
         )
 
+        # The brief's actions, and the features it lists ("Due dates and
+        # reminders"), which name no action for the first check to find.
         found = brief_actions_the_text_defers(document_text, specification)
+        found += brief_features_the_text_defers(document_text, specification)
         deferred = {action for action, _, _ in found}
         # And the silent version: named only in a list of requirements, never
         # given a flow of its own. One run's specification said "full CRUD

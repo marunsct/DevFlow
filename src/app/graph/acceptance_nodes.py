@@ -1005,8 +1005,16 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     red criterion can never reach the milestone review unreported.
     """
     failing, command = _failing_due(state)
+    # Whether or not anything fails: a manifest that does not install ships a
+    # product a clean checkout cannot run. Measured on one gate run: the
+    # product ran on what an earlier install left, 31 of 34 tests passed, and
+    # the `requirements.txt` it would have released failed every install.
+    installs = [
+        defect for defect in _the_install_that_failed(suite.last_result(_root(state)) or {}, state)
+        if not any("do not install" in str(getattr(item, "description", "") or "") for item in reported)
+    ]
     if not failing:
-        return []
+        return installs
     from app.acceptance.junit import tags_in
     from app.agents.specialists import ReportedDefect
 
@@ -1044,7 +1052,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             affected_files=[],
             owner=_owner_for(state, never_started),
         ))
-        return defects + _the_install_that_failed(saved, state) + _what_the_language_service_finds(state)
+        return defects + installs + _what_the_language_service_finds(state)
     if problems:
         defects.append(ReportedDefect(
             description="The product reports errors by itself while it loads, before any test touches it.",
@@ -1079,7 +1087,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             affected_files=[],
             owner=_owner_for(state, detail),
         ))
-    return defects
+    return [*installs, *defects]
 
 
 def due_criteria_failing(state: Any) -> str:

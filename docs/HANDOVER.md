@@ -377,6 +377,7 @@ test that fails on the old code:
   LF.112 (each package's manifest named; a failed install says why) at 02:30, no rewind.
   LF.113 (a failed install is raised as a defect) at 02:40, no rewind.
   LF.114 (a stage's call budget counts across a compaction) at 03:12, no rewind.
+  03:18 JST: the product starts, 31 of 34 tests pass. LF.115 (a failed install raised in every round) at 03:45.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

@@ -72,3 +72,37 @@ def test_a_deferred_action_in_a_json_specification_is_quoted_by_its_sentence():
     (found,) = brief_actions_the_text_defers(BRIEF, spec)
 
     assert found[0] == "delete" and found[2] == "- Bulk delete is deferred to a later release."
+
+
+def _state(**extra):
+    from types import SimpleNamespace
+
+    return {"document": SimpleNamespace(text=BRIEF), "architecture_revision_count": 0, **extra}
+
+
+def test_the_workflow_raises_it_as_a_major_finding_when_the_review_does_not():
+    # Measured on one gate run: the review was told and its eight findings never named it.
+    from app.graph.workflow import _a_brief_feature_the_specification_defers
+
+    finding = _a_brief_feature_the_specification_defers(_state(), "## Deferred scope\n- Reminder system\n")
+
+    assert finding.severity == "major" and "`reminders`" in finding.description
+    assert "acceptance criterion" in finding.required_remediation
+
+
+def test_once_per_run_and_never_on_the_last_revision():
+    from app.graph.workflow import MAX_ARCHITECTURE_REVISIONS, _a_brief_feature_the_specification_defers
+
+    spec = "## Deferred scope\n- Reminder system\n"
+    assert _a_brief_feature_the_specification_defers(_state(specification_deferrals_checked=True), spec) is None
+    last = _state(architecture_revision_count=MAX_ARCHITECTURE_REVISIONS - 1)
+    assert _a_brief_feature_the_specification_defers(last, spec) is None
+    assert _a_brief_feature_the_specification_defers(_state(), "## Features\n- Reminders by email\n") is None
+
+
+def test_the_review_node_adds_it():
+    import inspect
+
+    from app.graph import workflow
+
+    assert "deferral_finding = _a_brief_feature_the_specification_defers(state, spec_text)" in inspect.getsource(workflow)

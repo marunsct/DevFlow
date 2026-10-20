@@ -395,6 +395,8 @@ test that fails on the old code:
   LF.125 (a rewind crosses out the stage notes the restored files hold) at about 08:35 JST; rewound to it again.
   LF.126 (a rewound stage is handed no stray decision; the record names the stage rewound to) at about 08:38 JST;
   rewound to the FIRST `architecture_review` (22:37 UTC): a gate whose revisions are spent cannot send work back.
+  LF.127/LF.128 (deferred-requirement evidence by sentence; the workflow raises a deferred brief feature) at about
+  08:46 JST; rewound to the first review again.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

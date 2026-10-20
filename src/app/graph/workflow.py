@@ -497,6 +497,7 @@ class WorkflowGraphState(TypedDict, total=False):
     # Set once the workflow has raised its one success-measure coverage finding
     # against a specification. See `_a_success_measure_the_specification_drops`.
     specification_coverage_checked: bool
+    specification_deferrals_checked: bool
     specification_repair_count: int
     layout_repair_count: int
     # Per-stage count of attempts that ended without a structured response.
@@ -4256,6 +4257,46 @@ def _a_success_measure_the_specification_drops(state: Any, spec_text: str) -> An
             "Add each missing capability to the specification the way the others "
             "are specified - its data flow, the functions or endpoints that carry "
             "it, the UI that exposes it, and an acceptance criterion that verifies it."
+        ),
+    )
+
+
+def _a_brief_feature_the_specification_defers(state: Any, spec_text: str) -> Any:
+    """A major finding for a feature the operator's brief lists and the specification defers.
+
+    The review is told of these and judges each, and that was not enough.
+    Measured on one gate run: the review's request named "reminders" from the
+    brief's "Due dates and reminders" as deferred - and a major finding - and
+    its eight findings never mentioned it; the product shipped without them,
+    as the run before it had. Raised by the workflow, like
+    `_a_success_measure_the_specification_drops`: once per run, and never on
+    the revision that would exhaust `MAX_ARCHITECTURE_REVISIONS`.
+    """
+    if state.get("specification_deferrals_checked"):
+        return None
+    if state.get("architecture_revision_count", 0) + 1 >= MAX_ARCHITECTURE_REVISIONS:
+        return None
+    brief = getattr(state.get("document"), "text", "") or ""
+    from app.analysis.integration_checks import brief_features_the_text_defers
+
+    found = brief_features_the_text_defers(brief, spec_text)
+    if not found:
+        return None
+    from app.agents.architecture_reviewer import ArchitectureReviewFinding
+
+    return ArchitectureReviewFinding(
+        severity="major",
+        description=(
+            "The specification defers a feature the operator's brief requires: "
+            + "; ".join(f"`{feature}` (the brief: \"{line}\"; the specification: \"{where}\")"
+                        for feature, line, where in found)
+            + ". Deferring a requirement is the operator's decision, not the run's."
+        ),
+        evidence="Compared by the workflow against the operator's brief, word for word.",
+        required_remediation=(
+            "Specify each one as the other features are specified - its data, the functions or "
+            "endpoints that carry it, the interface that shows it, and an acceptance criterion that "
+            "verifies it - or, where the specification builds it under another name, say where."
         ),
     )
 
@@ -8288,6 +8329,13 @@ def build_workflow_graph(
             )
             update["architecture_review"] = review
             update["specification_coverage_checked"] = True
+        deferral_finding = _a_brief_feature_the_specification_defers(state, spec_text)
+        if deferral_finding is not None:
+            review = review.model_copy(
+                update={"findings": [*review.findings, deferral_finding], "status": "changes_required"}
+            )
+            update["architecture_review"] = review
+            update["specification_deferrals_checked"] = True
 
         review = _a_pass_over_its_own_findings(
             review, state["repository"].root_path, "approved", "architecture_review"

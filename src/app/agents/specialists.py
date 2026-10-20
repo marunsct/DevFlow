@@ -903,8 +903,15 @@ def specification_for_the_work_order(specification: Any, work_order: Any) -> str
     # `username` where the specification said `full_name`, and the tests, the
     # disputes and the fixes then argued over which was right.
     from app.acceptance.api_reference import api_reference
+    from app.agents import ledger
 
-    return api_reference(specification) + _the_entries_about_its_files(specification, work_order)
+    # And the strict contract lines the suite and the release check (plan
+    # CM.2, EF.11): the interface design above is prose, these are exact.
+    return (
+        api_reference(specification)
+        + ledger.for_a_work_order(specification, work_order)
+        + _the_entries_about_its_files(specification, work_order)
+    )
 
 
 def _the_entries_about_its_files(specification: Any, work_order: Any) -> str:

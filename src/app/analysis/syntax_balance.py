@@ -24,8 +24,8 @@ is looking at a stack trace.
 
 Two checkers, by what can be known exactly:
 
-- **Python** is parsed with `ast`, which is the real grammar. A failure there
-  is certain, so it is worth refusing over.
+- **Python** is compiled, which is the real grammar and the checks its compiler
+  makes after parsing. A failure there is certain, so it is worth refusing over.
 - **C-family** braces are counted, which is a structure check and not a parse.
   It cannot see a missing semicolon or a bad keyword, and it is deliberately
   conservative about what it does see - see `_confidently_unbalanced`.
@@ -39,7 +39,6 @@ impossible for the model to diagnose afterwards, and fatal to a run.
 
 from __future__ import annotations
 
-import ast
 import json
 import re
 from dataclasses import dataclass
@@ -491,7 +490,12 @@ def structural_problem(relative_path: str, content: str) -> str | None:
 
     if suffix == ".py":
         try:
-            ast.parse(content)
+            # Compiled, not only parsed: `await` in a plain `def`, `return` or
+            # `yield` outside a function and `break` outside a loop pass the
+            # parser and fail as the module is imported. Measured live: a test
+            # file with `await` in a plain `def` was written without a word,
+            # and every test in it failed to collect. Nothing is run.
+            compile(content, relative_path or "<file>", "exec", dont_inherit=True)
         except SyntaxError as failure:
             where = f" on line {failure.lineno}" if failure.lineno else ""
             # `def class(x)` reports "invalid syntax" and names a line, which is

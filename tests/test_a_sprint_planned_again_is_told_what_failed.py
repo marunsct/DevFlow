@@ -111,3 +111,51 @@ def test_an_attempt_s_record_keeps_each_defect_s_round_and_what_it_showed() -> N
     (recorded,) = _what_a_plan_did(None, SimpleNamespace(defects=[defect]))["defects"]
 
     assert recorded["found_in_round"] == 2 and recorded["actual_behavior"] == "unable to open database file"
+
+
+#: The unit run's output as one run's ended: pytest's and the import system's frames, then the cause.
+COLLECTION_ERROR = """== _____________________ ERROR collecting tests/test_items.py _____________________
+.venv/lib/python3.12/site-packages/_pytest/python.py:508: in importtestmodule
+    mod = import_path(
+/usr/local/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+E     File "shop/tests/test_items.py", line 146
+E       result = await db_session.execute(select(User))
+E                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   SyntaxError: 'await' outside async function
+=========================== short test summary info ============================
+ERROR tests/test_items.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!"""
+
+
+def test_a_unit_failure_carries_the_line_that_says_what_went_wrong() -> None:
+    """Measured on one run: the re-plan was shown the first 600 characters of the defect -
+    import frames - and "the unit test command exits non-zero"; it planned new test files
+    and left the broken one as it was."""
+    from app.graph.workflow import _the_unit_tests_fail
+
+    defect = _the_unit_tests_fail(None, COLLECTION_ERROR)
+
+    assert "SyntaxError: 'await' outside async function" in defect.actual_behavior
+    assert "importtestmodule" not in defect.actual_behavior and "_gcd_import" not in defect.actual_behavior
+
+
+def test_the_same_check_s_defect_from_two_rounds_is_shown_once() -> None:
+    from app.graph.workflow import _the_unit_tests_fail
+
+    earlier = _the_unit_tests_fail(None, COLLECTION_ERROR.replace("line 146", "line 140"))
+    latest = _the_unit_tests_fail(None, COLLECTION_ERROR)
+    attempt = {"number": 3, "status": "Failed", "reason": "exhausted remediation attempts", "defects": [
+        {"status": "open", "description": earlier.description, "owner": "testing", "found_in_round": 1,
+         "actual_behavior": earlier.actual_behavior},
+        {"status": "open", "description": latest.description, "owner": "testing", "found_in_round": 2,
+         "actual_behavior": latest.actual_behavior},
+    ]}
+
+    section = _request(attempt)
+    section = section[section.index("was not accepted"):section.index("What that attempt built")]
+
+    assert section.count("The unit tests fail.") == 1 and "Raised by an earlier round" not in section
+    assert "SyntaxError: 'await' outside async function" in section

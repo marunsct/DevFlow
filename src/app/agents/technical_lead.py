@@ -596,7 +596,9 @@ def _what_the_last_attempt_left(attempt: Any) -> str:
     for defect in attempt.get("defects") or []:
         if not isinstance(defect, dict) or str(defect.get("status") or "open") != "open":
             continue
-        key = " ".join(str(defect.get("description") or "").split())
+        # By its first sentence: a check's own words, the same each round,
+        # where the output after them differs run to run.
+        key = re.split(r"(?<=[.!?])\s|\n", " ".join(str(defect.get("description") or "").split()), maxsplit=1)[0]
         if key:
             # The latest of one description stands for all of them.
             latest.pop(key, None)

@@ -2668,6 +2668,29 @@ def _what_the_compiler_says_of(root: str, touched: set[str], stage_name: str, pr
 UNIT_FAILURE_TAIL_CHARACTERS = 3_000
 
 
+#: A line of a runner's output that states what went wrong: an error or exception
+#: named, a failure reported - in the words runners of every language use.
+_STATES_AN_ERROR = re.compile(r"\b\w*(?:Error|Exception)\b|\berror\b|\bFAIL(?:ED|URE)?\b|\bfailed\b|panicked|\bassert", re.I)
+#: A line that only says where: a stack frame, or a runner's banner around one.
+_ONLY_SAYS_WHERE = re.compile(r'^\s*(?:File "|at\s|\S+:\d+: in\b|<frozen\b|_{5,}|={5,}|-{5,}|\^+\s*$|\?\?\?)')
+#: Lines of a failure's cause kept, the last ones its output gives.
+MOST_CAUSE_LINES = 8
+
+
+def _what_the_failure_says(output: str) -> str:
+    """The lines of a runner's output that state what went wrong, the last of them; "" when none does.
+
+    Measured on one run: a test file had `await` in a plain function, the unit
+    run's output ended in pytest's and the import system's frames, and the line
+    that said so - `SyntaxError: 'await' outside async function` - was past the
+    600 characters a sprint planned again is shown of a defect. Its lead planned
+    new test files and left the broken one as it was.
+    """
+    lines = [" ".join(line.split()) for line in str(output or "").splitlines()]
+    stated = [line for line in lines if line and _STATES_AN_ERROR.search(line) and not _ONLY_SAYS_WHERE.match(line)]
+    return "\n".join(dict.fromkeys(stated[-MOST_CAUSE_LINES:]))[:1_000]
+
+
 def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
     """The defect for a failing unit run, owned by the role that writes the product.
 
@@ -2679,12 +2702,14 @@ def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
     roles = [str(getattr(t, "specialist_role", "")) for t in (getattr(milestone, "delegated_tasks", None) or [])]
     owner = next((role for role in roles if role and role not in {"testing", "documentation"}), "testing")
     tail = str(output or "").strip()[-UNIT_FAILURE_TAIL_CHARACTERS:]
+    causes = _what_the_failure_says(tail)
     return ReportedDefect(
         description=UNIT_TESTS_FAIL + " The runner's output ends:\n" + (tail or "(no output)"),
         severity="major",
         reproduction_steps="Run the project's unit test command.",
         expected_behavior="Every unit test passes.",
-        actual_behavior="The unit test command exits non-zero.",
+        actual_behavior=("The unit test command exits non-zero. It says:\n" + causes) if causes
+        else "The unit test command exits non-zero.",
         affected_files=[],
         owner=owner,
     )

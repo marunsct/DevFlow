@@ -258,6 +258,23 @@ def not_automatable(blockers: Sequence[str]) -> dict[str, str]:
     return found
 
 
+def _where_a_file_left_out_is() -> str:
+    """What a suite file left out of the request says about where it is.
+
+    Measured on one run: a 58,000-character suite showed 24,000 here and told
+    the reviewer to read the rest; the project memory held all ten files
+    whole, every one of the five reads came back "is in the project memory",
+    and the stall rule then withheld the reviewer's tools - a model call and
+    five tool calls spent finding what it already had. With the memory on, the
+    memory is where the file is.
+    """
+    from app.agents import project_memory
+
+    if project_memory.enabled():
+        return "(not shown here: it is in the project memory; read it only if the memory names it as not included)"
+    return "(not shown - read it with your tools)"
+
+
 def suite_text(repo_root: str | Path) -> str:
     root = Path(repo_root)
     parts: list[str] = []
@@ -269,7 +286,7 @@ def suite_text(repo_root: str | Path) -> str:
             continue
         block = f"### {path.relative_to(root).as_posix()}\n{text}\n"
         if total + len(block) > SUITE_TEXT_CHARS:
-            parts.append(f"### {path.relative_to(root).as_posix()}\n(not shown - read it with your tools)\n")
+            parts.append(f"### {path.relative_to(root).as_posix()}\n{_where_a_file_left_out_is()}\n")
             continue
         parts.append(block)
         total += len(block)

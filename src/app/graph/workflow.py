@@ -11296,12 +11296,15 @@ def rewind_to(graph: Any, thread_id: str, checkpoint_id: str, repo_root: str | N
     what was done: the stage, and whether the files were put back.
     """
     config = _run_config(thread_id, DEFAULT_RECURSION_LIMIT)
-    target = next(
-        (s for s in graph.get_state_history(config)
-         if s.config["configurable"].get("checkpoint_id") == checkpoint_id),
-        None,
-    )
-    if target is None:
+    # That one checkpoint, read by its id. Measured on 2026-10-20: scanning the
+    # history for it - the checkpoint store reads the history whole - got the
+    # API's workers killed for memory on an 11-hour run, and the rewind failed.
+    at = {**config, "configurable": {**config.get("configurable", {}), "checkpoint_ns": "", "checkpoint_id": checkpoint_id}}
+    try:
+        target = graph.get_state(at)
+    except Exception:  # noqa: BLE001 - an unreadable checkpoint is one this run does not have
+        target = None
+    if target is None or (target.config or {}).get("configurable", {}).get("checkpoint_id") != checkpoint_id:
         raise RewindError(f"This run has no checkpoint {checkpoint_id}.")
     node = target.next[0] if len(target.next or ()) == 1 else None
     if node is None or _not_a_stage_of_its_own(node):

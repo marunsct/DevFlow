@@ -227,3 +227,36 @@ def test_the_points_are_listed_one_checkpoint_at_a_time():
 
     assert len(points) == 200 and points[0]["at"] == "t0001" and points[0]["sprint"] == 1
     assert most[0] <= 3, f"{most[0]} snapshots held at once"
+
+
+def test_a_rewind_reads_its_one_checkpoint_not_the_history():
+    """Measured on 2026-10-20: finding the checkpoint by scanning the history got the API's
+    workers killed for memory on an 11-hour run, and the rewind could not be made."""
+    from types import SimpleNamespace
+
+    from app.graph.workflow import RewindError, rewind_to
+
+    asked = []
+
+    def get_state(config):
+        asked.append(config["configurable"]["checkpoint_id"])
+        if config["configurable"]["checkpoint_id"] != "c42":
+            return SimpleNamespace(config={"configurable": {"checkpoint_id": "latest"}}, next=())
+        return SimpleNamespace(config={"configurable": {"checkpoint_id": "c42"}}, next=("milestone_review",),
+                               created_at="2026-10-20T07:54:42+00:00")
+
+    def no_history(_config):
+        raise AssertionError("the whole history was read")
+
+    graph = SimpleNamespace(get_state=get_state, get_state_history=no_history,
+                            update_state=lambda config, values: None)
+
+    done = rewind_to(graph, "thread", "c42")
+
+    assert done["stage"] == "milestone_review" and asked == ["c42"]
+    try:
+        rewind_to(graph, "thread", "c-missing")
+    except RewindError:
+        pass
+    else:
+        raise AssertionError("a checkpoint the run does not have is refused")

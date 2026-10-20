@@ -339,6 +339,22 @@ def _the_manifests(found: Sequence[tuple[str, str, str]], project: Path | None) 
     return list(dict.fromkeys(chosen))
 
 
+def _where_each_belongs(found: Sequence[tuple[str, str, str]], project: Path | None) -> str:
+    """"declare `a` in `package.json`; `b`, `c` in `requirements.txt`" - each language's packages in its own manifest.
+
+    Measured on one gate run: the defect named both manifests and listed the
+    packages by importing file only, and the fix put a JavaScript package
+    into `requirements.txt`, which then failed to install.
+    """
+    parts = []
+    for language in dict.fromkeys(language for _, _, language in found):
+        manifest = (_the_manifests([item for item in found if item[2] == language], project) or ["its manifest"])[0]
+        names = ", ".join(f"`{name}`" for name, _, lang in found[:8] if lang == language)
+        if names:
+            parts.append(f"declare {names} in `{manifest}` ({language} packages)")
+    return "; ".join(parts) or "declare each in its language's manifest"
+
+
 def the_bundled_defect(found: Sequence[tuple[str, str, str]], *, owner: str, project: Path | None = None) -> Any:
     """One defect naming every undeclared import, for the fixer to declare.
 
@@ -364,7 +380,7 @@ def the_bundled_defect(found: Sequence[tuple[str, str, str]], *, owner: str, pro
         ),
         expected_behavior=(
             "Every third-party package the code imports is declared by a manifest "
-            "a clean install reads."
+            "a clean install reads: " + _where_each_belongs(found, project) + "."
         ),
         actual_behavior=(
             f"Undeclared: {named}{extra} (the harness's manifest reconciliation)"

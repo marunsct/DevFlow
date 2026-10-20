@@ -135,8 +135,15 @@ def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) 
             outcome = runner(argv, "install", project) or {}
             code = str(outcome.get("returncode", outcome.get("exit_code", "0")))
             if code not in ("0", "None", ""):
-                logger.warning("A changed manifest could not be installed: `%s` exited %s", " ".join(argv), code)
-                return [f"`{' '.join(argv)}` failed after the project's manifest changed."]
+                said = (str(outcome.get("stderr") or "") + "\n" + str(outcome.get("stdout") or "")).strip()
+                tail = "\n".join(line for line in said.splitlines() if line.strip())[-600:]
+                logger.warning("A changed manifest could not be installed: `%s` exited %s: %s",
+                               " ".join(argv), code, tail[-200:].replace("\n", " | "))
+                # What the installer said: measured on one gate run, a JavaScript
+                # package written into `requirements.txt` failed every install,
+                # and the note said only that the command failed.
+                return [f"`{' '.join(argv)}` failed after the project's manifest changed"
+                        + (f"; it ended:\n{tail}" if tail else ".")]
         installed(repo_root)
         logger.info("The project's manifest changed since its last install; installed again")
         return ["The project's dependencies were installed again: a manifest changed since the last install."]

@@ -280,3 +280,18 @@ def test_a_symptom_does_not_join_causes_in_different_files() -> None:
     assert len(merged) == 2
     assert {tuple(d.affected_files) for d in merged} == {("shop/routers/auth.py",), ("shop/schemas/__init__.py",)}
 
+
+def test_the_defect_says_which_manifest_each_package_goes_in(tmp_path) -> None:
+    """Measured on one gate run: the fix put a JavaScript package into `requirements.txt`, which then failed to install."""
+    (tmp_path / "requirements.txt").write_text("fastapi\n")
+    (tmp_path / "package.json").write_text("{}")
+
+    defect = dependency_drift.the_bundled_defect(
+        [("recharts", "src/pages/Analytics.tsx", "javascript"), ("passlib", "shop/auth.py", "python"),
+         ("python-dotenv", "shop/config.py", "python")],
+        owner="backend", project=tmp_path,
+    )
+
+    assert "declare `recharts` in `package.json`" in defect.expected_behavior
+    assert "declare `passlib`, `python-dotenv` in `requirements.txt`" in defect.expected_behavior
+

@@ -106,3 +106,20 @@ def test_every_measurement_the_harness_runs_installs_first(tmp_path, monkeypatch
     installs = [argv for argv, category in ran if category == "install"]
     assert installs == [list(argv) for argv in pack.commands("shop", None)["install"]]
     assert ran[-1] == (["npx", "playwright", "test", "acceptance/auth.spec.js"], "probe")
+
+
+def test_a_failed_install_says_what_the_installer_said(tmp_path):
+    """Measured on one gate run: a JavaScript package written into `requirements.txt` failed every install,
+    and the note said only that the command failed."""
+    _project(tmp_path)
+    runner = _Runner()
+    contract.installed(tmp_path, runner)
+    (tmp_path / "shop" / "requirements.txt").write_text("fastapi\nrecharts\n")
+
+    def failing(argv, category, working_directory):
+        return {"returncode": "1", "stdout": "",
+                "stderr": "ERROR: No matching distribution found for recharts\n"}
+
+    notes = contract.install_if_the_manifests_changed(tmp_path, failing)
+
+    assert notes and "No matching distribution found for recharts" in notes[0]

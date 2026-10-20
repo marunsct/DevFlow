@@ -691,6 +691,7 @@ def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
         guide=f"{frontend.guide}\n{service.guide}\nRun every unit test with `npm test`. {DATA_GUIDE}",
         data_store=DATA_GUIDE,
         entrypoints=tuple(e for e in (frontend.entry, service.entry) if e),
+        wired_by_imports=True,
         acceptance_guide=ACCEPTANCE_GUIDE,
         stack={
             "language": "Python and TypeScript" if service.language == "python" else "TypeScript and JavaScript",

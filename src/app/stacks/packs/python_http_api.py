@@ -169,6 +169,7 @@ PACK = StackPack(
     acceptance_pattern="test_*.py",
     unit_pattern="test_*.py",
     entrypoint="{{package}}/main.py",
+    wired_by_imports=True,
     unit_test_names=_python.UNIT_TEST_NAMES,
     test_helpers=_python.TEST_HELPERS,
     kept_files=("pytest.ini", "acceptance/conftest.py"),

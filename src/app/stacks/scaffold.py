@@ -190,6 +190,49 @@ def folders_nothing_serves(repo_root: str | Path) -> list[str]:
         return []
 
 
+#: How many unreached files a finding names before it says how many more.
+UNREACHED_NAMED = 8
+
+
+def _modules_nothing_imports(root: Path, project: str, entrypoints: list[str], pack: Any) -> list[str]:
+    """Each served folder's modules that no import from its entrypoint reaches, as findings; [] for a pack that loads code otherwise.
+
+    Measured on one run: every test passed while the service ran from one
+    `main.py` that redefined its models and routes, and the page from one
+    `App.tsx` - the planned modules beside them, 59% of the product's lines,
+    imported each other and nothing imported them. See
+    `app.analysis.reachability`.
+    """
+    if not getattr(pack, "wired_by_imports", False):
+        return []
+    from app.analysis.reachability import unreached_modules
+
+    problems = []
+    for found in unreached_modules(
+        root,
+        entrypoints,
+        lambda name: _a_unit_test(name, pack) or name in (getattr(pack, "test_helpers", ()) or ()),
+        getattr(pack, "kept_files", ()) or (),
+    ):
+        named = ", ".join(f"`{project}/{f}`" for f in found.files[:UNREACHED_NAMED])
+        more = f" and {len(found.files) - UNREACHED_NAMED} more" if len(found.files) > UNREACHED_NAMED else ""
+        repeated = ""
+        if found.repeats:
+            copy, served, names = found.repeats
+            shown = ", ".join(f"`{n}`" for n in names[:6])
+            repeated = (
+                f" `{project}/{copy}` defines {shown} again, as `{project}/{served}` does: two copies, "
+                "and only the second runs."
+            )
+        problems.append(
+            f"{len(found.files)} source file(s) ({found.lines} lines) under the served "
+            f"`{project}/{Path(found.entrypoint).parts[0]}/` are imported by nothing the product runs "
+            f"from `{project}/{found.entrypoint}`: {named}{more}.{repeated} Keep one copy - import "
+            "these modules where the product starts and remove what they repeat, or remove them."
+        )
+    return problems
+
+
 def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
     """Code beside the served app that the product never runs, and unit tests that only test it. Never raises.
 
@@ -229,6 +272,7 @@ def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
                 f"(e.g. `{project}/{mirrored[0]}`), and nothing serves it: the product runs from "
                 f"`{project}/{entrypoint}`. Change the served copy; the other is never built or run."
             )
+        problems.extend(_modules_nothing_imports(root, project, entrypoints, pack))
         for family in sorted({_family(e) for e in entrypoints} - {""}):
             tests = [f for f in files if _family(f) == family and _a_unit_test(Path(f).name, pack)]
             served_folders = {

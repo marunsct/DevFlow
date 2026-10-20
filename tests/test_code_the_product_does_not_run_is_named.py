@@ -30,7 +30,9 @@ def _workspace(tmp_path, files: dict[str, str]):
 
 
 SERVED = {
-    "src/App.tsx": "export default function App() {}",
+    # The served page imports its own modules, as a built one does; a module it
+    # never imports is a finding of its own (`app.analysis.reachability`).
+    "src/App.tsx": "import D from './pages/Dashboard';\nimport { get } from './api/client';\nexport default function App() {}",
     "src/pages/Dashboard.jsx": "export default 1",
     "src/api/client.jsx": "export const get = 1",
     "board/main.py": "app = object()",

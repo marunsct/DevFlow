@@ -102,6 +102,7 @@ one after another against the same service, so a test must create what it reads.
 PACK = StackPack(
     name="fullstack-node",
     entrypoint="src/app.js",
+    wired_by_imports=True,
     title="Browser app with its own HTTP service, in JavaScript on Express",
     kind="fullstack",
     language="javascript",

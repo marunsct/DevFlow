@@ -117,6 +117,13 @@ class StackPack:
     #: `backend/app/`, the served page stayed the scaffold's `src/App.tsx`, and
     #: every page test failed its first control while 13 fixers chased criteria.
     entrypoints: tuple[str, ...] = ()
+    #: Whether the product's code reaches its modules only through imports, so
+    #: a source file under an entrypoint's folder that no import reaches is
+    #: code the product never runs (`app.analysis.reachability`). Off for a
+    #: framework that loads modules by where they sit or by name - file-system
+    #: routes, autoloading, settings strings - where that would accuse code
+    #: the framework runs.
+    wired_by_imports: bool = False
     #: Where the product's data lives as the tests run it, said to the architect
     #: before the scaffold exists. Measured live: told the files and not the
     #: data, it planned a server's column types and search for a product every

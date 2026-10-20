@@ -105,6 +105,7 @@ rather than counting all of them.
 PACK = StackPack(
     name="node-http-api",
     entrypoint="src/app.js",
+    wired_by_imports=True,
     title="HTTP service in JavaScript on Express",
     kind="http_api",
     language="javascript",

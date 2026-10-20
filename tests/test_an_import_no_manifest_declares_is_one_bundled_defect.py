@@ -203,3 +203,22 @@ def test_an_import_the_installed_packages_name_and_a_required_one_are_declared(t
     found = dependency_drift.undeclared(project)
 
     assert [name for name, _, _ in found] == ["requests"]
+
+
+def test_a_bundled_defect_raised_before_is_closed_once_the_reconciliation_finds_them_declared(tmp_path):
+    """Measured live: the defect was raised by the reconciliation before it read the installed
+    packages, and two fixers in turn "declared" `jose` - each broke the product and was reverted."""
+    from app.analysis import dependency_drift
+    from app.graph import engineering
+
+    project = tmp_path / "shop"
+    (project / "shop_pkg").mkdir(parents=True)
+    (tmp_path / ".project-directory").write_text("shop\n")
+    (project / "pyproject.toml").write_text('[project]\nname = "shop"\ndependencies = ["python-jose>=3.5.0"]\n')
+    (project / "shop_pkg" / "auth.py").write_text("from jose import jwt\nimport requests\n")
+    _installed(project, "python-jose", "3.5.0", tops=("jose",))
+    stale = dependency_drift.the_bundled_defect([("jose", "shop_pkg/auth.py", "python")], owner="backend")
+    real = dependency_drift.the_bundled_defect([("requests", "shop_pkg/auth.py", "python")], owner="backend")
+
+    assert "declared now" in engineering.no_longer_underlined(str(tmp_path), stale.description)
+    assert engineering.no_longer_underlined(str(tmp_path), real.description) == ""

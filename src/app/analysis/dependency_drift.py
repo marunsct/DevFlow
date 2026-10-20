@@ -303,6 +303,21 @@ def undeclared(project: Path) -> list[tuple[str, str, str]]:
     return found
 
 
+#: How the bundled defect begins, so it can be told apart and checked again.
+OPENING = "The code imports packages no manifest declares:"
+#: A package the defect names: "`name` (imported in `file`)".
+_NAMED = re.compile(r"`([^`]+)` \(imported in `")
+
+
+def still_undeclared(project: Path, description: str) -> list[str] | None:
+    """The packages a bundled defect names that are still undeclared; None when it is not one."""
+    if not str(description or "").startswith(OPENING):
+        return None
+    named = _NAMED.findall(description)
+    now = {name.lower() for name, _, _ in undeclared(Path(project))}
+    return [name for name in named if name.lower() in now]
+
+
 def the_bundled_defect(found: Sequence[tuple[str, str, str]], *, owner: str) -> Any:
     """One defect naming every undeclared import, for the fixer to declare.
 
@@ -316,7 +331,7 @@ def the_bundled_defect(found: Sequence[tuple[str, str, str]], *, owner: str) -> 
     extra = f" and {len(found) - 8} more" if len(found) > 8 else ""
     return ReportedDefect(
         description=(
-            f"The code imports packages no manifest declares: {named}{extra}. "
+            f"{OPENING} {named}{extra}. "
             "A clean install provides none of them - this fails when the code runs."
         ),
         severity="major",
@@ -335,4 +350,4 @@ def the_bundled_defect(found: Sequence[tuple[str, str, str]], *, owner: str) -> 
     )
 
 
-__all__ = ["CODE_SUFFIXES", "the_bundled_defect", "undeclared"]
+__all__ = ["CODE_SUFFIXES", "OPENING", "still_undeclared", "the_bundled_defect", "undeclared"]

@@ -175,6 +175,19 @@ def no_longer_underlined(root: str, description: str) -> str:
     one undefined name; each went to a fixer of its own, five to eight minutes
     apiece, after the first had already fixed it. Never raises.
     """
+    try:
+        from app.analysis import dependency_drift
+        from app.tools.repository import pinned_project_directory
+
+        pinned = pinned_project_directory(Path(root))
+        left = dependency_drift.still_undeclared(Path(root) / pinned if pinned else Path(root), str(description or ""))
+        if left is not None:
+            # Measured live: a reconciliation fixed since raised `jose` and
+            # `starlette`, both declared in effect, and two fixers "declared"
+            # them - each change broke the product and was reverted.
+            return "" if left else "The harness's manifest reconciliation finds every package it named declared now."
+    except Exception:  # noqa: BLE001 - a defect not closed goes to a fixer as before
+        pass
     found = _AN_UNDERLINED_DEFECT.match(str(description or "").strip())
     if found is None:
         return ""

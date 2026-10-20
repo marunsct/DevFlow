@@ -3004,6 +3004,17 @@ def _settle_the_fix(
             sprint=state.get("current_sprint_index", 0),
             detail="its own tests still fail, measured after the fix",
         )
+    elif str(getattr(defect, "source", "") or "") == "language service" and _still_underlined(
+        state["repository"].root_path, defect
+    ):
+        # A finding the language service still reports is not fixed, whatever
+        # the fix changed: asked again here, as the next round would ask it.
+        update["remediation"] = cycle
+        defect_ledger.note(
+            "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+            sprint=state.get("current_sprint_index", 0),
+            detail="the language service still reports it, asked again after the fix",
+        )
     elif defect.regression_test_required and not regression_test and not _the_suite_already_guards_it(
         state, measured, defect
     ):
@@ -4727,6 +4738,12 @@ def _the_same_cause(one: Any, other: Any) -> bool:
 from app.graph.engineering import SAME_PROBLEM_ELSEWHERE  # noqa: E402 - the merge and the recheck share it
 
 
+def _still_underlined(root: str, defect: Any) -> bool:
+    from app.graph.engineering import still_underlined
+
+    return still_underlined(root, str(getattr(defect, "description", "") or ""))
+
+
 def _names_a_cause(defect: Any) -> bool:
     """Whether the defect is a check's finding of a cause, not a symptom of one.
 
@@ -4815,7 +4832,15 @@ def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
             f"- [{getattr(other, 'source', '') or 'reported'}] {' '.join(str(other.description).split())[:400]}"
             for other in others
         )
+        # What each check said the right outcome is, once each: a finding
+        # about a module its importers lack says where the name belongs, and
+        # the merge kept only the first finding's - measured: the module was
+        # rewritten for its own finding and the routers' name never added.
+        expected = list(dict.fromkeys(
+            str(getattr(member, "expected_behavior", "") or "").strip() for member in (item, *others)
+        ))
         merged.append(item.model_copy(update={
+            "expected_behavior": " ".join(e for e in expected if e)[:2000],
             "description": f"{item.description}{SAME_PROBLEM_ELSEWHERE}{also}",
             "affected_files": files,
             "severity": severity,

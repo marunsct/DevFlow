@@ -169,6 +169,44 @@ SAME_PROBLEM_ELSEWHERE = "\n\nThe same problem, as other checks reported it:\n"
 _AN_UNDERLINED_DEFECT = re.compile(r"^(?P<file>\S+) line [\d, ]+: (?P<message>.+)" + re.escape(FAILS_WHEN_IT_RUNS) + "$", re.S)
 
 
+def still_underlined(root: str, description: str) -> bool:
+    """Whether the language service certainly still reports what this defect names; False when gone or unknown.
+
+    For a fix's settlement: measured on one gate run, a rewrite of a settings
+    module that seven routers imported a missing name from fixed the module's
+    own finding, was recorded as fixed unmeasured, and the next round found
+    the product still stopped on that name.
+    """
+    try:
+        from app.analysis import dependency_drift
+        from app.analysis import compiler_check
+        from app.analysis.language_service import underlined_any
+        from app.tools.repository import pinned_project_directory
+
+        pinned = pinned_project_directory(Path(root))
+        project = Path(root) / pinned if pinned else None
+        left = dependency_drift.still_undeclared(project or Path(root), str(description or ""))
+        if left is not None:
+            return bool(left)
+        own, merged, _ = str(description or "").partition(SAME_PROBLEM_ELSEWHERE)
+        found = _AN_UNDERLINED_DEFECT.match(own.strip())
+        if found is None:
+            return False
+        target = Path(root) / found.group("file")
+        if not target.is_file():
+            return False
+        if target.suffix.lower() in compiler_check.SUFFIXES:
+            errors = [e for e in compiler_check.findings(root, pinned or "", [found.group("file")])
+                      if e["file"] == found.group("file")]
+            return any(e["message"] == found.group("message") for e in errors) or bool(merged and errors)
+        now = underlined_any(root, target, target.read_text(encoding="utf-8", errors="replace"), project)
+        if now is None:
+            return False
+        return any(f["message"] == found.group("message") for f in now.here) or bool(merged and now.here)
+    except Exception:  # noqa: BLE001 - settled as before
+        return False
+
+
 def no_longer_underlined(root: str, description: str) -> str:
     """Why an underlined defect is already fixed, or "" when it still holds or cannot be told.
 

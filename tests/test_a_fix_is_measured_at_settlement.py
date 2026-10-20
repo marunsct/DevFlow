@@ -169,3 +169,44 @@ def test_a_fix_whose_own_tests_still_fail_is_recorded_as_that_even_naming_no_tes
     _settle_the_fix(state, cycle, 0, "defect_fix_1_0", fix, measured=LABEL)
 
     assert noted == [("left open", "its own tests still fail, measured after the fix")]
+
+
+def test_a_finding_the_language_service_still_reports_is_left_open(tmp_path, monkeypatch) -> None:
+    """Measured on one gate run: a settings module's rewrite fixed its own finding, was recorded as fixed
+    unmeasured, and the routers' missing name it should have defined stopped the product a round later."""
+    from app.graph import engineering
+
+    (tmp_path / "shop").mkdir()
+    (tmp_path / "shop" / "database.py").write_text("engine = 1\n")
+    monkeypatch.setattr("app.tools.repository.pinned_project_directory", lambda root: "")
+    still = [{"message": '"get_db" is unknown import symbol'}]
+    monkeypatch.setattr("app.analysis.language_service.underlined_any",
+                        lambda root, target, content, project=None: SimpleNamespace(here=still))
+    finding = Defect(
+        description=f'shop/database.py line 1: Cannot access attribute "URL"{engineering.FAILS_WHEN_IT_RUNS}'
+                    f'{engineering.SAME_PROBLEM_ELSEWHERE}- [language service] shop/routers/a.py line 3: "get_db" ...',
+        severity="major", reproduction_steps="read it", expected_behavior="it resolves", actual_behavior="no",
+        owner="backend", regression_test_required=False, source="language service",
+    )
+
+    assert _settle(tmp_path, {}, defect=finding).status != "fixed"
+
+    still.clear()
+    assert _settle(tmp_path, {}, defect=finding).status == "fixed"
+
+
+def test_a_merged_defect_keeps_what_each_check_expected() -> None:
+    from app.agents.specialists import ReportedDefect
+    from app.graph.workflow import _one_defect_per_cause
+
+    def finding(message, expected):
+        return ReportedDefect(description=f'shop/db.py line 1: "{message}" is unknown - this fails when the code runs.',
+                              severity="major", reproduction_steps="r", expected_behavior=expected,
+                              actual_behavior="a", affected_files=["shop/db.py"], owner="backend",
+                              source="language service")
+
+    merged = _one_defect_per_cause([finding("url_of", "It resolves."),
+                                    finding("get_db", "`shop/db.py` defines `engine`; define `get_db` there.")])
+
+    assert len(merged) == 1
+    assert "It resolves." in merged[0].expected_behavior and "define `get_db` there" in merged[0].expected_behavior

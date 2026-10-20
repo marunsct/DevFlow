@@ -358,6 +358,7 @@ test that fails on the old code:
   LF.99 (direct model calls recorded) and LF.100 (an unknown import names its module) at 20:16, the same way. KPIs
   of fast runs before LF.99 undercount drafting and rewrite calls.
   LF.101 (a module-first finding names the module alone) at 20:23, the same way.
+  LF.102 (a merged defect keeps every finding's guidance; a finding is settled by asking the service) at 20:38.
   The rewind-points listing still runs out of memory on a long history: post the checkpoint id to
   `/api/runs/<id>/rewind` directly (points computed in the worker).
 - **Owner, 2026-10-20: every fix is language- and framework-agnostic.** Anything specific to a language or

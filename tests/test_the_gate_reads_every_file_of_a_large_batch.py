@@ -68,3 +68,16 @@ def test_the_cap_on_file_by_file_reads_falls_on_tests_not_on_the_product(tmp_pat
 
     assert [d.affected_files for d in found] == [["web/src/store.ts"]]
     assert read[0] == "web/src/store.ts" and len(read) == engineering.MOST_FILES_UNDERLINED
+
+
+def test_the_gate_names_no_language_of_its_own():
+    """Owner, 2026-10-20: language-specific handling lives with the language's own service,
+    so the gate treats every language alike. The first version tested for `.py` and named
+    Pyright in the gate itself."""
+    import inspect
+
+    source = inspect.getsource(engineering.underlined_in_the_batch)
+
+    assert ".py" not in source and "Pyright" not in source and "TypeScript" not in source
+    assert service.service_name("app/x.py") == "Pyright"
+    assert service.service_name("web/x.ts") == "the TypeScript language service"

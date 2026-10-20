@@ -564,6 +564,28 @@ _WHY_THE_ARGUMENT_IS_REFUSED: dict[str, str] = {
     "git": "reconfigures_the_tool",
 }
 
+#: How code an "eval" flag above carries runs from a file instead, per program
+#: and flag: the file's suffix and what the file holds, `{code}` being the code
+#: as given. The command tool saves the code under that name in the project
+#: and runs the program on the file (`agent_toolkit._code_on_the_command_line_as_a_file`),
+#: so every interpreter refused here gets the same answer. A program missing
+#: from this table keeps the refusal: `rake -e` and `mix -e` run code beside a
+#: build, and a file is not the same command.
+CODE_AS_A_FILE: dict[str, dict[str, tuple[str, str]]] = {
+    "python": {"-c": (".py", "{code}")},
+    "python3": {"-c": (".py", "{code}")},
+    # `.cjs`, so `require` works whatever the package's module type.
+    "node": {
+        "-e": (".cjs", "{code}"), "--eval": (".cjs", "{code}"),
+        "-p": (".cjs", "console.log(eval({code_json}));"), "--print": (".cjs", "console.log(eval({code_json}));"),
+    },
+    "ruby": {"-e": (".rb", "{code}")},
+    # A file is read as markup until `<?php`; `-r` takes code without it.
+    "php": {"-r": (".php", "<?php\n{code}")},
+    "elixir": {"-e": (".exs", "{code}"), "--eval": (".exs", "{code}")},
+    "scala": {"-e": (".sc", "{code}")},
+}
+
 _ALLOWED_PYTHON_MODULES = frozenset({"venv", "pip", "pytest", "unittest"})
 """Modules `python -m` may run.
 

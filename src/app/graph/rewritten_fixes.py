@@ -101,6 +101,9 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
         t.startswith(("AC-", "CR-")) for t in tags_in(str(getattr(defect, "description", "") or ""))
     )
     named = [str(f).strip().lstrip("./") for f in getattr(defect, "affected_files", None) or [] if str(f).strip()]
+    # A trace that prints absolute paths - most runtimes but Python's - names
+    # the workspace's files under its root.
+    failure = failure.replace(str(root).rstrip("/") + "/", "")
     # In the order the failure names them, with a line or without - but not
     # where a line only warns. Measured live: a service failed at start-up in
     # the module that opens its database, the one product file its output

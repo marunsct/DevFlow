@@ -296,7 +296,15 @@ _TESTING_BY_LANGUAGE = {
     "python": (
         "- Testing: `unittest` ships with Python and installs nothing; `pytest` is the "
         "common choice. A test-only package goes in a dev/test dependency group "
-        "(`[dependency-groups]`, `[project.optional-dependencies]`, or a test extra)."
+        "(`[dependency-groups]`, `[project.optional-dependencies]`, or a test extra).\n"
+        # Measured on one gate run: an async service's tests failed to set up
+        # round after round ("requested an async fixture"), and the fix tried
+        # was the configuration - a file the harness keeps. Strict mode is
+        # pytest-asyncio's default and the one that leaves anyio and trio
+        # tests to their own plugin, so the markers are the answer.
+        "- Async tests: pytest-asyncio runs in its default strict mode - mark each async "
+        "test `@pytest.mark.asyncio` and each async fixture `@pytest_asyncio.fixture`; "
+        "a test run by anyio is marked `@pytest.mark.anyio` instead."
     ),
     "go": "- Testing: `go test ./...` is part of the toolchain; test code needs no dependency declaration.",
     "rust": "- Testing: `cargo test`; test-only crates go in `[dev-dependencies]`.",

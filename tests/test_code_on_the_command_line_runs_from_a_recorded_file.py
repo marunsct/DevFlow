@@ -94,4 +94,33 @@ def test_the_tool_says_what_it_does_with_code_on_the_command_line(workspace):
     description = build_terminal_command_tool(str(workspace), "backend").description
 
     assert "are refused" not in description and "tmp-inline-" in description
-    assert not BANNED.search(description[description.index("Code passed"):description.index("next test round")])
+    assert not BANNED.search(description[description.index("Code passed"):description.index("the harness removes the file")])
+
+
+def test_every_language_the_sandbox_refuses_code_for_runs_it_from_a_file(workspace, ran):
+    """Owner, 2026-10-20: a fix that works for one language works for the others, from the
+    harness's own tables. The rewrite knew only Python and Node, while the sandbox refuses
+    code on the command line for Ruby, PHP, Elixir and Scala too."""
+    _run(workspace, ["ruby", "-e", "puts File.exist?('Gemfile')"])
+    _run(workspace, ["php", "-r", "echo PHP_VERSION;"])
+
+    (ruby, _), (php, _) = ran
+    assert ruby[0] == "ruby" and ruby[1].endswith(".rb") and is_scratch(ruby[1])
+    assert (workspace / ruby[1]).read_text() == "puts File.exist?('Gemfile')\n"
+    assert php[1].endswith(".php") and (workspace / php[1]).read_text() == "<?php\necho PHP_VERSION;\n"
+
+
+def test_the_table_covers_every_program_refused_for_code_in_an_argument():
+    from app.tools.sandbox import _WHY_THE_ARGUMENT_IS_REFUSED, CODE_AS_A_FILE
+
+    refused = {program for program, why in _WHY_THE_ARGUMENT_IS_REFUSED.items() if why == "eval"}
+    # Code beside a build: a file is not the same command, so the refusal stands.
+    assert refused - set(CODE_AS_A_FILE) == {"rake", "mix"}
+
+
+def test_the_description_names_every_language_it_rewrites(workspace):
+    description = build_terminal_command_tool(str(workspace), "backend").description
+
+    for named in ("`python -c`", "`node -e`", "`ruby -e`", "`php -r`"):
+        assert named in description
+    assert "{code_flags}" not in description

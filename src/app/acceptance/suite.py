@@ -598,7 +598,7 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
     if not report.tests:
         # No test ran because the product never started: the suite is not at
         # fault, and the product's own error is the defect (`the_product_did_not_start`).
-        never_started = the_product_did_not_start(output)
+        never_started = the_product_did_not_start(output, repo_root)
         if never_started:
             result.problem = never_started
     result.runtime_problems, result.shows = _read_runtime_report(runtime_file)
@@ -907,15 +907,83 @@ _STATES_A_CAUSE = re.compile(
     re.I,
 )
 
-#: A stack frame, as Python (`File "x.py", line 3`) and Node (`at f (x.js:3:5)`) print one.
-_A_FRAME = re.compile(r'File "[^"]+", line \d+|\bat\s.*?[^\s()]+\.[A-Za-z]{1,6}:\d+:\d+')
-#: A frame in a dependency or the runtime, not in the product's own code.
-_IN_A_DEPENDENCY = re.compile(r"site-packages|dist-packages|node_modules|[/\\]\.venv[/\\]|^\.venv|/usr/(?:local/)?lib/|<frozen|\(node:|node:internal")
+#: A place in a file, as runtimes print one in a trace: `path:12`, `path:12:5`,
+#: `path(12)`, `path(12,5)`, `File "path", line 12`, `path:line 12`.
+_A_PLACE = re.compile(
+    r"""(?P<path>(?:[A-Za-z]:)?[\w@~.$/\\-]*?[\w$-]+\.[A-Za-z][A-Za-z0-9]{0,7})"""
+    r"""(?=",\s*line\s+\d+|:line\s+\d+|:\d+|\(\d+(?:,\s*\d+)?\))"""
+)
 #: The product's frames kept from a failed start, the ones nearest the error.
 MOST_PRODUCT_FRAMES = 4
+#: Files of the product looked at, at most, to tell its frames from the rest.
+_MOST_PRODUCT_FILES = 20_000
 
-#: A start that failed opening its data file.
-_A_DATA_FILE_NOT_OPENED = re.compile(r"unable to open database file|SQLITE_CANTOPEN|ENOENT[^\n]{0,120}\.(?:db|sqlite3?)\b", re.I)
+#: A start that failed opening its data file: SQLite's own words, in any
+#: language's binding, or a missing file of a database's suffix.
+_A_DATA_FILE_NOT_OPENED = re.compile(
+    r"unable to open (?:the )?database file|SQLITE_CANTOPEN|"
+    r"(?:ENOENT|no such file or directory|cannot find the path)[^\n]{0,160}\.(?:db|sqlite3?)\b|"
+    r"\.(?:db|sqlite3?)\b[^\n]{0,160}(?:ENOENT|no such file or directory|cannot find the path)",
+    re.I,
+)
+
+
+def _the_product_s_files(root: str | Path | None) -> list[str]:
+    """The workspace's files, by path from its root, outside the folders a tool fills."""
+    if not root:
+        return []
+    import os
+
+    from app.tools.repository import INSTALLED_DIRECTORIES
+
+    base = Path(root)
+    found: list[str] = []
+    for directory, folders, names in os.walk(base):
+        folders[:] = [f for f in folders if f not in INSTALLED_DIRECTORIES and not f.startswith(".")]
+        found.extend(Path(directory, name).relative_to(base).as_posix() for name in names)
+        if len(found) >= _MOST_PRODUCT_FILES:
+            break
+    return found
+
+
+def _names_the_product(line: str, root: str | Path | None, files: list[str]) -> bool:
+    """Whether a trace line names a place in one of the product's own files.
+
+    Whatever the language: a file of the product, not one in a folder a tool
+    fills, by its path from the workspace, from a folder inside it, from the
+    root of another mount, or - as a JVM prints it - by its name alone.
+    """
+    from app.tools.repository import INSTALLED_DIRECTORIES
+
+    prefix = str(Path(root)).rstrip("/") + "/" if root else ""
+    names = {path.rsplit("/", 1)[-1] for path in files}
+    for match in _A_PLACE.finditer(line):
+        place = match.group("path").replace("\\", "/")
+        if prefix and place.startswith(prefix):
+            place = place[len(prefix):]
+        while place.startswith("./"):
+            place = place[2:]
+        place = place.lstrip("/")
+        if not place or any(part in INSTALLED_DIRECTORIES for part in place.split("/")):
+            continue
+        if "/" not in place:
+            if place in names:
+                return True
+            continue
+        if any(path == place or path.endswith("/" + place) or place.endswith("/" + path) for path in files):
+            return True
+    return False
+
+
+def _where_its_data_lives(root: str | Path | None) -> str:
+    """The run's pack's own words on where the product keeps its data, or ""."""
+    try:
+        from app.stacks.contract import the_pack
+
+        found = the_pack(root) if root else None
+        return " ".join(str(found[0].data_store or "").split()) if found else ""
+    except Exception:  # noqa: BLE001 - a hint without it is the hint as it was
+        return ""
 
 #: A start that failed for want of a setting: a required field, an unset variable, a missing secret.
 _A_MISSING_SETTING = re.compile(
@@ -926,7 +994,7 @@ _A_MISSING_SETTING = re.compile(
 )
 
 
-def the_product_did_not_start(output: str) -> str:
+def the_product_did_not_start(output: str, root: str | Path | None = None) -> str:
     """The problem to record when no test ran because the product never came up; "" otherwise.
 
     Measured on one run: a fix rewired the page, the build it served then
@@ -960,21 +1028,22 @@ def the_product_did_not_start(output: str) -> str:
     # the one product file it named was a deprecation warning's - which the
     # fix then rewrote, while the cause sat in the module that opens the
     # database.
-    frames = [i for i, line in enumerate(between) if _A_FRAME.search(line) and not _IN_A_DEPENDENCY.search(line)]
+    files = _the_product_s_files(root)
+    frames = [i for i, line in enumerate(between) if files and _names_the_product(line, root, files)]
     for i in frames[-MOST_PRODUCT_FRAMES:]:
         kept.add(i)
-        if i + 1 < len(between) and not _A_FRAME.search(between[i + 1]):
+        if i + 1 < len(between) and not _A_PLACE.search(between[i + 1]):
             kept.add(i + 1)
     causes = [between[i][:300] for i in sorted(kept)]
     middle = ("\n...\n" + "\n".join(causes)) if causes else ""
     excerpt = ("\n".join(head) + middle + ("\n...\n" + "\n".join(ending) if ending else ""))[:2_400]
     hint = ""
     if _A_DATA_FILE_NOT_OPENED.search(text):
+        guide = _where_its_data_lives(root)
         hint = (
-            "\nThe product could not open its data file. The suite starts it with `DATA_DIR` set to a fresh folder "
-            "for each run; the product keeps its data under `DATA_DIR`, builds the file's path from it, and creates "
-            "the folder if it is missing. A relative path such as `data/app.db` names a folder that need not exist "
-            "where it starts."
+            "\nThe product could not open its data file. It builds the file's path from where it is told to keep "
+            "its data, not from the folder it happens to start in, and creates that folder if it is missing."
+            + (f" This setup says: {guide[:700]}" if guide else "")
         )
     elif _A_MISSING_SETTING.search(text):
         hint = (

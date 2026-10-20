@@ -548,6 +548,57 @@ def python_underlined_together(project: Path, targets: list[Path]) -> dict[Path,
     return found
 
 
+#: The service that reads each suffix, as a finding names it; the rest are the TypeScript service's.
+_SERVICE_NAMES = {".py": "Pyright"}
+#: Suffixes whose service reads the whole project in one run, so a batch of
+#: them is read in that one run: `(project, targets) -> {target: findings}`.
+_READ_TOGETHER: dict[str, Callable[[Path, list[Path]], dict[Path, list[dict]] | None]] = {}
+
+
+def service_name(path: str | Path) -> str:
+    """The language service that reads this file, as a finding should name it."""
+    return _SERVICE_NAMES.get(Path(str(path)).suffix.lower(), "the TypeScript language service")
+
+
+def underlined_in(
+    repo_root: str | Path, relatives: list[str], project: Path | None, most_one_by_one: int,
+) -> dict[str, list[dict]]:
+    """Each file's certain findings, by its path relative to `repo_root`; a file not read is left out.
+
+    A language whose service reads the whole project in one run is read so,
+    every file of it at once, whatever the batch's size; the others file by
+    file, in the order given, up to `most_one_by_one`. Measured at the gate:
+    Pyright asked file by file re-read the project each time, 2 s a file, and
+    a cap on the count, applied by name, left the router of a 22-file batch
+    unread while its imports stopped the service three rounds running.
+    """
+    root = Path(repo_root)
+    found: dict[str, list[dict]] = {}
+    together: dict[tuple[str, Path], list[str]] = {}
+    one_by_one: list[str] = []
+    for relative in relatives:
+        suffix = Path(relative).suffix.lower()
+        if suffix in _READ_TOGETHER:
+            together.setdefault((suffix, project or (root / relative).parent), []).append(relative)
+        else:
+            one_by_one.append(relative)
+    for (suffix, where), group in together.items():
+        try:
+            read = _READ_TOGETHER[suffix](where, [root / relative for relative in group])
+        except Exception:  # noqa: BLE001 - a check that cannot run finds nothing
+            read = None
+        for relative in group:
+            found[relative] = (read or {}).get(root / relative) or []
+    for relative in one_by_one[:most_one_by_one]:
+        target = root / relative
+        try:
+            result = underlined_any(root, target, target.read_text(encoding="utf-8", errors="replace"), project)
+        except Exception:  # noqa: BLE001 - a check that cannot run finds nothing
+            result = None
+        found[relative] = result.here if result is not None else []
+    return found
+
+
 def underlined_any(repo_root: str | Path, target: Path, content: str, project: Path | None = None) -> Underlined | None:
     """The language service for this file's language, or None when there is none here."""
     if target.suffix.lower() == ".py":
@@ -555,6 +606,10 @@ def underlined_any(repo_root: str | Path, target: Path, content: str, project: P
     return underlined(repo_root, target, content, project)
 
 
+_READ_TOGETHER[".py"] = lambda project, targets: python_underlined_together(project, targets)
+
+
 __all__ = [
-    "BOTH", "BROWSER", "NODE", "SUFFIXES", "Underlined", "python_underlined", "python_underlined_together", "runs_in", "underlined", "underlined_any",
+    "BOTH", "BROWSER", "NODE", "SUFFIXES", "Underlined", "python_underlined", "python_underlined_together", "runs_in",
+    "service_name", "underlined", "underlined_any", "underlined_in",
 ]

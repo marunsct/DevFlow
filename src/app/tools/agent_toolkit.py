@@ -599,10 +599,10 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         project's tests from a project directory named `myapp`:
         `command=["npx", "jest"], working_directory="myapp"`.
 
-        Code passed on the command line (`python -c`, `node -e`, `node -p`)
-        is saved as a `tmp-inline-` file in the project and run from there, so
-        what ran is readable afterwards; the harness removes the file before
-        the next test round.
+        Code passed on the command line ({code_flags}) is saved as a
+        `tmp-inline-` file in the project and run from there, so what ran is
+        readable afterwards; the harness removes the file before the next test
+        round.
 
         A command that runs until something stops it - a dev server, a
         watcher, `serve` - has nothing here to stop it and will sit until the
@@ -639,16 +639,10 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
             result = {**result, "note": moved}
         return result
 
-    run_terminal_command.description = with_the_network_as_it_is(run_terminal_command.description)
+    run_terminal_command.description = with_the_network_as_it_is(
+        run_terminal_command.description.replace("{code_flags}", _code_flags_in_words())
+    )
     return run_terminal_command
-
-
-#: Interpreters whose code on the command line is saved to a file and run from it,
-#: by the flags that take the code: (extension, whether it prints the value).
-_CODE_FLAGS: dict[str, dict[str, tuple[str, bool]]] = {
-    "python": {"-c": (".py", False)},
-    "node": {"-e": (".cjs", False), "--eval": (".cjs", False), "-p": (".cjs", True), "--print": (".cjs", True)},
-}
 
 
 def _the_interpreter(program: str) -> str:
@@ -656,6 +650,16 @@ def _the_interpreter(program: str) -> str:
     if re.fullmatch(r"python(?:3(?:\.\d+)?)?", name):
         return "python"
     return name
+
+
+def _code_flags_in_words() -> str:
+    """`python -c`, `node -e`, ... - every program and flag the sandbox's table runs from a file."""
+    from app.tools.sandbox import CODE_AS_A_FILE
+
+    return ", ".join(
+        f"`{program} {flag}`" for program, flags in CODE_AS_A_FILE.items() if program != "python3"
+        for flag in flags if not flag.startswith("--")
+    )
 
 
 def _code_on_the_command_line_as_a_file(
@@ -675,18 +679,19 @@ def _code_on_the_command_line_as_a_file(
     """
     import hashlib
 
+    from app.tools.sandbox import CODE_AS_A_FILE
+
     if not isinstance(command, list) or len(command) < 3:
         return command, ""
-    flags = _CODE_FLAGS.get(_the_interpreter(str(command[0])))
+    flags = CODE_AS_A_FILE.get(_the_interpreter(str(command[0])))
     if not flags:
         return command, ""
     at = next((i for i, part in enumerate(command[1:], 1) if str(part) in flags), None)
     if at is None or at + 1 >= len(command):
         return command, ""
-    extension, prints = flags[str(command[at])]
-    code = str(command[at + 1])
-    if prints:
-        code = f"console.log(eval({json.dumps(code)}));"
+    extension, template = flags[str(command[at])]
+    given = str(command[at + 1])
+    code = template.replace("{code_json}", json.dumps(given)).replace("{code}", given)
     try:
         from app.tools.repository import pinned_project_directory
 

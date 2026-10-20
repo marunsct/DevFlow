@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-#: `asyncio_mode = auto`: with pytest-asyncio installed, an `async def` test or
-#: fixture runs as written. In its default strict mode each needs a marker, and
-#: this file is the harness's: measured on one gate run, a service's async
-#: tests failed to set up round after round ("requested an async fixture") and
-#: a fixer could not change the mode. Without the plugin pytest only warns.
 PYTEST_INI = """[pytest]
 pythonpath = .
 addopts = -p no:cacheprovider
-asyncio_mode = auto
 """
 
 GITIGNORE = """.venv/

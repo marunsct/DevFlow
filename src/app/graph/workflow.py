@@ -4061,6 +4061,54 @@ def _the_layout_repair(served: list[str], state: Any) -> str:
     )
 
 
+#: The settings the harness itself gives the product when it starts it.
+_GIVEN_AT_START = frozenset({"PORT", "DATA_DIR"})
+#: A setting said to be needed before the product can start, in one sentence.
+_NEEDED_TO_START = re.compile(
+    r"`?\b([A-Z][A-Z0-9]*_[A-Z0-9_]+|[A-Z]{3,})\b`?[^.;\n]{0,160}?"
+    r"(?:required at start(?:up)?|refuses? to start|fails? (?:to start )?if (?:it is )?(?:missing|unset|not set)"
+    r"|Default:\s*None|must be (?:set|provided)\b[^.;\n]{0,40}?(?:start|run))",
+    re.I,
+)
+
+
+def _settings_it_cannot_start_without(specification: Any) -> list[str]:
+    """The settings, besides the ones the harness gives, the specification says the product cannot start without.
+
+    Measured on one gate run: the environment contract told every stage the
+    product starts from `PORT` and `DATA_DIR` alone, and the specification said
+    in six sections that `SECRET_KEY` is "required at startup. Default: None
+    (service fails if missing)" - the product did not start for the suite, and
+    every fix was told to keep what the specification gives.
+    """
+    try:
+        text = " ".join(
+            str(value) for value in (specification.model_dump() if hasattr(specification, "model_dump") else {}).values()
+        )
+    except Exception:  # noqa: BLE001 - the specification goes on as written
+        return []
+    found = []
+    for match in _NEEDED_TO_START.finditer(text):
+        name = match.group(1)
+        if name.upper() == name and name not in _GIVEN_AT_START and name not in found and name not in {"JWT", "API", "URL", "HTTP", "CORS"}:
+            found.append(name)
+    return found
+
+
+def _the_startup_repair(required: list[str]) -> str:
+    """What the architect is told when the specification makes the product unable to start as the harness starts it."""
+    named = ", ".join(f"`{name}`" for name in required)
+    return (
+        f"The specification says the product cannot start without {named}. Every test here starts "
+        "it with only `PORT` and `DATA_DIR` set (the environment contract), so as written it never "
+        "starts for them. Give each a development default the environment overrides, or generate it "
+        "at first start and keep it under `DATA_DIR`; a production deployment still sets it. Return "
+        "only the sections that say otherwise - `configuration`, `security_and_privacy`, `deployment`, "
+        "`error_catalogue`, `function_contracts`, `file_plan` - corrected; unchanged sections are "
+        "automatically preserved."
+    )
+
+
 def _the_served_files_the_plan_leaves_out(specification: Any, state: Any) -> list[str]:
     """The files the stack's scaffold serves that the specification's file plan never names; [] if none or unknown.
 
@@ -8110,10 +8158,17 @@ def build_workflow_graph(
             # 28 files were drafted where nothing served them.
             served = [] if missing else _the_served_files_the_plan_leaves_out(update.get("technical_specification"), state)
             layout_repairs = state.get("layout_repair_count", 0) or 0
+            required = [] if (missing or served) else _settings_it_cannot_start_without(
+                update.get("technical_specification")
+            )
             if served and layout_repairs < MAX_SPECIFICATION_REPAIRS:
                 update["layout_repair_count"] = layout_repairs + 1
                 update["stage"] = "principal_architect"
                 update["revision_comments"] = [_the_layout_repair(served, state)]
+            elif required and repairs < MAX_SPECIFICATION_REPAIRS:
+                update["specification_repair_count"] = repairs + 1
+                update["stage"] = "principal_architect"
+                update["revision_comments"] = [_the_startup_repair(required)]
             elif missing and repairs < MAX_SPECIFICATION_REPAIRS:
                 # Straight back to the architect with the exact field names,
                 # without spending an architecture-review cycle on it.

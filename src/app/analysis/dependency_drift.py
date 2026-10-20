@@ -202,6 +202,61 @@ def _python_declared(project: Path) -> set[str] | None:
     return declared
 
 
+def _normalised(name: str) -> str:
+    """A distribution's name as the package index compares them (PEP 503)."""
+    return re.sub(r"[-_.]+", "-", str(name or "").strip().lower())
+
+
+def _what_is_installed(project: Path) -> tuple[dict[str, str], dict[str, set[str]]]:
+    """From the project's own environment: import name -> distribution, and what each distribution requires.
+
+    Read from the installed packages' records (`*.dist-info`: `METADATA`,
+    `top_level.txt`), so nothing is run and no table is kept by hand. Measured
+    on one run: the code imported `jose` and `starlette`, the manifest declared
+    `python-jose` and `fastapi`, and both were reported undeclared - `jose` is
+    what `python-jose` installs, and `starlette` is what `fastapi` requires -
+    while the alias table knew neither.
+    """
+    provides: dict[str, str] = {}
+    requires: dict[str, set[str]] = {}
+    for site in [*project.glob("*/lib/python*/site-packages"), *project.glob("*/Lib/site-packages")]:
+        if site.parts[len(project.parts)] not in {".venv", "venv", "env", ".env"}:
+            continue
+        for info in site.glob("*.dist-info"):
+            try:
+                metadata = (info / "METADATA").read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            found = re.search(r"^Name:\s*(\S+)", metadata, re.M)
+            if not found:
+                continue
+            distribution = _normalised(found.group(1))
+            requires[distribution] = {
+                _normalised(re.split(r"[\s;<>=!~\[(]", line, 1)[0])
+                for line in re.findall(r"^Requires-Dist:\s*(.+)$", metadata, re.M)
+                if "extra ==" not in line
+            }
+            try:
+                tops = (info / "top_level.txt").read_text(encoding="utf-8", errors="replace").split()
+            except OSError:
+                tops = []
+            for top in tops or [found.group(1).replace("-", "_")]:
+                provides.setdefault(top.strip().lower(), distribution)
+    return provides, requires
+
+
+def _what_a_clean_install_brings(declared: set[str], requires: dict[str, set[str]]) -> set[str]:
+    """The declared distributions and everything they require, as installed here."""
+    brought, todo = set(), [_normalised(name) for name in declared]
+    while todo:
+        name = todo.pop()
+        if name in brought:
+            continue
+        brought.add(name)
+        todo.extend(requires.get(name, ()))
+    return brought
+
+
 def _declares(declared: set[str], distribution: str) -> bool:
     """Whether a declared set covers a distribution, exact or dash-suffixed.
 
@@ -235,12 +290,15 @@ def undeclared(project: Path) -> list[tuple[str, str, str]]:
 
     py_declared = _python_declared(project)
     if py_declared is not None:
+        provides, requires = _what_is_installed(project)
+        brought = _what_a_clean_install_brings(py_declared, requires)
         for module, file in sorted(_python_imports(project).items()):
             if _is_a_python_builtin_or_local(project, module):
                 continue
-            distribution = _PYTHON_ALIASES.get(module.lower(), module.lower())
-            if not _declares(py_declared, distribution):
-                found.append((distribution, file, "python"))
+            distribution = provides.get(module.lower()) or _PYTHON_ALIASES.get(module.lower(), module.lower())
+            if _declares(py_declared, distribution) or _normalised(distribution) in brought:
+                continue
+            found.append((distribution, file, "python"))
 
     return found
 

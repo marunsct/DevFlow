@@ -173,3 +173,33 @@ def test_the_defect_text_is_plain_language() -> None:
     text = " ".join(str(v) for v in defect.model_dump().values() if v)
     for word in BANNED:
         assert not re.search(rf"\b{word}\b", text, re.IGNORECASE), word
+
+
+def _installed(project, name, version, *, tops=(), requires=()):
+    info = project / ".venv" / "lib" / "python3.12" / "site-packages" / f"{name.replace('-', '_')}-{version}.dist-info"
+    info.mkdir(parents=True)
+    (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n"
+                                   + "".join(f"Requires-Dist: {r}\n" for r in requires))
+    if tops:
+        (info / "top_level.txt").write_text("\n".join(tops) + "\n")
+
+
+def test_an_import_the_installed_packages_name_and_a_required_one_are_declared(tmp_path):
+    """Measured on one run: `jose` (what `python-jose` installs) and `starlette` (what
+    `fastapi` requires) were reported undeclared, and a fixer that declared `jose` would
+    install an unrelated package of that name."""
+    from app.analysis import dependency_drift
+
+    project = tmp_path / "shop"
+    (project / "shop_pkg").mkdir(parents=True)
+    (project / "pyproject.toml").write_text(
+        '[project]\nname = "shop"\ndependencies = ["fastapi>=0.149", "python-jose[cryptography]>=3.5.0"]\n')
+    (project / "shop_pkg" / "auth.py").write_text(
+        "from jose import jwt\nfrom starlette.middleware import Middleware\nimport requests\n")
+    _installed(project, "python-jose", "3.5.0", tops=("jose",))
+    _installed(project, "fastapi", "0.149.0", requires=("starlette>=0.46.0", "pydantic>=2", 'httpx; extra == "all"'))
+    _installed(project, "starlette", "1.9.0", tops=("starlette",))
+
+    found = dependency_drift.undeclared(project)
+
+    assert [name for name, _, _ in found] == ["requests"]

@@ -25,6 +25,11 @@ DEFAULT_TEST_TIMEOUT_SECONDS = 180
 # back. Off here; the tests that exercise it turn it on. See
 # `app.analysis.work_orders.readiness_enforced`.
 os.environ.setdefault("WORKFLOW_WORK_ORDER_READINESS", "off")
+# At import, not in a session fixture: a test module that imports
+# `app.server.auth` at its top level is collected before any fixture runs, and
+# auth refuses to load without a key - whether it did depended on which worker
+# collected which file first.
+os.environ.setdefault("ENV", "development")
 
 
 @pytest.fixture(autouse=True)

@@ -403,6 +403,41 @@ def with_capped_sprint_count(plan: Any, criteria_count: int, *, fast: bool = Fal
     return plan.model_copy(update=update_dict), folded
 
 
+
+#: Why a plan is the harness's, as its decision and its gap say.
+THE_HARNESS_S_PLAN = "one sprint for every criterion, written by the harness"
+
+
+def a_plan_the_harness_writes(
+    criteria: list[Any], measures: list[str], file_plan: list[str], product: str = "",
+) -> SprintPlanOutput:
+    """One sprint that delivers every criterion and success measure: the plan when the planner gave none.
+
+    A planning stage that runs out of every way to answer failed the run - one
+    run's sprint planner did, after six replies - while a fix, build or test
+    stage that cannot answer is recorded as blocked and the run goes on. One
+    sprint over everything is the plan fast delivery mostly ends with anyway,
+    and every input to it is the harness's own: the locked criteria, the
+    intake's success measures, the specification's file plan. It says it is
+    the harness's, and the release lists it as a gap.
+    """
+    name = product.strip() or "the product"
+    ids = [str(getattr(c, "id", "")) for c in criteria if getattr(c, "id", "")]
+    sprint = SprintDefinition(
+        goal=f"Deliver {name} as the brief and the specification describe it: every acceptance criterion",
+        user_value="Every criterion the brief sets passes in one release.",
+        in_scope=[str(entry) for entry in file_plan] + [str(measure) for measure in measures],
+        acceptance_criteria=[f"{getattr(c, 'id', '')}: {getattr(c, 'text', '')}" for c in criteria],
+        criteria=ids,
+        test_strategy=["Run the locked acceptance suite, which proves every criterion, and the unit tests."],
+        rollback_notes="One sprint: a revert returns the project to its scaffold.",
+    )
+    return SprintPlanOutput(
+        sprints=[sprint],
+        open_questions=[f"The sprint plan is {THE_HARNESS_S_PLAN}: the planner gave no answer."],
+        success_measure_coverage=[f"{index}: Sprint 1" for index in range(1, len(measures) + 1)],
+    )
+
 def how_much_a_plan_leaves_out(plan: Any, measures: list[str]) -> int:
     """How many success measures a plan fails to assign or to deliver in full."""
     return len(

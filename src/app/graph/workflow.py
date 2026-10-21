@@ -3563,6 +3563,15 @@ def _name_the_stage_on_the_run(run_id: str | None, stage_name: str) -> None:
 
 
 
+
+class StageGaveNoAnswer(ValueError):
+    """A stage spent every way to answer: no structured response, no retry left, no blocker it may return.
+
+    A `ValueError` as before, so every handler of that is unchanged; its own
+    class so a stage with an answer of its own to fall back on (the sprint
+    plan: `scrum_master.a_plan_the_harness_writes`) catches this and nothing else.
+    """
+
 #: (run, stage) pairs whose answer was asked for in parts: once per stage, so a
 #: stage the parts could not answer goes on to its restarts as before.
 _ASKED_IN_PARTS: set[tuple[str, str]] = set()
@@ -3600,6 +3609,42 @@ def _the_answer_in_parts(
     except Exception:  # noqa: BLE001 - the stage goes on to its restarts as before
         logger.warning("Stage %s could not be answered in parts", stage_name, exc_info=True)
         return None
+
+
+def _the_harness_s_sprint_plan(state: Any, measures: list[str], root_path: str, why: str) -> dict[str, Any]:
+    """The update that goes on with one sprint over every criterion, said as the harness's, when the planner gave none."""
+    from app.acceptance import suite as acceptance_suite
+    from app.agents.scrum_master import THE_HARNESS_S_PLAN, a_plan_the_harness_writes
+
+    specification = state.get("technical_specification")
+    plan = a_plan_the_harness_writes(
+        acceptance_suite.criteria(root_path), measures,
+        list(getattr(specification, "file_plan", None) or []),
+        str(getattr(state.get("product_intake"), "product_name", "") or ""),
+    )
+    logger.warning("The sprint planner gave no answer; going on with %s", THE_HARNESS_S_PLAN)
+    first_line = why.strip().splitlines()[0] if why.strip() else "no answer"
+    update: dict[str, Any] = {
+        "sprint_plan": plan,
+        "stage": "technical_lead",
+        "pending_approval": None,
+        "pending_inner_thread_id": None,
+        "pending_decision": None,
+        # Through the path every set-aside issue takes to the release's gaps.
+        "known_issues": [*(state.get("known_issues") or []),
+                         f"The sprint plan is {THE_HARNESS_S_PLAN}: {first_line[:300]}"],
+    }
+    try:
+        from app.decisions import record_decision
+
+        record_decision(
+            state, update, point="sprint_plan", question="How is the work split into sprints?",
+            options=["the planner's plan", THE_HARNESS_S_PLAN], decision=THE_HARNESS_S_PLAN,
+            rationale=f"The sprint planner spent every way to answer. {first_line[:400]}",
+        )
+    except Exception:  # noqa: BLE001 - a record is evidence, not control flow
+        logger.debug("Could not record the sprint plan decision", exc_info=True)
+    return update
 
 def _run_gated_agent(
     state: WorkflowGraphState,
@@ -3975,7 +4020,7 @@ def _run_gated_agent(
             blocked = _blocked_when_retries_exhausted(stage_name, result)
         if blocked is None:
             attempted = (state.get("structured_retries") or {}).get(stage_name, 0)
-            raise ValueError(
+            raise StageGaveNoAnswer(
                 _missing_structured_response(stage_name, result, attempts=attempted + 1)
             )
         logger.warning(
@@ -8604,15 +8649,18 @@ def build_workflow_graph(
             ),
             built_ahead=built_ahead_asked_about,
         )
-        update = _run_gated_agent(
-            state,
-            config,
-            stage_name="scrum_master",
-            agent=agent,
-            initial_request=request,
-            output_key="sprint_plan",
-            next_stage="technical_lead",
-        )
+        try:
+            update = _run_gated_agent(
+                state,
+                config,
+                stage_name="scrum_master",
+                agent=agent,
+                initial_request=request,
+                output_key="sprint_plan",
+                next_stage="technical_lead",
+            )
+        except StageGaveNoAnswer as gave_none:
+            update = _the_harness_s_sprint_plan(state, measures, root_path, str(gave_none))
         if not _hand_back(update, "sprint_plan"):
             earlier = state.get("sprint_plan") if gaps_already_asked_about else None
             if earlier is not None and how_much_a_plan_leaves_out(

@@ -97,3 +97,70 @@ def test_the_part_prompts_use_none_of_the_banned_words():
     assert not banned.search(module._SYSTEM)
     for prompt in model.prompts:
         assert not banned.search(prompt.replace("Plan.", ""))
+
+
+from pydantic import BaseModel as _Model
+
+
+class _Decision(_Model):
+    title: str
+    decision: str
+
+
+class _Spec(_Model):
+    scope: str
+    boundaries: str
+    contracts: str
+    files: str
+    decisions: list[_Decision] = []
+
+
+ECHO = {"scope": "SCOPE-TEXT-WRITTEN-EARLIER", "boundaries": "b", "contracts": "c", "files": "f"}
+
+
+class SpecWriter(BaseChatModel):
+    """Writes the scalar parts; for an item, echoes the earlier parts first - and, on the first ask, only them."""
+
+    prompts: list[str] = []
+    echo_only_first: bool = False
+
+    @property
+    def _llm_type(self) -> str:
+        return "spec-writer"
+
+    def _generate(self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any) -> ChatResult:
+        prompt = str(messages[-1].content)
+        self.prompts.append(prompt)
+        asked = prompt.split("Write now:")[1]
+        if "the outline of `decisions`" in asked:
+            text = json.dumps({"items": ["Store notes in SQLite"]})
+        elif "item 1 of" in asked:
+            again = "The last reply held no such object" in asked
+            text = json.dumps(ECHO) if self.echo_only_first and not again else \
+                json.dumps(ECHO) + "\n" + json.dumps({"title": "Storage", "decision": "SQLite under DATA_DIR"})
+        else:
+            text = json.dumps(ECHO)
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=text))])
+
+
+def test_an_item_written_after_an_echo_of_the_parts_before_it_is_still_the_item():
+    spec = answered_in_parts(_Spec, "Write the specification.", SpecWriter(prompts=[]), "principal_architect")
+
+    assert spec is not None and spec.decisions[0].decision == "SQLite under DATA_DIR"
+
+
+def test_an_item_that_came_back_as_an_echo_alone_is_asked_once_more_plainly():
+    model = SpecWriter(prompts=[], echo_only_first=True)
+
+    spec = answered_in_parts(_Spec, "Write the specification.", model, "principal_architect")
+
+    assert spec is not None and spec.decisions[0].title == "Storage"
+    assert any("Send only this part" in p for p in model.prompts)
+
+
+def test_an_item_is_shown_the_names_of_the_parts_before_it_not_their_text():
+    model = SpecWriter(prompts=[])
+    answered_in_parts(_Spec, "Write the specification.", model, "principal_architect")
+
+    item_prompt = next(p for p in model.prompts if "item 1 of" in p.split("Write now:")[1])
+    assert "SCOPE-TEXT-WRITTEN-EARLIER" not in item_prompt and '"scope"' in item_prompt

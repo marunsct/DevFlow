@@ -83,30 +83,59 @@ def _part_model(schema: Any, names: tuple[str, ...]) -> type[BaseModel]:
 
 
 def _read(text: str, model: type[BaseModel]) -> BaseModel | None:
-    """The reply's first JSON object as `model`, shapes repaired; None when it is not one."""
+    """The first JSON object in the reply that is `model`, shapes repaired; None when none is.
+
+    Any object, not only the first: measured live, a reply for one item began
+    by repeating the parts already written, and the item came after them.
+    """
     from app.agents.model_output import strip_reasoning
     from app.agents.settled_answer import validated_leniently
+    from app.agents.text_tool_calls import _json_objects
     from app.agents.wrapped_answer import unwrapped
-    from app.graph.workflow import _first_json_object
 
-    candidate = _first_json_object(strip_reasoning(text or ""))
-    if not candidate:
-        return None
-    try:
-        payload = json.loads(candidate)
-        return validated_leniently(model, unwrapped(payload, model)) if isinstance(payload, dict) else None
-    except Exception:  # noqa: BLE001 - a part that cannot be read is no part
-        return None
+    for candidate in _json_objects(strip_reasoning(text or "")):
+        try:
+            payload = json.loads(candidate)
+            if isinstance(payload, dict):
+                return validated_leniently(model, unwrapped(payload, model))
+        except Exception:  # noqa: BLE001 - not this one
+            continue
+    return None
 
 
-def _ask(model: Any, request: str, asked: str, shape: type[BaseModel], written: dict[str, Any], stage: str) -> BaseModel | None:
+def _ask(model: Any, request: str, asked: str, shape: type[BaseModel], written: dict[str, Any], stage: str,
+         shown: dict[str, Any] | None = None) -> BaseModel | None:
+    """One part asked for; asked once more, plainly, if its reply holds no such part.
+
+    `shown` is what of the parts already written this one is shown, when not
+    all of it: an item of a list sees the outline and the items before it, and
+    only the names of the rest - measured live, an item shown the whole answer
+    so far wrote that out again instead of the item.
+    """
+    for attempt in range(2):
+        part = _ask_once(model, request, asked if attempt == 0 else asked + _AGAIN.format(
+            fields=", ".join(f"`{name}`" for name in shape.model_fields)), shape, written, stage, shown)
+        if part is not None:
+            return part
+    return None
+
+
+_AGAIN = (
+    " The last reply held no such object. Send only this part: one JSON object whose fields are "
+    "{fields}, and nothing else - not the parts already written."
+)
+
+
+def _ask_once(model: Any, request: str, asked: str, shape: type[BaseModel], written: dict[str, Any], stage: str,
+              shown: dict[str, Any] | None = None) -> BaseModel | None:
     from langchain_core.messages import HumanMessage, SystemMessage
 
     from app.observability.direct_calls import config_for_this_run
 
+    seen = written if shown is None else shown
     so_far = (
-        "\n\nThe parts already written, which this part goes on from:\n" + json.dumps(written, indent=1, default=str)
-        if written else ""
+        "\n\nThe parts already written, which this part goes on from:\n" + json.dumps(seen, indent=1, default=str)
+        if seen else ""
     )
     prompt = (
         f"{request}\n\n---\nThe whole answer to the request above ran out of room. It is written in "
@@ -138,9 +167,10 @@ def _items(model: Any, request: str, schema: Any, name: str, written: dict[str, 
         return None
     items: list[Any] = []
     for index, line in enumerate(lines, 1):
-        so_far = {**written, f"{name} (outline)": lines, f"{name} (written so far)": [i.model_dump() for i in items]}
-        one = _ask(model, request, f"item {index} of {len(lines)} of `{name}`, in full: \"{line}\".",
-                   item, so_far, stage)
+        shown = {"fields already written": sorted(written), f"{name} (outline)": lines,
+                 f"{name} (written so far)": [i.model_dump() for i in items]}
+        one = _ask(model, request, f"item {index} of {len(lines)} of `{name}`, in full: \"{line}\" - "
+                   "one object, this item only.", item, written, stage, shown)
         if one is None:
             return None
         items.append(one)

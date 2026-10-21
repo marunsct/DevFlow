@@ -457,6 +457,16 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         problems.append(
             f"The suite does not run: {result.problem}.\n{result.output[-1500:]}".strip()
         )
+        if result.exit_code == 124 or "timed out" in f"{result.problem} {result.output}".lower():
+            stuck = suite.the_test_that_did_not_finish(root, result.output)
+            problems.append(
+                "The suite never finished" + (f": it stopped at {stuck}, which never returned" if stuck else "")
+                + ". A test that never finishes is one that waits for something that never ends - most "
+                "often a product that keeps running, started by the test itself (a service, its server, "
+                "its start script), which the suite's own setup already starts. Make that test check the "
+                "running product instead. This is about the tests, not the product: nothing of the "
+                "product is missing for this reason."
+            )
     problems.extend(suite.tests_that_cannot_pass(root, result))
     vacuous = suite.vacuous_green(root, result)
     problems.extend(vacuous)

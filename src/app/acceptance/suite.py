@@ -188,6 +188,30 @@ def declared_tests(repo_root: str | Path) -> list[tuple[str, str]]:
     return found
 
 
+
+#: A runner's progress line: one mark per finished test, perhaps a percentage.
+_PROGRESS_LINE = re.compile(r"^([.FEsxX]+)\s*(?:\[\s*\d+%\])?$")
+
+
+def the_test_that_did_not_finish(repo_root: str | Path, output: str) -> str:
+    """The test running when the suite was stopped - after the last one its progress marks - or "".
+
+    One run's suite timed out with `FFF.F.F.FFF.` and nothing else: twelve
+    tests had finished, the thirteenth ran the product's start script and never
+    returned, and QA, not told which, decided the product was missing. Only
+    for a runner that prints a mark per test, in the order the files declare.
+    """
+    marks = sum(
+        len(match.group(1))
+        for line in (output or "").splitlines()
+        if (match := _PROGRESS_LINE.match(line.strip()))
+    )
+    tests = declared_tests(repo_root)
+    if not marks or marks >= len(tests):
+        return ""
+    where, name = tests[marks]
+    return f"`{name}` in `{where}`"
+
 def coverage(repo_root: str | Path) -> dict[str, list[str]]:
     """Each criterion and change-request id, with the names of the tests that carry it."""
     covered: dict[str, list[str]] = {}

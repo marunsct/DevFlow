@@ -14,6 +14,7 @@ whitenoise>=6.8
 """
 
 REQUIREMENTS_DEV = """pytest>=8
+pytest-timeout>=2
 pytest-django>=4.9
 """
 
@@ -178,6 +179,7 @@ DJANGO_SETTINGS_MODULE = {{package}}.settings
 pythonpath = .
 testpaths = tests
 addopts = -p no:cacheprovider
+timeout = 90
 """
 
 PACKAGE_JSON = """{

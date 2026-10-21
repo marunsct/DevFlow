@@ -5,7 +5,16 @@ from __future__ import annotations
 PYTEST_INI = """[pytest]
 pythonpath = .
 addopts = -p no:cacheprovider
+timeout = 90
 """
+
+#: A test may run this long before it fails on its own (`pytest-timeout`, in
+#: each pack's `requirements-dev.txt`). Without one, a test that starts the
+#: product and waits for it - `subprocess.run(["bash", "start.sh"])` - never
+#: returned, and the whole suite hung to the command's 300-second limit with no
+#: result for any test: measured on one run's acceptance suite. Now that test
+#: fails alone, says why, and every other test reports.
+PER_TEST_TIMEOUT = "pytest-timeout>=2"
 
 GITIGNORE = """.venv/
 __pycache__/

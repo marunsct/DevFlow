@@ -11,6 +11,7 @@ uvicorn>=0.30
 
 REQUIREMENTS_DEV = """pytest>=8
 httpx>=0.27
+pytest-timeout>=2
 """
 
 MAIN = '''"""The service's HTTP interface."""

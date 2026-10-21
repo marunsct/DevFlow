@@ -16,6 +16,7 @@ dependencies = []
 """
 
 REQUIREMENTS_DEV = """pytest>=8
+pytest-timeout>=2
 """
 
 CLI = '''"""The program's command line."""

@@ -4745,7 +4745,7 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
     try:
         notes = [
             undiscoverable_test(relative_path, content),
-            tests_nothing_of_the_project(relative_path, content),
+            tests_nothing_of_the_project(relative_path, content, target),
             assertions_called_on_the_test_module(relative_path, content),
             a_test_that_asserts_nothing(relative_path, content),
             tests_the_runner_will_never_call(relative_path, content),

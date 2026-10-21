@@ -56,7 +56,7 @@ PACK = StackPack(
     files={
         "pyproject.toml": PYPROJECT,
         "requirements.txt": "",
-        "requirements-dev.txt": "pytest>=8\n",
+        "requirements-dev.txt": "pytest>=8\npytest-timeout>=2\n",
         "pytest.ini": _python.PYTEST_INI,
         ".gitignore": _python.GITIGNORE,
         "{{package}}/__init__.py": INIT,

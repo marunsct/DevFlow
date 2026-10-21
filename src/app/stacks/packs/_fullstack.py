@@ -471,7 +471,7 @@ FASTAPI = Service(
     language="python",
     files={
         "requirements.txt": "fastapi>=0.115\nuvicorn>=0.30\n",
-        "requirements-dev.txt": "pytest>=8\nhttpx>=0.27\n",
+        "requirements-dev.txt": "pytest>=8\nhttpx>=0.27\npytest-timeout>=2\n",
         "pytest.ini": _python.PYTEST_INI.replace("[pytest]\n", "[pytest]\ntestpaths = tests\n"),
         "{{package}}/__init__.py": '"""{{title}}."""\n',
         "{{package}}/main.py": FASTAPI_MAIN,

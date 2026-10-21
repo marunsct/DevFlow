@@ -22,6 +22,7 @@ file it just wrote.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 #: Node's default patterns, as globs reduced to what they mean for a basename:
 #: `*.test.?js`, `*-test.?js`, `*_test.?js`, `test-*.?js`, `test.?js`.
@@ -114,7 +115,7 @@ _RELATIVE_IMPORT = re.compile(
 )
 
 
-def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None:
+def tests_nothing_of_the_project(relative_path: str, content: str, target: Path | None = None) -> str | None:
     """Why this test file tests no project code, or None if it does.
 
     One run wrote `simple-to-do-list-app/app.test.js` with four passing
@@ -159,14 +160,58 @@ def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None
         return None
     if _RELATIVE_IMPORT.search(content):
         return None
+    # A project's own module imported by name - `from notes_api.db import
+    # insert` - is as much the project as `./app.js`. Only relative imports
+    # were seen, so every Python test file got this note.
+    if target is not None and _imports_a_module_the_project_has(content, target):
+        return None
+    # The acceptance suite tests the product from outside, by design: the
+    # harness's own setup starts it, and the tests meet it over its interface.
+    # One run's black-box suite was told to import the module under test, in
+    # another language's syntax.
+    if target is not None and _in_the_acceptance_suite(relative_path, target):
+        return None
     return (
         "This file declares tests and imports nothing from the project, so it "
-        "cannot be exercising any of its code - `node:test`, `assert`, `fs` and "
-        "`path` are the standard library. Tests that only read files by name "
-        "assert that the repository looks a certain way, which passes whether "
-        "or not the product works. Import the module under test "
-        "(`import { addTask } from './app.js'`) and assert on what it does."
+        "cannot be exercising any of its code: what it uses is the standard "
+        "library and the test runner. Tests that only read files by name assert "
+        "that the repository looks a certain way, which passes whether or not the "
+        "product works. Import the module under test and assert on what it does."
     )
+
+
+#: The first name an import statement imports by name, in the languages that
+#: import a project's own modules that way.
+_IMPORTED_BY_NAME = re.compile(r"^\s*(?:from|import)\s+([A-Za-z_]\w*)", re.M)
+
+
+def _imports_a_module_the_project_has(content: str, target: Path) -> bool:
+    """Whether an import by name names a package or module beside this file or above it, up to three levels."""
+    names = set(_IMPORTED_BY_NAME.findall(content or ""))
+    if not names:
+        return False
+    folder = Path(target).parent
+    for _ in range(4):
+        for name in names:
+            if (folder / name).is_dir() or any(path.is_file() for path in folder.glob(f"{name}.*")):
+                return True
+        if folder.parent == folder:
+            break
+        folder = folder.parent
+    return False
+
+
+def _in_the_acceptance_suite(relative_path: str, target: Path) -> bool:
+    """Whether the file is in this run's acceptance suite directory. Never raises."""
+    try:
+        from app.acceptance import suite
+
+        parts = Path(relative_path).parts
+        root = Path(target).resolve().parents[len(parts) - 1] if parts else None
+        directory = suite.directory(root) if root else None
+        return bool(directory) and Path(target).resolve().is_relative_to(Path(directory).resolve())
+    except Exception:  # noqa: BLE001 - the note is given as before
+        return False
 
 
 #: A browser API being built by hand in a test file.

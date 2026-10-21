@@ -12,7 +12,7 @@ week are in `docs/archive/`.
 
 | | |
 |---|---|
-| Run | LFM smoke runs on `benchmarks/notes-api` (`DELIVERY=fast FRONTIER=false`), not Measure runs: run-b62e4f1f failed at its scaffold after a deploy (LF.143); **run-abd8b897** started 15:52 JST on the owner's LFM sampling. Gate run 3 (run-f4f0030b) was stopped at 15:08 JST at the owner's word |
+| Run | LFM smoke runs on `benchmarks/notes-api` (`DELIVERY=fast FRONTIER=false`), not Measure runs: run-b62e4f1f failed at its scaffold after a deploy (LF.143); run-abd8b897 failed at its sprint plan (LF.148/149); **run-a4876ad2** started 16:44 JST on fa37938. Gate run 3 (run-f4f0030b) was stopped at 15:08 JST at the owner's word |
 | Model | **LFM2.5-24B-A2B** (owner's switch, 15:08 JST): 3 slots, 131,072 tokens; the owner's window setting 131,000; server sampling per the model card (temperature 0.1, top-k 50, repetition penalty 1.05, max tokens 32768); DevFlow's reply ceiling still 0 |
 | LFM measured | `loop.sh fitness --edits`: FIT 5/5, edits and whole files 100% well formed; `reasoning-probe run`: it reasons (about 2.3-3.3k output tokens a planning reply), no thinking switch turns that off (`thinking_off` -27%, reasoning still present) |
 | Deployed | worker a31fdcf + LF.146 pending at a stage boundary; app 8f60e01 (`deploy-app`). LF.147 (Progress pane) is committed and held for the next deploy or the run's end (owner) |

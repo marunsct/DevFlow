@@ -1743,6 +1743,58 @@ def _without_reasoning_after_a_lost_reply(request: Any, stage_name: str, lost_be
         return request
 
 
+
+#: Characters of a reply cut at its length limit that the next call is shown.
+CUT_REPLY_KEPT = 4_000
+#: Below this a cut reply is carried as it is: it costs the window little.
+CUT_REPLY_CARRIED_WHOLE = 8_000
+
+
+def _repeats_itself(text: str) -> bool:
+    """Whether the end of `text` is one stretch said over and over: its last 8,000 characters compress past 12 to 1."""
+    import zlib
+
+    tail = text[-8_000:].encode("utf-8", errors="replace")
+    return len(tail) >= 2_000 and len(zlib.compress(tail)) * 12 < len(tail)
+
+
+def _the_cut_reply_shortened(message: Any) -> Any:
+    """`message`, when its reply was cut at the length limit with a long text, cut to its head and a note; else itself."""
+    truncated = any(
+        isinstance(holder, dict) and str(holder.get("finish_reason") or "") == "length"
+        for holder in (getattr(message, "response_metadata", None), getattr(message, "additional_kwargs", None))
+    )
+    content = getattr(message, "content", "")
+    if (getattr(message, "type", None) != "ai" or not truncated or not isinstance(content, str)
+            or len(content) <= CUT_REPLY_CARRIED_WHOLE or getattr(message, "tool_calls", None)):
+        return message
+    why = ("it repeated the same text over and over until the limit stopped it"
+           if _repeats_itself(content) else "it ran past the reply's length limit")
+    note = (f"\n\n[This reply was cut off: {why}. The {len(content) - CUT_REPLY_KEPT:,} characters after "
+            "this point are not shown. Nothing in it was accepted. Write the answer again, once, "
+            "complete and short enough to finish.]")
+    return message.model_copy(update={"content": content[:CUT_REPLY_KEPT] + note})
+
+
+def _with_cut_replies_shortened(request: Any) -> Any:
+    """`request` with every long reply cut at the length limit shortened; `request` itself when there is none.
+
+    A reply cut at its limit is never an answer, and carried whole it cost the
+    next call its window and taught it the loop it was cut in: one stage's
+    first reply repeated a three-character string until 107,596 tokens were
+    spent, the next call was handed all 205,682 characters of it, and its own
+    reply repeated one block 102 times. The empty case - a reply all reasoning
+    - is `_the_last_reply_was_all_reasoning`'s.
+    """
+    try:
+        messages = list(getattr(request, "messages", None) or [])
+        shortened = [_the_cut_reply_shortened(m) for m in messages]
+        if all(a is b for a, b in zip(messages, shortened)):
+            return request
+        return request.override(messages=shortened)
+    except Exception:  # noqa: BLE001 - never fail the call over a saving
+        return request
+
 def build_settled_answer_middleware(
     schema: Any, stage_name: str = "", step_limit: int = 0
 ) -> Any:
@@ -1785,6 +1837,7 @@ def build_settled_answer_middleware(
                 _LOST_ACROSS_VISITS.get(visit_stage, 0) if visit_stage else 0,
             )
             request = _without_reasoning_after_a_lost_reply(request, stage_name, lost)
+            request = _with_cut_replies_shortened(request)
             try:
                 messages = getattr(request, "messages", None)
                 if not isinstance(messages, list) or not messages:

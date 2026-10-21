@@ -31,6 +31,18 @@ describe('the activity feed', () => {
     expect(screen.getByText('“Name the session store.”')).toBeTruthy();
   });
 
+  it('shows a step that answers in structured output alone: its start and its outcome', () => {
+    render(<AgentActivity logs={[
+      event('stage_change', 'tools_models', 'Comparing frameworks, model providers, and infrastructure options.', { status: 'running' }),
+      event('log', 'architecture_review', 'Outcome: passed\nNo blocking finding.'),
+    ]} />);
+    expect(screen.queryByText('Nothing to show yet')).toBeNull();
+    expect(screen.getAllByTestId('activity-note')).toHaveLength(2);
+    expect(screen.getByText(/^Started: /)).toBeTruthy();
+    expect(screen.getByText('Comparing frameworks, model providers, and infrastructure options.')).toBeTruthy();
+    expect(screen.getByText('Outcome: passed')).toBeTruthy();
+  });
+
   it('filters to one lane', async () => {
     render(<AgentActivity logs={logs} />);
     await userEvent.click(screen.getByRole('button', { name: 'fixes' }));

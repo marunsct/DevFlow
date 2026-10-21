@@ -38,7 +38,13 @@ interface AgentActivityProps {
 /** How many entries the feed shows at once, and adds each time earlier ones are asked for. */
 const SHOWN_AT_ONCE = 300;
 
-const ACTIVITY_TYPES = new Set(['agent_message', 'tool_call', 'tool_result', 'review_decision', 'approval_decision']);
+/**
+ * `stage_change` and `log` are in the feed too: a stage that answers in
+ * structured output alone - an intake, a technology consultation - sends no
+ * message and no tool call, so without its start and its outcome the feed said
+ * "Nothing to show yet" while the steps beside it were finishing.
+ */
+const ACTIVITY_TYPES = new Set(['agent_message', 'tool_call', 'tool_result', 'review_decision', 'approval_decision', 'stage_change', 'log']);
 
 /**
  * A result the harness gave instead of what was asked - a read of something the
@@ -57,7 +63,7 @@ const KIND_ICON = {
 
 interface Item {
   key: string;
-  type: 'message' | 'action' | 'decision';
+  type: 'message' | 'action' | 'decision' | 'note';
   stage: string;
   at: string;
   text: string;
@@ -117,6 +123,23 @@ function buildItems(logs: LogEntry[]): Item[] {
       const what = point ? describeStage(point).title : 'the request';
       const comment = (entry.message || '').split(' — ').slice(1).join(' — ');
       items.push({ key, type: 'decision', stage, at, text: `You ${verb} ${what}`, detail: comment || undefined });
+      continue;
+    }
+
+    if (entry.event_type === 'stage_change') {
+      // A step starting, named as the steps list names it; its meaning beneath.
+      const name = stage.replace(/^awaiting_approval:/, '');
+      const meaning = (entry.message || '').trim();
+      items.push({ key, type: 'note', stage, at, text: `Started: ${describeStage(name).title}`,
+        detail: meaning && meaning !== name ? meaning : undefined });
+      continue;
+    }
+
+    if (entry.event_type === 'log') {
+      // What a step decided: its first line, the rest beneath.
+      const [first, ...rest] = (entry.message || '').trim().split('\n');
+      if (!first) continue;
+      items.push({ key, type: 'note', stage, at, text: first, detail: rest.join('\n').trim() || undefined });
       continue;
     }
 
@@ -331,6 +354,17 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
     </div>
   );
 };
+
+/** A step starting, or what it decided: quieter than a message, so the work stays the headline. */
+const NoteRow: React.FC<{ item: Item }> = ({ item }) => (
+  <div className="my-0.5 flex items-start gap-2 py-1 pl-2 pr-2" data-testid="activity-note">
+    <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-none text-text-muted" aria-hidden="true" />
+    <span className="min-w-0 text-[13px] leading-snug text-text-secondary">
+      {item.text}
+      {item.detail && <span className="block text-[12px] text-text-muted">{item.detail}</span>}
+    </span>
+  </div>
+);
 
 /** One of the owner's decisions - an approval, a review answered - in its place in the feed. */
 const DecisionRow: React.FC<{ item: Item }> = ({ item }) => (
@@ -577,6 +611,8 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
                           <div key={item.key} data-at={item.at} className="animate-activity-in">
                             {item.type === 'decision' ? (
                               <DecisionRow item={item} />
+                            ) : item.type === 'note' ? (
+                              <NoteRow item={item} />
                             ) : item.type === 'message' ? (
                               <MessageRow
                                 item={item}

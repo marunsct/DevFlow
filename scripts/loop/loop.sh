@@ -271,11 +271,27 @@ kpi)
     mv "data/kpi/$run.json.tmp" "data/kpi/$run.json"
     bench=$(echo "$(cat "$STATE/current_brief.txt" 2>/dev/null)" | sed -n 's#^benchmarks/\([^/]*\)/brief.md$#\1#p')
     "$PY" "$HERE/kpi_ledger.py" "data/kpi/$run.json" data/kpi/ledger.csv "$bench"
+    # And the run's reader inputs into the corpus the suite replays (plan RC.1).
+    "$0" corpus harvest "$run" >/dev/null 2>&1 || echo "kpi: the corpus harvest did not run" >&2
   else
     rm -f "data/kpi/$run.json.tmp"; echo "kpi: the worker could not read $run's transcript; nothing was changed" >&2; exit 1
   fi
   ;;
 product) in_worker product_audit.py "${2:-$(current)}" ;;
+corpus)
+  # The reader corpus (plan RC): `corpus harvest [run]` keeps a run's reader inputs
+  # with today's results and copies the corpus to the host's data/corpus, where the
+  # suite replays it; `corpus` lists it; `corpus accept` keeps today's results after
+  # a reader change made on purpose.
+  case "${2:-list}" in
+  harvest)
+    in_worker corpus.py "${3:-$(current)}"
+    mkdir -p data/corpus && docker cp langchain-worker-1:/app/data/corpus/. data/corpus/ >/dev/null 2>&1 || true
+    ;;
+  accept) DATA_DIR=data PYTHONPATH="$ROOT/src" "$PY" -c 'from app.observability.reader_corpus import replay; print(replay(accept=True))' ;;
+  *) DATA_DIR=data PYTHONPATH="$ROOT/src" "$PY" -c 'from app.observability.reader_corpus import sizes, replay; print(sizes()); print("changed:", replay())' ;;
+  esac
+  ;;
 checks)
   shift
   # The scored runs are the host's (data/bench); the measurement runs in the worker.

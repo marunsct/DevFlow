@@ -6,7 +6,7 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-21 14:35 JST. Times are JST; containers and transcripts log UTC.
+**As of:** 2026-10-21 14:40 JST. Times are JST; containers and transcripts log UTC.
 
 ## Live now
 
@@ -49,7 +49,7 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
    no deploys into them; score each with `loop.sh score <run> tasks-api`. A bug found is filed
    for the Fix batch, not deployed. A fix batch that moves no hidden score or MF.3 KPI is parked.
 4. Building now, group 1 of Appendix 7 in order: MF.6 (this file) -> RC.1-RC.3 -> OP.1-OP.4 ->
-   CH.1-CH.3 -> IN.2, BW.3, EV.1, SF.1-SF.2. Done: MF.1, MF.3, MF.5.
+   CH.1-CH.3 -> IN.2, BW.3, EV.1, SF.1-SF.2. Done: MF.1, MF.3, MF.5, MF.6, RC.1-RC.3.
 5. Group 2 next after the measured runs, behind switches: PH.3, PH.1, CG.1-CG.2, RL.1-RL.3,
    IN.1, BW.1-BW.2, PN.1-PN.2, EV.2, the rest of AY. M.4 (fix-stage reasoning) is the owner's call.
 
@@ -61,6 +61,7 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
 - Comparing two harness versions: `python3 scripts/loop/kpi_ledger.py arms data/kpi/ledger.csv
   <commit-a> <commit-b> [benchmark]` - runs of exactly one commit, at least two per arm (MF.5).
 - A mixed-version run is never compared.
+- Reader corpus: `loop.sh corpus` (sizes, changes), `corpus harvest <run>`, `corpus accept`; the suite replays `data/corpus` (RC).
 
 ## Rules that are never optional
 

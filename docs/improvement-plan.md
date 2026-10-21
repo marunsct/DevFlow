@@ -3859,9 +3859,9 @@ covers edits only.
 
 | ID | Change | Group | Priority | Status |
 |---|---|---|---|---|
-| RC.1 | Harvest: after every run, every structured answer, tool-call envelope, file plan, contract line, verification claim and settled answer is extracted from the transcript into `data/corpus/<kind>/<hash>.json` with the reader's current result (accepted / repaired / refused) | 1 — now | P1 | PROPOSED |
-| RC.2 | Replay test: the suite replays the whole corpus through today's readers and fails on any sample whose outcome changed; a reader fix is then tested against hundreds of real samples offline, without the GPU or a live run | 1 — now | P1 | PROPOSED |
-| RC.3 | Corpus hygiene: samples are redacted of workspace paths and secrets at harvest; the corpus is `DATA_DIR` state, never committed; a `loop.sh corpus` command lists sizes and the readers each kind exercises | 1 — now | P2 | PROPOSED |
+| RC.1 | Harvest: after every run, every structured answer, tool-call envelope, file plan, contract line, verification claim and settled answer is extracted from the transcript into `data/corpus/<kind>/<hash>.json` with the reader's current result (accepted / repaired / refused) | 1 — now | P1 | BUILT 2026-10-21: `observability/reader_corpus.py` keeps each input four readers took (contract lines, file plans, drafted replies, tool calls written as text) with the reader's result, after every run (`loop.sh kpi` runs `loop.sh corpus harvest`) |
+| RC.2 | Replay test: the suite replays the whole corpus through today's readers and fails on any sample whose outcome changed; a reader fix is then tested against hundreds of real samples offline, without the GPU or a live run | 1 — now | P1 | BUILT 2026-10-21: `tests/test_the_reader_corpus_replays_unchanged.py` replays `data/corpus` through today's readers and fails naming each changed sample; `loop.sh corpus accept` keeps a change made on purpose |
+| RC.3 | Corpus hygiene: samples are redacted of workspace paths and secrets at harvest; the corpus is `DATA_DIR` state, never committed; a `loop.sh corpus` command lists sizes and the readers each kind exercises | 1 — now | P2 | BUILT 2026-10-21: samples redacted at harvest (workspace paths, key- and token-shaped strings); `DATA_DIR` state, never committed; `loop.sh corpus` lists sizes and what changed |
 
 <a id="plan-in"></a>
 ### IN — Intake: confirm assumptions before the run spends hours
@@ -4739,9 +4739,9 @@ the item: what it changes, why, and the evidence (review findings in
 | MF.4 | Measure/Fix cycle on a frozen SHA with a stop rule | P0 (process) | ADOPTED 2026-10-21 (owner), from the run after gate run 3 | [MF](#plan-mf) |
 | MF.5 | ledger compare with minimum n and spread | P1 | BUILT 2026-10-21 (group 1) | [MF](#plan-mf) |
 | MF.6 | `docs/STATE.md` as the only mandatory session read; archive; tokens per fix | P1 | BUILT 2026-10-21 (group 1) | [MF](#plan-mf) |
-| RC.1 | reader corpus harvested from every run's transcript | P1 | PROPOSED 2026-10-21 (group 1, now) | [RC](#plan-rc) |
-| RC.2 | corpus replay test for every reader | P1 | PROPOSED 2026-10-21 (group 1, now) | [RC](#plan-rc) |
-| RC.3 | corpus hygiene and `loop.sh corpus` | P2 | PROPOSED 2026-10-21 (group 1, now) | [RC](#plan-rc) |
+| RC.1 | reader corpus harvested from every run's transcript | P1 | BUILT 2026-10-21 (group 1) | [RC](#plan-rc) |
+| RC.2 | corpus replay test for every reader | P1 | BUILT 2026-10-21 (group 1) | [RC](#plan-rc) |
+| RC.3 | corpus hygiene and `loop.sh corpus` | P2 | BUILT 2026-10-21 (group 1) | [RC](#plan-rc) |
 | IN.1 | assumptions gate before the specification | P1 | PROPOSED 2026-10-21 (group 2) | [IN](#plan-in) |
 | IN.2 | ambiguity count at preview | P2 | PROPOSED 2026-10-21 (group 1, now) | [IN](#plan-in) |
 | BW.1 | regression contract from a seeded codebase's own tests | P1 | PROPOSED 2026-10-21 (group 2) | [BW](#plan-bw) |

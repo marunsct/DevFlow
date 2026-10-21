@@ -379,3 +379,21 @@ def test_a_credential_file_in_a_work_order_is_neither_drafted_nor_left_to_the_ag
     assert drafted[0].changed_files == ["notes/src/store.ts"]
     assert any("`notes/.env.example` is a credential file" in d for d in drafted[0].decisions)
     assert drafted[1].changed_files == []
+
+
+def test_a_draft_the_language_cannot_parse_is_drafted_once_more_with_the_error(tmp_path):
+    # Measured on one run: a service's entry point failed to parse on one line,
+    # and its whole work order went to the agent loop.
+    model = _Model({"notes/app/main.py": "```python\ndef f(a=1, b):\n    pass\n```"})
+    tries = []
+
+    def write(root, path, content):
+        tries.append(path)
+        if len(tries) == 1:
+            raise ValueError("Refusing to write 'notes/app/main.py': Python cannot parse this file on line 1: "
+                             "parameter without a default follows parameter with a default. Nothing was written.")
+
+    drafted = drafting.draft_work_orders([_order("backend", "notes/app/main.py")], SPEC, None, str(tmp_path), model, write=write)
+
+    assert tries == ["notes/app/main.py", "notes/app/main.py"] and drafted[0].changed_files == ["notes/app/main.py"]
+    assert "parameter without a default follows parameter with a default" in model.asked[1]

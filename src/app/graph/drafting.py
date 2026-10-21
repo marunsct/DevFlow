@@ -308,6 +308,10 @@ def _repaired_where_the_compiler_says(
                 logger.info("Repair of draft %s failed: %s", path, str(error)[:200])
 
 
+#: Words of a refused write that name the content, not the path: drafted once more with them.
+CONTENT_REFUSALS = ("language service is sure of", "cannot parse this file")
+
+
 def draft_work_orders(
     tasks: list[Any],
     specification: Any,
@@ -365,7 +369,11 @@ def draft_work_orders(
             try:
                 write(repo_root, path, content)
             except Exception as refused:  # noqa: BLE001 - drafted once more with what was refused
-                if "language service is sure of" not in str(refused):
+                # What the code says - a compiler's finding or a line the
+                # language cannot parse - is drafted once more with it in hand.
+                # Measured on one run: a service's entry point failed to parse
+                # on one line, and its whole work order went to the agent loop.
+                if not any(said in str(refused) for said in CONTENT_REFUSALS):
                     raise
                 content = _draft_one(model, root, path, task, specification, stack, [str(refused)])
                 write(repo_root, path, content)

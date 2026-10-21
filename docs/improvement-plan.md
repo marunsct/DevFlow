@@ -1,8 +1,8 @@
 # Harness Improvement Plan: High-Quality Product Delivery with Local & MoE Models
 
 > **Unified plan (consolidated 2026-10-19).** This file is the only improvement plan.
-> - It carries the original plan (§1–4, Initiatives A–I) and Appendices 1–6
->   (Initiatives J–BL, EF, CM, OS, RL, PH and CG, with the UI parts).
+> - It carries the original plan (§1–4, Initiatives A–I) and Appendices 1–7
+>   (Initiatives J–BL, EF, CM, OS, RL, PH, CG and Appendix 7's MF, RC, IN, BW, PN, OP, CH, EV, SF, with the UI parts).
 > - **Before implementing: Part 21** is the single implementation order and
 >   **Part 22** resolves the contradictions and lists what not to implement.
 > - Section E holds the two earlier plan documents, merged here.
@@ -3489,6 +3489,11 @@ Every stage keeps the standing rules (`AGENTS.md`):
 
 Each stage's gate is judged by the two-run rule (Part 20).
 
+*Added 2026-10-21 (Appendix 7, the discipline layer):*
+- **Group 1, now, before the next Measure cycle:** MF.1–MF.6 → RC.1–RC.3 → OP.1–OP.4 → CH.1–CH.3 → IN.2, BW.3, EV.1, SF.1–SF.2.
+- **Group 2, after the measured runs:** IN.1, BW.1–BW.2, PN.1–PN.2, EV.2.
+- **CH.4** after the first clean Measure cycle.
+
 *Added 2026-10-21 (Appendix 6):*
 - **PH.2**, **PH.3** → stage 3 after AY.
 - **PH.1**, **CG.1–CG.2** → stage 4 after BJ and CM.2.
@@ -3812,6 +3817,150 @@ stage order above; OS.0–OS.8 are implemented later, after group 2.
 - **RL.1–RL.3** join stage 7 (infrastructure); **RL.4** applies from now.
 - **CG.3–CG.4**, **PH.4** join stage 8.
 - **CG.5** joins the UI track after BG.3/BG.4.
+
+<a id="plan-appendix-7"></a>
+## Appendix 7 (2026-10-21): the discipline layer — measurement, provenance, intake, operations
+
+Owner, 2026-10-21 13:49 JST: "other than the improvement plans made, what else can be done?"
+Evidence: `docs/review-findings.md` §16 (the structural review of the run history and the
+plan's coverage). Nothing here repeats an item above; neighbours are named.
+
+**The finding.** The loop is spending almost all of its effort fixing the harness, and nothing
+measures whether that works: 137 LF rows in three days (37, 70, 30 — accelerating), every
+quality lever built but off, no clean gate run since 10-11, no run ever on one harness version
+(8–17 deploys and up to 11 rewinds each), `brief_medium` without hidden tests, and no run
+recording the harness commit or the served model. Fix stages take 80–90% of model minutes and
+22–47% of output is lost at the cap. The plan has enough features; what is missing is the
+discipline around them.
+
+**Grouping (owner's rule of 2026-10-19):** *group 1* = needs no before/after run, built now;
+*group 2* = changes run behaviour, behind a switch, validated against the measured runs.
+Every item below carries its group.
+
+<a id="plan-mf"></a>
+### MF — Measurement first, for real (ADR-0010 made operational)
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| MF.1 | Provenance on every run: harness commit SHA (and every SHA deployed into the run, so a mixed run is marked `mixed_versions`), served model id from the server (`/v1/models` or `/props`, not the client class name the transcript records today), quantisation and slots (already read by `server_profile`), the sampling parameters as sent, delivery and execution mode, and every flag on — into `runs`, the KPI JSON and `ledger.csv`. A leaderboard keyed by SHA falls out of it | 1 — now | P0 | PROPOSED |
+| MF.2 | Hidden tests for the gate brief: either `tasks-api` (10/10 reference, "the class the medium brief failed on") becomes the medium gate, or `benchmarks/<medium>/hidden/` is written from `brief_medium`'s Interface section with a reference implementation that scores 100%, as every other family has. Until then a medium result is a hand audit | 1 — now | P0 | PROPOSED |
+| MF.3 | Two KPIs that do not exist: `wall_clock_per_accepted_criterion` and `tokens_per_accepted_criterion` (`run_kpis.py` has no criteria fields), plus `gate_wait_minutes` (human-gate waiting is noted ad hoc only) | 1 — now | P0 | PROPOSED |
+| MF.4 | The Measure/Fix cycle, as process: **Measure** = one SHA, flags fixed, no deploys, two runs per family, scored by hidden tests only; a bug found is filed, not deployed. **Fix** = the batch, each fix with its failing test, suite green, then Measure again. A mid-run deploy into a long run is allowed only under the 40-minute rule and marks the run `mixed_versions`, excluded from comparisons. **Stop rule:** a fix batch that moves no hidden score, false-acceptance rate or MF.3 KPI on the next Measure cycle is parked or reverted, not kept | 1 — now (process) | P0 | PROPOSED for the owner's decision |
+| MF.5 | `kpi_ledger.compare` takes a minimum n (two runs per arm, Part 20) and reports the spread, not only the mean; the 1.5× regression flag stays | 1 — now | P1 | PROPOSED |
+| MF.6 | Session cost of the loop itself: `docs/STATE.md`, at most 150 lines — what is live, what is off, the last three run results, the next action — as the only mandatory read at session start; run narratives older than a week move to `docs/archive/`; `tokens_per_fix` recorded per session in the handover. Today a session reads about 12,000 lines (~150k tokens) before acting, and the plan grows ~30 rows a day | 1 — now | P1 | PROPOSED |
+
+<a id="plan-rc"></a>
+### RC — Reader-regression corpus from real transcripts
+
+Twelve-plus LF rows are a reader misreading real model output (LF.43, 92, 104, 108, 109, 127,
+129, 130 — 32 of 58 contract lines unparsed), each fixed against the one sample that failed.
+75 test files already carry hand-copied transcript snippets. Neighbour: Y's edit-replay corpus
+covers edits only.
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| RC.1 | Harvest: after every run, every structured answer, tool-call envelope, file plan, contract line, verification claim and settled answer is extracted from the transcript into `data/corpus/<kind>/<hash>.json` with the reader's current result (accepted / repaired / refused) | 1 — now | P1 | PROPOSED |
+| RC.2 | Replay test: the suite replays the whole corpus through today's readers and fails on any sample whose outcome changed; a reader fix is then tested against hundreds of real samples offline, without the GPU or a live run | 1 — now | P1 | PROPOSED |
+| RC.3 | Corpus hygiene: samples are redacted of workspace paths and secrets at harvest; the corpus is `DATA_DIR` state, never committed; a `loop.sh corpus` command lists sizes and the readers each kind exercises | 1 — now | P2 | PROPOSED |
+
+<a id="plan-in"></a>
+### IN — Intake: confirm assumptions before the run spends hours
+
+`product_manager` already produces `open_questions` and `evidence_vs_assumptions`; nobody is
+asked to answer them (`workflow.py:4000` excludes `open_questions` from checks; the intake gate
+shows a document). The medium runs' worst failures were spec-level (LF.40, LF.42, LF.90), and
+brief_low scored 5/10 against web-todo because the brief left UI controls implicit. The
+clarification research behind CM.4 (+14 points on underspecified tasks) applies here at zero
+per-run model cost. Neighbours: UI-S3 plan-first intake, CM.4 (questions *during* the run).
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| IN.1 | Assumptions gate: before the specification, one screen listing each open question with the PM's default answer; the owner confirms or edits each; in auto mode the defaults are recorded as decisions (`decision_log.md`) and shown on the run page. Behind `ASSUMPTIONS_GATE` | 2 — after measured runs (it changes what the architect receives) | P1 | PROPOSED |
+| IN.2 | Ambiguity score at preview: `POST /api/runs/preview` reports the count of criteria without an interface line and of brief features the PM marked as assumptions, so a thin brief is seen before the run, not at sprint 3 | 1 — now (read-only) | P2 | PROPOSED |
+
+<a id="plan-bw"></a>
+### BW — Brownfield: an existing codebase as the normal case
+
+Seeding works (`seeding.py`, `/codebase`), then the pipeline treats the repository as greenfield:
+no baseline of its existing tests, no protection of existing behaviour, no "new run against a
+previous product with a change request", and all 10 benchmarks are greenfield.
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| BW.1 | Regression contract at intake: on a seeded workspace the harness runs the existing test suite once; the green set is locked beside the acceptance suite, and a sprint that turns any of it red is sent back like a failed criterion | 2 | P1 | PROPOSED |
+| BW.2 | Change-request run: `POST /runs` from a finished run's workspace (or an upload) with a change brief; the product's locked suite and BW.1's contract carry over; the specification is a delta | 2 | P1 | PROPOSED |
+| BW.3 | Brownfield benchmark family: a previous run's product plus a change brief, hidden tests for the old and the new behaviour, a reference that scores 100% | 1 — now (benchmark only) | P1 | PROPOSED |
+
+<a id="plan-pn"></a>
+### PN — Non-functional checks on the *product*
+
+The harness CI audits the harness (pip-audit, bandit, secret scan, image scan); the generated
+product CI has none of it. `document_manifest.py` allows a README and checks nothing.
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| PN.1 | Per pack, as data: the ecosystem's dependency audit (`npm audit`, `pip-audit`, `cargo audit`, `govulncheck`, …), a secret scan and a licence listing; the release stage runs them once and files findings as defects; the generated CI carries the same steps | 2 (adds defects) | P2 | PROPOSED |
+| PN.2 | A README with run instructions and, for a service, an API summary are required release artifacts; the release check fails without them (the documentation specialist already produces the material) | 2 | P2 | PROPOSED |
+
+<a id="plan-op"></a>
+### OP — Operations: the manual steps that cost the owner hours
+
+15–25 human interventions a day on the gate runs: `POST /resume` after a host restart, crons
+re-created by hand after a session restart, rewinds by checkpoint id, deploy markers removed by
+hand, two sessions deploying at once leaving `Created` containers; gates and stalls notify the
+browser only; no backup of Postgres or `runs.db` exists (OS.8 mirrors the object store only).
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| OP.1 | Resume on boot: the worker's orphan recovery also re-creates its own schedules and resumes runs it finds paused by a restart, so a power loss needs no hand | 1 — now | P1 | PROPOSED |
+| OP.2 | Stall detector and notifications: a run `running` with no model or tool activity for N minutes, or a gate waiting longer than M minutes, posts to a webhook URL and an email (`NOTIFY_WEBHOOK_URL`, `NOTIFY_EMAIL`); the browser notification stays | 1 — now | P1 | PROPOSED |
+| OP.3 | Nightly `pg_dump` and a copy of `runs.db` and `lessons.json` to the object store (or `./data/backups` until OS lands), with a restore command in `manage.py` and a tested restore | 1 — now | P1 | PROPOSED |
+| OP.4 | `loop.sh deploy` takes a lock and refuses a second concurrent deploy; `loop.sh rewind` has a timeout and takes a stage name, resolving the checkpoint itself | 1 — now | P2 | PROPOSED |
+
+<a id="plan-ch"></a>
+### CH — Harness code health, the cheap part now
+
+`workflow.py` 11,912 lines, `repository.py` 7,550, `integration_checks.py` 7,133,
+`sandbox.py` 4,976; most LF fixes land in these. No ruff, mypy or pyright on the harness; no
+Dependabot; CI runs the suite serially (`ci.yml:39`, 290 s against 64 s with xdist); 34
+skip/xfail; root clutter. Part 12/V (the decomposition) stays last.
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| CH.1 | Delete the clutter: `Test Product Intake/`, `test_file`, `test_symlink -> nonexistent_dir`, `.github/*.docx` (none is referenced by a test) | 1 — now | P2 | PROPOSED |
+| CH.2 | CI: `pytest -n auto`, `ruff check`, `pyright` on `src/app` (warnings first, errors gated once clean), a Dependabot config for pip and npm | 1 — now | P2 | PROPOSED |
+| CH.3 | The 34 skips and xfails each name their reason and an owner; the timing-flaky test (`HANDOVER.md` L593, overlapping parts) is fixed or quarantined | 1 — now | P3 | PROPOSED |
+| CH.4 | Part 12/V, first mechanical step only: `workflow.py` split by stage node into `graph/nodes/*.py` with no behaviour change, the suite as the guard — after the first clean Measure cycle so the split is not itself a variable | after MF.4's first cycle | P3 | PROPOSED |
+
+<a id="plan-ev"></a>
+### EV — Evaluation depth
+
+Hidden tests are functional only; nothing scores a product's UI quality (the vision path exists
+only for the reviewer); no owner rating is captured per delivered product.
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| EV.1 | One-click owner rating (1–5 and a line) on a delivered run, stored with its KPI row; `bench-report` shows it beside the hidden score | 1 — now | P2 | PROPOSED |
+| EV.2 | Screenshot rubric for browser products, judged by the judgement model on a fixed checklist (layout, contrast, empty states, error states), recorded as a score, never as a gate | 2 | P3 | PROPOSED |
+
+<a id="plan-sf"></a>
+### SF — Execution safety
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| SF.1 | The "install" command category's network goes through a registry allowlist (the package registries and GitHub), the same egress pattern the harness already uses for seeding; today the grant is unrestricted | 1 — now | P2 | PROPOSED |
+| SF.2 | Fetched docs, search results and MCP text keep their "data, not instructions" label and are additionally capped and stripped of tool-call-shaped text before injection | 1 — now | P3 | PROPOSED |
+
+### Noted, not planned
+- Product kinds: five kinds and 30 packs; no mobile, desktop, worker/bot or data-pipeline kind. Strategic, not urgent.
+- Design assets: tokens only; icons, favicon and images would be a small pack-level addition.
+- A small cheap model for classification and summaries would free the main slot; BD (two local tiers) is the neighbour and is not started.
+- Constrained decoding (M.2) stays on Part 22's do-not-implement list; with 22–47% of output lost at the cap, it is re-measured on the current server only if N and AX do not close that number.
+
+**Placement in Part 21 (added 2026-10-21, this appendix):**
+- **MF.1–MF.6**, **RC.1–RC.3**, **OP.1–OP.4**, **CH.1–CH.3**, **IN.2**, **BW.3**, **EV.1**, **SF.1–SF.2** are group 1: built now, in that order, before the next Measure cycle.
+- **IN.1**, **BW.1–BW.2**, **PN.1–PN.2**, **EV.2** are group 2, after the measured runs, each behind its switch.
+- **CH.4** after the first clean Measure cycle.
 
 ## E. Earlier plans, merged into this document on 2026-10-19
 
@@ -4584,6 +4733,34 @@ the item: what it changes, why, and the evidence (review findings in
 | CG.4 | read-only `where_is` / `who_uses` tool from the graph | P3 | PROPOSED 2026-10-21 | [CG](#plan-cg) |
 | CG.5 | criterion → tests → files view on the run page | P3 (UI) | PROPOSED 2026-10-21 | [CG](#plan-cg) |
 | CG.6 | gate: ships only if redundant reads fall (AQ) | process | ADOPTED 2026-10-21 | [CG](#plan-cg) |
+| MF.1 | provenance on every run: SHA(s), served model, quantisation, slots, sampling, flags | P0 | PROPOSED 2026-10-21 (group 1, now) | [MF](#plan-mf) |
+| MF.2 | hidden tests for the gate brief (tasks-api as the medium gate, or a medium hidden suite) | P0 | PROPOSED 2026-10-21 (group 1, now) | [MF](#plan-mf) |
+| MF.3 | KPIs: wall-clock and tokens per accepted criterion; gate wait | P0 | PROPOSED 2026-10-21 (group 1, now) | [MF](#plan-mf) |
+| MF.4 | Measure/Fix cycle on a frozen SHA with a stop rule | P0 (process) | PROPOSED 2026-10-21 for the owner's decision | [MF](#plan-mf) |
+| MF.5 | ledger compare with minimum n and spread | P1 | PROPOSED 2026-10-21 (group 1, now) | [MF](#plan-mf) |
+| MF.6 | `docs/STATE.md` as the only mandatory session read; archive; tokens per fix | P1 | PROPOSED 2026-10-21 (group 1, now) | [MF](#plan-mf) |
+| RC.1 | reader corpus harvested from every run's transcript | P1 | PROPOSED 2026-10-21 (group 1, now) | [RC](#plan-rc) |
+| RC.2 | corpus replay test for every reader | P1 | PROPOSED 2026-10-21 (group 1, now) | [RC](#plan-rc) |
+| RC.3 | corpus hygiene and `loop.sh corpus` | P2 | PROPOSED 2026-10-21 (group 1, now) | [RC](#plan-rc) |
+| IN.1 | assumptions gate before the specification | P1 | PROPOSED 2026-10-21 (group 2) | [IN](#plan-in) |
+| IN.2 | ambiguity count at preview | P2 | PROPOSED 2026-10-21 (group 1, now) | [IN](#plan-in) |
+| BW.1 | regression contract from a seeded codebase's own tests | P1 | PROPOSED 2026-10-21 (group 2) | [BW](#plan-bw) |
+| BW.2 | change-request run from a finished product | P1 | PROPOSED 2026-10-21 (group 2) | [BW](#plan-bw) |
+| BW.3 | brownfield benchmark family | P1 | PROPOSED 2026-10-21 (group 1, now) | [BW](#plan-bw) |
+| PN.1 | dependency audit, secret scan and licence listing on the product, as pack data | P2 | PROPOSED 2026-10-21 (group 2) | [PN](#plan-pn) |
+| PN.2 | README and API summary as required release artifacts | P2 | PROPOSED 2026-10-21 (group 2) | [PN](#plan-pn) |
+| OP.1 | resume on boot, schedules re-created by the worker | P1 | PROPOSED 2026-10-21 (group 1, now) | [OP](#plan-op) |
+| OP.2 | stall detector; webhook and email notifications for stalls and gates | P1 | PROPOSED 2026-10-21 (group 1, now) | [OP](#plan-op) |
+| OP.3 | nightly Postgres and runs.db backup with a tested restore | P1 | PROPOSED 2026-10-21 (group 1, now) | [OP](#plan-op) |
+| OP.4 | deploy lock; rewind by stage name with a timeout | P2 | PROPOSED 2026-10-21 (group 1, now) | [OP](#plan-op) |
+| CH.1 | delete root clutter | P2 | PROPOSED 2026-10-21 (group 1, now) | [CH](#plan-ch) |
+| CH.2 | CI: xdist, ruff, pyright, Dependabot | P2 | PROPOSED 2026-10-21 (group 1, now) | [CH](#plan-ch) |
+| CH.3 | skips and xfails named and owned; flaky test fixed | P3 | PROPOSED 2026-10-21 (group 1, now) | [CH](#plan-ch) |
+| CH.4 | `workflow.py` split by stage node, no behaviour change | P3 | PROPOSED 2026-10-21 (after the first clean Measure cycle) | [CH](#plan-ch) |
+| EV.1 | owner rating per delivered run beside the hidden score | P2 | PROPOSED 2026-10-21 (group 1, now) | [EV](#plan-ev) |
+| EV.2 | screenshot rubric score for browser products | P3 | PROPOSED 2026-10-21 (group 2) | [EV](#plan-ev) |
+| SF.1 | registry allowlist for the install category's network | P2 | PROPOSED 2026-10-21 (group 1, now) | [SF](#plan-sf) |
+| SF.2 | fetched text capped and stripped of tool-call shapes | P3 | PROPOSED 2026-10-21 (group 1, now) | [SF](#plan-sf) |
 
 <a id="plan-m-2"></a>
 ### M.2 Fixes from the loop's audits (no plan item of their own)

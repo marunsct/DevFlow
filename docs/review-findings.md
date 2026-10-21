@@ -1,4 +1,4 @@
-# Review findings (unified evidence log, 2026-10-18 → 2026-10-19)
+# Review findings (unified evidence log, 2026-10-18 → 2026-10-21)
 
 > Consolidated 2026-10-19 from `review-findings-wip.md` (sessions 1–3) and the
 > session-4 review. This is the evidence log behind
@@ -31,6 +31,12 @@
 | F16 | (STATUS): Visual review loop already exists (Initiative B ~80% built) | [Sweep table](improvement-plan.md#plan-sweep) |
 | F17 | (GAP): Benchmark corpus lacks fullstack-Python & service-backed briefs | [U](improvement-plan.md#plan-u), [Sweep table](improvement-plan.md#plan-sweep) |
 | F18 | (CONTEXT): Strong existing tooling to build measurements on | [O](improvement-plan.md#plan-o), [U](improvement-plan.md#plan-u), [L.6](improvement-plan.md#plan-l-6), [Sweep table](improvement-plan.md#plan-sweep) |
+| F19 | (CRITICAL, 2026-10-21): The loop fixes the harness faster than anything measures it — 137 LF rows in 3 days, every quality lever off, no clean gate run since 10-11, no run on one harness version, the gate brief without hidden tests, no provenance per run | [MF](improvement-plan.md#plan-mf), [RC](improvement-plan.md#plan-rc) |
+| F20 | (HIGH, 2026-10-21): Readers misreading real model output are fixed one sample at a time (12+ LF rows) | [RC](improvement-plan.md#plan-rc) |
+| F21 | (HIGH, 2026-10-21): The PM's open questions and assumptions are never put to the owner before the run | [IN](improvement-plan.md#plan-in) |
+| F22 | (MEDIUM, 2026-10-21): Brownfield has no regression contract, no change-request run and no benchmark | [BW](improvement-plan.md#plan-bw) |
+| F23 | (MEDIUM, 2026-10-21): 15–25 manual interventions a day; no backups; browser-only notifications | [OP](improvement-plan.md#plan-op) |
+| F24 | (LOW, 2026-10-21): Product CI has no audit, secret or licence step; README unchecked; harness has no lint/type gate; root clutter | [PN](improvement-plan.md#plan-pn), [CH](improvement-plan.md#plan-ch), [SF](improvement-plan.md#plan-sf) |
 | G1 | (HIGH, local-model): prompts order a tool the role is not given — and contradict themselve | [Appendix 2](improvement-plan.md#plan-appendix-2), [X](improvement-plan.md#plan-x) |
 | G2 | (HIGH, throughput): project memory sits at the head of the conversation and is rewritten f | [Appendix 2](improvement-plan.md#plan-appendix-2), [AA](improvement-plan.md#plan-aa), [Part 17](improvement-plan.md#plan-part-17), [BJ](improvement-plan.md#plan-bj) |
 | G3 | (MEDIUM, local-model): no sampling or cache parameters are ever sent | [M (concrete)](improvement-plan.md#plan-m-concrete), [AA](improvement-plan.md#plan-aa) |
@@ -2057,3 +2063,62 @@ open); discussion #13606 (slot save/restore, `-sps`, `cache_prompt`, LRU).
 Host evidence: `data/kpi/run-8b0c94df-eff4-47f2-82c8-0ad06b7c5285.json`,
 `data/kpi/ledger.csv`, `data/bench/*.json` (33 runs), `docs/HANDOVER.md` §2,
 `docs/monitoring-handover.md` §0.2/§0.9.
+
+## 16. Fifth review session — the structural review (2026-10-21, 13:50–14:05 JST)
+
+Owner's question: other than the plans made, what else can be done? Method: the run history
+(`monitoring-handover.md`, `HANDOVER.md` §0–§3), the plan's own index (Appendix M) and the code,
+read for what the plan never mentions. Plan: Appendix 7.
+
+### 16.1 The shape of the loop (F19)
+
+| Fact | Evidence |
+|---|---|
+| About 45 runs since 10-10: ~13 completed, 9 failed, ~16 cancelled | MH §0, H §2.3 |
+| 137 LF rows in three days: 37 (10-19), 70 (10-20), 30 by 13:45 (10-21); every failure class still produced rows on 10-21 | Appendix M.2 |
+| Failure classes (rough counts): environment/install 25, agent not told a fact 22, wrong file or module 18, lost reply/compaction/budget 15, suite-vs-product 13, reader misread 12, orphan/deploy/rewind 12, telemetry wrong 12, UI 8, review over-reach 5 | LF.1–137 |
+| Every quality lever built and off: AQ, BB, AY, BI, BJ, M.4, `SHARED_FACTS`, `DECISION_LEDGER` | H L394–396 |
+| No clean gate run since 5aadbddd (10-11); stages 2–3 never attempted; brief_high never run; the two-clean-run compare never happened | H L332, L430 |
+| Each medium run carried 8–17 deploys and 2–11 rewinds | MH L150, L198, L214–228 |
+| brief_medium has no hidden tests; "62/62 suite, 1 of 10 contract lines kept"; "34/34, 59% of code unreached, compose stack not starting" | H L346, MH L214 |
+| Fix stages: 229/309, 91/142, 92/113, 110/172 model-minutes | MH L144–233 |
+| Output lost at the cap: 35% (8b0c94df), 47% (shakedown), 22% (d48f049e) | RF I1, MH L148, L214 |
+| "Neither model nor tool busy": 43–45% of early run time; 138 of 311 min after a rewind | MH L149–150, L218, LF.76 |
+| Runs record no harness SHA, no served model id (the transcript stores the client class name), no sampling | `run_kpis.py`, `kpi_ledger.py`, `transcript.py:562` |
+| Owner: "13 h for 1.5 sprints not competitive" (10-14); "seems like looping" (10-19); "why didn't the fix loop improve after group 1" (10-19) | MH L287, L146, L144 |
+
+Hidden scores that do exist: web-todo 10/10 routine; notes-api-hono 9/9 four times;
+fullstack-bookmarks-py 0/8 once. Whether quality improves across harness versions is unmeasured.
+
+### 16.2 Readers (F20)
+LF.43, 92, 104, 108, 109, 127, 129, 130: each a reader misreading one real output, fixed against
+that sample; 75 test files hold hand-copied snippets. No harvest, no replay.
+
+### 16.3 Intake (F21)
+`product_manager.py:66–68` produces `open_questions` and `evidence_vs_assumptions`;
+`workflow.py:4000` excludes `open_questions` from checks; the intake gate shows the document.
+`intake-api/` is a CRUD store. `POST /api/runs/preview` numbers criteria only.
+
+### 16.4 Brownfield (F22)
+`seeding.py` and `/codebase` seed; `scaffold.py:407` and `custom_setup.py:71` skip setup when a
+manifest exists; `change_request` handles a gate's request inside the same run only; all 10
+benchmarks greenfield.
+
+### 16.5 Operations (F23)
+Manual: `POST /resume` after a host restart; crons re-created after a session restart
+(H L412–416); rewinds by checkpoint id (H L405); deploy markers (LF.87/94); two sessions
+deploying at once leave `Created` containers (MH L589); the session's usage limit left the loop
+idle 7 h (H L940). Notifications browser-only (`lib/notify.ts`). No Postgres/`runs.db` backup.
+Gate wait not a KPI.
+
+### 16.6 Product checks, harness health, safety (F24)
+Harness CI: pip-audit, bandit, secret scan, image scan (`ci.yml:87–114`); product CI from
+`release.py`: none of them; `document_manifest.py:27` allows a README, checks nothing. Harness:
+no ruff/mypy/pyright, no Dependabot, CI without `-n` (`ci.yml:39`), 34 skip/xfail, root clutter
+(`Test Product Intake/`, `test_file`, `test_symlink -> nonexistent_dir`, `.github/*.docx`).
+Sandbox: install category's network unrestricted (`sandbox.py`); fetched text labelled "data,
+not instructions" without quarantine (`web_search.py:16`, `docs.py:18`, `mcp_tools.py:27`).
+
+### 16.7 Covered elsewhere, confirmed
+Context budgets, fix loop, lessons, communication, progress, code graph, object storage, UI —
+Appendix M. Constrained decoding (M.2) is on Part 22's do-not-implement list and is left there.

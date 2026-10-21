@@ -6147,6 +6147,9 @@ def _changes_any_code(changed_files: Any) -> bool:
     )
 
 
+#: Defects a fixer is shown beside its own, at most: fixers handed more fixed less.
+MOST_BUNDLED_DEFECTS = 2
+
 def _bundle_co_defects(cycle: RemediationCycle, defect_index: int) -> list[tuple[int, Any]]:
     """The open defects after this one that its fixer is shown too, to fix in the same stage.
 
@@ -6161,10 +6164,22 @@ def _bundle_co_defects(cycle: RemediationCycle, defect_index: int) -> list[tuple
     after a batch had fixed it would find nothing to change and leave it open.
     """
     defect = cycle.defects[defect_index]
-    return [
-        (pos, d) for pos, d in enumerate(cycle.defects[defect_index + 1:], start=defect_index + 1)
+    # Only defects that share a file with this one, and at most
+    # `MOST_BUNDLED_DEFECTS` of them, most files in common first. Every open
+    # defect of the same owner was bundled, and over every recorded run a fixer
+    # handed one defect fixed it 64% of the time in a median 18k output tokens,
+    # one handed four or more fixed 26% in 73k, with 62% of those stages cut off
+    # at the reply limit against 11%. Acceptance defects arrive one per root
+    # error, so a bundle mostly joined unrelated causes; and a defect an earlier
+    # fix resolved is closed by measurement whether or not it was bundled.
+    mine = {str(name).strip() for name in defect.affected_files or [] if str(name).strip()}
+    related = [
+        (len(mine & {str(name).strip() for name in d.affected_files or []}), pos, d)
+        for pos, d in enumerate(cycle.defects[defect_index + 1:], start=defect_index + 1)
         if d.status == "open" and d.owner == defect.owner and _a_measurement_can_close(d)
     ]
+    shared = sorted((r for r in related if r[0] > 0), key=lambda r: (-r[0], r[1]))[:MOST_BUNDLED_DEFECTS]
+    return [(pos, d) for _, pos, d in sorted(shared, key=lambda r: r[1])]
 
 
 def _note_the_bundled(co_defects: list[tuple[int, Any]], *, defect_index: int, stage_name: str,

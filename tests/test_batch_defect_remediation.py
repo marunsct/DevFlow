@@ -32,20 +32,23 @@ def _d(description, owner="ui_ux", **extra) -> Defect:
 
 
 ROUND = [
-    _d("[AC-3] The view does not update", failing_criteria=["AC-3"]),
-    _d("[AC-4] The count is wrong", failing_criteria=["AC-4"]),
-    _d("Regression: `unit: tests/view.test.js › renders` passed before and fails now."),
-    _d("An accessibility check of the page finds 1 serious rule broken: color-contrast.", source="page check"),
-    _d("The layout feels cramped", source="test round"),
-    _d("[AC-5] The service refuses a valid record", owner="backend", failing_criteria=["AC-5"]),
+    _d("[AC-3] The view does not update", failing_criteria=["AC-3"], affected_files=["app/view.js"]),
+    _d("[AC-4] The count is wrong", failing_criteria=["AC-4"], affected_files=["app/view.js"]),
+    _d("Regression: `unit: tests/view.test.js › renders` passed before and fails now.",
+       affected_files=["app/other.js"]),
+    _d("An accessibility check of the page finds 1 serious rule broken: color-contrast.", source="page check",
+       affected_files=["app/view.js", "app/style.css"]),
+    _d("The layout feels cramped", source="test round", affected_files=["app/view.js"]),
+    _d("[AC-5] The service refuses a valid record", owner="backend", failing_criteria=["AC-5"],
+       affected_files=["app/view.js"]),
 ]
 
 
 class TestWhatIsBundled:
-    def test_the_role_s_defects_a_measurement_can_close(self):
+    def test_the_role_s_defects_a_measurement_can_close_that_share_a_file(self):
         bundled = [position for position, _ in _bundle_co_defects(RemediationCycle(sprint_goal="g", defects=ROUND), 0)]
 
-        assert bundled == [1, 2, 3]
+        assert bundled == [1, 3]
 
     def test_not_one_no_measurement_can_show_resolved(self):
         bundled = [d.description for _, d in _bundle_co_defects(RemediationCycle(sprint_goal="g", defects=ROUND), 0)]

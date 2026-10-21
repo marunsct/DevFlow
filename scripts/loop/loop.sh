@@ -11,6 +11,7 @@
 #   scripts/loop/loop.sh stage <stage> [HH:MM]  trace one stage (stage_trace.py; HH:MM is UTC)
 #   scripts/loop/loop.sh reads [run-id]      redundant reads by stage and file (redundant_reads.py)
 #   scripts/loop/loop.sh deploy-app          rebuild and restart the app container only (API, UI); the worker and live runs untouched
+#   scripts/loop/loop.sh patterns [since]     across every run: where replies run out, fix outcome by bundle size, failures that recur
 #   scripts/loop/loop.sh timing [run-id..]   where the wall-clock time went: model vs tools, phases, reasoning share (run_timing.py)
 #   scripts/loop/loop.sh kpi [run-id]        the run's KPIs as JSON (data/kpi/<run>.json), a row of data/kpi/ledger.csv,
 #                                            and any KPI past 1.5x its 5-run mean (kpi.py, kpi_ledger.py); score runs it too
@@ -288,6 +289,7 @@ failures)
   in_worker failures.py "$@"
   ;;
 reads)  in_worker redundant_reads.py "${2:-$(current)}" ;;
+patterns) shift; in_worker patterns.py "$@" ;;
 timing) shift; in_worker run_timing.py "${@:-$(current)}" ;;
 kpi)
   run="${2:-$(current)}"

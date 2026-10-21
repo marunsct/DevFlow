@@ -1796,7 +1796,7 @@ def _the_harness_s_own_or_the_locked_suite(root: Path, target: Path) -> str | No
         stage = ""
     if stage.startswith(_THE_ACCEPTANCE_AUTHOR):
         if where and not inside:
-            return (
+            return _outside_its_own_files() + (
                 f"'{relative}' is not part of the acceptance suite. QA writes only "
                 f"`{where}/`; the product is built by the stages that own it, after "
                 "this suite is locked."
@@ -1883,7 +1883,7 @@ def _a_tester_changing_the_product(root: Path, target: Path, content: str = "") 
         # runner's way so it can be deleted, as the delete refusal suggests.
         return None
     if stage.startswith(_THE_TESTING_TASK):
-        return (
+        return _outside_its_own_files() + (
             f"'{shown}' is product code, and this is the testing work order: it writes "
             "tests against the interfaces the other work orders promise, while they "
             "write the code. Write the test against the interface as the plan gives it, "
@@ -1893,7 +1893,7 @@ def _a_tester_changing_the_product(root: Path, target: Path, content: str = "") 
             "configuration and the package manifest are yours to change. "
             "Nothing was written."
         )
-    return (
+    return _outside_its_own_files() + (
         f"'{shown}' is product code, and this is a test round: its job is to find "
         "what fails and report it, not to change the product. A fix made here is "
         "recorded nowhere - not in the defect log, not in the Sprint Record, not by "
@@ -1975,7 +1975,8 @@ def _another_work_order_s_file(root: Path, target: Path) -> str | None:
     )
     if owner is None or owner == stage:
         return None
-    return _again_and_again(shown) + (
+    per_file, whole_stage = _again_and_again(shown), _outside_its_own_files()
+    return (per_file or whole_stage) + (
         f"'{shown}' belongs to another work order in this milestone: the plan gave it "
         f"to {owner}, which writes it. Change only the files your own work order "
         "lists. If your task needs something in that file - an export, an element, a "
@@ -1997,6 +1998,32 @@ def _created_here(root: Path, shown: str, stage: str) -> bool:
 #: Refusals of one file to one stage before the refusal says how many.
 _REFUSALS_BEFORE_COUNTING = 3
 
+
+
+def _outside_its_own_files() -> str:
+    """A lead for the refusal once this stage has been refused writes outside its own files three times, or "".
+
+    Counted for the stage, whatever the file, the tool or the path: one run's
+    acceptance writer, refused product code, tried `database.py`, then
+    `models.py` four times, then `main.py` by another path, then the same
+    through `edit_artifact` - fourteen calls, every one a different file or
+    tool, so the count kept per file never reached its threshold.
+    """
+    try:
+        from app.agents.stage_memory import store
+
+        refused = store("writes_refused_outside_its_own_files", {})
+        refused["count"] = refused.get("count", 0) + 1
+        count = refused["count"]
+    except Exception:  # noqa: BLE001 - a count is a courtesy
+        return ""
+    if count < _REFUSALS_BEFORE_COUNTING:
+        return ""
+    return (
+        f"This stage has now been refused {count} writes outside its own files, whatever the "
+        "file, the tool or the path. Every one will be refused: none of those files is this "
+        "stage's to write. Stop, finish what is yours, and return your structured response. "
+    )
 
 def _again_and_again(shown: str) -> str:
     """A lead for the refusal when this stage has been refused this file before, or "".

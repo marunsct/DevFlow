@@ -8,6 +8,7 @@ whatever happens to be listening on localhost.
 """
 
 import faulthandler
+import contextlib
 import os
 
 import pytest
@@ -315,6 +316,35 @@ def client(authed_app):
     with TestClient(authed_app) as test_client:
         yield test_client
 
+
+
+@contextlib.contextmanager
+def metrics_kept_in_this_process():
+    """Restore `prometheus_client`'s value class on the way out.
+
+    `observability.metrics._prepare_multiprocess_dir` switches it to the
+    multiprocess class when `PROMETHEUS_MULTIPROC_DIR` is set, for the life of
+    the process. A test that set the variable (and had it removed after) left
+    its xdist worker in that mode, and the next test there that built the app -
+    any `client` test - failed creating its first metric with
+    "expected str ... not NoneType": a different test each suite, passing alone.
+    """
+    try:
+        from prometheus_client import values
+    except ImportError:
+        yield
+        return
+    before = values.ValueClass
+    try:
+        yield
+    finally:
+        values.ValueClass = before
+
+
+@pytest.fixture(autouse=True)
+def _metrics_stay_in_this_process():
+    with metrics_kept_in_this_process():
+        yield
 
 @pytest.fixture(autouse=True)
 def _no_model_router_outlives_its_test():

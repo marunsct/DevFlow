@@ -1309,6 +1309,12 @@ def reopen_the_suite_for(
         affects=sorted({tag for item in broken for tag in tags_in(item) if tag.startswith("AC-")}),
     )
     logger.warning("Reopening the locked suite: %d test(s) cannot pass", len(broken))
+    try:
+        from app.acceptance import suite as _suite
+
+        _suite.repairing(state["repository"].root_path, [_which_test(item) for item in broken])
+    except Exception:  # noqa: BLE001 - the repair goes on without its guard
+        logger.debug("Could not record the tests under repair", exc_info=True)
     reclassified = (
         {"suite_reclassified_tests": sorted({
             *(state.get("suite_reclassified_tests") or []), *map(_which_test, broken),

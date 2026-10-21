@@ -294,8 +294,44 @@ def lock(repo_root: str | Path) -> dict[str, str]:
     state = _state(repo_root)
     state["lock"] = checksums
     state["lock_version"] = _keep_this_version(root, snapshot, before)
+    state.pop("repairing", None)
     _save_state(repo_root, state)
     return checksums
+
+
+def repairing(repo_root: str | Path, tests: list[str]) -> None:
+    """Record the tests a reopened suite is being repaired for, until it is locked again."""
+    state = _state(repo_root)
+    state["repairing"] = sorted({*state.get("repairing", []), *(str(t) for t in tests if str(t).strip())})
+    _save_state(repo_root, state)
+
+
+def _declared_in(text: str) -> set[str]:
+    return {m.group(2) for m in _TITLED.finditer(text or "")} | {m.group(1) for m in _NAMED.finditer(text or "")}
+
+
+def tests_a_repair_would_drop(repo_root: str | Path, relative_path: str, content: str) -> list[str]:
+    """The tests this file had when the suite was last locked that `content` drops, other than those under repair.
+
+    Only while a reopened suite is being repaired. One run's repair, sent for
+    one test, wrote the file back with that test alone in it: the seventeen
+    other criteria lost their tests, and the suite went back for all of them.
+    """
+    state = _state(repo_root)
+    if "lock" in state or "repairing" not in state:
+        return []
+    locked_version = Path(repo_root) / SNAPSHOT_DIR / relative_path
+    if not locked_version.is_file():
+        return []
+    try:
+        before = _declared_in(locked_version.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return []
+    under_repair = set(state.get("repairing") or [])
+    return sorted(
+        name for name in before - _declared_in(content)
+        if not any(name == test or name in test or test in name for test in under_repair)
+    )
 
 
 def _the_files_of(directory: Path) -> dict[str, str]:

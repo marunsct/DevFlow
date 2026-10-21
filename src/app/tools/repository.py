@@ -1758,6 +1758,26 @@ def _a_file_the_harness_keeps(root: Path, relative: str) -> str | None:
     )
 
 
+
+def _tests_a_repair_would_drop(root: Path, target: Path, content: str) -> str:
+    """The refusal of a write that drops tests a suite repair was not sent for; "" otherwise. Never raises."""
+    try:
+        from app.acceptance import suite
+
+        relative = target.resolve().relative_to(Path(root).resolve()).as_posix()
+        dropped = suite.tests_a_repair_would_drop(root, relative, content)
+    except Exception:  # noqa: BLE001 - the write goes on as before
+        return ""
+    if not dropped:
+        return ""
+    shown = ", ".join(f"`{name}`" for name in dropped[:8]) + (f" and {len(dropped) - 8} more" if len(dropped) > 8 else "")
+    return (
+        f"Not written: this would remove {len(dropped)} test(s) the repair was not sent for - {shown}. "
+        "A repair changes only the tests it names; every other test stays in the file exactly as it "
+        "is. Change only those tests, with an edit, or write the file with every other test kept. "
+        "Nothing was written."
+    )
+
 def _the_harness_s_own_or_the_locked_suite(root: Path, target: Path) -> str | None:
     """The refusal for a change to the harness's records or the acceptance suite, or None.
 
@@ -6419,6 +6439,9 @@ def write_approved_artifact(
     locked = _the_harness_s_own_or_the_locked_suite(artifact_root, target)
     if locked is not None:
         raise RepositoryToolError(locked)
+    dropped = _tests_a_repair_would_drop(artifact_root, target, content)
+    if dropped:
+        raise RepositoryToolError(dropped)
     cut_off = _cut_off_at_a_quote(relative_path, content)
     if cut_off is not None:
         raise RepositoryToolError(cut_off)

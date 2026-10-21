@@ -80,7 +80,11 @@ def analyse(prefix):
         pass
     times = [ts(r["at"]) for r in recs if r.get("at")]
     wall = max(max(times) - min(times) - discarded, 1.0)
-    open_req = {}
+    # Each stage's requests waiting for their replies, oldest first: a stage
+    # asks several at once (a specification written in parts), and one open
+    # request per stage paired only the last and dropped the other replies -
+    # their time, calls and tokens - from every figure below.
+    open_req = collections.defaultdict(list)
     model_iv, tool_iv = [], []
     calls = {}
     per = collections.defaultdict(lambda: collections.Counter())
@@ -92,9 +96,9 @@ def analyse(prefix):
         st, k = r.get("stage") or "", r.get("kind")
         fam = family(st)
         if k == "model_request":
-            open_req[st] = ts(r["at"])
-        elif k == "model_response" and st in open_req:
-            a, b = open_req.pop(st), ts(r["at"])
+            open_req[st].append(ts(r["at"]))
+        elif k == "model_response" and open_req.get(st):
+            a, b = open_req[st].pop(0), ts(r["at"])
             model_iv.append((a, b))
             per_iv[fam].append((a, b))
             u = r.get("usage") or {}

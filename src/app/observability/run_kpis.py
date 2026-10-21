@@ -135,7 +135,7 @@ def kpis(records: list[dict]) -> dict:
     times = [_seconds(r["at"]) for r in records if r.get("at")]
     calls: dict[str, dict] = {}
     seen_calls: collections.Counter = collections.Counter()
-    opened: dict[str, float] = {}
+    opened: dict[str, list[float]] = {}
     model_iv: list[tuple[float, float]] = []
     tokens = collections.Counter()
     count = collections.Counter()
@@ -156,7 +156,8 @@ def kpis(records: list[dict]) -> dict:
         if stage and (not stages or stages[-1] != stage):
             stages.append(stage)
         if kind == "model_request":
-            opened[stage] = _seconds(r["at"])
+            # Oldest first: a stage asks several at once (see `run_timing`).
+            opened.setdefault(stage, []).append(_seconds(r["at"]))
             # A tool withheld: this request offers fewer tools than the stage's
             # last. Its notice is in a correction message, not a tool result.
             tools = r.get("tools")
@@ -171,8 +172,8 @@ def kpis(records: list[dict]) -> dict:
                     blocks[name] += int(size)
         elif kind == "model_response":
             count["model_calls"] += 1
-            if stage in opened:
-                model_iv.append((opened.pop(stage), _seconds(r["at"])))
+            if opened.get(stage):
+                model_iv.append((opened[stage].pop(0), _seconds(r["at"])))
             usage = r.get("usage") or {}
             output = usage.get("output_tokens") or 0
             cached = (usage.get("input_token_details") or {}).get("cache_read") or 0

@@ -60,7 +60,7 @@ def _lost(entry: dict) -> bool:
 def stage_usage(entries: Iterable[dict]) -> list[dict[str, Any]]:
     """One row per stage, in the order the stages first ran."""
     rows: dict[str, dict[str, Any]] = {}
-    asked_at: dict[str, datetime] = {}
+    asked_at: dict[str, list[datetime]] = {}
     read_calls: dict[str, str] = {}
     for entry in entries:
         stage = str(entry.get("stage") or "")
@@ -77,10 +77,11 @@ def stage_usage(entries: Iterable[dict]) -> list[dict[str, Any]]:
             row["last"] = at if row["last"] is None or at > row["last"] else row["last"]
         kind = entry.get("kind")
         if kind == "model_request" and at is not None:
-            asked_at[stage] = at
+            # Oldest first: a stage asks several at once (a specification in parts).
+            asked_at.setdefault(stage, []).append(at)
         elif kind == "model_response":
             row["model_calls"] += 1
-            started = asked_at.pop(stage, None)
+            started = asked_at[stage].pop(0) if asked_at.get(stage) else None
             if started is not None and at is not None:
                 row["model_seconds"] += max(0.0, (at - started).total_seconds())
             usage = entry.get("usage") or {}
@@ -115,16 +116,16 @@ MOST_RECENT_CALLS = 300
 def recent_calls(entries: Iterable[dict], now: datetime | None = None) -> list[dict[str, Any]]:
     """The model calls of the last hour, oldest first: when, which stage, tokens in and out, seconds (plan BG.15)."""
     calls: list[dict[str, Any]] = []
-    asked_at: dict[str, datetime] = {}
+    asked_at: dict[str, list[datetime]] = {}
     for entry in entries:
         stage = str(entry.get("stage") or "")
         at = _when(entry)
         if at is None:
             continue
         if entry.get("kind") == "model_request":
-            asked_at[stage] = at
+            asked_at.setdefault(stage, []).append(at)
         elif entry.get("kind") == "model_response":
-            started = asked_at.pop(stage, None)
+            started = asked_at[stage].pop(0) if asked_at.get(stage) else None
             usage = entry.get("usage") or {}
             calls.append({
                 "at": at.isoformat(),

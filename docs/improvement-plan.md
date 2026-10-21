@@ -3875,7 +3875,7 @@ per-run model cost. Neighbours: UI-S3 plan-first intake, CM.4 (questions *during
 
 | ID | Change | Group | Priority | Status |
 |---|---|---|---|---|
-| IN.1 | Assumptions gate: before the specification, one screen listing each open question with the PM's default answer; the owner confirms or edits each; in auto mode the defaults are recorded as decisions (`decision_log.md`) and shown on the run page. Behind `ASSUMPTIONS_GATE` | 2 — after measured runs (it changes what the architect receives) | P1 | PROPOSED |
+| IN.1 | Assumptions gate: before the specification, one screen listing each open question with the PM's default answer; the owner confirms or edits each; in auto mode the defaults are recorded as decisions (`decision_log.md`) and shown on the run page. Behind `ASSUMPTIONS_GATE` | 2 — after measured runs (it changes what the architect receives) | P1 | BUILT 2026-10-21 behind `ASSUMPTIONS_GATE` (off): `app/agents/assumptions.py` - the product manager writes `question -> assumed: answer`; each is a `product_intake` decision (decision log, run page); the architect's request carries them as answers to build to. The owner sees them at the intake review when it is on; a dedicated screen is UI work, not built |
 | IN.2 | Ambiguity score at preview: `POST /api/runs/preview` reports the count of criteria without an interface line and of brief features the PM marked as assumptions, so a thin brief is seen before the run, not at sprint 3 | 1 — now (read-only) | P2 | BUILT 2026-10-21: `app/acceptance/ambiguity.py`; `POST /api/runs/preview` answers `without_an_interface_line` (criteria no line of the brief's interface section speaks to) and `vague_phrases`, and the criteria preview shows both - `tests/brief_medium.md` has 13 of 13 without an interface line, `tasks-api` 2, `web-todo` 1. The PM's assumptions are not counted: they exist only after intake, and the preview makes no model call |
 
 <a id="plan-bw"></a>
@@ -4742,7 +4742,7 @@ the item: what it changes, why, and the evidence (review findings in
 | RC.1 | reader corpus harvested from every run's transcript | P1 | BUILT 2026-10-21 (group 1) | [RC](#plan-rc) |
 | RC.2 | corpus replay test for every reader | P1 | BUILT 2026-10-21 (group 1) | [RC](#plan-rc) |
 | RC.3 | corpus hygiene and `loop.sh corpus` | P2 | BUILT 2026-10-21 (group 1) | [RC](#plan-rc) |
-| IN.1 | assumptions gate before the specification | P1 | PROPOSED 2026-10-21 (group 2) | [IN](#plan-in) |
+| IN.1 | assumptions gate before the specification | P1 | BUILT 2026-10-21 behind `ASSUMPTIONS_GATE` (off) | [IN](#plan-in) |
 | IN.2 | ambiguity count at preview | P2 | PROPOSED 2026-10-21 (group 1, now) | BUILT 2026-10-21 (group 1) |
 | BW.1 | regression contract from a seeded codebase's own tests | P1 | BUILT 2026-10-21 behind `REGRESSION_CONTRACT` (off) | [BW](#plan-bw) |
 | BW.2 | change-request run from a finished product | P1 | PROPOSED 2026-10-21 (group 2) | [BW](#plan-bw) |

@@ -8056,6 +8056,10 @@ def build_workflow_graph(
     def product_manager_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         agent = create_product_manager_agent(model=planning_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         request = build_intake_request(state["document"], state["repository"])
+        # Each open question with the answer it assumes (plan IN.1, off until measured).
+        from app.agents import assumptions
+
+        request = assumptions.with_the_rule(request)
         update = _run_gated_agent(
             state,
             config,
@@ -8091,6 +8095,7 @@ def build_workflow_graph(
             "docs/product_intake.md",
             render_document("product_intake", o=update["product_intake"]),
         )
+        assumptions.record(state, update)
         # The project directory, named once from the product, so no stage has
         # to derive it and none looks for it before it exists.
         from app.tools.repository import pin_the_directory_the_product_names
@@ -8357,6 +8362,10 @@ def build_workflow_graph(
                 advice=state.get("specialist_advice"),
             )
 
+        # The open questions' assumed answers, recorded at intake (plan IN.1).
+        from app.agents import assumptions
+
+        request["messages"][-1]["content"] += assumptions.block(state)
         # Fast delivery: the architect writes the core and the other sections
         # are written from it at once. See `app.graph.specification_parts`.
         in_parts = _fast_delivery() and not (required_changes and previous_specification is not None)

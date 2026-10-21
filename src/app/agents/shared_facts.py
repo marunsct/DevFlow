@@ -63,6 +63,19 @@ def layout_facts(pack: Any, project: str, package: str | None) -> list[str]:
                  f"`{pack.acceptance_pattern}` in `{prefix}{pack.acceptance_dir}/`.")
     if getattr(pack, "data_store", ""):
         lines.append("- Where the data lives: " + " ".join(str(pack.data_store).split()))
+    started = str((getattr(pack, "files", None) or {}).get("start.sh") or "")
+    if started:
+        # The setup's own start script, already proven by its smoke test. Both
+        # Measure gate runs' specifications designed a start.sh of their own,
+        # and one - `exec python tasks_api/app.py`, a Python without the
+        # product's dependencies - was drafted over the working one: every
+        # locked test passed and the service did not start for anyone else.
+        command = next((line.strip() for line in pack.filled(started, project, "", package).splitlines()
+                        if line.strip() and not line.startswith("#")), "")
+        lines.append(f"- `{prefix}start.sh` is already set up and starts the service as the brief asks"
+                     + (f" (`{command}`)" if command else "")
+                     + ": the file plan keeps it as it is, and changes it only for something the brief "
+                     "asks that it does not do.")
     kept = [path for path in pack.kept_files if path not in served]
     if kept:
         lines.append("- Kept by the harness, not the product's to write: "

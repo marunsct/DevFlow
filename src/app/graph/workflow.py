@@ -1411,13 +1411,16 @@ def _the_last_attempt_section(cycle: Any, defect_index: int) -> str:
     )
 
 
-def _with_the_attempt(cycle: Any, index: int, stage: str, fix_result: Any, outcome: str) -> Any:
-    """The cycle with one fix attempt recorded on defect `index` (plan PH.2). Never raises."""
+def _with_the_attempt(cycle: Any, index: int, stage: str, fix_result: Any, outcome: str, calls: int | None = None) -> Any:
+    """The cycle with one fix attempt recorded on defect `index` (plan PH.2), with its model calls when counted (AY step 4). Never raises."""
     try:
         from app.agents.ledger import attempt_record
 
         defect = cycle.defects[index]
-        attempts = [*(getattr(defect, "attempts", None) or []), attempt_record(stage, fix_result, outcome)]
+        record = attempt_record(stage, fix_result, outcome)
+        if calls is not None:
+            record["calls"] = calls
+        attempts = [*(getattr(defect, "attempts", None) or []), record]
         return cycle.model_copy(update={"defects": [
             item.model_copy(update={"attempts": attempts}) if position == index else item
             for position, item in enumerate(cycle.defects)
@@ -10243,6 +10246,20 @@ def build_workflow_graph(
         closed = _closed_if_an_earlier_fix_resolved_it(state, cycle, defect_index)
         if closed is not None:
             return closed
+        # A defect that has spent its calls across attempts is not fixed again
+        # (plan AY step 4, off until measured).
+        from app.graph import defect_budget
+
+        spent_out = defect_budget.spent_out(cycle, defect_index)
+        if spent_out:
+            from app.observability import defect_ledger
+
+            defect_ledger.note(
+                "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+                sprint=state.get("current_sprint_index", 0), detail=spent_out,
+            )
+            return {"defect_cursor": defect_index + 1}
+        started = defect_budget.now()
 
         fix_model = _the_build_model(
             state,
@@ -10314,7 +10331,8 @@ def build_workflow_graph(
                 detail=f"broke {len(broke)} test(s) that passed before it: {'; '.join(broke[:3])}",
             )
             noted = _one_more_failed_fix(_noted_as_reverted(cycle, [defect_index], broke), defect_index)
-            noted = _with_the_attempt(noted, defect_index, stage_name, fix_result, f"reverted: it broke {'; '.join(broke[:3])}")
+            noted = _with_the_attempt(noted, defect_index, stage_name, fix_result, f"reverted: it broke {'; '.join(broke[:3])}",
+                                      defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name, started))
             contested = _a_locked_test_two_fixes_broke(noted)
             if contested and _a_dispute_may_be_held_now(state):
                 logger.warning(
@@ -10349,6 +10367,7 @@ def build_workflow_graph(
             settled["remediation"] = _with_the_attempt(
                 settled["remediation"], defect_index, stage_name, fix_result,
                 "fixed" if str(getattr(after, "status", "")) == "fixed" else "left open: its tests still fail",
+                defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name, started),
             )
         update.update(settled)
         if blames and _a_dispute_may_be_held_now(state):

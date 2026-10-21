@@ -31,6 +31,7 @@ SWITCHES: dict[str, str] = {
     "CHANGE_REQUEST_RUNS": "app.server.change_request_runs",
     "SCREENSHOT_RUBRIC": "app.acceptance.screenshot_rubric",
     "VERIFY_AFTER_WRITE": "app.graph.verify_after_write",
+    "DEFECT_CALL_CAP": "app.graph.defect_budget",
     "INTERFACE_CHANGES_NAMED": "app.agents.interface_changes",
     "PROJECT_GRAPH_FIXES": "app.analysis.project_graph:fixes_switch",
     "PROJECT_GRAPH_BUILDERS": "app.analysis.project_graph:builders_switch",

@@ -6,14 +6,14 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-22 00:05 JST. Times are JST; containers and transcripts log UTC.
+**As of:** 2026-10-22 01:15 JST. Times are JST; containers and transcripts log UTC.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | **Measure gate run 2: run-aedcd228** - `benchmarks/tasks-api/brief.md`, `DELIVERY=fast FRONTIER=false`, started about 23:00 JST (FastAPI, 2 sprints, suite locked at 11 tests); at 00:00 in sprint 1's fixes. **No deploys into it** (MF.4) |
-| Frozen | harness commit **039ad84** (source as 9218b3e6: everything through LF.166) |
+| Run | **Measure pair 2, run 1: run-bf3f222f** - `benchmarks/tasks-api/brief.md`, `DELIVERY=fast FRONTIER=false`, started 01:13 JST on **20dcdfbe** (Fix batch 1). Run 2 follows on the same SHA. **No deploys into either** (MF.4) |
+| Frozen | **20dcdfbe** for Measure pair 2 (039ad84 + LF.167-LF.170); later work - group 2 switches (off), LF.171 - sits above it, undeployed |
 | Model | Qwen3.6-35B-A3B (owner, back from LFM2.5 at 21:19): 2 slots, 262,144 tokens; server sampling = Qwen's *precise coding* profile (temperature 0.6, top_p 0.95, top_k 20, min_p 0, presence 0, repetition 1.0, max tokens 32,768); DevFlow context 260,000, reply ceiling 32,768 |
 | Owner's model settings | the owner's; never changed by the loop |
 | Peer sessions | none drive this workspace; this session is the only one that edits, deploys and starts runs |
@@ -48,16 +48,15 @@ Each module's `ON_BY_DEFAULT` turns its items on for the before/after runs.
 
 | Run | Brief | Result |
 |---|---|---|
-| run-aedcd228 | tasks-api (Measure 2) | live |
-| run-650d812f | tasks-api (Measure 1) | completed 22:49 JST, 80.7 min, 144 calls; 21/21 inside, **0/10 hidden - false acceptance** (start.sh rewritten to a Python without Flask); 10/10 with start.sh restored |
-| run-f4f0030b | brief_medium | stopped at 15:08 JST in test round 2's fixes: 367 min, 383 calls, 1.66M output tokens, 13 fix stages, 1 of 13 criteria (5 of 34 tests); a findings run (LF.119-LF.140) |
+| run-aedcd228 | tasks-api (Measure 2, 039ad84) | completed 01:00 JST, ~120 min, 2 sprints, 21/21 inside, **0/10 hidden - false acceptance again**: the work orders rewrote start.sh to a bare `python` without the product's packages; 10/10 with `.venv/bin/python` |
+| run-650d812f | tasks-api (Measure 1, 039ad84) | completed 22:49 JST, 80.7 min, 144 calls; 21/21 inside, **0/10 hidden - false acceptance** (start.sh rewritten to a Python without Flask); 10/10 with start.sh restored |
 
 No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh product`).
 
 ## Next actions
 
-1. When gate run 2 ends: `loop.sh score run-aedcd228 tasks-api`, `loop.sh kpi run-aedcd228`, compare with run 1 (`kpi_ledger arms`), and update the end-of-run product review.
-2. Then, with no run live and ALL READY: `loop.sh deploy 20dcdfbe` - **Fix batch 1**: LF.167 a rewriting fix never targets an ignored file; **LF.168 the suite starts a service through its `start.sh`**; LF.169 the architect is told the setup's `start.sh` works; LF.170 a held stage's command is held to its files (gate run 1 was a false acceptance: 0/10 hidden, 10/10 with start.sh restored). Then **Measure pair 2**: two tasks-api runs on that one SHA, no deploys; compare arms 039ad84 vs 20dcdfbe.
+1. Measure pair 2 (20dcdfbe): score each run (`loop.sh score <run> tasks-api`), `loop.sh kpi`, then `kpi_ledger arms` 039ad84 vs 20dcdfbe. Pair 1 on 039ad84 scored 0/10 and 0/10 hidden, both from start.sh; LF.168/LF.169 are what pair 2 measures.
+2. Done 01:10 JST: `loop.sh deploy 20dcdfbe` (Fix batch 1: LF.167-LF.170).
 3. **Fix batch 2** (seen in gate run 2): **LF.171 built** - the opening request names the files the memory holds (24 of 142 tool-calling replies only re-read held files). Filed, not built: one fixer ran the same `__pycache__` clean three times in a row with near-identical reasoning (no repeat guard caught it); `find tasks-api` run from inside `tasks-api` (the working directory named again as an argument); redundant reads 56% (healthy 8-19%); the 11-test suite is thin for 16 criteria; dead `models.py`; the intake keeps both the paraphrase and the brief's line of each measure (9 measures for 5) - replace a close paraphrase rather than append.
 4. Then group 2 as measured switch arms, one subsystem at a time (table above - all built, all off), then the brownfield family `benchmarks/tasks-api-change` (owner 2026-10-21: never stop the testing). Not built: CG.5 (UI), BH preference, M.4; AY steps 5-6 deferred (plan says why).
 

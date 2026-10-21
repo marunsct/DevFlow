@@ -2479,6 +2479,32 @@ _ONLY_INSPECTS = frozenset({
     "tree", "pwd", "printenv", "env",
 })
 
+#: A package manager's subcommands that only look a package up, by tool: the
+#: words after them are package names, never a server to start. Measured on a
+#: gate run: `python -m pip show fastapi starlette` was refused twice as a
+#: server that "runs until it is stopped", because `fastapi` is also the name
+#: of a server command.
+_PACKAGE_LOOKUPS: dict[str, frozenset[str]] = {
+    "pip": frozenset({"show", "list", "freeze", "index", "check", "inspect", "download", "search", "help"}),
+    "pip3": frozenset({"show", "list", "freeze", "index", "check", "inspect", "download", "search", "help"}),
+    "npm": frozenset({"view", "info", "show", "ls", "list", "outdated", "explain", "why", "search", "audit"}),
+    "pnpm": frozenset({"ls", "list", "why", "outdated", "info", "view", "audit"}),
+    "yarn": frozenset({"info", "list", "why", "outdated", "audit"}),
+    "cargo": frozenset({"tree", "search", "metadata"}),
+    "go": frozenset({"list", "doc", "version", "env"}),
+    "gem": frozenset({"list", "info", "search", "which"}),
+    "composer": frozenset({"show", "info", "outdated", "why", "depends"}),
+}
+
+
+def _a_package_lookup(parts: Sequence[str]) -> bool:
+    """Whether this command asks a package manager about packages, rather than running anything."""
+    return any(
+        part in _PACKAGE_LOOKUPS and parts[index + 1] in _PACKAGE_LOOKUPS[part]
+        for index, part in enumerate(parts[:-1])
+    )
+
+
 #: Runners that execute whatever follows them, so the program to judge is the
 #: next word rather than the runner. `npx which serve` is still an inspection.
 _DELEGATES_TO_THE_NEXT_WORD = frozenset({"npx", "bunx", "pnpx", "dlx", "exec"})
@@ -2550,7 +2576,7 @@ def _starts_a_server(argv: Sequence[str]) -> str | None:
     earlier; this is the other half of it.
     """
     parts = [os.path.basename(str(part)) for part in argv]
-    if _the_program_this_would_run(parts) in _ONLY_INSPECTS:
+    if _the_program_this_would_run(parts) in _ONLY_INSPECTS or _a_package_lookup(parts):
         return None
     # Installing a server is not running one. `npm install -D serve` names
     # `serve` as the package to add, and every word-matching check here sees

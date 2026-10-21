@@ -155,3 +155,34 @@ def test_a_file_refused_again_and_again_says_how_many_times(workspace: Path, mon
     assert "times" not in messages[0] and "times" not in messages[1]
     assert messages[2].startswith("This stage has now been refused 'shop/core.py' 3 times")
     assert "the plan gave it to specialist_backend_1" in messages[2]
+
+
+def test_the_owners_are_the_work_orders_as_dispatched_not_as_planned(tmp_path: Path, monkeypatch) -> None:
+    # Measured on one run: the lead's one order of 18 files was split into
+    # orders of three, the table still gave every file to the first, and each
+    # later order was refused its own files - the service's entry point among them.
+    import inspect
+    from types import SimpleNamespace
+
+    from app.graph import workflow
+    from app.graph.drafting import in_work_orders_of_at_most
+    from app.agents.technical_lead import SpecialistTask
+
+    (tmp_path / ".project-directory").write_text("shop\n", encoding="utf-8")
+    (tmp_path / "shop").mkdir()
+    lead = SpecialistTask(specialist_role="backend", task_description="build the service",
+                          acceptance_criteria=["works"],
+                          files=[f"shop/m{n}.py" for n in range(5)] + ["shop/main.py"])
+    workflow._record_the_owners(tmp_path, [lead])
+    parts, _ = in_work_orders_of_at_most([lead])
+    workflow._record_the_owners(tmp_path, parts)
+
+    _as(monkeypatch, "specialist_backend_1")
+    write_approved_artifact(tmp_path, "shop/main.py", "X = 1\n")
+    assert (tmp_path / "shop" / "main.py").is_file()
+    with pytest.raises(RepositoryToolError, match="the plan gave it to specialist_backend_0"):
+        write_approved_artifact(tmp_path, "shop/m0.py", "X = 1\n")
+
+    source = inspect.getsource(workflow)
+    assert '_record_the_owners(state["repository"].root_path, list(drafted["milestone_plan"].delegated_tasks))' in source
+    assert source.count("_record_the_owners(") >= 4

@@ -1119,6 +1119,27 @@ def _stages_holding_a_pause(state: Any) -> set[str]:
     return holding
 
 
+def _record_the_owners(root: Any, tasks: list[Any]) -> None:
+    """Record which stage owns each file the dispatched work orders list; a file two list has none.
+
+    From the work orders as dispatched, not as the lead planned them. Measured
+    on one run: fast delivery split the lead's one backend order of 18 files
+    into six orders of three, the table still gave every file to the first,
+    and each later order was refused its own files - the service's entry
+    point among them - as "specialist_backend_0's", a stage the dispatched
+    plan does not have.
+    """
+    if not root:
+        return
+    from app.tools.repository import record_work_order_files
+
+    declared: dict[str, list[str]] = {}
+    for index, task in enumerate(tasks or []):
+        for path in getattr(task, "files", None) or []:
+            declared.setdefault(str(path), []).append(_specialist_stage_name(task, index))
+    record_work_order_files(root, {path: stages[0] for path, stages in declared.items() if len(set(stages)) == 1})
+
+
 def _specialist_stage_name(task: Any, index: int) -> str:
     """The stage name one delegated task runs under.
 
@@ -8939,15 +8960,8 @@ def build_workflow_graph(
         # Which stage owns each file the work orders list, so a specialist
         # writing another work order's file is told whose it is. A file two
         # work orders list has no single owner and is left open.
-        from app.tools.repository import record_work_order_files
-
-        declared: dict[str, list[str]] = {}
-        for index, task in enumerate(getattr(update["milestone_plan"], "delegated_tasks", None) or []):
-            for path in getattr(task, "files", None) or []:
-                declared.setdefault(str(path), []).append(_specialist_stage_name(task, index))
-        record_work_order_files(
-            state["repository"].root_path,
-            {path: stages[0] for path, stages in declared.items() if len(set(stages)) == 1},
+        _record_the_owners(
+            state["repository"].root_path, list(getattr(update["milestone_plan"], "delegated_tasks", None) or []),
         )
 
         _record_document(
@@ -9088,7 +9102,15 @@ def build_workflow_graph(
             return missing
         drafted = _drafted_from_the_specification(state, config)
         if drafted is not None:
+            if "milestone_plan" in drafted:
+                # Split into parts: the owners are the parts'.
+                _record_the_owners(state["repository"].root_path, list(drafted["milestone_plan"].delegated_tasks))
             return drafted
+        # On every dispatch, from the plan as it stands: a run resumed on a
+        # plan whose table an earlier version recorded is put right here.
+        _record_the_owners(
+            state["repository"].root_path, list(getattr(state.get("milestone_plan"), "delegated_tasks", None) or []),
+        )
             
         # `effective_settings`, not `load_settings`. `load_settings` is a pure
         # function of the environment it is handed, and bare it reads this

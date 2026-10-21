@@ -35,10 +35,19 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_CRITERION = r"((?:AC|CR)-\d+)"
+#: The criterion a line serves; a line naming several serves the first. One
+#: specification wrote "AC-1 AC-2 AC-3 POST /auth/register -> 201".
+_CRITERION = r"((?:AC|CR)-\d+)(?:[\s,]+(?:AC|CR)-\d+)*"
 _HTTP = re.compile(_CRITERION + r"\s+(GET|POST|PUT|PATCH|DELETE)\s+(/\S*)\s*->\s*(\d{3})\s*$")
-_PAGE = re.compile(_CRITERION + r"\s+page\s+(/\S*)\s+([a-z]+)\s+\"([^\"]+)\"\s*$")
+#: A page control: the role and its name last, with any words naming where on
+#: the page it sits between the path and the role - one specification wrote 26
+#: of its page lines as `page /dashboard form textbox "Title"`, and every one
+#: was set aside as following no form.
+_PAGE = re.compile(_CRITERION + r"\s+page\s+(/\S*)\s+(?:[\w-]+\s+)*?([a-z]+)\s+\"([^\"]+)\"\s*$")
 _COMMAND = re.compile(_CRITERION + r"\s+command\s+(.+?)\s*->\s*exit\s+(\d+)\s*$")
+
+#: A control named by its element where the contract asks for its ARIA role.
+_ROLE_OF_THE_ELEMENT = {"textarea": "textbox", "select": "combobox"}
 
 #: A parenthesised note at the end of a line: "-> 200 (updates the field)".
 _A_TRAILING_NOTE = re.compile(r"\s+\([^()]*\)\s*$")
@@ -87,7 +96,8 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
         if match := _HTTP.match(line):
             checks.append(Check(match[1], "http", line, method=match[2], path=match[3], status=int(match[4])))
         elif match := _PAGE.match(line):
-            checks.append(Check(match[1], "page", line, path=match[2], role=match[3], name=match[4]))
+            role = _ROLE_OF_THE_ELEMENT.get(match[3], match[3])
+            checks.append(Check(match[1], "page", line, path=match[2], role=role, name=match[4]))
         elif match := _COMMAND.match(line):
             checks.append(Check(match[1], "command", line, command=match[2], exit_code=int(match[3])))
         else:
@@ -249,10 +259,13 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
         from app.stacks import contract
 
         root = Path(repo_root)
-        locked = the_locked_contract(root)[:MOST_CHECKS]
+        # Read again with the forms as they are now: a line set aside at the
+        # lock may be one a later reading takes.
+        read_now, still_unread = parse(the_unreadable_lines(root))
+        locked = [*the_locked_contract(root), *read_now][:MOST_CHECKS]
         # Lines no check can be compiled from: said at release, never dropped
-        # in silence. Measured on one run: three of a feature's four lines.
-        unreadable = [f"{line} (follows none of the contract's three forms)" for line in the_unreadable_lines(root)]
+        # in silence. Measured on one run: 32 of 58 lines at the lock.
+        unreadable = [f"{line} (follows none of the contract's three forms)" for line in still_unread]
         if not locked:
             return (
                 [f"{len(unreadable)} line(s) of the interface contract were not checked at release: "

@@ -187,3 +187,33 @@ def test_a_line_that_follows_no_form_is_named_at_release_not_dropped_at_the_lock
 
     assert gaps == ["1 line(s) of the interface contract were not checked at release: "
                     "AC-11 page /dashboard card task reminder bell icon (follows none of the contract's three forms)"]
+
+
+def test_the_shapes_one_specification_wrote_its_lines_in_are_read():
+    checks, unreadable = ic.parse([
+        'AC-2 page /dashboard form textbox "Title"',
+        'AC-4 page /dashboard form select "Priority"',
+        'AC-2 page /dashboard form textarea "Description"',
+        "AC-1 AC-2 AC-3 POST /auth/register -> 201",
+        'AC-5 page /dashboard form input[type=date] "Due Date"',
+    ])
+
+    assert [(c.criterion, c.kind, c.role, c.name) for c in checks if c.kind == "page"] == [
+        ("AC-2", "page", "textbox", "Title"), ("AC-4", "page", "combobox", "Priority"),
+        ("AC-2", "page", "textbox", "Description"),
+    ]
+    assert [(c.criterion, c.method, c.path, c.status) for c in checks if c.kind == "http"] == [
+        ("AC-1", "POST", "/auth/register", 201),
+    ]
+    assert unreadable == ['AC-5 page /dashboard form input[type=date] "Due Date"']
+
+
+def test_a_line_set_aside_at_the_lock_is_read_again_at_release(tmp_path, monkeypatch):
+    state = _locked_project(tmp_path, monkeypatch)
+    state["interface_contract"] = []
+    state["interface_contract_unreadable"] = ["AC-2 GET /api/notes/{id} -> 200"]
+
+    gaps = ic.what_the_contract_checks_find(tmp_path, runner=lambda *a: 1 / 0)
+
+    assert gaps == ["1 line(s) of the interface contract were not checked at release: "
+                    "AC-2 GET /api/notes/{id} -> 200 (a route with a parameter in it)"]

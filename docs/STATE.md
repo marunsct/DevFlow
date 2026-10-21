@@ -6,15 +6,15 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-21 21:19 JST. Times are JST; containers and transcripts log UTC.
+**As of:** 2026-10-21 21:26 JST. Times are JST; containers and transcripts log UTC.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | none. LFM2.5 smoke runs ended: run-9a475ffb cancelled 21:19 JST at 195 min (17/18 before a test repair; 333 calls, 2.04M output tokens, 78% reasoning) against Qwen's 38-46 min for the same kind of brief. Owner 21:19 JST: **back to Qwen3.6** for the Measure cycle |
-| Model | the owner switches the server back to Qwen3.6 (the loop never loads a model); `loop.sh ready` must say ALL READY before the gate runs |
-| Deployed | through LF.166 (9218b3e6); the command loophole (undo writes a stage may not make) is NOT built - owner's decision pending |
+| Run | **Measure gate run 1: run-650d812f** - `benchmarks/tasks-api/brief.md`, `DELIVERY=fast FRONTIER=false`, started 21:26 JST. Run 2 starts when it ends. **No deploys into either** (MF.4) |
+| Frozen | harness commit **039ad84** (source as 9218b3e6: everything through LF.166) |
+| Model | Qwen3.6-35B-A3B (owner, back from LFM2.5 at 21:19): 2 slots, 262,144 tokens; server sampling = Qwen's *precise coding* profile (temperature 0.6, top_p 0.95, top_k 20, min_p 0, presence 0, repetition 1.0, max tokens 32,768); DevFlow context 260,000, reply ceiling 32,768 |
 | Owner's model settings | the owner's; never changed by the loop |
 | Peer sessions | none drive this workspace; this session is the only one that edits, deploys and starts runs |
 

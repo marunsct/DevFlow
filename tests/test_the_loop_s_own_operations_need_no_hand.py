@@ -39,3 +39,15 @@ def test_one_deploy_at_a_time_and_a_rewind_with_timeouts():
     assert "flock -n 9" in _branch("deploy")
     rewind = _branch("rewind")
     assert rewind.count('-m "${REWIND_TIMEOUT:-600}"') == 2
+
+
+def test_a_change_to_the_app_alone_is_deployed_without_touching_the_worker():
+    """A UI change restarted the worker - and the live run's stage - for nothing the run sees."""
+    script = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()
+    body = script[script.index("\ndeploy-app)"):script.index("\ndeploy)")]
+
+    assert "flock -n 9" in body and "worktree add" in body
+    commands = [line for line in body.splitlines() if "build --progress" in line or "up -d" in line]
+    assert any(line.rstrip().endswith("app >/dev/null 2>&1") for line in commands)
+    assert "docker compose up -d --no-deps app" in body
+    assert not any("worker" in line for line in commands)

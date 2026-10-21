@@ -10,6 +10,7 @@
 #   scripts/loop/loop.sh audit [run-id]      failure / redundancy audit of a run (audit_live.py)
 #   scripts/loop/loop.sh stage <stage> [HH:MM]  trace one stage (stage_trace.py; HH:MM is UTC)
 #   scripts/loop/loop.sh reads [run-id]      redundant reads by stage and file (redundant_reads.py)
+#   scripts/loop/loop.sh deploy-app          rebuild and restart the app container only (API, UI); the worker and live runs untouched
 #   scripts/loop/loop.sh timing [run-id..]   where the wall-clock time went: model vs tools, phases, reasoning share (run_timing.py)
 #   scripts/loop/loop.sh kpi [run-id]        the run's KPIs as JSON (data/kpi/<run>.json), a row of data/kpi/ledger.csv,
 #                                            and any KPI past 1.5x its 5-run mean (kpi.py, kpi_ledger.py); score runs it too
@@ -333,6 +334,22 @@ stage)
   in_worker stage_trace.py "$(current)" "$2" "${3:-}"
   ;;
 
+deploy-app)
+  # The app container alone - the API and the UI - for a change that touches
+  # nothing the worker runs (a screen, a route). A full deploy restarts the
+  # worker, and with it the live run's stage, for a change the run never sees.
+  # Built from a clean checkout of HEAD, under the deploy lock, like `deploy`.
+  exec 9>"$STATE/deploy.lock"
+  flock -n 9 || { echo "another deploy is running (lock $STATE/deploy.lock); not starting a second" >&2; exit 1; }
+  head_tree=$(mktemp -d)/head
+  built=$(git -C "$ROOT" rev-parse HEAD)
+  git -C "$ROOT" worktree add -q --detach "$head_tree" "$built"
+  docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
+    build --progress=plain --build-arg HARNESS_COMMIT="$built" app >/dev/null 2>&1
+  git -C "$ROOT" worktree remove --force "$head_tree"
+  docker compose up -d --no-deps app
+  echo "app rebuilt from $(git -C "$ROOT" rev-parse --short "$built") at $(jst +%H:%M) JST; the worker and its runs were not touched"
+  ;;
 deploy)
   # One deploy at a time (plan OP.4): two sessions deploying at once left
   # containers stuck at `Created`.

@@ -3562,6 +3562,45 @@ def _name_the_stage_on_the_run(run_id: str | None, stage_name: str) -> None:
         logger.debug("Could not name the stage on the run's row", exc_info=True)
 
 
+
+#: (run, stage) pairs whose answer was asked for in parts: once per stage, so a
+#: stage the parts could not answer goes on to its restarts as before.
+_ASKED_IN_PARTS: set[tuple[str, str]] = set()
+
+
+def _the_answer_in_parts(
+    run_id: str | None, stage_name: str, agent: Any, initial_request: Any, result: dict[str, Any],
+) -> Any | None:
+    """The stage's answer asked for in parts when its last reply ran out of room; else None.
+
+    Whole replies that run out - reasoning to the limit, or an answer that does
+    not stop - were met with the same request again, thinking off and then
+    on fresh conversations. A smaller question is the lever that works on any
+    model: see `app.agents.answered_in_parts`. Once per stage of a run.
+    """
+    schema = getattr(agent, "workflow_response_format", None)
+    model = getattr(agent, "workflow_model", None)
+    last = next((m for m in reversed(result.get("messages") or []) if getattr(m, "type", None) == "ai"), None)
+    key = (str(run_id or ""), stage_name)
+    if schema is None or not isinstance(model, BaseChatModel) or key in _ASKED_IN_PARTS:
+        return None
+    if last is None or not _the_reply_was_cut_off_before_it_began(last):
+        return None
+    _ASKED_IN_PARTS.add(key)
+    messages = (initial_request or {}).get("messages") or [] if isinstance(initial_request, dict) else []
+    request = "\n\n".join(
+        str(m.get("content") if isinstance(m, dict) else getattr(m, "content", "")) for m in messages
+    ).strip()
+    if not request:
+        return None
+    try:
+        from app.agents.answered_in_parts import answered_in_parts
+
+        return answered_in_parts(schema, request, model, stage_name)
+    except Exception:  # noqa: BLE001 - the stage goes on to its restarts as before
+        logger.warning("Stage %s could not be answered in parts", stage_name, exc_info=True)
+        return None
+
 def _run_gated_agent(
     state: WorkflowGraphState,
     config: RunnableConfig,
@@ -3887,6 +3926,11 @@ def _run_gated_agent(
             # reply in `result` so the diagnosis below evaluates the messages
             # the stage actually ended on, not the pre-nudge turn.
             result = nudge_result_box[0]
+
+    if structured_response is None:
+        structured_response = _the_answer_in_parts(
+            config["configurable"].get(APP_RUN_ID_KEY), stage_name, agent, initial_request, result,
+        )
 
     if structured_response is None:
         # One failure is not worth restarting for: a reply cut off at the output

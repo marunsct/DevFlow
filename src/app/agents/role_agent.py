@@ -770,6 +770,9 @@ def create_role_agent(
     # through the fifteen places that build an agent - reaching fourteen of
     # fifteen is the mistake this codebase has made four times.
     agent.workflow_response_format = response_format
+    # And the model it runs on, for the answer asked for in parts when whole
+    # replies run out (`app.agents.answered_in_parts`).
+    agent.workflow_model = selected_model
     return agent
 
 

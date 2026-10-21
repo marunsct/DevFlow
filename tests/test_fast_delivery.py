@@ -361,3 +361,21 @@ def test_a_part_carries_the_lines_about_its_own_files_and_is_told_who_has_the_re
     assert first.verification == ["run npm test"]
     assert "do not wait for them or rewrite them" in first.out_of_scope[-1] and "notes/d.ts" in first.out_of_scope[-1]
     assert "notes/a.ts" in second.out_of_scope[-1]
+
+
+def test_a_credential_file_in_a_work_order_is_neither_drafted_nor_left_to_the_agent_loop(tmp_path):
+    # Measured on one run: `.env.example` was drafted, refused as a credential
+    # path, and handed to the agent loop, where the same rule refused it again.
+    model = _Model({"notes/src/store.ts": "```ts\nexport const a = 1\n```"})
+    written = {}
+
+    drafted = drafting.draft_work_orders(
+        [_order("backend", "notes/src/store.ts", "notes/.env.example"), _order("security_reliability", "notes/.env")],
+        SPEC, None, str(tmp_path), model,
+        write=lambda root, path, content: written.setdefault(path, content),
+    )
+
+    assert list(written) == ["notes/src/store.ts"] and len(model.asked) == 1
+    assert drafted[0].changed_files == ["notes/src/store.ts"]
+    assert any("`notes/.env.example` is a credential file" in d for d in drafted[0].decisions)
+    assert drafted[1].changed_files == []

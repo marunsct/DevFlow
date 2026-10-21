@@ -337,13 +337,23 @@ def draft_work_orders(
             return write_approved_artifact(root, path, content)
 
     root = Path(repo_root)
+    from app.tools.repository import is_secret_path
+
+    # A credential-shaped path (`.env.example`) is one no stage may write: the
+    # write is refused, and handed to the agent loop it was refused again.
+    # Measured on one run. It is no draft's, and its work order is done
+    # without it; the settings it would hold take development defaults.
+    never_written = {
+        str(path) for task in tasks for path in (getattr(task, "files", None) or [])
+        if str(path).strip() and is_secret_path(Path(str(path)))
+    }
     jobs = [
         (index, path, task)
         for index, task in enumerate(tasks)
         for path in (getattr(task, "files", None) or [])
-        if str(path).strip() and not str(path).endswith("/")
+        if str(path).strip() and not str(path).endswith("/") and str(path) not in never_written
     ]
-    if not jobs:
+    if not jobs and not never_written:
         return {}
 
     def run(job: tuple[int, str, Any]) -> tuple[int, str, bool]:
@@ -373,13 +383,18 @@ def draft_work_orders(
     drafted: dict[int, Any] = {}
     for index, task in enumerate(tasks):
         mine = [(path, ok) for i, path, ok in results if i == index]
-        if not mine or not all(ok for _, ok in mine):
+        if not all(ok for _, ok in mine):
+            continue
+        if not mine and not any(str(p) in never_written for p in (getattr(task, "files", None) or [])):
             continue
         written = [path for path, _ in mine]
+        skipped = [str(p) for p in (getattr(task, "files", None) or []) if str(p) in never_written]
         drafted[index] = SpecialistOutput(
             changed_files=written,
             tests=[path for path in written if classify_file(path) == "test"],
-            decisions=["Drafted from the specification, one call per file (fast delivery)."],
+            decisions=["Drafted from the specification, one call per file (fast delivery)."]
+            + [f"`{path}` is a credential file no stage writes; its settings take development defaults."
+               for path in skipped],
         )
     logger.info(
         "Drafted %d of %d work order(s) from the specification (%d of %d files)",

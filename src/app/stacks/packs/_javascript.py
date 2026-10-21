@@ -282,6 +282,18 @@ def page_check(page_path: str = "/") -> str:
     return _PAGE_CHECK % {"page": page_path, "report": PAGE_LOAD_REPORT}
 
 
+
+def the_brief_s_start_or(command: str) -> str:
+    """A service's server command for its suite: the project's `start.sh` when it has one, else `command`.
+
+    The brief names the service by its `start.sh`; the suite started it by the
+    pack's own command, so nothing ever ran the script the customer runs. One
+    run's drafting rewrote it to a Python with none of the product's
+    dependencies: the suite passed every test and the product would not start
+    at all for anyone else.
+    """
+    return f"if [ -f start.sh ]; then exec sh start.sh; else {command}; fi"
+
 def playwright_config(
     server_command: str,
     ready_path: str = "/",

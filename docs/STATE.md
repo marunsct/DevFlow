@@ -32,6 +32,7 @@ Each module's `ON_BY_DEFAULT` turns its items on for the before/after runs.
 
 | Run | Brief | Result |
 |---|---|---|
+| run-650d812f | tasks-api (Measure 1) | completed 22:49 JST, 80.7 min, 144 calls; 21/21 inside, **0/10 hidden - false acceptance** (start.sh rewritten to a Python without Flask); 10/10 with start.sh restored |
 | run-f4f0030b | brief_medium | stopped at 15:08 JST in test round 2's fixes: 367 min, 383 calls, 1.66M output tokens, 13 fix stages, 1 of 13 criteria (5 of 34 tests); a findings run (LF.119-LF.140) |
 | run-d48f049e | brief_medium | completed, acceptance 34/34, unit 30/30; 59% of its lines unreached (LF.120 built after it) |
 | run-b7a20bad | brief_medium | failed after 4 attempts, acceptance 0/31; a findings run (LF.91-LF.107) |
@@ -42,7 +43,7 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
 
 1. When the owner has Qwen3.6 serving and `loop.sh ready` says ALL READY: freeze the SHA (HEAD at that moment) and start **Measure (MF.4, MF.2)**: two gate runs on `benchmarks/tasks-api/brief.md`, `DELIVERY=fast FRONTIER=false`, one after the other, no deploys into them; score each with `loop.sh score <run> tasks-api`; `loop.sh kpi`. A bug found is filed for the Fix batch, not deployed.
 2. The LFM day's fixes (LF.141-LF.166) are in the frozen SHA: they are general and stay.
-3. **Fix batch (built on the branch, not deployed into Measure):** LF.167 - a rewriting fix never targets a file the project ignores (gate run 1 rewrote its test report twice).
+3. **Fix batch (built on the branch, not deployed into Measure):** LF.167 - a rewriting fix never targets a file the project ignores; **LF.168 - the suite starts a service through its `start.sh`** (gate run 1 was a false acceptance: 0/10 hidden, 10/10 with the pack's start.sh restored).
 4. Owner's decision pending: close the command loophole (a command writing files its stage may not) - a Fix-batch item, not for the frozen Measure SHA.
 4. Group 2 after Measure, behind switches: PH.3, PH.1, CG.1-CG.2, RL.1-RL.3, IN.1, BW.1-BW.2, PN.1-PN.2, EV.2, the rest of AY; streaming loop-abort (proposed) to measure.
 

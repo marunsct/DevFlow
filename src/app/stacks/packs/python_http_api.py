@@ -63,10 +63,14 @@ class Service:
 
     def start(self) -> None:
         env = {**os.environ, "PORT": str(self.port), "DATA_DIR": str(self.data_dir)}
+        # The way the brief starts it, when the project has its `start.sh`:
+        # what the customer runs is what every test here proves starts.
+        brief_s_way = ["sh", "start.sh"] if (PROJECT / "start.sh").is_file() else None
         self._process = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "{{package}}.main:app",
+            brief_s_way or [sys.executable, "-m", "uvicorn", "{{package}}.main:app",
              "--host", "127.0.0.1", "--port", str(self.port)],
             cwd=PROJECT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            start_new_session=True,
         )
         deadline = time.monotonic() + 30
         while True:
@@ -81,12 +85,16 @@ class Service:
                 time.sleep(0.2)
 
     def stop(self) -> None:
+        # The whole group: a start script that runs the server as its child
+        # would leave it serving the port after the script itself had gone.
         if self._process and self._process.poll() is None:
-            self._process.terminate()
             try:
+                os.killpg(self._process.pid, 15)
                 self._process.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                self._process.kill()
+                os.killpg(self._process.pid, 9)
+            except ProcessLookupError:
+                pass
 
     def restart(self) -> None:
         self.stop()

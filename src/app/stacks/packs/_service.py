@@ -103,7 +103,7 @@ def service_pack(
         files={
             "package.json": PACKAGE_JSON,
             **files,
-            "playwright.config.js": js.playwright_config(start, "/health", server_timeout_ms=server_timeout_ms),
+            "playwright.config.js": js.playwright_config(js.the_brief_s_start_or(start), "/health", server_timeout_ms=server_timeout_ms),
             ".gitignore": GITIGNORE + gitignore,
         },
         install=(*install, *js.INSTALL),

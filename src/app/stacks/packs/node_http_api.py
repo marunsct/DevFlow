@@ -112,7 +112,7 @@ PACK = StackPack(
     frameworks=("express", "node", "node.js", "http"),
     files={
         "package.json": PACKAGE_JSON,
-        "playwright.config.js": js.playwright_config("node src/index.js", "/health"),
+        "playwright.config.js": js.playwright_config(js.the_brief_s_start_or("node src/index.js"), "/health"),
         "src/app.js": APP,
         "src/index.js": INDEX,
         "start.sh": START,

@@ -30,4 +30,4 @@ def test_the_brief_s_criteria_as_the_run_will_number_them(client):
 
 def test_a_brief_that_lists_too_few_says_the_intake_will_name_them(client):
     body = client.post("/api/runs/preview", json={"brief": "Build a notes app people like."}).json()
-    assert body == {"criteria": [], "from_brief": False}
+    assert body == {"criteria": [], "from_brief": False, "without_an_interface_line": [], "vague_phrases": []}

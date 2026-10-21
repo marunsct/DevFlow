@@ -283,6 +283,14 @@ class BriefPreview(BaseModel):
     from_brief: bool = Field(
         description="Whether the brief lists them: with fewer than two, the run draws them from its product intake instead."
     )
+    without_an_interface_line: list[str] = Field(
+        default_factory=list,
+        description="Criteria no line of the brief's interface section speaks to - what the run would guess (plan IN.2).",
+    )
+    vague_phrases: list[str] = Field(
+        default_factory=list,
+        description="Phrases that ask for a quality without saying what it is, as the brief uses them (plan IN.2).",
+    )
 
 
 class StageUsage(BaseModel):

@@ -215,6 +215,22 @@
       "description": "Whether the brief lists them: with fewer than two, the run draws them from its product intake instead.",
       "title": "From Brief",
       "type": "boolean"
+     },
+     "vague_phrases": {
+      "description": "Phrases that ask for a quality without saying what it is, as the brief uses them (plan IN.2).",
+      "items": {
+       "type": "string"
+      },
+      "title": "Vague Phrases",
+      "type": "array"
+     },
+     "without_an_interface_line": {
+      "description": "Criteria no line of the brief's interface section speaks to - what the run would guess (plan IN.2).",
+      "items": {
+       "type": "string"
+      },
+      "title": "Without An Interface Line",
+      "type": "array"
      }
     },
     "required": [

@@ -61,6 +61,19 @@ export const CriteriaPreview: React.FC<{
           draw its criteria from what it understands of the product. List them, one per line, to choose them yourself.
         </p>
       )}
+      {/* What the run would have to guess (plan IN.2): seen now, not at sprint 3. */}
+      {preview.from_brief && (preview.without_an_interface_line?.length ?? 0) > 0 && (
+        <p className="mt-3 text-sm text-text-secondary" data-testid="no-interface-line">
+          {preview.without_an_interface_line.length} of {preview.criteria.length} criteria have no line in an
+          Interface section saying what a person sees, sends or gets back ({preview.without_an_interface_line.join(', ')}).
+          The run will guess those: name the routes, controls or commands to decide them yourself.
+        </p>
+      )}
+      {(preview.vague_phrases?.length ?? 0) > 0 && (
+        <p className="mt-2 text-sm text-text-secondary" data-testid="vague-phrases">
+          Phrases that ask for a quality without saying what it is: {preview.vague_phrases.join(', ')}.
+        </p>
+      )}
     </section>
   );
 };

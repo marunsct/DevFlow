@@ -3876,7 +3876,7 @@ per-run model cost. Neighbours: UI-S3 plan-first intake, CM.4 (questions *during
 | ID | Change | Group | Priority | Status |
 |---|---|---|---|---|
 | IN.1 | Assumptions gate: before the specification, one screen listing each open question with the PM's default answer; the owner confirms or edits each; in auto mode the defaults are recorded as decisions (`decision_log.md`) and shown on the run page. Behind `ASSUMPTIONS_GATE` | 2 — after measured runs (it changes what the architect receives) | P1 | PROPOSED |
-| IN.2 | Ambiguity score at preview: `POST /api/runs/preview` reports the count of criteria without an interface line and of brief features the PM marked as assumptions, so a thin brief is seen before the run, not at sprint 3 | 1 — now (read-only) | P2 | PROPOSED |
+| IN.2 | Ambiguity score at preview: `POST /api/runs/preview` reports the count of criteria without an interface line and of brief features the PM marked as assumptions, so a thin brief is seen before the run, not at sprint 3 | 1 — now (read-only) | P2 | BUILT 2026-10-21: `app/acceptance/ambiguity.py`; `POST /api/runs/preview` answers `without_an_interface_line` (criteria no line of the brief's interface section speaks to) and `vague_phrases`, and the criteria preview shows both - `tests/brief_medium.md` has 13 of 13 without an interface line, `tasks-api` 2, `web-todo` 1. The PM's assumptions are not counted: they exist only after intake, and the preview makes no model call |
 
 <a id="plan-bw"></a>
 ### BW — Brownfield: an existing codebase as the normal case
@@ -3889,7 +3889,7 @@ previous product with a change request", and all 10 benchmarks are greenfield.
 |---|---|---|---|---|
 | BW.1 | Regression contract at intake: on a seeded workspace the harness runs the existing test suite once; the green set is locked beside the acceptance suite, and a sprint that turns any of it red is sent back like a failed criterion | 2 | P1 | PROPOSED |
 | BW.2 | Change-request run: `POST /runs` from a finished run's workspace (or an upload) with a change brief; the product's locked suite and BW.1's contract carry over; the specification is a delta | 2 | P1 | PROPOSED |
-| BW.3 | Brownfield benchmark family: a previous run's product plus a change brief, hidden tests for the old and the new behaviour, a reference that scores 100% | 1 — now (benchmark only) | P1 | PROPOSED |
+| BW.3 | Brownfield benchmark family: a previous run's product plus a change brief, hidden tests for the old and the new behaviour, a reference that scores 100% | 1 — now (benchmark only) | P1 | BUILT 2026-10-21: `benchmarks/tasks-api-change` - `base/` is the tasks-api reference, the brief adds due dates, a done filter and a summary; hidden = tasks-api's 10 tests + 5 new; the base scores 10/15 (every old, no new), the reference 15/15 and reads the base's data; `loop.sh bench` uploads `base` into the workspace (`SEED=<dir>` for `start`) |
 
 <a id="plan-pn"></a>
 ### PN — Non-functional checks on the *product*
@@ -4743,10 +4743,10 @@ the item: what it changes, why, and the evidence (review findings in
 | RC.2 | corpus replay test for every reader | P1 | BUILT 2026-10-21 (group 1) | [RC](#plan-rc) |
 | RC.3 | corpus hygiene and `loop.sh corpus` | P2 | BUILT 2026-10-21 (group 1) | [RC](#plan-rc) |
 | IN.1 | assumptions gate before the specification | P1 | PROPOSED 2026-10-21 (group 2) | [IN](#plan-in) |
-| IN.2 | ambiguity count at preview | P2 | PROPOSED 2026-10-21 (group 1, now) | [IN](#plan-in) |
+| IN.2 | ambiguity count at preview | P2 | PROPOSED 2026-10-21 (group 1, now) | BUILT 2026-10-21 (group 1) |
 | BW.1 | regression contract from a seeded codebase's own tests | P1 | PROPOSED 2026-10-21 (group 2) | [BW](#plan-bw) |
 | BW.2 | change-request run from a finished product | P1 | PROPOSED 2026-10-21 (group 2) | [BW](#plan-bw) |
-| BW.3 | brownfield benchmark family | P1 | PROPOSED 2026-10-21 (group 1, now) | [BW](#plan-bw) |
+| BW.3 | brownfield benchmark family | P1 | PROPOSED 2026-10-21 (group 1, now) | BUILT 2026-10-21 (group 1) |
 | PN.1 | dependency audit, secret scan and licence listing on the product, as pack data | P2 | PROPOSED 2026-10-21 (group 2) | [PN](#plan-pn) |
 | PN.2 | README and API summary as required release artifacts | P2 | PROPOSED 2026-10-21 (group 2) | [PN](#plan-pn) |
 | OP.1 | resume on boot, schedules re-created by the worker | P1 | BUILT 2026-10-21 (group 1) | [OP](#plan-op) |

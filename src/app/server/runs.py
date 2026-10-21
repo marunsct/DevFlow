@@ -287,10 +287,15 @@ def create_runs_router(
         """The acceptance criteria a brief gives a run, before it starts: the same numbering, no model call (plan BG.10)."""
         from app.acceptance.criteria import from_brief, number
 
+        from app.acceptance.ambiguity import criteria_without_an_interface_line, vague_phrases
+
         listed = len(from_brief(body.brief)) >= 2
         found = number(body.brief) if listed else []
         return BriefPreview(
             criteria=[PreviewCriterion(id=c.id, text=c.text) for c in found], from_brief=listed,
+            # How much the run would guess, seen before it starts (plan IN.2).
+            without_an_interface_line=criteria_without_an_interface_line(body.brief, found),
+            vague_phrases=vague_phrases(body.brief),
         )
 
     @runs.post("/{run_id}/start", status_code=202)

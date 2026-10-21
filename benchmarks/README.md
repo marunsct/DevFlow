@@ -18,6 +18,7 @@ measured. See `docs/architecture-decisions.md ADR-0005`.
 | `notes-api-hono` | HTTP service | TypeScript, Hono (no pack) | 9 (`notes-api`'s) | pytest + httpx |
 | `fullstack-bookmarks-py` | page + its own service | Python service, HTML/JS page | 8 (`fullstack-bookmarks`'s) | Playwright (page and API) |
 | `tasks-api` | HTTP service with accounts and per-user data | Python | 10 | pytest + httpx |
+| `tasks-api-change` | brownfield: a change to `tasks-api`'s product | Python | 15 (10 old, 5 new) | pytest + httpx |
 
 The last two hold the `browser-react` and `node-http-api` stack packs to the
 same hidden tests as their siblings: the briefs differ only in the stack they
@@ -26,6 +27,12 @@ They are coverage, not part of the gate below. `tasks-api` is the class the medi
 the setup stage (`app.stacks.custom_setup`): the agents set the project up and
 the harness proves it; its reference (Hono on Node, TypeScript run directly)
 scores 9 of 9.
+
+`tasks-api-change` is the brownfield family (plan BW.3): its run starts from the tasks-api
+reference (`base/`, uploaded into the workspace by `loop.sh bench`) with a brief for due dates,
+a done filter and a summary. The hidden suite is tasks-api's ten tests and five for the change,
+so a run that adds the features and breaks what was there loses points. The base scores 10 of 15
+(every old test, no new one) and the reference 15 of 15.
 
 ## How a benchmark is laid out
 
@@ -37,6 +44,7 @@ scores 9 of 9.
 - `bench.json` - the kind of product and the runner.
 - `hidden/` - the tests. Never copied into a workspace and never in the
   image (the image copies only `src/`).
+- `base/` - a brownfield bench only (`"base"` in `bench.json`): the product the run starts from.
 - `reference/` - a small implementation that must score 100%. It proves the
   hidden tests are right before they are used to judge anything; a hidden
   test the reference fails is a bug in the test.

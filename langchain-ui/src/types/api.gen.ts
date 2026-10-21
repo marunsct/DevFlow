@@ -52,6 +52,10 @@ export interface BriefPreview {
   criteria: PreviewCriterion[];
   /** Whether the brief lists them: with fewer than two, the run draws them from its product intake instead. */
   from_brief: boolean;
+  /** Phrases that ask for a quality without saying what it is, as the brief uses them (plan IN.2). */
+  vague_phrases: string[];
+  /** Criteria no line of the brief's interface section speaks to - what the run would guess (plan IN.2). */
+  without_an_interface_line: string[];
 }
 
 /** A brief, before any run exists, to preview what it will be held to. */

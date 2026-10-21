@@ -21,7 +21,8 @@
 #   scripts/loop/loop.sh fitness [--edits]   five scripted tool calls to the build model: FIT/USABLE/UNFIT;
 #                                            --edits also measures well-formed whole-file writes vs edits (BH)
 #                                            (model_fitness.py); before a run, never beside a live one
-#   scripts/loop/loop.sh bench <name>        start a run from benchmarks/<name>/brief.md (needs LOOP_USER/LOOP_PASSWORD)
+#   scripts/loop/loop.sh bench <name>        start a run from benchmarks/<name>/brief.md (needs LOOP_USER/LOOP_PASSWORD);
+#                                            a brownfield bench's bench.json "base" seeds the workspace (SEED=<dir> for start)
 #   scripts/loop/loop.sh score [run] [name]  score a run's product against the benchmark's hidden tests
 #                                            (scripts/bench/score.py); the result lands in data/bench/<run>.json
 #   scripts/loop/loop.sh checks [labels] [--write]  how often each cross-file check fires over the stored
@@ -100,11 +101,24 @@ start)
           "$PY" -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
   run=$(curl -s -X POST "$API/api/runs" -H "Authorization: Bearer $token" -F "files=@$brief" |
         "$PY" -c "import sys,json; d=json.load(sys.stdin); print(d.get('run_id') or d.get('id'))")
+  # A brownfield run (plan BW.3): SEED names a directory, the previous product,
+  # uploaded as an archive and extracted into the workspace before the first agent reads it.
+  source=""
+  if [ -n "${SEED:-}" ]; then
+    [ -d "$SEED" ] || { echo "SEED is not a directory: $SEED" >&2; exit 2; }
+    archive="$STATE/seed-$run.tar.gz"
+    tar -czf "$archive" -C "$SEED" .
+    upload=$(curl -s -X POST "$API/api/runs/$run/codebase" -H "Authorization: Bearer $token" -F "file=@$archive" |
+             "$PY" -c "import sys,json; print(json.load(sys.stdin).get('upload_id') or '')")
+    rm -f "$archive"
+    [ -n "$upload" ] || { echo "the base was not uploaded" >&2; curl -s -X DELETE "$API/api/runs/$run" -H "Authorization: Bearer $token" >/dev/null; exit 1; }
+    source=", \"source\": {\"type\": \"archive\", \"upload_id\": \"$upload\"}"
+  fi
   # A refused start (a frontier model asked for and not answering, a run
   # already started) said "started" before; it names the refusal now, and the
   # run it created is not left behind as the current one.
   answer=$(curl -s -w '\n%{http_code}' -X POST "$API/api/runs/$run/start" -H "Authorization: Bearer $token" \
-       -H "Content-Type: application/json" -d "{\"auto_approve\": true${DELIVERY:+, \"delivery_mode\": \"$DELIVERY\"}${FRONTIER:+, \"use_frontier_model\": $FRONTIER}}")
+       -H "Content-Type: application/json" -d "{\"auto_approve\": true${DELIVERY:+, \"delivery_mode\": \"$DELIVERY\"}${FRONTIER:+, \"use_frontier_model\": $FRONTIER}$source}")
   code=$(echo "$answer" | tail -n 1)
   echo "$answer" | sed '$d'
   if [ "$code" != "202" ]; then
@@ -120,7 +134,13 @@ start)
 bench)
   name="${2:?name a benchmark under benchmarks/}"
   [ -f "benchmarks/$name/brief.md" ] || { echo "no benchmark named $name" >&2; exit 2; }
-  "$0" start "benchmarks/$name/brief.md"
+  # A brownfield bench names its previous product in bench.json's "base"; the run starts from it.
+  base=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1])).get('base') or '')" "benchmarks/$name/bench.json")
+  if [ -n "$base" ]; then
+    SEED="benchmarks/$name/$base" "$0" start "benchmarks/$name/brief.md"
+  else
+    "$0" start "benchmarks/$name/brief.md"
+  fi
   ;;
 
 score)

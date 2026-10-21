@@ -386,6 +386,11 @@ test that fails on the old code:
   would not start. LF.108-LF.119 went into it. **The next gate run is run-f4f0030b** (07:25 JST on d3de13a3, brief_medium,
   `DELIVERY=fast FRONTIER=false`). LF.120 (modules nothing imports are named to fixers and at release) deployed into it at
   about 07:40 JST. Group 2 (CM.1-CM.5 first, then M.4, EF.11) is built from now on and deployed after this gate run.
+  **Owner, 2026-10-21 13:45 JST: group 2 also takes the Appendix 6 additions RL, PH and CG** (plan, owner's commit
+  a5edf9c9), in Part 21's placement: PH.2/PH.3 in stage 3 after AY; PH.1, CG.1-CG.2 in stage 4 after BJ and CM.2;
+  RL.1-RL.3 in stage 7; CG.3-CG.4, PH.4 in stage 8; CG.5 on the UI track after BG.3/BG.4. RL.4 (learning judged on
+  hidden tests only) applies now; RL.5 is rejected. Build order from here: PH.2, PH.3 (they extend CM.2's ledger),
+  then PH.1, CG.1, CG.2, then RL.1-RL.3; each behind a switch, off until the gate run ends.
   Each group 2 item is behind its own switch, off by default (any mid-run deploy carries the branch); CM.1 =
   `SHARED_FACTS` (`app.agents.shared_facts.ON_BY_DEFAULT`); CM.2/EF.11 = `DECISION_LEDGER` (`app.agents.ledger.ON_BY_DEFAULT`); AY = `FIX_CYCLE` (`app.graph.bounded_fixes.ON_BY_DEFAULT`).
   `.gitignore` matches `fix_*.py`: name no source module so (`tests/test_no_source_module_is_ignored_by_git.py`). After the gate run: turn the built ones on, deploy, measure.

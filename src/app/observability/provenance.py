@@ -34,6 +34,7 @@ SWITCHES: dict[str, str] = {
     "DEFECT_CALL_CAP": "app.graph.defect_budget",
     "LOCALISE_FIRST": "app.graph.localisation",
     "INTERFACE_CLASH_CHECK": "app.agents.interface_clashes",
+    "ASK_SPECIFICATION": "app.agents.ask_specification",
     "INTERFACE_CHANGES_NAMED": "app.agents.interface_changes",
     "PROJECT_GRAPH_FIXES": "app.analysis.project_graph:fixes_switch",
     "PROJECT_GRAPH_BUILDERS": "app.analysis.project_graph:builders_switch",

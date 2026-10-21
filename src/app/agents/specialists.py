@@ -1395,6 +1395,11 @@ def create_specialist_agent(
 
     if project_graph.tool_enabled():
         extra_tools.append(project_graph.build_tool(resolved_repo_root))
+    # A bounded question to the specification, the architect on a miss (plan CM.4, off).
+    from app.agents import ask_specification
+
+    if ask_specification.enabled():
+        extra_tools.append(ask_specification.build_tool(resolved_repo_root, model if hasattr(model, "invoke") else None))
 
     return create_role_agent(
         name=f"specialist_{role}",

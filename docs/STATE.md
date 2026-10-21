@@ -31,6 +31,7 @@ week are in `docs/archive/`.
 | `WHERE_THINGS_STAND` | PH.1 the sprint's state at the top of builder/fixer requests | `app/agents/where_things_stand.py` |
 | `STATE_AT_DISPATCH` | PH.4 files changed since the CI gate measured (inside PH.1's block) | same |
 | `INTERFACE_CHANGES_NAMED` | PH.3 a builder's report names the interfaces it changed | `app/agents/interface_changes.py` |
+| `ASK_SPECIFICATION` | CM.4 a bounded question to the specification, the architect on a miss | `app/agents/ask_specification.py` |
 | `INTERFACE_CLASH_CHECK` | CM.3 join: a removed definition another work order still uses is a defect | `app/agents/interface_clashes.py` |
 | `PROJECT_GRAPH_FIXES` / `PROJECT_GRAPH_BUILDERS` / `CODE_GRAPH_TOOL` | CG.2 / CG.3 code-graph neighbourhood for fixers / builders; CG.4 the `code_graph` tool | `app/analysis/project_graph.py` |
 | `REGRESSION_CONTRACT` | BW.1 a seeded product's green tests are the first baseline | `app/acceptance/regression_contract.py` |
@@ -58,7 +59,7 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
 1. When gate run 2 ends: `loop.sh score run-aedcd228 tasks-api`, `loop.sh kpi run-aedcd228`, compare with run 1 (`kpi_ledger arms`), and update the end-of-run product review.
 2. Then, with no run live and ALL READY: `loop.sh deploy 20dcdfbe` - **Fix batch 1**: LF.167 a rewriting fix never targets an ignored file; **LF.168 the suite starts a service through its `start.sh`**; LF.169 the architect is told the setup's `start.sh` works; LF.170 a held stage's command is held to its files (gate run 1 was a false acceptance: 0/10 hidden, 10/10 with start.sh restored). Then **Measure pair 2**: two tasks-api runs on that one SHA, no deploys; compare arms 039ad84 vs 20dcdfbe.
 3. **Filed for Fix batch 2** (seen in gate run 2): one fixer ran the same `__pycache__` clean three times in a row with near-identical reasoning (no repeat guard caught it); `find tasks-api` run from inside `tasks-api` (the working directory named again as an argument); redundant reads 56% (healthy 8-19%); the 11-test suite is thin for 16 criteria; dead `models.py`.
-4. Then group 2 as measured switch arms, one subsystem at a time (table above - all built, all off), then the brownfield family `benchmarks/tasks-api-change` (owner 2026-10-21: never stop the testing). Not built: CM.4, CG.5 (UI), BH preference, M.4; AY steps 5-6 deferred (plan says why).
+4. Then group 2 as measured switch arms, one subsystem at a time (table above - all built, all off), then the brownfield family `benchmarks/tasks-api-change` (owner 2026-10-21: never stop the testing). Not built: CG.5 (UI), BH preference, M.4; AY steps 5-6 deferred (plan says why).
 
 ## Measuring
 

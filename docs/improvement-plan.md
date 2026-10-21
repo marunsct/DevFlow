@@ -4713,7 +4713,7 @@ the item: what it changes, why, and the evidence (review findings in
 | CM.1 | fact parity: reviewers get the builder's environment facts | P0 | BUILT 2026-10-21 behind `SHARED_FACTS`, off until the gate run ends | [CM](#plan-cm) |
 | CM.2 | typed decision-and-contract ledger (Pillar 9) | P1 | PARTLY 2026-10-21: the ledger and its interface-contract entries (EF.11), behind `DECISION_LEDGER` | [CM](#plan-cm) |
 | CM.3 | blockers and interface decisions routed to the work order that can act | P1 | BUILT: linear mode behind `DECISION_LEDGER` (2026-10-21); the join check behind `INTERFACE_CLASH_CHECK` (2026-10-22): before the CI gate commits a batch, a definition one work order removed that another's file still names is a defect owned by the latter | [CM](#plan-cm) |
-| CM.4 | bounded ask-the-specification tool (flag, off by default) | P2 | PROPOSED 2026-10-20 | [CM](#plan-cm) |
+| CM.4 | bounded ask-the-specification tool (flag, off by default) | P2 | BUILT 2026-10-22 behind `ASK_SPECIFICATION` (off): retrieval from earlier answers, the specification and the locked criteria first; on a miss one call to the stage's model as the architect, kept in `.harness/answers.json`; 2 per builder stage, 1 per fix, 12 per run | [CM](#plan-cm) |
 | CM.5 | reviewers keep a clean context | P0 (process) | ADOPTED 2026-10-20 | [CM](#plan-cm) |
 | OS.0–OS.6 | SeaweedFS object storage replacing MinIO (spike, compose profile, config, hardening, read-back, backfill, tests) | P2 | PROPOSED 2026-10-20 | [OS](#plan-os) |
 | OS.7 | object-storage docs and operations handover | P2 | PARTLY 2026-10-20 (ADR, research, plan) | [OS](#plan-os) |

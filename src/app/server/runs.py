@@ -121,6 +121,16 @@ def _require_run(runner: WorkflowRunner, run_id: str, user: UserInDB) -> RunReco
     return record
 
 
+def _a_completed_run_s_workspace(runner: WorkflowRunner, run_id: str, user: UserInDB) -> Path | None:
+    """The workspace of a completed run the caller may see, or None (plan BW.2)."""
+    record = runner.run_store.load(run_id)
+    if record is None or record.status != "completed" or not record.repo_root:
+        return None
+    if user.role != "admin" and record.tenant_id != user.tenant_id:
+        return None
+    return Path(record.repo_root)
+
+
 def _support_tier_of(root: Any) -> str:
     """How well this run's stack is covered by the harness's own checks (pack-supported, custom, unverified); "" if unknown."""
     try:
@@ -375,7 +385,8 @@ def create_runs_router(
         # "unknown" a blank directory yields.
         try:
             seeded = await run_in_threadpool(
-                seed_workspace, workspace, body.source, resolve_upload=_resolve_upload
+                seed_workspace, workspace, body.source, resolve_upload=_resolve_upload,
+                resolve_run=lambda finished_id: _a_completed_run_s_workspace(runner, finished_id, user),
             )
         except SeedError as exc:
             # The caller's own input was rejected, so this is a 400, and the

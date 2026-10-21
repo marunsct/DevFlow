@@ -3290,6 +3290,19 @@
       "description": "Branch or tag to clone, for type=git. Defaults to the remote's HEAD.",
       "title": "Ref"
      },
+     "run_id": {
+      "anyOf": [
+       {
+        "maxLength": 255,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "A completed run of the same tenant whose product is changed, for type=run.",
+      "title": "Run Id"
+     },
      "token": {
       "anyOf": [
        {
@@ -3305,11 +3318,12 @@
      },
      "type": {
       "default": "empty",
-      "description": "empty: greenfield. git: clone a repository. archive: extract an upload.",
+      "description": "empty: greenfield. git: clone a repository. archive: extract an upload. run: a completed run's product, for a change to it (behind CHANGE_REQUEST_RUNS).",
       "enum": [
        "empty",
        "git",
-       "archive"
+       "archive",
+       "run"
       ],
       "title": "Type",
       "type": "string"

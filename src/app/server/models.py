@@ -36,9 +36,12 @@ class WorkspaceSource(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["empty", "git", "archive"] = Field(
+    type: Literal["empty", "git", "archive", "run"] = Field(
         default="empty",
-        description="empty: greenfield. git: clone a repository. archive: extract an upload.",
+        description=(
+            "empty: greenfield. git: clone a repository. archive: extract an upload. "
+            "run: a completed run's product, for a change to it (behind CHANGE_REQUEST_RUNS)."
+        ),
     )
     url: str | None = Field(
         default=None, max_length=2048,
@@ -63,6 +66,10 @@ class WorkspaceSource(BaseModel):
     upload_id: str | None = Field(
         default=None, max_length=255,
         description="Identifier returned by the codebase upload endpoint, for type=archive.",
+    )
+    run_id: str | None = Field(
+        default=None, max_length=255,
+        description="A completed run of the same tenant whose product is changed, for type=run.",
     )
 
 

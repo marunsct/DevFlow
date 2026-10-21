@@ -550,11 +550,13 @@ def seed_workspace(
     source: object | None,
     *,
     resolve_upload,
+    resolve_run=None,
 ) -> SeedResult:
     """Materialise `source` into `workspace`, if a source was requested.
 
     `resolve_upload` maps an upload id to a stored path. It is injected rather
     than imported so this module never decides which file a caller may reach.
+    `resolve_run` does the same for a finished run's workspace (plan BW.2).
     """
     if source is None or getattr(source, "type", "empty") == "empty":
         return SeedResult(seeded=False, provenance={"type": "empty"})
@@ -576,6 +578,14 @@ def seed_workspace(
         if stored is None:
             raise SeedError("That upload could not be found.")
         result = SeedResult(seeded=True, provenance=seed_from_archive(workspace, stored))
+    elif kind == "run":
+        from app.server.change_request_runs import seed_from_run
+
+        run_id = str(getattr(source, "run_id", "") or "")
+        finished = resolve_run(run_id) if resolve_run is not None and run_id else None
+        if finished is None:
+            raise SeedError("That run could not be found, or it has not completed.")
+        result = SeedResult(seeded=True, provenance=seed_from_run(workspace, Path(finished), run_id))
     else:
         result = None
     if result is not None:

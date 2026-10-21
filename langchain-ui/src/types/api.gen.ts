@@ -779,10 +779,12 @@ export interface WorkspaceSource {
   depth?: number;
   /** Branch or tag to clone, for type=git. Defaults to the remote's HEAD. */
   ref?: string | null;
+  /** A completed run of the same tenant whose product is changed, for type=run. */
+  run_id?: string | null;
   /** Access token for a private repository, for type=git. Used for this clone only: it is never written to the run record, the audit log or the Celery broker. */
   token?: string | null;
-  /** empty: greenfield. git: clone a repository. archive: extract an upload. */
-  type?: "empty" | "git" | "archive";
+  /** empty: greenfield. git: clone a repository. archive: extract an upload. run: a completed run's product, for a change to it (behind CHANGE_REQUEST_RUNS). */
+  type?: "empty" | "git" | "archive" | "run";
   /** Identifier returned by the codebase upload endpoint, for type=archive. */
   upload_id?: string | null;
   /** Repository URL, for type=git. HTTPS unless the operator widened it. */

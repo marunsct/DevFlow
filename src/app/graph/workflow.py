@@ -9416,6 +9416,10 @@ def build_workflow_graph(
             from app.agents import ledger
 
             request = ledger.with_the_reports(request, done, task, tasks, leave_out=stage_name)
+            # Where the sprint stands, from what the harness measured (plan PH.1, off until measured).
+            from app.agents import where_things_stand
+
+            request = where_things_stand.with_it(request, state, leave_out=stage_name)
             update = _run_gated_agent(
                 state,
                 config,
@@ -10137,6 +10141,10 @@ def build_workflow_graph(
         # The layout the judges read too (plan CM.1); the stub and the code the
         # product does not run are the two sections above.
         request = with_the_facts(request, state["repository"].root_path, built=False)
+        # Where the sprint stands (plan PH.1, off until measured).
+        from app.agents import where_things_stand
+
+        request = where_things_stand.with_it(request, state)
         return request, co_defects
 
     def _fixed_by_rewriting(state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0) -> Any:

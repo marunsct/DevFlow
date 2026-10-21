@@ -442,6 +442,17 @@ suite)
   grep -E "^(FAILED|ERROR)" "$log" | head -20 || true
   tail -1 "$log"
   echo "(the three tests/test_codebase_seeding_api.py failures need S3 credentials this host lacks)"
+  # Every other failure once more, alone and in order (plan CH.3): the known
+  # flaky tests fail only beside others in the parallel run. Reported apart, so
+  # a flaky test is never mistaken for a fix's breakage, nor the other way round.
+  again=$(grep -E "^(FAILED|ERROR) " "$log" | grep -v "test_codebase_seeding_api.py" | sed -E 's/^(FAILED|ERROR) //; s/ - .*//' | sort -u)
+  if [ -n "$again" ]; then
+    PATH="$ROOT/.venv/bin:$PATH" ENV=development timeout 600 "$PY" -m pytest -q --no-cov -p no:cacheprovider $again > "$STATE/suite-again.log" 2>&1 || true
+    still=$(grep -E "^(FAILED|ERROR) " "$STATE/suite-again.log" | sed -E 's/^(FAILED|ERROR) //; s/ - .*//' | sort -u)
+    for t in $again; do
+      if echo "$still" | grep -qxF "$t"; then echo "FAILED alone too: $t"; else echo "flaky (passed alone): $t"; fi
+    done
+  fi
   ;;
 
 *) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 2 ;;

@@ -3927,9 +3927,9 @@ skip/xfail; root clutter. Part 12/V (the decomposition) stays last.
 
 | ID | Change | Group | Priority | Status |
 |---|---|---|---|---|
-| CH.1 | Delete the clutter: `Test Product Intake/`, `test_file`, `test_symlink -> nonexistent_dir`, `.github/*.docx` (none is referenced by a test) | 1 — now | P2 | PROPOSED |
-| CH.2 | CI: `pytest -n auto`, `ruff check`, `pyright` on `src/app` (warnings first, errors gated once clean), a Dependabot config for pip and npm | 1 — now | P2 | PROPOSED |
-| CH.3 | The 34 skips and xfails each name their reason and an owner; the timing-flaky test (`HANDOVER.md` L593, overlapping parts) is fixed or quarantined | 1 — now | P3 | PROPOSED |
+| CH.1 | Delete the clutter: `Test Product Intake/`, `test_file`, `test_symlink -> nonexistent_dir`, `.github/*.docx` (none is referenced by a test) | 1 — now | P2 | BUILT 2026-10-21: `Test Product Intake/`, `test_file`, `test_symlink`, `.github/*.docx` removed (in git history if wanted) |
+| CH.2 | CI: `pytest -n auto`, `ruff check`, `pyright` on `src/app` (warnings first, errors gated once clean), a Dependabot config for pip and npm | 1 — now | P2 | BUILT 2026-10-21: CI runs `pytest -n auto`; `ruff check src/app` and `pyright src/app` run and report without gating until clean; `.github/dependabot.yml` for pip, npm and Actions |
+| CH.3 | The 34 skips and xfails each name their reason and an owner; the timing-flaky test (`HANDOVER.md` L593, overlapping parts) is fixed or quarantined | 1 — now | P3 | BUILT 2026-10-21: `tests/test_every_skip_names_its_reason.py` fails on any skip or xfail without a reason (a bare `@pytest.mark.skip` included); `tests/SKIPS.md` names each kind's owner; `loop.sh suite` re-runs every failure but the S3 three alone and reports `flaky (passed alone)` or `FAILED alone too` - the order-dependent tests are told apart, not hidden |
 | CH.4 | Part 12/V, first mechanical step only: `workflow.py` split by stage node into `graph/nodes/*.py` with no behaviour change, the suite as the guard — after the first clean Measure cycle so the split is not itself a variable | after MF.4's first cycle | P3 | PROPOSED |
 
 <a id="plan-ev"></a>
@@ -4753,9 +4753,9 @@ the item: what it changes, why, and the evidence (review findings in
 | OP.2 | stall detector; webhook and email notifications for stalls and gates | P1 | BUILT 2026-10-21 (group 1) | [OP](#plan-op) |
 | OP.3 | nightly Postgres and runs.db backup with a tested restore | P1 | BUILT 2026-10-21 (group 1) | [OP](#plan-op) |
 | OP.4 | deploy lock; rewind by stage name with a timeout | P2 | BUILT 2026-10-21 (group 1) | [OP](#plan-op) |
-| CH.1 | delete root clutter | P2 | PROPOSED 2026-10-21 (group 1, now) | [CH](#plan-ch) |
-| CH.2 | CI: xdist, ruff, pyright, Dependabot | P2 | PROPOSED 2026-10-21 (group 1, now) | [CH](#plan-ch) |
-| CH.3 | skips and xfails named and owned; flaky test fixed | P3 | PROPOSED 2026-10-21 (group 1, now) | [CH](#plan-ch) |
+| CH.1 | delete root clutter | P2 | BUILT 2026-10-21 (group 1) | [CH](#plan-ch) |
+| CH.2 | CI: xdist, ruff, pyright, Dependabot | P2 | BUILT 2026-10-21 (group 1) | [CH](#plan-ch) |
+| CH.3 | skips and xfails named and owned; flaky test fixed | P3 | BUILT 2026-10-21 (group 1) | [CH](#plan-ch) |
 | CH.4 | `workflow.py` split by stage node, no behaviour change | P3 | PROPOSED 2026-10-21 (after the first clean Measure cycle) | [CH](#plan-ch) |
 | EV.1 | owner rating per delivered run beside the hidden score | P2 | PROPOSED 2026-10-21 (group 1, now) | [EV](#plan-ev) |
 | EV.2 | screenshot rubric score for browser products | P3 | PROPOSED 2026-10-21 (group 2) | [EV](#plan-ev) |

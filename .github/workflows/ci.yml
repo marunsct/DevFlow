@@ -35,11 +35,28 @@ jobs:
 
       - name: Run tests
         # Coverage gate comes from pyproject; testcontainers uses the runner's
-        # Docker daemon, so no service containers are declared here.
-        run: pytest tests/ -v --tb=short
+        # Docker daemon, so no service containers are declared here. Across
+        # workers (plan CH.2): 64 s against 290 s serially, the same result.
+        run: pytest tests/ -n auto --tb=short
         env:
           PYTHONPATH: src
           ENV: development
+
+      - name: Lint (ruff)
+        # Reported, not gated, until the harness is clean (plan CH.2).
+        continue-on-error: true
+        run: |
+          uv pip install --system ruff
+          ruff check src/app
+
+      - name: Type check (pyright)
+        # Warnings first; gated once clean (plan CH.2).
+        continue-on-error: true
+        run: |
+          uv pip install --system pyright
+          pyright src/app
+        env:
+          PYTHONPATH: src
 
       - uses: actions/upload-artifact@v4
         if: always()

@@ -312,6 +312,27 @@ def without_an_invented_root_for_a_new_file(path: str, repo_root: str) -> str:
         return path
 
 
+
+#: Where the sandbox mounts the workspace for a command (`sandbox.execute`'s
+#: `-w /workspace/...`): a command's output shows it, and models then use it.
+THE_SANDBOX_S_MOUNT = "/workspace"
+
+
+def a_working_directory_here(directory: str, repo_root: str) -> str:
+    """A command's working directory with the host path, an invented top directory or the sandbox's mount taken off.
+
+    The read tools had these rewrites and the command tools did not: one run's
+    acceptance writer, its terminal withheld, ran `run_validation` with
+    `working_directory="/workspace/notes-api"` and then `"/workspace"`, and was
+    told each time it was "not a directory in this workspace" - the mount every
+    command it ran had been standing in.
+    """
+    if not directory or not directory.startswith("/") or not repo_root:
+        return directory
+    if posixpath.normpath(directory) == THE_SANDBOX_S_MOUNT and not (Path(repo_root) / "workspace").is_dir():
+        return "/"
+    return without_an_invented_root(workspace_relative(directory, repo_root), repo_root)
+
 def rewrite_tool_arguments(
     name: str, arguments: dict[str, Any], repo_root: str
 ) -> dict[str, Any]:
@@ -323,6 +344,8 @@ def rewrite_tool_arguments(
 
     if name in _COMMAND_TOOLS:
         changed = as_a_command(changed, repo_root)
+        if isinstance(changed.get("working_directory"), str):
+            changed["working_directory"] = a_working_directory_here(changed["working_directory"], repo_root)
     if isinstance(changed.get("relative_path"), str):
         changed["relative_path"] = without_an_invented_root_for_a_new_file(changed["relative_path"], repo_root)
 

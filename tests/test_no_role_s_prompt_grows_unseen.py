@@ -21,6 +21,9 @@ CEILINGS = {
     "senior_architect_reviewer": 9_500,
     "milestone_reviewer": 8_400,
     "scrum_master": 6_000,
+    # + the rule that a test never starts a running product itself (LF.159): one
+    # such test hung a whole acceptance suite and its writer for 40 minutes.
+    "acceptance_reviewer": 4_600,
 }
 OTHERWISE = 4_200
 

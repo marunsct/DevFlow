@@ -83,6 +83,13 @@ only what its criterion states - an order, a count, a wording - and nothing the
 criterion leaves open. Name every pair of tests whose expectations contradict,
 and every test that asserts something its criterion leaves open.
 
+A test must never start a product that keeps running - a service, or the server
+a page is served from - itself: the suite's own setup starts it before the tests
+and stops it after, and a test that runs its start command waits for a process
+that never ends, so the whole suite stops there with no result for any test.
+Name every test that does, and ask for it to check the running product instead.
+A program that runs and exits is run by its tests, as its user runs it.
+
 Do not ask for style changes, more comments, or tests of things no criterion
 asks for. Do not judge the product: whatever part of it is built, it is not the
 standard, and tests of later features are expected to fail now. Never open its

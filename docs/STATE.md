@@ -6,17 +6,16 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-21 18:01 JST. Times are JST; containers and transcripts log UTC.
+**As of:** 2026-10-21 21:19 JST. Times are JST; containers and transcripts log UTC.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | LFM smoke runs on `benchmarks/notes-api` (`DELIVERY=fast FRONTIER=false`), not Measure runs: run-b62e4f1f failed at its scaffold after a deploy (LF.143); run-abd8b897 failed at its sprint plan (LF.148/149); run-a4876ad2 cancelled 18:00 (its acceptance writer looped 75 min; LF.155-LF.160); **run-9a475ffb** started 18:01 JST on 3b4142b. Gate run 3 (run-f4f0030b) was stopped at 15:08 JST at the owner's word |
-| Model | **LFM2.5-24B-A2B** (owner's switch, 15:08 JST): 3 slots, 131,072 tokens; the owner's window setting 131,000; server sampling per the model card (temperature 0.1, top-k 50, repetition penalty 1.05, max tokens 32768); DevFlow's reply ceiling still 0 |
-| LFM measured | `loop.sh fitness --edits`: FIT 5/5, edits and whole files 100% well formed; `reasoning-probe run`: it reasons (about 2.3-3.3k output tokens a planning reply), no thinking switch turns that off (`thinking_off` -27%, reasoning still present) |
-| Deployed | 3b4142b (worker and app), everything through LF.160 |
-| Owner's model settings | reply ceiling 0 (none), context window 186,000, thinking default - the owner's; never changed by the loop |
+| Run | none. LFM2.5 smoke runs ended: run-9a475ffb cancelled 21:19 JST at 195 min (17/18 before a test repair; 333 calls, 2.04M output tokens, 78% reasoning) against Qwen's 38-46 min for the same kind of brief. Owner 21:19 JST: **back to Qwen3.6** for the Measure cycle |
+| Model | the owner switches the server back to Qwen3.6 (the loop never loads a model); `loop.sh ready` must say ALL READY before the gate runs |
+| Deployed | through LF.166 (9218b3e6); the command loophole (undo writes a stage may not make) is NOT built - owner's decision pending |
+| Owner's model settings | the owner's; never changed by the loop |
 | Peer sessions | none drive this workspace; this session is the only one that edits, deploys and starts runs |
 
 ## Off until measured (group 2 switches)
@@ -41,10 +40,10 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
 
 ## Next actions
 
-1. Deploy HEAD - the frozen SHA for the Measure cycle; then `loop.sh corpus harvest` run 3 (its image lacked the corpus) and the product review doc (Claude Docs `0ba22658-e6f1-4b33-adbd-87c6cac83dae`).
-2. **Measure (MF.4, MF.2):** two gate runs on **`benchmarks/tasks-api/brief.md`** on LFM2.5, `DELIVERY=fast FRONTIER=false`, no deploys into them; score each with `loop.sh score <run> tasks-api`. A bug found is filed for the Fix batch, not deployed.
-3. Group 1 of Appendix 7 is built (MF.1-MF.6, RC.1-RC.3, OP.1-OP.4, CH.1-CH.3, IN.2, BW.3, EV.1, SF.1, SF.2). Rate each delivered run on its page (EV.1); `loop.sh kpi <run>` again takes the rating into its row. Built on the branch while Measure runs on the frozen image.
-4. Group 2 next, behind switches: PH.3, PH.1, CG.1-CG.2, RL.1-RL.3, IN.1, BW.1-BW.2, PN.1-PN.2, EV.2, the rest of AY. M.4 (fix-stage reasoning) is the owner's call - on LFM the replies are a tenth of Qwen's, so it may not be needed.
+1. When the owner has Qwen3.6 serving and `loop.sh ready` says ALL READY: freeze the SHA (HEAD at that moment) and start **Measure (MF.4, MF.2)**: two gate runs on `benchmarks/tasks-api/brief.md`, `DELIVERY=fast FRONTIER=false`, one after the other, no deploys into them; score each with `loop.sh score <run> tasks-api`; `loop.sh kpi`. A bug found is filed for the Fix batch, not deployed.
+2. The LFM day's fixes (LF.141-LF.166) are in the frozen SHA: they are general and stay.
+3. Owner's decision pending: close the command loophole (a command writing files its stage may not) - a Fix-batch item, not for the frozen Measure SHA.
+4. Group 2 after Measure, behind switches: PH.3, PH.1, CG.1-CG.2, RL.1-RL.3, IN.1, BW.1-BW.2, PN.1-PN.2, EV.2, the rest of AY; streaming loop-abort (proposed) to measure.
 
 ## Measuring
 

@@ -27,7 +27,13 @@ ON_BY_DEFAULT = False
 MOST_CHECKS = 6
 #: The tools whose success changes the product's files.
 WRITES = frozenset({"write_artifact", "edit_artifact", "write_file", "edit_file"})
-PASSED = "The harness ran this defect's own tests after the write: they pass now."
+#: Measured on a gate run: a fixer whose defect's tests passed at its twentieth
+#: call went on for eighteen more, fixing failures other fixers were given,
+#: and broke the file it had fixed. Passing is the moment to answer.
+PASSED = (
+    "The harness ran this defect's own tests after the write: they pass now. Your defect is fixed: "
+    "give your answer now. Other failing tests are other defects, each with its own fixer; leave them."
+)
 FAILING = "The harness ran this defect's own tests after the write: they still fail."
 
 _lock = threading.Lock()

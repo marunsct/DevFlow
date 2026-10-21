@@ -32,6 +32,7 @@ def test_a_watched_write_says_whether_the_defect_s_tests_pass_now():
         first = vaw.after_a_write("edit_artifact", _written(), "run", "defect_fix_1_0")
         second = vaw.after_a_write("write_artifact", _written(), "run", "defect_fix_1_0")
     assert first.content.endswith(vaw.FAILING) and second.content.endswith(vaw.PASSED)
+    assert "give your answer now" in vaw.PASSED and "other defects" in vaw.PASSED
     assert not BANNED.search(vaw.PASSED + vaw.FAILING)
 
 

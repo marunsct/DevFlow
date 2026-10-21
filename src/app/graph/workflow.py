@@ -9433,7 +9433,11 @@ def build_workflow_graph(
                 return update  # paused waiting for approval on this task
 
             outputs = dict(state.get("specialist_outputs", {}))
-            outputs[stage_name] = update.pop("__specialist_result__")
+            # The interfaces it changed, read by the harness (plan PH.3, off until measured).
+            from app.agents import interface_changes
+
+            outputs[stage_name] = interface_changes.with_them(
+                update.pop("__specialist_result__"), state["repository"].root_path)
             update["specialist_outputs"] = outputs
             update["specialist_task_index"] = index + 1
             return update
@@ -9536,7 +9540,10 @@ def build_workflow_graph(
         # loop: the dispatcher left `stage` as `specialist_dispatch_parallel`,
         # the worker did not change it, and the router fanned the same tasks out
         # again on every pass until the recursion limit ended the run.
-        finished: dict[str, Any] = {"specialist_outputs": {stage_name: update["__specialist_result__"]}}
+        from app.agents import interface_changes
+
+        finished: dict[str, Any] = {"specialist_outputs": {stage_name: interface_changes.with_them(
+            update["__specialist_result__"], state["repository"].root_path)}}
         if answered_in_a_batch:
             # Its pause was answered in a batch and never surfaced, so its queue
             # entry is still there; left, `specialist_gather` would surface a

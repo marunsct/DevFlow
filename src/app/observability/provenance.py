@@ -24,6 +24,7 @@ SWITCHES: dict[str, str] = {
     "DECISION_LEDGER": "app.agents.ledger",
     "FIX_CYCLE": "app.graph.bounded_fixes",
     "WHERE_THINGS_STAND": "app.agents.where_things_stand",
+    "INTERFACE_CHANGES_NAMED": "app.agents.interface_changes",
 }
 
 UNKNOWN = "unknown"

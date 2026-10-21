@@ -11,6 +11,8 @@
 
 | Part | Topic | Date | Main plan items |
 |---|---|---|---|
+| [R10](#r10) | Code graphs and repository maps for coding agents | 2026-10-21 | [CG](improvement-plan.md#plan-cg) |
+| [R9](#r9) | Recursive / self-improving harnesses; progress files and handoff | 2026-10-21 | [RL](improvement-plan.md#plan-rl), [PH](improvement-plan.md#plan-ph) |
 | [R8](#r8) | MinIO replacement: open-source S3-compatible storage | 2026-10-20 | [OS](improvement-plan.md#plan-os) |
 | [R7](#r7) | Agent-to-agent communication in multi-agent systems | 2026-10-20 | [CM](improvement-plan.md#plan-cm) |
 | [R1](#r1) | Frontier coding-agent harnesses and local-model techniques | 2026-10-19 | [AX](improvement-plan.md#plan-ax), [AY](improvement-plan.md#plan-ay), [AZ](improvement-plan.md#plan-az), [BA](improvement-plan.md#plan-ba), [BH](improvement-plan.md#plan-bh), [BJ](improvement-plan.md#plan-bj) |
@@ -21,6 +23,32 @@
 | [R6](#r6) | Earlier comparisons with other harnesses | 2026-10-04/09 | [E1](improvement-plan.md#plan-e1), [E2](improvement-plan.md#plan-e2) |
 
 ---
+
+<a id="r10"></a>
+## Part R10 — Code graphs and repository maps for coding agents (2026-10-21, session 5)
+
+Plan items: [CG](improvement-plan.md#plan-cg).
+
+| Finding | Evidence | Plan |
+|---|---|---|
+| Graph-guided localisation (directory/file/class/function nodes; contain, import, invoke, inherit edges; AST-built in seconds): file-level Acc@5 94.2% vs 90.2% for the best agent baselines; about 86% lower localisation cost ($0.66 → $0.09 per issue); a fine-tuned Qwen2.5-32B matches Claude 3.5 on localisation; about +12% relative on SWE-bench Lite resolution | LocAgent — [arXiv 2503.09089](https://arxiv.org/html/2503.09089v1) | CG.1, CG.2 |
+| Graph navigation beats retrieval on hidden-dependency tasks (99.4% vs 76.2% architectural coverage) but not on simple ones; the agent skipped the graph tool in 58% of trials despite instructions, and the skipping trials scored like vanilla | "Navigation paradox" — [arXiv 2602.20048](https://www.arxiv.org/pdf/2602.20048) | inject (CG.2), tool last (CG.4) |
+| Local graph index (tree-sitter, one SQLite file, incremental by SHA-256, ~2.5 s for a two-file edit on a 3,000-file repo): median ~63× fewer tokens than the corpus per question; caveats — graph context can exceed a plain read for a one-file edit, impact analysis is conservative | code-review-graph (benchmarks 2026-08-02) — [GitHub](https://github.com/tirth8205/code-review-graph) | CG.1 incremental; CG.6 gate |
+| Index comparison (Sourcegraph, CodeGraph, Claude Context, CocoIndex): exact-symbol questions suit structural navigation; change impact needs references and tests; a stale index "pointing to a deleted function is worse than a slower search" | [comparison, revised 2026-10-20](https://baeseokjae.github.io/posts/ai-coding-agent-code-index-mcp-comparison-2026/) | CG.1 staleness measure |
+| Aider's repository map: tree-sitter definitions and references ranked by graph centrality, under a token budget | [token-limit guide](https://fast.io/resources/aider-token-limit.md) | already noted at R1/R6; CG.1 budget |
+
+<a id="r9"></a>
+## Part R9 — Recursive / self-improving harnesses; progress files and handoff (2026-10-21, session 5)
+
+Plan items: [RL](improvement-plan.md#plan-rl), [PH](improvement-plan.md#plan-ph).
+
+| Finding | Evidence | Plan |
+|---|---|---|
+| Harness-code-level self-improvement: a leader agent (GPT-5.6) ran Terminal-Bench 2.1 on Kimi K3 in the Cline harness, diagnosed failures and changed harness code (rate-limit retries, loop detection, a liveness bug, `pkill` guidance); 77.5% → 88.8%, cost per run $79 → $50; about $680 and a billion tokens, humans reviewed the PR and restarted the agent every few hours | Cline, 2026-07-24 — [blog](https://cline.bot/blog/recursive-self-improvement-for-coding-agents) | level 2 stays human-gated (RL.5) |
+| Survey of self-improvement loops (ACE playbooks, ADAS, AFlow, STOP, AlphaEvolve, Darwin Gödel Machine, OpenMLE-Evo): the evaluator must sit outside the loop on held-out tests; STOP improved GPT-4 but degraded weaker models; loops optimise gameable signals | [Harness engineering & self-improvement, 2026-07/09](https://www.developersdigest.tech/blog/harness-engineering-self-improvement) | RL.4, RL.5 |
+| Training-free memory-level RSI (curriculum/actor/verifier, memory of procedures and lessons frozen at test time): OSWorld 2.0 72.0% → 79.0%, with unmatched budgets | RSIAgent — [GitHub](https://github.com/AetherLabsAI/RSIAgent) | RL.1 (deterministic variant) |
+| Long-running-agent harness: an initializer writes a JSON feature list (`category, description, steps, passes`; agents may change only `passes`; JSON because the model edits it less than Markdown), a progress file read at start and written at the end with a git commit, one feature per session, and a start-of-session check that the product runs before new work; no figures reported | Anthropic, 2025-11-26 — [engineering post](https://anthropic.com/engineering/effective-harnesses-for-long-running-agents) | PH.1, PH.4; feature list = locked suite; AZ |
+| Model-harness co-evolution (fine-tuning on the harness's own trajectories) | HELIX — [arXiv 2608.13951](https://arxiv.org/pdf/2608.13951) (text not fetchable here) | out of scope |
 
 <a id="r8"></a>
 ## Part R8 — MinIO replacement: open-source S3-compatible object storage (2026-10-20, session 5)

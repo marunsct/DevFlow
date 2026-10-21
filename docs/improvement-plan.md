@@ -2,7 +2,7 @@
 
 > **Unified plan (consolidated 2026-10-19).** This file is the only improvement plan.
 > - It carries the original plan (§1–4, Initiatives A–I) and Appendices 1–6
->   (Initiatives J–BL, EF, CM and OS, with the UI parts).
+>   (Initiatives J–BL, EF, CM, OS, RL, PH and CG, with the UI parts).
 > - **Before implementing: Part 21** is the single implementation order and
 >   **Part 22** resolves the contradictions and lists what not to implement.
 > - Section E holds the two earlier plan documents, merged here.
@@ -3489,6 +3489,13 @@ Every stage keeps the standing rules (`AGENTS.md`):
 
 Each stage's gate is judged by the two-run rule (Part 20).
 
+*Added 2026-10-21 (Appendix 6):*
+- **PH.2**, **PH.3** → stage 3 after AY.
+- **PH.1**, **CG.1–CG.2** → stage 4 after BJ and CM.2.
+- **RL.1–RL.3** → stage 7; **RL.4** from now.
+- **CG.3–CG.4**, **PH.4** → stage 8.
+- **CG.5** → UI track after BG.3/BG.4.
+
 *Added 2026-10-20 (Appendix 6):*
 - **CM.1** → stage 1.
 - **CM.2**, **CM.3** → stage 4 after BJ.
@@ -3642,11 +3649,16 @@ Owner's questions, 2026-10-20:
 - Would communication between the specialist agents improve effectiveness, efficiency and performance?
 - What replaces MinIO, which is no longer open source?
 
+Owner's questions, 2026-10-21:
+- Is a "recursive learning harness" a valid feature here? ([RL](#plan-rl))
+- Can agents see the exact progress before their work and leave a work summary for the next? ([PH](#plan-ph))
+- Can a graph of the code behind each feature (file, block, wiring) let an agent understand at once when something goes wrong? ([CG](#plan-cg))
+
 Full assessments, with evidence and sources:
 - [`docs/agent-communication-feasibility.md`](agent-communication-feasibility.md)
 - [`docs/object-storage-plan.md`](object-storage-plan.md)
 
-Research: [R7](research-findings.md#r7), [R8](research-findings.md#r8). Decisions (proposed): ADR-0012 and ADR-0013 in `docs/architecture-decisions.md`.
+Research: [R7](research-findings.md#r7), [R8](research-findings.md#r8), [R9](research-findings.md#r9), [R10](research-findings.md#r10). Decisions (proposed): ADR-0012 and ADR-0013 in `docs/architecture-decisions.md`.
 
 <a id="plan-cm"></a>
 ### CM — Agent communication through harness-owned records, not peer messages
@@ -3724,6 +3736,82 @@ Structured, harness-controlled hand-off does pay (MetaGPT, blackboard-with-contr
 
 *Owner, 2026-10-20 22:20 JST:* CM.1–CM.5 are implemented with group 2 (Part 21's validated items), in the
 stage order above; OS.0–OS.8 are implemented later, after group 2.
+
+<a id="plan-rl"></a>
+### RL — Recursive learning: finish the lessons engine, keep the human gate (2026-10-21)
+
+**What the term means in 2026** ([R9](research-findings.md#r9)). Three different things are called a recursive or self-improving harness:
+1. *Memory-level*: lessons, procedures or playbooks distilled from runs and injected into later runs (ACE, RSIAgent, Reflexion/ExpeL). No weights change.
+2. *Harness-code-level*: an agent reads benchmark failures and edits the harness's own code and prompts, a human reviewing the result (Cline, July 2026: Kimi K3 on Terminal-Bench 2.1 from 77.5% to 88.8% after a GPT-5.6 leader agent spent about $680 rewriting harness code).
+3. *Model-level*: fine-tuning on the harness's own trajectories (HELIX). Not applicable to a GGUF the owner does not train.
+
+**What exists.**
+- Level 1: the lessons store (AI, AT: DONE). Records are schema-checked, HMAC-signed, stack- and role-scoped, injected five per call in a fixed order, and only once the owner approves. Within a run, `sprint/record.lessons_from` already feeds the next sprint's lead.
+- Level 2: the standing loop in `AGENTS.md` (benchmark → audit → fix → test → deploy), gated by the KPI ledger (ADR-0010) and the two-run rule (Part 20). The LF rows in Appendix M are its output.
+- Not built: Pillar 5's post-run distiller (`src/app/learning/` does not exist). `store.propose()` is called only by hand (`loop.sh lessons`); the plan's line "the loop lists new proposals in each run's report" is not true of the code. No evidence that `data/lessons.json` has ever held a proposal.
+
+**Verdict.** Valid, as *finishing level 1 with deterministic distillation and uptake measurement*; level 2 stays human-gated as it is. Not valid on a local model: agents rewriting their own prompts or harness code unsupervised (STOP-style self-optimisation degraded weaker models; the one working result used a frontier leader model), or free-text memory the model edits itself (the drift-and-poison problem that caused the earlier drop, and R7's conclusion).
+
+| ID | Change | Model calls added | Measure | Priority | Status |
+|---|---|---|---|---|---|
+| RL.1 | Deterministic distiller (Pillar 5, bounded): after every run, propose lessons from harness-recorded signals only — a fix reverted for breaking tests, a CI-gate cause, a defect that needed more than two attempts, an advice "not built" finding, a recurring refused-call shape (what `loop.sh lessons` finds today). Each proposal names the stack, role, trigger, evidence runs and a rule of ≤2 lines; never model-written reflection | 0 | proposals per run; share approved | P1 | PROPOSED |
+| RL.2 | Uptake measurement: KPI `lessons_shown_per_call` (AT's open item), and per lesson whether its trigger shape recurs in later runs on the same stack (the only proof a lesson works). A lesson whose trigger recurs for three runs after approval is flagged for review | 0 | recurrence after approval | P1 | PROPOSED |
+| RL.3 | Proposals surfaced: `loop.sh report` lists new proposals with their evidence, and `GET /api/lessons` already serves them to the UI (S5); an owner approval is one click there | 0 | — | P2 | PROPOSED |
+| RL.4 | Scoring guard: distillation and the loop are judged on the hidden test families (`web-todo`, `notes-api-hono`) and never on a brief's own suite, so the loop cannot learn to pass the acceptance tests (J.1 guards the vacuous-green form) | 0 | hidden-test score across runs | P1 (process) | ADOPTED |
+| RL.5 | Not done: agents editing prompts, stack packs or harness code; model-written memory files; a reflector call on the local model | — | — | — | REJECTED |
+
+**Kill rule:** a lesson that raises the identical-call rate or tokens per accepted criterion on its stack without stopping its trigger is rejected (ADR-0010).
+
+<a id="plan-ph"></a>
+### PH — Progress in, work summary out (2026-10-21)
+
+**What exists** (checked 2026-10-21).
+- Harness-written records of what every stage did: `docs/sprint_N_summary.md` (the Sprint Record: work-order outcomes, defect log, findings, carried-forward, lessons), `docs/stage_summaries/<stage>.md` (every `SpecialistOutput` field), `decision_log.md`.
+- **But none of them is handed to a later agent.** `project_memory._RECORDS` deliberately leaves them out (they appear only as names under "Not included here"). The Sprint Record reaches the next *lead* (carried-forward, what went wrong) and feeds `fixes_to_keep`; a builder's request has no "what the earlier work orders of this sprint did" section; a fixer sees earlier attempts on its defect only as a revert note appended to `actual_behavior`.
+- The frontier pattern ([R9](research-findings.md#r9), Anthropic's long-running-agent harness, Nov 2025): a JSON feature list the agent may only mark `passes` (DevFlow's locked acceptance suite is this), one feature per session (AZ, NOT STARTED), a progress file read at start and written at the end, and a start-of-session check that the product still runs before new work.
+
+**Verdict.** A good feature, and mostly a routing change: the summaries exist, the readers do not. The lift is to hand each agent a *bounded, harness-written* progress block, not a document to read.
+
+| ID | Change | Model calls added | Measure | Priority | Status |
+|---|---|---|---|---|---|
+| PH.1 | "Where things stand" block at the start of every builder and fixer request, harness-written and ≤2k chars under BJ: the sprint's finished work orders (files changed, one-line decisions), open blockers addressed to this role (from CM.2's ledger), the last CI-gate and test-round verdicts, and the live product's state (`_where_the_product_stands`, today fixers only). Replaces reading `sprint_N_summary.md` | 0 | redundant reads (AQ); fix attempts per defect | P1 | PROPOSED |
+| PH.2 | Structured attempt record per defect: each fix attempt leaves `{files changed, what it did (from `decisions`), outcome: fixed / reverted (what broke) / blocked (why)}` in the ledger; the next fixer of the same defect gets the list, not a revert sentence inside `actual_behavior`. Builds on `_the_last_attempt_section` | 0 | repeat attempts that redo a reverted change (LF.80/82 class) | P1 | PROPOSED |
+| PH.3 | Work summary out, enforced: a builder's `SpecialistOutput.decisions` must name every interface it added, removed or renamed (the readiness check already refuses a thin answer); the ledger (CM.2) takes these as `decision` entries, which is what the next agent's PH.1 block shows. Stage summaries stay as the audit copy | 0 | unread-decision failures (the `window.todoApp` class) | P1 | PROPOSED |
+| PH.4 | Start-of-work check for builders: the product-start and unit-test state at dispatch (the CI gate's last result, re-run only if files changed since) is in the PH.1 block, so a builder does not start on a product that no longer starts | 0–1 sandbox run | fix rounds caused by a sibling's break | P2 | PROPOSED |
+| PH.5 | One slice per visit (AZ) stays the way to keep progress legible; PH does not change it | — | — | — | see AZ |
+
+**Not done:** a free-text progress file the model writes (the summaries are harness-written from structured output; R7's drift finding applies), and a new document agents must read (budget).
+
+<a id="plan-cg"></a>
+### CG — A map of the code behind each feature (2026-10-21)
+
+**What exists** (checked 2026-10-21).
+- Pieces of a graph, none joined: `analysis/project_memory.py` (per file: purpose, ≤8 signatures by regex, who wrote it; feeds `workspace_digest`), `reachability.py` (import graph from the pack entrypoints), `local_imports.who_would_break` (importers of a written file), `language_service.what_the_module_defines` (Python/TypeScript), tree-sitter for parse faults only (`grammar_parse.py`), ~40 wiring detectors in `integration_checks.py`.
+- No criterion → files map is stored: a fix derives it on the fly from the suite's AC tags through the specification.
+- Pillar 10 (Code and Test Index) and E1 #4 (repository map) are NOT BUILT; their gate is "measure redundant reads first" (AQ: PARTLY).
+- Measured cost of agents not knowing where code is: 24% identical calls on the medium run, 431 of them reads (AQ); 43% redundant reads, 40 of 57 after a compaction (LF.63); a fix stage re-reading the same three files 27 times in 36 calls (LF.81); three rounds rewriting importers instead of the module that lacked the name (LF.100, LF.105); `ui.js` read 60 times, 82% of 911 calls reads and listings (`project_snapshot.py`).
+
+**Research** ([R10](research-findings.md#r10)). Graph-guided localisation lifts file-level accuracy to about 94% and cuts localisation cost about 86% (LocAgent), with a fine-tuned 32B open model matching a frontier model, and about +12% relative on downstream resolution. A Feb 2026 study found graph navigation wins on *hidden-dependency* tasks (99% vs 76% coverage) but not on simple ones, and that the agent skipped the graph tool in 58% of trials even when told to use it: **inject the neighbourhood, do not rely on a tool**. Local graph indexes (tree-sitter, SQLite, incremental by file hash) report 35–360× fewer tokens than reading the corpus, with the caveat that graph context can cost more than a plain read for a one-file edit, and that a stale index is worse than a slow search.
+
+**Verdict.** A good feature for the *fix loop and reviews* first, built from the pieces that exist, injected rather than offered as a tool, and kept incremental. The "feature" axis is the locked criteria: each AC-n maps to its tests, the files those tests touch, and the work orders that own them.
+
+| ID | Change | Model calls added | Measure | Priority | Status |
+|---|---|---|---|---|---|
+| CG.1 | One harness-owned index per workspace (`.project-graph.json`, beside `.project-memory.json`): nodes = files and the definitions `project_memory` already extracts; edges = imports (`reachability`, `local_imports`), defines/exports (`what_the_module_defines` where a language service exists, regex elsewhere), test → criterion (junit AC tags) and test → file (what the test imports or requests), work order → files. Updated on every write by file hash (the write guard already sees every write); never model-written. Language-agnostic: regex signatures for every language, parsers where the harness has them | 0 | index build time; staleness (a renamed definition disappears on the next write) | P1 | PROPOSED |
+| CG.2 | Fix request gets the 1-hop neighbourhood of the defect's files from CG.1: who imports them, what they import, which definitions each exports, which tests and criteria reach them — ≤1.5k chars under BJ. Where a traceback names an importer, the defining module is listed first (LF.100/101 in general form). Reviews get the same for the files they judge | 0 | fix stages that rewrite the wrong file; redundant reads in fix stages | P1 | PROPOSED |
+| CG.3 | Builders get their work order's slice: the files it owns, what imports them and what they import, and the criteria they serve, in place of the flat digest for those files | 0 | redundant reads in builder stages | P2 | PROPOSED |
+| CG.4 | Read-only `where_is(name)` / `who_uses(path)` tool answered from CG.1 (Pillar 10 step 3), offered after CG.2 is measured; expected low uptake, so it is not the primary channel | 0 (a tool call replaces reads) | tool uptake; reads replaced | P3 | PROPOSED |
+| CG.5 | Criterion view in the UI: each AC-n with its tests, files and work orders from CG.1, and a failing test's path to its files on the run page (UI track; pairs with BG.3/BG.4) | 0 | — | P3 | PROPOSED |
+| CG.6 | Gate (Pillar 10's): CG.2 ships only if AQ's redundant-read share in fix stages falls on the same brief; a neighbourhood that costs more than the reads it replaces is cut to the defining-module line | — | AQ ledger row | process | ADOPTED |
+
+**Not done:** an external graph database or MCP server (one JSON per workspace is enough at this size), embeddings (exact names are what fixes need), and a graph the model maintains.
+
+**Placement in Part 21 (added 2026-10-21):**
+- **PH.2**, **PH.3** join stage 3 (the fix loop) after AY.
+- **PH.1**, **CG.1–CG.2** join stage 4 after BJ and CM.2 (they share the ledger and the input budget).
+- **RL.1–RL.3** join stage 7 (infrastructure); **RL.4** applies from now.
+- **CG.3–CG.4**, **PH.4** join stage 8.
+- **CG.5** joins the UI track after BG.3/BG.4.
 
 ## E. Earlier plans, merged into this document on 2026-10-19
 
@@ -4481,6 +4569,21 @@ the item: what it changes, why, and the evidence (review findings in
 | OS.0–OS.6 | SeaweedFS object storage replacing MinIO (spike, compose profile, config, hardening, read-back, backfill, tests) | P2 | PROPOSED 2026-10-20 | [OS](#plan-os) |
 | OS.7 | object-storage docs and operations handover | P2 | PARTLY 2026-10-20 (ADR, research, plan) | [OS](#plan-os) |
 | OS.8 | off-site mirror, lifecycle, RustFS re-evaluation | P3 | PROPOSED 2026-10-20 | [OS](#plan-os) |
+| RL.1 | deterministic lesson distiller from harness-recorded signals (Pillar 5, bounded) | P1 | PROPOSED 2026-10-21 | [RL](#plan-rl) |
+| RL.2 | lesson uptake: shown-per-call KPI and trigger recurrence after approval | P1 | PROPOSED 2026-10-21 | [RL](#plan-rl) |
+| RL.3 | proposals surfaced in the run report and the lessons UI | P2 | PROPOSED 2026-10-21 | [RL](#plan-rl) |
+| RL.4 | learning judged on hidden test families only | P1 (process) | ADOPTED 2026-10-21 | [RL](#plan-rl) |
+| RL.5 | agents editing prompts, packs or harness code; model-written memory | — | REJECTED 2026-10-21 | [RL](#plan-rl) |
+| PH.1 | "where things stand" block in every builder and fixer request | P1 | PROPOSED 2026-10-21 | [PH](#plan-ph) |
+| PH.2 | structured attempt record per defect for the next fixer | P1 | PROPOSED 2026-10-21 | [PH](#plan-ph) |
+| PH.3 | builders' decisions must name interface changes; ledger takes them | P1 | PROPOSED 2026-10-21 | [PH](#plan-ph) |
+| PH.4 | builders told the product's start and test state at dispatch | P2 | PROPOSED 2026-10-21 | [PH](#plan-ph) |
+| CG.1 | harness-owned code graph per workspace (files, definitions, imports, test→criterion→file, work order→files), incremental by hash | P1 | PROPOSED 2026-10-21 | [CG](#plan-cg) |
+| CG.2 | fix requests and reviews get the defect's 1-hop neighbourhood, defining module first | P1 | PROPOSED 2026-10-21 | [CG](#plan-cg) |
+| CG.3 | builders get their work order's slice of the graph | P2 | PROPOSED 2026-10-21 | [CG](#plan-cg) |
+| CG.4 | read-only `where_is` / `who_uses` tool from the graph | P3 | PROPOSED 2026-10-21 | [CG](#plan-cg) |
+| CG.5 | criterion → tests → files view on the run page | P3 (UI) | PROPOSED 2026-10-21 | [CG](#plan-cg) |
+| CG.6 | gate: ships only if redundant reads fall (AQ) | process | ADOPTED 2026-10-21 | [CG](#plan-cg) |
 
 <a id="plan-m-2"></a>
 ### M.2 Fixes from the loop's audits (no plan item of their own)

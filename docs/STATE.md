@@ -6,13 +6,13 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-22 05:25 JST. Measure pair 2 run 1: sprint 1 accepted 04:52, sprint 2 40/40 inside at 05:02, **a copy scored 10/10 hidden at 05:15** (final score at release). Times are JST; containers and transcripts log UTC.
+**As of:** 2026-10-22 05:20 JST.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | **Measure pair 2, run 1: run-bf3f222f** - `benchmarks/tasks-api/brief.md`, `DELIVERY=fast FRONTIER=false`, started 01:13 JST on **20dcdfbe** (Fix batch 1). Run 2 follows on the same SHA. **No deploys into either** (MF.4) |
+| Run | **Measure pair 2, run 2: run-403f7479** - `benchmarks/tasks-api/brief.md`, `DELIVERY=fast FRONTIER=false`, started 05:19 JST on **20dcdfbe** (Fix batch 1), the same SHA as run 1. **No deploys into it** (MF.4) |
 | Frozen | **20dcdfbe** for Measure pair 2 (039ad84 + LF.167-LF.170); later work - group 2 switches (off), LF.171 - sits above it, undeployed |
 | Model | Qwen3.6-35B-A3B (owner, back from LFM2.5 at 21:19): 2 slots, 262,144 tokens; server sampling = Qwen's *precise coding* profile (temperature 0.6, top_p 0.95, top_k 20, min_p 0, presence 0, repetition 1.0, max tokens 32,768); DevFlow context 260,000, reply ceiling 32,768 |
 | Owner's model settings | the owner's; never changed by the loop |
@@ -48,8 +48,8 @@ Each module's `ON_BY_DEFAULT` turns its items on for the before/after runs.
 
 | Run | Brief | Result |
 |---|---|---|
+| run-bf3f222f | tasks-api (Measure pair 2 run 1, 20dcdfbe) | completed 05:12 JST, ~240 min, 2 sprints (sprint 1 ~220 min, 14 fix stages; sprint 2 green at drafting), 40/40 inside, **10/10 hidden** - Fix batch 1's start.sh fixes held; KPI flags: 10 defects left open, 2 replies lost to length |
 | run-aedcd228 | tasks-api (Measure 2, 039ad84) | completed 01:00 JST, ~120 min, 2 sprints, 21/21 inside, **0/10 hidden - false acceptance again**: the work orders rewrote start.sh to a bare `python` without the product's packages; 10/10 with `.venv/bin/python` |
-| run-650d812f | tasks-api (Measure 1, 039ad84) | completed 22:49 JST, 80.7 min, 144 calls; 21/21 inside, **0/10 hidden - false acceptance** (start.sh rewritten to a Python without Flask); 10/10 with start.sh restored |
 
 No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh product`).
 

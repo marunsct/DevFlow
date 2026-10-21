@@ -225,6 +225,10 @@ USER appuser
 
 EXPOSE 8000
 
+# The commit the image was built from, for every run's provenance (plan MF.1).
+ARG HARNESS_COMMIT=unknown
+ENV HARNESS_COMMIT=${HARNESS_COMMIT}
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/api/health || exit 1
 

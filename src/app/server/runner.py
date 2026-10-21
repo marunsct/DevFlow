@@ -332,6 +332,20 @@ def _budget_exceeded(run_id: str) -> tuple[bool, RunCost]:
     return total.usd >= ceiling, total
 
 
+def _record_a_gate(run_id: str, stage: str, event: str, gate: str) -> None:
+    """A gate opened for a person, or answered, in the run's transcript (plan MF.3). Never raises.
+
+    Time a run spends waiting on a person was noted by hand, if at all; the
+    KPIs count it from these.
+    """
+    try:
+        from app.observability.transcript import record
+
+        record(run_id, stage, "gate", event=event, gate=gate)
+    except Exception:  # noqa: BLE001 - a record must never cost the run
+        logger.debug("Could not record the gate", exc_info=True)
+
+
 def _stage_narration(stage: str, *, auto_approve: bool) -> tuple[str, str]:
     """The message and API status to report for a stage.
 
@@ -1195,6 +1209,7 @@ class WorkflowRunner:
             run_id, "waiting_for_approval", "running", updated_at=now
         ):
             raise RunConflict(f"Run {run_id} is not waiting for approval.")
+        _record_a_gate(run_id, "", "answered", "approval")
         self._dispatch(run_id, resume=True, decision_payload={"type": "approval", "decision": decision})
 
     async def submit_review(self, run_id: str, decision: dict[str, Any]) -> None:
@@ -1203,6 +1218,7 @@ class WorkflowRunner:
             run_id, "waiting_for_review", "running", updated_at=now
         ):
             raise RunConflict(f"Run {run_id} is not waiting for review.")
+        _record_a_gate(run_id, "", "answered", "review")
         self._dispatch(run_id, resume=True, decision_payload={"type": "review", "decision": decision})
 
     async def cancel_run(self, run_id: str) -> None:
@@ -1681,6 +1697,7 @@ class WorkflowRunner:
                 record.status = "waiting_for_approval"
                 record.updated_at = datetime.now(timezone.utc).isoformat()
                 self._persist(record)
+                _record_a_gate(run_id, stage, "opened", "approval")
                 await self.event_bus.publish(
                     run_id,
                     RunEvent(
@@ -1698,6 +1715,7 @@ class WorkflowRunner:
                 record.status = "waiting_for_review"
                 record.updated_at = datetime.now(timezone.utc).isoformat()
                 self._persist(record)
+                _record_a_gate(run_id, stage, "opened", "review")
                 review_point = stage.removeprefix(REVIEW_PAUSE_PREFIX)
                 review = state.get("pending_review")
                 await self.event_bus.publish(

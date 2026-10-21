@@ -234,7 +234,21 @@ def kpis(records: list[dict]) -> dict:
     # A rewind's own gap is discarded time, already taken off the wall.
     orphan = max(sum(g for g in gaps if g > ORPHAN_GAP_SECONDS) - discarded, 0.0)
     effective_input = tokens["input"] - tokens["cached"]
+    from app.observability.provenance import summary as provenance_summary
+
+    # Time spent waiting on a person (plan MF.3): each gate from opened to answered.
+    gate_wait, opened_at = 0.0, None
+    for r in sorted((r for r in records if r.get("kind") == "gate"), key=lambda r: str(r.get("at") or "")):
+        if r.get("event") == "opened":
+            opened_at = _seconds(str(r.get("at") or ""))
+        elif r.get("event") == "answered" and opened_at is not None:
+            gate_wait += max(_seconds(str(r.get("at") or "")) - opened_at, 0.0)
+            opened_at = None
+
     return {
+        "gate_wait_minutes": round(gate_wait / 60, 1),
+        # What the run ran on (plan MF.1); a mixed run is left out of comparisons.
+        **provenance_summary(records),
         "wall_minutes": round(wall / 60, 1),
         "active_minutes": round((wall - orphan) / 60, 1),
         "orphan_gap_minutes": round(orphan / 60, 1),
@@ -311,3 +325,16 @@ FLOOR = {
 def worse(key: str, before: float, after: float) -> bool:
     """Whether `after` is a regression on `before` for this KPI, by the ledger's rule."""
     return key in WORSE_WHEN_HIGHER and after >= FLOOR.get(key, 0) and after > FACTOR * before
+
+
+def per_accepted_criterion(row: dict, accepted: int | None) -> dict:
+    """`row` with the cost of each accepted criterion (plan MF.3); None for both when none was accepted or it is unknown."""
+    if accepted is None:
+        return {**row, "accepted_criteria": None, "wall_clock_per_accepted_criterion": None,
+                "tokens_per_accepted_criterion": None}
+    return {
+        **row,
+        "accepted_criteria": accepted,
+        "wall_clock_per_accepted_criterion": round(row.get("wall_minutes", 0) / accepted, 1) if accepted else None,
+        "tokens_per_accepted_criterion": round(row.get("output_tokens", 0) / accepted) if accepted else None,
+    }

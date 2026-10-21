@@ -93,6 +93,47 @@ def compare(a: dict, b: dict) -> list[str]:
     return out
 
 
+#: Runs each arm needs before two harness versions are compared (plan MF.5, Part 20's two-run rule).
+MINIMUM_RUNS_PER_ARM = 2
+
+
+def _numbers(rows: list[dict], key: str) -> list[float]:
+    values = []
+    for r in rows:
+        try:
+            value = float(r.get(key, "nan"))
+        except (TypeError, ValueError):
+            continue
+        if value == value:
+            values.append(value)
+    return values
+
+
+def the_arm(rows: list[dict], commit: str, benchmark: str = "") -> list[dict]:
+    """The ledger's runs on exactly one harness commit, a mixed run left out (plans MF.1, MF.5)."""
+    return [
+        r for r in rows
+        if str(r.get("harness_commits") or "").split() == [commit]
+        and str(r.get("mixed_versions") or "False") != "True"
+        and (not benchmark or str(r.get("benchmark") or "") == benchmark)
+    ]
+
+
+def compare_arms(a: list[dict], b: list[dict], minimum: int = MINIMUM_RUNS_PER_ARM) -> list[str]:
+    """Each numeric KPI's mean and spread (min-max) on two arms of runs; refused below `minimum` runs an arm."""
+    if len(a) < minimum or len(b) < minimum:
+        return [f"not compared: {len(a)} and {len(b)} run(s); each arm needs at least {minimum}"]
+    out = [f"{'kpi':<34} {'arm A (n=' + str(len(a)) + ')':>24} {'arm B (n=' + str(len(b)) + ')':>24}"]
+    for key in sorted({k for r in [*a, *b] for k in r}):
+        x, y = _numbers(a, key), _numbers(b, key)
+        if len(x) < minimum or len(y) < minimum:
+            continue
+        mx, my = sum(x) / len(x), sum(y) / len(y)
+        change = "" if mx == 0 else f" ({(my - mx) / abs(mx):+.0%})"
+        out.append(f"{key:<34} {mx:>12.4g} [{min(x):g}-{max(x):g}] {my:>12.4g} [{min(y):g}-{max(y):g}]{change}")
+    return out
+
+
 def main(path: str, ledger: str = "data/kpi/ledger.csv", benchmark: str = "") -> int:
     row = json.loads(Path(path).read_text())
     if benchmark:
@@ -110,5 +151,12 @@ if __name__ == "__main__" and len(sys.argv) > 1:
     if sys.argv[1] == "compare" and len(sys.argv) == 4:
         # python kpi_ledger.py compare data/kpi/<A>.json data/kpi/<B>.json
         print("\n".join(compare(*(json.loads(Path(f).read_text()) for f in sys.argv[2:4]))))
+        raise SystemExit(0)
+    if sys.argv[1] == "arms" and len(sys.argv) >= 5:
+        # python kpi_ledger.py arms data/kpi/ledger.csv <commit-a> <commit-b> [benchmark]
+        with open(sys.argv[2], newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        kind = sys.argv[5] if len(sys.argv) > 5 else ""
+        print("\n".join(compare_arms(the_arm(rows, sys.argv[3], kind), the_arm(rows, sys.argv[4], kind))))
         raise SystemExit(0)
     raise SystemExit(main(*sys.argv[1:4]))

@@ -301,7 +301,7 @@ deploy)
   built=$(git -C "$ROOT" rev-parse HEAD)
   git -C "$ROOT" worktree add -q --detach "$head_tree" "$built"
   docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
-    build --progress=plain app worker >/dev/null 2>&1
+    build --progress=plain --build-arg HARNESS_COMMIT="$built" app worker >/dev/null 2>&1
   git -C "$ROOT" worktree remove --force "$head_tree"
   # At a stage boundary: a resume restarts the running stage's conversation,
   # and one fix stage was restarted five times in an hour by deploys landing

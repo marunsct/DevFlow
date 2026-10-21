@@ -455,7 +455,12 @@ def execute_workflow_run(
         # segment (a deploy or a model change between segments re-reads it).
         from app.models import server_profile
 
-        server_profile.record()
+        profile = server_profile.record()
+        # What this segment runs on (plan MF.1): every deploy restarts the
+        # worker, so a run on more than one harness version is seen as one.
+        from app.observability.provenance import record_the_segment
+
+        record_the_segment(run_id, record, profile)
 
         if runner.run_store.is_cancel_requested(run_id):
             logger.info("Run %s was cancelled before execution started", run_id)

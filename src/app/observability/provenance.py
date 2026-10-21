@@ -1,0 +1,98 @@
+"""What a run ran on: the harness version, the served model and the switches on (plan MF.1).
+
+No run recorded the harness commit or the model the server served; the
+transcript names the client class (`CompatibleChatOpenAI`), not the model. And
+no run has ever run on one harness version: 8 to 17 deploys and up to 11
+rewinds each, every deploy a worker restart. So each segment of a run - its
+start and every resume after a restart - writes one `provenance` record, and
+the run's KPIs say which commits it ran on and whether it ran on more than one
+(`mixed_versions`), so a comparison can leave mixed runs out.
+"""
+
+from __future__ import annotations
+
+import importlib
+import logging
+import os
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+#: The switches group 2's items ship behind, by environment name and the module that reads it.
+SWITCHES: dict[str, str] = {
+    "SHARED_FACTS": "app.agents.shared_facts",
+    "DECISION_LEDGER": "app.agents.ledger",
+    "FIX_CYCLE": "app.graph.bounded_fixes",
+}
+
+UNKNOWN = "unknown"
+
+
+def harness_commit() -> str:
+    """The commit this worker's image was built from (`HARNESS_COMMIT`, set by the build), or "unknown"."""
+    return str(os.environ.get("HARNESS_COMMIT") or "").strip() or UNKNOWN
+
+
+def switches_on() -> list[str]:
+    """The group 2 switches that are on in this process, by name."""
+    on = []
+    for name, module in SWITCHES.items():
+        try:
+            if importlib.import_module(module).enabled():
+                on.append(name)
+        except Exception:  # noqa: BLE001 - a switch that cannot be read is not on
+            continue
+    return on
+
+
+def the_segment(record: Any = None, profile: Any = None) -> dict[str, Any]:
+    """This segment's provenance, every value a plain scalar or list. Never raises."""
+    segment: dict[str, Any] = {"harness_commit": harness_commit(), "switches_on": switches_on()}
+    try:
+        from app.models import _runtime_settings
+
+        settings = _runtime_settings()
+        segment["model_setting"] = str(getattr(settings, "model_name", "") or "")
+        segment["max_output_tokens"] = getattr(settings, "model_max_output_tokens", None)
+        segment["thinking_mode"] = str(getattr(settings, "thinking_mode", "") or "")
+        segment["execution_mode"] = str(getattr(settings, "execution_mode", "") or "")
+    except Exception:  # noqa: BLE001 - the rest stands
+        logger.debug("Could not read the settings for the provenance record", exc_info=True)
+    if profile is not None:
+        segment["served_model"] = str(getattr(profile, "model", "") or "")
+        segment["quantisation"] = str(getattr(profile, "quantisation", "") or "")
+        segment["slots"] = getattr(profile, "slots", None)
+        segment["slot_context"] = getattr(profile, "slot_context", None)
+    if record is not None:
+        segment["delivery_mode"] = str(getattr(record, "delivery_mode", "") or "")
+        segment["local_only"] = bool(getattr(record, "local_only", False))
+    return segment
+
+
+def record_the_segment(run_id: str, record: Any = None, profile: Any = None) -> None:
+    """Write this segment's provenance into the run's transcript. Never raises."""
+    try:
+        from app.observability.transcript import record as transcript_record
+
+        transcript_record(run_id, "", "provenance", **the_segment(record, profile))
+    except Exception:  # noqa: BLE001 - a record must never cost the run
+        logger.debug("Could not record the run's provenance", exc_info=True)
+
+
+def summary(records: list[dict]) -> dict[str, Any]:
+    """The run's provenance from its transcript records, as the KPI row keeps it: scalars only."""
+    segments = [r for r in records if r.get("kind") == "provenance"]
+    commits = list(dict.fromkeys(str(r.get("harness_commit") or UNKNOWN) for r in segments))
+    last = segments[-1] if segments else {}
+    switches = sorted({name for r in segments for name in (r.get("switches_on") or [])})
+    return {
+        "harness_commits": " ".join(commits),
+        "mixed_versions": len(commits) > 1,
+        "served_model": str(last.get("served_model") or ""),
+        "quantisation": str(last.get("quantisation") or ""),
+        "switches_on": " ".join(switches),
+        "segments": len(segments),
+    }
+
+
+__all__ = ["SWITCHES", "harness_commit", "record_the_segment", "summary", "switches_on", "the_segment"]

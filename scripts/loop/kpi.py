@@ -45,8 +45,22 @@ def main(run: str) -> int:
             records.append(json.loads(line))
         except ValueError:
             continue
-    print(json.dumps({"run": run, **kpis(records)}))
+    from app.observability.run_kpis import per_accepted_criterion
+
+    print(json.dumps({"run": run, **per_accepted_criterion(kpis(records), accepted_criteria(run))}))
     return 0
+
+
+def accepted_criteria(run: str) -> int | None:
+    """How many criteria the run's last acceptance result passes, or None when it has none (plan MF.3)."""
+    paths = glob.glob(f"/app/data/workspaces/*/workspace-{run}/.harness/acceptance-result.json")
+    try:
+        result = json.load(open(paths[0])) if paths else None
+    except (OSError, ValueError):
+        return None
+    if not isinstance(result, dict) or not result.get("ran"):
+        return None
+    return sum(1 for c in (result.get("criteria") or {}).values() if (c or {}).get("status") == "passed")
 
 
 if __name__ == "__main__" and len(sys.argv) > 1:

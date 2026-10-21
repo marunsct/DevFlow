@@ -391,7 +391,10 @@ test that fails on the old code:
   RL.1-RL.3 in stage 7; CG.3-CG.4, PH.4 in stage 8; CG.5 on the UI track after BG.3/BG.4.
   **Owner, 2026-10-21 14:20 JST: Appendix 7 (the discipline layer).** Group 1, built now in this order: MF.1-MF.6, RC.1-RC.3,
   OP.1-OP.4, CH.1-CH.3, IN.2, BW.3, EV.1, SF.1-SF.2; group 2: IN.1, BW.1-BW.2, PN.1-PN.2, EV.2; MF.4 (Measure/Fix cycle)
-  awaits the owner's decision. Built: MF.1 (provenance; `HARNESS_COMMIT` in the image), MF.3, MF.5. RL.4 (learning judged on
+  is ADOPTED (owner, 14:25 JST) from the run after gate run 3. Built: MF.1 (provenance; `HARNESS_COMMIT` in the image), MF.3, MF.5.
+  **Gate brief from the next run (MF.2, owner): `benchmarks/tasks-api/brief.md`**, scored by its hidden suite
+  (`loop.sh score <run> tasks-api`); `tests/brief_medium.md` is no longer the gate. **Measure/Fix (MF.4):** a Measure run
+  is one frozen SHA, no mid-run deploys, two runs per family; bugs found are filed for the next Fix batch, not deployed. RL.4 (learning judged on
   hidden tests only) applies now; RL.5 is rejected. Build order from here: PH.2, PH.3 (they extend CM.2's ledger),
   then PH.1, CG.1, CG.2, then RL.1-RL.3; each behind a switch, off until the gate run ends.
   Each group 2 item is behind its own switch, off by default (any mid-run deploy carries the branch); CM.1 =

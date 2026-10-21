@@ -411,6 +411,23 @@ def already_set_up(project_root: Path, pack: StackPack) -> bool:
     return any((project_root / name).exists() for name in manifests)
 
 
+
+def _this_scaffold_s_own(repo_root: Path, pack: StackPack, project: str) -> bool:
+    """Whether the manifest there is this pack's own scaffold of this project, written and not yet proven.
+
+    The contract is recorded, unproven, right after the files are written and
+    before the first install. A second attempt - the node's retry, or the same
+    stage resumed after the worker was restarted mid-install - found the first
+    attempt's manifest, took it for a seeded codebase and refused: the retry
+    could never succeed, and one run failed at its scaffold because a deploy
+    restarted the worker during it. A seeded codebase has no such contract.
+    """
+    from app.stacks import contract as _contract
+
+    record = _contract.read(repo_root)
+    return bool(record) and record.get("pack") == pack.name and record.get("project") == project \
+        and not _contract.scaffolded(record)
+
 def scaffold(
     repo_root: str | Path,
     pack: StackPack,
@@ -429,7 +446,7 @@ def scaffold(
     root = Path(repo_root)
     project_root = root / project
     result = ScaffoldResult(ok=False, pack=pack.name, project=project)
-    if already_set_up(project_root, pack):
+    if already_set_up(project_root, pack) and not _this_scaffold_s_own(root, pack, project):
         result.problem = f"{project}/ already has a project manifest; it is built on as it is."
         return result
     run = run or sandbox_runner(root)

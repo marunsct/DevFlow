@@ -12,8 +12,8 @@ week are in `docs/archive/`.
 
 | | |
 |---|---|
-| Run | **run-b62e4f1f** - LFM smoke run, `benchmarks/notes-api`, `DELIVERY=fast FRONTIER=false`, started 15:24 JST; not a Measure run (it checks every stage works on LFM). Gate run 3 (run-f4f0030b) was stopped at 15:08 JST at the owner's word |
-| Model | **LFM2.5-24B-A2B** (owner's switch, 15:08 JST): 3 slots, 131,072 tokens as started; the owner's 186,000 setting is capped at the slot by `context_budget` |
+| Run | LFM smoke runs on `benchmarks/notes-api` (`DELIVERY=fast FRONTIER=false`), not Measure runs: run-b62e4f1f failed at its scaffold after a deploy (LF.143); the next starts on the owner's LFM sampling. Gate run 3 (run-f4f0030b) was stopped at 15:08 JST at the owner's word |
+| Model | **LFM2.5-24B-A2B** (owner's switch, 15:08 JST): 3 slots, 131,072 tokens; the owner's window setting 131,000; server sampling per the model card (temperature 0.1, top-k 50, repetition penalty 1.05, max tokens 32768); DevFlow's reply ceiling still 0 |
 | LFM measured | `loop.sh fitness --edits`: FIT 5/5, edits and whole files 100% well formed; `reasoning-probe run`: it reasons (about 2.3-3.3k output tokens a planning reply), no thinking switch turns that off (`thinking_off` -27%, reasoning still present) |
 | Deployed | worker image 3129aa1 (LF.138, MF.1/MF.3/MF.5); RC, OP, CH, IN.2, BW.3, LF.139-LF.140 are on the branch, not yet deployed |
 | Owner's model settings | reply ceiling 0 (none), context window 186,000, thinking default - the owner's; never changed by the loop |

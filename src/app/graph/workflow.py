@@ -3577,6 +3577,49 @@ class StageGaveNoAnswer(ValueError):
 _ASKED_IN_PARTS: set[tuple[str, str]] = set()
 
 
+
+#: Tools whose calls change something, and the argument that names what.
+_WHAT_A_CALL_ACTED_ON = (
+    ("write_artifact", "relative_path"), ("edit_artifact", "relative_path"), ("replace_lines", "relative_path"),
+    ("delete_artifact", "relative_path"), ("move_artifact", "relative_path"),
+    ("run_terminal_command", "command"), ("run_validation", "command"),
+)
+
+
+def _what_the_stage_did(result: dict[str, Any], most: int = 40) -> str:
+    """The stage's writes and commands with their outcomes, and its last words, from its conversation; "" if none.
+
+    An answer asked for in parts is asked without the conversation, and for a
+    stage that did work its answer is a report of that work. Measured live: the
+    acceptance writer's parts, given only the request, reported files it never
+    wrote, a setup it never read and checks of files that did not exist.
+    """
+    acting = dict(_WHAT_A_CALL_ACTED_ON)
+    asked: dict[str, tuple[str, str]] = {}
+    lines: list[str] = []
+    last_words = ""
+    for message in result.get("messages") or []:
+        kind = getattr(message, "type", None)
+        if kind == "ai":
+            text = str(getattr(message, "content", "") or "").strip()
+            if text:
+                last_words = text
+            for call in getattr(message, "tool_calls", None) or []:
+                name = str(call.get("name") or "")
+                if name in acting:
+                    target = (call.get("args") or {}).get(acting[name])
+                    shown = " ".join(map(str, target)) if isinstance(target, list) else str(target or "")
+                    asked[str(call.get("id") or "")] = (name, shown[:160])
+        elif kind == "tool":
+            entry = asked.pop(str(getattr(message, "tool_call_id", "") or ""), None)
+            if entry:
+                outcome = " ".join(str(getattr(message, "content", "") or "").split())[:180]
+                lines.append(f"- {entry[0]} {entry[1]} -> {outcome}")
+    record = "\n".join(lines[-most:])
+    if last_words:
+        record += ("\n" if record else "") + "Its last words: " + " ".join(last_words.split())[:1200]
+    return record
+
 def _the_answer_in_parts(
     run_id: str | None, stage_name: str, agent: Any, initial_request: Any, result: dict[str, Any],
 ) -> Any | None:
@@ -3602,6 +3645,13 @@ def _the_answer_in_parts(
     ).strip()
     if not request:
         return None
+    did = _what_the_stage_did(result)
+    if did:
+        request += (
+            "\n\n--- What this stage did, from its own conversation ---\n" + did
+            + "\n\nThe answer reports this work: name only the files, commands and results this record "
+            "shows, as it shows them."
+        )
     try:
         from app.agents.answered_in_parts import answered_in_parts
 

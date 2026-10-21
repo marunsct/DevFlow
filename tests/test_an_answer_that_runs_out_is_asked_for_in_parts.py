@@ -164,3 +164,33 @@ def test_an_item_is_shown_the_names_of_the_parts_before_it_not_their_text():
 
     item_prompt = next(p for p in model.prompts if "item 1 of" in p.split("Write now:")[1])
     assert "SCOPE-TEXT-WRITTEN-EARLIER" not in item_prompt and '"scope"' in item_prompt
+
+
+def test_a_stage_that_did_work_has_its_parts_told_what_it_did():
+    """Measured live: given only the request, the acceptance writer's parts reported files it never wrote."""
+    from langchain_core.messages import ToolMessage
+
+    from app.graph import workflow
+
+    class Agent:
+        workflow_response_format = SprintPlanOutput
+        workflow_model = PartWriter(prompts=[])
+
+    conversation = {"messages": [
+        AIMessage(content="", tool_calls=[{"name": "write_artifact", "id": "w1",
+                                           "args": {"relative_path": "notes-api/acceptance/test_acceptance.py", "content": "x"}}]),
+        ToolMessage(content='{"status": "written", "lines": 216}', tool_call_id="w1"),
+        AIMessage(content="", tool_calls=[{"name": "run_terminal_command", "id": "c1",
+                                           "args": {"command": [".venv/bin/python", "-m", "pytest", "acceptance"]}}]),
+        ToolMessage(content="FFFF.FF 404 Not Found", tool_call_id="c1"),
+        AIMessage(content="The routes do not exist yet, so the tests fail with 404 as expected.",
+                  response_metadata={"finish_reason": "length"}),
+    ]}
+
+    workflow._the_answer_in_parts("run-did", "acceptance_author_0", Agent(), {"messages": [{"content": "Write the suite."}]}, conversation)
+
+    first = Agent.workflow_model.prompts[0]
+    assert "write_artifact notes-api/acceptance/test_acceptance.py -> " in first and '"status": "written"' in first
+    assert "run_terminal_command .venv/bin/python -m pytest acceptance -> FFFF.FF 404 Not Found" in first
+    assert "Its last words: The routes do not exist yet" in first
+    assert "name only the files, commands and results this record shows" in first

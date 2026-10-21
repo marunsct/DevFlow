@@ -7,6 +7,12 @@ holds all of it. This writes it once, at most `MOST_CHARACTERS`: the sprint's
 finished work orders (files changed, first decision), the blockers they left,
 the last CI gate's verdict, and the acceptance suite's last measurement.
 Never model-written.
+
+Behind its own switch, `STATE_AT_DISPATCH` (plan PH.4): the CI gate's verdict
+is a measurement of one commit, and a builder dispatched after a sibling
+changed files read it as the product's state now. With the switch on, the
+block names the files changed since that commit and says the verdict may no
+longer hold - no sandbox run, only what git already knows.
 """
 
 from __future__ import annotations
@@ -28,6 +34,39 @@ HEADING = "--- Where things stand (written by the harness from what it measured)
 
 def enabled() -> bool:
     return is_on("WHERE_THINGS_STAND", ON_BY_DEFAULT)
+
+
+class _StateAtDispatch:
+    """PH.4's switch: `STATE_AT_DISPATCH`, off until measured."""
+
+    ON_BY_DEFAULT = False
+
+    @staticmethod
+    def enabled() -> bool:
+        return is_on("STATE_AT_DISPATCH", _StateAtDispatch.ON_BY_DEFAULT)
+
+
+state_at_dispatch = _StateAtDispatch()
+#: Paths the harness itself writes; a change to them is not a change to the product.
+_THE_HARNESS_S_OWN = (".harness/", "docs/", ".project-")
+
+
+def _changed_since_the_gate(state: Any) -> str:
+    """A line naming the files changed since the CI gate measured, or "". Never raises."""
+    if not state_at_dispatch.enabled() or not state.get("ci_batch_commit"):
+        return ""
+    try:
+        from app.tools.version_control import changed_since
+
+        changed = [p for p in changed_since(state["repository"].root_path, str(state["ci_batch_commit"]))
+                   if not p.startswith(_THE_HARNESS_S_OWN)]
+    except Exception:  # noqa: BLE001 - no line rather than a wrong one
+        return ""
+    if not changed:
+        return ""
+    shown = ", ".join(f"`{p}`" for p in changed[:8]) + (f" and {len(changed) - 8} more" if len(changed) > 8 else "")
+    return (f"- Changed since that measurement: {shown}. It may no longer hold; run the product's "
+            "tests before building on it.")
 
 
 def _finished(outputs: Any, leave_out: str) -> list[str]:
@@ -87,6 +126,9 @@ def block(state: Any, leave_out: str = "") -> str:
         ci = " ".join(str(state.get("ci_report") or "").split())
         if ci:
             lines.append(f"- The last CI gate: {ci[:300]}")
+            since = _changed_since_the_gate(state)
+            if since:
+                lines.append(since)
         measured = _the_suite(state["repository"].root_path)
         if measured:
             lines.append(measured)
@@ -107,4 +149,4 @@ def with_it(request: dict[str, Any], state: Any, leave_out: str = "") -> dict[st
     return request
 
 
-__all__ = ["HEADING", "MOST_CHARACTERS", "ON_BY_DEFAULT", "block", "enabled", "with_it"]
+__all__ = ["HEADING", "MOST_CHARACTERS", "ON_BY_DEFAULT", "block", "enabled", "state_at_dispatch", "with_it"]

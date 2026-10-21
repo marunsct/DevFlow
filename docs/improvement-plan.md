@@ -3887,7 +3887,7 @@ previous product with a change request", and all 10 benchmarks are greenfield.
 
 | ID | Change | Group | Priority | Status |
 |---|---|---|---|---|
-| BW.1 | Regression contract at intake: on a seeded workspace the harness runs the existing test suite once; the green set is locked beside the acceptance suite, and a sprint that turns any of it red is sent back like a failed criterion | 2 | P1 | PROPOSED |
+| BW.1 | Regression contract at intake: on a seeded workspace the harness runs the existing test suite once; the green set is locked beside the acceptance suite, and a sprint that turns any of it red is sent back like a failed criterion | 2 | P1 | BUILT 2026-10-21, behind `REGRESSION_CONTRACT` (off): seeding writes `.harness/seeded.json`; on a seeded workspace the baseline taken at the suite's lock is the seeded product's own measurement (its unit tests and the locked suite's tests that already pass), so the CI gate raises any of them that later fails as a regression defect |
 | BW.2 | Change-request run: `POST /runs` from a finished run's workspace (or an upload) with a change brief; the product's locked suite and BW.1's contract carry over; the specification is a delta | 2 | P1 | PROPOSED |
 | BW.3 | Brownfield benchmark family: a previous run's product plus a change brief, hidden tests for the old and the new behaviour, a reference that scores 100% | 1 — now (benchmark only) | P1 | BUILT 2026-10-21: `benchmarks/tasks-api-change` - `base/` is the tasks-api reference, the brief adds due dates, a done filter and a summary; hidden = tasks-api's 10 tests + 5 new; the base scores 10/15 (every old, no new), the reference 15/15 and reads the base's data; `loop.sh bench` uploads `base` into the workspace (`SEED=<dir>` for `start`) |
 
@@ -4744,7 +4744,7 @@ the item: what it changes, why, and the evidence (review findings in
 | RC.3 | corpus hygiene and `loop.sh corpus` | P2 | BUILT 2026-10-21 (group 1) | [RC](#plan-rc) |
 | IN.1 | assumptions gate before the specification | P1 | PROPOSED 2026-10-21 (group 2) | [IN](#plan-in) |
 | IN.2 | ambiguity count at preview | P2 | PROPOSED 2026-10-21 (group 1, now) | BUILT 2026-10-21 (group 1) |
-| BW.1 | regression contract from a seeded codebase's own tests | P1 | PROPOSED 2026-10-21 (group 2) | [BW](#plan-bw) |
+| BW.1 | regression contract from a seeded codebase's own tests | P1 | BUILT 2026-10-21 behind `REGRESSION_CONTRACT` (off) | [BW](#plan-bw) |
 | BW.2 | change-request run from a finished product | P1 | PROPOSED 2026-10-21 (group 2) | [BW](#plan-bw) |
 | BW.3 | brownfield benchmark family | P1 | PROPOSED 2026-10-21 (group 1, now) | BUILT 2026-10-21 (group 1) |
 | PN.1 | dependency audit, secret scan and licence listing on the product, as pack data | P2 | PROPOSED 2026-10-21 (group 2) | [PN](#plan-pn) |

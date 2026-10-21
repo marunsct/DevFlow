@@ -561,7 +561,7 @@ def seed_workspace(
 
     kind = getattr(source, "type")
     if kind == "git":
-        return SeedResult(
+        result = SeedResult(
             seeded=True,
             provenance=seed_from_git(
                 workspace,
@@ -571,11 +571,19 @@ def seed_workspace(
                 depth=getattr(source, "depth", 1) or 1,
             ),
         )
-    if kind == "archive":
+    elif kind == "archive":
         stored = resolve_upload(getattr(source, "upload_id", ""))
         if stored is None:
             raise SeedError("That upload could not be found.")
-        return SeedResult(seeded=True, provenance=seed_from_archive(workspace, stored))
+        result = SeedResult(seeded=True, provenance=seed_from_archive(workspace, stored))
+    else:
+        result = None
+    if result is not None:
+        # The workflow reads it to hold the seeded product's own green tests (plan BW.1).
+        from app.acceptance.regression_contract import mark_seeded
+
+        mark_seeded(workspace, result.provenance)
+        return result
 
     raise SeedError(f"Unknown workspace source '{kind}'.")
 

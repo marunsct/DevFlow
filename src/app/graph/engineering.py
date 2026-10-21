@@ -770,6 +770,16 @@ def suite_locked(root: str) -> None:
         return
     try:
         commit_id = ci.commit(root, "Acceptance suite locked")
+        from app.acceptance import regression_contract
+
+        if regression_contract.applies(root):
+            # A seeded product's own green tests are the first baseline, held
+            # by the CI gate from here (plan BW.1).
+            measured = ci.take(root, "the seeded product, as the suite was locked")
+            logger.info("Regression contract: %d test(s) of the seeded product pass and are held",
+                        len(measured.passing()))
+            ci.save(root, measured, accepted=True)
+            return
         ci.save(root, ci.Snapshot(label="suite locked", commit=commit_id), accepted=True)
     except Exception:  # noqa: BLE001
         logger.debug("Could not record the first baseline", exc_info=True)

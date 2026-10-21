@@ -51,3 +51,12 @@ def test_a_change_to_the_app_alone_is_deployed_without_touching_the_worker():
     assert any(line.rstrip().endswith("app >/dev/null 2>&1") for line in commands)
     assert "docker compose up -d --no-deps app" in body
     assert not any("worker" in line for line in commands)
+
+
+def test_a_deploy_can_build_a_named_commit_for_a_measure_pair():
+    """A Measure pair runs on exactly its Fix batch while later work is committed above it."""
+    script = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()
+    body = script[script.index("\ndeploy)\n"):script.index("\ndeploy-app)") if script.index("\ndeploy-app)") > script.index("\ndeploy)\n") else None]
+
+    assert 'built=$(git -C "$ROOT" rev-parse "${2:-HEAD}^{commit}")' in body
+    assert 'worktree add -q --detach "$head_tree" "$built"' in body

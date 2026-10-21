@@ -10,6 +10,7 @@
 #   scripts/loop/loop.sh audit [run-id]      failure / redundancy audit of a run (audit_live.py)
 #   scripts/loop/loop.sh stage <stage> [HH:MM]  trace one stage (stage_trace.py; HH:MM is UTC)
 #   scripts/loop/loop.sh reads [run-id]      redundant reads by stage and file (redundant_reads.py)
+#   scripts/loop/loop.sh deploy [commit]     rebuild app and worker from a commit (default HEAD), at a stage boundary
 #   scripts/loop/loop.sh deploy-app          rebuild and restart the app container only (API, UI); the worker and live runs untouched
 #   scripts/loop/loop.sh patterns [since]     across every run: where replies run out, fix outcome by bundle size, failures that recur
 #   scripts/loop/loop.sh timing [run-id..]   where the wall-clock time went: model vs tools, phases, reasoning share (run_timing.py)
@@ -363,7 +364,9 @@ deploy)
   # session's uncommitted, unverified edits sat in the same tree, and a build
   # of it shipped them into the live run.
   head_tree=$(mktemp -d)/head
-  built=$(git -C "$ROOT" rev-parse HEAD)
+  # A named commit, else HEAD: a Measure pair runs on exactly its Fix batch while
+  # later work goes on above it (plan MF.4).
+  built=$(git -C "$ROOT" rev-parse "${2:-HEAD}^{commit}")
   git -C "$ROOT" worktree add -q --detach "$head_tree" "$built"
   docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
     build --progress=plain --build-arg HARNESS_COMMIT="$built" app worker >/dev/null 2>&1

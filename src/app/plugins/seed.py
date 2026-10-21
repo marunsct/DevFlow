@@ -356,6 +356,17 @@ _PYTHON_PASSWORDS = (
 )
 SEED_INSTRUCTIONS["python"] += "\n" + _PYTHON_PASSWORDS
 
+#: Signed tokens in Python. Measured on a gate run: a service put the account's
+#: integer id in a token's `sub` claim; PyJWT 2.10 and later refuses that on
+#: decode (InvalidSubjectError), so every signed-in request answered 401 and
+#: eight criteria failed behind it for about an hour of fix stages.
+_PYTHON_TOKENS = (
+    "- Signed tokens: PyJWT 2.10 and later refuses a token whose `sub` claim is not a string "
+    "(`InvalidSubjectError` on decode, so every request carrying it reads as not signed in). Put an "
+    "id in as `str(account_id)` and convert it back after decoding."
+)
+SEED_INSTRUCTIONS["python"] += "\n" + _PYTHON_TOKENS
+
 #: Installing a Python application set up without a pack. Measured on one run:
 #: a setup declared `pip install -e .` over a `pyproject.toml` with setuptools at
 #: a project root that also held its tests, its data and `node_modules`, and the

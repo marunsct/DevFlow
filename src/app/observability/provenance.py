@@ -25,6 +25,7 @@ SWITCHES: dict[str, str] = {
     "FIX_CYCLE": "app.graph.bounded_fixes",
     "WHERE_THINGS_STAND": "app.agents.where_things_stand",
     "STATE_AT_DISPATCH": "app.agents.where_things_stand:state_at_dispatch",
+    "RELEASE_DOCS_REQUIRED": "app.stacks.release_docs",
     "INTERFACE_CHANGES_NAMED": "app.agents.interface_changes",
     "PROJECT_GRAPH_FIXES": "app.analysis.project_graph:fixes_switch",
     "PROJECT_GRAPH_BUILDERS": "app.analysis.project_graph:builders_switch",

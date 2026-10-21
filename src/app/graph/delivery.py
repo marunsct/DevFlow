@@ -240,14 +240,15 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             "product where it is wrong, or the test where it asks for what the product was "
             "never meant to do."
         )
-    # Plan PN.2, off until measured: a handoff no one else could run is held
-    # back like a failing criterion while attempts remain, then is a gap.
-    from app.stacks import release_docs
+    # Plans PN.2 and PN.1, off until measured: a handoff no one else could
+    # run, or one with a credential in its code, is held back like a failing
+    # criterion while attempts remain, then is a gap.
+    from app.stacks import release_audits, release_docs
 
-    undocumented = [] if failing else release_docs.what_the_handoff_lacks(root)
+    undocumented = [] if failing else [*release_docs.what_the_handoff_lacks(root), *release_audits.secrets_found(root)]
     if undocumented and int(state.get("release_attempts") or 0) < MAX_RELEASE_ATTEMPTS:
         failing = undocumented
-        summary = "The handoff lacks what someone who did not write the product needs: " + " ".join(undocumented)
+        summary = "The handoff is not ready for someone who did not write the product: " + " ".join(undocumented)
         unit_failing = undocumented
         undocumented = []
     if failing:
@@ -309,6 +310,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         for problem in state.get("work_order_problems") or []
     )
     gaps.extend(undocumented)
+    gaps.extend(release_audits.licence_gaps(root))
     unit_gap = _no_unit_tests_ran(root)
     if unit_gap:
         gaps.append(unit_gap)

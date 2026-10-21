@@ -65,6 +65,12 @@ def ci_workflow(pack: StackPack, project: str, title: str, package: str | None =
         _run(shlex.join(commands["unit_test"])),
         _run(shlex.join(commands["acceptance_test"])),
     ]
+    # The dependency audit runs here, where its advisory database can be
+    # reached (plan PN.1, off until measured).
+    from app.stacks import release_audits
+
+    if release_audits.enabled() and release_audits.audit_command(pack):
+        lines.append(_run(release_audits.audit_command(pack)))
     return "\n".join(lines) + "\n"
 
 

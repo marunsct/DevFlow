@@ -3899,7 +3899,7 @@ product CI has none of it. `document_manifest.py` allows a README and checks not
 
 | ID | Change | Group | Priority | Status |
 |---|---|---|---|---|
-| PN.1 | Per pack, as data: the ecosystem's dependency audit (`npm audit`, `pip-audit`, `cargo audit`, `govulncheck`, …), a secret scan and a licence listing; the release stage runs them once and files findings as defects; the generated CI carries the same steps | 2 (adds defects) | P2 | PROPOSED |
+| PN.1 | Per pack, as data: the ecosystem's dependency audit (`npm audit`, `pip-audit`, `cargo audit`, `govulncheck`, …), a secret scan and a licence listing; the release stage runs them once and files findings as defects; the generated CI carries the same steps | 2 (adds defects) | P2 | BUILT 2026-10-21 behind `RELEASE_AUDITS` (off): `app/stacks/release_audits.py` - a credential of a never-placeholder shape holds the release back like PN.2, then is a gap; installed packages' licences are listed in `docs/third-party-licences.md`, strong copyleft a gap; the ecosystem's audit (per-language table, a pack's `audit` overriding) is a step of the generated CI, since the sandbox's network is for installs only |
 | PN.2 | A README with run instructions and, for a service, an API summary are required release artifacts; the release check fails without them (the documentation specialist already produces the material) | 2 | P2 | BUILT 2026-10-21 behind `RELEASE_DOCS_REQUIRED` (off): `app/stacks/release_docs.py` - no README, a README naming none of the pack's commands (or `start.sh`, an entrypoint), or a locked HTTP route no product document names hold the release back while attempts remain, then are gaps |
 
 <a id="plan-op"></a>
@@ -4747,7 +4747,7 @@ the item: what it changes, why, and the evidence (review findings in
 | BW.1 | regression contract from a seeded codebase's own tests | P1 | BUILT 2026-10-21 behind `REGRESSION_CONTRACT` (off) | [BW](#plan-bw) |
 | BW.2 | change-request run from a finished product | P1 | PROPOSED 2026-10-21 (group 2) | [BW](#plan-bw) |
 | BW.3 | brownfield benchmark family | P1 | PROPOSED 2026-10-21 (group 1, now) | BUILT 2026-10-21 (group 1) |
-| PN.1 | dependency audit, secret scan and licence listing on the product, as pack data | P2 | PROPOSED 2026-10-21 (group 2) | [PN](#plan-pn) |
+| PN.1 | dependency audit, secret scan and licence listing on the product, as pack data | P2 | BUILT 2026-10-21 behind `RELEASE_AUDITS` (off) | [PN](#plan-pn) |
 | PN.2 | README and API summary as required release artifacts | P2 | BUILT 2026-10-21 behind `RELEASE_DOCS_REQUIRED` (off) | [PN](#plan-pn) |
 | OP.1 | resume on boot, schedules re-created by the worker | P1 | BUILT 2026-10-21 (group 1) | [OP](#plan-op) |
 | OP.2 | stall detector; webhook and email notifications for stalls and gates | P1 | BUILT 2026-10-21 (group 1) | [OP](#plan-op) |

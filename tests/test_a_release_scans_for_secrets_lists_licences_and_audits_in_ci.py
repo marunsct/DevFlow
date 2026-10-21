@@ -1,0 +1,84 @@
+"""A release scans the product for credentials, lists its dependencies' licences and audits them in CI (plan PN.1).
+
+Behind `RELEASE_AUDITS`, off until measured. A credential holds the release
+back like a failing criterion; a strong-copyleft dependency is a gap; the
+audit is a step of the generated CI, where its advisory database is reachable.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+from types import SimpleNamespace
+from unittest import mock
+
+from app.graph import delivery
+from app.stacks import contract, release, release_audits
+
+BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
+ON = {"RELEASE_AUDITS": "on"}
+#: Built here, so this file never holds a credential's shape itself.
+A_CLOUD_KEY = "AKIA" + "Q7" * 8
+
+
+def _repository(tmp_path):
+    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True)
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "settings.py").write_text(f'DEBUG = False\nKEY = "{A_CLOUD_KEY}"\n')
+    (tmp_path / "app" / "main.py").write_text('import os\nKEY = os.environ["KEY"]\n')
+    return tmp_path
+
+
+def test_a_credential_in_the_code_is_named_with_its_file_and_line(tmp_path):
+    root = _repository(tmp_path)
+    with mock.patch.dict(os.environ, ON):
+        found = release_audits.secrets_found(root)
+    assert len(found) == 1 and "`app/settings.py` line 2" in found[0] and "cloud access key" in found[0]
+    assert not BANNED.search(found[0])
+    with mock.patch.dict(os.environ, {"RELEASE_AUDITS": ""}):
+        assert release_audits.secrets_found(root) == []
+
+
+def test_licences_are_listed_and_a_strong_copyleft_one_is_a_gap(tmp_path, monkeypatch):
+    monkeypatch.setattr(contract, "read", lambda root: {"project": "app"})
+    site = tmp_path / "app" / ".venv" / "lib" / "python3.12" / "site-packages"
+    for name, line in (("calm", "License-Expression: MIT"), ("bound", "Classifier: License :: OSI Approved :: GNU Affero General Public License v3"),
+                       ("lesser", "License: LGPL-2.1")):
+        (site / f"{name}-1.0.dist-info").mkdir(parents=True)
+        (site / f"{name}-1.0.dist-info" / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\n{line}\n\nbody\n")
+    (tmp_path / "app" / "node_modules" / "left-pad").mkdir(parents=True)
+    (tmp_path / "app" / "node_modules" / "left-pad" / "package.json").write_text(json.dumps({"name": "left-pad", "license": "WTFPL"}))
+
+    with mock.patch.dict(os.environ, ON):
+        gaps = release_audits.licence_gaps(tmp_path)
+
+    listing = (tmp_path / release_audits.LISTING).read_text()
+    assert "| calm | MIT |" in listing and "| left-pad | WTFPL |" in listing and "| lesser | LGPL-2.1 |" in listing
+    assert len(gaps) == 1 and "bound" in gaps[0] and "lesser" not in gaps[0] and "calm" not in gaps[0]
+
+
+def test_the_ci_carries_the_ecosystem_s_audit_only_when_on():
+    pack = SimpleNamespace(language="python", ci_setup=(), ci_prepare=(),
+                           commands=lambda project, package: {"install": [["pip", "install", "."]],
+                                                              "unit_test": ["pytest"], "acceptance_test": ["pytest", "a"]})
+    with mock.patch.dict(os.environ, {"RELEASE_AUDITS": ""}):
+        assert "pip-audit" not in release.ci_workflow(pack, "app", "App")
+    with mock.patch.dict(os.environ, ON):
+        assert '- run: "pip install pip-audit && pip-audit"' in release.ci_workflow(pack, "app", "App")
+    assert release_audits.audit_command(SimpleNamespace(language="go", audit="")) == ""
+
+
+def test_the_release_holds_back_for_a_credential(tmp_path, monkeypatch):
+    from app.analysis import integration_checks
+
+    root = _repository(tmp_path)
+    monkeypatch.setattr(integration_checks, "problems_that_break_the_product", lambda root, stack=None, brief="": [])
+    monkeypatch.setattr(delivery, "_unit_tests_failing", lambda root: [])
+    monkeypatch.setattr(contract, "the_pack", lambda root: None)
+    with mock.patch.dict(os.environ, ON):
+        held = delivery.release(
+            {"repository": SimpleNamespace(root_path=str(root)), "release_attempts": 0}, {"configurable": {}},
+            SimpleNamespace(judgement_model=None, checkpointer=None, repo_root=str(root), allow_subdirectories=True),
+        )
+    assert held["stage"] == "technical_lead" and "cloud access key" in held["revision_comments"][-1]

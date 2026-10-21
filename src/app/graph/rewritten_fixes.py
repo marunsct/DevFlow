@@ -250,6 +250,10 @@ def fix_by_rewriting(
 
     failure = what_failed(defect, root, last_failure)
     files = files_to_fix(defect, failure, root, may_write or (lambda _: True))
+    # Asked where, once and cheaply, when the failure named none or many (plan AY step 1, off).
+    from app.graph.localisation import localised
+
+    files = localised(defect, failure, root, model, files, may_write or (lambda _: True))
     if not files:
         return None
     changed: list[str] = []
@@ -347,6 +351,10 @@ def fix_by_candidates(
 
     failure = what_failed(defect, root, last_failure)
     files = files_to_fix(defect, failure, root, may_write or (lambda _: True))
+    # Asked where, once and cheaply, when the failure named none or many (plan AY step 1, off).
+    from app.graph.localisation import localised
+
+    files = localised(defect, failure, root, model, files, may_write or (lambda _: True))
     if not files:
         return None
     originals = {path: (root / path).read_text(encoding="utf-8", errors="replace") for path in files}

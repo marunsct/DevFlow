@@ -23,6 +23,8 @@ import os
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+from app.tools.untrusted_text import defanged
+
 logger = logging.getLogger(__name__)
 
 #: Results one search returns.
@@ -87,9 +89,9 @@ def search(query: str, *, fetch: Fetch | None = None) -> dict[str, Any]:
         if not url.startswith(("http://", "https://")) or any(r["url"] == url for r in results):
             continue
         results.append({
-            "title": " ".join(str(item.get("title") or "").split())[:160],
+            "title": defanged(" ".join(str(item.get("title") or "").split()), 160),
             "url": url,
-            "snippet": " ".join(str(item.get("content") or "").split())[:MOST_SNIPPET],
+            "snippet": defanged(" ".join(str(item.get("content") or "").split()), MOST_SNIPPET),
             **({"published": str(item["publishedDate"])[:10]} if item.get("publishedDate") else {}),
         })
         if len(results) >= MOST_RESULTS:
@@ -140,7 +142,7 @@ def read_page(url: str, topic: str = "", *, fetch: Fetch | None = None) -> dict[
     excerpt = _sections_about(text, _words(topic), MAX_EXCERPT) if topic.strip() else text[:MAX_EXCERPT]
     if not excerpt.strip():
         return {"error": f"Nothing about {topic!r} is on that page."}
-    return {"source": url, "note": PAGE_NOTE, "excerpt": excerpt[:MAX_EXCERPT]}
+    return {"source": url, "note": PAGE_NOTE, "excerpt": defanged(excerpt, MAX_EXCERPT)}
 
 
 def _get_following(url: str, params: dict[str, Any] | None = None) -> tuple[int, str, str]:

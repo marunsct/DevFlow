@@ -4742,6 +4742,12 @@ class SandboxExecutor:
         # clock as well as a model call. See `timed_out_this_way_before`.
         harness = running_for_the_harness()
         ruled_out = None if harness else _refuse_an_install_the_brief_rules_out(command, repo_root)
+        # Where the network an install is given may reach (plan SF.1). The
+        # harness's own installs too: they read the manifests the agents wrote.
+        if not ruled_out and category in NETWORK_CATEGORIES:
+            from app.tools.install_egress import refusal
+
+            ruled_out = refusal(command, Path(repo_root) / str(working_directory or "").strip().strip("/"))
         if ruled_out:
             outcome = {"error": ruled_out}
             _record_execution(

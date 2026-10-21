@@ -3948,8 +3948,8 @@ only for the reviewer); no owner rating is captured per delivered product.
 
 | ID | Change | Group | Priority | Status |
 |---|---|---|---|---|
-| SF.1 | The "install" command category's network goes through a registry allowlist (the package registries and GitHub), the same egress pattern the harness already uses for seeding; today the grant is unrestricted | 1 — now | P2 | PROPOSED |
-| SF.2 | Fetched docs, search results and MCP text keep their "data, not instructions" label and are additionally capped and stripped of tool-call-shaped text before injection | 1 — now | P3 | PROPOSED |
+| SF.1 | The "install" command category's network goes through a registry allowlist (the package registries and GitHub), the same egress pattern the harness already uses for seeding; today the grant is unrestricted | 1 — now | P2 | BUILT 2026-10-21: `app/tools/install_egress.py` - every host an install names, on its command line (URLs, `--registry`, `--index-url`, `--trusted-host`, git addresses) or in the files it reads there (`.npmrc`, `.yarnrc*`, `pip.conf`, `package.json` dependency values, `requirements*.txt`, ...), must be a package registry or a source host on `ALLOWED_HOSTS`; `INSTALL_ALLOWED_HOSTS` widens it, `*` lifts it. The sandbox refuses before anything runs, for the harness's own installs too. An install by name goes to its manager's default registry, which is on the list. A network-level egress proxy is not built: this checks what an install is told to fetch, as seeding does |
+| SF.2 | Fetched docs, search results and MCP text keep their "data, not instructions" label and are additionally capped and stripped of tool-call-shaped text before injection | 1 — now | P3 | BUILT 2026-10-21: `app/tools/untrusted_text.defanged` replaces tool-call wrappers, unclosed wrapper tags, chat-template special tokens and JSON call heads with a marker before the cap, in `read_docs`, web search results and pages, and every MCP answer; the harness's own text-call reader finds no call in the result |
 
 ### Noted, not planned
 - Product kinds: five kinds and 30 packs; no mobile, desktop, worker/bot or data-pipeline kind. Strategic, not urgent.
@@ -4759,8 +4759,8 @@ the item: what it changes, why, and the evidence (review findings in
 | CH.4 | `workflow.py` split by stage node, no behaviour change | P3 | PROPOSED 2026-10-21 (after the first clean Measure cycle) | [CH](#plan-ch) |
 | EV.1 | owner rating per delivered run beside the hidden score | P2 | PROPOSED 2026-10-21 (group 1, now) | [EV](#plan-ev) |
 | EV.2 | screenshot rubric score for browser products | P3 | PROPOSED 2026-10-21 (group 2) | [EV](#plan-ev) |
-| SF.1 | registry allowlist for the install category's network | P2 | PROPOSED 2026-10-21 (group 1, now) | [SF](#plan-sf) |
-| SF.2 | fetched text capped and stripped of tool-call shapes | P3 | PROPOSED 2026-10-21 (group 1, now) | [SF](#plan-sf) |
+| SF.1 | registry allowlist for the install category's network | P2 | PROPOSED 2026-10-21 (group 1, now) | BUILT 2026-10-21 (group 1) |
+| SF.2 | fetched text capped and stripped of tool-call shapes | P3 | PROPOSED 2026-10-21 (group 1, now) | BUILT 2026-10-21 (group 1) |
 
 <a id="plan-m-2"></a>
 ### M.2 Fixes from the loop's audits (no plan item of their own)

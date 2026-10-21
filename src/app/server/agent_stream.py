@@ -56,6 +56,7 @@ class AgentActivityStream(BaseCallbackHandler):
         self.run_id = run_id
         self.stage = stage
         self._published = 0
+        self._announced = False
 
     # -- publishing ---------------------------------------------------------
 
@@ -106,6 +107,33 @@ class AgentActivityStream(BaseCallbackHandler):
             self._publish("log", _clip(summary))
 
     # -- callbacks ----------------------------------------------------------
+
+    def _announce(self) -> None:
+        """Say the stage has begun, once, at its first model call.
+
+        Every other event here is a reply's text, a tool call or a result, and a
+        stage that answers in structured output alone - an intake, a technology
+        consultation - publishes none of them. The run page builds its steps and
+        its activity from these events, so it said "Not started yet" while two
+        stages had finished and a third was working.
+        """
+        if self._announced:
+            return
+        self._announced = True
+        try:
+            from app.server.runner import _stage_narration
+
+            meaning = _stage_narration(self.stage, auto_approve=False)[0]
+        except Exception:  # noqa: BLE001 - the stage's name is narration enough
+            meaning = self.stage
+        self._publish("stage_change", meaning or self.stage, {"status": "running"})
+
+    def on_chat_model_start(self, serialized: Any, messages: Any, **kwargs: Any) -> None:  # noqa: ARG002
+        self._announce()
+
+    def on_llm_start(self, serialized: Any, prompts: Any, **kwargs: Any) -> None:  # noqa: ARG002
+        self._announce()
+
 
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:  # noqa: ARG002
         try:

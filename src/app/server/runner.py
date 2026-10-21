@@ -125,13 +125,34 @@ _STAGE_MEANINGS: dict[str, str] = {
 }
 
 
+#: What each iterated stage family does (`workflow._ITERATED_STAGE_OWNERS` names the families).
+_FAMILY_MEANINGS: dict[str, str] = {
+    "consult_": "A specialist is advising on the technology the build will use.",
+    "advice_review_": "Reviewing the specialists' advice on the technology.",
+    "stack_setup_": "Setting the project up on the chosen technology.",
+    "acceptance_author_": "Writing the acceptance tests from the criteria.",
+    "acceptance_review_": "Checking the acceptance tests against the criteria.",
+    "specialist_": "A specialist is building its part of the milestone.",
+    "code_review_": "Reviewing the code the milestone wrote.",
+    "test_round_": "Running the tests and recording what fails.",
+    "defect_fix_": "Fixing one defect the last test round found.",
+}
+
 def _stage_meaning(stage: str) -> str:
     """Human-readable meaning for a stage."""
     if stage.startswith(APPROVAL_PAUSE_PREFIX):
         return f"Waiting for approval: {stage.removeprefix(APPROVAL_PAUSE_PREFIX)}"
     if stage.startswith(REVIEW_PAUSE_PREFIX):
         return f"Waiting for review: {stage.removeprefix(REVIEW_PAUSE_PREFIX)}"
-    return _STAGE_MEANINGS.get(stage, stage)
+    if stage in _STAGE_MEANINGS:
+        return _STAGE_MEANINGS[stage]
+    # An iterated stage (`consult_database`, `defect_fix_2_5`) is named after its
+    # iteration; it means what its family does. The bare name reached the run
+    # page as its meaning.
+    for prefix, meaning in _FAMILY_MEANINGS.items():
+        if stage.startswith(prefix):
+            return meaning
+    return stage
 
 
 def _api_status(stage: str) -> str:

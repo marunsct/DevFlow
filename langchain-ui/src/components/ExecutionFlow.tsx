@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { RunStage } from '../types';
-import { Check, X, Clock, Loader2, Circle, ListChecks } from 'lucide-react';
+import { Check, X, Clock, Loader2, Circle, ListChecks, ChevronDown, ChevronRight } from 'lucide-react';
 import { describeStage, describeStatus } from '../lib/activity';
 
 interface ExecutionFlowProps {
@@ -45,10 +45,31 @@ function bySprint(stages: RunStage[]): { sprint: number; stages: RunStage[] }[] 
 
 const sprintTitle = (sprint: number) => (sprint === 0 ? 'Planning' : `Sprint ${sprint}`);
 
+/** A duration as the steps list writes it: "28s", "1m 46s", "1h 4m". */
+export function asDuration(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
+
+/** Finished steps a sprint shows one by one; past this, the earlier ones fold into one row. */
+const SHOWN_FINISHED = 2;
+
+
 export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentStage, isTerminal }) => {
   const done = stages.filter((s) => s.status === 'completed').length;
   const groups = bySprint(stages);
   const scroller = useRef<HTMLDivElement>(null);
+  // Sprints whose folded steps were opened.
+  const [opened, setOpened] = useState<Set<number>>(new Set());
+  // The step in flight shows how long it has been working, so the clock ticks.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (isTerminal) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [isTerminal]);
 
   // The step in flight stays in view: the list grows downward, and a short
   // pane scrolled to its top showed only steps long finished.
@@ -71,6 +92,12 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
           </p>
         </div>
       </div>
+      {stages.length > 0 && (
+        <div className="flex-none h-1 bg-overlay" role="progressbar" aria-label="Steps finished"
+             aria-valuemin={0} aria-valuemax={stages.length} aria-valuenow={done}>
+          <div className="h-full bg-primary/70 transition-[width] duration-500" style={{ width: `${(done / stages.length) * 100}%` }} />
+        </div>
+      )}
 
       {stages.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 text-center">
@@ -102,6 +129,47 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
                 </header>
 
                 <ol>
+                  {(() => {
+                    const finished = group.stages
+                      .map((stage, index) => ({ stage, index }))
+                      .filter(({ stage }) => describeStatus(stage.status).tone === 'done'
+                        && !(stage.name === currentStage && !isTerminal) && stage.retry_count === 0);
+                    const folded = opened.has(group.sprint) || finished.length <= SHOWN_FINISHED
+                      ? [] : finished.slice(0, finished.length - 1);
+                    if (!folded.length) return null;
+                    const took = folded.reduce((sum, { stage }) => sum + (stage.duration_seconds ?? 0), 0);
+                    return (
+                      <li className="relative flex items-center gap-3" data-folded-summary="true">
+                        <span className="absolute left-[9px] top-5 -bottom-1 w-px bg-border/40" aria-hidden />
+                        <span className={`relative z-10 flex-none grid place-items-center h-5 w-5 rounded-full border ${TONE.done.dot}`}>
+                          <Check className="h-3 w-3" />
+                        </span>
+                        <button
+                          type="button"
+                          aria-expanded={false}
+                          onClick={() => setOpened(new Set([...opened, group.sprint]))}
+                          className="min-w-0 flex-1 flex items-center gap-1 pb-2 pt-0.5 text-left text-[13px] text-text-secondary hover:text-text-primary"
+                        >
+                          <ChevronRight className="h-3 w-3 flex-none" aria-hidden />
+                          {folded.length} earlier steps
+                        </button>
+                        <span className="flex-none pb-1.5 text-xs text-text-muted tabular-nums">{asDuration(took)}</span>
+                      </li>
+                    );
+                  })()}
+                  {opened.has(group.sprint) && (
+                    <li>
+                      <button
+                        type="button"
+                        aria-expanded={true}
+                        onClick={() => setOpened(new Set([...opened].filter((sprint) => sprint !== group.sprint)))}
+                        className="mb-1.5 ml-8 flex items-center gap-1 text-xs text-text-muted hover:text-text-primary"
+                      >
+                        <ChevronDown className="h-3 w-3" aria-hidden />
+                        Fold the finished steps
+                      </button>
+                    </li>
+                  )}
                   {group.stages.map((stage, index) => {
                     const isCurrent = stage.name === currentStage && !isTerminal;
                     // A stage the backend still calls "completed" while it is the
@@ -117,6 +185,11 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
                     // A finished step is one line - its title and how long it took,
                     // its description on hover. Each took a title, a description and
                     // a status line, and the pane showed two steps at a time.
+                    const finishedHere = group.stages.filter((other) => describeStatus(other.status).tone === 'done'
+                      && !(other.name === currentStage && !isTerminal) && other.retry_count === 0);
+                    const foldsHere = !opened.has(group.sprint) && finishedHere.length > SHOWN_FINISHED;
+                    const place = finishedHere.indexOf(stage);
+                    if (foldsHere && place >= 0 && place < finishedHere.length - 1) return null;
                     if (status.tone === 'done' && !isCurrent && stage.retry_count === 0) {
                       return (
                         <li key={`${group.sprint}-${stage.name}-${index}`} className="relative flex items-center gap-3" data-compact="true">
@@ -131,9 +204,7 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
                           </p>
                           {stage.duration_seconds !== null && (
                             <span className={`flex-none text-xs text-text-muted tabular-nums ${isLast ? '' : 'pb-1.5'}`}>
-                              {stage.duration_seconds < 60
-                                ? `${Math.round(stage.duration_seconds)}s`
-                                : `${Math.floor(stage.duration_seconds / 60)}m ${Math.round(stage.duration_seconds % 60)}s`}
+                              {asDuration(stage.duration_seconds)}
                             </span>
                           )}
                         </li>
@@ -165,11 +236,14 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
                             {status.label !== copy.title && (
                               <span className={`text-xs font-medium ${tone.text}`}>{status.label}</span>
                             )}
+                            {isCurrent && stage.duration_seconds === null && stage.started_at && (
+                              <span className="text-xs text-text-muted tabular-nums" data-testid="working-for">
+                                {asDuration((now - Date.parse(stage.started_at)) / 1000)}
+                              </span>
+                            )}
                             {stage.duration_seconds !== null && (
                               <span className="text-xs text-text-muted tabular-nums">
-                                {stage.duration_seconds < 60
-                                  ? `${Math.round(stage.duration_seconds)}s`
-                                  : `${Math.floor(stage.duration_seconds / 60)}m ${Math.round(stage.duration_seconds % 60)}s`}
+                                {asDuration(stage.duration_seconds)}
                               </span>
                             )}
                             {/* Approvals are the step working, not repeating. Counting

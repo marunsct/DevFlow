@@ -189,6 +189,18 @@ const STAGE_COPY: Record<string, StageCopy> = {
     title: 'Moving on',
     blurb: 'Nothing to do at this step.',
   },
+  research_brief: {
+    title: 'Gathering what the plan needs',
+    blurb: 'Collecting the facts about the chosen technology that the technical plan will rely on.',
+  },
+  drafting: {
+    title: 'Drafting the code',
+    blurb: 'Writing a first version of every planned file, ready for the specialists to build on.',
+  },
+  defect_fix: {
+    title: 'Fixing what the tests found',
+    blurb: 'Sending each failing check to the one who owns that part of the product.',
+  },
 };
 
 /** Stage names a run makes as it goes, with a number in them: a round, a pass, a role. */
@@ -203,6 +215,18 @@ const NUMBERED_COPY: Array<[RegExp, (match: RegExpExecArray) => StageCopy]> = [
     blurb: 'Turning each acceptance criterion into a test that proves the product does it.',
   })],
   [/^acceptance_review_(\d+)$/, () => ({ title: 'Checking the acceptance tests', blurb: 'Reading the tests against the criteria before they are locked.' })],
+  [/^advice_review_(.+)$/, (m) => ({
+    title: `Checking the ${m[1].replace(/_/g, ' ').replace(/\bui ux\b/, 'interface')} advice`,
+    blurb: 'Reading this specialist’s advice against the brief before the plan relies on it.',
+  })],
+  [/^code_review_(\d+)_(\d+)$/, (m) => ({
+    title: Number(m[2]) > 0 ? `Reviewing the code again (pass ${Number(m[2]) + 1})` : 'Reviewing the code',
+    blurb: 'Reading the milestone’s change for mistakes before it is tested.',
+  })],
+  [/^stack_setup_(\d+)$/, (m) => ({
+    title: Number(m[1]) > 0 ? `Setting up the project again (attempt ${Number(m[1]) + 1})` : 'Setting up the project',
+    blurb: 'Preparing the project on the chosen technology and proving it builds and tests.',
+  })],
   [/^consult_(.+)$/, (m) => ({
     title: `Asking the ${m[1].replace(/_/g, ' ').replace(/\bui ux\b/, 'interface')} specialist`,
     blurb: 'Getting this specialist’s advice before the technical plan is written.',

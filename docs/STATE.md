@@ -15,7 +15,7 @@ week are in `docs/archive/`.
 | Run | LFM smoke runs on `benchmarks/notes-api` (`DELIVERY=fast FRONTIER=false`), not Measure runs: run-b62e4f1f failed at its scaffold after a deploy (LF.143); **run-abd8b897** started 15:52 JST on the owner's LFM sampling. Gate run 3 (run-f4f0030b) was stopped at 15:08 JST at the owner's word |
 | Model | **LFM2.5-24B-A2B** (owner's switch, 15:08 JST): 3 slots, 131,072 tokens; the owner's window setting 131,000; server sampling per the model card (temperature 0.1, top-k 50, repetition penalty 1.05, max tokens 32768); DevFlow's reply ceiling still 0 |
 | LFM measured | `loop.sh fitness --edits`: FIT 5/5, edits and whole files 100% well formed; `reasoning-probe run`: it reasons (about 2.3-3.3k output tokens a planning reply), no thinking switch turns that off (`thinking_off` -27%, reasoning still present) |
-| Deployed | worker image 3129aa1 (LF.138, MF.1/MF.3/MF.5); RC, OP, CH, IN.2, BW.3, LF.139-LF.140 are on the branch, not yet deployed |
+| Deployed | worker a31fdcf + LF.146 pending at a stage boundary; app 8f60e01 (`deploy-app`). LF.147 (Progress pane) is committed and held for the next deploy or the run's end (owner) |
 | Owner's model settings | reply ceiling 0 (none), context window 186,000, thinking default - the owner's; never changed by the loop |
 | Peer sessions | none drive this workspace; this session is the only one that edits, deploys and starts runs |
 

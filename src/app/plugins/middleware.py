@@ -180,21 +180,44 @@ _AUXILIARY_REPLY_TOKENS = 2_048
 _AUXILIARY_TIMEOUT_SECONDS = 180
 
 
+#: The cap of the one second asking, when the first reply was all reasoning.
+_AUXILIARY_REPLY_TOKENS_WITH_REASONING = 4 * _AUXILIARY_REPLY_TOKENS
+
+
+def _all_reasoning(reply: Any) -> bool:
+    """Whether the reply hit its cap with nothing written: the model reasoned through all of it."""
+    metadata = getattr(reply, "response_metadata", None) or {}
+    return str(metadata.get("finish_reason") or "") == "length" and not _text_of(reply).strip()
+
+
 def _ask(model: Any, messages: list[Any]) -> Any:
     """`model.invoke(messages)`, asked again without `reasoning_effort` if the
-    server refused the request because of it."""
+    server refused the request because of it, and once more with room to reason
+    if the reply was all reasoning.
+
+    The reply is capped small and asked for without reasoning, and a model that
+    reasons on every reply whatever it is asked spent the whole cap thinking and
+    wrote nothing: measured on the first runs of one such model, the list of
+    frameworks came back empty, and the notes for a framework the store does not
+    know would have too.
+    """
     from app.agents.thinking import the_server_refused_the_request, without_the_effort_field
     from app.observability.direct_calls import config_for_this_run
 
     recorded = config_for_this_run("plugin_instructions")
     try:
-        return model.invoke(messages, **recorded)
+        reply = model.invoke(messages, **recorded)
     except Exception as error:
         extra = getattr(model, "extra_body", None)
         plainer = without_the_effort_field({"extra_body": extra}) if extra else None
         if plainer is None or not the_server_refused_the_request(error):
             raise
-        return model.model_copy(update=plainer).invoke(messages, **recorded)
+        model = model.model_copy(update=plainer)
+        reply = model.invoke(messages, **recorded)
+    if _all_reasoning(reply) and int(getattr(model, "max_tokens", 0) or 0) < _AUXILIARY_REPLY_TOKENS_WITH_REASONING:
+        logger.info("The auxiliary reply was all reasoning at its cap; asking once more with room to reason")
+        reply = model.model_copy(update={"max_tokens": _AUXILIARY_REPLY_TOKENS_WITH_REASONING}).invoke(messages, **recorded)
+    return reply
 
 
 def _framework_names(reply: str) -> List[str]:

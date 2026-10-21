@@ -157,3 +157,27 @@ def test_after_a_transient_model_error_the_retry_carries_the_conversation_on(tmp
     (_, thread), (again, same) = agent.calls
     assert again is None and same == thread and update["out"] == "answer"
     assert abandoned_threads._read(tmp_path) == {}
+
+
+def test_a_transient_error_after_an_approved_tool_call_also_carries_the_conversation_on(tmp_path, monkeypatch):
+    # Measured on one run: with every gated tool call resumed through a decision,
+    # most model calls run on that path, and its retry started the stage over.
+    from app.graph import workflow
+
+    def resume(agent, thread, decision, **kwargs):
+        raise RuntimeError("Error code: 500 - {'type': 'server_error'} malformed output")
+
+    monkeypatch.setattr(workflow, "resume_with_decision", resume)
+    agent = _Agent(saved="outer:principal_architect:paused", pending=("model",))
+    state = {"stage": "principal_architect", "repository": SimpleNamespace(root_path=str(tmp_path)),
+             "pending_decision": {"type": "approve"}, "pending_inner_thread_id": "outer:principal_architect:paused"}
+
+    first = _run_gated_agent(
+        state, {"configurable": {"thread_id": "outer"}},
+        stage_name="principal_architect", agent=agent, initial_request={"messages": [{"role": "user", "content": "write"}]},
+        output_key="out", next_stage="architecture_review",
+    )
+    assert "out" not in first
+    _visit(tmp_path, agent)
+
+    assert agent.calls == [(None, "outer:principal_architect:paused")]

@@ -3621,6 +3621,14 @@ def _run_gated_agent(
                 return _handing_on(stage="failed", error=spun)
             retry = _transient_retry_update(state, stage_name, exc)
             if retry is not None:
+                # Most of a stage's calls run here, resumed after a gated tool:
+                # the retry carries this conversation on, as in the branch below.
+                from app.graph import abandoned_threads
+
+                abandoned_threads.remember(
+                    getattr(state.get("repository"), "root_path", None), outer_thread_id, stage_name,
+                    inner_thread_id, process=abandoned_threads.AFTER_A_TRANSIENT_ERROR,
+                )
                 return retry
             raise
     elif _is_awaiting_approval_for(state, stage_name) and state.get("pending_inner_thread_id"):

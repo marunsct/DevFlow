@@ -125,7 +125,9 @@ class ThinkingPolicy:
         # thinking at all. Fall back to the server's own default rather than
         # sending a request the provider rejects - or silently disabling
         # reasoning the deployment was relying on.
-        if chosen == "on" and budget <= 0:
+        # A ceiling of 0 is no ceiling at all, not one too small to share:
+        # thinking stays on, and no budget is named (`anthropic_arguments`).
+        if chosen == "on" and budget <= 0 and int(max_output_tokens or 0) > 0:
             chosen = "default"
         return cls(mode=chosen, effort=level, budget_tokens=budget)
 
@@ -152,7 +154,8 @@ class ThinkingPolicy:
 
     def anthropic_arguments(self) -> dict:
         """Client keyword arguments for Anthropic."""
-        if not self.enabled:
+        # No budget is no budget: a zero one is a request the provider refuses.
+        if not self.enabled or self.budget_tokens <= 0:
             return {}
         return {"thinking": {"type": "enabled", "budget_tokens": self.budget_tokens}}
 
@@ -161,6 +164,8 @@ class ThinkingPolicy:
             return "Thinking follows whatever the model server was configured to do."
         if self.mode == "off":
             return "Thinking is off; the model answers directly."
+        if self.budget_tokens <= 0:
+            return f"Thinking is on at {self.effort} effort, with no ceiling on a reply."
         return (
             f"Thinking is on at {self.effort} effort, up to {self.budget_tokens:,} "
             "tokens of the reply budget."

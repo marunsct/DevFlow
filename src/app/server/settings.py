@@ -420,13 +420,12 @@ async def update_settings(
             "openai_base_url": payload.openai_base_url,
             "model_name": payload.model_name,
             "model_context_window": str(payload.model_context_window),
-            # Empty clears the override, so the reply ceiling goes back to being
-            # derived from the window rather than pinned to a stale number.
-            "model_max_output_tokens": (
-                str(payload.model_max_output_tokens)
-                if payload.model_max_output_tokens
-                else ""
-            ),
+            # Stored as given, 0 included: 0 is a choice - no ceiling on a
+            # reply (`ContextBudget.from_window`) - not an absent value. Stored
+            # as empty it cleared the override, the ceiling was derived from
+            # the window again, and the page showed 32,000 after its owner
+            # saved 0.
+            "model_max_output_tokens": str(payload.model_max_output_tokens),
             # Stored as the strings `_read_bool` and the effort lookup expect,
             # so a value read back out of Postgres parses the same way one read
             # out of the environment does.
@@ -600,7 +599,8 @@ async def update_local_model_settings(
             "openai_base_url": payload.openai_base_url,
             "model_name": payload.model_name,
             "model_context_window": str(payload.model_context_window) if payload.model_context_window else "",
-            "model_max_output_tokens": str(payload.model_max_output_tokens) if payload.model_max_output_tokens else "",
+            # 0 is a choice, not an absent value: see `update_settings`.
+            "model_max_output_tokens": str(payload.model_max_output_tokens),
             "thinking_mode": payload.thinking_mode,
             "thinking_effort": payload.thinking_effort,
         },

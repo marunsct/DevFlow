@@ -499,7 +499,8 @@ export const Settings: React.FC = () => {
                             <p className="mt-1.5 text-xs text-text-muted leading-relaxed">
                               The reply and the conversation share the window above, so raising
                               this shrinks the room the conversation has - the figures below
-                              update to show what is left. Set 0 to let it follow the window.
+                              update to show what is left. Set 0 for no ceiling: a reply may then use
+                              whatever the window leaves beside the conversation.
                             </p>
                           </div>
 

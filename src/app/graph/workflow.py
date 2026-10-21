@@ -10277,15 +10277,22 @@ def build_workflow_graph(
                 checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories,
             )
             request, co_defects = _the_fix_request(state, config, cycle, defect_index)
-            update = _run_gated_agent(
-                state,
-                config,
-                stage_name=stage_name,
-                agent=agent,
-                initial_request=request,
-                output_key="__fix_result__",
-                next_stage="defect_remediation",
-            )
+            # Each write followed by the defect's own tests (plan AY step 3, off until measured).
+            from app.graph import verify_after_write
+
+            root = Path(state["repository"].root_path)
+            with verify_after_write.watching(
+                config["configurable"].get(APP_RUN_ID_KEY), stage_name, lambda: _the_defect_s_tests_pass(root, defect),
+            ):
+                update = _run_gated_agent(
+                    state,
+                    config,
+                    stage_name=stage_name,
+                    agent=agent,
+                    initial_request=request,
+                    output_key="__fix_result__",
+                    next_stage="defect_remediation",
+                )
             if "__fix_result__" not in update:
                 update["fix_base_commit"] = fix_base
                 return update  # paused waiting for approval on this fix

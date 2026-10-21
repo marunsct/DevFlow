@@ -4676,7 +4676,7 @@ the item: what it changes, why, and the evidence (review findings in
 | UI-S3 | plan-first intake | P2 | DONE 2026-10-19 `46e65503` | [UI-S3](#plan-ui-15-4) |
 | UI-S6 | insights | P3 | DONE 2026-10-19 `c2eca784` | [UI-S6](#plan-ui-15-4) |
 | AX | reasoning budget per role | P0 | NOT BUILT (AR: server ignores per-request budgets; advice to the owner) | [AX](#plan-ax) |
-| AY | bounded fix cycle | P0 | PARTLY 2026-10-21: step 2 (candidates from the fix's own model when the run has no judgement model of its own) behind `FIX_CYCLE`, off until the gate run ends | [AY](#plan-ay) |
+| AY | bounded fix cycle | P0 | PARTLY 2026-10-21: step 2 (candidates from the fix's own model when the run has no judgement model of its own) behind `FIX_CYCLE`; step 3 (each write in a linear fix stage followed by the defect's own tests, one line in the write's reply, at most 6 per stage) behind `VERIFY_AFTER_WRITE` (2026-10-22); both off | [AY](#plan-ay) |
 | AZ | skeleton + slices | P0 | NOT STARTED | [AZ](#plan-az) |
 | BA | prefix-cache discipline | P1 | NOT STARTED | [BA](#plan-ba) |
 | BB | lead plans in parts | P1 | NOT STARTED | [BB](#plan-bb) |

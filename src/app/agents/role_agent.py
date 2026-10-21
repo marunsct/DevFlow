@@ -358,6 +358,12 @@ def _workspace_filesystem_middleware(repo_root: str) -> FilesystemMiddleware:
     )
 
 
+def _verify_after_write_middleware() -> Any:
+    from app.graph.verify_after_write import build_middleware
+
+    return build_middleware()
+
+
 def _compaction_middleware(agent_name: str, model: Any = None) -> list:
     """Summarise this agent's history before it outgrows the model's window.
 
@@ -693,6 +699,9 @@ def create_role_agent(
         # `on_tool_end` fires before any of that and sees only what the tool
         # returned. See `app.observability.transcript`.
         build_transcript_middleware(stage),
+        # Inside the transcript, so it records the line this appends: a fix
+        # stage's write followed by its defect's tests (plan AY step 3, off).
+        _verify_after_write_middleware(),
         # A stage on the judgement model gathers on the build model and writes
         # on the judgement model (fast delivery). Outside the text-tool-call
         # repair, so it judges the reply that repair produced. See

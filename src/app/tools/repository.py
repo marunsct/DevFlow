@@ -6930,6 +6930,16 @@ _ANOTHER_STAGE_S_TEST = (
 )
 
 
+def _a_stage_is_running() -> bool:
+    """Whether a tool call comes from a stage of a run (its stage is in the graph's config)."""
+    try:
+        from app.observability.transcript import _stage_from_config
+
+        return bool(_stage_from_config(""))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _this_stage_created(root: Path, shown: str) -> bool:
     """Whether the stage running now created this file, so may delete it outright.
 
@@ -7319,14 +7329,28 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
         #
         # The two steps below are verified: `move_artifact` accepts a test name
         # as its source, and `delete_artifact` accepts the renamed file.
-        suggestion = _somewhere_this_rule_will_let_go_of(shown, root)
+        # In a run, this stage's own probes are deletable above, so a test it
+        # did not write is someone's evidence: the rename-then-delete way out
+        # was taken by a fixer for a unit test drafting had written (see
+        # `TEST_MOVED_OUT_OF_THE_SUITE`). Outside a run it stays the way out.
+        from app.analysis.file_kinds import is_scratch
+
+        if not _a_stage_is_running() or is_scratch(target.name):
+            suggestion = _somewhere_this_rule_will_let_go_of(shown, root)
+            raise RepositoryToolError(
+                f"'{shown}' is a test, and tests are part of what this run delivers - "
+                "the reviewer reads them as the evidence the product works. Leave it. "
+                "If it is genuinely a throwaway probe and not a test, rename it out of "
+                f"the way first: `move_artifact` from '{shown}' to '{suggestion}', then "
+                "`delete_artifact` on that. Asking to delete this path again will be "
+                "refused the same way."
+            )
         raise RepositoryToolError(
-            f"'{shown}' is a test, and tests are part of what this run delivers - "
-            "the reviewer reads them as the evidence the product works. Leave it. "
-            "If it is genuinely a throwaway probe and not a test, rename it out of "
-            f"the way first: `move_artifact` from '{shown}' to '{suggestion}', then "
-            "`delete_artifact` on that. Asking to delete this path again will be "
-            "refused the same way."
+            f"'{shown}' is a test this stage did not write, and tests are part of what this run "
+            "delivers - the reviewer reads them as the evidence the product works. Leave it. If it "
+            "fails because the product is wrong, fix the product; if it asks for something the "
+            "specification does not, say so in `blockers`. Asking to delete or move this path "
+            "again will be refused the same way."
         )
     if target.is_dir():
         raise RepositoryToolError(
@@ -7357,6 +7381,15 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
     except Exception:  # noqa: BLE001 - never fail a delete over a memo
         logger.debug("Could not record the deletion of %s", shown, exc_info=True)
     return {"deleted": shown, "status": "deleted"}
+
+
+#: Said when a stage moves a test it did not write to a name no runner collects.
+TEST_MOVED_OUT_OF_THE_SUITE = (
+    "Refusing to move '{source}' to '{target}': '{source}' is a test this stage did not write, and "
+    "under the new name no runner collects it - the suite loses it as surely as if it were deleted. "
+    "Leave it. If it fails because the product is wrong, fix the product; if it asks for something "
+    "the specification does not, say so in `blockers`."
+)
 
 
 def move_approved_artifact(
@@ -7459,6 +7492,27 @@ def move_approved_artifact(
         raise RepositoryToolError(
             f"'{from_shown}' is already where you are asking to put it."
         )
+    # A test moved to a name no runner collects is a test deleted, and the
+    # delete is refused for a test this stage did not write. Measured on a gate
+    # run: a fixer was refused deleting a unit-test file it had not written,
+    # then moved it to `test___init__.py.bak`, which was allowed, and the suite
+    # it was fixing lost the test.
+    # Out of the runner's sight is a name that stops looking like a test, or
+    # one whose extension changed: `tests/test_x.py.bak` is still in `tests/`.
+    from app.analysis.file_kinds import is_scratch
+
+    if (
+        looks_like_a_test(from_shown)
+        and (not looks_like_a_test(to_shown) or source.suffix != target.suffix)
+        and not is_scratch(source.name)
+        and not _the_plan_says_to_delete(root, from_shown)
+        and not _is_a_probe_with_a_test_s_name(source)
+        and _a_stage_is_running()
+        and not _this_stage_created(root, from_shown)
+        # A test another stage is known to have written is refused below, by name.
+        and not _another_stage_s_test(root, from_shown)
+    ):
+        raise RepositoryToolError(TEST_MOVED_OUT_OF_THE_SUITE.format(source=from_shown, target=to_shown))
     # Moving another work order's file away takes it from its owner as surely
     # as deleting it; moving a file onto one of its paths writes it. Product
     # code is judged at the source only: renaming a testing stage's own probe

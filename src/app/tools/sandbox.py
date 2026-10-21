@@ -4700,6 +4700,13 @@ class SandboxExecutor:
             category = "test"
         token = _FOR_THE_HARNESS.set(bool(for_the_harness))
         begun = time.time()
+        # A command is held to the line the stage's file tools are (see
+        # `repository.what_a_command_may_not_change`).
+        held = None
+        if not for_the_harness:
+            from app.tools.repository import what_a_command_may_not_change
+
+            held = what_a_command_may_not_change(repo_root)
         try:
             with _the_lock_for(repo_root):
                 outcome = cls._execute_serialised(
@@ -4711,6 +4718,19 @@ class SandboxExecutor:
         # formatter, a generator or an install rewrote it is not told it still
         # holds it (Initiative AO.9). Only for a command that ran.
         if isinstance(outcome, dict) and "returncode" in outcome and not for_the_harness:
+            if held:
+                from app.tools.repository import _outside_its_own_files, put_back_what_a_command_changed
+
+                put_back = put_back_what_a_command_changed(repo_root, held, begun)
+                if put_back:
+                    shown = ", ".join(f"`{name}`" for name in put_back[:6]) + (
+                        f" and {len(put_back) - 6} more" if len(put_back) > 6 else "")
+                    earlier = str(outcome.get("note") or "")
+                    outcome = {**outcome, "put_back": put_back, "note": (earlier + "\n\n" if earlier else "") + _outside_its_own_files() + (
+                        f"This command changed {len(put_back)} file(s) this stage may not change - {shown}. "
+                        "Each was put back as it was before the command ran: a command is held to the same "
+                        "files as the tools that write. Change only this stage's own files."
+                    )}
             changed = files_changed_since(repo_root, begun)
             if changed:
                 outcome = {**outcome, "files_changed": changed}

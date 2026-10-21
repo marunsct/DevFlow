@@ -1778,6 +1778,108 @@ def _tests_a_repair_would_drop(root: Path, target: Path, content: str) -> str:
         "Nothing was written."
     )
 
+
+#: The stages whose commands are held to the line their file tools are: each runs alone,
+#: never beside a stage that writes the product, so a file changed while its command ran
+#: was changed by that command.
+_COMMANDS_HELD_TO_THE_LINE = (_THE_ACCEPTANCE_AUTHOR, _A_TEST_ROUND)
+#: Bytes of the files a command could change that are kept to put back, at most.
+_MOST_HELD_BYTES = 40 * 1024 * 1024
+
+
+def _not_this_stage_s(root: Path, target: Path) -> bool:
+    return bool(_the_harness_s_own_or_the_locked_suite(root, target) or _a_tester_changing_the_product(root, target))
+
+
+def _workspace_files(root: Path) -> list[Path]:
+    from app.tools.sandbox import _RUNNER_OUTPUT_DIRECTORIES
+
+    found: list[Path] = []
+    for directory, subdirectories, files in os.walk(root):
+        subdirectories[:] = [
+            name for name in subdirectories
+            if name not in IGNORED_DIRECTORIES and name not in _RUNNER_OUTPUT_DIRECTORIES and not name.startswith(".")
+        ]
+        found.extend(Path(directory) / name for name in files if not name.startswith("."))
+    return found
+
+
+def _ignored_by_git(root: Path, relatives: list[str]) -> set[str]:
+    import subprocess
+
+    if not relatives:
+        return set()
+    try:
+        done = subprocess.run(["git", "-C", str(root), "check-ignore", "--stdin"], input="\n".join(relatives),
+                              capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {line.strip() for line in done.stdout.splitlines() if line.strip()}
+
+
+def what_a_command_may_not_change(repo_root: str | Path) -> dict[str, bytes] | None:
+    """The files the running stage may not write, as they are now - to put back after its command; None when not held.
+
+    The file tools refuse a write outside the stage's own files, and a command
+    did not: one run's acceptance writer, refused product code a dozen ways,
+    ran `python3 -c "open('notes_api/storage.py', 'w').write(...)"`, which the
+    sandbox ran - failing only on the folder it was run from. Only for the
+    stages that never run beside a builder; files the project ignores (reports,
+    data, caches) are left to the command. Never raises.
+    """
+    try:
+        from app.observability.transcript import _stage_from_config
+
+        stage = str(_stage_from_config("") or "")
+        if not stage.startswith(_COMMANDS_HELD_TO_THE_LINE):
+            return None
+        root = _normalize_repo_root(repo_root)
+        candidates = {path.relative_to(root).as_posix(): path for path in _workspace_files(root) if _not_this_stage_s(root, path)}
+        ignored = _ignored_by_git(root, sorted(candidates))
+        held: dict[str, bytes] = {}
+        total = 0
+        for relative, path in candidates.items():
+            if relative in ignored:
+                continue
+            data = path.read_bytes()
+            total += len(data)
+            if total > _MOST_HELD_BYTES:
+                return None
+            held[relative] = data
+        return held
+    except Exception:  # noqa: BLE001 - the command runs as before
+        logger.debug("Could not hold the files a command may not change", exc_info=True)
+        return None
+
+
+def put_back_what_a_command_changed(repo_root: str | Path, held: dict[str, bytes], since: float) -> list[str]:
+    """Put back each held file the command changed or removed, and remove what it made that is not the stage's; what it did. Never raises."""
+    done: list[str] = []
+    try:
+        root = _normalize_repo_root(repo_root)
+        for relative, data in held.items():
+            path = root / relative
+            try:
+                now = path.read_bytes()
+            except FileNotFoundError:
+                now = None
+            if now != data:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+                done.append(relative)
+        made = [path for path in _workspace_files(root)
+                if path.relative_to(root).as_posix() not in held and path.stat().st_mtime > since
+                and _not_this_stage_s(root, path)]
+        ignored = _ignored_by_git(root, [path.relative_to(root).as_posix() for path in made])
+        for path in made:
+            relative = path.relative_to(root).as_posix()
+            if relative not in ignored:
+                path.unlink()
+                done.append(f"{relative} (made by the command)")
+    except Exception:  # noqa: BLE001 - what could not be put back is left as it is
+        logger.warning("Could not put back what a command changed", exc_info=True)
+    return done
+
 def _the_harness_s_own_or_the_locked_suite(root: Path, target: Path) -> str | None:
     """The refusal for a change to the harness's records or the acceptance suite, or None.
 

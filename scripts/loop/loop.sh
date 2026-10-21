@@ -209,9 +209,11 @@ rewind)
     echo "paused $run after ${waited}s ($(jst +%H:%M) JST): $(status)"
   fi
   [ "$stage" = "--pause-only" ] && exit 0
-  checkpoint=$(curl -s "$API/api/runs/$run/rewind-points" -H "Authorization: Bearer $token" |
+  # Timeouts on both calls (plan OP.4): listing the points of a long run took
+  # minutes, and a call with none waited on a server that had stopped answering.
+  checkpoint=$(curl -s -m "${REWIND_TIMEOUT:-600}" "$API/api/runs/$run/rewind-points" -H "Authorization: Bearer $token" |
                "$PY" "$HERE/rewind_point.py" "$stage" "${4:-}") || exit 1
-  answer=$(curl -s -w '\n%{http_code}' -X POST "$API/api/runs/$run/rewind" -H "Authorization: Bearer $token" \
+  answer=$(curl -s -m "${REWIND_TIMEOUT:-600}" -w '\n%{http_code}' -X POST "$API/api/runs/$run/rewind" -H "Authorization: Bearer $token" \
        -H "Content-Type: application/json" -d "{\"checkpoint_id\": \"$checkpoint\"}")
   code=$(echo "$answer" | tail -n 1)
   echo "$answer" | sed '$d'; echo
@@ -308,6 +310,10 @@ stage)
   ;;
 
 deploy)
+  # One deploy at a time (plan OP.4): two sessions deploying at once left
+  # containers stuck at `Created`.
+  exec 9>"$STATE/deploy.lock"
+  flock -n 9 || { echo "another deploy is running (lock $STATE/deploy.lock); not starting a second" >&2; exit 1; }
   echo "live runs before deploy (they will be resumed by orphan recovery):"
   "${DB[@]}" "select run_id, status from runs where status in ('running','queued','pending')"
   # Built from a clean checkout of HEAD, never the working tree: another
@@ -374,7 +380,45 @@ deploy)
 
 freshness) "$PY" "$HERE/pack_freshness.py" ;;
 lessons) shift; in_worker lessons.py "${@:-3}" ;;
+backup)
+  # The run database and the lessons, kept under data/backups/<date> (plan OP.3).
+  # `backup --check` restores the newest into a scratch database and counts its runs:
+  # a backup nobody has restored is a hope, not a backup.
+  if [ "${2:-}" = "--check" ]; then
+    dump=$(ls -1d data/backups/*/ 2>/dev/null | sort | tail -1)
+    [ -n "$dump" ] && [ -f "$dump/langchain.dump" ] || { echo "no backup to check" >&2; exit 1; }
+    scratch="restore_check_$(date +%s)"
+    docker exec langchain-db-1 psql -U postgres -qc "create database $scratch" >/dev/null
+    docker exec -i langchain-db-1 pg_restore -U postgres --no-owner -d "$scratch" < "$dump/langchain.dump" >/dev/null 2>&1
+    restored=$(docker exec langchain-db-1 psql -U postgres -d "$scratch" -tAc "select count(*) from runs" 2>/dev/null | tr -d '[:space:]')
+    live=$("${DB[@]}" "select count(*) from runs" | tr -d '[:space:]')
+    docker exec langchain-db-1 psql -U postgres -qc "drop database $scratch" >/dev/null
+    echo "restore check of $dump: ${restored:-0} run(s) restored, ${live:-?} in the live database"
+    [ "${restored:-0}" -gt 0 ] || exit 1
+    exit 0
+  fi
+  dir="data/backups/$(date +%F)"
+  mkdir -p "$dir"
+  # Custom format, compressed: the checkpoint tables dumped as plain SQL came to 15 GB.
+  docker exec langchain-db-1 pg_dump -U postgres -d langchain --no-owner -Fc > "$dir/langchain.dump.tmp" && mv "$dir/langchain.dump.tmp" "$dir/langchain.dump"
+  docker cp langchain-worker-1:/app/data/lessons.json "$dir/lessons.json" >/dev/null 2>&1 || true
+  # Three days kept.
+  ls -1d data/backups/*/ 2>/dev/null | sort | head -n -3 | xargs -r rm -rf
+  echo "backup -> $dir ($(du -sh "$dir" | cut -f1))"
+  ;;
+restore)
+  # Into a database of its own, never over the live one (plan OP.3):
+  #   loop.sh restore data/backups/<date> <new-database>
+  # then point DATABASE_URL at it, or rename it over the live one by hand.
+  src="${2:?usage: loop.sh restore <backup-dir> <new-database>}"; target="${3:?name a new database to restore into}"
+  [ "$target" != "langchain" ] || { echo "not over the live database; name a new one" >&2; exit 1; }
+  docker exec langchain-db-1 psql -U postgres -qc "create database $target" && \
+    docker exec -i langchain-db-1 pg_restore -U postgres --no-owner -d "$target" < "$src/langchain.dump" >/dev/null && \
+    echo "restored $src into database $target"
+  ;;
 nightly)
+  # The backup first, live run or not: it reads the database and touches nothing else.
+  "$0" backup | tee -a "$STATE/nightly.log"
   # Never beside a live run: scaffolding 27 packs competes for its memory and CPU.
   live=$("${DB[@]}" "select count(*) from runs where status in ('running','queued','pending')")
   if [ "${live:-1}" != "0" ]; then echo "$(jst '+%F %H:%M JST') nightly skipped: a run is live" | tee -a "$STATE/nightly.log"; exit 0; fi

@@ -243,6 +243,18 @@ def _sweep_for_abandoned_runs() -> None:
                 )
             except Exception:  # noqa: BLE001 - a sweep must never take a worker down
                 logger.warning("Second orphan sweep failed", exc_info=True)
+            # And a run an earlier recovery left failed whose resume was lost
+            # (plan OP.1): no sweep reads failed rows otherwise.
+            try:
+                from app.server.manage import resume_runs_a_restart_abandoned, runs_a_restart_left_failed
+                from app.server.run_store import RunStore
+
+                left = runs_a_restart_left_failed(RunStore.shared().list_all(limit=500))
+                if left:
+                    logger.info("Resuming %d run(s) a restart left failed: %s", len(left), ", ".join(left))
+                    resume_runs_a_restart_abandoned(left)
+            except Exception:  # noqa: BLE001 - a sweep must never take a worker down
+                logger.warning("Could not resume the runs a restart left failed", exc_info=True)
             return
         except Exception:  # noqa: BLE001 - a sweep must never take a worker down
             logger.warning("Could not recover abandoned runs", exc_info=True)

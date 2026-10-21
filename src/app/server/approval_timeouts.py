@@ -75,3 +75,7 @@ async def sweep_for_ever(runner: Any) -> None:
             await approve_what_is_due(runner)
         except Exception:  # noqa: BLE001 - a sweep never takes the server down
             logger.warning("The approval-timeout sweep failed", exc_info=True)
+        # And stalls and long gates, told to a webhook and an email (plan OP.2).
+        from app.server.stall_notices import notify_what_is_stalled
+
+        await notify_what_is_stalled(runner)

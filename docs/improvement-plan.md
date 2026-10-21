@@ -3912,10 +3912,10 @@ browser only; no backup of Postgres or `runs.db` exists (OS.8 mirrors the object
 
 | ID | Change | Group | Priority | Status |
 |---|---|---|---|---|
-| OP.1 | Resume on boot: the worker's orphan recovery also re-creates its own schedules and resumes runs it finds paused by a restart, so a power loss needs no hand | 1 — now | P1 | PROPOSED |
-| OP.2 | Stall detector and notifications: a run `running` with no model or tool activity for N minutes, or a gate waiting longer than M minutes, posts to a webhook URL and an email (`NOTIFY_WEBHOOK_URL`, `NOTIFY_EMAIL`); the browser notification stays | 1 — now | P1 | PROPOSED |
-| OP.3 | Nightly `pg_dump` and a copy of `runs.db` and `lessons.json` to the object store (or `./data/backups` until OS lands), with a restore command in `manage.py` and a tested restore | 1 — now | P1 | PROPOSED |
-| OP.4 | `loop.sh deploy` takes a lock and refuses a second concurrent deploy; `loop.sh rewind` has a timeout and takes a stage name, resolving the checkpoint itself | 1 — now | P2 | PROPOSED |
+| OP.1 | Resume on boot: the worker's orphan recovery also re-creates its own schedules and resumes runs it finds paused by a restart, so a power loss needs no hand | 1 — now | P1 | BUILT 2026-10-21: the worker's startup sweep also resumes a run recovery marked failed for a stopped worker within the last 12 hours whose resume was lost (`manage.runs_a_restart_left_failed`); a paused run, or one failed for any other reason, is never touched. Schedules: the API's once-a-minute sweep carries OP.2; the loop's crons stay in the operator session |
+| OP.2 | Stall detector and notifications: a run `running` with no model or tool activity for N minutes, or a gate waiting longer than M minutes, posts to a webhook URL and an email (`NOTIFY_WEBHOOK_URL`, `NOTIFY_EMAIL`); the browser notification stays | 1 — now | P1 | BUILT 2026-10-21: `server/stall_notices.py`, in the API's minute sweep: a running run whose transcript has been quiet `STALL_MINUTES` (20), or a gate waiting `GATE_NOTICE_MINUTES` (30), is sent once to `NOTIFY_WEBHOOK_URL` (JSON) and `NOTIFY_EMAIL` (with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`); nothing is sent when neither is set |
+| OP.3 | Nightly `pg_dump` and a copy of `runs.db` and `lessons.json` to the object store (or `./data/backups` until OS lands), with a restore command in `manage.py` and a tested restore | 1 — now | P1 | BUILT 2026-10-21: `loop.sh backup` (compressed `pg_dump` - 1.8 GB against 15 GB as plain SQL - and `lessons.json`, three days kept), run by `loop.sh nightly` even beside a live run; `loop.sh backup --check` restores the newest into a scratch database and counts its runs (272 of 272 on 2026-10-21); `loop.sh restore <dir> <new-database>` never restores over the live one |
+| OP.4 | `loop.sh deploy` takes a lock and refuses a second concurrent deploy; `loop.sh rewind` has a timeout and takes a stage name, resolving the checkpoint itself | 1 — now | P2 | BUILT 2026-10-21: `loop.sh deploy` takes a lock (`data/loop/deploy.lock`) and refuses a second; `loop.sh rewind <stage>` already resolved the checkpoint from a stage name, and both its calls now time out (`REWIND_TIMEOUT`, 600 s) |
 
 <a id="plan-ch"></a>
 ### CH — Harness code health, the cheap part now
@@ -4749,10 +4749,10 @@ the item: what it changes, why, and the evidence (review findings in
 | BW.3 | brownfield benchmark family | P1 | PROPOSED 2026-10-21 (group 1, now) | [BW](#plan-bw) |
 | PN.1 | dependency audit, secret scan and licence listing on the product, as pack data | P2 | PROPOSED 2026-10-21 (group 2) | [PN](#plan-pn) |
 | PN.2 | README and API summary as required release artifacts | P2 | PROPOSED 2026-10-21 (group 2) | [PN](#plan-pn) |
-| OP.1 | resume on boot, schedules re-created by the worker | P1 | PROPOSED 2026-10-21 (group 1, now) | [OP](#plan-op) |
-| OP.2 | stall detector; webhook and email notifications for stalls and gates | P1 | PROPOSED 2026-10-21 (group 1, now) | [OP](#plan-op) |
-| OP.3 | nightly Postgres and runs.db backup with a tested restore | P1 | PROPOSED 2026-10-21 (group 1, now) | [OP](#plan-op) |
-| OP.4 | deploy lock; rewind by stage name with a timeout | P2 | PROPOSED 2026-10-21 (group 1, now) | [OP](#plan-op) |
+| OP.1 | resume on boot, schedules re-created by the worker | P1 | BUILT 2026-10-21 (group 1) | [OP](#plan-op) |
+| OP.2 | stall detector; webhook and email notifications for stalls and gates | P1 | BUILT 2026-10-21 (group 1) | [OP](#plan-op) |
+| OP.3 | nightly Postgres and runs.db backup with a tested restore | P1 | BUILT 2026-10-21 (group 1) | [OP](#plan-op) |
+| OP.4 | deploy lock; rewind by stage name with a timeout | P2 | BUILT 2026-10-21 (group 1) | [OP](#plan-op) |
 | CH.1 | delete root clutter | P2 | PROPOSED 2026-10-21 (group 1, now) | [CH](#plan-ch) |
 | CH.2 | CI: xdist, ruff, pyright, Dependabot | P2 | PROPOSED 2026-10-21 (group 1, now) | [CH](#plan-ch) |
 | CH.3 | skips and xfails named and owned; flaky test fixed | P3 | PROPOSED 2026-10-21 (group 1, now) | [CH](#plan-ch) |

@@ -273,6 +273,44 @@ def _worker_ran_out_of_memory() -> bool:
 _RESUMED_ON_START: set[str] = set()
 
 
+#: The words recovery writes on a run its worker abandoned. See `recover_orphaned_runs`.
+STOPPED_WORKER_MARKER = "The worker running this stage stopped without finishing"
+
+#: How recent a run a restart left failed must be for a starting worker to resume it.
+RESTART_RESUME_WINDOW_HOURS = 12
+
+
+def runs_a_restart_left_failed(records: list, *, within_hours: float = RESTART_RESUME_WINDOW_HOURS) -> list[str]:
+    """Runs recovery marked failed for a stopped worker, recently, that nothing resumed (plan OP.1).
+
+    Recovery marks such a run failed and resumes it - and when that resume was
+    lost (the broker restarted with the host, or the worker died before it
+    claimed the task) no later sweep looks at it again: sweeps read `running`
+    rows only. The handover told the operator to `POST /resume` by hand after
+    every host restart. Only a run with recovery's own words, failed within
+    `within_hours` and not asked to cancel: a paused run is someone's decision
+    and is never touched, nor is a run failed for any other reason.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    since = datetime.now(timezone.utc) - timedelta(hours=within_hours)
+    found = []
+    for record in records:
+        if record.status != "failed" or not str(record.error or "").startswith(STOPPED_WORKER_MARKER):
+            continue
+        if getattr(record, "cancel_requested", False):
+            continue
+        try:
+            when = datetime.fromisoformat(str(record.updated_at))
+        except (TypeError, ValueError):
+            continue
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        if when >= since:
+            found.append(record.run_id)
+    return found
+
+
 def resume_runs_a_restart_abandoned(run_ids: list[str]) -> int:
     """Put runs their worker abandoned back on the queue. Never raises.
 

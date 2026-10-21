@@ -6,16 +6,16 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-21 15:00 JST. Times are JST; containers and transcripts log UTC.
+**As of:** 2026-10-21 15:15 JST. Times are JST; containers and transcripts log UTC.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | **run-f4f0030b** - gate run 3, `tests/brief_medium.md`, `DELIVERY=fast FRONTIER=false`, started 07:25 JST |
-| Where | sprint 1, test round 2's fixes (`defect_fix_2_5`); last measured 1 of 13 criteria, 5 of 34 tests |
-| Rule for this run | the old one: verified fixes are deployed into it and it is rewound (`loop.sh deploy`, `loop.sh resumed`) |
-| Deployed | worker image built 03:24 UTC (LF.137); LF.138 and MF.1/MF.3/MF.5 are waiting on a stage boundary |
+| Run | none. Gate run 3 (run-f4f0030b) was stopped at 15:08 JST at the owner's word: little left to learn on the old model |
+| Model | **LFM2.5-24B-A2B** (owner's switch, 15:08 JST): 3 slots, 131,072 tokens as started; the owner's 186,000 setting is capped at the slot by `context_budget` |
+| LFM measured | `loop.sh fitness --edits`: FIT 5/5, edits and whole files 100% well formed; `reasoning-probe run`: it reasons (about 2.3-3.3k output tokens a planning reply), no thinking switch turns that off (`thinking_off` -27%, reasoning still present) |
+| Deployed | worker image 3129aa1 (LF.138, MF.1/MF.3/MF.5); RC, OP, CH, IN.2, BW.3, LF.139-LF.140 are on the branch, not yet deployed |
 | Owner's model settings | reply ceiling 0 (none), context window 186,000, thinking default - the owner's; never changed by the loop |
 | Peer sessions | none drive this workspace; this session is the only one that edits, deploys and starts runs |
 
@@ -33,7 +33,7 @@ Each module's `ON_BY_DEFAULT` turns its items on for the before/after runs.
 
 | Run | Brief | Result |
 |---|---|---|
-| run-f4f0030b | brief_medium | live (above); reminders specified and built this time |
+| run-f4f0030b | brief_medium | stopped at 15:08 JST in test round 2's fixes: 367 min, 383 calls, 1.66M output tokens, 13 fix stages, 1 of 13 criteria (5 of 34 tests); a findings run (LF.119-LF.140) |
 | run-d48f049e | brief_medium | completed, acceptance 34/34, unit 30/30; 59% of its lines unreached (LF.120 built after it) |
 | run-b7a20bad | brief_medium | failed after 4 attempts, acceptance 0/31; a findings run (LF.91-LF.107) |
 
@@ -41,17 +41,10 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
 
 ## Next actions
 
-1. Watch run 3 to its end: the 10-minute audit and the 90-minute deep analysis (crons in this session).
-2. When it ends: `loop.sh kpi <run>`, `loop.sh product <run>`, the product review doc
-   (Claude Docs `0ba22658-e6f1-4b33-adbd-87c6cac83dae`), the run's row in the monitoring log.
-3. **Then the Measure/Fix cycle starts (MF.4, owner 14:25 JST):** freeze the SHA; two gate
-   runs on **`benchmarks/tasks-api/brief.md`** (MF.2, owner), `DELIVERY=fast FRONTIER=false`,
-   no deploys into them; score each with `loop.sh score <run> tasks-api`. A bug found is filed
-   for the Fix batch, not deployed. A fix batch that moves no hidden score or MF.3 KPI is parked.
-4. Building now, group 1 of Appendix 7 in order: MF.6 (this file) -> RC.1-RC.3 -> OP.1-OP.4 ->
-   CH.1-CH.3 -> IN.2, BW.3, EV.1, SF.1-SF.2. Done: MF.1, MF.3, MF.5, MF.6, RC.1-RC.3, OP.1-OP.4, CH.1-CH.3, IN.2, BW.3.
-5. Group 2 next after the measured runs, behind switches: PH.3, PH.1, CG.1-CG.2, RL.1-RL.3,
-   IN.1, BW.1-BW.2, PN.1-PN.2, EV.2, the rest of AY. M.4 (fix-stage reasoning) is the owner's call.
+1. Deploy HEAD - the frozen SHA for the Measure cycle; then `loop.sh corpus harvest` run 3 (its image lacked the corpus) and the product review doc (Claude Docs `0ba22658-e6f1-4b33-adbd-87c6cac83dae`).
+2. **Measure (MF.4, MF.2):** two gate runs on **`benchmarks/tasks-api/brief.md`** on LFM2.5, `DELIVERY=fast FRONTIER=false`, no deploys into them; score each with `loop.sh score <run> tasks-api`. A bug found is filed for the Fix batch, not deployed.
+3. Group 1 of Appendix 7 left: SF.1, SF.2, EV.1 (done: MF.1-MF.6, RC.1-RC.3, OP.1-OP.4, CH.1-CH.3, IN.2, BW.3). Built on the branch while Measure runs on the frozen image.
+4. Group 2 next, behind switches: PH.3, PH.1, CG.1-CG.2, RL.1-RL.3, IN.1, BW.1-BW.2, PN.1-PN.2, EV.2, the rest of AY. M.4 (fix-stage reasoning) is the owner's call - on LFM the replies are a tenth of Qwen's, so it may not be needed.
 
 ## Measuring
 

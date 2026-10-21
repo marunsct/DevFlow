@@ -76,6 +76,10 @@ current() { cat "$STATE/current_run.txt" 2>/dev/null || { echo "no current run: 
 in_worker() { local script=$1; shift; docker compose exec -T worker python - "$@" < "$HERE/$script"; }
 jst() { TZ=Asia/Tokyo date "$@"; }
 
+# One group, parsed whole before it runs, that exits inside itself: bash reads a script as it
+# goes, so an edit to this file while a long command runs - a deploy, the suite - would otherwise be
+# read from the old byte offset when the command ends - a syntax error at a random line.
+{
 case "${1:-status}" in
 status)
   run="${2:-$(current)}"
@@ -477,3 +481,5 @@ suite)
 
 *) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 2 ;;
 esac
+exit $?
+}

@@ -102,3 +102,18 @@ def test_two_versions_are_compared_on_two_runs_each_with_their_spread_and_no_mix
     assert ledger.compare_arms(a, b) == ["not compared: 2 and 1 run(s); each arm needs at least 2"]
     lines = ledger.compare_arms(a, [*b, {**b[0], "run": "5", "wall_minutes": "90"}])
     assert any(line.startswith("wall_minutes") and "[100-120]" in line and "[80-90]" in line for line in lines)
+
+
+def test_a_run_whose_first_calls_predate_its_first_segment_is_mixed():
+    """A run begun before provenance existed was read as one version: its earlier hours ran on others."""
+    segment = {"at": "2026-10-21T06:00:00+00:00", "kind": "provenance", "harness_commit": "abc12345",
+               "served_model": "m.gguf", "quantisation": "Q8_0", "switches_on": []}
+    earlier = [
+        {"at": "2026-10-20T22:25:00+00:00", "stage": "intake", "kind": "model_request"},
+        {"at": "2026-10-20T22:26:00+00:00", "stage": "intake", "kind": "model_response"},
+    ]
+
+    row = kpis([*earlier, segment])
+
+    assert row["harness_commits"] == "unknown abc12345" and row["mixed_versions"] is True
+    assert kpis([segment, *earlier])["mixed_versions"] is False

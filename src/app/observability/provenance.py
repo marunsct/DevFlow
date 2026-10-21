@@ -83,6 +83,11 @@ def summary(records: list[dict]) -> dict[str, Any]:
     """The run's provenance from its transcript records, as the KPI row keeps it: scalars only."""
     segments = [r for r in records if r.get("kind") == "provenance"]
     commits = list(dict.fromkeys(str(r.get("harness_commit") or UNKNOWN) for r in segments))
+    # Model calls before the first segment ran on a version nothing recorded - a run begun
+    # before provenance existed, or a segment that failed to write - so it is not one version.
+    first = next((i for i, r in enumerate(records) if r.get("kind") == "provenance"), len(records))
+    if any(r.get("kind") in ("model_request", "model_response") for r in records[:first]):
+        commits = list(dict.fromkeys([UNKNOWN, *commits]))
     last = segments[-1] if segments else {}
     switches = sorted({name for r in segments for name in (r.get("switches_on") or [])})
     return {

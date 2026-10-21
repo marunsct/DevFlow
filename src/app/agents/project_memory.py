@@ -340,12 +340,36 @@ def enabled() -> bool:
     return str(os.environ.get("PROJECT_MEMORY") or "").strip().lower() not in ("0", "off", "false", "no")
 
 
-def _with_memory(messages: list[Any], memory: str) -> list[Any] | None:
-    """`messages` with `memory` at the start of the opening request, or None if there is none to put it in."""
+#: Files named in the line that closes the opening request, at most.
+MOST_HELD_NAMED = 30
+
+
+def files_held_line(held: Any) -> str:
+    """The line closing the opening request: the files the memory holds whole, or "" for none.
+
+    The memory opens the request and the request can run to 70,000 tokens
+    after it; by its end the model read files it held. Measured on one gate
+    run: 24 of 142 tool-calling replies did nothing but read files the memory
+    held - every review's and the lead's first move - each a model call and
+    its reasoning, answered with a pointer. Named again at the end, where the
+    model is about to act. Fixed for the visit, so the prompt stays cached.
+    """
+    names = [str(n) for n in held or () if not str(n).startswith(".")]
+    if not names:
+        return ""
+    shown = ", ".join(f"`{n}`" for n in names[:MOST_HELD_NAMED]) + (
+        f" and {len(names) - MOST_HELD_NAMED} more" if len(names) > MOST_HELD_NAMED else "")
+    return (f"\n\n[Already in front of you, whole and current, in the project memory at the start of this "
+            f"message: {shown}. Reading any of them returns nothing new; work from the memory.]")
+
+
+def _with_memory(messages: list[Any], memory: str, held: Any = ()) -> list[Any] | None:
+    """`messages` with `memory` at the start of the opening request and the files it holds named at its end, or None if there is none to put it in."""
     from langchain_core.messages import HumanMessage
 
     from app.observability.transcript import MEMORY_CHARS
 
+    closing = files_held_line(held)
     for index, message in enumerate(messages):
         if getattr(message, "type", None) == "human" and isinstance(getattr(message, "content", None), str):
             # How much of the message is memory, for the transcript's record of
@@ -353,11 +377,11 @@ def _with_memory(messages: list[Any], memory: str) -> list[Any] | None:
             marked = {**(getattr(message, "additional_kwargs", None) or {}), MEMORY_CHARS: len(memory) + 2}
             return [
                 *messages[:index],
-                HumanMessage(content=memory + "\n\n" + message.content, additional_kwargs=marked),
+                HumanMessage(content=memory + "\n\n" + message.content + closing, additional_kwargs=marked),
                 *messages[index + 1:],
             ]
         if isinstance(message, dict) and message.get("role") == "user" and isinstance(message.get("content"), str):
-            return [*messages[:index], {**message, "content": memory + "\n\n" + message["content"]}, *messages[index + 1:]]
+            return [*messages[:index], {**message, "content": memory + "\n\n" + message["content"] + closing}, *messages[index + 1:]]
     return None
 
 
@@ -481,7 +505,7 @@ def build_project_memory_middleware(repo_root: str) -> Any:
 
                     for held_path, held_content in held.items():
                         remember_if_unseen(held_path, held_content)
-                changed = _with_memory(messages, memory) if memory else None
+                changed = _with_memory(messages, memory, list(held)) if memory else None
                 if changed is not None:
                     note = changes_since(visit.get("files") or {}, current(repo_root))
                     if note:

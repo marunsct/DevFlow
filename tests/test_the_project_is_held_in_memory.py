@@ -80,7 +80,7 @@ def test_each_call_gets_it_and_a_read_of_what_it_holds_is_a_pointer(workspace):
 
     middleware.wrap_model_call(Request(messages=[HumanMessage(content="Build it")], model=None),
                                lambda request: seen.append(request.messages))
-    assert seen[0][0].content.startswith("[Project memory") and seen[0][0].content.endswith("Build it")
+    assert seen[0][0].content.startswith("[Project memory") and "Build it" in seen[0][0].content and seen[0][0].content.endswith("work from the memory.]")
 
     read = SimpleNamespace(tool_call={"name": "read_file", "id": "r1", "args": {"file_path": "notes-api/src/store.ts"}})
     pointer = middleware.wrap_tool_call(read, lambda request: "the file again")

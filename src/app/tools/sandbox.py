@@ -3327,6 +3327,27 @@ def _the_first_runner_s_totals(text: str) -> dict:
     return {}
 
 
+#: Said when a test command answers as it did last time and nothing has changed since.
+#: Measured on a gate run: a fixer ran one test command twice in a row, then
+#: another three times, each the same result, with 4,000-20,000 tokens of
+#: reasoning "to reproduce the failure" between runs - the guard against a
+#: call repeated with the same answer waits for four in a row.
+SAME_RESULT_NOTHING_CHANGED = (
+    "\n\n[The same result as this command gave here at {at} UTC - {passed} of {tests} passed - and no "
+    "file has changed since. Running it again cannot show anything new: change what the failure "
+    "names, or give your answer.]"
+)
+
+
+def _nothing_changed_since(repo_root: str, at: Any) -> bool:
+    """Whether no file of the workspace changed after the moment `at` (an ISO time); False when it cannot tell."""
+    try:
+        moment = datetime.fromisoformat(str(at)).timestamp()
+    except (TypeError, ValueError):
+        return False
+    return not files_changed_since(repo_root, moment)
+
+
 def _fewer_pass_than_last_time(
     repo_root: str, command: Sequence[str], working_directory: str | None, result: dict
 ) -> str:
@@ -3359,6 +3380,9 @@ def _fewer_pass_than_last_time(
                 continue
             if "passed" not in entry or "tests" not in entry:
                 continue
+            if (now["passed"], now["tests"]) == (entry["passed"], entry["tests"]) and _nothing_changed_since(repo_root, entry.get("at")):
+                return SAME_RESULT_NOTHING_CHANGED.format(
+                    at=str(entry.get("at") or "")[11:16], passed=now["passed"], tests=now["tests"])
             if now["passed"] >= entry["passed"] and now["tests"] >= entry["tests"]:
                 return ""
             

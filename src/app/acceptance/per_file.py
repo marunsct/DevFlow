@@ -34,10 +34,30 @@ def _the_command_for(argv: Sequence[str], file: str, directory: str, pattern: st
     return command
 
 
+def _its_own_tests(report: Path, naming: set[str]) -> str:
+    """`finished` when every test in the file's report that carries one of `naming` passed, `failed` when one did not; "" when none carries one.
+
+    A file holds tests of several criteria. Judged by its exit code, a defect
+    whose own tests passed stayed open while a sibling test of another
+    criterion failed - measured on a gate run: AC-9's six tests passed, the
+    file also held a later sprint's AC-8 test, and AC-9 was left open each
+    round its fix was measured.
+    """
+    from app.acceptance import junit
+
+    # By the test's own name: its suite is the file, and a file named for
+    # several criteria would give each of its tests every one of them.
+    own = [t for t in junit.read(report).tests if set(junit.tags_in(t.name)) & naming]
+    if not own:
+        return ""
+    return "finished" if all(t.outcome in ("passed", "skipped") for t in own) else "failed"
+
+
 def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, naming: set[str] | None = None) -> list[dict[str, str]]:
     """Each acceptance file's own run: its path, `finished`/`failed`/`hung`, and the end of its output.
 
-    `naming`: only the files whose text names one of these (criterion ids, for one defect's check).
+    `naming`: only the files whose text names one of these (criterion ids, for one defect's check),
+    each judged by its tests that carry one of them (`_its_own_tests`) when its report says.
     """
     project = str(record.get("project") or "")
     directory = str(record.get("acceptance_dir") or "")
@@ -56,13 +76,21 @@ def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, nam
                 continue
             if not any(name in text for name in naming):
                 continue
+        report = Path(repo_root) / project / str(record.get("acceptance_report") or "") if record.get("acceptance_report") else None
+        if naming is not None and report is not None:
+            from app.acceptance import junit
+
+            junit.clear(report)
         outcome = run(_the_command_for(argv, relative, directory, pattern), "probe", project) or {}
         output = (str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "") + str(outcome.get("error") or ""))
         code = str(outcome.get("returncode", ""))
         hung = code == "124" or "timed out" in output.lower()
+        verdict = "finished" if code == "0" else "failed"
+        if naming is not None and not hung and report is not None:
+            verdict = _its_own_tests(report, naming) or verdict
         found.append({
             "file": f"{project}/{relative}" if project else relative,
-            "outcome": "hung" if hung else ("finished" if code == "0" else "failed"),
+            "outcome": "hung" if hung else verdict,
             "output": output.strip()[-MOST_OUTPUT_CHARACTERS:],
         })
     return found

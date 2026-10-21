@@ -693,6 +693,12 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         never_started = the_product_did_not_start(output, repo_root)
         if never_started:
             result.problem = never_started
+    else:
+        # Every test ran and each that failed did so because the service it
+        # starts never came up: the same one cause (`every_failure_is_the_start`).
+        never_started = every_failure_is_the_start(report, repo_root)
+        if never_started:
+            result.problem = never_started
     result.runtime_problems, result.shows = _read_runtime_report(runtime_file)
     result.phone_overflow = _read_phone_overflow(runtime_file)
     result.overlaps, result.small_targets = _read_layout_findings(runtime_file)
@@ -1122,6 +1128,24 @@ _A_MISSING_SETTING = re.compile(
     r"(?:SECRET|_KEY|TOKEN|PASSWORD|DATABASE_URL)[^\n]{0,40}(?:is not set|is required|must be set|not defined)",
     re.I,
 )
+
+
+def every_failure_is_the_start(report: Any, root: str | Path | None = None) -> str:
+    """The problem to record when every failing test failed because the product never came up; "" otherwise.
+
+    A suite that starts the service per test (a fixture, a `beforeAll`) runs
+    every test, and each fails at its setup with the service's own crash.
+    The check above, asked only when no test ran, never saw it: measured on a
+    gate run, a startup crash in one module (`main.py` calling a function
+    `database.py` does not define) became six criterion defects, six fixers
+    each rewrote their criterion's files, and all six were left open. Tests
+    that need no service may pass; one failure for any other reason means
+    the product started for it, and the failures are its own.
+    """
+    failed = [t for t in getattr(report, "tests", None) or () if t.outcome == "failed"]
+    if not failed or not all(_NEVER_STARTED.search(t.message or "") for t in failed):
+        return ""
+    return the_product_did_not_start(failed[0].message, root)
 
 
 def the_product_did_not_start(output: str, root: str | Path | None = None) -> str:

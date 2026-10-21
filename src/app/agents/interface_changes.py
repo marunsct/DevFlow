@@ -40,12 +40,12 @@ def _before(root: Path, relative: str) -> str:
     return done.stdout if done.returncode == 0 else ""
 
 
-def changes(root: str | Path, changed_files: list[str]) -> list[str]:
-    """One line per changed file whose definitions changed against the last commit. Never raises."""
+def definitions_changed(root: str | Path, changed_files: list[str]) -> dict[str, tuple[list[str], list[str]]]:
+    """Changed file -> (definitions added, definitions removed) against the last commit; files with neither left out. Never raises."""
     from app.analysis.reachability import FAMILIES, _defined, family_of
 
     root = Path(root)
-    lines: list[str] = []
+    found: dict[str, tuple[list[str], list[str]]] = {}
     for relative in [str(f).strip().lstrip("./") for f in changed_files if str(f).strip()][:MOST_FILES]:
         try:
             family = FAMILIES.get(family_of(relative))
@@ -54,9 +54,18 @@ def changes(root: str | Path, changed_files: list[str]) -> list[str]:
                 continue
             after = _defined(path.read_text(encoding="utf-8", errors="replace"), family) if path.is_file() else set()
             before = _defined(_before(root, relative), family)
-            added, removed = sorted(after - before), sorted(before - after)
-            if not added and not removed:
-                continue
+            if after != before:
+                found[relative] = (sorted(after - before), sorted(before - after))
+        except Exception:  # noqa: BLE001 - one file unread is one file fewer
+            logger.debug("Could not read the interface change of %s", relative, exc_info=True)
+    return found
+
+
+def changes(root: str | Path, changed_files: list[str]) -> list[str]:
+    """One line per changed file whose definitions changed against the last commit. Never raises."""
+    lines: list[str] = []
+    for relative, (added, removed) in definitions_changed(root, changed_files).items():
+        try:
             parts = []
             if added:
                 parts.append("added " + ", ".join(f"`{n}`" for n in added[:10]))
@@ -91,4 +100,4 @@ def _names_in(line: str) -> list[str]:
     return re.findall(r"`([^`]+)`", line)[1:]
 
 
-__all__ = ["ON_BY_DEFAULT", "changes", "enabled", "with_them"]
+__all__ = ["ON_BY_DEFAULT", "changes", "definitions_changed", "enabled", "with_them"]

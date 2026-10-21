@@ -456,6 +456,12 @@ def ci_gate(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     if not ci_applies(root):
         return _handing_on(stage="test_and_triage")
     titles = "; ".join(_title(task) for task in _tasks(state)) or "work orders"
+    # Before the commit, while the last commit is the batch's start: two work
+    # orders that disagree on an interface (plan CM.3's parallel half, off).
+    from app.agents import interface_clashes
+
+    clashed = interface_clashes.defects(root, state.get("specialist_outputs") or {}, lambda stage: (
+        interface_clashes.role_of(stage) or _owner_of(state, "")))
     batch = ci.commit(root, f"Work orders: {titles}")
     accepted = ci.load(root, "accepted")
     # The last measurement before this batch, as well as the last accepted
@@ -488,6 +494,7 @@ def ci_gate(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         review_defects=[
             *raised_by("regression", regression_defects(state, lost, after)),
             *raised_by("language service", underlined),
+            *raised_by("interface clash", clashed),
         ],
     )
 

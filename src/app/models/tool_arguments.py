@@ -171,13 +171,28 @@ def _repaired(value: Any, schema: Any, definitions: dict[str, Any], depth: int) 
         return "; ".join(
             f"{key}: {item if isinstance(item, str) else json.dumps(item)}" for key, item in value.items()
         )
+    if (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and "string" in wanted and not wanted & {"integer", "number"}):
+        # A number where a text is wanted - a sprint named by its number among
+        # dependencies the schema keeps as text. Written as text it loses nothing.
+        return str(value)
+    if (isinstance(value, list) and "string" in wanted and "array" not in wanted and value
+            and all(isinstance(item, str) for item in value)):
+        # Lines of text written as a list where the schema wants one text: one
+        # run's sprint plan sent its rollback notes so, six times, and each
+        # answer was refused for it. One line each.
+        return "\n".join(value)
     if isinstance(value, dict):
         for option in options:
             properties = option.get("properties")
             if isinstance(properties, dict):
+                # A field the schema forbids holds nothing it can keep: dropped,
+                # not refused. Only where extra fields are forbidden outright.
+                closed = option.get("additionalProperties") is False
                 return {
                     key: _repaired(item, properties[key], definitions, depth + 1) if key in properties else item
                     for key, item in value.items()
+                    if key in properties or not closed
                 }
         return value
     if isinstance(value, list):

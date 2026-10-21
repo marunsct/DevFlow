@@ -261,6 +261,34 @@ def _without_repeats(payload: Any) -> Any:
     return payload
 
 
+
+def validated_leniently(schema: Any, payload: Any) -> Any:
+    """`payload` as the schema's instance; on a miss, once more with its shapes repaired; raises as validation does.
+
+    An answer written as text never went through the repair a tool call's
+    arguments get (`tool_arguments.with_structure_decoded`): prose where a list
+    is wanted, a list where a line is, a field the schema has no place for. One
+    run's sprint planner wrote a plan with exactly those misses six times, was
+    told each time which fields were wrong, and the run failed with the plan
+    written every time.
+    """
+    try:
+        return schema.model_validate(payload)
+    except Exception:
+        from app.models.tool_arguments import with_structure_decoded
+
+        # Only an answer to this schema is repaired: most of its top-level keys
+        # are the schema's own. Any other object - a `package.json` written as a
+        # file - would lose every key it has and pass as an empty answer.
+        fields = set(getattr(schema, "model_fields", {}) or {})
+        keys = set(payload) if isinstance(payload, dict) else set()
+        if not keys or len(keys & fields) * 2 < len(keys):
+            raise
+        repaired = with_structure_decoded(payload, schema.model_json_schema())
+        if repaired == payload:
+            raise
+        return schema.model_validate(repaired)
+
 def _answer_in(message: Any, schema: Any) -> Any | None:
     """The message content read as an instance of the stage's response schema.
 
@@ -298,7 +326,7 @@ def _answer_in(message: Any, schema: Any) -> Any | None:
     from app.agents.wrapped_answer import unwrapped
 
     try:
-        return schema.model_validate(unwrapped(_without_repeats(payload), schema))
+        return validated_leniently(schema, unwrapped(_without_repeats(payload), schema))
     except Exception:  # noqa: BLE001 - a near-miss is not the answer
         return None
 

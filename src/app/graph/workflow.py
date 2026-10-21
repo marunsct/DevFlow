@@ -1920,7 +1920,9 @@ def _answer_written_into_the_conversation(result: dict[str, Any], schema: Any) -
         from app.agents.wrapped_answer import unwrapped
 
         try:
-            return schema.model_validate(unwrapped(_without_repeats(payload), schema))
+            from app.agents.settled_answer import validated_leniently
+
+            return validated_leniently(schema, unwrapped(_without_repeats(payload), schema))
         except Exception:  # noqa: BLE001 - a near-miss is not the answer
             continue
     return None
@@ -3283,6 +3285,34 @@ def _it_spent_its_whole_output_budget(stage_name: str, attempts: int) -> str:
     )
 
 
+
+def _it_ran_past_its_output_limit(stage_name: str, attempts: int, chars: int) -> str:
+    """The message for a stage whose replies had text and ran to the output limit without an accepted answer.
+
+    Told as the reply that wrote nothing - "spent its entire output budget
+    before writing anything ... no text" - while each of the sprint planner's
+    six replies held 78,000 to 129,000 characters: a plan, then the same plan or
+    a sentence written over and over until the limit. The fix that message names
+    (more output tokens) is the wrong one for a reply that never stops.
+    """
+    tried = (
+        f" This was attempt {attempts} at the stage; the earlier ones ended "
+        "without a structured response too."
+        if attempts > 1
+        else ""
+    )
+    return (
+        f"Agent '{stage_name}' wrote replies that ran to the output limit without an answer the "
+        f"stage's schema accepts: the last was {chars:,} characters, cut off by the limit "
+        f"(`finish_reason: length`).{tried}\n\n"
+        "A reply that runs to the limit with text in it is a model that does not stop - it writes "
+        "its answer and goes on, repeating it or a sentence - or an answer far longer than it "
+        "should be. A higher output limit makes each such reply cost more, not less. Look at the "
+        "last reply in the run's transcript: if it repeats itself, the model server's repetition "
+        "penalty and sampling settings are the place to look; if an answer near its start misses "
+        "the schema, the stage's validation errors say which field."
+    )
+
 #: Stages whose "could not do it" the workflow already has an outcome for: a
 #: defect left open for the next round, a work order returned with blockers.
 _STAGES_THAT_MAY_RETURN_BLOCKED = ("defect_fix_", "specialist_", "test_round_")
@@ -3405,8 +3435,10 @@ def _missing_structured_response(
         if text
         else "It produced no final message at all."
     )
-    if ran_out:
+    if ran_out and not text.strip():
         return _it_spent_its_whole_output_budget(stage_name, attempts)
+    if ran_out:
+        return _it_ran_past_its_output_limit(stage_name, attempts, len(text))
     if "structured response" in text.lower():
         detail += (
             " That message mentions a structured response, so the model most "

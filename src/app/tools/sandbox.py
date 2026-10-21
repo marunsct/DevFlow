@@ -1443,7 +1443,23 @@ def workspace_rooted_arguments(
         # narrow: `/nothing-here/x` and a regex like `/foo/` have no parent
         # here and are left alone.
         if not os.path.exists(candidate) and not os.path.isdir(os.path.dirname(candidate)):
-            continue
+            # A root the model put in front - the sandbox's `/workspace`, which
+            # a command's output shows, or one it invented: the same path less
+            # its first part, when that is there. Measured on one run: a fixer
+            # ran `cat /workspace/notes-api/notes_api/storage.py` and
+            # `ls /workspace/notes-api/notes_api/`, "No such file" each time,
+            # for files the read tools had just shown it under that spelling.
+            parts = [part for part in argument.split("/") if part]
+            if len(parts) < 2:
+                continue
+            candidate = os.path.join(workspace, *parts[1:])
+            try:
+                if os.path.commonpath([os.path.realpath(candidate), workspace]) != workspace:
+                    continue
+            except ValueError:
+                continue
+            if not os.path.exists(candidate):
+                continue
         rewritten[index] = os.path.relpath(candidate, run_in)
     return rewritten
 

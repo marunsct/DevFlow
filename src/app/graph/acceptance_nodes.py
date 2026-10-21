@@ -547,7 +547,13 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         review = update.pop("__acceptance_review__")
         update.pop("stage", None)
         if not review.approved and review.findings:
-            findings = [str(item) for item in review.findings]
+            findings = suite.findings_about_the_suite([str(item) for item in review.findings])
+            if len(findings) < len(review.findings):
+                logger.info(
+                    "QA lead's review: %d of %d finding(s) were about the product, not the tests; not sent back",
+                    len(review.findings) - len(findings), len(review.findings),
+                )
+        if not review.approved and findings:
             from app import delivery
 
             # Fast delivery sends a suite back once; what is still open after

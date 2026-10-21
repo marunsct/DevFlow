@@ -212,6 +212,36 @@ def the_test_that_did_not_finish(repo_root: str | Path, output: str) -> str:
     where, name = tests[marks]
     return f"`{name}` in `{where}`"
 
+
+#: A finding that a test fails because the product does not have something yet.
+_THE_PRODUCT_LACKS = re.compile(
+    r"\b(?:(?:is|are)\s+not\s+(?:yet\s+)?implemented|not\s+yet\s+(?:implemented|built)|"
+    r"(?:fails?|failing|returns?|answers?)\s+(?:with\s+)?(?:a\s+)?404|has\s+not\s+been\s+built)\b",
+    re.I,
+)
+#: A finding about the test itself, which stays whatever else it says.
+_THE_TEST_IS_AT_FAULT = re.compile(
+    r"\b(?:assert\w*|weak|lenient|too\s+loose|wrong\s+(?:thing|criterion|endpoint|status)|contradict\w*|"
+    r"no\s+test|missing\s+(?:a\s+)?test|named?|should\s+(?:check|test|assert|expect)|expects?\s+the\s+wrong|"
+    r"flak\w*|never\s+(?:fails|finishes|returns))\b",
+    re.I,
+)
+
+
+def findings_about_the_suite(findings: list[str]) -> list[str]:
+    """The review findings that are about the tests: one saying only that a test fails because the product lacks it is dropped.
+
+    The suite is written before the product, and its tests are meant to fail
+    now. One run's QA lead sent the suite back with fifteen findings, every one
+    "test_acN fails with 404 because ... is not implemented", and QA, sent back
+    with them, tried again to write the product. A finding that also faults the
+    test - a weak assertion, a wrong name, a contradiction - is kept.
+    """
+    return [
+        finding for finding in findings
+        if not _THE_PRODUCT_LACKS.search(finding) or _THE_TEST_IS_AT_FAULT.search(finding)
+    ]
+
 def coverage(repo_root: str | Path) -> dict[str, list[str]]:
     """Each criterion and change-request id, with the names of the tests that carry it."""
     covered: dict[str, list[str]] = {}

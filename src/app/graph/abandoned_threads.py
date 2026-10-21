@@ -64,12 +64,28 @@ def _key(outer_thread_id: str, stage_name: str) -> str:
     return f"{outer_thread_id}|{stage_name}"
 
 
-def remember(root: str | Path | None, outer_thread_id: str, stage_name: str, inner_thread_id: str) -> None:
+#: The process a note names when its conversation is to be carried on by this
+#: very process: a model call that failed in a way another attempt may fix.
+AFTER_A_TRANSIENT_ERROR = "after-a-transient-model-error"
+
+
+def remember(
+    root: str | Path | None, outer_thread_id: str, stage_name: str, inner_thread_id: str,
+    process: str = PROCESS,
+) -> None:
+    """Write down the conversation a visit runs in.
+
+    `process` is this worker's own unless the conversation is to be carried on
+    by the next entry whoever makes it - `AFTER_A_TRANSIENT_ERROR`. Measured on
+    one run: the model server refused one malformed reply, the stage was
+    retried in a new conversation, and 25 calls of reading, edits and test runs
+    were thrown away, its call budget starting again from nothing.
+    """
     if not root:
         return
     with _LOCK:
         data = _read(root)
-        data[_key(outer_thread_id, stage_name)] = {"thread": inner_thread_id, "process": PROCESS}
+        data[_key(outer_thread_id, stage_name)] = {"thread": inner_thread_id, "process": process}
         _write(root, data)
 
 

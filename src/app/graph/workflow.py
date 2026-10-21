@@ -3635,7 +3635,8 @@ def _run_gated_agent(
         inner_thread_id = cut_off[0] if cut_off else f"{outer_thread_id}:{stage_name}:{uuid.uuid4().hex[:8]}"
         if cut_off:
             logger.warning(
-                "Stage %s was cut off by a stopped worker; carrying on in its own conversation", stage_name,
+                "Stage %s was cut off (a stopped worker or a transient model error); carrying on in its own "
+                "conversation", stage_name,
             )
         abandoned_threads.remember(visit_root, outer_thread_id, stage_name, inner_thread_id)
         # A previous attempt at this stage left what it established. The
@@ -3724,6 +3725,12 @@ def _run_gated_agent(
                 return _handing_on(stage="failed", error=spun)
             retry = _transient_retry_update(state, stage_name, exc)
             if retry is not None:
+                # Another attempt at the call, not at the stage: the retry
+                # carries this conversation on from its last saved step.
+                abandoned_threads.remember(
+                    visit_root, outer_thread_id, stage_name, inner_thread_id,
+                    process=abandoned_threads.AFTER_A_TRANSIENT_ERROR,
+                )
                 return retry
             raise
 

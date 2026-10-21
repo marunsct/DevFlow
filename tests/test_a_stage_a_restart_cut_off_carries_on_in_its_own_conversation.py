@@ -119,3 +119,41 @@ def test_a_decision_with_no_gate_waiting_for_it_starts_the_stage_with_its_reques
     request, thread = agent.calls[0]
     assert request == {"messages": [{"role": "user", "content": "review this"}]}
     assert thread.startswith("outer:architecture_review:") and update["out"] == "answer"
+
+
+def test_after_a_transient_model_error_the_retry_carries_the_conversation_on(tmp_path):
+    """Measured on one run: the model server refused one malformed reply, the stage was
+    retried in a new conversation, and 25 calls of work were thrown away."""
+
+    class _Flaky(_Agent):
+        def __init__(self):
+            super().__init__()
+            self.failed = False
+
+        def get_state(self, config):
+            if self.calls and config["configurable"]["thread_id"] == self.calls[0][1]:
+                return SimpleNamespace(values={"messages": [1, 2, 3]}, next=("model",))
+            return SimpleNamespace(values={}, next=())
+
+        def invoke(self, request, config=None):
+            self.calls.append((request, config["configurable"]["thread_id"]))
+            if not self.failed:
+                self.failed = True
+                raise RuntimeError("Error code: 500 - {'type': 'server_error'} The model produced output that does not match "
+                                   "the expected peg-native format")
+            return {"messages": [], "structured_response": "answer"}
+
+    agent = _Flaky()
+    state = {"stage": "principal_architect", "repository": SimpleNamespace(root_path=str(tmp_path))}
+
+    first = _run_gated_agent(
+        state, {"configurable": {"thread_id": "outer"}},
+        stage_name="principal_architect", agent=agent, initial_request={"messages": [{"role": "user", "content": "write"}]},
+        output_key="out", next_stage="architecture_review",
+    )
+    assert "out" not in first  # handed back for a retry
+    update = _visit(tmp_path, agent)
+
+    (_, thread), (again, same) = agent.calls
+    assert again is None and same == thread and update["out"] == "answer"
+    assert abandoned_threads._read(tmp_path) == {}

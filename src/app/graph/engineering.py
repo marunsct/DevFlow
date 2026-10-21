@@ -724,6 +724,54 @@ def _its_tests_without_its_product_change(
         return None
 
 
+def _lines_added(root: str, base: str, relative: str) -> set[int] | None:
+    """The line numbers `relative` holds now that it did not at `base`; None for every line (a new file)."""
+    import subprocess
+
+    try:
+        done = subprocess.run(["git", "-C", root, "diff", "-U0", base, "--", relative],
+                              capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if done.returncode != 0:
+        return set()
+    if not done.stdout.strip():
+        # Not in the diff at all: a file `base` never had and git does not track yet.
+        return None
+    added: set[int] = set()
+    for start, count in re.findall(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", done.stdout, re.M):
+        first, many = int(start), int(count) if count else 1
+        added.update(range(first, first + many))
+    return added
+
+
+def what_the_fix_made_certain_to_fail(root: str, base: str) -> list[str]:
+    """What the language service is sure fails when the code runs, on lines the fix wrote; [] when nothing. Never raises."""
+    try:
+        from app.analysis.file_kinds import is_scratch
+        from app.analysis.language_service import ALL_SUFFIXES, underlined_in
+        from app.tools.repository import pinned_project_directory
+        from app.tools.version_control import changed_since
+
+        pinned = pinned_project_directory(Path(root))
+        project = Path(root) / pinned if pinned else None
+        files = [p for p in changed_since(root, base)
+                 if p.lower().endswith(ALL_SUFFIXES) and not is_scratch(Path(p).name)][:MOST_FILES_UNDERLINED]
+        if not files:
+            return []
+        findings = underlined_in(root, files, project, MOST_FILES_UNDERLINED)
+        found = []
+        for relative in files:
+            added = _lines_added(root, base, relative)
+            for finding in findings.get(relative) or []:
+                if added is None or int(finding.get("line") or 0) in added:
+                    found.append(f"`{relative}` line {finding.get('line')}: {finding.get('message')}")
+        return found
+    except Exception:  # noqa: BLE001 - a check that cannot run keeps the fix
+        logger.debug("Could not ask the language service about the fix", exc_info=True)
+        return []
+
+
 def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list[str]:
     """Measure the fix. A fix that broke what passed before it is reverted; returns what it broke."""
     if not base or not ci_applies(root):
@@ -745,6 +793,16 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list
             ci.save(root, kept)
             ci.commit(root, f"Fix, its tests only: {description[:50]}")
             return []
+    elif not after.passing() - (before.passing() if before is not None else set()):
+        # Nothing passed before, so nothing could break, and the fix made
+        # nothing pass: a line it wrote that the language service is sure
+        # fails is all it changed. Measured on a gate run: with every test red
+        # because the service did not start, a fix wrote calls to a function
+        # its module never defined, was kept, and the service then crashed at
+        # start for every later fixer.
+        certain = what_the_fix_made_certain_to_fail(root, base)
+        if certain:
+            broken = ["it wrote code the language service is sure fails when it runs: " + "; ".join(certain[:3])]
     if broken and ci.revert_to(root, base):
         # What the reverted fix had gained as well, so whether a whole fix
         # should go for one broken test can be measured: the snapshot after a

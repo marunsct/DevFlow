@@ -1119,6 +1119,31 @@ def _stages_holding_a_pause(state: Any) -> set[str]:
     return holding
 
 
+def the_round_s_measurement(root: Any) -> str:
+    """What the acceptance suite measured in the round, in counts; "" when it has not run.
+
+    The log said only how many defects a round raised, as "did not report 5
+    failing acceptance criteria"; read as the round's result, a round where
+    the product did not start - every criterion failing, the start failure
+    standing for the rest - looked better than the next, where it started and
+    2 of 13 passed. Measured on one run, by its owner.
+    """
+    try:
+        from app.acceptance import suite
+
+        result = suite.last_result(Path(root)) if root else {}
+    except Exception:  # noqa: BLE001 - a log line is never worth a failure
+        return ""
+    if not result or not result.get("ran"):
+        return "the acceptance suite did not run"
+    criteria = list((result.get("criteria") or {}).values())
+    passing = sum(1 for c in criteria if (c or {}).get("status") == "passed")
+    return (
+        f"the acceptance suite measured {passing} of {len(criteria)} criteria passing "
+        f"({result.get('passed', 0)} of {int(result.get('passed') or 0) + int(result.get('failed') or 0)} tests)"
+    )
+
+
 def _record_the_owners(root: Any, tasks: list[Any]) -> None:
     """Record which stage owns each file the dispatched work orders list; a file two list has none.
 
@@ -9602,9 +9627,10 @@ def build_workflow_graph(
         except Exception:  # noqa: BLE001 - the round's own report stands
             logger.debug("Could not compare the round's report with the acceptance suite", exc_info=True)
             unreported_criteria = []
+        logger.info("test_round_%d: %s", test_round, the_round_s_measurement(state["repository"].root_path))
         if unreported_criteria:
             logger.warning(
-                "test_round_%d did not report %d failing acceptance criteria; recording them as defects",
+                "test_round_%d raised %d defect(s) for failing acceptance criteria its report left out",
                 test_round, len(unreported_criteria),
             )
             reported = reported + raised_by("acceptance suite", unreported_criteria)

@@ -29,6 +29,7 @@ SWITCHES: dict[str, str] = {
     "RELEASE_AUDITS": "app.stacks.release_audits",
     "ASSUMPTIONS_GATE": "app.agents.assumptions",
     "CHANGE_REQUEST_RUNS": "app.server.change_request_runs",
+    "SCREENSHOT_RUBRIC": "app.acceptance.screenshot_rubric",
     "INTERFACE_CHANGES_NAMED": "app.agents.interface_changes",
     "PROJECT_GRAPH_FIXES": "app.analysis.project_graph:fixes_switch",
     "PROJECT_GRAPH_BUILDERS": "app.analysis.project_graph:builders_switch",

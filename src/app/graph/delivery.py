@@ -355,6 +355,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         gaps.append(release_outcome.a_gap)
     if gaps:
         update["completion_gaps"] = gaps
+    # Plan EV.2, off until measured: how the page looks, scored - never a gate.
+    from app.acceptance import screenshot_rubric
+
+    screenshot_rubric.score(root, getattr(ctx, "judgement_model", None), config["configurable"].get(APP_RUN_ID_KEY))
     record_decision(
         state, update, point="release",
         question="Is the product ready to release?",

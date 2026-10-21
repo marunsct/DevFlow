@@ -120,6 +120,13 @@ def _calls_shown_lessons(records: list[dict]) -> int:
         return 0
     return sum(1 for r in records if r.get("kind") == "model_request" and FRAME in json.dumps(r.get("messages") or ""))
 
+def _the_screenshot_rubric(records: list[dict]) -> float | None:
+    """The page's checklist score at release (plan EV.2), or None."""
+    from app.acceptance.screenshot_rubric import from_records
+
+    return from_records(records)
+
+
 def kpis(records: list[dict]) -> dict:
     """The run's KPIs from its transcript records, as the run stands (see `live_branch`)."""
     rewinds = sum(1 for r in records if r.get("kind") == "rewound")
@@ -265,6 +272,7 @@ def kpis(records: list[dict]) -> dict:
         "model_calls": count["model_calls"],
         # Model calls shown approved lessons (plan RL.2): uptake, measured.
         "lessons_shown_calls": _calls_shown_lessons(records),
+        "screenshot_rubric": _the_screenshot_rubric(records),
         "model_errors": count["model_errors"],
         "resumes": count["resumes"],
         "rewinds": rewinds,

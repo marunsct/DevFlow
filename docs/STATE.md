@@ -35,6 +35,7 @@ week are in `docs/archive/`.
 | `ASSUMPTIONS_GATE` | IN.1 open questions answered by recorded assumptions | `app/agents/assumptions.py` |
 | `RELEASE_DOCS_REQUIRED` | PN.2 README with run commands and the routes it serves | `app/stacks/release_docs.py` |
 | `RELEASE_AUDITS` | PN.1 secret scan, licence listing, dependency audit in CI | `app/stacks/release_audits.py` |
+| `SCREENSHOT_RUBRIC` | EV.2 page screenshots scored on a fixed checklist, KPI only | `app/acceptance/screenshot_rubric.py` |
 
 Each module's `ON_BY_DEFAULT` turns its items on for the before/after runs.
 
@@ -53,7 +54,7 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
 1. When gate run 2 ends: `loop.sh score run-aedcd228 tasks-api`, `loop.sh kpi run-aedcd228`, compare with run 1 (`kpi_ledger arms`), and update the end-of-run product review.
 2. Then, with no run live and ALL READY: `loop.sh deploy 20dcdfbe` - **Fix batch 1**: LF.167 a rewriting fix never targets an ignored file; **LF.168 the suite starts a service through its `start.sh`**; LF.169 the architect is told the setup's `start.sh` works; LF.170 a held stage's command is held to its files (gate run 1 was a false acceptance: 0/10 hidden, 10/10 with start.sh restored). Then **Measure pair 2**: two tasks-api runs on that one SHA, no deploys; compare arms 039ad84 vs 20dcdfbe.
 3. **Filed for Fix batch 2** (seen in gate run 2): one fixer ran the same `__pycache__` clean three times in a row with near-identical reasoning (no repeat guard caught it); `find tasks-api` run from inside `tasks-api` (the working directory named again as an argument); redundant reads 56% (healthy 8-19%); the 11-test suite is thin for 16 criteria; dead `models.py`.
-4. Then group 2 as measured switch arms, one subsystem at a time (table above - all built, all off), then the brownfield family `benchmarks/tasks-api-change` (owner 2026-10-21: never stop the testing). Not built: EV.2 screenshot rubric, CM.4, CG.4/CG.5, BH preference, M.4.
+4. Then group 2 as measured switch arms, one subsystem at a time (table above - all built, all off), then the brownfield family `benchmarks/tasks-api-change` (owner 2026-10-21: never stop the testing). Not built: CM.4, CG.4/CG.5, BH preference, M.4.
 
 ## Measuring
 

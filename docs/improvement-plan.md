@@ -3941,7 +3941,7 @@ only for the reviewer); no owner rating is captured per delivered product.
 | ID | Change | Group | Priority | Status |
 |---|---|---|---|---|
 | EV.1 | One-click owner rating (1–5 and a line) on a delivered run, stored with its KPI row; `bench-report` shows it beside the hidden score | 1 — now | P2 | BUILT 2026-10-21: a delivered run's page offers 1-5 and a line (`OwnerRating`); `PUT`/`GET /api/runs/{id}/rating` keep it in `DATA_DIR/ratings/` (only a completed run is rated; rating again replaces it); `loop.sh kpi` writes `owner_rating`/`owner_note` into the KPI row (re-run it after a rating: the row is replaced); `bench-report` shows each benchmark's mean rating and how many were rated beside the hidden score |
-| EV.2 | Screenshot rubric for browser products, judged by the judgement model on a fixed checklist (layout, contrast, empty states, error states), recorded as a score, never as a gate | 2 | P3 | PROPOSED |
+| EV.2 | Screenshot rubric for browser products, judged by the judgement model on a fixed checklist (layout, contrast, empty states, error states), recorded as a score, never as a gate | 2 | P3 | BUILT 2026-10-22 behind `SCREENSHOT_RUBRIC` (off): `app/acceptance/screenshot_rubric.py` - when the judgement model reads images, the release shows it the page probe's screenshots with a fixed 4-item checklist (layout, contrast, empty states, error states); 1-5 per item and the mean go to `.harness/screenshot-rubric.json`, the transcript and KPI `screenshot_rubric`; never a gate |
 
 <a id="plan-sf"></a>
 ### SF — Execution safety
@@ -4758,7 +4758,7 @@ the item: what it changes, why, and the evidence (review findings in
 | CH.3 | skips and xfails named and owned; flaky test fixed | P3 | BUILT 2026-10-21 (group 1) | [CH](#plan-ch) |
 | CH.4 | `workflow.py` split by stage node, no behaviour change | P3 | PROPOSED 2026-10-21 (after the first clean Measure cycle) | [CH](#plan-ch) |
 | EV.1 | owner rating per delivered run beside the hidden score | P2 | PROPOSED 2026-10-21 (group 1, now) | BUILT 2026-10-21 (group 1) |
-| EV.2 | screenshot rubric score for browser products | P3 | PROPOSED 2026-10-21 (group 2) | [EV](#plan-ev) |
+| EV.2 | screenshot rubric score for browser products | P3 | BUILT 2026-10-22 behind `SCREENSHOT_RUBRIC` (off) | [EV](#plan-ev) |
 | SF.1 | registry allowlist for the install category's network | P2 | PROPOSED 2026-10-21 (group 1, now) | BUILT 2026-10-21 (group 1) |
 | SF.2 | fetched text capped and stripped of tool-call shapes | P3 | PROPOSED 2026-10-21 (group 1, now) | BUILT 2026-10-21 (group 1) |
 

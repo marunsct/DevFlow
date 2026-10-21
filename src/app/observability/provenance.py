@@ -25,6 +25,8 @@ SWITCHES: dict[str, str] = {
     "FIX_CYCLE": "app.graph.bounded_fixes",
     "WHERE_THINGS_STAND": "app.agents.where_things_stand",
     "INTERFACE_CHANGES_NAMED": "app.agents.interface_changes",
+    "PROJECT_GRAPH_FIXES": "app.analysis.project_graph:fixes_switch",
+    "PROJECT_GRAPH_BUILDERS": "app.analysis.project_graph:builders_switch",
 }
 
 UNKNOWN = "unknown"
@@ -35,12 +37,19 @@ def harness_commit() -> str:
     return str(os.environ.get("HARNESS_COMMIT") or "").strip() or UNKNOWN
 
 
+def switch(spec: str) -> Any:
+    """The object a `SWITCHES` entry names - a module, or `module:attribute` for one of several in a module."""
+    module, _, attribute = spec.partition(":")
+    loaded = importlib.import_module(module)
+    return getattr(loaded, attribute) if attribute else loaded
+
+
 def switches_on() -> list[str]:
     """The group 2 switches that are on in this process, by name."""
     on = []
     for name, module in SWITCHES.items():
         try:
-            if importlib.import_module(module).enabled():
+            if switch(module).enabled():
                 on.append(name)
         except Exception:  # noqa: BLE001 - a switch that cannot be read is not on
             continue

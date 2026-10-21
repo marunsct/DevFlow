@@ -6,18 +6,17 @@ variable of its name, and listed for the KPI rows.
 """
 from __future__ import annotations
 
-import importlib
 import os
 from unittest import mock
 
 import pytest
 
-from app.observability.provenance import SWITCHES, switches_on
+from app.observability.provenance import SWITCHES, switch, switches_on
 
 
 @pytest.mark.parametrize("name,module", sorted(SWITCHES.items()))
 def test_the_switch_is_off_by_default_and_follows_its_variable(name, module):
-    loaded = importlib.import_module(module)
+    loaded = switch(module)
 
     assert loaded.ON_BY_DEFAULT is False
     with mock.patch.dict(os.environ, {name: ""}):

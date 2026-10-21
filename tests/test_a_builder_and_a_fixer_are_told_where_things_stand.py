@@ -55,4 +55,4 @@ def test_both_requests_carry_it():
     from app.graph import workflow
 
     source = inspect.getsource(workflow.build_workflow_graph)
-    assert source.count("where_things_stand.with_it(request, state") == 2
+    assert source.count("where_things_stand.with_it(request, state") == 3

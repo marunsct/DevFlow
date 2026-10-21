@@ -9420,6 +9420,10 @@ def build_workflow_graph(
             from app.agents import where_things_stand
 
             request = where_things_stand.with_it(request, state, leave_out=stage_name)
+            # Its files' neighbours in the code graph (plan CG.3, off until measured).
+            from app.analysis import project_graph
+
+            request = project_graph.with_the_slice(request, state["repository"].root_path, getattr(task, "files", None) or [])
             update = _run_gated_agent(
                 state,
                 config,
@@ -9487,6 +9491,13 @@ def build_workflow_graph(
         )
         # The facts the work is built and judged under (plan CM.1).
         request = with_the_facts(request, state["repository"].root_path, built=False)
+        # Where the sprint stands, and the work order's slice of the code graph
+        # (plans PH.1, CG.3; off until measured).
+        from app.agents import where_things_stand
+        from app.analysis import project_graph
+
+        request = where_things_stand.with_it(request, state, leave_out=stage_name)
+        request = project_graph.with_the_slice(request, state["repository"].root_path, getattr(task, "files", None) or [])
         
         # A worker may only answer its *own* approval gate.
         #
@@ -10152,6 +10163,11 @@ def build_workflow_graph(
         from app.agents import where_things_stand
 
         request = where_things_stand.with_it(request, state)
+        # The defect's files' neighbours in the code graph (plan CG.2, off until measured).
+        from app.analysis import project_graph
+
+        request = project_graph.with_the_neighbourhood(request, state["repository"].root_path, [
+            *(defect.affected_files or []), *(f for _, d in co_defects for f in (d.affected_files or []))])
         return request, co_defects
 
     def _fixed_by_rewriting(state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0) -> Any:

@@ -142,6 +142,24 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
     return found
 
 
+
+def _the_project_ignores(root: Path, relative: str) -> bool:
+    """Whether the project's own ignore rules exclude the file: a report, a build, a cache - never its source.
+
+    Measured live: two fixes in a row took `test-results/acceptance.xml`,
+    named in the failure text, as the file to rewrite, rewrote the runner's
+    report, and left both defects open. Asked of git, so every stack's own
+    ignore file answers. False when there is no repository to ask.
+    """
+    import subprocess
+
+    try:
+        done = subprocess.run(["git", "-C", str(root), "check-ignore", "-q", "--", relative],
+                              capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0
+
 def _the_files(
     root: Path, named: list[str], mentioned: list[str], judged_by_the_suite: bool, tests_from_the_text: bool,
     may_write: Callable[[str], bool],
@@ -163,7 +181,7 @@ def _the_files(
         # fixes as what failed, and each rewrote the probe and was recorded
         # as having fixed its defect.
         is_a_test = classify_file(relative) == "test"
-        if is_scratch(relative) or (judged_by_the_suite and is_a_test):
+        if is_scratch(relative) or (judged_by_the_suite and is_a_test) or _the_project_ignores(root, relative):
             continue
         if is_a_test and name not in own and not tests_from_the_text:
             continue

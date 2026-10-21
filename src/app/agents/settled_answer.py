@@ -1513,6 +1513,43 @@ def _the_same_call_running(messages: list[Any]) -> tuple[str, int] | None:
     return calls[-1][0], running
 
 
+#: The same call answered the same this many times running is a loop, with
+#: thinking on or off. Measured on one run: a builder sent one install command
+#: twelve times in a row, about every eight seconds, each answered "Requirement
+#: already satisfied" - a command, so no query rung counted it, and thinking was
+#: on, so the rung above did not either.
+SAME_CALL_SAME_ANSWER_RUNNING = 4
+
+
+def _the_same_call_answered_the_same(messages: list[Any]) -> tuple[str, int] | None:
+    """The tool of the last call and how many calls running had its arguments and its answer, or None below the threshold.
+
+    Timings aside: a command that reports how long it took answers the same
+    with a different number.
+    """
+    answers = {
+        str(getattr(m, "tool_call_id", "") or ""): _TIMINGS.sub("", str(getattr(m, "content", "") or ""))
+        for m in messages if getattr(m, "type", None) == "tool"
+    }
+    calls: list[tuple[str, str, str]] = []
+    for message in messages:
+        for call in getattr(message, "tool_calls", None) or ():
+            name = str((call or {}).get("name") or "")
+            called = str((call or {}).get("id") or "")
+            if name and called in answers:
+                calls.append((name, json.dumps((call or {}).get("args") or {}, sort_keys=True, default=str), answers[called]))
+    if not calls:
+        return None
+    running = 0
+    for call in reversed(calls):
+        if call != calls[-1]:
+            break
+        running += 1
+    if running < SAME_CALL_SAME_ANSWER_RUNNING:
+        return None
+    return calls[-1][0], running
+
+
 def _the_same_call_running_notice(name: str, times: int) -> str:
     """Why a tool is gone for this call: the stage sent it the same arguments again and again."""
     return (
@@ -1944,6 +1981,9 @@ def build_settled_answer_middleware(
                     if repeated is None:
                         repeated = _a_query_answered_identically(messages)
                         notice = _a_query_withheld_notice(*repeated) if repeated is not None else ""
+                    if repeated is None:
+                        repeated = _the_same_call_answered_the_same(messages)
+                        notice = _the_same_call_running_notice(*repeated) if repeated is not None else ""
                     if repeated is None and _thinking_is_off_here(messages, stage_name):
                         repeated = _the_same_call_running(messages)
                         notice = _the_same_call_running_notice(*repeated) if repeated is not None else ""

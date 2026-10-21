@@ -96,3 +96,38 @@ def test_with_thinking_on_the_ordinary_rungs_decide() -> None:
     request = _sent([SimpleNamespace(type="human", content="Fix it."), lost, *_repeats(3)])
 
     assert [tool.name for tool in request.tools] == ["read_file", "edit_artifact"]
+
+
+def test_with_thinking_on_a_call_answered_the_same_four_times_running_is_withheld() -> None:
+    # Measured on one run: one install command twelve times in a row, each answered
+    # "Requirement already satisfied", with thinking on.
+    from app.agents.settled_answer import SAME_CALL_SAME_ANSWER_RUNNING, _the_same_call_answered_the_same
+
+    def install(n: int, took: str) -> list[object]:
+        return [
+            SimpleNamespace(type="ai", content="", tool_calls=[{"name": "run_terminal_command",
+                                                                "args": {"command": ["pip", "install", "bcrypt"]}, "id": f"i{n}"}]),
+            _Tool(f'{{"stdout": "Requirement already satisfied: bcrypt", "took": "{took}s"}}', f"i{n}"),
+        ]
+
+    four = [m for n in range(SAME_CALL_SAME_ANSWER_RUNNING) for m in install(n, f"0.{n}")]
+    assert _the_same_call_answered_the_same(four) == ("run_terminal_command", 4)
+    assert _the_same_call_answered_the_same(four[:-2]) is None
+
+    tools = [SimpleNamespace(name="run_terminal_command"), SimpleNamespace(name="edit_artifact")]
+    sent: list = []
+    middleware = build_settled_answer_middleware(_Answer, "specialist_backend_3", step_limit=40)
+    middleware.wrap_model_call(_Request([SimpleNamespace(type="human", content="Build it."), *four], tools),
+                               lambda request: sent.append(request))
+    assert [tool.name for tool in sent[0].tools] == ["edit_artifact"]
+
+
+def test_the_same_call_answered_differently_is_not_a_loop() -> None:
+    from app.agents.settled_answer import _the_same_call_answered_the_same
+
+    runs = []
+    for n, out in enumerate(["1 failed", "2 failed", "1 failed", "0 failed"]):
+        runs += [SimpleNamespace(type="ai", content="", tool_calls=[{"name": "run_terminal_command",
+                                                                     "args": {"command": ["npm", "test"]}, "id": f"t{n}"}]),
+                 _Tool(out, f"t{n}")]
+    assert _the_same_call_answered_the_same(runs) is None

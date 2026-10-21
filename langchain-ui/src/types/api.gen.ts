@@ -175,6 +175,26 @@ export interface ModelProfile {
   updated_by: string | null;
 }
 
+/** A rating as kept: who gave it and when. */
+export interface OwnerRating {
+  /** One line on the product, optional. */
+  note: string;
+  /** When, ISO 8601 UTC. */
+  rated_at: string;
+  /** The account that rated the run. */
+  rated_by: string;
+  /** 1 (unusable) to 5 (would hand it over as it is). */
+  score: number;
+}
+
+/** The owner's verdict on a delivered product: 1 to 5 and a line (plan EV.1). */
+export interface OwnerRatingRequest {
+  /** One line on the product, optional. */
+  note?: string;
+  /** 1 (unusable) to 5 (would hand it over as it is). */
+  score: number;
+}
+
 /** The owner's appearance and run defaults. Every field is optional: a patch changes only what it names. */
 export interface Preferences {
   accent?: "blue" | "violet" | "teal" | "amber" | "rose" | "neutral" | null;

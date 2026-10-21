@@ -293,6 +293,21 @@ class BriefPreview(BaseModel):
     )
 
 
+
+class OwnerRatingRequest(BaseModel):
+    """The owner's verdict on a delivered product: 1 to 5 and a line (plan EV.1)."""
+    model_config = ConfigDict(extra="forbid")
+
+    score: int = Field(ge=1, le=5, description="1 (unusable) to 5 (would hand it over as it is).")
+    note: str = Field(default="", max_length=500, description="One line on the product, optional.")
+
+
+class OwnerRating(OwnerRatingRequest):
+    """A rating as kept: who gave it and when."""
+
+    rated_by: str = Field(description="The account that rated the run.")
+    rated_at: str = Field(description="When, ISO 8601 UTC.")
+
 class StageUsage(BaseModel):
     """One stage's time, tokens and failures, from the run's transcript (plan BG.7)."""
     model_config = ConfigDict(extra="forbid")

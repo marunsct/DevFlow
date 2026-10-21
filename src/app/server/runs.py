@@ -55,6 +55,8 @@ from app.server.models import (
     EventPage,
     BriefPreview,
     BriefPreviewRequest,
+    OwnerRating,
+    OwnerRatingRequest,
     PreviewCriterion,
     SprintsResponse,
     SpinnerResponse,
@@ -279,6 +281,29 @@ def create_runs_router(
             original_name=result.original_name,
             file_size_bytes=result.file_size_bytes,
         )
+
+    @runs.get("/{run_id}/rating", response_model=OwnerRating | None)
+    async def get_rating(run_id: str, user: UserInDB = Depends(get_current_active_user)) -> dict | None:
+        """The owner's rating of the delivered run, or null (plan EV.1)."""
+        from app.server import ratings
+
+        _require_run(runner, run_id, user)
+        return ratings.read(run_id)
+
+    @runs.put("/{run_id}/rating", response_model=OwnerRating)
+    async def rate_run(
+        run_id: str, body: OwnerRatingRequest, user: UserInDB = Depends(require_operator)
+    ) -> dict:
+        """Rate a delivered run 1-5 with a line; rating again replaces it (plan EV.1)."""
+        from app.server import ratings
+
+        record = _require_run(runner, run_id, user)
+        if record.status != "completed":
+            raise HTTPException(status_code=409, detail=f"Run {run_id} is {record.status}; only a delivered run is rated.")
+        rating = ratings.save(run_id, body.score, body.note, user.username)
+        record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.rated",
+                     subject=run_id, detail={"score": body.score})
+        return rating
 
     @runs.post("/preview", response_model=BriefPreview)
     async def preview_brief(

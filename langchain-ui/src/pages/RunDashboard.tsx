@@ -43,6 +43,7 @@ import { ApprovalGate } from '../components/ApprovalGate';
 import { WizardDashboard } from '../components/WizardDashboard';
 import { SprintSummaryPanel } from '../components/SprintSummaryPanel';
 import { DeliveryPanel } from '../components/DeliveryPanel';
+import { OwnerRating } from '../components/OwnerRating';
 import { RunFigures } from '../components/RunFigures';
 import { fixLoop, useTypicalTime } from '../lib/runSummary';
 import { holdingTheModel, useServerHealth } from '../lib/serverHealth';
@@ -805,6 +806,7 @@ export const RunDashboard: React.FC = () => {
         <>
           <SprintSummaryPanel runId={runId!} refreshKey={stageKey} />
           <DeliveryPanel runId={runId!} refreshKey={stageKey} />
+          {run?.status === 'completed' && <OwnerRating runId={runId!} />}
           <WizardDashboard run={run} model={wizard} />
         </>
       ) : (
@@ -878,6 +880,7 @@ export const RunDashboard: React.FC = () => {
             {/* Acceptance criteria, screenshots and the decision log, then the
                 sprints - refreshed as the run moves between stages. */}
             <DeliveryPanel runId={runId!} refreshKey={stageKey} onOpenChange={selectChange} />
+            {run?.status === 'completed' && <OwnerRating runId={runId!} />}
             <SprintSummaryPanel runId={runId!} refreshKey={stageKey} />
           </div>
         </div>

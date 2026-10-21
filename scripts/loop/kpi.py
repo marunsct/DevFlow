@@ -47,7 +47,7 @@ def main(run: str) -> int:
             continue
     from app.observability.run_kpis import per_accepted_criterion
 
-    print(json.dumps({"run": run, **per_accepted_criterion(kpis(records), accepted_criteria(run))}))
+    print(json.dumps({"run": run, **per_accepted_criterion(kpis(records), accepted_criteria(run)), **owner_rating(run)}))
     return 0
 
 
@@ -62,6 +62,15 @@ def accepted_criteria(run: str) -> int | None:
         return None
     return sum(1 for c in (result.get("criteria") or {}).values() if (c or {}).get("status") == "passed")
 
+
+
+def owner_rating(run: str, root: str = "/app/data") -> dict:
+    """The owner's rating of the delivered run, 1-5 and a line, for its KPI row (plan EV.1); empty when unrated."""
+    try:
+        rating = json.load(open(f"{root}/ratings/{run}.json"))
+    except (OSError, ValueError):
+        return {"owner_rating": "", "owner_note": ""}
+    return {"owner_rating": rating.get("score", ""), "owner_note": " ".join(str(rating.get("note") or "").split())[:200]}
 
 if __name__ == "__main__" and len(sys.argv) > 1:
     raise SystemExit(main(sys.argv[1]))

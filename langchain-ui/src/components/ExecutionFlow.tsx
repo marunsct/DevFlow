@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import type { RunStage } from '../types';
 import { Check, X, Clock, Loader2, Circle, ListChecks } from 'lucide-react';
 import { describeStage, describeStatus } from '../lib/activity';
@@ -48,6 +48,15 @@ const sprintTitle = (sprint: number) => (sprint === 0 ? 'Planning' : `Sprint ${s
 export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentStage, isTerminal }) => {
   const done = stages.filter((s) => s.status === 'completed').length;
   const groups = bySprint(stages);
+  const scroller = useRef<HTMLDivElement>(null);
+
+  // The step in flight stays in view: the list grows downward, and a short
+  // pane scrolled to its top showed only steps long finished.
+  useEffect(() => {
+    const box = scroller.current;
+    const current = box?.querySelector<HTMLElement>('[data-current="true"]');
+    if (box && current) box.scrollTop = Math.max(0, current.offsetTop - box.clientHeight / 2);
+  }, [currentStage, stages.length]);
 
   return (
     <div className="glass-card rounded-2xl flex flex-col h-full overflow-hidden">
@@ -74,14 +83,15 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
           </p>
         </div>
       ) : (
-        <div tabIndex={0} role="region" aria-label="The run's steps" className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
+        <div ref={scroller} tabIndex={0} role="region" aria-label="The run's steps" className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
           {groups.map((group) => {
             const groupDone = group.stages.filter((s) => s.status === 'completed').length;
             return (
               <section key={`sprint-${group.sprint}`} className="mb-5 last:mb-0">
                 {/* Sticks while its steps scroll, flush with the top: the scroller
-                    has no padding above it, so nothing shows through. */}
-                <header className="sticky top-0 z-10 -mx-4 mb-2.5 flex items-baseline gap-2 bg-surface px-4 pb-1.5 pt-3">
+                    has no padding above it, so nothing shows through. Above the
+                    steps' icons (z-10): level with them, each icon scrolled over it. */}
+                <header className="sticky top-0 z-20 -mx-4 mb-2.5 flex items-baseline gap-2 bg-surface px-4 pb-1.5 pt-3">
                   <h3 className="text-xs font-semibold tracking-wide uppercase text-text-secondary">
                     {sprintTitle(group.sprint)}
                   </h3>
@@ -104,8 +114,34 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
                     const Icon = tone.icon;
                     const isLast = index === group.stages.length - 1;
 
+                    // A finished step is one line - its title and how long it took,
+                    // its description on hover. Each took a title, a description and
+                    // a status line, and the pane showed two steps at a time.
+                    if (status.tone === 'done' && !isCurrent && stage.retry_count === 0) {
+                      return (
+                        <li key={`${group.sprint}-${stage.name}-${index}`} className="relative flex items-center gap-3" data-compact="true">
+                          {!isLast && (
+                            <span className="absolute left-[9px] top-5 -bottom-1 w-px bg-border/40" aria-hidden />
+                          )}
+                          <span className={`relative z-10 flex-none grid place-items-center h-5 w-5 rounded-full border ${tone.dot}`}>
+                            <Icon className="h-3 w-3" />
+                          </span>
+                          <p className={`min-w-0 flex-1 truncate text-[13px] text-text-secondary ${isLast ? 'py-0.5' : 'pb-2 pt-0.5'}`} title={`${copy.blurb} (${stage.name})`}>
+                            {copy.title}
+                          </p>
+                          {stage.duration_seconds !== null && (
+                            <span className={`flex-none text-xs text-text-muted tabular-nums ${isLast ? '' : 'pb-1.5'}`}>
+                              {stage.duration_seconds < 60
+                                ? `${Math.round(stage.duration_seconds)}s`
+                                : `${Math.floor(stage.duration_seconds / 60)}m ${Math.round(stage.duration_seconds % 60)}s`}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    }
+
                     return (
-                      <li key={`${group.sprint}-${stage.name}-${index}`} className="relative flex gap-3">
+                      <li key={`${group.sprint}-${stage.name}-${index}`} className="relative flex gap-3" data-current={isCurrent ? 'true' : undefined}>
                         {!isLast && (
                           <span className="absolute left-[13px] top-7 bottom-0 w-px bg-border/40" aria-hidden />
                         )}

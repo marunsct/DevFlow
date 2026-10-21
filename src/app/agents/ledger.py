@@ -177,3 +177,51 @@ def with_the_reports(request: dict[str, Any], outputs: Any, work_order: Any, pla
     except Exception:  # noqa: BLE001 - the request stands as it was
         pass
     return request
+
+
+ATTEMPTS_HEADING = (
+    "--- Earlier attempts at this defect, as the harness measured them ---\n"
+    "Each ended as it says. Do not make a change one of them made and was measured making; "
+    "build on what held, and change what did not.\n"
+)
+
+#: The most attempts listed; the newest are kept.
+MOST_ATTEMPTS_LISTED = 6
+
+
+def attempt_record(stage: str, fix_result: Any, outcome: str) -> dict[str, Any]:
+    """One fix attempt as the ledger keeps it: the stage, the files it changed, what it did, how it ended (plan PH.2)."""
+    decisions = [" ".join(str(d).split()) for d in (getattr(fix_result, "decisions", None) or []) if str(d).strip()]
+    return {
+        "stage": str(stage),
+        "files": [str(f) for f in (getattr(fix_result, "changed_files", None) or [])][:8],
+        "did": decisions[0][:240] if decisions else "",
+        "outcome": " ".join(str(outcome).split())[:300],
+    }
+
+
+def earlier_attempts(defect: Any, defects: Iterable[Any] = ()) -> str:
+    """What the fixer of `defect` reads of the attempts before it - its own and the defect it recurs from; "" when none or off.
+
+    A fixer saw an earlier attempt only as a revert sentence appended to the
+    defect's actual behaviour, so the next attempt could redo the change that
+    had been reverted - measured on earlier runs (the LF.80/82 class).
+    """
+    if not enabled():
+        return ""
+    from app.sprint import recurrence_of
+
+    before = list(defects or ())
+    try:
+        earlier = recurrence_of(defect, [d for d in before if d is not defect])
+    except Exception:  # noqa: BLE001 - its own attempts alone
+        earlier = None
+    attempts = [*(getattr(earlier, "attempts", None) or []), *(getattr(defect, "attempts", None) or [])]
+    if not attempts:
+        return ""
+    lines = []
+    for item in attempts[-MOST_ATTEMPTS_LISTED:]:
+        files = ", ".join(f"`{f}`" for f in item.get("files") or []) or "no file"
+        did = f"; {item['did']}" if item.get("did") else ""
+        lines.append(f"- {item.get('stage', '?')}: changed {files}{did} -> {item.get('outcome', '?')}")
+    return "\n" + ATTEMPTS_HEADING + "\n".join(lines) + "\n"

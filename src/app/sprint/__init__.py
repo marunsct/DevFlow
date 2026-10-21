@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -79,6 +79,13 @@ class Defect(BaseModel):
     fix_attempts: int = Field(
         default=0, ge=0,
         description="Fix stages that ran on this defect and left it open, or were reverted.",
+    )
+    attempts: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Each fix stage that ran on it: the stage, the files it changed, what it did and "
+            "how it ended (plan PH.2). Set by the controller, never by a specialist."
+        ),
     )
     verified_by: str = Field(
         default="",

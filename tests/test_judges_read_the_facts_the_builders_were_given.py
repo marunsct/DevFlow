@@ -93,7 +93,7 @@ def test_every_judge_and_builder_request_in_the_graph_ends_with_the_facts():
         ]
         assert calls, f"no call of build_{name}_request in the graph"
         for file, line in calls:
-            following = "\n".join(sources[file].splitlines()[max(0, line - 3):line + 45])
+            following = "\n".join(sources[file].splitlines()[max(0, line - 3):line + 60])
             if "with_the_facts(" not in following:
                 missing.append(f"{file}:{line + 1} build_{name}_request")
     assert not missing, missing

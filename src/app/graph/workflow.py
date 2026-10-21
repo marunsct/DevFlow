@@ -1411,6 +1411,22 @@ def _the_last_attempt_section(cycle: Any, defect_index: int) -> str:
     )
 
 
+def _with_the_attempt(cycle: Any, index: int, stage: str, fix_result: Any, outcome: str) -> Any:
+    """The cycle with one fix attempt recorded on defect `index` (plan PH.2). Never raises."""
+    try:
+        from app.agents.ledger import attempt_record
+
+        defect = cycle.defects[index]
+        attempts = [*(getattr(defect, "attempts", None) or []), attempt_record(stage, fix_result, outcome)]
+        return cycle.model_copy(update={"defects": [
+            item.model_copy(update={"attempts": attempts}) if position == index else item
+            for position, item in enumerate(cycle.defects)
+        ]})
+    except Exception:  # noqa: BLE001 - the cycle stands as it was
+        logger.debug("Could not record the fix attempt", exc_info=True)
+        return cycle
+
+
 def _one_more_failed_fix(cycle: Any, index: int) -> Any:
     """The cycle with one more failed fix counted against defect `index`."""
     return cycle.model_copy(update={"defects": [
@@ -9914,6 +9930,10 @@ def build_workflow_graph(
         # work, not a third variation of the instruction that failed twice.
         # See `_the_last_attempt_section`.
         request["messages"][-1]["content"] += _the_last_attempt_section(cycle, defect_index)
+        # Each earlier attempt as measured (plan PH.2), not a revert sentence.
+        from app.agents import ledger as _ledger
+
+        request["messages"][-1]["content"] += _ledger.earlier_attempts(defect, cycle.defects[:defect_index])
         request["messages"][-1]["content"] += _the_stub_still_served_section(state["repository"].root_path)
         request["messages"][-1]["content"] += _the_unserved_code_section(state["repository"].root_path)
         request["messages"][-1]["content"] += _the_database_section(state["repository"].root_path)
@@ -10050,6 +10070,7 @@ def build_workflow_graph(
                 detail=f"broke {len(broke)} test(s) that passed before it: {'; '.join(broke[:3])}",
             )
             noted = _one_more_failed_fix(_noted_as_reverted(cycle, [defect_index], broke), defect_index)
+            noted = _with_the_attempt(noted, defect_index, stage_name, fix_result, f"reverted: it broke {'; '.join(broke[:3])}")
             contested = _a_locked_test_two_fixes_broke(noted)
             if contested and _a_dispute_may_be_held_now(state):
                 logger.warning(
@@ -10079,6 +10100,12 @@ def build_workflow_graph(
         settled, blames = _settle_the_fix(
             state, cycle, defect_index, stage_name, fix_result, measured=f"after {stage_name}",
         )
+        if settled.get("remediation") is not None:
+            after = settled["remediation"].defects[defect_index]
+            settled["remediation"] = _with_the_attempt(
+                settled["remediation"], defect_index, stage_name, fix_result,
+                "fixed" if str(getattr(after, "status", "")) == "fixed" else "left open: its tests still fail",
+            )
         update.update(settled)
         if blames and _a_dispute_may_be_held_now(state):
             # The fix stage left its defect open and says a locked test is

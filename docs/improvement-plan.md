@@ -3759,9 +3759,9 @@ stage order above; OS.0–OS.8 are implemented later, after group 2.
 
 | ID | Change | Model calls added | Measure | Priority | Status |
 |---|---|---|---|---|---|
-| RL.1 | Deterministic distiller (Pillar 5, bounded): after every run, propose lessons from harness-recorded signals only — a fix reverted for breaking tests, a CI-gate cause, a defect that needed more than two attempts, an advice "not built" finding, a recurring refused-call shape (what `loop.sh lessons` finds today). Each proposal names the stack, role, trigger, evidence runs and a rule of ≤2 lines; never model-written reflection | 0 | proposals per run; share approved | P1 | PROPOSED |
-| RL.2 | Uptake measurement: KPI `lessons_shown_per_call` (AT's open item), and per lesson whether its trigger shape recurs in later runs on the same stack (the only proof a lesson works). A lesson whose trigger recurs for three runs after approval is flagged for review | 0 | recurrence after approval | P1 | PROPOSED |
-| RL.3 | Proposals surfaced: `loop.sh report` lists new proposals with their evidence, and `GET /api/lessons` already serves them to the UI (S5); an owner approval is one click there | 0 | — | P2 | PROPOSED |
+| RL.1 | Deterministic distiller (Pillar 5, bounded): after every run, propose lessons from harness-recorded signals only — a fix reverted for breaking tests, a CI-gate cause, a defect that needed more than two attempts, an advice "not built" finding, a recurring refused-call shape (what `loop.sh lessons` finds today). Each proposal names the stack, role, trigger, evidence runs and a rule of ≤2 lines; never model-written reflection | 0 | proposals per run; share approved | P1 | BUILT 2026-10-21 behind `LESSON_DISTILLER` (off): `app/plugins/lesson_distiller.py` proposes one lesson per kind from the transcript's defect records (a fix reverted for breaking tests, a package no manifest declares, a defect fixed more than twice) for the run's pack; `loop.sh kpi` runs `loop.sh lessons distil`; nothing is shown until the owner approves |
+| RL.2 | Uptake measurement: KPI `lessons_shown_per_call` (AT's open item), and per lesson whether its trigger shape recurs in later runs on the same stack (the only proof a lesson works). A lesson whose trigger recurs for three runs after approval is flagged for review | 0 | recurrence after approval | P1 | BUILT 2026-10-21 behind `LESSON_DISTILLER`: KPI `lessons_shown_calls`; an approved lesson proposed again counts `recurred_runs` (`lessons.recurred`) |
+| RL.3 | Proposals surfaced: `loop.sh report` lists new proposals with their evidence, and `GET /api/lessons` already serves them to the UI (S5); an owner approval is one click there | 0 | — | P2 | BUILT 2026-10-21: `loop.sh lessons` (list, or distil <run>); `GET /api/lessons` already serves proposals |
 | RL.4 | Scoring guard: distillation and the loop are judged on the hidden test families (`web-todo`, `notes-api-hono`) and never on a brief's own suite, so the loop cannot learn to pass the acceptance tests (J.1 guards the vacuous-green form) | 0 | hidden-test score across runs | P1 (process) | ADOPTED |
 | RL.5 | Not done: agents editing prompts, stack packs or harness code; model-written memory files; a reflector call on the local model | — | — | — | REJECTED |
 
@@ -4718,18 +4718,18 @@ the item: what it changes, why, and the evidence (review findings in
 | OS.0–OS.6 | SeaweedFS object storage replacing MinIO (spike, compose profile, config, hardening, read-back, backfill, tests) | P2 | PROPOSED 2026-10-20 | [OS](#plan-os) |
 | OS.7 | object-storage docs and operations handover | P2 | PARTLY 2026-10-20 (ADR, research, plan) | [OS](#plan-os) |
 | OS.8 | off-site mirror, lifecycle, RustFS re-evaluation | P3 | PROPOSED 2026-10-20 | [OS](#plan-os) |
-| RL.1 | deterministic lesson distiller from harness-recorded signals (Pillar 5, bounded) | P1 | PROPOSED 2026-10-21 | [RL](#plan-rl) |
-| RL.2 | lesson uptake: shown-per-call KPI and trigger recurrence after approval | P1 | PROPOSED 2026-10-21 | [RL](#plan-rl) |
-| RL.3 | proposals surfaced in the run report and the lessons UI | P2 | PROPOSED 2026-10-21 | [RL](#plan-rl) |
+| RL.1 | deterministic lesson distiller from harness-recorded signals (Pillar 5, bounded) | P1 | BUILT 2026-10-21 behind `LESSON_DISTILLER` (off) | [RL](#plan-rl) |
+| RL.2 | lesson uptake: shown-per-call KPI and trigger recurrence after approval | P1 | BUILT 2026-10-21 behind `LESSON_DISTILLER` (off) | [RL](#plan-rl) |
+| RL.3 | proposals surfaced in the run report and the lessons UI | P2 | BUILT 2026-10-21 (`loop.sh lessons`) | [RL](#plan-rl) |
 | RL.4 | learning judged on hidden test families only | P1 (process) | ADOPTED 2026-10-21 | [RL](#plan-rl) |
 | RL.5 | agents editing prompts, packs or harness code; model-written memory | — | REJECTED 2026-10-21 | [RL](#plan-rl) |
 | PH.1 | "where things stand" block in every builder and fixer request | P1 | BUILT 2026-10-21 behind `WHERE_THINGS_STAND` (off) | [PH](#plan-ph) |
 | PH.2 | structured attempt record per defect for the next fixer | P1 | BUILT 2026-10-21, behind `DECISION_LEDGER`: `Defect.attempts` (stage, files, what it did, how it ended), recorded by the controller on every revert and settlement; the next fixer of the defect - or of one it recurs from - reads them (`ledger.earlier_attempts`). Test: `tests/test_the_next_fixer_reads_each_earlier_attempt.py` | [PH](#plan-ph) |
 | PH.3 | builders' decisions must name interface changes; ledger takes them | P1 | BUILT 2026-10-21 behind `INTERFACE_CHANGES_NAMED` (off) | [PH](#plan-ph) |
 | PH.4 | builders told the product's start and test state at dispatch | P2 | PROPOSED 2026-10-21 | [PH](#plan-ph) |
-| CG.1 | harness-owned code graph per workspace (files, definitions, imports, test→criterion→file, work order→files), incremental by hash | P1 | PROPOSED 2026-10-21 | [CG](#plan-cg) |
-| CG.2 | fix requests and reviews get the defect's 1-hop neighbourhood, defining module first | P1 | PROPOSED 2026-10-21 | [CG](#plan-cg) |
-| CG.3 | builders get their work order's slice of the graph | P2 | PROPOSED 2026-10-21 | [CG](#plan-cg) |
+| CG.1 | harness-owned code graph per workspace (files, definitions, imports, test→criterion→file, work order→files), incremental by hash | P1 | BUILT 2026-10-21 (`.project-graph.json`) | [CG](#plan-cg) |
+| CG.2 | fix requests and reviews get the defect's 1-hop neighbourhood, defining module first | P1 | BUILT 2026-10-21 behind `PROJECT_GRAPH_FIXES` (off) | [CG](#plan-cg) |
+| CG.3 | builders get their work order's slice of the graph | P2 | BUILT 2026-10-21 behind `PROJECT_GRAPH_BUILDERS` (off) | [CG](#plan-cg) |
 | CG.4 | read-only `where_is` / `who_uses` tool from the graph | P3 | PROPOSED 2026-10-21 | [CG](#plan-cg) |
 | CG.5 | criterion → tests → files view on the run page | P3 (UI) | PROPOSED 2026-10-21 | [CG](#plan-cg) |
 | CG.6 | gate: ships only if redundant reads fall (AQ) | process | ADOPTED 2026-10-21 | [CG](#plan-cg) |

@@ -12,6 +12,7 @@
 #   scripts/loop/loop.sh reads [run-id]      redundant reads by stage and file (redundant_reads.py)
 #   scripts/loop/loop.sh deploy [commit]     rebuild app and worker from a commit (default HEAD), at a stage boundary
 #   scripts/loop/loop.sh deploy-app          rebuild and restart the app container only (API, UI); the worker and live runs untouched
+#   scripts/loop/loop.sh lessons [distil <run>] the lessons awaiting the owner, or propose a run's (LESSON_DISTILLER)
 #   scripts/loop/loop.sh patterns [since]     across every run: where replies run out, fix outcome by bundle size, failures that recur
 #   scripts/loop/loop.sh timing [run-id..]   where the wall-clock time went: model vs tools, phases, reasoning share (run_timing.py)
 #   scripts/loop/loop.sh kpi [run-id]        the run's KPIs as JSON (data/kpi/<run>.json), a row of data/kpi/ledger.csv,
@@ -291,6 +292,7 @@ failures)
   ;;
 reads)  in_worker redundant_reads.py "${2:-$(current)}" ;;
 patterns) shift; in_worker patterns.py "$@" ;;
+lessons) shift; in_worker lessons.py "${@:-list}" ;;
 timing) shift; in_worker run_timing.py "${@:-$(current)}" ;;
 kpi)
   run="${2:-$(current)}"
@@ -303,6 +305,8 @@ kpi)
     "$PY" "$HERE/kpi_ledger.py" "data/kpi/$run.json" data/kpi/ledger.csv "$bench"
     # And the run's reader inputs into the corpus the suite replays (plan RC.1).
     "$0" corpus harvest "$run" >/dev/null 2>&1 || echo "kpi: the corpus harvest did not run" >&2
+    # And the lessons its recorded signals argue for, when LESSON_DISTILLER is on (plan RL.1).
+    "$0" lessons distil "$run" >/dev/null 2>&1 || true
   else
     rm -f "data/kpi/$run.json.tmp"; echo "kpi: the worker could not read $run's transcript; nothing was changed" >&2; exit 1
   fi

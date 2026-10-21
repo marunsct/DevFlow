@@ -155,6 +155,18 @@ def decide(lesson_id: str, approved: bool, *, by: str = "owner", path: Path | No
     raise LessonError(f"No lesson {lesson_id}.")
 
 
+
+def recurred(lesson_id: str, *, path: Path | None = None) -> dict[str, Any]:
+    """Count a run on which an approved lesson's trigger happened again (plan RL.2)."""
+    with _LOCK:
+        lessons = load(path)
+        for lesson in lessons:
+            if lesson.get("id") == lesson_id:
+                lesson["recurred_runs"] = int(lesson.get("recurred_runs") or 0) + 1
+                _save(lessons, path)
+                return lesson
+    raise LessonError(f"No lesson {lesson_id}.")
+
 def approved_for(keywords: Iterable[str], path: Path | None = None, role: str = "") -> list[dict[str, Any]]:
     """The approved lessons about any of these stacks for this role, in a fixed order, a call's worth at most."""
     wanted = {str(k).strip().lower() for k in keywords or () if str(k).strip()}

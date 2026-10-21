@@ -111,6 +111,15 @@ def discarded_seconds(records: list[dict]) -> float:
     return total
 
 
+
+def _calls_shown_lessons(records: list[dict]) -> int:
+    """Model requests whose messages carried the lessons block (`plugins.lessons.FRAME`)."""
+    try:
+        from app.plugins.lessons import FRAME
+    except Exception:  # noqa: BLE001
+        return 0
+    return sum(1 for r in records if r.get("kind") == "model_request" and FRAME in json.dumps(r.get("messages") or ""))
+
 def kpis(records: list[dict]) -> dict:
     """The run's KPIs from its transcript records, as the run stands (see `live_branch`)."""
     rewinds = sum(1 for r in records if r.get("kind") == "rewound")
@@ -254,6 +263,8 @@ def kpis(records: list[dict]) -> dict:
         "orphan_gap_minutes": round(orphan / 60, 1),
         "model_busy_share": _share(model_busy, wall),
         "model_calls": count["model_calls"],
+        # Model calls shown approved lessons (plan RL.2): uptake, measured.
+        "lessons_shown_calls": _calls_shown_lessons(records),
         "model_errors": count["model_errors"],
         "resumes": count["resumes"],
         "rewinds": rewinds,

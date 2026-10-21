@@ -28,6 +28,7 @@ SWITCHES: dict[str, str] = {
     "PROJECT_GRAPH_FIXES": "app.analysis.project_graph:fixes_switch",
     "PROJECT_GRAPH_BUILDERS": "app.analysis.project_graph:builders_switch",
     "REGRESSION_CONTRACT": "app.acceptance.regression_contract",
+    "LESSON_DISTILLER": "app.plugins.lesson_distiller",
 }
 
 UNKNOWN = "unknown"

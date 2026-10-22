@@ -30,3 +30,16 @@ def test_a_namespace_package_a_sibling_module_and_the_test_tree_are_local(tmp_pa
     script.write_text("import conftest\nimport helpers\nfrom src import models\nimport models\nimport requests\n")
     local = lambda m: dependency_drift._a_local_module(project, script, m)
     assert local("conftest") and local("helpers") and local("src") and local("models") and not local("requests")
+
+
+def test_a_project_module_imported_by_the_wrong_path_is_no_package_to_declare(tmp_path):
+    """`from database import` in the tests, for `tasks_api/database.py`, was reported as an undeclared
+    package `database`."""
+    project = tmp_path / "tasks-api"
+    (project / "tasks_api").mkdir(parents=True)
+    (project / "tasks_api" / "database.py").write_text("def init_db():\n    pass\n")
+    (project / "tests").mkdir()
+    script = project / "tests" / "test_database.py"
+    script.write_text("from database import init_db\nimport bcrypt\n")
+    assert dependency_drift._a_local_module(project, script, "database")
+    assert not dependency_drift._a_local_module(project, script, "bcrypt")

@@ -26,6 +26,7 @@ exist.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -152,7 +153,22 @@ def _a_local_module(project: Path, script: Path, module: str) -> bool:
     for base in (project, project / "src", script.parent):
         if (base / module).is_dir() or (base / f"{module}.py").is_file():
             return True
-    return False
+    # A module of the product's own elsewhere in its tree, imported by the
+    # wrong path (`from database import` for `app/database.py`): a wrong
+    # import, which the tests that run it report; never a package to declare.
+    # Read as one, a fixer was invited to put `database` in the manifest.
+    return module in _the_project_s_modules(project)
+
+
+def _the_project_s_modules(project: Path) -> set[str]:
+    """Every module and package name the project's own tree defines, outside environments and caches."""
+    names: set[str] = set()
+    skipped = {".venv", "venv", "node_modules", "__pycache__", ".git", "dist", "build", ".harness"}
+    for folder, directories, files in os.walk(project):
+        directories[:] = [d for d in directories if d not in skipped and not d.startswith(".")]
+        names.update(Path(f).stem for f in files if f.endswith(".py"))
+        names.update(directories)
+    return names
 
 
 def _imports_in_source(source: str) -> list[str]:

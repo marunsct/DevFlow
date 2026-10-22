@@ -11,6 +11,7 @@
 
 | Part | Topic | Date | Main plan items |
 |---|---|---|---|
+| [R12](#r12) | What organisations expect of an AI software-delivery harness: governance, audit, supply chain, EU AI Act | 2026-10-22 | [EN](improvement-plan.md#plan-en) |
 | [R11](#r11) | SAP CAP, Fiori/UI5 and RAP: toolchains, MCP servers, what runs outside an SAP system | 2026-10-22 | [SAP](improvement-plan.md#plan-sap), [DT](improvement-plan.md#plan-dt) |
 | [R10](#r10) | Code graphs and repository maps for coding agents | 2026-10-21 | [CG](improvement-plan.md#plan-cg) |
 | [R9](#r9) | Recursive / self-improving harnesses; progress files and handoff | 2026-10-21 | [RL](improvement-plan.md#plan-rl), [PH](improvement-plan.md#plan-ph) |
@@ -24,6 +25,20 @@
 | [R6](#r6) | Earlier comparisons with other harnesses | 2026-10-04/09 | [E1](improvement-plan.md#plan-e1), [E2](improvement-plan.md#plan-e2) |
 
 ---
+
+<a id="r12"></a>
+## Part R12 — What organisations expect of an AI software-delivery harness (2026-10-22, session 5)
+
+Plan items: [EN](improvement-plan.md#plan-en).
+
+| Finding | Evidence | Plan |
+|---|---|---|
+| CTO evaluation checklist (Apr–Jun 2026): SAML SSO and SCIM at the purchased tier; contractual data residency and no-training; configurable retention incl. telemetry; CMEK; air-gapped/self-hosted option; audit logs linking each change to agent, model version, input specification and named approver, tamper-evident and SIEM-exportable; RBAC incl. over audit data; spending caps and per-team usage; determinism controls — model version pinning, logged sampling, exportable run manifests; human approval gates, verifier agents, atomic revertable change units, CI-tested rollback; SOC 2 Type II, ISO 27001, ISO/IEC 42001 | [Augment Code CTO checklist](https://www.augmentcode.com/guides/cto-ai-coding-checklist) | EN.1, EN.2, EN.5, EN.6, EN.9 |
+| Governance for coding agents (Jun 2026): versioned policy with an owner and an inventory of approved agents; scoped workspaces and credentials, deployment identities separate; branch protection with required approvals (CODEOWNERS alone does not require approval); code-owner approval for sensitive paths; human sign-off after AI review; policy-as-code versioned and tested; exceptions with approver, scope, expiry and compensating control; immutable audit logs linking task, agent identity, policy version, commit, tests, findings, approval, deployment; export tested | [CodeRabbit governance guide](https://www.coderabbit.ai/guides/ai-governance-coding-agents) | EN.2, EN.4, EN.5, EN.11 |
+| EU AI Act, most provisions enforceable 2 Aug 2026: development teams are usually *deployers*; Article 50 disclosure at the point of interaction and labelling of AI-generated content; classify each AI feature and document the decision; for external providers document which sees what data; log input, output, timestamp, user/session and the exact immutable model version; substantial modification can make a team a provider | [EU AI Act, Aug 2026 for dev teams](https://levelup.gitconnected.com/eu-ai-act-august-2026-what-a-development-team-actually-needs-to-do-56755d24d020), [readiness checklist](https://www.evalueserve.com/blog/eu-ai-act-readiness-checklist/) | EN.2, EN.8 |
+| Supply chain (Aug 2026): SBOM in CycloneDX or SPDX from lock files at every artifact build, tagged with commit and build, diffed between releases; Sigstore keyless signing in CI (SLSA v1.0 Build L2, L3 with reusable workflows); pin actions to SHAs; CycloneDX 1.6 ML-BOM and an unratified agent-BOM for MCP servers, tools and credentials; CISA AI-SBOM minimum elements; EU CRA vulnerability reporting in force Sep 2026, SBOM mandate Dec 2027 | [SBOM for agent-driven pipelines](https://www.augmentcode.com/guides/sbom-for-agent-driven-pipelines) | EN.3 |
+| Ticket-to-PR is the enterprise workflow shape: Jira/ADO work item → agent run → pull request with status back on the ticket (GitHub Copilot coding agent for Jira; Atlassian's agentic Jira tooling) | [devops.com](https://devops.com/github-copilot-coding-agent-for-jira-connects-planning-to-pull-requests-without-leaving-your-workflow/), [ITBrief](https://itbrief.com.au/story/atlassian-launches-jira-tools-for-agentic-software-teams) | EN.4 |
+| Enterprise deployment of coding agents: isolation per run, scoped credentials, egress control, audit — the self-hosted shape DevFlow already has | [Northflank](https://northflank.com/blog/enterprise-ai-coding-agent-deployment), [AI agent audit trail + RBAC](https://www.teamazing.com/blog/ai-agent-audit-trail-rbac-requirements/) | EN.1, EN.6 |
 
 <a id="r11"></a>
 ## Part R11 — SAP CAP, Fiori/UI5 and RAP: toolchains, MCP servers, what runs outside an SAP system (2026-10-22, session 5)

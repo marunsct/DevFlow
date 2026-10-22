@@ -2,7 +2,7 @@
 
 > **Unified plan (consolidated 2026-10-19).** This file is the only improvement plan.
 > - It carries the original plan (§1–4, Initiatives A–I) and Appendices 1–8
->   (Initiatives J–BL, EF, CM, OS, RL, PH, CG and Appendix 7's MF, RC, IN, BW, PN, OP, CH, EV, SF and Appendix 8's SL, RV, SAP, DT, RD, with the UI parts).
+>   (Initiatives J–BL, EF, CM, OS, RL, PH, CG and Appendix 7's MF, RC, IN, BW, PN, OP, CH, EV, SF and Appendix 8's SL, RV, EN, SAP, DT, RD, with the UI parts).
 > - **Before implementing: Part 21** is the single implementation order and
 >   **Part 22** resolves the contradictions and lists what not to implement.
 > - Section E holds the two earlier plan documents, merged here.
@@ -3490,8 +3490,8 @@ Every stage keeps the standing rules (`AGENTS.md`):
 Each stage's gate is judged by the two-run rule (Part 20).
 
 *Added 2026-10-22 (Appendix 8, customer stacks, SAP, templates, legacy docs):*
-- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
-- **Group 2, behind switches:** SL.5, SAP.1 → SAP.2 → SAP.3, SAP.4 → SAP.5, DT.5, RD.1, RD.3, RD.5, RD.6.
+- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, EN.1–EN.6, EN.8–EN.11, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
+- **Group 2, behind switches:** SL.5, EN.7, SAP.1 → SAP.2 → SAP.3, SAP.4 → SAP.5, DT.5, RD.1, RD.3, RD.5, RD.6.
 
 *Added 2026-10-21 (Appendix 7, the discipline layer):*
 - **Group 1, now, before the next Measure cycle:** MF.1–MF.6 → RC.1–RC.3 → OP.1–OP.4 → CH.1–CH.3 → IN.2, BW.3, EV.1, SF.1–SF.2.
@@ -4034,6 +4034,33 @@ once and partly; numbered items the reviewer must answer one by one, with the ha
 each was answered, are what made specialist advice stick (the architect's adopted/declined record).
 Effort: RV.1–RV.2 1½ days, RV.3 1 day, RV.4 1 day, RV.5–RV.6 1½ days.
 
+<a id="plan-en"></a>
+### EN — What an organisation expects beyond the build (research, 2026-10-22 11:14 JST)
+
+Research [R12](research-findings.md#r12): enterprise evaluation checklists for AI coding agents,
+governance guides, the EU AI Act's August 2026 obligations, and supply-chain practice (SBOM, SLSA,
+AI-BOM). Mapped against the code: `tenant_id` and `role` on users and runs, an `audit_log` table,
+rate limits, a deletion contract, Prometheus metrics — and MF.1 (provenance), OP.2 (webhooks),
+OP.3 (backups), PN.1 (audits, licences), SF.1 (egress), SL/RV (conventions, review policy) above.
+Each row names what is still missing.
+
+| ID | Expectation → change | Group | Priority | Status |
+|---|---|---|---|---|
+| EN.1 | **Identity**: SSO (OIDC and SAML) and SCIM provisioning; roles `viewer / operator / approver / admin` with per-gate approval rights; tenant isolation proven by tests (a user of one tenant cannot list, read or approve another's runs, documents, policies or lessons). Today: local accounts, two roles, tenant columns with no isolation tests | 1 — now | P1 | PROPOSED |
+| EN.2 | **Audit and evidence**: a tamper-evident audit log (hash-chained rows) that links every change to its ticket, run, stage, model id and version, prompt hash, commit, test results, review findings, policy version and the named human approver (the EU AI Act's deployer logging: input, output, timestamp, user, exact model version — MF.1 gives the model); export on demand as JSONL and to a SIEM endpoint; retention per tenant; the export tested | 1 — now | P1 | PROPOSED |
+| EN.3 | **Supply chain**: a CycloneDX (or SPDX) SBOM per release from the lock files, tagged with commit and run id, in the handover and the release artifacts (PN.1 produces the licence listing from the same data); a **run manifest** — models and versions, quantisation, MCP servers and tools used, prompt-template versions, flags — as a CycloneDX ML-BOM/agent-BOM document; agent-authored commits carry trailers (`Run-Id`, `Model`, `Stage`); release artifacts signed (Sigstore keyless in the generated CI where the host supports it) | 1 — now | P1 | PROPOSED |
+| EN.4 | **SDLC integration**: delivery as a pull request to the customer's git host (GitHub, GitLab, Azure DevOps) on a branch, respecting branch protection and CODEOWNERS (never a push to a protected branch); ticket linkage — a run started from a Jira/ADO work item carries its key, posts status and the PR link back, and the brief may come from the ticket; the webhook events of OP.2 cover `gate_waiting`, `run_finished`, `pr_opened` | 1 — now | P1 | PROPOSED |
+| EN.5 | **Approvals as policy**: an approval matrix per gate (which roles may approve release, which may approve a write to a customer system — SAP.4); segregation of duties (the requester is never the sole approver of release); protected paths in the organisation profile (`auth/`, `payments/`, migrations) whose writes pause for a human even in auto mode; an exceptions register (approver, reason, scope, expiry, compensating control); a per-tenant kill switch that pauses every run at the next boundary | 1 — now, inactive until configured | P1 | PROPOSED |
+| EN.6 | **Data handling**: the deployment is self-hosted and the default model local, so "no training, no residency question" is a stated property — made checkable: a per-tenant allowlist of model endpoints and MCP servers (SF.1's egress allowlist extended), secrets from a vault (HashiCorp Vault, Azure Key Vault, AWS Secrets Manager) instead of `.env` for provider keys, object-store and ADT credentials, optional PII detection on uploaded briefs and codebases with a redaction report, retention per tenant on top of the deletion contract | 1 — now | P2 | PROPOSED |
+| EN.7 | **Quality gates as policy**: coverage threshold, complexity ceiling and duplicate-code limit per stack from the organisation profile, enforced as a CI-gate check family; results of an external scanner (SonarQube, CodeQL) consumed as findings when the customer runs one; WCAG AA (axe, serious and critical) as a release gate for browser products; a performance budget check (startup time, a request-rate smoke) as pack data | 2 (adds defects) | P2 | PROPOSED |
+| EN.8 | **Compliance posture**: a `compliance/` bundle per run — audit export, SBOM, run manifest, checklist report (RV.6), documents (DT), the risk-classification note (deployer under the EU AI Act, feature class, which providers see which data) and an Article 50 disclosure in generated READMEs ("built with DevFlow, model X, human-reviewed at gates …"); a model inventory per tenant; an ISO/IEC 42001-shaped records template, filled from the facts | 1 — now | P2 | PROPOSED |
+| EN.9 | **Cost and chargeback**: tokens, model minutes and wall-clock per tenant, team and run; a priced local model (GPU-hour rate in settings, since the cost tracker reports "not priced" for local); budgets and alerts per tenant on top of the per-run ceilings (AH.1, AK); a monthly report | 1 — now | P2 | PROPOSED |
+| EN.10 | **Operability for the customer's IT**: Helm chart and Kubernetes manifests beside compose; a versioned database migration path and an upgrade note per release; a redacted support bundle (logs, config without secrets, run KPIs) for incidents; HA guidance (two workers, the storage of OS) | 1 — now | P3 | PROPOSED |
+| EN.11 | **Governance of the customisations themselves**: the organisation profile, stack policy, review policy, templates and lessons are versioned with author, approver and change history; export/import between environments; a change to policy is itself an audited, approvable event (a policy edit can weaken every later review) | 1 — now | P2 | PROPOSED |
+
+**Not planned:** IP indemnity and certifications (SOC 2, ISO 27001, ISO 42001) are commercial and
+organisational matters, not harness features; the harness supplies the evidence (EN.2, EN.3, EN.8).
+
 <a id="plan-sap"></a>
 ### SAP — CAP, Fiori and RAP as stacks (Q2)
 
@@ -4131,7 +4158,7 @@ and the citation check makes invention visible and countable. Effort: RD.2 1 day
 RD.4 ½ day, RD.5 1½ days, RD.6 2 days, RD.7 1 day.
 
 **Placement in Part 21 (added 2026-10-22, this appendix):**
-- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
+- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, EN.1–EN.6, EN.8–EN.11, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
 - **Group 2, after the measured runs, each behind its switch:** SL.5, SAP.1 → SAP.2 → SAP.3, SAP.4 → SAP.5 (needs the owner's SAP system), DT.5, RD.1, RD.3, RD.5, RD.6.
 - Dependencies: DT before RD's documents; SAP.4 before SAP.5; BW.1/BW.2 and CG.1 (built) under RD.
 
@@ -4940,6 +4967,17 @@ the item: what it changes, why, and the evidence (review findings in
 | RV.4 | checklist items promoted to deterministic checks where a detector exists | P2 | PROPOSED 2026-10-22 (group 1) | [RV](#plan-rv) |
 | RV.5 | precision loop from dispositions: retire noisy items, keep fixed ones | P2 | PROPOSED 2026-10-22 (group 1) | [RV](#plan-rv) |
 | RV.6 | checklist report per run; code-review report document; Review policy tab | P1 | PROPOSED 2026-10-22 (group 1) | [RV](#plan-rv) |
+| EN.1 | SSO/SCIM, four roles with per-gate rights, tenant isolation tests | P1 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
+| EN.2 | tamper-evident audit log linking change → model → commit → approver; SIEM export | P1 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
+| EN.3 | SBOM, run manifest (ML/agent BOM), commit trailers, signed artifacts | P1 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
+| EN.4 | PR delivery to the customer's git host; ticket linkage; richer webhooks | P1 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
+| EN.5 | approval matrix, segregation of duties, protected paths, exceptions register, kill switch | P1 | PROPOSED 2026-10-22 (group 1, inactive until configured) | [EN](#plan-en) |
+| EN.6 | endpoint allowlists, vault secrets, PII detection, retention per tenant | P2 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
+| EN.7 | coverage/complexity gates, external scanner results, WCAG and performance gates | P2 | PROPOSED 2026-10-22 (group 2) | [EN](#plan-en) |
+| EN.8 | compliance bundle per run, EU AI Act disclosure and classification note, model inventory | P2 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
+| EN.9 | cost and chargeback per tenant/team; priced local model; budgets | P2 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
+| EN.10 | Helm/Kubernetes, migrations and upgrade notes, support bundle, HA guidance | P3 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
+| EN.11 | versioned, approvable customisations with export/import | P2 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
 | SAP.1 | `sap_cap_node` pack with `@cap-js/mcp-server` | P1 | PROPOSED 2026-10-22 (group 2) | [SAP](#plan-sap) |
 | SAP.2 | `sap_fiori_elements_cap` pack, UI generated by the harness | P1 | PROPOSED 2026-10-22 (group 2, after SAP.1; spike first) | [SAP](#plan-sap) |
 | SAP.3 | `ui5_freestyle` pack | P3 | PROPOSED 2026-10-22 (group 2) | [SAP](#plan-sap) |

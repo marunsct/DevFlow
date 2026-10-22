@@ -164,14 +164,50 @@ def _a_requirement_name(line: str) -> str:
     return name.strip().lower()
 
 
+def _what_the_install_reads(project: Path) -> tuple[set[str], bool] | None:
+    """The requirement files the project's recorded install names, and whether it installs the project itself; None when no install is recorded.
+
+    A manifest is a declaration only if the install reads it. Measured on a
+    gate run: `bcrypt` was declared in `pyproject.toml`, the pack's install
+    read only `requirements.txt` and `requirements-dev.txt`, this check
+    counted it declared, and every clean install lacked it - the product did
+    not start and the unit tests could not import it.
+    """
+    try:
+        from app.stacks import contract
+
+        record = contract.read(project.parent) or contract.read(project) or {}
+    except Exception:  # noqa: BLE001 - nothing recorded is every manifest, as before
+        return None
+    installs = [list(map(str, argv)) for argv in record.get("install") or [] if argv]
+    pip = [argv for argv in installs if "pip" in argv and "install" in argv]
+    if not pip:
+        return None
+    files: set[str] = set()
+    itself = False
+    for argv in pip:
+        for index, arg in enumerate(argv):
+            if arg in ("-r", "--requirement") and index + 1 < len(argv):
+                files.add(Path(argv[index + 1]).name)
+            elif arg.startswith("--requirement="):
+                files.add(Path(arg.split("=", 1)[1]).name)
+            elif arg in (".", "./") or arg.startswith((".[", "./[")):
+                itself = True
+    return files, itself
+
+
 def _python_declared(project: Path) -> set[str] | None:
     """What the Python manifests declare, or None when there is nothing to
     reconcile against. A `requirements*.txt` reconciles even when empty - it
     is the project saying "these are my dependencies"; a `pyproject.toml`
     only reconciles when it actually declares some, because a build-system
-    header alone says nothing about them."""
+    header alone says nothing about them. Where the project's install is
+    recorded, only the manifests it reads count (`_what_the_install_reads`)."""
+    read = _what_the_install_reads(project)
     declared: set[str] | None = None
     for manifest in sorted(project.glob("requirements*.txt")):
+        if read is not None and read[0] and manifest.name not in read[0]:
+            continue
         try:
             lines = manifest.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
@@ -181,6 +217,10 @@ def _python_declared(project: Path) -> set[str] | None:
     try:
         import tomllib
 
+        if read is not None and read[0] and not read[1]:
+            # The install names its requirement files and never the project:
+            # what `pyproject.toml` lists is not installed.
+            raise LookupError("not read by the install")
         parsed = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))
         from_project = [
             _a_requirement_name(str(item))

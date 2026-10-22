@@ -3490,7 +3490,7 @@ Every stage keeps the standing rules (`AGENTS.md`):
 Each stage's gate is judged by the two-run rule (Part 20).
 
 *Added 2026-10-22 (Appendix 8, customer stacks, SAP, templates, legacy docs):*
-- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, EN.2–EN.6, EN.8–EN.11 (EN.1 via MT), MT.1–MT.10 once the owner opens Matura's TS7d, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
+- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, EN.2–EN.6, EN.8–EN.11 (EN.1 via MT), MT.1–MT.10 in the MT sequence when the owner schedules it, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
 - **Group 2, behind switches:** SL.5, EN.7, SAP.1 → SAP.2 → SAP.3, SAP.4 → SAP.5, DT.5, RD.1, RD.3, RD.5, RD.6.
 
 *Added 2026-10-21 (Appendix 7, the discipline layer):*
@@ -4070,18 +4070,19 @@ memberships and per-app roles; OpenFGA for fine-grained permissions; a hash-chai
 sinks; entitlements; agent identity (service accounts, agents as revocable members, delegated tokens);
 readiness controls, evidence and a trust page; SDKs for Python, TypeScript and Go; a conformance kit.
 Its app-integration contract (spec 03, v0.1, 2026-10-16) names **DevFlow as the first app**, and its
-delivery plan holds a sprint for it (TS7d) marked *on hold until the owner asks*. Read 2026-10-22 at
-`bc5770e`; research [R13](research-findings.md#r13).
+delivery plan holds a sprint for it (TS7d). Read 2026-10-22 at `bc5770e`; research
+[R13](research-findings.md#r13). **Owner, 2026-10-22 11:40 JST:** the hold on DevFlow changes in Matura's
+handover was for the owner's own testing of Matura; the owner will schedule this integration. The plan
+below is therefore ready to be scheduled, not on hold.
 
 **Decision.** EN.1, EN.2 (partly), EN.5 (partly), EN.6 (partly), EN.8 (partly) and EN.11 are **not built
 in DevFlow**; they are taken from Matura through its SDK and contract, and DevFlow becomes a conformant
 Matura app. What Matura does not yet offer an app (audit ingest, secrets/BYOK, usage metering, the
-no-code gateway) DevFlow keeps for now, shaped so it can be handed over later. This is planning only:
-Matura's own handover says "do not touch DevFlow", so MT.1 starts when the owner lifts that.
+no-code gateway) DevFlow keeps for now, shaped so it can be handed over later.
 
 | ID | Change | Group | Priority | Status |
 |---|---|---|---|---|
-| MT.1 | Manifest and client: `matura/manifest.json` for DevFlow — permission catalogue (`run.read`, `run.start`, `run.approve`, `run.review`, `run.delete`, `lesson.approve`, `settings.read`, `settings.write`, `secrets.write`, `policy.write`, `template.write`), starter roles `admin / operator / approver / viewer`, `auth.resources` for any MCP endpoint DevFlow exposes, `conformance.resources` (runs) — uploaded with `PUT /admin/v1/apps/devflow`; a `devflow` client in the realm (none exists today). Owner's go-ahead first | 1 — now (no run behaviour) | P1 | PROPOSED, on hold by the owner |
+| MT.1 | Manifest and client: `matura/manifest.json` for DevFlow — permission catalogue (`run.read`, `run.start`, `run.approve`, `run.review`, `run.delete`, `lesson.approve`, `settings.read`, `settings.write`, `secrets.write`, `policy.write`, `template.write`), starter roles `admin / operator / approver / viewer`, `auth.resources` for any MCP endpoint DevFlow exposes, `conformance.resources` (runs) — uploaded with `PUT /admin/v1/apps/devflow`; a `devflow` client in the realm (none exists today) | 1 — now (no run behaviour) | P1 | PROPOSED, to be scheduled by the owner |
 | MT.2 | Token verification: `MaturaFastAPI(Verifier)` replaces `get_current_user`; every route checks `perms`, never role names (ADR 0008/0009); `require_admin`/`require_operator` become `require_permission(...)`; the password login and HS256 tokens stay behind `LEGACY_LOGIN` for one release (contract §9); the UI signs in with OIDC PKCE against the `matura` realm and keeps no token in `localStorage`; `users.preferences` moves to `devflow_user_settings(tenant_id, user_id, …)` | 1 — now | P1 | PROPOSED |
 | MT.3 | Contract tables and tenancy: the SDK migration creates `matura_*`; `tenant_id` becomes a uuid foreign key to `matura_tenant` on runs, audit_log, runtime_settings, runtime_secrets, model_profiles, plugin_instructions, the organisation profile, review policy, templates and lessons (lessons leave the JSON file for a table); the `'default'` tenant is migrated as a real tenant; `tenant_segment` uses the uuid; the webhook receiver `/matura/events` and `Sync.catch_up` at start-up and hourly keep the tables current; a `tenant.deleting` event purges runs, workspaces, object-store keys (OS keys gain a tenant prefix) and lessons; `user.deleted` pseudonymises actors | 1 — now | P1 | PROPOSED |
 | MT.4 | Isolation proven: RLS on every tenant table (`FORCE ROW LEVEL SECURITY`, `current_setting('matura.tenant_id')`), a per-transaction `set_config` in the session factory (the SDK's `tenant_session` is not written yet — DevFlow writes it or contributes it), the app role without `BYPASSRLS`, the admin cross-tenant bypass in `runs.py` removed (platform operators use Matura's console, not DevFlow), the `matura-conformance` kit green in CI (401/403 cases, cross-tenant create/list/read, webhook idempotency and signatures) — this is EN.1's isolation test | 1 — now | P1 | PROPOSED |
@@ -4098,8 +4099,26 @@ segregation → MT.5 (protected paths, exceptions and the kill switch stay in De
 EN.8 model inventory and readiness → via Matura's evidence once app controls exist; EN.9 budgets → MT.7;
 EN.11 → tenant rows under MT.3 with Matura's audit of role changes. EN.3, EN.4, EN.7, EN.10 are unchanged.
 
-**Effort:** MT.1–MT.2 2 days; MT.3–MT.4 3 days (the migrations and RLS are the bulk); MT.5–MT.6 1½ days;
-MT.7–MT.10 2 days. **Risks:** the contract is v0.1 *proposed* and Matura is early (tokens live 5 min, no
+#### MT implementation sequence (for the owner's scheduling)
+
+Each step is one branch, one commit series, tests proven to fail on the old code, suite green, both
+handovers and `STATE.md` updated; the old login stays usable until step 8.
+
+| Step | Work | Files (DevFlow) | Test that proves it | Days |
+|---|---|---|---|---|
+| 0 | Bring-up: Matura compose beside DevFlow's; `devflow` client with the Matura mapper in `keycloak/realm/matura-realm.json` (Platform repo); DevFlow compose overlay joining `matura_default` with `MATURA_ISSUER`, `MATURA_JWKS_URL`, `MATURA_AUDIENCE=devflow`, `MATURA_WEBHOOK_SECRET`, `MATURA_APP_CLIENT_ID/SECRET` | `docker-compose.matura.yml`, `.env.example`, `docs/HANDOVER.md` | `loop.sh ready` reports the issuer reachable and the JWKS key id | ½ |
+| 1 | Manifest: `matura/manifest.json` (permissions, roles, resources, `conformance.resources`); `manage.py matura register` uploads it (`PUT /admin/v1/apps/devflow`) and the webhook (`/admin/v1/apps/devflow/webhooks`) | `matura/manifest.json`, `server/manage.py` | manifest validates against Matura's schema; every route's permission appears in the catalogue (a test walks the FastAPI routes) | ½ |
+| 2 | Verification: `matura` SDK dependency; `MaturaFastAPI(Verifier)` wired in `api.py`; `get_current_user` returns a `Principal` adapter; `require_admin/operator` → `require_permission`; `LEGACY_LOGIN=true` keeps `/api/auth/token` and HS256 | `server/auth.py`, `server/api.py`, every router's dependencies, `pyproject.toml` | `FakeIssuer` tokens: 401 (no token, expired, wrong `aud`, unknown kid, wrong issuer), 403 (missing perm), 200 with perm; legacy token still accepted while the flag is on | 1½ |
+| 3 | UI: OIDC PKCE (`oidc-client-ts`) against the realm; token kept in memory with silent renew; `/portal/` link in the shell; the login page shows "Sign in with Matura" and, under the flag, the password form | `langchain-ui/src/lib/session.ts`, `api/index.ts`, `pages/Login.tsx`, shell | Playwright: sign-in redirects to Keycloak and back; a 401 triggers renew, not a logout; no token in `localStorage` | 1 |
+| 4 | Contract tables and tenancy: SDK migration (`matura.contract.v1`); `tenant_id uuid` FK on `runs`, `audit_log`, `runtime_settings`, `runtime_secrets`, `model_profiles`, `plugin_instructions`, the organisation profile, review policy, templates; `lessons` move from `DATA_DIR/lessons.json` to a table (signature kept); migration of `'default'` to a real tenant; `tenant_segment` on the uuid; `devflow_user_settings` | `server/run_store.py`, `runtime_settings.py`, `plugin_store.py`, `plugins/lessons.py`, `workspaces.py`, Alembic migrations | migration round-trips a fixture database; every table with tenant data has the FK (a test lists tables) | 1½ |
+| 5 | Events and feed: `webhook_router` at `/matura/events`; `Sync.bootstrap` at start-up and `catch_up` hourly (Celery beat); `tenant.deleting` → purge runs, workspaces, object-store keys (tenant prefix), lessons; `user.deleted` → pseudonymise actors | `server/matura_events.py`, `server/tasks.py`, `run_retention.py`, `object_store.py` | signed event applied once (idempotent), stale signature refused, version rule (older event ignored), deletion purges everything the retention contract names | 1 |
+| 6 | Isolation: `FORCE ROW LEVEL SECURITY` on tenant tables; session factory sets `matura.tenant_id` per transaction from the `Principal` (Celery tasks carry the tenant explicitly); the app role without `BYPASSRLS`; the admin cross-tenant bypass in `runs.py` removed; `matura-conformance` in CI | `server/db.py` (or the session factory), `run_store.py`, `runs.py`, `.github/workflows/ci.yml` | conformance kit green; a test proves a worker task without the tenant set reads zero rows rather than every row | 1½ |
+| 7 | Roles, approvals, audit: gate approvals check `run.approve` / `release.approve`; `reviewer` becomes a `matura_user` id; segregation of duties; `audit_log` gains `actor_id uuid`, `tenant_id uuid`, `kind`, `act_sub`, `policy_version`, `run_id`, `commit`, `prev_hash`/`hash` (chain per tenant), NDJSON export; delegated-agent `act.sub` recorded on model calls made for a person | `server/auth.py` (record_audit), `runs.py`, `lessons_api.py`, `observability/*` | approval by the requester refused when SoD is on; chain verifies and a tampered row breaks it; export matches the contract's test vectors | 1½ |
+| 8 | Entitlements, secrets, cleanup: read `/v1/tenants/{tid}/entitlements` and enforce `max_concurrent_runs`, `frontier_model`, `max_runs_per_month`, `storage_gb` (402 `plan-limit`); `SecretsBackend` seam with per-tenant Fernet; remove the users admin from `manage.py` CLI except for break-glass; `LEGACY_LOGIN` default off one release later | `server/entitlements.py`, `runtime_settings.py`, `manage.py` | over-limit start answers 402; a tenant cannot read another's secret rows | 1½ |
+| 9 | Docs and asks: HANDOVER two-stack bring-up and the issuer/JWKS pitfall; `STATE.md`; ADR-0014 *DevFlow is a Matura app*; MT.11 asks filed as issues in the Platform repo (audit ingest, app secrets/BYOK, usage ingest, `tenant_session` + Alembic op, app readiness controls) | `docs/*`, Platform issues | — | ½ |
+
+**Effort:** about 11 days in sequence; steps 2–3 and 4–5 can run in parallel. The order keeps a
+working login at every step and lands isolation (step 6) before approvals depend on it. **Risks:** the contract is v0.1 *proposed* and Matura is early (tokens live 5 min, no
 instant revocation; portal pages for SSO/SCIM/agents/audit not built); DevFlow's psycopg pools need the
 per-transaction `set_config` or RLS silently sees nothing; the issuer/JWKS host mismatch in compose.
 
@@ -4200,7 +4219,7 @@ and the citation check makes invention visible and countable. Effort: RD.2 1 day
 RD.4 ½ day, RD.5 1½ days, RD.6 2 days, RD.7 1 day.
 
 **Placement in Part 21 (added 2026-10-22, this appendix):**
-- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, EN.2–EN.6, EN.8–EN.11 (EN.1 via MT), MT.1–MT.10 once the owner opens Matura's TS7d, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
+- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, EN.2–EN.6, EN.8–EN.11 (EN.1 via MT), MT.1–MT.10 in the MT sequence when the owner schedules it, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
 - **Group 2, after the measured runs, each behind its switch:** SL.5, SAP.1 → SAP.2 → SAP.3, SAP.4 → SAP.5 (needs the owner's SAP system), DT.5, RD.1, RD.3, RD.5, RD.6.
 - Dependencies: DT before RD's documents; SAP.4 before SAP.5; BW.1/BW.2 and CG.1 (built) under RD.
 
@@ -5020,7 +5039,7 @@ the item: what it changes, why, and the evidence (review findings in
 | EN.9 | cost and chargeback per tenant/team; priced local model; budgets | P2 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
 | EN.10 | Helm/Kubernetes, migrations and upgrade notes, support bundle, HA guidance | P3 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
 | EN.11 | versioned, approvable customisations with export/import | P2 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
-| MT.1 | DevFlow manifest (permissions, roles, resources) and realm client | P1 | PROPOSED 2026-10-22 (group 1; on hold by the owner's Matura rule) | [MT](#plan-mt) |
+| MT.1 | DevFlow manifest (permissions, roles, resources) and realm client | P1 | PROPOSED 2026-10-22 (group 1; owner schedules the MT sequence) | [MT](#plan-mt) |
 | MT.2 | Matura token verification and `perms` checks; OIDC PKCE in the UI; legacy login behind a flag | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
 | MT.3 | contract tables; uuid `tenant_id` everywhere incl. lessons; events and feed; deletion handling | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
 | MT.4 | RLS, per-transaction tenant setting, no admin bypass, conformance kit in CI | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
@@ -5030,7 +5049,7 @@ the item: what it changes, why, and the evidence (review findings in
 | MT.8 | per-tenant secrets store behind a backend seam for Matura/OpenBao later | P2 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
 | MT.9 | no DevFlow users page; portal linked; tenant-scoped settings | P2 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
 | MT.10 | compose overlay and Helm values joining a Matura install | P2 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
-| MT.11 | asks of Matura: audit ingest, app secrets/BYOK, usage ingest, SDK `tenant_session`, app readiness controls | P1 | PROPOSED 2026-10-22 (filed when TS7d opens) | [MT](#plan-mt) |
+| MT.11 | asks of Matura: audit ingest, app secrets/BYOK, usage ingest, SDK `tenant_session`, app readiness controls | P1 | PROPOSED 2026-10-22 (filed at MT step 9) | [MT](#plan-mt) |
 | SAP.1 | `sap_cap_node` pack with `@cap-js/mcp-server` | P1 | PROPOSED 2026-10-22 (group 2) | [SAP](#plan-sap) |
 | SAP.2 | `sap_fiori_elements_cap` pack, UI generated by the harness | P1 | PROPOSED 2026-10-22 (group 2, after SAP.1; spike first) | [SAP](#plan-sap) |
 | SAP.3 | `ui5_freestyle` pack | P3 | PROPOSED 2026-10-22 (group 2) | [SAP](#plan-sap) |

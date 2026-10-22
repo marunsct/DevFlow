@@ -12,7 +12,7 @@ week are in `docs/archive/`.
 
 | | |
 |---|---|
-| Run | **Group 2 all-on baseline** run-bf8a972f - tasks-api, `DELIVERY=fast FRONTIER=false`, on **07ef4de** (Fix batch 4: LF.186-LF.211; **all 24 switches on**, verified in worker and app). Started 19:57 JST. Mid-run deploys allowed at a stage boundary for time-wasting defects (owner 18:40). |
+| Run | **Group 2 all-on baseline** run-bf8a972f - tasks-api, `DELIVERY=fast FRONTIER=false`, on **07ef4de** (Fix batch 4: LF.186-LF.211; **all 24 switches on**, verified in worker and app). Started 19:57 JST. **Shakedown run (owner 20:00 JST):** every confirmed harness bug is fixed at once - `loop.sh rewind --pause-only; BOUNDARY_WAIT=0 loop.sh deploy; loop.sh rewind <earliest affected stage>` - for the first couple of all-on runs; its score is not an arm. Gated runs start once a run goes through with no new harness bug. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | Qwen3.6-35B-A3B (owner, back from LFM2.5 at 21:19): 2 slots, 262,144 tokens; server sampling = Qwen's *precise coding* profile (temperature 0.6, top_p 0.95, top_k 20, min_p 0, presence 0, repetition 1.0, max tokens 32,768); DevFlow context 260,000, reply ceiling 32,768 |
 | Owner's model settings | the owner's; never changed by the loop |

@@ -12,6 +12,7 @@
 #   scripts/loop/loop.sh reads [run-id]      redundant reads by stage and file (redundant_reads.py)
 #   scripts/loop/loop.sh deploy [commit]     rebuild app and worker from a commit (default HEAD), at a stage boundary
 #   scripts/loop/loop.sh deploy-app          rebuild and restart the app container only (API, UI); the worker and live runs untouched
+#   scripts/loop/loop.sh effects [run]          what each fix and switch did in a run (fired, saved, cost)
 #   scripts/loop/loop.sh lessons [distil <run>] the lessons awaiting the owner, or propose a run's (LESSON_DISTILLER)
 #   scripts/loop/loop.sh patterns [since]     across every run: where replies run out, fix outcome by bundle size, failures that recur
 #   scripts/loop/loop.sh timing [run-id..]   where the wall-clock time went: model vs tools, phases, reasoning share (run_timing.py)
@@ -320,6 +321,7 @@ kpi)
     rm -f "data/kpi/$run.json.tmp"; echo "kpi: the worker could not read $run's transcript; nothing was changed" >&2; exit 1
   fi
   ;;
+effects) in_worker effects.py "${2:-$(current)}" ;;
 product) in_worker product_audit.py "${2:-$(current)}" ;;
 corpus)
   # The reader corpus (plan RC): `corpus harvest [run]` keeps a run's reader inputs

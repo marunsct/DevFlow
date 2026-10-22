@@ -16,7 +16,12 @@ Reasons, in the order a request is laid out:
 - `history_rewritten` - an earlier stored message was not resent as it was
   (argument truncation, reasoning carry, cut-reply shortening, compaction);
 - `evicted` - the prefix was unchanged and still nothing was read from the cache;
-- `stable` - nothing before the new messages changed.
+- `stable` - nothing before the new messages changed;
+- `first_of_a_conversation` - a request that resends nothing (`carried` 0)
+  opens a conversation of its own - a one-shot call beside a stage's agent, a
+  part of a specification written at once - and is no break of the call
+  before it. Measured on the first all-on run: 8 of 10 "breaks" were these,
+  so the prefix-cache switches were judged on calls they cannot affect.
 """
 
 from __future__ import annotations
@@ -27,7 +32,8 @@ from typing import Any, Iterable
 
 #: The request blocks in the order they reach the model, after the system message.
 OPENING_BLOCKS = ("environment_contract", "project_memory", "specification", "request")
-REASONS = ("tools_changed", "system_changed", "opening_changed", "history_rewritten", "evicted", "stable")
+REASONS = ("tools_changed", "system_changed", "opening_changed", "history_rewritten", "evicted", "stable",
+           "first_of_a_conversation")
 
 
 def _as(value: Any, kind: type) -> Any:
@@ -100,7 +106,12 @@ def breaks(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
             details = usage.get("input_token_details") or {}
             read = details.get("cache_read") if isinstance(details, dict) else None
             read = int(read) if isinstance(read, (int, float)) else None
-            why = reason(last[stage], request, read) if stage in last else "first_of_the_stage"
+            if stage not in last:
+                why = "first_of_the_stage"
+            elif _int(request.get("carried")) == 0:
+                why = "first_of_a_conversation"
+            else:
+                why = reason(last[stage], request, read)
             last[stage] = request
             counts[why] += 1
             uncached[why] += max(0, _int(usage.get("input_tokens")) - int(read or 0))

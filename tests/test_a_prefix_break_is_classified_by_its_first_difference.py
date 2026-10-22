@@ -46,3 +46,13 @@ def test_malformed_records_never_raise():
     ]
     out = breaks(records)
     assert sum(out["calls_by_reason"].values()) == 2
+
+
+def test_a_request_that_resends_nothing_opens_its_own_conversation_and_is_no_break():
+    """Measured on the first all-on run: 8 of 10 'breaks' were one-shot calls beside a stage's agent."""
+    def request(carried, system):
+        return {"kind": "model_request", "stage": "principal_architect", "at": "t", "carried": carried, "messages": 2,
+                "tools": [], "blocks": {"system": system, "request": 100}}
+    response = {"kind": "model_response", "stage": "principal_architect", "at": "t", "usage": {"input_tokens": 10}}
+    out = breaks([request(0, 15000), response, request(3, 15000), response, request(0, 64), response])
+    assert out["calls_by_reason"] == {"first_of_the_stage": 1, "stable": 1, "first_of_a_conversation": 1}

@@ -1578,6 +1578,13 @@ def _the_same_call_answered_the_same(messages: list[Any]) -> tuple[str, int] | N
     return calls[-1][0], running
 
 
+def stable_tools_notice(withheld: set[str]) -> str:
+    """What a call is told when its tools stay listed but some are refused (plan PX.2)."""
+    names = ", ".join(f"`{name}`" for name in sorted(withheld)[:12])
+    return (f"\n\nStill listed, but refused if called on this call: {names}. A call to one returns "
+            "a refusal and is not run.")
+
+
 def _the_same_call_running_notice(name: str, times: int) -> str:
     """Why a tool is gone for this call: the stage sent it the same arguments again and again."""
     return (
@@ -2083,12 +2090,20 @@ def build_settled_answer_middleware(
                         **spiral_quiet,
                     }
                     spiral_plainer = without_the_effort_field(overrides["model_settings"])
+                from app.agents import stable_tools
+
+                stable = stable_tools.enabled()
+                withheld_here: set[str] | None = None
                 if answer_only:
                     # Empty here, not empty at the model. `_get_bound_model`
                     # appends the structured-output tools to whatever this
                     # list holds, so the model is left bound to exactly one
-                    # tool: the one that ends the stage.
-                    overrides["tools"] = []
+                    # tool: the one that ends the stage. With the list held
+                    # stable (plan PX.2) every one of them is refused instead.
+                    if stable:
+                        withheld_here = {_named(tool) for tool in getattr(request, "tools", None) or []} - {""}
+                    else:
+                        overrides["tools"] = []
                     if spiralled:
                         # Without tools the model can still spend the reply
                         # reasoning, and did. See `answering_without_reasoning`.
@@ -2136,7 +2151,10 @@ def build_settled_answer_middleware(
                             )
                     if ignored or (stalled and writers):
                         kept, narrowed = _without_the_looking_tools_in(kept), True
-                    if narrowed:
+                    if narrowed and stable:
+                        withheld_here = ({_named(tool) for tool in getattr(request, "tools", None) or []}
+                                         - {_named(tool) for tool in kept} - {""})
+                    elif narrowed:
                         overrides["tools"] = kept
                     elif repeated is not None and not correction.strip():
                         # Nothing was removed, so a notice would describe a tool
@@ -2146,12 +2164,16 @@ def build_settled_answer_middleware(
                     # Built last, so it carries whatever tool narrowing the
                     # call above settled on.
                     refused_fallback = {**overrides, "model_settings": spiral_plainer}
+                if withheld_here:
+                    correction += stable_tools_notice(withheld_here)
                 corrected = [*messages, {"role": "user", "content": correction}]
                 if refused_fallback is not None:
                     refused_fallback = request.override(messages=corrected, **refused_fallback)
                 if "tools" in overrides:
                     sent = {_named(tool) for tool in overrides["tools"]}
                     self._withheld = {_named(tool) for tool in getattr(request, "tools", None) or []} - sent - {""}
+                elif withheld_here is not None:
+                    self._withheld = withheld_here
                 request = request.override(messages=corrected, **overrides)
             except Exception:  # noqa: BLE001 - never fail the call over a hint
                 return handler(request)

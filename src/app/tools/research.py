@@ -95,7 +95,11 @@ def build_research_share_middleware() -> Any:
             try:
                 gone = {tool for kind, tools in _TOOL_OF.items() if spent(kind) for tool in tools}
                 tools = list(getattr(request, "tools", None) or [])
-                if gone and tools:
+                from app.agents import stable_tools
+
+                # Kept listed when the list is held stable (plan PX.2): each
+                # research tool already refuses a lookup over its share.
+                if gone and tools and not stable_tools.enabled():
                     kept = [t for t in tools if _named(t) not in gone]
                     if len(kept) != len(tools):
                         request = request.override(tools=kept)

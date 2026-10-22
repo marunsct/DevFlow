@@ -4556,7 +4556,7 @@ Appendix 4's ledger becomes "absorbed by PX (Appendix 9)"; BA's acceptance
 | Item | Priority | Status | Notes |
 |---|---|---|---|
 | PX.1 prefix-break reasons | P1 | BUILT 2026-10-22, measurement only (no switch: it changes no request) - `app/observability/prefix_breaks.py`, KPIs `prefix_break_<reason>` and `uncached_tokens_<reason>`, read from the existing `model_request` records. Measured post hoc on Measure pair 2 run 2 and pair 3 run 1: uncached input by first break - tools changed 30-31%, first call of a stage 26-28%, opening messages changed 18-25%, new messages 18-21%, system message 1-2%, history rewritten 1% | after BF (done) |
-| PX.2 stable tools per visit | P1 | NOT STARTED (group 2, `STABLE_TOOLS`, owner 2026-10-22: build now, off) | absorbs BA step 2; the largest measured break |
+| PX.2 stable tools per visit | P1 | BUILT 2026-10-22 behind `STABLE_TOOLS` (off): `app/agents/stable_tools.py`; the settled-answer guards (read tool, a repeated tool, looking tools, answer-only) and the research share leave the bound list as it is, the withheld names go to the existing `wrap_tool_call` refusal and the call is told which are refused. Thinking-toggle and MCP sort (steps 3-4) not yet | absorbs BA step 2; the largest measured break |
 | PX.3 canonical memory, no clock | P1 | NOT STARTED (group 2, `CANONICAL_MEMORY`, owner 2026-10-22: build now, off) | second largest measured break |
 | PX.4 append-only transcript | P1 | NOT STARTED (group 2, `APPEND_ONLY_HISTORY`, owner 2026-10-22: build now, off) | measured 1% of uncached input on tasks-api |
 | PX.5 steering at the tail | P2 | NOT STARTED (group 2 by owner 2026-10-22, `STEERING_AT_THE_TAIL`, off) | system-message changes measured 1-2% |

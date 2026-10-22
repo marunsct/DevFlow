@@ -33,6 +33,7 @@ SWITCHES: dict[str, str] = {
     "VERIFY_AFTER_WRITE": "app.graph.verify_after_write",
     "DEFECT_CALL_CAP": "app.graph.defect_budget",
     "LOCALISE_FIRST": "app.graph.localisation",
+    "STABLE_TOOLS": "app.agents.stable_tools",
     "INTERFACE_CLASH_CHECK": "app.agents.interface_clashes",
     "ASK_SPECIFICATION": "app.agents.ask_specification",
     "INTERFACE_CHANGES_NAMED": "app.agents.interface_changes",

@@ -2998,7 +2998,17 @@ def _the_defect_s_tests_in(root: str, label: str, defect: Any) -> bool | None:
     try:
         from app import ci
         from app.acceptance.junit import tags_in
+        from app.analysis import dependency_drift
+        from app.stacks import contract as the_contract
 
+        # A defect about what the manifests declare is settled by declaring
+        # it, measured by the same reconciliation that raised it - not by unit
+        # tests that only mention the package. Measured on a gate run: a fixer
+        # declared both packages, and the defect was left open on them.
+        project = str((the_contract.read(root) or {}).get("project") or "")
+        left = dependency_drift.still_undeclared(Path(root) / project, str(getattr(defect, "description", "") or ""))
+        if left is not None:
+            return not left
         snapshot = ci.load(root, "latest")
         if snapshot is None or snapshot.label != label:
             return None

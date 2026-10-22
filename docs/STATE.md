@@ -6,13 +6,13 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-22 22:30 JST.
+**As of:** 2026-10-23 00:35 JST.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | **Shakedown run 2** run-8cced4a9 - tasks-api, `DELIVERY=fast FRONTIER=false`, on **fc93ecd** (all 24 switches on). Started 22:28 JST. Shakedown rules as below: pause/deploy/rewind only for a bug that changes the outcome or wastes time; other fixes bundled. |
+| Run | **Gated run 1** run-f13f7438 - tasks-api, `DELIVERY=fast FRONTIER=false`, on **1246bb22** (frozen SHA, 24/25 switches on; `MUTATION_GUIDED_TESTS` off). Started 00:35 JST. No mid-run deploys; hidden tests only; a bug found is filed for the next Fix batch. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | Qwen3.6-35B-A3B (owner, back from LFM2.5 at 21:19): 2 slots, 262,144 tokens; server sampling = Qwen's *precise coding* profile (temperature 0.6, top_p 0.95, top_k 20, min_p 0, presence 0, repetition 1.0, max tokens 32,768); DevFlow context 260,000, reply ceiling 32,768 |
 | Owner's model settings | the owner's; never changed by the loop |
@@ -20,6 +20,7 @@ week are in `docs/archive/`.
 
 ## Last runs
 
+- **run-8cced4a9** (shakedown 2, 07ef4de -> 1246bb22, mixed_versions): **completed 00:17 JST, hidden 10/10**, 108 active min (faster than run 1's 140), 507k output tokens, 2 lost replies, quality 6/7, mutation 0.625. Bugs: LF.214-class import fixed live; LF.217 (UI sprint counter, bundled - never counted against the score, owner's rule). Both shakedown runs clean of outcome-affecting bugs -> **moved to gated runs**; SHA frozen at 1246bb22.
 - **run-bf8a972f** (shakedown 1, all 24 switches on, 07ef4de -> 9e881ff -> fc93ecd, mixed_versions): **completed 22:18 JST, hidden 10/10**, 140 active min (previous tasks-api runs 199-233), 715k output tokens (-33%), 2 replies lost to the cap (4-6), 247 calls. Sprint 1 took 3 attempts (a locked test contradicting the spec - dispute, QA repair; two identical rewrites reverted - LF.216); sprint 2 passed on its first measurement (AC-7 placed with the item routes). Bugs fixed live: LF.214, LF.216; bundled: LF.212, LF.213, LF.215. **LF.217 built 23:41 JST, bundled (UI only - never counted against a gate run's score):** fast delivery's sprint-planning path makes no model call, so the run page's sprint counter (counts `technical_lead` visits) silently skipped the sprint it opened; the next sprint's header wore the wrong number (owner screenshot, run-8cced4a9). Now narrates itself.
 - **run-10d79850** (Measure pair 4 run 1, f8b3c82a): **cancelled 19:56 JST** by the owner's rule (no value left) after 206 min in sprint 1 attempt 2; hidden **4/10**. Sprint 1 could not pass AC-7 (its only test needs sprint 2's item routes - LF.202); 6 replies lost to the output cap (32 min, 23% of model time); a docstring read as an import put `of==0.0.1` in the manifest (LF.207).
 

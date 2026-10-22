@@ -8867,6 +8867,17 @@ def build_workflow_graph(
             update["sprint_plan"], assignment_notes = with_every_criterion_assigned(
                 update["sprint_plan"], [c.id for c in numbered], {c.id: c.text for c in numbered}
             )
+            # Each criterion where a test of it can pass: a test proving a later
+            # sprint's criterion too cannot pass before that sprint.
+            from app.acceptance import suite as locked_suite
+            from app.acceptance.junit import tags_in
+            from app.agents.scrum_master import with_each_criterion_where_its_tests_can_pass
+
+            update["sprint_plan"], moved = with_each_criterion_where_its_tests_can_pass(
+                update["sprint_plan"],
+                [list(tags_in(name)) for _, name in locked_suite.declared_tests(state["repository"].root_path)],
+            )
+            assignment_notes = [*assignment_notes, *moved]
             if assignment_notes:
                 logger.info("Sprint plan's criteria adjusted: %s", "; ".join(assignment_notes))
             # Once, as for the success measures: a sprint whose scope builds a

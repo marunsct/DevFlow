@@ -819,6 +819,43 @@ def with_every_criterion_assigned(
     return plan.model_copy(update={"sprints": updated}), notes
 
 
+def with_each_criterion_where_its_tests_can_pass(plan: Any, tests: list[list[str]]) -> tuple[Any, list[str]]:
+    """The plan with each criterion moved to the earliest sprint in which one of its tests can pass, and what moved.
+
+    A locked test carries every criterion it proves (`tests` holds each test's
+    criterion ids, from its name). One that also proves a later sprint's
+    criterion cannot pass before that sprint. Measured on a Measure run: the
+    plan gave sprint 1 "accounts and items survive a restart" and sprint 2 the
+    item routes; its only test, carrying both, signs up, creates an item,
+    restarts and lists items. Sprint 1 spent two fix rounds - about 75 minutes
+    - on a criterion that could not pass, and was planned again. A criterion
+    with no test, or one of whose tests can pass where it is, stays.
+    """
+    sprints = list(getattr(plan, "sprints", None) or [])
+    if len(sprints) < 2 or not tests:
+        return plan, []
+    where = {item: number for number, sprint in enumerate(sprints) for item in (getattr(sprint, "criteria", None) or [])}
+    moves: dict[str, int] = {}
+    for item, number in where.items():
+        carrying = [[t for t in test if t in where] for test in tests if item in test]
+        if not carrying:
+            continue
+        # The sprint by which each test's every criterion is built; the earliest of those.
+        earliest = min(max(where[t] for t in test) for test in carrying)
+        if earliest > number:
+            moves[item] = earliest
+    if not moves:
+        return plan, []
+    cleaned = [[i for i in (getattr(sprint, "criteria", None) or []) if i not in moves] for sprint in sprints]
+    for item, number in moves.items():
+        cleaned[number].append(item)
+    if not cleaned[0]:
+        return plan, []
+    updated = [sprint.model_copy(update={"criteria": ids}) for sprint, ids in zip(sprints, cleaned)]
+    notes = [f"{item} to sprint {number + 1}, where a test of it can first pass" for item, number in moves.items()]
+    return plan.model_copy(update={"sprints": updated}), notes
+
+
 _SYSTEM_PROMPT = f"""You are the Scrum Master for this workflow.
 
 Your role is to turn an approved technical specification into an implementation

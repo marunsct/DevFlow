@@ -6,13 +6,13 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-22 19:58 JST.
+**As of:** 2026-10-22 22:30 JST.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | **Group 2 all-on baseline** run-bf8a972f - tasks-api, `DELIVERY=fast FRONTIER=false`, on **07ef4de** (Fix batch 4: LF.186-LF.211; **all 24 switches on**, verified in worker and app). Started 19:57 JST. **Shakedown run (owner 20:00 JST):** every confirmed harness bug is fixed at once - `loop.sh rewind --pause-only; BOUNDARY_WAIT=0 loop.sh deploy; loop.sh rewind <earliest affected stage>` - for the first couple of all-on runs - **only for a bug that changes the run's outcome or wastes its time**; fixes that do not (measurement, logs, tooling) are pushed and bundled with the next significant one (owner 20:19). Deployed 21:09 JST (9e881ff, run resumed, mixed_versions): LF.212-LF.214 - LF.214 turned out to cost time (the rewrite wrote `database` into requirements.txt; the next fixer removed it). Deployed 22:00 JST (fc93ecd, resumed): LF.215, LF.216 - a fast rewrite now sees earlier attempts and the revert (two identical rewrites were reverted for the same test). Its score is not an arm. Gated runs start once a run goes through with no new harness bug. |
+| Run | **Shakedown run 2** run-8cced4a9 - tasks-api, `DELIVERY=fast FRONTIER=false`, on **fc93ecd** (all 24 switches on). Started 22:28 JST. Shakedown rules as below: pause/deploy/rewind only for a bug that changes the outcome or wastes time; other fixes bundled. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | Qwen3.6-35B-A3B (owner, back from LFM2.5 at 21:19): 2 slots, 262,144 tokens; server sampling = Qwen's *precise coding* profile (temperature 0.6, top_p 0.95, top_k 20, min_p 0, presence 0, repetition 1.0, max tokens 32,768); DevFlow context 260,000, reply ceiling 32,768 |
 | Owner's model settings | the owner's; never changed by the loop |
@@ -20,6 +20,7 @@ week are in `docs/archive/`.
 
 ## Last runs
 
+- **run-bf8a972f** (shakedown 1, all 24 switches on, 07ef4de -> 9e881ff -> fc93ecd, mixed_versions): **completed 22:18 JST, hidden 10/10**, 140 active min (previous tasks-api runs 199-233), 715k output tokens (-33%), 2 replies lost to the cap (4-6), 247 calls. Sprint 1 took 3 attempts (a locked test contradicting the spec - dispute, QA repair; two identical rewrites reverted - LF.216); sprint 2 passed on its first measurement (AC-7 placed with the item routes). Bugs fixed live: LF.214, LF.216; bundled: LF.212, LF.213, LF.215.
 - **run-10d79850** (Measure pair 4 run 1, f8b3c82a): **cancelled 19:56 JST** by the owner's rule (no value left) after 206 min in sprint 1 attempt 2; hidden **4/10**. Sprint 1 could not pass AC-7 (its only test needs sprint 2's item routes - LF.202); 6 replies lost to the output cap (32 min, 23% of model time); a docstring read as an import put `of==0.0.1` in the manifest (LF.207).
 
 ## Owner 2026-10-22 18:40 JST: all improvements on

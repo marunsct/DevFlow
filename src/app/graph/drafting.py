@@ -225,6 +225,25 @@ def _neighbours(root: Path, path: str, task: Any, detail: str) -> str:
     return "\n\n".join(shown)
 
 
+def _where_dependencies_go(root: Path) -> str:
+    """The manifests this project's install reads, for every drafted file; "" with no recorded setup.
+
+    Drafting wrote the dependency lists: on five gate runs in a row it put a
+    service's packages in `pyproject.toml`, which the pack's install never
+    reads, and the product did not start until a fix round moved them.
+    """
+    try:
+        from app.stacks import contract
+
+        record = contract.read(root)
+        if not record:
+            return ""
+        return "--- Where this project's dependencies go ---\n" + contract._where_dependencies_go(
+            str(record.get("project") or ""), record)
+    except Exception:  # noqa: BLE001 - the request as it was
+        return ""
+
+
 def draft_request(root: Path, path: str, task: Any, specification: Any, stack: Any,
                   diagnostics: list[str] | None = None) -> str:
     """What one file's draft is asked; `diagnostics` are what the compiler reported on its last draft."""
@@ -254,6 +273,7 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         ("--- The compiler reports, in the draft above ---\n" + "\n".join(diagnostics)) if diagnostics else "",
         # The layout every builder and judge reads (plan CM.1).
         the_facts_section(root, built=False).strip(),
+        _where_dependencies_go(root),
         f"Reply with the complete content of `{path}` and nothing else, in one fenced code block. "
         "Every name, signature, message, import and library call is the one the specification "
         "gives; where it gives none, write the plainest code that meets the work order.",

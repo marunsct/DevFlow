@@ -469,6 +469,34 @@ def _put_back_the_scripts(root: Path, project: str, pack: StackPack) -> list[str
     ]
 
 
+def _where_dependencies_go(project: str, record: dict[str, Any]) -> str:
+    """Where this project's install reads its dependencies from, said once for every stage that writes code.
+
+    "Add dependencies the normal way" left the choice to the model, and a
+    Python project has two normal ways: measured on five gate runs in a row,
+    drafting declared its packages in `pyproject.toml` while the pack's
+    install read only `requirements.txt`, and the product did not start until
+    a fix round moved them.
+    """
+    installs = [[str(part) for part in argv] for argv in record.get("install") or [] if argv]
+    files: list[str] = []
+    for argv in installs:
+        for index, arg in enumerate(argv):
+            if arg in ("-r", "--requirement") and index + 1 < len(argv):
+                files.append(argv[index + 1])
+    if files:
+        named = " and ".join(f"`{project}/{name}`" if project else f"`{name}`" for name in dict.fromkeys(files))
+        return (f"Declare every package the code imports in {named} - the install reads only "
+                f"{'these' if len(files) > 1 else 'this'}, so a package listed anywhere else (a "
+                "`pyproject.toml` included) is never installed; a test-only tool goes in the "
+                "development file where there is one.")
+    if installs:
+        shown_install = " && ".join(" ".join(argv) for argv in installs)
+        return (f"Declare every package the code imports in the manifest this install reads "
+                f"(`{shown_install}`), in the same change that imports it.")
+    return "Declare every package the code imports in the project's manifest, in the same change that imports it."
+
+
 def describe(repo_root: str | Path | None) -> str:
     """The contract as a block for every stage that writes code or tests."""
     found = the_pack(repo_root)
@@ -493,7 +521,8 @@ def describe(repo_root: str | Path | None) -> str:
         + (f", and the manifest scripts {scripts}" if scripts else "")
         + ". They are test setup, not the product: do not change them, test them, run them "
         "yourself or build on them - one run's stage wrote a unit test that started the "
-        "harness's server and hung for five minutes. Add dependencies the normal way; "
-        "everything else in the project is yours.\n"
+        "harness's server and hung for five minutes. "
+        + _where_dependencies_go(project, record)
+        + " Everything else in the project is yours.\n"
         f"{pack.filled(pack.guide, project, record.get('title') or project, record.get('package'))}\n\n"
     )

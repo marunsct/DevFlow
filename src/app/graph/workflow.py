@@ -3852,9 +3852,9 @@ def _run_gated_agent(
         # out one read at a time. Before the request, not after: the last
         # message a model reads is the one it answers. See
         # `app.agents.project_snapshot`.
-        from app.agents.project_snapshot import project_snapshot
+        from app.agents.project_snapshot import for_a_stage
 
-        snapshot = project_snapshot(getattr(state.get("repository"), "root_path", None))
+        snapshot = for_a_stage(getattr(state.get("repository"), "root_path", None))
         if snapshot:
             initial_request = {
                 **initial_request,

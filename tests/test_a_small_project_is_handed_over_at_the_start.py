@@ -89,7 +89,10 @@ def test_a_project_holding_only_harness_files_is_empty_too(tmp_path: Path) -> No
     assert "has no files yet" in project_snapshot(tmp_path)
 
 
-def test_a_stage_s_opening_request_carries_it_before_its_own_request(tmp_path: Path, agents) -> None:  # noqa: F811
+def test_a_stage_s_opening_request_carries_it_before_its_own_request(tmp_path: Path, agents, monkeypatch) -> None:  # noqa: F811
+    # Without the project memory; under it the memory holds the files once
+    # (tests/test_a_stage_is_given_each_file_once.py).
+    monkeypatch.setenv("PROJECT_MEMORY", "off")
     from test_graph_routing import (
         _approved_review,
         _document,

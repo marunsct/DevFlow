@@ -166,4 +166,23 @@ def project_snapshot(repo_root: str | Path) -> str:
         return ""
 
 
-__all__ = ["SNAPSHOT_BUDGET_CHARS", "project_snapshot"]
+def for_a_stage(repo_root: str | Path) -> str:
+    """What a stage's opening request is given: the snapshot, or only the empty-project notice under the project memory.
+
+    Every stage agent carries the project memory (`app.agents.project_memory`),
+    which holds the same files whole at the start of every call and names what
+    it left out. The snapshot on top of it said each file twice and
+    contradicted it: measured on a Measure run, every call of a fix stage
+    carried 14 files twice - about 24,000 characters - and the snapshot called
+    a test file "not included, read it" that the memory held and refused to
+    let it read; the fixer concluded the memory held only summaries.
+    """
+    from app.agents import project_memory
+
+    text = project_snapshot(repo_root)
+    if text and project_memory.enabled() and not text.startswith("The project directory `"):
+        return ""
+    return text
+
+
+__all__ = ["SNAPSHOT_BUDGET_CHARS", "for_a_stage", "project_snapshot"]

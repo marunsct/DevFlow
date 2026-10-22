@@ -54,3 +54,43 @@ def test_the_kpis_give_each_tool_its_own_failure_rate():
     got = kpi.kpis(records)["tool_failure_rate_by_tool"]
 
     assert got == {"edit_artifact": 1.0, "read_file": 0.0}
+
+
+def test_the_reference_passes_every_quality_test_too(tmp_path):
+    """A quality test holds the product to the brief at its edges; it is fit to judge a run only once the
+    reference passes it (a username of only spaces was dropped for that reason)."""
+    import shutil
+
+    work = tmp_path / "quality"
+    shutil.copytree(BENCH / "quality", work)
+    shutil.copy(BENCH / "hidden" / "conftest.py", work / "conftest.py")
+    done = subprocess.run(
+        [sys.executable, "-m", "pytest", str(work), "-q", "-p", "no:cacheprovider",
+         "--rootdir", str(work), "-c", os.devnull, "--no-header", "-o", "addopts="],
+        env={**os.environ, "PRODUCT_DIR": str(BENCH / "reference")},
+        capture_output=True, text=True, timeout=300, cwd=tmp_path,
+    )
+    assert " passed" in done.stdout and "failed" not in done.stdout, done.stdout[-1500:] + done.stderr[-800:]
+
+
+def test_the_score_carries_the_quality_set_apart_and_the_ledger_carries_all_three_scores(tmp_path):
+    import importlib.util
+
+    def load(name, path):
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    root = Path(__file__).resolve().parents[1]
+    score = load("score_q", root / "scripts" / "bench" / "score.py")
+    assert "_the_quality_set" in dir(score)
+    ledger = load("ledger_q", root / "scripts" / "loop" / "kpi_ledger.py")
+    bench = tmp_path / "bench"
+    (bench / "mutation").mkdir(parents=True)
+    (bench / "run-x.json").write_text(json.dumps({"score": 1.0, "quality_passed": 5, "quality_total": 7}))
+    (bench / "mutation" / "run-x.json").write_text(json.dumps({"score": 0.6}))
+    row = ledger.with_the_scores({"run": "run-x"}, bench)
+    assert row == {"run": "run-x", "hidden_score": 1.0, "quality_score": 0.714, "mutation_score": 0.6}
+    earlier = [{"quality_score": "1.0"}, {"quality_score": "1.0"}]
+    assert any(line.startswith("quality_score") for line in ledger.regressions(earlier, row))

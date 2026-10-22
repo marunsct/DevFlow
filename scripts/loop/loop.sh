@@ -181,11 +181,14 @@ score)
   mkdir -p data/bench
   docker cp "langchain-worker-1:/tmp/bench-$run.json" "data/bench/$run.json" >/dev/null && echo "result: data/bench/$run.json"
   # The score alone - no test names - for the outcome dashboard (app.server.outcomes).
-  "$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({k:d.get(k) for k in ("benchmark","passed","total","score","completion_gaps","brief_mismatch")}))' "data/bench/$run.json" \
+  "$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({k:d.get(k) for k in ("benchmark","passed","total","score","quality_passed","quality_total","completion_gaps","brief_mismatch")}))' "data/bench/$run.json" \
     | docker compose exec -T worker sh -c "mkdir -p /app/data/outcomes && cat > /app/data/outcomes/$run.json" || true
   # The hidden tests and the copy they ran against leave the worker at once:
   # it is the container the harness's agents work in.
   docker compose exec -T -u root worker rm -rf /tmp/bench-src /tmp/bench-work "/tmp/bench-$run.json" || true
+  # How strong the run's own locked suite is, as a quality measure beside the
+  # hidden score (owner, 2026-10-22); MUTATE=0 skips it. A few minutes.
+  [ "${MUTATE:-12}" = "0" ] || "$0" mutate "$run" "${MUTATE:-12}" | tail -1 || true
   # Every scored run's KPIs, beside the runs before it (Initiative W.4).
   "$0" kpi "$run" || true
   ;;

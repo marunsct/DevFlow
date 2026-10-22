@@ -40,10 +40,22 @@ FLOOR = {
 WORSE_WHEN_HIGHER = (*WORSE_WHEN_HIGHER, "lost_reply_output_share", "invalid_tool_call_rate")
 
 
+#: Quality measures, each a share in [0, 1]: a drop of this much below the recent mean is a regression.
+WORSE_WHEN_LOWER = ("hidden_score", "quality_score", "mutation_score")
+DROP = 0.15
+
+
 def regressions(earlier: list[dict], row: dict) -> list[str]:
-    """Each KPI of `row` past FACTOR x its mean over the last WINDOW rows of `earlier`."""
+    """Each KPI of `row` past FACTOR x its mean over the last WINDOW rows of `earlier`, and each quality score DROP below its mean."""
     flagged = []
     recent = earlier[-WINDOW:]
+    for key in WORSE_WHEN_LOWER:
+        values = [float(r[key]) for r in recent if str(r.get(key, "")).strip() not in ("", "None")]
+        if not values or row.get(key) in (None, ""):
+            continue
+        mean = sum(values) / len(values)
+        if float(row[key]) < mean - DROP:
+            flagged.append(f"{key}: {float(row[key]):g} against a {len(values)}-run mean of {mean:.3g}")
     for key in WORSE_WHEN_HIGHER:
         values = [float(r[key]) for r in recent if str(r.get(key, "")).strip() not in ("", "None")]
         if not values or key not in row:
@@ -140,8 +152,31 @@ def compare_arms(a: list[dict], b: list[dict], minimum: int = MINIMUM_RUNS_PER_A
     return out
 
 
+def with_the_scores(row: dict, bench: Path = Path("data/bench")) -> dict:
+    """`row` with the run's quality measures, where they were taken (owner, 2026-10-22: the quality of what is built, not only its cost).
+
+    - `hidden_score`: the benchmark's hidden tests (`loop.sh score`);
+    - `quality_score`: the benchmark's quality set - the brief at its edges;
+    - `mutation_score`: the share of small changes to the product its own locked suite noticed (`loop.sh mutate`).
+    """
+    run = str(row.get("run") or "")
+    try:
+        scored = json.loads((bench / f"{run}.json").read_text())
+        row["hidden_score"] = scored.get("score")
+        if scored.get("quality_total"):
+            row["quality_score"] = round(scored["quality_passed"] / scored["quality_total"], 3)
+    except (OSError, ValueError, TypeError, ZeroDivisionError):
+        pass
+    try:
+        mutated = json.loads((bench / "mutation" / f"{run}.json").read_text())
+        row["mutation_score"] = mutated.get("score")
+    except (OSError, ValueError):
+        pass
+    return row
+
+
 def main(path: str, ledger: str = "data/kpi/ledger.csv", benchmark: str = "") -> int:
-    row = json.loads(Path(path).read_text())
+    row = with_the_scores(json.loads(Path(path).read_text()))
     if benchmark:
         row["benchmark"] = benchmark
     earlier = append(Path(ledger), row)

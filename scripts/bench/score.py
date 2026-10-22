@@ -154,6 +154,29 @@ def brief_pairing(own_brief: str) -> dict:
     return found
 
 
+def _the_quality_set(bench: Path, work: Path, runner: str, env: dict, notes: list[str]) -> list[dict] | None:
+    """The benchmark's quality tests (`<bench>/quality`), run beside the hidden ones; None when it has none.
+
+    The hidden tests check that the product does what the brief says; on a
+    benchmark every run now passes, they no longer tell one product from a
+    better one. The quality set holds the same brief to its edges.
+    """
+    if not (bench / "quality").is_dir() or runner == "playwright":
+        return None
+    shutil.copytree(bench / "quality", work / "quality")
+    if not (work / "quality" / "conftest.py").exists() and (bench / "hidden" / "conftest.py").exists():
+        shutil.copy(bench / "hidden" / "conftest.py", work / "quality" / "conftest.py")
+    report = work / "quality.xml"
+    data = work / "quality-data"
+    data.mkdir(exist_ok=True)
+    ran = _run([str(_python_runner()), "-m", "pytest", str(work / "quality"), "-q", f"--junitxml={report}",
+                "-p", "no:cacheprovider"], work, {**env, "DATA_DIR": str(data)}, timeout=1200)
+    found = _junit(report)
+    if not found:
+        notes.append("the quality tests produced no report: " + (ran.stdout + ran.stderr)[-800:])
+    return found
+
+
 def score(
     product: Path, bench: Path, out: Path, status: str = "", completion_gaps: list[str] | None = None,
     own_brief: str = "",
@@ -207,6 +230,7 @@ def score(
     tests = _junit(report)
     if not tests:
         notes.append("the hidden tests produced no report: " + (ran.stdout + ran.stderr)[-1500:])
+    quality = _the_quality_set(bench, work, runner, env if runner != "playwright" else {}, notes)
     passed = sum(t["outcome"] == "passed" for t in tests)
     total = len(tests) or int(spec.get("tests", 0))
     result = {
@@ -219,6 +243,11 @@ def score(
         "tests": tests,
         "notes": notes,
     }
+    if quality is not None:
+        # Apart from the headline score, which stays comparable across runs.
+        result["quality_passed"] = sum(t["outcome"] == "passed" for t in quality)
+        result["quality_total"] = len(quality)
+        result["quality_tests"] = quality
     result["harness"] = harness_verdict(product, status, completion_gaps)
     result.update(brief_pairing(own_brief))
     result["false_acceptance"] = (
@@ -244,6 +273,8 @@ if __name__ == "__main__":
         product, bench, out, sys.argv[4] if len(sys.argv) > 4 else "", gaps, sys.argv[6] if len(sys.argv) > 6 else "",
     )
     print(f"{result['benchmark']}: {result['passed']}/{result['total']} hidden tests pass (score {result['score']})")
+    if "quality_total" in result:
+        print(f"  quality: {result['quality_passed']}/{result['quality_total']} of the brief's edges held")
     if result["brief_mismatch"]:
         print("  BRIEF MISMATCH: the run was not started from this benchmark's brief; not a false acceptance")
     harness = result["harness"]

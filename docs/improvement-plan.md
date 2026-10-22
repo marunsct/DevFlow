@@ -3008,6 +3008,8 @@ attack is:
 <a id="plan-ba"></a>
 #### BA. Prefix-cache discipline on a 1-slot server — P1
 
+> **2026-10-22:** absorbed by [PX (Appendix 9)](#plan-px), which keeps this goal and adds the request-layout breaks found in the code (clock in the snapshot, request-dependent memory order, sliding argument truncation, reasoning carry, steering in the system prompt). BF, its dependency, is done.
+
 - **Goal.** `cached_token_share ≥ 0.85` on the local server without touching
   the owner's launch flags.
 - **Evidence.** I3 (158 tool-list changes; each one re-renders the system
@@ -3592,7 +3594,7 @@ review; every recommendation in it is covered here:
 | AX reasoning budget per role | P0 | NOT BUILT 2026-10-19 (AR: no per-request budget) | AR showed the server ignores a per-request reasoning budget and effort. Advice to the owner, not code: a server-wide reasoning budget is a server flag (the owner's), or a server build that honours a per-request budget (the plan names build ≥ b9982); then re-run `loop.sh reasoning-probe run` and AX can be built as profile data. Fast build stages already run with thinking off, the one switch the server honours |
 | AY bounded fix cycle | P0 | NOT STARTED | |
 | AZ skeleton + slices | P0 | NOT STARTED | after AY |
-| BA prefix-cache discipline | P1 | NOT STARTED | after BF |
+| BA prefix-cache discipline | P1 | ABSORBED 2026-10-22 by PX (Appendix 9) | after BF (done) |
 | BB lead plans in parts | P1 | NOT STARTED | |
 | BC stalls end one call earlier | P1 | DONE 2026-10-19 `f47f685` | two pointer answers in a row (`POINTERS_BEFORE_THE_ANSWER = 2`, `settled_answer._pointed_lately`) stall the stage: a writer keeps only its writers, a reader only its answer; the pointer itself now says a second one ends reading. Test `tests/test_a_second_pointer_answer_ends_the_turn.py` (the two stall tests fail on the old code); `test_a_few_pointers_take_nothing_away` now spaces its pointers with writes. Deployed after the W.2 baselines |
 | BD two local tiers + model advice | P1 | NOT STARTED | owner's A/B |
@@ -4270,6 +4272,297 @@ RD.4 ½ day, RD.5 1½ days, RD.6 2 days, RD.7 1 day.
 - **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, EN.2–EN.6, EN.8–EN.11 (EN.1 via MT), MT.1–MT.10 in the MT sequence when the owner schedules it, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
 - **Group 2, after the measured runs, each behind its switch:** SL.5, SAP.1 → SAP.2 → SAP.3, SAP.4 → SAP.5 (needs the owner's SAP system), DT.5, RD.1, RD.3, RD.5, RD.6.
 - Dependencies: DT before RD's documents; SAP.4 before SAP.5; BW.1/BW.2 and CG.1 (built) under RD.
+
+## Appendix 9 (2026-10-22): prefix-cache discipline — the stable-prefix request layout
+
+Owner's question, 2026-10-22 12:18 JST: *can the code base be kept as key/value pairs
+in RAM beside llama.cpp so it is read, not recomputed?* Answer: that is the attention
+KV cache, llama-server already keeps it (`cache_prompt`, `--cache-reuse`, `/slots`
+save/restore), and it only pays off when the cached bytes are a **literal, byte-identical
+prefix** of the next request. The harness decides whether they are. This appendix absorbs
+[BA](#plan-ba) (NOT STARTED; its dependency BF is DONE since `ab2afae`) and turns it into
+a request-layout rule with the places the code breaks it today. No launch flag of the
+owner's is touched; server-side items are advice.
+
+**Evidence.** Code as read on 2026-10-22 (branch `harness-hardening-session`):
+`agents/role_agent.py:662-752`, `agents/project_memory.py:136-155, 366-385, 484-516`,
+`agents/project_snapshot.py:111, 150`, `agents/where_things_stand.py:144-149`,
+`agents/workspace_digest.py:556-599, 641-650`, `agents/settled_answer.py:1746-1822,
+2086-2149`, `agents/compaction.py:82-88, 202-255`, `plugins/middleware.py:552-606`,
+`server/steering.py:97-106`, `models/__init__.py:437-599, 617-665`,
+`graph/workflow.py:1194-1209, 3847-3864`, `observability/run_kpis.py:161-189`.
+Measured: `cached_token_share` 0.726 on brief_medium (I3/I7), 158 tool-list changes in
+that run; `cache_miss_after_tool_change` is already counted (BF).
+
+### 9.1 What one request looks like today, and where the prefix breaks
+
+The live order is: **system message** (role prompt + rules → deepagents base text →
+environment contract → plugin/framework instructions → steering notes) → **first human
+message** (project memory prepended to the first of: carry-over note / project snapshot /
+stage request, with the `where_things_stand` block before the request text and the
+held-files line after it) → **transcript** (append-only) → **per-call tail** (workspace
+digest with call numbers, memory `changes_since` note, settled-answer notices — request
+overrides only, never stored).
+
+That is already close to the right shape. The prefix is broken by:
+
+| # | Break | Where | How often |
+|---|---|---|---|
+| 1 | Tool list changes inside a stage: research share spent, read tools withheld, one repeated tool dropped, all look-only tools dropped, `tools=[]` | `tools/research.py:94-104`, `settled_answer.py:2086-2140` | 158 times on brief_medium; each re-prefills the whole context because tools are rendered into the system prompt by the chat template |
+| 2 | Steering notes are rendered **in the system message** and re-read every call | `plugins/middleware.py:583-606`, `steering.py:97-106` | once per note added mid-stage, every stage thereafter until its scope ends |
+| 3 | `enable_thinking` / `reasoning_effort` toggled after a lost reply or a spiral | `settled_answer.py:1746-1771`, `thinking.py:134-152` | per lost reply; whether the template change lands in the prefix or only in the generation prompt depends on the model's template (**verify per model**, PX.2 step 4) |
+| 4 | `time.strftime('%H:%M:%S')` in the project snapshot (second opening message) | `project_snapshot.py:111, 150` | every stage visit; parallel siblings and retries can never share past this byte |
+| 5 | The memory's file order depends on the request text: rank −1 for files the request names, and `digest_of` picks spec sections by focus | `project_memory.py:139-143, 163-203` | every fan-out: six builders in one sprint render six different memories of the same code base |
+| 6 | Argument truncation rewrites older tool calls as the keep window slides | `role_agent.py:422-426` (deepagents `truncate_args`) | every call above 0.5 × ceiling: a message sent whole on call N is shortened on call N+1 |
+| 7 | Reasoning carry: the last 800 chars of reasoning copied into earlier tool-calling assistant messages, dropped again when a prose reply appears | `models/__init__.py:617-665` | per prose reply |
+| 8 | Compaction replaces everything before the cutoff with one head message | `compaction.py:202-255` | once per 0.8 × ceiling; unavoidable, but the tail after the cut is recoverable with `--cache-reuse` |
+| 9 | Slot eviction: `concurrent_requests = min(6, total_slots)` but compaction summaries, gathering calls, keyword extraction and other runs share the same slots; nothing pins a thread to a slot | `workflow.py:1194-1209`, `call_gate.py:151-170` | unmeasured — PX.1 makes it visible |
+
+Items 4–7 are the ones no earlier session named; BA covered 1 and 9.
+
+### 9.2 The rule (ADR candidate: *request layout for a prefix cache*)
+
+A request has four zones, in this order, and nothing moves between them:
+
+1. **Run-stable**: system message = role prompt + rules + base text + environment
+   contract + plugin instructions + tool schemas. Byte-identical for every call of a role
+   in a run.
+2. **Visit-stable**: the opening messages = canonical project memory + snapshot + request.
+   Byte-identical for every call of one stage visit; identical across parallel siblings
+   up to the request text.
+3. **Append-only transcript**: a stored message is never rewritten after the call that
+   produced it. Anything that must shorten it (cut replies, long arguments) is shortened
+   **at store time, once**, or at compaction, never on a sliding window.
+4. **Volatile tail**: everything that changes per call — digest, call numbers, budget
+   warnings, steering notes, corrections, `changes_since`, carried reasoning — goes after
+   the transcript as request overrides.
+
+Test shape for every PX item: serialise two consecutive requests of one thread (BF's
+`blocks` record), assert the common prefix covers zones 1–3 of the earlier one.
+
+<a id="plan-px"></a>
+### PX — Initiatives
+
+<a id="plan-px-1"></a>
+#### PX.1 Measure where the prefix breaks — P1, group 1
+
+- **Goal.** Every model call records why its prefix did not match the previous call of
+  the same thread, so PX.2–PX.8 are ordered by measured cost, not by guess.
+- **Evidence.** BF records block sizes and `cache_miss_after_tool_change`; nothing
+  records the other eight breaks, and `cached_token_share` is a run total.
+- **Files.** `src/app/models/__init__.py` (per-call hook: hash the serialised request at
+  the boundaries system / tools / opening messages / each history message, keep the
+  previous hashes per thread in `stage_memory`), `src/app/observability/run_kpis.py`
+  (`prefix_break_reason` counter: `tools_changed`, `steering_changed`,
+  `thinking_toggled`, `snapshot_clock`, `memory_order`, `args_truncated`,
+  `reasoning_carry`, `compaction`, `evicted` — identical prefix hash yet
+  `cache_read == 0` — and `other`; plus `uncached_tokens_by_reason`),
+  `scripts/loop/kpi_ledger.py` (the columns), `scripts/loop/patterns.py` (per-stage
+  family).
+- **Steps.** (1) Hash boundaries from BF's `blocks` plus one hash per history message.
+  (2) Classify the first differing boundary. (3) Read llama-server's `timings`
+  (`prompt_n`, `cache_n` where present) beside `input_token_details.cache_read` and keep
+  both. (4) Run `loop.sh kpi` on the two Measure pair 3 runs (no deploy needed — the
+  hook is read-only and can be a post-hoc replay over the stored requests if the records
+  carry the full messages; otherwise the next Fix batch).
+- **Tests.** `tests/test_a_prefix_break_is_classified_by_its_first_difference.py`
+  (fails on old code: no reason recorded).
+- **Acceptance.** A table "uncached tokens by reason" for one tasks-api run and one
+  brief_medium run.
+- **Effort.** S.  **Depends on.** BF (done).
+
+<a id="plan-px-2"></a>
+#### PX.2 Tool list and template settings constant per stage visit — P1, group 2 (`STABLE_TOOLS`)
+
+- **Goal.** Zero `tools_changed` breaks inside a stage visit; the withholding behaviour
+  stays, as a refusal at `wrap_tool_call` that ends the turn with the answer-only notice
+  (BA step 2, Part 22.1 #7 unchanged: the parallel/linear toggle is untouched).
+- **Evidence.** 158 changes on brief_medium; I3 names the mechanism (tools are in the
+  system prompt).
+- **Files.** `src/app/agents/settled_answer.py:2086-2140` (keep `request.tools` as
+  bound; move each drop into a refusal map consulted by `wrap_tool_call`),
+  `src/app/tools/research.py:94-104` (same: refuse docs/web calls over the share with the
+  existing "share spent" wording), `src/app/agents/thinking.py` + `settled_answer.py:
+  1746-1771` (the thinking toggle after a lost reply becomes a **tail instruction plus a
+  lower `max_tokens`** when the model's template renders `enable_thinking` into the
+  prefix; stays a template kwarg when it only changes the generation prompt),
+  `src/app/agents/gathering.py:142` (a call routed to another model is its own thread
+  id, so it never counts as a break of the stage's thread).
+- **Steps.** (1) Refusal map. (2) `ResearchShare` to refusal. (3) Tool order asserted
+  stable across a visit (MCP tools sorted by name at bind time). (4) Per-model check of
+  what `chat_template_kwargs.enable_thinking` does to the rendered prompt (Qwen3-family
+  templates put the empty think block in the generation prompt, i.e. the tail; confirm on
+  the owner's served model with `/apply-template` before choosing step 4's branch).
+- **Tests.** `tests/test_a_withheld_tool_does_not_change_the_tool_list.py` (BA, fails on
+  old code), `tests/test_a_spent_research_share_refuses_instead_of_unbinding.py`,
+  `tests/test_tool_order_is_the_same_on_every_call_of_a_visit.py`.
+- **Acceptance.** `prefix_break_reason.tools_changed` = 0 on tasks-api; the loop
+  counters (`layer_tool_withheld`, stall rules) unchanged in behaviour.
+- **Effort.** M.  **Depends on.** PX.1.
+
+<a id="plan-px-3"></a>
+#### PX.3 The clock and the request text leave the visit-stable zone — P1, group 2 (`CANONICAL_MEMORY`)
+
+- **Goal.** Parallel siblings of one fan-out share the whole system message and the
+  whole project memory; retries share it with the first attempt.
+- **Evidence.** Break 4 (clock) and 5 (request-dependent file order). On a 2-slot server
+  running 6 builders the slots are reassigned between siblings; today every reassignment
+  is a full re-prefill of ~60k tokens even though five sixths of the bytes are the same
+  files in a different order.
+- **Files.** `src/app/agents/project_snapshot.py:111, 150` (drop the clock, or move the
+  "as of" line to the tail digest), `src/app/agents/project_memory.py:136-155` (the
+  ranking loses the request-dependent `-1` group: order = documents → application/config
+  → other docs → tests → records, ties by path, **independent of the request**; the
+  files the request names become one line *after* the memory, "start with: a, b, c",
+  which is the same pointer the held-files line already gives), `:163-203` (`digest_of`:
+  render the specification digest **after** the canonical code block, so the
+  request-dependent section choice sits behind the shared bytes), `src/app/agents/
+  carry_over.py:91` (the carry-over note moves after the request, before the transcript),
+  `src/app/agents/where_things_stand.py:144-149` (the block stays before the request —
+  it is per sprint, not per call — but is rendered once per sprint and reused byte-for-
+  byte by every builder of the wave; today it is rendered per call site).
+- **Steps.** (1) Clock out. (2) Canonical ranking behind a switch; keep the old order
+  as the fallback for one measured pair. (3) `where_things_stand` cached per sprint.
+  (4) Carry-over after the request.
+- **Tests.** `tests/test_two_siblings_of_one_wave_share_the_same_memory_bytes.py`
+  (fails on old code: different order), `tests/test_the_snapshot_carries_no_clock.py`,
+  `tests/test_a_retry_shares_the_first_attempt_s_opening_bytes.py`.
+- **Acceptance.** `prefix_break_reason.snapshot_clock + memory_order` = 0; on a 2-slot
+  server with a 6-way fan-out `cached_token_share` for builders rises (expected: the
+  memory block, ~40% of the request per BF's `prompt_block_share_project_memory`, becomes
+  shared). Quality guard: the AQ limited-memory behaviour (served files first within the
+  budget) is kept by the rank order, so no file that was in memory before falls out.
+- **Effort.** S–M.  **Depends on.** PX.1.
+
+<a id="plan-px-4"></a>
+#### PX.4 The transcript is append-only — P1, group 2 (`APPEND_ONLY_HISTORY`)
+
+- **Goal.** No stored message changes after the call that produced it.
+- **Evidence.** Breaks 6 and 7. Argument truncation above 0.5 × ceiling (i.e. the second
+  half of every long stage, where fix stages live) shortens a different message on each
+  call; the reasoning carry rewrites every tool-calling assistant message when a prose
+  reply lands.
+- **Files.** `src/app/agents/role_agent.py:422-426` (replace the sliding
+  `truncate_args` with store-time truncation: when a tool result lands, the stored call's
+  arguments are shortened to `MAX_TOOL_ARG_CHARS` **once, immediately**, since the file is
+  on disk the moment the call returns — the comment at `:420` already says so; the
+  `keep` window then has nothing to do), `src/app/models/__init__.py:617-665`
+  (`with_the_reasoning_carried`: carry into the **stored** assistant message once, at
+  the time the reply is stored, instead of re-deriving the set on every call; or carry
+  only into the last assistant message as a tail override), `src/app/agents/
+  settled_answer.py:1807-1822` (`_with_cut_replies_shortened` applied at store time for
+  the same reason; it is already deterministic).
+- **Steps.** (1) Store-time truncation. (2) Reasoning carry persisted or tail-only (A/B
+  on one lost-reply-heavy stage: the carry exists to stop re-reasoning, so the tail
+  variant must be shown not to raise lost replies). (3) Cut-reply shortening at store
+  time.
+- **Tests.** `tests/test_a_stored_message_never_changes_after_its_call.py` (fails on old
+  code), `tests/test_long_arguments_are_shortened_once_when_the_result_lands.py`.
+- **Acceptance.** `args_truncated + reasoning_carry` = 0; lost replies not up.
+- **Effort.** M (deepagents' `truncate_args` is theirs; the store-time version is a
+  small middleware of ours and the setting is removed).  **Depends on.** PX.1.
+
+<a id="plan-px-5"></a>
+#### PX.5 Steering notes move to the tail — P2, group 1
+
+- **Goal.** A note added mid-stage costs one tail block, not a system-prompt rewrite.
+- **Evidence.** Break 2. Dynamic agent-instruction injection is an owner feature and
+  stays; only its position changes. Plugin/framework instructions stay in the system
+  message (they are stable per run).
+- **Files.** `src/app/plugins/middleware.py:583-606` (split `_with_instructions`:
+  plugin text stays; steering text becomes a tail user message in the same wording,
+  after the digest), `src/app/server/steering.py` (unchanged).
+- **Tests.** `tests/test_a_steering_note_does_not_change_the_system_message.py` (fails
+  on old code), existing steering tests pass unchanged.
+- **Acceptance.** `steering_changed` = 0.
+- **Effort.** S.  **Depends on.** —.
+
+<a id="plan-px-6"></a>
+#### PX.6 Compaction that keeps what it can — P2, group 2
+
+- **Goal.** After compaction the run-stable zone and the memory are byte-identical to
+  before (they are today — verify with PX.1), and the server can recover the transcript
+  tail by position shift.
+- **Evidence.** Break 8; llama.cpp `--cache-reuse N` reuses chunks ≥ N tokens found at a
+  different position by RoPE-shifting them, which is exactly the shape a compacted
+  transcript has (head replaced, tail unchanged).
+- **Files.** `src/app/agents/compaction.py:218-255` (the summary head message is placed
+  **after** the memory, which the memory middleware already does by prepending — assert
+  it with a test), `docs/HANDOVER.md` §5 (owner advice: `--cache-reuse 256`; nothing in
+  code).
+- **Tests.** `tests/test_compaction_leaves_the_opening_bytes_unchanged.py`.
+- **Acceptance.** `compaction` breaks carry only the summary head's cost; with
+  `--cache-reuse` advised and adopted by the owner, uncached tokens on the first call after
+  compaction fall from "whole context" to "memory + summary".
+- **Effort.** S.  **Depends on.** PX.1; owner for the flag.
+
+<a id="plan-px-7"></a>
+#### PX.7 Slot affinity and the pause (BA steps 3–4) — P2, group 2 (`SLOT_AFFINITY`)
+
+- **Goal.** One stage visit keeps one slot; side calls do not evict it; a visit paused at
+  an approval gate comes back to a warm slot when the server allows.
+- **Evidence.** Break 9. llama-server picks the slot by prefix similarity and evicts LRU;
+  a thread that waits behind a compaction summary or a gathering call can come back to
+  find its slot reused.
+- **Files.** `src/app/models/__init__.py` (`extra_body.cache_prompt = true` always —
+  explicit, so a server whose default differs still caches — and `extra_body.id_slot =
+  hash(inner thread id) mod total_slots` when `server_profile.slots` is known),
+  `src/app/graph/workflow.py:1194-1209` (side calls — compaction summariser, gathering,
+  keyword extraction — take the slot of the thread they serve, never a free one; the
+  fan-out rule "fan-out = server slots" extends to every fan-out as BA step 3 says, the
+  toggle untouched), `src/app/models/server_profile.py` (record whether `/slots` answers
+  and whether save/restore is enabled — `--slot-save-path` is not in `/props`, so the
+  probe is a `GET /slots` plus one `POST /slots/0?action=save` only **with the owner's
+  consent**, since it writes a file on the owner's disk), `src/app/agents/approval.py`
+  (save before a gate wait longer than N minutes, restore on resume, when enabled).
+- **Steps.** (1) `cache_prompt` explicit. (2) `id_slot` affinity. (3) Side calls follow
+  their thread. (4) Save/restore around gates, advisory first.
+- **Tests.** `tests/test_a_visit_s_calls_carry_the_same_slot.py` (fails on old code: no
+  field), `tests/test_a_side_call_takes_its_thread_s_slot.py`.
+- **Acceptance.** `evicted` share of uncached tokens −50% on a 2-slot server with
+  `HARNESS_MAX_PARALLEL=6`.
+- **Effort.** M.  **Depends on.** PX.1, PX.3.
+
+<a id="plan-px-8"></a>
+#### PX.8 The code-base snapshot store (the owner's side-car) — P3, decision gate
+
+- **Goal.** Decide, from PX.1's numbers, whether a content-addressed store of saved slot
+  states (key = hash of the canonical run-stable + visit-stable zones; value = the file
+  `/slots/:id?action=save` writes) is worth building beside llama-server.
+- **Evidence.** It is a thin orchestration layer (restore the snapshot whose key matches
+  the next request's prefix hash, LRU on disk), a few hundred lines, and it only pays
+  when the same prefix is **revisited after eviction**: several sprints of builders over
+  the same code base on a server with fewer slots than threads. KV size is the limit —
+  per token it is 2 × layers × kv-heads × head-dim × bytes (take layers and kv-heads
+  from the model card or `/props`; q8_0 KV halves it), so a 60k-token memory is
+  gigabytes per snapshot and only a handful fit on fast disk.
+- **Gate.** Build only if, after PX.2–PX.7 are on, `uncached_tokens_by_reason.evicted`
+  is still ≥ 15% of input tokens on brief_medium. If it is below, close the item with the
+  measurement. The owner's launch flags are never changed by the harness; the store
+  would be a separate process with its own flag advice.
+- **Effort.** M if built.  **Depends on.** PX.1, PX.7, owner.
+
+### 9.3 Order and placement in Part 21
+
+PX.1 (measure, group 1) → PX.5 (steering, group 1, no behaviour change) → PX.3 →
+PX.2 → PX.4 → PX.6 → PX.7 → PX.8 (decision). PX.2–PX.4 and PX.7 are group 2 switches
+(`STABLE_TOOLS`, `CANONICAL_MEMORY`, `APPEND_ONLY_HISTORY`, `SLOT_AFFINITY`) measured as
+one arm after the AY arm, since they change bytes every stage sees. The BA row in
+Appendix 4's ledger becomes "absorbed by PX (Appendix 9)"; BA's acceptance
+(`cached_token_share` 0.73 → ≥ 0.85, effective input tokens −40%) is PX's.
+
+### Appendix 9 rows (Implementation Progress Ledger continuation)
+
+| Item | Priority | Status | Notes |
+|---|---|---|---|
+| PX.1 prefix-break reasons | P1 | NOT STARTED (group 1) | after BF (done) |
+| PX.2 stable tools per visit | P1 | NOT STARTED (group 2, `STABLE_TOOLS`) | absorbs BA step 2 |
+| PX.3 canonical memory, no clock | P1 | NOT STARTED (group 2, `CANONICAL_MEMORY`) | |
+| PX.4 append-only transcript | P1 | NOT STARTED (group 2, `APPEND_ONLY_HISTORY`) | |
+| PX.5 steering at the tail | P2 | NOT STARTED (group 1) | |
+| PX.6 compaction keeps the opening | P2 | NOT STARTED (group 2) | `--cache-reuse 256` is owner advice |
+| PX.7 slot affinity, save/restore | P2 | NOT STARTED (group 2, `SLOT_AFFINITY`) | absorbs BA steps 3–4 |
+| PX.8 snapshot side-car | P3 | DECISION GATE | build only on PX.1's eviction share |
 
 ## E. Earlier plans, merged into this document on 2026-10-19
 
@@ -4987,7 +5280,7 @@ the item: what it changes, why, and the evidence (review findings in
 | AX | reasoning budget per role | P0 | NOT BUILT (AR: server ignores per-request budgets; advice to the owner) | [AX](#plan-ax) |
 | AY | bounded fix cycle | P0 | PARTLY (steps 1-4 built, each behind its own switch; step 5 deferred - project memory already answers a re-read of a file it holds with a pointer, and withholding the read tool also stops a fixer reading what is not in its request; step 6 orders steps 1-4 and waits for their measurement) 2026-10-21: step 1 (one reasoning-free call of at most 1,500 tokens names files, symbols and a hypothesis when the failure names no file or more than 2; a file kept only if it exists, may be written and holds a named symbol) behind `LOCALISE_FIRST` (2026-10-22); step 2 (candidates from the fix's own model when the run has no judgement model of its own) behind `FIX_CYCLE`; step 3 (each write in a linear fix stage followed by the defect's own tests, one line in the write's reply, at most 6 per stage; on a pass it says to answer now and leave other failures to their fixers) behind `VERIFY_AFTER_WRITE` (2026-10-22); step 4 (each attempt's model calls kept on its attempt record; a defect and the one it recurs from that spent 60, `DEFECT_CALLS_AT_MOST`, is left open with its attempts as the diagnosis) behind `DEFECT_CALL_CAP` (2026-10-22); all off | [AY](#plan-ay) |
 | AZ | skeleton + slices | P0 | NOT STARTED | [AZ](#plan-az) |
-| BA | prefix-cache discipline | P1 | NOT STARTED | [BA](#plan-ba) |
+| BA | prefix-cache discipline | P1 | ABSORBED 2026-10-22 by PX (Appendix 9) | [BA](#plan-ba) |
 | BB | lead plans in parts | P1 | NOT STARTED | [BB](#plan-bb) |
 | BC | stalls end one call earlier | P1 | DONE 2026-10-19 `f47f685` | [BC](#plan-bc) |
 | BD | two local tiers + model advice | P1 | NOT STARTED | [BD](#plan-bd) |
@@ -5143,6 +5436,14 @@ the item: what it changes, why, and the evidence (review findings in
 | EV.2 | screenshot rubric score for browser products | P3 | BUILT 2026-10-22 behind `SCREENSHOT_RUBRIC` (off) | [EV](#plan-ev) |
 | SF.1 | registry allowlist for the install category's network | P2 | PROPOSED 2026-10-21 (group 1, now) | BUILT 2026-10-21 (group 1) |
 | SF.2 | fetched text capped and stripped of tool-call shapes | P3 | PROPOSED 2026-10-21 (group 1, now) | BUILT 2026-10-21 (group 1) |
+| PX.1 | prefix-break reason per model call (tools, steering, thinking, clock, memory order, truncation, reasoning carry, compaction, eviction) | P1 | NOT STARTED 2026-10-22 (group 1) | [PX.1](#plan-px-1) |
+| PX.2 | tool list and template settings constant per stage visit; withholding becomes a refusal | P1 | NOT STARTED 2026-10-22 (group 2, `STABLE_TOOLS`) | [PX.2](#plan-px-2) |
+| PX.3 | canonical project-memory order independent of the request; no clock in the snapshot; siblings share the prefix | P1 | NOT STARTED 2026-10-22 (group 2, `CANONICAL_MEMORY`) | [PX.3](#plan-px-3) |
+| PX.4 | transcript append-only: arguments and cut replies shortened once at store time; reasoning carry persisted | P1 | NOT STARTED 2026-10-22 (group 2, `APPEND_ONLY_HISTORY`) | [PX.4](#plan-px-4) |
+| PX.5 | steering notes rendered at the tail, not in the system message | P2 | NOT STARTED 2026-10-22 (group 1) | [PX.5](#plan-px-5) |
+| PX.6 | compaction keeps the opening bytes; `--cache-reuse` advised to the owner | P2 | NOT STARTED 2026-10-22 (group 2) | [PX.6](#plan-px-6) |
+| PX.7 | `cache_prompt` explicit, `id_slot` affinity per visit, side calls follow their thread, slot save/restore around gates | P2 | NOT STARTED 2026-10-22 (group 2, `SLOT_AFFINITY`) | [PX.7](#plan-px-7) |
+| PX.8 | code-base snapshot side-car beside llama-server | P3 | DECISION GATE 2026-10-22 (on PX.1's eviction share) | [PX.8](#plan-px-8) |
 
 <a id="plan-m-2"></a>
 ### M.2 Fixes from the loop's audits (no plan item of their own)

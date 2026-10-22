@@ -11,13 +11,14 @@ def test_each_signal_is_counted_and_one_not_reached_says_so():
     effects = runpy.run_path(str(SCRIPT))["effects"]
     records = [
         {"kind": "model_request", "messages": [{"content": "=== LESSONS FROM EARLIER RUNS ===\nx"}]},
+        {"kind": "model_request", "messages": [{"content": "You find where in a codebase a failure is caused. You answer"}]},
         {"kind": "tool_result", "content": "... The harness ran this defect's own tests after the write: they pass now. Your defect is fixed"},
         {"kind": "model_response", "usage": {"output_tokens": 32768}},
         {"kind": "defect", "event": "left open", "detail": "left open after 61 model calls across its attempts"},
         "not a record",
     ]
     lines = "\n".join(effects(records, "AC-7 to sprint 2, where a test of it can first pass"))
-    assert "   1  LF.191 approved lessons shown" in lines
+    assert "   1  LF.191 approved lessons shown" in lines and "   1  AY.1 a defect localised" in lines
     assert "   1  AY.3 a write followed by the defect's tests - passing" in lines
     assert "   1  LF.202 a criterion moved" in lines and "   1  AY.4 a defect left open at its call cap" in lines
     assert "   1  replies lost to the output cap" in lines and "defects: left open 1" in lines

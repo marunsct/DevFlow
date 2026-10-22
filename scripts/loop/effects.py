@@ -27,6 +27,7 @@ SIGNALS: list[tuple[str, str, str]] = [
     ("PH.1 where things stand", "request", "Where things stand"),
     ("LF.203 the lead told why a release was held", "request", "Why the release was held back"),
     ("LF.186 where dependencies go", "request", "Declare every"),
+    ("AY.1 a defect localised by one cheap call before its rewrite", "request", "You find where in a codebase a failure is caused"),
     ("AY.3 a write followed by the defect's tests - passing", "result", "they pass now. Your defect is fixed"),
     ("AY.3 a write followed by the defect's tests - still failing", "result", "after the write: they still fail"),
     ("PX.2/LF.197 a withheld tool refused", "result", "is withheld at this point of the stage"),

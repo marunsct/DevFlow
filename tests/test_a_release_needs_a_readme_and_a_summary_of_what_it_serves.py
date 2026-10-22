@@ -67,11 +67,26 @@ def _release(root, attempts):
     )
 
 
-def test_the_release_holds_back_while_attempts_remain_then_records_a_gap(product, monkeypatch):
+def _no_checks(monkeypatch):
     from app.analysis import integration_checks
 
     monkeypatch.setattr(integration_checks, "problems_that_break_the_product", lambda root, stack=None, brief="": [])
     monkeypatch.setattr(delivery, "_unit_tests_failing", lambda root: [])
+
+
+def test_the_release_writes_what_the_harness_knows_and_goes_on(product, monkeypatch):
+    _no_checks(monkeypatch)
+    with mock.patch.dict(os.environ, ON):
+        released = _release(product, 0)
+    assert released["stage"] != "technical_lead"
+    assert (product / "app" / "README.md").is_file()
+
+
+def test_the_release_holds_back_what_it_cannot_write_while_attempts_remain_then_records_a_gap(product, monkeypatch):
+    _no_checks(monkeypatch)
+    # No pack: the harness knows no command to write.
+    monkeypatch.setattr(contract, "the_pack", lambda root: None)
+    monkeypatch.setattr(contract, "read", lambda root: {"project": "app"})
     with mock.patch.dict(os.environ, ON):
         held = _release(product, 0)
         assert held["stage"] == "technical_lead"
@@ -79,3 +94,29 @@ def test_the_release_holds_back_while_attempts_remain_then_records_a_gap(product
         released = _release(product, delivery.MAX_RELEASE_ATTEMPTS)
     assert released["stage"] != "technical_lead"
     assert any("no README" in str(gap) for gap in released.get("completion_gaps") or [])
+
+
+def test_what_the_harness_knows_is_written_into_the_readme_and_nothing_is_left_to_ask(product):
+    (product / "app" / "start.sh").write_text("exec serve\n")
+    with mock.patch.dict(os.environ, ON):
+        assert release_docs.complete_the_handoff(product) == ["app/README.md"]
+        assert release_docs.what_the_handoff_lacks(product) == []
+        assert release_docs.complete_the_handoff(product) == [], "nothing is added twice"
+    text = (product / "app" / "README.md").read_text()
+    assert "pip install -e ." in text and "sh start.sh" in text and "| DELETE | `/items/{id}` | 204 |" in text
+    assert not BANNED.search(text)
+
+
+def test_an_own_readme_keeps_its_words_and_gains_only_what_it_lacks(product):
+    (product / "app" / "README.md").write_text("# Items\n\nRun `sh start.sh`.\n\n- GET /items lists them\n")
+    with mock.patch.dict(os.environ, ON):
+        release_docs.complete_the_handoff(product)
+    text = (product / "app" / "README.md").read_text()
+    assert text.startswith("# Items\n\nRun `sh start.sh`.") and "Running it" not in text
+    assert "DELETE | `/items/{id}`" in text and "| GET | `/items`" not in text
+
+
+def test_off_the_readme_is_not_touched(product):
+    with mock.patch.dict(os.environ, {"RELEASE_DOCS_REQUIRED": ""}):
+        assert release_docs.complete_the_handoff(product) == []
+    assert not (product / "app" / "README.md").exists()

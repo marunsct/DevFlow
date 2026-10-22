@@ -41,8 +41,12 @@ def now() -> str:
 
 
 def calls_in(run_id: str | None, stage: str, since: str) -> int | None:
-    """The model calls `stage` made since `since`, from the transcript; None when off or unreadable."""
-    if not enabled() or not run_id:
+    """The model calls `stage` made since `since`, from the transcript; None when off, unreadable or with no start.
+
+    With no start every call ever made under the stage's name would count,
+    and a name recurs across a sprint's attempts.
+    """
+    if not enabled() or not run_id or not since:
         return None
     try:
         from app.observability.transcript import read_transcript

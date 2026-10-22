@@ -394,7 +394,7 @@ test that fails on the old code:
   is ADOPTED (owner, 14:25 JST) from the run after gate run 3. Built: MF.1 (provenance; `HARNESS_COMMIT` in the image), MF.3, MF.5.
   **Gate brief from the next run (MF.2, owner): `benchmarks/tasks-api/brief.md`**, scored by its hidden suite
   (`loop.sh score <run> tasks-api`); `tests/brief_medium.md` is no longer the gate. **Measure/Fix (MF.4):** a Measure run
-  is one frozen SHA, no mid-run deploys, two runs per family; bugs found are filed for the next Fix batch, not deployed. RL.4 (learning judged on
+  is one frozen SHA, no mid-run deploys, two runs per family; bugs found are filed for the next Fix batch, not deployed. **Set aside by the owner 2026-10-22 18:40 JST:** from Measure pair 4 run 1's end every switch is on (compose defaults them on), the next run is the all-on baseline, and verified fixes that save harness or model time are deployed mid-run at a stage boundary again (`loop.sh deploy`, `loop.sh resumed`); features are turned off later to measure them. RL.4 (learning judged on
   hidden tests only) applies now; RL.5 is rejected. Build order from here: PH.2, PH.3 (they extend CM.2's ledger),
   then PH.1, CG.1, CG.2, then RL.1-RL.3; each behind a switch, off until the gate run ends.
   Each group 2 item is behind its own switch, off by default (any mid-run deploy carries the branch); CM.1 =

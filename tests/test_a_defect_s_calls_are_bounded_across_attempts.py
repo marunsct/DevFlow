@@ -47,7 +47,9 @@ def test_an_attempt_s_calls_are_counted_from_the_transcript_since_it_started():
     with mock.patch.dict(os.environ, ON), \
          mock.patch("app.observability.transcript.read_transcript", lambda run_id, kinds=None: records):
         assert defect_budget.calls_in("run", "defect_fix_1_0", "2026-10-22T01:00:00+00:00") == 2
-    assert defect_budget.calls_in("run", "defect_fix_1_0", "") is None
+        assert defect_budget.calls_in("run", "defect_fix_1_0", "") is None, "no start counts nothing"
+    with mock.patch.dict(os.environ, {"DEFECT_CALL_CAP": ""}):
+        assert defect_budget.calls_in("run", "defect_fix_1_0", "2026-10-22T01:00:00+00:00") is None
 
 
 def test_the_attempt_record_keeps_the_calls_and_the_fix_stage_checks_the_ceiling_first():

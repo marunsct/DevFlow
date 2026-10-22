@@ -245,6 +245,8 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # criterion while attempts remain, then is a gap.
     from app.stacks import release_audits, release_docs
 
+    if not failing:
+        release_docs.complete_the_handoff(root)
     undocumented = [] if failing else [*release_docs.what_the_handoff_lacks(root), *release_audits.secrets_found(root)]
     if undocumented and int(state.get("release_attempts") or 0) < MAX_RELEASE_ATTEMPTS:
         failing = undocumented

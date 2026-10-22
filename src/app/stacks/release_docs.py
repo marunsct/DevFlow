@@ -121,4 +121,57 @@ def what_the_handoff_lacks(repo_root: str | Path) -> list[str]:
         return []
 
 
-__all__ = ["ON_BY_DEFAULT", "README_NAMES", "enabled", "what_the_handoff_lacks"]
+def complete_the_handoff(repo_root: str | Path) -> list[str]:
+    """Write what the harness itself knows into the README - how to run the product, the routes it serves; the files written.
+
+    A model was sent back from the release for a README while every fact it
+    needs is the harness's own: the pack's commands and the routes locked in
+    the interface contract. Measured on a Measure run that passed every hidden
+    test: the product had no README, so with this check on every release
+    would have gone back to the lead for one. Written from those facts, it
+    costs no model call; what it cannot know is still asked for. Off with
+    the switch; never raises.
+    """
+    if not enabled():
+        return []
+    try:
+        from app.acceptance.interface_contract import the_locked_contract
+        from app.stacks import contract
+
+        root = Path(repo_root)
+        found = contract.the_pack(root)
+        pack, record = found if found else (None, contract.read(root) or {})
+        if pack is None:
+            return []
+        project = str((record or {}).get("project") or "")
+        readme = _the_readme(root, project) or (root / project / "README.md" if project else root / "README.md")
+        text = readme.read_text(encoding="utf-8", errors="replace") if readme.is_file() else (
+            f"# {(record or {}).get('title') or project or root.name}\n")
+        added = ""
+        ways = _ways_to_run(root, project, pack)
+        if not any(way in text for way in ways):
+            base = root / project if project else root
+            commands = [shlex.join(argv) for argv in getattr(pack, "install", ()) or ()]
+            commands += ["sh start.sh"] if (base / "start.sh").is_file() else []
+            commands += [shlex.join(getattr(pack, name, ()) or ()) for name in ("unit_test", "acceptance_test")]
+            commands = [c for c in dict.fromkeys(commands) if c.strip()]
+            if commands:
+                added += ("\n## Running it\n\nFrom this directory:\n\n```sh\n" + "\n".join(commands) + "\n```\n")
+        locked = [c for c in the_locked_contract(root) if c.kind == "http"]
+        missing = set(_routes_not_named(_the_product_s_documents(root, project) + "\n" + added, list(
+            dict.fromkeys((c.method, c.path) for c in locked))))
+        rows = [f"| {c.method} | `{c.path}` | {c.status or ''} |" for c in locked if f"{c.method} {c.path}" in missing]
+        if rows:
+            added += ("\n## What it serves\n\n| Method | Path | Answers |\n| --- | --- | --- |\n"
+                      + "\n".join(dict.fromkeys(rows)) + "\n")
+        if not added:
+            return []
+        readme.parent.mkdir(parents=True, exist_ok=True)
+        readme.write_text(text.rstrip("\n") + "\n" + added, encoding="utf-8")
+        return [readme.relative_to(root).as_posix()]
+    except Exception:  # noqa: BLE001 - what is left is asked for, as before
+        logger.warning("Could not complete the product's README", exc_info=True)
+        return []
+
+
+__all__ = ["ON_BY_DEFAULT", "README_NAMES", "complete_the_handoff", "enabled", "what_the_handoff_lacks"]

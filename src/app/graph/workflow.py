@@ -10477,23 +10477,37 @@ def build_workflow_graph(
             return None
         from types import SimpleNamespace
 
-        from app.graph.rewritten_fixes import fix_by_candidates, fix_by_rewriting
+        from app.graph.rewritten_fixes import fix_by_candidates, fix_by_rewriting, files_to_fix, what_failed
         from app.tools.repository import _the_harness_s_own_or_the_locked_suite
 
         from app.graph.bounded_fixes import the_candidate_model
 
         root = Path(state["repository"].root_path)
+        may_write = lambda path: _the_harness_s_own_or_the_locked_suite(root, root / path) is None
+        last_failure = _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY))
+        # Carried from the candidates path into the rewrite that follows it,
+        # so a retry that already asked where the defect lives - same defect,
+        # same failure - does not ask again. None when candidates were never
+        # tried: `fix_by_rewriting` localises for itself, as before, so a
+        # defect this never reaches pays nothing extra for it.
+        located: list[str] | None = None
         # A judgement model of its own, or with the fix cycle on the fix's own
         # model (plan AY step 2); None asks for no candidates.
         candidate_model = the_candidate_model(judgement_model, model, fix_model)
         if failed_tries >= 1 and candidate_model is not None:
             try:
+                from app.graph.localisation import localised
+
+                failure = what_failed(defect, root, last_failure)
+                located = localised(
+                    defect, failure, root, fix_model or model or building_model,
+                    files_to_fix(defect, failure, root, may_write), may_write,
+                )
                 kept = fix_by_candidates(
                     defect, root, candidate_model, lambda: _the_defect_s_tests_pass(root, defect),
                     specification=state.get("technical_specification"),
                     stack=getattr(state.get("stack_selection"), "technology_stack", None),
-                    last_failure=_what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
-                    may_write=lambda path: _the_harness_s_own_or_the_locked_suite(root, root / path) is None,
+                    last_failure=last_failure, may_write=may_write, files=located,
                 )
                 if kept is not None:
                     return kept
@@ -10509,8 +10523,7 @@ def build_workflow_graph(
                 defect, root, fix_model or model or building_model,
                 specification=state.get("technical_specification"),
                 stack=getattr(state.get("stack_selection"), "technology_stack", None),
-                last_failure=_what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
-                may_write=lambda path: _the_harness_s_own_or_the_locked_suite(root, root / path) is None,
+                last_failure=last_failure, may_write=may_write, files=located,
                 diagnose=lambda files: _diagnostics_in_files_touched(
                     state, {"messages": []}, SimpleNamespace(changed_files=files),
                 ),

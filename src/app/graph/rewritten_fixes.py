@@ -243,8 +243,14 @@ def fix_by_rewriting(
     last_failure: Any = None, may_write: Callable[[str], bool] | None = None,
     write: Callable[[str, str, str], Any] | None = None,
     diagnose: Callable[[list[str]], list[str]] | None = None,
+    files: list[str] | None = None,
 ) -> Any | None:
-    """The fix stage's output for a defect fixed by rewriting its files, or None for the agent loop."""
+    """The fix stage's output for a defect fixed by rewriting its files, or None for the agent loop.
+
+    `files`, when given, is used as the files to rewrite and no localisation
+    call is made: a retry that already asked `fix_by_candidates` where the
+    defect lives need not ask again. See `app.graph.workflow._fixed_by_rewriting`.
+    """
     from langchain_core.messages import HumanMessage, SystemMessage
 
     from app.agents.specialists import SpecialistOutput
@@ -258,11 +264,12 @@ def fix_by_rewriting(
             return write_approved_artifact(base, path, content)
 
     failure = what_failed(defect, root, last_failure)
-    files = files_to_fix(defect, failure, root, may_write or (lambda _: True))
-    # Asked where, once and cheaply, when the failure named none or many (plan AY step 1, off).
-    from app.graph.localisation import localised
+    if files is None:
+        files = files_to_fix(defect, failure, root, may_write or (lambda _: True))
+        # Asked where, once and cheaply, when the failure named none or many (plan AY step 1, off).
+        from app.graph.localisation import localised
 
-    files = localised(defect, failure, root, model, files, may_write or (lambda _: True))
+        files = localised(defect, failure, root, model, files, may_write or (lambda _: True))
     if not files:
         return None
     changed: list[str] = []
@@ -332,9 +339,12 @@ def fix_by_candidates(
     defect: Any, repo_root: str | Path, model: Any, check: Callable[[], bool | None], *,
     specification: Any = None, stack: Any = None, last_failure: Any = None,
     may_write: Callable[[str], bool] | None = None, write: Callable[[str, str, str], Any] | None = None,
-    candidates: int = CANDIDATES,
+    candidates: int = CANDIDATES, files: list[str] | None = None,
 ) -> Any | None:
     """A defect fixed by several candidate rewrites asked for at once, the first its tests pass kept; or None.
+
+    `files`, when given, is used as the files to change and no localisation
+    call is made. See `app.graph.workflow._fixed_by_rewriting`.
 
     Agentless's repair and validation: one run's defect failed fix after fix
     on the build model, each an agent loop of half an hour. Here the
@@ -368,11 +378,12 @@ def fix_by_candidates(
     except Exception:  # noqa: BLE001 - nothing to choose by
         return None
     failure = what_failed(defect, root, last_failure)
-    files = files_to_fix(defect, failure, root, may_write or (lambda _: True))
-    # Asked where, once and cheaply, when the failure named none or many (plan AY step 1, off).
-    from app.graph.localisation import localised
+    if files is None:
+        files = files_to_fix(defect, failure, root, may_write or (lambda _: True))
+        # Asked where, once and cheaply, when the failure named none or many (plan AY step 1, off).
+        from app.graph.localisation import localised
 
-    files = localised(defect, failure, root, model, files, may_write or (lambda _: True))
+        files = localised(defect, failure, root, model, files, may_write or (lambda _: True))
     if not files:
         return None
     originals = {path: (root / path).read_text(encoding="utf-8", errors="replace") for path in files}

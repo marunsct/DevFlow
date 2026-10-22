@@ -70,3 +70,18 @@ def test_the_rewrite_takes_the_localised_files(tmp_path, monkeypatch):
                         lambda defect, failure, root, model, found, may_write: seen.append(found) or [])
     assert rewritten_fixes.fix_by_rewriting(DEFECT, root, None, last_failure="boom") is None
     assert seen == [[]]
+
+
+def test_a_retry_that_falls_from_candidates_to_a_rewrite_localises_only_once():
+    """A failed candidate attempt fell through to a rewrite that asked the same question again - same
+    defect, same failure - and spent a second model call finding the same files."""
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+    helper = source[source.index("    def _fixed_by_rewriting("):source.index("    def _fix_one(")]
+    assert helper.count("localised(") == 1, "localised once, carried into both calls"
+    assert "files=located" in helper
+    candidates_call = helper[helper.index("fix_by_candidates("):helper.index("fix_by_rewriting(")]
+    assert "files=located" in candidates_call

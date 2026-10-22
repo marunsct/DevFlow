@@ -84,3 +84,15 @@ def test_a_product_already_built_is_changed_by_the_lead_not_written_again(tmp_pa
     (tmp_path / "notes-api/src/app.ts").unlink()
     (tmp_path / "notes-api/tests/store.test.ts").unlink()
     assert work_orders_from_the_specification(SPEC, "Notes", ["AC-1"], ["npm test"], str(tmp_path)) is not None
+
+
+def test_the_harness_made_plan_narrates_itself_so_the_sprint_it_opened_is_counted():
+    """Fast delivery's own path made no model call, so no event ever carried `stage="technical_lead"` for
+    it; the UI's sprint counter (built by counting technical_lead events) silently skipped the sprint
+    this opened, and the sprint that followed wore its number - shown live, sprint 1 never had a header,
+    and the header that first appeared, over sprint 2's planning, read "Sprint 1"."""
+    source = inspect.getsource(workflow)
+    node = source[source.index("    def technical_lead_node("):]
+    start = node.index("if planned is not None:")
+    branch = node[start:node.index("        else:", start)]
+    assert "AgentActivityStream(" in branch and '"technical_lead"' in branch and "publish_outcome(" in branch

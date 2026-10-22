@@ -9242,6 +9242,23 @@ def build_workflow_graph(
         )
         if planned is not None:
             logger.info("Work orders made from the specification by the harness: %d", len(planned.delegated_tasks))
+            # Fast delivery's own path makes no model call, so no event ever
+            # carried stage="technical_lead" for it - the UI's sprint counter
+            # (built by counting technical_lead visits, `runs.py`) silently
+            # skipped the sprint this opened. One for the sprint that follows
+            # wore its number instead: shown live, sprint 1 never had a
+            # header, and the header that first appeared, over sprint 2's
+            # planning, read "Sprint 1". Narrated the same way a deterministic
+            # close already is (`models.call_gate._tell_the_run`), so the
+            # stage is visible to anything built from the event stream.
+            try:
+                from app.server.agent_stream import AgentActivityStream
+
+                AgentActivityStream(config["configurable"].get(APP_RUN_ID_KEY) or "", "technical_lead").publish_outcome(
+                    f"{len(planned.delegated_tasks)} work order(s) made from the specification; no planning call needed."
+                )
+            except Exception:  # noqa: BLE001 - narration is never load-bearing
+                logger.debug("Could not narrate the harness-made work orders", exc_info=True)
             update = {"milestone_plan": planned, "stage": "specialist_dispatch", "pending_inner_thread_id": None}
         else:
             update = _run_gated_agent(

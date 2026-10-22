@@ -44,6 +44,7 @@ SWITCHES: dict[str, str] = {
     "CODE_GRAPH_TOOL": "app.analysis.project_graph:tool_switch",
     "REGRESSION_CONTRACT": "app.acceptance.regression_contract",
     "LESSON_DISTILLER": "app.plugins.lesson_distiller",
+    "MUTATION_GUIDED_TESTS": "app.acceptance.mutation_guided",
 }
 
 UNKNOWN = "unknown"

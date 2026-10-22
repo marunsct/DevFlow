@@ -1135,6 +1135,7 @@ def build_defect_fix_request(
     observed: dict[str, str] | None = None,
     caught_by: str = "",
     done_already: list[str] | None = None,
+    what_settles_it: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """Build the input that routes one tracked defect to the specialist who owns it.
 
@@ -1152,9 +1153,13 @@ def build_defect_fix_request(
     that had no syntax error, while the suite was failing on a different line
     for a different reason. Both belong in the brief - the prose carries the
     judgement about which failure matters, the output carries the facts.
+
+    `what_settles_it`, when given, says what closes this defect in place of
+    the regression-test clause: a defect the harness settles by a check of
+    its own (`app.acceptance.mutation_guided.what_settles_it`).
     """
     files_text = "\n".join(f"- {name}" for name in affected_files) or "- (none identified)"
-    regression_clause = (
+    regression_clause = what_settles_it or (
         # "Fails before your fix and passes after it" was read, by one run, as
         # a request for a test that expects the failure: it wrote "import fails
         # before fix" and asserted that the error occurred.

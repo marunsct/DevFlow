@@ -6,6 +6,10 @@ model does during a run (owner, 2026-10-22). Since 18:40 JST that day every
 switch defaults on (owner: a baseline with all the improvements, features
 turned off later to measure the unproven ones); the default lives here so a
 later deploy cannot turn one off by leaving the host unset.
+
+Except a switch the owner has not turned on yet: it reaches the worker the
+same way and defaults off, so a deploy cannot turn it on by leaving the host
+unset either.
 """
 from __future__ import annotations
 
@@ -16,9 +20,22 @@ from app.observability.provenance import SWITCHES
 
 COMPOSE = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text()
 
+#: Built after the all-on baseline and not turned on by the owner: plan QM.2
+#: adds fix stages to every sprint whose criteria pass, so it is measured
+#: before it joins the baseline.
+NOT_TURNED_ON_YET = frozenset({"MUTATION_GUIDED_TESTS"})
+
 
 def test_every_switch_is_passed_through_and_defaults_on():
     for name in SWITCHES:
         found = re.search(rf"^  {name}: \$\{{{name}:-([a-z]*)\}}$", COMPOSE, re.M)
         assert found, f"{name} does not reach the worker"
-        assert found.group(1) == "on", name
+        assert found.group(1) == ("off" if name in NOT_TURNED_ON_YET else "on"), name
+
+
+def test_the_switches_not_turned_on_yet_are_switches_off_in_their_code_too():
+    from app.observability.provenance import switch
+
+    for name in NOT_TURNED_ON_YET:
+        assert name in SWITCHES, name
+        assert switch(SWITCHES[name]).ON_BY_DEFAULT is False, name

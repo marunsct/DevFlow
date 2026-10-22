@@ -142,6 +142,12 @@ _DEFECT_NOISE = frozenset({
 })
 
 
+#: Checks whose defects are one template filled in with the site each names
+#: (`app.acceptance.mutation_guided`): two of them share nearly every word and
+#: are still two problems, so neither is ever a restatement of another.
+TEMPLATED_SOURCES = frozenset({"mutation"})
+
+
 def _defect_terms(description: str) -> frozenset[str]:
     """The meaningful words of a defect description, for comparing two of them."""
     # Dots and dashes are kept inside a token so `jest.config.js` survives, then
@@ -172,11 +178,13 @@ def recurrence_of(defect: Defect, earlier: Sequence[Defect]) -> Defect | None:
     notice that two sentences are about the same thing, and a false negative
     just restores today's behaviour.
     """
+    if getattr(defect, "source", "") in TEMPLATED_SOURCES:
+        return None
     terms = _defect_terms(defect.description)
     if len(terms) < 2:
         return None
     for candidate in earlier:
-        if candidate.status != "fixed":
+        if candidate.status != "fixed" or getattr(candidate, "source", "") in TEMPLATED_SOURCES:
             continue
         candidate_terms = _defect_terms(candidate.description)
         if not candidate_terms:

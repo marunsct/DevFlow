@@ -335,6 +335,7 @@ PRODUCT_INTAKE_REVIEW = "product_intake"
 """Review point: the refined product intake document."""
 
 from app.agents import interface_clashes  # noqa: E402 - beside its siblings
+from app.acceptance import mutation_guided  # noqa: E402 - beside its siblings
 from app.graph.acceptance_nodes import ACCEPTANCE_REVIEW  # noqa: E402 - beside its siblings
 from app.graph.delivery import RECORDED_AS_RISKS, RELEASE_REVIEW  # noqa: E402 - beside its siblings
 from app.graph.escalation import ESCALATION_REVIEW  # noqa: E402 - beside its siblings
@@ -639,6 +640,12 @@ class WorkflowGraphState(TypedDict, total=False):
     escalation: dict[str, Any] | None
     escalation_count: int
     known_issues: list[str]
+    # Plan QM.2, off until measured: the sprint attempts whose sources were
+    # probed with deliberate changes ("<sprint index>:<re-plan count>"), and
+    # the findings no unit test was made to notice, for the release's gaps.
+    # See `app.acceptance.mutation_guided`.
+    mutation_probed: list[str]
+    mutation_gaps: list[str]
     # CI and code review between a batch and its test rounds, and the guard
     # around each fix. See `app.graph.engineering`.
     ci_report: str
@@ -3070,7 +3077,13 @@ def _settle_the_fix(
     verified_by = _what_the_ledger_confirms(
         state["repository"].root_path, fix_result.verification
     )
-    if fix_result.blockers and not fix_result.changed_files:
+    if mutation_guided.is_a_finding(defect):
+        # A change no test noticed is settled by the harness's own check, as
+        # a language-service finding is asked again: ahead of every rule
+        # below, since its "own tests" are the whole unit run, and nothing the
+        # product does is wrong (plan QM.2).
+        update["remediation"] = _a_mutation_finding_settled(state, cycle, defect_index, stage_name, fix_result)
+    elif fix_result.blockers and not fix_result.changed_files:
         # Blocked and nothing changed: not a fix. Recorded as fixed, it was
         # closed with no change behind it, and a stage that could not
         # reply at all now answers this way (`_blocked_for_want_of_room`).
@@ -3163,9 +3176,149 @@ def _settle_the_fix(
         # One more failed try: past `escalate_after()` its next fix runs on
         # the judgement model (`_the_build_model`).
         update["remediation"] = _one_more_failed_fix(cycle, defect_index)
-    blames = still_open and _blames_a_locked_test(state, [*fix_result.blockers, *fix_result.decisions])
+    blames = still_open and not mutation_guided.is_a_finding(defect) and _blames_a_locked_test(
+        state, [*fix_result.blockers, *fix_result.decisions]
+    )
     update["specialist_outputs"] = outputs
     return update, blames
+
+
+def _a_mutation_finding_settled(state: Any, cycle: Any, defect_index: int, stage_name: str, fix_result: Any) -> Any:
+    """`cycle` after one fix of a mutation finding: fixed, closed as equivalent or as a gap; `cycle` itself if left open.
+
+    Fixed only when the unit tests fail with the change and pass without it,
+    measured here (`mutation_guided.settled`) - not on a named test. Closed,
+    never escalated, when the fixer says the change behaves the same and why,
+    or once its tries are spent: a finding is about the tests' strength, not
+    something the product does wrong, so setting it aside accepts no known
+    defect. `accept_risk` records it with the reason, the way a person would.
+    """
+    from app.observability import defect_ledger
+    from app.sprint import accept_risk
+
+    defect = cycle.defects[defect_index]
+    where = {"round_": state.get("test_round", 0), "index": defect_index, "sprint": state.get("current_sprint_index", 0)}
+    checked = mutation_guided.settled(state["repository"].root_path, defect)
+    if checked is True:
+        detail = "the unit tests fail with the change and pass without it, measured by the harness"
+        defect_ledger.note("fixed", stage_name, defect=defect, detail=detail, **where)
+        return mark_defect_fixed(
+            cycle, defect_index,
+            regression_test="the unit tests, which fail with the change and pass without it",
+            verified_by="the harness's mutation check", resolution=detail[0].upper() + detail[1:] + ".",
+        )
+    why = mutation_guided.equivalent_because(fix_result)
+    if why and not fix_result.changed_files:
+        defect_ledger.note("closed", stage_name, defect=defect, detail="judged equivalent: " + why, **where)
+        return accept_risk(cycle, defect_index, reason=mutation_guided.EQUIVALENT + why)
+    measured = (
+        "the unit tests still pass with the change" if checked is False
+        else "the change could not be made again where it was, or the unit tests did not run"
+    )
+    tries = failed_fix_tries(cycle, defect_index) + 1
+    if tries >= mutation_guided.MOST_TRIES:
+        defect_ledger.note("closed", stage_name, defect=defect, detail=f"a completion gap after {tries} tries: {measured}", **where)
+        return accept_risk(cycle, defect_index, reason=f"{mutation_guided.A_GAP}{measured} after {tries} fix stage(s).")
+    defect_ledger.note("left open", stage_name, defect=defect, detail=measured + ", asked again after the fix", **where)
+    return cycle
+
+
+def _put_back_a_deliberate_change(state: Any) -> None:
+    """With `MUTATION_GUIDED_TESTS` on, undo a mutation check a dead worker left in the product. Never raises.
+
+    A deploy restarts the worker mid-stage, and the stage is entered again on
+    the tree as it was left: a fix measured, or a fixer briefed, against a
+    deliberate break.
+    """
+    if not mutation_guided.enabled():
+        return
+    try:
+        from app.acceptance.mutation import restore_an_interrupted_probe
+
+        restore_an_interrupted_probe(state["repository"].root_path)
+    except Exception:  # noqa: BLE001 - the probe's own entry tries again
+        logger.debug("Could not check for a deliberate change left in place", exc_info=True)
+
+
+def _only_mutation_findings_open(cycle: Any, measured: list[Any]) -> bool:
+    """Whether a round found nothing and every defect still open is a mutation finding.
+
+    Such a round found nothing wrong with the product, only tests too weak to
+    notice a change, and is not charged against the product's attempts (plan
+    QM.2), as a round of only test defects is not.
+    """
+    still = [d for d in getattr(cycle, "defects", None) or [] if getattr(d, "status", "") == "open"]
+    return not measured and bool(still) and all(mutation_guided.is_a_finding(d) for d in still)
+
+
+def _mutation_findings_set_aside(state: Any, cycle: Any, test_round: int) -> tuple[Any, list[str]]:
+    """`cycle` with each open mutation finding the sprint has no round for closed as a gap; and the run's gaps from them.
+
+    The sprint's attempts bound the findings as they bound every defect, but a
+    finding never spends the last of them: one still open when the sprint has
+    no attempt or round to spare is a completion gap, not an escalation (plan
+    QM.2). The gaps are every finding closed unsettled, this sprint's added to
+    the run's. A no-op for a cycle with no finding.
+    """
+    from app.observability import defect_ledger
+    from app.sprint import ROUNDS_PER_ATTEMPT_CEILING, accept_risk
+
+    known = list(state.get("mutation_gaps") or [])
+    defects = list(getattr(cycle, "defects", None) or [])
+    if not any(mutation_guided.is_a_finding(d) for d in defects):
+        return cycle, known
+    no_room = (
+        len(cycle.test_runs) + 2 > cycle.max_attempts * ROUNDS_PER_ATTEMPT_CEILING
+        or cycle.attempt + 1 >= cycle.max_attempts
+    )
+    for index, defect in enumerate(defects):
+        if defect.status != "open" or not mutation_guided.is_a_finding(defect):
+            continue
+        tries = failed_fix_tries(cycle, index)
+        if not no_room and tries < mutation_guided.MOST_TRIES:
+            continue
+        why = "the sprint had no fix round to spare for it" if no_room else f"{tries} fix stage(s) did not settle it"
+        defect_ledger.note("closed", f"test_round_{test_round}", defect=defect, round_=test_round, index=index,
+                           sprint=state.get("current_sprint_index", 0), detail="a completion gap: " + why)
+        cycle = accept_risk(cycle, index, reason=f"{mutation_guided.A_GAP}{why}.")
+    gaps = [gap for d in cycle.defects if (gap := mutation_guided.the_gap(d))]
+    return cycle, list(dict.fromkeys([*known, *gaps]))
+
+
+def _the_mutation_probe(state: Any, cycle: Any, test_round: int) -> dict[str, Any]:
+    """The update for a sprint whose due criteria all pass: its findings to fix, or only that it was probed; {} when off.
+
+    Once per sprint attempt - its index and re-plan count - and never again
+    on the last sprint's release path. The sources are the product's own files
+    this sprint changed (`_the_files_this_milestone_changed`). See
+    `app.acceptance.mutation_guided`.
+    """
+    if not mutation_guided.enabled():
+        return {}
+    from app.observability import defect_ledger
+
+    index = int(state.get("current_sprint_index") or 0)
+    key = f"{index}:{int(state.get('sprint_replan_count') or 0)}"
+    done = list(state.get("mutation_probed") or [])
+    if key in done or (int(state.get("release_attempts") or 0) and any(k.split(":")[0] == str(index) for k in done)):
+        return {}
+    root = state["repository"].root_path
+    changed = _the_files_this_milestone_changed(state, state.get("specialist_outputs") or {})
+    found = [mutation_guided.defect(site) for site in mutation_guided.probe(root, changed)]
+    update: dict[str, Any] = {"mutation_probed": [*done, key]}
+    if not found:
+        return update
+    for position, item in enumerate(found, start=len(cycle.defects)):
+        defect_ledger.note("raised", f"test_round_{test_round}", defect=item, round_=test_round, index=position,
+                           sprint=index, detail="a deliberate change no test noticed")
+    logger.warning("Sprint %d: %d deliberate change(s) no test noticed; the testing role is asked for unit tests",
+                   index + 1, len(found))
+    return {
+        **update,
+        "remediation": cycle.model_copy(update={"defects": [*cycle.defects, *found]}),
+        "stage": "defect_remediation",
+        "defect_cursor": 0,
+    }
 
 
 def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
@@ -9736,6 +9889,9 @@ def build_workflow_graph(
         milestone = state["milestone_plan"]
         test_round = state.get("test_round", 0)
         outputs = state.get("specialist_outputs", {})
+        # A worker that died with a deliberate change in the product left it
+        # there; the round must not measure it (plan QM.2, off until measured).
+        _put_back_a_deliberate_change(state)
         # The harness runs the locked acceptance suite once per round, on the
         # round's first entry (a resume after an approval pause is the same
         # round), and hands the measured result to the test engineer.
@@ -10042,6 +10198,9 @@ def build_workflow_graph(
         for position, item in enumerate(new_defects, start=len(cycle.defects)):
             defect_ledger.note("raised", f"test_round_{test_round}", defect=item, round_=test_round, index=position,
                                 sprint=state.get("current_sprint_index", 0))
+        # Mutation findings the sprint has no round for are gaps, not a reason
+        # to re-plan it (plan QM.2); a no-op for a cycle with none.
+        cycle, mutation_gaps = _mutation_findings_set_aside(state, cycle, test_round)
         try:
             cycle = record_test_run(
                 cycle,
@@ -10049,7 +10208,10 @@ def build_workflow_graph(
                 passed=not measured,
                 summary=f"{len(measured)} defect(s) found" if measured else "all applicable tests passed",
                 new_defects=new_defects,
-                charge_the_budget=_a_round_that_found_a_product_defect(measured),
+                # A round with only mutation findings open charges nothing (plan QM.2).
+                charge_the_budget=_a_round_that_found_a_product_defect(measured) and not (
+                    _only_mutation_findings_open(cycle, measured)
+                ),
             )
         except RemediationLimitExceeded as exc:
             # The same exit as every other exhausted sprint: planned again,
@@ -10094,6 +10256,8 @@ def build_workflow_graph(
             "pending_decision": None,
             "review_defects": [],
         }
+        if mutation_gaps:
+            base_update["mutation_gaps"] = mutation_gaps
 
         if cycle.escalated:
             return _replan_or_escalate(
@@ -10112,7 +10276,13 @@ def build_workflow_graph(
                 "missing regression coverage or an unaccepted risk",
             )
 
-        return _handing_on(**base_update, stage="security_review")
+        # Plan QM.2, off until measured: the product exists and its due
+        # criteria pass, so a deliberate change no test notices is now a
+        # finding for the testing role, before any review reads the sprint.
+        probed = _the_mutation_probe(state, cycle, test_round)
+        if probed.get("stage"):
+            return _handing_on(**{**base_update, **probed})
+        return _handing_on(**base_update, **probed, stage="security_review")
 
     def _replan_or_escalate(
         state: WorkflowGraphState,
@@ -10226,12 +10396,15 @@ def build_workflow_graph(
             # description of it. See `build_defect_fix_request`.
             _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
             caught_by=getattr(defect, "caught_by", ""),
-            # Only for a defect that is not itself a failing criterion.
+            # Only for a defect that is not itself a failing criterion - nor a
+            # mutation finding, whose product is not wrong (plan QM.2).
             done_already=(
                 []
                 if [t for t in tags_in(str(defect.description or "")) if t.startswith(("AC-", "CR-"))]
+                or mutation_guided.is_a_finding(defect)
                 else acceptance_nodes.done_by_the_definition(state)
             ),
+            what_settles_it=mutation_guided.what_settles_it(defect),
         )
         request["messages"][-1]["content"] += _what_a_fix_stage_must_leave_alone(state, defect)
         co_defects = _bundle_co_defects(cycle, defect_index)
@@ -10279,6 +10452,11 @@ def build_workflow_graph(
         defect's tests pass is kept (`rewritten_fixes.fix_by_candidates`).
         """
         if not _the_run_approves_its_own_writes(config["configurable"].get(APP_RUN_ID_KEY)):
+            return None
+        if mutation_guided.is_a_finding(defect):
+            # A rewrite rewrites the files a failure points at - here the
+            # product's own source, which the finding must leave as it is. A
+            # new unit test is the agent loop's (plan QM.2).
             return None
         from types import SimpleNamespace
 
@@ -10329,6 +10507,7 @@ def build_workflow_graph(
         cycle = state["remediation"]
         defect = cycle.defects[defect_index]
         stage_name = f"defect_fix_{state.get('test_round', 0)}_{defect_index}"
+        _put_back_a_deliberate_change(state)
 
         # Fixed already, by an earlier fix in this round: nothing for a fixer
         # to do, and a fixer told to fix what works finds other work.
@@ -10636,6 +10815,8 @@ def build_workflow_graph(
         from app.graph import engineering
         from app.observability import defect_ledger
 
+        # Before the batch is measured: a mutation check cut short left its change (plan QM.2).
+        _put_back_a_deliberate_change(state)
         cycle = state["remediation"]
         batch = list(state.get("fix_batch") or [])
         round_ = state.get("test_round", 0)

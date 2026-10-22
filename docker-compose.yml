@@ -66,6 +66,11 @@ x-app-env: &app-env
   STEERING_AT_THE_TAIL: ${STEERING_AT_THE_TAIL:-on}
   VERIFY_AFTER_WRITE: ${VERIFY_AFTER_WRITE:-on}
   WHERE_THINGS_STAND: ${WHERE_THINGS_STAND:-on}
+  # Plan QM.2 ships off: the owner has not turned it on (2026-10-22). It adds
+  # fix stages to a sprint whose criteria pass, so it is measured before it is
+  # part of the baseline. Changes tried per sprint: MUTATION_GUIDED_TESTS_CHANGES.
+  MUTATION_GUIDED_TESTS: ${MUTATION_GUIDED_TESTS:-off}
+  MUTATION_GUIDED_TESTS_CHANGES: ${MUTATION_GUIDED_TESTS_CHANGES:-6}
   PAGE_VIEW_ENABLED: ${PAGE_VIEW_ENABLED:-true}
   CUSTOM_STACK_SETUP: ${CUSTOM_STACK_SETUP:-true}
   # At most this many agents of one run at once in parallel mode: work orders,

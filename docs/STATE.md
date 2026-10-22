@@ -6,13 +6,13 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-22 05:20 JST.
+**As of:** 2026-10-22 09:05 JST.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | **Measure pair 2, run 2: run-403f7479** - `benchmarks/tasks-api/brief.md`, `DELIVERY=fast FRONTIER=false`, started 05:19 JST on **20dcdfbe** (Fix batch 1), the same SHA as run 1. **No deploys into it** (MF.4) |
+| Run | none live: Measure pair 2 done (09:00 JST); next, deploy Fix batch 2 and Measure it |
 | Frozen | **20dcdfbe** for Measure pair 2 (039ad84 + LF.167-LF.170); later work - group 2 switches (off), LF.171 - sits above it, undeployed |
 | Model | Qwen3.6-35B-A3B (owner, back from LFM2.5 at 21:19): 2 slots, 262,144 tokens; server sampling = Qwen's *precise coding* profile (temperature 0.6, top_p 0.95, top_k 20, min_p 0, presence 0, repetition 1.0, max tokens 32,768); DevFlow context 260,000, reply ceiling 32,768 |
 | Owner's model settings | the owner's; never changed by the loop |
@@ -48,15 +48,15 @@ Each module's `ON_BY_DEFAULT` turns its items on for the before/after runs.
 
 | Run | Brief | Result |
 |---|---|---|
+| run-403f7479 | tasks-api (Measure pair 2 run 2, 20dcdfbe) | completed 08:57 JST, ~218 min, **10/10 hidden**; the PyJWT `sub` 401 blocked 8 criteria for about an hour; 5 replies lost to length |
 | run-bf3f222f | tasks-api (Measure pair 2 run 1, 20dcdfbe) | completed 05:12 JST, ~240 min, 2 sprints (sprint 1 ~220 min, 14 fix stages; sprint 2 green at drafting), 40/40 inside, **10/10 hidden** - Fix batch 1's start.sh fixes held; KPI flags: 10 defects left open, 2 replies lost to length |
-| run-aedcd228 | tasks-api (Measure 2, 039ad84) | completed 01:00 JST, ~120 min, 2 sprints, 21/21 inside, **0/10 hidden - false acceptance again**: the work orders rewrote start.sh to a bare `python` without the product's packages; 10/10 with `.venv/bin/python` |
 
 No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh product`).
 
 ## Next actions
 
-1. Measure pair 2 (20dcdfbe): score each run (`loop.sh score <run> tasks-api`), `loop.sh kpi`, then `kpi_ledger arms` 039ad84 vs 20dcdfbe. Pair 1 on 039ad84 scored 0/10 and 0/10 hidden, both from start.sh; LF.168/LF.169 are what pair 2 measures.
-2. Done 01:10 JST: `loop.sh deploy 20dcdfbe` (Fix batch 1: LF.167-LF.170).
+1. **Measure pair 2 result (arms 039ad84 vs 20dcdfbe, tasks-api, n=2 each):** hidden 0/10, 0/10 -> **10/10, 10/10**; active minutes 101 -> 227 (+125%), model calls +61%, output tokens +137%, defect-fix stages +63%, defects fixed +133%, lost-reply output share 0 -> 10%, memory pointers +64%. Fix batch 1 turned false acceptances into real products; the cost is fix stages.
+2. Next: deploy HEAD (Fix batch 2: LF.171-LF.180, every group 2 switch still off) and Measure it - two tasks-api runs on that SHA - then the AY arm (`VERIFY_AFTER_WRITE`, `DEFECT_CALL_CAP`, `LOCALISE_FIRST`) as the first group 2 arm.
 3. **Fix batch 2** (seen in gate run 2): **LF.171 built** - the opening request names the files the memory holds (24 of 142 tool-calling replies only re-read held files). **LF.172 built** - a service that crashes in every test's setup is one start defect, not one per criterion (Measure 2 run 1: six fixers, six left open). **LF.173 built** - a fix that made nothing pass and wrote a line the language service is sure fails is reverted (the same run: one fix wrote the `get_db_sync` crash and was kept). **LF.174 built** - a test run with the same counts as the last identical run and no file changed since says re-running shows nothing new. **LF.175 built** - a defect's own tests are judged by the tests carrying its criterion, not by the exit of the file they share (AC-9 left open while AC-8 failed beside it). **LF.176 built** - in a run a test this stage did not write cannot be moved out of the runner's sight (a fixer moved a drafted unit test to `.bak`). **LF.177 built** - timing, KPIs and stage usage pair each stage's parallel calls oldest first (they dropped all but one). **LF.178 built** - a package manager's lookup (`pip show fastapi`) is never refused as a server. **LF.179 built** - Python stages are told PyJWT 2.10+ needs a string `sub` (the 401 behind 8 criteria in Measure 2 run 2). Candidate, not built: criteria that fail behind one shared layer (Measure 2 run 2: every item route answered 401 to a valid token, 8 criteria failing as `assert 401`, `KeyError: 'id'`, `KeyError: 0`) as one defect for that layer - needs a signature beyond the first message line. Filed, not built: one fixer ran the same `__pycache__` clean three times in a row with near-identical reasoning (no repeat guard caught it); `find tasks-api` run from inside `tasks-api` (the working directory named again as an argument); redundant reads 56% (healthy 8-19%); the 11-test suite is thin for 16 criteria; dead `models.py`; the intake keeps both the paraphrase and the brief's line of each measure (9 measures for 5) - replace a close paraphrase rather than append. A role's command refusal for `pip` advises `pip install <tool>` in the same message, and `python3 -m pip install` then runs: make the hint and the rule agree (Measure 2 run 1, acceptance author).
 4. Then group 2 as measured switch arms, one subsystem at a time - **first arm: AY (`VERIFY_AFTER_WRITE`, `DEFECT_CALL_CAP`, `LOCALISE_FIRST`)**: on Measure 2 run 1 fix stages took 95 of 132 model minutes (91% reasoning, 14 visits); one fixer's defect passed at call 20 and it went on 18 more calls fixing other fixers' failures. VERIFY_AFTER_WRITE's pass note now tells it to answer (2026-10-22) (table above - all built, all off), then the brownfield family `benchmarks/tasks-api-change` (owner 2026-10-21: never stop the testing). Not built: CG.5 (UI), BH preference, M.4; AY steps 5-6 deferred (plan says why).
 

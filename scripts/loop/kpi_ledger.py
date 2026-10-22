@@ -110,10 +110,16 @@ def _numbers(rows: list[dict], key: str) -> list[float]:
 
 
 def the_arm(rows: list[dict], commit: str, benchmark: str = "") -> list[dict]:
-    """The ledger's runs on exactly one harness commit, a mixed run left out (plans MF.1, MF.5)."""
+    """The ledger's runs on exactly one harness commit, a mixed run left out (plans MF.1, MF.5).
+
+    `commit` may be the short form the docs and the deploy use: the ledger
+    keeps the full one, and an exact match found no run of either arm.
+    """
+    wanted = str(commit).strip().lower()
     return [
         r for r in rows
-        if str(r.get("harness_commits") or "").split() == [commit]
+        if len(commits := str(r.get("harness_commits") or "").split()) == 1
+        and wanted and commits[0].lower().startswith(wanted)
         and str(r.get("mixed_versions") or "False") != "True"
         and (not benchmark or str(r.get("benchmark") or "") == benchmark)
     ]

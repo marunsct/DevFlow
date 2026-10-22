@@ -81,7 +81,7 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
 
 ## Measuring
 
-- Quality (QM.1, owner 2026-10-22): `loop.sh score` also runs the quality set (`benchmarks/<b>/quality/`) and the mutation test; the ledger carries `hidden_score`, `quality_score`, `mutation_score`. run-bf8a972f: 10/10, 7/7, 0.6.
+- Quality (QM.1, owner 2026-10-22): `loop.sh score` also runs the quality set (`benchmarks/<b>/quality/`) and the mutation test; the ledger carries `hidden_score`, `quality_score`, `mutation_score`. run-bf8a972f: 10/10, 7/7, 0.6. **QM.2 built (2026-10-22), behind `MUTATION_GUIDED_TESTS`, off** - a survivor the hidden suite misses becomes a finding for the testing role, settled by the harness re-running the unit tests with the one change back in; never measured live yet.
 - KPIs: `loop.sh kpi <run>` -> `data/kpi/<run>.json` and `data/kpi/ledger.csv`; each row now carries
   `harness_commits`, `mixed_versions`, `served_model`, `switches_on` (MF.1), `gate_wait_minutes`,
   `accepted_criteria` and the cost per accepted criterion (MF.3).

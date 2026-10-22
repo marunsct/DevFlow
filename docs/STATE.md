@@ -12,7 +12,7 @@ week are in `docs/archive/`.
 
 | | |
 |---|---|
-| Run | **run-77f7752f** - tasks-api, fast, all-on (1246bb22, LF.218/219/220 included). Started 04:59 JST. |
+| Run | **run-1409658f** - tasks-api, fast, all-on (1246bb22). Started 06:50 JST. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | Qwen3.6-35B-A3B (owner, back from LFM2.5 at 21:19): 2 slots, 262,144 tokens; server sampling = Qwen's *precise coding* profile (temperature 0.6, top_p 0.95, top_k 20, min_p 0, presence 0, repetition 1.0, max tokens 32,768); DevFlow context 260,000, reply ceiling 32,768 |
 | Owner's model settings | the owner's; never changed by the loop |
@@ -20,6 +20,7 @@ week are in `docs/archive/`.
 
 ## Last runs
 
+- **run-77f7752f** (1246bb22, not mixed): **completed 06:38 JST, hidden 10/10, quality 7/7** (best quality yet), 98 active min, 147 calls, 545k output tokens, 2 lost replies. **Mutation regression: 0.333 vs 0.708 mean** - 4 `True->False` success-flag mutants and `or`/`and` flips in app.py/models.py uncaught; direct evidence for turning on QM.2 (mutation-guided tests, still off).
 - **run-f13f7438 and run-8cced4a9 are the gated pair**, both on 1246bb22, hidden 10/10 each. run-8cced4a9 ran the whole way on 1246bb22 (not mixed); run-f13f7438 likewise (1246bb22, not mixed) - **59 active min**, 133 calls, 337k output tokens, 0 replies lost, 0 tool failures, quality 6/7, mutation 0.5; sprint 1 took 2 attempts (a unit test the fixers' writes kept failing), sprint 2 passed with no defect; first scored 0/10 by a half-built hidden-test runner (LF.219, built and fixed by the other session) - corrected. run-8cced4a9: 108 active min, 507k output tokens, 2 lost replies, quality 6/7, mutation 0.625; LF.214-class import fixed live; LF.217 (UI sprint counter) bundled. **Gate verdict: the all-on baseline holds 10/10 hidden on both, at 108 and 59 active minutes against 199-233 before.**
 - **run-3bfd71ee** (a third all-on run, crossed by the two sessions' deploys: 1246bb22 -> bc153af (LF.219) -> 323e2f5 (LF.220), mixed_versions): **completed 03:21 JST, hidden 10/10**, quality 6/7 (20 items created at once: not all kept with their own ids), 100 active min, 195 calls, 511k output tokens, 1 lost reply. LF.220 (a fixer twice told its defect's tests pass is left only its answer) found and deployed in it by the other session. Mutation not taken: the two sessions' mutation runs collided.
 - **run-bf8a972f** (shakedown 1, all 24 switches on, 07ef4de -> 9e881ff -> fc93ecd, mixed_versions): **completed 22:18 JST, hidden 10/10**, 140 active min (previous tasks-api runs 199-233), 715k output tokens (-33%), 2 replies lost to the cap (4-6), 247 calls. Sprint 1 took 3 attempts (a locked test contradicting the spec - dispute, QA repair; two identical rewrites reverted - LF.216); sprint 2 passed on its first measurement (AC-7 placed with the item routes). Bugs fixed live: LF.214, LF.216; bundled: LF.212, LF.213, LF.215. **LF.217 built 23:41 JST, bundled (UI only - never counted against a gate run's score):** fast delivery's sprint-planning path makes no model call, so the run page's sprint counter (counts `technical_lead` visits) silently skipped the sprint it opened; the next sprint's header wore the wrong number (owner screenshot, run-8cced4a9). Now narrates itself.

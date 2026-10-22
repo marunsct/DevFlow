@@ -2,7 +2,7 @@
 
 > **Unified plan (consolidated 2026-10-19).** This file is the only improvement plan.
 > - It carries the original plan (§1–4, Initiatives A–I) and Appendices 1–8
->   (Initiatives J–BL, EF, CM, OS, RL, PH, CG and Appendix 7's MF, RC, IN, BW, PN, OP, CH, EV, SF and Appendix 8's SL, RV, EN, SAP, DT, RD, with the UI parts).
+>   (Initiatives J–BL, EF, CM, OS, RL, PH, CG and Appendix 7's MF, RC, IN, BW, PN, OP, CH, EV, SF and Appendix 8's SL, RV, EN, MT, SAP, DT, RD, with the UI parts).
 > - **Before implementing: Part 21** is the single implementation order and
 >   **Part 22** resolves the contradictions and lists what not to implement.
 > - Section E holds the two earlier plan documents, merged here.
@@ -3490,7 +3490,7 @@ Every stage keeps the standing rules (`AGENTS.md`):
 Each stage's gate is judged by the two-run rule (Part 20).
 
 *Added 2026-10-22 (Appendix 8, customer stacks, SAP, templates, legacy docs):*
-- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, EN.1–EN.6, EN.8–EN.11, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
+- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, EN.2–EN.6, EN.8–EN.11 (EN.1 via MT), MT.1–MT.10 once the owner opens Matura's TS7d, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
 - **Group 2, behind switches:** SL.5, EN.7, SAP.1 → SAP.2 → SAP.3, SAP.4 → SAP.5, DT.5, RD.1, RD.3, RD.5, RD.6.
 
 *Added 2026-10-21 (Appendix 7, the discipline layer):*
@@ -4046,20 +4046,62 @@ Each row names what is still missing.
 
 | ID | Expectation → change | Group | Priority | Status |
 |---|---|---|---|---|
-| EN.1 | **Identity**: SSO (OIDC and SAML) and SCIM provisioning; roles `viewer / operator / approver / admin` with per-gate approval rights; tenant isolation proven by tests (a user of one tenant cannot list, read or approve another's runs, documents, policies or lessons). Today: local accounts, two roles, tenant columns with no isolation tests | 1 — now | P1 | PROPOSED |
-| EN.2 | **Audit and evidence**: a tamper-evident audit log (hash-chained rows) that links every change to its ticket, run, stage, model id and version, prompt hash, commit, test results, review findings, policy version and the named human approver (the EU AI Act's deployer logging: input, output, timestamp, user, exact model version — MF.1 gives the model); export on demand as JSONL and to a SIEM endpoint; retention per tenant; the export tested | 1 — now | P1 | PROPOSED |
+| EN.1 | **Identity** — *via Matura, see MT.1–MT.4*: SSO (OIDC and SAML) and SCIM provisioning; roles `viewer / operator / approver / admin` with per-gate approval rights; tenant isolation proven by tests (a user of one tenant cannot list, read or approve another's runs, documents, policies or lessons). Today: local accounts, two roles, tenant columns with no isolation tests | 1 — now | P1 | PROPOSED |
+| EN.2 | **Audit and evidence** — *shape and export now, ingest via Matura later (MT.6)*: a tamper-evident audit log (hash-chained rows) that links every change to its ticket, run, stage, model id and version, prompt hash, commit, test results, review findings, policy version and the named human approver (the EU AI Act's deployer logging: input, output, timestamp, user, exact model version — MF.1 gives the model); export on demand as JSONL and to a SIEM endpoint; retention per tenant; the export tested | 1 — now | P1 | PROPOSED |
 | EN.3 | **Supply chain**: a CycloneDX (or SPDX) SBOM per release from the lock files, tagged with commit and run id, in the handover and the release artifacts (PN.1 produces the licence listing from the same data); a **run manifest** — models and versions, quantisation, MCP servers and tools used, prompt-template versions, flags — as a CycloneDX ML-BOM/agent-BOM document; agent-authored commits carry trailers (`Run-Id`, `Model`, `Stage`); release artifacts signed (Sigstore keyless in the generated CI where the host supports it) | 1 — now | P1 | PROPOSED |
 | EN.4 | **SDLC integration**: delivery as a pull request to the customer's git host (GitHub, GitLab, Azure DevOps) on a branch, respecting branch protection and CODEOWNERS (never a push to a protected branch); ticket linkage — a run started from a Jira/ADO work item carries its key, posts status and the PR link back, and the brief may come from the ticket; the webhook events of OP.2 cover `gate_waiting`, `run_finished`, `pr_opened` | 1 — now | P1 | PROPOSED |
-| EN.5 | **Approvals as policy**: an approval matrix per gate (which roles may approve release, which may approve a write to a customer system — SAP.4); segregation of duties (the requester is never the sole approver of release); protected paths in the organisation profile (`auth/`, `payments/`, migrations) whose writes pause for a human even in auto mode; an exceptions register (approver, reason, scope, expiry, compensating control); a per-tenant kill switch that pauses every run at the next boundary | 1 — now, inactive until configured | P1 | PROPOSED |
-| EN.6 | **Data handling**: the deployment is self-hosted and the default model local, so "no training, no residency question" is a stated property — made checkable: a per-tenant allowlist of model endpoints and MCP servers (SF.1's egress allowlist extended), secrets from a vault (HashiCorp Vault, Azure Key Vault, AWS Secrets Manager) instead of `.env` for provider keys, object-store and ADT credentials, optional PII detection on uploaded briefs and codebases with a redaction report, retention per tenant on top of the deletion contract | 1 — now | P2 | PROPOSED |
+| EN.5 | **Approvals as policy** — *roles and segregation via Matura (MT.5)*: an approval matrix per gate (which roles may approve release, which may approve a write to a customer system — SAP.4); segregation of duties (the requester is never the sole approver of release); protected paths in the organisation profile (`auth/`, `payments/`, migrations) whose writes pause for a human even in auto mode; an exceptions register (approver, reason, scope, expiry, compensating control); a per-tenant kill switch that pauses every run at the next boundary | 1 — now, inactive until configured | P1 | PROPOSED |
+| EN.6 | **Data handling** — *vault via Matura when its BYOK API exists (MT.8)*: the deployment is self-hosted and the default model local, so "no training, no residency question" is a stated property — made checkable: a per-tenant allowlist of model endpoints and MCP servers (SF.1's egress allowlist extended), secrets from a vault (HashiCorp Vault, Azure Key Vault, AWS Secrets Manager) instead of `.env` for provider keys, object-store and ADT credentials, optional PII detection on uploaded briefs and codebases with a redaction report, retention per tenant on top of the deletion contract | 1 — now | P2 | PROPOSED |
 | EN.7 | **Quality gates as policy**: coverage threshold, complexity ceiling and duplicate-code limit per stack from the organisation profile, enforced as a CI-gate check family; results of an external scanner (SonarQube, CodeQL) consumed as findings when the customer runs one; WCAG AA (axe, serious and critical) as a release gate for browser products; a performance budget check (startup time, a request-rate smoke) as pack data | 2 (adds defects) | P2 | PROPOSED |
 | EN.8 | **Compliance posture**: a `compliance/` bundle per run — audit export, SBOM, run manifest, checklist report (RV.6), documents (DT), the risk-classification note (deployer under the EU AI Act, feature class, which providers see which data) and an Article 50 disclosure in generated READMEs ("built with DevFlow, model X, human-reviewed at gates …"); a model inventory per tenant; an ISO/IEC 42001-shaped records template, filled from the facts | 1 — now | P2 | PROPOSED |
 | EN.9 | **Cost and chargeback**: tokens, model minutes and wall-clock per tenant, team and run; a priced local model (GPU-hour rate in settings, since the cost tracker reports "not priced" for local); budgets and alerts per tenant on top of the per-run ceilings (AH.1, AK); a monthly report | 1 — now | P2 | PROPOSED |
 | EN.10 | **Operability for the customer's IT**: Helm chart and Kubernetes manifests beside compose; a versioned database migration path and an upgrade note per release; a redacted support bundle (logs, config without secrets, run KPIs) for incidents; HA guidance (two workers, the storage of OS) | 1 — now | P3 | PROPOSED |
-| EN.11 | **Governance of the customisations themselves**: the organisation profile, stack policy, review policy, templates and lessons are versioned with author, approver and change history; export/import between environments; a change to policy is itself an audited, approvable event (a policy edit can weaken every later review) | 1 — now | P2 | PROPOSED |
+| EN.11 | **Governance of the customisations themselves** — *tenant rows under MT.3, role changes audited by Matura*: the organisation profile, stack policy, review policy, templates and lessons are versioned with author, approver and change history; export/import between environments; a change to policy is itself an audited, approvable event (a policy edit can weaken every later review) | 1 — now | P2 | PROPOSED |
 
 **Not planned:** IP indemnity and certifications (SOC 2, ISO 27001, ISO 42001) are commercial and
 organisational matters, not harness features; the harness supplies the evidence (EN.2, EN.3, EN.8).
+
+<a id="plan-mt"></a>
+### MT — DevFlow on Matura: identity, tenants, roles, audit and compliance come from the platform (2026-10-22 11:33 JST)
+
+**Matura** (`github.com/marunsct/Platform`, Apache-2.0, "make any open-source app enterprise-ready") is the
+owner's control plane: Keycloak for sign-in, SSO (SAML/OIDC), SCIM, MFA and passkeys; tenants, workspaces,
+memberships and per-app roles; OpenFGA for fine-grained permissions; a hash-chained audit log with SIEM
+sinks; entitlements; agent identity (service accounts, agents as revocable members, delegated tokens);
+readiness controls, evidence and a trust page; SDKs for Python, TypeScript and Go; a conformance kit.
+Its app-integration contract (spec 03, v0.1, 2026-10-16) names **DevFlow as the first app**, and its
+delivery plan holds a sprint for it (TS7d) marked *on hold until the owner asks*. Read 2026-10-22 at
+`bc5770e`; research [R13](research-findings.md#r13).
+
+**Decision.** EN.1, EN.2 (partly), EN.5 (partly), EN.6 (partly), EN.8 (partly) and EN.11 are **not built
+in DevFlow**; they are taken from Matura through its SDK and contract, and DevFlow becomes a conformant
+Matura app. What Matura does not yet offer an app (audit ingest, secrets/BYOK, usage metering, the
+no-code gateway) DevFlow keeps for now, shaped so it can be handed over later. This is planning only:
+Matura's own handover says "do not touch DevFlow", so MT.1 starts when the owner lifts that.
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| MT.1 | Manifest and client: `matura/manifest.json` for DevFlow — permission catalogue (`run.read`, `run.start`, `run.approve`, `run.review`, `run.delete`, `lesson.approve`, `settings.read`, `settings.write`, `secrets.write`, `policy.write`, `template.write`), starter roles `admin / operator / approver / viewer`, `auth.resources` for any MCP endpoint DevFlow exposes, `conformance.resources` (runs) — uploaded with `PUT /admin/v1/apps/devflow`; a `devflow` client in the realm (none exists today). Owner's go-ahead first | 1 — now (no run behaviour) | P1 | PROPOSED, on hold by the owner |
+| MT.2 | Token verification: `MaturaFastAPI(Verifier)` replaces `get_current_user`; every route checks `perms`, never role names (ADR 0008/0009); `require_admin`/`require_operator` become `require_permission(...)`; the password login and HS256 tokens stay behind `LEGACY_LOGIN` for one release (contract §9); the UI signs in with OIDC PKCE against the `matura` realm and keeps no token in `localStorage`; `users.preferences` moves to `devflow_user_settings(tenant_id, user_id, …)` | 1 — now | P1 | PROPOSED |
+| MT.3 | Contract tables and tenancy: the SDK migration creates `matura_*`; `tenant_id` becomes a uuid foreign key to `matura_tenant` on runs, audit_log, runtime_settings, runtime_secrets, model_profiles, plugin_instructions, the organisation profile, review policy, templates and lessons (lessons leave the JSON file for a table); the `'default'` tenant is migrated as a real tenant; `tenant_segment` uses the uuid; the webhook receiver `/matura/events` and `Sync.catch_up` at start-up and hourly keep the tables current; a `tenant.deleting` event purges runs, workspaces, object-store keys (OS keys gain a tenant prefix) and lessons; `user.deleted` pseudonymises actors | 1 — now | P1 | PROPOSED |
+| MT.4 | Isolation proven: RLS on every tenant table (`FORCE ROW LEVEL SECURITY`, `current_setting('matura.tenant_id')`), a per-transaction `set_config` in the session factory (the SDK's `tenant_session` is not written yet — DevFlow writes it or contributes it), the app role without `BYPASSRLS`, the admin cross-tenant bypass in `runs.py` removed (platform operators use Matura's console, not DevFlow), the `matura-conformance` kit green in CI (401/403 cases, cross-tenant create/list/read, webhook idempotency and signatures) — this is EN.1's isolation test | 1 — now | P1 | PROPOSED |
+| MT.5 | Roles and approvals from the platform: gate approval rights are permissions (`run.approve` per gate kind, `release.approve`); the reviewer on a run is a `matura_user` id; segregation of duties (EN.5) checks `sub` of the requester against the approver; agents appear as members: a run's model calls that act for a person carry the delegated token's `act.sub` into DevFlow's audit ("the agent did this for Ana"); per-run reviewer relations in OpenFGA optional | 1 — now | P1 | PROPOSED |
+| MT.6 | Audit: DevFlow's `audit_log` stays (Matura records only its own changes; an app audit-ingest API is not yet specified) but takes the contract's shape now — uuid actor and tenant, `kind`, `act.sub`, policy version, run and commit — and a hash chain per tenant, so that it can be streamed to Matura's sinks or handed to its ingest API when one exists. Export as NDJSON (EN.2) | 1 — now | P1 | PROPOSED |
+| MT.7 | Entitlements: read `GET /v1/tenants/{tid}/entitlements` and enforce the keys Matura keeps for apps — `max_concurrent_runs`, `frontier_model`, `max_runs_per_month`, `storage_gb` — answering 402 `plan-limit` as Matura does; cost stays in `cost_tracker` until Matura has a usage-ingest API (then EN.9 reports through it) | 1 — now | P2 | PROPOSED |
+| MT.8 | Secrets: Matura has no app secrets/BYOK API yet (OpenBao/KMS is on its roadmap); DevFlow's Fernet store is split from the JWT secret and made per tenant now (EN.6), with a `SecretsBackend` seam so the Matura/OpenBao backend is a configuration change later | 1 — now | P2 | PROPOSED |
+| MT.9 | Consoles and settings: no DevFlow users page — members, invitations, roles, SSO and SCIM are Matura's portal; DevFlow's Settings keeps model, runtime, stacks (SL), organisation profile (SL/RV), templates (DT); the organisation profile, policy and templates are tenant rows under MT.3; `/portal/` linked from the shell | 1 — now | P2 | PROPOSED |
+| MT.10 | Deployment: a compose overlay joining `matura_default` (issuer `localhost:8180/realms/matura`, JWKS at `keycloak:8180`), a webhook registration for `http://app:8000/matura/events`, Helm values for EN.10 referencing the Matura chart; the HANDOVER gains the two-stack bring-up and the issuer/JWKS pitfall | 1 — now | P2 | PROPOSED |
+| MT.11 | Asks of Matura (filed in the Platform repo when the owner opens TS7d): an app audit-ingest endpoint and schema; an app secrets/BYOK API; a usage-ingest endpoint for metering; `tenant_session` (RLS `set_config` + placement routing) and the Alembic `matura_tenant_table` operation in the Python SDK; app-level readiness controls (human-approval log, restore-test evidence) so DevFlow's EN.8 bundle can feed the trust page | — | P1 | PROPOSED |
+
+**What this changes in EN:** EN.1 → MT.1–MT.4; EN.2 → MT.6 (ingest pending Matura); EN.5 approvals and
+segregation → MT.5 (protected paths, exceptions and the kill switch stay in DevFlow); EN.6 vault → MT.8;
+EN.8 model inventory and readiness → via Matura's evidence once app controls exist; EN.9 budgets → MT.7;
+EN.11 → tenant rows under MT.3 with Matura's audit of role changes. EN.3, EN.4, EN.7, EN.10 are unchanged.
+
+**Effort:** MT.1–MT.2 2 days; MT.3–MT.4 3 days (the migrations and RLS are the bulk); MT.5–MT.6 1½ days;
+MT.7–MT.10 2 days. **Risks:** the contract is v0.1 *proposed* and Matura is early (tokens live 5 min, no
+instant revocation; portal pages for SSO/SCIM/agents/audit not built); DevFlow's psycopg pools need the
+per-transaction `set_config` or RLS silently sees nothing; the issuer/JWKS host mismatch in compose.
 
 <a id="plan-sap"></a>
 ### SAP — CAP, Fiori and RAP as stacks (Q2)
@@ -4158,7 +4200,7 @@ and the citation check makes invention visible and countable. Effort: RD.2 1 day
 RD.4 ½ day, RD.5 1½ days, RD.6 2 days, RD.7 1 day.
 
 **Placement in Part 21 (added 2026-10-22, this appendix):**
-- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, EN.1–EN.6, EN.8–EN.11, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
+- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, EN.2–EN.6, EN.8–EN.11 (EN.1 via MT), MT.1–MT.10 once the owner opens Matura's TS7d, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
 - **Group 2, after the measured runs, each behind its switch:** SL.5, SAP.1 → SAP.2 → SAP.3, SAP.4 → SAP.5 (needs the owner's SAP system), DT.5, RD.1, RD.3, RD.5, RD.6.
 - Dependencies: DT before RD's documents; SAP.4 before SAP.5; BW.1/BW.2 and CG.1 (built) under RD.
 
@@ -4978,6 +5020,17 @@ the item: what it changes, why, and the evidence (review findings in
 | EN.9 | cost and chargeback per tenant/team; priced local model; budgets | P2 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
 | EN.10 | Helm/Kubernetes, migrations and upgrade notes, support bundle, HA guidance | P3 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
 | EN.11 | versioned, approvable customisations with export/import | P2 | PROPOSED 2026-10-22 (group 1) | [EN](#plan-en) |
+| MT.1 | DevFlow manifest (permissions, roles, resources) and realm client | P1 | PROPOSED 2026-10-22 (group 1; on hold by the owner's Matura rule) | [MT](#plan-mt) |
+| MT.2 | Matura token verification and `perms` checks; OIDC PKCE in the UI; legacy login behind a flag | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.3 | contract tables; uuid `tenant_id` everywhere incl. lessons; events and feed; deletion handling | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.4 | RLS, per-transaction tenant setting, no admin bypass, conformance kit in CI | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.5 | gate approvals as permissions; reviewer as matura user; delegated-agent `act` in audit | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.6 | audit log in the contract's shape with a hash chain, ready for Matura ingest | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.7 | entitlements read and enforced (concurrent runs, frontier model, quotas) | P2 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.8 | per-tenant secrets store behind a backend seam for Matura/OpenBao later | P2 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.9 | no DevFlow users page; portal linked; tenant-scoped settings | P2 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.10 | compose overlay and Helm values joining a Matura install | P2 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.11 | asks of Matura: audit ingest, app secrets/BYOK, usage ingest, SDK `tenant_session`, app readiness controls | P1 | PROPOSED 2026-10-22 (filed when TS7d opens) | [MT](#plan-mt) |
 | SAP.1 | `sap_cap_node` pack with `@cap-js/mcp-server` | P1 | PROPOSED 2026-10-22 (group 2) | [SAP](#plan-sap) |
 | SAP.2 | `sap_fiori_elements_cap` pack, UI generated by the harness | P1 | PROPOSED 2026-10-22 (group 2, after SAP.1; spike first) | [SAP](#plan-sap) |
 | SAP.3 | `ui5_freestyle` pack | P3 | PROPOSED 2026-10-22 (group 2) | [SAP](#plan-sap) |

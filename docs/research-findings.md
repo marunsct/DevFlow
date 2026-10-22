@@ -11,6 +11,7 @@
 
 | Part | Topic | Date | Main plan items |
 |---|---|---|---|
+| [R13](#r13) | Matura (the owner's platform): what it gives an app, what it does not yet | 2026-10-22 | [MT](improvement-plan.md#plan-mt), [EN](improvement-plan.md#plan-en) |
 | [R12](#r12) | What organisations expect of an AI software-delivery harness: governance, audit, supply chain, EU AI Act | 2026-10-22 | [EN](improvement-plan.md#plan-en) |
 | [R11](#r11) | SAP CAP, Fiori/UI5 and RAP: toolchains, MCP servers, what runs outside an SAP system | 2026-10-22 | [SAP](improvement-plan.md#plan-sap), [DT](improvement-plan.md#plan-dt) |
 | [R10](#r10) | Code graphs and repository maps for coding agents | 2026-10-21 | [CG](improvement-plan.md#plan-cg) |
@@ -25,6 +26,23 @@
 | [R6](#r6) | Earlier comparisons with other harnesses | 2026-10-04/09 | [E1](improvement-plan.md#plan-e1), [E2](improvement-plan.md#plan-e2) |
 
 ---
+
+<a id="r13"></a>
+## Part R13 — Matura: what the owner's platform gives an app, and what it does not yet (2026-10-22, session 5)
+
+Plan items: [MT](improvement-plan.md#plan-mt). Source: `github.com/marunsct/Platform` at `bc5770e`, read in full
+(`docs/spec/03-app-integration-contract.md` v0.1, ADRs 0004–0009, `HANDOVER.md`, `docs/plan/20`, `/21`,
+`sdk/python`, `api/openapi.yaml`, `deploy/compose`, `cmd/matura-conformance`).
+
+| Finding | Where | Plan |
+|---|---|---|
+| Integration contract: a Keycloak JWT (ES256/RS256, 5 min, `aud` = app client) carrying `sub`, `tid`, `tenant`, `wid`, `troles`, `roles`, **`perms`** (expanded by Matura; the app checks only perms), `ver`, `pmode`, `kind` (human/service/agent), `act` (delegation); signed CloudEvents webhooks (`Matura-Signature`, 300 s window) and a change feed/snapshot; contract tables `matura_tenant/workspace/user/membership/role_grant/app_role` created and written only by the SDK; app tables carry `tenant_id` FK, composite keys, RLS in shared mode; placement modes shared/schema/database | spec 03 §2–§7, ADR 0006–0009 | MT.2–MT.4 |
+| Built (HANDOVER, plan 21 §5): TS1–TS15, TS17, TS24, TS25 — tenants, workspaces, members, roles, placements with RLS, invitations, SSO/SCIM endpoints, agents and delegated tokens (RFC 8693), RFC 9728 metadata, readiness controls and OSCAL evidence, trust page, Helm, metrics, Matura's own backups, Go/TypeScript/Python SDKs, the conformance kit (AgentCanvas 19/19) | `HANDOVER.md`, `docs/plan/21-build-plan.md` | MT.1–MT.5 |
+| Not built: instant revocation, OpenBao/KMS and crypto-shredding, billing adapters, SCIM bulk, agent consent and per-tool scopes, portal pages for SSO/SCIM/agents/audit, the no-code `matura-gateway`; **no app audit-ingest, app secrets/BYOK or usage-ingest API**; SDK lacks `tenant_session` and the Alembic op the contract's example uses | plan 21 §5, OpenAPI (111 paths), `sdk/python` | MT.6–MT.8, MT.11 |
+| Python SDK v0.1.0: `Verifier`, `Principal.has(perm)`, `Contract.create/apply`, `MaturaAPI` (changes, snapshot, placements, OpenFGA check/batch/list), `Sync.bootstrap/catch_up`, `MaturaFastAPI.require_permission`, `webhook_router`, `FakeIssuer` for tests | `sdk/python/src/matura/*` | MT.2–MT.4 |
+| DevFlow is named the first app; sprint TS7d plans the swap of `users`/HS256 for the SDK and `tenant_id`+RLS on runs and audit; the realm has clients `matura-admin/api/console/agentcanvas` and **no `devflow`**; HANDOVER: "do not touch DevFlow", TS7d on hold until the owner asks | spec 03 §9, plan 20, `keycloak/realm/matura-realm.json` | MT.1 |
+| DevFlow today: own HS256 JWT (60 min + refresh), `users(role, tenant_id TEXT 'default')`, DB lookup per request, `audit_log` without a hash chain, global settings/secrets/profiles/plugin instructions/lessons, admin sees every tenant (`runs.py:567,624`), no RLS, UI token in `localStorage`, zero OIDC/SAML code | `auth.py`, `run_store.py`, `runtime_settings.py`, `langchain-ui/src/lib/session.ts` | MT.2–MT.4, MT.9 |
+| Compose: Matura runs postgres, Keycloak :8180 (realm imported), Mailpit :8025, OpenFGA :8081, maturad :8080 on project network `matura_default`; DevFlow's compose has no `networks:`; issuer vs JWKS host mismatch is the known pitfall | `deploy/compose/compose.yaml` | MT.10 |
 
 <a id="r12"></a>
 ## Part R12 — What organisations expect of an AI software-delivery harness (2026-10-22, session 5)

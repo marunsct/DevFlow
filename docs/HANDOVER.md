@@ -134,7 +134,7 @@ the cause fixed in general, deployed, and the run started again.
 (`loop.sh cancel`), fix, deploy and start again. If you find a major harness
 bug or gap at any time, cancel immediately.
 
-**Shakedown runs (owner 2026-10-22 20:00 JST):** for the first couple of runs with every group 2 switch on, a confirmed harness bug is fixed immediately and the run paused, deployed and rewound to the earliest affected stage - `loop.sh rewind --pause-only; BOUNDARY_WAIT=0 loop.sh deploy; loop.sh rewind <stage>` - whatever the run's age (the 40-minute rule does not apply). Their scores are not arms; the gated runs start once a run passes with no new harness bug.
+**Shakedown runs (owner 2026-10-22 20:00 JST):** for the first couple of runs with every group 2 switch on, a confirmed harness bug is fixed immediately and the run paused, deployed and rewound to the earliest affected stage - `loop.sh rewind --pause-only; BOUNDARY_WAIT=0 loop.sh deploy; loop.sh rewind <stage>` - whatever the run's age (the 40-minute rule does not apply). Their scores are not arms; the gated runs start once a run passes with no new harness bug. Only a bug that changes the run's outcome or wastes its time is deployed this way; a fix that does not (measurement, log wording, tooling) is pushed and deployed with the next significant one (owner, 20:19 JST).
 
 **Mid-run deploys when defect fixed (owner instruction 2026-10-10 18:45 JST):**
 

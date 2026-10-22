@@ -993,6 +993,45 @@ def _nothing_new_lately(messages: list[Any], count: int = NOTHING_NEW_BEFORE_THE
     return False
 
 
+#: Times a fix stage is told its defect's own tests pass before only its
+#: answer is left to it (plan AY step 3).
+FIXED_NOTICES_BEFORE_THE_ANSWER = 2
+
+
+def _told_its_defect_is_fixed(messages: list[Any]) -> bool:
+    """Whether the harness has measured this stage's defect fixed after its writes at least twice, the last time too.
+
+    The measurement after each write (`app.graph.verify_after_write`) tells a
+    fixer its defect's tests pass and to answer, and a model can carry on
+    regardless. Measured on an all-on run: a fixer whose unit-test defect was
+    fixed was told so seven times and went on diagnosing another defect's
+    500s with one throwaway script after another, its own budget running out
+    on work another fixer is given. Counted from the conversation, so it
+    survives a pause and a rebuilt agent; the last measurement must still be
+    a pass, so a later write that broke the tests again keeps its tools.
+    """
+    from app.graph.verify_after_write import FAILING, PASSED
+
+    passed, last = 0, None
+    for message in messages:
+        if getattr(message, "type", None) != "tool":
+            continue
+        said = str(getattr(message, "content", "") or "")
+        if PASSED in said:
+            passed, last = passed + 1, True
+        elif FAILING in said:
+            last = False
+    return passed >= FIXED_NOTICES_BEFORE_THE_ANSWER and last is True
+
+
+#: Sent with the tools withheld once `_told_its_defect_is_fixed`.
+_FIXED_ANSWER_NOW_NOTICE = (
+    "The harness has measured your defect's own tests passing after your changes, and has told you so "
+    "more than once. Your tools are withheld: return your structured answer now, saying what you changed. "
+    "Other failing tests are other defects, each with its own fixer."
+)
+
+
 def _nothing_left_but_the_answer(messages: list[Any], limit: int, schema: Any) -> bool:
     """True on the last calls of the budget with no answer written yet.
 
@@ -1998,9 +2037,13 @@ def build_settled_answer_middleware(
                     _without_the_looking_tools_in(list(getattr(request, "tools", None) or []))
                     if ignored or stalled else []
                 )
+                fixed_already = schema is not None and _told_its_defect_is_fixed(messages)
+                if fixed_already:
+                    correction = f"{correction}\n\n{_FIXED_ANSWER_NOW_NOTICE}" if correction else _FIXED_ANSWER_NOW_NOTICE
+                    logger.warning("Stage %s was told its defect is fixed and carried on; only its answer is left", stage_name or "?")
                 answer_only = (spiralled and not spiral_quiet) or _nothing_left_but_the_answer(
                     messages, step_limit, schema
-                ) or (stalled and not writers) or (ignored and not writers) or stuck_on_a_failure
+                ) or (stalled and not writers) or (ignored and not writers) or stuck_on_a_failure or fixed_already
                 if ignored:
                     # Named as well: the model is told which call it kept
                     # sending, not only that its tools are gone.

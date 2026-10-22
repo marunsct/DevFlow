@@ -4109,9 +4109,37 @@ one place that differs; everything downstream (permissions, tenancy, audit, appr
 | MT.15 | Tenancy independent of the provider: the uuid `tenant_id`, RLS and the conformance-style isolation tests (MT.3–MT.4) apply in every mode; in `oidc` mode DevFlow owns the `tenant`/`user`/`membership` tables (same DDL as the Matura contract, so switching a customer to Matura later is a data move, not a schema change); deletion and pseudonymisation hooks are called from JIT updates or an admin command instead of Matura events | 1 — now | P1 | PROPOSED |
 | MT.16 | Agent identity in `oidc` mode: a run's model calls act under a service identity DevFlow names in its audit (`kind=agent`, `act_sub` = the person who started the run), the same columns MT.6 adds, so the audit trail reads identically whether delegated tokens come from Matura or DevFlow records the delegation itself | 1 — now | P2 | PROPOSED |
 
-Conformance test matrix: the MT step-2 and step-6 tests run against three issuers — `FakeIssuer`
-(Matura), a generic OIDC fake with Entra-shaped claims (`roles`, `tid`), and the legacy signer — and
-the same 401/403/isolation expectations must hold in all three.
+#### Identity process review: the fallback rule and the gaps (owner, 2026-10-22 11:48 JST)
+
+**Owner's decision:** roles are IdP-managed, with DevFlow-managed roles as the fallback. Precisely
+(MT.17): per tenant, `role_source = idp_then_devflow` (the default), `idp` or `devflow`. Under the
+default, a token whose mapped groups yield at least one DevFlow role sets the member's roles from the
+IdP and DevFlow's own assignments for that member are ignored (not added); a token with no mappable
+groups — claim absent, empty, or nothing matched — leaves DevFlow's assignments in force. An optional
+`additive` flag unions the two for tenants that want it. The Members page shows, per member, which
+source is in force and why.
+
+Walking the lifecycle end to end — configure, sign in, create, map, approve, run, change, leave, break —
+found these gaps; each has an item.
+
+| ID | Gap | Change | Group | Priority | Status |
+|---|---|---|---|---|---|
+| MT.17 | The fallback was a sentence, not a rule | `role_source` per tenant as above; `roles_source` and `roles_seen_at` stored on the membership; a token that changes a member's effective roles writes an `identity.roles_changed` audit row with before/after and the source — so gaining `run.approve` through an IdP group is visible in DevFlow's audit even though the change happened elsewhere | 1 — now | P1 | PROPOSED |
+| MT.18 | One issuer per install; a multi-tenant install has customers on different IdPs | Per-tenant identity configuration (issuer, audience, JWKS, claims mapping, groups map, `role_source`) with home-realm discovery by email domain on the sign-in page; a platform-level default; in `matura` mode Matura brokers per tenant and this is unused | 1 — now | P1 | PROPOSED |
+| MT.19 | Provider quirks break the generic path silently: Entra access tokens for another audience, Okta custom claims only from a custom authorization server, Entra **groups overage** (groups omitted above 200, `_claim_names` instead), group ids vs names | Provider recipes as data (`identity/recipes/{entra,okta,auth0,ping,google,keycloak}.json`: expected claims, audience advice, overage handling); overage handled by preferring app roles over groups and, when only groups exist, a documented Graph lookup or the fallback role; `loop.sh auth-check` validates discovery, JWKS and a sample token's mapping as a dry run, and the Settings *Identity* tab has the same *Test* button | 1 — now | P1 | PROPOSED |
+| MT.20 | No service accounts in `oidc` mode: CI, the loop's operator account (`LOOP_USER/PASSWORD`) and API integrations have no user | Client-credentials tokens map to a `kind=service` principal by `azp`/`client_id` with roles from a per-tenant service map; the loop moves from password login to a client credential (or stays on `legacy`, which remains supported); every service action is audited with `kind=service` | 1 — now | P1 | PROPOSED |
+| MT.21 | Background work has no principal: Celery tasks, schedulers (retention, backups, stall detector, feed catch-up) run for every tenant | A `system` principal that may only iterate tenants explicitly and sets `matura.tenant_id` per tenant inside the loop — never a `BYPASSRLS` session; a test asserts no scheduled job runs a query without a tenant set; approval timeouts that auto-approve are audited as `system` | 1 — now | P1 | PROPOSED |
+| MT.22 | Revocation latency and sessions: a disabled IdP account keeps a valid token until expiry; the UI session outlives it | Short access tokens (≤15 min) in the recipes; OIDC back-channel logout (`sid`) and front-channel logout supported by the UI; a *Deactivate now* on the Members page that blocks `sub` immediately regardless of token validity (a small denylist with TTL = token lifetime) | 1 — now | P2 | PROPOSED |
+| MT.23 | Account linking: a legacy user and an IdP user are the same person; `sub` is the key and email can change | One-time link by verified email (`email_verified` required) on first IdP sign-in, after which `sub` is authoritative; an unverified email never links; an admin can link or unlink on the Members page; audited | 1 — now | P2 | PROPOSED |
+| MT.24 | A person in several tenants: tenant choice and tenant switching | Membership in many tenants from several mapped groups; a tenant selector after sign-in and `X-DevFlow-Tenant` on every API call, checked against the membership (never trusted from the token alone unless it carries `tid`); the UI shows the active tenant in the shell | 1 — now | P2 | PROPOSED |
+| MT.25 | Roles before first login: an admin wants to grant `approver` to someone who has not signed in yet (invitations exist only in Matura) | Pending grants by email, applied at JIT creation and then subject to `role_source`; shown as pending on the Members page | 1 — now | P2 | PROPOSED |
+| MT.26 | Lockout when the IdP or the mapping is misconfigured | Break-glass: the `legacy` signer stays available at `/api/auth/break-glass` for `BOOTSTRAP_ADMINS` only, bound to loopback or an allow-listed network, rate-limited, every use audited and shown on the health page; the auth-check of MT.19 runs before a mode switch is saved | 1 — now | P1 | PROPOSED |
+| MT.27 | Identity has no settings surface or observability | Settings → *Identity* tab (platform admin: mode, per-tenant issuer and mapping, groups map, `role_source`, bootstrap admins, service accounts, test); metrics for verification failures by reason, JIT creations, role changes, JWKS refresh failures (keys cached with TTL; an unknown `kid` triggers one refresh, then fails closed) | 1 — now | P2 | PROPOSED |
+| MT.28 | Tests cover three issuers but not the quirks | The issuer matrix gains Entra-shaped (`roles`, `tid`, overage) and Okta-shaped (`groups`, custom authorization server) fakes, service-account and `system` principals, back-channel logout, linking, multi-tenant switching and break-glass; the isolation tests run in each | 1 — now | P1 | PROPOSED |
+
+Conformance test matrix: the MT step-2 and step-6 tests run against the issuers of MT.28 — `FakeIssuer`
+(Matura), Entra- and Okta-shaped OIDC fakes, and the legacy signer — and the same 401/403/isolation
+expectations must hold in all of them.
 
 **What this changes in EN:** EN.1 → MT.1–MT.4 (Matura) or MT.12–MT.15 (direct IdP); EN.2 → MT.6 (ingest pending Matura); EN.5 approvals and
 segregation → MT.5 (protected paths, exceptions and the kill switch stay in DevFlow); EN.6 vault → MT.8;
@@ -4128,6 +4156,7 @@ handovers and `STATE.md` updated; the old login stays usable until step 8.
 | 0 | Bring-up: Matura compose beside DevFlow's; `devflow` client with the Matura mapper in `keycloak/realm/matura-realm.json` (Platform repo); DevFlow compose overlay joining `matura_default` with `MATURA_ISSUER`, `MATURA_JWKS_URL`, `MATURA_AUDIENCE=devflow`, `MATURA_WEBHOOK_SECRET`, `MATURA_APP_CLIENT_ID/SECRET` | `docker-compose.matura.yml`, `.env.example`, `docs/HANDOVER.md` | `loop.sh ready` reports the issuer reachable and the JWKS key id | ½ |
 | 1 | Manifest: `matura/manifest.json` (permissions, roles, resources, `conformance.resources`); `manage.py matura register` uploads it (`PUT /admin/v1/apps/devflow`) and the webhook (`/admin/v1/apps/devflow/webhooks`) | `matura/manifest.json`, `server/manage.py` | manifest validates against Matura's schema; every route's permission appears in the catalogue (a test walks the FastAPI routes) | ½ |
 | 2 | Verification through the `IdentityProvider` seam (MT.12): `AUTH_MODE=legacy|oidc|matura`; `oidc` = generic JWKS verifier + claims mapping + JIT provisioning (MT.13); `matura` = the SDK's `Verifier`; `get_current_user` returns a `Principal`; `require_admin/operator` → `require_permission`; the role→permission catalogue is one file shared with the manifest | `server/identity/{base,legacy,oidc,matura}.py`, `server/auth.py`, `server/api.py`, every router's dependencies, `pyproject.toml` | the three-issuer matrix: 401 (no token, expired, wrong `aud`, unknown kid, wrong issuer), 403 (missing perm), 200 with perm, in `legacy`, `oidc` (Entra-shaped claims) and `matura` modes; JIT creates tenant and user rows from a first token | 2 |
+| 2b | Identity hardening (MT.17–MT.21, MT.26): `role_source` and roles-changed audit, per-tenant configuration, provider recipes and `auth-check`, service accounts, the `system` principal, break-glass | `server/identity/*`, `server/tasks.py`, `scripts/loop/*` | the MT.28 matrix; no scheduled job queries without a tenant; break-glass refused off the allow-list | 2 |
 | 3 | UI: OIDC PKCE (`oidc-client-ts`) against whichever issuer `GET /api/auth/config` names (Matura's realm or the customer's IdP); token kept in memory with silent renew; `/portal/` link in the shell; the login page shows "Sign in with Matura" and, under the flag, the password form | `langchain-ui/src/lib/session.ts`, `api/index.ts`, `pages/Login.tsx`, shell | Playwright: sign-in redirects to Keycloak and back; a 401 triggers renew, not a logout; no token in `localStorage` | 1 |
 | 4 | Contract tables and tenancy: the contract DDL in every mode (SDK migration in `matura` mode, DevFlow-owned in `oidc`/`legacy`, MT.15); `tenant_id uuid` FK on `runs`, `audit_log`, `runtime_settings`, `runtime_secrets`, `model_profiles`, `plugin_instructions`, the organisation profile, review policy, templates; `lessons` move from `DATA_DIR/lessons.json` to a table (signature kept); migration of `'default'` to a real tenant; `tenant_segment` on the uuid; `devflow_user_settings` | `server/run_store.py`, `runtime_settings.py`, `plugin_store.py`, `plugins/lessons.py`, `workspaces.py`, Alembic migrations | migration round-trips a fixture database; every table with tenant data has the FK (a test lists tables) | 1½ |
 | 5 | Events and feed: `webhook_router` at `/matura/events`; `Sync.bootstrap` at start-up and `catch_up` hourly (Celery beat); `tenant.deleting` → purge runs, workspaces, object-store keys (tenant prefix), lessons; `user.deleted` → pseudonymise actors | `server/matura_events.py`, `server/tasks.py`, `run_retention.py`, `object_store.py` | signed event applied once (idempotent), stale signature refused, version rule (older event ignored), deletion purges everything the retention contract names | 1 |
@@ -4136,7 +4165,7 @@ handovers and `STATE.md` updated; the old login stays usable until step 8.
 | 8 | Entitlements, secrets, cleanup: read `/v1/tenants/{tid}/entitlements` and enforce `max_concurrent_runs`, `frontier_model`, `max_runs_per_month`, `storage_gb` (402 `plan-limit`); `SecretsBackend` seam with per-tenant Fernet; remove the users admin from `manage.py` CLI except for break-glass; `LEGACY_LOGIN` default off one release later | `server/entitlements.py`, `runtime_settings.py`, `manage.py` | over-limit start answers 402; a tenant cannot read another's secret rows | 1½ |
 | 9 | Docs and asks: HANDOVER two-stack bring-up and the issuer/JWKS pitfall; `STATE.md`; ADR-0014 *DevFlow is a Matura app*; MT.11 asks filed as issues in the Platform repo (audit ingest, app secrets/BYOK, usage ingest, `tenant_session` + Alembic op, app readiness controls) | `docs/*`, Platform issues | — | ½ |
 
-**Effort:** about 11½ days in sequence; steps 2–3 and 4–5 can run in parallel. The order keeps a
+**Effort:** about 13½ days in sequence; steps 2–3 and 4–5 can run in parallel; MT.22–MT.25 and MT.27 follow as a second identity batch (about 3 days). The order keeps a
 working login at every step and lands isolation (step 6) before approvals depend on it. **Risks:** the contract is v0.1 *proposed* and Matura is early (tokens live 5 min, no
 instant revocation; portal pages for SSO/SCIM/agents/audit not built); DevFlow's psycopg pools need the
 per-transaction `set_config` or RLS silently sees nothing; the issuer/JWKS host mismatch in compose.
@@ -5074,6 +5103,18 @@ the item: what it changes, why, and the evidence (review findings in
 | MT.14 | SAML and other IdPs through a broker (Matura's Keycloak or a standalone one) | P2 | PROPOSED 2026-10-22 (docs) | [MT](#plan-mt) |
 | MT.15 | tenancy, RLS and isolation tests identical in every mode; contract DDL owned by DevFlow when not on Matura | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
 | MT.16 | agent identity recorded the same way in every mode | P2 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.17 | `role_source` per tenant (idp_then_devflow default); roles-changed audit | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.18 | per-tenant identity configuration and home-realm discovery | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.19 | provider recipes, groups overage, `auth-check` dry run | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.20 | service accounts via client credentials; the loop's account | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.21 | `system` principal for background work; no BYPASSRLS | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.22 | short tokens, back-channel logout, deactivate-now denylist | P2 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.23 | account linking by verified email | P2 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.24 | multi-tenant users and tenant switching | P2 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.25 | pending role grants by email | P2 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.26 | break-glass login for bootstrap admins | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.27 | Identity settings tab and auth observability | P2 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
+| MT.28 | issuer and scenario test matrix | P1 | PROPOSED 2026-10-22 (group 1) | [MT](#plan-mt) |
 | SAP.1 | `sap_cap_node` pack with `@cap-js/mcp-server` | P1 | PROPOSED 2026-10-22 (group 2) | [SAP](#plan-sap) |
 | SAP.2 | `sap_fiori_elements_cap` pack, UI generated by the harness | P1 | PROPOSED 2026-10-22 (group 2, after SAP.1; spike first) | [SAP](#plan-sap) |
 | SAP.3 | `ui5_freestyle` pack | P3 | PROPOSED 2026-10-22 (group 2) | [SAP](#plan-sap) |

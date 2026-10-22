@@ -565,14 +565,26 @@ def build_plugin_instructions_middleware(repo_root: str, role: str = "") -> Any:
                     run_id = ((get_config() or {}).get("configurable") or {}).get(APP_RUN_ID_KEY)
                 except Exception:  # noqa: BLE001 - outside a run there is no config; the note still applies
                     run_id = None
-                instructions += the_owner_s_direction(repo_root, _stage_from_config(""), run_id)
+                direction = the_owner_s_direction(repo_root, _stage_from_config(""), run_id)
             except Exception:  # noqa: BLE001 - a note that cannot be read adds nothing
                 logger.debug("Could not read the run's steering notes", exc_info=True)
-            if not instructions:
+                direction = ""
+            from app.plugins.steering_at_the_tail import enabled as at_the_tail
+
+            # The direction after the transcript, so a note added mid-stage
+            # leaves the system message as it was (plan PX.5, off until measured).
+            tail = direction.strip() if at_the_tail() else ""
+            if not tail:
+                instructions += direction
+            if not instructions and not tail:
                 return handler(request)
 
             try:
-                request = _with_instructions(request, instructions)
+                if instructions:
+                    request = _with_instructions(request, instructions)
+                if tail:
+                    messages = list(getattr(request, "messages", None) or [])
+                    request = request.override(messages=[*messages, {"role": "user", "content": tail}])
             except Exception:  # noqa: BLE001 - never fail a call over a hint
                 logger.debug("Could not append plugin instructions", exc_info=True)
             return handler(request)

@@ -35,6 +35,7 @@ SWITCHES: dict[str, str] = {
     "LOCALISE_FIRST": "app.graph.localisation",
     "STABLE_TOOLS": "app.agents.stable_tools",
     "CANONICAL_MEMORY": "app.agents.canonical_memory",
+    "STEERING_AT_THE_TAIL": "app.plugins.steering_at_the_tail",
     "INTERFACE_CLASH_CHECK": "app.agents.interface_clashes",
     "ASK_SPECIFICATION": "app.agents.ask_specification",
     "INTERFACE_CHANGES_NAMED": "app.agents.interface_changes",

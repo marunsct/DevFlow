@@ -156,3 +156,15 @@ def test_a_root_readme_names_the_project_directory_and_a_pack_without_a_start_sc
         assert release_docs.complete_the_handoff(tmp_path) == ["README.md"]
     text = (tmp_path / "README.md").read_text()
     assert "From `shop/`:" in text and "npm start" in text
+
+
+def test_a_run_no_pack_scaffolded_finds_the_readme_in_its_pinned_project(tmp_path, monkeypatch):
+    """Looked for at the workspace root only, the project's own README was missing, and the release was
+    held back twice and escalated."""
+    monkeypatch.setattr(contract, "the_pack", lambda root: None)
+    monkeypatch.setattr(contract, "read", lambda root: None)
+    (tmp_path / ".project-directory").write_text("acme")
+    (tmp_path / "acme").mkdir()
+    (tmp_path / "acme" / "README.md").write_text("# Acme\n\n```sh\nsh start.sh\n```\n")
+    with mock.patch.dict(os.environ, ON):
+        assert release_docs.what_the_handoff_lacks(tmp_path) == []

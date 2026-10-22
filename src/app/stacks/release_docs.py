@@ -50,6 +50,20 @@ def _the_readme(root: Path, project: str) -> Path | None:
     return None
 
 
+def _the_pinned_project(root: Path) -> str:
+    """The project directory the run pinned at intake, for a run no pack scaffolded; "" when none.
+
+    Without it a README in the project directory was looked for at the
+    workspace root only, and the release was held back for one it had.
+    """
+    try:
+        from app.tools.repository import pinned_project_directory
+
+        return str(pinned_project_directory(root) or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _ways_to_run(root: Path, project: str, pack: object | None) -> list[str]:
     ways = ["start.sh"]
     if pack is not None:
@@ -106,7 +120,7 @@ def what_the_handoff_lacks(repo_root: str | Path) -> list[str]:
         root = Path(repo_root)
         found = contract.the_pack(root)
         pack, record = found if found else (None, contract.read(root) or {})
-        project = str((record or {}).get("project") or "")
+        project = str((record or {}).get("project") or "") or _the_pinned_project(root)
         readme = _the_readme(root, project)
         if readme is None:
             return ["The project has no README: someone who did not write it cannot tell how to install, "
@@ -159,7 +173,7 @@ def complete_the_handoff(repo_root: str | Path) -> list[str]:
         pack, record = found if found else (None, contract.read(root) or {})
         if pack is None:
             return []
-        project = str((record or {}).get("project") or "")
+        project = str((record or {}).get("project") or "") or _the_pinned_project(root)
         readme = _the_readme(root, project) or (root / project / "README.md" if project else root / "README.md")
         text = readme.read_text(encoding="utf-8", errors="replace") if readme.is_file() else (
             f"# {(record or {}).get('title') or project or root.name}\n")

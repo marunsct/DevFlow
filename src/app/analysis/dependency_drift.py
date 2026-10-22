@@ -133,11 +133,50 @@ def _python_imports(project: Path) -> dict[str, str]:
             source = script.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        for groups in _PY_IMPORT.findall(source):
-            module = str(next((part for part in groups if part), "")).split(".")[0]
-            if module:
-                imported.setdefault(module, str(script.relative_to(project)))
+        for module in _imports_in_source(source):
+            if _a_local_module(project, script, module):
+                continue
+            imported.setdefault(module, str(script.relative_to(project)))
     return imported
+
+
+def _a_local_module(project: Path, script: Path, module: str) -> bool:
+    """Whether the project itself provides `module` without an `__init__.py`: a namespace package
+    directory, a module beside the importing file, or the test tree's own helpers.
+
+    Reported as undeclared, such a name was a defect the fixer could not
+    settle: no manifest declares `src`, `models` or `conftest`.
+    """
+    if module in ("tests", "test", "conftest"):
+        return True
+    for base in (project, project / "src", script.parent):
+        if (base / module).is_dir() or (base / f"{module}.py").is_file():
+            return True
+    return False
+
+
+def _imports_in_source(source: str) -> list[str]:
+    """The top-level packages a Python source imports, read from its syntax tree.
+
+    Read by pattern before: a docstring line "import of ``app.main`` which
+    would..." raised a package called `of`, and the fast rewrite declared
+    `of==0.0.1` in the manifest. The pattern remains for a file that does not
+    parse, where its lines are the only reading there is.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return [m for groups in _PY_IMPORT.findall(source)
+                if (m := str(next((part for part in groups if part), "")).split(".")[0])]
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found += [alias.name.split(".")[0] for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            found.append(node.module.split(".")[0])
+    return list(dict.fromkeys(found))
 
 
 def _is_a_python_builtin_or_local(project: Path, module: str) -> bool:

@@ -36,3 +36,10 @@ def test_one_test_that_can_pass_where_it_is_keeps_it_and_sprint_1_is_never_empti
 def test_the_planner_s_plan_goes_through_it():
     source = inspect.getsource(workflow)
     assert "with_each_criterion_where_its_tests_can_pass(" in source
+
+
+def test_only_the_moves_that_would_empty_sprint_1_are_dropped():
+    plan, notes = with_each_criterion_where_its_tests_can_pass(
+        _plan(["AC-1"], ["AC-2", "AC-3"], ["AC-4"]), [["AC-1", "AC-2"], ["AC-3", "AC-4"]])
+    assert [s.criteria for s in plan.sprints] == [["AC-1"], ["AC-2"], ["AC-4", "AC-3"]]
+    assert notes == ["AC-3 to sprint 3, where a test of it can first pass"]

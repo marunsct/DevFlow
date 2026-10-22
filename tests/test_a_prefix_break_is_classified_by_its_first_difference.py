@@ -35,3 +35,14 @@ def test_the_run_kpis_carry_the_counts_and_the_uncached_tokens():
     assert breaks(records)["calls_by_reason"] == {"first_of_the_stage": 1, "tools_changed": 1}
     found = kpis(records)
     assert found["prefix_break_tools_changed"] == 1 and found["uncached_tokens_tools_changed"] == 8000
+
+
+def test_malformed_records_never_raise():
+    records = [
+        {"kind": "model_request", "stage": "s", "at": "t", "tools": "[", "blocks": "{[1]: 2}", "messages": 3},
+        {"kind": "model_response", "stage": "s", "at": "t", "usage": {"input_tokens": "abc", "input_token_details": {"cache_read": [1]}}},
+        {"kind": "model_request", "stage": "s", "at": "t", "tools": [], "blocks": {}, "messages": None},
+        {"kind": "model_response", "stage": "s", "at": "t", "usage": {"input_tokens": {"a": 1}}},
+    ]
+    out = breaks(records)
+    assert sum(out["calls_by_reason"].values()) == 2

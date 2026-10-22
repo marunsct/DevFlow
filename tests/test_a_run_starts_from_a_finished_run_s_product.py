@@ -72,3 +72,36 @@ def test_only_a_completed_run_of_the_caller_s_tenant_is_found(tmp_path):
     assert runs._a_completed_run_s_workspace(runner, "live", user) is None
     assert runs._a_completed_run_s_workspace(runner, "theirs", user) is None
     assert runs._a_completed_run_s_workspace(runner, "gone", user) is None
+
+
+def test_the_copy_keeps_a_product_s_own_target_dir_drops_links_out_and_cleans_a_failed_copy(tmp_path):
+    """`ignore_patterns` applied the top-level set at every depth, a nested link out of the workspace was
+    copied, and a failed copy left a workspace every retry tripped over."""
+    from app.server import change_request_runs
+
+    finished = tmp_path / "finished"
+    (finished / "shop" / "src" / "target").mkdir(parents=True)
+    (finished / "shop" / "src" / "target" / "x.py").write_text("x = 1\n")
+    (finished / "shop" / "node_modules").mkdir()
+    (finished / "shop" / "package.json").write_text("{}")
+    (finished / "shop" / "node_modules" / "m.js").write_text("")
+    (finished / "shop" / "src" / "out").symlink_to("/etc/hostname")
+    subprocess.run(["git", "-C", str(finished), "init", "-q"], check=True)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    with mock.patch.dict(os.environ, {"CHANGE_REQUEST_RUNS": "on"}):
+        change_request_runs.seed_from_run(workspace, finished, "run-x")
+    assert (workspace / "shop" / "src" / "target" / "x.py").is_file(), "a product's own target/ is the product's"
+    assert not (workspace / "shop" / "node_modules").exists() and not (workspace / "shop" / "src" / "out").exists()
+
+    unreadable = finished / "shop" / "src" / "secret.py"
+    unreadable.write_text("x\n")
+    unreadable.chmod(0)
+    again = tmp_path / "again"
+    again.mkdir()
+    try:
+        with mock.patch.dict(os.environ, {"CHANGE_REQUEST_RUNS": "on"}), pytest.raises(SeedError):
+            change_request_runs.seed_from_run(again, finished, "run-x")
+        assert not (again / "shop").exists(), "nothing half-copied is left behind"
+    finally:
+        unreadable.chmod(0o644)

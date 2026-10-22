@@ -27,7 +27,7 @@ ON_BY_DEFAULT = False
 #: Checks run per stage, at most.
 MOST_CHECKS = 6
 #: The tools whose success changes the product's files.
-WRITES = frozenset({"write_artifact", "edit_artifact", "write_file", "edit_file"})
+WRITES = frozenset({"write_artifact", "edit_artifact", "write_file", "edit_file", "replace_lines"})
 #: Measured on a gate run: a fixer whose defect's tests passed at its twentieth
 #: call went on for eighteen more, fixing failures other fixers were given,
 #: and broke the file it had fixed. Passing is the moment to answer.
@@ -38,7 +38,8 @@ PASSED = (
 FAILING = "The harness ran this defect's own tests after the write: they still fail."
 
 #: How a write that did not happen answers: `{"error": ...}`, or a refusal.
-_A_WRITE_THAT_DID_NOT_HAPPEN = re.compile(r'\s*(?:\{\s*"error"|Error\b|Refusing\b)')
+_A_WRITE_THAT_DID_NOT_HAPPEN = re.compile(
+    r'\s*(?:\{\s*"error"|Error\b|Refusing\b|\{[^{}]*"status":\s*"(?:unchanged|already_applied)")')
 
 _lock = threading.Lock()
 _watched: dict[tuple[str, str], list[Any]] = {}

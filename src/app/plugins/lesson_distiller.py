@@ -43,7 +43,7 @@ def proposals(records: Iterable[dict[str, Any]]) -> list[dict[str, str]]:
     found: dict[str, dict[str, str]] = {}
     attempts: dict[str, int] = {}
     for record in records:
-        if record.get("kind") != "defect":
+        if not isinstance(record, dict) or record.get("kind") != "defect":
             continue
         event, detail = str(record.get("event") or ""), str(record.get("detail") or "")
         description = str(record.get("description") or "")

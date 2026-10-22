@@ -846,11 +846,15 @@ def with_each_criterion_where_its_tests_can_pass(plan: Any, tests: list[list[str
             moves[item] = earliest
     if not moves:
         return plan, []
+    first = list(getattr(sprints[0], "criteria", None) or [])
+    if first and all(item in moves for item in first):
+        # Sprint 1 keeps something to show: its moves stay, the others go.
+        moves = {item: number for item, number in moves.items() if item not in first}
+        if not moves:
+            return plan, []
     cleaned = [[i for i in (getattr(sprint, "criteria", None) or []) if i not in moves] for sprint in sprints]
     for item, number in moves.items():
         cleaned[number].append(item)
-    if not cleaned[0]:
-        return plan, []
     updated = [sprint.model_copy(update={"criteria": ids}) for sprint, ids in zip(sprints, cleaned)]
     notes = [f"{item} to sprint {number + 1}, where a test of it can first pass" for item, number in moves.items()]
     return plan.model_copy(update={"sprints": updated}), notes

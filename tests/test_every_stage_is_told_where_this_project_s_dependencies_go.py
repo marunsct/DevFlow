@@ -38,3 +38,12 @@ def test_every_drafted_file_is_told_too(tmp_path):
         "install": [[".venv/bin/python", "-m", "pip", "install", "-r", "requirements.txt"]]}))
     request = drafting.draft_request(tmp_path, "items-api/pyproject.toml", SimpleNamespace(task_description="Set up"), None, None)
     assert "--- Where this project's dependencies go ---" in request and "`items-api/requirements.txt`" in request
+
+
+def test_a_mixed_install_names_the_javascript_manifest_too():
+    from app.stacks import contract as _contract
+
+    record = {"install": [["pip", "install", "-r", "requirements.txt"], ["npm", "install"]]}
+    text = _contract._where_dependencies_go("shop", record)
+    assert "`shop/requirements.txt`" in text and "`package.json`" in text and "Python package" in text
+    assert "package.json" not in _contract._where_dependencies_go("shop", {"install": [["pip", "install", "-r", "requirements.txt"]]})

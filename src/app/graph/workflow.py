@@ -619,6 +619,8 @@ class WorkflowGraphState(TypedDict, total=False):
     fix_batch: list[int]
     # When the batch was dispatched, so each fixer's calls are counted from it (plan AY step 4).
     fix_batch_started: str
+    # When the defect fixed alone started, carried across its approval pause (plan AY step 4).
+    fix_started: str
     fixes_tried: list[str]
     fixes_one_at_a_time: list[str]
     # Parallel mode's reviews (`security_review_node`): the reviews in flight -
@@ -6085,16 +6087,21 @@ def _closed_if_an_earlier_fix_resolved_it(
                 # stage of minutes, and a green probe closes the defect with
                 # no model call at all. A probe that cannot answer (None)
                 # dispatches the fixer exactly as before (Initiative L.3).
+                # Taken before the probe: a product keeping its store in a
+                # committed file is rewritten by the probe itself, and read
+                # after it the product had always "changed".
+                from app.acceptance import unstable
+
+                unchanged = unstable.unchanged_since_the_suite_measured(root)
                 if _the_defect_s_tests_pass(Path(root), defect):
                     # Passing alone on the very product the suite measured it
                     # failing on is not a fix: the tests depend on order or on
                     # another test's data. Held as a dispute while one may be
                     # (`app.acceptance.unstable`).
-                    from app.acceptance import unstable
                     from app.acceptance.junit import tags_in
 
                     criteria = [t for t in tags_in(str(defect.description or "")) if t.startswith(("AC-", "CR-"))]
-                    if criteria and unstable.unchanged_since_the_suite_measured(root) and _a_dispute_may_be_held_now(state):
+                    if criteria and unchanged and _a_dispute_may_be_held_now(state):
                         from app.observability import defect_ledger
 
                         logger.warning("Defect '%s' passes alone and fails in the suite on the same product: "
@@ -7560,7 +7567,12 @@ def _blames_a_locked_test(state: Any, blockers: list[str]) -> bool:
         if not acceptance_suite.is_locked(root):
             return False
         names = {path.name for path in acceptance_suite.suite_files(root)}
-        names |= {str(name).split("[", 1)[0] for _, name in acceptance_suite.declared_tests(root)}
+        for _, name in acceptance_suite.declared_tests(root):
+            title = re.sub(r"\[[^\]]*\]$", "", str(name)).strip()
+            # A plain word as a title (`describe('Accounts')`) is any sentence's
+            # word: it blames the suite only with a tag or as a phrase.
+            if title and (re.search(r"\b[A-Z]{2,}-\d+\b", title) or len(title.split()) >= 3 or "_" in title):
+                names.add(title)
         text = " ".join(map(str, blockers or []))
         return any(name and re.search(rf"(?<![\w.]){re.escape(name)}(?![\w])", text) for name in names)
     except Exception:  # noqa: BLE001 - not blamed is how it was before
@@ -10336,7 +10348,9 @@ def build_workflow_graph(
                 sprint=state.get("current_sprint_index", 0), detail=spent_out,
             )
             return {"defect_cursor": defect_index + 1}
-        started = defect_budget.now()
+        # Carried across an approval pause, as the commit it starts from is:
+        # taken again on resume, the calls before the pause were not counted.
+        started = (str(state.get("fix_started") or "") if state.get("pending_inner_thread_id") else "") or defect_budget.now()
 
         fix_model = _the_build_model(
             state,
@@ -10389,6 +10403,7 @@ def build_workflow_graph(
                 )
             if "__fix_result__" not in update:
                 update["fix_base_commit"] = fix_base
+                update["fix_started"] = started
                 return update  # paused waiting for approval on this fix
 
             fix_result = update.pop("__fix_result__")
@@ -10679,7 +10694,7 @@ def build_workflow_graph(
             settled_cycle = settled["remediation"]
             update["specialist_outputs"] = settled["specialist_outputs"]
             blamed = blamed or blames
-        update.update(remediation=settled_cycle, fix_batch=[], fix_base_commit="", fixes_tried=tried)
+        update.update(remediation=settled_cycle, fix_batch=[], fix_base_commit="", fix_batch_started="", fixes_tried=tried)
         if blamed and _a_dispute_may_be_held_now(state):
             logger.warning("A fix in the batch blames the locked suite; the QA lead judges its failing tests")
             return _handing_on(**update, stage="acceptance_dispute", dispute_returns_to="test_and_triage")

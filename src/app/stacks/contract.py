@@ -484,12 +484,15 @@ def _where_dependencies_go(project: str, record: dict[str, Any]) -> str:
         for index, arg in enumerate(argv):
             if arg in ("-r", "--requirement") and index + 1 < len(argv):
                 files.append(argv[index + 1])
+    javascript = any(argv and argv[0] in ("npm", "pnpm", "yarn", "bun") for argv in installs)
     if files:
         named = " and ".join(f"`{project}/{name}`" if project else f"`{name}`" for name in dict.fromkeys(files))
-        return (f"Declare every package the code imports in {named} - the install reads only "
+        return (f"Declare every Python package the code imports in {named} - the install reads only "
                 f"{'these' if len(files) > 1 else 'this'}, so a package listed anywhere else (a "
                 "`pyproject.toml` included) is never installed; a test-only tool goes in the "
-                "development file where there is one.")
+                "development file where there is one."
+                + (" JavaScript packages go in `package.json`, which the install's `npm install` reads."
+                   if javascript else ""))
     if installs:
         shown_install = " && ".join(" ".join(argv) for argv in installs)
         return (f"Declare every package the code imports in the manifest this install reads "

@@ -75,7 +75,14 @@ _TEXT_SUFFIXES = (
     ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".py", ".go", ".rs", ".java", ".kt", ".cs",
     ".rb", ".php", ".swift", ".html", ".css", ".scss", ".vue", ".svelte", ".sql", ".graphql",
 )
-_SKIPPED_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "Cargo.lock", "go.sum"}
+#: Build and configuration files known by their suffix or whole name. The
+#: snapshot showed them; with it gone under the memory (LF.188), a Go, Java,
+#: .NET, Ruby or PHP project's `go.mod`, `pom.xml`, `.csproj`, `Gemfile` or
+#: `phpunit.xml` was neither held nor named as left out.
+_BUILD_SUFFIXES = (".xml", ".properties", ".csproj", ".fsproj", ".sln", ".ru", ".gradle", ".kts", ".mod", ".lock.json")
+_BUILD_NAMES = {"Gemfile", "Rakefile", "artisan", "Dockerfile", "Makefile", "Procfile", "Pipfile", "go.work"}
+_SKIPPED_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "Cargo.lock", "go.sum", "Gemfile.lock",
+                  "composer.lock", "packages.lock.json"}
 
 _LOCK = threading.Lock()
 #: (root, relative path) -> (modification time, size, content).
@@ -94,7 +101,9 @@ def _candidates(root: Path) -> list[str]:
         relative_folder = Path(folder).relative_to(root)
         directories[:] = [d for d in directories if not _ignored((*relative_folder.parts, d))]
         for name in files:
-            if name in _SKIPPED_NAMES or not name.endswith(_TEXT_SUFFIXES) or name.startswith(".project-"):
+            if name in _SKIPPED_NAMES or name.startswith(".project-") or not (
+                name.endswith(_TEXT_SUFFIXES) or name.endswith(_BUILD_SUFFIXES) or name in _BUILD_NAMES
+            ):
                 continue
             found.append((relative_folder / name).as_posix())
     return found
@@ -296,10 +305,23 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
         unserved = tuple(folders_nothing_serves(repo_root))
     except Exception:  # noqa: BLE001 - the order stands as it was
         unserved = ()
+    try:
+        from app.acceptance.sprint_scope import later_sprints_files
+
+        later = later_sprints_files(repo_root)
+    except Exception:  # noqa: BLE001 - every file is due
+        later = {}
+    held_back: list[str] = []
     for path in _ranked(files, focus, unserved):
         text = files[path]
         if _RECORDS.match(path):
             left_out.append(path)
+            continue
+        if path in later:
+            # A later sprint's tests, handed over whole, read as this sprint's
+            # work (see `app.acceptance.sprint_scope`); the snapshot held them
+            # back and the memory now stands in for it.
+            held_back.append(f"{path} ({', '.join(later[path])})")
             continue
         block = f"=== {path} ===\n{text.rstrip()}\n"
         if len(text) > LARGEST_FILE_CHARACTERS and path.endswith(".md"):
@@ -327,6 +349,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
         "included.]\n\n"
     ) + where_things_stand(repo_root, files)
     tail = ("\nNot included here (read when needed): " + ", ".join(left_out) + "\n") if left_out else ""
+    if held_back:
+        tail += ("\nNot included because every test in them is for a criterion a later sprint builds: "
+                 + ", ".join(held_back) + "\n")
     shapes = map_of({path: files[path] for path in left_out if not path.startswith("docs/")})
     if shapes:
         tail += "\nWhat those files define (read one when you need its body):\n" + shapes + "\n"

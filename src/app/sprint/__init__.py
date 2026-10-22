@@ -188,6 +188,38 @@ def recurrence_of(defect: Defect, earlier: Sequence[Defect]) -> Defect | None:
     return None
 
 
+def recurrence_chain(defect: Defect, earlier: Sequence[Defect]) -> list[Defect]:
+    """Every fixed defect this one restates, newest first, each found from the one after it.
+
+    One generation was followed: a problem fixed and raised again three times
+    counted only the latest fix, so its calls never reached the cap and its
+    tries never reached the escalation rung.
+    """
+    chain: list[Defect] = []
+    pool, current = list(earlier), defect
+    while pool:
+        # The nearest earlier generation first, so none is stepped over.
+        found = recurrence_of(current, list(reversed(pool)))
+        if found is None:
+            break
+        chain.append(found)
+        pool = pool[:next(i for i, d in enumerate(pool) if d is found)]
+        current = found
+    return chain
+
+
+def _tries_of(defect: Defect) -> int:
+    """A defect's own failed fixes: its reverts, or its attempts that did not fix it, whichever says more.
+
+    Only a revert was counted: a fix measured and left open counted none, so
+    the candidate fixes, the judgement model and the last attempt's note all
+    waited for a revert that a left-open defect never has.
+    """
+    unfixed = sum(1 for a in (getattr(defect, "attempts", None) or [])
+                  if isinstance(a, dict) and not str(a.get("outcome") or "").startswith("fixed"))
+    return max(int(defect.fix_attempts or 0), unfixed)
+
+
 def failed_fix_tries(cycle: RemediationCycle, index: int) -> int:
     """How many times fixing this problem has failed: its own fixes, and the fix of the defect it restates.
 
@@ -196,8 +228,7 @@ def failed_fix_tries(cycle: RemediationCycle, index: int) -> int:
     problem, and so is every one before it.
     """
     defect = cycle.defects[index]
-    earlier = recurrence_of(defect, cycle.defects[:index])
-    return int(defect.fix_attempts or 0) + (int(earlier.fix_attempts or 0) + 1 if earlier is not None else 0)
+    return _tries_of(defect) + sum(_tries_of(earlier) + 1 for earlier in recurrence_chain(defect, cycle.defects[:index]))
 
 
 def recurring_defect_note(cycle: RemediationCycle) -> str:

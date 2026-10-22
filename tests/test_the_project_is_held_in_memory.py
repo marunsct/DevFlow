@@ -230,3 +230,30 @@ def test_a_few_lines_by_position_are_read_from_the_file_with_their_numbers(works
 
     assert middleware.wrap_tool_call(narrow, lambda request: "   1\texport const store = 1;") == "   1\texport const store = 1;"
     assert not BANNED.search(project_memory.NUMBERED_LINES)
+
+
+def test_a_later_sprint_s_test_file_is_held_back_from_the_memory(tmp_path, monkeypatch):
+    """The snapshot held them back and no longer opens a stage under the memory (LF.188)."""
+    from app.acceptance import sprint_scope
+    from app.agents import project_memory as _memory
+
+    (tmp_path / "shop").mkdir()
+    (tmp_path / "shop" / "app.py").write_text("x = 1\n")
+    (tmp_path / "shop" / "test_ac20.py").write_text("def test_ac20_later():\n    pass\n")
+    monkeypatch.setattr(sprint_scope, "later_sprints_files", lambda root: {"shop/test_ac20.py": ["AC-20"]})
+    text, held = _memory.render(tmp_path, 50_000)
+    assert "shop/test_ac20.py" not in held and "=== shop/test_ac20.py ===" not in text
+    assert "a criterion a later sprint builds: shop/test_ac20.py (AC-20)" in text
+
+
+def test_build_files_without_a_code_suffix_are_held(tmp_path):
+    """The snapshot showed them; under the memory alone they were neither held nor named."""
+    from app.agents import project_memory as _memory
+
+    (tmp_path / "svc").mkdir()
+    for name in ("go.mod", "pom.xml", "Gemfile", "config.ru", "phpunit.xml", "app.csproj", "application.properties"):
+        (tmp_path / "svc" / name).write_text("x\n")
+    (tmp_path / "svc" / "Gemfile.lock").write_text("lock\n")
+    _, held = _memory.render(tmp_path, 50_000)
+    assert {f"svc/{n}" for n in ("go.mod", "pom.xml", "Gemfile", "config.ru", "phpunit.xml", "app.csproj", "application.properties")} <= set(held)
+    assert "svc/Gemfile.lock" not in held

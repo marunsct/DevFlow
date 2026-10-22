@@ -36,8 +36,17 @@ def _as(value: Any, kind: type) -> Any:
     try:
         parsed = ast.literal_eval(str(value))
         return parsed if isinstance(parsed, kind) else kind()
-    except (ValueError, SyntaxError):
+    except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
         return kind()
+
+
+def _int(value: Any) -> int:
+    """`value` as a count; 0 for anything that is not one."""
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    return int(str(value)) if str(value).strip().isdigit() else 0
 
 
 def _messages(record: dict[str, Any]) -> int:
@@ -94,7 +103,7 @@ def breaks(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
             why = reason(last[stage], request, read) if stage in last else "first_of_the_stage"
             last[stage] = request
             counts[why] += 1
-            uncached[why] += max(0, int(usage.get("input_tokens") or 0) - int(read or 0))
+            uncached[why] += max(0, _int(usage.get("input_tokens")) - int(read or 0))
     return {"calls_by_reason": dict(counts), "uncached_tokens_by_reason": dict(uncached)}
 
 

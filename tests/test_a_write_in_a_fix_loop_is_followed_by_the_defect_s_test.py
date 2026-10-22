@@ -80,3 +80,20 @@ def test_a_write_that_did_not_happen_runs_no_check():
             assert module.after_a_write("edit_artifact", message, "run", "defect_fix_1_0").content == content
         module.after_a_write("edit_artifact", ToolMessage(content='{"status": "edited"}', tool_call_id="2"), "run", "defect_fix_1_0")
     assert ran == [1], "only the write that happened is measured"
+
+
+def test_a_write_that_changed_nothing_runs_no_check_and_a_line_edit_is_a_write():
+    import os as _os
+    from unittest import mock as _mock
+
+    from langchain_core.messages import ToolMessage
+
+    from app.graph import verify_after_write as module
+
+    ran = []
+    with _mock.patch.dict(_os.environ, {"VERIFY_AFTER_WRITE": "on"}), \
+         module.watching("run", "defect_fix_1_0", lambda: ran.append(1) or False):
+        for content in ('{"path": "a.py", "status": "unchanged"}', '{"path": "a.py", "status": "already_applied"}'):
+            module.after_a_write("edit_artifact", ToolMessage(content=content, tool_call_id="1"), "run", "defect_fix_1_0")
+        module.after_a_write("replace_lines", ToolMessage(content='{"path": "a.py", "status": "edited"}', tool_call_id="2"), "run", "defect_fix_1_0")
+    assert ran == [1]

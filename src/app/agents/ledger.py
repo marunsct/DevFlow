@@ -209,14 +209,15 @@ def earlier_attempts(defect: Any, defects: Iterable[Any] = ()) -> str:
     """
     if not enabled():
         return ""
-    from app.sprint import recurrence_of
+    from app.sprint import recurrence_chain
 
     before = list(defects or ())
     try:
-        earlier = recurrence_of(defect, [d for d in before if d is not defect])
+        chain = recurrence_chain(defect, [d for d in before if d is not defect])
     except Exception:  # noqa: BLE001 - its own attempts alone
-        earlier = None
-    attempts = [*(getattr(earlier, "attempts", None) or []), *(getattr(defect, "attempts", None) or [])]
+        chain = []
+    attempts = [*(a for earlier in reversed(chain) for a in (getattr(earlier, "attempts", None) or [])),
+                *(getattr(defect, "attempts", None) or [])]
     if not attempts:
         return ""
     lines = []

@@ -59,3 +59,11 @@ def test_the_attempt_record_keeps_the_calls_and_the_fix_stage_checks_the_ceiling
     assert cycle.defects[0].attempts[-1]["calls"] == 17
     source = inspect.getsource(workflow)
     assert source.index("defect_budget.spent_out(cycle, defect_index)") < source.index("fix_model = _the_build_model(\n            state,\n            stage_name,")
+
+
+def test_the_start_is_carried_across_a_pause_and_a_batch_s_start_is_cleared():
+    source = inspect.getsource(workflow)
+    fix_one = source[source.index("    def _fix_one("):source.index("    def _the_next_fix_batch(")]
+    assert 'state.get("fix_started")' in fix_one and 'update["fix_started"] = started' in fix_one
+    gather = source[source.index("    def defect_fix_gather_node("):source.index("    def _the_security_review(")]
+    assert 'fix_batch_started=""' in gather

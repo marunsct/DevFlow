@@ -64,10 +64,10 @@ def calls_in(run_id: str | None, stage: str, since: str) -> int | None:
 
 def spent(cycle: Any, index: int) -> int:
     """The calls defect `index` and the defect it recurs from have cost, by their attempt records."""
-    from app.sprint import recurrence_of
+    from app.sprint import recurrence_chain
 
     defect = cycle.defects[index]
-    chain = [defect, *([earlier] if (earlier := recurrence_of(defect, cycle.defects[:index])) is not None else [])]
+    chain = [defect, *recurrence_chain(defect, cycle.defects[:index])]
     return sum(int((a or {}).get("calls") or 0) for d in chain for a in (getattr(d, "attempts", None) or []))
 
 

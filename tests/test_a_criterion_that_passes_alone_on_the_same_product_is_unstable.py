@@ -54,3 +54,10 @@ def test_the_dispatch_holds_a_dispute_for_an_unstable_criterion_and_says_why():
     assert 'stage="acceptance_dispute"' in source
     text = unstable.reason(["AC-4"])
     assert "AC-4" in text and "pass when they run alone" in text
+
+
+def test_the_product_s_state_is_taken_before_the_probe_runs():
+    """The probe itself rewrote a committed store file, so the product had always 'changed'."""
+    source = inspect.getsource(workflow._closed_if_an_earlier_fix_resolved_it)
+    assert source.index("unchanged = unstable.unchanged_since_the_suite_measured(root)") < source.index(
+        "if _the_defect_s_tests_pass(Path(root), defect):")

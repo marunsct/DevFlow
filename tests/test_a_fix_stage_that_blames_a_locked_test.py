@@ -227,3 +227,19 @@ class TestTwoLockedTestsThatAskForOppositeThings:
         from app.graph.workflow import _with_the_reason
 
         assert _with_the_reason({"messages": [{"role": "user", "content": "x"}]}, "")["messages"][-1]["content"] == "x"
+
+
+def test_a_one_word_title_does_not_blame_and_a_leading_tag_title_does(tmp_path, monkeypatch):
+    from types import SimpleNamespace as _NS
+
+    from app.acceptance import suite as _suite
+    from app.graph import workflow as _workflow
+
+    monkeypatch.setattr(_suite, "is_locked", lambda root: True)
+    monkeypatch.setattr(_suite, "suite_files", lambda root: [])
+    monkeypatch.setattr(_suite, "declared_tests", lambda root: [("a.spec.ts", "Accounts"), ("a.spec.ts", "[AC-3] a completed item stays done"),
+                                                                  ("t.py", "test_ac9_empty[case1]")])
+    state = {"repository": _NS(root_path=str(tmp_path))}
+    assert not _workflow._blames_a_locked_test(state, ["Accounts are stored in the wrong table"])
+    assert _workflow._blames_a_locked_test(state, ["The test [AC-3] a completed item stays done expects the wrong status"])
+    assert _workflow._blames_a_locked_test(state, ["test_ac9_empty asserts 400 where 422 is answered"])

@@ -307,6 +307,14 @@ def _the_brief_forbids_installing_anything(repo_root: str) -> str:
     agent layer and is handed a repository, not a brief. The intake document
     is where the constraint lands - one run's `docs/product_intake.md`
     carries "No external dependencies beyond basic HTML/CSS/JS" twice.
+
+    A line counts when it states the constraint - in a section headed
+    constraints, or opening with the phrase - not when the phrase sits inside
+    a sentence about something else: measured on a gate run, the stack
+    selector's rationale said SQLite "suits this single-user workload with no
+    external dependencies" - no database server - and every install of the
+    product was refused, the `pip install -e .` that would have installed its
+    declared packages among them.
     """
     try:
         from app.agents.brief_constraints import _FORBIDS_DEPENDENCIES
@@ -315,13 +323,39 @@ def _the_brief_forbids_installing_anything(repo_root: str) -> str:
             document = Path(repo_root) / "docs" / name
             if not document.is_file():
                 continue
-            text = document.read_text(encoding="utf-8", errors="replace")
-            for line in text.splitlines():
-                if any(phrase in line.lower() for phrase in _FORBIDS_DEPENDENCIES):
-                    return line.strip().lstrip("-*# ").strip()
+            in_constraints = False
+            for line in document.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.startswith("#"):
+                    in_constraints = "constraint" in line.lower()
+                    continue
+                statement = line.strip().lstrip("-*0123456789. ").strip()
+                lower = statement.lower()
+                if not any(phrase in lower for phrase in _FORBIDS_DEPENDENCIES):
+                    continue
+                if in_constraints or any(lower.startswith(phrase) for phrase in _FORBIDS_DEPENDENCIES):
+                    return statement
     except Exception:  # noqa: BLE001 - a constraint that cannot be read is not enforced
         return ""
     return ""
+
+
+#: What to do without an install, and the test-only exception, in each ecosystem's own words.
+_WITHOUT_AN_INSTALL = {
+    "node": ("Node's own `node:test` and `node:assert` need no install, and logic written as functions "
+             "that take their inputs as arguments can be tested without a DOM at all. A test suite is a "
+             "different matter: `npm i -D <pkg>` puts it in `devDependencies`, which is not shipped and "
+             "breaks no constraint in the brief."),
+    "python": ("Python's own `unittest` and the standard library need no install, and logic written as "
+               "functions that take their inputs as arguments can be tested without the service running. "
+               "A test suite is a different matter: a line in `requirements-dev.txt` is not shipped and "
+               "breaks no constraint in the brief."),
+}
+
+
+def _the_ecosystem_of(command: Sequence[str]) -> str:
+    """`python` for a pip install, `node` otherwise."""
+    names = {Path(str(part)).name for part in command}
+    return "python" if names & {"pip", "pip3", "python", "python3", "uv", "poetry"} else "node"
 
 
 def _refuse_an_install_the_brief_rules_out(
@@ -370,14 +404,10 @@ def _refuse_an_install_the_brief_rules_out(
         f"Refusing to install {', '.join(packages[:4])}: the brief rules that "
         f'out in its own words - "{constraint}". Installing it does not make '
         "the product the brief describes, and every later stage would have to "
-        "carry it or take it back out. Node's own `node:test` and "
-        "`node:assert` need no install, and logic written as functions that "
-        "take their inputs as arguments can be tested without a DOM at all. "
-        "If the product genuinely cannot be built within the constraint, say "
-        "so as a blocker in your report rather than installing past it. "
-        "A test suite is a different matter: `npm i -D <pkg>` puts it in "
-        "`devDependencies`, which is not shipped and breaks no constraint in "
-        "the brief."
+        "carry it or take it back out. "
+        + _WITHOUT_AN_INSTALL.get(_the_ecosystem_of(command), _WITHOUT_AN_INSTALL["node"])
+        + " If the product genuinely cannot be built within the constraint, say "
+        "so as a blocker in your report rather than installing past it."
     )
 
 

@@ -11,6 +11,7 @@
 
 | Part | Topic | Date | Main plan items |
 |---|---|---|---|
+| [R11](#r11) | SAP CAP, Fiori/UI5 and RAP: toolchains, MCP servers, what runs outside an SAP system | 2026-10-22 | [SAP](improvement-plan.md#plan-sap), [DT](improvement-plan.md#plan-dt) |
 | [R10](#r10) | Code graphs and repository maps for coding agents | 2026-10-21 | [CG](improvement-plan.md#plan-cg) |
 | [R9](#r9) | Recursive / self-improving harnesses; progress files and handoff | 2026-10-21 | [RL](improvement-plan.md#plan-rl), [PH](improvement-plan.md#plan-ph) |
 | [R8](#r8) | MinIO replacement: open-source S3-compatible storage | 2026-10-20 | [OS](improvement-plan.md#plan-os) |
@@ -23,6 +24,23 @@
 | [R6](#r6) | Earlier comparisons with other harnesses | 2026-10-04/09 | [E1](improvement-plan.md#plan-e1), [E2](improvement-plan.md#plan-e2) |
 
 ---
+
+<a id="r11"></a>
+## Part R11 — SAP CAP, Fiori/UI5 and RAP: toolchains, MCP servers, what runs outside an SAP system (2026-10-22, session 5)
+
+Plan items: [SAP](improvement-plan.md#plan-sap); document tooling notes for [DT](improvement-plan.md#plan-dt).
+
+| Finding | Evidence | Plan |
+|---|---|---|
+| CAP Node.js: `cds init`, `cds add <facet>`, `cds watch` with in-memory SQLite, OData V4 at `/odata/v4/<service>` on :4004; `cds build` / `cds up --to cf|k8s`; Node 24 LTS in the docs; Java flavour via `cds add java` (Maven) | [CAP getting started](https://cap.cloud.sap/docs/get-started/) | SAP.1 |
+| Official `@cap-js/mcp-server` (Apache-2.0, `npx -y @cap-js/mcp-server`): `search_model` (fuzzy search of the compiled CDS model: entities, annotations, endpoints) and `search_docs` (local embeddings via onnxruntime-web); no command-running tool | [cap-js/mcp-server](https://github.com/cap-js/mcp-server) | SAP.1, SAP.6 |
+| Official `@sap-ux/fiori-mcp-server` (`npx --yes @sap-ux/fiori-mcp-server@latest fiori-mcp`): `search_docs` (downloads an ~86 MB embedding model on first use), `list_fiori_apps`, `generate_fiori_app_cap`, `generate_fiori_app_odata`, `download_odata_service_metadata`, and `list_functionality / get_functionality_details / execute_functionality` for adding pages, controller extensions and manifest changes; headless behaviour not documented | [README](https://cdn.jsdelivr.net/npm/@sap-ux/fiori-mcp-server@1.11.0/README.md) | SAP.2 spike |
+| `@sap/generator-fiori` is interactive (Yeoman): templates List Report/Object Page, Overview, Analytical List, Form Entry, Worklist, freestyle; data from an ABAP system, an OData URL, a local CAP project (V4 only) or a metadata file (mock data only); Node ≥16.14.2; no documented headless mode | [README 1.33.0](https://cdn.jsdelivr.net/npm/@sap/generator-fiori@1.33.0/README.md) | SAP.2 spike |
+| The SAP MCP landscape (curated, 2026-09): official SAP Fiori, CAP, UI5, MDK and UI5 Web Components servers (Apache-2.0); an official ADT MCP server and a BTP administration server on the Help Portal; ~20 community ADT servers (MIT/Apache) that read, write, activate and run ABAP Unit/ATC on a live system; docs servers (`mcp-sap-docs`, Apache-2.0); SAP skill repos (capire CAP skills, CAP Agentic Engineered Skills, UI5 plugins — Apache-2.0; some community sets GPL-3.0) | [marianfoo/sap-ai-mcp-servers](https://github.com/marianfoo/sap-ai-mcp-servers), [overview post](https://blog.zeis.de/posts/2026-03-05-sap-ai-mcp-servers-overview/) | SAP.4–SAP.6 |
+| A community unified server (`par4987/sap-fiori-mcp-server`, MIT, 1 star) replicates the three official servers with its own CDS parser; not adopted — official servers first | [repo](https://github.com/par4987/sap-fiori-mcp-server) | SAP.6 |
+| RAP needs an SAP system: BTP ABAP Environment (trial), S/4HANA Cloud, or on-premise ≥2022; development through ADT; abapGit imports/exports packages | [SAP-samples/abap-platform-rap100](https://github.com/SAP-samples/abap-platform-rap100) | SAP.4, SAP.5 |
+| Off-stack ABAP: the abaplint transpiler (ABAP → JS, 7.02 syntax after downport, SQLite/PostgreSQL drivers) runs ABAP Unit on Node for pure-ABAP logic; the "Off-Stack ABAP Unit + abaplint CI" skill shims DDIC, DB, BAPI and HTTP and calls the result "CI-grade provenance, not in-system verification"; RAP and CDS are not covered | [abaplint/transpiler](https://github.com/abaplint/transpiler), [SAP AI Skills entry](https://skills.cloud.sap/skills/alokm3hta-star/abap-offstack-testing/abap-offstack-aunit) | SAP.5 |
+| Document tooling (from prior knowledge, versions to be verified at implementation): `docxtpl` (MIT) renders Jinja2 placeholders, loops and images inside a `.docx` on top of `python-docx`, which the harness already ships; LibreOffice headless converts `.docx` to PDF | — | DT.3, DT.4 |
 
 <a id="r10"></a>
 ## Part R10 — Code graphs and repository maps for coding agents (2026-10-21, session 5)

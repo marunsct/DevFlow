@@ -1,8 +1,8 @@
 # Harness Improvement Plan: High-Quality Product Delivery with Local & MoE Models
 
 > **Unified plan (consolidated 2026-10-19).** This file is the only improvement plan.
-> - It carries the original plan (§1–4, Initiatives A–I) and Appendices 1–7
->   (Initiatives J–BL, EF, CM, OS, RL, PH, CG and Appendix 7's MF, RC, IN, BW, PN, OP, CH, EV, SF, with the UI parts).
+> - It carries the original plan (§1–4, Initiatives A–I) and Appendices 1–8
+>   (Initiatives J–BL, EF, CM, OS, RL, PH, CG and Appendix 7's MF, RC, IN, BW, PN, OP, CH, EV, SF and Appendix 8's SL, SAP, DT, RD, with the UI parts).
 > - **Before implementing: Part 21** is the single implementation order and
 >   **Part 22** resolves the contradictions and lists what not to implement.
 > - Section E holds the two earlier plan documents, merged here.
@@ -3489,6 +3489,10 @@ Every stage keeps the standing rules (`AGENTS.md`):
 
 Each stage's gate is judged by the two-run rule (Part 20).
 
+*Added 2026-10-22 (Appendix 8, customer stacks, SAP, templates, legacy docs):*
+- **Group 1, now:** SL.1–SL.4, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
+- **Group 2, behind switches:** SL.5, SAP.1 → SAP.2 → SAP.3, SAP.4 → SAP.5, DT.5, RD.1, RD.3, RD.5, RD.6.
+
 *Added 2026-10-21 (Appendix 7, the discipline layer):*
 - **Group 1, now, before the next Measure cycle:** MF.1–MF.6 → RC.1–RC.3 → OP.1–OP.4 → CH.1–CH.3 → IN.2, BW.3, EV.1, SF.1–SF.2.
 - **Group 2, after the measured runs:** IN.1, BW.1–BW.2, PN.1–PN.2, EV.2.
@@ -3961,6 +3965,141 @@ only for the reviewer); no owner rating is captured per delivered product.
 - **MF.1–MF.6**, **RC.1–RC.3**, **OP.1–OP.4**, **CH.1–CH.3**, **IN.2**, **BW.3**, **EV.1**, **SF.1–SF.2** are group 1: built now, in that order, before the next Measure cycle.
 - **IN.1**, **BW.1–BW.2**, **PN.1–PN.2**, **EV.2** are group 2, after the measured runs, each behind its switch.
 - **CH.4** after the first clean Measure cycle.
+
+<a id="plan-appendix-8"></a>
+## Appendix 8 (2026-10-22): customer stacks and conventions, SAP (CAP, Fiori, RAP), document templates, documenting legacy code
+
+Owner's questions, 2026-10-22 10:50 JST. Evidence: the code as read on 2026-10-22 (`stack_selector.py`,
+`stacks/__init__.py`, `plugins/*`, `doc_templates/*`, `acceptance/suite.py`, `ci.py`, `seeding.py`,
+`analysis/project_graph.py`); research [R11](research-findings.md#r11). Groups as in Appendix 7:
+*group 1* = built now, no before/after run (most items here are off until a customer configures them);
+*group 2* = changes a run that is not configured, validated on measured runs.
+
+<a id="plan-sl"></a>
+### SL — Locked stacks and organisation conventions (Q1)
+
+**What exists.** The stack is chosen by a model (`stack_selector`) from the brief's constraint sections;
+`choose_pack()` then matches a pack; nothing can force one — `StartRunRequest` has no stack field, the
+settings have no allowed-stacks key, and the only lever is wording in the brief. Organisation-level
+instruction channels: plugin instructions (per framework, in Postgres, seeded from `plugins/seed.py`,
+**no API or UI**), lessons (owner-approved, no create endpoint), steering (per run only). Nothing is
+tenant-scoped; no custom-instructions, naming-convention or coding-standards field exists.
+
+**Does it add value?** Yes, twice over. A customer with a mandated stack (an existing platform, a
+support contract, a skills base) cannot use a harness that may pick another; and a locked stack
+removes a model decision — `run-d1899b44` was cancelled because the selector left the frontend
+unstated — and makes the prefix byte-stable. Conventions matter the same way: a product in the
+customer's naming and layout is one they can maintain. Rule for the design: **what can be checked is
+checked by the harness; the model is told, not trusted.**
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| SL.1 | Stack policy, as a setting and a per-run override: `allowed_packs` (multi-select from `ALL_PACKS`), `default_pack_per_kind`, `custom_stacks_allowed` (whether a stack no pack covers may go to custom setup). `StartRunRequest.stack` (optional) names a pack outright. Enforcement is deterministic: `choose_pack()` filters by the policy before matching; the selector's note changes from "choose one of these unless the brief requires something else" to "choose among these"; with a single allowed pack per kind the selector call is skipped. A brief whose constraints name a stack outside the policy stops at the intake gate with the conflict named (auto mode: the policy wins and the decision is recorded) | 1 — now, inactive until configured | P1 | PROPOSED |
+| SL.2 | Organisation profile, per tenant: free-text instructions (≤4k chars), structured naming rules (file names, identifier case per language, test file pattern, folder layout, commit message form), coding-standard documents (`.md`, ≤3 files), licence policy (allowed licences for product dependencies; PN.1 enforces). Stored beside plugin instructions, tenant-scoped (`tenant_id` exists on users and runs) | 1 — now | P1 | PROPOSED |
+| SL.3 | Delivery of the profile: the free text and standards reach every call through the plugin-instructions middleware under one byte-stable header (prefix cache, ADR-0011), role-sliced under BJ; the **naming rules compile to checks**: a write-time refusal for a file name or identifier that breaks a rule (the write guard already sees every write), a CI-gate finding for the rest, and the lead's readiness check applies the layout rule to the plan's paths. The model is told the rule once; the harness holds it | 1 — now | P1 | PROPOSED |
+| SL.4 | UI and API: Settings → *Stacks* (policy) and *Organisation* (profile) tabs; `GET/PUT /api/settings/stack-policy`, `/api/settings/organisation`; plugin instructions get a read/edit API and a tab (today a DB edit); `POST /api/lessons` for operator-written lessons (the store already supports `source="operator"`); the run-start form shows the lock and `preview` names a conflict | 1 — now | P1 | PROPOSED |
+| SL.5 | Workspace conventions read from the repo: on a seeded codebase, `AGENTS.md`, `CONTRIBUTING.md`, `.editorconfig`, linter configs and the dominant file-naming pattern become profile proposals the owner confirms (nothing read from a workspace reaches a prompt unconfirmed) | 2 | P2 | PROPOSED |
+
+<a id="plan-sap"></a>
+### SAP — CAP, Fiori and RAP as stacks (Q2)
+
+**Research summary** ([R11](research-findings.md#r11)). Three different situations:
+- **CAP (Node.js)** builds and runs entirely in the sandbox: `cds init`, `cds watch`, SQLite in memory
+  or a file, OData V4 at `/odata/v4/...`, tests with `@cap-js/cds-test` (Jest or Mocha), `cds build`
+  for release. Official MCP `@cap-js/mcp-server` (Apache-2.0): `search_model` over the compiled CDS
+  model, `search_docs` with local embeddings — both offline.
+- **Fiori elements / UI5** builds in the sandbox on top of CAP or an OData metadata file. Official
+  `@sap-ux/fiori-mcp-server` has `generate_fiori_app_cap`, `generate_fiori_app_odata` and a
+  list/get/execute flow for page and manifest changes; `@sap/generator-fiori` is interactive (Yeoman)
+  with no documented headless mode. Tests: OPA5/QUnit via karma, wdi5 (WebDriver), or the harness's
+  own Playwright against the served page. `@ui5/mcp-server` and `ui5-linter` cover freestyle UI5.
+- **RAP (ABAP)** cannot be compiled, activated or run outside an SAP system (BTP ABAP Environment,
+  S/4HANA Cloud, or on-premise ≥2022). Development happens in-system through ADT; abapGit serialises
+  objects to files. Off-stack: `abaplint` lints and syntax-checks against a target release, and the
+  abaplint transpiler runs ABAP Unit for pure-ABAP logic on Node (no CDS, RAP or database). SAP lists
+  an official ADT MCP server (Help Portal) and there are a dozen community ADT MCP servers (MIT/Apache)
+  that read, write, activate and run ABAP Unit/ATC on a live system.
+
+**Decision.** CAP and Fiori are ordinary packs; RAP is a new class of stack — a *connected* stack whose
+verification runs on a customer system through MCP — and needs one architectural seam before any pack.
+Order: CAP → Fiori elements on CAP → UI5 freestyle → RAP.
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| SAP.1 | `sap_cap_node` pack (kinds `http_api` and `fullstack`): scaffold `cds init` + `cds add sqlite,…`; Node ≥20; `PORT` honoured by CAP, `DATA_DIR` → SQLite file via `cds.requires.db`; start `cds serve`; unit tests `@cap-js/cds-test` with Jest; the compiler check is `cds compile srv --to json`; acceptance over HTTP (httpx) against OData V4; release `cds build` + Dockerfile + optional `mta.yaml`; plugin instruction seed for CDS modelling, annotations and service handlers; `@cap-js/mcp-server` registered as a read-only tool for the architect and the backend specialist (`search_docs`, `search_model`) | 2 (a new pack is validated on its benchmark) | P1 | PROPOSED |
+| SAP.2 | `sap_fiori_elements_cap` pack (kind `fullstack`): the UI is generated by the harness as a scaffold step, not by the model — a spike decides between `@sap-ux/fiori-mcp-server generate_fiori_app_cap` called by the harness and a pinned `@sap/generator-fiori` driven non-interactively; served by `cds watch` under `app/<name>/webapp`; page checks and hidden tests with Playwright, waiting for UI5 readiness and using role/text locators; OPA5 optional; the pack opts out of the harness's CSS design tokens (UI5 themes own the look); annotations (`@UI.*`) are the model's work, checked by `cds compile` and the served page | 2 | P1 | PROPOSED, after SAP.1 |
+| SAP.3 | `ui5_freestyle` pack (kind `browser_app`): `@ui5/cli`, `ui5 serve`, `ui5-linter`, QUnit via karma; `@ui5/mcp-server` for the UI specialist | 2 | P3 | PROPOSED |
+| SAP.4 | Connected-stack seam: a pack may declare that build, activate, unit-test and lint steps run through named MCP tools instead of sandbox commands (`StackPack.remote_verification`); results come back as the same `VerificationRun`/junit shapes the CI gate reads; credentials are a tenant setting never shown to a model; every write to a customer system is a gated action (approval mode by default, auto only on a system the owner marks *development*); the workspace keeps abapGit-serialised files as the source of truth | 2 | P2 | PROPOSED |
+| SAP.5 | `sap_rap_abap` pack on SAP.4: file formats `.ddls.asddls`, `.bdef.asbdef`, `.abap` (behaviour implementation, unit tests), `.srvd.srvdsrv`, `.srvb.srvbsrv`, `.ddlx.asddlxs`; local checks `abaplint` (target release, Clean Core / ABAP Cloud rules) in the sandbox; off-stack ABAP Unit for pure-logic classes via the abaplint transpiler; in-system push, activate, ABAP Unit and ATC through an ADT MCP server (SAP's official one when available to the customer, else a vetted community server); acceptance through the exposed OData service (httpx), so hidden tests stay black-box. Needs an SAP system the owner provides; without one the pack is lint-only and says so | 2 | P2 | PROPOSED, after SAP.4 |
+| SAP.6 | MCP and skills policy for SAP: official SAP servers (Apache-2.0) first — `@cap-js/mcp-server`, `@sap-ux/fiori-mcp-server`, `@ui5/mcp-server`; `mcp-sap-docs` (Apache-2.0) as the docs source for `DOCS_LOOKUP`; each exposed to a stage as the few tools it needs (tool count is coordination cost, R7); SAP's Apache-2.0 skill repos (capire CAP skills, CAP Agentic Engineered Skills, UI5 plugins) are read into plugin-instruction seeds, GPL skill repos are not | 1 — now (policy and registry entries) | P1 | PROPOSED |
+| SAP.7 | Benchmarks: `bookshop-cap` (OData V4 service, hidden httpx tests, CAP reference), `bookshop-fiori` (list report + object page on the same service, hidden Playwright tests), and a RAP family only once SAP.5 has a system | 1 — now (benchmarks only) | P1 | PROPOSED |
+
+**Effort:** SAP.1 2 days + bench; SAP.2 spike ½ day then 2 days; SAP.4 3 days; SAP.5 3 days plus the
+customer system; SAP.3 1 day. **Risks:** UI5 pages render late and heavily (Playwright timeouts, page
+checks); the Fiori generator's headless path is undocumented (the spike decides); RAP cannot be
+scored without a system; CAP Java is a separate pack (Maven) and is not planned.
+
+<a id="plan-dt"></a>
+### DT — Customer document templates with test results and evidence (Q3)
+
+**What exists.** Twelve Jinja2 Markdown templates (`doc_templates/templates/*.md.j2`) render the
+harness's own documents; `read_document` reads `.docx`/`.pdf` for input only; there is **no DOCX or
+PDF output and no uploaded-template support**. The data for a test report already exists:
+`.harness/acceptance-result.json` (per criterion: status, tests, outcomes, messages, output tail,
+accessibility, overlaps), `.harness/ci.json` (per unit and acceptance test outcome, commit, label),
+JUnit XML under `test-results/`, screenshots (flat list, on failure by default), the evidence pages,
+the decision log, the sprint record. Missing: a per-test link to its screenshot.
+
+**Decision (the owner left it to judgement).** The harness keeps its own structured facts as the
+source of truth and **renders the customer's template from them deterministically**; the model fills
+only prose placeholders that have no harness data, from the facts, in one bounded call per document,
+and never writes a result. A template is a view, not a workflow change.
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| DT.1 | Document facts: one `DocumentFacts` model assembled by the harness at release — product, stack, specification sections, architecture decisions, file map with purpose and interfaces (`project_graph`, `project_memory`), criteria with their tests, outcomes, messages, output and evidence paths, unit tests from JUnit/`ci.json` with per-test outcome and duration, coverage when the runner reports it, defect log, sprint record, commit, environment, timestamps | 1 — now | P1 | PROPOSED |
+| DT.2 | Evidence per test: Playwright `screenshot: 'on'` and `trace` on failure into `test-results/evidence/<test>/`, JUnit attachments; `acceptance-result.json` tests gain `evidence: [paths]`; the page probe's `page-desktop/phone.png` attach to their criteria. Unit-test evidence is the runner's output per test | 1 — now | P1 | PROPOSED |
+| DT.3 | Template registry, per tenant: upload `.docx` (placeholders in `{{ }}` and loops, read with `docxtpl`) or `.md`/`.html` (Jinja2, the existing renderer); document type (technical_design, unit_test_report, acceptance_test_report, release_notes, custom); on upload the harness lists the template's variables and classifies each — *harness-filled* (a `DocumentFacts` field or an alias from a small mapping table), *prose* (filled by DT.5), *unknown* (shown to the uploader to map or drop). Fixed built-in templates ship for the three named types so a customer without a template still gets them | 1 — now | P1 | PROPOSED |
+| DT.4 | Rendering and delivery: `docxtpl` for `.docx` (tables for test cases, images for evidence), Markdown → `.docx` via `python-docx` for `.md` templates, PDF through LibreOffice headless in the worker image behind `PDF_EXPORT` (image size cost); documents are produced at release (and on demand for a finished run), stored under `docs/deliverables/`, listed by `GET /api/runs/{id}/documents`, downloadable singly and in the handover zip; a *Documents* tab on the run page | 1 — now | P1 | PROPOSED |
+| DT.5 | Prose fill: for placeholders classified *prose* (design rationale, scope summary, known limitations) one bounded model call per document receives the facts and the placeholder names and returns text per placeholder; the harness refuses an answer that cites a test, file or number not in the facts; every placeholder left empty is listed in the document's front matter, never silently blank | 2 (adds a model call) | P2 | PROPOSED |
+| DT.6 | Test documents in detail: the unit-test document lists each test with file, name, outcome, duration, failure message and the command and commit it ran under; the acceptance-test document lists each criterion, its tests, steps (from the scenario text the suite already renders), expected vs actual (contract line vs outcome), evidence images, and the run's summary (passed/failed/skipped, support tier, deferred items, completion gaps); both are harness-written, no model | 1 — now | P1 | PROPOSED |
+
+**Effort:** DT.1–DT.2 1½ days, DT.3–DT.4 2 days, DT.6 1 day, DT.5 1 day. `docxtpl` (MIT) is a
+`python-docx` extension; LibreOffice adds ~300 MB to the image, hence the switch.
+
+<a id="plan-rd"></a>
+### RD — Technical specification, unit-test and acceptance-test documents for an existing repository (Q4)
+
+**What exists.** Seeding (`seeding.py`: git, archive, or a previous run behind `CHANGE_REQUEST_RUNS`),
+the regression contract (BW.1, behind `REGRESSION_CONTRACT`: the seeded product's own tests run and
+locked), the project graph (CG.1), per-file purpose and interfaces (`project_memory`), reachability,
+integration checks and the language services. **A brief is always required and the graph always starts
+at `product_manager`**; the architect has no "describe what exists" mode; `test_discovery` is lint only.
+
+**Decision.** A third run kind, *document*, beside *build* and *change request*: the harness surveys
+the repository deterministically, the architect role recovers the design from the survey under a
+citation rule the harness verifies, the existing tests are run and become the unit-test document, an
+acceptance suite is derived from the product's surface and run, and DT renders the three documents.
+Where there are no tests, characterisation tests are written (group 2).
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| RD.1 | Run kind `document`: `POST /api/runs` with a seeded codebase and no brief (or a one-line purpose); graph path `repo_survey → architecture_recovery → test_catalogue → acceptance_recovery → documents → user_review_release`; stack detected from manifests (pack or custom setup, as a seeded build run does) | 2 | P1 | PROPOSED |
+| RD.2 | `repo_survey` (harness, no model): manifests and versions, entrypoints, the project graph, file purposes and interfaces, routes/endpoints and pages (the integration checks' detectors), CLI commands (`--help`), database schema (migrations, models), configuration and environment variables read, existing tests found and their runner, licences (PN.1's audit) — written as `docs/repository_survey.md` and as facts for DT | 1 — now (read-only) | P1 | PROPOSED |
+| RD.3 | `architecture_recovery`: the architect role in *describe-what-exists* mode — inputs are the survey and the digest; it may not propose or invent; every statement carries a citation `path:symbol` or `path:line`, and the harness checks each against the graph and the files — an uncited or unverifiable statement is marked *unverified* in the document and counted; the output fills the technical-specification facts (components, data model, interfaces, flows, decisions inferred, known gaps) | 2 | P1 | PROPOSED |
+| RD.4 | `test_catalogue`: the existing tests run once (BW.1's mechanism), each test mapped to the files it reaches (graph) and the features they belong to; the result is the unit-test document (DT.6) with per-test outcome; a repository with no runnable tests gets that stated, not invented | 1 — now (read-only) | P1 | PROPOSED |
+| RD.5 | `acceptance_recovery`: criteria derived from the product's surface — each route, page action, CLI command — in the harness's criterion form, confirmed by the owner at a gate (auto mode: all kept); the QA role writes the acceptance suite against the running product as a build run does; the run's result is the acceptance-test document with evidence (DT.2, DT.6) | 2 | P1 | PROPOSED |
+| RD.6 | Characterisation tests where none exist: for each entrypoint or module without a test, the testing specialist writes golden-master tests from observed behaviour (not from the spec), under the usual readiness and vacuous-green gates; they ship as the repository's first unit-test document and become the regression contract for later change-request runs | 2 | P2 | PROPOSED |
+| RD.7 | Benchmark: two small open-source repositories with hand-written reference documents; deterministic score — share of files, endpoints and commands the specification names, citation validity rate, unverified-statement rate, tests run vs tests present | 1 — now (benchmark only) | P1 | PROPOSED |
+
+**Why this shape on a local model:** recovery is where a model invents most; the survey gives it facts
+and the citation check makes invention visible and countable. Effort: RD.2 1 day, RD.1+RD.3 2 days,
+RD.4 ½ day, RD.5 1½ days, RD.6 2 days, RD.7 1 day.
+
+**Placement in Part 21 (added 2026-10-22, this appendix):**
+- **Group 1, now:** SL.1–SL.4, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
+- **Group 2, after the measured runs, each behind its switch:** SL.5, SAP.1 → SAP.2 → SAP.3, SAP.4 → SAP.5 (needs the owner's SAP system), DT.5, RD.1, RD.3, RD.5, RD.6.
+- Dependencies: DT before RD's documents; SAP.4 before SAP.5; BW.1/BW.2 and CG.1 (built) under RD.
 
 ## E. Earlier plans, merged into this document on 2026-10-19
 
@@ -4753,6 +4892,31 @@ the item: what it changes, why, and the evidence (review findings in
 | OP.2 | stall detector; webhook and email notifications for stalls and gates | P1 | BUILT 2026-10-21 (group 1) | [OP](#plan-op) |
 | OP.3 | nightly Postgres and runs.db backup with a tested restore | P1 | BUILT 2026-10-21 (group 1) | [OP](#plan-op) |
 | OP.4 | deploy lock; rewind by stage name with a timeout | P2 | BUILT 2026-10-21 (group 1) | [OP](#plan-op) |
+| SL.1 | stack policy: allowed packs, default per kind, per-run override, deterministic enforcement | P1 | PROPOSED 2026-10-22 (group 1, inactive until configured) | [SL](#plan-sl) |
+| SL.2 | organisation profile per tenant: instructions, naming rules, standards, licence policy | P1 | PROPOSED 2026-10-22 (group 1) | [SL](#plan-sl) |
+| SL.3 | profile delivered byte-stable; naming rules compiled to write-time and CI checks | P1 | PROPOSED 2026-10-22 (group 1) | [SL](#plan-sl) |
+| SL.4 | Settings tabs and APIs for stacks, organisation, plugin instructions, operator lessons | P1 | PROPOSED 2026-10-22 (group 1) | [SL](#plan-sl) |
+| SL.5 | conventions proposed from a seeded repo's own files, owner-confirmed | P2 | PROPOSED 2026-10-22 (group 2) | [SL](#plan-sl) |
+| SAP.1 | `sap_cap_node` pack with `@cap-js/mcp-server` | P1 | PROPOSED 2026-10-22 (group 2) | [SAP](#plan-sap) |
+| SAP.2 | `sap_fiori_elements_cap` pack, UI generated by the harness | P1 | PROPOSED 2026-10-22 (group 2, after SAP.1; spike first) | [SAP](#plan-sap) |
+| SAP.3 | `ui5_freestyle` pack | P3 | PROPOSED 2026-10-22 (group 2) | [SAP](#plan-sap) |
+| SAP.4 | connected-stack seam: verification through MCP tools on a customer system, gated writes | P2 | PROPOSED 2026-10-22 (group 2) | [SAP](#plan-sap) |
+| SAP.5 | `sap_rap_abap` pack: abaplint locally, ADT MCP in-system, OData acceptance | P2 | PROPOSED 2026-10-22 (group 2, needs an SAP system) | [SAP](#plan-sap) |
+| SAP.6 | SAP MCP and skills policy: official Apache-2.0 servers and skills, few tools per stage | P1 | PROPOSED 2026-10-22 (group 1) | [SAP](#plan-sap) |
+| SAP.7 | benchmarks `bookshop-cap`, `bookshop-fiori` | P1 | PROPOSED 2026-10-22 (group 1) | [SAP](#plan-sap) |
+| DT.1 | `DocumentFacts`: one harness-assembled fact model per run | P1 | PROPOSED 2026-10-22 (group 1) | [DT](#plan-dt) |
+| DT.2 | evidence per test: screenshots and traces linked to each test and criterion | P1 | PROPOSED 2026-10-22 (group 1) | [DT](#plan-dt) |
+| DT.3 | template registry: uploaded `.docx`/`.md` templates, variables classified | P1 | PROPOSED 2026-10-22 (group 1) | [DT](#plan-dt) |
+| DT.4 | rendering to docx/md/pdf; Documents tab, API and handover | P1 | PROPOSED 2026-10-22 (group 1) | [DT](#plan-dt) |
+| DT.5 | prose placeholders filled by one bounded call, facts-checked | P2 | PROPOSED 2026-10-22 (group 2) | [DT](#plan-dt) |
+| DT.6 | unit-test and acceptance-test documents, harness-written with results and evidence | P1 | PROPOSED 2026-10-22 (group 1) | [DT](#plan-dt) |
+| RD.1 | run kind `document` for a seeded repository without a brief | P1 | PROPOSED 2026-10-22 (group 2) | [RD](#plan-rd) |
+| RD.2 | `repo_survey`: deterministic inventory of a repository | P1 | PROPOSED 2026-10-22 (group 1) | [RD](#plan-rd) |
+| RD.3 | `architecture_recovery` with harness-verified citations | P1 | PROPOSED 2026-10-22 (group 2) | [RD](#plan-rd) |
+| RD.4 | `test_catalogue`: existing tests run and mapped; the unit-test document | P1 | PROPOSED 2026-10-22 (group 1) | [RD](#plan-rd) |
+| RD.5 | `acceptance_recovery`: criteria from the product's surface, suite written and run | P1 | PROPOSED 2026-10-22 (group 2) | [RD](#plan-rd) |
+| RD.6 | characterisation tests where none exist | P2 | PROPOSED 2026-10-22 (group 2) | [RD](#plan-rd) |
+| RD.7 | legacy-documentation benchmark with deterministic scoring | P1 | PROPOSED 2026-10-22 (group 1) | [RD](#plan-rd) |
 | CH.1 | delete root clutter | P2 | BUILT 2026-10-21 (group 1) | [CH](#plan-ch) |
 | CH.2 | CI: xdist, ruff, pyright, Dependabot | P2 | BUILT 2026-10-21 (group 1) | [CH](#plan-ch) |
 | CH.3 | skips and xfails named and owned; flaky test fixed | P3 | BUILT 2026-10-21 (group 1) | [CH](#plan-ch) |

@@ -12,7 +12,7 @@ week are in `docs/archive/`.
 
 | | |
 |---|---|
-| Run | none live. |
+| Run | **run-77f7752f** - tasks-api, fast, all-on (1246bb22, LF.218/219/220 included). Started 04:59 JST. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | Qwen3.6-35B-A3B (owner, back from LFM2.5 at 21:19): 2 slots, 262,144 tokens; server sampling = Qwen's *precise coding* profile (temperature 0.6, top_p 0.95, top_k 20, min_p 0, presence 0, repetition 1.0, max tokens 32,768); DevFlow context 260,000, reply ceiling 32,768 |
 | Owner's model settings | the owner's; never changed by the loop |

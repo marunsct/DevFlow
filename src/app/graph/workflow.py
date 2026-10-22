@@ -7496,7 +7496,14 @@ def _a_dispute_is_due(state: Any) -> bool:
 
 
 def _blames_a_locked_test(state: Any, blockers: list[str]) -> bool:
-    """Whether a fix stage's blockers name a file of the locked acceptance suite. Never raises."""
+    """Whether a fix stage's blockers name a file or a test of the locked acceptance suite. Never raises.
+
+    By its test as well as its file: measured on a gate run, a fixer changed
+    nothing and reported "test_ac7_persistence_after_restart has an unfixable
+    typo" - a locked test signing in as the wrong account - and, its file not
+    named, no dispute was held; the next round sent the same criterion to
+    another fixer.
+    """
     try:
         from app.acceptance import suite as acceptance_suite
 
@@ -7504,8 +7511,9 @@ def _blames_a_locked_test(state: Any, blockers: list[str]) -> bool:
         if not acceptance_suite.is_locked(root):
             return False
         names = {path.name for path in acceptance_suite.suite_files(root)}
+        names |= {str(name).split("[", 1)[0] for _, name in acceptance_suite.declared_tests(root)}
         text = " ".join(map(str, blockers or []))
-        return any(name and name in text for name in names)
+        return any(name and re.search(rf"(?<![\w.]){re.escape(name)}(?![\w])", text) for name in names)
     except Exception:  # noqa: BLE001 - not blamed is how it was before
         return False
 

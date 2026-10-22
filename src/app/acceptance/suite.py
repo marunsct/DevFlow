@@ -886,7 +886,12 @@ def _judged(repo_root: str | Path, result: AcceptanceResult, save: bool) -> Acce
         try:
             path = Path(repo_root) / RESULT_FILE
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(result.as_dict(), indent=2) + "\n", encoding="utf-8")
+            saved = result.as_dict()
+            # The product this measured, so a later probe can tell "unchanged" (`unstable`).
+            from app.acceptance.unstable import fingerprint
+
+            saved["fingerprint"] = fingerprint(repo_root)
+            path.write_text(json.dumps(saved, indent=2) + "\n", encoding="utf-8")
         except OSError:
             logger.debug("Could not save the acceptance result", exc_info=True)
     return result

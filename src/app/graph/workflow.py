@@ -6061,6 +6061,30 @@ def _closed_if_an_earlier_fix_resolved_it(
                 # no model call at all. A probe that cannot answer (None)
                 # dispatches the fixer exactly as before (Initiative L.3).
                 if _the_defect_s_tests_pass(Path(root), defect):
+                    # Passing alone on the very product the suite measured it
+                    # failing on is not a fix: the tests depend on order or on
+                    # another test's data. Held as a dispute while one may be
+                    # (`app.acceptance.unstable`).
+                    from app.acceptance import unstable
+                    from app.acceptance.junit import tags_in
+
+                    criteria = [t for t in tags_in(str(defect.description or "")) if t.startswith(("AC-", "CR-"))]
+                    if criteria and unstable.unchanged_since_the_suite_measured(root) and _a_dispute_may_be_held_now(state):
+                        from app.observability import defect_ledger
+
+                        logger.warning("Defect '%s' passes alone and fails in the suite on the same product: "
+                                       "its tests are unstable; the QA lead judges them", defect.description[:80])
+                        defect_ledger.note(
+                            "left open", f"defect_fix_{state.get('test_round', 0)}_{defect_index}",
+                            defect=defect, round_=state.get("test_round", 0), index=defect_index,
+                            detail="its own tests pass alone and fail in the whole suite on the same product: unstable",
+                            sprint=state.get("current_sprint_index", 0),
+                        )
+                        return _handing_on(
+                            stage="acceptance_dispute", dispute_returns_to="test_and_triage",
+                            defect_cursor=defect_index + 1, fix_base_commit="",
+                            dispute_reason=unstable.reason(criteria),
+                        )
                     logger.warning(
                         "Defect '%s' is already fixed: its own tests pass in a re-measure taken at "
                         "dispatch; closed without a fixer", defect.description[:80],

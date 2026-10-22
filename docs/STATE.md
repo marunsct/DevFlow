@@ -12,8 +12,8 @@ week are in `docs/archive/`.
 
 | | |
 |---|---|
-| Run | **Measure pair 3, run 2: run-ef034768** - tasks-api, `DELIVERY=fast FRONTIER=false`, started 12:24 JST on **fadd5a58** (Fix batch 2), the same SHA as run 1. **No deploys into it** (MF.4) |
-| Frozen | **fadd5a58** for Measure pair 3 (Fix batch 2); 20dcdfbe was pair 2's |
+| Run | **Measure pair 4, run 1** - tasks-api, `DELIVERY=fast FRONTIER=false`, on **f8b3c82a** (Fix batch 3: LF.181-LF.185; `LESSON_DISTILLER` and `CHANGE_REQUEST_RUNS` on; lessons L-1/L-2 approved; every other switch off). **No deploys into it** (MF.4) |
+| Frozen | **f8b3c82a** for Measure pair 4 (Fix batch 3); fadd5a58 was pair 3's |
 | Model | Qwen3.6-35B-A3B (owner, back from LFM2.5 at 21:19): 2 slots, 262,144 tokens; server sampling = Qwen's *precise coding* profile (temperature 0.6, top_p 0.95, top_k 20, min_p 0, presence 0, repetition 1.0, max tokens 32,768); DevFlow context 260,000, reply ceiling 32,768 |
 | Owner's model settings | the owner's; never changed by the loop |
 | Peer sessions | none drive this workspace; this session is the only one that edits, deploys and starts runs |

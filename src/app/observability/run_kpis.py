@@ -120,6 +120,17 @@ def _calls_shown_lessons(records: list[dict]) -> int:
         return 0
     return sum(1 for r in records if r.get("kind") == "model_request" and FRAME in json.dumps(r.get("messages") or ""))
 
+def _the_prefix_breaks(records: list[dict]) -> dict:
+    """Why calls missed the cached prefix, and the uncached input tokens behind each reason (plan PX.1)."""
+    from app.observability.prefix_breaks import REASONS, breaks
+
+    found = breaks(records)
+    return {
+        **{f"prefix_break_{why}": found["calls_by_reason"].get(why, 0) for why in REASONS},
+        **{f"uncached_tokens_{why}": found["uncached_tokens_by_reason"].get(why, 0) for why in REASONS},
+    }
+
+
 def _the_screenshot_rubric(records: list[dict]) -> float | None:
     """The page's checklist score at release (plan EV.2), or None."""
     from app.acceptance.screenshot_rubric import from_records
@@ -274,6 +285,7 @@ def kpis(records: list[dict]) -> dict:
         # Model calls shown approved lessons (plan RL.2): uptake, measured.
         "lessons_shown_calls": _calls_shown_lessons(records),
         "screenshot_rubric": _the_screenshot_rubric(records),
+        **_the_prefix_breaks(records),
         "model_errors": count["model_errors"],
         "resumes": count["resumes"],
         "rewinds": rewinds,

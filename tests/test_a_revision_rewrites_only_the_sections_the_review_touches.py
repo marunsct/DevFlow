@@ -137,3 +137,16 @@ def test_sections_of_records_are_shown_as_json_and_join_again():
     assert revised is not None
     assert revised.file_plan[-1] == "src/health.ts: the health route"
     assert revised.decisions == previous.decisions
+
+
+def test_the_sections_the_review_names_are_rewritten_and_at_most_a_few_more():
+    """Asked for every section a change touches or repeats, the model named nearly all of them: ten sections
+    rewritten per revision, for three findings."""
+    names = ["product_scope", "file_plan", "testing", "decisions", "configuration", "data_flows", "error_catalogue"]
+    changes = "[blocking] Configuration section line 266: DATA_DIR default contradicts the File plan."
+    chosen = specification_parts._bounded_by_what_the_review_names(
+        ["product_scope", "testing", "decisions", "data_flows", "error_catalogue", "configuration"], changes, names)
+    assert chosen[:1] == ["configuration"] and "file_plan" in chosen
+    assert len(chosen) == 2 + specification_parts.MOST_UNNAMED_SECTIONS
+    # A review that names no section keeps what the model chose.
+    assert specification_parts._bounded_by_what_the_review_names(["testing"], "make it consistent", names) == ["testing"]

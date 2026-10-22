@@ -194,8 +194,30 @@ def sections_to_revise(specification: Any, required_changes: str, model: Any) ->
     except Exception as error:  # noqa: BLE001 - the architect revises as before
         logger.info("Could not tell which sections a revision touches: %s", str(error)[:200])
         return []
-    chosen = [str(name) for name in found.get("sections") or [] if str(name) in names]
-    return list(dict.fromkeys(chosen))
+    chosen = list(dict.fromkeys(str(name) for name in found.get("sections") or [] if str(name) in names))
+    return _bounded_by_what_the_review_names(chosen, required_changes, names)
+
+
+#: Sections a revision rewrites beyond those the review's own words name.
+MOST_UNNAMED_SECTIONS = 2
+
+
+def _bounded_by_what_the_review_names(chosen: list[str], required_changes: str, names: list[str]) -> list[str]:
+    """`chosen` kept to the sections the required changes name, and at most a few more.
+
+    Asked for every section the changes touch and every one that repeats a
+    changed name, the model named nearly all of them. Measured on the first
+    all-on run: three review rounds of three blocking findings each, every
+    revision rewriting ten sections at 4,000-14,000 tokens apiece - 56 of the
+    architect's model minutes. The review cites the sections it means
+    ("Function contracts section line 147", "Configuration section").
+    """
+    text = (required_changes or "").lower().replace("-", " ")
+    named = [name for name in names if name.replace("_", " ").lower() in text]
+    if not named:
+        return chosen
+    extra = [name for name in chosen if name not in named][:MOST_UNNAMED_SECTIONS]
+    return [*[name for name in chosen if name in named], *[n for n in named if n not in chosen], *extra]
 
 
 def revised_in_place(specification: Any, required_changes: str, model: Any, context: str) -> Any | None:

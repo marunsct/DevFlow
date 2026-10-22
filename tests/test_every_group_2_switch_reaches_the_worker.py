@@ -20,10 +20,10 @@ from app.observability.provenance import SWITCHES
 
 COMPOSE = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text()
 
-#: Built after the all-on baseline and not turned on by the owner: plan QM.2
-#: adds fix stages to every sprint whose criteria pass, so it is measured
-#: before it joins the baseline.
-NOT_TURNED_ON_YET = frozenset({"MUTATION_GUIDED_TESTS"})
+#: Switches built and not yet turned on by the owner, each off in compose and
+#: in its code. Empty since 2026-10-23 08:08 JST, when the owner turned plan
+#: QM.2 (`MUTATION_GUIDED_TESTS`) on as its own measured arm.
+NOT_TURNED_ON_YET: frozenset[str] = frozenset()
 
 
 def test_every_switch_is_passed_through_and_defaults_on():
@@ -39,3 +39,11 @@ def test_the_switches_not_turned_on_yet_are_switches_off_in_their_code_too():
     for name in NOT_TURNED_ON_YET:
         assert name in SWITCHES, name
         assert switch(SWITCHES[name]).ON_BY_DEFAULT is False, name
+
+
+def test_mutation_guided_tests_are_on_in_compose_and_off_in_code():
+    """On as a measured arm by the owner (2026-10-23); its code default stays off, as every switch's does."""
+    from app.observability.provenance import switch
+
+    assert re.search(r"^  MUTATION_GUIDED_TESTS: \$\{MUTATION_GUIDED_TESTS:-on\}$", COMPOSE, re.M)
+    assert switch(SWITCHES["MUTATION_GUIDED_TESTS"]).ON_BY_DEFAULT is False

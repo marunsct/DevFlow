@@ -6,17 +6,21 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-22 19:05 JST.
+**As of:** 2026-10-22 19:58 JST.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | **Measure pair 4, run 1** - tasks-api, `DELIVERY=fast FRONTIER=false`, on **f8b3c82a** (Fix batch 3: LF.181-LF.185; `LESSON_DISTILLER` and `CHANGE_REQUEST_RUNS` on; lessons L-1/L-2 approved; every other switch off). **No deploys into it** (MF.4) |
-| Frozen | **f8b3c82a** for Measure pair 4 (Fix batch 3); fadd5a58 was pair 3's |
+| Run | **Group 2 all-on baseline** run-bf8a972f - tasks-api, `DELIVERY=fast FRONTIER=false`, on **07ef4de** (Fix batch 4: LF.186-LF.211; **all 24 switches on**, verified in worker and app). Started 19:57 JST. Mid-run deploys allowed at a stage boundary for time-wasting defects (owner 18:40). |
+| Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | Qwen3.6-35B-A3B (owner, back from LFM2.5 at 21:19): 2 slots, 262,144 tokens; server sampling = Qwen's *precise coding* profile (temperature 0.6, top_p 0.95, top_k 20, min_p 0, presence 0, repetition 1.0, max tokens 32,768); DevFlow context 260,000, reply ceiling 32,768 |
 | Owner's model settings | the owner's; never changed by the loop |
 | Peer sessions | none drive this workspace; this session is the only one that edits, deploys and starts runs |
+
+## Last runs
+
+- **run-10d79850** (Measure pair 4 run 1, f8b3c82a): **cancelled 19:56 JST** by the owner's rule (no value left) after 206 min in sprint 1 attempt 2; hidden **4/10**. Sprint 1 could not pass AC-7 (its only test needs sprint 2's item routes - LF.202); 6 replies lost to the output cap (32 min, 23% of model time); a docstring read as an import put `of==0.0.1` in the manifest (LF.207).
 
 ## Owner 2026-10-22 18:40 JST: all improvements on
 

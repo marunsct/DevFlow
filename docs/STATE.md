@@ -6,13 +6,13 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-22 09:05 JST.
+**As of:** 2026-10-22 12:25 JST.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | **Measure pair 3, run 1: run-7e5c11af** - tasks-api, `DELIVERY=fast FRONTIER=false`, started 09:01 JST on **fadd5a58** (Fix batch 2: LF.171-LF.180; every group 2 switch off). **No deploys into it** (MF.4) |
+| Run | **Measure pair 3, run 2: run-ef034768** - tasks-api, `DELIVERY=fast FRONTIER=false`, started 12:24 JST on **fadd5a58** (Fix batch 2), the same SHA as run 1. **No deploys into it** (MF.4) |
 | Frozen | **fadd5a58** for Measure pair 3 (Fix batch 2); 20dcdfbe was pair 2's |
 | Model | Qwen3.6-35B-A3B (owner, back from LFM2.5 at 21:19): 2 slots, 262,144 tokens; server sampling = Qwen's *precise coding* profile (temperature 0.6, top_p 0.95, top_k 20, min_p 0, presence 0, repetition 1.0, max tokens 32,768); DevFlow context 260,000, reply ceiling 32,768 |
 | Owner's model settings | the owner's; never changed by the loop |
@@ -48,8 +48,8 @@ Each module's `ON_BY_DEFAULT` turns its items on for the before/after runs.
 
 | Run | Brief | Result |
 |---|---|---|
+| run-7e5c11af | tasks-api (Measure pair 3 run 1, fadd5a58) | completed 12:22 JST, 199 min, **10/10 hidden**; 5 fix stages (was 15-16), but 2 suite repairs (two broken locked tests) and 3 milestone reviews; 4 replies lost to length |
 | run-403f7479 | tasks-api (Measure pair 2 run 2, 20dcdfbe) | completed 08:57 JST, ~218 min, **10/10 hidden**; the PyJWT `sub` 401 blocked 8 criteria for about an hour; 5 replies lost to length |
-| run-bf3f222f | tasks-api (Measure pair 2 run 1, 20dcdfbe) | completed 05:12 JST, ~240 min, 2 sprints (sprint 1 ~220 min, 14 fix stages; sprint 2 green at drafting), 40/40 inside, **10/10 hidden** - Fix batch 1's start.sh fixes held; KPI flags: 10 defects left open, 2 replies lost to length |
 
 No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh product`).
 

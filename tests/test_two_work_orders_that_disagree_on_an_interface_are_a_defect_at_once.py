@@ -92,3 +92,31 @@ def test_a_dotted_directory_keeps_its_dot():
 
     for module in (interface_clashes, project_graph, localisation):
         assert 'lstrip("./")' not in inspect.getsource(module)
+
+
+def test_a_moved_name_still_imported_from_its_old_file_is_a_clash_and_a_name_in_a_comment_is_not(tmp_path):
+    outputs = _batch(tmp_path)
+    (tmp_path / "app" / "items.py").write_text("def load_items():\n    return []\n")
+    outputs["specialist_backend_0"].changed_files.append("app/items.py")
+    (tmp_path / "app" / "routes.py").write_text("from app.store import load_items\n\ndef index():\n    return load_items()\n")
+    with mock.patch.dict(os.environ, ON):
+        assert [c["name"] for c in interface_clashes.clashes(tmp_path, outputs)] == ["load_items"], "the old import breaks"
+    outputs["specialist_backend_0"].changed_files.remove("app/items.py")
+    (tmp_path / "app" / "items.py").unlink()
+    (tmp_path / "app" / "routes.py").write_text("from app import store\n# load_items used to live here\nX = 'load_items'\n")
+    with mock.patch.dict(os.environ, ON):
+        assert interface_clashes.clashes(tmp_path, outputs) == []
+
+
+def test_a_clash_is_asked_again_at_settlement(tmp_path):
+    """Closed on any named test and held open on none, a clash was never re-checked."""
+    outputs = _batch(tmp_path)
+    with mock.patch.dict(os.environ, ON):
+        description = interface_clashes.defects(tmp_path, outputs, interface_clashes.role_of)[0].description
+    assert interface_clashes.still_clashing(tmp_path, description) is True
+    (tmp_path / "app" / "routes.py").write_text("from app.store import fetch_items\n\ndef index():\n    return fetch_items()\n")
+    assert interface_clashes.still_clashing(tmp_path, description) is False
+    assert interface_clashes.still_clashing(tmp_path, "[AC-1] sign up fails") is None
+    from app.graph import workflow
+    source = inspect.getsource(workflow._settle_the_fix)
+    assert "interface_clashes.still_clashing(" in source

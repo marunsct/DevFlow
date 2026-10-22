@@ -94,3 +94,15 @@ def test_the_harness_s_and_toolchains_folders_and_documented_example_keys_are_no
     (root / ".agent-home" / "go" / "key_test.go").write_text(f'const k = "{A_CLOUD_KEY}"\n')
     with mock.patch.dict(os.environ, ON):
         assert release_audits.secrets_found(root) == []
+
+
+def test_example_files_placeholders_nested_toolchain_dirs_are_not_credentials_and_java_has_an_audit(tmp_path):
+    root = _repository(tmp_path)
+    (root / "app" / "settings.py").write_text("KEY = 'x'\n")
+    (root / "app" / ".env.example").write_text("GITHUB_TOKEN=ghp_" + "x" * 36 + "\nSTRIPE=sk_live_" + "x" * 24 + "\n")
+    (root / "app" / "config.py").write_text("TOKEN = 'ghp_" + "a" * 36 + "'\n")  # one repeated character
+    (root / "app" / "vendor" / "bundle").mkdir(parents=True)
+    (root / "app" / "vendor" / "bundle" / "k.py").write_text(f'k = "{A_CLOUD_KEY}"\n')
+    with mock.patch.dict(os.environ, ON):
+        assert release_audits.secrets_found(root) == []
+    assert "dependency-check" in release_audits.AUDIT_COMMANDS["java"]

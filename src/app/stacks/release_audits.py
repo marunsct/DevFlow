@@ -47,6 +47,7 @@ AUDIT_COMMANDS: dict[str, str] = {
     "rust": "cargo install cargo-audit --locked && cargo audit",
     "ruby": "gem install bundler-audit && bundle-audit check --update",
     "php": "composer audit",
+    "java": "mvn -q -B org.owasp:dependency-check-maven:check",
     "csharp": "dotnet list package --vulnerable --include-transitive",
 }
 #: Credential shapes that are never a placeholder, by what they are.
@@ -62,6 +63,8 @@ SECRET_SHAPES: dict[str, re.Pattern[str]] = {
 _STRONG_COPYLEFT = re.compile(r"\bA?GPL(?!-?2\.0-with)|\bSSPL\b|Affero|(?<!Lesser )General Public License", re.I)
 _LESSER = re.compile(r"\bLGPL\b|Lesser General", re.I)
 _MOST_BYTES = 1_000_000
+#: A file that documents a setting's shape, never a credential.
+_AN_EXAMPLE_FILE = re.compile(r"\.(?:example|sample|template|dist)$|^example\.|^sample\.", re.I)
 _NOT_THE_PRODUCT = frozenset({".agent-home", ".harness", ".git", "node_modules", ".venv", "vendor", "target"})
 
 
@@ -88,6 +91,14 @@ def _tracked(root: Path) -> list[str]:
     return []
 
 
+def _a_placeholder(found: str) -> bool:
+    """A documented sample or a filler: one character repeated, `xxxx`, `your-`, `changeme`, `EXAMPLE`."""
+    body = re.sub(r"^(?:AKIA|ASIA|gh[pousr]_|xox[abprs]-|[rs]k_live_|AIza)", "", found)
+    if len(set(body.lower())) <= 1:
+        return True
+    return bool(re.search(r"(?i)xxxx|your[-_]|changeme|EXAMPLE|placeholder", found))
+
+
 def secrets_found(repo_root: str | Path) -> list[str]:
     """One line per file holding a credential, saying what and where; [] when off or none. Never raises."""
     if not enabled():
@@ -97,7 +108,8 @@ def secrets_found(repo_root: str | Path) -> list[str]:
         # The harness's and the toolchains' own folders, never the product: a
         # seeded workspace has no harness `.gitignore`, and a module cache holds
         # its libraries' test keys.
-        if relative.split("/", 1)[0] in _NOT_THE_PRODUCT:
+        parts = relative.split("/")
+        if any(part in _NOT_THE_PRODUCT for part in parts) or _AN_EXAMPLE_FILE.search(parts[-1]):
             continue
         path = root / relative
         try:
@@ -107,7 +119,7 @@ def secrets_found(repo_root: str | Path) -> list[str]:
         except OSError:
             continue
         for what, shape in SECRET_SHAPES.items():
-            match = next((m for m in shape.finditer(text) if "EXAMPLE" not in m.group(0)), None)
+            match = next((m for m in shape.finditer(text) if not _a_placeholder(m.group(0))), None)
             if match:
                 line = text.count("\n", 0, match.start()) + 1
                 found.append(f"`{relative}` line {line} holds {what}: a credential must come from the "

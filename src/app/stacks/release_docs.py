@@ -21,6 +21,7 @@ import logging
 import re
 import shlex
 from pathlib import Path
+from typing import Any
 
 from app.switches import is_on
 
@@ -128,6 +129,14 @@ def what_the_handoff_lacks(repo_root: str | Path) -> list[str]:
         return []
 
 
+def _the_pack_s_start(pack: Any) -> list[str]:
+    """How the pack starts the product when it has no start script: its kept `start` script, or nothing."""
+    scripts = getattr(pack, "kept_scripts", None) or {}
+    if isinstance(scripts, dict) and scripts.get("start"):
+        return ["npm start"] if str(getattr(pack, "language", "")) in ("javascript", "typescript") else []
+    return []
+
+
 def complete_the_handoff(repo_root: str | Path) -> list[str]:
     """Write what the harness itself knows into the README - how to run the product, the routes it serves; the files written.
 
@@ -159,11 +168,13 @@ def complete_the_handoff(repo_root: str | Path) -> list[str]:
         if not any(way in text for way in ways):
             base = root / project if project else root
             commands = [shlex.join(argv) for argv in getattr(pack, "install", ()) or ()]
-            commands += ["sh start.sh"] if (base / "start.sh").is_file() else []
+            commands += ["sh start.sh"] if (base / "start.sh").is_file() else _the_pack_s_start(pack)
             commands += [shlex.join(getattr(pack, name, ()) or ()) for name in ("unit_test", "acceptance_test")]
             commands = [c for c in dict.fromkeys(commands) if c.strip()]
             if commands:
-                added += ("\n## Running it\n\nFrom this directory:\n\n```sh\n" + "\n".join(commands) + "\n```\n")
+                # A README at the workspace root runs the project's commands from the project.
+                where = (f"From `{project}/`:" if project and readme.parent != root / project else "From this directory:")
+                added += (f"\n## Running it\n\n{where}\n\n```sh\n" + "\n".join(commands) + "\n```\n")
         locked = [c for c in the_locked_contract(root) if c.kind == "http"]
         missing = set(_routes_not_named(_the_product_s_documents(root, project) + "\n" + added, list(
             dict.fromkeys((c.method, c.path) for c in locked))))

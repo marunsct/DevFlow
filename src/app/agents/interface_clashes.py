@@ -49,9 +49,15 @@ def clashes(root: str | Path, outputs: dict[str, Any]) -> list[dict[str, str]]:
             for relative, (added, removed) in changed.items():
                 module = re.compile(rf"(?<![\w$]){re.escape(Path(relative).stem)}(?![\w$])")
                 for name in removed:
-                    if name in added or name in added_anywhere:
+                    if name in added:
                         continue
+                    moved = name in added_anywhere
                     word = re.compile(rf"(?<![\w$]){re.escape(name)}(?![\w$])")
+                    # The use that breaks: an import line naming the removed
+                    # file and the name. A moved name is a clash only there.
+                    imported_from = re.compile(
+                        rf"^[^\n#/]*\b(?:from|import|require)\b[^\n]*(?<![\w$]){re.escape(Path(relative).stem)}(?![\w$])"
+                        rf"[^\n]*(?<![\w$]){re.escape(name)}(?![\w$])", re.M)
                     for other, theirs in files.items():
                         if other == stage:
                             continue
@@ -63,9 +69,9 @@ def clashes(root: str | Path, outputs: dict[str, Any]) -> list[dict[str, str]]:
                             # A use of the removed definition names the file it came from, as an import
                             # does; a file that defines the name itself, or never names that file, uses
                             # another `get` or `update` of its own.
-                            if not module.search(text) or name in _defined_in(used, text):
+                            if name in _defined_in(used, text):
                                 continue
-                            if word.search(text):
+                            if imported_from.search(text) or (not moved and module.search(text) and word.search(_code_only(text))):
                                 found.append({"name": name, "removed_in": relative, "removed_by": stage,
                                               "used_in": used, "used_by": other})
         return found[:MOST]
@@ -74,12 +80,56 @@ def clashes(root: str | Path, outputs: dict[str, Any]) -> list[dict[str, str]]:
         return []
 
 
+_COMMENTS_AND_STRINGS = re.compile(r"#[^\n]*|//[^\n]*|/\*.*?\*/|\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`", re.S)
+
+
+def _code_only(text: str) -> str:
+    """`text` with its comments and string literals blanked: a name there is no use of it."""
+    return _COMMENTS_AND_STRINGS.sub(" ", text)
+
+
 def _defined_in(relative: str, text: str) -> set[str]:
     """The names `text` defines, in its language's family; empty when the family is unknown."""
     from app.analysis.reachability import FAMILIES, _defined, family_of
 
     family = FAMILIES.get(family_of(relative))
     return set(_defined(text, family)) if family is not None else set()
+
+
+_A_CLASH_DESCRIPTION = re.compile(r"`(?P<name>[^`]+)` was removed from `(?P<removed_in>[^`]+)` by \S+, and `(?P<used_in>[^`]+)`")
+
+
+def still_clashing(root: str | Path, description: str) -> bool | None:
+    """Whether the clash a defect describes is still there; None when the description is not a clash's.
+
+    Asked at settlement, as the language service is asked again: a clash is
+    settled when the using file no longer imports the name from the file that
+    dropped it, or that file defines it again - whatever the fixer named.
+    """
+    found = _A_CLASH_DESCRIPTION.search(description or "")
+    if not found:
+        return None
+    try:
+        root = Path(root)
+        name, removed_in, used_in = found["name"], found["removed_in"], found["used_in"]
+        removed = root / removed_in
+        if removed.is_file() and name in _defined_in(removed_in, removed.read_text(encoding="utf-8", errors="replace")):
+            return False
+        using = root / used_in
+        if not using.is_file():
+            return False
+        text = using.read_text(encoding="utf-8", errors="replace")
+        if name in _defined_in(used_in, text):
+            return False
+        imported_from = re.compile(
+            rf"^[^\n#/]*\b(?:from|import|require)\b[^\n]*(?<![\w$]){re.escape(Path(removed_in).stem)}(?![\w$])"
+            rf"[^\n]*(?<![\w$]){re.escape(name)}(?![\w$])", re.M)
+        module = re.compile(rf"(?<![\w$]){re.escape(Path(removed_in).stem)}(?![\w$])")
+        word = re.compile(rf"(?<![\w$]){re.escape(name)}(?![\w$])")
+        return bool(imported_from.search(text) or (module.search(text) and word.search(_code_only(text))))
+    except Exception:  # noqa: BLE001 - unmeasured is not settled
+        logger.debug("Could not re-check an interface clash", exc_info=True)
+        return None
 
 
 def role_of(stage: str) -> str:
@@ -111,4 +161,4 @@ def defects(root: str | Path, outputs: dict[str, Any], owner_of: Any) -> list[An
     return made
 
 
-__all__ = ["MOST", "ON_BY_DEFAULT", "clashes", "defects", "enabled", "role_of"]
+__all__ = ["MOST", "ON_BY_DEFAULT", "clashes", "defects", "enabled", "role_of", "still_clashing"]

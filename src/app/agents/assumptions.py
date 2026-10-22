@@ -62,7 +62,15 @@ def record(state: Any, update: dict[str, Any]) -> None:
         return
     from app.decisions import record_decision
 
+    already = {
+        str(d.get("question") or "").strip() for d in (state.get("decisions") or [])
+        if isinstance(d, dict) and d.get("point") == "product_intake"
+    }
     for question, answer in assumed(getattr(update.get("product_intake"), "open_questions", None)):
+        # Once: intake sent back by its review asked the same questions again,
+        # and each pass recorded every assumption anew.
+        if question.strip() in already:
+            continue
         record_decision(
             state, update, point="product_intake", question=question, decision=answer,
             options=[answer, "the owner answers otherwise"],
@@ -75,11 +83,13 @@ def block(state: Any) -> str:
     if not enabled():
         return ""
     try:
-        lines = [
-            f"- {d.get('question')} -> {d.get('decision')}"
-            for d in state.get("decisions") or []
-            if isinstance(d, dict) and d.get("point") == "product_intake" and str(d.get("rationale") or "").startswith(MARK)
-        ]
+        # The last answer per question: the owner's, when the review carried one, else the assumed.
+        latest: dict[str, str] = {}
+        for d in state.get("decisions") or []:
+            if isinstance(d, dict) and d.get("point") == "product_intake" and d.get("question"):
+                if str(d.get("rationale") or "").startswith(MARK) or str(d.get("question")).strip() in latest:
+                    latest[str(d.get("question")).strip()] = str(d.get("decision") or "")
+        lines = [f"- {question} -> {answer}" for question, answer in latest.items()]
     except Exception:  # noqa: BLE001
         return ""
     if not lines:

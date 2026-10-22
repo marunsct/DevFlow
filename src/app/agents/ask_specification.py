@@ -162,10 +162,17 @@ def build_tool(repo_root: str | Path, model: Any = None) -> Any:
         if not answer:
             return {"answer_from": "nothing", "answer": "Nothing written answers it; decide, and name the decision in your report."}
         try:
+            # Under the lock and through a temporary file: six builders asking at
+            # once lost answers and left the file unreadable.
+            import os as _os
+
             target = root / ANSWERS_FILE
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(json.dumps([*_answers(root), {"question": question, "answer": answer}], indent=1),
-                              encoding="utf-8")
+            with _lock:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                temporary = target.with_name(target.name + ".tmp")
+                temporary.write_text(json.dumps([*_answers(root), {"question": question, "answer": answer}], indent=1),
+                                     encoding="utf-8")
+                _os.replace(temporary, target)
         except OSError:
             pass
         return {"answer_from": "the architect", "answer": answer}

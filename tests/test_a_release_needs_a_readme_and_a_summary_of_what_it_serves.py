@@ -6,6 +6,7 @@ failing criterion while attempts remain, then recorded as a gap.
 """
 from __future__ import annotations
 
+import inspect
 import os
 import re
 from types import SimpleNamespace
@@ -14,7 +15,7 @@ from unittest import mock
 import pytest
 
 from app.acceptance import interface_contract
-from app.graph import delivery
+from app.graph import delivery, workflow
 from app.stacks import contract, release_docs
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
@@ -133,3 +134,25 @@ def test_a_route_with_a_trailing_slash_and_a_project_named_like_a_record_are_rea
     with mock.patch.dict(os.environ, ON):
         release_docs.complete_the_handoff(tmp_path)
         assert release_docs.what_the_handoff_lacks(tmp_path) == []
+
+
+def test_the_lead_is_told_why_the_release_was_held_back():
+    """The hold hands on with no milestone plan, so the lead planned afresh and the planning request
+    never read the comments: two re-sprints were told nothing."""
+    source = inspect.getsource(workflow)
+    lead = source[source.index("    def technical_lead_node("):]
+    lead = lead[:lead.index("\n    def ", 10)]
+    assert "Why the release was held back" in lead and 'state.get("release_attempts")' in lead
+
+
+def test_a_root_readme_names_the_project_directory_and_a_pack_without_a_start_script_names_its_start(tmp_path, monkeypatch):
+    pack = SimpleNamespace(install=(("npm", "install"),), unit_test=("npm", "test"), acceptance_test=("npm", "run", "test:acceptance"),
+                           entrypoints=(), entrypoint="", language="typescript", kept_scripts={"start": "node dist/main.js"})
+    monkeypatch.setattr(contract, "the_pack", lambda root: (pack, {"project": "shop"}))
+    (tmp_path / "shop").mkdir()
+    (tmp_path / "README.md").write_text("# Shop\n")
+    interface_contract.record_at_lock(tmp_path, ["AC-1 GET /items -> 200"])
+    with mock.patch.dict(os.environ, ON):
+        assert release_docs.complete_the_handoff(tmp_path) == ["README.md"]
+    text = (tmp_path / "README.md").read_text()
+    assert "From `shop/`:" in text and "npm start" in text

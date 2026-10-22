@@ -334,6 +334,7 @@ SPRINT_REVIEW = "sprint"
 PRODUCT_INTAKE_REVIEW = "product_intake"
 """Review point: the refined product intake document."""
 
+from app.agents import interface_clashes  # noqa: E402 - beside its siblings
 from app.graph.acceptance_nodes import ACCEPTANCE_REVIEW  # noqa: E402 - beside its siblings
 from app.graph.delivery import RECORDED_AS_RISKS, RELEASE_REVIEW  # noqa: E402 - beside its siblings
 from app.graph.escalation import ESCALATION_REVIEW  # noqa: E402 - beside its siblings
@@ -3101,9 +3102,21 @@ def _settle_the_fix(
             sprint=state.get("current_sprint_index", 0),
             detail="the language service still reports it, asked again after the fix",
         )
+    elif str(getattr(defect, "source", "") or "") == "interface clash" and (
+        still := interface_clashes.still_clashing(state["repository"].root_path, defect.description)
+    ) is not None and still:
+        # Asked again, as the language service is: measured live, a clash was
+        # closed on any named test and held open on none, never re-checked.
+        update["remediation"] = cycle
+        defect_ledger.note(
+            "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+            sprint=state.get("current_sprint_index", 0),
+            detail="the using file still imports the removed name, asked again after the fix",
+        )
     elif defect.regression_test_required and not regression_test and not _the_suite_already_guards_it(
         state, measured, defect
-    ):
+    ) and not (str(getattr(defect, "source", "") or "") == "interface clash"
+               and interface_clashes.still_clashing(state["repository"].root_path, defect.description) is False):
         # No named regression test: the defect stays open on purpose. The
         # next test round will count this as another failed attempt, so the
         # bounded loop still terminates.
@@ -9007,6 +9020,15 @@ def build_workflow_graph(
         due_brief = acceptance_nodes.criteria_brief(state)
         if due_brief:
             request["messages"][-1]["content"] += due_brief
+        # A release held back hands on with no milestone plan, so the lead
+        # plans afresh - and the planning request never read the comments:
+        # a release held for a missing README or a credential in the code
+        # cost two re-sprints that were told nothing. See `delivery.release`.
+        if not revising and revision_comments and int(state.get("release_attempts") or 0) > 0:
+            request["messages"][-1]["content"] += (
+                "\n\nWhy the release was held back - the work this sprint must include:\n"
+                + "\n".join(f"- {str(c).strip()}" for c in revision_comments[-3:])
+            )
         # Recorded here too, not only when the builders start, so the lead's own
         # listing and snapshot tell a later sprint's tests from this one's.
         from app.agents.specialists import fixes_to_keep_section

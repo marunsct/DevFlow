@@ -100,13 +100,19 @@ def _server_key(server: str) -> str:
     return hashlib.sha1(server.encode("utf-8")).hexdigest()[:10] if server else "any"
 
 
+#: What `_runs_on` names a call no run claims.
+UNCLAIMED = "<unclaimed>"
+
+
 def _runs_on(server_key: str, besides: str) -> set[str]:
     """The other runs with a call in flight on this server now."""
     runs = set()
     for name in in_flight():
         run, _, rest = name.partition("__")
         if rest.startswith(f"{server_key}__") and run and run != besides:
-            runs.add(run)
+            # A call made outside any run is marked `none` (`a_model_call`):
+            # a paused run's calls still in flight, a probe. It is not another run.
+            runs.add(UNCLAIMED if run == "none" else run)
     return runs
 
 
@@ -161,10 +167,12 @@ def a_model_call(server: str = "") -> Iterator[None]:
             shared |= _runs_on(key, run)
             took = time.perf_counter() - started
             if shared and took >= SHARED_NOTICE_SECONDS:
+                others = sorted(r[:12] for r in shared if r != UNCLAIMED)
+                parts = ([f"{len(others)} other run(s) ({', '.join(others)})"] if others else []) + (
+                    ["calls no run claims (a paused run's calls still in flight, or a probe)"] if UNCLAIMED in shared else [])
                 text = (
                     f"A model call took {took:.0f}s while the model server was also serving "
-                    f"{len(shared)} other run(s) ({', '.join(sorted(r[:12] for r in shared))}); runs that share "
-                    "one model server wait for each other."
+                    + " and ".join(parts) + "; calls that share one model server wait for each other."
                 )
                 logger.warning(text)
                 _tell_the_run(run, stage, text)

@@ -108,3 +108,21 @@ def test_the_deploy_counts_only_calls_whose_process_still_runs():
 
     assert "[ -d /proc/\\$p ]" in deploy
 
+
+
+def test_a_call_no_run_claims_is_not_called_another_run(tmp_path, monkeypatch):
+    """After a pause, the paused task's calls still in flight were reported as "1 other run(s) (none)"."""
+    monkeypatch.setenv("MODEL_CALL_GATE_DIR", str(tmp_path))
+    monkeypatch.setattr(call_gate, "_this_run", lambda: ("run-mine", "principal_architect"))
+    told = []
+    monkeypatch.setattr(call_gate, "_tell_the_run", lambda run, stage, text: told.append(text))
+    clock = iter([0.0, 400.0])
+    monkeypatch.setattr(call_gate.time, "perf_counter", lambda: next(clock))
+    key = call_gate._server_key("http://gpu:9090/v1")
+    (tmp_path / "inflight").mkdir()
+    (tmp_path / "inflight" / f"none__{key}__9-abc").write_text("")
+
+    with call_gate.a_model_call("http://gpu:9090/v1"):
+        pass
+
+    assert told and "other run" not in told[0] and "(none)" not in told[0] and "calls no run claims" in told[0]

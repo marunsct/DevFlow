@@ -26,7 +26,7 @@ can turn one off - then start the next tasks-api run as the **all-on baseline**.
 deploys are allowed again at a stage boundary, as soon as possible, for any defect that wastes harness or model
 time (`loop.sh deploy` + `loop.sh resumed`; marks `mixed_versions`). Later, features are turned off one at a time
 to measure the unproven ones (set `NAME=off` on the host before `loop.sh deploy`). Checked before the switch: the
-whole suite with every switch on - the failures were the switches' intended behaviour, plus LF.189 and LF.190. **Between the runs, before the baseline starts:** `loop.sh reasoning-probe run` (ten calls; changes no setting) - Measure 4 run 1 lost 32 of 140 model minutes (23%) to six fix-stage replies that reasoned to the 32,768-token cap with no answer; if a per-request `reasoning_budget` is honoured, cap fix-stage reasoning per reply (the spiral recovery already switches thinking off after one).
+whole suite with every switch on - the failures were the switches' intended behaviour, plus LF.189 and LF.190. **Owner 19:50 JST: start the baseline immediately after the run** (score, `loop.sh deploy`, ready, bench); the reasoning probe waits for a later gap: `loop.sh reasoning-probe run` (ten calls; changes no setting) - Measure 4 run 1 lost 32 of 140 model minutes (23%) to six fix-stage replies that reasoned to the 32,768-token cap with no answer; if a per-request `reasoning_budget` is honoured, cap fix-stage reasoning per reply (the spiral recovery already switches thinking off after one).
 
 ## Off until measured (group 2 switches - all default on from the next deploy)
 

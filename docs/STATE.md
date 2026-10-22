@@ -6,7 +6,7 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-22 12:32 JST.
+**As of:** 2026-10-22 16:25 JST.
 
 ## Live now
 
@@ -51,8 +51,8 @@ Each module's `ON_BY_DEFAULT` turns its items on for the before/after runs.
 
 | Run | Brief | Result |
 |---|---|---|
+| run-ef034768 | tasks-api (Measure pair 3 run 2, fadd5a58) | **cancelled 16:18 JST** after 4 failed attempts at sprint 1 (unstable acceptance tests closed at dispatch and raised again - LF.185 - after LF.181/LF.184 cost attempt 1); its product still scores **10/10 hidden**; 29 defects left open, 6 replies lost to length |
 | run-7e5c11af | tasks-api (Measure pair 3 run 1, fadd5a58) | completed 12:22 JST, 199 min, **10/10 hidden**; 5 fix stages (was 15-16), but 2 suite repairs (two broken locked tests) and 3 milestone reviews; 4 replies lost to length |
-| run-403f7479 | tasks-api (Measure pair 2 run 2, 20dcdfbe) | completed 08:57 JST, ~218 min, **10/10 hidden**; the PyJWT `sub` 401 blocked 8 criteria for about an hour; 5 replies lost to length |
 
 No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh product`).
 

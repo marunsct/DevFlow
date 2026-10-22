@@ -6,6 +6,8 @@ off until measured.
 """
 from __future__ import annotations
 
+import re
+
 import inspect
 import json
 import os
@@ -38,6 +40,8 @@ def test_the_graph_holds_imports_both_ways_definitions_and_the_criteria_tests_ca
     assert set(store["imported_by"]) == {"notes-api/notes_api/main.py", "notes-api/acceptance/test_api.py"}
     assert graph["notes-api/acceptance/test_api.py"]["criteria"] == ["AC-3"]
     assert (tmp_path / project_graph.GRAPH_FILE).is_file()
+    # Never in a commit, a digest or the reviewer's diff.
+    assert project_graph.GRAPH_FILE.startswith(".harness/") and not (tmp_path / ".project-graph.json").exists()
 
 
 def test_a_fix_request_gets_the_neighbourhood_only_when_on(tmp_path):
@@ -60,3 +64,11 @@ def test_both_builder_paths_and_the_fix_request_carry_it():
 
     source = inspect.getsource(workflow.build_workflow_graph)
     assert source.count("project_graph.with_the_slice(") == 2 and source.count("project_graph.with_the_neighbourhood(") == 1
+
+
+def test_a_name_the_graph_does_not_show_is_not_said_to_be_defined_nowhere(tmp_path):
+    """The graph reads some languages only; an empty answer read as absent invited a second definition."""
+    _project(tmp_path)
+    answer = project_graph.build_tool(tmp_path).invoke({"where_is_name": "NotInTheGraph"})
+    assert answer["defined_in"] == [] and "Search the files" in answer["note"]
+    assert not re.search(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", answer["note"], re.I)

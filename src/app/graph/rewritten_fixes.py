@@ -349,6 +349,15 @@ def fix_by_candidates(
         def write(base: str, path: str, content: str) -> Any:
             return write_approved_artifact(base, path, content)
 
+    # Candidates are chosen by their tests: a defect with none has nothing to
+    # choose by, so the first that changed anything was kept unchecked and the
+    # others were paid for and thrown away. The single rewrite or the agent
+    # loop takes it.
+    try:
+        if check() is None:
+            return None
+    except Exception:  # noqa: BLE001 - nothing to choose by
+        return None
     failure = what_failed(defect, root, last_failure)
     files = files_to_fix(defect, failure, root, may_write or (lambda _: True))
     # Asked where, once and cheaply, when the failure named none or many (plan AY step 1, off).

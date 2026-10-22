@@ -156,12 +156,17 @@ def decide(lesson_id: str, approved: bool, *, by: str = "owner", path: Path | No
 
 
 
-def recurred(lesson_id: str, *, path: Path | None = None) -> dict[str, Any]:
-    """Count a run on which an approved lesson's trigger happened again (plan RL.2)."""
+def recurred(lesson_id: str, *, run_id: str = "", path: Path | None = None) -> dict[str, Any]:
+    """Count a run on which an approved lesson's trigger happened again (plan RL.2), each run once."""
     with _LOCK:
         lessons = load(path)
         for lesson in lessons:
             if lesson.get("id") == lesson_id:
+                seen = list(lesson.get("recurred_in") or [])
+                if run_id and run_id in seen:
+                    return lesson
+                if run_id:
+                    lesson["recurred_in"] = [*seen, run_id]
                 lesson["recurred_runs"] = int(lesson.get("recurred_runs") or 0) + 1
                 _save(lessons, path)
                 return lesson

@@ -42,7 +42,13 @@ def _ledger() -> dict[str, Any]:
 
 
 def over_its_share(kind: str, count: int = 1) -> str | None:
-    """Counts `count` more of `kind` for the running stage; a refusal when that is past its share."""
+    """Counts `count` more of `kind` for the running stage; a refusal when that is past its share, or done for it."""
+    if _RESEARCHED.get():
+        # Its reading was done before it began. The tools were not offered;
+        # held listed (plan PX.2) they ran up to their whole shares.
+        return ("This stage's documentation and package reading was done for it before it began: what was "
+                "found is in this request. Write your answer from it; where something is still uncertain, "
+                "say so in the answer.")
     ledger = _ledger()
     used = ledger.get(kind, 0)
     share = _SHARES[kind]

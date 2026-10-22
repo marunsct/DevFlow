@@ -58,7 +58,7 @@ def _confirmed(root: Path, answer: Localisation, may_write: Callable[[str], bool
     kept = []
     symbols = [s.strip() for s in answer.symbols if s.strip()]
     for name in answer.files:
-        relative = str(name).strip().lstrip("./")
+        relative = str(name).strip().removeprefix("./").lstrip("/")
         path = root / relative
         if not relative or not path.is_file() or not may_write(relative):
             continue

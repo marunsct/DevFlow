@@ -46,7 +46,7 @@ def definitions_changed(root: str | Path, changed_files: list[str]) -> dict[str,
 
     root = Path(root)
     found: dict[str, tuple[list[str], list[str]]] = {}
-    for relative in [str(f).strip().lstrip("./") for f in changed_files if str(f).strip()][:MOST_FILES]:
+    for relative in [str(f).strip().removeprefix("./").lstrip("/") for f in changed_files if str(f).strip()][:MOST_FILES]:
         try:
             family = FAMILIES.get(family_of(relative))
             path = root / relative

@@ -616,6 +616,8 @@ class WorkflowGraphState(TypedDict, total=False):
     # flight, by defect index; the fix stages tried this round; and the ones
     # whose batch was reverted, to be fixed alone.
     fix_batch: list[int]
+    # When the batch was dispatched, so each fixer's calls are counted from it (plan AY step 4).
+    fix_batch_started: str
     fixes_tried: list[str]
     fixes_one_at_a_time: list[str]
     # Parallel mode's reviews (`security_review_node`): the reviews in flight -
@@ -10494,6 +10496,20 @@ def build_workflow_graph(
             index for index, defect in enumerate(cycle.defects)
             if defect.status == "open" and name(index) not in tried
         ]
+        # A defect that has spent its calls is not fixed again, side by side or
+        # alone (plan AY step 4): the batch never asked, and sent it on.
+        from app.graph import defect_budget
+
+        for index in list(candidates):
+            spent_out = defect_budget.spent_out(cycle, index)
+            if spent_out:
+                from app.observability import defect_ledger
+
+                defect_ledger.note(
+                    "left open", name(index), defect=cycle.defects[index], round_=state.get("test_round", 0),
+                    index=index, sprint=state.get("current_sprint_index", 0), detail=spent_out,
+                )
+                return _with_tried(state, {}, name(index))
         if not candidates:
             return {"stage": "test_and_triage", "defect_cursor": 0, "fixes_tried": [], "fixes_one_at_a_time": []}
         for index in candidates:
@@ -10512,7 +10528,8 @@ def build_workflow_graph(
             state["repository"].root_path, f"defect_fix_{state.get('test_round', 0)}_batch"
         )
         logger.info("Fixing %d defects side by side: %s", len(chosen), ", ".join(map(name, chosen)))
-        return {"stage": "defect_fix_parallel", "fix_batch": chosen, "fix_base_commit": base}
+        return {"stage": "defect_fix_parallel", "fix_batch": chosen, "fix_base_commit": base,
+                "fix_batch_started": defect_budget.now()}
 
     def defect_fix_worker_node(state: dict, config: RunnableConfig) -> dict[str, Any]:
         """One defect's fixer, in a batch fixed side by side. See `_the_next_fix_batch`."""
@@ -10531,10 +10548,17 @@ def build_workflow_graph(
         temp_state: Any = dict(state)
         # A worker may only answer its own approval gate: see `specialist_worker_node`.
         temp_state.update(_only_this_worker_s_pause(state, stage_name))
-        update = _run_gated_agent(
-            temp_state, config, stage_name=stage_name, agent=agent, initial_request=request,
-            output_key="__fix_result__", next_stage="defect_remediation",
-        )
+        # Each write followed by the defect's own tests, as when fixed alone (plan AY step 3).
+        from app.graph import verify_after_write
+
+        root = Path(state["repository"].root_path)
+        with verify_after_write.watching(
+            config["configurable"].get(APP_RUN_ID_KEY), stage_name, lambda: _the_defect_s_tests_pass(root, defect),
+        ):
+            update = _run_gated_agent(
+                temp_state, config, stage_name=stage_name, agent=agent, initial_request=request,
+                output_key="__fix_result__", next_stage="defect_remediation",
+            )
         answered_in_a_batch = bool((state.get("queued_decisions") or {}).get(stage_name))
         if "__fix_result__" not in update:
             # Queued, not returned, for the reason `specialist_worker_node` gives.
@@ -10546,7 +10570,7 @@ def build_workflow_graph(
             finished["specialist_pauses"] = {stage_name: None}
         return finished
 
-    def defect_fix_gather_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
+    def defect_fix_gather_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         """Where a batch of fixes joins: surface a pause, or measure the batch once and settle each fix."""
         pauses = _queued_pauses(state)
         if pauses:
@@ -10607,6 +10631,18 @@ def build_workflow_graph(
                 {**state, "specialist_outputs": {**outputs, **update.get("specialist_outputs", {})}},
                 settled_cycle, index, stage_name, result, measured=f"after defect_fix_{round_}_batch",
             )
+            if settled.get("remediation") is not None:
+                # Recorded as a fix alone records it, so the call cap and the next
+                # fixer's earlier attempts see a batched attempt too.
+                from app.graph import defect_budget
+
+                after = settled["remediation"].defects[index]
+                settled["remediation"] = _with_the_attempt(
+                    settled["remediation"], index, stage_name, result,
+                    "fixed" if str(getattr(after, "status", "")) == "fixed" else "left open: its tests still fail",
+                    defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name,
+                                           str(state.get("fix_batch_started") or "")),
+                )
             settled_cycle = settled["remediation"]
             update["specialist_outputs"] = settled["specialist_outputs"]
             blamed = blamed or blames

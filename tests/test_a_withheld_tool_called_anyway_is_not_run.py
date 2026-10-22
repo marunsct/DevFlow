@@ -50,3 +50,23 @@ def test_nothing_is_refused_when_nothing_was_withheld():
     middleware = build_settled_answer_middleware(Plan, "scrum_master", 120)
     middleware.wrap_model_call(_Request([HumanMessage(content="plan")], [SimpleNamespace(name="glob")]), lambda r: r)
     assert middleware.wrap_tool_call(SimpleNamespace(tool_call={"name": "glob", "args": {}, "id": "x"}), lambda r: "ran") == "ran"
+
+
+def test_a_withheld_tool_stays_refused_when_the_agent_is_built_again_to_resume_a_pause():
+    """A call that needs approval pauses the graph and the agent is built afresh to run it, with no model
+    call first: a withheld write ran after its pause."""
+    from app.agents import stage_memory
+    from app.agents.settled_answer import _NOTHING_NEW, _REFUSED
+
+    messages: list = [HumanMessage(content="plan")]
+    for n in range(IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL):
+        messages.append(AIMessage(content="", id=f"a{n}", tool_calls=[{"name": "glob", "args": {"pattern": "*"}, "id": f"c{n}"}]))
+        messages.append(ToolMessage(content=SAME, tool_call_id=f"c{n}"))
+    tools = [SimpleNamespace(name=name) for name in ("glob", "ls")]
+    with stage_memory.remembering("run-x:scrum_master"):
+        first = build_settled_answer_middleware(Plan, "scrum_master", 120)
+        first.wrap_model_call(_Request(messages, tools), lambda r: r)
+        rebuilt = build_settled_answer_middleware(Plan, "scrum_master", 120)
+        refused = rebuilt.wrap_tool_call(SimpleNamespace(tool_call={"name": "glob", "args": {}, "id": "x"}), lambda r: "ran")
+    assert isinstance(refused, ToolMessage), "the rebuilt agent still refuses it"
+    assert _REFUSED.search(refused.content) and _NOTHING_NEW.search(refused.content), "counted as refused and as nothing new"

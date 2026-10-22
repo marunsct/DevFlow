@@ -33,6 +33,7 @@ README_NAMES = ("README.md", "README.rst", "README.txt", "README")
 #: Documents the harness writes about the run, never the product's own.
 _THE_HARNESS_S_DOCS = ("decision_log", "product_intake", "reviews", "sprint", "release-evidence")
 _A_PARAMETER = re.compile(r"\{[^}/]*\}|:[A-Za-z_]\w*|<[^>/]*>")
+_A_TRAILING_SLASH = re.compile(r"(?<=[\w}])/(?=[\s`|),.;:]|$)")
 _A_COMMAND_BLOCK = re.compile(r"```|^(?: {4}|\t|\$ )\S", re.M)
 
 
@@ -62,8 +63,12 @@ def _ways_to_run(root: Path, project: str, pack: object | None) -> list[str]:
 def _the_product_s_documents(root: Path, project: str) -> str:
     texts = []
     for base in dict.fromkeys(([root / project] if project else []) + [root]):
-        for path in [*(base / n for n in README_NAMES), *sorted((base / "docs").glob("**/*.md"))]:
-            if path.is_file() and not any(part in path.relative_to(root).as_posix() for part in _THE_HARNESS_S_DOCS):
+        readmes = [base / n for n in README_NAMES]
+        for path in [*readmes, *sorted((base / "docs").glob("**/*.md"))]:
+            # The harness's documents by their path under `docs/`: matched on the
+            # whole path, a project called `book-reviews` had every document left out.
+            within = path.relative_to(base / "docs").as_posix() if path not in readmes else ""
+            if path.is_file() and not any(part in within for part in _THE_HARNESS_S_DOCS):
                 try:
                     texts.append(path.read_text(encoding="utf-8", errors="replace"))
                 except OSError:
@@ -76,7 +81,9 @@ def _shape(path: str) -> str:
 
 
 def _routes_not_named(documents: str, routes: list[tuple[str, str]]) -> list[str]:
-    lines = [(line.upper(), _shape(line)) for line in documents.splitlines()]
+    # A path written with its trailing slash (`/items/`) is the same route the
+    # contract's shape names without it.
+    lines = [(line.upper(), _A_TRAILING_SLASH.sub("", _shape(line))) for line in documents.splitlines()]
     missing = []
     for method, path in routes:
         shaped = _shape(path)

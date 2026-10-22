@@ -65,7 +65,8 @@ def test_the_ci_carries_the_ecosystem_s_audit_only_when_on():
     with mock.patch.dict(os.environ, {"RELEASE_AUDITS": ""}):
         assert "pip-audit" not in release.ci_workflow(pack, "app", "App")
     with mock.patch.dict(os.environ, ON):
-        assert '- run: "pip install pip-audit && pip-audit"' in release.ci_workflow(pack, "app", "App")
+        # The product's own environment, not the runner's system pip.
+        assert '- run: ".venv/bin/python -m pip install pip-audit && .venv/bin/python -m pip_audit"' in release.ci_workflow(pack, "app", "App")
     assert release_audits.audit_command(SimpleNamespace(language="go", audit="")) == ""
 
 
@@ -82,3 +83,14 @@ def test_the_release_holds_back_for_a_credential(tmp_path, monkeypatch):
             SimpleNamespace(judgement_model=None, checkpointer=None, repo_root=str(root), allow_subdirectories=True),
         )
     assert held["stage"] == "technical_lead" and "cloud access key" in held["revision_comments"][-1]
+
+
+def test_the_harness_s_and_toolchains_folders_and_documented_example_keys_are_not_the_product_s(tmp_path):
+    """A seeded workspace has no harness ignore file, so a module cache's test keys were scanned; and a
+    documented example key read as a credential."""
+    root = _repository(tmp_path)
+    (root / "app" / "settings.py").write_text('KEY = "' + "AKIA" + "IOSFODNN7" + 'EXAMPLE"\n')
+    (root / ".agent-home" / "go").mkdir(parents=True)
+    (root / ".agent-home" / "go" / "key_test.go").write_text(f'const k = "{A_CLOUD_KEY}"\n')
+    with mock.patch.dict(os.environ, ON):
+        assert release_audits.secrets_found(root) == []

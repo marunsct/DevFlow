@@ -75,3 +75,14 @@ def test_on_a_spent_research_share_leaves_its_tools_listed(monkeypatch):
         with mock.patch.dict(os.environ, {"STABLE_TOOLS": switch}):
             middleware.wrap_model_call(_Request([HumanMessage(content="x")], tools), lambda r: sent.append(r))
         assert len(sent[0].tools) == kept
+
+
+def test_a_stage_whose_reading_was_done_for_it_is_refused_a_lookup_its_tools_stay_listed_for():
+    """Held listed under the switch, the research tools of an architect whose research was done ran up to
+    their whole shares; they had not been offered at all."""
+    from app.tools import research
+
+    with research.researched(True):
+        refusal = research.over_its_share("documentation")
+    assert refusal and "done for it" in refusal
+    assert not re.search(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", refusal, re.I)

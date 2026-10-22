@@ -110,7 +110,11 @@ def _the_architect_s_answer(root: Path, model: Any, question: str) -> str:
         specification = (root / SPECIFICATION).read_text(encoding="utf-8", errors="replace")[:_MOST_SPEC_CHARS]
     except OSError:
         specification = ""
-    reply = model.invoke([
+    from app.agents.thinking import without_reasoning
+
+    # Without reasoning: on a server that reasons by default an 800-token
+    # reply was reasoning to its end, and the builder got no answer.
+    reply = without_reasoning(model).invoke([
         SystemMessage(content="You are the principal architect of this product. You answer a builder's question "
                               "from the specification; where it does not say, you decide, keep the decision "
                               "consistent with it, and say that it is a decision."),

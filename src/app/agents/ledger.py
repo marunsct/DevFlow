@@ -83,7 +83,7 @@ def from_the_specification(specification: Any) -> list[Entry]:
 
 def the_slice(entries: Iterable[Entry], role: str = "", files: Iterable[str] = ()) -> list[Entry]:
     """The entries for this role and these files, in ledger order: everyone's, the role's, and those about its files."""
-    mine = {str(f).strip().lstrip("./") for f in files if str(f).strip()}
+    mine = {str(f).strip().removeprefix("./").lstrip("/") for f in files if str(f).strip()}
     return [
         entry for entry in entries
         if (not entry.roles or role in entry.roles)
@@ -147,7 +147,7 @@ def from_the_builders(outputs: Any, known_files: Iterable[str], leave_out: str =
     changed, or was blocked on, learnt of it a whole review later. One naming
     no planned file has nothing to route by and stays the review's.
     """
-    known = sorted({str(f).strip().lstrip("./") for f in known_files if str(f).strip()})
+    known = sorted({str(f).strip().removeprefix("./").lstrip("/") for f in known_files if str(f).strip()})
     entries = []
     for key, output in sorted((outputs or {}).items()):
         if key == leave_out:

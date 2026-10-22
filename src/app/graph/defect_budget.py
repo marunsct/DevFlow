@@ -51,8 +51,13 @@ def calls_in(run_id: str | None, stage: str, since: str) -> int | None:
     try:
         from app.observability.transcript import read_transcript
 
+        # The harness's own rewrites, candidates and localisation for the defect
+        # are recorded under the family's name; they run only for a defect fixed
+        # alone, so since its start they are its own. Uncounted, an attempt of
+        # nine candidate calls and a rewrite was recorded as none.
+        mine = {stage, "defect_fix"}
         return sum(1 for r in read_transcript(run_id, {"model_request"})
-                   if r.get("stage") == stage and str(r.get("at") or "") >= since)
+                   if r.get("stage") in mine and str(r.get("at") or "") >= since)
     except Exception:  # noqa: BLE001
         return None
 

@@ -43,10 +43,12 @@ def test_an_attempt_s_calls_are_counted_from_the_transcript_since_it_started():
         {"kind": "model_request", "stage": "defect_fix_1_0", "at": "2026-10-22T01:00:01+00:00"},
         {"kind": "model_request", "stage": "defect_fix_1_0", "at": "2026-10-22T01:00:05+00:00"},
         {"kind": "model_request", "stage": "defect_fix_1_1", "at": "2026-10-22T01:00:06+00:00"},
+        # A candidate rewrite for it, recorded under the family's name.
+        {"kind": "model_request", "stage": "defect_fix", "at": "2026-10-22T01:00:07+00:00"},
     ]
     with mock.patch.dict(os.environ, ON), \
          mock.patch("app.observability.transcript.read_transcript", lambda run_id, kinds=None: records):
-        assert defect_budget.calls_in("run", "defect_fix_1_0", "2026-10-22T01:00:00+00:00") == 2
+        assert defect_budget.calls_in("run", "defect_fix_1_0", "2026-10-22T01:00:00+00:00") == 3
         assert defect_budget.calls_in("run", "defect_fix_1_0", "") is None, "no start counts nothing"
     with mock.patch.dict(os.environ, {"DEFECT_CALL_CAP": ""}):
         assert defect_budget.calls_in("run", "defect_fix_1_0", "2026-10-22T01:00:00+00:00") is None

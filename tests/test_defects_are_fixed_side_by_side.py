@@ -191,3 +191,19 @@ def test_a_fixer_in_a_batch_that_pauses_resumes_its_own_defect(agents, parallel,
     assert state["stage"] == "complete", state.get("error")
     assert [d.regression_test for d in state["remediation"].defects] == ["t-api", "t-db", "t-ui"]
     assert len(agents.requests["specialist_backend"]) == 2, "the backend fixer ran once, beside the paused one"
+
+
+def test_a_batch_keeps_the_fix_cycle_s_bounds_and_records():
+    """Batched fixes skipped the call cap, the check after a write and the attempt record: a defect that
+    had spent its calls was still sent, and a batched attempt left nothing for the cap or the next fixer."""
+    import inspect as _inspect
+
+    from app.graph import workflow as _workflow
+
+    source = _inspect.getsource(_workflow)
+    batch = source[source.index("    def _the_next_fix_batch("):source.index("    def defect_fix_worker_node(")]
+    worker = source[source.index("    def defect_fix_worker_node("):source.index("    def defect_fix_gather_node(")]
+    gather = source[source.index("    def defect_fix_gather_node("):source.index("    def _the_security_review(")]
+    assert "defect_budget.spent_out(cycle, index)" in batch and '"fix_batch_started": defect_budget.now()' in batch
+    assert "verify_after_write.watching(" in worker
+    assert "_with_the_attempt(" in gather and 'state.get("fix_batch_started")' in gather

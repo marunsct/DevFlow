@@ -39,7 +39,8 @@ ON_BY_DEFAULT = False
 LISTING = "docs/third-party-licences.md"
 #: The ecosystem's own audit, by pack language; a pack's `audit` attribute overrides it.
 AUDIT_COMMANDS: dict[str, str] = {
-    "python": "pip install pip-audit && pip-audit",
+    # The product's own environment: the system pip audits only itself.
+    "python": ".venv/bin/python -m pip install pip-audit && .venv/bin/python -m pip_audit",
     "javascript": "npm audit --omit=dev --audit-level=high",
     "typescript": "npm audit --omit=dev --audit-level=high",
     "go": "go run golang.org/x/vuln/cmd/govulncheck@latest ./...",
@@ -61,6 +62,7 @@ SECRET_SHAPES: dict[str, re.Pattern[str]] = {
 _STRONG_COPYLEFT = re.compile(r"\bA?GPL(?!-?2\.0-with)|\bSSPL\b|Affero|(?<!Lesser )General Public License", re.I)
 _LESSER = re.compile(r"\bLGPL\b|Lesser General", re.I)
 _MOST_BYTES = 1_000_000
+_NOT_THE_PRODUCT = frozenset({".agent-home", ".harness", ".git", "node_modules", ".venv", "vendor", "target"})
 
 
 def enabled() -> bool:
@@ -92,6 +94,11 @@ def secrets_found(repo_root: str | Path) -> list[str]:
         return []
     root, found = Path(repo_root), []
     for relative in _tracked(root):
+        # The harness's and the toolchains' own folders, never the product: a
+        # seeded workspace has no harness `.gitignore`, and a module cache holds
+        # its libraries' test keys.
+        if relative.split("/", 1)[0] in _NOT_THE_PRODUCT:
+            continue
         path = root / relative
         try:
             if not path.is_file() or path.stat().st_size > _MOST_BYTES:
@@ -100,7 +107,7 @@ def secrets_found(repo_root: str | Path) -> list[str]:
         except OSError:
             continue
         for what, shape in SECRET_SHAPES.items():
-            match = shape.search(text)
+            match = next((m for m in shape.finditer(text) if "EXAMPLE" not in m.group(0)), None)
             if match:
                 line = text.count("\n", 0, match.start()) + 1
                 found.append(f"`{relative}` line {line} holds {what}: a credential must come from the "

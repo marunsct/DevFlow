@@ -39,13 +39,17 @@ def clashes(root: str | Path, outputs: dict[str, Any]) -> list[dict[str, str]]:
         from app.agents.interface_changes import definitions_changed
 
         root = Path(root)
-        files = {stage: [str(f).strip().lstrip("./") for f in (getattr(o, "changed_files", None) or [])]
+        files = {stage: [str(f).strip().removeprefix("./").lstrip("/") for f in (getattr(o, "changed_files", None) or [])]
                  for stage, o in (outputs or {}).items()}
         found: list[dict[str, str]] = []
-        for stage, changed in files.items():
-            for relative, (added, removed) in definitions_changed(root, changed).items():
+        changes = {stage: definitions_changed(root, changed) for stage, changed in files.items()}
+        # A name any work order of the batch defines anew was moved, not removed.
+        added_anywhere = {name for changed in changes.values() for added, _ in changed.values() for name in added}
+        for stage, changed in changes.items():
+            for relative, (added, removed) in changed.items():
+                module = re.compile(rf"(?<![\w$]){re.escape(Path(relative).stem)}(?![\w$])")
                 for name in removed:
-                    if name in added:
+                    if name in added or name in added_anywhere:
                         continue
                     word = re.compile(rf"(?<![\w$]){re.escape(name)}(?![\w$])")
                     for other, theirs in files.items():
@@ -55,13 +59,27 @@ def clashes(root: str | Path, outputs: dict[str, Any]) -> list[dict[str, str]]:
                             path = root / used
                             if used == relative or not path.is_file():
                                 continue
-                            if word.search(path.read_text(encoding="utf-8", errors="replace")):
+                            text = path.read_text(encoding="utf-8", errors="replace")
+                            # A use of the removed definition names the file it came from, as an import
+                            # does; a file that defines the name itself, or never names that file, uses
+                            # another `get` or `update` of its own.
+                            if not module.search(text) or name in _defined_in(used, text):
+                                continue
+                            if word.search(text):
                                 found.append({"name": name, "removed_in": relative, "removed_by": stage,
                                               "used_in": used, "used_by": other})
         return found[:MOST]
     except Exception:  # noqa: BLE001 - no clash found is no defect
         logger.debug("Could not check the batch for interface clashes", exc_info=True)
         return []
+
+
+def _defined_in(relative: str, text: str) -> set[str]:
+    """The names `text` defines, in its language's family; empty when the family is unknown."""
+    from app.analysis.reachability import FAMILIES, _defined, family_of
+
+    family = FAMILIES.get(family_of(relative))
+    return set(_defined(text, family)) if family is not None else set()
 
 
 def role_of(stage: str) -> str:

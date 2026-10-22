@@ -40,7 +40,7 @@ def test_each_recorded_signal_proposes_one_lesson_in_no_banned_word():
         "code imports a package no manifest declares",
         "a defect that needed more than 2 fix attempts",
     ]
-    assert "`bcrypt`" in found[1]["rule"]
+    assert "`bcrypt`" not in found[1]["rule"], "a stack's rule names no one product's packages"
     assert not any(BANNED.search(p["rule"] + p["trigger"]) for p in found)
 
 
@@ -51,9 +51,11 @@ def test_on_they_are_proposed_for_the_stack_and_an_approved_one_recurring_is_cou
         first = lesson_distiller.distil(transcript, tmp_path, path=store)
         lessons.decide(first[0]["id"], True, path=store)
         again = lesson_distiller.distil(transcript, tmp_path, path=store)
+        once_more = lesson_distiller.distil(transcript, tmp_path, path=store)
 
     assert {l["status"] for l in first} == {"proposed"} and all(l["stack"] == "python-flask-api" for l in first)
     assert again[0]["recurred_runs"] == 1 and len(lessons.load(store)) == 3
+    assert once_more[0]["recurred_runs"] == 1, "the same run distilled again is not another recurrence"
 
 
 def test_off_nothing_is_proposed(tmp_path):

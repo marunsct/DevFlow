@@ -4,7 +4,7 @@ Fixers and builders found a file's neighbours by reading: who imports it, what
 it imports, which tests reach it. The harness reads all of that already -
 imports per language family (`analysis.reachability`), definitions by the same
 patterns, the acceptance suite's tests and the criteria their names carry.
-This puts it in one index, `.project-graph.json` beside `.project-memory.json`,
+This puts it in one index, `.harness/project-graph.json`,
 computed from the files as they are - never model-written - and gives a request
 the one-hop neighbourhood of its files at most `MOST_CHARACTERS`.
 
@@ -27,8 +27,11 @@ logger = logging.getLogger(__name__)
 
 #: Characters of a neighbourhood a request carries, at most.
 MOST_CHARACTERS = 1_500
-GRAPH_FILE = ".project-graph.json"
-_SKIPPED = {"node_modules", ".venv", "venv", "__pycache__", "dist", "build", "test-results", ".git"}
+#: Under `.harness/`, which no commit, digest or review diff carries: at the
+#: workspace's top it was committed and led the code reviewer's capped diff.
+GRAPH_FILE = ".harness/project-graph.json"
+_SKIPPED = {"node_modules", ".venv", "venv", "__pycache__", "dist", "build", "test-results", ".git",
+            "vendor", "target", "coverage", "playwright-report", "htmlcov"}
 
 
 def fixes_enabled() -> bool:
@@ -68,6 +71,7 @@ def build(root: str | Path) -> dict[str, dict[str, list[str]]]:
                     graph[target]["imported_by"].append(relative)
         _criteria_of_the_tests(root, graph)
         try:
+            (root / GRAPH_FILE).parent.mkdir(parents=True, exist_ok=True)
             (root / GRAPH_FILE).write_text(json.dumps(graph, indent=1), encoding="utf-8")
         except OSError:
             pass
@@ -93,7 +97,7 @@ def neighbourhood(root: str | Path, files: Iterable[str], heading: str) -> str:
     """The one-hop neighbourhood of `files`: what each defines and imports, what imports it and which tests reach it; "" when none."""
     graph = build(root)
     lines: list[str] = []
-    for relative in dict.fromkeys(str(f).strip().lstrip("./") for f in files if str(f).strip()):
+    for relative in dict.fromkeys(str(f).strip().removeprefix("./").lstrip("/") for f in files if str(f).strip()):
         node = graph.get(relative)
         if node is None:
             continue
@@ -162,7 +166,7 @@ def where_is(root: str | Path, name: str) -> list[str]:
 
 def who_uses(root: str | Path, path: str) -> dict[str, list[str]]:
     """What imports `path`, which acceptance tests reach it and their criteria; {} for a file the graph does not hold."""
-    graph, relative = build(root), str(path).strip().lstrip("./")
+    graph, relative = build(root), str(path).strip().removeprefix("./").lstrip("/")
     node = graph.get(relative)
     if node is None:
         return {}
@@ -187,7 +191,13 @@ def build_tool(repo_root: str | Path) -> Any:
         Give one of the two. Returns `{"defined_in": [...]}` or `{"imported_by", "defines", "tests", "criteria"}`.
         """
         if where_is_name.strip():
-            return {"defined_in": where_is(repo_root, where_is_name)}
+            found = where_is(repo_root, where_is_name)
+            if not found:
+                # Not "defined nowhere": the graph reads only some languages, and
+                # an empty answer read as absent invited a second definition.
+                return {"defined_in": [], "note": f"The code graph does not show `{where_is_name}`: it reads "
+                        "only some languages and kinds of definition. Search the files before you define it."}
+            return {"defined_in": found}
         if who_uses_path.strip():
             return who_uses(repo_root, who_uses_path) or {"error": f"The code graph holds no file `{who_uses_path}`."}
         return {"error": "Give `where_is_name` or `who_uses_path`."}

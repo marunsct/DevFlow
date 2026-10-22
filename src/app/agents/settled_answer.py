@@ -926,6 +926,7 @@ _NOTHING_NEW = re.compile(
     # acceptance author wrote the same files again and again, each refused
     # with this, and none counted - it ran on toward its whole budget.
     r"already contain(?:s|ed) exactly this content|"
+    r"is withheld at this point of the stage and was not run|"
     r"is not a valid tool",
     re.S,
 )
@@ -1854,7 +1855,7 @@ def build_settled_answer_middleware(
             # For `_decide`, which runs after this call and sees no model.
             self._model = getattr(request, "model", None)
             # Tools this call withholds, refused if called anyway (`wrap_tool_call`).
-            self._withheld = set()
+            self._set_withheld(set())
             # Each lost reply, counted once by its message, so compaction
             # cannot take the count with the history.
             seen = list(getattr(request, "messages", None) or [])
@@ -2171,9 +2172,9 @@ def build_settled_answer_middleware(
                     refused_fallback = request.override(messages=corrected, **refused_fallback)
                 if "tools" in overrides:
                     sent = {_named(tool) for tool in overrides["tools"]}
-                    self._withheld = {_named(tool) for tool in getattr(request, "tools", None) or []} - sent - {""}
+                    self._set_withheld({_named(tool) for tool in getattr(request, "tools", None) or []} - sent - {""})
                 elif withheld_here is not None:
-                    self._withheld = withheld_here
+                    self._set_withheld(withheld_here)
                 request = request.override(messages=corrected, **overrides)
             except Exception:  # noqa: BLE001 - never fail the call over a hint
                 return handler(request)
@@ -2196,6 +2197,26 @@ def build_settled_answer_middleware(
                 )
                 return handler(refused_fallback)
 
+        def _set_withheld(self, names: Any) -> None:
+            """The tools this call withholds, on the instance and in the stage's memory.
+
+            A call that needs approval pauses the graph, and the node builds the
+            agent afresh to resume it, running the paused call with no model call
+            first: on the instance alone the new middleware knew of nothing
+            withheld, and a withheld write or command ran after its pause.
+            """
+            from app.agents.stage_memory import store
+
+            self._withheld = set(names)
+            store("withheld tools", {})["names"] = sorted(self._withheld)
+
+        def _withheld_now(self) -> set[str]:
+            if "_withheld" in self.__dict__:
+                return set(self._withheld)
+            from app.agents.stage_memory import store
+
+            return set(store("withheld tools", {}).get("names") or ())
+
         def wrap_tool_call(self, request: Any, handler: Any) -> Any:
             """A call to a tool this call withheld is refused, not run.
 
@@ -2206,12 +2227,15 @@ def build_settled_answer_middleware(
             """
             call = getattr(request, "tool_call", None) or {}
             name = str(call.get("name") or "")
-            if name and name in getattr(self, "_withheld", set()):
+            if name and name in self._withheld_now():
                 from langchain_core.messages import ToolMessage
 
+                # Opens as a refusal, so the guards that count refused and
+                # nothing-new results count it: unopened, a stalled stage's
+                # check was reset by each refused call and never escalated.
                 return ToolMessage(
                     content=(
-                        f"`{name}` is withheld at this point of the stage and was not run. Use what this "
+                        f"Refusing: `{name}` is withheld at this point of the stage and was not run. Use what this "
                         "conversation already holds, and the tools you were offered on this call."
                     ),
                     tool_call_id=str(call.get("id") or ""),

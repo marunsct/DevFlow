@@ -69,3 +69,22 @@ def test_it_is_offered_only_when_on():
     assert "ask_specification.enabled()" in inspect.getsource(specialists.create_specialist_agent)
     with mock.patch.dict(os.environ, {"ASK_SPECIFICATION": ""}):
         assert not ask.enabled()
+
+
+def test_the_architect_s_answer_is_asked_without_reasoning(tmp_path, monkeypatch):
+    """On a server that reasons by default the short answer was reasoning to its end, and empty."""
+    from app.agents import ask_specification as module, thinking
+
+    asked = {}
+
+    class _Model:
+        def invoke(self, messages, **kw):
+            asked["quiet"] = getattr(self, "quiet", False)
+            return type("R", (), {"content": "Use the store's id."})()
+
+    quiet = _Model()
+    quiet.quiet = True
+    monkeypatch.setattr(thinking, "without_reasoning", lambda model: quiet)
+    monkeypatch.setattr("app.observability.direct_calls.config_for_this_run", lambda stage: {})
+    assert module._the_architect_s_answer(tmp_path, _Model(), "Which id?") == "Use the store's id."
+    assert asked["quiet"] is True

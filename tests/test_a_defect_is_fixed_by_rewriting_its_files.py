@@ -174,3 +174,15 @@ def test_the_fix_step_supplies_fallback_model_when_building_model_is_none():
     helper = source[source.index("    def _fixed_by_rewriting("):source.index("    def _fix_one(")]
     assert "fix_model or model or building_model" in helper
 
+
+
+def test_a_defect_with_no_tests_of_its_own_gets_no_candidates(tmp_path):
+    """Nothing to choose candidates by: the first that changed anything was kept unchecked, the rest paid for."""
+    root = _workspace(tmp_path)
+    model = _Numbered()
+
+    kept = rewritten_fixes.fix_by_candidates(
+        DEFECT, root, model, lambda: None, write=lambda base, path, content: (root / path).write_text(content),
+    )
+
+    assert kept is None and model.calls == 0

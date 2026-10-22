@@ -143,3 +143,38 @@ def test_the_routes_exist_and_approving_needs_the_administrator():
     source = inspect.getsource(lessons_api)
     assert source.count("Depends(require_admin)") == 2 and "Depends(get_current_active_user)" in source
     assert "include_router(lessons_router)" in inspect.getsource(__import__("app.server.api", fromlist=["x"]))
+
+
+def test_a_lesson_filed_under_the_run_s_pack_reaches_the_prompt(tmp_path, monkeypatch):
+    """Lessons are filed under the pack; prompts asked only by the stack document's frameworks, so two
+    approved lessons never reached one."""
+    import json as _json
+
+    from app.plugins import lessons as _lessons, middleware
+    from app.stacks import contract as _contract
+
+    store = tmp_path / "lessons.json"
+    monkeypatch.setattr(_lessons, "DEFAULT_PATH", store, raising=False)
+    lesson = _lessons.propose("python-http-api", "code imports a package no manifest declares",
+                              "Add every package the code imports to the manifest.", 1, path=store)
+    _lessons.decide(lesson["id"], True, path=store)
+    (tmp_path / ".harness").mkdir()
+    (tmp_path / _contract.CONTRACT_FILE).write_text(_json.dumps({"pack": "python-http-api", "project": "app"}))
+    monkeypatch.setattr(middleware, "_extract_stack_keywords", lambda root: ["fastapi"])
+    seen = {}
+    monkeypatch.setattr(middleware, "get_plugin_instructions", lambda keys, role="": seen.setdefault("keys", list(keys)) and "")
+    built = middleware.build_plugin_instructions_middleware(str(tmp_path))
+
+    class _Request:
+        system_message = None
+        messages = []
+
+        def override(self, **kw):
+            return self
+
+    try:
+        built.wrap_model_call(_Request(), lambda request: None)
+    except Exception:  # noqa: BLE001 - only the keys it asked with matter here
+        pass
+    assert "python-http-api" in seen.get("keys", [])
+    assert "Add every package" in _lessons.as_instructions(seen["keys"], path=store)

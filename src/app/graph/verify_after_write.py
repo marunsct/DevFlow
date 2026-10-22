@@ -13,6 +13,7 @@ they still fail - to what the write tool returns. No model call; at most
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from contextlib import contextmanager
 from typing import Any, Callable, Iterator
@@ -35,6 +36,9 @@ PASSED = (
     "give your answer now. Other failing tests are other defects, each with its own fixer; leave them."
 )
 FAILING = "The harness ran this defect's own tests after the write: they still fail."
+
+#: How a write that did not happen answers: `{"error": ...}`, or a refusal.
+_A_WRITE_THAT_DID_NOT_HAPPEN = re.compile(r'\s*(?:\{\s*"error"|Error\b|Refusing\b)')
 
 _lock = threading.Lock()
 _watched: dict[tuple[str, str], list[Any]] = {}
@@ -70,6 +74,10 @@ def _the_check(run_id: str | None, stage: str) -> Callable[[], bool | None] | No
 def after_a_write(tool: str, result: Any, run_id: str | None, stage: str) -> Any:
     """`result` with the defect's test outcome appended, when it is a watched stage's successful write."""
     if tool not in WRITES or getattr(result, "status", None) == "error" or not isinstance(getattr(result, "content", None), str):
+        return result
+    # A refused or failed write answers as a successful tool message with its
+    # error in the content; nothing changed, so nothing is worth measuring.
+    if _A_WRITE_THAT_DID_NOT_HAPPEN.match(result.content):
         return result
     check = _the_check(run_id, stage)
     if check is None:

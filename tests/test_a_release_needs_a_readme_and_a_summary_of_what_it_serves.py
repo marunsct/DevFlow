@@ -120,3 +120,16 @@ def test_off_the_readme_is_not_touched(product):
     with mock.patch.dict(os.environ, {"RELEASE_DOCS_REQUIRED": ""}):
         assert release_docs.complete_the_handoff(product) == []
     assert not (product / "app" / "README.md").exists()
+
+
+def test_a_route_with_a_trailing_slash_and_a_project_named_like_a_record_are_read_as_documented(tmp_path, monkeypatch):
+    """`POST /items/` written in the README stayed missing, and a project called `book-reviews` had every
+    document left out: each sent the release back twice for what it already had."""
+    pack = SimpleNamespace(install=(("pip", "install", "."),), unit_test=("pytest",), acceptance_test=("pytest",),
+                           entrypoints=(), entrypoint="")
+    monkeypatch.setattr(contract, "the_pack", lambda root: (pack, {"project": "book-reviews"}))
+    (tmp_path / "book-reviews").mkdir()
+    interface_contract.record_at_lock(tmp_path, ["AC-1 POST /items/ -> 201"])
+    with mock.patch.dict(os.environ, ON):
+        release_docs.complete_the_handoff(tmp_path)
+        assert release_docs.what_the_handoff_lacks(tmp_path) == []

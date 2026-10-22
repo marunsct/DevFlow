@@ -61,3 +61,22 @@ def test_the_middleware_passes_a_result_through_and_the_fix_stage_and_agents_use
     assert middleware.wrap_tool_call(request, lambda r: _written()).content == "Wrote app/main.py (12 lines)."
     assert "verify_after_write.watching(" in inspect.getsource(workflow)
     assert "_verify_after_write_middleware()" in inspect.getsource(role_agent)
+
+
+def test_a_write_that_did_not_happen_runs_no_check():
+    """An edit whose text was not found answers as a successful message with an error in it."""
+    import os as _os
+    from unittest import mock as _mock
+
+    from langchain_core.messages import ToolMessage
+
+    from app.graph import verify_after_write as module
+
+    ran = []
+    with _mock.patch.dict(_os.environ, {"VERIFY_AFTER_WRITE": "on"}), \
+         module.watching("run", "defect_fix_1_0", lambda: ran.append(1) or False):
+        for content in ('{"error": "Could not find that text"}', "Refusing this write: unchanged"):
+            message = ToolMessage(content=content, tool_call_id="1")
+            assert module.after_a_write("edit_artifact", message, "run", "defect_fix_1_0").content == content
+        module.after_a_write("edit_artifact", ToolMessage(content='{"status": "edited"}', tool_call_id="2"), "run", "defect_fix_1_0")
+    assert ran == [1], "only the write that happened is measured"

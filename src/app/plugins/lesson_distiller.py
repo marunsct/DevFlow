@@ -54,11 +54,10 @@ def proposals(records: Iterable[dict[str, Any]]) -> list[dict[str, str]]:
                         "a change that makes one test pass by breaking another is reverted.",
             })
         if "no manifest declares" in description:
-            packages = (_PACKAGES.search(description) or [None, ""])[1]
+            # The rule is the stack's, so it names no one product's packages.
             found.setdefault("undeclared", {
                 "trigger": "code imports a package no manifest declares",
-                "rule": "Add every package the code imports to the project's manifest in the same change"
-                        + (f" (here: {' '.join(packages.split())[:80]})" if packages else "") + ".",
+                "rule": "Add every package the code imports to the project's manifest in the same change.",
             })
         if event in ("left open", "reverted", "fixed"):
             # One defect is fixed across rounds under the same description, not the same (round, index).
@@ -104,7 +103,8 @@ def distil(transcript: str | Path, root: str | Path, *, path: Path | None = None
         for proposal in proposals(records):
             lesson = lessons.propose(stack, proposal["trigger"], proposal["rule"], 1, source="harness", path=path)
             if lesson.get("status") == "approved":
-                lesson = lessons.recurred(lesson["id"], path=path)
+                # Once per run: the distiller runs with every `loop.sh kpi`.
+                lesson = lessons.recurred(lesson["id"], run_id=Path(transcript).stem, path=path)
             done.append(lesson)
         return done
     except Exception:  # noqa: BLE001 - a lesson is never worth a failed run

@@ -65,3 +65,30 @@ def test_the_ci_gate_checks_before_it_commits_and_files_them():
     source = inspect.getsource(engineering.ci_gate)
     assert source.index("interface_clashes.defects(") < source.index("ci.commit(root")
     assert '*raised_by("interface clash", clashed)' in source
+
+
+def test_a_moved_name_or_a_name_of_another_module_is_no_clash(tmp_path):
+    """A defect no fixer can settle: a definition moved to another file, or a common name (`get`)
+    the other file uses from somewhere else, read as a clash."""
+    outputs = _batch(tmp_path)
+    (tmp_path / "app" / "items.py").write_text("def load_items():\n    return []\n")
+    outputs["specialist_backend_0"].changed_files.append("app/items.py")
+    (tmp_path / "app" / "routes.py").write_text("from app.items import load_items\n\ndef index():\n    return load_items()\n")
+    with mock.patch.dict(os.environ, ON):
+        assert interface_clashes.clashes(tmp_path, outputs) == [], "moved, not removed"
+    outputs["specialist_backend_0"].changed_files.remove("app/items.py")
+    (tmp_path / "app" / "items.py").unlink()
+    (tmp_path / "app" / "routes.py").write_text("import cache\n\ndef index():\n    return cache.load_items()\n")
+    with mock.patch.dict(os.environ, ON):
+        assert interface_clashes.clashes(tmp_path, outputs) == [], "the file never names the module it was removed from"
+    (tmp_path / "app" / "routes.py").write_text("from app import store\n\ndef load_items():\n    return store.fetch_items()\n")
+    with mock.patch.dict(os.environ, ON):
+        assert interface_clashes.clashes(tmp_path, outputs) == [], "it defines the name itself"
+
+
+def test_a_dotted_directory_keeps_its_dot():
+    from app.analysis import project_graph
+    from app.graph import localisation
+
+    for module in (interface_clashes, project_graph, localisation):
+        assert 'lstrip("./")' not in inspect.getsource(module)

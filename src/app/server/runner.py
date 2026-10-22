@@ -29,14 +29,18 @@ from app.documents import DocumentContent
 from app.graph.workflow import (
     APPROVAL_PAUSE_PREFIX,
     REVIEW_PAUSE_PREFIX,
+    RunCancelled,
     approve_decision,
     build_workflow_graph,
+    queued_parallel_pauses,
     request_changes_decision,
     resume_pending_approval,
     resume_pending_review,
     skip_decision,
     start_workflow,
 )
+from app.models.quota import OUT_OF_QUOTA_PHRASES, out_of_quota
+from app.observability.cost_tracker import RunCost, forget_run, run_cost
 from app.observability.metrics import MetricsTracker
 from app.server.events import EventBus, RunEvent, redact_metadata
 from app.state import RepositoryContext
@@ -121,13 +125,34 @@ _STAGE_MEANINGS: dict[str, str] = {
 }
 
 
+#: What each iterated stage family does (`workflow._ITERATED_STAGE_OWNERS` names the families).
+_FAMILY_MEANINGS: dict[str, str] = {
+    "consult_": "A specialist is advising on the technology the build will use.",
+    "advice_review_": "Reviewing the specialists' advice on the technology.",
+    "stack_setup_": "Setting the project up on the chosen technology.",
+    "acceptance_author_": "Writing the acceptance tests from the criteria.",
+    "acceptance_review_": "Checking the acceptance tests against the criteria.",
+    "specialist_": "A specialist is building its part of the milestone.",
+    "code_review_": "Reviewing the code the milestone wrote.",
+    "test_round_": "Running the tests and recording what fails.",
+    "defect_fix_": "Fixing one defect the last test round found.",
+}
+
 def _stage_meaning(stage: str) -> str:
     """Human-readable meaning for a stage."""
     if stage.startswith(APPROVAL_PAUSE_PREFIX):
         return f"Waiting for approval: {stage.removeprefix(APPROVAL_PAUSE_PREFIX)}"
     if stage.startswith(REVIEW_PAUSE_PREFIX):
         return f"Waiting for review: {stage.removeprefix(REVIEW_PAUSE_PREFIX)}"
-    return _STAGE_MEANINGS.get(stage, stage)
+    if stage in _STAGE_MEANINGS:
+        return _STAGE_MEANINGS[stage]
+    # An iterated stage (`consult_database`, `defect_fix_2_5`) is named after its
+    # iteration; it means what its family does. The bare name reached the run
+    # page as its meaning.
+    for prefix, meaning in _FAMILY_MEANINGS.items():
+        if stage.startswith(prefix):
+            return meaning
+    return stage
 
 
 def _api_status(stage: str) -> str:
@@ -141,6 +166,35 @@ def _api_status(stage: str) -> str:
     if stage.startswith(REVIEW_PAUSE_PREFIX):
         return "waiting_for_review"
     return "running"
+
+
+def _the_stage_itself(stage: str) -> str:
+    """`specialist_ui_ux_0` from `awaiting_approval:specialist_ui_ux_0`.
+
+    The gate loop only ever sees a *paused* stage value - the graph runs its
+    nodes internally and returns at an interrupt - so the string handed to the
+    histogram carried the pause prefix. Measured live on 2026-09-21::
+
+        stage_duration_seconds_sum{stage="awaiting_approval:specialist_ui_ux_0"} 78.5
+
+    A dashboard grouping by `stage` therefore sees a series per *pause*, and the
+    stage names an operator would look for never appear at all. `_derive_stages`
+    already folds a pause into its parent for exactly this reason - its docstring
+    opens with "A pause is not a stage" - and the histogram was the one reader
+    that did not.
+
+    **What this does not fix, and cannot from here.** A stage that never pauses
+    is never observed: the loop sees one returned state per interrupt, so five
+    of run 2's first six stages - `tools_models`, `principal_architect`,
+    `architecture_review`, `scrum_master`, `technical_lead`, none of which took
+    an approval - produced no observation at all. The histogram is a record of
+    gated stages, correctly named. Timing every stage needs an observation point
+    inside the graph, where the transitions actually happen.
+    """
+    for prefix in (APPROVAL_PAUSE_PREFIX, REVIEW_PAUSE_PREFIX):
+        if stage.startswith(prefix):
+            return stage.removeprefix(prefix)
+    return stage
 
 
 def _record_stage_duration(timed: dict[str, object]) -> None:
@@ -162,9 +216,155 @@ def _record_stage_duration(timed: dict[str, object]) -> None:
     if not stage or not isinstance(started_at, (int, float)):
         return
     try:
-        MetricsTracker.record_stage_duration(str(stage), time.monotonic() - started_at)
+        MetricsTracker.record_stage_duration(
+            _the_stage_itself(str(stage)), time.monotonic() - started_at
+        )
     except Exception:  # noqa: BLE001 - see the docstring: metrics must not break a run
         logger.warning("Could not record the stage-duration metric", exc_info=True)
+
+
+#: Status of a run parked because it reached its spending ceiling.
+#:
+#: Named like `waiting_for_approval` and `waiting_for_review` because it is the
+#: same kind of state: the run is intact, its work is good, and it is waiting
+#: for a person. It is deliberately not `failed` - nothing went wrong.
+BUDGET_PAUSE_STATUS = "waiting_for_budget"
+
+
+#: Statuses a run is resumed from, from its last checkpoint.
+RESUMABLE_STATUSES = ("failed", BUDGET_PAUSE_STATUS, "paused", "cancelled")
+
+
+CANCELLABLE_WHILE_PARKED = (
+    "created",
+    "waiting_for_approval",
+    "waiting_for_review",
+    "paused",
+    BUDGET_PAUSE_STATUS,
+)
+"""Statuses in which a run is parked with no worker driving it.
+
+Cancelling one of these has to mark it terminal here, because there is nobody
+else left to notice the cancel flag.
+"""
+
+
+def _max_concurrent_runs() -> int:
+    """How many runs may execute at once; 0 or less disables the limit.
+
+    Item 6 of Part III of the hardening plan (`docs/improvement-plan.md §E1`), and the gate on Part I's
+    item 2. Nothing bounded this: two unattended runs against one local model
+    server shared that server's queue and neither could know its latency was
+    being caused by the other.
+
+    Observed on 2026-09-20. Orphan recovery resumed one run at the moment
+    one run was started, and both executed - throughput halved and the 524
+    rate rose, on a deployment whose model server answers one request at a time.
+
+    Why Part I's probe needs this. That item derives a request timeout from a
+    *measured* generation rate. A probe run on a contended server measures a
+    rate the run will not see, or the reverse, and the derived timeout is wrong
+    in whichever direction the contention happened to push it. Measuring the
+    model requires being the only load.
+
+    Read on every dispatch rather than captured at import, for the reason
+    `_max_run_cost_usd` gives: the answer to "the queue is full" is to raise the
+    limit, and that should not need a worker restart.
+
+    Off by default, because a deployment with a worker pool sized for the work
+    already has its answer and a second ceiling underneath the first is a
+    surprise.
+    """
+    raw = os.environ.get("MAX_CONCURRENT_RUNS", "").strip()
+    if not raw:
+        return 0
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        logger.warning("MAX_CONCURRENT_RUNS is not a number: %r; ignoring it", raw)
+        return 0
+
+
+def _max_run_cost_usd() -> float:
+    """The per-run spending ceiling in US dollars; 0 or less disables it.
+
+    Read on every check rather than captured at import, which is what makes
+    `MAX_GATES` and this setting differently shaped. A gate ceiling is consulted
+    by a run that is already moving; this one is consulted by a run an operator
+    has just been asked to make a decision about, and the decision on offer is
+    "raise it and resume". Captured at import, raising it would need a worker
+    restart, which turns a one-line answer into an outage.
+
+    Off by default. A deployment on a local model spends nothing, and a ceiling
+    that fires on a run costing nothing would be the third fabricated number
+    plan-part3 §3.2 set out to remove.
+    """
+    raw = os.environ.get("MAX_RUN_COST_USD", "").strip()
+    if not raw:
+        return 0.0
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("Malformed MAX_RUN_COST_USD (%r); no ceiling applied", raw)
+        return 0.0
+
+
+def _max_run_tokens() -> int:
+    """`MAX_RUN_TOKENS`: a bound on every model token a run uses, priced or not; 0 (the default) is none.
+
+    The dollar ceiling counts priced calls only, so a local model - priced at
+    nothing and counted as nothing - has no bound at all; one run used 73
+    million tokens over twelve hours. Tokens are counted for every call, so
+    this bound holds whatever the model costs (Initiative AH.1).
+    """
+    raw = os.environ.get("MAX_RUN_TOKENS", "").strip()
+    try:
+        return max(0, int(raw)) if raw else 0
+    except ValueError:
+        logger.warning("Malformed MAX_RUN_TOKENS (%r); no bound applied", raw)
+        return 0
+
+
+def _budget_exceeded(run_id: str) -> tuple[bool, RunCost]:
+    """Whether this run has passed its ceiling, and the total it passed it with.
+
+    Returns the total either way so the caller can name the spend in the pause
+    message without reading it twice - the number that triggers the pause must
+    be the number the operator is shown, or they are being asked to decide about
+    a different run than the one that stopped.
+
+    An unpriced call is not counted against the ceiling, because its cost is
+    unknown rather than zero. That is the safe direction for a *pause*: a
+    ceiling that fires on a number it invented would stop good work for a reason
+    that is not true. `unpriced_requests` on the summary is how an operator sees
+    that the total is partial, and the dashboard shows it beside the spend.
+
+    So the ceiling is a hard cap only over priced models: a run is refused at
+    start when a configured model has no price (`_require_a_ceiling_that_can_hold`).
+    A reply that comes back without usage is still unpriced and still uncounted.
+    """
+    ceiling = _max_run_cost_usd()
+    total = run_cost(run_id)
+    tokens = _max_run_tokens()
+    if tokens and total.total_tokens >= tokens:
+        return True, total
+    if ceiling <= 0:
+        return False, total
+    return total.usd >= ceiling, total
+
+
+def _record_a_gate(run_id: str, stage: str, event: str, gate: str) -> None:
+    """A gate opened for a person, or answered, in the run's transcript (plan MF.3). Never raises.
+
+    Time a run spends waiting on a person was noted by hand, if at all; the
+    KPIs count it from these.
+    """
+    try:
+        from app.observability.transcript import record
+
+        record(run_id, stage, "gate", event=event, gate=gate)
+    except Exception:  # noqa: BLE001 - a record must never cost the run
+        logger.debug("Could not record the gate", exc_info=True)
 
 
 def _stage_narration(stage: str, *, auto_approve: bool) -> tuple[str, str]:
@@ -188,6 +388,15 @@ def _stage_narration(stage: str, *, auto_approve: bool) -> tuple[str, str]:
 
 class RunConflict(RuntimeError):
     """A lifecycle transition was attempted from the wrong status."""
+
+
+class RunQueueFull(RunConflict):
+    """Every worker slot is taken. A queueing signal, not a failure.
+
+    A subclass of `RunConflict` so existing handlers keep returning 409 without
+    change, and its own type so a caller that wants to distinguish "you cannot
+    do that" from "not yet" can.
+    """
 
 
 _SECRET_OVERRIDE_KEYS = frozenset({"openai_api_key", "anthropic_api_key", "google_api_key"})
@@ -244,6 +453,13 @@ def _applicable_overrides(overrides: dict[str, Any] | None) -> dict[str, Any]:
 #: other failure an operator can act on, applied to the ones that come from the
 #: provider rather than from the conversation.
 _PROVIDER_FAILURE_HINTS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (
+        OUT_OF_QUOTA_PHRASES,
+        "The model provider refused the call because the account's quota or credit "
+        "is used up. Nothing in the run failed: it is paused at its last checkpoint. "
+        "Add funds or change the plan with the provider, or point the model setting "
+        "at another model, then resume.",
+    ),
     (
         ("no model loaded", "inference/load", "model_not_found", "no models loaded",
          "downloaded but not loaded", "switch model by request", "is not loaded"),
@@ -321,7 +537,7 @@ MAX_LOOPS_ANSWERED_BY_DENIAL = 4
 """How many times a looping stage is answered before the run is ended.
 
 Ending the whole run was the first and only response, and it is the harshest
-available. Measured on run-130deeef: `specialist_backend_8` wrote
+available. Measured on one run: `specialist_backend_8` wrote
 `docs/blocker.md` five times - a perfectly reasonable document, written by a
 model that had correctly worked out it was blocked and had no other move - and
 that killed a run which had already completed a full sprint, a test round, a
@@ -389,13 +605,103 @@ def _repeat_is_a_loop(approval: Any) -> bool:
     attempts - `write_approved_artifact` reports exactly that, as `unchanged`.
 
     Re-running an identical *command* is the opposite: it is the build/fix cycle
-    working. On run-0b55ad49 `specialist_backend_1` ran `npm test`, read
+    working. On one run `specialist_backend_1` ran `npm test`, read
     `app.js`, ran it again, read four more files, ran it again - real diagnosis
     between every run, with the tests passing - and was stopped as a loop after
     five. Commands stay bounded by `MAX_GATES_PER_STAGE`, which is the right
     ceiling for work that is expensive rather than stuck.
     """
     return getattr(approval, "action_kind", "unknown") != "command"
+
+
+@dataclass
+class _GateCount:
+    """One paused stage's auto-approvals: its gate budget and its loop check.
+
+    Kept per stage, so a parallel fan-out's workers each have their own count
+    when several of their pauses are answered in one resume. It used to be one
+    set of counters for "the current stage", reset whenever the surfaced stage
+    changed - which in a fan-out, where the surfaced stage alternates between
+    workers, reset it nearly every gate.
+    """
+
+    gates: int = 0
+    repeats: int = 0
+    last: tuple[str, str] | None = None
+    signatures: dict[Any, int] = field(default_factory=dict)
+    loops_answered: int = 0
+    looping: bool = False
+
+    def observe(self, approval: Any) -> tuple[str, tuple[str, str]]:
+        """Count one gate: ("approve" | "deny" | "fail", what it asked for).
+
+        A read-only look at the workspace is approved and recorded, but does
+        not spend the budget meant for writes and builds. On one run a testing
+        specialist used all 120 gates on `ls -la`, `find` and `cat` - work its
+        ungated filesystem tools could have done - and was stopped before
+        writing anything.
+        """
+        signature = _approval_signature(approval)
+        if getattr(approval, "action_kind", "") != "read":
+            self.gates += 1
+        self.repeats = self.repeats + 1 if signature == self.last else 0
+        self.signatures[signature] = self.signatures.get(signature, 0) + 1
+        self.last = signature
+        self.looping = self.repeats >= MAX_IDENTICAL_GATES and _repeat_is_a_loop(approval)
+        if self.looping and self.loops_answered < MAX_LOOPS_ANSWERED_BY_DENIAL:
+            # Answer the request instead of ending the run. See
+            # `MAX_LOOPS_ANSWERED_BY_DENIAL`.
+            self.loops_answered += 1
+            self.repeats = 0
+            return "deny", signature
+        if self.looping or self.gates > MAX_GATES_PER_STAGE:
+            return "fail", signature
+        return "approve", signature
+
+
+def _gate_failure_message(stage_name: str, count: _GateCount, signature: tuple[str, str]) -> str:
+    """Why a stage was stopped at its gates: a loop, or its budget spent."""
+    if count.looping:
+        return (
+            f"The '{stage_name}' stage asked to write the same thing "
+            f"{count.repeats + 1} times in a row without moving on, so it was "
+            f"stopped. The repeated request was: "
+            f"{signature[0] if signature[0] and 'unknown' not in signature[0] else (signature[1] or 'an artifact write')}. "
+            "An agent re-requesting an identical write is looping, and every "
+            "attempt costs a model call."
+        )
+    # What it kept doing is the part worth reporting. "Raise the ceiling" alone
+    # was the whole message, and on one run that was the wrong advice: the stage
+    # ran `node test.js` over and over against a test whose assertion could not
+    # be satisfied, so a larger budget would only have bought more of it.
+    busiest = max(count.signatures.items(), key=lambda kv: kv[1], default=(None, 0))
+    repeated = ""
+    if busiest[0] and busiest[1] > 2:
+        # A command approval carries no artifact path, so the path half is a
+        # placeholder. Prefer whichever half actually says something: on one run
+        # this read "<unknown path>, 21 times", which names the repetition
+        # without naming the thing.
+        path, notes = busiest[0]
+        what = next(
+            (part for part in (path, notes) if part and "unknown" not in part.lower()),
+            "",
+        )
+        if what:
+            repeated = f" Its most repeated request was {what[:120]}, {busiest[1]} times."
+        else:
+            repeated = (
+                f" It made the same request {busiest[1]} times; "
+                "the event log for this stage says which."
+            )
+    return (
+        f"The '{stage_name}' stage used all "
+        f"{MAX_GATES_PER_STAGE} of its approvals without finishing, so it "
+        "was stopped. The requests were not identical, so this is either a "
+        "stage doing more work than the ceiling allows, or an edit-and-retest "
+        f"cycle that is not converging.{repeated} Check whether the same "
+        "check keeps failing before raising WORKFLOW_MAX_GATES_PER_STAGE - "
+        "a larger budget only helps the first case."
+    )
 
 
 def _approval_metadata(approval: Any) -> dict[str, Any]:
@@ -442,6 +748,18 @@ class RunRecord:
     reviewer: str = "unassigned"
     auto_approve: bool = False
     model_overrides: dict[str, Any] = field(default_factory=dict)
+    #: `fast` or `thorough`, chosen when the run starts (`app.delivery`).
+    delivery_mode: str = ""
+    #: True when the run was started not to use the frontier model: every
+    #: stage on the build model (`app.models.roles.on_the_build_model_only`).
+    local_only: bool = False
+    #: Minutes a gate waits for a person before approving itself; None waits for ever.
+    approval_timeout_minutes: int | None = None
+    #: What the release knew it did not prove (Initiative J.4): deferred
+    #: criteria, problems the suite was locked with, an unproven setup. Set
+    #: when the graph completes; a completed run with a non-empty list is
+    #: never plain "completed" on any surface that shows it.
+    completion_gaps: list[str] = field(default_factory=list)
 
     # Execution bookkeeping.
     task_id: str | None = None
@@ -558,13 +876,90 @@ class WorkflowRunner:
         for thread_id in [*state.get("inner_thread_ids", []), record.thread_id]:
             discard_thread(thread_id, checkpointer=self.checkpointer)
 
+    async def _say_if_the_judgement_model_was_replaced(self, record: RunRecord) -> None:
+        """Put a configured judgement model that could not be built into the run's history."""
+        from app.models.roles import judgement_downgrade, remember_the_downgrade
+
+        note = judgement_downgrade()
+        if not note:
+            return
+        remember_the_downgrade(record.run_id, note)
+        try:
+            await self.event_bus.publish(
+                record.run_id,
+                RunEvent(
+                    run_id=record.run_id,
+                    sequence=await self.event_bus.next_sequence(record.run_id),
+                    stage=record.current_stage or "",
+                    event_type="log",
+                    message=note,
+                    metadata={"kind": "judgement_model_replaced"},
+                ),
+            )
+        except Exception:  # noqa: BLE001 - the note never stops the run
+            logger.warning("Could not record that the judgement model was replaced", exc_info=True)
+
+    async def _require_command_execution(self) -> None:
+        """Refuse to start when the workers reported that they cannot run commands.
+
+        See `app.server.execution_readiness`. A record that cannot be read
+        refuses nothing: this stops a run that was certain to fail, never one
+        that might work.
+        """
+        from app.server.execution_readiness import READINESS_KEY, why_commands_cannot_run
+        from app.server.redis_client import get_async_redis_client
+
+        try:
+            stored = await get_async_redis_client().get(READINESS_KEY)
+        except Exception:  # noqa: BLE001 - never block on the store being down
+            logger.warning("Could not read whether the workers can run commands", exc_info=True)
+            return
+        reason = why_commands_cannot_run(stored)
+        if reason:
+            raise RunConflict(reason)
+
+    def _require_a_ceiling_that_can_hold(self) -> None:
+        """Refuse to start under a spending ceiling that could not stop this run.
+
+        `_budget_exceeded` counts only calls it could price, so a ceiling over a
+        hosted model with no known rate reads as a hard cap and is none: every
+        call goes unpriced and the total stays at zero. A local model is priced
+        at nothing, which is a measurement, so it never trips this.
+        """
+        if _max_run_cost_usd() <= 0:
+            return
+        from app.models.roles import judgement_environment
+        from app.observability.cost_tracker import price_for
+        from app.server.runtime_settings import effective_environment
+
+        try:
+            environment = dict(effective_environment())
+        except Exception:  # noqa: BLE001 - never block on reading settings
+            logger.warning("Could not read settings to check the spending ceiling", exc_info=True)
+            return
+        unpriced = []
+        for settings in (environment, judgement_environment(environment)):
+            if not settings:
+                continue
+            provider = str(settings.get("LLM_PROVIDER") or "local").strip().lower()
+            model = str(settings.get("OPENAI_MODEL") or "").strip()
+            if model and price_for(provider, model) is None:
+                unpriced.append(model)
+        if unpriced:
+            raise RunConflict(
+                f"MAX_RUN_COST_USD is set to ${_max_run_cost_usd():.2f}, but "
+                f"{', '.join(sorted(set(unpriced)))} has no known price, so its calls would "
+                "not count toward the ceiling and nothing would stop the run. Add its rates "
+                "to MODEL_PRICES_JSON, or unset MAX_RUN_COST_USD to run without a ceiling."
+            )
+
     def _require_a_reachable_model(self) -> None:
         """Refuse to start when nothing is serving the configured endpoint.
 
         A model server that is not there and one that is merely slow produce
         the same symptom: the first call blocks and the run sits at `running`.
 
-        Measured on run-18c0e34c: Docker Desktop wedged, the worker died, and
+        Measured on one run: Docker Desktop wedged, the worker died, and
         the run reported `running` at the same stage for about ten hours.
         Telling the operator which address failed turns that into a one-line
         fix.
@@ -588,6 +983,26 @@ class WorkflowRunner:
         if not status.reachable:
             raise RunConflict(status.detail)
 
+        # Reachable is not the same as usable. A proxy with a fixed origin
+        # timeout can answer a probe in milliseconds and still cut off every
+        # full-length reply the run will ask for. Warned, never refused: the
+        # run works, it just truncates long answers and pays a retry for each,
+        # and that is the operator's trade to make - but it has to be made
+        # knowingly. One run made it unknowingly and spent 74 of its 130
+        # minutes waiting out retries that could not succeed.
+        try:
+            from app.observability.proxy_timeouts import (
+                reply_budget_that_cannot_arrive,
+            )
+
+            complaint = reply_budget_that_cannot_arrive(
+                getattr(settings, "openai_base_url", "") or ""
+            )
+        except Exception:  # noqa: BLE001 - a warning never blocks a run
+            complaint = ""
+        if complaint:
+            logger.warning("%s", complaint)
+
     async def start_run(
         self,
         run_id: str,
@@ -598,6 +1013,9 @@ class WorkflowRunner:
         reviewer: str = "unassigned",
         auto_approve: bool = False,
         model_overrides: dict[str, str | None] | None = None,
+        delivery_mode: str | None = None,
+        use_frontier_model: bool | None = None,
+        approval_timeout_minutes: int | None = None,
     ) -> None:
         """Persist start settings and dispatch the run to a worker.
 
@@ -608,12 +1026,24 @@ class WorkflowRunner:
         if record is None:
             raise ValueError(f"Run {run_id} is not registered")
 
+        await self._require_command_execution()
+        self._require_a_ceiling_that_can_hold()
         self._require_a_reachable_model()
 
         record.repo_root = str(repository.root_path)
         record.review_policy = review_policy or {}
         record.reviewer = reviewer
         record.auto_approve = auto_approve
+        # The run's own mode, fixed now: one chosen with it, else the
+        # deployment's. A change of the deployment's later does not move it.
+        from app import delivery
+
+        chosen = str(delivery_mode or record.delivery_mode or "").strip().lower()
+        record.delivery_mode = chosen if chosen in delivery.MODES else delivery.mode()
+        # Unsaid is the frontier model as configured; only an explicit no
+        # keeps every stage on the build model.
+        record.local_only = use_frontier_model is False
+        record.approval_timeout_minutes = approval_timeout_minutes
         # Overrides are persisted so the worker can apply them. They were
         # previously built here and then dropped, so choosing a model in the UI
         # had no effect at all. Secrets are filtered out: they must not travel
@@ -646,7 +1076,7 @@ class WorkflowRunner:
     """
 
     async def resume_run(self, run_id: str) -> None:
-        """Resume a failed run from its last checkpoint."""
+        """Resume a failed or budget-paused run from its last checkpoint."""
         record = self.run_store.load(run_id)
         if record is not None and (record.error or "").startswith(self.UNRESUMABLE_ERROR_MARKER):
             raise RunConflict(
@@ -655,14 +1085,133 @@ class WorkflowRunner:
                 "produced. Clone it to repeat the attempt from the beginning."
             )
 
+        await self._require_command_execution()
+        self._require_a_ceiling_that_can_hold()
         self._require_a_reachable_model()
 
         now = datetime.now(timezone.utc).isoformat()
-        if not self.run_store.compare_and_set_status(
-            run_id, "failed", "running", updated_at=now, clear_error=True
-        ):
-            raise RunConflict(f"Run {run_id} is not in the 'failed' state.")
+        # A run parked at its spending ceiling, paused by its owner or cancelled
+        # resumes by the same path as a failed one: each continues from the last
+        # checkpoint and none carries a decision. They are tried in turn rather
+        # than read-then-written so the status change stays a single
+        # compare-and-set, which is what stops two resumes dispatching two
+        # tasks onto one thread. A cancelled run keeps its checkpoints; a
+        # cancel is final only until its owner says otherwise.
+        for resumable in RESUMABLE_STATUSES:
+            if self.run_store.compare_and_set_status(
+                run_id, resumable, "running", updated_at=now, clear_error=True
+            ):
+                break
+        else:
+            raise RunConflict(
+                f"Run {run_id} is not in one of the states a run resumes from: {', '.join(RESUMABLE_STATUSES)}."
+            )
+        # The stop flag a pause or a cancel raised would stop it again at once.
+        self.run_store.clear_stop(run_id)
         self._dispatch(run_id, resume=True, decision_payload=None)
+
+    def _graph_for(self, record: RunRecord) -> Any:
+        return build_workflow_graph(
+            model=self.model, repo_root=record.repo_root, checkpointer=self.checkpointer,
+        )
+
+    async def rewind_points(self, run_id: str) -> list[dict[str, Any]]:
+        """Each stage the run started, oldest first, as a point to rewind it to."""
+        from app.graph.workflow import rewind_points
+
+        record = self.run_store.load(run_id)
+        if record is None:
+            raise ValueError(f"Run {run_id} not found")
+        graph = self._graph_for(record)
+        return await asyncio.to_thread(rewind_points, graph, record.thread_id)
+
+    async def rewind_run(self, run_id: str, checkpoint_id: str) -> dict[str, Any]:
+        """Rewind a stopped run to the start of a stage, with its files as they were, and run it from there.
+
+        Only a run nothing is driving: a running one is paused first. The run's
+        own history is kept - it continues on a branch from that checkpoint.
+        """
+        from app.graph.workflow import rewind_to
+
+        record = self.run_store.load(run_id)
+        if record is None:
+            raise ValueError(f"Run {run_id} not found")
+        if record.status not in (*RESUMABLE_STATUSES, "completed"):
+            raise RunConflict(
+                f"Run {run_id} is {record.status}; pause it first, then rewind it."
+            )
+        graph = self._graph_for(record)
+        done = await asyncio.to_thread(rewind_to, graph, record.thread_id, checkpoint_id, record.repo_root)
+        # Where it went back to, in the transcript: what the abandoned branch
+        # did stays recorded, and the KPIs leave it out (`run_kpis.live_branch`).
+        try:
+            from app.observability.transcript import record as transcript_record
+
+            transcript_record(run_id, done["stage"], "rewound", point_at=done.get("point_at", ""),
+                              files_restored=done.get("files_restored"))
+        except Exception:  # noqa: BLE001 - the rewind stands without its record
+            logger.debug("Could not record the rewind in the transcript", exc_info=True)
+        now = datetime.now(timezone.utc).isoformat()
+        if record.status == "completed":
+            self.run_store.compare_and_set_status(run_id, "completed", "paused", updated_at=now, clear_error=True)
+        # The stage it is rewound to, before the resume reads it. Still naming
+        # the gate it was paused on, the resume answered that gate on the
+        # rewound state, and the rewound stage ran with no request.
+        rewound = self.run_store.load(run_id)
+        if rewound is not None:
+            rewound.current_stage = done["stage"]
+            rewound.updated_at = now
+            self.run_store.save(rewound)
+        await self.event_bus.publish(
+            run_id,
+            RunEvent(
+                run_id=run_id,
+                sequence=await self.event_bus.next_sequence(run_id),
+                stage=done["stage"],
+                event_type="stage_change",
+                message=(
+                    f"Run rewound to {done['stage']}"
+                    + ("; its files are as they were then." if done["files_restored"]
+                       else "; its files were left as they are.")
+                ),
+            ),
+        )
+        await self.resume_run(run_id)
+        return done
+
+    async def pause_run(self, run_id: str) -> None:
+        """Stop a running run at a stage boundary, keeping it to be resumed.
+
+        The same two mechanisms as a cancel: the flag stops it cleanly at the
+        next checkpoint, and the revoke stops a task mid-stage now - the stage
+        it was in runs again on resume, as after a redeploy. Only the status
+        recorded differs (`_finish_stopped`), and nothing is cleaned up.
+        """
+        record = self.run_store.load(run_id)
+        if record is None:
+            raise ValueError(f"Run {run_id} not found")
+        now = datetime.now(timezone.utc).isoformat()
+        if not self.run_store.request_pause(run_id, now):
+            raise RunConflict(
+                f"Run {run_id} is {record.status}; only a running run can be paused."
+            )
+        if record.task_id:
+            try:
+                from app.server.tasks import celery_app
+
+                celery_app.control.revoke(record.task_id, terminate=True, signal="SIGTERM")
+            except Exception:  # noqa: BLE001 - the flag still stops it at the next check
+                logger.warning("Could not revoke task %s for run %s", record.task_id, run_id, exc_info=True)
+        await self.event_bus.publish(
+            run_id,
+            RunEvent(
+                run_id=run_id,
+                sequence=await self.event_bus.next_sequence(run_id),
+                stage=record.current_stage,
+                event_type="stage_change",
+                message="Run paused by user; resume it to continue from where it stopped.",
+            ),
+        )
 
     async def submit_approval(self, run_id: str, decision: dict[str, Any]) -> None:
         # Defence in depth against a stale status row. An unattended run answers
@@ -681,6 +1230,7 @@ class WorkflowRunner:
             run_id, "waiting_for_approval", "running", updated_at=now
         ):
             raise RunConflict(f"Run {run_id} is not waiting for approval.")
+        _record_a_gate(run_id, "", "answered", "approval")
         self._dispatch(run_id, resume=True, decision_payload={"type": "approval", "decision": decision})
 
     async def submit_review(self, run_id: str, decision: dict[str, Any]) -> None:
@@ -689,6 +1239,7 @@ class WorkflowRunner:
             run_id, "waiting_for_review", "running", updated_at=now
         ):
             raise RunConflict(f"Run {run_id} is not waiting for review.")
+        _record_a_gate(run_id, "", "answered", "review")
         self._dispatch(run_id, resume=True, decision_payload={"type": "review", "decision": decision})
 
     async def cancel_run(self, run_id: str) -> None:
@@ -719,10 +1270,17 @@ class WorkflowRunner:
         # A run that is paused has no worker to notice the flag, so mark it
         # terminal here. A running one is left to the worker, which will see the
         # flag and record the cancellation itself.
-        if record.status in ("created", "waiting_for_approval", "waiting_for_review", "paused"):
+        #
+        # `BUDGET_PAUSE_STATUS` belongs in this set for the same reason as the
+        # rest: the run is parked with no worker, so nothing else will ever act
+        # on the flag, and the pause message offers cancelling as one of the two
+        # ways out. Named in one tuple and reused, rather than written twice -
+        # the two lists drifting apart is how a status becomes cancellable in
+        # the test and not in the branch.
+        if record.status in CANCELLABLE_WHILE_PARKED:
             self.run_store.compare_and_set_status(
                 run_id,
-                ("created", "waiting_for_approval", "waiting_for_review", "paused"),
+                CANCELLABLE_WHILE_PARKED,
                 "cancelled",
                 updated_at=now,
             )
@@ -740,8 +1298,30 @@ class WorkflowRunner:
         await self.event_bus.close(run_id)
 
     def _dispatch(self, run_id: str, *, resume: bool, decision_payload: dict[str, Any] | None) -> None:
-        """Hand the run to a Celery worker and remember the task id."""
+        """Hand the run to a Celery worker and remember the task id.
+
+        Refuses rather than queues when every slot is taken. Celery would
+        happily accept the message and hold it, which is the behaviour that
+        made two runs contend for one model server in the first place: the
+        second run looked started, and was in fact competing.
+        """
         from app.server.tasks import execute_workflow_run
+
+        limit = _max_concurrent_runs()
+        if limit > 0:
+            try:
+                in_flight = self.run_store.count_in_flight()
+            except Exception:  # noqa: BLE001 - a limit must never be the reason a run cannot start
+                logger.warning("Could not count in-flight runs; dispatching", exc_info=True)
+            else:
+                if in_flight >= limit:
+                    raise RunQueueFull(
+                        f"{in_flight} of {limit} run slots are in use. This "
+                        "deployment runs one model server, and a second run "
+                        "started now would contend with the first rather than "
+                        "go faster. Wait for a slot, or raise "
+                        "MAX_CONCURRENT_RUNS."
+                    )
 
         async_result = execute_workflow_run.delay(
             run_id=run_id, resume=resume, decision_payload=decision_payload
@@ -780,6 +1360,9 @@ class WorkflowRunner:
             if self.run_store.is_cancel_requested(run_id):
                 await self._finish_cancelled(record)
                 return
+            from app.graph.workflow import forget_the_stop
+
+            forget_the_stop(run_id)
 
             graph = build_workflow_graph(
                 model=self.model,
@@ -788,6 +1371,7 @@ class WorkflowRunner:
                 model_overrides=overrides or None,
                 checkpointer=self.checkpointer,
             )
+            await self._say_if_the_judgement_model_was_replaced(record)
 
             trace_meta = (
                 trace_metadata(
@@ -809,7 +1393,7 @@ class WorkflowRunner:
                         resume_pending_review, graph, record.thread_id, decision["decision"],
                         metadata=trace_meta, run_id=run_id,
                     )
-                elif self._resume_means_answering_own_gate(record):
+                elif self._resume_means_answering_own_gate(record, graph):
                     state = await asyncio.to_thread(
                         resume_pending_approval, graph, record.thread_id,
                         approve_write_decision(), metadata=trace_meta, run_id=run_id,
@@ -833,12 +1417,27 @@ class WorkflowRunner:
         except asyncio.CancelledError:
             await self._finish_cancelled(record)
             raise
+        except RunCancelled:
+            # Not a failure. The graph saw the cancel flag at a stage boundary
+            # and stopped there, with the previous stage already checkpointed -
+            # which is the whole point of item 7: a SIGTERM would have killed
+            # the turn wherever it was and lost it back to that same checkpoint,
+            # only messily and with a traceback.
+            logger.info("Run %s stopped at a stage boundary after cancellation", run_id)
+            await self._finish_cancelled(record)
+            return
         except Exception as exc:
             # The full traceback goes to the log, keyed by correlation id. Only a
             # short message reaches the API, because run.error is rendered in the
             # browser and a traceback leaks paths, versions and module layout.
-            logger.exception("Run %s failed", run_id)
-            record.status = self._status_after_failure(record)
+            # A provider out of quota is not a failure of the work: the run waits
+            # for a person, as at its spending ceiling, and resumes from here.
+            parked = out_of_quota(exc)
+            if parked:
+                logger.warning("Run %s is waiting: its model provider is out of quota", run_id)
+            else:
+                logger.exception("Run %s failed", run_id)
+            record.status = BUDGET_PAUSE_STATUS if parked else self._status_after_failure(record)
             record.error = _explain_failure(exc)
             record.updated_at = datetime.now(timezone.utc).isoformat()
             self._persist(record)
@@ -849,7 +1448,7 @@ class WorkflowRunner:
                     sequence=await self.event_bus.next_sequence(run_id),
                     stage=record.current_stage,
                     event_type="error",
-                    message=f"Run failed: {record.error}",
+                    message=f"Run {'paused' if parked else 'failed'}: {record.error}",
                 ),
             )
             await self.event_bus.close(run_id)
@@ -867,21 +1466,13 @@ class WorkflowRunner:
         by MAX_GATES with a real re-invoke on each pass.
         """
         run_id = record.run_id
-        # Consecutive auto-approvals at one stage. Reset whenever the stage
-        # changes, so a long but progressing run is unaffected.
-        gate_stage: str | None = None
-        # Which request this stage made most often, for the message if its
-        # gate budget runs out - non-convergence is invisible without it.
-        stage_signatures: dict[Any, int] = {}
-        gates_at_stage = 0
-        # Consecutive gates asking for the exact same thing. A stage that varies
-        # what it asks for is working; one that repeats itself is looping, and
-        # only the second is worth failing fast on.
-        last_signature: tuple[str, str] | None = None
-        repeats = 0
-        # How many loops at the current stage have been answered with a denial
-        # rather than by ending the run. See `MAX_LOOPS_ANSWERED_BY_DENIAL`.
-        loops_answered = 0
+        # Each paused stage's auto-approvals, for its gate budget and its loop
+        # check (`_GateCount`). A stage's counts go when it has nothing paused,
+        # so a long but progressing run is unaffected.
+        gate_counts: dict[str, _GateCount] = {}
+        # The decision given to a queued parallel pause, by stage, with the
+        # pause's queue time - so a pause seen twice is answered once.
+        answered: dict[str, tuple[Any, dict[str, Any]]] = {}
         # Consecutive re-invokes that returned the same stage without running
         # anything. Distinct from `repeats`, which counts *gates*; this counts
         # rounds where the graph did not even reach one.
@@ -926,8 +1517,38 @@ class WorkflowRunner:
 
             if stage in ("complete", "failed"):
                 record.status = "completed" if stage == "complete" else "failed"
-                record.error = state.get("error")
+                # What the release knew it did not prove rides the record, so
+                # every surface that shows the completion can show the gaps
+                # with it (Initiative J.4). See `app.graph.delivery.release`.
+                record.completion_gaps = [str(gap) for gap in state.get("completion_gaps") or []]
+                # A failed run must never be recorded with nothing to say. The
+                # graph's `failed_node` names the route it came from, and this is
+                # the second line of defence for any path that reaches here
+                # without one - one run was stored with a null error, and
+                # nothing in the row, the events or the log said why.
+                record.error = state.get("error") or (
+                    None if stage == "complete" else
+                    "The run failed and no reason reached the run record. Its last "
+                    "stage and its transcript are what remain to go on."
+                )
                 record.updated_at = datetime.now(timezone.utc).isoformat()
+                # The workspace tells the truth after the run ends (Initiative
+                # J.6): every terminal state but a clean release leaves a
+                # machine-readable marker in its root, and a clean release
+                # clears whatever an earlier attempt left there.
+                if record.repo_root:
+                    from app.graph import terminal_state
+
+                    if stage == "complete" and not record.completion_gaps:
+                        terminal_state.clear(record.repo_root)
+                    else:
+                        terminal_state.mark(
+                            record.repo_root,
+                            status=record.status,
+                            reason=str(record.error or "completed with gaps it did not prove"),
+                            stage=str(state.get("stage") or stage),
+                            gaps=record.completion_gaps,
+                        )
                 self._persist(record)
                 await asyncio.to_thread(self._archive_artifacts, record)
                 await asyncio.to_thread(self._prune_scratch)
@@ -942,64 +1563,119 @@ class WorkflowRunner:
                     ),
                 )
                 await self.event_bus.close(run_id)
+                forget_run(run_id)
+                return
+
+            # The spending ceiling, checked at the stage boundary. After the
+            # terminal check, so a run that has already finished is never parked
+            # for a bill it is not going to add to, and after the cancel check,
+            # because an operator who asked for a stop should get a stop rather
+            # than a question. See plan-part3 §5.2.
+            over_budget, spent = _budget_exceeded(run_id)
+            if over_budget:
+                record.status = BUDGET_PAUSE_STATUS
+                record.updated_at = datetime.now(timezone.utc).isoformat()
+                self._persist(record)
+                summary = spent.summary()
+                partial = (
+                    ""
+                    if spent.fully_priced
+                    else (
+                        f" This is a partial total: {spent.unpriced_requests} of "
+                        f"{spent.successful_requests} model calls used a model with no "
+                        f"published rate ({', '.join(sorted(spent.unpriced_models)) or 'unknown'}), "
+                        "so the real spend is higher than the figure above."
+                    )
+                )
+                by_tokens = bool(_max_run_tokens()) and spent.total_tokens >= _max_run_tokens()
+                message = (
+                    f"Paused at {spent.total_tokens:,} tokens, which has reached the MAX_RUN_TOKENS "
+                    f"bound of {_max_run_tokens():,}, across {spent.successful_requests} model calls "
+                    f"(${spent.usd:.2f} known spend).\n\n"
+                    "The run is intact and paused at a stage boundary - nothing has failed. Raise "
+                    "MAX_RUN_TOKENS and resume to continue, or cancel it."
+                ) if by_tokens else (
+                    f"Paused at ${spent.usd:.2f}, which has reached the "
+                    f"MAX_RUN_COST_USD ceiling of ${_max_run_cost_usd():.2f}, across "
+                    f"{spent.successful_requests} model calls and "
+                    f"{spent.total_tokens:,} tokens.{partial}\n\n"
+                    "The run is intact and paused at a stage boundary - nothing has "
+                    "failed. Raise MAX_RUN_COST_USD and resume to continue, or cancel "
+                    "it. Resuming without raising the ceiling pauses again at the next "
+                    "stage boundary, because the spend that triggered this does not go "
+                    "down."
+                )
+                await self.event_bus.publish(
+                    run_id,
+                    RunEvent(
+                        run_id=run_id,
+                        sequence=await self.event_bus.next_sequence(run_id),
+                        stage=stage,
+                        event_type="budget_pause",
+                        message=message,
+                        metadata=redact_metadata(summary),
+                    ),
+                )
+                logger.warning("Run %s paused at its cost ceiling: %s", run_id, message)
                 return
 
             if stage.startswith(APPROVAL_PAUSE_PREFIX):
                 approval = state.get("pending_approval")
                 if record.auto_approve:
-                    await self.event_bus.publish(
-                        run_id,
-                        RunEvent(
-                            run_id=run_id,
-                            sequence=await self.event_bus.next_sequence(run_id),
-                            stage=stage,
-                            event_type="approval_auto",
-                            message=f"Auto-approved: {approval.notes if approval else 'artifact write'}",
-                            metadata=redact_metadata(_approval_metadata(approval)),
-                        ),
-                    )
-                    signature = _approval_signature(approval)
-                    # A read-only look at the workspace is approved and
-                    # recorded, but does not spend the budget meant for writes
-                    # and builds. On run-3f8e387d a testing specialist used all
-                    # 120 gates on `ls -la`, `find` and `cat` - work its ungated
-                    # filesystem tools could have done - and was stopped before
-                    # writing anything.
-                    costs_budget = getattr(approval, "action_kind", "") != "read"
-                    if stage == gate_stage:
-                        if costs_budget:
-                            gates_at_stage += 1
-                        repeats = repeats + 1 if signature == last_signature else 0
-                        stage_signatures[signature] = stage_signatures.get(signature, 0) + 1
-                    else:
-                        gate_stage, repeats = stage, 0
-                        gates_at_stage = 1 if costs_budget else 0
-                        stage_signatures = {signature: 1}
-                        loops_answered = 0
-                    last_signature = signature
-
-                    looping = repeats >= MAX_IDENTICAL_GATES and _repeat_is_a_loop(approval)
-                    if looping and loops_answered < MAX_LOOPS_ANSWERED_BY_DENIAL:
-                        # Answer the request instead of ending the run. See
-                        # `MAX_LOOPS_ANSWERED_BY_DENIAL`.
-                        loops_answered += 1
-                        repeats = 0
-                        what = _what_was_asked_for(signature)
+                    # Every pause this resume can answer: the surfaced one and,
+                    # in a parallel fan-out, every pause queued behind it - so
+                    # the workers go on together instead of one per superstep.
+                    # Each is counted against its own stage's gate budget and
+                    # loop check, exactly as a lone pause always was.
+                    batch: list[tuple[str, Any, Any]] = [
+                        (stage.removeprefix(APPROVAL_PAUSE_PREFIX), approval, None)
+                    ]
+                    for queued_stage, pause in queued_parallel_pauses(state).items():
+                        batch.append((queued_stage, pause.get("pending_approval"), pause.get("queued_at")))
+                    # A stage with nothing paused has finished: its counts go,
+                    # as they always did when the stage changed. One stage at a
+                    # time - linear mode, or a fan-out down to its last worker -
+                    # is exactly the old reset.
+                    live = {name for name, _, _ in batch}
+                    for name in list(gate_counts):
+                        if name not in live:
+                            gate_counts.pop(name, None)
+                            answered.pop(name, None)
+                    decisions: dict[str, dict[str, Any]] = {}
+                    for name, pending, queued_at in batch:
+                        remembered = answered.get(name)
+                        if queued_at is not None and remembered and remembered[0] == queued_at:
+                            # The same pause, not yet consumed: the same answer,
+                            # not counted a second time.
+                            decisions[name] = remembered[1]
+                            continue
+                        paused_stage = f"{APPROVAL_PAUSE_PREFIX}{name}"
                         await self.event_bus.publish(
                             run_id,
                             RunEvent(
                                 run_id=run_id,
                                 sequence=await self.event_bus.next_sequence(run_id),
-                                stage=stage,
-                                event_type="approval_denied",
-                                message=f"Denied a repeated request: {what}",
+                                stage=paused_stage,
+                                event_type="approval_auto",
+                                message=f"Auto-approved: {getattr(pending, 'notes', None) or 'artifact write'}",
+                                metadata=redact_metadata(_approval_metadata(pending)),
                             ),
                         )
-                        state = await asyncio.to_thread(
-                            resume_pending_approval,
-                            graph,
-                            record.thread_id,
-                            reject_write_decision(
+                        count = gate_counts.setdefault(name, _GateCount())
+                        verdict, signature = count.observe(pending)
+                        if verdict == "deny":
+                            what = _what_was_asked_for(signature)
+                            await self.event_bus.publish(
+                                run_id,
+                                RunEvent(
+                                    run_id=run_id,
+                                    sequence=await self.event_bus.next_sequence(run_id),
+                                    stage=paused_stage,
+                                    event_type="approval_denied",
+                                    message=f"Denied a repeated request: {what}",
+                                ),
+                            )
+                            decision = reject_write_decision(
                                 f"Denied. You have asked for this same thing "
                                 f"{MAX_IDENTICAL_GATES + 1} times in a row ({what}) and "
                                 "nothing has changed between the attempts, so it will be "
@@ -1007,91 +1683,42 @@ class WorkflowRunner:
                                 "be. Stop repeating it and return your structured response "
                                 "now, with whatever you have - put anything you could not "
                                 "do in `blockers`."
-                            ),
-                            metadata=trace_meta,
-                            run_id=run_id,
-                        )
-                        continue
-
-                    if looping or gates_at_stage > MAX_GATES_PER_STAGE:
-                        stage_name = stage.removeprefix(APPROVAL_PAUSE_PREFIX)
-                        record.status = "failed"
-                        if looping:
-                            record.error = (
-                                f"The '{stage_name}' stage asked to write the same thing "
-                                f"{repeats + 1} times in a row without moving on, so it was "
-                                f"stopped. The repeated request was: "
-                                f"{signature[0] if signature[0] and 'unknown' not in signature[0] else (signature[1] or 'an artifact write')}. "
-                                "An agent re-requesting an identical write is looping, and every "
-                                "attempt costs a model call."
                             )
+                        elif verdict == "fail":
+                            record.status = "failed"
+                            record.error = _gate_failure_message(name, count, signature)
+                            record.updated_at = datetime.now(timezone.utc).isoformat()
+                            self._persist(record)
+                            await self.event_bus.publish(
+                                run_id,
+                                RunEvent(
+                                    run_id=run_id,
+                                    sequence=await self.event_bus.next_sequence(run_id),
+                                    stage=paused_stage,
+                                    event_type="error",
+                                    message=record.error,
+                                ),
+                            )
+                            await self.event_bus.close(run_id)
+                            return
                         else:
-                            # What it kept doing is the part worth reporting.
-                            # "Raise the ceiling" alone was the whole message,
-                            # and on run-db3a4a0b that was the wrong advice: the
-                            # stage ran `node test.js` over and over against a
-                            # test whose assertion could not be satisfied, so a
-                            # larger budget would only have bought more of it.
-                            busiest = max(stage_signatures.items(), key=lambda kv: kv[1], default=(None, 0))
-                            repeated = ""
-                            if busiest[0] and busiest[1] > 2:
-                                # A command approval carries no artifact path, so
-                                # the path half is a placeholder. Prefer whichever
-                                # half actually says something: on run-3f8e387d
-                                # this read "<unknown path>, 21 times", which
-                                # names the repetition without naming the thing.
-                                path, notes = busiest[0]
-                                what = next(
-                                    (
-                                        part
-                                        for part in (path, notes)
-                                        if part and "unknown" not in part.lower()
-                                    ),
-                                    "",
-                                )
-                                if what:
-                                    repeated = (
-                                        f" Its most repeated request was "
-                                        f"{what[:120]}, {busiest[1]} times."
-                                    )
-                                else:
-                                    repeated = (
-                                        f" It made the same request {busiest[1]} times; "
-                                        "the event log for this stage says which."
-                                    )
-                            record.error = (
-                                f"The '{stage_name}' stage used all "
-                                f"{MAX_GATES_PER_STAGE} of its approvals without finishing, so it "
-                                "was stopped. The requests were not identical, so this is either a "
-                                "stage doing more work than the ceiling allows, or an edit-and-retest "
-                                f"cycle that is not converging.{repeated} Check whether the same "
-                                "check keeps failing before raising WORKFLOW_MAX_GATES_PER_STAGE - "
-                                "a larger budget only helps the first case."
-                            )
-                        record.updated_at = datetime.now(timezone.utc).isoformat()
-                        self._persist(record)
-                        await self.event_bus.publish(
-                            run_id,
-                            RunEvent(
-                                run_id=run_id,
-                                sequence=await self.event_bus.next_sequence(run_id),
-                                stage=stage,
-                                event_type="error",
-                                message=record.error,
-                            ),
-                        )
-                        await self.event_bus.close(run_id)
-                        return
+                            decision = approve_write_decision()
+                        decisions[name] = decision
+                        if queued_at is not None:
+                            answered[name] = (queued_at, decision)
 
+                    surfaced = batch[0][0]
                     state = await asyncio.to_thread(
                         resume_pending_approval, graph, record.thread_id,
-                        approve_write_decision(), metadata=trace_meta, run_id=run_id,
+                        decisions.pop(surfaced), metadata=trace_meta, run_id=run_id,
+                        queued_decisions=decisions or None,
                     )
                     continue
 
                 record.status = "waiting_for_approval"
                 record.updated_at = datetime.now(timezone.utc).isoformat()
                 self._persist(record)
+                _record_a_gate(run_id, stage, "opened", "approval")
                 await self.event_bus.publish(
                     run_id,
                     RunEvent(
@@ -1109,6 +1736,7 @@ class WorkflowRunner:
                 record.status = "waiting_for_review"
                 record.updated_at = datetime.now(timezone.utc).isoformat()
                 self._persist(record)
+                _record_a_gate(run_id, stage, "opened", "review")
                 review_point = stage.removeprefix(REVIEW_PAUSE_PREFIX)
                 review = state.get("pending_review")
                 await self.event_bus.publish(
@@ -1250,7 +1878,9 @@ class WorkflowRunner:
         except Exception:  # noqa: BLE001 - cleanup is never load-bearing
             logger.warning("Could not prune scratch storage", exc_info=True)
 
-    def _resume_means_answering_own_gate(self, record: RunRecord) -> bool:
+    def _resume_means_answering_own_gate(
+        self, record: RunRecord, graph: Any = None
+    ) -> bool:
         """Whether resuming this run should answer its approval gate itself.
 
         An unattended run that stopped while parked on its own gate has nobody
@@ -1263,13 +1893,23 @@ class WorkflowRunner:
         time it reaches one. Doing it here too is not a special case so much as
         the absence of one.
 
-        Read from `current_stage` rather than the checkpoint deliberately: it is
-        the same field `_status_after_failure` uses to decide which route the UI
-        offers, so the route offered and the route taken cannot disagree.
+        Read from `current_stage` or the checkpoint state if current_stage
+        was updated to a non-prefixed stage name before the restart.
         """
-        return bool(record.auto_approve) and (record.current_stage or "").startswith(
-            APPROVAL_PAUSE_PREFIX
-        )
+        if not record.auto_approve:
+            return False
+        if (record.current_stage or "").startswith(APPROVAL_PAUSE_PREFIX):
+            return True
+        if graph is not None:
+            try:
+                from app.graph.workflow import _run_config
+
+                snap = graph.get_state(_run_config(record.thread_id, 100))
+                if snap and str(snap.values.get("stage", "")).startswith(APPROVAL_PAUSE_PREFIX):
+                    return True
+            except Exception:
+                pass
+        return False
 
     def _status_after_failure(self, record: RunRecord) -> str:
         """The status to record when an invoke raised.
@@ -1303,8 +1943,20 @@ class WorkflowRunner:
         return "failed"
 
     async def _finish_cancelled(self, record: RunRecord) -> None:
+        if self.run_store.stop_reason(record.run_id) == "pause":
+            await self._finish_paused(record)
+            return
+        forget_run(record.run_id)
         record.status = "cancelled"
         record.updated_at = datetime.now(timezone.utc).isoformat()
+        # A cancelled run is no delivery either; its workspace says so
+        # (Initiative J.6).
+        if record.repo_root:
+            from app.graph import terminal_state
+
+            terminal_state.mark(
+                record.repo_root, status="cancelled", reason="The run was cancelled before it finished."
+            )
         self._persist(record)
         logger.info("Run %s cancelled", record.run_id)
         # Cancellation is a terminal outcome like any other, and leaves the same
@@ -1312,6 +1964,13 @@ class WorkflowRunner:
         # a deployment where runs are frequently cancelled never pruned at all.
         await asyncio.to_thread(self._prune_scratch)
         await self.event_bus.close(record.run_id)
+
+    async def _finish_paused(self, record: RunRecord) -> None:
+        """Record a run stopped by a pause: waiting to be resumed, with everything kept."""
+        record.status = "paused"
+        record.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(record)
+        logger.info("Run %s paused", record.run_id)
 
     def _update_record(self, record: RunRecord, state: dict[str, Any]) -> None:
         """Sync the run record with the latest graph state."""

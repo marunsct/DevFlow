@@ -4,7 +4,7 @@ Every stage begins the same way: `ls /`, `ls /project`, then a read of each
 file it might care about. It has to, because an agent is built per stage and
 none of them can see what an earlier one learned.
 
-Measured on run-61c5a5b6: 257 `read_file` calls over 22 distinct files, and the
+Measured on one run: 257 `read_file` calls over 22 distinct files, and the
 opening moves of `technical_lead`, `test_round_0`, `milestone_review`,
 `security_review` and every specialist are near-identical - list the root, list
 the project, read `app.js`, read `index.html`, read the tests. Each of those is
@@ -16,13 +16,13 @@ is to read*, which is the part that was rediscovered twenty-five times. An
 agent that knows `app.js` is 229 lines and exports `createTask`, `toggleTask`
 and `renderTasks` can go straight to the one it needs.
 
-Injected into the first model call of a stage and never written to state, on
-the same reasoning as `app.agents.response_reminder`: it is context the model
-needs once, not a message that should accumulate.
+Injected into the model request and never written to state: it is context
+the model needs on each call, not a message that should accumulate.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -76,6 +76,26 @@ def _is_a_rendered_document(name: str) -> bool:
         return False
 
 
+def _written_by(writer: str) -> str:
+    """Who last changed a file, told from the reader's side.
+
+    A stage is never told its own name, so "written by specialist_backend_2"
+    shown to `specialist_backend_2` reads as a colleague's work. Observed: that
+    stage exported one class in `app.js`, saw the digest name "a previous
+    backend specialist" as the file's writer on the next call, planned its six
+    changes from the top again, and sent the same first edit three more times.
+    """
+    try:
+        from app.observability.transcript import _stage_from_config
+
+        me = _stage_from_config("")
+    except Exception:  # noqa: BLE001 - naming the writer is still true
+        me = ""
+    if me and writer == me:
+        return " - last changed by you, in this stage"
+    return f" - written by {writer}"
+
+
 def _entry_for(root: Path, name: str, path: Path, text: str) -> list[str]:
     """One file, as the lines a later stage reads instead of the file itself.
 
@@ -94,15 +114,25 @@ def _entry_for(root: Path, name: str, path: Path, text: str) -> list[str]:
     """
     from app.analysis import project_memory
 
-    count = text.count("\n") + 1
+    # The count every file tool reports ("@@ lines 1-113 of 113 @@"). It was
+    # newlines plus one, so a file ending in a newline - nearly all of them -
+    # read one line longer here than in the read that followed, and a model
+    # that tracks line counts had two numbers for one unchanged file.
+    count = len(text.splitlines())
     head = f"  {name} ({count} lines)"
+    owner = _owned_by_the_harness(root, name)
+    if owner:
+        # Marked where a stage looks on every call. Listed as an ordinary file,
+        # the harness's server read as product: one run's lead planned work
+        # orders to change it and its stages tried to run it 19 times.
+        return [f"{head} - {owner}: {_what_to_do_with(owner, root, name)}"]
     try:
         changed_by = project_memory.who_changed(root, name)
         if changed_by:
-            head += f" - written by {changed_by}"
+            head += _written_by(changed_by)
         # Not for the nine. Every stage already knows what
         # `docs/milestone_plan.md` is, and its first heading is whatever that
-        # stage's model happened to write: on run-ed05e20e it was "Milestone
+        # stage's model happened to write: on one run it was "Milestone
         # Plan - The layout adapts cleanly to both mobile (<600px) and
         # desktop (1280px) viewports", which describes one bullet inside it.
         purpose = "" if _is_a_rendered_document(name) else project_memory.purpose_of(text, name)
@@ -126,6 +156,45 @@ def _entry_for(root: Path, name: str, path: Path, text: str) -> list[str]:
     return out
 
 
+def _owned_by_the_harness(root: Path, name: str) -> str:
+    try:
+        from app.stacks.contract import owned_by_the_harness
+
+        return owned_by_the_harness(root, name)
+    except Exception:  # noqa: BLE001 - the digest must survive a bad contract
+        return ""
+
+
+def _a_later_sprint_s(root: Path, name: str) -> list[str]:
+    """The criteria a locked suite file tests, when every one is a later sprint's. Never raises."""
+    try:
+        from app.acceptance.sprint_scope import later_sprints_files
+
+        return later_sprints_files(root).get(name, [])
+    except Exception:  # noqa: BLE001 - the plain label is the old behaviour
+        return []
+
+
+def _what_to_do_with(owner: str, root: Path | None = None, name: str = "") -> str:
+    """What a stage may do with a file the harness owns."""
+    from app.stacks import contract
+
+    if owner == contract.LOCKED_SUITE and root is not None:
+        later = _a_later_sprint_s(root, name)
+        if later:
+            # "read it for what the product must do" said a later sprint's
+            # tests were this one's work. See `app.acceptance.sprint_scope`.
+            return (
+                f"tests of criteria a later sprint builds ({', '.join(later)}); they fail "
+                "until then and are not this sprint's work; never change it"
+            )
+    return {
+        # "the acceptance command runs it" was untrue of a unit test setup.
+        contract.KEPT_SETUP: "the project's test commands run it; do not change, run or test it",
+        contract.LOCKED_SUITE: "read it for what the product must do; never change it",
+    }.get(owner, "not yours to change")
+
+
 #: A language the suffix list does not name. `_CODE_SUFFIXES` is JS and
 #: Python only, which left Go, Rust, Java, C# and the rest with no interface
 #: line at all - and this harness is meant to build in all of them.
@@ -140,7 +209,7 @@ def _in_reading_order(root: Path, names: list[str]) -> list[str]:
     """The project first, then documents, then everything else.
 
     Alphabetical order put dotfiles at the top, so the cut at `max_files` fell
-    on the application: on run-61c5a5b6's workspace the listing reached
+    on the application: on one run's workspace the listing reached
     `simple-to-do-list-app/README.md` and stopped, hiding `app.js` behind
     "... and 13 more". The files a stage came here for must survive the cut.
     """
@@ -177,7 +246,7 @@ def _nothing_here_is_evidence(names: list[str]) -> bool:
     the transcripts, four runs and four `read_repository_file` calls, all of
     them `README.md`, all answered "File does not exist within the repository".
 
-    Run d6297b2f is the proof this needs saying rather than listing. Its first
+    One run is the proof this needs saying rather than listing. Its first
     model call carried the digest
 
         The workspace as it stands. This is what is there ...
@@ -196,7 +265,7 @@ def _nothing_has_been_built(names: list[str]) -> bool:
 
     The state every stage before the first specialist is in, and the one that
     reads as "the product is missing" when it is only unwritten. Measured on
-    run 1c9854c7's `architecture_review`, whose digest was
+    one run's `architecture_review`, whose digest was
 
         docs/product_intake.md, docs/technical_specification.md,
         docs/technology_stack.md, docs/tools_and_models.md, .gitignore
@@ -221,8 +290,83 @@ def _nothing_has_been_built(names: list[str]) -> bool:
     )
 
 
-def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -> str:
+#: The header and footer once a stage has already acted. See `_a_refresh`.
+#:
+#: It used to end "carry on from where you left off", and models read that as
+#: being told they had been interrupted. It arrives after every tool result, so
+#: they said so after every tool result: one run's `test_round_0` opened turn
+#: after turn with "I'll continue from where I left off", once with "the
+#: conversation has been fragmented across turns", restated its plan each time,
+#: and ran the same browser install four times. Across runs the echo climbed
+#: from about 1% of replies to 7%. Nothing was interrupted; the header now says
+#: what it is and that nothing was.
+#:
+#: It also used to call itself "the same listing as before". The same run's
+#: `specialist_ui_ux_1` edited `index.html` without changing its length, saw
+#: the entry still read "(36 lines)", concluded "the workspace listing reflects
+#: the original state before my edit", and read the file six more times. The
+#: listing shows names and sizes, never contents, and now says so.
+_REFRESH_HEADER = (
+    "The workspace as it stands now, read from disk for this call. It is "
+    "reference, not a new request, and nothing was interrupted: it is attached "
+    "automatically to every call, and the conversation above it is unbroken. It "
+    "shows names and line counts, not contents, so an edit that kept a file's "
+    "length leaves its entry looking the same - the tool result of the edit is "
+    "what tells you it was applied."
+)
+_REFRESH_FOOTER = (
+    "Nothing here asks you to read anything again. A file you have already "
+    "read in this stage is still what that result showed you unless you or "
+    "another stage has written it since, and the read tool says so when it has. "
+    "Under each name is what the file is for and the calls it exposes, so a file "
+    "you only need to call is one you do not have to open."
+)
+
+
+def _where_the_code_goes(root: Path) -> str:
+    """The pinned project directory, as a line of the listing, or ""."
+
+    Before any code exists the listing shows only `docs/`, so a specialist
+    names the directory itself - and in parallel mode several did, differently.
+    See `app.tools.repository.pin_the_directory_a_plan_names`.
+    """
+    try:
+        from app.tools.repository import pinned_project_directory
+
+        project = pinned_project_directory(root)
+    except Exception:  # noqa: BLE001 - a hint must never fail the digest
+        return ""
+    if not project:
+        return ""
+    where = root / project
+    if where.is_dir():
+        # Created empty when it is pinned, so "is a directory" no longer means
+        # anything has been written into it.
+        try:
+            empty = not any(where.iterdir())
+        except OSError:
+            empty = False
+        if empty:
+            return (
+                f"  This run's project directory is '{project}/'. Every application file "
+                "goes inside it; it is empty so far."
+            )
+        return f"  This run's project directory is '{project}/'. Every application file goes inside it."
+    return (
+        f"  This run's project directory is '{project}/'. Every application file "
+        "goes inside it; it does not exist yet, and the first file written inside it "
+        "creates it."
+    )
+
+
+def render_workspace_digest(
+    repo_root: str | Path, max_files: int = MAX_FILES, *, refresh: bool = False
+) -> str:
     """One compact listing of what is in the workspace, or "" if nothing is.
+
+    `refresh` is for every call after a stage's first: the listing is the same,
+    but it is framed as a status line rather than as an opening brief. See
+    `_a_refresh`.
 
     Never raises. A digest that fails a stage would cost far more than the
     calls it saves, so an unreadable workspace simply produces no digest and
@@ -272,6 +416,9 @@ def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -
         return ""
 
     more = f"\n  ... and {len(names) - max_files} more" if len(names) > max_files else ""
+    project_line = _where_the_code_goes(root)
+    if project_line:
+        lines.append(project_line)
     if _nothing_has_been_built(names) and not _nothing_here_is_evidence(names):
         return (
             "The workspace as it stands:\n"
@@ -290,6 +437,8 @@ def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -
             "given is the whole of the evidence available to you. Do not spend "
             "a call looking for a file a repository would usually have."
         )
+    if refresh:
+        return _REFRESH_HEADER + "\n" + "\n".join(lines) + more + "\n" + _REFRESH_FOOTER
     return (
         "The workspace as it stands. This is what is there - you do not need to "
         "list the directories to find out:\n" + "\n".join(lines) + more + "\n"
@@ -298,6 +447,156 @@ def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -
         "so a file you only need to CALL or to know ABOUT is one you do not "
         "have to open."
     )
+
+
+_WRITERS = ("write_artifact", "edit_artifact", "write_file", "edit_file", "replace_lines", "delete_artifact")
+MOST_KNOWN = 30
+
+
+def _get(message: Any, key: str) -> Any:
+    return message.get(key) if isinstance(message, dict) else getattr(message, key, None)
+
+
+_A_NUMBERED_LINE = re.compile(r"^\s*(\d+)(?:\t|  )", re.M)
+
+
+def _lines_a_read_showed(content: str) -> tuple[int, int] | None:
+    """The first and last line numbers a `read_file` result carries; None when it numbers none."""
+    found = [int(n) for n in _A_NUMBERED_LINE.findall(content)]
+    return (min(found), max(found)) if found else None
+
+
+def _joined(ranges: list[tuple[int, int]]) -> str:
+    """Ranges of lines, merged where they touch, as "1-200, 300-340"."""
+    merged: list[list[int]] = []
+    for start, end in sorted(ranges):
+        if merged and start <= merged[-1][1] + 1:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return ", ".join(f"{a}\u2013{b}" for a, b in merged)
+
+
+_SAVED_AS = re.compile(r"full output saved as ([\w.\-/]+?)(?=[\s\]\"\\;,]|$)")
+_FILES_CHANGED = re.compile(r'"files_changed":\s*(\[[^\]]*\])')
+
+
+def _files_a_command_changed(content: str) -> list[str]:
+    """The workspace files a command's result says it changed; [] when it names none."""
+    found = _FILES_CHANGED.search(content or "")
+    if not found:
+        return []
+    try:
+        named = json.loads(found.group(1))
+    except ValueError:
+        return []
+    return [str(p).lstrip("/") for p in named if isinstance(p, str) and not p.startswith("... and ")]
+
+
+def already_known(messages: list[Any]) -> str:
+    """What this conversation already holds, from its own calls: a line for the end of each call; "" if nothing.
+
+    17-47% of tool calls across runs were exact repeats, most of them reads of
+    a file the conversation already had (Initiative R). The pointer and the
+    withholding rungs answer a repeat after it is made; this names, where the
+    model reads last, what it already has - each file it read and whether a
+    write here changed it since, each command it ran and how it ended - so the
+    repeat is not needed. Built from the messages alone, so it is the same
+    bytes for the same conversation.
+    """
+    calls: dict[str, tuple[int, str, dict]] = {}
+    order = 0
+    for message in messages:
+        if _get(message, "type") == "ai" or _get(message, "role") == "assistant":
+            for call in _get(message, "tool_calls") or []:
+                order += 1
+                calls[str(call.get("id") or "")] = (order, str(call.get("name") or ""), call.get("args") or {})
+    read_at: dict[str, int] = {}
+    read_lines: dict[str, list[tuple[int, int]]] = {}
+    written_at: dict[str, int] = {}
+    by_a_command: set[str] = set()
+    ran: dict[str, tuple[int, str]] = {}
+    for message in messages:
+        if not (_get(message, "type") == "tool" or _get(message, "role") == "tool"):
+            continue
+        n, name, args = calls.get(str(_get(message, "tool_call_id") or ""), (0, "", {}))
+        content = str(_get(message, "content") or "")
+        if not n:
+            continue
+        path = str(args.get("file_path") or args.get("relative_path") or args.get("path") or "").strip().lstrip("/")
+        failed = content.lstrip().startswith(("Error", '{"error"', "Refusing"))
+        if name in ("read_file", "read_repository_file") and path and not failed:
+            read_at[path] = n
+            # What the read covered, so "already read" does not mean the whole
+            # file when it was lines 1-200 of 640 (Initiative AO.9).
+            shown = _lines_a_read_showed(content)
+            if shown:
+                read_lines.setdefault(path, []).append(shown)
+        elif name in _WRITERS and path and not failed:
+            written_at[path] = n
+            by_a_command.discard(path)
+            read_lines.pop(path, None)  # what was read is no longer what is there
+        elif name == "run_terminal_command":
+            command = args.get("command")
+            text = " ".join(command) if isinstance(command, list) else str(command or "")
+            found = re.search(r'"returncode":\s*"?(-?\d+)', content)
+            how = f"exit {found.group(1)}" if found else ("refused" if failed else "ran")
+            # Where its whole output is, when it was cut: measured live, a stage
+            # read "call 7" from this line and asked `read_command_output` for
+            # "call 7", which names no output.
+            saved = _SAVED_AS.search(content)
+            ran[text[:100]] = (n, f"{how}; full output: read_command_output('{saved.group(1)}')" if saved else how)
+            # A file the command rewrote is no longer what was read (Initiative AO.9).
+            for changed in _files_a_command_changed(content):
+                written_at[changed] = n
+                by_a_command.add(changed)
+                read_lines.pop(changed, None)
+    if not read_at and not ran:
+        return ""
+    lines = []
+    if read_at:
+        shown = sorted(read_at.items(), key=lambda kv: -kv[1])[:MOST_KNOWN]
+        lines.append("Files already in this conversation (scroll up rather than read again): " + ", ".join(
+            f"{p} (call {n}{'; lines ' + _joined(read_lines[p]) if read_lines.get(p) else ''}"
+            f"{'; changed by your ' + ('command' if p in by_a_command else 'write') + ' at call ' + str(written_at[p]) if written_at.get(p, 0) > n else ''})"
+            for p, n in shown
+        ))
+    if ran:
+        shown = sorted(ran.items(), key=lambda kv: -kv[1][0])[:MOST_KNOWN // 2]
+        lines.append("Commands already run here: " + "; ".join(f"`{c}` -> {how} (call {n})" for c, (n, how) in shown))
+    return "\n".join(lines)
+
+
+def _a_refresh(messages: list[Any]) -> bool:
+    """Whether the stage has already acted, so the digest is a refresh.
+
+    The digest is appended as the last message of every call, which is the
+    right place for the prefix cache - the conversation before it is unchanged
+    call to call - and the wrong place for its old wording. The last message a
+    model reads is the one it answers, and the old one ended "Read the files you
+    actually need." After a tool result, that is an instruction to read.
+
+    It was obeyed. On one run `specialist_backend_1` wrote `app.js` at
+    06:26:02 and then opened seven of its next nine turns as though arriving for
+    the first time - "Both files already exist from a prior run. Let me read...
+    and verify" - re-issuing the same `read_file` pair, `wc -l`, `node --check`
+    and `grep innerHTML` while its history grew from 32 messages to 51. Across
+    the twelve runs before it, 20 to 49% of every `read_file` was answered with
+    content the stage already had.
+
+    So once the model has replied at least once, the listing is still sent, and
+    still current, but framed as a status line and without the instruction.
+    Keyed on an AI message being present rather than on a message count,
+    because a carried-over summary or a restart note can put several messages
+    in front of a stage that has not yet done anything.
+    """
+    for message in messages:
+        kind = getattr(message, "type", None)
+        if kind is None and isinstance(message, dict):
+            kind = message.get("role") or message.get("type")
+        if kind in ("ai", "assistant"):
+            return True
+    return False
 
 
 def build_workspace_digest_middleware(repo_root: str) -> Any:
@@ -310,7 +609,7 @@ def build_workspace_digest_middleware(repo_root: str) -> Any:
     On EVERY call, not just the first. Injected once, the listing is in the
     opening request and nowhere afterwards - `override` does not write it to
     stored history - so from the second call the agent has no map and goes
-    looking again. Measured on run-2eb3aa24's `principal_architect`: six
+    looking again. Measured on one run's `principal_architect`: six
     identical `ls {'path': '/'}` and four `ls` of a project directory that did
     not exist yet, in one stage, against a digest that had already said what
     was there. It is also why the listing count fell only 43% (46 to 26) when
@@ -323,7 +622,7 @@ def build_workspace_digest_middleware(repo_root: str) -> Any:
 
     This does not address a re-READ of a file's contents; a listing is not
     content. Those were measured separately and are not eviction: compaction
-    triggers at 70,200 tokens and the largest stage of run-1d1b6c9c carried
+    triggers at 70,200 tokens and the largest stage of one run carried
     about 22,600, with no compaction in the logs at all.
     """
     from langchain.agents.middleware import AgentMiddleware
@@ -339,7 +638,11 @@ def build_workspace_digest_middleware(repo_root: str) -> Any:
                 return handler(request)
             if os.environ.get("WORKSPACE_DIGEST", "1").lower() in ("0", "false", "off"):
                 return handler(request)
-            digest = render_workspace_digest(repo_root)
+            digest = render_workspace_digest(repo_root, refresh=_a_refresh(messages))
+            if os.environ.get("ALREADY_KNOWN", "1").lower() not in ("0", "false", "off"):
+                known = already_known(messages)
+                if known:
+                    digest = f"{digest}\n\n{known}" if digest else known
             if not digest:
                 return handler(request)
             try:

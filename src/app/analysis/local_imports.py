@@ -5,7 +5,7 @@
 are knowable too - they are right there on disk - and getting them wrong is the
 single most common way a test file fails in this harness.
 
-Measured on run-454adf22, where two of five tests failed and neither failure was
+Measured on one run, where two of five tests failed and neither failure was
 about the product:
 
     SyntaxError: The requested module './app.js' does not provide an export
@@ -30,6 +30,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from app.analysis.walk import files_under
 
 #: `import x from './a.js'`, `import {a} from '../b.mjs'`, `export * from './c'`
 _RELATIVE = re.compile(
@@ -79,7 +80,7 @@ def _elsewhere(project: Path, specifier: str, target: Path | None = None) -> lis
     matched `app.test.mjs` as well as `app.js`, so a broken `./app.cjs` in
     `app.test.mjs` was answered "There is a file of that name at app.js,
     app.test.mjs" - naming a file that is not of that name, and telling the
-    file to import itself. Measured on run d6297b2f's `defect_fix_1_0`, which
+    file to import itself. Measured on one run's `defect_fix_1_0`, which
     got exactly that note.
     """
     name = specifier.rstrip("/").rsplit("/", 1)[-1]
@@ -94,7 +95,7 @@ def _elsewhere(project: Path, specifier: str, target: Path | None = None) -> lis
             here = None
     found: list[str] = []
     try:
-        for candidate in project.rglob("*"):
+        for candidate in files_under(project, _SKIP):
             if not candidate.is_file() or candidate.stem != stem:
                 continue
             if any(part in _SKIP for part in candidate.parts):
@@ -170,12 +171,11 @@ def who_would_break(target: Path, content: str, project: Path | None = None) -> 
     it? Removing an export is silent, and the answer arrives a stage later as a
     failing test run.
 
-    That silence is what keeps a run oscillating. Runs 0c5aabdb, d6297b2f and
-    0afef410 all reached a genuine conflict - `index.html` loading `app.js`
+    That silence is what keeps a run oscillating. Three runs all reached a genuine conflict - `index.html` loading `app.js`
     with a plain `<script>` tag needs a classic script, while `app.test.mjs`
     doing `import { addTask } from './app.js'` needs a module - and each of
-    them alternated between satisfying one and satisfying the other. On run
-    0afef410 the milestone reviewer named the fix that satisfies both, adding
+    them alternated between satisfying one and satisfying the other. On one
+    run the milestone reviewer named the fix that satisfies both, adding
     `type="module"` to the tag; the stage removed the exports instead, and
     nothing said the suite had just stopped being able to import anything.
 

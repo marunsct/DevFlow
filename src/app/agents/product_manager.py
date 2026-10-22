@@ -19,7 +19,7 @@ from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.approval import (
     approve_write_decision as approve_write_decision,
@@ -36,7 +36,7 @@ from app.agents.approval import (
 from app.agents.approval import (
     resume_with_decision as resume_with_decision,
 )
-from app.agents.brief_constraints import constraint_lines
+from app.agents.brief_constraints import acceptance_lines, constraint_lines
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent, default_repo_root
 from app.documents import DocumentContent
@@ -67,6 +67,56 @@ class ProductManagerOutput(BaseModel):
     success_measures: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
 
+    @field_validator(
+        "users_and_stakeholders", "problems_and_desired_outcomes", "core_workflows",
+        "mvp_candidates", "deferred_scope", "constraints", "evidence_vs_assumptions",
+        "success_measures", "open_questions",
+        mode="before",
+    )
+    @classmethod
+    def _one_item_each(cls, value: Any) -> Any:
+        """A whole bulleted list sent as one entry becomes its entries.
+
+        Every later check walks these lists one entry at a time. See
+        `app.agents.list_items`.
+        """
+        from app.agents.list_items import one_item_each
+
+        return one_item_each(value)
+
+
+def with_the_workflows_its_measures_require(output: ProductManagerOutput) -> ProductManagerOutput:
+    """`output`, with a core workflow for every capability a success measure lists.
+
+    An intake can contradict itself: its success measures say "Users can add,
+    edit, and delete tasks" while its core workflows list add, toggle, delete and
+    filter. Every later stage then has to pick one of the two lists, and they
+    picked the workflows. In one run the architect saw the contradiction and
+    wrote an ADR resolving it the wrong way - "'Edit' in the success measures
+    refers to toggling completion status" - the reviewer approved it, and the
+    planner deferred editing from both sprints. The brief had said "Users can
+    add, edit, delete tasks" in so many words.
+
+    So the contradiction is removed where it is made. A success measure whose
+    enumeration names a capability no core workflow names is added to the core
+    workflows verbatim, marked as coming from the measures. The model's own
+    workflows are kept and come first; nothing is removed; an intake whose
+    workflows already cover its measures is returned unchanged. The comparison
+    is `app.agents.success_measures`, which reads product prose and no
+    programming language.
+    """
+    from app.agents.success_measures import capabilities_never_named
+
+    measures = [str(m) for m in output.success_measures if str(m).strip()]
+    missing = capabilities_never_named("\n".join(str(w) for w in output.core_workflows), measures)
+    if not missing:
+        return output
+    added = [
+        f"{measures[n - 1]} (a success measure; no workflow above covered {', '.join(words)})"
+        for n, words in sorted(missing.items())
+    ]
+    return output.model_copy(update={"core_workflows": [*output.core_workflows, *added]})
+
 
 def with_the_constraints_the_brief_states(
     output: ProductManagerOutput, document_text: str
@@ -74,7 +124,7 @@ def with_the_constraints_the_brief_states(
     """`output`, plus any constraint the brief states that it left out.
 
     `constraints` is an optional list field on a ten-field schema, and a local
-    model fills it or does not. On run 0c5aabdb it did not: the brief carries a
+    model fills it or does not. On one run it did not: the brief carries a
     `## Technical Constraints` heading with four lines under it, and
     `docs/product_intake.md` rendered
 
@@ -107,6 +157,93 @@ def with_the_constraints_the_brief_states(
     return output.model_copy(
         update={"constraints": [*output.constraints, *missing]}
     )
+
+
+def with_the_measures_the_brief_states(
+    output: ProductManagerOutput, document_text: str
+) -> ProductManagerOutput:
+    """`output`, plus every acceptance criterion the brief states, verbatim.
+
+    The success measures are what every later stage checks itself against,
+    and they were the model's paraphrase of the brief. One run's brief said
+    "Users can add, edit, delete tasks"; the intake measured "create, read,
+    update, and delete", which a workflow "Update task status" satisfies, and
+    it deferred "Task editing (beyond status)". The specification then
+    excluded editing from scope, and no check objected, because none of them
+    ever saw the word "edit".
+
+    The model's measures are kept and come first; the brief's lines are
+    appended when they are not already there, matched exactly and ignoring
+    case. A brief with no acceptance heading leaves the output unchanged.
+    """
+    stated = acceptance_lines(document_text)
+    if not stated:
+        return output
+    already = {str(m).strip().lower() for m in output.success_measures}
+    missing = [line for line in stated if line.strip().lower() not in already]
+    if not missing:
+        return output
+    return output.model_copy(update={"success_measures": [*output.success_measures, *missing]})
+
+
+def with_what_the_brief_requires_marked_in_deferred_scope(
+    output: ProductManagerOutput, document_text: str
+) -> ProductManagerOutput:
+    """`output`, with each deferral that touches a brief-required capability marked.
+
+    A deferred item naming a capability the brief's acceptance criteria require
+    reads as excluding it, and the stages after the intake followed it: one
+    run's specification scope read "excludes ... task editing beyond status"
+    for a brief whose acceptance criteria say "Users can add, edit, delete
+    tasks".
+
+    The item is kept and marked with the requirement, because an item can name
+    a required capability and still defer something real - "Add attachments"
+    under a brief that requires "add". An earlier version removed such items,
+    matched against the model's own measures and on word prefixes: a measure
+    "ease of use and error-free operations" made "use" required, "use" matched
+    "User authentication ...", and a deferral of authentication, sync and
+    notifications was deleted as "not deferred".
+
+    So only the brief's own acceptance criteria are read, only the items of
+    their "and" lists and conjunction-free lists, and a word is matched whole,
+    inflections allowed ("edit" names "editing", never "credit"; "use" never
+    names "User"). An open question on a marked capability gets the same
+    note. Nothing is removed and nothing is added to scope.
+    """
+    from app.agents.success_measures import enumerations, names_the_word
+
+    required = [
+        (word, line)
+        for line in acceptance_lines(document_text)
+        for every_item, words in enumerations(line)
+        if every_item
+        for word in words
+    ]
+    if not required:
+        return output
+
+    def touches(text: str, among: list[tuple[str, str]]) -> tuple[str, str] | None:
+        return next(((w, line) for w, line in among if names_the_word(w, text)), None)
+
+    deferred: list[str] = []
+    marked: list[tuple[str, str]] = []
+    for item in output.deferred_scope:
+        hit = touches(str(item), required)
+        if hit is None:
+            deferred.append(item)
+            continue
+        marked.append(hit)
+        deferred.append(
+            f'{item} (the brief requires {hit[0]}: "{hit[1]}" - only what goes beyond that is deferred)'
+        )
+    if not marked:
+        return output
+    questions = []
+    for question in output.open_questions:
+        hit = touches(str(question), marked)
+        questions.append(question if hit is None else f'{question} (the brief says: "{hit[1]}")')
+    return output.model_copy(update={"deferred_scope": deferred, "open_questions": questions})
 
 
 def _truncate(text: str, max_chars: int | None = None) -> str:
@@ -144,8 +281,7 @@ def build_intake_request(
         # the HOST - `/app/data/uploads/brief_low_752e3b83.md` - and inside the
         # agent every path is resolved against a workspace rooted at "/", so
         # reading it answers "not found" and writing it would build a mirror of
-        # the host layout inside the workspace. Measured across runs 2b5def74,
-        # da6c5e19 and 5d83e946: `product_manager` opens by trying to read that
+        # the host layout inside the workspace. Measured across three runs: `product_manager` opens by trying to read that
         # exact string, every time, and gets an error for its first tool call.
         # This is the rule the comment below already states, applied to the
         # other path on the same line - it was written for the repository and
@@ -157,8 +293,7 @@ def build_intake_request(
         # basename instead of its host path, on the reasoning that the name was
         # safe where the path was not. It is not: the stored name carries an
         # upload suffix (`brief_low_aa06a786.md`) and names nothing that exists
-        # in a workspace rooted at "/". Measured on runs 2b5def74, da6c5e19,
-        # 5d83e946 and again on run-36eb1260 - `product_manager` spends its
+        # in a workspace rooted at "/". Measured on three runs and again on one run - `product_manager` spends its
         # first two calls on `read_file` and then `glob` for that exact string,
         # and gets an error for both.
         #
@@ -172,7 +307,7 @@ def build_intake_request(
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on
-        # run-0b55ad49, agents retried `ls` against that exact string four times
+        # one run, agents retried `ls` against that exact string four times
         # in a row, and fed it to shell commands, every attempt failing with
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
@@ -213,15 +348,12 @@ Responsibilities:
 
 Constraints:
 - Do not modify application source code.
-- Do not change repo files except through the approved artifact tool.
 - Do not write a document. The workflow renders `docs/product_intake.md` from the
   structured response you return, so your product intake reaches its readers
   either way - and only through that response. Writing it yourself
   produces the same work twice from one understanding, and the two
   copies then disagree.
 - Do not claim a requirement is fact without evidence from the supplied brief or repository context.
-- Every write_artifact call pauses for a human decision before anything is saved; never tell the user the artifact is saved until you see a tool result confirming a completed write.
-- **Write the complete intake in ONE single write_artifact call.** Do NOT make follow-up edit calls to refine or improve it after the initial write. Once the write is confirmed, immediately return your structured response.
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.
@@ -271,4 +403,6 @@ __all__ = [
     "extract_pending_approval",
     "reject_write_decision",
     "resume_with_decision",
+    "with_the_measures_the_brief_states",
+    "with_what_the_brief_requires_marked_in_deferred_scope",
 ]

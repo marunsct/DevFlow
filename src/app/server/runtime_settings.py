@@ -35,6 +35,8 @@ import threading
 import time
 from typing import Any, Mapping
 
+from app.server.schema_lock import ensure_table
+
 logger = logging.getLogger(__name__)
 
 SETTINGS_TABLE_SQL = """
@@ -72,6 +74,9 @@ SETTABLE_SECRETS: dict[str, str] = {
     "openai_api_key": "OPENAI_API_KEY",
     "anthropic_api_key": "ANTHROPIC_API_KEY",
     "google_api_key": "GOOGLE_API_KEY",
+    # The judgement model's own key, when it is served somewhere the default
+    # model is not. See `app.models.roles`.
+    "judgement_api_key": "JUDGEMENT_API_KEY",
 }
 
 # Settings an administrator may change at runtime, mapped to the environment
@@ -97,6 +102,35 @@ SETTABLE_KEYS: dict[str, str] = {
     "model_max_output_tokens": "MODEL_MAX_OUTPUT_TOKENS",
     "thinking_mode": "MODEL_THINKING_MODE",
     "thinking_effort": "MODEL_THINKING_EFFORT",
+    # Whether a sprint's specialists run one after another or all at once.
+    # `specialist_dispatch_node` reads it through `load_settings()`, the
+    # settings page offers it as a toggle, and `SettingsPayload` carries it -
+    # and it was missing from here, which is the one list that decides whether
+    # a write is allowed at all. `save()` raised
+    # `ValueError: Not a settable key: execution_mode` for every attempt, so
+    # the toggle could not be turned on and fourteen settings tests that post
+    # a whole payload failed with it.
+    "execution_mode": "EXECUTION_MODE",
+    # How much each stage does: `fast` or `thorough`. See `app.delivery`.
+    "delivery_mode": "DELIVERY_MODE",
+    # Whether the model can be shown images - "yes", "no" or "auto". The
+    # milestone review is given screenshots of the page only when it can. See
+    # `app.models.vision`.
+    "model_reads_images": "MODEL_READS_IMAGES",
+    # A second model for the stages that judge rather than produce: the
+    # architect, QA, the reviews, the test rounds and the fixes. Empty means
+    # every stage uses the model above. See `app.models.roles`.
+    "judgement_provider": "JUDGEMENT_PROVIDER",
+    "judgement_base_url": "JUDGEMENT_BASE_URL",
+    "judgement_model_name": "JUDGEMENT_MODEL",
+    "judgement_context_window": "JUDGEMENT_CONTEXT_WINDOW",
+    # Its longest single reply; 0 derives it from its own window.
+    "judgement_max_output_tokens": "JUDGEMENT_MAX_OUTPUT_TOKENS",
+    # Two tiers: the judgement model plans (`PLAN_ON_JUDGEMENT_MODEL`), the
+    # default model builds, and a stage or defect the default model failed this
+    # many times goes to the judgement model. See `app.models.roles`.
+    "escalate_after_attempts": "ESCALATE_AFTER_ATTEMPTS",
+    "plan_on_judgement_model": "PLAN_ON_JUDGEMENT_MODEL",
 }
 
 CACHE_TTL_SECONDS = float(os.environ.get("SETTINGS_CACHE_TTL", "5"))
@@ -118,7 +152,7 @@ def _read_overrides_from_db() -> dict[str, str]:
 
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(SETTINGS_TABLE_SQL)
+            ensure_table(cur, "runtime_settings", SETTINGS_TABLE_SQL)
             cur.execute("SELECT key, value FROM runtime_settings")
             rows = cur.fetchall()
         conn.commit()
@@ -164,7 +198,7 @@ def save(values: Mapping[str, str], *, actor: str = "unknown") -> None:
 
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(SETTINGS_TABLE_SQL)
+            ensure_table(cur, "runtime_settings", SETTINGS_TABLE_SQL)
             for key, value in values.items():
                 cur.execute(
                     """
@@ -189,7 +223,7 @@ def clear(keys: list[str] | None = None, *, actor: str = "unknown") -> None:
     targets = keys if keys is not None else list(SETTABLE_KEYS)
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(SETTINGS_TABLE_SQL)
+            ensure_table(cur, "runtime_settings", SETTINGS_TABLE_SQL)
             cur.execute("DELETE FROM runtime_settings WHERE key = ANY(%s)", (targets,))
         conn.commit()
     overrides(refresh=True)
@@ -250,7 +284,7 @@ def _read_secrets_from_db() -> dict[str, str]:
 
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(SECRETS_TABLE_SQL)
+            ensure_table(cur, "runtime_secrets", SECRETS_TABLE_SQL)
             cur.execute("SELECT key, ciphertext FROM runtime_secrets")
             rows = cur.fetchall()
         conn.commit()
@@ -311,7 +345,7 @@ def save_secrets(values: Mapping[str, str], *, actor: str = "unknown") -> list[s
     changed: list[str] = []
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(SECRETS_TABLE_SQL)
+            ensure_table(cur, "runtime_secrets", SECRETS_TABLE_SQL)
             for key, value in values.items():
                 if value == "":
                     cur.execute("DELETE FROM runtime_secrets WHERE key = %s", (key,))
@@ -342,7 +376,7 @@ def clear_secrets(keys: list[str] | None = None) -> None:
     targets = keys if keys is not None else list(SETTABLE_SECRETS)
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(SECRETS_TABLE_SQL)
+            ensure_table(cur, "runtime_secrets", SECRETS_TABLE_SQL)
             cur.execute("DELETE FROM runtime_secrets WHERE key = ANY(%s)", (targets,))
         conn.commit()
     secrets(refresh=True)
@@ -358,8 +392,89 @@ def reset_cache() -> None:
         _secret_cache_expires_at = 0.0
 
 
+#: Where each provider reads its credential from.
+_KEY_VARIABLE = {"anthropic": "ANTHROPIC_API_KEY", "gemini": "GOOGLE_API_KEY", "google": "GOOGLE_API_KEY"}
+
+#: A stored credential that belongs to one endpoint rather than to a provider.
+ENDPOINT_KEY_PREFIX = "endpoint:"
+
+
+def endpoint_id(provider: str, base_url: str) -> str:
+    """The identity of an endpoint: a provider at an address ("" is the provider's own)."""
+    import hashlib
+
+    normal = f"{str(provider or 'local').strip().lower()}|{str(base_url or '').strip().lower().rstrip('/')}"
+    return ENDPOINT_KEY_PREFIX + hashlib.sha256(normal.encode("utf-8")).hexdigest()[:24]
+
+
+def endpoint_keys() -> dict[str, str]:
+    """Every endpoint's own stored key, by `endpoint_id`. Never raises.
+
+    A key used to belong to a provider: one OpenAI-compatible key for every
+    OpenAI-compatible server. Measured on one run's model change: the local
+    server, a hosted preview API and a cloud API were all "OpenAI-compatible",
+    and switching to the cloud API kept sending the preview API's key - every
+    call refused with 401. Each endpoint now keeps its own.
+    """
+    try:
+        from app.server.auth import get_db_connection
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                ensure_table(cur, "runtime_secrets", SECRETS_TABLE_SQL)
+                cur.execute("SELECT key, ciphertext FROM runtime_secrets WHERE key LIKE %s", (ENDPOINT_KEY_PREFIX + "%",))
+                rows = cur.fetchall()
+            conn.commit()
+    except Exception:  # noqa: BLE001 - the provider's key still applies
+        logger.debug("Could not read the endpoints' keys", exc_info=True)
+        return {}
+    box = _fernet()
+    found: dict[str, str] = {}
+    for key, ciphertext in rows:
+        try:
+            found[key] = box.decrypt(ciphertext.encode("utf-8")).decode("utf-8")
+        except InvalidToken:
+            logger.error("A stored endpoint key cannot be decrypted; re-enter it in Settings.")
+    return found
+
+
+def save_endpoint_key(provider: str, base_url: str, value: str, *, actor: str = "unknown") -> None:
+    """Store `value` as this endpoint's own key, encrypted; an empty value removes it."""
+    from app.server.auth import get_db_connection
+
+    identity = endpoint_id(provider, base_url)
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            ensure_table(cur, "runtime_secrets", SECRETS_TABLE_SQL)
+            if not value:
+                cur.execute("DELETE FROM runtime_secrets WHERE key = %s", (identity,))
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO runtime_secrets (key, ciphertext, updated_at, updated_by)
+                    VALUES (%s, %s, NOW(), %s)
+                    ON CONFLICT (key) DO UPDATE
+                       SET ciphertext = EXCLUDED.ciphertext,
+                           updated_at = EXCLUDED.updated_at,
+                           updated_by = EXCLUDED.updated_by
+                    """,
+                    (identity, _fernet().encrypt(value.encode("utf-8")).decode("utf-8"), actor),
+                )
+        conn.commit()
+
+
+def judgement_endpoint(environment: Mapping[str, str]) -> tuple[str, str]:
+    """(provider, address) the judgement model is served from, as `app.models.roles` builds it."""
+    default_provider = str(environment.get("LLM_PROVIDER") or "local").strip().lower()
+    provider = str(environment.get("JUDGEMENT_PROVIDER") or "").strip().lower() or default_provider
+    base = str(environment.get("JUDGEMENT_BASE_URL") or "").strip()
+    if not base and provider == default_provider:
+        base = str(environment.get("OPENAI_BASE_URL") or "")
+    return provider, base
+
+
 def effective_environment(base: Mapping[str, str] | None = None) -> dict[str, str]:
-    """The environment with stored overrides layered on top."""
+    """The environment with stored overrides layered on top, each endpoint with its own key."""
     environment = dict(base if base is not None else os.environ)
     for key, value in overrides().items():
         if value:
@@ -367,6 +482,16 @@ def effective_environment(base: Mapping[str, str] | None = None) -> dict[str, st
     for key, value in secrets().items():
         if value:
             environment[SETTABLE_SECRETS[key]] = value
+    keys = endpoint_keys()
+    if keys:
+        provider = str(environment.get("LLM_PROVIDER") or "local").strip().lower()
+        own = keys.get(endpoint_id(provider, str(environment.get("OPENAI_BASE_URL") or "")))
+        if own:
+            environment[_KEY_VARIABLE.get(provider, "OPENAI_API_KEY")] = own
+        if str(environment.get("JUDGEMENT_MODEL") or "").strip():
+            judge = keys.get(endpoint_id(*judgement_endpoint(environment)))
+            if judge:
+                environment["JUDGEMENT_API_KEY"] = judge
     return environment
 
 
@@ -392,6 +517,10 @@ __all__ = [
     "clear_secrets",
     "effective_environment",
     "effective_settings",
+    "endpoint_id",
+    "endpoint_keys",
+    "judgement_endpoint",
+    "save_endpoint_key",
     "overrides",
     "reset_cache",
     "save",

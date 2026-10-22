@@ -78,17 +78,16 @@ class ArchitectureReviewOutput(BaseModel):
         review that lists its findings has already decided; it has only failed
         to write the word down.
 
-        Measured on run-6412366b: the reviewer answered
+        Measured on one run: the reviewer answered
         `{"findings": [...]}` with no `status` four times in one stage, which
         cost two stage restarts and reached "attempt 3 of 3", the last retry
         before the stage fails outright. Across all stored runs, 8 of 74
         answers carrying findings omit the field.
 
         Deliberately only fills what is ABSENT. A status the model did write is
-        left exactly as written: across those same runs there are zero cases of
-        a verdict approving around its own blocking finding, so there is
-        nothing to enforce and overriding a stated decision on no evidence
-        would be the worse error.
+        left as written here; a stated `approved` over the review's own gating
+        findings is routed as `changes_required` by the workflow instead
+        (`_a_pass_over_its_own_findings`), where the product's scope is known.
         """
         if not isinstance(data, dict) or data.get("status"):
             return data
@@ -115,8 +114,24 @@ def build_architecture_review_request(
     technical_specification_text: str,
     repository_root: str,
     document_text: str = "",
+    earlier: list[ArchitectureReviewFinding] | None = None,
+    revision: int = 0,
+    environment: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the specification text awaiting review.
+
+    `environment` is the setup the product is built and tested in - its layout
+    and where its data lives - as the architect was told it. Measured live:
+    without it the reviewer raised the architect's file-database fallback as a
+    major finding against the brief's database, and the revision made the
+    server's address required - a service no test could start.
+
+    `earlier` is what this review asked for last time, and `revision` how many
+    times the specification has been sent back. Without them each review was a
+    first reading: one run's reviewer raised two new major findings on each of
+    three revisions of a to-do list - a partial-update contract, then an ES
+    module setting, then that a checkbox should show whether its task is done -
+    and never said whether the previous ones had been answered.
 
     The specification is budgeted. It is the largest artifact in the pipeline
     and it arrives in the *first* user message, which is the one case
@@ -125,7 +140,7 @@ def build_architecture_review_request(
 
     `document_text` is the product brief, and only its constraints are carried.
     This is the last gate before anything is built, and it could not do the one
-    job that would have saved run 0c5aabdb: the specification it approved
+    job that would have saved one run: the specification it approved
     proposed Express for a brief that says "No external dependencies beyond
     basic HTML/CSS/JS", and the reviewer had no way to know that, because it
     was given the specification and nothing else. See
@@ -142,9 +157,131 @@ def build_architecture_review_request(
     brief = (
         WORKSPACE_ROOT_NOTE
         + constraints_note(document_text, reader="reviewing")
+        + _the_setup(environment)
         + f"--- Technical specification and ADRs under review (/docs/technical_specification.md) ---\n{specification}\n"
+        + "\n" + _the_sections_it_can_have()
+        + _what_the_brief_requires_that_this_defers(document_text, technical_specification_text)
+        + _what_you_asked_for_last_time(earlier or [], revision)
     )
     return {"messages": [{"role": "user", "content": brief}]}
+
+
+def _the_setup(environment: str) -> str:
+    """The setup the product is built and tested in, and how to weigh it; "" when unknown."""
+    if not environment.strip():
+        return ""
+    return (
+        "--- The setup the product is built and tested in (the harness's; the specification cannot change it) ---\n"
+        + environment.strip()
+        + "\nWhat this setup requires is not a departure from the brief: a specification that does what it "
+        "says here meets the brief's constraints in this environment. Do not raise a finding against it, "
+        "and do not ask for a change that would undo it.\n\n"
+    )
+
+
+def _the_sections_it_can_have() -> str:
+    """See `principal_architect.the_sections_a_specification_has`. Never raises."""
+    try:
+        from app.agents.principal_architect import the_sections_a_specification_has
+
+        return the_sections_a_specification_has(reader="reviewing")
+    except Exception:  # noqa: BLE001 - a note must never fail a review
+        return ""
+
+
+def _what_the_brief_requires_that_this_defers(document_text: str, specification: str) -> str:
+    """Each brief requirement the specification defers, put to the reviewer.
+
+    The reviewer was given the brief's constraints and not its acceptance
+    criteria, so it had nothing to hold a descope against. One run's
+    specification redefined "edit" as toggling completion and deferred inline
+    editing, for a brief that says "Users can add, edit, delete tasks"; the
+    review accepted it as a trade-off, and the objection arrived three sprint-one
+    test rounds later, at stages that could not change the specification. See
+    `app.analysis.integration_checks.brief_actions_the_text_defers`.
+
+    Found by matching words, so the reviewer judges each one: a line can defer a
+    variant ("bulk delete") of something the specification builds elsewhere.
+    """
+    try:
+        from app.analysis.integration_checks import (
+            brief_actions_the_text_defers,
+            brief_actions_the_text_never_describes,
+            brief_features_the_text_defers,
+        )
+
+        # The brief's actions, and the features it lists ("Due dates and
+        # reminders"), which name no action for the first check to find.
+        found = brief_actions_the_text_defers(document_text, specification)
+        found += brief_features_the_text_defers(document_text, specification)
+        deferred = {action for action, _, _ in found}
+        # And the silent version: named only in a list of requirements, never
+        # given a flow of its own. One run's specification said "full CRUD
+        # operations (create, read, update, delete tasks)" and described every
+        # flow but editing; nothing deferred it, so the section above was empty.
+        silent = [
+            (action, required)
+            for action, required in brief_actions_the_text_never_describes(
+                document_text, specification
+            )
+            if action not in deferred
+        ]
+    except Exception:  # noqa: BLE001 - a hint must never stop a review
+        return ""
+    if not found and not silent:
+        return ""
+    listed = "\n".join(
+        [
+            f"- `{action}`. The brief: \"{required}\". The specification: \"{line}\""
+            for action, required, line in found
+        ]
+        + [
+            f"- `{action}`. The brief: \"{required}\". The specification names it only "
+            "in lists of requirements, never in a line of its own that says how it is done."
+            for action, required in silent
+        ]
+    )
+    return (
+        "\n--- Brief requirements this specification defers, redefines or never describes ---\n"
+        f"{listed}\n\n"
+        "Each of these is an acceptance criterion in the operator's brief. Narrowing, "
+        "reinterpreting or deferring one is the operator's decision, not the run's: a "
+        "specification that does it is a major finding, and the remediation is to "
+        "specify how it will be built - its flow, as the specification gives every other "
+        "action. The one exception is an action the specification does describe under "
+        "another name, or a line that defers only a variant of something it builds "
+        "elsewhere - then quote where it is built. The run's final check reads the brief, so a requirement "
+        "dropped here is built at the end anyway, after every sprint that could have "
+        "planned for it.\n"
+    )
+
+
+def _what_you_asked_for_last_time(earlier: list[ArchitectureReviewFinding], revision: int) -> str:
+    """The previous review's findings, and the bar a new one has to clear."""
+    if not earlier or revision < 1:
+        return ""
+    def field(finding: Any, name: str) -> str:
+        value = finding.get(name) if isinstance(finding, dict) else getattr(finding, name, "")
+        return str(value or "").strip()
+
+    listed = "\n".join(
+        f"- [{field(f, 'severity')}] {field(f, 'description')} "
+        f"Required remediation: {field(f, 'required_remediation')}"
+        for f in earlier
+    )
+    return (
+        f"\n--- What your review of the previous version asked for (revision {revision}) ---\n"
+        f"{listed}\n\n"
+        "This version is the architect's answer. Check each of these first: resolved, "
+        "or still open - and if still open, quote what the specification now says.\n\n"
+        "A finding you did not raise before is major only if a competent implementer "
+        "who followed this specification exactly would build something that fails a "
+        "requirement of the brief, or could not build it at all. Something they would "
+        "get right without being told - a control that shows the state it controls, a "
+        "validation error that reaches the user the way the specification already "
+        "shows errors - is minor. Every new major finding costs a full revision, and "
+        "the run ends when revisions run out.\n"
+    )
 
 
 _SYSTEM_PROMPT = f"""You are the Senior Architect Reviewer for this workflow.
@@ -184,10 +321,10 @@ a Dockerfile. If your remediation begins "Create", "Add" or "Implement" a file,
 you are reviewing the wrong artifact; rewrite it as what the specification
 should say.
 
-Measured on run-c4f17841: this review rejected an 11.7 KB specification six
-times and ended the run, on five findings all of this shape - missing
-Dockerfiles, missing Helm charts, a missing CI workflow, missing Prometheus
-middleware, missing pgcrypto migrations. It had run a glob for `alembic`, found
+Observed: this review rejected an 11.7 KB specification six times and ended
+the run, on five findings all of this shape - missing container images, missing
+cluster deployment charts, a missing CI workflow, missing metrics middleware,
+missing encryption migrations. It had run a glob for a migration tool, found
 nothing, and treated an empty repository as a defect in a document.
 
 That specification's Deployment section read:
@@ -226,9 +363,8 @@ Acceptable risks to note (do NOT block on):
 {TESTING_DEPENDENCY_RULE}
 
 Constraints:
-- Do not modify application source code or the specification itself; you only
-  review it and record findings.
-- Do not change repo files except through the approved artifact tool.
+- Do not modify application source code, documents, or the specification itself;
+  you have no write tools and only review the specification and record findings.
 - Never approve based only on the Principal Architect's own confidence
   statements; approval must be grounded in what you actually verified.
 - You have no write tool and need none. When you have finished reviewing,
@@ -241,12 +377,6 @@ Constraints:
 - Put every finding in the `findings` list. A finding described only in prose
   is not one the workflow can act on: the architect is given your findings and
   nothing else.
-- Every write_artifact call pauses for a human decision before anything is
-  saved; never claim the artifact is saved until a tool result confirms it.
-- **Write the complete artifact in ONE single write_artifact call.** Do NOT
-  make follow-up edit calls to refine, fix typos, or improve the document after
-  the initial write. The document must be complete and correct before you write
-  it. Once the write is confirmed, immediately return your structured response.
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.

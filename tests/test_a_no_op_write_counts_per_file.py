@@ -1,6 +1,6 @@
 """A write that changes nothing counts per file, not per byte sent.
 
-Run f81808a4's `specialist_backend_0` wrote `docs/README.md` ten times:
+One run's `specialist_backend_0` wrote `docs/README.md` ten times:
 
     1.     0B  ?
     2.   479B  written
@@ -108,7 +108,7 @@ def test_repeated_edit_failures_count_by_file_not_by_the_passage_sent():
     `edit_artifact` answers "Could not find that text in 'a.js'" and a stage
     that cannot find it responds by sending a different passage, so `find`
     changes on every retry. Counting per arguments saw every retry as a first
-    attempt. Measured on run-519a9d8a: ten retries in `test_round_1`, seven in
+    attempt. Measured on one run: ten retries in `test_round_1`, seven in
     `specialist_testing_2`, each a different `find` against the same file.
     """
     stage_memory.forget_everything()

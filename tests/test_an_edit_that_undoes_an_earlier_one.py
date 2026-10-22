@@ -5,7 +5,7 @@ consecutive calls; the no-op refusal wants `replace` to equal what it
 replaces. Both see a *successful* edit with new arguments and let it through,
 so the file oscillates and the stage spends its budget.
 
-Measured on run 8d28ee3f, `defect_fix_1_0`: 67 tool calls against a 40-call
+Measured on one run, `defect_fix_1_0`: 67 tool calls against a 40-call
 budget, 23 edits and 16 reads of one file. Its edits to `app.js` ran
 `console.log(...)` -> `global.console.log(...)` -> `console.log(...)` ->
 `console.log(...)`, each reported "edited".

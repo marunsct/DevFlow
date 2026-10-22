@@ -5,7 +5,7 @@ was and lets it through. That is right the first time and the second: measured
 across every stored transcript, of the three stages ever to receive the note,
 two stopped after one.
 
-The third is what this is for. Run 1ae7671d's `test_round_1` was told five
+The third is what this is for. One run's `test_round_1` was told five
 times and went on swapping a single line between four spellings - `++nextId`,
 `nextId; nextId++`, `nextId++`, `current.length > 0 ? ... : 1` and back - for
 eight edits, while the stage grew to the longest in the run.

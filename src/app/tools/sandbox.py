@@ -25,18 +25,24 @@ pattern list:
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
+import signal
 import re
 import shutil
 import subprocess
+import functools
+import threading
 import time
+import tomllib
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.tools.repository import IGNORED_DIRECTORIES
+from app.analysis.walk import files_under
+from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE
 from typing import Any, Dict, Iterable, Sequence
 
 logger = logging.getLogger(__name__)
@@ -132,7 +138,13 @@ def _manager_of(command: Sequence[str]) -> str | None:
     """
     if not command:
         return None
-    return os.path.basename(str(command[0])) or None
+    program = os.path.basename(str(command[0]))
+    # `python -m pip ...` drives pip as surely as `pip ...` does. Measured live:
+    # `python3 -m pip install fastapi uvicorn[standard]` was refused twice as a
+    # server it would start, because the install carve-out never saw pip.
+    if re.fullmatch(r"python(?:3(?:\.\d+)?)?", program) and len(command) > 2 and str(command[1]) == "-m":
+        return os.path.basename(str(command[2])) or None
+    return program or None
 
 
 def _a_package_this_command_would_add(command: Sequence[str]) -> list[str]:
@@ -157,13 +169,96 @@ def _a_package_this_command_would_add(command: Sequence[str]) -> list[str]:
     noise = _NOT_A_PACKAGE_NAME.get(manager or "", frozenset())
     named = [
         word
-        for word in words[1:]
+        for index, word in enumerate(words[1:], start=1)
         if not word.startswith("-")
         and word not in grammar["subcommands"]
         and word not in noise
         and word != manager
+        # The value of a flag that says where, not what. One run's
+        # `npm --prefix simple-to-do-list-app install` installs what the
+        # manifest declares, and was refused as adding a package named after
+        # the project's own directory.
+        and words[index - 1] not in _FLAGS_THAT_NAME_A_PLACE
     ]
     return named
+
+
+#: Flags whose next word is a directory, a file or a registry, never a package.
+_FLAGS_THAT_NAME_A_PLACE = frozenset({
+    "--prefix", "-C", "--cwd", "--dir", "--directory", "--root", "--project",
+    "--manifest-path", "--path", "--target", "--target-dir", "--workspace",
+    "--filter", "--registry", "--index-url", "--extra-index-url", "--cache",
+    "--cache-dir", "--userconfig", "--globalconfig", "--config", "--python",
+})
+
+
+#: Subcommands that fetch what a manifest already declares, beside the ones in
+#: `_INSTALL_GRAMMAR` that add something new. Both need the registry.
+_RESOLVE_SUBCOMMANDS: dict[str, frozenset[str]] = {
+    "npm": frozenset({"ci"}),
+    "yarn": frozenset({"install"}),
+    "pip": frozenset({"download"}),
+    "pip3": frozenset({"download"}),
+    "uv": frozenset({"sync", "pip"}),
+    "poetry": frozenset({"install"}),
+    "cargo": frozenset({"fetch"}),
+    "dotnet": frozenset({"restore"}),
+    "bundle": frozenset({"install"}),
+    "composer": frozenset({"install"}),
+    "dart": frozenset({"pub"}),
+    "flutter": frozenset({"pub"}),
+    "mix": frozenset({"deps.get"}),
+}
+
+
+def _fetches_dependencies(command: Sequence[str]) -> bool:
+    """Whether this command downloads packages through a package manager.
+
+    Such a command belongs in the `install` category whatever the caller
+    sent: that is the category with the registry and the time to use it.
+    Measured on one run: `npm i -D jest` arrived with no category, ran under
+    the 120-second default instead of the install limit, and timed out - to
+    advice about servers, watchers and browser test suites, none of which it
+    was.
+    """
+    manager = _manager_of(command)
+    if not manager:
+        return False
+    words = [str(word).lower() for word in command[1:]]
+    if not words:
+        return False
+    first = next((word for word in words if not word.startswith("-")), "")
+    grammar = _INSTALL_GRAMMAR.get(manager)
+    if grammar is not None and first in grammar["subcommands"]:
+        return True
+    if first in _RESOLVE_SUBCOMMANDS.get(manager, frozenset()):
+        return True
+    # `go mod download` - the one resolve step that is two words.
+    return manager == "go" and words[:2] == ["mod", "download"]
+
+
+def _runs_tests(command: Sequence[str]) -> bool:
+    """Whether this command runs a test suite, in any language.
+
+    Such a command belongs in the `test` category whatever the caller sent,
+    as an install belongs in `install`. Measured on one run:
+    `npm test` arrived with no category, ran under the 120-second default,
+    and timed out - its end-to-end half alone took 144 seconds when the stage
+    ran it again as `npm run test:e2e` with `category: "test"`.
+
+    Recognised by shape, not by a list of tools: a `test` subcommand or a
+    `test:*` script among the first few words (`npm test`, `npm run test:e2e`,
+    `go test`, `cargo test`, `npx playwright test`, `dotnet test`, `node --test`), a program
+    named for testing (`pytest`, `phpunit`), or `python -m pytest|unittest`.
+    """
+    words = [Path(str(word)).name.lower() for word in command[:4]]
+    if not words:
+        return False
+    if any(word in ("test", "--test") or word.startswith(("test:", "test-")) for word in words[1:]):
+        return True
+    if ("test" in words[0] or words[0].endswith("unit")) and not words[0].startswith("-"):
+        return True
+    return len(words) >= 3 and words[1] == "-m" and words[2] in ("pytest", "unittest")
 
 
 def _is_a_test_only_install(command: Sequence[str]) -> bool:
@@ -210,8 +305,16 @@ def _the_brief_forbids_installing_anything(repo_root: str) -> str:
 
     Read from the workspace rather than passed in: the sandbox is below the
     agent layer and is handed a repository, not a brief. The intake document
-    is where the constraint lands - run 9bd3a091's `docs/product_intake.md`
+    is where the constraint lands - one run's `docs/product_intake.md`
     carries "No external dependencies beyond basic HTML/CSS/JS" twice.
+
+    A line counts when it states the constraint - in a section headed
+    constraints, or opening with the phrase - not when the phrase sits inside
+    a sentence about something else: measured on a gate run, the stack
+    selector's rationale said SQLite "suits this single-user workload with no
+    external dependencies" - no database server - and every install of the
+    product was refused, the `pip install -e .` that would have installed its
+    declared packages among them.
     """
     try:
         from app.agents.brief_constraints import _FORBIDS_DEPENDENCIES
@@ -220,13 +323,39 @@ def _the_brief_forbids_installing_anything(repo_root: str) -> str:
             document = Path(repo_root) / "docs" / name
             if not document.is_file():
                 continue
-            text = document.read_text(encoding="utf-8", errors="replace")
-            for line in text.splitlines():
-                if any(phrase in line.lower() for phrase in _FORBIDS_DEPENDENCIES):
-                    return line.strip().lstrip("-*# ").strip()
+            in_constraints = False
+            for line in document.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.startswith("#"):
+                    in_constraints = "constraint" in line.lower()
+                    continue
+                statement = line.strip().lstrip("-*0123456789. ").strip()
+                lower = statement.lower()
+                if not any(phrase in lower for phrase in _FORBIDS_DEPENDENCIES):
+                    continue
+                if in_constraints or any(lower.startswith(phrase) for phrase in _FORBIDS_DEPENDENCIES):
+                    return statement
     except Exception:  # noqa: BLE001 - a constraint that cannot be read is not enforced
         return ""
     return ""
+
+
+#: What to do without an install, and the test-only exception, in each ecosystem's own words.
+_WITHOUT_AN_INSTALL = {
+    "node": ("Node's own `node:test` and `node:assert` need no install, and logic written as functions "
+             "that take their inputs as arguments can be tested without a DOM at all. A test suite is a "
+             "different matter: `npm i -D <pkg>` puts it in `devDependencies`, which is not shipped and "
+             "breaks no constraint in the brief."),
+    "python": ("Python's own `unittest` and the standard library need no install, and logic written as "
+               "functions that take their inputs as arguments can be tested without the service running. "
+               "A test suite is a different matter: a line in `requirements-dev.txt` is not shipped and "
+               "breaks no constraint in the brief."),
+}
+
+
+def _the_ecosystem_of(command: Sequence[str]) -> str:
+    """`python` for a pip install, `node` otherwise."""
+    names = {Path(str(part)).name for part in command}
+    return "python" if names & {"pip", "pip3", "python", "python3", "uv", "poetry"} else "node"
 
 
 def _refuse_an_install_the_brief_rules_out(
@@ -236,7 +365,7 @@ def _refuse_an_install_the_brief_rules_out(
 
     The testing role's own description already says not to introduce a runner
     the stack did not choose, and to "verify with what the runtime already
-    provides" where the stack names none. Run 9bd3a091 read that and ran
+    provides" where the stack names none. One run read that and ran
     `npm install jsdom`, then `npm install jest`. Six of the twenty-six
     recorded runs install a named package this way - jsdom four times, jest,
     and jest-environment-jsdom - against briefs that rule dependencies out.
@@ -252,7 +381,7 @@ def _refuse_an_install_the_brief_rules_out(
     Not every install is the product's. A test-scoped one - `npm i -D` - lands
     in `devDependencies`, which ships to nobody, so the constraint on the
     shipped product has nothing to say about it and it is allowed through.
-    Measured on run-519a9d8a: `specialist_ui_ux_0` needed `@playwright/test`
+    Measured on one run: `specialist_ui_ux_0` needed `@playwright/test`
     for the only suite that can exercise a real DOM, this refusal blocked it,
     and the model installed the package *without* the flag to get past the
     refusal - leaving it in `node_modules` and absent from `package.json`,
@@ -275,14 +404,10 @@ def _refuse_an_install_the_brief_rules_out(
         f"Refusing to install {', '.join(packages[:4])}: the brief rules that "
         f'out in its own words - "{constraint}". Installing it does not make '
         "the product the brief describes, and every later stage would have to "
-        "carry it or take it back out. Node's own `node:test` and "
-        "`node:assert` need no install, and logic written as functions that "
-        "take their inputs as arguments can be tested without a DOM at all. "
-        "If the product genuinely cannot be built within the constraint, say "
-        "so as a blocker in your report rather than installing past it. "
-        "A test suite is a different matter: `npm i -D <pkg>` puts it in "
-        "`devDependencies`, which is not shipped and breaks no constraint in "
-        "the brief."
+        "carry it or take it back out. "
+        + _WITHOUT_AN_INSTALL.get(_the_ecosystem_of(command), _WITHOUT_AN_INSTALL["node"])
+        + " If the product genuinely cannot be built within the constraint, say "
+        "so as a blocker in your report rather than installing past it."
     )
 
 
@@ -304,7 +429,7 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
     # `f"{role}_specialist"` for each `SpecialistRole`. This read
     # `ui_specialist` while the role is `ui_ux`, so the key matched nothing and
     # the frontend specialist silently ran with the common set alone: on
-    # run-0b55ad49 it was refused `node` eight times while building a web page.
+    # one run it was refused `node` eight times while building a web page.
     # `test_every_specialist_role_has_an_allowlist` now pins the correspondence.
     "ui_ux_specialist": frozenset({
         "npm", "npx", "node", "yarn", "pnpm", "make", "python3", "jest", "vitest", "tsc",
@@ -314,7 +439,7 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
     }),
     # `node` belongs here for the same reason `npx` already did: a JavaScript
     # backend's entry point is `node server.js`, and without it the role that
-    # wrote the file cannot run it. On run-95ca3f72 the backend specialist was
+    # wrote the file cannot run it. On one run the backend specialist was
     # refused `node -e "require('./todo-app/script.js').initTodoApp()"` - a
     # smoke test of code it had just written - while `npx` (which can run any
     # package at all) was permitted.
@@ -328,12 +453,12 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
     # made, and this was the only code-writing role still without it - even
     # `documentation_specialist`, which writes prose, had `node`. The stack is
     # chosen per run, so "database" does not mean SQL: on a browser-storage
-    # brief the persistence layer *is* JavaScript, and on run-414a621f this
+    # brief the persistence layer *is* JavaScript, and on one run this
     # role wrote `app.js`, `app.test.mjs` and a `package.json`, then could not
     # run any of them.
     #
     # Withholding it bought nothing, exactly as it bought nothing for
-    # `testing_specialist` on run-3da8dd91. Refused `node --test`, the agent
+    # `testing_specialist` on one run. Refused `node --test`, the agent
     # tried `python3 -c "subprocess.run(['node', ...])"` (refused), then wrote
     # `run-tests.py` to subprocess-launch node - which was permitted and ran.
     # What the refusal actually bought was 145 events of thrashing and
@@ -348,7 +473,7 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
     # running tests could run `pytest` and no JavaScript runner at all - on a
     # brief that is explicitly HTML/CSS/JavaScript. Worse, the refusal bought
     # nothing: `npx` was already permitted, so `npx jest` ran jest anyway. What
-    # it did buy, on run-95ca3f72, was the agent reasoning "We cannot run jest
+    # it did buy, on one run, was the agent reasoning "We cannot run jest
     # because not allowed... we can set package.json test script and run npm
     # test" - writing a manifest at the workspace root, which is the collision
     # that cost the previous run three remediation rounds.
@@ -359,7 +484,7 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
         "pytest", "python", "python3", "npm", "npx", "yarn", "pnpm", "go", "cargo", "make",
         "jest", "mocha", "vitest", "jasmine", "karma", "tsc", "playwright",
         # The role whose job is running tests must be able to run a test script.
-        # Measured on run-3da8dd91: the testing specialist wrote a plain
+        # Measured on one run: the testing specialist wrote a plain
         # `test-harness.js`, found `node` missing, and reasoned that it had
         # `npx` available - running it as `npx node test-harness.js`. That works
         # by accident, and `npx` can execute any package at all, so withholding
@@ -369,7 +494,7 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
     # Writes prose, and checks it against the code it documents.
     "documentation_specialist": frozenset({"python3", "node", "npx"}),
     # Audits what the other roles built: it has to be able to run the project
-    # to test it. Refused `node` and `python3` on run-0b55ad49 while auditing a
+    # to test it. Refused `node` and `python3` on one run while auditing a
     # JavaScript application.
     "security_reliability_specialist": frozenset({
         "python", "python3", "pip", "pip3", "pytest", "node", "npm", "npx", "make",
@@ -384,12 +509,34 @@ COMMON_EXECUTABLES = frozenset({
     "ls", "cat", "echo", "mkdir", "touch", "git", "pwd", "find", "head", "tail", "wc",
     # Read-only inspection. Neither can modify a file or execute anything, and
     # both are what an agent reaches for by reflex: `grep` was the single most
-    # refused command on run-0b55ad49 (17 of 43 refusals), and every refusal
+    # refused command on one run (17 of 43 refusals), and every refusal
     # cost a model call to learn something the allowlist could have allowed.
     "grep", "which",
 })
 
 # Argument forms that would turn an allowed interpreter back into a general one.
+#
+# `TOOLCHAINS` pins seventeen languages and the inline-eval half of this table
+# covered two of them. Measured 2026-09-27 by calling `validate_command` once
+# per toolchain with the stack marker set to that language: `node -e` and
+# `python3 -c` were refused, and `ruby -e`, `php -r`, `elixir -e`, `scala -e`,
+# `rake -e`, `mix run -e` and `gradle -I` were all permitted. The policy was
+# never JavaScript-and-Python-only; only its enforcement was.
+#
+# `go run .` and `cargo run` stay permitted deliberately. They compile and run
+# the project in front of them, which is a build step, not code in an argument.
+#
+# `bundle exec`, `poetry run`, `uv run` and `composer exec` were added here in
+# the same pass and then taken back out, which is worth recording because the
+# argument for them looks sound. They run a program the allowlist never cleared,
+# exactly as the `npm exec` entry below does - but blocking `npm exec` never
+# closed that hole, because `npx <anything>` is permitted and does the same
+# thing. So refusing the others would not have made the boundary tighter; it
+# would only have made every non-JavaScript language stricter than JavaScript.
+# It also took away ordinary work with no replacement: `bundle exec rspec`,
+# `bundle exec rake db:migrate` and `poetry run pytest` are how a Ruby or Python
+# project reaches the tools inside its own bundle or virtualenv.
+# `test_a_real_build_step_still_runs` pins them.
 _FORBIDDEN_ARGS: dict[str, frozenset[str]] = {
     "python": frozenset({"-c"}),
     "python3": frozenset({"-c"}),
@@ -403,6 +550,70 @@ _FORBIDDEN_ARGS: dict[str, frozenset[str]] = {
     # command line. Both turn `make` into a general interpreter pointed at
     # something the workspace does not contain.
     "make": frozenset({"-f", "--file", "--makefile", "--eval", "-e"}),
+    # `-e` means "here is the program" to every interpreter that has it, so the
+    # same refusal applies for the same reason. A flag a given interpreter does
+    # not actually accept costs nothing to list: the only command it can refuse
+    # is one that was trying to evaluate a snippet anyway.
+    "ruby": frozenset({"-e"}),
+    "php": frozenset({"-r", "-a"}),
+    "elixir": frozenset({"-e", "--eval"}),
+    "scala": frozenset({"-e"}),
+    "rake": frozenset({"-e", "--execute"}),
+    "mix": frozenset({"-e", "--eval"}),
+    # An injected or redirected build script, exactly as `make -f` is. `gradle
+    # test` and `gradle build` are untouched; only "use this build file instead"
+    # is refused.
+    "gradle": frozenset({"-I", "--init-script", "-b", "--build-file"}),
+}
+
+#: Why each program's arguments above are refused, which decides what the
+#: refusal tells the agent to do instead. Advice that does not fit the command
+#: is worse than none: "put the code in a file" is the right answer for
+#: `ruby -e` and nonsense for `bundle exec rspec`, whose answer is "run
+#: `rspec`". Keyed by program so a new entry above cannot silently inherit
+#: advice meant for a different shape; pinned by
+#: `test_every_refused_argument_says_what_to_do_instead`.
+_WHY_THE_ARGUMENT_IS_REFUSED: dict[str, str] = {
+    "python": "eval",
+    "python3": "eval",
+    "node": "eval",
+    "ruby": "eval",
+    "php": "eval",
+    "elixir": "eval",
+    "scala": "eval",
+    "rake": "eval",
+    "mix": "eval",
+    # `make` holds both shapes - `-f` redirects the build, `--eval` supplies a
+    # rule inline - and the build-file answer covers each of them.
+    "make": "foreign_build_file",
+    "npm": "any_program",
+    "npx": "any_program",
+    "yarn": "any_program",
+    "pnpm": "any_program",
+    "gradle": "foreign_build_file",
+    "git": "reconfigures_the_tool",
+}
+
+#: How code an "eval" flag above carries runs from a file instead, per program
+#: and flag: the file's suffix and what the file holds, `{code}` being the code
+#: as given. The command tool saves the code under that name in the project
+#: and runs the program on the file (`agent_toolkit._code_on_the_command_line_as_a_file`),
+#: so every interpreter refused here gets the same answer. A program missing
+#: from this table keeps the refusal: `rake -e` and `mix -e` run code beside a
+#: build, and a file is not the same command.
+CODE_AS_A_FILE: dict[str, dict[str, tuple[str, str]]] = {
+    "python": {"-c": (".py", "{code}")},
+    "python3": {"-c": (".py", "{code}")},
+    # `.cjs`, so `require` works whatever the package's module type.
+    "node": {
+        "-e": (".cjs", "{code}"), "--eval": (".cjs", "{code}"),
+        "-p": (".cjs", "console.log(eval({code_json}));"), "--print": (".cjs", "console.log(eval({code_json}));"),
+    },
+    "ruby": {"-e": (".rb", "{code}")},
+    # A file is read as markup until `<?php`; `-r` takes code without it.
+    "php": {"-r": (".php", "<?php\n{code}")},
+    "elixir": {"-e": (".exs", "{code}"), "--eval": (".exs", "{code}")},
+    "scala": {"-e": (".sc", "{code}")},
 }
 
 _ALLOWED_PYTHON_MODULES = frozenset({"venv", "pip", "pytest", "unittest"})
@@ -440,7 +651,7 @@ def _max_output_size() -> int:
 
 MAX_OUTPUT_SIZE = _max_output_size()
 
-TIMEOUTS = {"install": 300, "build": 180, "test": 300, "default": 120}
+TIMEOUTS = {"install": 300, "build": 180, "test": 300, "default": 120, "probe": 60}
 
 #: How much longer than the JavaScript baseline each toolchain needs.
 #:
@@ -504,8 +715,55 @@ def timeout_for(category: str, repo_root: str | Path | None = None) -> int:
     scale = max((TOOLCHAIN_TIMEOUT_SCALE.get(key, 1.0) for key in pinned), default=1.0)
     return int(min(base * scale, MAX_TIMEOUT_SECONDS))
 
+#: The least a command is given after its last run used the whole limit, and
+#: the share of the limit it gets.
+SHORTEST_RETRY_TIMEOUT_SECONDS = 60
+RETRY_TIMEOUT_SHARE = 0.2
+
+
+def after_a_run_that_never_finished(
+    repo_root: str | Path | None,
+    argv: Sequence[str],
+    working_directory: str | None,
+    timeout: int,
+) -> int:
+    """`timeout`, or a fraction of it when this command's last run used it all.
+
+    A command that ran the whole limit and was stopped is usually one that
+    cannot finish - a test with a loop that never ends, a server left
+    listening - and the stage that ran it runs it again to see. Measured on
+    one run: a suite with `while (state.tasks.length)` over a stale copy was
+    run three times in one sprint, 300 seconds each, a quarter of an hour in
+    which nothing else happened.
+
+    So the next run of the same command, in the same directory, gets a short
+    limit: enough for a command that now finishes, a fifth of the wait for one
+    that still does not. Only the next one. A run stopped at the short limit
+    is followed by a full one, so a command that is merely slow is never held
+    to the short limit twice running. Never raises.
+    """
+    try:
+        wanted = [str(part) for part in argv]
+        for entry in reversed(read_execution_ledger(str(repo_root), limit=400, by_the_agents=True)):
+            if entry.get("command") != wanted or not _same_invocation(
+                entry, wanted, working_directory
+            ):
+                continue
+            spent = entry.get("duration_seconds")
+            if (
+                str(entry.get("error") or "").lstrip().startswith("Command timed out")
+                and isinstance(spent, (int, float))
+                and spent >= timeout * 0.9
+            ):
+                return max(SHORTEST_RETRY_TIMEOUT_SECONDS, int(timeout * RETRY_TIMEOUT_SHARE))
+            return timeout
+    except Exception:  # noqa: BLE001 - a timeout must not fail the command
+        return timeout
+    return timeout
+
+
 # Resource ceilings. A fork bomb or a runaway build hits these instead of the host.
-MEMORY_LIMIT = os.environ.get("SANDBOX_MEMORY_LIMIT", "4g")
+MEMORY_LIMIT = os.environ.get("SANDBOX_MEMORY_LIMIT", "1g")
 CPU_LIMIT = os.environ.get("SANDBOX_CPU_LIMIT", "2")
 PIDS_LIMIT = os.environ.get("SANDBOX_PIDS_LIMIT", "512")
 
@@ -543,13 +801,63 @@ _MEMORY_BYTES = {"k": 1024, "m": 1024**2, "g": 1024**3}
 
 
 def _memory_limit_bytes() -> int:
-    raw = MEMORY_LIMIT.strip().lower()
+    return _bytes_of(MEMORY_LIMIT, 2 * 1024**3)
+
+
+def _bytes_of(size: str, fallback: int) -> int:
+    """`"1g"`, `"512m"` or a plain number of bytes, as bytes; `fallback` if unreadable."""
+    raw = str(size).strip().lower()
     multiplier = _MEMORY_BYTES.get(raw[-1:], 1)
     digits = raw[:-1] if multiplier > 1 else raw
     try:
         return int(float(digits) * multiplier)
     except ValueError:
-        return 2 * 1024**3
+        return fallback
+
+
+def _process_memory(workspace: str | Path | None) -> int:
+    """The data limit for each process of a command in this workspace, in bytes.
+
+    The configured limit, or more where the project's pack says its toolchain
+    needs more (`StackPack.process_memory`). Read from the pack the contract
+    names, which the scaffold writes before its first install, so the
+    scaffold's own commands get it too.
+    """
+    configured = _memory_limit_bytes()
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(workspace)
+    except Exception:  # noqa: BLE001 - then the configured limit stands
+        return configured
+    if not found:
+        return configured
+    pack, record = found
+    need = _bytes_of(pack.process_memory, 0) if pack.process_memory else 0
+    if _its_tests_run_on_node(pack, record):
+        need = max(need, NODE_TOOLCHAIN_MEMORY)
+    return max(configured, need)
+
+
+#: The data limit a toolchain that runs its tests on Node needs. Measured in the
+#: worker through the sandbox: four Node worker threads would not start under a
+#: 1 or a 2 GB data limit ("Failed to reserve virtual memory for CodeRange", in
+#: `node::worker::Worker::Run`) and ran at 3 GB - each thread's V8 instance
+#: reserves a code range the limit counts. On the gate run, once the page built,
+#: Playwright's runner stopped there on every acceptance file and the round
+#: recorded 13 criteria as not working. The tree watcher still bounds real use.
+NODE_TOOLCHAIN_MEMORY = 4 * 1024**3
+
+#: The programs that start a Node toolchain.
+_NODE_LAUNCHERS = frozenset({"npm", "npx", "node", "pnpm", "yarn"})
+
+
+def _its_tests_run_on_node(pack: Any, record: dict) -> bool:
+    for key in ("unit_test", "acceptance_test"):
+        argv = list(record.get(key) or getattr(pack, key, None) or [])
+        if argv and Path(str(argv[0])).name in _NODE_LAUNCHERS:
+            return True
+    return False
 
 
 MAX_WRITE_BYTES = int(os.environ.get("SANDBOX_MAX_FILE_BYTES", str(2 * 1024**3)))
@@ -589,11 +897,81 @@ def _concurrency_environment() -> Dict[str, str]:
     `app.tools.resources`, which reads what is free now rather than only what
     the configuration allows: a container already holding a large conversation
     hands out a smaller heap than an idle one, which is the case that killed
-    run-cbd22a34 twice.
+    one run twice.
     """
     from app.tools.resources import concurrency_environment
 
     return concurrency_environment(_memory_limit_bytes())
+
+
+#: Settings a toolchain needs to run inside this sandbox at all - not secrets,
+#: and the same for every command.
+#:
+#: .NET maps its executable memory twice, through a file it sizes far beyond
+#: the largest file a command may write (`MAX_WRITE_BYTES`, as RLIMIT_FSIZE):
+#: every `dotnet` command, `dotnet --version` included, was killed by SIGXFSZ
+#: before printing a word. Its write-xor-execute hardening is off in here; the
+#: sandbox's own limits are the boundary.
+TOOLCHAIN_ENVIRONMENT = {
+    "DOTNET_EnableWriteXorExecute": "0",
+    "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+    "DOTNET_NOLOGO": "1",
+    "NEXT_TELEMETRY_DISABLED": "1",
+    # Go fetched a newer toolchain into the run's workspace (some 250 MB)
+    # whenever a module asked for one, every run. A module that needs a newer
+    # Go than the image's is now an error the stage can act on - by asking for
+    # that Go with `use_runtime`, downloaded once for every run
+    # (`app.tools.runtimes`).
+    "GOTOOLCHAIN": "local",
+}
+
+
+#: The longest path a Unix socket may have (`sun_path`, less its terminator).
+UNIX_SOCKET_PATH_LIMIT = 107
+
+
+def _short_temporary_directory(workspace: str) -> str:
+    """A temporary directory of this workspace's own, at a short path.
+
+    Tools make Unix sockets in it (a TypeScript runner's IPC pipe, a
+    bundler's, a language server's), and a socket path longer than
+    `UNIX_SOCKET_PATH_LIMIT` cannot be listened on. Measured on one run: the
+    temporary directory was the workspace's `.agent-home`, the runner's pipe
+    under it was 112 characters, and every launch of the product failed with
+    `listen EINVAL` - so no acceptance test could start it.
+    """
+    import hashlib
+    import tempfile
+
+    digest = hashlib.sha256(os.path.abspath(workspace).encode()).hexdigest()[:12]
+    path = os.path.join(tempfile.gettempdir(), f"run-{digest}")
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    return path
+
+
+def _the_project_virtualenv(workspace: str) -> str | None:
+    """The project's virtualenv bin directory, when this workspace's project has one.
+
+    Found through the project contract, so it is the same directory the
+    pack's own commands use - `.venv/bin/python` in a Python pack's install,
+    unit and serve argv - and never a guess about where a virtualenv might
+    be (Initiative K.5). None when there is no contract, no project, no
+    virtualenv or no interpreter in it: a command then keeps the PATH it
+    had, and nothing is claimed that is not there.
+    """
+    try:
+        from app.stacks import contract
+
+        record = contract.read(workspace)
+        project = str((record or {}).get("project") or "")
+        if not project:
+            return None
+        candidate = Path(workspace) / project / ".venv" / "bin"
+        if (candidate / "python").exists() or (candidate / "python3").exists():
+            return str(candidate)
+    except Exception:  # noqa: BLE001 - a PATH that cannot be enriched stays as it is
+        logger.debug("Could not look for the project's virtualenv", exc_info=True)
+    return None
 
 
 def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict[str, str]:
@@ -602,12 +980,28 @@ def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict
         key: os.environ[key] for key in _ENV_PASSTHROUGH if os.environ.get(key)
     }
     environment.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
+    # A runtime version this project asked for, ahead of the image's own.
+    # See `app.tools.runtimes`.
+    from app.tools.runtimes import path_for
+
+    environment["PATH"] = path_for(workspace, environment["PATH"])
+    # Installs must land in the interpreter environment the product's own
+    # commands read (Initiative K.5). The environment contract tells every
+    # stage so, and then a bare `pip install` in a sandbox command landed in
+    # the system environment while a Python pack runs everything through
+    # `.venv/bin/python` - instructing and then punishing. The project's
+    # virtualenv goes in front of every command's PATH, so `pip`, `python`
+    # and `pytest` are the virtualenv's and an install is visible to the
+    # acceptance server the moment it lands.
+    virtualenv = _the_project_virtualenv(workspace)
+    if virtualenv:
+        environment["PATH"] = virtualenv + os.pathsep + environment["PATH"]
     # Tool caches (npm, pip, cargo) land in the workspace rather than in a
     # home directory shared by every run.
     home = os.path.join(workspace, ".agent-home")
     os.makedirs(home, exist_ok=True)
     environment["HOME"] = home
-    environment["TMPDIR"] = home
+    environment["TMPDIR"] = _short_temporary_directory(workspace)
     # Playwright's browsers are large (Chromium alone is ~190MB) and are
     # downloaded by `npx playwright install`, which runs as a child of this
     # function and therefore writes to `home` above - the workspace, not a
@@ -622,14 +1016,34 @@ def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict
         _pw_cache = os.path.join(home, ".cache", "ms-playwright")
     if os.path.isdir(_pw_cache):
         environment["PLAYWRIGHT_BROWSERS_PATH"] = _pw_cache
+    environment.update(TOOLCHAIN_ENVIRONMENT)
     # Before `extra_env`, so a caller can still override a specific value.
     environment.update(_concurrency_environment())
+    # A port nothing is listening on, for a suite that starts the product
+    # (the stack packs' acceptance configurations read it). Every command
+    # gets one, so a suite an agent runs takes exactly the path the harness's
+    # own runs take. Only the harness passed one before, and a defect that
+    # broke every run but the harness's - a port picked twice - stayed
+    # invisible to every check the harness made.
+    environment["ACCEPTANCE_PORT"] = str(_a_free_port())
     environment.update(extra_env or {})
     return environment
 
 
-def _apply_limits() -> None:
+def _a_free_port() -> int:
+    """A port nothing on this machine is listening on right now."""
+    import socket
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def _apply_limits(data_bytes: int | None = None) -> None:
     """Cap the child before it execs. Runs between fork and exec.
+
+    `data_bytes` is the data limit, by default the configured one; see
+    `_process_memory`.
 
     Nothing here can be relied on the way a container's cgroup can - these are
     per-process rlimits, and a command that forks can multiply its memory use -
@@ -646,7 +1060,7 @@ def _apply_limits() -> None:
     # runtime reserves far more of that than it ever uses: V8 and WebAssembly
     # reserve multi-gigabyte contiguous ranges up front as a bounds-check trick
     # and touch almost none of it. Against a 2 GB address-space cap every WASM
-    # instantiation fails - on run-0b55ad49, `WebAssembly.Instance(): Out of
+    # instantiation fails - on one run, `WebAssembly.Instance(): Out of
     # memory: Cannot allocate Wasm memory for new instance` appeared 24 times,
     # the milestone review concluded "no test commands succeeded in the
     # workspace", and agents had started writing `WebAssembly = null` stubs to
@@ -658,7 +1072,7 @@ def _apply_limits() -> None:
     # local execution, where there is no cgroup.
     memory_limit = getattr(resource, "RLIMIT_DATA", resource.RLIMIT_AS)
     for limit, value in (
-        (memory_limit, _memory_limit_bytes()),
+        (memory_limit, data_bytes or _memory_limit_bytes()),
         (resource.RLIMIT_FSIZE, MAX_WRITE_BYTES),
     ):
         try:
@@ -670,9 +1084,201 @@ def _apply_limits() -> None:
             continue
 
 
-def _image_for(executable: str) -> str:
+class _TreeOverBudget(Exception):
+    """A command's process tree was stopped for the memory it was using."""
+
+    def __init__(self, used: int, budget: int, stdout: str, stderr: str) -> None:
+        super().__init__("process tree over its memory budget")
+        self.used_mb = used // 1024**2
+        self.budget_mb = budget // 1024**2
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+#: How often a running command's process tree is measured.
+_TREE_POLL_SECONDS = 0.5
+
+#: The least a command's tree is ever allowed, whatever the container has free.
+_LEAST_TREE_BUDGET_BYTES = 512 * 1024**2
+
+
+def _tree_memory_bytes(group: int) -> int:
+    """Resident memory of every process in process group `group`. Never raises.
+
+    Read from `/proc`, where there is one: each `stat` carries the group id and
+    `statm` the resident pages. Zero where it cannot be read, which makes the
+    watch below a no-op rather than a failure.
+    """
+    total = 0
+    try:
+        page = os.sysconf("SC_PAGE_SIZE")
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/stat", encoding="utf-8", errors="replace") as handle:
+                    # The command name is in brackets and may hold spaces; the
+                    # fields after it are fixed. pgrp is the third of them.
+                    after = handle.read().rsplit(")", 1)[-1].split()
+                if int(after[2]) != group:
+                    continue
+                with open(f"/proc/{entry}/statm", encoding="utf-8") as handle:
+                    total += int(handle.read().split()[1]) * page
+            except (OSError, ValueError, IndexError):
+                continue
+    except (OSError, ValueError):
+        return 0
+    return total
+
+
+def _tree_budget_bytes() -> int:
+    """What one command's whole process tree may use, from what is free now."""
+    ceiling = _memory_limit_bytes()
+    try:
+        from app.tools.resources import tree_budget
+
+        return max(_LEAST_TREE_BUDGET_BYTES, tree_budget(ceiling))
+    except Exception:  # noqa: BLE001 - then the configured ceiling stands
+        return ceiling
+
+
+def _kill_the_tree(group: int) -> None:
+    try:
+        os.killpg(group, signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        pass
+
+
+#: A test run's closing summary: pytest's "7 errors in 0.26s", "=== 3 passed in 1.2s ===".
+_A_TEST_SUMMARY = re.compile(
+    r"^=*\s*(?:\d+ (?:passed|failed|errors?|skipped|deselected|warnings?|xfailed|xpassed)[, ]*)+"
+    r"(?:in \d+(?:\.\d+)?s)(?: \(\d+:\d+:\d+\))?\s*=*$|^=*\s*no tests ran in \d+(?:\.\d+)?s\s*=*$"
+)
+#: Seconds of silence after that summary before the run is taken as finished.
+SETTLED_AFTER_THE_SUMMARY_SECONDS = 5.0
+
+
+def _the_run_has_summed_up(output: str) -> bool:
+    """Whether the output's last line is a test run's closing summary."""
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    return bool(lines) and bool(_A_TEST_SUMMARY.match(lines[-1]))
+
+
+def _what_the_summary_says(output: str) -> int:
+    """The exit code the summary implies: 1 when anything failed or errored, else 0."""
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    last = lines[-1] if lines else ""
+    return 1 if re.search(r"\b\d+ (?:failed|errors?)\b", last) else 0
+
+
+def _run_and_watch_the_tree(
+    argv: list[str], *, cwd: str, env: Dict[str, str], timeout: int, data_bytes: int | None = None,
+    ends_at_its_summary: bool = False,
+) -> "subprocess.CompletedProcess[str]":
+    """`subprocess.run`, bounding the command's whole process tree.
+
+    The rlimits in `_apply_limits` bound one process, and a command is rarely
+    one process. Measured on one run: `npm test` started a runner with a worker
+    per CPU, each within its own limit; together they took what the container
+    had, the kernel killed the Celery worker instead of any of them, killed the
+    two that replaced it, and the container restarted with the run still
+    marked running.
+
+    Two things change. The tree's resident memory is measured twice a second
+    and the whole process group is killed when it passes what the container can
+    give one command, raising `_TreeOverBudget` - a failed command with a
+    reason, where there was a dead run with none. And a timeout kills the
+    group, not only the process this module started: `subprocess.run` killed
+    the direct child and left its workers running.
+    """
+    process = subprocess.Popen(  # noqa: S603 - argv list, no shell, validated by the caller
+        argv,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        preexec_fn=functools.partial(_apply_limits, data_bytes),  # noqa: PLW1509 - the point is to limit the child
+        start_new_session=False,   # _apply_limits calls setsid itself
+    )
+    budget = _tree_budget_bytes()
+    over: list[int] = []
+    lingered: list[bool] = []
+    finished = threading.Event()
+    # Read as it comes, so the watcher can see a test run's summary arrive.
+    # Measured live: a product's test setup opened a database thread at
+    # import; pytest printed "7 errors in 0.26s" and then never exited, and
+    # every run of it waited out the timeout - 300 s, then 60 s, then 60 s.
+    chunks: dict[str, list[str]] = {"stdout": [], "stderr": []}
+    last_output = [time.monotonic()]
+
+    def read(name: str, stream: Any) -> None:
+        for line in iter(stream.readline, ""):
+            chunks[name].append(line)
+            last_output[0] = time.monotonic()
+        stream.close()
+
+    readers = [
+        threading.Thread(target=read, args=(name, stream), daemon=True)
+        for name, stream in (("stdout", process.stdout), ("stderr", process.stderr))
+    ]
+    for reader in readers:
+        reader.start()
+
+    def watch() -> None:
+        while not finished.wait(_TREE_POLL_SECONDS):
+            used = _tree_memory_bytes(process.pid)
+            if used > budget:
+                over.append(used)
+                _kill_the_tree(process.pid)
+                return
+            if (
+                ends_at_its_summary
+                and time.monotonic() - last_output[0] >= SETTLED_AFTER_THE_SUMMARY_SECONDS
+                and _the_run_has_summed_up("".join(chunks["stdout"]) or "".join(chunks["stderr"]))
+            ):
+                lingered.append(True)
+                _kill_the_tree(process.pid)
+                return
+
+    watcher = threading.Thread(target=watch, name="sandbox-tree-watch", daemon=True)
+    watcher.start()
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_the_tree(process.pid)
+        process.wait()
+        for reader in readers:
+            reader.join(timeout=5)
+        raise subprocess.TimeoutExpired(
+            argv, timeout, output="".join(chunks["stdout"]), stderr="".join(chunks["stderr"])
+        ) from None
+    finally:
+        finished.set()
+        watcher.join(timeout=2)
+        # Whatever the command left behind in its group goes with it.
+        _kill_the_tree(process.pid)
+    for reader in readers:
+        reader.join(timeout=5)
+    stdout, stderr = "".join(chunks["stdout"]), "".join(chunks["stderr"])
+    if over:
+        raise _TreeOverBudget(over[0], budget, stdout, stderr)
+    if lingered:
+        result = subprocess.CompletedProcess(argv, _what_the_summary_says(stdout or stderr), stdout, stderr)
+        result.lingered = True  # type: ignore[attr-defined]
+        return result
+    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+
+
+def _image_for(executable: str, workspace: str | Path | None = None) -> str:
+    """The image a command runs in: the version this workspace pinned, else the configured one."""
+    from app.tools.runtimes import image_tag
+
+    pinned = image_tag(workspace, executable)
+    if pinned:
+        return pinned
     if executable in {"npm", "npx", "node", "yarn", "pnpm"}:
-        return os.environ.get("SANDBOX_NODE_IMAGE", "node:20-slim")
+        return os.environ.get("SANDBOX_NODE_IMAGE", "node:24-slim")
     if executable in {"python", "python3", "pip", "pip3", "pytest", "uv", "django-admin", "alembic"}:
         return os.environ.get("SANDBOX_PYTHON_IMAGE", "python:3.12-slim")
     if executable == "go":
@@ -730,7 +1336,7 @@ def manifest_written_outside_the_project(command: Sequence[str], repo_root: str)
     Commands always run with the workspace root as their working directory, so
     `npm install` there creates `package.json` and `node_modules` at the root -
     beside a project that already has its own. The two then disagree about
-    dependency versions and test configuration, which on run-0b55ad49 meant jest
+    dependency versions and test configuration, which on one run meant jest
     30 at the root running the project's jest-29 tests and three remediation
     rounds spent on "Identifier 'jest' has already been declared".
 
@@ -767,7 +1373,7 @@ def resolve_working_directory(workspace: str, working_directory: str | None) -> 
     tried `cd todo-app && npx jest` was refused with no alternative to fall
     back on.
 
-    Measured on run-95ca3f72: eight commands were spent discovering `--prefix`,
+    Measured on one run: eight commands were spent discovering `--prefix`,
     and `./scripts/line_count_check.sh` inside the project was never runnable
     at all. Four of the refusals were `cd`, one was `bash -lc`; putting either
     on the allowlist would hand back the shell this sandbox exists to withhold.
@@ -786,7 +1392,7 @@ def resolve_working_directory(workspace: str, working_directory: str | None) -> 
         # tool and the prompt all use it - and which means the subdirectory,
         # not a path at the filesystem root.
         #
-        # Only the first was accepted. On run-61c5a5b6 the UI specialist ran
+        # Only the first was accepted. On one run the UI specialist ran
         # its verifier with `working_directory="/simple-to-do-list-app"`, was
         # told the directory it was standing in was "outside the workspace",
         # and had to retry - a gate spent on a convention this codebase itself
@@ -826,7 +1432,7 @@ def workspace_rooted_arguments(
     container where `/` is the container's own root, so `/todo-app/index.html`
     named nothing.
 
-    Measured on run-61c5a5b6: the documentation specialist ran
+    Measured on one run: the documentation specialist ran
     `wc -l /simple-to-do-list-app/index.html`, got "No such file", and spent six
     approval gates on `pwd`, `ls /`, `find` and two more `wc` spellings working
     out a convention it had been taught correctly everywhere else.
@@ -858,7 +1464,7 @@ def workspace_rooted_arguments(
         # The path itself, or - for a path being created - its parent. A
         # `mkdir` target does not exist yet by definition, so requiring the
         # path itself to be there excluded exactly the case that needs this.
-        # Measured on run-2b5def74: the testing specialist spent five gates on
+        # Measured on one run: the testing specialist spent five gates on
         # `mkdir -p /simple-to-do-list-app/tests`, `mkdir -p /tests`, `ls`,
         # `pwd` and finally a relative path - and put the tests in the wrong
         # directory as a result.
@@ -867,7 +1473,23 @@ def workspace_rooted_arguments(
         # narrow: `/nothing-here/x` and a regex like `/foo/` have no parent
         # here and are left alone.
         if not os.path.exists(candidate) and not os.path.isdir(os.path.dirname(candidate)):
-            continue
+            # A root the model put in front - the sandbox's `/workspace`, which
+            # a command's output shows, or one it invented: the same path less
+            # its first part, when that is there. Measured on one run: a fixer
+            # ran `cat /workspace/notes-api/notes_api/storage.py` and
+            # `ls /workspace/notes-api/notes_api/`, "No such file" each time,
+            # for files the read tools had just shown it under that spelling.
+            parts = [part for part in argument.split("/") if part]
+            if len(parts) < 2:
+                continue
+            candidate = os.path.join(workspace, *parts[1:])
+            try:
+                if os.path.commonpath([os.path.realpath(candidate), workspace]) != workspace:
+                    continue
+            except ValueError:
+                continue
+            if not os.path.exists(candidate):
+                continue
         rewritten[index] = os.path.relpath(candidate, run_in)
     return rewritten
 
@@ -885,7 +1507,7 @@ the workspace the way the project directory already is.
 #: because a role that can write a file in a language and not run it has only
 #: bad options - and takes them.
 #:
-#: run-414a621f: the database specialist wrote app.js, app.test.mjs and a
+#: One run: the database specialist wrote app.js, app.test.mjs and a
 #: package.json, was refused `node`, wrote a Python script to subprocess-launch
 #: node (permitted), then tried `python3 app.test.mjs` and finally to `exec()` a
 #: JavaScript module as Python. That was the fourth time `node` was added to one
@@ -902,13 +1524,13 @@ TOOLCHAINS: dict[str, frozenset[str]] = {
     "javascript": frozenset({"node", "npm", "npx", "yarn", "pnpm", "jest", "vitest", "mocha", "tsc", "playwright"}),
     "typescript": frozenset({"node", "npm", "npx", "yarn", "pnpm", "jest", "vitest", "mocha", "tsc", "ts-node", "playwright"}),
     "python": frozenset({"python", "python3", "pip", "pip3", "pytest", "uv", "poetry", "ruff"}),
-    "go": frozenset({"go", "gofmt"}),
+    "go": frozenset({"go", "gofmt", "gotestsum"}),
     "rust": frozenset({"cargo", "rustc", "rustfmt"}),
     "java": frozenset({"java", "javac", "mvn", "gradle"}),
     "kotlin": frozenset({"kotlin", "kotlinc", "gradle"}),
     "csharp": frozenset({"dotnet"}),
     "ruby": frozenset({"ruby", "bundle", "gem", "rake", "rspec"}),
-    "php": frozenset({"php", "composer", "phpunit"}),
+    "php": frozenset({"php", "composer", "phpunit", "phpstan"}),
     "swift": frozenset({"swift", "swiftc"}),
     "dart": frozenset({"dart", "flutter"}),
     "elixir": frozenset({"elixir", "mix"}),
@@ -940,7 +1562,7 @@ def _toolchain_key(language: str) -> str | None:
     "JavaScript (ES6+)", "Python 3.12" and "Go 1.22", and failed on anything
     with a qualifier in front of the name.
 
-    Measured live on run-cac07d52, whose stack selector answered "Plain
+    Measured live on one run, whose stack selector answered "Plain
     JavaScript (ES6+)": the head word was `plain`, nothing matched, and
     `.project-stack` was written empty. Every role then lost the JavaScript
     toolchain, so `tsc`, `vitest` and `playwright` were on no allowlist - in a
@@ -1077,13 +1699,27 @@ def project_stack(repo_root: str | Path | None) -> frozenset[str]:
     return frozenset(line.strip() for line in text.splitlines() if line.strip())
 
 
+#: A word of the form `NAME=value` where a program should be: the shell's way of
+#: setting a variable for one command, written by an author who expects a shell.
+AN_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+#: What to do instead of `NAME=value program ...`, said once for every place that
+#: meets one: a plan's verification command and a command a stage sends.
+ASSIGNMENT_ADVICE = (
+    "A `NAME=value` before a command is a shell's way of setting a variable, and there is no "
+    "shell here, so it sets nothing and is not a program. Every command already gets `PORT` and "
+    "`DATA_DIR`; a value the code needs belongs in the project's own configuration or the "
+    "test's setup, with a development default, and the command is run without it."
+)
+
+
 #: What to do instead, for the commands a model reaches for that this
 #: environment will never allow. The allowlist tells it what it may run; that
 #: is not the same as telling it how to do the thing it was trying to do, and a
 #: model handed a list of twenty-six programs reads it as "pick another one"
 #: rather than "use a different tool".
 #:
-#: Measured on run-130deeef: `sh ./simple-to-do-list-app/build.sh` refused five
+#: Measured on one run: `sh ./simple-to-do-list-app/build.sh` refused five
 #: times, `rm -rf simple-to-do-list-app/tests` once. Both had an obvious answer
 #: the refusal did not mention - `delete_artifact` exists, and a build script's
 #: commands can simply be run.
@@ -1113,6 +1749,25 @@ _INSTEAD_OF: dict[str, str] = {
         "`cd` is not a program. Pass `working_directory` to "
         "`run_terminal_command` to run somewhere else."
     ),
+    # A builtin of a shell nobody has here: `export X=1 && npm test` set nothing
+    # for a later command, and the refusal that listed the allowed programs did
+    # not say why (measured live, run after run).
+    "export": (
+        "`export` is a shell builtin and there is no shell here, so it cannot set anything for a "
+        "command that follows. Every command already gets `PORT` and `DATA_DIR`; a value the code "
+        "needs belongs in the project's own configuration or in the test's setup, not on the command line."
+    ),
+    "set": (
+        "`set` is a shell builtin and there is no shell here. Put a setting in the project's own "
+        "configuration, and run each command by itself."
+    ),
+    "source": (
+        "`source` is a shell builtin and there is no shell here. Run the commands in the file "
+        "directly, one `run_terminal_command` each."
+    ),
+    # `env NAME=value program` is the same wish through a program that is not here.
+    "env": ASSIGNMENT_ADVICE,
+    "unset": "`unset` is a shell builtin and there is no shell here; nothing carries from one command to the next.",
     # Accurate rather than absolute: `NETWORK_CATEGORIES` grants a network to
     # the `install` category, which is how `npm install jsdom` succeeds. What is
     # unavailable is fetching something by hand.
@@ -1130,7 +1785,23 @@ _INSTEAD_OF: dict[str, str] = {
 
 
 def _what_to_do_instead(executable: str) -> str:
-    """The tool that does what this refused command was trying to do, or ""."""
+    """The tool that does what this refused command was trying to do, or "".
+
+    A script invoked by path - `./build.sh`, `scripts/setup.sh` - is refused by
+    the allowlist like any other unknown program, and the refusal used to name
+    only the programs that are permitted. The agent's next move is then to try
+    `sh ./build.sh`, which is refused again for a different reason. Both are
+    the same mistake and both have the same answer, so a `.sh` basename gets
+    the answer already written for `sh`.
+
+    The check is on the name, not on the file: a name ending in `.sh` that is
+    on no allowlist is a script whichever way it was reached, and a name that
+    *is* permitted never arrives here.
+    """
+    if executable.endswith(".sh"):
+        return f" {_INSTEAD_OF['sh']}"
+    if AN_ASSIGNMENT.match(executable):
+        return f" {ASSIGNMENT_ADVICE}"
     suggestion = _INSTEAD_OF.get(executable)
     return f" {suggestion}" if suggestion else ""
 
@@ -1149,7 +1820,7 @@ def _installed(names: frozenset[str] | set[str]) -> tuple[list[str], list[str]]:
     recommends, in the refusal that explains there is no shell. A specialist
     told "Allowed: ... make ..." tries it, is told "not found", and has been
     handed an environment fault it cannot fix - which is the shape that turned
-    run-130deeef into five identical `sh` attempts and then a blocker loop.
+    one run into five identical `sh` attempts and then a blocker loop.
 
     Re-evaluated on every refusal rather than cached, because `pip install
     pytest` and `npm install -D vitest` genuinely move a name from the second
@@ -1202,6 +1873,165 @@ def allowed_executables(
     return base
 
 
+#: A quoted literal inside a code snippet. The snippet is not parsed - every
+#: language quotes a path the same way, and a path is all this needs.
+#:
+#: One character up, not two: a minimum of two makes a one-character literal
+#: unmatchable, so the scan slides past its quotes and swallows the next
+#: literal with them. `open(F, '<', 'app.js')` yielded `', '` and no path.
+_A_QUOTED_LITERAL = re.compile(r"""['"]([^'"\n]{1,200})['"]""")
+
+#: A literal that could be a path: a short extension, optionally with
+#: directories before it. `utf8`, `Exports:` and `, ` are none of those.
+_COULD_BE_A_PATH = re.compile(r"^[\w./@+-]*[\w-]\.[A-Za-z0-9]{1,6}$")
+
+#: How many files one note names. Past a couple the snippet was doing something
+#: else and this is guessing.
+MAX_FILES_A_SNIPPET_NAMED = 3
+
+
+def _what_that_snippet_was_reading(argv: Sequence[str], repo_root: str | Path | None) -> str:
+    """The workspace files an inline snippet names, or "".
+
+    A snippet refused for executing arbitrary code is told to "put the code in
+    a file inside the project folder, run the file, then remove it" - three
+    calls, and a scratch file written into the product. Across the current
+    generation of runs that refusal fired 31 times in 10 of 24 runs, and almost
+    every snippet was reading a file and printing part of it:
+
+        node -e "const pkg = JSON.parse(require('fs').readFileSync('todo-app/package.json','utf8')); ..."
+        node -e "const css = fs.readFileSync('/simple-to-do-list-app/style.css', 'utf8'); ..."
+        node -e "import('./todo-app/app.js').then(m => console.log(Object.keys(m)))"
+
+    Most of those need to execute nothing: `read_file` returns the file and
+    `grep` finds a name inside it. Some do - a snippet that requires the module
+    and exercises it against a mock is not reading - so the note offers the
+    cheaper route rather than asserting the snippet only reads, and repeats that
+    the file-then-delete route is there for one that really must run.
+
+    The refusal stands either way. What a snippet can do is why it is refused,
+    and that does not depend on what this one happened to be for; only the
+    advice after it changes.
+
+    Reads quoted literals rather than any language's syntax, so it is not about
+    any one runtime: `node -e`, `python -c`, `ruby -e`, `php -r` and `perl -e`
+    all quote a path the same way, and the workspace decides whether it is one.
+
+    Never raises, and says nothing unless it can name a file that exists.
+    """
+    if not repo_root:
+        return ""
+    try:
+        root = os.path.abspath(str(repo_root))
+        wanted: list[str] = []
+        for part in argv[1:]:
+            for literal in _A_QUOTED_LITERAL.findall(str(part)):
+                candidate = literal.strip()
+                if not _COULD_BE_A_PATH.match(candidate):
+                    continue
+                if candidate not in wanted:
+                    wanted.append(candidate)
+        if not wanted:
+            return ""
+
+        found: list[str] = []
+        for name in wanted:
+            direct = os.path.join(root, name.lstrip("./"))
+            if os.path.isfile(direct):
+                relative = os.path.relpath(direct, root)
+                if relative not in found:
+                    found.append(relative)
+        if len(found) < len(wanted):
+            # One pruned walk for whatever a direct join did not settle, which
+            # is how `./app.mjs` inside a project folder is found at all.
+            basenames = {os.path.basename(name) for name in wanted}
+            for directory, subdirectories, files in os.walk(root):
+                subdirectories[:] = [
+                    entry for entry in subdirectories
+                    if entry not in IGNORED_DIRECTORIES
+                    and entry not in _RUNNER_OUTPUT_DIRECTORIES
+                ]
+                for entry in files:
+                    if entry not in basenames:
+                        continue
+                    relative = os.path.relpath(os.path.join(directory, entry), root)
+                    if relative not in found:
+                        found.append(relative)
+                if len(found) >= MAX_FILES_A_SNIPPET_NAMED:
+                    break
+    except Exception:  # noqa: BLE001 - a hint must never change a refusal
+        return ""
+
+    if not found:
+        return ""
+    shown = sorted(found)[:MAX_FILES_A_SNIPPET_NAMED]
+    named = ", ".join(f"`{name}`" for name in shown)
+    it = "it" if len(shown) == 1 else "them"
+    # Offered, not asserted. Some of these snippets require the module and
+    # exercise it, which is not reading, and a note that told them otherwise
+    # would be wrong about the one thing it is for.
+    return (
+        f" Before you do: this snippet names {named}, already in the workspace. "
+        f"If what you need is what is in {it}, `read_file` returns that without "
+        "running anything and `grep` finds a name inside without reading all of "
+        f"{it} - one call rather than three, and nothing left to delete. If you "
+        "do need to execute it, the route above is the way."
+    )
+
+
+def _what_to_do_with_that_argument(
+    executable: str,
+    argv: Sequence[str],
+    repo_root: str | Path | None,
+    permitted: frozenset[str] | set[str],
+) -> str:
+    """Why this argument is refused and what to send instead.
+
+    One sentence used to cover every entry in `_FORBIDDEN_ARGS`: "it can
+    execute arbitrary code. Put the code in a file inside the project folder,
+    run the file, then remove it with `delete_artifact`." That is exactly right
+    for `ruby -e` and wrong for the other three shapes the table holds.
+    `npm exec -- sh` has no code to put in a file, and `gradle -b other.gradle`
+    has no snippet either. An agent handed the file-and-delete route for those
+    writes a file it did not need, and the refusal it gets for the next attempt
+    looks identical, so nothing tells it the advice never applied.
+    """
+    kind = _WHY_THE_ARGUMENT_IS_REFUSED.get(executable, "eval")
+    if kind == "any_program":
+        return (
+            "it runs a program the allowlist has not cleared, so it is refused "
+            "whatever follows it. There is nothing to put in a file: run the "
+            "program directly as the first item of `command`, and it is checked "
+            f"on its own name. {_what_can_actually_run(permitted)}"
+        )
+    if kind == "foreign_build_file":
+        return (
+            "the build has to come from the project's own build file. This "
+            "either points it at a different file or supplies a rule on the "
+            "command line, and neither is reproducible for the next stage. Put "
+            "the step in the build file the project already has, then run the "
+            "target by name."
+        )
+    if kind == "reconfigures_the_tool":
+        return (
+            f"it changes how `{executable}` itself runs rather than doing "
+            "anything in the workspace. Send the plain command without it."
+        )
+    # Named as a throwaway, because what is named so is swept before the next
+    # test round and at release (`file_kinds.is_scratch`). "Remove it" was
+    # followed for a few: one run left twelve `tmp-*` probes and one
+    # `src/import-ui.mjs`, and only the last - named like the product - would
+    # have shipped.
+    return (
+        "it can execute arbitrary code. Put the code in a file inside the "
+        "project folder named `tmp-<what it checks>` with the language's own "
+        "extension, and run the file. A file named so is a throwaway the "
+        "harness removes before the next test round and at release, so it "
+        "never ships; any other name is taken for part of the product."
+        + _what_that_snippet_was_reading(argv, repo_root)
+    )
+
+
 def validate_command(
     command: Sequence[str], role_name: str, repo_root: str | Path | None = None
 ) -> list[str]:
@@ -1216,11 +2046,12 @@ def validate_command(
         raise CommandNotAllowed("Command cannot be empty.")
 
     executable = os.path.basename(argv[0])
+
     permitted = allowed_executables(role_name, repo_root)
     if executable not in permitted:
         # A whole command line packed into the first element is not a missing
         # permission, and saying so sends the agent looking for the wrong fix.
-        # Measured on run-1c522244: `["wc -l", "todo-app/style.css"]` was
+        # Measured on one run: `["wc -l", "todo-app/style.css"]` was
         # answered with "'wc -l' is not permitted ... Allowed: ..., wc, ..." -
         # a refusal that lists the very program it is refusing. Three calls
         # went that way across two roles.
@@ -1245,9 +2076,8 @@ def validate_command(
     for index, arg in enumerate(argv[1:], start=1):
         if arg in forbidden:
             raise CommandNotAllowed(
-                f"'{executable} {arg}' is not permitted: it can execute arbitrary code. "
-                "Put the code in a file inside the project folder, run the file, then "
-                "remove it with `delete_artifact`."
+                f"'{executable} {arg}' is not permitted: "
+                + _what_to_do_with_that_argument(executable, argv, repo_root, permitted)
             )
         if arg == "-m" and executable in {"python", "python3"}:
             module = argv[index + 1] if index + 1 < len(argv) else ""
@@ -1269,6 +2099,10 @@ def validate_command(
             "read the result."
         )
 
+    code_to_check = _code_given_to_node_check(argv)
+    if code_to_check is not None:
+        raise CommandNotAllowed(code_to_check)
+
     unparseable = _checks_a_file_node_cannot_parse(argv)
     if unparseable is not None:
         raise CommandNotAllowed(
@@ -1280,16 +2114,96 @@ def validate_command(
             "it contains."
         )
 
-    server = _starts_a_server(argv)
+    directory = _a_directory_given_to_node_test(argv, repo_root)
+    if directory is not None:
+        base = directory.rstrip("/").removeprefix("./")
+        pattern = "**/*.test.js" if base in {"", "."} else f"{base}/**/*.test.js"
+        corrected = [pattern if part == directory else part for part in argv]
+        raise CommandNotAllowed(
+            f"`node --test {directory}` runs no test on the Node here: it loads a "
+            "directory argument as a module and fails before any test starts (\"Could "
+            "not find\", ERR_UNSUPPORTED_DIR_IMPORT). Give it the test files, or a "
+            f"pattern Node expands itself - send {corrected!r}. In a package.json "
+            f"script, quote the pattern: `node --test '{pattern}'`."
+        )
+
+    root_install = _needs_root_the_sandbox_will_not_give(argv)
+    if root_install is not None:
+        raise CommandNotAllowed(root_install)
+
+    server = _starts_a_server(argv) or _a_script_that_serves(argv, repo_root)
     if server:
         raise CommandNotAllowed(
             f"'{server}' is not permitted: it runs until it is stopped, and "
             "nothing here will stop it, so this call would sit until the "
-            "timeout and return nothing. There is also no browser to open the "
-            "page with. To check the page, read the files and assert on them "
-            "from a test; to check the logic, import it and call it."
+            "timeout and return nothing."
+            + _how_to_serve_the_page_instead(str(repo_root or ""))
         )
     return argv
+
+
+#: Playwright subcommands that install *system* packages rather than browsers.
+#: `install-deps` is the documented one; `install --with-deps` is the same thing
+#: reached through a flag.
+_ROOT_INSTALL_SUBCOMMANDS = frozenset({"install-deps"})
+
+
+def _needs_root_the_sandbox_will_not_give(argv: list[str]) -> str | None:
+    """Refuse a command whose only job is to `apt-get install` as root.
+
+    Measured live on this deployment on 2026-09-21. `specialist_ui_ux_2` ran
+    `npx playwright install-deps chromium` and got::
+
+        Installing dependencies...
+        Switching to root user to install dependencies...
+        Failed to install browser dependencies
+        Error: Installation process exited with code: 1
+        stderr: Password: su: Authentication failure
+
+    Three things are wrong with letting that through, and the third is the one
+    that matters.
+
+    It cannot succeed. The runtime image runs as `appuser` deliberately - the
+    whole compose stack is written to avoid root - so a command that shells out
+    to `su` will fail here every time, whatever the agent changes about it.
+
+    It is not needed. The Dockerfile already installs the browser system
+    libraries, for a reason it records: one run spent all three of its
+    remediation attempts on "Playwright regression tests fail due to missing
+    system library libglib-2.0.so.0". They are present; nothing is missing.
+
+    And the error it returns points the wrong way. `su: Authentication failure`
+    reads as a credentials problem, so an agent's next move is to try again with
+    `sudo`, or to give up on browser tests entirely and delete the suite that
+    was about to pass. The Playwright e2e tests in this very run went on to pass
+    twenty assertions once the agent stopped trying to install dependencies it
+    already had. A refusal that says so costs one tool call; the confusion costs
+    a stage.
+
+    `install` itself is untouched: it is a no-op against the image's cache,
+    returns instantly, and refusing it would teach the agent to distrust a
+    command that works.
+    """
+    parts = [os.path.basename(str(part)) for part in argv]
+    if not any(part == "playwright" for part in parts):
+        return None
+
+    asks_for_deps = any(part in _ROOT_INSTALL_SUBCOMMANDS for part in parts) or (
+        "install" in parts and "--with-deps" in parts
+    )
+    if not asks_for_deps:
+        return None
+
+    return (
+        "`playwright install-deps` installs system packages as root, and this "
+        "container runs as an unprivileged user - it will fail with "
+        "`su: Authentication failure` however it is phrased, and that message is "
+        "about `su`, not about anything you can fix.\n\n"
+        "You do not need it. The browser and its system libraries are already in "
+        "this image. Run your tests directly: `npx playwright test`. If a browser "
+        "binary is genuinely missing, `npx playwright install chromium` is "
+        "permitted and returns immediately against the image's cache."
+    )
 
 
 #: Commands whose whole purpose is to keep running. A static file server is
@@ -1298,10 +2212,10 @@ def validate_command(
 #: kills it. Measured across the stored runs - every one of these is a 120s
 #: wait that returned nothing:
 #:
-#:   run-cbd22a34  npx serve . -p 8000        specialist_testing_1
-#:   run-cbd22a34  npx serve -p 8000          specialist_testing_1 (retried)
-#:   run-cbb1a5fc  npx http-server -p 8765    specialist_ui_ux_0
-#:   run-2eb3aa24  npx --yes serve -p 3000    specialist_ui_ux_0 (retried)
+#:   One run  npx serve . -p 8000        specialist_testing_1
+#:   one run  npx serve -p 8000          specialist_testing_1 (retried)
+#:   one run  npx http-server -p 8765    specialist_ui_ux_0
+#:   one run  npx --yes serve -p 3000    specialist_ui_ux_0 (retried)
 #:
 #: Half of all command timeouts on record. A refusal costs nothing and says
 #: what to do instead; a timeout costs two minutes and says nothing. This is
@@ -1312,7 +2226,7 @@ def validate_command(
 #: way of starting a server - `rails server`, `flask run`, `uvicorn`,
 #: `dotnet run`, `php -S`, `mix phx.server`, `ng serve` - ran until the
 #: timeout and returned nothing, and the agent then retried it. That is the
-#: pattern that cost run-e9e7f48f, and the timeout scaling added on
+#: pattern that cost one run, and the timeout scaling added on
 #: 2026-09-19 makes it cost more: on a Rust or Java stack the same hang now
 #: waits several times as long before saying anything.
 #:
@@ -1380,7 +2294,7 @@ def _uses_a_shell_operator(argv: Sequence[str]) -> str | None:
     It prints them, exits 0, and writes nothing - so the agent is told its
     command succeeded and believes the file exists.
 
-    Measured on run-fff9bf89: `specialist_backend_2` did exactly that twice,
+    Measured on one run: `specialist_backend_2` did exactly that twice,
     for `app.js` and `simple-to-do-list-app/app.js`. Both "succeeded". Neither
     file was written.
 
@@ -1396,6 +2310,44 @@ def _uses_a_shell_operator(argv: Sequence[str]) -> str | None:
     return None
 
 
+#: Characters a command-line code snippet has and a file path does not.
+_CODE_NOT_A_PATH = re.compile(r"""[()'"`;{}]""")
+_A_SCRIPT_IT_NAMES = re.compile(r"""['"`]((?:\.{1,2}/)?[\w./-]+\.(?:m|c)?js)['"`]""")
+
+
+def _code_given_to_node_check(argv: Sequence[str]) -> str | None:
+    """Why `node --check <code>` cannot work, or None when it names files.
+
+    `--check` parses the file it is given. Measured on one run: a fix stage ran
+    `node -c "require('./src/main.js')"`, and the refusal for a file node
+    cannot parse answered - the "extension" of that snippet being `.js')` -
+    that there is no syntax checker for this kind of file here. There is one,
+    for the very file the snippet names.
+    """
+    parts = [str(part) for part in argv]
+    if not parts or os.path.basename(parts[0]) != "node":
+        return None
+    if not any(p in {"--check", "-c"} for p in parts[1:]):
+        return None
+    code = next(
+        (part for part in parts[1:] if not part.startswith("-") and _CODE_NOT_A_PATH.search(part)),
+        None,
+    )
+    if code is None:
+        return None
+    named = _A_SCRIPT_IT_NAMES.search(code)
+    instead = (
+        f" To check '{named.group(1)}', send ['node', '--check', "
+        f"'{os.path.normpath(named.group(1))}'] from the directory it is in."
+        if named
+        else " Send the path of the file to check."
+    )
+    return (
+        f"`node --check` parses a file, and '{code}' is code, not a file's path: "
+        f"node would look for a file of that name.{instead}"
+    )
+
+
 def _checks_a_file_node_cannot_parse(argv: Sequence[str]) -> str | None:
     """The non-JavaScript file this `node --check` would refuse, or None.
 
@@ -1405,7 +2357,7 @@ def _checks_a_file_node_cannot_parse(argv: Sequence[str]) -> str | None:
     class as a policy refusal rather than an ordinary failure, and the
     write-gated "you already tried this" note is silent on it by design.
 
-    Measured on run-fa7b7286: `specialist_ui_ux_0` ran the identical
+    Measured on one run: `specialist_ui_ux_0` ran the identical
     `node --check task-manager/style.css` twice, two minutes apart, editing
     files in between - so the gate correctly saw a changed workspace and said
     nothing, twice, about a command that could not work either time.
@@ -1427,18 +2379,240 @@ def _checks_a_file_node_cannot_parse(argv: Sequence[str]) -> str | None:
     return None
 
 
+#: `node` flags whose value follows as the next argument, so it is not a path.
+_NODE_FLAGS_WITH_A_VALUE = frozenset({
+    "--test-reporter", "--test-reporter-destination", "--test-name-pattern",
+    "--test-skip-pattern", "--test-concurrency", "--test-timeout", "--test-shard",
+    "--test-coverage-include", "--test-coverage-exclude", "--import", "--require",
+    "-r", "--loader", "--experimental-loader", "--env-file", "--conditions", "-C",
+})
+
+
+def _a_directory_given_to_node_test(argv: Sequence[str], repo_root: str | Path | None) -> str | None:
+    """The directory this `node --test` is given, or None.
+
+    Node 20 searched a directory argument for test files. The Node here does
+    not: measured in the run image on Node 24.21, `node --test ./` stops at
+    "Could not find './'", and `node --test tests/` loads the directory as a
+    module and reports one failed test, ERR_UNSUPPORTED_DIR_IMPORT - none of
+    the suite's own tests run, however they are written. The harness's own
+    packs named `tests/` until the image moved on, and each failed its smoke
+    test that way.
+
+    A trailing `/`, `.`, or a name with no extension that is a directory in
+    the workspace or the project. A pattern (`tests/**/*.test.js`) is what
+    Node expands itself, and a flag's value is not a path.
+    """
+    parts = [str(part) for part in argv]
+    if not parts or os.path.basename(parts[0]) != "node" or "--test" not in parts[1:]:
+        return None
+    after = parts[parts.index("--test") + 1 :]
+    skip = False
+    for part in after:
+        if skip:
+            skip = False
+            continue
+        if part.startswith("-"):
+            skip = part in _NODE_FLAGS_WITH_A_VALUE
+            continue
+        if re.search(r"[*?\[{]", part):
+            continue
+        if part.endswith("/") or part in {".", ".."}:
+            return part
+        if os.path.splitext(part)[1] or repo_root is None:
+            continue
+        root = Path(repo_root)
+        candidates = [root / part]
+        try:
+            project = (root / ".project-directory").read_text(encoding="utf-8").strip()
+        except OSError:
+            project = ""
+        if project:
+            candidates.append(root / project / part)
+        if any(candidate.is_dir() for candidate in candidates):
+            return part
+    return None
+
+
+def _how_to_serve_the_page_instead(repo_root: str) -> str:
+    """What to do with a page in this workspace, given what it has installed.
+
+    The refusal above is right that a foreground server would sit until the
+    timeout. Its second half was wrong wherever it mattered most: "There is
+    also no browser to open the page with. To check the page, read the files
+    and assert on them from a test."
+
+    Both halves are false in a workspace with Playwright, which is the
+    workspace the harness's own checks push every UI product toward. Measured
+    on one run: `npx serve -p 3000 --cors` was refused with that sentence
+    sixteen times, while the same run's `playwright.config.ts` carried
+    `webServer: { command: 'npx serve .' }`, started it, logged "Accepting
+    connections at http://localhost:3000" and ran 34 browser tests with real
+    passes and failures. The same program, in the same container, refused to
+    the agent and granted to the test runner.
+
+    The advice was worse than the false fact. "Read the files and assert on
+    them from a test" describes the hand-built DOM that `a_dom_built_by_hand`
+    notes and `_refuse_a_hand_built_dom_again` refuses - one part of the
+    harness telling a stage to do what another part stops it doing.
+
+    A project a stack pack scaffolded has that configuration already, kept by
+    the harness: telling a stage to write one sent one run's stages back to the
+    refused command 101 times. There, the answer is the pack's own command.
+    """
+    try:
+        from app.stacks.contract import read as the_contract
+
+        record = the_contract(repo_root)
+    except Exception:  # noqa: BLE001 - no contract, no pack-specific answer
+        record = None
+    if record:
+        command = " ".join(str(part) for part in record.get("acceptance_test") or [])
+        project = record.get("project") or "the project directory"
+        evidence = record.get("evidence_dir") or ""
+        return (
+            f" This project's acceptance configuration already starts the product: "
+            f"`{command}` in `{project}/` serves it, runs the tests against it and stops "
+            f"it again. To look at one criterion, run it alone - "
+            f"`{command} -- -g \"AC-3\"` - and read what it prints"
+            + (f"; a screenshot of every test is kept under `{project}/{evidence}/`" if evidence else "")
+            + ". Starting the server yourself is refused every time, so do not try again."
+        )
+    if _any_manifest_declares_a_browser_runner(repo_root):
+        return (
+            " A browser runner is installed here and browsers do run: start "
+            "the server from Playwright instead of from this tool, with "
+            "`webServer: { command: '...', url: '...' }` in "
+            "`playwright.config.ts`. Playwright starts it, waits for the url, "
+            "runs the tests against it and stops it afterwards, which is the "
+            "one shape of this that finishes. Do not replace the browser test "
+            "with a hand-written `global.document`; that is refused elsewhere."
+        )
+    return (
+        " There is no browser here to open the page with either. To check the "
+        "page, import the module and call it from a test - or install a "
+        "browser runner (`npm install -D @playwright/test`) and let its "
+        "`webServer` start the server for you, which is the supported way to "
+        "serve a page in this sandbox."
+    )
+
+
+#: Programs that look something up and exit. No argument can make one of these
+#: run forever, so a server's name among their arguments is a subject, not a
+#: command - `which serve` asks where `serve` is, it does not start it.
+#:
+#: `tail` is deliberately absent: `tail -f` does run until it is stopped.
+_ONLY_INSPECTS = frozenset({
+    "which", "type", "whereis", "command", "ls", "cat", "head", "grep", "egrep",
+    "fgrep", "rg", "find", "wc", "stat", "file", "echo", "test", "diff", "cmp",
+    "sort", "uniq", "basename", "dirname", "realpath", "readlink", "du", "df",
+    "tree", "pwd", "printenv", "env",
+})
+
+#: A package manager's subcommands that only look a package up, by tool: the
+#: words after them are package names, never a server to start. Measured on a
+#: gate run: `python -m pip show fastapi starlette` was refused twice as a
+#: server that "runs until it is stopped", because `fastapi` is also the name
+#: of a server command.
+_PACKAGE_LOOKUPS: dict[str, frozenset[str]] = {
+    "pip": frozenset({"show", "list", "freeze", "index", "check", "inspect", "download", "search", "help"}),
+    "pip3": frozenset({"show", "list", "freeze", "index", "check", "inspect", "download", "search", "help"}),
+    "npm": frozenset({"view", "info", "show", "ls", "list", "outdated", "explain", "why", "search", "audit"}),
+    "pnpm": frozenset({"ls", "list", "why", "outdated", "info", "view", "audit"}),
+    "yarn": frozenset({"info", "list", "why", "outdated", "audit"}),
+    "cargo": frozenset({"tree", "search", "metadata"}),
+    "go": frozenset({"list", "doc", "version", "env"}),
+    "gem": frozenset({"list", "info", "search", "which"}),
+    "composer": frozenset({"show", "info", "outdated", "why", "depends"}),
+}
+
+
+def _a_package_lookup(parts: Sequence[str]) -> bool:
+    """Whether this command asks a package manager about packages, rather than running anything."""
+    return any(
+        part in _PACKAGE_LOOKUPS and parts[index + 1] in _PACKAGE_LOOKUPS[part]
+        for index, part in enumerate(parts[:-1])
+    )
+
+
+#: Runners that execute whatever follows them, so the program to judge is the
+#: next word rather than the runner. `npx which serve` is still an inspection.
+_DELEGATES_TO_THE_NEXT_WORD = frozenset({"npx", "bunx", "pnpx", "dlx", "exec"})
+
+
+def _the_program_this_would_run(parts: Sequence[str]) -> str:
+    """The program a command actually runs, past any delegating runner."""
+    for part in parts:
+        if part in _DELEGATES_TO_THE_NEXT_WORD or part.startswith("-"):
+            continue
+        if part in {"npm", "pnpm", "yarn", "bun"}:
+            continue
+        return part
+    return parts[0] if parts else ""
+
+
+#: Interpreters that run a script file named as their first argument.
+_RUNS_A_SCRIPT = frozenset({"node", "python", "python3", "deno", "bun", "tsx", "ts-node"})
+
+#: What starting an HTTP listener looks like inside a script, across the
+#: languages the stack packs build in.
+_SERVES = re.compile(
+    r"createServer\s*\(|\.listen\s*\(\s*(?:\d|port|PORT|process\.env)|serve_forever\s*\("
+    r"|uvicorn\.run\s*\(|HTTPServer\s*\(|Deno\.serve\s*\(|Bun\.serve\s*\(|\bapp\.run\s*\("
+)
+
+
+def _a_script_that_serves(argv: Sequence[str], repo_root: str | Path | None) -> str | None:
+    """The script this command runs, when that script starts a server; else None.
+
+    `_starts_a_server` knows server commands by name. A server can also be a
+    plain script - `node scripts/serve.mjs` - which looks like any other
+    program until it is read. One run's QA stage started a stack pack's own
+    static server this way and the call sat until its timeout; the pack's
+    acceptance configuration starts that server itself.
+    """
+    parts = [str(part) for part in argv]
+    if not parts or os.path.basename(parts[0]) not in _RUNS_A_SCRIPT or "--test" in parts:
+        return None
+    script = next((part for part in parts[1:] if not part.startswith("-")), None)
+    if not script or not repo_root:
+        return None
+    # A test may start a server and close it again; running it is not serving.
+    if re.search(r"(?:^|[._/-])(?:test|tests|spec)(?:[._/-]|$)", script, re.I):
+        return None
+    root = Path(repo_root)
+    candidates = [root / script, *(child / script for child in root.iterdir() if child.is_dir())] if root.is_dir() else []
+    for candidate in candidates:
+        try:
+            if candidate.is_file() and _SERVES.search(candidate.read_text(encoding="utf-8", errors="replace")[:200_000]):
+                return script
+        except OSError:
+            continue
+    return None
+
+
 def _starts_a_server(argv: Sequence[str]) -> str | None:
     """The name of the server this command would start, or None.
 
     Matched on the argument rather than the executable because these arrive as
     `npx serve` and `npx --yes serve`, never as `serve` alone.
+
+    That is why a program whose whole job is to look something up needed
+    excluding. Measured on the stored runs: `which serve` and
+    `ls -la node_modules/serve` were both refused with "it runs until it is
+    stopped, and nothing here will stop it" - said about a path lookup and a
+    directory listing. `grep serve package.json` and `npx which serve` do the
+    same. The install carve-out below is the same shape of mistake, found
+    earlier; this is the other half of it.
     """
     parts = [os.path.basename(str(part)) for part in argv]
+    if _the_program_this_would_run(parts) in _ONLY_INSPECTS or _a_package_lookup(parts):
+        return None
     # Installing a server is not running one. `npm install -D serve` names
     # `serve` as the package to add, and every word-matching check here sees
     # a server.
     #
-    # Measured live on run-ed05e20e: `specialist_backend_2` was refused
+    # Measured live on one run: `specialist_backend_2` was refused
     # `npm install -D serve` twice, told "it runs until it is stopped, and
     # nothing here will stop it" about a command that would have exited in
     # seconds. `serve` has been in this list since before it was widened, so
@@ -1453,9 +2627,18 @@ def _starts_a_server(argv: Sequence[str]) -> str | None:
         if wanted and parts[index + 1] in wanted:
             return f"{part} {parts[index + 1]}"
     for index, part in enumerate(parts):
-        if part in _SERVER_MODULES and "-m" in parts[:index]:
+        # The module `-m` runs is the word right after it: in `python -m pip
+        # install uvicorn`, pip runs and uvicorn is only installed.
+        if part in _SERVER_MODULES and index > 0 and parts[index - 1] == "-m":
             return part
         if part not in _SERVER_COMMANDS:
+            continue
+        # A program `_SERVER_SUBCOMMANDS` names is a server only with one of
+        # those subcommands, which the loop above has already checked. Caught
+        # here by its name alone, `rails test`, `ng test` and `flask db
+        # upgrade` were refused as servers - a pack's own unit test command
+        # among them.
+        if part in _SERVER_SUBCOMMANDS:
             continue
         # A generic word is only a server behind something that takes one;
         # `npm run dev` reaches here as `dev` and is caught above, while a
@@ -1474,16 +2657,331 @@ def _starts_a_server(argv: Sequence[str]) -> str | None:
 #: What to say when a command hits the wall. "Command timed out" alone tells an
 #: agent nothing about why, and the commonest cause is not slowness: it is a
 #: command that was never going to exit. `_SERVER_COMMANDS` refuses the ones
-#: that can be recognised by name, but run-2eb3aa24's ui specialist wrote its
+#: that can be recognised by name, but one run's ui specialist wrote its
 #: own - `node serve-test.mjs` - and no name check can catch that.
+#:
+#: It used to say "there is no browser to open a page with" and "to check a page,
+#: read the file and assert on its contents". Both were false wherever a browser
+#: runner could be installed - which is here - and the second describes the
+#: hand-built DOM another check refuses. The commonest cause it never named was
+#: a test runner that watches by default: one run's `npm test` was `vitest`, ran
+#: the full 300 seconds, and the fix was two words, `vitest run`. Named here
+#: without naming any runner, because every ecosystem has one of these.
 _TIMEOUT_ADVICE = (
     " A command that does not finish is usually one that was not meant to: a "
     "server, a watcher, or something waiting on input that will never come. "
-    "Nothing here will connect to a server and there is no browser to open a "
-    "page with, so it would have served nobody. To check a page, read the file "
-    "and assert on its contents from a test; to check logic, import it and call "
-    "it. If the command really is just slow, run the smaller part of it."
+    "A test runner that watches for changes by default never exits on its own: "
+    "check the script this command runs, and use the runner's run-once mode. A "
+    "server a test needs belongs in the test runner's own configuration, which "
+    "starts and stops it. To check logic, import it and call it. If the command "
+    "really is just slow, run the smaller part of it."
 )
+
+#: The same advice for a workspace that HAS a browser runner. The text above
+#: is false there, and it was being sent to the stages most likely to need the
+#: truth.
+#:
+#: Measured on one run. `npx playwright test` timed out and was answered
+#: with "there is no browser to open a page with ... To check a page, read the
+#: file and assert on its contents from a test". Seven minutes later
+#: `npx playwright test --project=Desktop` ran 34 tests in this same sandbox,
+#: with real passes and real failures. Browsers work here; the suite had been
+#: run whole, with its web server starting, against a 120-second limit.
+#:
+#: The advice it replaces is worse than merely wrong. "Read the file and assert
+#: on its contents from a test" is a description of the hand-built DOM that
+#: `a_dom_built_by_hand` refuses, so the harness was telling a stage to do the
+#: thing another part of the harness would stop it doing.
+_TIMEOUT_ADVICE_WITH_A_BROWSER = (
+    " A command that does not finish is usually one that was not meant to: a "
+    "server, a watcher, or something waiting on input that will never come. "
+    "This project has a browser runner installed and browsers do run here, so "
+    "the likely causes are different: the whole suite run at once against this "
+    "limit, or a `webServer` that never came up. Run a smaller part of it - one "
+    "project (`--project=...`), one spec file, or `--reporter=line` - and check "
+    "the server command separately. Do not replace the browser test with a "
+    "hand-written `global.document`: that is refused elsewhere, and for good "
+    "reason."
+)
+
+
+def _declares_a_browser_runner(manifest: Path) -> bool:
+    """Whether one `package.json` brings a browser runner with it."""
+    try:
+        import json as _json
+
+        declared = _json.loads(manifest.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - an unreadable manifest declares nothing
+        return False
+    packages = {
+        **(declared.get("dependencies") or {}),
+        **(declared.get("devDependencies") or {}),
+    }
+    return "@playwright/test" in packages or "playwright" in packages
+
+
+def _any_manifest_declares_a_browser_runner(repo_root: str) -> bool:
+    """The same question with no working directory to start the walk from.
+
+    `validate_command` has the workspace root and nothing else, and the
+    manifest is almost never at the root - every run so far has put the
+    product in a subdirectory of its own. Two levels is enough for that and
+    keeps this off `node_modules`.
+    """
+    if not repo_root:
+        # `Path("")` is the current working directory, which is the harness's
+        # own checkout, not a workspace. A caller with no root knows nothing
+        # about the product, and guessing from the process's cwd would answer
+        # a question about the wrong repository.
+        return False
+    try:
+        root = Path(repo_root)
+        if not root.is_dir():
+            return False
+        for manifest in (root / "package.json", *root.glob("*/package.json")):
+            if manifest.is_file() and _declares_a_browser_runner(manifest):
+                return True
+    except Exception:  # noqa: BLE001 - never fail a refusal over a manifest
+        return False
+    return False
+
+
+def _a_browser_runner_is_installed(repo_root: str, working_directory: str | None) -> bool:
+    """Whether this workspace has Playwright to drive, as opposed to advice.
+
+    Read from the manifests rather than from the command, so it is true for
+    the `npm test` that wraps a Playwright run as well as for a direct one.
+    """
+    if not working_directory:
+        return _any_manifest_declares_a_browser_runner(repo_root)
+    try:
+        import json as _json
+
+        root = Path(repo_root)
+        # `_execute_here` passes an absolute `run_in`; the tool layer passes a
+        # path relative to the workspace. `Path.__truediv__` takes an absolute
+        # right-hand side as the whole answer, so one line covers both.
+        start = (root / working_directory) if working_directory else root
+        start = start.resolve()
+        for folder in (start, *start.parents):
+            manifest = folder / "package.json"
+            if not manifest.is_file():
+                if root not in folder.parents and folder != root:
+                    break
+                continue
+            declared = _json.loads(manifest.read_text(encoding="utf-8"))
+            packages = {
+                **(declared.get("dependencies") or {}),
+                **(declared.get("devDependencies") or {}),
+            }
+            if "@playwright/test" in packages or "playwright" in packages:
+                return True
+            if folder == root:
+                break
+    except Exception:  # noqa: BLE001 - never fail a timeout message over a manifest
+        return False
+    return False
+
+
+#: For an install that ran out of time. Servers, watchers and browser suites -
+#: what the other two describe - are not what an install is.
+_INSTALL_TIMEOUT_ADVICE = (
+    " This was a package install. An install that runs past the limit is a slow "
+    "registry or a large dependency tree, not a command that never ends: run it "
+    "once more, or install fewer packages per command. Nothing was changed by "
+    "the part that did not finish."
+)
+
+
+#: How runtimes report a program or file as missing, each capturing the path.
+#: `spawn /bin/sh ENOENT` is how Node reports a child whose working directory
+#: does not exist - it names the program, not the directory.
+_REPORTED_MISSING = (
+    re.compile(r"spawn (/[\w./+-]+) ENOENT"),
+    re.compile(r"No such file or directory:? '?(/[\w./+-]+)'?"),
+    re.compile(r"(/[\w./+-]+): (?:No such file or directory|not found)"),
+)
+
+
+def _a_missing_path_that_is_here(outcome: dict) -> str:
+    """A note when the output calls a path missing that exists here, or "".
+
+    One run's `specialist_backend_2` ran its browser tests and got
+    `Error: Failed to launch: Error: spawn /bin/sh ENOENT`. It concluded "this
+    container lacks /bin/sh, which is required for Playwright", and deleted
+    the end-to-end suite, its config and its server. `/bin/sh` was there. The
+    config it had just edited gave the web server `cwd: 'simple-todo-list'`,
+    resolved against a config already inside `simple-todo-list/`, and a child
+    started in a directory that does not exist is reported by the name of the
+    program it was starting.
+    """
+    text = f"{outcome.get('stdout') or ''}\n{outcome.get('stderr') or ''}\n{outcome.get('error') or ''}"
+    for pattern in _REPORTED_MISSING:
+        for match in pattern.finditer(text):
+            path = match.group(1).rstrip(".,:;")
+            try:
+                present = Path(path).exists()
+            except OSError:
+                present = False
+            if present:
+                return (
+                    f"'{path}' exists in this environment. An error that names it as "
+                    "missing is about something else it was started with - most often "
+                    "a working directory that does not exist, such as a path given "
+                    "relative to the wrong folder in a command or a configuration "
+                    "file. Check every directory the command and its configuration "
+                    "name before concluding that a tool is unavailable here."
+                )
+    return ""
+
+
+#: A relative path an error reports as missing, in the spellings runtimes use:
+#: Node's `ENOENT: no such file or directory, open './x'` and `Cannot find
+#: module 'x'`, Python's `No such file or directory: 'x'`, and the shell's
+#: `x: No such file or directory`. Absolute paths are `_REPORTED_MISSING`'s.
+_A_RELATIVE_PATH_MISSING = (
+    re.compile(r"no such file or directory,? (?:open|stat|scandir|lstat)? ?'((?!/)[\w./@+-]+)'", re.I),
+    re.compile(r"No such file or directory:? '((?!/)[\w./@+-]+)'"),
+    re.compile(r"Cannot find module '((?!/)[\w./@+-]*[./][\w./@+-]+)'"),
+    re.compile(r"(?m)^(?:[\w-]+: )?((?!/)[\w./@+-]+\.[\w]+): (?:No such file or directory|not found)"),
+)
+
+
+def _a_relative_path_missing_from_where_it_ran(
+    outcome: dict, repo_root: str | Path, working_directory: str | None
+) -> str:
+    """A note when a relative path is missing from where the command ran, or "".
+
+    A relative path in a command, or in a file the command reads, resolves from
+    the directory the command runs in - not from the file that names it. One
+    run's `specialist_ui_ux_0` wrote `todo-list/validate.mjs` reading
+    `./style.css` and ran it from the workspace root, then from `todo-list`
+    with the script named from the root, then flipped the path between
+    `./style.css` and `todo-list/style.css` four times: ENOENT every time, a
+    dozen calls, and each error named only the path, never the directory it
+    was looked for in. The harness knows both, and where the file is.
+
+    Only when exactly one workspace file ends with the reported path, so the
+    note never guesses between two.
+    """
+    text = f"{outcome.get('stdout') or ''}\n{outcome.get('stderr') or ''}"
+    if not text.strip():
+        return ""
+    try:
+        root = Path(repo_root).resolve()
+        ran_in = (root / (working_directory or "")).resolve()
+    except OSError:
+        return ""
+    for pattern in _A_RELATIVE_PATH_MISSING:
+        for match in pattern.finditer(text):
+            wanted = match.group(1).rstrip(".,:;")
+            while wanted.startswith("./"):
+                wanted = wanted[2:]
+            if not wanted or wanted.startswith("../") or (ran_in / wanted).exists():
+                continue
+            name = wanted.rsplit("/", 1)[-1]
+            try:
+                found = [
+                    candidate.relative_to(root).as_posix()
+                    for candidate in files_under(root, NOT_SEARCHED_FOR_A_STAGE, name)
+                    if candidate.is_file()
+                    and candidate.relative_to(root).as_posix().endswith(wanted)
+                ]
+            except Exception:  # noqa: BLE001 - a note must never fail a command
+                return ""
+            if len(found) != 1:
+                continue
+            here = found[0]
+            base = here[: -len(wanted)].rstrip("/")
+            where = f"'{working_directory}'" if working_directory else "the workspace root"
+            instead = f"working_directory '{base}'" if base else "no working_directory"
+            return (
+                f"'{match.group(1)}' was looked for in the directory this command ran "
+                f"in, {where}, and is not there. It is at '{here}'. A relative path - "
+                "in the command or in a file the command reads - resolves from the "
+                "working directory, not from the file that names it. Run with "
+                f"{instead} and name every other path relative to that, or change the "
+                "path to be relative to where it runs."
+            )
+    return ""
+
+
+def _timeout_advice(
+    repo_root: str, working_directory: str | None, command: Sequence[str] = ()
+) -> str:
+    """Which of the advice above this command and workspace have earned.
+
+    The browser advice is about a test run - "the whole suite run at once ...
+    or a `webServer` that never came up" - so it goes only to a command that
+    runs tests. One run's testing specialist started its own `node server.js`,
+    which never exits, and was told "the likely causes are different" from the
+    server its command was.
+    """
+    if command and _fetches_dependencies(command):
+        return _INSTALL_TIMEOUT_ADVICE
+    if (not command or _runs_tests(command)) and _a_browser_runner_is_installed(
+        repo_root, working_directory
+    ):
+        return _TIMEOUT_ADVICE_WITH_A_BROWSER
+    return _TIMEOUT_ADVICE
+
+
+def strip_a_redundant_cd(
+    command: Sequence[str], working_directory: str | None
+) -> tuple[list[str], str | None]:
+    """Drop a leading `cd <dir> &&` that names the directory already in force.
+
+    Measured live on 2026-09-21, twice in one run, by two different roles::
+
+        specialist_ui_ux_2   ["cd", "task-manager", "&&", "node", "--check", "app.js"]
+                             working_directory: "task-manager"
+        defect_fix_1_0       ["cd", "task-manager", "&&", "npx", "playwright", ...]
+                             working_directory: "task-manager"
+
+    Both were refused with "`cd` is not a program. Pass `working_directory`" -
+    and both had *already passed it*, naming the very directory the `cd` asks
+    for. The refusal is correct about `cd` and useless about the situation: the
+    agent did the right thing and added a belt to its braces, and paid a model
+    call for it.
+
+    This is the `strip_a_doubled_working_directory` shape - an agent expressing
+    the same intent twice - and it takes the same answer: recognise it, do what
+    was meant, and say so.
+
+    Narrow on purpose. The prefix is dropped only when the `cd` target resolves
+    to the same place as `working_directory`. A `cd` somewhere *else* is a real
+    disagreement about where the command should run, and guessing which half is
+    right would be the clever-rather-than-safe move this module avoids: it stays
+    refused, with the message that already explains what to pass.
+    """
+    # A string, not a list, is refused downstream with a message that says so.
+    # `list()` on it would split it into characters and the refusal would name a
+    # one-letter executable instead. `strip_a_doubled_working_directory` carries
+    # the same guard for the same reason, and leaving it out here reintroduced
+    # the defect its comment describes - caught by
+    # `test_a_command_string_is_still_refused`.
+    if isinstance(command, (str, bytes)):
+        return command, None  # type: ignore[return-value]
+    argv = list(command)
+    if len(argv) < 4 or str(argv[0]) != "cd" or str(argv[2]) != "&&":
+        return argv, None
+    if not working_directory:
+        return argv, None
+
+    target = str(argv[1]).strip().strip("/")
+    here = str(working_directory).strip().strip("/")
+    if target != here and target not in {".", "./"}:
+        return argv, None
+
+    rest = [str(part) for part in argv[3:]]
+    if not rest:
+        return argv, None
+    return rest, (
+        f"Dropped the leading `cd {argv[1]} &&`: working_directory is already "
+        f"'{working_directory}', so the command runs there anyway. There is no "
+        "shell here, so `cd` would have been refused - passing "
+        "`working_directory`, as you did, is the whole answer."
+    )
 
 
 def strip_a_doubled_working_directory(
@@ -1495,11 +2993,11 @@ def strip_a_doubled_working_directory(
     project into the path as well produces `todo-app/todo-app/app.test.mjs`,
     which exists nowhere. Seen in at least seven runs:
 
-        run-2b5def74  simple-to-do-list-app/simple-to-do-list-app/app.test.js
-        run-61c5a5b6  simple-to-do-list-app/simple-to-do-list-app/tests.test.js  (x6)
-        run-cbb1a5fc  simple-to-do-list-app/simple-to-do-list-app/app.test.mjs
-        run-da6c5e19  task-manager/task-manager/*.test.*
-        run-2eb3aa24  simple-to-do-list-app/simple-to-do-list-app/app.test.mjs
+        One run  simple-to-do-list-app/simple-to-do-list-app/app.test.js
+        one run  simple-to-do-list-app/simple-to-do-list-app/tests.test.js  (x6)
+        one run  simple-to-do-list-app/simple-to-do-list-app/app.test.mjs
+        one run  task-manager/task-manager/*.test.*
+        one run  simple-to-do-list-app/simple-to-do-list-app/app.test.mjs
 
     The ambiguity is real - nothing says whether a path argument resolves
     against the workspace root or against `working_directory` - so the agent
@@ -1509,6 +3007,30 @@ def strip_a_doubled_working_directory(
     DOES. That is what makes this safe rather than clever: a project that
     genuinely contains a directory of its own name still resolves as written,
     because then the original exists and nothing is touched.
+
+    That test cannot decide a command that *creates* the path, because then
+    neither version exists yet - and such a command succeeds, so no failure and
+    no hint ever follows it. Measured live on one run:
+
+        06:29:00  test_round_0  wd='task-manager'  mkdir -p task-manager/e2e
+
+    which made `task-manager/task-manager/e2e`, an empty directory that is still
+    in the shipped workspace. The stage then wrote
+    `task-manager/e2e/todo.spec.ts` - `write_artifact` paths are workspace-
+    relative - so the file landed in the right place and the run carried a stray
+    directory, and two later `ls /task-manager/e2e` calls were answered with a
+    hint pointing at the doubled path.
+
+    So for a command whose whole purpose is to create a directory, the prefix is
+    stripped even when the stripped path does not exist yet. That is safe
+    because it only applies when neither path exists - nothing is being shadowed
+    - and creating `X/X/...` from inside `X` is not a thing anyone intends. The
+    agent's own model is workspace-relative throughout, which is what stripping
+    produces.
+
+    Across the 27 current-generation runs, 42 commands name a path that repeats
+    their working directory. Most fail, and the failure hint already names where
+    the file really is; these are the ones that silently succeed.
     """
     # A string, not a list, is refused downstream with a message that says so.
     # `list()` on it would split it into characters and the refusal would name
@@ -1523,13 +3045,18 @@ def strip_a_doubled_working_directory(
     except Exception:  # noqa: BLE001 - a guard must not fail the command
         return list(command), None
 
+    # A command that makes a directory rather than reading one. `install` is
+    # here for `install -d`, which is the same intent spelled differently.
+    creates_the_path = os.path.basename(str(command[0])) in {"mkdir", "install"} if command else False
+
     rewritten: list[str] = []
     changed: list[str] = []
+    created: list[str] = []
     for part in command:
         argument = str(part)
         # `./project/app.test.mjs` and `/project/app.test.mjs` mean the same
         # thing to the model as `project/app.test.mjs`, and it writes all
-        # three. Comparing the raw string missed the first two: run-04576307
+        # three. Comparing the raw string missed the first two: one run
         # sent `["node", "--test", "./simple-to-do-list-app/app.test.mjs"]`
         # with `working_directory` already set to the project, and the guard
         # written for exactly that shape did not fire over one `.`.
@@ -1543,18 +3070,43 @@ def strip_a_doubled_working_directory(
                     rewritten.append(shortened)
                     changed.append(f"{argument} -> {shortened}")
                     continue
+                # Neither exists, and this command is about to make one of
+                # them. Declined when a directory of the same name really is
+                # nested here - then the layout is genuine and the agent may
+                # mean it, which is the case the original rule protects.
+                if (
+                    creates_the_path
+                    and shortened
+                    and not (base / bare).exists()
+                    and not (base / prefix).is_dir()
+                ):
+                    rewritten.append(shortened)
+                    created.append(f"{argument} -> {shortened}")
+                    continue
             except OSError:
                 pass
         rewritten.append(argument)
-    if not changed:
+    if not changed and not created:
         return list(command), None
+    reasons = []
+    if changed:
+        reasons.append(
+            ", ".join(changed)
+            + " (the path as given does not exist; the shortened one does)"
+        )
+    if created:
+        reasons.append(
+            ", ".join(created)
+            + " (this command creates the path, and creating it under the "
+            "directory of the same name would have made "
+            f"'{prefix}/{prefix}/...', which nothing else would then find)"
+        )
     return rewritten, (
         "Note: the working directory is already '"
         + prefix
         + "', so "
-        + ", ".join(changed)
-        + " (the path as given does not exist; the shortened one does). Paths "
-        "in a command are relative to the working directory."
+        + "; ".join(reasons)
+        + ". Paths in a command are relative to the working directory."
     )
 
 
@@ -1576,6 +3128,44 @@ def execution_enabled() -> bool:
     return os.environ.get("ALLOW_COMMAND_EXECUTION", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def execution_readiness() -> tuple[bool, str]:
+    """Whether a command can run from this process, and in a sentence why or why not.
+
+    A run that cannot run commands can still write a product, but never
+    install, build or test it, so every check that needs a command fails and
+    the run spends its model calls on a result nobody can verify. That is
+    worth knowing before the first call, not after the last.
+    """
+    if not execution_enabled():
+        return False, (
+            "Command execution is turned off (ALLOW_COMMAND_EXECUTION is not true), so a "
+            "run could write a product but never install, build or test it. Set "
+            "ALLOW_COMMAND_EXECUTION=true for the worker, with SANDBOX_EXECUTION_MODE "
+            "chosen for the isolation this deployment needs."
+        )
+    if execution_mode() == IN_CONTAINER_MODE:
+        return True, "Commands run in the worker's own container."
+    try:
+        binary = _docker_binary()
+    except SandboxUnavailable as error:
+        return False, str(error)
+    try:
+        probe = subprocess.run(
+            [binary, "version", "--format", "{{.Server.Version}}"],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return False, f"The container runtime '{binary}' could not be asked for its version: {error}"
+    if probe.returncode != 0:
+        reason = (probe.stderr or probe.stdout or "").strip().splitlines()
+        return False, (
+            f"Commands are to run in their own containers, but '{binary}' cannot reach its "
+            f"daemon ({reason[0] if reason else f'exit {probe.returncode}'}). Mount a working "
+            "runtime socket into the worker, or set SANDBOX_EXECUTION_MODE=in-container."
+        )
+    return True, "Commands run in their own containers."
+
+
 def _as_workspace_relative(text: str, workspace: str) -> str:
     """Rewrite the host's workspace path out of command output.
 
@@ -1584,7 +3174,7 @@ def _as_workspace_relative(text: str, workspace: str) -> str:
     path. The agent reads it and uses it, and every filesystem tool it holds
     then fails, because inside the agent the workspace is rooted at "/".
 
-    Measured on run-0b55ad49: agents called `ls` against that exact string four
+    Measured on one run: agents called `ls` against that exact string four
     times in a row across two stages, every attempt returning `path_not_found`,
     and passed it to `node` and `read_file` besides. Removing it from the
     prompts is only half the fix - command output puts it back.
@@ -1594,7 +3184,7 @@ def _as_workspace_relative(text: str, workspace: str) -> str:
     workspace as their working directory - so `simple-todo-list-app/app.js`
     works there while `/simple-todo-list-app/app.js` does not. That second form
     is not hypothetical either: agents built shell commands from rooted paths
-    three times in one stage on run-0b55ad49, and every one failed. The artifact
+    three times in one stage on one run, and every one failed. The artifact
     tools accept a relative path too, so this form is the one that works
     everywhere the agent might paste it.
     """
@@ -1608,18 +3198,22 @@ def _as_workspace_relative(text: str, workspace: str) -> str:
     return text.replace(f"{root}/", "").replace(root, ".")
 
 
-def _truncate(text: str, label: str = "output") -> str:
+def _truncate(text: str, label: str = "output", workspace: str | None = None) -> str:
     """Cap output for the model, keeping the whole of it on disk.
 
     The tail is kept as well as the head: a build's actual error is almost
     always in the last lines, and a head-only cut reliably discards it.
+
+    `workspace` only tags the entry with the run it came from. The journal is one
+    shared directory, so without the tag `read_command_output` could neither list
+    a run's own entries nor keep from offering another run's.
     """
     if len(text) <= MAX_OUTPUT_SIZE:
         return text
 
-    from app.tools.journal import write_entry
+    from app.tools.journal import scope_of, write_entry
 
-    reference = write_entry(label, text)
+    reference = write_entry(label, text, scope=scope_of(workspace))
     head = text[: int(MAX_OUTPUT_SIZE * 0.4)]
     tail = text[-int(MAX_OUTPUT_SIZE * 0.4):]
     pointer = (
@@ -1696,9 +3290,13 @@ def _where_it_ran(working_directory: str | None) -> str:
 
 #: TAP's own summary lines, as `node --test` and anything TAP-compatible
 #: print them. Not anchored: the output reaches here inside a JSON string.
-_TAP_PASS = re.compile(r"#\s*pass\s+(\d+)")
-_TAP_FAIL = re.compile(r"#\s*fail\s+(\d+)")
-_TAP_TESTS = re.compile(r"#\s*tests\s+(\d+)")
+# Node's TAP reporter writes "# pass 12"; its spec reporter, which the stack
+# packs' unit scripts use, writes "ℹ pass 12". Reading only the first left
+# every unit run of every pack-built project without counts - one run's Sprint
+# Records said "Passed: 0, Failed: 0" for a suite of twelve passing tests.
+_TAP_PASS = re.compile(r"^\s*[#ℹ]\s*pass\s+(\d+)", re.M)
+_TAP_FAIL = re.compile(r"^\s*[#ℹ]\s*fail\s+(\d+)", re.M)
+_TAP_TESTS = re.compile(r"^\s*[#ℹ]\s*tests\s+(\d+)", re.M)
 
 #: How each test runner reports its totals.
 #:
@@ -1746,12 +3344,25 @@ def _the_counts_a_test_run_reported(result: dict) -> dict:
         _TAP_TESTS.search(text),
     )
     if passed and failed and tests:
-        return {
+        tap = {
             "passed": int(passed.group(1)),
             "failed": int(failed.group(1)),
             "tests": int(tests.group(1)),
         }
+        # And whatever ran after it. `node --test x && playwright test` is one
+        # command and two runners; returning at the TAP totals dropped the
+        # second. One run's sprint summary reported "Test Cases: 36" for a
+        # suite of 36 unit tests and 10 browser tests. TAP's "# pass 36" does
+        # not match any runner pattern below, so nothing is counted twice.
+        other = _the_first_runner_s_totals(text)
+        if other:
+            return {key: tap[key] + other[key] for key in tap}
+        return tap
+    return _the_first_runner_s_totals(text)
 
+
+def _the_first_runner_s_totals(text: str) -> dict:
+    """The totals of the first non-TAP runner `text` reports, or `{}`."""
     # Not TAP. Every other runner says the same thing in its own words, and
     # reading only TAP is why the regression check fired in 3 runs of 41 while
     # 39 of them broke a suite that had been green. See `_RUNNER_TOTALS`.
@@ -1772,6 +3383,27 @@ def _the_counts_a_test_run_reported(result: dict) -> dict:
     return {}
 
 
+#: Said when a test command answers as it did last time and nothing has changed since.
+#: Measured on a gate run: a fixer ran one test command twice in a row, then
+#: another three times, each the same result, with 4,000-20,000 tokens of
+#: reasoning "to reproduce the failure" between runs - the guard against a
+#: call repeated with the same answer waits for four in a row.
+SAME_RESULT_NOTHING_CHANGED = (
+    "\n\n[The same result as this command gave here at {at} UTC - {passed} of {tests} passed - and no "
+    "file has changed since. Running it again cannot show anything new: change what the failure "
+    "names, or give your answer.]"
+)
+
+
+def _nothing_changed_since(repo_root: str, at: Any) -> bool:
+    """Whether no file of the workspace changed after the moment `at` (an ISO time); False when it cannot tell."""
+    try:
+        moment = datetime.fromisoformat(str(at)).timestamp()
+    except (TypeError, ValueError):
+        return False
+    return not files_changed_since(repo_root, moment)
+
+
 def _fewer_pass_than_last_time(
     repo_root: str, command: Sequence[str], working_directory: str | None, result: dict
 ) -> str:
@@ -1783,8 +3415,8 @@ def _fewer_pass_than_last_time(
     last edit caused.
 
     Thirteen of the twenty-three runs with two comparable results have at
-    least one: run d6297b2f's `defect_fix_1_0` went 6 passing to 0 over seven
-    tests, run 84e05d4b's `implementation` 4 to 0, run f81808a4's
+    least one: one run's `defect_fix_1_0` went 6 passing to 0 over seven
+    tests, one run's `implementation` 4 to 0, one run's
     `specialist_testing_3` 10 to 8 over twelve.
 
     Only against the same command in the same directory, and only when the
@@ -1799,11 +3431,14 @@ def _fewer_pass_than_last_time(
     try:
         here = _where_it_ran(working_directory)
         argv = [str(part) for part in command]
-        for entry in reversed(read_execution_ledger(repo_root)):
+        for entry in reversed(read_execution_ledger(repo_root, by_the_agents=True)):
             if entry.get("command") != argv or entry.get("working_directory") != here:
                 continue
             if "passed" not in entry or "tests" not in entry:
                 continue
+            if (now["passed"], now["tests"]) == (entry["passed"], entry["tests"]) and _nothing_changed_since(repo_root, entry.get("at")):
+                return SAME_RESULT_NOTHING_CHANGED.format(
+                    at=str(entry.get("at") or "")[11:16], passed=now["passed"], tests=now["tests"])
             if now["passed"] >= entry["passed"] and now["tests"] >= entry["tests"]:
                 return ""
             
@@ -1853,7 +3488,7 @@ def _record_execution(
     can tell them apart.
 
     `working_directory` is part of the record because it is part of the
-    command. Without it, run-44653bd2's `node --test` under
+    command. Without it, one run's `node --test` under
     `/simple-to-do-list-app` and under `simple-to-do-list-app` were one entry,
     so "you already ran this" was answered from the wrong history. Keying on
     argv alone is the mistake finding 68 already made once.
@@ -1865,11 +3500,13 @@ def _record_execution(
         entry = {
             "at": datetime.now(timezone.utc).isoformat(),
             "role": role_name,
+            "stage": _the_stage_running_now(),
             "command": [str(part) for part in command],
             "working_directory": _where_it_ran(working_directory),
             "category": category,
             "returncode": _as_exit_code(result.get("returncode")),
             "error": result.get("error"),
+            "by": "harness" if running_for_the_harness() else "agent",
             # How long it actually took. Nothing reads this yet; it is here so
             # B3's measured timeout - p95 of a category's successful runs on
             # this stack, doubled - has evidence to derive from. A constant
@@ -1886,8 +3523,33 @@ def _record_execution(
         logger.debug("Could not append to the execution ledger", exc_info=True)
 
 
-def read_execution_ledger(repo_root: str, limit: int = 200) -> list[dict]:
-    """Every command this run actually ran, oldest first. Never raises."""
+#: Set while the harness runs a command itself - its scaffold, its runs of
+#: the suites, its CI measurements - rather than on an agent's behalf.
+#:
+#: Every guard that steers an agent away from repeating itself was applied to
+#: the harness too. On one run the agents had run the acceptance suite three
+#: times with nothing written between, so when the harness measured the state
+#: the sprint was accepted in, the sandbox withheld the run ("Not running this
+#: again ... you already have the answer"): the accepted baseline recorded no
+#: acceptance results at all, so the next sprint's CI could not see a criterion
+#: regress, and the same refusal at the release gate would have held a finished
+#: product back as "the suite did not run". The harness measures; it is not
+#: told it already knows.
+_FOR_THE_HARNESS: contextvars.ContextVar[bool] = contextvars.ContextVar("for_the_harness", default=False)
+
+
+def running_for_the_harness() -> bool:
+    """Whether the command being run now is the harness's own."""
+    return _FOR_THE_HARNESS.get()
+
+
+def read_execution_ledger(repo_root: str, limit: int = 200, *, by_the_agents: bool = False) -> list[dict]:
+    """Every command this run actually ran, oldest first. Never raises.
+
+    `by_the_agents` leaves out the harness's own runs, for the questions that
+    are about what an agent did: whether it is repeating itself, and whether
+    it ran the command it says proves its fix.
+    """
     path = _ledger_path(repo_root)
     if path is None or not path.is_file():
         return []
@@ -1895,9 +3557,12 @@ def read_execution_ledger(repo_root: str, limit: int = 200) -> list[dict]:
     try:
         for line in path.read_text(encoding="utf-8").splitlines()[-limit:]:
             try:
-                entries.append(json.loads(line))
+                entry = json.loads(line)
             except ValueError:
                 continue
+            if by_the_agents and isinstance(entry, dict) and entry.get("by") == "harness":
+                continue
+            entries.append(entry)
     except OSError:
         return []
     return entries
@@ -1925,10 +3590,10 @@ def failed_this_way_before(
 ) -> int:
     """How many times this exact command has already failed in this run.
 
-    Measured twice on run-9ff00d5b's `specialist_backend_2`: the agent wrote a
+    Measured twice on one run's `specialist_backend_2`: the agent wrote a
     `verify.js`, hit `node:fs:448 ... binding.readFileUtf8` on a path that does
     not exist, and ran the identical command four times with the identical
-    failure. Earlier, run-e9e7f48f's `specialist_ui_ux_2` made 14 identical
+    failure. Earlier, one run's `specialist_ui_ux_2` made 14 identical
     `grep` calls and rode the stage into the recursion limit, failing the run.
 
     Nothing told either of them. A command that failed and is run again
@@ -1942,7 +3607,7 @@ def failed_this_way_before(
     """
     argv = [str(part) for part in command]
     try:
-        entries = read_execution_ledger(repo_root)
+        entries = read_execution_ledger(repo_root, by_the_agents=True)
     except Exception:  # noqa: BLE001 - a hint must never fail the command
         return 0
     entries = [e for e in entries if _same_invocation(e, argv, working_directory)]
@@ -1952,7 +3617,7 @@ def failed_this_way_before(
         if entry.get("command") == argv
         and _as_exit_code(entry.get("returncode")) not in (0, None)
         # A `grep` that matched nothing exited 1 and is not a failure. Counting
-        # it here told `specialist_ui_ux_1` on run-1c522244 that a working
+        # it here told `specialist_ui_ux_1` on one run that a working
         # command had "failed" and to "change the file it runs"; it ran the
         # same grep twelve times and the run died on the repeat guard.
         and not _ran_and_answered(argv, _as_exit_code(entry.get("returncode")))
@@ -1964,7 +3629,7 @@ def failed_this_way_before(
     # telling it "running it again unchanged will fail again" is both false and
     # discouraging exactly the right behaviour.
     #
-    # Caught on run-37476645's `specialist_testing_2`, live, in the first run
+    # Caught on one run's `specialist_testing_2`, live, in the first run
     # after this check shipped: the trace is EDIT, RUN, EDIT, RUN, EDIT, RUN -
     # a specialist debugging a suite properly - and it was told twenty-six
     # times that it had changed nothing. The settled-answer middleware and the
@@ -1987,7 +3652,7 @@ def failed_this_way_before(
 #: Deliberately NOT added to `IGNORED_DIRECTORIES`, which hides a directory
 #: from every listing and read. Playwright's `test-results/` holds
 #: `error-context.md`, which says why a browser test failed and which an agent
-#: read to good effect on run-cac07d52. Hiding it would remove the best
+#: read to good effect on one run. Hiding it would remove the best
 #: diagnostic the suite produces.
 #:
 #: They are excluded from one thing only: the "has anything changed since"
@@ -2018,7 +3683,7 @@ def _written_since(
     edited the file under test, so the only writes that should clear it are
     writes where the command runs. The workflow itself writes `docs/*.md`
     between every stage, and the old whole-workspace walk counted those: on
-    run-2bfa5e6e a `npm test` failing on a missing `package.json` was re-run
+    one run a `npm test` failing on a missing `package.json` was re-run
     three times in three different stages, each with only a rendered review
     document between them, and the "already failed N times" note never fired
     once. The agent was never told what the harness already knew.
@@ -2056,6 +3721,44 @@ def _written_since(
     return False
 
 
+#: The most changed files a command's result names; past it, a count.
+MOST_FILES_CHANGED_NAMED = 20
+
+
+def files_changed_since(repo_root: str, moment: float) -> list[str]:
+    """Workspace-relative files modified after `moment`, dependency and runner output pruned. Never raises.
+
+    The same walk as `_changed_since`, which answers only whether anything
+    changed. A list past `MOST_FILES_CHANGED_NAMED` ends with how many more.
+    """
+    found: list[str] = []
+    more = 0
+    try:
+        for directory, subdirectories, files in os.walk(repo_root):
+            subdirectories[:] = [
+                name for name in subdirectories
+                if name not in IGNORED_DIRECTORIES and name not in _RUNNER_OUTPUT_DIRECTORIES
+                and not name.startswith(".")
+            ]
+            for name in files:
+                if name.startswith("."):
+                    continue
+                path = os.path.join(directory, name)
+                try:
+                    if os.stat(path).st_mtime <= moment:
+                        continue
+                except OSError:
+                    continue
+                if len(found) < MOST_FILES_CHANGED_NAMED:
+                    found.append(os.path.relpath(path, repo_root).replace(os.sep, "/"))
+                else:
+                    more += 1
+    except Exception:  # noqa: BLE001 - nothing known is nothing claimed
+        return []
+    found.sort()
+    return found + ([f"... and {more} more"] if more else [])
+
+
 def _resolve_a_working_directory(repo_root: str, working_directory: str | None) -> str:
     """The absolute directory a command runs in, or the workspace root.
 
@@ -2070,9 +3773,12 @@ def _resolve_a_working_directory(repo_root: str, working_directory: str | None) 
 
 
 def timed_out_this_way_before(
-    repo_root: str, command: Sequence[str], working_directory: str | None = None
+    repo_root: str,
+    command: Sequence[str],
+    working_directory: str | None = None,
+    category: str | None = None,
 ) -> int:
-    """How many times this exact command has already timed out in this run.
+    """How many times this exact command has timed out with nothing written since.
 
     Separate from `failed_this_way_before` because a timeout records no exit
     code - the process never exited - so that function's `returncode not in
@@ -2080,23 +3786,82 @@ def timed_out_this_way_before(
 
     Worth its own check because of what a repeat costs. An ordinary repeated
     failure costs a model call; a repeated timeout costs a model call and the
-    full timeout. Run 0c5aabdb's `specialist_backend_1` ran
+    full timeout. One run's `specialist_backend_1` ran
     `node simple-to-do-list-app/index.js` twice and spent four minutes of wall
     clock on a server the sandbox has nobody to connect to - which is what the
     refusal already says, after the second 120 seconds had been paid.
     """
     argv = [str(part) for part in command]
     try:
-        entries = read_execution_ledger(repo_root)
+        entries = read_execution_ledger(repo_root, by_the_agents=True)
     except Exception:  # noqa: BLE001 - a guard must never fail the command
         return 0
+    # Only a timeout under at least the limit this run would get predicts
+    # another. One run's `test_round_0` timed `npx playwright test` out at the
+    # 120-second default; the next call, which would have had the 300-second
+    # test limit, was refused as "would time out again", and the stage ran the
+    # suite one test at a time with `-g` - about twenty-five invocations - where
+    # the whole suite had passed in seventy seconds under the test limit before.
+    allowed = TIMEOUTS.get(category or "default", TIMEOUTS["default"])
     return sum(
         1
         for entry in entries
         if _same_invocation(entry, argv, working_directory)
         and entry.get("command") == argv
-        and "timed out" in str(entry.get("error") or "")
+        # A real timeout, not this function's own refusal, which says "already
+        # timed out" and is recorded too: that run counted its refusals, and
+        # "timed out 2 time(s)" became 3, 4, 5, 6 with nothing timing out.
+        and str(entry.get("error") or "").lstrip().startswith("Command timed out")
+        and TIMEOUTS.get(str(entry.get("category") or "default"), TIMEOUTS["default"]) >= allowed
+        # Only with nothing written since, as `failed_this_way_before` counts.
+        # A change can be the fix for the hang. Measured on one run: `npm test`
+        # timed out twice in sprint 1's first defect fix, and from then on it
+        # was refused as "would time out again" - five times, to the stages
+        # fixing the hang and to the test rounds after them - so nothing could
+        # check whether the fix had worked.
+        and not _written_since(repo_root, entry.get("at"), working_directory)
     )
+
+
+SUCCESSES_BEFORE_WITHHOLDING = 3
+"""Identical passing runs allowed before the command is withheld instead.
+
+`succeeded_this_way_before` has appended a note since the leak it documents was
+measured - eleven identical `node -c` calls in eight seconds, twenty-eight
+identical test runs in one stage. The note asks the agent to stop. This run
+shows what happens when it does not: `defect_fix_1_0` ran
+
+    wc -l task-manager/index.html task-manager/style.css task-manager/app.js
+
+eleven times with a single write before the first of them. The note fired
+correctly on runs four through eleven, counting up as it went - "already passed
+1 time(s)", "2 time(s)", ... "8 time(s)" - and the stage ran the command again
+after every one. Eight notices, eight ignored, sixteen wasted round trips
+counting the model calls that read them.
+
+So it escalates, exactly as `aeb1e3a` escalated the repeated *read*: a notice
+first, and when the notice is not heeded, the thing is withheld. Three because
+that is what reads use, and because two identical results are an accident while
+four is a habit.
+
+The guard is `nothing has been written since`, which is what makes this safe for
+a legitimate edit-test loop: a write re-arms the command immediately. A stage
+that is genuinely making changes never meets this.
+
+Search commands are excluded. `_ran_and_answered` marks a grep-like command
+whose exit 1 means "no match" - a real answer - and those already have their own
+note explaining that the text is simply not there.
+"""
+
+
+def _the_stage_running_now() -> str:
+    """The stage making this call, or "" outside a graph run. Never raises."""
+    try:
+        from app.observability.transcript import _stage_from_config
+
+        return _stage_from_config("")
+    except Exception:  # noqa: BLE001 - bookkeeping only
+        return ""
 
 
 def succeeded_this_way_before(
@@ -2109,12 +3874,12 @@ def succeeded_this_way_before(
     wrong; a command that *passed* and is run again returns the identical
     output, and the agent reads that as new evidence and runs it once more.
 
-    Measured on run-ae4b717e's `specialist_ui_ux_1`: `node -c
+    Measured on one run's `specialist_ui_ux_1`: `node -c
     task-manager/app.js` run eleven times inside eight seconds, every one exit
     0 with empty stdout and stderr, and no write between any of them - eleven
     model round trips to learn the same nothing. The same run's
     `specialist_backend_0` ran `node task-manager/verify_main.mjs` four times
-    for four byte-identical reports. Worse on run-9ff00d5b, whose
+    for four byte-identical reports. Worse on one run, whose
     `test_round_0` ran one passing `node --test todo-app/app.test.mjs`
     twenty-eight times; that run died in the recursion limit.
 
@@ -2128,10 +3893,21 @@ def succeeded_this_way_before(
     """
     argv = [str(part) for part in command]
     try:
-        entries = read_execution_ledger(repo_root)
+        entries = read_execution_ledger(repo_root, by_the_agents=True)
     except Exception:  # noqa: BLE001 - a hint must never fail the command
         return 0
     entries = [e for e in entries if _same_invocation(e, argv, working_directory)]
+    # Only the passes this stage was shown. The refusal and the note both say
+    # "you already have the answer", which is true of a pass this stage ran and
+    # false of one another stage ran. One run's `defect_fix_1_1` was told to
+    # reproduce its defect, asked for `npm test`, and was refused because
+    # three earlier stages had passed it - output it had never seen. It spent
+    # some twenty calls on `cat`, `read_command_output` with a stage name as the
+    # reference, and a delete it was refused, hunting for that output. Outside a
+    # run there is no stage, and every entry counts as before.
+    stage = _the_stage_running_now()
+    if stage:
+        entries = [e for e in entries if e.get("stage") == stage]
     passes = [
         entry
         for entry in entries
@@ -2163,7 +3939,7 @@ def refused_this_way_before(
     a command the allowlist refuses is refused for what it *is*, and no edit
     anywhere in the workspace will change that.
 
-    Measured on run-ae4b717e's `specialist_backend_0`: `node -e "const pkg =
+    Measured on one run's `specialist_backend_0`: `node -e "const pkg =
     require(...)"` refused at 23:44:29 with a message naming the way round
     (put the code in a file, run the file, remove it), and sent again
     unchanged at 23:44:41. The agent had edited and deleted files in between,
@@ -2172,7 +3948,7 @@ def refused_this_way_before(
     """
     argv = [str(part) for part in command]
     try:
-        entries = read_execution_ledger(repo_root)
+        entries = read_execution_ledger(repo_root, by_the_agents=True)
     except Exception:  # noqa: BLE001 - a hint must never fail the command
         return 0
     return sum(
@@ -2207,6 +3983,504 @@ def _is_a_standing_refusal(
     except Exception:  # noqa: BLE001 - unknown means "not a standing refusal"
         return False
     return False
+
+
+#: One command at a time per workspace.
+#:
+#: Parallel execution mode fans a milestone's specialists out to run at once,
+#: and they share one workspace. Measured on one run, the first parallel
+#: run: three specialists issued `npm install` in `simple-to-do-list-app` at
+#: 04:54:23, to the second, and npm tore its own tree apart -
+#:
+#:     npm error code ENOTEMPTY
+#:     npm error syscall rmdir
+#:     npm error path simple-to-do-list-app/node_modules/playwright-core/lib/vit...
+#:
+#: - then two of them ran `npm test` together at 04:55:29, where a Playwright
+#: `webServer` binds one port and a runner writes one `test-results/`.
+#:
+#: Linear mode could not produce this: one stage ran at a time, which is the
+#: assumption every tool in this package was written under. Nothing about the
+#: commands is wrong, and no allowlist or category can fix it - the fault is two
+#: of them at once in one directory.
+#:
+#: Serialising *every* command rather than only the ones known to collide, for
+#: two reasons. The set that collides is not knowable up front: installs tear at
+#: `node_modules`, test runners bind ports and share output directories, builds
+#: write one `dist/`, and a formatter rewrites files another command is reading.
+#: And it costs almost nothing here - what parallel mode is for is the model
+#: calls, which take 9 to 13 seconds each and number in the hundreds, against a
+#: handful of commands per milestone.
+#:
+#: Held across the checks as well as the run, which is what turns the collision
+#: into saved work: the second `npm install` now sees the first one's ledger
+#: entry and `succeeded_this_way_before` withholds it instead of repeating it.
+_WORKSPACE_COMMAND_LOCKS: dict[str, threading.Lock] = {}
+_LOCK_REGISTRY = threading.Lock()
+
+
+def _the_lock_for(repo_root: str) -> threading.Lock:
+    """The one lock for this workspace, created on first use."""
+    key = os.path.realpath(str(repo_root))
+    with _LOCK_REGISTRY:
+        lock = _WORKSPACE_COMMAND_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _WORKSPACE_COMMAND_LOCKS[key] = lock
+        return lock
+
+
+#: How many places one note names a file of the same name. Past a handful the
+#: note is longer than the correction it is asking for.
+MAX_PLACES_NAMED = 3
+
+#: An argument that names a file: a last segment with a short extension. A flag
+#: is never a path, and a bare directory or a glob cannot be resolved this way.
+_NAMES_A_FILE = re.compile(r"^[^-][\w./+-]*\.[A-Za-z0-9]{1,6}$")
+
+
+def _where_the_files_it_named_actually_are(
+    repo_root: str,
+    command: Sequence[str],
+    working_directory: str | None = None,
+) -> str:
+    """For a command that failed, where the files it named are, or "".
+
+    A failed command's own arguments say what it was looking for, and the
+    workspace says where that is. Nothing put the two together, so a command
+    run from the wrong directory got advice about the command instead of the
+    location.
+
+    Measured live on one run's `specialist_ui_ux_4`, four calls in 36
+    seconds:
+
+        09:00:16  node --test main.test.js storage.test.js   wd=(none)  exit 1
+        09:00:19  node --test main.test.js storage.test.js   wd=the project  exit 1
+        09:00:38  node --test main.test.js                   wd=(none)  exit 1
+        09:00:44  node --test main.test.js                   wd=(none)  exit 1
+        09:00:52  node --test main.test.js                   wd=(none)  exit 1
+
+    Every one of the wd-less calls answered `Could not find 'main.test.js'`,
+    and the repeat note fired correctly on the last two - "already failed 1
+    time(s) ... change the command, or change the file it runs". Both of those
+    are the wrong move: the command was right and the file was fine. It was in
+    the project directory, which the second call had already used and which the
+    workspace could have named at the first failure.
+
+    Reads the command's arguments rather than the runner's error text, so it is
+    not about any one runner: `node --test x.test.js`, `pytest tests/x.py`,
+    `go test ./x_test.go`, `javac Main.java` and `ruby spec/x_spec.rb` all name
+    what they could not find in the same place, as an argument.
+
+    Never raises, and says nothing at all unless it can name somewhere real.
+    """
+    try:
+        base = _resolve_a_working_directory(repo_root, working_directory)
+        wanted: list[str] = []
+        for argument in [str(part) for part in command][1:]:
+            if not _NAMES_A_FILE.match(argument):
+                continue
+            if os.path.exists(os.path.join(base, argument)):
+                continue
+            if argument not in wanted:
+                wanted.append(argument)
+        if not wanted:
+            return ""
+
+        # One walk for every missing argument, pruning as it descends. A failed
+        # command is a bad moment to pay for a full `node_modules` listing.
+        by_name: dict[str, list[str]] = {name: [] for name in wanted}
+        basenames = {os.path.basename(name): name for name in wanted}
+        for directory, subdirectories, files in os.walk(repo_root):
+            subdirectories[:] = [
+                name
+                for name in subdirectories
+                if name not in IGNORED_DIRECTORIES
+                and name not in _RUNNER_OUTPUT_DIRECTORIES
+            ]
+            for name in files:
+                argument = basenames.get(name)
+                if argument is None:
+                    continue
+                found = by_name[argument]
+                if len(found) < MAX_PLACES_NAMED:
+                    found.append(
+                        os.path.relpath(os.path.join(directory, name), repo_root)
+                    )
+    except Exception:  # noqa: BLE001 - a hint must never fail the command
+        return ""
+
+    parts: list[str] = []
+    for argument, places in by_name.items():
+        if not places:
+            continue
+        where = ", ".join(sorted(places))
+        parts.append(
+            f"`{argument}` is not in the directory this ran in, but a file of "
+            f"that name is at {where}. Either pass that path or set "
+            f"`working_directory` to the directory holding it."
+        )
+    return " ".join(parts)
+
+
+#: How many task names one note lists. A project with fifty make targets does
+#: not need all of them to answer "which one runs the tests".
+MAX_TASKS_NAMED = 12
+
+#: Task names that read as "run this project's suite". Only for these does the
+#: note add that the gates measure the suite by this command - said about a
+#: `build` script it would be false.
+_A_TEST_TASK = frozenset({"test", "tests", "check", "checks", "spec", "specs",
+                          "verify", "unit", "ci"})
+
+#: A package manager's own subcommands, which are never a task the project
+#: defined. Without these, a failed `pnpm install` would be reported as an
+#: undefined script.
+_NOT_A_TASK = frozenset({
+    "install", "i", "ci", "add", "remove", "rm", "uninstall", "update", "up",
+    "upgrade", "outdated", "audit", "list", "ls", "link", "unlink", "why",
+    "exec", "dlx", "create", "init", "publish", "pack", "login", "logout",
+    "whoami", "config", "cache", "help", "version", "view", "info", "search",
+    "prune", "dedupe", "fund", "doctor", "rebuild", "explain", "import",
+    "licenses", "set", "get", "store", "patch", "deploy", "env", "x", "run",
+    "task", "workspace", "workspaces", "bin", "root", "ping", "access", "team",
+    "owner", "star", "unstar", "token", "adduser", "hook", "org", "profile",
+    "shrinkwrap", "completion", "edit", "docs", "repo", "bugs", "diff",
+})
+
+
+def _keys_of_a_json_table(text: str, *tables: str) -> list[str]:
+    """The keys of the first of `tables` this JSON document has as an object.
+
+    Raises for a document that is not an object at all, so that "this manifest
+    cannot be read" stays distinct from "it declares nothing": a manifest that
+    is a JSON array is its own reported problem, and saying it declares no
+    scripts would be describing it as valid.
+    """
+    document = json.loads(text)
+    if not isinstance(document, dict):
+        raise ValueError("a manifest is an object")
+    for table in tables:
+        section = document.get(table)
+        if isinstance(section, dict):
+            return [str(key) for key in section]
+    return []
+
+
+def _scripts_in_a_package_json(text: str) -> list[str]:
+    return _keys_of_a_json_table(text, "scripts")
+
+
+def _a_task_declared_at_the_top_level(text: str, task: str) -> bool:
+    """Whether a manifest declares `task` outside its `scripts` table.
+
+    A manifest of `{"test": "node --test ./tests"}` is answered by `npm test`
+    with `Missing script: "test"`, which is true and reads as though the name
+    were absent. It is present, one level too high, and that is a different
+    correction from adding it. Seen in the stored workspaces of one run.
+    """
+    try:
+        document = json.loads(text)
+    except ValueError:
+        return False
+    return isinstance(document, dict) and isinstance(document.get(task), str)
+
+
+def _tasks_in_a_deno_manifest(text: str) -> list[str]:
+    return _keys_of_a_json_table(text, "tasks")
+
+
+#: A make target: a name at the start of a line followed by a colon. `:=` is an
+#: assignment and `.PHONY` and friends are directives, not targets.
+_A_MAKE_TARGET = re.compile(r"^([A-Za-z0-9][\w.%/-]*)\s*:(?!=)", re.MULTILINE)
+
+#: A just recipe, which may declare parameters before its colon.
+_A_JUST_RECIPE = re.compile(r"^([a-zA-Z0-9][\w-]*)(?:\s+[^:\n]*)?:(?!=)", re.MULTILINE)
+
+#: A rake task, in either quoting style, with or without a dependency list.
+_A_RAKE_TASK = re.compile(r"^\s*(?:task|multitask)\s+[:\'\"]([\w:-]+)", re.MULTILINE)
+
+#: A tox environment or a nox session.
+_A_TOX_ENV = re.compile(r"^\[testenv:([^\]]+)\]", re.MULTILINE)
+_A_NOX_SESSION = re.compile(r"^def\s+(\w+)\s*\(", re.MULTILINE)
+
+
+def _targets_in_a_makefile(text: str) -> list[str]:
+    return [name for name in _A_MAKE_TARGET.findall(text) if not name.startswith(".")]
+
+
+def _recipes_in_a_justfile(text: str) -> list[str]:
+    return list(_A_JUST_RECIPE.findall(text))
+
+
+def _tasks_in_a_rakefile(text: str) -> list[str]:
+    return list(_A_RAKE_TASK.findall(text))
+
+
+def _envs_in_a_tox_config(text: str) -> list[str]:
+    return [name.strip() for name in _A_TOX_ENV.findall(text)]
+
+
+def _sessions_in_a_noxfile(text: str) -> list[str]:
+    return list(_A_NOX_SESSION.findall(text))
+
+
+def _scripts_in_a_pyproject(text: str) -> list[str]:
+    """Every script table pyproject is used to declare tasks in."""
+    document = tomllib.loads(text)
+    tool = document.get("tool") or {}
+    names: list[str] = []
+    for table in (
+        document.get("project", {}).get("scripts"),
+        (tool.get("poetry") or {}).get("scripts"),
+        (tool.get("pdm") or {}).get("scripts"),
+        (tool.get("taskipy") or {}).get("tasks"),
+        (tool.get("rye") or {}).get("scripts"),
+        (tool.get("uv") or {}).get("scripts"),
+    ):
+        if isinstance(table, dict):
+            names.extend(str(key) for key in table)
+    environments = ((tool.get("hatch") or {}).get("envs") or {})
+    if isinstance(environments, dict):
+        for environment in environments.values():
+            scripts = (environment or {}).get("scripts")
+            if isinstance(scripts, dict):
+                names.extend(str(key) for key in scripts)
+    return names
+
+
+#: The manifests a runner consults for the names it accepts, and how to read
+#: the names out. Several runners share one manifest, and one runner can be
+#: satisfied by more than one, so this is keyed by the file.
+_WHERE_TASKS_ARE_DECLARED: tuple[tuple[tuple[str, ...], Any, str], ...] = (
+    (("package.json",), _scripts_in_a_package_json, "scripts"),
+    (("deno.json", "deno.jsonc"), _tasks_in_a_deno_manifest, "tasks"),
+    (("composer.json",), _scripts_in_a_package_json, "scripts"),
+    (("Makefile", "makefile", "GNUmakefile"), _targets_in_a_makefile, "targets"),
+    (("justfile", "Justfile", ".justfile"), _recipes_in_a_justfile, "recipes"),
+    (("Rakefile", "rakefile"), _tasks_in_a_rakefile, "tasks"),
+    (("pyproject.toml",), _scripts_in_a_pyproject, "scripts"),
+    (("tox.ini",), _envs_in_a_tox_config, "environments"),
+    (("noxfile.py",), _sessions_in_a_noxfile, "sessions"),
+)
+
+#: Which manifests each runner would accept a name from, and how it is asked.
+#: `after` are the subcommands whose next argument is a task name; a runner with
+#: `bare` also takes one as its first argument.
+_TASK_RUNNERS: tuple[tuple[str, tuple[str, ...], bool, tuple[str, ...]], ...] = (
+    ("npm", ("run", "run-script"), True, ("package.json",)),
+    ("yarn", ("run",), True, ("package.json",)),
+    ("pnpm", ("run",), True, ("package.json",)),
+    ("bun", ("run",), True, ("package.json",)),
+    ("deno", ("task",), False, ("deno.json", "deno.jsonc")),
+    ("composer", ("run", "run-script"), True, ("composer.json",)),
+    ("make", (), True, ("Makefile", "makefile", "GNUmakefile")),
+    ("gmake", (), True, ("Makefile", "makefile", "GNUmakefile")),
+    ("just", (), True, ("justfile", "Justfile", ".justfile")),
+    ("rake", (), True, ("Rakefile", "rakefile")),
+    ("pdm", ("run",), False, ("pyproject.toml",)),
+    ("rye", ("run",), False, ("pyproject.toml",)),
+    ("hatch", ("run",), False, ("pyproject.toml",)),
+    ("poetry", ("run",), False, ("pyproject.toml",)),
+    ("tox", ("-e",), False, ("tox.ini", "pyproject.toml")),
+    ("nox", ("-s", "--session"), False, ("noxfile.py",)),
+)
+
+
+def _the_task_a_command_asked_for(
+    command: Sequence[str],
+) -> tuple[str, tuple[str, ...]] | None:
+    """The task name a command asked a runner to run, and where it is declared.
+
+    Returns None for anything that is not that shape, which is most commands:
+    `node --test x.js` names no task, and neither does `pnpm install`.
+    """
+    parts = [str(part) for part in command]
+    if not parts:
+        return None
+    runner = os.path.basename(parts[0])
+    if runner.endswith(".cmd") or runner.endswith(".exe"):
+        runner = runner.rsplit(".", 1)[0]
+    # `./gradlew`, `npx`, `yarn dlx` and friends delegate, and what they
+    # delegate to is not decidable from the argv alone.
+    for name, after, bare, manifests in _TASK_RUNNERS:
+        if runner != name:
+            continue
+        arguments = parts[1:]
+        for index, argument in enumerate(arguments):
+            if argument in after and index + 1 < len(arguments):
+                return arguments[index + 1], manifests
+            # `-e py311` and `-epy311` are the same request.
+            for flag in after:
+                if flag.startswith("-") and argument.startswith(flag) and len(argument) > len(flag):
+                    return argument[len(flag):].lstrip("="), manifests
+        if not bare:
+            return None
+        for argument in arguments:
+            if argument.startswith("-"):
+                continue
+            if argument in _NOT_A_TASK:
+                return None
+            return argument, manifests
+        return None
+    return None
+
+
+def _the_tasks_this_project_defines(
+    repo_root: str,
+    command: Sequence[str],
+    working_directory: str | None = None,
+) -> str:
+    """For a command that asked for a task that is not declared, what is, or "".
+
+    A runner asked for a name its manifest does not define answers with its own
+    vocabulary and nothing else. The names it *would* accept are in a file in
+    the workspace, and nothing put the two together, so a stage that guessed the
+    command wrong got the runner's complaint instead of the answer.
+
+    Measured on one run, which failed its first sprint. `package.json` was
+    written as `{"type": "module"}` - no `scripts` table at all - and the test
+    rounds ran the project's gating command three times:
+
+        test_round_0  npm test  ->  npm error Missing script: "test"
+        test_round_1  npm test  ->  npm error Missing script: "test"
+        test_round_2  npm test  ->  npm error Missing script: "test"
+
+    Eighteen model turns across the three rounds, and not one of them added the
+    script. `npm error Missing script: "test"` does not say that the manifest
+    declares nothing, does not say which file it read, and does not say that the
+    fix is a line in that file.
+
+    Reads the manifest rather than the runner's error text, so it is not about
+    any one runner or language: `npm run build`, `make test`, `just check`,
+    `rake spec`, `composer run lint`, `deno task start`, `pdm run test`,
+    `tox -e py311` and `nox -s lint` all name a task the same way, and the file
+    that declares the accepted names is in the workspace in every case.
+
+    Says nothing when it cannot read a manifest, when the name is defined, or
+    when the command names no task - which is most commands. Never raises.
+    """
+    try:
+        asked = _the_task_a_command_asked_for(command)
+        if asked is None:
+            return ""
+        task, manifests = asked
+
+        base = _resolve_a_working_directory(repo_root, working_directory)
+        root = os.path.abspath(repo_root)
+        readers = {
+            name: (reader, noun)
+            for names, reader, noun in _WHERE_TASKS_ARE_DECLARED
+            for name in names
+        }
+
+        # Up from the directory it ran in to the workspace root, which is how
+        # every one of these runners looks for its own manifest.
+        directory = os.path.abspath(base)
+        while True:
+            for name in manifests:
+                candidate = os.path.join(directory, name)
+                if not os.path.isfile(candidate):
+                    continue
+                reader, noun = readers[name]
+                relative = os.path.relpath(candidate, root)
+                try:
+                    with open(candidate, "r", encoding="utf-8", errors="replace") as handle:
+                        text = handle.read()
+                    declared = [str(found) for found in reader(text)]
+                except Exception:  # noqa: BLE001 - an unreadable manifest is its own problem
+                    return ""
+                if task in declared:
+                    return ""
+                return _what_to_say_about_a_missing_task(
+                    task, relative, noun, declared,
+                    misplaced=_a_task_declared_at_the_top_level(text, task),
+                )
+            if directory == root or os.path.dirname(directory) == directory:
+                return ""
+            directory = os.path.dirname(directory)
+    except Exception:  # noqa: BLE001 - a hint must never fail the command
+        return ""
+
+
+def _what_to_say_about_a_missing_task(
+    task: str,
+    manifest: str,
+    noun: str,
+    declared: Sequence[str],
+    misplaced: bool = False,
+) -> str:
+    """The note for a task a manifest does not declare."""
+    gating = ""
+    if task.lower() in _A_TEST_TASK:
+        gating = (
+            " Every gate in this pipeline measures the suite by the project's own "
+            "test command, so until that name resolves to something, no number it "
+            "reads comes from your tests."
+        )
+    if misplaced:
+        return (
+            f"`{manifest}` does declare `{task}`, but at the top level of the "
+            f"manifest rather than inside its `{noun}` table, which is the only "
+            f"place the runner looks - so the name is there and unreachable. "
+            f"Move it into `{noun}`."
+            + gating
+        )
+    if not declared:
+        return (
+            f"`{manifest}` declares no {noun} at all, so `{task}` cannot resolve "
+            f"to anything - the runner is not refusing your command, it has "
+            f"nothing to look it up in. Add a `{task}` entry there that runs it."
+            + gating
+        )
+    names = sorted(set(declared))
+    shown = ", ".join(f"`{name}`" for name in names[:MAX_TASKS_NAMED])
+    if len(names) > MAX_TASKS_NAMED:
+        shown += f" and {len(names) - MAX_TASKS_NAMED} more"
+    return (
+        f"`{task}` is not one of the {noun} `{manifest}` declares. It declares "
+        f"{shown}. Either use one of those or add `{task}` to that file."
+        + gating
+    )
+
+
+def _a_silent_success(outcome: Dict[str, Any]) -> str:
+    """What an exit code of 0 with nothing printed means, or "".
+
+    One run's `specialist_testing_4` ran `npx playwright install chromium` with
+    the browser already cached. It exited 0 in a second and printed nothing,
+    and the stage sent the identical command four more times - the second
+    before any repeat note existed to stop it - until it was refused. A result
+    of `{"stdout": "", "stderr": "", "returncode": "0"}` reads as nothing
+    having happened, not as success.
+
+    Only for the first silent success: a repeat already gets
+    `_note_about_running_this_again`, which says more.
+    """
+    if _as_exit_code(outcome.get("returncode")) != 0 or outcome.get("error"):
+        return ""
+    if str(outcome.get("stdout") or "").strip() or str(outcome.get("stderr") or "").strip():
+        return ""
+    return (
+        "It exited 0 and printed nothing, which is success: a command with nothing "
+        "to do - a package or browser already installed, a directory already there, "
+        "a check that found no problem - usually says nothing. Running it again will "
+        "print nothing again; go on to the next step."
+    )
+
+
+def _failures_a_later_sprint_owns(repo_root: str, since: float) -> str:
+    """Which of a test command's failures are a later sprint's tests, or "". Never raises.
+
+    See `app.acceptance.sprint_scope`: a builder shown a later sprint's failures
+    beside its own, with nothing to tell them apart, built that sprint's work.
+    """
+    try:
+        from app.acceptance import sprint_scope
+
+        return sprint_scope.note_on_failures(repo_root, since)
+    except Exception:  # noqa: BLE001 - a note must never fail the command
+        return ""
 
 
 def _note_about_running_this_again(
@@ -2283,7 +4557,7 @@ def summarise_executions(repo_root: str) -> str:
     not a convenience: without it this digest is read as a verdict on the
     product, and it is a record of the work instead.
 
-    Run 0afef410's milestone reviewer is the case. It was handed
+    One run's milestone reviewer is the case. It was handed
 
         25 command(s) executed, 4 succeeded:
         ... - [testing_specialist] npm test -> exit 1   (x4)
@@ -2368,7 +4642,17 @@ class SandboxExecutor:
                     "workspace or one the environment provides, not a path out of it."
                 )
             return candidate if os.access(candidate, os.X_OK) else None
-        return shutil.which(name, path=os.environ.get("PATH", ""))
+        from app.tools.runtimes import path_for
+
+        # Looked up on the PATH the command will run with, the project's
+        # virtualenv first (`_child_environment`): measured on one run, `pytest`
+        # in `.venv/bin` was answered "not installed in this environment" five
+        # times while the command would have found it.
+        search = path_for(workspace, os.environ.get("PATH", ""))
+        venv = _the_project_virtualenv(workspace)
+        if venv:
+            search = os.pathsep.join((venv, search))
+        return shutil.which(name, path=search)
 
     @classmethod
     def _execute_here(
@@ -2408,32 +4692,52 @@ class SandboxExecutor:
             role_name, category, argv,
         )
         try:
-            result = subprocess.run(  # noqa: S603 - argv list, no shell, validated above
+            result = _run_and_watch_the_tree(
                 [executable, *argv[1:]],
                 cwd=run_in or workspace,
                 env=_child_environment(workspace, extra_env),
-                capture_output=True,
-                text=True,
                 timeout=timeout,
-                check=False,
-                preexec_fn=_apply_limits,  # noqa: PLW1509 - the point is to limit the child
-                start_new_session=False,   # _apply_limits calls setsid itself
+                data_bytes=_process_memory(workspace),
+                ends_at_its_summary=_runs_tests(argv),
             )
         except subprocess.TimeoutExpired as expired:
             return {
-                "error": f"Command timed out after {timeout} seconds." + _TIMEOUT_ADVICE,
-                "stdout": _as_workspace_relative(_truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout"), workspace),
-                "stderr": _as_workspace_relative(_truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr"), workspace),
+                "error": f"Command timed out after {timeout} seconds; it was ended at the time limit. Its output so far is in stdout and stderr." + _timeout_advice(workspace, run_in, argv),
+                "stdout": _as_workspace_relative(_truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout", workspace), workspace),
+                "stderr": _as_workspace_relative(_truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr", workspace), workspace),
                 "returncode": "124",
+            }
+        except _TreeOverBudget as over:
+            return {
+                "error": (
+                    f"Command stopped: its processes together were using {over.used_mb} MB, "
+                    f"past the {over.budget_mb} MB this container can give one command. "
+                    "Left running, the kernel would have killed this run instead of the "
+                    "command. A test runner usually reaches this by starting one worker "
+                    "per CPU, each loading the whole project, or by a test that grows a "
+                    "structure without end. Run it in one process (the runner's "
+                    "in-band or single-worker option), or one test file at a time."
+                ),
+                "stdout": _as_workspace_relative(_truncate(over.stdout, f"{role_name}-{argv[0]}-stdout", workspace), workspace),
+                "stderr": _as_workspace_relative(_truncate(over.stderr, f"{role_name}-{argv[0]}-stderr", workspace), workspace),
+                "returncode": "137",
             }
         except OSError as exc:
             return {"error": f"Could not run '{argv[0]}': {exc}"}
 
-        return {
-            "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout"), workspace),
-            "stderr": _as_workspace_relative(_truncate(result.stderr, f"{role_name}-{argv[0]}-stderr"), workspace),
+        finished = {
+            "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout", workspace), workspace),
+            "stderr": _as_workspace_relative(_truncate(result.stderr, f"{role_name}-{argv[0]}-stderr", workspace), workspace),
             "returncode": str(result.returncode),
         }
+        if getattr(result, "lingered", False):
+            finished["note"] = (
+                "The tests finished and printed their summary, but the process did not exit, so it "
+                "was ended; the exit code is the summary's. Something the tests start keeps it "
+                "alive - a database engine, a thread, a server or a timer never closed. That is a "
+                "defect in the tests' setup: close or dispose of it when the tests end."
+            )
+        return finished
 
     @classmethod
     def execute(
@@ -2444,8 +4748,14 @@ class SandboxExecutor:
         category: str = "default",
         extra_env: Dict[str, str] | None = None,
         working_directory: str | None = None,
+        *,
+        for_the_harness: bool = False,
     ) -> Dict[str, Any]:
         """Run one command and record that it happened.
+
+        `for_the_harness` is the harness running a command itself: the guards
+        that steer an agent away from repeating itself do not apply, and the
+        run does not count toward an agent's repeats. See `_FOR_THE_HARNESS`.
 
         A thin recording wrapper around `_run`, rather than a `_record_execution`
         call at each of the eight places that return: one entry point cannot be
@@ -2453,7 +4763,7 @@ class SandboxExecutor:
         captured on the same path as successes.
         """
         # An install with no directory given used to be refused, with a message
-        # naming the directory to use instead. Run 8d28ee3f spent two calls on
+        # naming the directory to use instead. One run spent two calls on
         # that: bare `npm install`, refused, then the identical command with
         # the directory filled in. The refusal could only ever name one
         # directory - a project is pinned, and there is one - so run it there
@@ -2464,6 +4774,65 @@ class SandboxExecutor:
         # left alone either way: it has said where it means, including when
         # that is the root.
         started = time.monotonic()
+        if category == "default" and _fetches_dependencies(command):
+            category = "install"
+        elif category == "default" and _runs_tests(command):
+            category = "test"
+        token = _FOR_THE_HARNESS.set(bool(for_the_harness))
+        begun = time.time()
+        # A command is held to the line the stage's file tools are (see
+        # `repository.what_a_command_may_not_change`).
+        held = None
+        if not for_the_harness:
+            from app.tools.repository import what_a_command_may_not_change
+
+            held = what_a_command_may_not_change(repo_root)
+        try:
+            with _the_lock_for(repo_root):
+                outcome = cls._execute_serialised(
+                    command, repo_root, role_name, category, extra_env, working_directory, started
+                )
+        finally:
+            _FOR_THE_HARNESS.reset(token)
+        # What the command wrote, so a conversation that read a file before a
+        # formatter, a generator or an install rewrote it is not told it still
+        # holds it (Initiative AO.9). Only for a command that ran.
+        if isinstance(outcome, dict) and "returncode" in outcome and not for_the_harness:
+            if held:
+                from app.tools.repository import _outside_its_own_files, put_back_what_a_command_changed
+
+                put_back = put_back_what_a_command_changed(repo_root, held, begun)
+                if put_back:
+                    shown = ", ".join(f"`{name}`" for name in put_back[:6]) + (
+                        f" and {len(put_back) - 6} more" if len(put_back) > 6 else "")
+                    earlier = str(outcome.get("note") or "")
+                    outcome = {**outcome, "put_back": put_back, "note": (earlier + "\n\n" if earlier else "") + _outside_its_own_files() + (
+                        f"This command changed {len(put_back)} file(s) this stage may not change - {shown}. "
+                        "Each was put back as it was before the command ran: a command is held to the same "
+                        "files as the tools that write. Change only this stage's own files."
+                    )}
+            changed = files_changed_since(repo_root, begun)
+            if changed:
+                outcome = {**outcome, "files_changed": changed}
+        return outcome
+
+    @classmethod
+    def _execute_serialised(
+        cls,
+        command: Sequence[str],
+        repo_root: str,
+        role_name: str,
+        category: str,
+        extra_env: Dict[str, str] | None,
+        working_directory: str | None,
+        started: float,
+    ) -> Dict[str, Any]:
+        """`execute`'s body, with this workspace's command lock held.
+
+        Split out so the lock is taken in exactly one place and cannot be
+        skipped by an early return - there are several, and a refusal that
+        returns before the lock is released would deadlock every other worker.
+        """
         belongs_in = (
             None if working_directory else the_project_this_command_belongs_in(command, repo_root)
         )
@@ -2477,13 +4846,24 @@ class SandboxExecutor:
                 f"one. Pass working_directory='{belongs_in}' to say so yourself."
             )
 
+        # Before the doubled-directory check and before validation: a leading
+        # `cd <dir> &&` that names the directory already in force is the agent
+        # saying the same thing twice, not a different command.
+        command, redundant_cd = strip_a_redundant_cd(command, working_directory)
         command, doubled = strip_a_doubled_working_directory(
             command, repo_root, working_directory
         )
         # Before running it: a command that timed out will time out again, and
         # unlike every other repeated failure this one is paid for in wall
         # clock as well as a model call. See `timed_out_this_way_before`.
-        ruled_out = _refuse_an_install_the_brief_rules_out(command, repo_root)
+        harness = running_for_the_harness()
+        ruled_out = None if harness else _refuse_an_install_the_brief_rules_out(command, repo_root)
+        # Where the network an install is given may reach (plan SF.1). The
+        # harness's own installs too: they read the manifests the agents wrote.
+        if not ruled_out and category in NETWORK_CATEGORIES:
+            from app.tools.install_egress import refusal
+
+            ruled_out = refusal(command, Path(repo_root) / str(working_directory or "").strip().strip("/"))
         if ruled_out:
             outcome = {"error": ruled_out}
             _record_execution(
@@ -2492,21 +4872,53 @@ class SandboxExecutor:
             )
             return outcome
 
-        already_timed_out = timed_out_this_way_before(repo_root, command, working_directory)
+        # A command that has already passed several times, with nothing written
+        # between, is withheld rather than run again. See
+        # `SUCCESSES_BEFORE_WITHHOLDING` for why the note alone was not enough.
+        settled = 0 if harness else succeeded_this_way_before(repo_root, command, working_directory)
+        if settled >= SUCCESSES_BEFORE_WITHHOLDING and not _ran_and_answered(
+            command, 0
+        ):
+            outcome = {
+                "error": (
+                    f"Not running this again. It has already passed {settled} time(s) "
+                    "in this run and nothing has been written since any of them, so "
+                    "its output cannot have changed - you already have the answer, "
+                    f"{settled} copies of it.\n\n"
+                    "You have been told this after each of the last few runs and run "
+                    "it again anyway, so it is now withheld rather than repeated.\n\n"
+                    "This verification is finished. Either return your structured "
+                    "response now, or change a file first - after a write, this "
+                    "command runs normally again."
+                )
+            }
+            _record_execution(
+                repo_root, role_name, command, outcome, working_directory, category,
+                duration_seconds=time.monotonic() - started,
+            )
+            return outcome
+
+        already_timed_out = 0 if harness else timed_out_this_way_before(repo_root, command, working_directory, category)
+        later_sprints = ""
         if already_timed_out:
             outcome = {
                 "error": (
                     f"Not running this again: it has already timed out "
                     f"{already_timed_out} time(s) in this run and would time out "
                     "again, which costs the run the whole timeout a second time."
-                    + _TIMEOUT_ADVICE
+                    + _timeout_advice(repo_root, working_directory)
                 )
             }
         else:
+            began = time.time()
             outcome = cls._run(
                 command, repo_root, role_name, category, extra_env, working_directory
             )
-        notes = [n for n in (doubled, redirected) if n]
+            if not harness and _as_exit_code(outcome.get("returncode")) not in (None, 0):
+                later_sprints = _failures_a_later_sprint_owns(repo_root, began)
+        notes = [n for n in (redundant_cd, doubled, redirected, _a_missing_path_that_is_here(outcome),
+                             _a_relative_path_missing_from_where_it_ran(outcome, repo_root, working_directory),
+                             later_sprints) if n]
         if notes:
             outcome = {**outcome, "note": " ".join(notes)}
         regressed = _fewer_pass_than_last_time(
@@ -2519,12 +4931,34 @@ class SandboxExecutor:
             }
         note = _note_about_running_this_again(
             repo_root, command, outcome, role_name, working_directory
-        )
+        ) or _a_silent_success(outcome)
         if note:
             outcome = {
                 **outcome,
                 "note": f"{outcome['note']} {note}" if outcome.get("note") else note,
             }
+        # On the first failure, not only on a repeat. The repeat note is the
+        # cheapest place to notice a wasted call and the most expensive place to
+        # learn the answer: by then the call has been paid for twice. What the
+        # command was looking for is decidable at the first failure.
+        if _as_exit_code(outcome.get("returncode")) not in (None, 0):
+            for hint in (
+                _where_the_files_it_named_actually_are(
+                    repo_root, command, working_directory
+                ),
+                # The other half of the same question. A failed command either
+                # named something the workspace does not have where it looked,
+                # or asked a runner for a name the project never declared.
+                _the_tasks_this_project_defines(
+                    repo_root, command, working_directory
+                ),
+            ):
+                if not hint:
+                    continue
+                outcome = {
+                    **outcome,
+                    "note": f"{outcome['note']} {hint}" if outcome.get("note") else hint,
+                }
         _record_execution(
             repo_root, role_name, command, outcome, working_directory, category,
             duration_seconds=time.monotonic() - started,
@@ -2563,7 +4997,7 @@ class SandboxExecutor:
         # Ask what is free before starting, not after the kernel has answered.
         # A refusal is a tool result the model can read and work around; an OOM
         # kill takes the worker with it, and a run whose worker is gone has no
-        # process left to write an error. Run-cbd22a34 ended that way twice.
+        # process left to write an error. One run ended that way twice.
         from app.tools.resources import enough_headroom, read_resource_state
 
         state = read_resource_state()
@@ -2576,6 +5010,8 @@ class SandboxExecutor:
             return {"error": why}
 
         timeout = timeout_for(category, repo_root)
+        if not running_for_the_harness():
+            timeout = after_a_run_that_never_finished(repo_root, argv, working_directory, timeout)
 
         if execution_mode() == IN_CONTAINER_MODE:
             return cls._execute_here(
@@ -2592,8 +5028,8 @@ class SandboxExecutor:
             docker, "run", "--rm",
             "--name", container,
             "--network", "bridge" if category in NETWORK_CATEGORIES else "none",
-            "--memory", MEMORY_LIMIT,
-            "--memory-swap", MEMORY_LIMIT,   # equal to --memory disables swap
+            "--memory", f"{_process_memory(workspace) // 1024**2}m",
+            "--memory-swap", f"{_process_memory(workspace) // 1024**2}m",   # equal to --memory disables swap
             "--cpus", CPU_LIMIT,
             "--pids-limit", PIDS_LIMIT,
             "--cap-drop", "ALL",
@@ -2614,7 +5050,7 @@ class SandboxExecutor:
         ]
         for key, value in (extra_env or {}).items():
             docker_cmd += ["--env", f"{key}={value}"]
-        docker_cmd.append(_image_for(os.path.basename(argv[0])))
+        docker_cmd.append(_image_for(os.path.basename(argv[0]), workspace))
         docker_cmd.extend(argv)
 
         logger.info(
@@ -2626,14 +5062,14 @@ class SandboxExecutor:
         except subprocess.TimeoutExpired:
             subprocess.run([docker, "kill", container], capture_output=True, check=False)
             return {
-                "error": f"Command timed out after {timeout} seconds." + _TIMEOUT_ADVICE
+                "error": f"Command timed out after {timeout} seconds." + _timeout_advice(workspace, run_in, argv)
             }
         except OSError as exc:
             return {"error": f"Could not start the sandbox: {exc}"}
 
         return {
-            "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout"), repo_root),
-            "stderr": _as_workspace_relative(_truncate(result.stderr, f"{role_name}-{argv[0]}-stderr"), repo_root),
+            "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout", repo_root), repo_root),
+            "stderr": _as_workspace_relative(_truncate(result.stderr, f"{role_name}-{argv[0]}-stderr", repo_root), repo_root),
             "returncode": str(result.returncode),
         }
 

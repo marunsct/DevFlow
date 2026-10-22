@@ -4,11 +4,11 @@
 whatever the agent invents. Five runs died on this loop and the name check
 caught three:
 
-    d6297b2f  docs/structured_response.md         32 writes
-    1ae7671d  todo-list/structured_response.json   8
-    a7150a6c  docs/structured_response.json        4
-    0deeb8bf  final_response.json                  6   - fell through
-    01f03ed9  docs/summary.json                    5   - fell through
+    one run  docs/structured_response.md         32 writes
+    one run  todo-list/structured_response.json   8
+    one run  docs/structured_response.json        4
+    one run  final_response.json                  6   - fell through
+    one run  docs/summary.json                    5   - fell through
 
 Fifty-five writes across the five, every one carrying the same thing:
 `{"changed_files": [...], "decisions": [...], "tests": [...]}`. Only the
@@ -103,7 +103,7 @@ def test_two_matching_fields_are_a_coincidence_and_three_are_not(tmp_path):
 
 
 def test_the_one_instance_in_the_corpus_is_recognised():
-    """Run 2bcdc19b's `final_output.json`, the only file of 660 that trips it."""
+    """One run's `final_output.json`, the only file of 660 that trips it."""
     assert _the_response_written_under_another_name(
         ("final_output.json",),
         json.dumps(

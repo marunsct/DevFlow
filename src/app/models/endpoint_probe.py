@@ -5,7 +5,7 @@ merely slow: nothing happens. Every stage's first call blocks, the run sits at
 `running`, and the only way to tell the difference is to go and look at the
 host.
 
-Measured on run-18c0e34c: the local `llama-server` was restarted and bound a
+Measured on one run: the local `llama-server` was restarted and bound a
 different port each time - 8888, then 60847, then 56953 - while the stored
 setting kept pointing at the first. The run stalled at
 `awaiting_approval:principal_architect` and stayed there for about ten hours,
@@ -71,6 +71,9 @@ def probe_endpoint(base_url: str, api_key: str = "", *, timeout: int = PROBE_TIM
     there is nothing local to check and refusing to start would be worse than
     the problem this exists to catch.
     """
+    from app.models.endpoints import reached_from_here
+
+    base_url = reached_from_here(base_url)[0] if base_url else base_url
     if not base_url:
         return EndpointStatus(True, "No base URL is set, so there is nothing local to check.")
 
@@ -94,7 +97,9 @@ def probe_endpoint(base_url: str, api_key: str = "", *, timeout: int = PROBE_TIM
         )
 
     endpoint = f"{base_url.rstrip('/')}/models"
-    request = urllib.request.Request(endpoint, method="GET")
+    from app.models.endpoints import host_header_for
+
+    request = urllib.request.Request(endpoint, method="GET", headers=host_header_for(base_url))
     if api_key:
         request.add_header("Authorization", f"Bearer {api_key}")
     try:
@@ -124,7 +129,7 @@ def probe_endpoint(base_url: str, api_key: str = "", *, timeout: int = PROBE_TIM
             # `{"data": []}`, so every check that asks "is anything serving
             # here" passes and the run dies on its first model call instead.
             #
-            # Measured on run-eb48de7a: LM Studio unloaded its model
+            # Measured on one run: LM Studio unloaded its model
             # thirty-five minutes into the run, and the next call came back
             # `400 - No models loaded. Please load a model in the developer
             # page or use the 'lms load' command`. The harness reported that

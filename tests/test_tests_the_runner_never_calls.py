@@ -1,6 +1,6 @@
 """A green suite whose cases never execute.
 
-Run d6297b2f's test round hit `ReferenceError: describe is not defined` - a
+One run's test round hit `ReferenceError: describe is not defined` - a
 Jest-shaped suite under `node --test` - and fixed it by moving every case
 inside a default-exported function. `npm test` then returned 0 with
 

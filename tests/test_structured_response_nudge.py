@@ -4,7 +4,7 @@ A stage that answers in prose has done the work; it failed only at the last
 step. The existing remedy - restart on a fresh conversation - treats it as if
 the work were lost too.
 
-Measured on run-61c5a5b6, `test_round_0`: four files read, two globs, a
+Measured on one run, `test_round_0`: four files read, two globs, a
 paragraph of correct analysis of `app.js`, returned as prose. The restart at
 event 131 re-read the same four files and re-ran the same globs. Twenty-seven
 events and five approval gates to arrive back where it already was.
@@ -141,7 +141,7 @@ def _ai(text: str):
 def test_an_answer_printed_as_a_message_is_recovered():
     """The failure is not a model that could not answer.
 
-    Measured on run-2b5def74: `specialist_backend_0` emitted its complete
+    Measured on one run: `specialist_backend_0` emitted its complete
     response object as a chat message three times - 2,027 characters, each
     followed by a sentence of commentary - and the workflow discarded all three
     and failed the stage on attempt 3 of 3.
@@ -256,7 +256,7 @@ def test_the_nudge_names_the_fields_when_the_answer_is_a_near_miss() -> None:
     wrong, and "return it through the schema" produces the same near miss
     again.
 
-    Measured on run-2c523383's `principal_architect`: the request-side
+    Measured on one run's `principal_architect`: the request-side
     correction fixed it mid-conversation - the turn after it fired,
     `product_scope` came back as the string the schema asks for. That turn made
     no tool call, so the stage ended, the generic nudge ran, and the restart

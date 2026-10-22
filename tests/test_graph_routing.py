@@ -97,9 +97,13 @@ class ScriptedAgents:
         return _FakeAgent(role, self)
 
     def last_request_text(self, role: str) -> str:
-        """Return the text of the most recent `{"messages": [...]}` request for a role."""
+        """Return the text of the most recent `{"messages": [...]}` request for a role.
+
+        Every message of it: a stage's opening request can be preceded by the
+        project snapshot, which an empty project now carries too.
+        """
         payload = self.requests[role][-1]
-        return payload["messages"][0]["content"]
+        return "\n\n".join(str(message["content"]) for message in payload["messages"])
 
 
 class _FakeAgent:
@@ -133,6 +137,7 @@ def agents(monkeypatch: pytest.MonkeyPatch) -> ScriptedAgents:
         "create_milestone_reviewer_agent": "milestone_reviewer",
         "create_security_reviewer_agent": "security_reviewer",
         "create_stack_selector_agent": "stack_selector",
+        "create_suite_dispute_agent": "suite_dispute",
     }
     for factory_name, role in simple_roles.items():
         monkeypatch.setattr(
@@ -147,26 +152,20 @@ def agents(monkeypatch: pytest.MonkeyPatch) -> ScriptedAgents:
         lambda role, *args, **kwargs: registry.agent(f"specialist_{role}"),
     )
     
-    import app.scaffolding.executor
-    monkeypatch.setattr(
-        app.scaffolding.executor,
-        "execute_scaffolding",
-        lambda repo_root, app_name, framework: (True, "Scaffolding succeeded")
-    )
-    
-    import app.build.verifier
-    monkeypatch.setattr(
-        app.build.verifier.BuildVerifier,
-        "verify",
-        lambda self, command, role_name: type('Result', (), {'success': True, 'stdout': '', 'stderr': '', 'errors': []})()
-    )
-    
-    import app.analysis.static_analyzer
-    monkeypatch.setattr(
-        app.analysis.static_analyzer.StaticAnalyzer,
-        "analyze",
-        lambda self, role_name: type('Result', (), {'success': True, 'stdout': '', 'stderr': '', 'errors': []})()
-    )
+    # The stages between the architecture and the sprint plan - scaffold, QA
+    # writing the acceptance suite, its review - have tests of their own
+    # (`test_acceptance_stages.py`). Here they pass straight through, so these
+    # tests keep exercising what they were written for.
+    from app.graph import acceptance_nodes
+
+    monkeypatch.setattr(acceptance_nodes, "scaffold", lambda state, config, ctx: {"stage": "acceptance_author"})
+    monkeypatch.setattr(acceptance_nodes, "acceptance_author", lambda state, config, ctx: {"stage": "scrum_master"})
+    # And the specialists consulted before the specification: nobody here, so
+    # the stage passes straight to the architect. It has tests of its own
+    # (`test_the_specialists_advise_before_the_specification.py`).
+    from app.agents import specialist_advice
+
+    monkeypatch.setattr(specialist_advice, "roles_to_consult", lambda *args, **kwargs: [])
     return registry
 
 
@@ -407,6 +406,74 @@ def test_happy_path_runs_every_stage_in_order_and_completes(agents: ScriptedAgen
     assert "specialist_testing_0" in state["specialist_outputs"]
 
 
+def test_a_stage_reporting_a_change_nothing_made_is_recorded_without_it(
+    agents: ScriptedAgents, tmp_path: Any
+) -> None:
+    """A work order answered with `changed_files` that nothing in the stage
+    wrote has them dropped from the record - deterministically, with no model
+    call asking about them (Initiative Q.4: the clarification was itself a
+    full model call, eleven a day, and two measured stages doubled down)."""
+    _script_through_architecture(agents, _approved_review())
+    _script_through_sprint(agents)
+    agents.script("specialist_testing", [
+        responds_with(_specialist(changed_files=["tests/test_bookings.py"])),
+        responds_with(_specialist()),
+    ])
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-claimed")
+
+    assert state["stage"] == "complete", state.get("error")
+    kept = state["specialist_outputs"]["specialist_testing_0"]
+    assert kept.changed_files == []
+    # The work order and the test round, and nothing between them: no
+    # clarification turn was sent to the stage about its claim.
+    assert len(agents.requests["specialist_testing"]) == 2
+    asked = "\n".join(
+        str(message.get("content", ""))
+        for request in agents.requests["specialist_testing"]
+        for message in request["messages"]
+    )
+    assert "nothing in this conversation wrote" not in asked
+
+
+def test_a_stage_that_claims_it_again_is_recorded_without_it(agents: ScriptedAgents, tmp_path: Any) -> None:
+    """Measured on the first stage ever asked about a phantom claim: one call
+    from its budget, its tools withheld, it named the same file again. Nothing
+    is asked now (Q.4); the record keeps only what changed either way."""
+    _script_through_architecture(agents, _approved_review())
+    _script_through_sprint(agents)
+    claim = responds_with(_specialist(changed_files=["tests/test_bookings.py"]))
+    agents.script("specialist_testing", [claim, claim, responds_with(_specialist())])
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-claimed-twice")
+
+    assert state["stage"] == "complete", state.get("error")
+    assert state["specialist_outputs"]["specialist_testing_0"].changed_files == []
+
+
+def test_a_completed_run_leaves_nothing_uncommitted(agents: ScriptedAgents, tmp_path: Any) -> None:
+    """The release decision, its evidence and the last sprint's record are
+    written after the release's own commit. Three finished runs ended with
+    them uncommitted: a history whose release was never decided."""
+    import subprocess
+
+    from app.tools.version_control import initialise_repository
+
+    assert initialise_repository(tmp_path)
+    _script_through_architecture(agents, _approved_review())
+    _script_through_sprint(agents)
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-committed")
+
+    assert state["stage"] == "complete", state.get("error")
+    left = subprocess.run(["git", "status", "--porcelain"], cwd=tmp_path, capture_output=True, text=True).stdout
+    assert left == "", left
+    last = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=tmp_path, capture_output=True, text=True).stdout
+    assert last.startswith("Run complete:")
+    tracked = subprocess.run(["git", "ls-files"], cwd=tmp_path, capture_output=True, text=True).stdout
+    assert "docs/sprint_1_summary.md" in tracked and "docs/decision_log.md" in tracked
+
+
 def test_a_specification_missing_sections_goes_straight_back_to_the_architect(
     agents: ScriptedAgents, tmp_path: Any
 ) -> None:
@@ -439,7 +506,7 @@ def test_a_specification_missing_sections_goes_straight_back_to_the_architect(
     assert state.get("architecture_revision_count", 0) == 0
     assert state["specification_repair_count"] == 0
 
-    repair_request = agents.requests["principal_architect"][1]["messages"][0]["content"]
+    repair_request = agents.requests["principal_architect"][1]["messages"][-1]["content"]
     for section in ("security_and_privacy", "testing", "deployment"):
         assert section in repair_request
 
@@ -502,25 +569,117 @@ def test_rejected_architecture_returns_to_the_architect_with_the_findings(
     assert "first draft" in revision_request, "the rejected specification should come back for revision"
 
 
-def test_repeated_rejection_fails_the_run_instead_of_looping(agents: ScriptedAgents, tmp_path: Any) -> None:
+def test_a_repair_after_a_revision_is_not_handed_the_review_s_findings_again(
+    agents: ScriptedAgents, tmp_path: Any
+) -> None:
+    """A review's findings are applied once.
+
+    Measured live: the architect's own check sent a review-driven revision back
+    for one section, and the repair pass was handed the review's findings again
+    beside "return only" that section - it rewrote ten sections a second time.
+    """
+    agents.script("product_manager", [responds_with(_intake())])
+    agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
+    agents.script(
+        "principal_architect",
+        [
+            responds_with(_spec("first draft")),
+            responds_with(_spec("revised with auth", testing=["Manually verify the booking page in a browser"])),
+            responds_with(_spec("revised with auth")),
+        ],
+    )
+    agents.script(
+        "architecture_review",
+        [responds_with(_rejected_review("No authentication described")), responds_with(_approved_review())],
+    )
+    _script_through_sprint(agents)
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-repair-after-review")
+
+    assert state["stage"] == "complete", state.get("error")
+    revision, repair = (
+        "\n\n".join(str(m["content"]) for m in request["messages"])
+        for request in agents.requests["principal_architect"][1:3]
+    )
+    assert "No authentication described" in revision
+    assert "Manually verify the booking page" in repair
+    assert "No authentication described" not in repair
+    assert "MUST FIX" not in repair
+
+
+def _script_rejections(agents: ScriptedAgents) -> None:
     agents.script("product_manager", [responds_with(_intake())])
     agents.script("tools_models", [responds_with(_tools())])
     agents.script("stack_selector", [responds_with(_stack_selector())])
     agents.script("principal_architect", [responds_with(_spec())] * MAX_ARCHITECTURE_REVISIONS)
     agents.script("architecture_review", [responds_with(_rejected_review())] * MAX_ARCHITECTURE_REVISIONS)
 
+
+def test_repeated_rejection_is_decided_instead_of_looping(agents: ScriptedAgents, tmp_path: Any) -> None:
+    """Auto mode builds from the latest specification and records what is open.
+
+    The run used to fail here. The acceptance suite, written from the brief,
+    decides whether the product works, so open design points are a risk to
+    record rather than a reason to stop - and the reviewer's words must survive
+    into that record, not just "reached the limit".
+    """
+    _script_rejections(agents)
+    _script_through_sprint(agents)
+
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-loop")
 
-    assert state["stage"] == "failed"
+    assert state["stage"] == "complete", state.get("error")
     assert state["architecture_revision_count"] == MAX_ARCHITECTURE_REVISIONS
+    decision = next(d for d in state["decisions"] if d["point"] == "technical_specification"
+                    and "known risks" in d["decision"])
+    assert decision["decided_by"] == "auto"
+    assert "No authentication described" in decision["rationale"]
+    assert any("No authentication described" in issue for issue in state["known_issues"])
 
-    # The message has to say what is still wrong, not just that the run stopped.
-    # The reviewer has already written the answer down; a run that dies with
-    # "reached the limit" makes the reader open the checkpoint to find out why.
-    error = state["error"]
-    assert str(MAX_ARCHITECTURE_REVISIONS) in error
-    assert "No authentication described" in error
-    assert "Describe the authentication and session model." in error
+
+def test_repeated_rejection_asks_the_person_who_asked_to_be_asked(agents: ScriptedAgents, tmp_path: Any) -> None:
+    from app.graph.escalation import ESCALATION_REVIEW
+
+    graph = _graph()
+    _script_rejections(agents)
+    _script_through_sprint(agents)
+
+    state = start_workflow(
+        graph, _document(), _repository(tmp_path), "run-loop-ask", review_policy={ESCALATION_REVIEW: True},
+    )
+
+    assert state["stage"] == "awaiting_user_review:escalation"
+    page = (tmp_path / "docs" / "reviews" / "escalation.md").read_text()
+    assert "did not converge" in page and "No authentication described" in page
+
+    state = resume_pending_review(graph, "run-loop-ask", approve_decision("Build it"))
+
+    assert state["stage"] == "complete", state.get("error")
+    decision = next(d for d in state["decisions"] if "known risks" in str(d.get("decision")))
+    assert decision["decided_by"] == "user"
+
+
+def test_the_person_s_guidance_goes_back_to_the_architect(agents: ScriptedAgents, tmp_path: Any) -> None:
+    from app.graph.escalation import ESCALATION_REVIEW
+
+    graph = _graph()
+    agents.script("product_manager", [responds_with(_intake())])
+    agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
+    agents.script("principal_architect", [responds_with(_spec())] * (MAX_ARCHITECTURE_REVISIONS + 1))
+    agents.script(
+        "architecture_review",
+        [responds_with(_rejected_review())] * MAX_ARCHITECTURE_REVISIONS + [responds_with(_approved_review())],
+    )
+    _script_through_sprint(agents)
+    start_workflow(graph, _document(), _repository(tmp_path), "run-guided", review_policy={ESCALATION_REVIEW: True})
+
+    state = resume_pending_review(graph, "run-guided", request_changes_decision("Use signed session cookies."))
+
+    assert "Use signed session cookies." in agents.last_request_text("principal_architect")
+    assert state["stage"] == "complete", state.get("error")
+    assert state["architecture_revision_count"] == 0
 
 
 def test_the_architecture_revision_budget_is_bounded_and_configurable(monkeypatch) -> None:
@@ -608,16 +767,68 @@ def test_specialist_dispatch_runs_every_delegated_task(agents: ScriptedAgents, t
     }
 
 
-def test_a_defect_that_never_gets_fixed_escalates_instead_of_looping(
-    agents: ScriptedAgents, tmp_path: Any
+def test_a_fix_stage_whose_replies_are_all_cut_off_leaves_its_defect_open(
+    agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A defect the owner cannot fix consumes attempts and then escalates."""
+    """One run failed 4 h 45 min in because one defect fix lost its reply to
+    the output limit, and then the reply after it. A fix not made has an
+    outcome - the defect stays open for the next round - so the run goes on."""
+    from langchain_core.messages import AIMessage
+
+    from app.observability import defect_ledger
+
+    events: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(defect_ledger, "note", lambda event, stage, **fields: events.append((event, fields)))
+    cut_off = {"messages": [AIMessage(content="", response_metadata={"finish_reason": "length"})]}
     _script_through_architecture(agents, _approved_review())
     agents.script("scrum_master", [responds_with(_sprint_plan())])
     agents.script("technical_lead", [responds_with(_milestone("backend"))])
-    agents.script("specialist_backend", [responds_with(_specialist())] * 8)
+    agents.script("specialist_backend", [
+        responds_with(_specialist()),
+        cut_off,
+        cut_off,
+        responds_with(_specialist(tests=["tests/test_bookings_regression.py"])),
+    ])
+    agents.script("specialist_testing", [
+        responds_with(_specialist(defects=[_defect(owner="backend")])),
+        responds_with(_specialist()),
+        responds_with(_specialist()),
+    ])
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-cut-off-fix")
+
+    assert state["stage"] == "complete", state.get("error")
+    left = [fields for event, fields in events if event == "left open"]
+    assert left and "changed nothing" in left[0]["detail"] and "output limit" in left[0]["detail"]
+    assert [event for event, _ in events].count("fixed") == 1
+
+
+def test_a_defect_that_never_gets_fixed_escalates_instead_of_looping(
+    agents: ScriptedAgents, tmp_path: Any
+) -> None:
+    """A defect the owner cannot fix consumes attempts and then escalates.
+
+    A sprint that exhausts its remediation attempts is now re-planned rather
+    than failing the run outright, so "escalates instead of looping" means
+    something stronger than it did: the re-plan is itself bounded, by the same
+    `MAX_MILESTONE_REVISIONS` as every other revision. An unfixable defect
+    therefore costs one plan plus that many re-plans and then reaches a human,
+    instead of exhausting a fresh remediation cycle forever.
+
+    The scripts are sized for every attempt the bound allows. They are
+    deliberately longer than the run needs: a script that runs dry fails with
+    "no scripted response left", which says nothing about whether the routing
+    was right.
+    """
+    _script_through_architecture(agents, _approved_review())
+    agents.script("scrum_master", [responds_with(_sprint_plan())])
+    attempts_allowed = workflow_module.MAX_MILESTONE_REVISIONS + 1
+    agents.script("technical_lead", [responds_with(_milestone("backend"))] * (attempts_allowed + 2))
+    agents.script("specialist_backend", [responds_with(_specialist())] * 60)
     # Every verification round keeps finding the same failure.
-    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 8)
+    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 60)
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-blocked")
 
@@ -626,6 +837,78 @@ def test_a_defect_that_never_gets_fixed_escalates_instead_of_looping(
     assert state["remediation"].attempt == workflow_module.MAX_REMEDIATION_ATTEMPTS
     assert "remediation attempts" in state["error"]
     assert "Booking API returns 500" in state["error"], "the defect report is the sprint evidence"
+    assert len(agents.requests["technical_lead"]) == attempts_allowed, (
+        "the sprint is re-planned up to the revision limit and then escalated, "
+        "not re-planned indefinitely"
+    )
+    # The record of the failed sprint includes the round that ended it. It was
+    # written from the cycle as it stood before that round, so it reported one
+    # round and one defect fewer, and a sprint that "exhausted remediation
+    # attempts" with nothing open.
+    # And the lead planning it again is told what stopped the attempt before.
+    second = agents.requests["technical_lead"][1]
+    replan = "\n".join(str(m.get("content", "")) for m in second["messages"])
+    assert "already been attempted and was not accepted" in replan
+    assert "Booking API returns 500" in replan
+    cycle = state["remediation"]
+    last = state["sprint_attempts"][-1]
+    assert last["status"] == "Failed"
+    assert last["rounds"] == len(cycle.test_runs)
+    assert len(last["defects"]) == len(cycle.defects)
+    assert [d["status"] for d in last["defects"]].count("open") == sum(
+        1 for d in cycle.defects if d.status == "open"
+    ) > 0
+
+
+def test_a_defect_only_about_a_locked_test_beyond_repair_goes_to_no_fixer(
+    agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once the suite may not be repaired again, the round is told which locked
+    tests cannot pass, and a defect about them alone is set aside: a fixer
+    would only answer that it may not change the locked suite."""
+    from app.graph import acceptance_nodes
+
+    broken = "`acceptance/a.spec.js` line 9: `[AC-1] books` looks for `second`, a value the test made itself"
+    monkeypatch.setattr(acceptance_nodes, "acceptance_for_round", lambda state: ("", [broken]))
+    monkeypatch.setattr(acceptance_nodes, "MAX_SUITE_REPAIRS", 0)
+    monkeypatch.setattr(acceptance_nodes, "MAX_SUITE_REPAIRS_IN_ALL", 0)
+    _script_through_architecture(agents, _approved_review())
+    _script_through_sprint(agents)
+    unfixable = _defect(owner="testing", description="AC-1 locked test looks for a value it never entered")
+    agents.script("specialist_testing", [responds_with(_specialist()), responds_with(_specialist(defects=[unfixable]))])
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-unrepairable")
+
+    assert state["stage"] == "complete", state.get("error")
+    verification = "\n".join(str(m.get("content", "")) for m in agents.requests["specialist_testing"][1]["messages"])
+    assert "cannot pass whatever is built (AC-1)" in verification and broken in verification
+    assert not (state.get("remediation") and state["remediation"].defects)
+
+
+def test_a_defect_open_when_its_attempt_ends_is_recorded_as_left_open(
+    agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The defect ledger closes each story. A defect still open when its
+    sprint's attempt ended showed as raised and nothing after - the same as a
+    round cut short - so an audit could not tell the two apart."""
+    from app.observability import defect_ledger
+
+    events: list[tuple[str, str, dict[str, Any]]] = []
+    monkeypatch.setattr(defect_ledger, "note", lambda event, stage, **fields: events.append((event, stage, fields)))
+    _script_through_architecture(agents, _approved_review())
+    agents.script("scrum_master", [responds_with(_sprint_plan())])
+    attempts_allowed = workflow_module.MAX_MILESTONE_REVISIONS + 1
+    agents.script("technical_lead", [responds_with(_milestone("backend"))] * (attempts_allowed + 2))
+    agents.script("specialist_backend", [responds_with(_specialist())] * 60)
+    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 60)
+
+    start_workflow(_graph(), _document(), _repository(tmp_path), "run-blocked")
+
+    left = [fields for event, stage, fields in events if event == "left open" and stage.startswith("test_round_")]
+    assert len(left) >= attempts_allowed, "each ended attempt closes the stories it leaves open"
+    assert all("remediation attempts" in fields["detail"] for fields in left)
+    assert "planned again" in left[0]["detail"]
+    assert "escalated to a person" in left[-1]["detail"]
 
 
 # --------------------------------------------------------------------------
@@ -953,7 +1236,7 @@ def test_a_changes_required_with_no_findings_is_re_reviewed_not_acted_on(
     `findings` is the only field the revision loop can gate on, so a reviewer
     that buries a blocking defect in `acceptance_evidence` hands the technical
     lead free text: no severity, no required remediation, and nothing for
-    `_findings_that_block` to see. Observed on run-27fac2a5, where the
+    `_findings_that_block` to see. Observed on one run, where the
     deterministic cross-file checks told the reviewer a module script tag was
     loading a CommonJS file, the reviewer wrote that in `acceptance_evidence`
     and left `findings` empty, and three revisions later the file was unchanged
@@ -1017,7 +1300,7 @@ def test_a_changes_required_with_no_findings_is_re_reviewed_not_acted_on(
     # contain the module/commonjs sentence from `acceptance_evidence` and no
     # remediation instruction at all.
     lead_requests = agents.requests["technical_lead"]
-    assert "classic script" in lead_requests[1]["messages"][0]["content"]
+    assert "classic script" in lead_requests[1]["messages"][-1]["content"]
 
 
 def test_sprint_review_pauses_after_tests_pass_and_can_be_approved(
@@ -1070,12 +1353,19 @@ def test_sprint_review_changes_replan_the_milestone_with_the_comment(
 
 
 def test_a_blocked_sprint_never_reaches_its_optional_review(agents: ScriptedAgents, tmp_path: Any) -> None:
-    """An optional review cannot rubber-stamp a sprint whose tests never passed."""
+    """An optional review cannot rubber-stamp a sprint whose tests never passed.
+
+    Scripted for every re-plan the revision limit allows, because a sprint that
+    exhausts its remediation attempts is re-planned before it escalates.
+    """
     _script_through_architecture(agents, _approved_review())
     agents.script("scrum_master", [responds_with(_sprint_plan())])
-    agents.script("technical_lead", [responds_with(_milestone("backend"))])
-    agents.script("specialist_backend", [responds_with(_specialist())] * 8)
-    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 8)
+    agents.script(
+        "technical_lead",
+        [responds_with(_milestone("backend"))] * (workflow_module.MAX_MILESTONE_REVISIONS + 3),
+    )
+    agents.script("specialist_backend", [responds_with(_specialist())] * 60)
+    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 60)
 
     state = start_workflow(
         _graph(),
@@ -1121,6 +1411,8 @@ def test_a_reported_failure_becomes_a_tracked_defect_routed_to_its_owner(
         "specialist_backend",
         [
             responds_with(_specialist(changed_files=["src/api/bookings.py"])),
+            # A scripted answer reports a file nothing wrote; the claim is
+            # dropped from the record with no model call about it (Q.4).
             responds_with(_specialist(tests=["tests/test_bookings_regression.py"])),
         ],
     )
@@ -1187,13 +1479,20 @@ def test_a_defect_is_routed_to_its_owner_not_to_the_reporter(agents: ScriptedAge
 def test_a_fix_without_a_regression_test_does_not_close_the_defect(
     agents: ScriptedAgents, tmp_path: Any
 ) -> None:
-    """The plan's gate forbids accepting a sprint with missing regression coverage."""
+    """The plan's gate forbids accepting a sprint with missing regression coverage.
+
+    Scripted for every re-plan the revision limit allows; see
+    `test_a_defect_that_never_gets_fixed_escalates_instead_of_looping`.
+    """
     _script_through_architecture(agents, _approved_review())
     agents.script("scrum_master", [responds_with(_sprint_plan())])
-    agents.script("technical_lead", [responds_with(_milestone("backend"))])
+    agents.script(
+        "technical_lead",
+        [responds_with(_milestone("backend"))] * (workflow_module.MAX_MILESTONE_REVISIONS + 3),
+    )
     # The backend specialist claims to have fixed it but names no test.
-    agents.script("specialist_backend", [responds_with(_specialist(tests=[]))] * 8)
-    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 8)
+    agents.script("specialist_backend", [responds_with(_specialist(tests=[]))] * 60)
+    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 60)
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-no-regression")
 
@@ -1217,8 +1516,8 @@ def test_multiple_defects_are_each_routed_to_their_own_owner(agents: ScriptedAge
                 _specialist(
                     defects=[
                         _defect(owner="backend", description="API 500"),
-                        _defect(owner="database", description="Missing index"),
-                        _defect(owner="ui_ux", description="Broken layout"),
+                        _defect(owner="database", description="Missing index").model_copy(update={"actual_behavior": "Query took 1200ms without index"}),
+                        _defect(owner="ui_ux", description="Broken layout").model_copy(update={"actual_behavior": "Text clipped at small viewport"}),
                     ]
                 )
             ),
@@ -1365,3 +1664,44 @@ def test_the_structured_retry_targets_a_routable_node():
             next_stage="complete",
         )
         assert update["stage"] in _NODE_NAMES, f"retry from {stage} routes nowhere"
+
+
+def _review_asking_for_changes() -> MilestoneReviewOutput:
+    return MilestoneReviewOutput(
+        status="changes_required",
+        findings=[MilestoneReviewFinding(
+            severity="major", category="correctness",
+            description="Two concurrent deletes of one note both answer 204.",
+            affected_files=["src/app.py"], required_remediation="Answer 404 to the second.",
+        )],
+        acceptance_evidence="The tests pass; one defect no test checks.",
+        documentation_reviewed=True, tests_reviewed=True,
+    )
+
+
+@pytest.mark.parametrize("fast", [True, False])
+def test_a_review_still_asking_for_changes_at_the_limit(agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, fast: bool) -> None:
+    """Owner, 2026-10-15: in fast delivery the findings become recorded risks and the run goes on.
+
+    One run's reviews found new, different findings each round while every
+    test passed; the third would have stopped the run for a person.
+    """
+    monkeypatch.setattr(workflow_module, "_fast_delivery", lambda: fast)
+    _script_through_architecture(agents, _approved_review())
+    agents.script("scrum_master", [responds_with(_sprint_plan())])
+    agents.script("technical_lead", [responds_with(_milestone("testing"))] * 6)
+    agents.script("specialist_testing", [responds_with(_specialist())] * 20)
+    agents.script("milestone_reviewer", [responds_with(_review_asking_for_changes())] * 6)
+    agents.script("security_reviewer", [responds_with(_security_review())] * 6)
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), f"run-review-limit-{fast}")
+
+    if fast:
+        assert state["stage"] == "complete", state.get("error")
+        risked = [d for d in state.get("decisions") or [] if "record the findings as risks" in str(d.get("decision"))]
+        assert risked
+        # One send-back, as the architecture review allows in fast delivery.
+        assert "after 1 revision(s)" in str(risked[0].get("question")), risked[0]
+    else:
+        assert state["stage"] != "complete"
+        assert "still required changes" in str(state.get("error") or "")

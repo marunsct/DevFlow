@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.agents.project_layout import PROJECT_LAYOUT, WORKSPACE_ROOT_NOTE
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
+from app.agents.project_layout import PLANNED_PROJECT_DIRECTORY
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 
@@ -50,14 +51,118 @@ of valid role names.
 """
 
 
+def _as_a_line(item: Any) -> Any:
+    """One structured item of a work-order list, as the line of text it says.
+
+    `{"given": g, "when": w, "then": t}` reads "Given g, when w, then t", with
+    any other keys after it; an object with one key reads as its value; any
+    other object as "key: value" pairs; a nested list as its items joined.
+    Strings, and anything that is neither, are returned as they came.
+    """
+    if isinstance(item, list):
+        return "; ".join(str(_as_a_line(part)) for part in item if part not in (None, ""))
+    if not isinstance(item, dict):
+        return item
+    parts = {str(k).strip().lower(): v for k, v in item.items() if v not in (None, "", [])}
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return str(_as_a_line(next(iter(parts.values()))))
+    ordered = [key for key in ("given", "when", "then") if key in parts]
+    if ordered:
+        line = ", ".join(f"{key} {_as_a_line(parts.pop(key))}" for key in ordered)
+        line = line[0].upper() + line[1:]
+        rest = "; ".join(f"{key} {_as_a_line(value)}" for key, value in parts.items())
+        return f"{line}; {rest}" if rest else line
+    return "; ".join(f"{key}: {_as_a_line(value)}" for key, value in parts.items())
+
+
 class SpecialistTask(BaseModel):
     """One unit of delegated work for a single specialist."""
 
     model_config = ConfigDict(extra="forbid")
 
     specialist_role: SpecialistRole = Field(..., description="Which specialist should perform this task.")
+    title: str = Field(
+        default="",
+        description=(
+            "A short name for what this task delivers, as a reader would list it: "
+            "'Delete an item', 'Persist items between sessions'. One line."
+        ),
+    )
     task_description: str = Field(..., description="The specific, scoped piece of work being delegated.")
     acceptance_criteria: list[str] = Field(default_factory=list)
+    # The work order. A developer new to this codebase should be able to do the
+    # task from these fields alone, without the specification in front of them
+    # and without guessing. See `app.analysis.work_orders`, which checks them.
+    files: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every file this task creates or changes, as a path inside the project "
+            "directory. One owner per file: a file listed here is this task's."
+        ),
+    )
+    interfaces: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The exact contracts this task implements or calls, copied from the "
+            "technical specification: names, parameters, return values, data "
+            "shapes, messages or endpoints. The tests are written against these."
+        ),
+    )
+    steps: list[str] = Field(
+        default_factory=list,
+        description="The implementation steps, in order, specific enough to follow without guessing.",
+    )
+    edge_cases: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Inputs and conditions the work must handle and the rule for each: empty, "
+            "too long, missing, duplicate, invalid - and the same rule on every other "
+            "path that sets the same value."
+        ),
+    )
+    test_cases: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Given/when/then cases that prove the acceptance criteria. The testing "
+            "task turns these into automated tests; the developer knows from them "
+            "exactly what will be checked."
+        ),
+    )
+    verification: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Commands the specialist runs to prove the work: one program and its "
+            "arguments per entry, no shell operators. Prefer the project's own test "
+            "command."
+        ),
+    )
+    out_of_scope: list[str] = Field(
+        default_factory=list,
+        description="What this task must not change, so it does not collide with another task.",
+    )
+
+    @field_validator(
+        "acceptance_criteria", "files", "interfaces", "steps", "edge_cases",
+        "test_cases", "verification", "out_of_scope",
+        mode="before",
+    )
+    @classmethod
+    def _each_item_as_a_line(cls, value: Any) -> Any:
+        """Accept a structured item where a line of text is asked for.
+
+        The readiness check asks for test cases as given/when/then, and one
+        run's lead did exactly that - `{"given": ..., "when": ..., "then": ...}`
+        for each case. The schema wanted strings, so the answer was refused on
+        `delegated_tasks.0.test_cases.0` through `.5`, and the lead's next
+        answer dropped its test cases altogether. The plan was then dispatched
+        with "no `test_cases`" noted against it, after three rounds spent on
+        exactly the thing the lead had written.
+        """
+        if not isinstance(value, list):
+            return value
+        return [_as_a_line(item) for item in value]
 
     @field_validator("task_description", mode="after")
     @classmethod
@@ -65,7 +170,7 @@ class SpecialistTask(BaseModel):
         """Refuse a task that says there is nothing to do.
 
         A specialist with no work should not be on the list. Measured on
-        run-bb1ee9bb, whose milestone plan read
+        one run, whose milestone plan read
 
             #### backend — N/A
             #### database — N/A
@@ -99,7 +204,7 @@ class SpecialistTask(BaseModel):
         The sibling of `_a_task_is_work`, and the same lesson: an agent handed
         a task it cannot complete does not stop, it finds something to do.
 
-        Measured on run f81808a4. The lead delegated
+        Measured on one run. The lead delegated
 
             Update docs/sprint_plan.md to include a new section detailing the
             filtering feature implementation.
@@ -181,7 +286,13 @@ class MilestonePlanOutput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    selected_sprint_goal: str = Field(..., description="The single sprint goal this milestone covers.")
+    # Not required: the harness knows the sprint's goal. Measured on one run:
+    # a lead's every answer left this one field out and was refused, eight
+    # times in 12 minutes, each the whole plan again.
+    selected_sprint_goal: str = Field(
+        default="",
+        description="The single sprint goal this milestone covers. Left out, it is the sprint's own goal.",
+    )
     milestone_scope: list[str] = Field(default_factory=list, description="What this milestone will actually deliver.")
     delegated_tasks: list[SpecialistTask] = Field(default_factory=list)
     integration_notes: list[str] = Field(
@@ -196,10 +307,20 @@ class MilestonePlanOutput(BaseModel):
         default_factory=list,
         description=(
             "When revising after a review, one line per requested change naming the "
-            "delegated task that will make it, e.g. 'Add jest.setup.js polyfill -> task 3 "
-            "(testing)'. Empty on a first plan. Purpose: a requested change that no task "
+            "delegated task that will make it, e.g. 'Add the missing test setup file -> "
+            "task 3 (testing)'. Empty on a first plan. Purpose: a requested change that no task "
             "owns is a change nobody makes. Producer: Technical Lead. Consumer: the "
             "workflow, which refuses a revision that assigns nothing."
+        ),
+    )
+    carried_forward_decisions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "One line per item carried forward from an earlier sprint, saying which "
+            "task in this milestone takes it, or why it is declined - e.g. "
+            "'Description cannot be edited once empty -> task 2' or 'Stale label on "
+            "filter controls -> declined: removed by task 1'. Empty when nothing was "
+            "carried forward."
         ),
     )
     blockers: list[str] = Field(
@@ -210,7 +331,7 @@ class MilestonePlanOutput(BaseModel):
     def _a_plan_assigns_something(self) -> "MilestonePlanOutput":
         """A milestone with scope and no tasks is not a plan.
 
-        Measured on run-a7150a6c, whose fifth plan named a full scope - "Add
+        Measured on one run, whose fifth plan named a full scope - "Add
         event handlers and UI rendering for add, edit, delete, toggle in
         app.js; unit tests; documentation; encrypt data before saving" - and
         delegated nothing, with no blockers. The workflow accepted it, found no
@@ -236,6 +357,95 @@ class MilestonePlanOutput(BaseModel):
         )
 
 
+#: How much of two requested changes must be the same words for the second to
+#: count as a repeat. Measured over the milestone reviews of 20 stored runs, as
+#: word-set overlap between consecutive rounds' gating findings:
+#:
+#:   clearly different  0.05 0.07 0.08 0.08 0.09 0.10 0.10 0.10 0.11 0.12 0.13
+#:                      0.14 0.15 0.15 0.15 0.17 0.18 0.18 0.18 0.20 0.24 0.25
+#:                      0.28 0.29 0.30 0.36
+#:   repeats            0.45 0.46 0.49 0.51 0.61 0.61 0.61 0.70 0.80
+#:
+#: Two of those are known ground truth: one run's 0.70 is the pair whose
+#: text was byte-identical, and one run's 0.49 is the pair that said "the
+#: CSS in index.html contains no responsive rules" and then "the <style> block in
+#: index.html contains no responsive rules" - the same finding, reworded, which
+#: an exact-match test missed while that run died on the revision cap.
+#:
+#: 0.40 rather than a line fitted between 0.46 and 0.49, which would be two
+#: adjacent observations deciding a constant. This note is advice and not a gate:
+#: a false positive tells a lead that a change looks like last round's and to name
+#: the file and the edit, which is sound whether or not it repeated, and a false
+#: negative is what cost one run four sprints.
+SAME_CHANGE_WORD_OVERLAP = 0.40
+
+
+def _the_same_words(first: str, second: str) -> float:
+    """Word-set overlap of two requested changes, 0.0 to 1.0.
+
+    Words rather than characters, because the rewording that matters swaps a
+    phrase and keeps the subject: "the CSS in index.html" for "the <style> block
+    in index.html". Numbers are kept - a budget finding that moves from 506 lines
+    to 688 is a different measurement, and dropping the digits would merge them.
+    """
+    import re
+
+    def words(text: str) -> set[str]:
+        return set(re.findall(r"[a-z0-9]+", str(text).lower()))
+
+    mine, theirs = words(first), words(second)
+    if not mine or not theirs:
+        return 0.0
+    return len(mine & theirs) / len(mine | theirs)
+
+
+def _a_change_asked_for_twice(comments: list[str]) -> str:
+    """The note for a requested change that repeats the last one, or "".
+
+    `revision_comments` accumulates, so a lead on its second revision is handed
+    the same request twice and nothing says the measurement did not move. Round
+    two then reads like round one and is answered the same way.
+
+    Two runs died this way. One run's first two milestone reviews were
+    byte-identical, both blocking on "The product exceeds the stated 500-line code
+    limit ... 506 lines of code" - six lines over, asked for twice in the same
+    words - and its third round got under the limit by deleting `updateTask`,
+    which the suite still called, so `npm test` exited 1 and that became the new
+    blocker.
+
+    One run then showed the other shape. Its rounds 4 and 5 both blocked on
+    the same missing responsive CSS, once as "the CSS in index.html" and once as
+    "the <style> block in index.html". An exact-match test - which is what this
+    was when it shipped - saw two different strings and said nothing, and the run
+    died on the revision cap.
+
+    So the comparison is by overlap, and the note says both things those runs
+    demonstrated: the change is a repeat, and meeting a size limit by removing
+    delivered behaviour is not meeting it.
+    """
+    trimmed = [" ".join(str(comment).split()) for comment in comments if str(comment).strip()]
+    if len(trimmed) < 2:
+        return ""
+    if (
+        trimmed[-1] != trimmed[-2]
+        and _the_same_words(trimmed[-1], trimmed[-2]) < SAME_CHANGE_WORD_OVERLAP
+    ):
+        return ""
+    return (
+        "\n\nTHIS IS THE SAME CHANGE YOU WERE GIVEN LAST ROUND.\n"
+        "The review re-measured and asked for it again, so whatever the previous "
+        "plan assigned did not move it. Assigning the same task again in the same "
+        "terms will not either. Name the file and the specific edit this time, and "
+        "give it to a specialist who can make exactly that edit.\n"
+        "If the change is a size or count limit: meet it by removing duplication, "
+        "dead code, comments or over-long constructs. Do NOT meet it by deleting "
+        "behaviour the product has already delivered - the tests that cover it "
+        "will fail, the promise in the intake goes unmet, and the next review "
+        "blocks on that instead. That is what happened the last time this limit "
+        "was answered by deletion."
+    )
+
+
 def build_milestone_revision_request(
     previous_plan_json: str, comments: list[str]
 ) -> dict[str, list[dict[str, str]]]:
@@ -243,7 +453,7 @@ def build_milestone_revision_request(
 
     The generic revision prompt asks the agent to "address every requested
     change", and for a *plan* there is a way to do that which changes nothing:
-    write it down. Measured on run-0b55ad49 - a review named the exact file,
+    write it down. Measured on one run - a review named the exact file,
     line and fix for a test-suite failure, the lead reproduced it verbatim under
     `## Integration Notes`, no delegated task mentioned it, and eighty minutes
     later the file was byte-for-byte unchanged. The relay worked; the assignment
@@ -272,7 +482,18 @@ def build_milestone_revision_request(
                 "naming the task that took it. If you cannot name a task for a change, "
                 "you have not assigned it yet.\n"
                 "- Fixing what the review raised comes before adding new work. Do not "
-                "add new tests or features while a reported failure is unfixed.",
+                "add new tests or features while a reported failure is unfixed.\n"
+                # One run's second revision re-assigned a stray brace and a dead
+                # CSS rule that the first revision had already removed; the
+                # review that sent it back never mentioned them. The specialist
+                # found nothing to fix and spent its turns re-reading the file to
+                # be sure - fifteen refused reads and a 21,000-token reply.
+                "- The tasks in the plan above HAVE ALREADY BEEN CARRIED OUT, and the "
+                "review that sent it back judged their result. Do not assign them "
+                "again. A task belongs in this revision only if one of the requested "
+                "changes asks for it: work the review does not mention is done, and a "
+                "specialist sent back to it finds nothing to fix."
+                + _a_change_asked_for_twice(comments),
             }
         ]
     }
@@ -298,20 +519,199 @@ def _truncate(text: str, max_chars: int | None = None) -> str:
     )
 
 
+#: The specification sections a work order copies from: where things live, what
+#: the data is, the contracts between parts, how data moves, how it is tested.
+_CONTRACT_SECTIONS = (
+    ("component_boundaries", "Component boundaries"),
+    ("domain_model", "Domain model"),
+    ("api_and_event_contracts", "Contracts"),
+    ("data_flows", "Data flows"),
+    # What the interface looks like and how it behaves, from the UI/UX advice.
+    # A work order building the interface copies its part; without it the
+    # interface was built from functional tests alone, and 20 of 26 stored
+    # products shipped the scaffold's stylesheet untouched.
+    ("interface_design", "Interface design"),
+    ("testing", "Testing"),
+    # The builder's detail (`TechnicalSpecificationOutput.file_plan` and the
+    # sections after it): a work order copies the entries for its files.
+    ("file_plan", "File plan"),
+    ("function_contracts", "Function contracts"),
+    ("data_contracts", "Data contracts"),
+    ("error_catalogue", "Error catalogue"),
+    ("implementation_order", "Implementation order"),
+    ("configuration", "Configuration"),
+    ("library_usage", "Library usage"),
+)
+
+
+def _the_contracts(specification: Any) -> str:
+    """The specification's contract sections, for the lead to copy into work orders."""
+    if specification is None:
+        return ""
+    blocks: list[str] = []
+    for field, heading in _CONTRACT_SECTIONS:
+        items = [str(item).strip() for item in getattr(specification, field, None) or [] if str(item).strip()]
+        if items:
+            blocks.append(f"{heading}:\n" + "\n".join(f"- {item}" for item in items))
+    if not blocks:
+        return ""
+    return (
+        "--- From the approved technical specification: the contracts your work orders "
+        "copy from (/docs/technical_specification.md has the rest) ---\n"
+        + _truncate("\n\n".join(blocks)) + "\n\n"
+    )
+
+
+#: Open defects of a failed attempt quoted to the lead, and how much of each.
+MOST_OPEN_DEFECTS_QUOTED = 8
+_MOST_DEFECT_CHARACTERS = 600
+_MOST_CAUSE_CHARACTERS = 900
+
+
+def _what_the_last_attempt_left(attempt: Any) -> str:
+    """Why this sprint is being planned again, and what is still open, or "".
+
+    A sprint that exhausts its fix attempts goes back to the lead to be planned
+    again, and the request for that plan was the same one as the first time:
+    the sprint plan, the contracts, the files. Nothing said the sprint had been
+    tried, or what stopped it. Measured on one run: sprint 1 failed its tests
+    on one defect - an edit that never reached the browser's storage - and each
+    of its three re-plans was "run the existing test suite", by a lead that had
+    no way to know there was anything to fix. The same defect closed the run.
+
+    What the last test round still found comes first, each with what it
+    showed; what only an earlier round raised follows, marked so. Measured on
+    one gate run: the re-plan was given round 0's "the unit tests fail" - which
+    the last round's unit tests no longer did - and "the product does not
+    start" twice and without its cause, and planned the unit tests' setup
+    while the product went on failing to start.
+
+    `attempt` is the sprint record's own entry for that attempt: its reason and
+    its defects with their status.
+    """
+    if not isinstance(attempt, dict):
+        return ""
+    reason = str(attempt.get("reason") or "").strip()
+    latest: dict[str, dict] = {}
+    for defect in attempt.get("defects") or []:
+        if not isinstance(defect, dict) or str(defect.get("status") or "open") != "open":
+            continue
+        # By its first sentence: a check's own words, the same each round,
+        # where the output after them differs run to run.
+        key = re.split(r"(?<=[.!?])\s|\n", " ".join(str(defect.get("description") or "").split()), maxsplit=1)[0]
+        if key:
+            # The latest of one description stands for all of them.
+            latest.pop(key, None)
+            latest[key] = defect
+    still_open = list(latest.values())
+    if not reason and not still_open:
+        return ""
+    rounds = [d.get("found_in_round") for d in still_open if isinstance(d.get("found_in_round"), int)]
+    last = max(rounds) if rounds else None
+
+    def earlier(defect: dict) -> bool:
+        found = defect.get("found_in_round")
+        return last is not None and isinstance(found, int) and found < last
+
+    lines = [
+        "--- This sprint has already been attempted and was not accepted ---",
+        f"Attempt {attempt.get('number', '?')} ended: {reason or 'not accepted'}.",
+    ]
+    current = [d for d in still_open if not earlier(d)]
+    before = [d for d in still_open if earlier(d)]
+    quoted = 0
+    for heading, group in (("Defects its last test round still found:", current),
+                           ("Raised by an earlier round and not found again by the last one - check each before "
+                            "working on it:", before)):
+        shown = group[:max(0, MOST_OPEN_DEFECTS_QUOTED - quoted)]
+        if not shown:
+            continue
+        lines.append(heading)
+        for defect in shown:
+            text = " ".join(str(defect["description"]).split())[:_MOST_DEFECT_CHARACTERS]
+            lines.append(f"- [owner: {defect.get('owner') or 'unassigned'}] {text}")
+            showed = " ".join(str(defect.get("actual_behavior") or "").split())[:_MOST_CAUSE_CHARACTERS]
+            if showed and showed not in text:
+                lines.append(f"  What it showed: {showed}")
+        quoted += len(shown)
+    if len(still_open) > quoted:
+        lines.append(f"- ... and {len(still_open) - quoted} more")
+    lines.append(
+        "What that attempt built is still in the workspace. This plan finishes the "
+        "sprint; it does not start it again. Give every defect above to a work order "
+        "that fixes it - in the product if the product is wrong, in the test if the "
+        "test asks for something the product was never meant to do - and say in that "
+        "work order which it is. A plan that only runs the suite again will fail on "
+        "the same defects."
+    )
+    return "\n".join(lines) + "\n\n"
+
+
+#: Measured on one run: the last sprint, whose goal was the responsive layout
+#: and the finish, declined every interface item the specification had adopted
+#: and its specialist found missing - "test suite passes, so ignore", "not
+#: required by tests" - and the product shipped without them.
+NOT_A_REASON_TO_DECLINE = (
+    "That no test checks an item, or that the tests pass without it, is not a reason "
+    "to decline it: what the specification adopted is for the person who uses the "
+    "product, and a specialist found it missing."
+)
+
+
 def build_milestone_planning_request(
-    sprint_plan_text: str, selected_sprint_goal: str, repository_root: str
+    sprint_plan_text: str,
+    selected_sprint_goal: str,
+    repository_root: str,
+    specification: Any = None,
+    carried_forward: Any = (),
+    lessons: Any = (),
+    last_attempt: Any = None,
 ) -> dict[str, list[dict[str, str]]]:
-    """Build the Deep Agent input for planning one milestone from the approved sprint plan."""
+    """Build the Deep Agent input for planning one milestone from the approved sprint plan.
+
+    `last_attempt` is this same sprint's previous attempt, when there was one
+    and it was not accepted: see `_what_the_last_attempt_left`.
+
+    `carried_forward` is what earlier sprints left open - review findings that
+    did not block, defects accepted rather than fixed - and each must be taken by
+    a task or declined with a reason. `lessons` is what the harness saw go wrong
+    in earlier sprints of this run, for the lead to design around.
+    """
+    carried = [str(item).strip() for item in carried_forward or () if str(item).strip()]
+    learned = [str(item).strip() for item in lessons or () if str(item).strip()]
     brief = (
         WORKSPACE_ROOT_NOTE
         + f"--- Approved sprint plan (/docs/sprint_plan.md) ---\n{_truncate(sprint_plan_text)}\n\n"
-        f"You are now planning the milestone for this sprint: '{selected_sprint_goal}'.\n"
+        + _the_contracts(specification)
+        + (
+            "--- Carried forward from earlier sprints ---\n"
+            + "\n".join(f"- {item}" for item in carried)
+            + "\nEach of these must either be taken by a work order in this milestone or "
+            "declined with a reason. Record which in `carried_forward_decisions`, one "
+            "line per item. " + NOT_A_REASON_TO_DECLINE + "\n\n"
+            if carried else ""
+        )
+        + (
+            "--- What went wrong earlier in this run (from the harness's own record) ---\n"
+            + "\n".join(f"- {item}" for item in learned)
+            + "\nWrite the work orders so these do not happen again.\n\n"
+            if learned else ""
+        )
+        + _what_the_last_attempt_left(last_attempt)
+        + f"You are now planning the milestone for this sprint: '{selected_sprint_goal}'.\n"
         "Draft the specialized tasks necessary to complete this specific sprint.\n\n"
-        f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
+        + PLANNED_PROJECT_DIRECTORY
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
 
+# Evidence for two of the rules below, kept here rather than in the prompt
+# (Initiative X.4: the model needs the rule, not its history). Across the
+# stored runs, 18 of 143 delegated specialist tasks were test-only work given
+# to another role - most often `backend`, on products with no backend; one such
+# stage ran 47 model calls and wrote its tests in another module system. And 17
+# of 25 sprint plans assigned one file to more than one specialist; 157 writes
+# were a stage writing byte for byte what another had written.
 _SYSTEM_PROMPT = f"""You are the Technical Lead for this workflow.
 
 Your role is to select exactly one sprint from the approved plan, define a
@@ -328,27 +728,51 @@ Responsibilities:
   cover - tests for a UI component are still testing work, not ui_ux work.
   Only the `testing` specialist is given the validation tool that runs a
   suite; every other role has to fall back on a raw terminal command, and it
-  is the only role told which runner this run's stack chose. Measured across
-  the stored runs, 18 of 143 delegated specialist tasks were test-only work
-  given to another role - most often `backend`, including on products with no
-  backend at all. On run d6297b2f that stage ran 47 model calls, wrote its
-  tests in a different module system from the suite already in the project,
-  and the testing specialist spent the next stage undoing it.
+  is the only role told which runner this run's stack chose.
+- One file, one owner. Two tasks that both write the same file are two
+  specialists running at the same time on one file, and the second whole-file
+  write discards the first. If two roles genuinely need the same file, say in each task which part of
+  it that task owns, so neither has to rewrite the whole thing.
 - A role whose part of the product does not exist has nothing to delegate. A
   product the stack builds on vanilla JavaScript and browser storage has no
   backend and no database: do not invent a task for those roles to justify
   naming them.
-- Give each delegated task a highly granular, scoped description and explicit acceptance
-  criteria a Milestone Reviewer can check. You MUST instruct specialists to write complete,
-  executable code and explicitly mandate that they compile/verify their code using terminal commands.
+- Write every delegated task as a WORK ORDER that a developer new to this
+  codebase can complete without asking anything and without the specification
+  in front of them. The specialist sees its own work order and nothing else of
+  the plan. Fill every field:
+  - `title`: a short name for what it delivers, as a reader would list it.
+  - `task_description`: what to build and why, in plain sentences.
+  - `files`: every file it creates or changes, as paths inside the project
+    directory. One owner per file.
+  - `interfaces`: the exact contracts it implements or calls, copied from the
+    specification - names, parameters, return values, data shapes, messages or
+    endpoints. Code and tests are written from these at the same time, so they
+    must be exact.
+  - `steps`: the implementation steps in order.
+  - `edge_cases`: each input or condition to handle and the rule for it, and
+    the same rule on every other path that sets the same value.
+  - `test_cases`: given/when/then cases that prove the acceptance criteria.
+  - `verification`: commands that prove the work, each one program with its
+    arguments. There is no shell: no `&&`, `||`, pipes or redirections, and no
+    code passed inline to an interpreter. Prefer the project's own test command.
+  - `out_of_scope`: what this task must not change.
+  - `acceptance_criteria`: what a Milestone Reviewer checks.
+- A milestone that changes code includes one `testing` work order. It is given
+  the other work orders' `interfaces` and `test_cases` and writes the automated
+  tests from them while the code is written - contract first, not after.
+- The harness checks every plan before dispatch: a code work order with no
+  `files` or no `test_cases`, a file outside the project directory or one the
+  harness keeps, a file the sprint's scope names that no work order lists, a
+  milestone with code and no `testing` work order, or a verification command
+  the sandbox refuses sends the plan back to you.
 - Every milestone must change what the product DOES. At least one delegated
   task must add or change application code that a user or a caller would
   notice. Creating directories, copying files and writing documentation are
   not deliverable work: the workspace and its project directory already exist,
   `docs/` is written by the workflow, and a milestone spent on them ships
-  nothing. Measured on run-84e05d4b, where an entire milestone was "create the
-  project directory", "copy the docs folder into it" and "initialise
-  package.json" - 163 model calls, a test round, a security review and a
+  nothing. Observed: an entire milestone was "create the project directory",
+  "copy the docs folder into it" and "initialise the dependency manifest" - 163 model calls, a test round, a security review and a
   milestone review, and the product had no application file at the end of it.
   The tests written for that milestone asserted that README.md contained a
   heading.
@@ -366,19 +790,17 @@ Constraints:
   needed architecture change, record it as a blocker for human review instead
   of changing it yourself.
 - Do not grant a specialist access beyond their delegated task.
-- Do not modify application source code yourself.
-- Do not change repo files except through the approved artifact tool.
+- Do not modify application source code or automated test files yourself; all
+  changes must be delegated to specialist roles in your work orders.
+- Do not attempt to change repository files directly; you have no file
+  modification tools. Your plan reaches the workflow only through your
+  structured response.
+
 - Do not write a document. The workflow renders `docs/milestone_plan.md` from the
   structured response you return, so your milestone plan reaches its readers
   either way - and only through that response. Writing it yourself
   produces the same work twice from one understanding, and the two
   copies then disagree.
-- Every write_artifact call pauses for a human decision before anything is
-  saved; never claim the artifact is saved until a tool result confirms it.
-- **Write the complete artifact in ONE single write_artifact call.** Do NOT
-  make follow-up edit calls to refine, fix typos, or improve the document after
-  the initial write. The document must be complete and correct before you write
-  it. Once the write is confirmed, immediately return your structured response.
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.

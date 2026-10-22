@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: build the frontend
 # ---------------------------------------------------------------------------
-FROM node:20-slim AS frontend-builder
+FROM node:24-slim AS frontend-builder
 WORKDIR /app/langchain-ui
 
 COPY langchain-ui/package*.json ./
@@ -13,6 +13,22 @@ COPY langchain-ui/ ./
 # `npm run build` runs `tsc -b` first, so a type error fails the image build
 # rather than shipping a frontend that cannot compile.
 RUN npm run build
+
+# The TypeScript compiler, for the runtime image and not for this build: the
+# write tools parse every `.ts`, `.tsx` and `.jsx` an agent writes with it
+# (`app.analysis.typescript_parse`), and Node cannot. Installed globally so it
+# travels with `/usr/local/lib/node_modules` below. Pinned to the last release
+# that ships the JavaScript API the check calls - 7.x is a native binary
+# without it - and a project that installs its own TypeScript is parsed with
+# that one instead.
+RUN npm install -g typescript@6.0.3
+
+# Pyright - the engine of VS Code's Python language support - for the same
+# reason on the Python side: what an IDE would underline in a Python file (a
+# name nothing defines, an import of something its module does not have), at
+# the moment it is written (`app.analysis.language_service`). It runs on the
+# Node already here.
+RUN npm install -g pyright@1.1.414
 
 # ---------------------------------------------------------------------------
 # Stage 2: install Python dependencies into a virtualenv
@@ -30,11 +46,23 @@ ENV VIRTUAL_ENV=/opt/venv
 RUN uv venv "$VIRTUAL_ENV"
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 COPY src/ ./src/
 # Runtime dependencies only: the previous image also installed pytest into the
 # production layer.
-RUN uv pip install --no-cache .
+#
+# Exactly the versions `uv.lock` pins - the ones the test suite runs against.
+# `uv pip install .` resolved the newest release each range in pyproject.toml
+# allows and ignored the lock, so on 2026-09-30 production was running 38
+# packages at versions no test had seen: deepagents 0.7.20 against 0.7.13 in
+# the suite, among them. 0.7.20 dropped the line-number gutter from
+# `read_file`, and every line-addressed edit a model made from then on was
+# counted by hand from unnumbered text - the largest class of failed edits
+# that day, invisible to a suite running the older release. `--frozen` fails
+# the build if the lock is out of date rather than resolving around it.
+RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt > /tmp/requirements.txt \
+    && uv pip install --no-cache -r /tmp/requirements.txt \
+    && uv pip install --no-cache --no-deps .
 
 # ---------------------------------------------------------------------------
 # Stage 3: runtime
@@ -106,13 +134,6 @@ ENV VIRTUAL_ENV=/opt/venv \
     WORKFLOW_WORKSPACE_ROOT=/app/data/workspaces \
     DATA_DIR=/app/data
 
-COPY --from=python-builder /opt/venv /opt/venv
-
-WORKDIR /app
-COPY --chown=appuser:appuser src/ ./src/
-COPY --chown=appuser:appuser pyproject.toml ./
-COPY --from=frontend-builder --chown=appuser:appuser /app/langchain-ui/dist /app/langchain-ui/dist
-
 # Node for the agents, not for this image's own build - the UI specialist is
 # expected to run `npm install` and compile what it writes, and cannot install a
 # runtime for itself. Copied from the frontend builder rather than downloaded
@@ -122,11 +143,6 @@ COPY --from=frontend-builder /usr/local/lib/node_modules /usr/local/lib/node_mod
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
     && node --version && npm --version
-
-RUN mkdir -p /app/data/uploads /app/data/workspaces && chown -R appuser:appuser /app/data
-
-# Runs unprivileged. The image previously ran as root.
-USER appuser
 
 # Chromium in the image, downloaded once and shared by every run.
 #
@@ -145,11 +161,73 @@ USER appuser
 #
 # The system libraries Chromium needs are installed further up, as root,
 # with a note explaining why `--with-deps` is not used here.
-RUN npx --yes playwright install chromium \
+#
+# Pinned to the Playwright release every JavaScript pack pins
+# (`app.stacks.packs._javascript.PLAYWRIGHT`, and the benchmark scorer's), and
+# installed before anything that changes with the source. Unpinned, `npx --yes`
+# fetched whatever release was newest on the day of the build, and because it ran
+# after `COPY src/`, every deploy did it again: from one deploy on the image held
+# only Chromium 1248 (Playwright 1.64) while the packs pinned 1.63, whose browser
+# is 1243, and three of four runs had their scaffold "left to the agents" over an
+# acceptance smoke test that could not start a browser.
+# The toolchains the stack packs build with, beyond Node and Python: Go, Java
+# with Maven, Rust, Ruby with Bundler, PHP with Composer, and .NET. A product in
+# any of these languages starts from a pack whose own tests already run
+# (`app.stacks.packs`), and a stage asked to build it can run what it writes.
+# System-wide - from Debian's packages where Debian's are current, Go from its
+# own release (Debian's 1.24 is older than modules like Gin now require, and Go
+# fetched a newer toolchain into every run's workspace) - since the sandbox gives
+# every command a home inside its run's workspace, so a toolchain installed
+# under a user's home (rustup, sdkman) would not be found. Before anything a
+# deploy changes, so a deploy keeps them. The test reporters each language
+# lacks - gotestsum for Go, cargo-nextest for Rust - are pinned.
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        openjdk-21-jdk-headless maven \
+        rustc cargo \
+        ruby ruby-dev ruby-bundler build-essential \
+        php-cli php-xml php-mbstring php-curl php-sqlite3 composer unzip \
+        libicu76 \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://go.dev/dl/go1.26.9.linux-amd64.tar.gz | tar -xz -C /usr/local \
+    && ln -sf /usr/local/go/bin/go /usr/local/bin/go && ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt \
+    && GOBIN=/usr/local/bin GOPATH=/tmp/gopath GOCACHE=/tmp/gocache GOTOOLCHAIN=local go install gotest.tools/gotestsum@v1.12.3 \
+    && rm -rf /tmp/gopath /tmp/gocache \
+    && curl -fsSL https://get.nexte.st/0.9.104/linux | tar -xz -C /usr/local/bin \
+    && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+    && bash /tmp/dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet \
+    && ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
+    && rm /tmp/dotnet-install.sh \
+    && go version && java -version && mvn -v && cargo --version && cargo nextest --version \
+    && ruby --version && bundle --version && php --version && composer --version && dotnet --version
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_ROOT=/usr/share/dotnet
+
+ARG PLAYWRIGHT_VERSION=1.64.0
+USER appuser
+RUN npx --yes playwright@${PLAYWRIGHT_VERSION} install chromium \
     && test -d "$HOME/.cache/ms-playwright" \
     && du -sh "$HOME/.cache/ms-playwright"
+USER root
+
+COPY --from=python-builder /opt/venv /opt/venv
+
+WORKDIR /app
+COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser pyproject.toml ./
+COPY --from=frontend-builder --chown=appuser:appuser /app/langchain-ui/dist /app/langchain-ui/dist
+
+
+RUN mkdir -p /app/data/uploads /app/data/workspaces && chown -R appuser:appuser /app/data
+
+# Runs unprivileged. The image previously ran as root.
+USER appuser
+
 
 EXPOSE 8000
+
+# The commit the image was built from, for every run's provenance (plan MF.1).
+ARG HARNESS_COMMIT=unknown
+ENV HARNESS_COMMIT=${HARNESS_COMMIT}
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/api/health || exit 1

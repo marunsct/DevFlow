@@ -46,6 +46,12 @@
     </div>
 </div>
 
+<!-- Sprint Milestones -->
+<div class="card" id="sprint-milestones-card" style="display: none;">
+    <h2>🚀 Sprint Milestones</h2>
+    <div id="sprint-milestones" style="margin-top: 0.5rem;"></div>
+</div>
+
 <!-- Event log -->
 <div class="card">
     <h2>Event Log</h2>
@@ -236,6 +242,59 @@
             alert('Error: ' + err.message);
         }
     }
+
+    // ---- Sprint Milestones ----
+    async function loadSprintSummaries() {
+        const container = document.getElementById('sprint-milestones');
+        const card = document.getElementById('sprint-milestones-card');
+        let html = '';
+        for (let i = 1; i <= 20; i++) {
+            try {
+                const resp = await fetch(`/api/runs/${RUN_ID}/artifacts/download?path=docs/sprint_${i}_summary.md`, { headers: { 'Accept': 'text/plain' } });
+                if (!resp.ok) break;
+                const text = await resp.text();
+                const goal = (text.match(/\*\*Goal:\*\* (.+)/) || [])[1] || 'Unknown';
+                const status = (text.match(/\*\*Status:\*\* (.+)/) || [])[1] || 'Unknown';
+                const rounds = (text.match(/\*\*Rounds Completed:\*\* (\d+)/) || [])[1] || '0';
+                const bugs = (text.match(/\*\*Total Bugs Found:\*\* (\d+)/) || [])[1] || '0';
+                const fixed = (text.match(/\*\*Bugs Fixed:\*\* (\d+)/) || [])[1] || '0';
+                // The figures the card was missing: test cases, and whether
+                // this sprint was attempted more than once. A re-run is one
+                // sprint attempted twice, not two sprints.
+                const cases = (text.match(/\*\*Test Cases:\*\* (\d+)/) || [])[1] || null;
+                const casesPassed = (text.match(/\*\*Passed:\*\* (\d+)/) || [])[1] || '0';
+                const casesFailed = (text.match(/\*\*Failed:\*\* (\d+)/) || [])[1] || '0';
+                const attempts = parseInt((text.match(/\*\*Attempts:\*\* (\d+)/) || [])[1] || '1', 10);
+                const ofPlan = (text.match(/^# Sprint \d+ of (\d+)/m) || [])[1] || null;
+                const passed = status.toLowerCase() === 'completed';
+                const badge = passed
+                    ? '<span class="status-badge status-completed">Completed</span>'
+                    : '<span class="status-badge status-failed">Failed</span>';
+                const rerun = attempts > 1
+                    ? `<span title="One sprint, attempted ${attempts} times" style="font-size: 0.75rem; color: var(--muted);">re-run ×${attempts}</span>`
+                    : '';
+                html += `<div style="padding: 0.75rem 0; border-bottom: 1px solid #f0f0f0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <strong>Sprint ${i}${ofPlan ? ' of ' + ofPlan : ''}</strong>
+                        <span style="display: flex; gap: 0.5rem; align-items: center;">${rerun} ${badge}</span>
+                    </div>
+                    <p style="color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem;">${goal}</p>
+                    <div style="display: flex; gap: 1.5rem; font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem;">
+                        <span>✅ ${cases === null ? 'no test counts reported' : casesPassed + '/' + cases + ' cases passed, ' + casesFailed + ' failed'}</span>
+                        <span>🧪 ${rounds} test cycles</span>
+                        <span>🐛 ${bugs} bugs (${fixed} fixed)</span>
+                    </div>
+                </div>`;
+            } catch { break; }
+        }
+        if (html) {
+            container.innerHTML = html;
+            card.style.display = 'block';
+        }
+    }
+    // Poll sprint summaries every 15 seconds
+    loadSprintSummaries();
+    setInterval(loadSprintSummaries, 15000);
 
     // ---- Initialize ----
     connectSSE();

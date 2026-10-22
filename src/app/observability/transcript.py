@@ -6,7 +6,7 @@ it, and it has never recorded the prompts at all. Those three gaps cost real
 diagnosis time in one session:
 
 - a repeat notice appended after 3,847 characters of file content sat past the
-  clip, so every audit of run-3c0c31d2 read "no note fired" when the notice had
+  clip, so every audit of one run read "no note fired" when the notice had
   fired on every call
 - notices appended by `wrap_tool_call` reach the model and not the events, so
   findings 86 and 87 were mis-measured until a live agent was driven by hand
@@ -174,7 +174,7 @@ def last_failing_command(run_id: str | None) -> dict[str, str] | None:
     defect handed to a fixer is the *reporting* specialist's prose reading of a
     failure, and prose drifts.
 
-    Measured on run-d3965815. `defect_fix_2_1` was briefed with "Syntax error
+    Measured on one run. `defect_fix_2_1` was briefed with "Syntax error
     in createElementFallback causing renderTasks failure ... Observe stderr
     showing Unexpected token '}'". By then the suite was failing with
     `ReferenceError: mockList is not defined` at `app.test.mjs:50:20`, and
@@ -183,14 +183,22 @@ def last_failing_command(run_id: str | None) -> dict[str, str] | None:
     the defect moving.
 
     The machine's own words were on disk the whole time - the transcript
-    records every `run_terminal_command` result verbatim. This hands them back.
-    The prose stays: it carries the specialist's judgement about *which*
-    failure matters, which the raw output does not.
+    records every command a stage runs, with its result, verbatim. This hands
+    them back. The prose stays: it carries the specialist's judgement about
+    *which* failure matters, which the raw output does not.
+
+    Every tool whose result carries an exit code counts, not one tool by name,
+    and a failure the same command has passed since is no failure any more.
+    Measured on one run: a fixer was briefed with a unit-suite failure of 47
+    tests, one failing, as "the machine's own output" to believe over the
+    report. The suite had since grown to 61 and passed three times - through
+    the validation tool, which this did not read - and the fixer spent twelve
+    minutes looking for a failure that was gone.
     """
     if not run_id:
         return None
     calls: dict[str, dict] = {}
-    found: dict[str, str] | None = None
+    latest: dict[str, dict[str, str] | None] = {}
     for entry in read_transcript(run_id, {"tool_call", "tool_result"}):
         call_id = str(entry.get("call_id") or "")
         if not call_id:
@@ -199,38 +207,70 @@ def last_failing_command(run_id: str | None) -> dict[str, str] | None:
             calls[call_id] = entry
             continue
         call = calls.get(call_id)
-        if call is None or call.get("tool") != "run_terminal_command":
-            continue
         content = str(entry.get("content") or "")
-        if not _reports_a_failure(content):
+        outcome = _exit_code(content)
+        if call is None or outcome is None:
             continue
-        argv = (call.get("args") or {}).get("command")
-        found = {
-            "command": (
-                " ".join(str(part) for part in argv)
-                if isinstance(argv, list)
-                else str(argv or "")
-            ),
+        command = _the_command(call)
+        if not command or _runs_a_probe(call):
+            continue
+        # Re-inserted so the dict's order is the order of each command's
+        # latest result.
+        latest.pop(_same_command(command), None)
+        latest[_same_command(command)] = None if outcome == "0" else {
+            "command": command,
             "output": _last_lines(content, OBSERVED_OUTPUT_LINES),
             "at": str(entry.get("at") or ""),
             "stage": str(call.get("stage") or entry.get("stage") or ""),
         }
-    return found
+    failing = [found for found in latest.values() if found]
+    return failing[-1] if failing else None
 
 
-def _reports_a_failure(content: str) -> bool:
-    """Whether this `run_terminal_command` result is a failure.
+def _runs_a_probe(call: dict) -> bool:
+    """Whether the command runs a stage's throwaway probe, whose failure is the probe's, not the product's.
 
-    The tool returns a JSON object carrying `returncode`. A refused command has
-    an `error` and no exit code; that is the harness declining, not the project
-    failing, and briefing a fixer with it would send it after the wrong thing.
+    Measured live: one fixer's `tmp-check-*.py` failed on its own import path,
+    and two later fixes, of other defects, were briefed with that traceback
+    as the product's failure.
+    """
+    from app.analysis.file_kinds import is_scratch
+
+    argv = (call.get("args") or {}).get("command")
+    words = argv if isinstance(argv, list) else str(argv or "").split()
+    return any(is_scratch(str(word)) for word in words[:4] if "/" in str(word) or "." in str(word))
+
+
+def _the_command(call: dict) -> str:
+    """The command a tool call ran, as one line, or ""."""
+    argv = (call.get("args") or {}).get("command")
+    if isinstance(argv, list):
+        return " ".join(str(part) for part in argv)
+    return str(argv or "").strip()
+
+
+#: A leading `cd <dir> &&` (or `;`) - the same command, spelled from elsewhere.
+_CD_FIRST = re.compile(r"^\s*cd\s+\S+\s*(?:&&|;)\s*")
+
+
+def _same_command(command: str) -> str:
+    """`command` with what does not change which command it is taken out."""
+    return " ".join(_CD_FIRST.sub("", command).split())
+
+
+def _exit_code(content: str) -> str | None:
+    """A command result's exit code as text, or None for no command result.
+
+    A refused command has an `error` and no exit code; that is the harness
+    declining, not the project failing, and briefing a fixer with it would send
+    it after the wrong thing.
 
     The quotes around the number are optional because the tool really does send
     it both ways - `{"returncode": "0"}` in the transcripts on disk. Matching
     the bare-integer form alone found nothing at all, silently.
     """
     match = re.search(r'"returncode"\s*:\s*"?(-?\d+)"?', content)
-    return bool(match) and match.group(1) != "0"
+    return match.group(1) if match else None
 
 
 def _last_lines(content: str, limit: int) -> str:
@@ -251,6 +291,115 @@ def _last_lines(content: str, limit: int) -> str:
     if len(lines) <= limit:
         return "\n".join(lines)
     return "... (earlier output omitted)\n" + "\n".join(lines[-limit:])
+
+
+#: The key, in a message's `additional_kwargs`, under which the project memory says
+#: how many leading characters of that message it put there. The provider never
+#: sends it (only `name` is read from there), so the prompt is unchanged.
+MEMORY_CHARS = "project_memory_chars"
+
+#: A request's own section header, `--- Title ---`, and a memory file's, `=== path ===`.
+_A_SECTION = re.compile(r"^(?:-{3}|={3}) .+ (?:-{3}|={3})[^\n]*$", re.M)
+#: The sections that carry the specification: a header naming it, and not one of
+#: the advice or gap lists that only mention it.
+_THE_SPECIFICATION = re.compile(r"specification", re.I)
+_ONLY_MENTIONS_IT = re.compile(r"advi[cs]e|defers|already decided", re.I)
+
+
+def _specification_in(text: str) -> int:
+    """Characters of `text` inside sections whose header names the specification."""
+    headers = list(_A_SECTION.finditer(text))
+    size = 0
+    for index, header in enumerate(headers):
+        title = header.group(0)
+        if not _THE_SPECIFICATION.search(title) or _ONLY_MENTIONS_IT.search(title):
+            continue
+        end = headers[index + 1].start() if index + 1 < len(headers) else len(text)
+        size += end - header.start()
+    return size
+
+
+def _contract_in(text: str) -> int:
+    """Characters of the environment contract inside a system prompt, or 0."""
+    try:
+        from app.agents.environment_contract import environment_contract_text
+
+        contract = environment_contract_text()
+    except Exception:  # noqa: BLE001 - no contract, nothing to attribute
+        return 0
+    return len(contract) if contract and contract in text else 0
+
+
+def _text_of(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            str(part.get("text", "")) if isinstance(part, dict) else str(part) for part in content
+        )
+    return str(content or "")
+
+
+def prompt_blocks(messages: list[dict[str, Any]], kwargs: dict[str, Any] | None = None) -> dict[str, int]:
+    """What one request carried, by block, in characters (Initiative BF).
+
+    `system` (less the `environment_contract` it ends with), `tool_schemas`,
+    `project_memory`, `workspace` (the digest), `specification` (wherever it
+    sits), `request` (the stage's opening ask), `notes` (the harness's
+    bracketed notices later in the conversation) and `conversation` (the
+    model's turns, tool results, anything else). The sizes sum to the whole
+    request, so a share is a share of what the server had to read.
+    """
+    blocks: dict[str, int] = {}
+
+    def add(name: str, size: int) -> None:
+        if size > 0:
+            blocks[name] = blocks.get(name, 0) + size
+
+    tools = ((kwargs or {}).get("invocation_params") or {}).get("tools") or []
+    if tools:
+        add("tool_schemas", len(json.dumps(tools, default=str)))
+    # The stage's opening turn: every human message before the model's first
+    # reply. A request can arrive as several messages (the ask, the documents,
+    # the research), and counting only the first as the request put the rest
+    # under conversation - 60k characters of an architect's opening request.
+    answered = False
+    for message in messages or []:
+        role = str(message.get("role") or "")
+        if role in ("ai", "assistant", "tool"):
+            answered = True
+        text = _text_of(message.get("content"))
+        calls = message.get("tool_calls")
+        size = len(text) + (len(json.dumps(calls, default=str)) if calls else 0)
+        if role == "system":
+            contract = _contract_in(text)
+            add("environment_contract", contract)
+            add("system", size - contract)
+            continue
+        if role not in ("human", "user"):
+            add("conversation", size)
+            continue
+        memory = min(int(message.get(MEMORY_CHARS) or 0), len(text))
+        if memory:
+            spec = _specification_in(text[:memory])
+            add("specification", spec)
+            add("project_memory", memory - spec)
+            text, size = text[memory:], size - memory
+        stripped = text.lstrip()
+        if stripped.startswith("The workspace as it stands"):
+            kind = "workspace"
+        elif stripped.startswith("[Project memory"):
+            kind = "project_memory"
+        elif not answered:
+            kind = "request"
+        elif stripped.startswith("["):
+            kind = "notes"
+        else:
+            kind = "conversation"
+        spec = _specification_in(text)
+        add("specification", spec)
+        add(kind, size - spec)
+    return blocks
 
 
 def _messages_of(payload: Any) -> list[dict[str, Any]]:
@@ -275,6 +424,9 @@ def _messages_of(payload: Any) -> list[dict[str, Any]]:
             ]
         if getattr(message, "tool_call_id", None):
             entry["tool_call_id"] = message.tool_call_id
+        memory = (getattr(message, "additional_kwargs", None) or {}).get(MEMORY_CHARS)
+        if memory:
+            entry[MEMORY_CHARS] = memory
         rendered.append(entry)
     return rendered
 
@@ -334,7 +486,7 @@ def _only_what_is_new(
 
     A model request carries the whole conversation, and the transcript
     recorded all of it every time - so the file grows with the square of a
-    stage's length. Measured on run-ed05e20e mid-run: 36.6 MB, of which 279
+    stage's length. Measured on one run mid-run: 36.6 MB, of which 279
     `model_request` entries were 33.4 MB. 91% of the record was copies of
     text already in it, and the stored transcripts came to 490 MB.
 
@@ -409,6 +561,9 @@ def build_transcript_callback(run_id: str | None, stage: str) -> Any:
                         carried=carried,
                         model=(serialized or {}).get("name"),
                         tools=offered,
+                        # The whole request by block, so a run can say what
+                        # its input was spent on (Initiative BF).
+                        blocks=prompt_blocks(whole, kwargs),
                     )
             except Exception:  # noqa: BLE001 - a record must not fail a call
                 logger.debug("Could not record a model request", exc_info=True)
@@ -428,7 +583,19 @@ def build_transcript_callback(run_id: str | None, stage: str) -> Any:
                                 for c in (getattr(message, "tool_calls", None) or [])
                                 if isinstance(c, dict)
                             ],
+                            # Kept whole: a call whose arguments did not parse
+                            # is otherwise nowhere, and one run lost three
+                            # specifications of ~20,000 tokens that way with
+                            # nothing to say why.
+                            invalid_tool_calls=[
+                                {"name": c.get("name"), "error": c.get("error"), "args": c.get("args")}
+                                for c in (getattr(message, "invalid_tool_calls", None) or [])
+                                if isinstance(c, dict)
+                            ],
                             usage=getattr(message, "usage_metadata", None),
+                            # How long the reply's reasoning was, for a server
+                            # that reports no reasoning tokens.
+                            reasoning_chars=(getattr(message, "response_metadata", None) or {}).get("reasoning_chars") or 0,
                             finish_reason=(getattr(generation, "generation_info", None) or {}).get(
                                 "finish_reason"
                             ),

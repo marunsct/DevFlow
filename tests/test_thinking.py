@@ -89,7 +89,7 @@ def test_disabling_thinking_tells_a_local_server_explicitly():
 def test_the_default_mode_sends_nothing_at_all():
     """The regression this feature shipped with, pinned.
 
-    run-c826ae90 was the first run after a two-state `enabled: bool` defaulting
+    One run was the first run after a two-state `enabled: bool` defaulting
     to False shipped. The client began sending `enable_thinking: False`,
     turning off reasoning the server had been launched with. The product
     manager returned its summary as prose instead of the structured response

@@ -35,6 +35,10 @@ const STAGE_COPY: Record<string, StageCopy> = {
     title: 'Choosing the technology',
     blurb: 'Settling on the languages, frameworks and services the build will use.',
   },
+  specialist_consultation: {
+    title: 'Asking the specialists',
+    blurb: "Getting the interface, data and service specialists' advice before the technical plan is written.",
+  },
   principal_architect: {
     title: 'Designing how it works',
     blurb: 'Writing the technical plan: the pieces, the data, and how they fit together.',
@@ -71,6 +75,14 @@ const STAGE_COPY: Record<string, StageCopy> = {
     title: 'Security check',
     blurb: 'Looking over the finished code for anything unsafe.',
   },
+  advice_review: {
+    title: "Checking the specialists' advice",
+    blurb: 'Each specialist asked before the design checks its advice was built this sprint.',
+  },
+  acceptance_dispute: {
+    title: 'Judging the failing tests',
+    blurb: 'Before a failed sprint is planned again, the QA lead says which locked tests no right product could pass.',
+  },
   milestone_review: {
     title: 'Reviewing the work',
     blurb: 'Checking the finished piece against what was planned.',
@@ -91,7 +103,135 @@ const STAGE_COPY: Record<string, StageCopy> = {
     title: 'Stopped',
     blurb: 'Something went wrong and the run needs a person to look at it.',
   },
+  // Every node of the graph has its words here: a test fails when one is added
+  // without them (tests/test_every_stage_has_words_on_the_page.py, plan BG.11).
+  scaffold: {
+    title: 'Setting up the project',
+    blurb: 'Laying down the project folder, its build and test commands, and the files every stage relies on.',
+  },
+  acceptance_author: {
+    title: 'Writing the acceptance tests',
+    blurb: 'Turning each acceptance criterion into a test that proves the product does it.',
+  },
+  acceptance_review: {
+    title: 'Checking the acceptance tests',
+    blurb: 'Reading the tests against the criteria before they are locked.',
+  },
+  user_review_acceptance: {
+    title: 'Your review',
+    blurb: 'Paused for you to read the acceptance tests in plain words and say whether to continue.',
+  },
+  user_review_product_intake: {
+    title: 'Your review',
+    blurb: 'Paused for you to check what the run understood of your product.',
+  },
+  user_review_release: {
+    title: 'Your review',
+    blurb: 'Paused for you to look at the release and what it proves.',
+  },
+  user_review_escalation: {
+    title: 'Your decision',
+    blurb: 'The run could not finish this sprint on its own and asks you how to go on.',
+  },
+  specialist_worker: {
+    title: 'Building it',
+    blurb: 'Writing the code and tests for one piece of this sprint.',
+  },
+  specialist_gather: {
+    title: 'Putting the pieces together',
+    blurb: 'Collecting what each piece of the sprint produced.',
+  },
+  defect_fix_worker: {
+    title: 'Fixing a problem',
+    blurb: 'Changing the code so a failing check passes, then measuring it again.',
+  },
+  defect_fix_gather: {
+    title: 'Collecting the fixes',
+    blurb: 'Gathering the fixes made side by side and measuring them together.',
+  },
+  ci_gate: {
+    title: 'Checking the build',
+    blurb: 'Building the product and running its checks before anyone reviews it.',
+  },
+  code_review: {
+    title: 'Reviewing the code',
+    blurb: 'Reading the change for mistakes, missing tests and anything unsafe.',
+  },
+  review_worker: {
+    title: 'Reviewing the code',
+    blurb: 'One reviewer reading its part of the change.',
+  },
+  review_gather: {
+    title: 'Collecting the reviews',
+    blurb: 'Putting the reviewers’ findings together.',
+  },
+  change_request: {
+    title: 'Taking in your change',
+    blurb: 'Adding what you asked for to the plan.',
+  },
+  escalation: {
+    title: 'Deciding how to go on',
+    blurb: 'A sprint did not pass after its fixes; working out whether to retry, accept or stop.',
+  },
+  escalation_accept: {
+    title: 'Going on as it is',
+    blurb: 'Accepting the sprint as it stands, with what it did not prove written down.',
+  },
+  escalation_retry: {
+    title: 'Trying the sprint again',
+    blurb: 'Planning the sprint again with what the last attempt learned.',
+  },
+  release: {
+    title: 'Releasing',
+    blurb: 'Writing the release files and the evidence of what the release proves.',
+  },
+  noop: {
+    title: 'Moving on',
+    blurb: 'Nothing to do at this step.',
+  },
+  research_brief: {
+    title: 'Gathering what the plan needs',
+    blurb: 'Collecting the facts about the chosen technology that the technical plan will rely on.',
+  },
+  drafting: {
+    title: 'Drafting the code',
+    blurb: 'Writing a first version of every planned file, ready for the specialists to build on.',
+  },
+  defect_fix: {
+    title: 'Fixing what the tests found',
+    blurb: 'Sending each failing check to the one who owns that part of the product.',
+  },
 };
+
+/** Stage names a run makes as it goes, with a number in them: a round, a pass, a role. */
+const NUMBERED_COPY: Array<[RegExp, (match: RegExpExecArray) => StageCopy]> = [
+  [/^defect_fix_(\d+)_(\d+)$/, (m) => ({
+    title: `Fixing problem ${Number(m[2]) + 1} (test round ${m[1]})`,
+    blurb: 'Changing the code so a failing check passes, then measuring it again.',
+  })],
+  [/^test_round_(\d+)$/, (m) => ({ title: `Testing, round ${m[1]}`, blurb: 'Running every test and writing down what failed.' })],
+  [/^acceptance_author_(\d+)$/, (m) => ({
+    title: Number(m[1]) > 0 ? `Revising the acceptance tests (pass ${Number(m[1]) + 1})` : 'Writing the acceptance tests',
+    blurb: 'Turning each acceptance criterion into a test that proves the product does it.',
+  })],
+  [/^acceptance_review_(\d+)$/, () => ({ title: 'Checking the acceptance tests', blurb: 'Reading the tests against the criteria before they are locked.' })],
+  [/^advice_review_(.+)$/, (m) => ({
+    title: `Checking the ${m[1].replace(/_/g, ' ').replace(/\bui ux\b/, 'interface')} advice`,
+    blurb: 'Reading this specialist’s advice against the brief before the plan relies on it.',
+  })],
+  [/^code_review_(\d+)_(\d+)$/, (m) => ({
+    title: Number(m[2]) > 0 ? `Reviewing the code again (pass ${Number(m[2]) + 1})` : 'Reviewing the code',
+    blurb: 'Reading the milestone’s change for mistakes before it is tested.',
+  })],
+  [/^stack_setup_(\d+)$/, (m) => ({
+    title: Number(m[1]) > 0 ? `Setting up the project again (attempt ${Number(m[1]) + 1})` : 'Setting up the project',
+    blurb: 'Preparing the project on the chosen technology and proving it builds and tests.',
+  })],
+  [/^consult_(.+)$/, (m) => ({
+    title: `Asking the ${m[1].replace(/_/g, ' ').replace(/\bui ux\b/, 'interface')} specialist`,
+    blurb: 'Getting this specialist’s advice before the technical plan is written.',
+  })],
+];
 
 /** Specialist stages are numbered per task (`specialist_backend_0`). */
 const SPECIALIST_COPY: Record<string, StageCopy> = {
@@ -121,6 +261,11 @@ export function describeStage(rawName: string | null | undefined): StageCopy {
   const name = rawName.replace(/^awaiting_(approval|user_review):/, '');
 
   if (STAGE_COPY[name]) return STAGE_COPY[name];
+
+  for (const [pattern, copy] of NUMBERED_COPY) {
+    const match = pattern.exec(name);
+    if (match) return copy(match);
+  }
 
   const specialist = /^specialist_(.+?)(?:_\d+)?$/.exec(name);
   if (specialist) {
@@ -161,6 +306,8 @@ export function describeStatus(status: string | null | undefined): StatusCopy {
       return { label: 'Waiting for you', tone: 'waiting' };
     case 'waiting_for_review':
       return { label: 'Needs your review', tone: 'waiting' };
+    case 'waiting_for_budget':
+      return { label: 'Stopped at its budget', tone: 'waiting' };
     case 'paused':
       return { label: 'Paused', tone: 'waiting' };
     case 'rejected':
@@ -353,4 +500,20 @@ export function splitToolMessage(message: string): { tool: string; args: string 
     tool: message.slice(0, separator).trim(),
     args: message.slice(separator + 1).trim(),
   };
+}
+
+/**
+ * Statuses a run can be resumed from, from where it stopped. Mirrors
+ * `RESUMABLE_STATUSES` in `app/server/runner.py`; a paused or cancelled run
+ * keeps everything it has done.
+ */
+export const RESUMABLE: string[] = ['failed', 'waiting_for_budget', 'paused', 'cancelled'];
+
+/** Which lane a stage works in, for the lane filter: its role, or the kind of step. */
+export function laneOf(stage: string): string {
+  const role = /^specialist_(.+?)(?:_\d+)?$/.exec(stage);
+  if (role) return role[1].replace(/_specialist$/, '').replace(/_/g, ' ');
+  if (/^defect_fix|^fix_/.test(stage)) return 'fixes';
+  if (/^(acceptance|test_round|qa)/.test(stage)) return 'testing';
+  return 'planning';
 }

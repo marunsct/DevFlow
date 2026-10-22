@@ -7,7 +7,7 @@ reply dict and dropped every one, so they reached `run_terminal_command` and
 never reached `run_validation`, which is the tool the specialist prompt names
 for running tests.
 
-Measured on run-84e05d4b's `specialist_testing_1`: 53 model calls, `node --test`
+Measured on one run's `specialist_testing_1`: 53 model calls, `node --test`
 run six times through this path and three through the other. Only the three
 could be told anything.
 """

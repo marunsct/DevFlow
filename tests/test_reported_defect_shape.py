@@ -1,4 +1,4 @@
-"""The defect shape a specialist actually sends, taken from run-0deeb8bf.
+"""The defect shape a specialist actually sends, taken from one run.
 
 `defect_fix_2_0` produced this answer and the harness rejected it five times
 running, until the repeat guard stopped the stage and the run failed. Every
@@ -15,7 +15,7 @@ import pytest
 
 from app.agents.specialists import ReportedDefect, SpecialistOutput
 
-RUN_0DEEB8BF = {
+MEASURED_REPORTED_DEFECT_ANSWER = {
     "changed_files": ["simple-to-do-list-app/app.test.js", "docs/defects.md"],
     "decisions": ["Added regression test 'testAddTaskRegression'."],
     "tests": ["testAddTaskRegression"],
@@ -38,8 +38,8 @@ RUN_0DEEB8BF = {
 }
 
 
-def test_the_answer_that_killed_run_0deeb8bf_is_accepted() -> None:
-    output = SpecialistOutput.model_validate(RUN_0DEEB8BF)
+def test_the_answer_that_killed_a_run_is_accepted() -> None:
+    output = SpecialistOutput.model_validate(MEASURED_REPORTED_DEFECT_ANSWER)
 
     (defect,) = output.defects
     assert defect.severity == "major"
@@ -106,7 +106,7 @@ def test_an_unroutable_defect_is_still_refused(owner: str) -> None:
 
 
 def test_a_defect_missing_its_evidence_is_still_refused() -> None:
-    """The first answer run-0deeb8bf sent really was incomplete.
+    """The first answer one run sent really was incomplete.
 
     It carried a name, a description and a status and nothing else - no
     reproduction, no expected behaviour. That one must still be rejected, so

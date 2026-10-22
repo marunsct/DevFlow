@@ -1,6 +1,6 @@
 """A test file the runner will never collect.
 
-run-d3965815's security specialist wrote `todo-app/app.test_xss.mjs`: real
+One run's security specialist wrote `todo-app/app.test_xss.mjs`: real
 assertions, for a real XSS concern. `node --test todo-app/` collected
 `app.test.mjs` and reported "# tests 1" while two test files sat in the
 directory. Nothing failed, because an uncollected test does not error - it is
@@ -21,7 +21,7 @@ NODE_TEST = (
 )
 
 
-def test_the_file_from_run_d3965815_is_caught() -> None:
+def test_the_file_from_a_run_is_caught() -> None:
     note = undiscoverable_test("todo-app/app.test_xss.mjs", NODE_TEST)
 
     assert note is not None
@@ -67,7 +67,7 @@ def test_the_prefix_form_takes_a_hyphen_only(name: str) -> None:
         ok  add-task-test.mjs   ok  add.test.mjs   ok  add_task_test.mjs
         ok  test-add-task.mjs   ok  test.mjs       --  test_add_task.mjs
 
-    Five of six. run-04576307 wrote six suites in the underscore-prefix form -
+    Five of six. One run wrote six suites in the underscore-prefix form -
     `test_add_task.mjs`, `test_delete_task.mjs`, `test_edit_task.mjs`,
     `test_filter_tasks.mjs`, `test_persistence.mjs`, `test_toggle_task.mjs` -
     none of which Node runs, and this check called every one of them fine.
@@ -138,7 +138,7 @@ test('README.md exists and contains title', () => {
 """
 
 
-def test_the_four_green_tests_from_run_84e05d4b_are_flagged() -> None:
+def test_the_four_green_tests_from_a_run_are_flagged() -> None:
     """Four passing assertions, none touching a line of application code.
 
     There was none in the project to touch. The test round passed, the security
@@ -188,7 +188,7 @@ def test_the_note_reaches_the_write_too(tmp_path) -> None:
 # --- a browser API built by hand -------------------------------------------
 
 
-RUN_D3965815 = """import test from 'node:test';
+MEASURED_HAND_BUILT_DOCUMENT_SUITE = """import test from 'node:test';
 import assert from 'node:assert';
 
 global.document = {
@@ -205,11 +205,11 @@ def test_a_hand_built_dom_is_flagged() -> None:
     The mock holds until the code under test touches something it does not
     have, and the failure then reads as an application bug inside application
     code: `TypeError: Cannot read properties of undefined (reading
-    'children')`. run-d3965815 spent three remediation rounds on exactly that.
+    'children')`. One run spent three remediation rounds on exactly that.
     """
     from app.analysis.test_discovery import a_dom_built_by_hand
 
-    note = a_dom_built_by_hand("app.test.mjs", RUN_D3965815)
+    note = a_dom_built_by_hand("app.test.mjs", MEASURED_HAND_BUILT_DOCUMENT_SUITE)
 
     assert note is not None
     # The advice changed with commit 8a17712, which made Playwright
@@ -249,12 +249,12 @@ def test_the_note_reaches_the_write_as_well(tmp_path) -> None:
 
     write_approved_artifact(tmp_path, "proj/package.json", '{"name": "proj"}')
 
-    result = write_approved_artifact(tmp_path, "proj/app.test.mjs", RUN_D3965815)
+    result = write_approved_artifact(tmp_path, "proj/app.test.mjs", MEASURED_HAND_BUILT_DOCUMENT_SUITE)
 
     assert "Playwright" in (result.get("note") or "")
 
 
-RUN_A7150A6C = """// Test to ensure style.css is linked in index.html
+MEASURED_STYLESHEET_LINK_SCRIPT = """// Test to ensure style.css is linked in index.html
 import fs from 'fs';
 const html = fs.readFileSync('simple-to-do-list-app/index.html', 'utf8');
 if (!html.includes('<link rel="stylesheet" href="style.css">')) {
@@ -265,7 +265,7 @@ console.log('Style link found');
 
 
 def test_a_test_by_name_with_no_framework_import_is_still_judged() -> None:
-    """Requiring a `node:test` import missed the shape run-a7150a6c produced.
+    """Requiring a `node:test` import missed the shape one run produced.
 
     `app.test.mjs`, importing only `fs`, reading `index.html`, throwing if a
     `<link>` tag was absent. No framework import, so the first version of this
@@ -274,7 +274,7 @@ def test_a_test_by_name_with_no_framework_import_is_still_judged() -> None:
     """
     from app.analysis.test_discovery import tests_nothing_of_the_project
 
-    note = tests_nothing_of_the_project("proj/app.test.mjs", RUN_A7150A6C)
+    note = tests_nothing_of_the_project("proj/app.test.mjs", MEASURED_STYLESHEET_LINK_SCRIPT)
 
     assert note is not None
     assert "imports nothing from the project" in note
@@ -303,7 +303,7 @@ function render() { const list = document.getElementById('task-list'); }
 if (typeof document !== "undefined") { render(); }
 """
 
-RUN_740EDB6B = """import { addTask } from './app.js';
+MEASURED_UNNAMED_SUITE = """import { addTask } from './app.js';
 import { test } from 'node:test';
 import assert from 'assert';
 
@@ -324,10 +324,10 @@ def project(tmp_path):
     return tmp_path
 
 
-def test_the_run_740edb6b_test_is_warned(project) -> None:
+def test_the_measured_test_is_warned(project) -> None:
     """Four runs have ended a stage on `document is not defined`.
 
-    run-740edb6b's `addTask.test.mjs` imported `addTask` from a module whose
+    One run's `addTask.test.mjs` imported `addTask` from a module whose
     render path calls `document.getElementById`, mocked `localStorage` and
     nothing else, and reported that ReferenceError for every test in the file.
     The module guards its top level, so the import succeeds and the failure
@@ -336,7 +336,7 @@ def test_the_run_740edb6b_test_is_warned(project) -> None:
     """
     from app.analysis.test_discovery import a_test_that_needs_a_dom
 
-    note = a_test_that_needs_a_dom("addTask.test.mjs", RUN_740EDB6B, project)
+    note = a_test_that_needs_a_dom("addTask.test.mjs", MEASURED_UNNAMED_SUITE, project)
 
     assert note is not None
     assert "document is not defined" in note
@@ -354,7 +354,7 @@ def test_the_run_740edb6b_test_is_warned(project) -> None:
 def test_a_test_that_provides_a_dom_is_silent(project, prelude: str) -> None:
     from app.analysis.test_discovery import a_test_that_needs_a_dom
 
-    assert a_test_that_needs_a_dom("a.test.mjs", prelude + RUN_740EDB6B, project) is None
+    assert a_test_that_needs_a_dom("a.test.mjs", prelude + MEASURED_UNNAMED_SUITE, project) is None
 
 
 def test_a_dom_free_module_is_silent(project) -> None:
@@ -369,7 +369,7 @@ def test_a_localstorage_mock_is_not_a_hand_built_dom() -> None:
     """It is a string-keyed map with four methods and does not collapse the way
     a `document` stub does.
 
-    Including it meant run-740edb6b's test - which mocks `localStorage`, sets
+    Including it meant one run's test - which mocks `localStorage`, sets
     up no DOM, and fails with `document is not defined` - was told its
     localStorage mock was the problem, and the right note could not fire.
     """

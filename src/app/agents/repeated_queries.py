@@ -1,7 +1,7 @@
 """Say when a listing or a search comes back exactly as it did before.
 
 `read_file` has had this since finding 59, and after finding 80 keyed it on the
-bytes returned it catches almost everything: on run-fa7b7286 only 1 of 50 reads
+bytes returned it catches almost everything: on one run only 1 of 50 reads
 returned content the stage had already been given. The tools beside it never
 had it, and the same waste simply moved there - 4 of 10 `ls` calls and 4 of 12
 `grep` calls in that run returned byte-identical results, with
@@ -33,6 +33,11 @@ from app.agents.workspace_paths import the_same_place
 #: two notices should not disagree about what counts as circling.
 REPEATS_BEFORE_SAYING_SO = 2
 
+#: The words that mark a repeated query's identical, successful answer. Matched
+#: by `app.agents.settled_answer`, which withholds a tool asked the same thing
+#: past `IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL` times.
+SAME_ANSWER_MARKER = "returned exactly what it returned"
+
 #: Read-only queries with no note of their own. `read_file` is excluded because
 #: the backend already gives it a better one, keyed on the file's identity as
 #: well as the bytes, and two notices on one result would just be noise.
@@ -41,24 +46,31 @@ REPEATS_BEFORE_SAYING_SO = 2
 #: of that machinery - no repeat notice, no span tracking, nothing. So a model
 #: that used it paid for every re-read in silence, and a model that alternated
 #: between the two escaped even `read_file`'s counter. Measured on
-#: run-84e05d4b: `specialist_testing_6` read
+#: one run: `specialist_testing_6` read
 #: `simple-to-do-list-app/app.test.js` through this tool five times with
 #: identical arguments, and `specialist_backend_1` read
 #: `docs/architecture_review.md` through it four times while reading the same
 #: file through `read_file` eleven more.
 #:
 #: `inspect_repository` takes no arguments at all and returns a listing, so a
-#: repeat of it is always a repeat. run-0deeb8bf called it seven times in one
+#: repeat of it is always a repeat. One run called it seven times in one
 #: stage.
+#:
+#: `read_command_output` and `changed_since_sprint` were the two read-only
+#: tools left out, and a test now fails for the next one. One run's fix stage
+#: sent one identical `read_command_output` eight times, answered identically
+#: each time with no note, so nothing counted it.
 QUERY_TOOLS = frozenset({
-    "ls", "grep", "glob", "read_repository_file", "inspect_repository"
+    "ls", "grep", "glob", "read_repository_file", "inspect_repository",
+    "read_command_output", "changed_since_sprint", "look_up_package", "look_at_page", "read_docs",
+    "search_the_web", "read_web_page",
 })
 
 #: Mutating tools, watched only for repeated *failures*. A repeated successful
 #: write is already answered by `write_artifact`'s "unchanged" status and by the
 #: no-op edit refusal; a repeated failing edit had nothing at all.
 #:
-#: run-36eb1260 died on it: `specialist_backend_2` sent the same failing
+#: One run died on it: `specialist_backend_2` sent the same failing
 #: `edit_artifact` over and over against a five-line file and was stopped as a
 #: loop at 1,137 events. The command notices cover `run_terminal_command` and
 #: the query notice covers listings and searches; mutations were the member of
@@ -74,10 +86,10 @@ MUTATING_TOOLS = frozenset({
 #: tool already answers the second with "This file already contained exactly
 #: this content ... Do not write it again; continue with your response".
 #:
-#: run-5f4cdd55 shows what that is worth on its own: `specialist_backend_1`
+#: One run shows what that is worth on its own: `specialist_backend_1`
 #: wrote docs/technical_specification.md, was told "unchanged" with that
 #: sentence, and wrote it three more times until the run-level guard ended the
-#: run at 728 events. run-2bcdc19b did the same with final_output.json.
+#: run at 728 events. One run did the same with final_output.json.
 #:
 #: A note the model has ignored twice is not a note that needs rewording. The
 #: escalation this codebase keeps arriving at is hint, note, rewrite, refuse -
@@ -149,7 +161,7 @@ _WHY_REFUSED = re.compile(r"""(?:Refusing to \w+|Cannot \w+)[^:]*:\s*([^.]{0,60}
 #: opening - path included - is the stable shape. A stage that keeps guessing
 #: at the passage varies `find` on every retry, and keying the repeat guard on
 #: the arguments let all ten of those retries count as ten first attempts.
-#: Measured on run-519a9d8a: `specialist_testing_2` sent a different failing
+#: Measured on one run: `specialist_testing_2` sent a different failing
 #: `find` for the same file seven times, and `test_round_1` ten times.
 _EDIT_NOT_FOUND = re.compile(r"(Could not find that text in '[^']*')")
 
@@ -165,7 +177,7 @@ def _the_same_refusal(content: str) -> str:
 
     Measured across every stored transcript, 26 combinations of stage, refusal
     and path were refused three or more times, costing 72 model calls past the
-    second. Run 551640d3's `test_round_0` wrote `docs/technical_specification.md`
+    second. One run's `test_round_0` wrote `docs/technical_specification.md`
     ten times with different content on each attempt - a document the workflow
     renders and no agent may write - and was refused ten times without the
     guard ever seeing a repeat.
@@ -187,7 +199,7 @@ def _the_same_refusal(content: str) -> str:
 #: about another. It is wrong for a refusal about a class of file, because the
 #: lesson does not belong to the path.
 #:
-#: Measured on run-cac07d52's `test_round_0`: it was refused a write to
+#: Measured on one run's `test_round_0`: it was refused a write to
 #: `docs/technical_specification.md`, then to `docs/milestone_review.md`, then
 #: to `docs/technical_specification.md` again - the same refusal, in the same
 #: words, three times in one stage - and no notice ever fired, because two of
@@ -278,7 +290,9 @@ def build_repeated_query_middleware() -> Any:
                 # A write that actually changed the file is left alone.
                 if not _looks_like_a_failure(content) and not _changed_nothing(content):
                     return ""
-            elif name not in QUERY_TOOLS:
+            elif name not in QUERY_TOOLS and not name.startswith("mcp_"):
+                # Every MCP tool a stage holds is one the owner allowed as a query
+                # (`app.tools.mcp_tools`).
                 return ""
 
             args = call.get("args") or {}
@@ -287,7 +301,7 @@ def build_repeated_query_middleware() -> Any:
                 # were sent, so it counts per file - not per (file, content).
                 #
                 # Keying on the arguments let a single byte reset the counter.
-                # Measured on run f81808a4, `specialist_backend_0` writing
+                # Measured on one run, `specialist_backend_0` writing
                 # `docs/README.md` ten times: two writes, two "unchanged", two
                 # refusals, then one trailing newline removed - and two more
                 # "unchanged" before it was refused again. The guard fired
@@ -336,7 +350,7 @@ def build_repeated_query_middleware() -> Any:
                 return ""
             if _looks_like_a_failure(content):
                 # The repeated case is usually this one. Measured on
-                # run-9506d3ab's `specialist_ui_ux_0`: three identical
+                # one run's `specialist_ui_ux_0`: three identical
                 # `ls {'path': 'task-manager'}` in four seconds, every one
                 # `path_not_found`. Calling that "returned exactly what it
                 # returned" is true and reads as though something came back;
@@ -349,7 +363,7 @@ def build_repeated_query_middleware() -> Any:
                     "create what is missing, or carry on without it.]"
                 )
             return (
-                f"\n\n[This `{name}` returned exactly what it returned the {count} "
+                f"\n\n[This `{name}` {SAME_ANSWER_MARKER} the {count} "
                 "previous times you ran it in this stage. A listing reports each "
                 "entry's size and modification time, a search reports the lines it "
                 "matched, and a read returns the file's bytes - so an identical "
@@ -367,4 +381,4 @@ def _refuses_instead(request: Any, result: Any) -> bool:
     return name in MUTATING_TOOLS and _changed_nothing(content)
 
 
-__all__ = ["QUERY_TOOLS", "REPEATS_BEFORE_SAYING_SO", "build_repeated_query_middleware"]
+__all__ = ["QUERY_TOOLS", "REPEATS_BEFORE_SAYING_SO", "SAME_ANSWER_MARKER", "build_repeated_query_middleware"]

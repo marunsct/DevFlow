@@ -2,7 +2,7 @@
 
 Across five models in one session they reached content three ways:
 `<|END_THINKING|><|START_ACTION|>` written into a source file (finding 93,
-run-44653bd2); `<tools>{...}</tools>` returned as message content with
+one run); `<tools>{...}</tools>` returned as message content with
 `tool_calls` empty (run 40); a trailing `</tool_call>` on an otherwise valid
 structured answer (run 31).
 
@@ -16,7 +16,7 @@ from app.agents.model_output import find_leaked_marker, strip_reasoning
 
 
 def test_the_token_that_broke_a_test_suite_is_found() -> None:
-    """run-44653bd2's Task.test.mjs, line 963."""
+    """One run's Task.test.mjs, line 963."""
     assert find_leaked_marker('});\n\n");<|END_THINKING|><|START_ACTION|>[{') == "<|END_THINKING|>"
 
 

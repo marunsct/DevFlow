@@ -1,6 +1,6 @@
 """A whole file escaped twice over was fatal; the same fault in an edit was not.
 
-Measured live on run-eb48de7a at 03:37, two minutes into the run.
+Measured live on one run at 03:37, two minutes into the run.
 `test_round_0` sent
 
     write_artifact(relative_path="todo-app/package.json",
@@ -11,8 +11,7 @@ column 2, the write is refused - correctly, since a broken `package.json`
 breaks every module in its directory - and the model sent the identical bytes
 three times before the repeat guard answered it. The stage made no progress.
 
-The repairs for exactly this fault have existed since run-95ca3f72 and
-run-0b55ad49, and were reachable only from `edit_artifact`'s `find`.
+The repairs for exactly this fault have existed since two runs, and were reachable only from `edit_artifact`'s `find`.
 `write_artifact` had none. Twelve of thirteen again, with the thirteenth being
 the path that carries whole files.
 
@@ -43,7 +42,7 @@ def workspace(tmp_path: pathlib.Path) -> pathlib.Path:
     return tmp_path
 
 
-def test_the_exact_run_eb48de7a_content_is_written(workspace):
+def test_the_exact_a_run_content_is_written(workspace):
     sent = (
         '{\\n  "name": "todo-app",\\n  "version": "1.0.0",\\n  "type": "module",'
         '\\n  "scripts": {\\n    "test": "node --test"\\n  }\\n}'

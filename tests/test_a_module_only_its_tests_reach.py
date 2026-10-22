@@ -5,7 +5,7 @@ test importing it counts - right for "is this dead code", wrong for "does the
 product run". A suite can exercise every function in a module the page never
 loads, and does.
 
-Run 7e960f06's milestone review found it by reading, which is luck rather than
+One run's milestone review found it by reading, which is luck rather than
 design: `index.html` carried no `<script>` tag of any kind, `app.js` was
 imported only by `app.test.mjs`, and the deterministic checks reported one
 untidy problem and nothing else. The suite was 5 of 5 green over a product that

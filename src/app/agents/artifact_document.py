@@ -6,12 +6,12 @@ were generated separately from one understanding and nothing reconciled them.
 
 That cost three things, all measured:
 
-- **Divergence.** On run-0b55ad49 a 1 KB `docs/spec.md` sat beside a 51 KB
+- **Divergence.** On one run a 1 KB `docs/spec.md` sat beside a 51 KB
   `docs/technical_specification.md`; the reviewer read the thin one and blocked
   a sprint for detail that was in the other file.
 - **Double generation.** The specification is ~40 KB of prose. Asking for it
   twice doubles the most expensive call in the pipeline.
-- **Confusion about what "done" means.** On run-0edfcd33 the architect wrote
+- **Confusion about what "done" means.** On one run the architect wrote
   the document and then reported in prose - "The technical specification has
   been written to `docs/technical_specification.md`" - on three fresh
   conversations, each ending in a ~100,000 character message, and the run
@@ -27,8 +27,11 @@ of these schemas is a flat set of sections, some holding nested records, and
 from __future__ import annotations
 
 import json
-
+import re
 from typing import Any
+
+#: A bullet a list item already carries: "- ", "* " or "• ".
+_A_BULLET = re.compile(r"^[-*\u2022]\s+")
 
 #: Headings that a mechanical title-case of the field name gets wrong.
 _SECTION_TITLES: dict[str, str] = {
@@ -106,7 +109,7 @@ def _record_lines(record: Any, depth: int = 0) -> list[str]:
 def _json_in_a_prose_field(text: str) -> list[str] | None:
     """A string field holding JSON, rendered readably instead of as a blob.
 
-    Models put structure into string fields. Measured on run-78804673, the
+    Models put structure into string fields. Measured on one run, the
     architect's `product_scope` - a prose field - arrived as
     `{"in_scope": [...], "deferred_scope": [...]}`, and rendering it verbatim
     produced a single 1,200-character line no reader would read.
@@ -159,7 +162,9 @@ def _value_lines(value: Any, depth: int = 0) -> list[str]:
             if _is_record(item):
                 lines.extend(_record_lines(item, depth))
             elif str(item).strip():
-                lines.append(f"- {str(item).strip()}")
+                # An item a model wrote as a bullet of its own. One run's
+                # specification rendered every interface-design item as "- - ".
+                lines.append(f"- {_A_BULLET.sub('', str(item).strip(), count=1)}")
         return lines
     return [str(value)]
 

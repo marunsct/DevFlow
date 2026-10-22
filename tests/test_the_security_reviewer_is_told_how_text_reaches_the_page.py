@@ -1,13 +1,13 @@
 """The security reviewer gets the fact that settles a DOM-injection finding.
 
 `how_the_page_receives_text` was built for the milestone reviewer, which
-recorded a major XSS finding in run 1c9854c7 against a product whose only text
+recorded a major XSS finding in one run against a product whose only text
 write was `textSpan.textContent = task.text`, and the run was stopped after
 three revisions over a defect that did not exist.
 
 It went to that reviewer and no further. The security reviewer is the stage
-whose job this is, and it made the same mistake with no way to check: run
-08acb1ee reported "renders task names using innerHTML without sanitization"
+whose job this is, and it made the same mistake with no way to check: one
+run reported "renders task names using innerHTML without sanitization"
 against a product that assigns `textContent` three times and `innerHTML` never.
 
 Two stages can make this finding. The answer was computed for one of them.
@@ -57,7 +57,7 @@ def test_a_product_with_no_dom_writes_adds_nothing(tmp_path):
 
 
 def test_the_run_that_prompted_this(tmp_path):
-    """Run 08acb1ee, reduced to the three writes its `app.js` actually made."""
+    """One run, reduced to the three writes its `app.js` actually made."""
     (tmp_path / "app.js").write_text(
         "list.textContent = '';\n"
         "span.textContent = `${sanitizedTitle}${sanitizedDescription}`;\n"

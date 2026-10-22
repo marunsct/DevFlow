@@ -1,6 +1,6 @@
 """Test files the project's own `npm test` will not execute.
 
-run-04576307 reached its third milestone round with seven test files -
+One run reached its third milestone round with seven test files -
 `app.test.mjs` and six standalone assertion scripts named `test_add_task.mjs`,
 `test_delete_task.mjs`, `test_edit_task.mjs`, `test_filter_tasks.mjs`,
 `test_persistence.mjs` and `test_toggle_task.mjs`, 3,845 bytes of real
@@ -36,11 +36,15 @@ def _project(tmp_path: Path, test_script: str, names: list[str]) -> list[str]:
     )
     (project / "app.js").write_text("export const a = 1;\n", encoding="utf-8")
     for name in names:
-        (project / name).write_text("import assert from 'node:assert';\n", encoding="utf-8")
+        # An assertion, as the measured suites had: a file named like a test
+        # that asserts nothing is a probe, and not reported as stranded.
+        (project / name).write_text(
+            "import assert from 'node:assert';\nassert.equal(1, 1);\n", encoding="utf-8"
+        )
     return _tests_the_project_never_runs(_source_files(tmp_path), tmp_path)
 
 
-RUN_04576307 = [
+MEASURED_TEST_FILES = [
     "test_add_task.mjs",
     "test_delete_task.mjs",
     "test_edit_task.mjs",
@@ -51,16 +55,19 @@ RUN_04576307 = [
 
 
 def test_the_six_stranded_suites_are_reported(tmp_path: Path) -> None:
-    (problem,) = _project(tmp_path, "node --test ./", [*RUN_04576307, "app.test.mjs"])
+    # The measured script, bare. `node --test ./` searched the same way on
+    # Node 20; on Node 24 it runs nothing at all, which is reported as such
+    # (`test_a_named_test_command_strands_the_rest`).
+    (problem,) = _project(tmp_path, "node --test", [*MEASURED_TEST_FILES, "app.test.mjs"])
 
-    for name in RUN_04576307:
+    for name in MEASURED_TEST_FILES:
         assert name in problem
     assert "app.test.mjs" not in problem, "the one that does run is not listed"
 
 
 def test_it_counts_as_breaking_the_product(tmp_path: Path) -> None:
     """The run believes it has coverage it does not have."""
-    (problem,) = _project(tmp_path, "node --test", RUN_04576307)
+    (problem,) = _project(tmp_path, "node --test", MEASURED_TEST_FILES)
 
     assert _severity_of(problem) == "BREAKS"
 
@@ -85,11 +92,11 @@ def test_another_runner_is_left_alone(tmp_path: Path, script: str) -> None:
     """Jest, Vitest and Mocha decide discovery in their own configuration,
     which this cannot read. A wrong claim about a suite that runs perfectly
     well would be worse than no claim."""
-    assert _project(tmp_path, script, RUN_04576307) == []
+    assert _project(tmp_path, script, MEASURED_TEST_FILES) == []
 
 
 def test_a_project_with_no_test_script_is_left_alone(tmp_path: Path) -> None:
-    assert _project(tmp_path, "", RUN_04576307) == []
+    assert _project(tmp_path, "", MEASURED_TEST_FILES) == []
 
 
 def test_a_broken_manifest_is_reported_elsewhere(tmp_path: Path) -> None:

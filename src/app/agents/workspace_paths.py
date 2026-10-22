@@ -4,12 +4,12 @@ The agent filesystem (`ls`, `read_file`, `glob`, `grep`) is a
 `FilesystemBackend` rooted at the run's workspace in virtual mode, so the
 workspace root is `/` and the project is `/todo-app`. But several prompts hand
 the agent `repository.root_path` - the real host path, such as
-`/app/data/workspaces/low2-run-95ca3f72-.../` - and tool errors quote it back.
+`/app/data/workspaces/low2-one run-.../` - and tool errors quote it back.
 An agent that believes that is where it is asks for
 `/app/data/workspaces/low2-run-.../todo-app/package.json`, which resolves under
 the root a second time and is never found.
 
-Measured on run-95ca3f72: seven `read_file` calls and one `ls` failed this way,
+Measured on one run: seven `read_file` calls and one `ls` failed this way,
 every one of them for a file that existed. The agent cannot tell a real
 "missing file" from this, so it retried the same path three times in a row.
 
@@ -20,6 +20,8 @@ other half: whichever spelling arrives, it means the same file.
 from __future__ import annotations
 
 import posixpath
+import shlex
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -42,7 +44,7 @@ def the_same_place(value: str) -> str:
     arguments, so they were three different files to it and each got its own
     allowance before anything was said.
 
-    Measured on run-ed05e20e's `specialist_ui_ux_1`: `style.css` read six
+    Measured on one run's `specialist_ui_ux_1`: `style.css` read six
     times as `/task-manager/style.css` and four more as
     `task-manager/style.css`, and `app.js` six and four the same way. Ten
     reads of one unchanged file in one stage, counted as two runs of four and
@@ -97,7 +99,7 @@ def without_an_invented_root(path: str, repo_root: str) -> str:
     "The workspace is rooted at '/'" and the model writes `/workspace/docs/...`
     anyway.
 
-    Measured on run-44653bd2: 16 `read_file` calls for
+    Measured on one run: 16 `read_file` calls for
     `/workspace/docs/technical_specification.md` and two `ls` of `/workspace`,
     18 of that run's 33 tool failures, every one for a file that existed one
     level down. The "there is a file of that name at ..." hint fired on every
@@ -134,7 +136,7 @@ def without_an_invented_root(path: str, repo_root: str) -> str:
 #: is 100 lines, which is less than half of what the tool-result budget can
 #: already afford and turns reading one source file into several model turns.
 #:
-#: Measured on run-61c5a5b6: 148 of 257 `read_file` calls carried an explicit
+#: Measured on one run: 148 of 257 `read_file` calls carried an explicit
 #: offset - they were paging, not sampling. `tests.test.js` alone was paged 57
 #: times. Reading the project's six files from end to end costs 25 calls at 100
 #: lines and 8 at 400, and every saved call is a whole model turn carrying the
@@ -147,16 +149,209 @@ def without_an_invented_root(path: str, repo_root: str) -> str:
 #: continue stays with the model.
 DEFAULT_READ_LINES = 400
 
+#: What `grep` answers with when the model does not say. The tool's own default
+#: is `files_with_matches`: the names of the files that matched, and nothing
+#: of what matched in them.
+#:
+#: Measured over twelve runs: 35 of 36 `grep` calls left the mode unset, and
+#: 28 of the answers were file names alone. 20 of those calls searched a single
+#: named file, so the answer was that file's own name back - a yes or no, with
+#: no line and no text. One architecture review searched its specification for
+#: eight different words that way, and for "required" twice, then read the
+#: whole file anyway.
+#:
+#: `content` answers the same question and the one behind it: each matching
+#: line, numbered, under the file it is in. The file names are still there. It
+#: is held to the same result budget as every other tool answer, so a search
+#: that matches everywhere is cut short with a note, not dumped whole. A model
+#: that asks for file names or counts still gets them.
+DEFAULT_GREP_OUTPUT = "content"
+
+#: Characters that make a `glob` pattern a pattern rather than a name.
+_GLOB_WILDCARDS = frozenset("*?[")
+
+
+def a_name_fragment(pattern: Any) -> str:
+    """The text a `glob` pattern with no wildcard in it is looking for, or ''.
+
+    `glob` matches a pattern against whole file names, so `taskStore` finds a
+    file named exactly `taskStore` and never `taskStore.js`, and `.js` finds
+    nothing at all. The model writes it as a search for names that contain it.
+
+    Measured over twenty runs: 36 of 71 `glob` calls were a bare fragment like
+    that - `.js`, `playwright`, `addTask`, `.config` - and 34 came back "No
+    files found", including `.js` three times in a project full of `.js`
+    files. 62 of the 71 found nothing.
+
+    Only a fragment without a directory in it: `docs/spec.md` names a place,
+    and is left to mean what it says.
+    """
+    if not isinstance(pattern, str):
+        return ""
+    text = pattern.strip()
+    if not text or "/" in text or _GLOB_WILDCARDS & set(text):
+        return ""
+    return text
+
+
+def nothing_is_named(fragment: str, path: Any) -> str:
+    """What an empty search for names containing `fragment` means, and what to use instead.
+
+    The rest of those empty answers were a directory name (`tests`, `modules`)
+    or words from inside a file (`addTask`, `export`) - neither of which a
+    file name ever contains, however the pattern is written.
+    """
+    where = f"'{path}'" if isinstance(path, str) and path.strip("/ ") else "the workspace"
+    return (
+        f"No file in {where} has a name containing '{fragment}'. `glob` matches "
+        "file names only - not directory names, and not the text inside files. "
+        "To see what a directory holds, use `ls`; to find where something is "
+        "written, use `grep`."
+    )
+
+
+#: Arguments that name a place in the workspace, whichever tool takes them.
+_ANY_PATH_ARGUMENT = frozenset({"relative_path", "destination", "working_directory", "file_path", "path"})
+
+
+def unquoted(value: str) -> str:
+    """`value` without one pair of quotes around the whole of it.
+
+    A path typed as it would be at a shell prompt. Measured on one run: a
+    builder sent `working_directory='"notes-api"'` and `'"/notes-api/src/store.ts"'`
+    - the quotes part of the name - and was told four times that the
+    directory and the file did not exist. No name in a workspace starts and
+    ends with the same quote.
+    """
+    text = value.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'`":
+        return text[1:-1].strip()
+    return value
+
+
+#: The tools that run a command: `command` an argv list, `working_directory` relative to the workspace.
+_COMMAND_TOOLS = frozenset({"run_terminal_command", "run_validation"})
+_CD_THEN = re.compile(r"^\s*cd\s+(\S+)\s*&&\s*(.+)$", re.S)
+_TRIMMING = re.compile(r"\s*(?:2>&1|\|\s*(?:head|tail)(?:\s+-n)?\s+-?\d+)\s*$")
+_A_SHELL = re.compile(r"&&|\|\||[|;<>`]|\$\(")
+
+
+def as_a_command(arguments: dict[str, Any], repo_root: str) -> dict[str, Any]:
+    """A command line sent as one string, as the argv and working directory it means.
+
+    There is no shell: `"cd /workspace/notes-api && node --test x 2>&1 | head -80"`
+    is refused. Measured on one run on a local model: 53 of its failed calls
+    were command lines like that. `cd DIR &&` is the working directory, and
+    `2>&1`, `| head -N` and `| tail -N` only trim the output, which comes back
+    whole anyway. A line with any other shell construct is left as it was, to
+    be refused with the reason.
+    """
+    command = arguments.get("command")
+    if isinstance(command, str):
+        text = command
+    elif isinstance(command, list) and len(command) == 1 and isinstance(command[0], str):
+        text = command[0]
+    else:
+        return arguments
+    if not re.search(r"\s", text.strip()):
+        return arguments
+    directory = arguments.get("working_directory")
+    moved = _CD_THEN.match(text)
+    if moved:
+        directory, text = moved.group(1), moved.group(2)
+    before = None
+    while before != text:
+        before, text = text, _TRIMMING.sub("", text)
+    if _A_SHELL.search(text):
+        return arguments
+    try:
+        argv = shlex.split(text)
+    except ValueError:
+        return arguments
+    if not argv:
+        return arguments
+    rewritten = {**arguments, "command": argv}
+    if moved:
+        rewritten["working_directory"] = _a_directory_here(str(directory), repo_root)
+    return rewritten
+
+
+def _a_directory_here(directory: str, repo_root: str) -> str | None:
+    """`directory` as a workspace-relative directory, an invented root taken off; None for the root."""
+    cleaned = unquoted(directory).strip().replace("\\", "/")
+    relative = workspace_relative(cleaned, repo_root).strip("/") if repo_root else cleaned.strip("/")
+    if not relative or relative == ".":
+        return None
+    root = Path(repo_root) if repo_root else None
+    if root is None or (root / relative).is_dir():
+        return relative
+    rest = relative.split("/", 1)[1] if "/" in relative else ""
+    if not rest:
+        return None
+    return rest if (root / rest).is_dir() else relative
+
+
+def without_an_invented_root_for_a_new_file(path: str, repo_root: str) -> str:
+    """`without_an_invented_root` for a file that may not exist yet: its directory decides.
+
+    One run's acceptance author wrote `/workspace/notes-api/acceptance/api.spec.ts`
+    25 times and was told each time the file was not part of the suite.
+    """
+    if not path or not repo_root or not path.startswith("/"):
+        return path
+    segments = [part for part in posixpath.normpath(path).split("/") if part]
+    if len(segments) < 2:
+        return path
+    root = Path(repo_root)
+    try:
+        if (root / segments[0]).exists():
+            return path
+        parent = root.joinpath(*segments[1:-1]) if len(segments) > 2 else root
+        return "/" + "/".join(segments[1:]) if parent.is_dir() else path
+    except OSError:
+        return path
+
+
+
+#: Where the sandbox mounts the workspace for a command (`sandbox.execute`'s
+#: `-w /workspace/...`): a command's output shows it, and models then use it.
+THE_SANDBOX_S_MOUNT = "/workspace"
+
+
+def a_working_directory_here(directory: str, repo_root: str) -> str:
+    """A command's working directory with the host path, an invented top directory or the sandbox's mount taken off.
+
+    The read tools had these rewrites and the command tools did not: one run's
+    acceptance writer, its terminal withheld, ran `run_validation` with
+    `working_directory="/workspace/notes-api"` and then `"/workspace"`, and was
+    told each time it was "not a directory in this workspace" - the mount every
+    command it ran had been standing in.
+    """
+    if not directory or not directory.startswith("/") or not repo_root:
+        return directory
+    if posixpath.normpath(directory) == THE_SANDBOX_S_MOUNT and not (Path(repo_root) / "workspace").is_dir():
+        return "/"
+    return without_an_invented_root(workspace_relative(directory, repo_root), repo_root)
 
 def rewrite_tool_arguments(
     name: str, arguments: dict[str, Any], repo_root: str
 ) -> dict[str, Any]:
-    """A copy of `arguments` with workspace paths and read windows normalised."""
+    """A copy of `arguments` with workspace paths, read windows and search output normalised."""
     changed = dict(arguments)
+    for argument in _ANY_PATH_ARGUMENT & set(changed):
+        if isinstance(changed[argument], str):
+            changed[argument] = unquoted(changed[argument])
+
+    if name in _COMMAND_TOOLS:
+        changed = as_a_command(changed, repo_root)
+        if isinstance(changed.get("working_directory"), str):
+            changed["working_directory"] = a_working_directory_here(changed["working_directory"], repo_root)
+    if isinstance(changed.get("relative_path"), str):
+        changed["relative_path"] = without_an_invented_root_for_a_new_file(changed["relative_path"], repo_root)
 
     key = _PATH_ARGUMENTS.get(name)
     if key is not None:
-        value = arguments.get(key)
+        value = changed.get(key)
         if isinstance(value, str):
             # Host path first - that is the spelling the workflow itself hands
             # out - then a root the model invented, which only resolves against
@@ -171,7 +366,44 @@ def rewrite_tool_arguments(
     if name == "read_file" and "limit" not in arguments:
         changed["limit"] = DEFAULT_READ_LINES
 
+    if name == "grep" and "output_mode" not in arguments:
+        changed["output_mode"] = DEFAULT_GREP_OUTPUT
+
+    if name == "glob":
+        fragment = a_name_fragment(arguments.get("pattern"))
+        if fragment:
+            changed["pattern"] = f"**/*{fragment}*"
+
     return arguments if changed == arguments else changed
+
+
+def _with_the_note_it_held(result: Any) -> Any:
+    """`result`, with the note the backend held back ahead of the numbered text.
+
+    See `app.agents.workspace_backend.held_read_note`: written into the text,
+    the note was numbered with it and every real line came out two too high.
+    """
+    from app.agents.workspace_backend import held_read_note
+
+    note = held_read_note()
+    content = getattr(result, "content", None)
+    if not note or not isinstance(content, str):
+        return result
+    try:
+        return result.model_copy(update={"content": note + "\n\n" + content})
+    except Exception:  # noqa: BLE001 - a Command, or some other shape
+        return result
+
+
+def _explained_if_empty(result: Any, fragment: str, path: Any) -> Any:
+    """`result`, with "No files found" replaced by what that means for a name search."""
+    content = getattr(result, "content", None)
+    if not isinstance(content, str) or not content.strip().startswith("No files found"):
+        return result
+    try:
+        return result.model_copy(update={"content": nothing_is_named(fragment, path)})
+    except Exception:  # noqa: BLE001 - a Command, or some other shape
+        return result
 
 
 def build_workspace_path_middleware(repo_root: str) -> Any:
@@ -195,14 +427,26 @@ def build_workspace_path_middleware(repo_root: str) -> Any:
                         request = request.override(
                             tool_call={**call, "args": rewritten}
                         )
+                    if call.get("name") == "glob":
+                        fragment = a_name_fragment(arguments.get("pattern"))
+                        if fragment:
+                            return _explained_if_empty(
+                                handler(request), fragment, arguments.get("path")
+                            )
+                if call.get("name") == "read_file":
+                    return _with_the_note_it_held(handler(request))
             return handler(request)
 
     return WorkspacePathMiddleware()
 
 
 __all__ = [
+    "unquoted",
+    "DEFAULT_GREP_OUTPUT",
     "DEFAULT_READ_LINES",
+    "a_name_fragment",
     "build_workspace_path_middleware",
+    "nothing_is_named",
     "rewrite_tool_arguments",
     "workspace_relative",
 ]

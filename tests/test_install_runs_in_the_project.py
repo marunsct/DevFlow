@@ -1,6 +1,6 @@
 """A bare `npm install` runs in the project instead of being refused.
 
-Run 8d28ee3f spent two model calls on this: bare `npm install`, refused with
+One run spent two model calls on this: bare `npm install`, refused with
 a message naming the directory to use, then the identical command with that
 directory filled in. The refusal could only ever name one directory - a
 project is pinned, and there is one - so the harness does what it was asking

@@ -1,6 +1,6 @@
 """A read that lands on a directory is a question about its contents.
 
-run-130deeef's `specialist_backend_3` read `/simple-to-do-list-app/tests` four
+One run's `specialist_backend_3` read `/simple-to-do-list-app/tests` four
 times and was told four times that a directory of that name existed at that
 path - which it had just typed. The answer it wanted, the list of files in
 there, cost one `iterdir` on a call that had already failed.

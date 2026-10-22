@@ -72,10 +72,64 @@ def test_sprint_advance_is_routable():
     assert "sprint_advance" in _NODE_NAMES
 
 
+#: Stage values that are instructions to the router rather than node names.
+#:
+#: `specialist_dispatch_parallel` is the only one. In parallel execution mode
+#: the dispatcher sets it and `_route_from_stage` turns it into one `Send` per
+#: delegated task, so there is deliberately no node of that name - and a test
+#: that only checked `_NODE_NAMES` called the feature a bug.
+#:
+#: Each entry is checked below against the router itself, so an entry here can
+#: only excuse a stage the router demonstrably handles.
+#: `defect_fix_parallel` and `review_parallel` are the same kind: parallel
+#: mode's batch of defect fixes and its reviews of a finished sprint.
+_ROUTER_SENTINELS = frozenset({"specialist_dispatch_parallel", "defect_fix_parallel", "review_parallel"})
+
+
 def test_every_stage_a_node_assigns_is_a_known_target():
     """Any literal assigned to `stage` must be somewhere the router can go."""
-    unknown = _assigned_stage_values() - set(_NODE_NAMES)
+    unknown = _assigned_stage_values() - set(_NODE_NAMES) - _ROUTER_SENTINELS
     assert not unknown, f"Nodes assign stage values with no matching node: {sorted(unknown)}"
+
+
+@pytest.mark.parametrize("sentinel", sorted(_ROUTER_SENTINELS))
+def test_a_sentinel_stage_is_actually_handled_by_the_router(sentinel):
+    """Being on the exemption list is not enough; the router must answer for it.
+
+    Otherwise this list becomes the place a genuinely unroutable stage goes to
+    silence the test above.
+    """
+    from langgraph.types import Send
+
+    destination = _route_from_stage({"stage": sentinel})
+
+    if isinstance(destination, list):
+        assert destination, f"{sentinel} routed to an empty fan-out"
+        assert all(isinstance(send, Send) for send in destination)
+        assert all(send.node in _NODE_NAMES for send in destination)
+    else:
+        assert destination in _NODE_NAMES, (
+            f"{sentinel} is exempt from the node-name check but the router sends "
+            f"it to {destination!r}, which is not a node either"
+        )
+
+
+def test_the_parallel_sentinel_falls_back_when_there_is_nothing_to_fan_out():
+    """An empty plan must not fan out to nobody and strand the run.
+
+    `Send` with an empty list is not a route: LangGraph has nothing to run, the
+    superstep ends, and the run stops between stages with no error. A milestone
+    with no delegated tasks is uncommon but it is a shape a model produces, so
+    the dispatcher's own fallback is the safety net rather than the schema.
+
+    It falls back to the join node rather than straight to the tests, because
+    the join is the one place allowed to set `stage` after a fan-out and the one
+    place that looks for a worker that paused.
+    """
+    assert _route_from_stage({"stage": "specialist_dispatch_parallel"}) == "specialist_gather"
+    assert _route_from_stage(
+        {"stage": "specialist_dispatch_parallel", "milestone_plan": None}
+    ) == "specialist_gather"
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +333,7 @@ def test_the_overflow_message_names_the_settings_that_apply():
 # ---------------------------------------------------------------------------
 # A stage that produced no structured response
 #
-# Observed on run-0b55ad49: `specialist_ui_ux_0` did its work, then wrote the
+# Observed on one run: `specialist_ui_ux_0` did its work, then wrote the
 # heading "## Structured Response" in prose and continued for 431,469
 # characters - about 108,000 tokens over 38 minutes - and the stage failed
 # because the schema was never called. The old message blamed the context
@@ -337,7 +391,7 @@ def test_the_message_never_asserts_a_cause_it_cannot_know() -> None:
 def test_a_failed_stage_retries_on_a_fresh_conversation() -> None:
     """The retry must abandon the conversation, not replay it.
 
-    On run-0b55ad49 the stage failed, the run was resumed, and the resume path
+    On one run the stage failed, the run was resumed, and the resume path
     re-entered the same inner thread - the one holding 431,441 characters of
     prose - and failed identically in four minutes. Clearing
     `pending_inner_thread_id` is what turns that loop into a retry.
@@ -393,7 +447,7 @@ def test_the_substring_fallback_still_applies() -> None:
 # `_run_gated_agent` - seeing a pending decision - resumes the inherited thread
 # instead of starting its own.
 #
-# Observed on run-0b55ad49 at 1833 events: `milestone_review` finished with
+# Observed on one run at 1833 events: `milestone_review` finished with
 # `changes_required` and handed back to `technical_lead`, which resumed the
 # reviewer's conversation, was handed a `MilestoneReviewOutput`, stored it under
 # `milestone_plan`, and died on
@@ -457,7 +511,7 @@ def test_no_node_returns_a_bare_dict_after_consuming_an_agent_result() -> None:
 def test_a_missing_product_intake_fails_with_an_explanation():
     """A stage that skipped its structured response must not raise a KeyError.
 
-    Observed on run-c826ae90: the product manager wrote
+    Observed on one run: the product manager wrote
     `docs/product_intake.md` and then reported "Product intake complete. Here
     is the structured summary:" as prose, so `product_intake` never entered
     state. `tools_models_node` read the key directly and the run died with
@@ -481,7 +535,7 @@ def test_a_missing_product_intake_fails_with_an_explanation():
     assert "without returning its structured" in body
     # Resuming re-enters this node, where the intake is still missing, so the
     # guard must route back to the stage that owes the output rather than tell
-    # the operator to resume. run-c826ae90 was resumed once and failed in the
+    # the operator to resume. One run was resumed once and failed in the
     # same place.
     assert 'stage="product_manager"' in body
     assert "structured_retries" in body

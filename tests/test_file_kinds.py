@@ -51,3 +51,29 @@ def test_application_code_is_not_mistaken_for_a_test(path: str) -> None:
     """`latest`, `contest`, `protest` all contain the word."""
     assert classify_file(path) == "application", path
     assert is_application(path)
+
+
+@pytest.mark.parametrize("path", [
+    "simple-to-do-list-app/jest.setup.js",
+    "simple-to-do-list-app/jest.setup.sync.js",
+    "app/jestSetup.js",
+    "app/vitest.setup.ts",
+    "app/src/setupTests.ts",
+    "app/tests/global-setup.ts",
+    "app/playwright.global-setup.ts",
+    "app/test-setup.mjs",
+])
+def test_a_runner_s_setup_file_is_configuration_not_the_application(path):
+    """One run's testing work order was refused `jest.setup.js` seven times as
+    "product code", while its runner's config pointed at a setup file nobody
+    was allowed to write."""
+    from app.analysis.file_kinds import classify_file
+
+    assert classify_file(path) in {"config", "test"}
+
+
+@pytest.mark.parametrize("path", ["app/setup.js", "app/src/setupStore.js", "app/jest.js", "app/teardown.js"])
+def test_a_product_file_that_merely_mentions_setup_is_still_the_application(path):
+    from app.analysis.file_kinds import classify_file
+
+    assert classify_file(path) == "application"

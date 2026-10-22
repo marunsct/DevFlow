@@ -22,7 +22,7 @@ Two things are missing from a list of names:
 * **What the file is for.** `task-manager/app.js (348 lines): createTask,
   toggleTask, deleteTask` does not say whether `app.js` is the model, the
   view or the entry point. Taken from the file's own header comment, which
-  its author has usually already written - run-ed05e20e's `server.mjs` opens
+  its author has usually already written - one run's `server.mjs` opens
   with "Minimal static file server for Playwright testing", a better line
   than any separate model call would produce, and free.
 * **How to call it.** `createTask` does not say whether it takes a title, an
@@ -41,7 +41,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import tempfile
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
@@ -149,14 +152,14 @@ def _without_the_file_name(purpose: str, path: str) -> str:
     prints. Only when a separator follows it, so a sentence that happens to
     begin with the file's name is left alone.
 
-    The full relative path is tried first: measured on run-ed05e20e, the
+    The full relative path is tried first: measured on one run, the
     header of `task-manager/app.js` opens `task-manager/app.js — ES module
     with all task management logic`, so matching only the base name left the
     directory in.
     """
     name = Path(path).name
     # A spelling that carries the extension is unmistakably a label, so it may
-    # be dropped with or without a separator - measured on run-ed05e20e,
+    # be dropped with or without a separator - measured on one run,
     # "task-manager/style.css Production styles for the Task Manager
     # single-page app". The bare stem still needs one, because a sentence
     # that happens to open with the word must be left alone.
@@ -302,7 +305,7 @@ def interface_of(text: str, limit: int = MAX_SIGNATURES) -> str:
                 if not _balanced(parameters):
                     # `[^)]` stops at the first `)`, which a default value or
                     # a destructured argument can contain: measured on
-                    # run-ed05e20e, `createMockStorage({ getItemFn = ()`. A
+                    # one run, `createMockStorage({ getItemFn = ()`. A
                     # signature cut mid-expression is worse than a bare name,
                     # because a stage will try to call it.
                     found.append(name)
@@ -322,6 +325,18 @@ def interface_of(text: str, limit: int = MAX_SIGNATURES) -> str:
 
 def _memory_path(root: Path) -> Path:
     return Path(root) / MEMORY_FILE
+
+
+#: Held across the read-modify-write in `record`.
+#:
+#: One entry is written by reading the whole file, changing one key and writing
+#: the whole file back. With one stage running at a time that is sound. Parallel
+#: execution mode fans a milestone's specialists out to run at once, and two of
+#: them recording a write together means each reads the file before the other's
+#: change lands, so one entry is silently dropped - and `write_text` truncates
+#: before it writes, so a reader arriving mid-write sees invalid JSON and
+#: `_load` starts the memory over from empty.
+_WRITING = threading.Lock()
 
 
 def _load(root: Path) -> dict[str, dict]:
@@ -348,16 +363,69 @@ def record(root: str | Path, relative_path: str, stage: str = "") -> None:
         if not path:
             return
         root = Path(root)
-        held = _load(root)
-        held[path] = {
-            "changed_by": str(stage or "") or held.get(path, {}).get("changed_by", ""),
-            "changed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        }
-        _memory_path(root).write_text(
-            json.dumps(held, indent=1, sort_keys=True), encoding="utf-8"
-        )
+        with _WRITING:
+            held = _load(root)
+            before = held.get(path, {})
+            held[path] = {
+                "changed_by": str(stage or "") or before.get("changed_by", ""),
+                "changed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                # Kept from the first write on: see `who_created`.
+                "created_by": before.get("created_by", "") if before else str(stage or ""),
+            }
+            _write_atomically(_memory_path(root), json.dumps(held, indent=1, sort_keys=True))
     except Exception:  # noqa: BLE001 - a memory that fails a write is worse than none
         logger.debug("Could not record %s in the project memory", relative_path, exc_info=True)
+
+
+def record_move(root: str | Path, from_path: str, to_path: str) -> None:
+    """The file's record follows it to its new name. Never raises.
+
+    A move keeps the bytes, so it keeps who wrote them. Without this a renamed
+    file had no author at all, and the checks that ask "did this stage create
+    it?" - a testing stage deleting its own probe after renaming it out of the
+    test runner's way - found nobody.
+    """
+    try:
+        from app.agents.workspace_paths import the_same_place
+
+        source, target = the_same_place(str(from_path)), the_same_place(str(to_path))
+        if not source or not target:
+            return
+        root = Path(root)
+        with _WRITING:
+            held = _load(root)
+            if source not in held:
+                return
+            held[target] = held.pop(source)
+            _write_atomically(_memory_path(root), json.dumps(held, indent=1, sort_keys=True))
+    except Exception:  # noqa: BLE001 - a memory that fails a write is worse than none
+        logger.debug("Could not move %s to %s in the project memory", from_path, to_path, exc_info=True)
+
+
+def _write_atomically(path: Path, content: str) -> None:
+    """Replace `path`'s contents in one step, or leave them as they were.
+
+    `write_text` opens for truncation first, so there is a window in which the
+    file on disk is empty or half written. Every reader of this file treats
+    unreadable as "no memory at all", which is the worst possible reading of a
+    write in progress. A temporary file in the same directory followed by
+    `os.replace` has no such window: readers see either the old contents or the
+    new ones.
+    """
+    handle = tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=str(path.parent),
+        prefix=f".{path.name}.", suffix=".tmp", delete=False,
+    )
+    try:
+        with handle:
+            handle.write(content)
+        os.replace(handle.name, path)
+    except Exception:
+        try:
+            os.unlink(handle.name)
+        except OSError:
+            pass
+        raise
 
 
 def who_changed(root: str | Path, relative_path: str) -> str:
@@ -367,6 +435,23 @@ def who_changed(root: str | Path, relative_path: str) -> str:
 
         entry = _load(Path(root)).get(the_same_place(str(relative_path)), {})
         return str(entry.get("changed_by") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def who_created(root: str | Path, relative_path: str) -> str:
+    """The stage that first wrote this file, or "". Never raises.
+
+    Not the same question as `who_changed`. One run's `specialist_testing_2`
+    edited a suite `specialist_backend_1` had written, which made it the last
+    writer, and then renamed the suite out of the test runner's reach as though
+    it were its own scratch file.
+    """
+    try:
+        from app.agents.workspace_paths import the_same_place
+
+        entry = _load(Path(root)).get(the_same_place(str(relative_path)), {})
+        return str(entry.get("created_by") or "")
     except Exception:  # noqa: BLE001
         return ""
 
@@ -386,6 +471,7 @@ def note_for(root: str | Path, relative_path: str, text: str) -> FileNote:
 
 
 __all__ = [
+    "who_created",
     "MAX_PURPOSE_CHARS",
     "MAX_SIGNATURES",
     "MEMORY_FILE",

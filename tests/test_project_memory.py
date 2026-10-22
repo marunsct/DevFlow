@@ -254,3 +254,89 @@ def test_a_file_with_neither_costs_no_extra_lines(tmp_path: Path):
 
     assert "app/style.css" in digest
     assert digest.count("app/style.css") == 1
+
+
+class TestConcurrentRecording:
+    """Parallel execution mode has several stages writing this file at once.
+
+    One entry is recorded by reading the whole file, changing one key and
+    writing it all back. With one stage running at a time that is sound, and it
+    was sound for as long as that was the only mode. A milestone fanned out to
+    three specialists has three of them recording writes concurrently.
+    """
+
+    def test_no_entry_is_lost_when_stages_record_at_the_same_time(self, tmp_path):
+        """Each worker reads before the others' changes land; one entry wins.
+
+        Without the lock this loses entries in proportion to how much work runs
+        in parallel, and what it loses is the record of who changed a file -
+        which is what the digest uses to tell a stage that another stage has
+        already been here.
+        """
+        import threading
+
+        from app.analysis.project_memory import record, who_changed
+
+        (tmp_path / "app").mkdir()
+        names = [f"app/file{index}.js" for index in range(24)]
+        for name in names:
+            (tmp_path / name).write_text("//\n", encoding="utf-8")
+
+        barrier = threading.Barrier(len(names))
+
+        def write(name: str) -> None:
+            barrier.wait()
+            record(tmp_path, name, stage=f"stage_for_{name}")
+
+        threads = [threading.Thread(target=write, args=(name,)) for name in names]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        missing = [name for name in names if not who_changed(tmp_path, name)]
+        assert not missing, f"{len(missing)} of {len(names)} entries were lost: {missing[:5]}"
+
+    def test_a_reader_never_sees_a_half_written_file(self, tmp_path):
+        """`write_text` truncates first, and every reader treats unreadable as empty.
+
+        So a read landing inside a write did not degrade - it reported that the
+        project had no memory at all, which is the reading that makes a stage
+        re-read files another stage had already described.
+        """
+        import json
+        import threading
+
+        from app.analysis.project_memory import MEMORY_FILE, record
+
+        (tmp_path / "app").mkdir()
+        for index in range(40):
+            (tmp_path / f"app/file{index}.js").write_text("//\n", encoding="utf-8")
+
+        stop = threading.Event()
+        damaged: list[str] = []
+
+        def read_repeatedly() -> None:
+            path = tmp_path / MEMORY_FILE
+            while not stop.is_set():
+                try:
+                    raw = path.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                if not raw:
+                    continue
+                try:
+                    json.loads(raw)
+                except ValueError:
+                    damaged.append(raw[:40])
+
+        reader = threading.Thread(target=read_repeatedly)
+        reader.start()
+        try:
+            for index in range(40):
+                record(tmp_path, f"app/file{index}.js", stage="writer")
+        finally:
+            stop.set()
+            reader.join()
+
+        assert not damaged, f"a reader saw {len(damaged)} half-written states, e.g. {damaged[:1]}"

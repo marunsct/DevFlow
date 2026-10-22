@@ -5,6 +5,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.server.events import RunEvent
+
+
+class RewindRequest(BaseModel):
+    """Which point of a run's history to rewind it to (`GET /runs/{id}/rewind-points`)."""
+    model_config = ConfigDict(extra="forbid")
+
+    checkpoint_id: str = Field(min_length=1, max_length=200, description="The checkpoint before the stage.")
+
 
 class CreateRunResponse(BaseModel):
     """Response returned when a new run is created."""
@@ -27,9 +36,12 @@ class WorkspaceSource(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["empty", "git", "archive"] = Field(
+    type: Literal["empty", "git", "archive", "run"] = Field(
         default="empty",
-        description="empty: greenfield. git: clone a repository. archive: extract an upload.",
+        description=(
+            "empty: greenfield. git: clone a repository. archive: extract an upload. "
+            "run: a completed run's product, for a change to it (behind CHANGE_REQUEST_RUNS)."
+        ),
     )
     url: str | None = Field(
         default=None, max_length=2048,
@@ -54,6 +66,10 @@ class WorkspaceSource(BaseModel):
     upload_id: str | None = Field(
         default=None, max_length=255,
         description="Identifier returned by the codebase upload endpoint, for type=archive.",
+    )
+    run_id: str | None = Field(
+        default=None, max_length=255,
+        description="A completed run of the same tenant whose product is changed, for type=run.",
     )
 
 
@@ -100,6 +116,28 @@ class StartRunRequest(BaseModel):
     source: WorkspaceSource | None = Field(
         default=None,
         description="Seed the workspace from an existing codebase. Omit for a greenfield run.",
+    )
+    delivery_mode: Literal["fast", "thorough"] | None = Field(
+        default=None,
+        description=(
+            "Fast: fewer, leaner stages. Thorough: every stage in full. Omit to keep what the "
+            "run was registered with, else the deployment's default."
+        ),
+    )
+    use_frontier_model: bool | None = Field(
+        default=None,
+        description=(
+            "Whether stages that need judgement (specification, reviews, escalated fixes) use the "
+            "frontier model. False keeps every stage on the build model. Omit for the frontier "
+            "model as configured."
+        ),
+    )
+    approval_timeout_minutes: int | None = Field(
+        default=None, ge=1, le=10_080,
+        description=(
+            "Minutes a gate that asks a person (an approval or a review) waits before it is approved "
+            "automatically. Omit to wait for the person however long it takes."
+        ),
     )
     auto_approve: bool | None = Field(
         default=None,
@@ -183,6 +221,181 @@ class RemediationInfo(BaseModel):
     escalated: bool = Field(description="Whether the remediation has been escalated.")
     defect_count: int = Field(description="Number of defects found.")
     test_runs: int = Field(description="Number of test runs performed.")
+    open_defects: int = Field(default=0, description="Defects found and still open.")
+
+
+class SprintDefectView(BaseModel):
+    """One defect of a sprint's latest attempt, as its summary lists it."""
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = Field(description="open, fixed or accepted_risk.")
+    description: str = Field(description="What is wrong.")
+    owner: str = Field(description="Who fixes it.")
+
+
+class SprintView(BaseModel):
+    """One sprint, from the attempts the engine renders its summary document from (plan BG.6)."""
+    model_config = ConfigDict(extra="forbid")
+
+    number: int = Field(description="The sprint's place in the plan, from 1.")
+    planned_total: int = Field(description="How many sprints the plan has.")
+    goal: str = Field(description="The sprint plan's goal for this sprint.")
+    status: str = Field(description="The latest attempt's status: Completed, Failed or another the engine records.")
+    failure_reason: str = Field(default="", description="Why the latest attempt failed; '' when it did not.")
+    attempts: int = Field(description="How many times this sprint was attempted. More than one is a re-run, not another sprint.")
+    planned: list[str] = Field(default_factory=list, description="What the sprint promised, from the plan.")
+    features: list[str] = Field(default_factory=list, description="What the latest attempt implemented.")
+    test_cases: int | None = Field(default=None, description="Test cases measured at the end of the latest attempt, or null when none were.")
+    cases_passed: int = Field(default=0, description="Of those, passed.")
+    cases_failed: int = Field(default=0, description="Of those, failed.")
+    test_rounds: int = Field(default=0, description="Test rounds the latest attempt ran.")
+    total_bugs: int = Field(default=0, description="Defects found in the latest attempt.")
+    fixed_bugs: int = Field(default=0, description="Of those, fixed.")
+    open_bugs: int = Field(default=0, description="Of those, not fixed.")
+    defects: list[SprintDefectView] = Field(default_factory=list, description="The latest attempt's defects.")
+    attempt_history: list[str] = Field(default_factory=list, description="One line per attempt, when there was more than one.")
+
+
+class EventPage(BaseModel):
+    """A page of a run's events, oldest first: the same events the live stream sends."""
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str = Field(description="The run.")
+    total: int = Field(description="Events the run has in all.")
+    offset: int = Field(description="Where this page starts.")
+    limit: int = Field(description="The most this page holds.")
+    logs: list[RunEvent] = Field(default_factory=list, description="The events, as the stream sends them.")
+
+
+class BriefPreviewRequest(BaseModel):
+    """A brief, before any run exists, to preview what it will be held to."""
+    model_config = ConfigDict(extra="forbid")
+
+    brief: str = Field(max_length=400_000, description="The brief's text, as written or read from its files.")
+
+
+class PreviewCriterion(BaseModel):
+    """One acceptance criterion as the run will number it."""
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(description="AC-1, AC-2, ...")
+    text: str = Field(description="The behaviour, in the brief's own words.")
+
+
+class BriefPreview(BaseModel):
+    """The acceptance criteria a brief gives a run, read without a model call (plan BG.10)."""
+    model_config = ConfigDict(extra="forbid")
+
+    criteria: list[PreviewCriterion] = Field(default_factory=list, description="AC-1..n from the brief, in its order.")
+    from_brief: bool = Field(
+        description="Whether the brief lists them: with fewer than two, the run draws them from its product intake instead."
+    )
+    without_an_interface_line: list[str] = Field(
+        default_factory=list,
+        description="Criteria no line of the brief's interface section speaks to - what the run would guess (plan IN.2).",
+    )
+    vague_phrases: list[str] = Field(
+        default_factory=list,
+        description="Phrases that ask for a quality without saying what it is, as the brief uses them (plan IN.2).",
+    )
+
+
+
+class OwnerRatingRequest(BaseModel):
+    """The owner's verdict on a delivered product: 1 to 5 and a line (plan EV.1)."""
+    model_config = ConfigDict(extra="forbid")
+
+    score: int = Field(ge=1, le=5, description="1 (unusable) to 5 (would hand it over as it is).")
+    note: str = Field(default="", max_length=500, description="One line on the product, optional.")
+
+
+class OwnerRating(OwnerRatingRequest):
+    """A rating as kept: who gave it and when."""
+
+    rated_by: str = Field(description="The account that rated the run.")
+    rated_at: str = Field(description="When, ISO 8601 UTC.")
+
+class StageUsage(BaseModel):
+    """One stage's time, tokens and failures, from the run's transcript (plan BG.7)."""
+    model_config = ConfigDict(extra="forbid")
+
+    stage: str = Field(description="The stage's name; a stage that ran more than once is one row.")
+    wall_seconds: float = Field(description="From the stage's first record to its last.")
+    model_seconds: float = Field(description="Time spent waiting on model replies.")
+    model_calls: int = Field(description="Model replies.")
+    input_tokens: int = Field(description="Input tokens sent.")
+    cached_tokens: int = Field(description="Of those, tokens the server had cached.")
+    output_tokens: int = Field(description="Output tokens, reasoning included.")
+    lost_replies: int = Field(description="Replies cut off at the output limit with no text and no call kept.")
+    tool_calls: int = Field(description="Tool calls made.")
+    tool_failures: int = Field(description="Tool calls that failed or were refused.")
+    redundant_reads: int = Field(description="Reads answered with 'you already have this'.")
+
+
+class CallUsage(BaseModel):
+    """One model call: when it ended, which stage made it, its tokens, and how long it took (plan BG.15)."""
+    model_config = ConfigDict(extra="forbid")
+
+    at: datetime = Field(description="When the reply arrived.")
+    stage: str = Field(description="The stage that made the call.")
+    input_tokens: int = Field(description="Tokens sent: how full the context was.")
+    output_tokens: int = Field(description="Tokens the reply had, reasoning included.")
+    seconds: float = Field(description="From the request to the reply.")
+
+
+class RunUsage(BaseModel):
+    """A run's usage by stage, in the order the stages first ran, and its calls of the last hour."""
+    model_config = ConfigDict(extra="forbid")
+
+    stages: list[StageUsage] = Field(default_factory=list, description="One row per stage; empty before the transcript has any.")
+    recent_calls: list[CallUsage] = Field(
+        default_factory=list, description="The model calls of the run's last hour of calls, oldest first, at most 300."
+    )
+
+
+class SprintsResponse(BaseModel):
+    """A run's sprints, in plan order; only those attempted so far."""
+    model_config = ConfigDict(extra="forbid")
+
+    sprints: list[SprintView] = Field(default_factory=list, description="The sprints attempted so far.")
+
+
+class RunCostSummary(BaseModel):
+    """What a run has spent on model calls, and how much of it was priced.
+
+    `estimated_cost_usd` on its own is a trap: a run whose model is absent from
+    the price table would report `0.0`, which reads as "this was free" rather
+    than "this was not measured". `fully_priced` and `unpriced_requests` are
+    what tell those two apart, so they are not optional extras here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    estimated_cost_usd: float = Field(description="Spend on calls that could be priced.")
+    total_tokens: int = Field(description="Tokens across every call, priced or not.")
+    prompt_tokens: int = Field(description="Input tokens across every call.")
+    completion_tokens: int = Field(description="Output tokens across every call.")
+    successful_requests: int = Field(description="Model calls that completed.")
+    priced_requests: int = Field(description="Calls charged at a known rate.")
+    unpriced_requests: int = Field(
+        description="Calls whose model had no published rate; their cost is unknown, not zero."
+    )
+    unpriced_models: list[str] = Field(
+        default_factory=list, description="Model ids that had no rate."
+    )
+    fully_priced: bool = Field(
+        description="False when any call went unpriced, so the total is partial."
+    )
+    prices_as_of: str = Field(description="Month the built-in price table was current.")
+
+
+class SteeringNote(BaseModel):
+    """The owner's direction to a running run, carried by its next model calls."""
+
+    text: str = Field(..., min_length=1, max_length=2000)
+    scope: Literal["run", "next_stage"] = Field(
+        default="run", description="For the rest of the run, or for the one stage that is working when it is first read."
+    )
 
 
 class RunStatusResponse(BaseModel):
@@ -196,6 +409,13 @@ class RunStatusResponse(BaseModel):
         "running",
         "waiting_for_approval",
         "waiting_for_review",
+        # Parked at `MAX_RUN_COST_USD`. Listed here and not only in the runner,
+        # because a status this model does not accept makes *reading* the run
+        # fail with a `ValidationError` - the run is fine and the page that would
+        # show why it stopped is the thing that breaks. This is the shape of the
+        # `approval_denied` defect that `test_event_types_are_registered` exists
+        # to prevent, on the status field rather than the event field.
+        "waiting_for_budget",
         "paused",
         "failed",
         "cancelled",
@@ -210,12 +430,66 @@ class RunStatusResponse(BaseModel):
     reviews: list[ReviewInfo] = Field(default_factory=list, description="Reviews associated with the run.")
     remediation: RemediationInfo | None = Field(default=None, description="Remediation information if applicable.")
     error: str | None = Field(default=None, description="Error message if the run failed.")
+    non_deliverable: str = Field(
+        default="",
+        description=(
+            "What the workspace's NON-DELIVERABLE marker says, or '' when the "
+            "workspace is marked deliverable. A terminal state other than a "
+            "clean release writes it into the workspace root (Initiative J.6)."
+        ),
+    )
+    gate_deadline: datetime | None = Field(
+        default=None,
+        description=(
+            "When a gate that is waiting for a person approves itself (the run's approval timeout), "
+            "or null when nothing waits or the gate waits for the person however long it takes."
+        ),
+    )
+    approval_timeout_minutes: int | None = Field(
+        default=None, description="The run's approval timeout in minutes; null waits for the person."
+    )
+    completion_gaps: list[str] = Field(
+        default_factory=list,
+        description=(
+            "What this release knew it did not prove: deferred criteria, "
+            "problems the suite was locked with, an unproven setup (Initiative "
+            "J.4). Empty on a completed run that proved everything it claims; "
+            "a completed run with gaps here is never plain 'completed' on any "
+            "surface that shows it."
+        ),
+    )
+    delivery_mode: str = Field(
+        default="", description="`fast` or `thorough`: how this run delivers, chosen when it started.",
+    )
+    max_run_tokens: int | None = Field(
+        default=None,
+        description="The deployment's bound on the tokens a run uses (`MAX_RUN_TOKENS`), or null when none is set.",
+    )
+    criteria_proven: int | None = Field(default=None, description="Acceptance criteria passing in the last measurement, or null before one.")
+    criteria_total: int | None = Field(default=None, description="Acceptance criteria of the run, or null before the suite is written.")
+    max_run_cost_usd: float | None = Field(
+        default=None,
+        description="The deployment's ceiling on a run's priced spend (`MAX_RUN_COST_USD`), or null when none is set.",
+    )
+    use_frontier_model: bool = Field(
+        default=True, description="Whether this run uses the frontier model; False is the build model only.",
+    )
     auto_approve: bool = Field(
         default=False,
         description=(
             "Whether the run answers its own approval gates (unattended). The UI "
             "needs this to know whether a gate is waiting on a person or will "
             "clear itself, and the wizard uses it to label a paused stage."
+        ),
+    )
+    cost: RunCostSummary | None = Field(
+        default=None,
+        description=(
+            "What this run has spent on model calls so far, when the worker "
+            "holding its total is this process. Absent rather than zero when it "
+            "is not: a run whose accounting lives in another worker has an "
+            "unknown cost, and reporting $0.00 for it would be the fabricated "
+            "measurement this field was added to remove."
         ),
     )
 
@@ -426,6 +700,30 @@ class RunSummary(BaseModel):
     current_stage: str | None = Field(default=None, description="The currently active stage.")
     created_at: datetime = Field(description="Timestamp when the run was created.")
     document_names: list[str] = Field(default_factory=list, description="Names of the documents associated with the run.")
+    updated_at: datetime | None = Field(default=None, description="When the run last moved.")
+    delivery_mode: str | None = Field(default=None, description="fast or thorough.")
+    local_only: bool | None = Field(default=None, description="Whether the run was started not to use the frontier model.")
+    completion_gaps: int = Field(default=0, description="How many things the release knew it did not prove.")
+    criteria_proven: int | None = Field(default=None, description="Acceptance criteria passing in the last measurement, or null before one.")
+    criteria_total: int | None = Field(default=None, description="Acceptance criteria of the run, or null before the suite is written.")
+    gate_deadline: datetime | None = Field(
+        default=None,
+        description="When a waiting gate approves itself, or null when nothing waits or it waits for the person.",
+    )
+
+
+class ServerHealth(BaseModel):
+    """What the build model's server says of itself, read with one request for its status and never a model call (plan BG.5)."""
+    model_config = ConfigDict(extra="forbid")
+
+    hosted: bool = Field(description="The build model is a hosted API, which has no server status to read.")
+    answered: bool = Field(description="The server answered its status request (`/props`) when it was read.")
+    model: str = Field(default="", description="The model the server holds, from its file name; the configured name otherwise.")
+    quantisation: str = Field(default="", description="The quantisation its file name names, such as Q4_K_M; '' when none.")
+    slots: int | None = Field(default=None, description="How many requests it serves at once, or null when not reported.")
+    slot_context: int | None = Field(default=None, description="Context tokens each request gets, as the server was started, or null.")
+    checked_at: datetime = Field(description="When the status was read; it is read again at most once a minute.")
+    busy_runs: list[str] = Field(default_factory=list, description="The runs running now, which hold the server's slots.")
 
 
 class RunListResponse(BaseModel):
@@ -464,6 +762,9 @@ class ReviewPayload(BaseModel):
     revision: int = Field(description="The revision being reviewed.")
     comments: str | None = Field(default=None, description="Existing comments context.")
     available_actions: list[str] = Field(description="List of actions the reviewer can take.")
+    document: str | None = Field(
+        default=None, description="The workspace path of the document the review is about, when the workflow wrote one."
+    )
 
 
 class ReviewDecisionRequest(BaseModel):
@@ -472,14 +773,6 @@ class ReviewDecisionRequest(BaseModel):
 
     action: Literal["approve", "changes", "skip"] = Field(description="The review decision.")
     comment: str | None = Field(default=None, description="Comment detailing the decision.")
-
-
-class EventResponse(BaseModel):
-    """Response containing events for polling clients."""
-    model_config = ConfigDict(extra="forbid")
-
-    events: list[dict] = Field(description="List of serialized events.")
-    cursor: int = Field(description="Sequence cursor for fetching subsequent events.")
 
 
 class SpinnerResponse(BaseModel):

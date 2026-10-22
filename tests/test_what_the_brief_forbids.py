@@ -2,11 +2,11 @@
 
 `what_the_brief_asked_for_that_is_missing` checks one direction - the brief
 asks for a page, the product has none. Nothing checked the other, and it is the
-direction run 0c5aabdb failed in: a brief reading "No external dependencies
+direction one run failed in: a brief reading "No external dependencies
 beyond basic HTML/CSS/JS" against a product built on Express with a 32KB
 lockfile.
 
-Run 551640d3 is the same thing more quietly. It installed `jsdom` to get a DOM
+One run is the same thing more quietly. It installed `jsdom` to get a DOM
 for its tests - a reasonable instinct, and exactly what the brief forbids -
 leaving a full `node_modules` and a 29KB lockfile. Nothing reported it: the
 cross-file checks look at how files relate, and the missing-things check has
@@ -64,7 +64,7 @@ def test_a_shipped_dependency_is_reported(project):
 
 def test_a_test_only_devdependency_is_not_a_violation(project):
     """A test runner in `devDependencies` ships to nobody, so a brief that
-    forbids dependencies has nothing to say about it. Measured on run-2d9066e2,
+    forbids dependencies has nothing to say about it. Measured on one run,
     which spent all three remediation attempts on `@playwright/test` here and
     failed without a product defect in it.
     """
@@ -81,6 +81,9 @@ def test_a_test_only_devdependency_is_not_a_violation(project):
     # distinguishes a violation from a note that the check ran and found none.
     assert found[0].startswith("todo/package.json declares no product dependencies")
     assert "not shipped" in found[0]
+    # It used to end with the violation's own closing sentences.
+    assert "cannot accept the milestone" not in found[0]
+    assert "rules that out" not in found[0]
 
 
 def test_a_devdependency_the_product_itself_imports_is_still_reported(project):
@@ -163,7 +166,7 @@ def test_the_milestone_reviewer_is_given_it(project):
 
 
 def test_a_package_imported_but_never_declared_is_still_a_dependency(tmp_path):
-    """Run 9bd3a091 imported `jsdom` into three test files under an empty
+    """One run imported `jsdom` into three test files under an empty
     `devDependencies`, with a full `node_modules` and a lockfile of thirty-nine
     packages. Reading declarations alone, the check went dark on it.
     """
@@ -201,7 +204,7 @@ def test_a_test_only_package_imported_but_never_declared_is_reported(tmp_path):
 
 
 def test_a_declared_package_and_an_undeclared_one_are_both_named(tmp_path):
-    """Run cbd22a34 declared `jsdom` and `vitest` and imported `linkedom` too.
+    """Run a000000c declared `jsdom` and `vitest` and imported `linkedom` too.
 
     The two declared ones are test-only, so they are no longer a violation; the
     undeclared one still is, because `npm ci` will not install it and the suite
@@ -264,7 +267,7 @@ def test_relative_and_url_imports_are_not_packages(tmp_path):
 
 
 def test_a_test_framework_config_file_is_test_tooling_not_product_code(tmp_path):
-    """The one import that cost run-519a9d8a its milestone.
+    """The one import that cost one run its milestone.
 
     `@playwright/test` sat in `devDependencies` with no `dependencies` at all,
     imported by a test file and by `playwright.config.ts`. `file_kinds` classifies
@@ -311,3 +314,92 @@ def test_a_test_framework_imported_by_product_code_is_still_reported(tmp_path):
     )
     found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
     assert found and "@playwright/test" in found[0]
+
+
+def test_a_package_a_declared_test_runner_brings_is_not_undeclared(tmp_path):
+    """One run's suite imported `@jest/globals` under a declared `jest`. The
+    lockfile installs it, only tests import it, and the reviewer was told the
+    product broke the brief's rule on dependencies - through its last revision.
+    """
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(json.dumps({"devDependencies": {"jest": "^29"}}))
+    (project / "package-lock.json").write_text(json.dumps({"packages": {
+        "": {}, "node_modules/jest": {}, "node_modules/@jest/globals": {},
+        "node_modules/jest/node_modules/chalk": {},
+    }}))
+    (project / "app.js").write_text("export const x = 1;\n")
+    (project / "app.test.js").write_text("const { test } = require('@jest/globals');\n")
+
+    found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
+
+    assert not any("without declaring it" in line for line in found)
+    assert not any("@jest/globals" in line for line in found)
+
+
+def test_the_same_package_imported_by_the_product_is_still_reported(tmp_path):
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(json.dumps({"devDependencies": {"jest": "^29"}}))
+    (project / "package-lock.json").write_text(json.dumps({"packages": {
+        "": {}, "node_modules/jest": {}, "node_modules/@jest/globals": {},
+    }}))
+    (project / "app.js").write_text("import { jest } from '@jest/globals';\n")
+
+    found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
+
+    assert found and "@jest/globals" in found[0] and "without declaring it" in found[0]
+
+
+def test_an_undeclared_package_only_the_tests_import_is_a_test_setup_gap(tmp_path):
+    """One run's reviewer, told `@playwright/test` was imported without being
+    declared and that "the brief rules that out", required every reference to
+    Playwright removed so "the product has no external dependencies" - on the
+    last revision the run was allowed."""
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(json.dumps({"devDependencies": {}}))
+    (project / "app.js").write_text("export const x = 1;\n")
+    (project / "e2e.spec.js").write_text("import { test } from '@playwright/test';\n")
+
+    found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
+
+    assert len(found) == 1
+    assert "the tests import `@playwright/test` without declaring it" in found[0]
+    assert "gap in the test setup" in found[0]
+    assert "rules that out" not in found[0]
+    assert "cannot accept the milestone" not in found[0]
+
+
+def test_the_reviewer_is_not_told_the_brief_is_broken_when_it_is_not(project):
+    """A note that only test-only packages are declared used to be followed by
+    "a milestone whose product does not have what the brief asks for is not
+    complete"."""
+    from app.agents.milestone_reviewer import build_milestone_review_request
+
+    root = project({"name": "t", "devDependencies": {"@playwright/test": "^1.49"}})
+    (root / "todo" / "app.js").write_text("export const x = 1;\n")
+    (root / "todo" / "index.html").write_text("<!DOCTYPE html><html><body></body></html>\n")
+    (root / "todo" / "styles.css").write_text("body { margin: 0; }\n")
+    (root / "todo" / "app.test.mjs").write_text("import { test } from '@playwright/test';\n")
+
+    body = build_milestone_review_request(
+        "goal", ["todo/app.js", "todo/index.html"], "tests pass", "none", str(root), None, FORBIDS
+    )["messages"][0]["content"]
+
+    assert "it is not a finding" in body
+    assert "Nothing in it is the product breaking the brief." in body
+    assert "does not have what the brief asks" not in body.split("Checked deterministically")[1].split("---")[0]
+
+
+def test_the_reviewer_is_still_told_when_it_is(project):
+    from app.agents.milestone_reviewer import build_milestone_review_request
+
+    root = project({"name": "t", "dependencies": {"express": "^4"}})
+    (root / "todo" / "index.js").write_text("const express = require('express');\n")
+
+    body = build_milestone_review_request(
+        "goal", ["todo/app.js"], "tests pass", "none", str(root), None, FORBIDS
+    )["messages"][0]["content"]
+
+    assert "is not complete, whatever its tests do" in body

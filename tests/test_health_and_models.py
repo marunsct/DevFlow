@@ -59,8 +59,32 @@ def test_readiness_fails_when_redis_is_unreachable(client, monkeypatch):
 
 
 def test_model_health_is_reachable_for_an_admin(client):
+    """It pings every registered model, so it pings only a stand-in here.
+
+    Run after the tests that build chat models from this host's own settings,
+    it pinged whatever servers those named - the operator's local model servers,
+    busy with a real run - and the suite stopped there with no summary.
+    """
+    from types import SimpleNamespace
+
+    from app.models.router import ModelRouter
+
+    pinged = []
+
+    class _Model:
+        def invoke(self, messages, config=None):
+            pinged.append(messages)
+            return "pong"
+
+    ModelRouter.for_configuration(
+        SimpleNamespace(llm_provider="local", openai_base_url="http://stand-in/v1", model_name="m"),
+        [{"name": "m", "model": _Model()}],
+    )
+
     response = client.get("/api/health/models")
+
     assert response.status_code == 200
+    assert pinged and list(response.json().values()) == [{"m": "healthy"}]
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +206,7 @@ def _llm_result(llm_output, usage_metadata):
 def test_the_cost_tracker_counts_an_unstreamed_response() -> None:
     from app.observability.cost_tracker import CostTrackingCallbackHandler
 
-    tracker = CostTrackingCallbackHandler()
+    tracker = CostTrackingCallbackHandler("cost-unstreamed", provider="openai", model="gpt-4o-mini")
     tracker.on_llm_end(
         _llm_result({"token_usage": {"prompt_tokens": 19, "completion_tokens": 10, "total_tokens": 29}}, None)
     )
@@ -199,7 +223,7 @@ def test_the_cost_tracker_counts_a_streamed_response() -> None:
     """
     from app.observability.cost_tracker import CostTrackingCallbackHandler
 
-    tracker = CostTrackingCallbackHandler()
+    tracker = CostTrackingCallbackHandler("cost-streamed", provider="openai", model="gpt-4o-mini")
     tracker.on_llm_end(
         _llm_result(None, {"input_tokens": 19, "output_tokens": 10, "total_tokens": 29})
     )
@@ -214,7 +238,7 @@ def test_a_response_with_no_usage_anywhere_is_counted_as_a_request_only() -> Non
     """It must not invent numbers, and must not raise."""
     from app.observability.cost_tracker import CostTrackingCallbackHandler
 
-    tracker = CostTrackingCallbackHandler()
+    tracker = CostTrackingCallbackHandler("cost-no-usage", provider="openai", model="gpt-4o-mini")
     tracker.on_llm_end(_llm_result(None, None))
 
     summary = tracker.get_summary()

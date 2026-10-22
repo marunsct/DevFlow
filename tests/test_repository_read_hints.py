@@ -1,12 +1,12 @@
 """The other read tool, given the hints `read_file` has had all along.
 
-`read_file` has said "There is a file of that name at ..." since run-3f8e387d,
+`read_file` has said "There is a file of that name at ..." since one run,
 where 56 of 72 failed reads named a file that was in the workspace under a
 different path. `read_repository_file` had none of it - the third piece of
 machinery it turned out to be missing, after the repeat notice and the span
 tracking.
 
-Measured across run-499c771a, run-454adf22 and run-04576307: every one failed a
+Measured across three runs: every one failed a
 `read_repository_file` of `README.md` at the workspace root while the project's
 README sat one directory down.
 """

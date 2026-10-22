@@ -11,15 +11,17 @@ and Node is on the allowlist of every role because the products this harness
 builds are mostly JavaScript. Measured in the worker container: five checks in
 83 milliseconds.
 
-run-454adf22 is what this is for. `app.js` was written with a stray `try`, and
+One run is what this is for. `app.js` was written with a stray `try`, and
 the whole of `test_round_0` was spent discovering `SyntaxError: Unexpected
 token 'try'` at line 83 and routing it back as a defect - a round trip through
 the test round, the triage and a defect-fix stage, for something the parser
 would have named at the moment of the write.
 
-Only `.js`, `.cjs` and `.mjs`. `.jsx`, `.ts` and `.tsx` are not JavaScript and
-Node will not parse them; running this on one would report a syntax error in a
-file that is perfectly correct, which is the one outcome worth avoiding.
+`node --check` for `.js`, `.cjs` and `.mjs` only. `.jsx`, `.ts` and `.tsx` are
+not JavaScript and Node will not parse them; running it on one would report a
+syntax error in a file that is perfectly correct, which is the one outcome
+worth avoiding. Those go to the TypeScript compiler's parser instead - see
+`app.analysis.typescript_parse`.
 
 The check runs on a temporary sibling of the real file, so `package.json`'s
 `type` resolves exactly as it will for the real one - `.js` is ESM or CommonJS
@@ -72,9 +74,9 @@ def _the_module_goal_also_rejects(node: str, path: Path, content: str) -> str | 
 
     Measured over every `.js` write in the stored transcripts that uses ES
     module syntax: 16 of 116 pass `node --check` and throw on import. Four
-    runs paid for it - d6297b2f twice on `Duplicate export of 'init'`,
-    f81808a4 on `Export 'addTask' is not defined in module`, 551640d3
-    thirteen times, and run 1cd4597b spent 177 events of a defect-fix stage
+    runs paid for it - one run twice on `Duplicate export of 'init'`,
+    one run on `Export 'addTask' is not defined in module`, one run
+    thirteen times, and one run spent 177 events of a defect-fix stage
     on `Duplicate export of 'deleteHandler'` that this would have named at
     the write.
 
@@ -125,7 +127,14 @@ def parse_error(path: Path, content: str) -> str | None:
     unexpected. A write must not fail because a check could not run, and this
     is the same rule every other hint in this codebase follows.
     """
-    if path.suffix.lower() not in PARSEABLE:
+    suffix = path.suffix.lower()
+    if suffix not in PARSEABLE:
+        # TypeScript and JSX are Node's to load only once something has
+        # compiled them, so the compiler's parser is the one to ask.
+        from app.analysis import typescript_parse
+
+        if suffix in typescript_parse.PARSEABLE:
+            return typescript_parse.parse_error(path, content)
         return None
     node = _node()
     if node is None:
@@ -166,7 +175,7 @@ def parse_error(path: Path, content: str) -> str | None:
         f"Node cannot parse this file{where}: {detail}. "
         "This is `node --check`, the same parser that loads the file, so the "
         "error is certain - it is not a guess about style."
-        + _the_other_half(detail, content)
+        + _the_other_half(detail, content, path, line.group(1) if line else None)
         + _around_the_failure(line.group(1) if line else None, content)
     )
 
@@ -179,8 +188,8 @@ CONTEXT_LINES = 4
 def _around_the_failure(line: str | None, content: str) -> str:
     """The text at the line the parser named, with its neighbours, or "".
 
-    The message named a line number and never showed the line. Measured on run
-    1c9854c7's `test_round_0`: an edit refused with "Node cannot parse this
+    The message named a line number and never showed the line. Measured on one
+    run's `test_round_0`: an edit refused with "Node cannot parse this
     file on line 26: SyntaxError: Unexpected token '}'", sent again unchanged,
     and again, and again - four attempts, the last two answered only by the
     repeat guard. The agent had the number and not the text, and the text is
@@ -222,14 +231,82 @@ def _declarations_of(name: str, content: str) -> list[int]:
     return [content.count("\n", 0, m.start()) + 1 for m in pattern.finditer(content)]
 
 
-def _the_other_half(detail: str, content: str) -> str:
+#: `SyntaxError: Duplicate export of 'FilterState'`
+_DUPLICATE_EXPORT = re.compile(r"Duplicate export of '([^']+)'")
+
+
+def _exports_of(name: str, content: str) -> list[int]:
+    """The lines that export `name`: a declaration, or a list `export { ... }`."""
+    declared = re.compile(
+        rf"^\s*export\s+(?:async\s+)?(?:const|let|var|function\*?|class)\s+{re.escape(name)}\b", re.M
+    )
+    listed = re.compile(r"\bexport\s*\{([^}]*)\}", re.S)
+    lines = [content.count("\n", 0, m.start()) + 1 for m in declared.finditer(content)]
+    for m in listed.finditer(content):
+        names = [part.split(" as ")[-1].strip() for part in m.group(1).split(",")]
+        if name in names:
+            lines.append(content.count("\n", 0, m.start()) + 1)
+    return sorted(set(lines))
+
+
+def _a_comment_that_ended_early(content: str) -> tuple[int, int] | None:
+    """(where a block comment opened, where a `*/` inside it closed it), or None.
+
+    Block comments do not nest. Measured on one run's `defect_fix_1_4`: a JSDoc
+    block carried an example, `storageAdapter.set = (key, value) => { /* mock */ };`,
+    and the `*/` of that inner comment ended the JSDoc. Node stopped on the `}`
+    after it, the bracket guess said "a '}' closes something that was never
+    opened - look at the block that should contain it", and the stage rewrote
+    the whole file four times without finding what it had written: nothing was
+    wrong with any block, and the line looked like a comment to the eye.
+
+    Strings and line comments are skipped, so a `/*` inside either is not one.
+    """
+    i, n, line = 0, len(content), 1
+    while i < n:
+        c = content[i]
+        if c == "\n":
+            line += 1
+        elif c in "'\"`":
+            i += 1
+            while i < n and content[i] != c:
+                if content[i] == "\\":
+                    i += 1
+                elif content[i] == "\n":
+                    line += 1
+                    if c != "`":
+                        break
+                i += 1
+        elif content.startswith("//", i):
+            end = content.find("\n", i)
+            if end < 0:
+                return None
+            i = end
+            continue
+        elif content.startswith("/*", i):
+            opened = line
+            end = content.find("*/", i + 2)
+            if end < 0:
+                return None
+            body = content[i + 2:end]
+            if "/*" in body:
+                return opened, line + body.count("\n")
+            line += body.count("\n")
+            i = end + 2
+            continue
+        i += 1
+    return None
+
+
+def _the_other_half(
+    detail: str, content: str, path: Path | None = None, line: str | None = None
+) -> str:
     """The fact the parser's own message is missing, or "".
 
-    Node names one end of the problem. For the two errors this harness
-    actually produces, the other end is what the agent needs and is cheap to
-    find.
+    Node names one end of the problem. For the errors this harness actually
+    produces, the other end is what the agent needs and is cheap to find.
 
-    Measured on run-04576307's `specialist_backend_2`: five consecutive edits
+    Measured on one run's `specialist_backend_2`: five consecutive edits
     refused, three of them `Unexpected token '}'` and one `Identifier
     'newTitle' has already been declared`. It had the line number each time
     and still could not place the fault, because the line a parser stops on is
@@ -245,7 +322,47 @@ def _the_other_half(detail: str, content: str) -> str:
                 "or rename one of them."
             )
         return ""
+    exported = _DUPLICATE_EXPORT.search(detail)
+    if exported:
+        # One run's `specialist_backend_1` was told "Duplicate export of
+        # 'FilterState'" at the `export { FilterState, applyFilter }` closing the
+        # file, five times. The other export was `export const FilterState` near
+        # the top, which the refusal never showed.
+        lines = _exports_of(exported.group(1), content)
+        if len(lines) > 1:
+            listed = " and ".join(str(number) for number in lines[:4])
+            return (
+                f" `{exported.group(1)}` is exported on lines {listed}; a name may be "
+                "exported once - drop it from one of them."
+            )
+        return ""
     if "Unexpected token" in detail or "Unexpected end of input" in detail:
+        # Before the bracket guess: a keyword bound as a name is certain, and
+        # `Unexpected token 'delete'` is otherwise indistinguishable from a
+        # misplaced brace. One run took five edits to five different line
+        # numbers on one such name - see `app.analysis.reserved_words`.
+        if path is not None:
+            try:
+                from app.analysis.reserved_words import why_the_name_cannot_work
+
+                reserved = why_the_name_cannot_work(path.name, content)
+            except Exception:  # noqa: BLE001 - a hint on a hint must not fail
+                reserved = ""
+            if reserved:
+                return reserved
+        early = _a_comment_that_ended_early(content)
+        if early is not None:
+            opened, closed = early
+            # Only when the parser gave up at or after that `*/`. Before it,
+            # the comment is intact and the fault is somewhere else.
+            if line is None or not str(line).isdigit() or int(line) >= closed:
+                return (
+                    f" The block comment opened on line {opened} holds another "
+                    f"`/* ... */`, and block comments do not nest: the `*/` on line "
+                    f"{closed} ends the comment that began on line {opened}, so "
+                    "the rest of it is read as code. Take the inner `/* */` out of "
+                    "the comment, or write it as `//`."
+                )
         try:
             from app.analysis.syntax_balance import _confidently_unbalanced
 

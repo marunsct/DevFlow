@@ -55,6 +55,8 @@ NOT_A_PACKAGE_MANAGER = frozenset({
     "python", "python3", "pytest", "ruff",
     "gofmt", "rustc", "rustfmt", "java", "javac",
     "kotlin", "rake", "rspec", "phpunit", "swiftc", "elixir",
+    # Go's test runner reporter: runs `go test`, installs nothing.
+    "gotestsum",
     # A browser-driving test runner, invoked as `npx playwright test`. It
     # installs packages no more than `jest` does.
     "playwright",
@@ -64,6 +66,9 @@ NOT_A_PACKAGE_MANAGER = frozenset({
     # working: `ruby` and `php` are in `TOOLCHAINS` beside their managers and
     # look like managers to anything that does not know the difference.
     "ruby", "php",
+    # PHP's static analyser, which the compiler check runs when a project
+    # installed it (`app.analysis.compiler_check`). It installs nothing.
+    "phpstan",
     # Compilers and build drivers, not package managers.
     "scala", "scalac", "gcc", "clang", "g++", "clang++", "make",
 })
@@ -145,7 +150,7 @@ def test_a_production_install_is_refused_in_every_ecosystem(
 #: The test-scoped twin of each ecosystem that has a dev scope. None may be
 #: refused: a dependency that ships to nobody breaks no constraint on the
 #: shipped product, and refusing it is what left `@playwright/test` installed
-#: into `node_modules` and missing from `package.json` on run-519a9d8a.
+#: into `node_modules` and missing from `package.json` on one run.
 TEST_ONLY_INSTALLS = [
     ["npm", "install", "-D", "@playwright/test"],
     ["npm", "i", "--save-dev", "jest"],
@@ -212,3 +217,14 @@ def test_the_manager_is_matched_on_the_basename_not_by_substring():
     """`if "npm" in words[0]` also matched any path containing those letters."""
     assert _a_package_this_command_would_add(["/usr/local/bin/npm", "install", "express"])
     assert _a_package_this_command_would_add(["./tools/npm-helper", "install", "express"]) == []
+
+
+def test_a_flag_s_directory_is_not_a_package() -> None:
+    """One run's `npm --prefix simple-to-do-list-app install` installs what the
+    manifest declares, and was refused as adding a package named after the
+    project's own directory."""
+    from app.tools.sandbox import _a_package_this_command_would_add
+
+    assert _a_package_this_command_would_add(["npm", "--prefix", "simple-to-do-list-app", "install"]) == []
+    assert _a_package_this_command_would_add(["npm", "--prefix", "the-app", "install", "express"]) == ["express"]
+    assert _a_package_this_command_would_add(["pip", "install", "--index-url", "https://example.test/simple", "requests"]) == ["requests"]

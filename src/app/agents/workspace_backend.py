@@ -6,7 +6,7 @@ container mode that placement is not a choice: only the workspace is mounted,
 so anything a command writes has to be inside it.
 
 The cost is that it is also inside everything an agent looks at. Measured on
-run-61c5a5b6: 42 tool results across ten stages carried `.agent-home`, every
+one run: 42 tool results across ten stages carried `.agent-home`, every
 `ls /` opened with it, and one `npm install` had left 26 cache blobs with
 sha512 filenames. `list_repository_files` was taught to skip it; `ls`, `glob`
 and `grep` come from the deep-agent filesystem backend and were not.
@@ -20,17 +20,23 @@ not mean a command cannot write to it.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
+import threading
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from deepagents.backends.filesystem import FilesystemBackend
+from app.analysis.document_manifest import not_rendered_yet
+from app.analysis.walk import directories_under, files_under
 
 #: Directory names hidden from an agent's view of the workspace. Sourced from
 #: the repository tools so the two listings cannot drift apart.
 from app.agents.workspace_paths import the_same_place
-from app.tools.repository import IGNORED_DIRECTORIES
+
+logger = logging.getLogger(__name__)
+from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE, is_harness_momentary
 
 
 
@@ -49,7 +55,7 @@ class _Suggesting:
     invented and nothing else, so it guesses again. Measured across the stored
     runs, the guesses are `/home/user/...`, `/workspace/...`, the project
     directory at the root, and the host path; and the file it wants almost
-    always exists. On run-3f8e387d - the run that died of gate exhaustion -
+    always exists. On one run - the run that died of gate exhaustion -
     72 reads failed and 56 of them (77%) named a file that was in the
     workspace under a different path.
 
@@ -63,7 +69,7 @@ class _Suggesting:
 
         A model that reads a directory is asking what is in it. Answering "that
         is a directory" is true and is not the answer - measured on
-        run-130deeef, where `specialist_backend_3` read
+        one run, where `specialist_backend_3` read
         `/simple-to-do-list-app/tests` four times and was told four times that
         a directory of that name existed there. Listing it costs one `iterdir`
         on a call that has already failed.
@@ -103,8 +109,8 @@ class _Suggesting:
 
         `_where_it_actually_is` searches by basename, which is the part an
         agent usually gets right - but a rename that changes the extension
-        changes the basename too, so it finds nothing. Measured on run
-        d6297b2f: `specialist_backend_0` moved `test/loadTasks.test.mjs` to
+        changes the basename too, so it finds nothing. Measured on one
+        run: `specialist_backend_0` moved `test/loadTasks.test.mjs` to
         `test/loadTasks.test.js`, then spent a read and an edit on the old
         name, each answered only "not found". That stage ran 47 model calls
         against a next-longest of 10.
@@ -130,14 +136,18 @@ class _Suggesting:
         if not root or not name:
             return ""
         # A name with no extension is a directory name, which is what `ls`
-        # misses: run-2eb3aa24 asked for `/simple-to-do-list-app` four times.
+        # misses: one run asked for `/simple-to-do-list-app` four times.
         want_file = "." in name
         try:
             found = [
                 str(candidate.relative_to(root))
-                for candidate in Path(root).rglob(name)
+                for candidate in (
+                    files_under(root, NOT_SEARCHED_FOR_A_STAGE, name)
+                    if want_file
+                    else directories_under(root, NOT_SEARCHED_FOR_A_STAGE, name)
+                )
                 if (candidate.is_file() if want_file else candidate.is_dir())
-                and not any(part in IGNORED_DIRECTORIES for part in candidate.parts)
+                and not any(part in NOT_SEARCHED_FOR_A_STAGE for part in candidate.parts)
             ]
         except Exception:  # noqa: BLE001 - a hint must never fail the call
             return ""
@@ -150,6 +160,83 @@ class _Suggesting:
             f" There is {kind} of that name at {shown}{more}. "
             "Every path is relative to the workspace root, which is '/'."
         )
+
+    def _the_one_path_it_meant(self, wanted: str) -> str:
+        """The workspace path this request unambiguously names, or "".
+
+        `_where_it_actually_is` already finds the file and says where it is. It
+        then returns an error, and the stage spends a model call re-asking with
+        the path it was just handed.
+
+        Measured on the run of 2026-09-21. `technical_lead` asked for
+        `/home/user/workspace/task-manager/package.json`,
+        `/home/user/workspace/task-manager/style.css`,
+        `/home/user/task-manager/style.css` and
+        `/home/user/task-manager/package.json` - four reads, four errors, each
+        one naming the real path in its own message. The container path prefix
+        is invented; everything after it was right.
+
+        Resolved only when the answer cannot be wrong:
+
+        - exactly one file in the workspace carries that basename, so there is
+          nothing to choose between, and
+        - the path asked for *ends with* that workspace path, so the request
+          agrees with the answer about the directory as well as the name.
+
+        `/home/user/workspace/task-manager/app.js` ends with
+        `task-manager/app.js`, so the only thing wrong with it is a prefix the
+        agent imagined. A bare `/app.js` that happens to be unique does not end
+        with `task-manager/app.js` and is left alone: the agent may have meant a
+        file at the root that does not exist, and silently reading a different
+        one is the wrong kind of helpful.
+
+        The candidate comes from an `rglob` rooted at the workspace, so the file
+        resolved is inside it by construction - this widens what a path may be
+        *spelled* as, never what it may reach.
+        """
+        root = getattr(self, "cwd", None)
+        name = _basename(wanted)
+        if not root or not name or "." not in name:
+            return ""
+        try:
+            found = [
+                str(candidate.relative_to(root))
+                for candidate in files_under(root, NOT_SEARCHED_FOR_A_STAGE, name)
+                if candidate.is_file()
+                and not any(part in NOT_SEARCHED_FOR_A_STAGE for part in candidate.parts)
+            ]
+        except Exception:  # noqa: BLE001 - a convenience must never fail the call
+            return ""
+        if len(found) != 1:
+            return ""
+        here = found[0].replace("\\", "/")
+        asked = str(wanted).replace("\\", "/").lstrip("/")
+        if asked == here:
+            return ""
+        if asked.endswith(here) or self._only_the_project_directory_left_off(asked, here):
+            return "/" + here
+        return ""
+
+    @staticmethod
+    def _only_the_project_directory_left_off(asked: str, here: str) -> bool:
+        """Whether `asked` is `here` written relative to its top-level folder.
+
+        The mirror of an invented prefix: a path written from inside the
+        project, not from the workspace root. One run's `defect_fix_2_3` asked
+        for `tests/e2e/todo-app.spec.ts`, was told "There is a file of that name
+        at /todo-list/tests/e2e/todo-app.spec.ts", and spent a call asking for
+        exactly that.
+
+        Held to the same bar as the prefix case. The one missing piece must be
+        a single top-level directory, and the request must name at least one
+        directory of its own, so every directory it names agrees with the
+        answer. A bare `app.js` is still left alone, for the reason the caller
+        gives.
+        """
+        if "/" not in asked:
+            return False
+        top, _, rest = here.partition("/")
+        return bool(top) and rest == asked
 
 
 #: How many identical read failures to let pass before saying so. One repeat is
@@ -169,9 +256,9 @@ REPEATS_BEFORE_SAYING_SO = 2
 #: After this many, stop returning the bytes and say where they already are.
 #:
 #: The note above is the right first response and it is not always the last
-#: one. Measured on run-84e05d4b's `specialist_backend_1`: eleven reads of
+#: one. Measured on one run's `specialist_backend_1`: eleven reads of
 #: `/docs/architecture_review.md`, byte-identical, in one stage, each answered
-#: with a note saying so and each followed by another. run-44e9fc83 did
+#: with a note saying so and each followed by another. One run did
 #: seventeen of `app.js`.
 #:
 #: This codebase's escalation everywhere else is hint, note, refuse, and the
@@ -206,11 +293,17 @@ REPEATS_BEFORE_SAYING_SO = 2
 #: lines, so a stage whose context was compacted away still has an anchor.
 READS_BEFORE_WITHHOLDING = 3
 
+#: Earlier reads of the same window of an unchanged file before the next is
+#: answered with where those lines already are, not the lines (Initiative AQ):
+#: one, so the second asking is the first one spared. Measured on a medium run,
+#: 431 identical `read_file` calls came after every other guard.
+WINDOWED_REPEATS_BEFORE_POINTING = 1
+
 #: Repeated reads across ALL files in a stage before the notice stops being
 #: about the file and starts being about the stage.
 #:
 #: Both rungs above are per file, and a stage that cycles three files reaches
-#: neither quickly. Measured live on run-cac07d52: `specialist_ui_ux_0`,
+#: neither quickly. Measured live on one run: `specialist_ui_ux_0`,
 #: restarted on a fresh conversation, made 55 reads of which 50 were files the
 #: previous attempt had already read, cycling `index.html`, `app.js` and
 #: `styles.css` about a dozen times. Both per-file rungs fired - 24 notes and
@@ -229,10 +322,69 @@ READS_BEFORE_WITHHOLDING = 3
 #: is the one thing none of the others say.
 REPEATED_READS_BEFORE_NAMING_THE_EXIT = 6
 
+#: Repeated reads across all files before a redundant read stops succeeding.
+#:
+#: Every rung below this one is a notice attached to a successful result, and
+#: measured across the stored transcripts, notices do not stop the reading:
+#:
+#:     after a note      27.3% read the same file again,   31% did any work
+#:     after a withhold  30.0% read the same file again,   61.5% read a
+#:                       *different* file, and 8% did any work
+#:     after the exit    93.0% read again
+#:     notice above
+#:
+#: The exit notice fired 515 times across 29 stages, and
+#: `one run`'s `specialist_ui_ux_0` received it 115 times. Withholding
+#: the bytes reduces what a redundant read costs and moves the stage to a
+#: different file rather than to work; naming the exit is ignored outright.
+#:
+#: What does move this model is an error. The `node -e` refusal was answered
+#: by writing the code to a file 49% of the time and retried in the same shape
+#: 9% of the time - the opposite profile - because a refusal arrives in the
+#: channel the model reads as "that did not work", and a withheld result
+#: arrives as a success.
+#:
+#: So past this, a read that would return nothing the stage has not already
+#: been given fails instead of succeeding quietly. Twice the exit-notice
+#: threshold, and derived from it rather than written again, so the two cannot
+#: drift apart: by the time this fires the stage has been handed the exit at
+#: least six times and gone on reading.
+#:
+#: Narrow, in the way that makes it safe: it applies only to a read that is
+#: provably redundant - the same bytes, or a range already served, of a file
+#: that has not changed since. A read of anything new always succeeds, so a
+#: stage that has genuinely lost its context has a way back that a loop does
+#: not take.
+REPEATED_READS_BEFORE_REFUSING = REPEATED_READS_BEFORE_NAMING_THE_EXIT * 2
+
+#: The opening words of that refusal, named here so the middleware that counts
+#: them cannot drift from the backend that writes them. Counting a message by
+#: a phrase written somewhere else is how a marker goes stale silently.
+READ_REFUSED_MARKER = "Refusing to read"
+#: The words a read opens with when its content is held back as a repeat. It
+#: is a refusal in all but name, and counted as one (`settled_answer._refused_reads`).
+READ_WITHHELD_MARKER = "has given you these same bytes"
+
 
 #: Lines of the withheld file shown at each end, so the message is an anchor
 #: rather than only a refusal.
 ANCHOR_LINES = 3
+
+
+def _times(count: int) -> str:
+    """"21st", not "21th".
+
+    Both notices that count a repeat built the ordinal by appending "th", so a
+    stage on its 21st, 22nd or 23rd read was told "21th", "22th", "23th" - as
+    were the first three of anything. Seen through one run, whose
+    `specialist_ui_ux_0` reached "22th". These strings are read by a language
+    model, and a sentence that cannot count is a poor argument that it has read
+    something enough times.
+    """
+    if count % 100 in (11, 12, 13):
+        return f"{count}th"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(count % 10, "th")
+    return f"{count}{suffix}"
 
 
 def _an_anchor_to_what_was_withheld(text: str) -> str:
@@ -272,10 +424,16 @@ def _an_anchor_to_what_was_withheld(text: str) -> str:
     )
 
 
+#: What a stage's record of its reads is kept under in `stage_memory`: the lines
+#: and the bytes its tool results gave it, and how often a read gave nothing new.
+#: A compaction takes those results out of the conversation, so it forgets them.
+WHAT_THE_CONVERSATION_WAS_GIVEN = ("read_spans", "read_digests", "repeated_reads")
+
+
 class _NoticingRepeats:
     """Say when a file comes back byte-identical to the last time it was read.
 
-    Measured on run-44e9fc83's `specialist_backend_1`: 39 tool calls, 17 of
+    Measured on one run's `specialist_backend_1`: 39 tool calls, 17 of
     them the same `read_file` of `app.js` at the same range, in runs of six,
     five and four, two to three seconds apart, with no write between them.
     That is 16 model turns spent re-reading 400 lines the model already had.
@@ -288,7 +446,7 @@ class _NoticingRepeats:
     The content is always returned. A note that withheld it would strand a
     model that had genuinely lost the text - and while compaction is not
     firing on these stages today (it triggers at 70,200 tokens and the largest
-    stage of run-1d1b6c9c carried about 22,600), a fix whose failure mode is
+    stage of one run carried about 22,600), a fix whose failure mode is
     "the agent cannot get its file back" is not worth the tokens it saves.
 
     The note is delivered in the result the model just asked for, which is
@@ -309,11 +467,13 @@ class _NoticingRepeats:
             return ""
         return f"{stat.st_size}:{stat.st_mtime_ns}"
 
-    def _note_if_already_seen(self, path: str, digest: str, first: int, last: int) -> str:
+    def _note_if_already_seen(
+        self, path: str, digest: str, first: int, last: int, text: str = ""
+    ) -> str:
         """Whether this stage has already been served these exact lines.
 
         Finding 59 caught a byte-identical call. This catches the same waste
-        wearing different arguments. Measured on run-6412366b's
+        wearing different arguments. Measured on one run's
         `specialist_ui_ux_0`, reading a 984-line `index.html` that had not
         changed since it was written:
 
@@ -344,21 +504,132 @@ class _NoticingRepeats:
             own = {}
             self._read_spans = own  # noqa: SLF001 - own attribute
         seen = store("read_spans", own)
-        previous_digest, covered = seen.get(path, (None, set()))
+        # Three elements since the withholding rung was added; entries written
+        # by the two-element version still unpack.
+        entry = seen.get(path, (None, set(), 0))
+        previous_digest, covered, nothing_new = (*entry, 0)[:3]
         if previous_digest != digest:
-            seen[path] = (digest, set(range(first, last + 1)))
+            seen[path] = (digest, set(range(first, last + 1)), 0)
             return ""
         wanted = set(range(first, last + 1))
         fresh = wanted - covered
         covered |= wanted
-        # Bounded: a file large enough for this to matter is already paged.
-        seen[path] = (digest, covered if len(covered) < 100_000 else set())
         if fresh:
+            # Bounded: a file large enough for this to matter is already paged.
+            seen[path] = (digest, covered if len(covered) < 100_000 else set(), 0)
             return ""
+        nothing_new += 1
+        seen[path] = (digest, covered if len(covered) < 100_000 else set(), nothing_new)
+        self._count_a_repeated_read()
+        if nothing_new >= READS_BEFORE_WITHHOLDING:
+            # The same rung the byte-identical ladder reaches, on the same
+            # count, because they are the same waste. Measured on one run's
+            # `specialist_ui_ux_0`, reading a 391-line `app.js` it had just
+            # written:
+            #
+            #   reads  2-11  whole file      withheld from the 4th   1,111 bytes
+            #   read     12  limit=120       3,483 bytes returned in full
+            #   reads 12-14  limit=120       withheld on the 3rd
+            #   read     15  limit=100       2,897 bytes returned in full
+            #   reads 15-17  limit=100       withheld on the 3rd
+            #
+            # Narrowing the window reset the digest counter and the file came
+            # back whole, twice, after ten withholdings - about 19,000
+            # characters of lines the stage had already been given. Those six
+            # calls are what carried it to the edge of its model-call budget.
+            #
+            # This rung knows they were not new: it is the check that printed
+            # "you have already read lines 1-120" on reads 12 and 13 and
+            # returned the bytes anyway.
+            self._withheld = True  # noqa: SLF001 - own attribute, read by `read`
+            return (
+                f"[Lines {first}-{last} are ones this stage has already been "
+                f"given, and the file has not changed since. This is the "
+                f"{_times(nothing_new)} read of it that returned nothing new, so the "
+                "content is not repeated here - scroll back to any earlier "
+                "result. A narrower or wider window of the same lines is still "
+                "the same lines; if there is a part you have not seen, ask for "
+                "a range outside what you have read. Otherwise use what you "
+                "have and move on.]"
+                + _an_anchor_to_what_was_withheld(text)
+                + self._the_way_out()
+            )
         return (
             f"\n\n[You have already read lines {first}-{last} of this file in "
             "this stage, and it has not changed since. This returned nothing "
             "you did not already have.]"
+            + self._the_way_out()
+        )
+
+    def _not_written_yet(self, wanted: str) -> str:
+        """Say that nothing is there yet, when nothing of that name is anywhere.
+
+        The two hints above say where a path really is, or what the project is
+        really called. Neither fires for the commonest case of all: the name is
+        right and nothing has been written there yet. Measured on one run: its
+        `scrum_master` listed `/`, got `.gitignore` and `docs/`, and listed
+        `/task-manager` - this run's own project directory, pinned and correct,
+        and empty because no stage had written a file - to a bare
+        "path_not_found". Two more stages did the same.
+        """
+        root = getattr(self, "cwd", None)
+        segments = [part for part in str(wanted).strip("/").split("/") if part]
+        if not root or not segments or "." in segments[-1]:
+            return ""
+        try:
+            from app.tools.repository import pinned_project_directory
+
+            pinned = pinned_project_directory(Path(root))
+        except Exception:  # noqa: BLE001 - a hint must never fail the call
+            pinned = None
+        # The deepest part of the path that is there. Asked for
+        # `/task-manager/e2e`, one run was told that `/task-manager` - which
+        # held nine files - "has no file written into it yet": the project was
+        # judged by its name alone, not by whether it existed.
+        present = 0
+        for depth in range(1, len(segments)):
+            if (Path(root) / Path(*segments[:depth])).is_dir():
+                present = depth
+            else:
+                break
+        if present:
+            there = "/" + "/".join(segments[:present])
+            return (
+                f" '{there}' exists, but nothing has been written under "
+                f"'{'/'.join(segments[present:])}' in it yet. A directory is created by "
+                "the first file written under it."
+            )
+        if pinned and segments[0] == pinned:
+            return (
+                f" '/{pinned}' is this run's project directory, and no stage has "
+                "written a file into it yet, so it does not exist. It is created by "
+                "the first file written under it."
+            )
+        return (
+            f" Nothing named '{segments[-1]}' exists anywhere in the workspace yet. "
+            "A directory is created by the first file written under it."
+        )
+
+    def _no_file_of_that_name(self, wanted: str) -> str:
+        """Say that no file of this name exists anywhere, when none does.
+
+        The read counterpart of `_not_written_yet`. One run's
+        `specialist_documentation_2`, sent to write the README, read
+        `README.md` first, got a bare "not found", and spent its next call on
+        `ls` of the project to learn the same thing.
+        """
+        root = getattr(self, "cwd", None)
+        name = Path(str(wanted).strip()).name
+        if not root or not name:
+            return ""
+        try:
+            if next(iter(files_under(Path(root), NOT_SEARCHED_FOR_A_STAGE, name)), None) is not None:
+                return ""
+        except Exception:  # noqa: BLE001 - a hint must never fail the call
+            return ""
+        return (
+            f" No file named '{name}' exists anywhere in the workspace yet. If it "
+            "is yours to write, writing it creates it."
         )
 
     def _the_project_is_called(self, wanted: str) -> str:
@@ -367,12 +638,9 @@ class _NoticingRepeats:
         This run has already committed to one and recorded it; the guess is
         the only part that is missing. Measured across six runs, 53 failed
         listings of a directory that never existed while the marker sat on
-        disk the whole time:
+        disk the whole time - 16, 11, 8, 8, 5 and 5 per run.
 
-            ae4b717e 16   37476645 11   304add54 8
-            db3a4a0b  8   2eb3aa24  5   d6369866 5
-
-        run-ae4b717e's ui specialist asked for `task-manager-ui` eleven times
+        One run's ui specialist asked for `task-manager-ui` eleven times
         and `task-manager` - the real one - four. The digest already lists the
         files, and it guessed anyway; what changes this model's behaviour is
         being told at the point of failure, which is where the "there is a file
@@ -411,10 +679,10 @@ class _NoticingRepeats:
         ask for a file that is not there as often as it likes and be told
         "not found" each time, in silence.
 
-        Measured on run 0afef410's `specialist_backend_2`, asked to create
+        Measured on one run's `specialist_backend_2`, asked to create
         `app.js`: two identical `read_file` calls for `/task-manager/app.js`,
         two identical `Error: File '/task-manager/app.js' not found`, no notice
-        of any kind. `edit_artifact` has had this note since run-9506d3ab -
+        of any kind. `edit_artifact` has had this note since one run -
         "failed the same way the N previous times you ran it in this stage" -
         and a read deserves the same.
 
@@ -444,7 +712,21 @@ class _NoticingRepeats:
             "on without it."
         )
 
-    def _note_if_repeated(self, file_path: str, text: str) -> str:
+    def _the_part_it_covered(self, result: Any, content: str) -> str:
+        """"lines A-B of N" when a read returned less than the file, else ""."""
+        first = getattr(result, "start_line", None)
+        last = getattr(result, "end_line", None)
+        try:
+            total = self._lines_in_the_file(result, content)
+        except Exception:  # noqa: BLE001 - unknown size: claim nothing about it
+            return ""
+        if not first or not last or not total:
+            return ""
+        if first <= 1 and last >= total:
+            return ""
+        return f"lines {first}-{last} of {total}"
+
+    def _note_if_repeated(self, file_path: str, text: str, window: str = "") -> str:
         """Whether this stage has already been handed these exact bytes.
 
         Keyed on what came back and which file it came from, not on the call
@@ -453,7 +735,7 @@ class _NoticingRepeats:
         bytes look unrelated, and the model does not repeat itself that
         tidily.
 
-        Measured on run-f0630b10's `specialist_ui_ux_0`, 54 reads of one
+        Measured on one run's `specialist_ui_ux_0`, 54 reads of one
         `index.html`:
 
         - It alternated between `task-manager/index.html` (36 reads) and
@@ -508,11 +790,24 @@ class _NoticingRepeats:
         counts[digest] = count + 1
         seen[where] = (identity, counts)
         if count >= REPEATS_BEFORE_SAYING_SO:
-            self._repeated_reads = getattr(self, "_repeated_reads", 0) + 1
+            self._count_a_repeated_read()
+        if window and count >= WINDOWED_REPEATS_BEFORE_POINTING:
+            # A window of an unchanged file, asked for again: the lines are in
+            # the conversation already, so the bytes are not sent a second time
+            # (Initiative AQ step 3). A whole file waits for the rungs below.
+            self._withheld = True  # noqa: SLF001 - own attribute, read by `read`
+            return (
+                f"[Unchanged: this file {READ_WITHHELD_MARKER} before in this stage - {window} - "
+                "and has not changed since, so those lines are in your context above. If you "
+                "need lines you have not seen, ask for a range outside them. Otherwise use "
+                "what you have and move on.]"
+                + _an_anchor_to_what_was_withheld(text)
+                + self._the_way_out()
+            )
         if count >= READS_BEFORE_WITHHOLDING:
             self._withheld = True  # noqa: SLF001 - own attribute, read by `read`
             return (
-                f"[This file has given you these same bytes {count} times in "
+                f"[This file {READ_WITHHELD_MARKER} {count} times in "
                 "this stage and has not changed once. The content is not "
                 "repeated here, because you already have it - scroll back to "
                 "any of those results. If you need a part of it you have not "
@@ -522,14 +817,220 @@ class _NoticingRepeats:
                 + self._the_way_out()
             )
         if count >= REPEATS_BEFORE_SAYING_SO:
+            # "This is the whole file" only when it is. `window` names the
+            # lines this read covered when that is less than the file: one
+            # run's `architecture_review` read lines 1-120 of a 423-line
+            # specification a fifth time and was told a different range would
+            # not help because this was the whole file.
+            rest = (
+                f"These are {window}; if you need a part you have not seen, ask "
+                "for a range outside the lines you have read. Otherwise use "
+                "what you have and move on.]"
+                if window
+                else "Asking for a different range of it will not help - this "
+                "is the whole file. Use what you have and move on.]"
+            )
             return (
                 f"\n\n[These are the same bytes this file gave you {count} "
                 "previous times in this stage, and it has not changed since. "
-                "Asking for a different range of it will not help - this is "
-                "the whole file. Use what you have and move on.]"
+                + rest
                 + self._the_way_out()
             )
         return ""
+
+    def _the_repeated_read_tally(self) -> dict:
+        """This stage's count of reads that returned nothing new.
+
+        In `stage_memory`, not on `self`, because the two rungs above the
+        withholding one claim to measure the stage - "the {n}th time this stage
+        has asked for content it already has" - and a plain attribute measures
+        this backend object instead. The digest maps beside this already go
+        through `store` for exactly that reason.
+
+        Measured on one run: 110 reads had their content withheld and the
+        two rungs above it fired zero times. Every one of those 110 calls
+        `_the_way_out`, which returns text once the tally reaches
+        `REPEATED_READS_BEFORE_NAMING_THE_EXIT` (6). `specialist_testing_2`
+        alone read one `package.json` fifteen times and was withheld thirteen
+        of them. A tally that survived those thirteen would have passed 6 and
+        then 12; it never passed 5, so it was being reset under them and both
+        upper rungs were unreachable in practice.
+
+        `store` returns the fallback dict when there is no stage to key on, so
+        outside a graph run the behaviour is what it was.
+        """
+        from app.agents.stage_memory import store
+
+        own = getattr(self, "_repeated_read_tally", None)
+        if own is None:
+            own = {}
+            self._repeated_read_tally = own  # noqa: SLF001 - own attribute
+        return store("repeated_reads", own)
+
+    def _count_a_repeated_read(self) -> int:
+        """Add one to this stage's tally and return the new total."""
+        tally = self._the_repeated_read_tally()
+        tally["count"] = tally.get("count", 0) + 1
+        # Diagnostic, not a guard. Two attempts at making this tally per stage -
+        # 6bdbba1 and c6125b1 - both shipped and changed nothing: one run
+        # still reported one interleaved sequence, 12 to 17, across three
+        # concurrent specialists while the sequential `test_round_0` after them
+        # restarted at 12. The remaining question is what key the count is
+        # actually landing under, and whether two workers share a dict or a key.
+        # Inference has been wrong twice here, so this records the answer instead.
+        if logger.isEnabledFor(logging.INFO):
+            from app.agents.stage_memory import current_stage_key
+
+            logger.info(
+                "repeated-read tally %d under key %r in backend %s",
+                tally["count"], current_stage_key(), hex(id(self)),
+            )
+        return tally["count"]
+
+    def _repeated_reads_so_far(self) -> int:
+        return self._the_repeated_read_tally().get("count", 0)
+
+    #: How many ranges one sentence names. A file read in a dozen scattered
+    #: slices is described by the first few and a count.
+    MOST_RANGES_NAMED = 4
+
+    def _as_ranges(self, numbers: set[int]) -> list[tuple[int, int]]:
+        """Consecutive line numbers collapsed into (first, last) pairs."""
+        ordered = sorted(n for n in numbers if isinstance(n, int) and n > 0)
+        spans: list[list[int]] = []
+        for number in ordered:
+            if spans and number == spans[-1][1] + 1:
+                spans[-1][1] = number
+            else:
+                spans.append([number, number])
+        return [(first, last) for first, last in spans]
+
+    def _which_lines_are_left(self, path: str, total: int) -> str:
+        """The lines this stage has and has not been given, or "".
+
+        The refusal says "a range you have NOT read still works" and named
+        neither the ranges already served nor the length of the file, so there
+        was no way to choose one except by guessing - and a stage that guesses
+        asks for the same range again.
+
+        Measured on one run, whose `specialist_documentation_5` sent
+        `offset=50 limit=50` against `task-manager/app.js` 28 times and was
+        refused every time after the twelfth. The harness knew both halves: the
+        served line numbers are in `read_spans` in stage memory, and the length
+        is the file in front of it.
+
+        Says nothing when it cannot work out either, because a sentence naming
+        no range is worse than the general advice it would replace.
+        """
+        try:
+            from app.agents.stage_memory import store
+
+            own = getattr(self, "_read_spans", None) or {}
+            seen = store("read_spans", own)
+            entry = seen.get(path)
+            if not entry:
+                return ""
+            covered = (*entry, 0)[1]
+            if not isinstance(covered, set) or not covered:
+                return ""
+            read = self._as_ranges(covered)
+            if not read:
+                return ""
+            unread = self._as_ranges(set(range(1, total + 1)) - covered) if total else []
+        except Exception:  # noqa: BLE001 - a hint must never change a refusal
+            return ""
+
+        def describe(spans: list[tuple[int, int]]) -> str:
+            shown = spans[: self.MOST_RANGES_NAMED]
+            text = ", ".join(
+                f"{first}-{last}" if first != last else str(first) for first, last in shown
+            )
+            if len(spans) > len(shown):
+                text += f" and {len(spans) - len(shown)} more"
+            return text
+
+        if not unread:
+            return (
+                f" You have been given lines {describe(read)}, which is the whole "
+                f"file ({total} lines). There is no range of it left to read."
+            )
+        return (
+            f" You have been given lines {describe(read)} of {total}. The lines you "
+            f"have NOT been given are {describe(unread)} - ask for those, or use "
+            "`grep`."
+        )
+
+    def _remember_the_version_read(self, file_path: str) -> None:
+        """Record the file this stage has now seen, for `edit_artifact`.
+
+        `seen_content.remember` is how an edit whose `find` no longer matches
+        can say the file changed after it was read, and only
+        `read_repository_file` and the write tools called it. `read_file`, the
+        read most stages use, did not, so a stage that read with it was always
+        told "Could not find that text" and a nearest match. One run's
+        `specialist_ui_ux_0` read `app.js` with `read_file`, a parallel stage
+        edited it twice, and the edit was answered with a JSDoc block from the
+        top of the file.
+
+        The whole file, not the slice returned: the check compares whole-file
+        digests, and a ranged read has seen the version the range came from.
+        """
+        try:
+            from app.tools.seen_content import remember
+
+            text = self._resolve_path(file_path).read_text(encoding="utf-8")
+            remember(str(file_path), text)
+        except Exception:  # noqa: BLE001 - bookkeeping must never fail a read
+            return
+
+    @staticmethod
+    def _lines_in_the_file(result: object, content: str) -> int:
+        """How long the file is, not how long the part of it just returned is.
+
+        Both refusal sites passed `len(content.splitlines())`, which is the
+        length of the requested window. For a ranged read those differ, and the
+        refusal then contradicted itself. Measured on one run's `test_round_0`,
+        refused `offset=241 limit=35` on a 271-line `index.html`:
+
+            You have been given lines 1-271, which is the whole file (31 lines).
+
+        The read result already carries the file's length as `total_lines`; the
+        window is only the fallback for a backend that does not report it.
+        """
+        total = getattr(result, "total_lines", None)
+        if isinstance(total, int) and total > 0:
+            return total
+        return len(content.splitlines())
+
+    def _refuse_a_read_that_returns_nothing_new(
+        self, file_path: str, total_lines: int = 0
+    ) -> str:
+        """Why this read failed, or "" while it should still succeed.
+
+        The last rung of the ladder, and the first one that is not a notice.
+        Reached only by a read that would return nothing this stage has not
+        already been given, and only after the stage has ignored the exit
+        notice for another six repeated reads - see
+        `REPEATED_READS_BEFORE_REFUSING` for the measurement that says notices
+        stop working long before this.
+        """
+        if self._repeated_reads_so_far() < REPEATED_READS_BEFORE_REFUSING:
+            return ""
+        return (
+            f"{READ_REFUSED_MARKER} '{file_path}' again: this returns nothing you "
+            f"have not already been given, and it is the "
+            f"{_times(self._repeated_reads_so_far())} time this stage has asked for "
+            f"content "
+            "it already has. The file has not changed since you last saw it, "
+            "so nothing here can tell you anything new.\n"
+            "A range you have NOT read still works, and so does `grep` for "
+            "something specific."
+            + self._which_lines_are_left(str(file_path), total_lines)
+            + " If you have what you need, return your structured response now. "
+            "If something is stopping you, return it in `blockers` and say what "
+            "you would need - a blocker is a complete answer and the workflow "
+            "acts on it."
+        )
 
     def _the_way_out(self) -> str:
         """Name the exit once a stage is circling over its whole file set.
@@ -541,11 +1042,15 @@ class _NoticingRepeats:
         run this was measured on and why it adds information rather than
         taking more away.
         """
-        if getattr(self, "_repeated_reads", 0) < REPEATED_READS_BEFORE_NAMING_THE_EXIT:
+        if self._repeated_reads_so_far() < REPEATED_READS_BEFORE_NAMING_THE_EXIT:
             return ""
         return (
+            # Only what is true. It said "and written nothing between them", but
+            # the tally counts unchanged content and is never reset by a write:
+            # one run's `defect_fix_1_0` had written three files between the
+            # reads it was told it had written nothing between.
             "\n\n[You have now re-read files this stage had already been given "
-            f"{self._repeated_reads} times, and written nothing between them. "
+            f"{self._repeated_reads_so_far()} times, unchanged each time. "
             "Reading again cannot tell you anything new: nothing has changed "
             "these files since you last saw them. There are two ways out and "
             "both end this stage. If you have what you need, return your "
@@ -568,10 +1073,51 @@ def _path_of(entry: Any) -> str:
     return str(getattr(entry, "path", entry) or "")
 
 
-def _is_hidden(entry: Any) -> bool:
-    """Whether an entry lies in a directory agents are not shown."""
-    parts = [part for part in _path_of(entry).replace("\\", "/").split("/") if part]
-    return any(part in IGNORED_DIRECTORIES for part in parts)
+def _is_hidden(entry: Any, under: str | None = "") -> bool:
+    """Whether an entry lies in a directory agents are not shown.
+
+    Only the part of its path below `under`, the directory the agent asked
+    about, counts. An agent that names `node_modules` itself has a reason, as
+    one that reads a file there does. One run's `test_round_1` listed its
+    project's `node_modules` to see whether the install had happened, was told
+    "No files found" because every entry was inside it, and installed again.
+    """
+    path = _path_of(entry).replace("\\", "/").strip("/")
+    base = (under or "").replace("\\", "/").strip("/")
+    if base and (path == base or path.startswith(base + "/")):
+        path = path[len(base):]
+    parts = [part for part in path.split("/") if part]
+    # And the harness's momentary files, which exist only while it checks or
+    # writes something. See `repository.is_harness_momentary`.
+    return any(part in IGNORED_DIRECTORIES for part in parts) or bool(
+        parts and is_harness_momentary(parts[-1])
+    )
+
+
+#: The note the read in progress on this thread held back, for
+#: `held_read_note`. A thread, not a context variable: the tool runs in a copy
+#: of the caller's context, so a context variable set inside the read would
+#: never be seen by the middleware that called it. Agents here run
+#: synchronously, one tool call per thread at a time.
+_HELD = threading.local()
+
+
+def held_read_note() -> str:
+    """Take the note the last read on this thread held back, or ''.
+
+    `read_file` numbers every line of the text the backend returns, starting at
+    the first line asked for. A note written into that text was numbered too,
+    and so pushed every real line two numbers down: measured on one run, a
+    re-read of `lib/tasks.js` showed `export function deleteTask` as line 105
+    when it was line 103, and the stage's `replace_lines` at the numbers it
+    was shown was refused as "not what you expected" - four times. Over 25
+    runs, 50 `replace_lines` calls were refused that way against 47 that
+    succeeded. `app.agents.workspace_paths` puts the note ahead of the numbered
+    text instead, where it still comes first.
+    """
+    note = getattr(_HELD, "note", "") or ""
+    _HELD.note = ""
+    return note
 
 
 class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
@@ -581,14 +1127,44 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
     untouched: an agent that names a path inside one of these directories has a
     reason, and a read that silently failed would be a worse surprise than a
     listing that is quiet about the cache.
+
+    `hold_notes`: hold a note about the read back for `held_read_note` instead
+    of writing it into the text. The agents' backend sets it, because its
+    caller numbers the text; read directly, the note stays in the text.
     """
 
+    def __init__(self, *args: Any, hold_notes: bool = False, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.hold_notes = hold_notes
+
     def read(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
-        result = super().read(file_path, *args, **kwargs)
+        _HELD.note = ""
+        try:
+            result = super().read(file_path, *args, **kwargs)
+        except ValueError as e:
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
+                from deepagents.backends.filesystem import ReadResult
+                return ReadResult(error=str(e))
+            raise
         error = getattr(result, "error", None)
         if error:
             if "not found" not in error:
                 return result
+            # Before explaining where the file is: read it. The explanation was
+            # already correct and already cost a model call to act on. See
+            # `_the_one_path_it_meant` for what makes this unambiguous.
+            instead = self._the_one_path_it_meant(file_path)
+            if instead:
+                try:
+                    corrected = super().read(instead, *args, **kwargs)
+                except ValueError as e:
+                    if "Path traversal" in str(e) or "outside root directory" in str(e):
+                        from deepagents.backends.filesystem import ReadResult
+                        corrected = ReadResult(error=str(e))
+                    else:
+                        raise
+                if not getattr(corrected, "error", None):
+                    return self.read(instead, *args, **kwargs)
             # What is in it, before where else it might be: a model that read
             # a directory asked what is in it, and "there is a directory of
             # that name at the path you gave" answers nothing.
@@ -596,6 +1172,8 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                 self._what_is_in_it(file_path)
                 or self._where_this_stage_moved_it(file_path)
                 or self._where_it_actually_is(file_path)
+                or not_rendered_yet(str(file_path))
+                or self._no_file_of_that_name(file_path)
             )
             # After the hint, not instead of it: where the file really is
             # answers the question, and this only adds that asking again will
@@ -610,9 +1188,17 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         content = data.get("content") if isinstance(data, dict) else None
         if not isinstance(content, str):
             return result
+        self._remember_the_version_read(file_path)
         self._withheld = False  # noqa: SLF001 - own attribute
-        note = self._note_if_repeated(file_path, content)
+        note = self._note_if_repeated(
+            file_path, content, self._the_part_it_covered(result, content)
+        )
         if self._withheld:
+            refusal = self._refuse_a_read_that_returns_nothing_new(
+                file_path, self._lines_in_the_file(result, content)
+            )
+            if refusal:
+                return replace(result, error=refusal)
             # The bytes are replaced, not prefixed. Repeating them is the whole
             # cost this is here to stop.
             return replace(result, file_data={**data, "content": note})
@@ -623,44 +1209,154 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
             last = getattr(result, "end_line", None)
             if isinstance(first, int) and isinstance(last, int) and last >= first:
                 note = self._note_if_already_seen(
-                    str(file_path), self._file_identity(file_path), first, last
+                    str(file_path), self._file_identity(file_path), first, last, content
                 )
+                if self._withheld:
+                    refusal = self._refuse_a_read_that_returns_nothing_new(
+                        file_path, self._lines_in_the_file(result, content)
+                    )
+                    if refusal:
+                        return replace(result, error=refusal)
+                    # Same as the byte-identical rung above: the bytes are
+                    # replaced, not prefixed.
+                    return replace(result, file_data={**data, "content": note})
         if not note:
             return result
         # Ahead of the content, not after it. A file of any size puts an
         # appended note thousands of characters into the payload, and
-        # run-3c0c31d2's `technical_lead` read one 3,847-character
+        # one run's `technical_lead` read one 3,847-character
         # `milestone_plan.md` seven times with the notice firing from the
         # second read onward. Being told at the end of what you are reading is
         # not being told: the notice exists to change the *next* call, so it
         # belongs where the model starts.
+        if self.hold_notes:
+            # Ahead of the numbered text, not inside it - see `held_read_note`.
+            _HELD.note = note.strip()
+            return result
         return replace(result, file_data={**data, "content": note.strip() + "\n\n" + content})
 
     def ls(self, path: str) -> Any:
         path = path.strip()
-        result = super().ls(path)
+        try:
+            result = super().ls(path)
+        except ValueError as e:
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
+                from deepagents.backends.filesystem import LsResult
+                return LsResult(error=str(e))
+            raise
         error = getattr(result, "error", None)
         if error and "path_not_found" in error:
-            hint = self._where_it_actually_is(path) or self._the_project_is_called(path)
+            hint = (
+                self._where_it_actually_is(path)
+                or self._the_project_is_called(path)
+                or self._not_written_yet(path)
+            )
             return replace(result, error=error + hint) if hint else result
+        if error and "not_a_directory" in error:
+            # The token stays: deepagents reads it as "this is a plain file".
+            return replace(
+                result,
+                error=error + f". '{path}' is a file, so it exists; read_file "
+                "reads it, and ls lists the directory that holds it.",
+            )
         entries = getattr(result, "entries", None)
         if not entries:
             return result
-        return replace(result, entries=[e for e in entries if not _is_hidden(e)])
+        return replace(result, entries=[e for e in entries if not _is_hidden(e, path)])
 
     def glob(self, pattern: str, path: str | None = None) -> Any:
-        result = super().glob(pattern, path)
+        try:
+            result = super().glob(pattern, path)
+        except ValueError as e:
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
+                from deepagents.backends.filesystem import GlobResult
+                return GlobResult(error=str(e))
+            raise
         matches = getattr(result, "matches", None)
         if not matches:
             return result
-        return replace(result, matches=[m for m in matches if not _is_hidden(m)])
+        return replace(result, matches=[m for m in matches if not _is_hidden(m, path)])
 
     def grep(self, *args: Any, **kwargs: Any) -> Any:
-        result = super().grep(*args, **kwargs)
+        try:
+            result = super().grep(*args, **kwargs)
+        except ValueError as e:
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
+                from deepagents.backends.filesystem import GrepResult
+                return GrepResult(error=str(e))
+            raise
         matches = getattr(result, "matches", None)
+        if not matches and not getattr(result, "error", None):
+            result = self._each_alternative(result, *args, **kwargs)
+            matches = getattr(result, "matches", None)
         if not matches:
             return result
-        return replace(result, matches=[m for m in matches if not _is_hidden(m)])
+        under = kwargs.get("path", args[1] if len(args) > 1 else None)
+        return replace(result, matches=[m for m in matches if not _is_hidden(m, under)])
+
+    def _each_alternative(self, result: Any, *args: Any, **kwargs: Any) -> Any:
+        """A literal miss on `a|b|c`, searched as `a`, `b` and `c` instead.
+
+        `grep` here is literal, and a pattern with `|` in it is almost always
+        an alternation the model meant as a regex. The miss came back with
+        "run a separate search per alternative", and the model sent the same
+        alternation again: one run's `test_round_0` sent
+        `editBtn|edit-btn|editing` and `taskList.addEventListener|deleteBtn|editBtn`
+        and their like a dozen times, each answered "No matches found".
+
+        Only after the literal search found nothing, so a pattern that really
+        contains `|` still matches itself first; and never for `||`, which is
+        code, not alternation.
+        """
+        pattern = kwargs.get("pattern", args[0] if args else None)
+        if not isinstance(pattern, str) or "|" not in pattern or "||" in pattern:
+            return result
+        alternatives = [part.strip() for part in pattern.split("|") if part.strip()]
+        if len(alternatives) < 2:
+            return result
+        rest = args[1:]
+        options = {key: value for key, value in kwargs.items() if key != "pattern"}
+        found: list[Any] = []
+        seen: set[str] = set()
+        for alternative in alternatives:
+            try:
+                each = super().grep(alternative, *rest, **options)
+            except Exception:  # noqa: BLE001 - the literal answer still stands
+                return result
+            for match in getattr(each, "matches", None) or []:
+                key = repr(sorted(match.items())) if isinstance(match, dict) else repr(match)
+                if key not in seen:
+                    seen.add(key)
+                    found.append(match)
+        return replace(result, matches=found) if found else result
 
 
-__all__ = ["WorkspaceBackend"]
+    def write(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return super().write(file_path, *args, **kwargs)
+        except ValueError as e:
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
+                from deepagents.backends.filesystem import WriteResult
+                return WriteResult(path=file_path, error=str(e))
+            raise
+
+    def edit(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return super().edit(file_path, *args, **kwargs)
+        except ValueError as e:
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
+                from deepagents.backends.filesystem import EditResult
+                return EditResult(path=file_path, error=str(e))
+            raise
+
+    def delete(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return super().delete(file_path, *args, **kwargs)
+        except ValueError as e:
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
+                from deepagents.backends.filesystem import DeleteResult
+                return DeleteResult(path=file_path, error=str(e))
+            raise
+
+
+__all__ = ["WorkspaceBackend", "held_read_note"]

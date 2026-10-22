@@ -3,7 +3,7 @@
 Nothing in a run could answer "what did the last sprint actually change?" or
 "what did this look like when it last worked?". Every stage re-read the whole
 workspace to find out - 257 `read_file` calls over 22 distinct files on
-run-61c5a5b6 - and a sprint that broke something had no state to fall back to.
+one run - and a sprint that broke something had no state to fall back to.
 
 The commit point is milestone *acceptance*, not sprint start. That is the only
 moment the workflow has an opinion that the work is sound: the tests ran, the
@@ -37,6 +37,7 @@ AUTHOR_EMAIL = "workflow@localhost"
 #: product.
 _IGNORED = """\
 .agent-home/
+.harness/
 node_modules/
 __pycache__/
 *.pyc
@@ -44,16 +45,61 @@ __pycache__/
 dist/
 build/
 .DS_Store
+.project-directory
+.project-stack
+.project-memory.json
+.work-order-files.json
+docs/stage_summaries/
+test-results/
+playwright-report/
+blob-report/
+coverage/
+.nyc_output/
+htmlcov/
+.turbo/
+.parcel-cache/
+.vite/
+.cache/
+"""
+"""The last three are the harness's own bookkeeping, not the product's.
+
+`.project-directory` pins which folder the project lives in, `.project-stack`
+records the toolchain the run chose, and `.project-memory.json` holds which
+stage last wrote each file. All three sit at the workspace root beside the
+work and all three were being committed into the sprint history: `git
+ls-files` on one run listed every one of them.
+
+Nothing reads them through git - they are read from disk - so ignoring them
+costs nothing and stops a delivered repository carrying three files that mean
+nothing to whoever receives it. `HARNESS_FILES` in `tools/repository.py`
+already hides the same three from every listing, digest and cross-file check;
+this is the fourth place they should never appear.
+
+The directories after them are a test runner's own output, and they are here
+for the same reason. Measured on one run's first sprint:
+`todo-app/test-results/.last-run.json` was committed alongside the product,
+and a reviewer reading that diff has to work out that it is not part of the
+work. The list is `sandbox._RUNNER_OUTPUT_DIRECTORIES`, which
+`repository._iter_repo_files` already prunes from every listing and digest -
+so, again, git was the one place nobody had looked. A test ties the two lists
+together.
 """
 
 _TIMEOUT_SECONDS = 30
 
 
-def _git(root: Path, *args: str) -> subprocess.CompletedProcess | None:
-    """Run one git command in `root`, or return None if git cannot run at all."""
+def _git(root: Path, *args: str, index: Path | None = None) -> subprocess.CompletedProcess | None:
+    """Run one git command in `root`, or return None if git cannot run at all.
+
+    `index` is an index file of its own, so a snapshot never disturbs the
+    index the sprint commits are made from.
+    """
     binary = shutil.which("git")
     if binary is None:
         return None
+    env = {"GIT_TERMINAL_PROMPT": "0", "HOME": str(root / ".agent-home"), "PATH": "/usr/bin:/bin:/usr/local/bin"}
+    if index is not None:
+        env["GIT_INDEX_FILE"] = str(index)
     try:
         return subprocess.run(
             [binary, *args],
@@ -62,7 +108,7 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess | None:
             text=True,
             timeout=_TIMEOUT_SECONDS,
             check=False,
-            env={"GIT_TERMINAL_PROMPT": "0", "HOME": str(root / ".agent-home"), "PATH": "/usr/bin:/bin:/usr/local/bin"},
+            env=env,
         )
     except (OSError, subprocess.SubprocessError):
         logger.debug("git %s failed in %s", args, root, exc_info=True)
@@ -152,6 +198,27 @@ def commit_milestone(
     return commit
 
 
+def commit_all(repo_root: str | Path, message: str) -> str | None:
+    """Commit everything in the workspace with `message`; the short hash, or None.
+
+    None when there was nothing to commit or git could not run - neither is a
+    reason to disturb the run.
+    """
+    root = Path(repo_root)
+    if not is_repository(root) and not initialise_repository(root):
+        return None
+    if _git(root, "add", "-A") is None:
+        return None
+    subject, _, body = message.strip().partition("\n")
+    if len(subject) > 72:
+        subject = subject[:69].rstrip() + "..."
+    result = _git(root, "commit", "--quiet", "-m", f"{subject}\n{body}".rstrip())
+    if result is None or result.returncode != 0:
+        return None
+    revision = _git(root, "rev-parse", "--short", "HEAD")
+    return revision.stdout.strip() if revision and revision.returncode == 0 else None
+
+
 def last_good_commit(repo_root: str | Path) -> str | None:
     """The most recent accepted-milestone commit, if there is one."""
     result = _git(Path(repo_root), "rev-parse", "--short", "HEAD")
@@ -165,15 +232,45 @@ def changed_since(repo_root: str | Path, reference: str) -> list[str]:
 
     What a later stage needs to know about an earlier one, without re-reading
     the workspace to work it out.
+
+    Includes files that are new since `reference` and not yet tracked.
+    `git diff --name-only` lists only tracked paths, so a file the sprint created
+    and never committed was invisible - and a file the sprint created is the
+    commonest thing a later stage needs to know about. Caught by a test of
+    `_the_files_this_milestone_changed`, which used this to find what a stage had
+    written and did not report: a new `index.html` was missing from the answer.
     """
-    result = _git(Path(repo_root), "diff", "--name-only", reference)
+    root = Path(repo_root)
+    result = _git(root, "diff", "--name-only", reference)
     if result is None or result.returncode != 0:
         return []
-    return [line for line in result.stdout.splitlines() if line.strip()]
+    found = [line for line in result.stdout.splitlines() if line.strip()]
+    new = _git(root, "ls-files", "--others", "--exclude-standard")
+    if new is not None and new.returncode == 0:
+        found.extend(line for line in new.stdout.splitlines() if line.strip())
+    # Deduplicated in order, because a path can be both staged and reported new
+    # by some git versions and a caller should not have to know that.
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for name in found:
+        if name not in seen:
+            seen.add(name)
+            ordered.append(name)
+    return ordered
+
+
+def accepted_sprints(repo_root: str | Path) -> list[int]:
+    """The sprint numbers this workspace has a `sprint-<n>` tag for, in order."""
+    result = _git(Path(repo_root), "tag", "--list", "sprint-*")
+    if result is None or result.returncode != 0:
+        return []
+    numbers = {int(name[len("sprint-"):]) for name in result.stdout.split() if name[len("sprint-"):].isdigit()}
+    return sorted(numbers)
 
 
 __all__ = [
     "AUTHOR_EMAIL",
+    "accepted_sprints",
     "AUTHOR_NAME",
     "changed_since",
     "commit_milestone",
@@ -181,3 +278,116 @@ __all__ = [
     "is_repository",
     "last_good_commit",
 ]
+
+
+# --- stage snapshots, for rewinding a run --------------------------------------
+
+#: Where a snapshot of the workspace is kept, one per stage started: outside
+#: every branch and tag, so the sprint history is untouched.
+SNAPSHOT_REFS = "refs/harness/stages/"
+
+#: What a snapshot leaves out: installed packages, caches and build or test
+#: output, which an install or a build makes again. The harness's own records
+#: (`.harness/`, `.project-*`, stage summaries) are kept, though git ignores
+#: them for commits: a rewound run must not keep the decisions or the locked
+#: suite of the stages it went back before.
+_NOT_SNAPSHOTTED = (
+    "node_modules", ".venv", "venv", ".agent-home", "__pycache__", "dist", "build", "target",
+    ".next", ".gradle", "test-results", "playwright-report", "blob-report", "coverage",
+    ".nyc_output", "htmlcov", ".turbo", ".parcel-cache", ".vite", ".cache", ".pytest_cache",
+)
+
+
+def _pathspec() -> list[str]:
+    return ["--", ".", *(f":(exclude,glob)**/{name}/**" for name in _NOT_SNAPSHOTTED)]
+
+
+def _identity() -> list[str]:
+    return ["-c", f"user.name={AUTHOR_NAME}", "-c", f"user.email={AUTHOR_EMAIL}"]
+
+
+def snapshot_workspace(repo_root: str | Path, label: str) -> str | None:
+    """Record the workspace as it is now under `SNAPSHOT_REFS`; the ref, or None.
+
+    Taken as each stage starts (`workflow._snapshotting`), so a run can be
+    rewound to that stage with its files as they were then. Never raises.
+    """
+    import re
+    import time
+
+    root = Path(repo_root)
+    if not is_repository(root):
+        return None
+    index = root / ".git" / "harness-snapshot-index"
+    added = _git(root, "add", "-A", "-f", *_pathspec(), index=index)
+    tree = _git(root, "write-tree", index=index)
+    if added is None or tree is None or tree.returncode != 0:
+        return None
+    head = _git(root, "rev-parse", "--verify", "-q", "HEAD")
+    parent = ["-p", head.stdout.strip()] if head is not None and head.returncode == 0 and head.stdout.strip() else []
+    commit = _git(root, *_identity(), "commit-tree", tree.stdout.strip(), *parent, "-m", f"Before {label}")
+    if commit is None or commit.returncode != 0:
+        return None
+    name = re.sub(r"[^A-Za-z0-9_.-]", "-", label)[:80] or "stage"
+    ref = f"{SNAPSHOT_REFS}{int(time.time() * 1000):013d}-{name}"
+    updated = _git(root, "update-ref", ref, commit.stdout.strip())
+    return ref if updated is not None and updated.returncode == 0 else None
+
+
+def workspace_snapshots(repo_root: str | Path) -> list[tuple[int, str, str]]:
+    """Every stage snapshot, oldest first: (milliseconds since the epoch, stage, commit)."""
+    root = Path(repo_root)
+    if not is_repository(root):
+        return []
+    listed = _git(root, "for-each-ref", "--format=%(refname) %(objectname)", SNAPSHOT_REFS)
+    found = []
+    for line in (listed.stdout.splitlines() if listed is not None and listed.returncode == 0 else []):
+        ref, _, commit = line.partition(" ")
+        stamp, _, stage = ref[len(SNAPSHOT_REFS):].partition("-")
+        if stamp.isdigit():
+            found.append((int(stamp), stage, commit))
+    return sorted(found)
+
+
+def restore_snapshot(repo_root: str | Path, commit: str) -> bool:
+    """Put the workspace back as `commit` recorded it; whether that was done.
+
+    The files it did not have are removed and the ones it had are written
+    back; installed packages and caches are left alone. The branch and the
+    sprint tags go back to where they were then, so the sprint history does
+    not claim work the rewound run has not done again. What the workspace
+    held before the rewind is itself snapshotted first.
+    """
+    root = Path(repo_root)
+    if not is_repository(root):
+        return False
+    snapshot_workspace(root, "before-rewind")
+    index = root / ".git" / "harness-snapshot-index"
+    now = _git(root, "ls-files", "-z", index=index)
+    then = _git(root, "ls-tree", "-r", "-z", "--name-only", commit)
+    if now is None or then is None or then.returncode != 0:
+        return False
+    kept = {path for path in then.stdout.split("\0") if path}
+    for path in (path for path in now.stdout.split("\0") if path and path not in kept):
+        try:
+            (root / path).unlink()
+        except OSError:
+            pass
+    restore = root / ".git" / "harness-restore-index"
+    if _git(root, "read-tree", commit, index=restore) is None:
+        return False
+    written = _git(root, "checkout-index", "-a", "-f", index=restore)
+    restore.unlink(missing_ok=True)
+    if written is None or written.returncode != 0:
+        return False
+    parent = _git(root, "rev-parse", "--verify", "-q", f"{commit}^")
+    if parent is not None and parent.returncode == 0 and parent.stdout.strip():
+        base = parent.stdout.strip()
+        _git(root, "update-ref", "HEAD", base)
+        _git(root, "read-tree", base)
+        tags = _git(root, "tag", "-l", "sprint-*")
+        for tag in (tags.stdout.split() if tags is not None else []):
+            ancestor = _git(root, "merge-base", "--is-ancestor", tag, base)
+            if ancestor is not None and ancestor.returncode != 0:
+                _git(root, "tag", "-d", tag)
+    return True

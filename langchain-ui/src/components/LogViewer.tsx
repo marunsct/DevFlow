@@ -14,8 +14,8 @@ const EVENT_COLOR: Record<string, string> = {
   approval_auto: 'text-success',
   complete: 'text-success',
   stage_change: 'text-primary',
-  agent_message: 'text-slate-400',
-  tool_call: 'text-primary/70',
+  agent_message: 'text-text-secondary',
+  tool_call: 'text-primary',
   tool_result: 'text-text-muted',
 };
 
@@ -48,7 +48,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
   if (logs.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-2 px-6 text-center">
-        <span className="grid place-items-center h-10 w-10 rounded-xl bg-white/[0.03]">
+        <span className="grid place-items-center h-10 w-10 rounded-xl bg-overlay">
           <Terminal className="h-4 w-4 text-text-muted" />
         </span>
         <p className="text-sm text-text-secondary">No events yet</p>
@@ -62,7 +62,11 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="absolute inset-0 overflow-y-auto bg-[#080c16] px-3 py-3 font-mono text-[11.5px] leading-relaxed"
+        role="log"
+        aria-live="polite"
+        aria-label="Run log"
+        tabIndex={0}
+        className="absolute inset-0 overflow-y-auto bg-code text-code-fg px-3 py-3 font-mono text-[11.5px] leading-relaxed"
       >
         {logs.map((log) => {
           const time = new Date(log.timestamp).toLocaleTimeString([], {
@@ -74,7 +78,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
           return (
             <div
               key={log.event_id ?? log.sequence}
-              className="flex gap-3 rounded px-2 py-1 hover:bg-white/[0.03]"
+              className="flex gap-3 rounded px-2 py-1 hover:bg-overlay"
             >
               <span className="flex-none text-text-muted tabular-nums">{time}</span>
               <span
@@ -83,7 +87,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
               >
                 {describeStage(log.stage).title}
               </span>
-              <span className="min-w-0 flex-1 break-words whitespace-pre-wrap text-slate-300">
+              <span className="min-w-0 flex-1 break-words whitespace-pre-wrap text-text-secondary">
                 {log.message}
               </span>
             </div>
@@ -99,7 +103,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
             if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
             setPinned(true);
           }}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-border/60 bg-surface-raised/95 px-3 py-1.5 text-[11px] font-medium text-text-secondary shadow-lg backdrop-blur hover:text-white transition-colors"
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-border/60 bg-surface-raised/95 px-3 py-1.5 text-xs font-medium text-text-secondary shadow-lg backdrop-blur hover:text-text-primary transition-colors"
         >
           <ArrowDown className="h-3 w-3" />
           Jump to latest

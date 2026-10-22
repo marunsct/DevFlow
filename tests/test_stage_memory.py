@@ -6,7 +6,7 @@ survive: with auto_approve each gated tool interrupts the graph, the workflow
 node runs again from the top, and `create_specialist_agent` builds a new agent
 - new middleware, new backend, empty counter.
 
-run-454adf22 had 73 byte-identical repeated tool calls, 32% of its model calls:
+One run had 73 byte-identical repeated tool calls, 32% of its model calls:
 
     middleware query-repeat notes:      0
     middleware no-op write refusals:    0

@@ -1,7 +1,7 @@
 """A listing or a search that answers identically is worth saying so.
 
 `read_file` has had this since finding 59, and finding 80's content key made it
-effective: on run-fa7b7286 only 1 of 50 reads returned content the stage
+effective: on one run only 1 of 50 reads returned content the stage
 already had. The tools beside it never had it and the waste moved there - 4 of
 10 `ls` calls and 4 of 12 `grep` calls returned byte-identical results in that
 run, with `ls {'path': 'task-manager'}` run five times inside one stage.
@@ -115,7 +115,7 @@ def test_every_role_agent_gets_it() -> None:
 def test_a_repeated_failure_is_told_it_failed_not_that_it_returned() -> None:
     """The repeated case is usually an error, and the wording has to match.
 
-    Measured on run-9506d3ab's `specialist_ui_ux_0`: three identical
+    Measured on one run's `specialist_ui_ux_0`: three identical
     `ls {'path': 'task-manager'}` within four seconds, every one
     `path_not_found`. The filesystem tools return their errors rather than
     raising, so the notice already saw them - it just described a failure as
@@ -166,7 +166,7 @@ def test_a_repeated_failing_edit_is_told_so() -> None:
     """The member of the set nobody had added.
 
     Command repeats are answered by the sandbox notices, listing and search
-    repeats by this middleware, and mutations by nothing. run-36eb1260 died on
+    repeats by this middleware, and mutations by nothing. One run died on
     it: `specialist_backend_2` sent the same failing `edit_artifact` over and
     over against a five-line file and was stopped as a loop at 1,137 events.
     """
@@ -210,7 +210,7 @@ def test_edit_failures_that_vary_the_find_still_count_together() -> None:
     retry. Keying the guard on the arguments saw ten retries as ten first
     attempts. The refusal is the event; the passage it sent is not.
 
-    Measured on run-519a9d8a: `test_round_1` sent a different failing `find`
+    Measured on one run: `test_round_1` sent a different failing `find`
     for `todo-app/test_app.test.js` ten times, and `specialist_testing_2` seven
     times for `tests/playwright.test.ts`.
     """
@@ -276,10 +276,10 @@ WRITTEN = '{"path": "docs/spec.md", "status": "written"}'
 def test_a_third_no_op_write_is_refused_not_noted() -> None:
     """A note the model has ignored twice does not need rewording.
 
-    run-5f4cdd55: `specialist_backend_1` wrote docs/technical_specification.md,
+    One run: `specialist_backend_1` wrote docs/technical_specification.md,
     was told "unchanged ... Do not write it again; continue with your
     response", and wrote it three more times until the run-level guard ended
-    the run at 728 events. run-2bcdc19b did the same with final_output.json.
+    the run at 728 events. One run did the same with final_output.json.
 
     Refusing a write that would change nothing costs nothing: by definition the
     file already holds exactly that content.
@@ -358,7 +358,7 @@ def test_a_repeated_repository_read_is_told_so() -> None:
     own - no repeat notice, no span tracking. A model that used it paid for
     every re-read in silence.
 
-    Measured on run-84e05d4b: `specialist_testing_6` read
+    Measured on one run: `specialist_testing_6` read
     `simple-to-do-list-app/app.test.js` through it five times with identical
     arguments, and `specialist_backend_1` read `docs/architecture_review.md`
     through it four times while reading the same file through `read_file`
@@ -390,7 +390,7 @@ def test_a_repository_read_that_changed_starts_again() -> None:
 
 def test_a_repeated_inspection_is_told_so() -> None:
     """`inspect_repository` takes no arguments, so a repeat is always a repeat.
-    run-0deeb8bf called it seven times in one stage."""
+    One run called it seven times in one stage."""
     middleware = build_repeated_query_middleware()
 
     for _ in range(2):
@@ -417,7 +417,7 @@ def test_read_file_is_still_left_to_the_backend() -> None:
 # lands on. The counter keyed on `(tool, path, reason)`, which is right for a
 # refusal about content and wrong for a refusal about a class of file.
 #
-# Measured on run-cac07d52's `test_round_0`: refused a write to
+# Measured on one run's `test_round_0`: refused a write to
 # `docs/technical_specification.md`, then to `docs/milestone_review.md`, then
 # to `docs/technical_specification.md` again - the same refusal in the same
 # words, three times in one stage - and no notice ever fired, because two were

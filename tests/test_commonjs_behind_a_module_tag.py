@@ -1,6 +1,6 @@
 """CommonJS behind `<script type="module">`, which no browser can run.
 
-Run d6297b2f shipped `index.html` carrying
+One run shipped `index.html` carrying
 
     <script type="module" src="app.js"></script>
 

@@ -1,6 +1,6 @@
 """Ending a stage that has answered and started going in a circle.
 
-Measured on run-5d83e946: `milestone_review` emitted its complete verdict as
+Measured on one run: `milestone_review` emitted its complete verdict as
 message content alongside a `read_file` call twenty-seven times, asking for the
 same twenty lines of the same file every time, until the recursion limit
 stopped it. See `app.agents.settled_answer` for the whole account.
@@ -38,7 +38,7 @@ def _after(state: dict, schema=Verdict):
     return build_settled_answer_middleware(schema, "milestone_review").after_model(state, None)
 
 
-# --- the run-5d83e946 shape -----------------------------------------------
+# --- the one run shape -----------------------------------------------
 
 
 def test_an_answered_stage_repeating_a_read_is_ended() -> None:
@@ -139,7 +139,7 @@ def test_a_turn_with_no_pending_call_and_no_answer_ends_on_its_own() -> None:
 
 
 def test_an_answer_returned_as_a_message_with_no_tool_call_ends_the_stage() -> None:
-    """run-519a9d8a's `specialist_testing_1` emitted its complete, valid
+    """One run's `specialist_testing_1` emitted its complete, valid
     response as a message and stopped calling tools - twenty times in a row.
 
     The answer was already there. This middleware returned None at a guard that
@@ -157,7 +157,7 @@ def test_an_answer_returned_as_a_message_with_no_tool_call_ends_the_stage() -> N
 
 def test_a_wrapped_answer_returned_as_a_message_ends_the_stage() -> None:
     """The same turn, with the answer under a `SpecialistOutput` key - the
-    shape run-519a9d8a actually emitted. `unwrapped` handles the key once the
+    shape one run actually emitted. `unwrapped` handles the key once the
     message reaches `_answer_in`.
     """
     wrapped = '{"SpecialistOutput": {"status": "changes_required", "reason": "t"}}'
@@ -232,7 +232,7 @@ def test_the_agent_graph_actually_stops() -> None:
 
     `can_jump_to` has to reach the compiled graph as a conditional edge, or the
     update is accepted and the loop carries on exactly as it did on
-    run-5d83e946. This drives a real agent with a model that reproduces that
+    one run. This drives a real agent with a model that reproduces that
     run's behaviour - verdict as content, plus the same call every time - and
     counts the turns.
     """
@@ -406,7 +406,7 @@ def test_a_repeat_after_the_write_is_still_a_circle() -> None:
     assert update is not None and update["jump_to"] == "end"
 
 
-# --- the run-0deeb8bf shape: a refused write is not a change ---------------
+# --- the one run shape: a refused write is not a change ---------------
 
 
 REFUSED = (
@@ -557,7 +557,7 @@ def test_a_failure_inside_the_check_leaves_the_loop_alone() -> None:
 def test_a_near_miss_is_told_which_fields_are_wrong() -> None:
     """The twenty-one minutes that prompted this.
 
-    run-5c7d7d8d's `principal_architect` spent 21 minutes and fifteen answers
+    One run's `principal_architect` spent 21 minutes and fifteen answers
     emitting `"product_scope": {"covers": [...], "defers": [...]}` against a
     schema declaring `product_scope: str`. Pydantic says exactly what is wrong.
     The model never saw it: an answer written into the conversation goes
@@ -595,7 +595,7 @@ def test_prose_with_no_json_gets_no_correction() -> None:
 
 
 def test_a_markdown_answer_is_corrected_on_its_shape() -> None:
-    """run-519a9d8a's `specialist_testing_1` wrote its answer as Markdown to
+    """One run's `specialist_testing_1` wrote its answer as Markdown to
     `docs/structured_response.md` twenty times. The write is refused for a
     reason that never mentions the answer's shape, so the model had nothing to
     correct and wrote the document again.
@@ -663,7 +663,7 @@ def test_the_correction_reaches_the_request_without_touching_history() -> None:
     assert "not a valid response" in str(captured["messages"][-1])
 
 
-def test_the_real_shape_from_run_5c7d7d8d_is_diagnosed() -> None:
+def test_the_real_shape_from_a_run_is_diagnosed() -> None:
     """The exact payload, against the exact schema."""
     from app.agents.principal_architect import TechnicalSpecificationOutput
     from app.agents.settled_answer import _why_it_was_not_accepted
@@ -686,7 +686,7 @@ def test_the_real_shape_from_run_5c7d7d8d_is_diagnosed() -> None:
 def test_the_failing_field_names_are_available_for_the_log() -> None:
     """Diagnosing what you cannot see is finding 47 again.
 
-    On run-44e9fc83 the log said `principal_architect` "sent an answer that
+    On one run the log said `principal_architect` "sent an answer that
     does not satisfy its schema" four times and nothing about which part. The
     event stream showed `product_scope` being corrected from an object to a
     string and the stage failing anyway, with no way to see what else was
@@ -731,7 +731,7 @@ def test_failing_fields_survives_a_non_pydantic_exception() -> None:
 
 
 def test_an_answer_written_several_turns_ago_still_counts() -> None:
-    """run-d6369866's `scrum_master` wrote a valid sprint plan at 15:23:30 and
+    """One run's `scrum_master` wrote a valid sprint plan at 15:23:30 and
     then spent eleven and a half minutes writing prose about creating files it
     has no tools to create. By the time it was circling, the last message held
     no answer, and reading only the last message made this check blind to it.
@@ -778,7 +778,7 @@ def test_an_answer_older_than_the_lookback_is_not_used() -> None:
 
 
 def test_a_stage_nearing_its_ceiling_is_told_to_finish() -> None:
-    """Measured on run-37476645: `specialist_testing_2` spent all three of its
+    """Measured on one run: `specialist_testing_2` spent all three of its
     attempts in an edit-run-edit-run loop on a failing suite, using 170 tool
     calls, and never returned its answer. `specialist_ui_ux_0` used 175.
 
@@ -937,7 +937,7 @@ def test_the_warning_arrives_with_room_left_to_act() -> None:
     This has been got wrong twice in opposite directions. First the warning
     counted AI messages against a superstep ceiling, so seventy per cent of the
     budget was already past it and the warning fired at the very end or never -
-    run-05c46508's `specialist_testing_2` died at the ceiling with `close to
+    one run's `specialist_testing_2` died at the ceiling with `close to
     its step ceiling` appearing zero times in the log. Then it read
     `langgraph_step`, which keeps climbing across approval resumes while the
     ceiling is re-armed, so it fired from a healthy stage's eleventh call
@@ -986,7 +986,7 @@ def test_the_budget_is_counted_in_model_calls(monkeypatch) -> None:
 
 
 def test_a_healthy_stage_is_never_nagged(monkeypatch) -> None:
-    """The cost of the old unit, measured on run-d3965815.
+    """The cost of the old unit, measured on one run.
 
     `specialist_ui_ux_0` was warned at 42, 46, 50, 54, 58 and 62 "of the 60
     steps this stage is allowed", passed the ceiling it was being warned
@@ -1023,9 +1023,9 @@ def test_an_answer_in_a_pending_write_ends_the_stage() -> None:
     `settled_answer` could not help, because it looks in the message content
     and these turns have none: a tool call and no text at all.
 
-    Three runs died here - run-0deeb8bf on `final_response.json`, run-130deeef
-    on `final_output.json`, run-01f03ed9 on `docs/summary.json`, each stopped
-    by the run-level repeat guard after five identical requests. run-01f03ed9
+    Three runs died here - one run on `final_response.json`, one run
+    on `final_output.json`, one run on `docs/summary.json`, each stopped
+    by the run-level repeat guard after five identical requests. One run
     had already completed four milestones.
     """
     import json as _json
@@ -1092,7 +1092,7 @@ def test_a_stage_with_no_schema_is_unaffected() -> None:
 
 
 def test_a_missing_bracket_is_repaired_into_the_answer() -> None:
-    """run-91a18470 wrote this object fifty-nine times and was refused each time.
+    """One run wrote this object fifty-nine times and was refused each time.
 
     The `defects` array is missing its closing `]`, so the object fails one
     character from the end. Everything the schema requires is present; only the
@@ -1184,7 +1184,7 @@ def _long_state(calls: int, answered: bool = True):
 
 
 def test_a_stage_at_its_budget_with_an_answer_is_ended() -> None:
-    """run-08acb1ee's `specialist_ui_ux_0` was warned on twelve consecutive
+    """One run's `specialist_ui_ux_0` was warned on twelve consecutive
     calls - 28, 29, 30 ... 39 - ignored every one, and ended on a
     `run_terminal_command` at 40.
 
@@ -1202,7 +1202,7 @@ def test_a_stage_at_its_budget_with_an_answer_is_ended() -> None:
 
 
 def test_a_stage_at_its_budget_with_no_answer_is_ended() -> None:
-    """run-1a7a62c2's `specialist_testing` had no answer and no end.
+    """One run's `specialist_testing` had no answer and no end.
 
     It was told it was out of budget 71 times and kept running `npm test` for
     an hour and a half. Ending is safe here for a different reason than the
@@ -1286,7 +1286,7 @@ def test_a_stage_that_has_an_answer_is_told_the_gentler_truth() -> None:
 
 
 def test_a_prose_answer_is_not_reported_as_a_schema_failure():
-    """Measured live on run-ed05e20e at 07:38:50.
+    """Measured live on one run at 07:38:50.
 
         Stage specialist_testing sent an answer that does not satisfy its
         schema (unknown); returning the validation errors

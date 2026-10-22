@@ -6,7 +6,7 @@ stack selector chose the built-in runner alone while the architect, reading
 the same environment description, chose Playwright - and the architecture
 reviewer then reported the two documents as a contradiction.
 
-Seen live on run-83c41ea1, whose first architecture review opened with:
+Seen live on one run, whose first architecture review opened with:
 
     technology_stack.md selects 'node --test' as the testing framework. The
     technical_specification.md (testing section and ADR-003) selects
@@ -16,7 +16,7 @@ Neither stage was wrong. The environment description told the selector to
 prefer a runner the runtime provides, and told it that Playwright is the
 required way to test frontend UI - and never said how those combine. The
 answer is both, which is what the delivered products actually contain:
-run-ed05e20e shipped `app.test.mjs` under `node --test` and `app.spec.js`
+One run shipped `app.test.mjs` under `node --test` and `app.spec.js`
 under Playwright, and passed both.
 """
 
@@ -47,7 +47,7 @@ def test_the_preference_for_a_built_in_runner_is_scoped(environment: str):
     """Unqualified, it is the instruction that produced the contradiction."""
     assert "does not remove the need for a browser" in environment
     # And the preference itself survives - it is right about logic.
-    assert "ship with their" in environment
+    assert "ships with the language's runtime" in environment
 
 
 def test_the_answer_the_prompt_recommends_actually_validates():
@@ -94,12 +94,17 @@ def test_manual_testing_is_still_refused():
 
 
 def test_the_two_prompts_no_longer_disagree():
-    """The specialist's rule and the selector's environment, side by side."""
-    from app.agents.testability import TESTABILITY_RULE
+    """The page stack's guidance and the selector's environment, side by side.
+
+    The specialists' browser guidance now lives in the seed row for a page, not
+    in a rule every stack reads; the two must still name the same runner, and
+    both must still want the built-in runner for the logic.
+    """
+    from app.plugins.seed import SEED_INSTRUCTIONS
 
     environment = describe_execution_environment()
-    for text in (TESTABILITY_RULE, environment):
+    page = SEED_INSTRUCTIONS["html"]
+    for text in (page, environment):
         assert "Playwright" in text, "both must name the browser runner"
-    # And both must say the built-in runner is still wanted.
-    assert "node --test" in TESTABILITY_RULE
-    assert "node --test" in environment
+    assert "built-in runner" in environment
+    assert "node --test" in SEED_INSTRUCTIONS["javascript:setup"]

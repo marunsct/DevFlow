@@ -1,7 +1,30 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen, ShieldCheck, CheckSquare } from 'lucide-react';
-import { createRun, startRun } from '../api';
+import { api, createRun, deleteRun, startRun, getFrontierStatus, getOutcomes, uploadCodebase, type FrontierStatus, type RunForecast } from '../api';
+import { Link } from 'react-router-dom';
+import { typicalTime } from '../lib/runSummary';
+import { describeServer, holdingTheModel, useServerHealth } from '../lib/serverHealth';
+import { CriteriaPreview } from '../components/CriteriaPreview';
+import { Textarea } from '../ui';
+
+const DRAFT = 'devflow.briefDraft';
+const readDraft = (): string => {
+  try {
+    return localStorage.getItem(DRAFT) ?? '';
+  } catch {
+    return '';
+  }
+};
+const keepDraft = (text: string): void => {
+  try {
+    if (text) localStorage.setItem(DRAFT, text);
+    else localStorage.removeItem(DRAFT);
+  } catch {
+    /* the draft lives in this page only */
+  }
+};
+import { readRunDefaults, saveRunDefaults } from '../lib/runDefaults';
 
 export const Home: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
@@ -11,14 +34,117 @@ export const Home: React.FC = () => {
   // so the run only comes back when it finishes or fails. Supervised keeps the
   // individual gates, which are then worth showing separately.
   const [unattended, setUnattended] = useState<boolean>(false);
-  const [autoApprove, setAutoApprove] = useState<boolean>(false);
+  // Approval mode asks at decisions, not at every file: the review gates below
+  // are where a person decides, so per-action prompts start switched off.
+  const [autoApprove, setAutoApprove] = useState<boolean>(true);
+  // How this run delivers. Chosen per run: it is not a setting of the models.
+  const [deliveryMode, setDeliveryMode] = useState<'fast' | 'thorough'>('fast');
+  // Whether the stages that need judgement use the frontier model. Off, every
+  // stage runs on the local build model.
+  const [useFrontierModel, setUseFrontierModel] = useState<boolean>(true);
+  // Set once the server says no frontier model is configured. See the check below.
+  const noFrontierModel = useRef(false);
+  // Minutes a review gate waits for a person before approving itself; blank
+  // waits however long it takes.
+  const [approvalTimeout, setApprovalTimeout] = useState<string>('');
+  // What a run of each delivery mode has typically taken here.
+  const [forecast, setForecast] = useState<Record<string, RunForecast | null>>({});
+  useEffect(() => {
+    getOutcomes().then((data) => setForecast(data.forecast)).catch(() => setForecast({}));
+  }, []);
   const [reviewIntake, setReviewIntake] = useState<boolean>(true);
   const [reviewTechSpec, setReviewTechSpec] = useState<boolean>(true);
+  const [reviewAcceptance, setReviewAcceptance] = useState<boolean>(true);
   const [reviewSprint, setReviewSprint] = useState<boolean>(true);
+  const [reviewRelease, setReviewRelease] = useState<boolean>(true);
+  const [reviewEscalation, setReviewEscalation] = useState<boolean>(true);
+  // The form opens as the owner last started a run (plan UI-S5): read once, and
+  // only what was saved replaces the defaults above.
+  useEffect(() => {
+    let live = true;
+    readRunDefaults().then((saved) => {
+      if (!live || !saved) return;
+      if (saved.delivery_mode) setDeliveryMode(saved.delivery_mode);
+      if (saved.use_frontier_model !== undefined) setUseFrontierModel(saved.use_frontier_model && !noFrontierModel.current);
+      if (saved.unattended !== undefined) setUnattended(saved.unattended);
+      if (saved.auto_approve !== undefined) setAutoApprove(saved.auto_approve);
+      if (saved.approval_timeout_minutes) setApprovalTimeout(String(saved.approval_timeout_minutes));
+      if (saved.allow_subdirectories !== undefined) setAllowSubdirectories(saved.allow_subdirectories);
+      const reviews = saved.reviews ?? {};
+      const take = (key: string, set: (on: boolean) => void) => { if (key in reviews) set(reviews[key]); };
+      take('product_intake', setReviewIntake);
+      take('technical_specification', setReviewTechSpec);
+      take('acceptance_tests', setReviewAcceptance);
+      take('sprint', setReviewSprint);
+      take('release', setReviewRelease);
+      take('escalation', setReviewEscalation);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const navigate = useNavigate();
+  const health = useServerHealth();
+  const holder = holdingTheModel(health);
+  // The brief as text, beside or instead of its files (plan BG.10); kept as a
+  // draft in this browser until a run starts from it.
+  const [briefText, setBriefText] = useState<string>(readDraft);
+  // The text of the brief's text files, for the criteria preview.
+  const [fileText, setFileText] = useState('');
+  useEffect(() => {
+    let live = true;
+    const readable = files.filter((file) => /\.(md|txt)$/i.test(file.name));
+    Promise.all(readable.map((file) => file.text()))
+      .then((texts) => live && setFileText(texts.join('\n\n')))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [files]);
+  // Who reviews the run: the person starting it.
+  const [reviewer, setReviewer] = useState('');
+  useEffect(() => {
+    let live = true;
+    api.get('/auth/me').then((me) => live && setReviewer(String(me.data?.username ?? ''))).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  // The brief's size, from its criteria preview: the estimates scale with it.
+  const [criteriaCount, setCriteriaCount] = useState<number | null>(null);
+  // Whether the frontier model is configured and answering, asked when the box is ticked.
+  const [frontier, setFrontier] = useState<FrontierStatus | null>(null);
+  // With no frontier model configured the box starts unticked (owner, 2026-10-20):
+  // a ticked box could only block the start. Asked once; a saved default cannot
+  // tick it back. One that is configured and not answering stays ticked and says why.
+  useEffect(() => {
+    let live = true;
+    getFrontierStatus()
+      .then((found) => {
+        if (!live || !found || found.configured) return;
+        noFrontierModel.current = true;
+        setFrontier(found);
+        setUseFrontierModel(false);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!useFrontierModel) return;
+    let live = true;
+    getFrontierStatus().then((found) => live && setFrontier(found)).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [useFrontierModel]);
+  // An existing codebase to start from, as an archive (a brownfield run).
+  const [codebase, setCodebase] = useState<File | null>(null);
+  const hasBrief = files.length > 0 || briefText.trim().length > 0;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -51,28 +177,49 @@ export const Home: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (files.length === 0) {
-      setError("Please select at least one file to upload.");
+    if (!hasBrief) {
+      setError('Write the brief or add its documents.');
       return;
+    }
+    if (useFrontierModel) {
+      const status = frontier ?? (await getFrontierStatus().catch(() => null));
+      if (status?.problem) {
+        setError(status.problem);
+        return;
+      }
     }
 
     setIsUploading(true);
     setError(null);
 
+    // A run that was created but could not start is deleted, not left behind
+    // as an orphan in the list (plan BG.10, G9).
+    let created: string | null = null;
     try {
-      const runData = await createRun(files);
+      const written = briefText.trim() ? [new File([briefText], 'brief.md', { type: 'text/markdown' })] : [];
+      const runData = await createRun([...files, ...written]);
+      created = runData.run_id;
+      if (codebase) await uploadCodebase(runData.run_id, codebase);
       
       const payload: any = {
-        reviewer: "Product Manager",
+        // The person starting the run reviews it.
+        reviewer: reviewer || undefined,
         workspace_label: workspaceLabel || undefined,
         allow_subdirectories: allowSubdirectories,
         auto_approve: unattended || autoApprove,
+        delivery_mode: deliveryMode,
+        use_frontier_model: useFrontierModel,
+        approval_timeout_minutes:
+          !unattended && parseInt(approvalTimeout, 10) > 0 ? parseInt(approvalTimeout, 10) : undefined,
         review_policy: unattended
-          ? { product_intake: false, technical_specification: false, sprint: false }
+          ? { product_intake: false, technical_specification: false, acceptance_tests: false, sprint: false, release: false, escalation: false }
           : {
               product_intake: reviewIntake,
               technical_specification: reviewTechSpec,
-              sprint: reviewSprint
+              acceptance_tests: reviewAcceptance,
+              sprint: reviewSprint,
+              release: reviewRelease,
+              escalation: reviewEscalation
             }
       };
       
@@ -90,75 +237,115 @@ export const Home: React.FC = () => {
       // this form just isn't one of them.
 
       await startRun(runData.run_id, payload);
+      await saveRunDefaults({
+        delivery_mode: deliveryMode,
+        use_frontier_model: useFrontierModel,
+        unattended,
+        auto_approve: autoApprove,
+        approval_timeout_minutes: parseInt(approvalTimeout, 10) > 0 ? parseInt(approvalTimeout, 10) : null,
+        allow_subdirectories: allowSubdirectories,
+        reviews: {
+          product_intake: reviewIntake,
+          technical_specification: reviewTechSpec,
+          acceptance_tests: reviewAcceptance,
+          sprint: reviewSprint,
+          release: reviewRelease,
+          escalation: reviewEscalation,
+        },
+      });
+      keepDraft('');
       navigate(`/runs/${runData.run_id}`);
     } catch (err: any) {
       console.error(err);
+      if (created) await deleteRun(created).catch(() => undefined);
       setError(err.response?.data?.detail || err.message || "An error occurred during upload.");
       setIsUploading(false);
     }
   };
 
-  const Checkbox = ({ id, checked, onChange, label, description }: {
-    id: string; checked: boolean; onChange: (v: boolean) => void; label: string; description?: string;
-  }) => (
-    <label htmlFor={id} className="flex items-start gap-3 cursor-pointer group">
-      <div className="relative mt-0.5">
-        <input
-          id={id}
-          type="checkbox"
-          checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
-          className="sr-only"
-        />
-        <div className={`h-5 w-5 rounded-md border-2 transition-all duration-200 flex items-center justify-center ${
-          checked
-            ? 'bg-primary border-primary shadow-lg shadow-primary/20'
-            : 'border-border bg-surface hover:border-text-muted'
-        }`}>
-          {checked && (
-            <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          )}
-        </div>
+interface CheckboxProps {
+  id: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  description?: string;
+}
+
+const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, description }) => (
+  <label className="flex items-start gap-3 cursor-pointer group">
+    <div className="relative mt-0.5">
+      <input
+        id={id}
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="sr-only"
+      />
+      <div className={`h-5 w-5 rounded-md border-2 transition-all duration-200 flex items-center justify-center ${
+        checked
+          ? 'bg-primary border-primary shadow-lg shadow-primary/20'
+          : 'border-border bg-surface hover:border-text-muted'
+      }`}>
+        {checked && (
+          <svg className="h-3 w-3 text-text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        )}
       </div>
-      <div>
-        <span className="text-sm font-medium text-text-primary group-hover:text-white transition-colors">{label}</span>
-        {description && <p className="text-xs text-text-muted mt-0.5">{description}</p>}
-      </div>
-    </label>
-  );
+    </div>
+    <div>
+      <span className="text-sm font-medium text-text-primary group-hover:text-text-primary transition-colors">{label}</span>
+      {description && <p className="text-xs text-text-muted mt-0.5">{description}</p>}
+    </div>
+  </label>
+);
 
   return (
-    <div className="max-w-3xl mx-auto mt-4 animate-fade-in">
+    <div className="w-full mt-4 animate-fade-in">
       <div className="glass-card-strong rounded-2xl shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="p-8 text-center border-b border-border/50 bg-gradient-to-b from-primary/5 to-transparent">
-          <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-gradient-to-br from-primary/20 to-violet-500/20 border border-primary/30 mb-4">
+          <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-gradient-to-br from-primary/20 to-accent-soft border border-primary/30 mb-4">
             <PlayCircle className="h-7 w-7 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-2">Start New Workflow</h1>
+          <h1 className="text-2xl font-bold text-text-primary mb-2">Start New Workflow</h1>
           <p className="text-text-secondary text-sm max-w-md mx-auto">
-            Upload your product documents to kick off the automated development pipeline.
+            Write the brief or add its documents: see what the build will be held to, choose how it runs, and start it.
           </p>
+          {holder && (
+            <p role="status" className="mt-3 text-xs text-warning max-w-md mx-auto">
+              The model serves one request at a time and {holder} is on it: a run started now waits for it to free the model.
+            </p>
+          )}
         </div>
 
         {/* Form */}
         <div className="p-8">
           <form onSubmit={handleSubmit}>
+            {/* Two columns on a wide screen: what the run is built from, and how it runs. */}
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-8 items-start">
+            <div className="space-y-6">
             {/* Upload Area */}
             <div
               className={`border-2 border-dashed rounded-xl p-10 text-center transition-all duration-300 cursor-pointer ${
                 isDragging
-                  ? 'border-primary bg-primary/10 scale-[1.01]'
+                  ? 'border-primary bg-accent-soft scale-[1.01]'
                   : files.length > 0
                     ? 'border-success/50 bg-success/5'
-                    : 'border-border hover:border-primary/50 hover:bg-white/[0.02]'
+                    : 'border-border hover:border-primary/50 hover:bg-overlay'
               }`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onClick={() => document.getElementById('file-upload')?.click()}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  document.getElementById('file-upload')?.click();
+                }
+              }}
             >
               <input
                 id="file-upload"
@@ -174,21 +361,21 @@ export const Home: React.FC = () => {
                   <div className="h-14 w-14 bg-surface-overlay/50 rounded-xl flex items-center justify-center mb-4">
                     <UploadCloud className="h-7 w-7 text-text-muted" />
                   </div>
-                  <h3 className="text-base font-semibold text-text-primary mb-1">
+                  <h2 className="text-base font-semibold text-text-primary mb-1">
                     Drop files here or click to browse
-                  </h3>
+                  </h2>
                   <p className="text-sm text-text-muted">
                     Markdown, PDF, TXT or DOCX (max 10MB each)
                   </p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center">
-                  <div className="h-14 w-14 bg-success/10 rounded-xl flex items-center justify-center mb-4">
+                  <div className="h-14 w-14 bg-success-bg rounded-xl flex items-center justify-center mb-4">
                     <FileText className="h-7 w-7 text-success" />
                   </div>
-                  <h3 className="text-base font-semibold text-white mb-2">
+                  <h2 className="text-base font-semibold text-text-primary mb-2">
                     {files.length} file{files.length > 1 ? 's' : ''} selected
-                  </h3>
+                  </h2>
                   <ul className="text-sm text-text-secondary max-h-24 overflow-y-auto mb-3 w-full max-w-sm text-left space-y-1">
                     {files.map((f, i) => (
                       <li key={i} className="truncate flex items-center gap-2">
@@ -200,7 +387,7 @@ export const Home: React.FC = () => {
                   </ul>
                   <button
                     type="button"
-                    className="text-sm text-danger hover:text-danger/80 transition-colors"
+                    className="text-sm text-danger hover:text-danger transition-colors"
                     onClick={(e) => { e.stopPropagation(); setFiles([]); }}
                   >
                     Remove all files
@@ -209,8 +396,31 @@ export const Home: React.FC = () => {
               )}
             </div>
 
-            {/* Configuration */}
-            <div className="mt-8 space-y-6">
+              <Textarea
+                label="Or write the brief here"
+                hint="Beside the documents or instead of them. Kept in this browser until a run starts."
+                rows={6}
+                value={briefText}
+                onChange={(event) => { setBriefText(event.target.value); keepDraft(event.target.value); }}
+                placeholder={'# What to build\n\n## Features\n- ...'}
+              />
+
+              <CriteriaPreview onCount={setCriteriaCount} brief={[briefText, fileText].filter((part) => part.trim()).join('\n\n')} />
+
+              <div>
+                <label htmlFor="codebase-upload" className="block text-sm font-semibold text-text-primary mb-1">
+                  Start from existing code <span className="font-normal text-text-muted">(optional)</span>
+                </label>
+                <input
+                  id="codebase-upload"
+                  type="file"
+                  accept=".zip,.tar,.tar.gz,.tgz,.tar.bz2,.tbz2,.tar.xz"
+                  onChange={(event) => setCodebase(event.target.files?.[0] ?? null)}
+                  className="text-sm text-text-secondary"
+                />
+                <p className="text-xs text-text-muted mt-1">An archive of the repository; the run builds on it instead of starting empty.</p>
+              </div>
+
               {/* Workspace label */}
               <div>
                 <label htmlFor="workspace-label" className="flex items-center gap-2 text-sm font-semibold text-text-primary mb-2">
@@ -224,22 +434,70 @@ export const Home: React.FC = () => {
                   value={workspaceLabel}
                   onChange={(e) => setWorkspaceLabel(e.target.value)}
                   placeholder="e.g., checkout-service"
-                  className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-white placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all text-sm"
+                  className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all text-sm"
                 />
                 <p className="text-xs text-text-muted mt-1.5">
                   Just a label, not a path. Every run gets its own isolated workspace on the
                   server either way &mdash; this only makes it recognisable on disk. Documents go
-                  to <code className="text-primary/80">docs/</code> and code
-                  to <code className="text-primary/80">{'<product-name>'}/</code> inside it.
+                  to <code className="text-primary">docs/</code> and code
+                  to <code className="text-primary">{'<product-name>'}/</code> inside it.
                 </p>
               </div>
 
+            {/* Error */}
+            {error && (
+              <div className="p-4 bg-danger-bg border border-danger/30 rounded-xl text-danger text-sm flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-danger animate-pulse shrink-0" />
+                {error}
+              </div>
+            )}
+
+            {/* Pre-flight and what is about to start, read before Start. */}
+            <div className="rounded-xl border border-border bg-surface p-3 text-sm space-y-1">
+              <p className={describeServer(health).tone === 'warn' ? 'text-warning' : 'text-text-secondary'}>{describeServer(health).said}</p>
+              <p className="text-text-secondary">
+                {deliveryMode === 'fast' ? 'Fast' : 'Thorough'} delivery
+                {typicalTime(forecast[deliveryMode], criteriaCount) ? ` (${typicalTime(forecast[deliveryMode], criteriaCount)})` : ''}
+                {' \u00B7 '}{useFrontierModel ? `local model with the frontier model${frontier?.model ? ` ${frontier.model}` : ''}` : 'local model only'}
+                {' \u00B7 '}{unattended ? 'unattended: no stops for review' : 'stops where you asked to review'}
+                {codebase ? ' \u00B7 from existing code' : ''}
+              </p>
+            </div>
+
+            {/* Submit */}
+            <div>
+              <button
+                type="submit"
+                disabled={!hasBrief || isUploading}
+                className={`w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-primary-foreground transition-all ${
+                  !hasBrief || isUploading
+                    ? 'bg-surface-overlay text-text-muted cursor-not-allowed'
+                    : 'gradient-btn'
+                }`}
+              >
+                {isUploading ? (
+                  <>
+                    <div className="h-5 w-5 border-2 border-border border-t-text-primary rounded-full animate-spin" />
+                    Starting Workflow...
+                  </>
+                ) : (
+                  <>
+                    <PlayCircle className="h-5 w-5" />
+                    Start Workflow Run
+                  </>
+                )}
+              </button>
+            </div>
+            </div>
+
+            {/* Configuration */}
+            <div className="space-y-6 xl:mt-0">
               {/* How much the run should stop for you */}
               <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-4">
-                <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-primary" />
                   Supervision
-                </h3>
+                </h2>
                 <Checkbox
                   id="unattended"
                   checked={unattended}
@@ -256,14 +514,76 @@ export const Home: React.FC = () => {
                 />
               </div>
 
+              <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-3">
+                <h2 className="text-sm font-semibold text-text-primary">Delivery</h2>
+                <div className="flex flex-col sm:flex-row gap-3" role="radiogroup" aria-label="Delivery">
+                  {(['fast', 'thorough'] as const).map((choice) => (
+                    <button
+                      key={choice}
+                      id={`delivery-${choice}`}
+                      type="button"
+                      role="radio"
+                      aria-checked={deliveryMode === choice}
+                      onClick={() => setDeliveryMode(choice)}
+                      className={`flex-1 rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition-all ${
+                        deliveryMode === choice
+                          ? 'border-primary bg-accent-soft text-primary'
+                          : 'border-border/50 bg-surface/30 text-text-muted hover:text-text-secondary hover:border-border'
+                      }`}
+                    >
+                      {choice === 'fast' ? 'Fast' : 'Thorough'}
+                      <span className="block text-xs font-normal mt-0.5">
+                        {choice === 'fast'
+                          ? 'One sprint for a small product, files written from the specification, harness-run checks'
+                          : 'Every sprint planned, built, tested and reviewed in full'}
+                      </span>
+                      {/* Each mode's own estimate for this brief's size, side by side. */}
+                      {typicalTime(forecast[choice], criteriaCount) && (
+                        <span className="block text-xs font-normal mt-1 text-text-secondary">{typicalTime(forecast[choice], criteriaCount)}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-text-muted">
+                  {criteriaCount
+                    ? 'Estimates are for a brief of this size, from the most recent runs of each kind here.'
+                    : 'Write or add the brief to see an estimate for its size; until then, times are what recent runs of each kind took here.'}
+                </p>
+                <p className="text-xs text-text-muted leading-relaxed">
+                  Both keep the project in memory for every stage and check each edit as it is written.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-3">
+                <h2 className="text-sm font-semibold text-text-primary">Models</h2>
+                <Checkbox
+                  id="useFrontierModel"
+                  checked={useFrontierModel}
+                  onChange={setUseFrontierModel}
+                  label="Use the frontier model"
+                  description="The specification, the reviews and escalated fixes run on the frontier model set in Settings. Unchecked, every stage of this run - planning, building, testing and reviews - runs on the local model only."
+                />
+                {/* Ticked, the frontier model must be configured and answering (owner,
+                    2026-10-19): said here, and Start waits for it. */}
+                {useFrontierModel && frontier && (
+                  frontier.problem ? (
+                    <p role="alert" className="text-xs text-warning">
+                      {frontier.problem} <Link to="/settings?tab=models" className="font-medium underline">Open the model settings</Link>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-success">Ready: {frontier.model} on {frontier.provider} answers.</p>
+                  )
+                )}
+              </div>
+
               {/* Only meaningful when the run is supervised */}
               {!unattended && (
                 <>
                   <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-4">
-                    <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                    <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
                       <ShieldCheck className="h-4 w-4 text-primary" />
                       Approvals
-                    </h3>
+                    </h2>
                     <Checkbox
                       id="autoApprove"
                       checked={autoApprove}
@@ -274,10 +594,27 @@ export const Home: React.FC = () => {
                   </div>
 
                   <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-4">
-                    <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                    <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
                       <CheckSquare className="h-4 w-4 text-primary" />
                       Review Gates
-                    </h3>
+                    </h2>
+                    <label htmlFor="approvalTimeout" className="block text-sm text-text-primary">
+                      Approve a waiting gate automatically after
+                      <input
+                        id="approvalTimeout"
+                        type="number"
+                        min={1}
+                        max={10080}
+                        value={approvalTimeout}
+                        onChange={(e) => setApprovalTimeout(e.target.value)}
+                        placeholder="never"
+                        className="mx-2 w-20 rounded-md border border-border bg-surface px-2 py-1 text-sm"
+                      />
+                      minutes
+                      <span className="block text-xs text-text-muted mt-1">
+                        Leave blank to wait for you however long it takes.
+                      </span>
+                    </label>
                     <Checkbox
                       id="reviewIntake"
                       checked={reviewIntake}
@@ -291,47 +628,38 @@ export const Home: React.FC = () => {
                       label="Technical Specification Review"
                     />
                     <Checkbox
+                      id="reviewAcceptance"
+                      checked={reviewAcceptance}
+                      onChange={setReviewAcceptance}
+                      label="Acceptance Tests Review"
+                      description="The tests that decide when the product is done, before they are locked."
+                    />
+                    <Checkbox
                       id="reviewSprint"
                       checked={reviewSprint}
                       onChange={setReviewSprint}
                       label="End of Sprint Review"
+                      description="With the criteria that pass, screenshots and decisions. A requested change becomes a tracked change request."
+                    />
+                    <Checkbox
+                      id="reviewRelease"
+                      checked={reviewRelease}
+                      onChange={setReviewRelease}
+                      label="Release Review"
+                      description="The finished product, once every acceptance criterion passes."
+                    />
+                    <Checkbox
+                      id="reviewEscalation"
+                      checked={reviewEscalation}
+                      onChange={setReviewEscalation}
+                      label="Ask Me When Work Is Stuck"
+                      description="A sprint that fixes and re-planning cannot finish, or a specification its review never approves: you decide to go on (deferring what fails, or building from the latest design) or try again with your guidance. Off, the run decides and records why."
                     />
                   </div>
                 </>
               )}
             </div>
 
-            {/* Error */}
-            {error && (
-              <div className="mt-6 p-4 bg-danger/10 border border-danger/30 rounded-xl text-danger text-sm flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-danger animate-pulse shrink-0" />
-                {error}
-              </div>
-            )}
-
-            {/* Submit */}
-            <div className="mt-8">
-              <button
-                type="submit"
-                disabled={files.length === 0 || isUploading}
-                className={`w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-white transition-all ${
-                  files.length === 0 || isUploading
-                    ? 'bg-surface-overlay text-text-muted cursor-not-allowed'
-                    : 'gradient-btn'
-                }`}
-              >
-                {isUploading ? (
-                  <>
-                    <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Starting Workflow...
-                  </>
-                ) : (
-                  <>
-                    <PlayCircle className="h-5 w-5" />
-                    Start Workflow Run
-                  </>
-                )}
-              </button>
             </div>
           </form>
         </div>

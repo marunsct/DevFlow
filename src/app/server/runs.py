@@ -10,6 +10,7 @@ which validates it and resumes the LangGraph thread.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -36,6 +37,7 @@ from app.server.events import EventBus, RunEvent
 from pathlib import Path
 
 from app.server.models import (
+    RunCostSummary,
     ApprovalDecisionRequest,
     ArtifactInfo,
     RemediationInfo,
@@ -45,12 +47,22 @@ from app.server.models import (
     CreateRunResponse,
     ReviewDecisionRequest,
     ReviewPayload,
+    RewindRequest,
     RunListResponse,
     RunStatusResponse,
     RunSummary,
+    RunUsage,
+    EventPage,
+    BriefPreview,
+    BriefPreviewRequest,
+    OwnerRating,
+    OwnerRatingRequest,
+    PreviewCriterion,
+    SprintsResponse,
     SpinnerResponse,
     StartRunRequest,
     SprintRevision,
+    SteeringNote,
     WizardModel,
     WizardNote,
     WizardReview,
@@ -58,7 +70,15 @@ from app.server.models import (
     WizardStep,
     WizardSummary,
 )
-from app.server.runner import RunRecord, WorkflowRunner, _api_status, _stage_meaning
+from app.server.runner import (
+    RESUMABLE_STATUSES,
+    RunRecord,
+    WorkflowRunner,
+    _api_status,
+    _max_run_cost_usd,
+    _max_run_tokens,
+    _stage_meaning,
+)
 from app.server.object_store import archive_directory, archive_file, ensure_local
 from app.server.seeding import SeedError, seed_workspace
 from app.server.uploads import (
@@ -99,6 +119,47 @@ def _require_run(runner: WorkflowRunner, run_id: str, user: UserInDB) -> RunReco
     if user.role != "admin" and record.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
     return record
+
+
+def _a_completed_run_s_workspace(runner: WorkflowRunner, run_id: str, user: UserInDB) -> Path | None:
+    """The workspace of a completed run the caller may see, or None (plan BW.2)."""
+    record = runner.run_store.load(run_id)
+    if record is None or record.status != "completed" or not record.repo_root:
+        return None
+    if user.role != "admin" and record.tenant_id != user.tenant_id:
+        return None
+    return Path(record.repo_root)
+
+
+def _support_tier_of(root: Any) -> str:
+    """How well this run's stack is covered by the harness's own checks (pack-supported, custom, unverified); "" if unknown."""
+    try:
+        from app.stacks import contract, pack_named, support_tier
+
+        record = contract.read(root) or {}
+        return support_tier(pack_named(str(record.get("pack") or ""))) if record.get("pack") else ""
+    except Exception:  # noqa: BLE001 - the evidence page works without it
+        return ""
+
+
+def _how_many_criteria_hold(record: Any) -> dict[str, int | None]:
+    """The criteria passing and the criteria there are, from the last measured suite; None for each before there is one."""
+    none: dict[str, int | None] = {"criteria_proven": None, "criteria_total": None}
+    root = getattr(record, "repo_root", None)
+    if not root:
+        return none
+    try:
+        from app.acceptance import suite
+
+        criteria = (suite.last_result(root) or {}).get("criteria") or {}
+    except Exception:  # noqa: BLE001 - a list must not fail over one run's measurement
+        return none
+    if not criteria:
+        return none
+    return {
+        "criteria_proven": sum(1 for c in criteria.values() if c.get("status") == "passed"),
+        "criteria_total": len(criteria),
+    }
 
 
 def create_runs_router(
@@ -231,6 +292,47 @@ def create_runs_router(
             file_size_bytes=result.file_size_bytes,
         )
 
+    @runs.get("/{run_id}/rating", response_model=OwnerRating | None)
+    async def get_rating(run_id: str, user: UserInDB = Depends(get_current_active_user)) -> dict | None:
+        """The owner's rating of the delivered run, or null (plan EV.1)."""
+        from app.server import ratings
+
+        _require_run(runner, run_id, user)
+        return ratings.read(run_id)
+
+    @runs.put("/{run_id}/rating", response_model=OwnerRating)
+    async def rate_run(
+        run_id: str, body: OwnerRatingRequest, user: UserInDB = Depends(require_operator)
+    ) -> dict:
+        """Rate a delivered run 1-5 with a line; rating again replaces it (plan EV.1)."""
+        from app.server import ratings
+
+        record = _require_run(runner, run_id, user)
+        if record.status != "completed":
+            raise HTTPException(status_code=409, detail=f"Run {run_id} is {record.status}; only a delivered run is rated.")
+        rating = ratings.save(run_id, body.score, body.note, user.username)
+        record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.rated",
+                     subject=run_id, detail={"score": body.score})
+        return rating
+
+    @runs.post("/preview", response_model=BriefPreview)
+    async def preview_brief(
+        body: BriefPreviewRequest, user: UserInDB = Depends(get_current_active_user)
+    ) -> BriefPreview:
+        """The acceptance criteria a brief gives a run, before it starts: the same numbering, no model call (plan BG.10)."""
+        from app.acceptance.criteria import from_brief, number
+
+        from app.acceptance.ambiguity import criteria_without_an_interface_line, vague_phrases
+
+        listed = len(from_brief(body.brief)) >= 2
+        found = number(body.brief) if listed else []
+        return BriefPreview(
+            criteria=[PreviewCriterion(id=c.id, text=c.text) for c in found], from_brief=listed,
+            # How much the run would guess, seen before it starts (plan IN.2).
+            without_an_interface_line=criteria_without_an_interface_line(body.brief, found),
+            vague_phrases=vague_phrases(body.brief),
+        )
+
     @runs.post("/{run_id}/start", status_code=202)
     async def start_run(
         run_id: str,
@@ -247,6 +349,18 @@ def create_runs_router(
 
         body = body or StartRunRequest()
 
+        # Asked for the frontier model, it must be there and answering before
+        # anything is prepared (owner, 2026-10-19): otherwise the run's
+        # specification and reviews would quietly run on the local model, or it
+        # would fail at its first judgement stage. Omitted keeps the run on
+        # whatever is configured, as before.
+        if body.use_frontier_model is True:
+            from app.models.frontier_check import check_frontier
+
+            frontier = await asyncio.to_thread(check_frontier)
+            if frontier["problem"]:
+                raise HTTPException(status_code=409, detail=frontier["problem"])
+
         # On a single node the files are already here and this is a no-op. On
         # more than one, the upload may have landed on a different replica's
         # disk, so pull it back from object storage before reading.
@@ -262,7 +376,7 @@ def create_runs_router(
         # from the request body, which let a caller point every agent tool and
         # the sandbox bind-mount at any directory on the host, including "/".
         try:
-            workspace = allocate_workspace(run_id, body.workspace_label)
+            workspace = allocate_workspace(run_id, body.workspace_label, user.tenant_id)
         except WorkspaceError as exc:
             raise HTTPException(status_code=500, detail=f"Could not prepare the workspace: {exc}")
 
@@ -271,7 +385,8 @@ def create_runs_router(
         # "unknown" a blank directory yields.
         try:
             seeded = await run_in_threadpool(
-                seed_workspace, workspace, body.source, resolve_upload=_resolve_upload
+                seed_workspace, workspace, body.source, resolve_upload=_resolve_upload,
+                resolve_run=lambda finished_id: _a_completed_run_s_workspace(runner, finished_id, user),
             )
         except SeedError as exc:
             # The caller's own input was rejected, so this is a 400, and the
@@ -311,6 +426,9 @@ def create_runs_router(
                     "openai_base_url": body.openai_base_url,
                     "model_name": body.model_name,
                 },
+                delivery_mode=body.delivery_mode,
+                use_frontier_model=body.use_frontier_model,
+                approval_timeout_minutes=body.approval_timeout_minutes,
             )
         except RunConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc))
@@ -332,12 +450,20 @@ def create_runs_router(
     async def resume_run(
         run_id: str, user: UserInDB = Depends(require_operator)
     ) -> dict[str, str]:
-        """Resume a failed run."""
+        """Resume a failed, paused, budget-paused or cancelled run from its last checkpoint."""
         record = _require_run(runner, run_id, user)
-        if record.status != "failed":
+        # A run parked at its spending ceiling is not failed - it is waiting for
+        # someone to decide whether to keep paying. Refusing to resume it here
+        # would leave the only pause in the system with no way out but cancel.
+        # A run its owner paused, or cancelled, keeps its checkpoints too.
+        resumable = RESUMABLE_STATUSES
+        if record.status not in resumable:
             raise HTTPException(
                 status_code=409,
-                detail=f"Run {run_id} is {record.status}; only failed runs can be resumed.",
+                detail=(
+                    f"Run {run_id} is {record.status}; only {' or '.join(resumable)} "
+                    "runs can be resumed."
+                ),
             )
         try:
             await runner.resume_run(run_id)
@@ -345,6 +471,46 @@ def create_runs_router(
             raise HTTPException(status_code=409, detail=str(exc))
         record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.resume", subject=run_id)
         return {"message": f"Run {run_id} resumed."}
+
+    @runs.get("/{run_id}/rewind-points")
+    async def rewind_points(
+        run_id: str, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, Any]:
+        """Each stage the run started, oldest first, as a point to rewind it to."""
+        _require_run(runner, run_id, user)
+        return {"points": await runner.rewind_points(run_id)}
+
+    @runs.post("/{run_id}/rewind", status_code=202)
+    async def rewind_run(
+        run_id: str, payload: RewindRequest, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, Any]:
+        """Rewind a stopped run to the start of a stage, with its files as they were, and run it from there."""
+        from app.graph.workflow import RewindError
+
+        _require_run(runner, run_id, user)
+        try:
+            done = await runner.rewind_run(run_id, payload.checkpoint_id)
+        except RunConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except RewindError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        record_audit(
+            actor=user.username, tenant_id=user.tenant_id, action="run.rewind", subject=run_id,
+        )
+        return {"message": f"Run {run_id} rewound to {done['stage']} and resumed.", **done}
+
+    @runs.post("/{run_id}/pause", status_code=202)
+    async def pause_run(
+        run_id: str, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, str]:
+        """Pause a running run at its next stage boundary; resume continues it."""
+        _require_run(runner, run_id, user)
+        try:
+            await runner.pause_run(run_id)
+        except RunConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.pause", subject=run_id)
+        return {"message": f"Run {run_id} is pausing."}
 
     @runs.post("/{run_id}/clone", status_code=201, response_model=CreateRunResponse)
     async def clone_run(
@@ -408,11 +574,60 @@ def create_runs_router(
                     current_stage=r.current_stage,
                     created_at=r.created_at,
                     document_names=r.document_names,
+                    updated_at=getattr(r, "updated_at", None),
+                    delivery_mode=getattr(r, "delivery_mode", None),
+                    local_only=getattr(r, "local_only", None),
+                    completion_gaps=len(getattr(r, "completion_gaps", None) or []),
+                    gate_deadline=_when_the_gate_approves_itself(r),
+                    **_how_many_criteria_hold(r),
                 )
                 for r in records
             ],
             total=runner.run_store.count(tenant),
         )
+
+    @runs.get("/compare")
+    async def compare_runs(
+        a: str, b: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """Two runs' KPIs side by side, each change marked worse by the ledger's rule (plan UI-S6).
+
+        Declared before `/{run_id}`, which would otherwise take "compare" for a run.
+        """
+        from app.observability.run_kpis import kpis, worse
+        from app.observability.transcript import read_transcript
+
+        _require_run(runner, a, user)
+        _require_run(runner, b, user)
+        first, second = await asyncio.gather(
+            asyncio.to_thread(read_transcript, a), asyncio.to_thread(read_transcript, b)
+        )
+        left, right = kpis(first), kpis(second)
+        rows = []
+        for key in sorted(set(left) & set(right)):
+            x, y = left[key], right[key]
+            if isinstance(x, bool) or isinstance(y, bool) or not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+                continue
+            rows.append({
+                "key": key, "a": x, "b": y,
+                "change": None if x == 0 else round((y - x) / abs(x), 4),
+                "worse": worse(key, float(x), float(y)),
+            })
+        return {"a": a, "b": b, "rows": rows}
+
+    @runs.get("/outcomes")
+    async def run_outcomes(user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+        """Finished runs with their time and score, and the typical time per delivery mode."""
+        from app.server.outcomes import forecast, outcomes
+
+        records = runner.run_store.list_all(
+            tenant_id=None if user.role == "admin" else user.tenant_id, limit=500,
+        )
+        rows = outcomes(records)
+        return {
+            "runs": rows,
+            "forecast": {mode: forecast(rows, mode) for mode in ("fast", "thorough")},
+        }
 
     @runs.get("/{run_id}", response_model=RunStatusResponse)
     async def get_run(
@@ -420,6 +635,70 @@ def create_runs_router(
     ) -> RunStatusResponse:
         record = _require_run(runner, run_id, user)
         return await _build_status_response(record, runner)
+
+    @runs.get("/{run_id}/sprints", response_model=SprintsResponse)
+    async def get_sprints(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> SprintsResponse:
+        """The run's sprints as figures, from the attempts each sprint summary is rendered from (plan BG.6)."""
+        from app.agents.sprint_summary import sprint_views
+        from app.graph.workflow import the_attempt_in_progress
+
+        record = _require_run(runner, run_id, user)
+        state = record.graph_state(runner.checkpointer)
+        # A live run's current sprint is the attempt under way, not the one it
+        # last recorded; a finished run has none under way.
+        live = record.status not in ("completed", "failed", "cancelled") and state.get("sprint_plan")
+        return SprintsResponse(
+            sprints=sprint_views(
+                state.get("sprint_plan"),
+                state.get("sprint_attempts") or [],
+                the_attempt_in_progress(state) if live else None,
+            )
+        )
+
+    @runs.get("/{run_id}/usage", response_model=RunUsage)
+    async def get_usage(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> RunUsage:
+        """Time, tokens and failures per stage, from the run's transcript (plan BG.7)."""
+        from app.observability.stage_usage import recent_calls, stage_usage
+        from app.observability.transcript import read_transcript
+
+        _require_run(runner, run_id, user)
+        entries = await asyncio.to_thread(read_transcript, run_id)
+        return RunUsage(stages=stage_usage(entries), recent_calls=recent_calls(entries))
+
+    @runs.get("/{run_id}/kpis")
+    async def get_kpis(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """The run's KPIs from its transcript, as the loop's ledger keeps them (plan UI-S6)."""
+        from app.observability.run_kpis import kpis
+        from app.observability.transcript import read_transcript
+
+        _require_run(runner, run_id, user)
+        entries = await asyncio.to_thread(read_transcript, run_id)
+        return {"run": run_id, **kpis(entries)}
+
+    @runs.get("/{run_id}/transcript")
+    async def download_transcript(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> Response:
+        """The run's whole transcript as text: every model call, reply, tool call and result."""
+        from app.observability.transcript import render_transcript
+
+        _require_run(runner, run_id, user)
+        text = await asyncio.to_thread(render_transcript, run_id)
+        record_audit(
+            actor=user.username, tenant_id=user.tenant_id, action="run.transcript.download",
+            subject=run_id, detail={},
+        )
+        return Response(
+            content=text,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{run_id}-transcript.txt"'},
+        )
 
     @runs.get("/{run_id}/wizard", response_model=WizardModel)
     async def get_wizard(
@@ -478,14 +757,8 @@ def create_runs_router(
         """
         record = _require_run(runner, run_id, user)
 
-        logical_mapping = {
-            "product-intake": "product_intake",
-            "tools-and-models": "tools_models",
-            "technical-specification": "technical_specification",
-            "architecture-review": "architecture_review",
-            "sprint-milestone": "milestone_plan",
-            "milestone-review": "milestone_review",
-        }
+        logical_mapping = _REVIEW_OUTPUTS
+        path = _REVIEW_DOCUMENTS.get(path, path)
         state = record.graph_state(runner.checkpointer)
         logical_key = logical_mapping.get(path) or path.replace("-", "_")
         if state.get(logical_key) is not None:
@@ -519,24 +792,63 @@ def create_runs_router(
             media_type="application/octet-stream",
         )
 
-    @runs.get("/{run_id}/logs")
+    @runs.get("/{run_id}/artifacts/diff")
+    async def get_document_diff(
+        run_id: str, path: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """What changed in one workspace document since its version before (plan BG.3)."""
+        from app.server.changes import ChangesUnavailable, document_diff
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root:
+            raise HTTPException(status_code=404, detail="This run has no workspace.")
+        try:
+            full_path = resolve_within_workspace(record.repo_root, path)
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        relative = full_path.relative_to(Path(record.repo_root).resolve()).as_posix()
+        try:
+            return await asyncio.to_thread(document_diff, record.repo_root, relative)
+        except ChangesUnavailable as error:
+            return {"path": relative, "since": None, "since_at": None, "diff": "", "truncated": False, "problem": str(error)}
+
+    @runs.get("/{run_id}/handover")
+    async def download_handover(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> Any:
+        """The run's handover pack: its documents, decisions and acceptance suite, as one zip."""
+        from app.sprint.handover import build
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root or not Path(record.repo_root).is_dir():
+            raise HTTPException(status_code=404, detail="This run has no workspace.")
+        record_audit(
+            actor=user.username, tenant_id=user.tenant_id, action="run.handover.download",
+            subject=run_id, detail={},
+        )
+        return Response(
+            content=build(record.repo_root, run_id),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{run_id}-handover.zip"'},
+        )
+
+    @runs.get("/{run_id}/logs", response_model=EventPage)
     async def get_logs(
         run_id: str,
         limit: int = Query(50, ge=1, le=500),
         offset: int = Query(0, ge=0),
         user: UserInDB = Depends(get_current_active_user),
-    ) -> dict[str, Any]:
-        """Paginated log entries, paged in Redis rather than in Python."""
+    ) -> EventPage:
+        """Paginated log entries, paged in Redis rather than in Python.
+
+        Typed (plan UI-S4): the event's schema is published with the API, so the
+        page's type of it is generated and a new event type reaches the page's
+        build, not a blank row.
+        """
         _require_run(runner, run_id, user)
         total = await event_bus.history_length(run_id)
         page = await event_bus.get_history(run_id, offset=offset, limit=limit)
-        return {
-            "run_id": run_id,
-            "total": total,
-            "offset": offset,
-            "limit": limit,
-            "logs": [e.model_dump() for e in page],
-        }
+        return EventPage(run_id=run_id, total=total, offset=offset, limit=limit, logs=list(page))
 
     # ------------------------------------------------------------------
     # Lifecycle controls
@@ -561,9 +873,10 @@ def create_runs_router(
         """Delete a terminal run and everything it owns.
 
         Deletion cascades: uploads, workspace, checkpoints and event history all
-        go. Previously only the metadata row was removed, so documents and
-        checkpoints accumulated forever - which is also a data-retention problem,
-        not just a disk one.
+        go, and so do the transcript, ledger, journal and stored copies - see
+        `app.server.run_retention` for the full contract. Previously only the
+        metadata row was removed, so documents and checkpoints accumulated
+        forever - which is also a data-retention problem, not just a disk one.
         """
         record = _require_run(runner, run_id, user)
         if record.status not in ("completed", "failed", "cancelled"):
@@ -574,12 +887,18 @@ def create_runs_router(
 
         # Uploads may be shared with a clone, so only remove files no other run
         # still references.
+        unshared = []
         for path in record.document_paths:
             if not runner.run_store.document_in_use(path, exclude_run_id=run_id):
+                unshared.append(path)
                 try:
                     Path(path).unlink(missing_ok=True)
                 except OSError:
                     logger.warning("Could not remove upload %s", path, exc_info=True)
+
+        from app.server.run_retention import purge_run_records
+
+        purge_run_records(run_id, record.repo_root, unshared)
 
         if record.repo_root:
             try:
@@ -594,7 +913,7 @@ def create_runs_router(
         # active run, and deleting it would clobber that run's in-flight
         # compaction state. The files inside are small markdown summaries keyed
         # by a per-invocation session id; their slow accumulation is a known,
-        # accepted limitation (see docs/context-compaction-remediation-steps.md).
+        # accepted limitation, recorded when context compaction was remediated.
 
         runner.discard_run_threads(record)
         await event_bus.purge(run_id)
@@ -671,6 +990,112 @@ def create_runs_router(
         )
         return {"message": f"Approval decision '{body.action}' recorded for run {run_id}."}
 
+    @runs.get("/{run_id}/decisions")
+    async def get_decisions(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """Every decision the run has taken, who took it and why (`app.decisions`)."""
+        record = _require_run(runner, run_id, user)
+        state = record.graph_state(runner.checkpointer)
+        decisions = [d for d in (state.get("decisions") or []) if isinstance(d, dict)]
+        return {"run_id": run_id, "decisions": decisions}
+
+    @runs.get("/{run_id}/evidence")
+    async def get_evidence(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """What a reviewer is shown: the acceptance suite's last measured result,
+        the screenshots it kept, and the review pages written so far."""
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root:
+            return {"run_id": run_id, "acceptance": {}, "screenshots": [], "pages": []}
+        from app.acceptance import suite
+        from app.ci import first_passes
+        from app.graph.delivery import screenshots
+
+        root = Path(record.repo_root)
+        pages = sorted(
+            path.relative_to(root).as_posix()
+            for path in (root / "docs" / "reviews").glob("*.md")
+        ) if (root / "docs" / "reviews").is_dir() else []
+        return {
+            "run_id": run_id,
+            "acceptance": suite.last_result(root),
+            "deferred": suite.deferred(root),
+            "change_requests": suite.change_requests(root),
+            "screenshots": screenshots(root),
+            "pages": pages,
+            # What the release knew it did not prove, and how well the stack's own checks cover it.
+            "completion_gaps": [str(gap) for gap in (getattr(record, "completion_gaps", None) or [])],
+            "support_tier": _support_tier_of(root),
+            # Each criterion's first passing test, after which step and when (plan BG.9).
+            "first_passed": first_passes(root),
+        }
+
+    @runs.get("/{run_id}/changes")
+    async def get_changes(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """The run's workspace history, newest first, with the files each commit touched."""
+        from app.server.changes import ChangesTookTooLong, ChangesUnavailable, commits
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root:
+            return {"run_id": run_id, "commits": []}
+        try:
+            # Off the event loop: git can take seconds on a large history.
+            return {"run_id": run_id, "commits": await asyncio.to_thread(commits, record.repo_root)}
+        except ChangesTookTooLong as error:
+            raise HTTPException(status_code=504, detail=str(error)) from error
+        except ChangesUnavailable as error:
+            return {"run_id": run_id, "commits": [], "problem": str(error)}
+
+    @runs.get("/{run_id}/changes/{sha}")
+    async def get_change(
+        run_id: str, sha: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """One commit's diff in the run's workspace."""
+        from app.server.changes import ChangesTookTooLong, ChangesUnavailable, diff
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root:
+            raise HTTPException(status_code=404, detail="This run has no workspace yet.")
+        try:
+            return {"run_id": run_id, **await asyncio.to_thread(diff, record.repo_root, sha)}
+        except ChangesTookTooLong as error:
+            raise HTTPException(status_code=504, detail=str(error)) from error
+        except ChangesUnavailable as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @runs.get("/{run_id}/steering")
+    async def get_steering(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """The notes the owner sent this run while it ran."""
+        from app.server.steering import notes
+
+        record = _require_run(runner, run_id, user)
+        return {"run_id": run_id, "notes": notes(record.repo_root) if record.repo_root else []}
+
+    @runs.post("/{run_id}/steering", status_code=201)
+    async def post_steering(
+        run_id: str, body: SteeringNote, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """Give a running run a direction its next model calls carry."""
+        from app.server.steering import add
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root or record.status in ("completed", "failed", "cancelled"):
+            raise HTTPException(status_code=409, detail="Only a run that is still going can be steered.")
+        if record.status in ("paused", "waiting_for_budget"):
+            # A note on a run that is not running reaches nothing until it is
+            # resumed, and the owner reads "sent" as "followed" (Initiative AS).
+            raise HTTPException(status_code=409, detail="This run is paused. Resume it first, then send the direction.")
+        try:
+            return {"run_id": run_id, "note": add(record.repo_root, body.text, user.username, body.scope)}
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
     @runs.get("/{run_id}/review")
     async def get_pending_review(
         run_id: str, user: UserInDB = Depends(get_current_active_user)
@@ -688,6 +1113,7 @@ def create_runs_router(
             revision=review.revision if review else 0,
             comments="\n".join(review.comments) if review and review.comments else None,
             available_actions=["approve", "changes", "skip"],
+            document=_the_review_document(record.repo_root, review.artifact_id if review else ""),
         )
         return {"pending": True, "run_id": run_id, "review": payload.model_dump()}
 
@@ -864,7 +1290,7 @@ def _derive_stages(events: list[Any], current_stage: str | None) -> list[dict[st
     for event in events:
         # Every event carries the stage that produced it, and only pauses emit
         # `stage_change` - the runner publishes one per gate, so a timeline
-        # built from those alone showed 8 of run-2b5def74's 17 stages and none
+        # built from those alone showed 8 of one run's 17 stages and none
         # of the planning or review. Reading the stage off all events costs
         # nothing and shows the run that actually happened.
         raw = event.stage or ""
@@ -940,7 +1366,7 @@ def _stage_in_flight(record: RunRecord, stages: list[dict[str, Any]]) -> str:
     `current_stage` is written by the runner's gate loop, and that loop only
     turns when the graph pauses for an approval. A run between gates - which is
     most of a run - carries whatever it last paused on, or, for one that has
-    not reached its first gate, nothing at all. Measured on run-7b11cb67: ten
+    not reached its first gate, nothing at all. Measured on one run: ten
     minutes of steady work, a model call every thirty seconds, and a blank
     stage on the screen the whole time.
 
@@ -983,6 +1409,7 @@ _WIZARD_STAGE_COPY: dict[str, tuple[str, str]] = {
     "product_manager": ("Understanding your product", "Reading your document to work out what you want built and who it is for."),
     "tools_models": ("Comparing the options", "Weighing up the technologies and AI models that would suit this product."),
     "stack_selector": ("Choosing the technology", "Settling on the languages, frameworks and services the build will use."),
+    "specialist_consultation": ("Asking the specialists", "Getting the interface, data and service specialists' advice before the technical plan is written."),
     "principal_architect": ("Designing how it works", "Writing the technical plan: the pieces, the data, and how they fit together."),
     "architecture_review": ("Checking the design", "A second opinion on the plan, looking for security holes and things that will not work."),
     "user_review_specification": ("Your review", "Paused for you to read the technical plan and say whether to continue."),
@@ -992,6 +1419,8 @@ _WIZARD_STAGE_COPY: dict[str, tuple[str, str]] = {
     "test_and_triage": ("Testing", "Running the tests and writing down anything that failed."),
     "defect_remediation": ("Fixing what broke", "Sending each problem back to be fixed, then testing again."),
     "security_review": ("Security check", "Looking over the finished code for anything unsafe."),
+    "advice_review": ("Checking the specialists' advice", "Each specialist asked before the design checks its advice was built this sprint."),
+    "acceptance_dispute": ("Judging the failing tests", "Before a failed sprint is planned again, the QA lead says which locked tests no right product could pass."),
     "milestone_review": ("Reviewing the work", "Checking the finished piece against what was planned."),
     "user_review_sprint": ("Your review", "Paused for you to look at the completed sprint and say whether to continue."),
     "sprint_advance": ("Starting the next sprint", "This chunk is done. Moving on to the next one."),
@@ -1514,6 +1943,54 @@ async def build_wizard_model(record: RunRecord, runner: WorkflowRunner) -> Wizar
     return WizardModel(sections=sections, summary=summary_model, current_section_id=current_section_id)
 
 
+#: Review points whose artifact is a structured output in the graph state, by its key.
+_REVIEW_OUTPUTS = {
+    "product-intake": "product_intake",
+    "tools-and-models": "tools_models",
+    "technical-specification": "technical_specification",
+    "architecture-review": "architecture_review",
+    "sprint-milestone": "milestone_plan",
+    "milestone-review": "milestone_review",
+}
+#: Review points whose artifact is a document the workflow writes rather than a
+#: structured output: the acceptance suite in plain language, and the release
+#: evidence. See `app.graph.acceptance_nodes` and `delivery`.
+_REVIEW_DOCUMENTS = {
+    "acceptance-tests": "docs/acceptance_tests.md",
+    "release": "docs/reviews/release-evidence.md",
+    "escalation": "docs/reviews/escalation.md",
+}
+
+
+def _the_review_document(repo_root: str | None, artifact_id: str) -> str | None:
+    """The workspace document a review is about, when the workflow wrote one (plan BG.3).
+
+    A structured output is also rendered as `docs/<name>.md`; the page shows
+    that in place of asking the owner to download, edit and upload it.
+    """
+    if not repo_root or not artifact_id:
+        return None
+    logical = _REVIEW_OUTPUTS.get(artifact_id) or artifact_id.replace("-", "_")
+    for candidate in (_REVIEW_DOCUMENTS.get(artifact_id), f"docs/{logical}.md", f"docs/{artifact_id.replace('-', '_')}.md"):
+        if candidate and (Path(repo_root) / candidate).is_file():
+            return candidate
+    return None
+
+
+def _remediation_info(cycle: Any) -> RemediationInfo | None:
+    """Where the fix loop stands, with the defects still open; None outside one."""
+    if cycle is None:
+        return None
+    return RemediationInfo(
+        attempt=cycle.attempt,
+        max_attempts=cycle.max_attempts,
+        escalated=cycle.escalated,
+        defect_count=len(cycle.defects),
+        test_runs=len(cycle.test_runs),
+        open_defects=sum(1 for defect in cycle.defects if getattr(defect, "status", "open") == "open"),
+    )
+
+
 async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> RunStatusResponse:
     """Assemble the full status payload for one run."""
     # Derived from the event history rather than stored: the history is already
@@ -1542,16 +2019,7 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
             )
         )
 
-    remediation = None
-    cycle = state.get("remediation")
-    if cycle is not None:
-        remediation = RemediationInfo(
-            attempt=cycle.attempt,
-            max_attempts=cycle.max_attempts,
-            escalated=cycle.escalated,
-            defect_count=len(cycle.defects),
-            test_runs=len(cycle.test_runs),
-        )
+    remediation = _remediation_info(state.get("remediation"))
 
     artifacts = [
         ArtifactInfo(
@@ -1578,7 +2046,94 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         remediation=remediation,
         error=record.error,
         auto_approve=bool(record.auto_approve),
+        completion_gaps=[str(gap) for gap in (getattr(record, "completion_gaps", None) or [])],
+        gate_deadline=_when_the_gate_approves_itself(record),
+        approval_timeout_minutes=getattr(record, "approval_timeout_minutes", None),
+        non_deliverable=_what_the_marker_says(record),
+        delivery_mode=str(getattr(record, "delivery_mode", "") or ""),
+        use_frontier_model=not bool(getattr(record, "local_only", False)),
+        cost=_cost_summary(record.run_id),
+        # The ceilings the worker holds the run to: the API reads the same environment.
+        max_run_tokens=_max_run_tokens() or None,
+        max_run_cost_usd=_max_run_cost_usd() or None,
+        # Its size, so the page can say what a run of this size takes here.
+        **_how_many_criteria_hold(record),
     )
+
+
+def _when_the_gate_approves_itself(record: Any) -> Any:
+    """When a waiting gate approves itself, or None: nothing waits, or it waits for the person.
+
+    The sweep approves a gate `approval_timeout_minutes` after the run started
+    waiting (`app.server.approval_timeouts`), and the page never said so: a
+    gate approved itself with nobody told, and gates with no timeout were
+    measured parked for 12-13 h with nothing to say they would wait for ever.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    minutes = getattr(record, "approval_timeout_minutes", None)
+    if record.status not in ("waiting_for_approval", "waiting_for_review") or not minutes:
+        return None
+    try:
+        since = datetime.fromisoformat(str(record.updated_at))
+    except (TypeError, ValueError):
+        return None
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
+    return since + timedelta(minutes=int(minutes))
+
+
+def _what_the_marker_says(record: Any) -> str:
+    """The workspace's non-deliverable marker in one sentence, or "" (Initiative J.6)."""
+    try:
+        from app.graph import terminal_state
+
+        found = terminal_state.read(getattr(record, "repo_root", "") or "")
+    except Exception:  # noqa: BLE001 - a status response is never failed by the marker
+        return ""
+    if not found:
+        return ""
+    reason = str(found.get("reason") or "")
+    status = str(found.get("status") or "")
+    return f"{status}: {reason}" if reason else status
+
+
+def _cost_summary(run_id: str) -> RunCostSummary | None:
+    """This run's spend, or `None` when this process is not the one tracking it.
+
+    Two sources, in order of precision. The live registry is authoritative but
+    per-process, so it answers only in the worker that made the calls; the API
+    is a different container and would otherwise report nothing for every run.
+    The transcript is the shared fallback - both containers mount
+    `DATA_DIR/transcripts/` and every `model_response` line carries its usage.
+
+    `None` when neither has anything, and not a zeroed summary: absent means
+    "not known here", and a `$0.00` on a run that has made a hundred paid calls
+    is exactly the fabricated measurement plan-part3 §3.2 set out to remove.
+
+    A run genuinely on a local model reports a summary with `0.0` and
+    `fully_priced` true, which is a different statement and reads as one.
+    """
+    from app.observability.cost_tracker import cost_from_transcript, run_cost
+
+    total = run_cost(run_id)
+    if total.successful_requests == 0:
+        # Not this process's run. Fall back to the transcript, which both
+        # containers can read - otherwise the API reports no cost for every run,
+        # because the worker is where the calls were made.
+        provider = model = ""
+        try:
+            from app.models import _runtime_settings
+
+            resolved = _runtime_settings()
+            provider = getattr(resolved, "llm_provider", "") or ""
+            model = getattr(resolved, "model_name", "") or ""
+        except Exception:  # noqa: BLE001 - an unpriced total beats no total
+            logger.debug("Could not resolve settings for the cost summary", exc_info=True)
+        total = cost_from_transcript(run_id, provider, model)
+        if total is None:
+            return None
+    return RunCostSummary(**total.summary())
 
 
 __all__ = ["create_runs_router"]

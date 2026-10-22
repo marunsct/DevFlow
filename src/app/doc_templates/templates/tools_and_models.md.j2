@@ -1,0 +1,59 @@
+{#- docs/tools_and_models.md - the technology comparison.
+    Context: o (ToolsAndModelsOutput). Every option is the same record, so every
+    option reads with the same labels in the same order. -#}
+{% macro options(items) %}
+{% for opt in items %}
+
+### {{ opt.name | text("Unnamed option") }}{% if opt.category %} ({{ opt.category | text }}){% endif %}
+
+- **Capability:** {{ opt.capability | text }}
+- **Compatibility:** {{ opt.compatibility | text }}
+- **Quality:** {{ opt.quality | text }}
+- **Latency:** {{ opt.latency | text }}
+- **Cost:** {{ opt.cost | text }}
+- **Privacy:** {{ opt.privacy | text }}
+- **Licensing:** {{ opt.licensing | text }}
+- **Operational burden:** {{ opt.operational_burden | text }}
+- **Alternative:** {{ opt.alternative | text }}
+- **Replacement criteria:** {{ opt.replacement_criteria | text }}
+{% else %}
+_Not specified._
+{% endfor %}
+{% endmacro %}
+# Tools and Models
+
+## Frameworks
+{{ options(o.frameworks) }}
+
+## Model providers
+{{ options(o.model_providers) }}
+
+## Storage options
+{{ options(o.storage_options) }}
+
+## Queues and Job Systems
+{{ options(o.queue_and_job_systems) }}
+
+## Authentication
+{{ options(o.authentication) }}
+
+## Observability
+{{ options(o.observability) }}
+
+## Testing tools
+{{ options(o.testing_tools) }}
+
+## Deployment options
+{{ options(o.deployment_options) }}
+
+## Selected Technology Stack
+{% if o.technology_stack %}
+{% with stack = o.technology_stack %}{% include "_stack.md.j2" %}{% endwith %}
+{% else %}
+_Not specified._
+{% endif %}
+
+## Open questions
+{{ o.open_questions | section }}
+
+<!-- Generated from this stage's structured response. Editing this file does not change what the pipeline reads. -->

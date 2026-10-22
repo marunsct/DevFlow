@@ -550,18 +550,20 @@ def seed_workspace(
     source: object | None,
     *,
     resolve_upload,
+    resolve_run=None,
 ) -> SeedResult:
     """Materialise `source` into `workspace`, if a source was requested.
 
     `resolve_upload` maps an upload id to a stored path. It is injected rather
     than imported so this module never decides which file a caller may reach.
+    `resolve_run` does the same for a finished run's workspace (plan BW.2).
     """
     if source is None or getattr(source, "type", "empty") == "empty":
         return SeedResult(seeded=False, provenance={"type": "empty"})
 
     kind = getattr(source, "type")
     if kind == "git":
-        return SeedResult(
+        result = SeedResult(
             seeded=True,
             provenance=seed_from_git(
                 workspace,
@@ -571,11 +573,27 @@ def seed_workspace(
                 depth=getattr(source, "depth", 1) or 1,
             ),
         )
-    if kind == "archive":
+    elif kind == "archive":
         stored = resolve_upload(getattr(source, "upload_id", ""))
         if stored is None:
             raise SeedError("That upload could not be found.")
-        return SeedResult(seeded=True, provenance=seed_from_archive(workspace, stored))
+        result = SeedResult(seeded=True, provenance=seed_from_archive(workspace, stored))
+    elif kind == "run":
+        from app.server.change_request_runs import seed_from_run
+
+        run_id = str(getattr(source, "run_id", "") or "")
+        finished = resolve_run(run_id) if resolve_run is not None and run_id else None
+        if finished is None:
+            raise SeedError("That run could not be found, or it has not completed.")
+        result = SeedResult(seeded=True, provenance=seed_from_run(workspace, Path(finished), run_id))
+    else:
+        result = None
+    if result is not None:
+        # The workflow reads it to hold the seeded product's own green tests (plan BW.1).
+        from app.acceptance.regression_contract import mark_seeded
+
+        mark_seeded(workspace, result.provenance)
+        return result
 
     raise SeedError(f"Unknown workspace source '{kind}'.")
 

@@ -3,7 +3,8 @@ import secrets
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+import json
+from typing import Any, Literal, Optional
 
 import bcrypt
 import jwt
@@ -12,9 +13,11 @@ from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import logging
+
+from app.server.schema_lock import lock_schema
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +135,10 @@ def get_db_connection():
         conn.rollback()
         raise
     finally:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         _db_pool.putconn(conn)
 
 
@@ -146,9 +153,24 @@ def init_db():
     Raises on failure: an auth store that could not be created will fail every
     request anyway, and a warning that scrolls past in the log is how the broken
     state stayed invisible before.
+
+    Serialised by `lock_schema`, because every gunicorn worker runs this in its
+    lifespan and `WEB_CONCURRENCY` defaults to 4, so against an empty database
+    four sessions create the schema at once. `CREATE TABLE IF NOT EXISTS` does
+    not protect against that; `app.server.schema_lock` explains why, and carries
+    the measurements from the cold start that found it.
+
+    The admin seed at the end of this function has the same shape and is covered
+    by the same lock: it is a `SELECT` for `admin` followed by an `INSERT`, so
+    two workers that both read "no admin" both insert one and the loser fails on
+    the primary key. The lock is held for the whole transaction, not just the
+    DDL, which is what makes that work.
     """
     with get_db_connection() as conn:
         with conn.cursor() as c:
+            # Before any DDL. The losers block here until the winner commits,
+            # then find every object already present and do nothing.
+            lock_schema(c)
             c.execute(
                 """
                 CREATE TABLE IF NOT EXISTS users (
@@ -164,6 +186,8 @@ def init_db():
             # idempotent so this is safe to run on every start.
             c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'operator'")
             c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'")
+            # The owner's appearance (theme, accent, density), kept per user so it follows them across devices.
+            c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences TEXT NOT NULL DEFAULT '{}'")
             # A database created before roles existed has an 'admin' account that
             # the ADD COLUMN default would silently demote to 'operator',
             # locking every administrative action out of an upgraded install.
@@ -260,15 +284,38 @@ class Token(BaseModel):
     expires_in: Optional[int] = None
 
 
-class TokenData(BaseModel):
-    username: Optional[str] = None
-
-
 class User(BaseModel):
     username: str
     disabled: Optional[bool] = None
     role: str = "operator"
     tenant_id: str = "default"
+    preferences: dict = {}
+
+
+class RunDefaults(BaseModel):
+    """How the owner last started a run, so the start form opens with it (plan UI-S5).
+
+    Every field is optional; an empty object forgets them. Kept with the user,
+    so they follow the owner to another browser.
+    """
+
+    delivery_mode: Optional[Literal["fast", "thorough"]] = None
+    use_frontier_model: Optional[bool] = None
+    unattended: Optional[bool] = None
+    auto_approve: Optional[bool] = None
+    approval_timeout_minutes: Optional[int] = Field(default=None, ge=1, le=10_080)
+    allow_subdirectories: Optional[bool] = None
+    #: Review point -> whether the run stops there for the owner.
+    reviews: Optional[dict[str, bool]] = None
+
+
+class Preferences(BaseModel):
+    """The owner's appearance and run defaults. Every field is optional: a patch changes only what it names."""
+
+    theme: Optional[Literal["graphite", "paper", "contrast", "system"]] = None
+    accent: Optional[Literal["blue", "violet", "teal", "amber", "rose", "neutral"]] = None
+    density: Optional[Literal["comfortable", "compact"]] = None
+    run_defaults: Optional[RunDefaults] = None
 
 
 class UserInDB(User):
@@ -283,7 +330,8 @@ def get_user(username: str) -> Optional[UserInDB]:
     with get_db_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as c:
             c.execute(
-                "SELECT username, hashed_password, disabled, role, tenant_id "
+                "SELECT username, hashed_password, disabled, role, tenant_id, "
+                "COALESCE(preferences, '{}') AS preferences "
                 "FROM users WHERE username = %s",
                 (username,),
             )
@@ -295,8 +343,18 @@ def get_user(username: str) -> Optional[UserInDB]:
                     disabled=bool(row["disabled"]),
                     role=row.get("role") or "operator",
                     tenant_id=row.get("tenant_id") or "default",
+                    preferences=_read_preferences(row.get("preferences")),
                 )
     return None
+
+
+def _read_preferences(raw: Any) -> dict:
+    """The stored appearance as a dict; {} when it is absent or not JSON."""
+    try:
+        value = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _create_token(data: dict, expires_delta: timedelta, token_type: str) -> str:
@@ -381,22 +439,6 @@ require_admin = require_role("admin")
 require_operator = require_role("operator", "admin")
 
 
-async def get_user_from_token(token: str) -> Optional[User]:
-    if not token:
-        return None
-    username = _decode(token, "access")
-    if username is None:
-        return None
-    try:
-        user = get_user(username)
-    except Exception:  # noqa: BLE001 - a DB blip must not look like a valid session
-        logger.error("Failed to load user while validating token", exc_info=True)
-        return None
-    if user and not user.disabled:
-        return user
-    return None
-
-
 @auth_router.post("/api/auth/token", response_model=Token, tags=["auth"])
 async def login_for_access_token(
     request: Request,
@@ -475,4 +517,21 @@ async def read_users_me(current_user: UserInDB = Depends(get_current_active_user
         disabled=current_user.disabled,
         role=current_user.role,
         tenant_id=current_user.tenant_id,
+        preferences=current_user.preferences,
+    )
+
+
+@auth_router.patch("/api/auth/me/preferences", response_model=User, tags=["auth"])
+async def update_my_preferences(
+    patch: Preferences, current_user: UserInDB = Depends(get_current_active_user)
+) -> User:
+    """Keep the owner's appearance, merged over what was kept; the stored value wins on the next sign-in."""
+    merged = {**current_user.preferences, **patch.model_dump(exclude_none=True)}
+    with get_db_connection() as conn:
+        with conn.cursor() as c:
+            c.execute("UPDATE users SET preferences = %s WHERE username = %s", (json.dumps(merged), current_user.username))
+        conn.commit()
+    return User(
+        username=current_user.username, disabled=current_user.disabled, role=current_user.role,
+        tenant_id=current_user.tenant_id, preferences=merged,
     )

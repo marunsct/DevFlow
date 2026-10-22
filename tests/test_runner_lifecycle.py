@@ -840,7 +840,7 @@ def test_the_error_stays_short_enough_to_render() -> None:
 def test_a_task_time_limit_says_the_run_was_still_working() -> None:
     """`SoftTimeLimitExceeded: SoftTimeLimitExceeded()` tells the reader nothing.
 
-    Observed on run-0b55ad49: 54.3 minutes of healthy progress, from
+    Observed on one run: 54.3 minutes of healthy progress, from
     stack_selector through two architecture-review rounds to technical_lead,
     ended by a 3300-second ceiling. Nothing was wrong with the run and nothing
     was lost - but the message named a Celery class, not a clock, so the obvious
@@ -874,7 +874,7 @@ def test_the_task_time_limit_is_sized_for_a_whole_run() -> None:
 def test_a_loaded_but_different_model_is_explained_too() -> None:
     """The server may hold a model and still refuse the one that was asked for.
 
-    Observed on run-0b55ad49: settings named `unsloth/Qwen3.8-27B-GGUF` while
+    Observed on one run: settings named `unsloth/Qwen3.8-27B-GGUF` while
     the server had `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` loaded with
     'Switch model by request' off. Saying "no model loaded" would have sent the
     reader looking for a problem that was not there.
@@ -903,7 +903,7 @@ def test_a_loaded_but_different_model_is_explained_too() -> None:
 # nothing changed between attempts, and `write_approved_artifact` says so by
 # reporting `unchanged`. Applying the same rule to a command inverts it.
 #
-# On run-0b55ad49 `specialist_backend_1` ran `npm test`, read `app.js`, ran it
+# On one run `specialist_backend_1` ran `npm test`, read `app.js`, ran it
 # again, read four more files, ran it again - real diagnosis between every run,
 # with the tests passing - and was stopped after five as "asking to write the
 # same thing 5 times in a row". It had written nothing at all.
@@ -960,7 +960,7 @@ def test_the_approval_records_what_the_pause_would_do() -> None:
 def test_a_loop_is_answered_before_the_run_is_ended() -> None:
     """Ending the run was the harshest available response, and the only one.
 
-    run-130deeef's `specialist_backend_8` wrote `docs/blocker.md` five times - a
+    One run's `specialist_backend_8` wrote `docs/blocker.md` five times - a
     perfectly reasonable document, from a model that had correctly worked out it
     was blocked and had no other move - and that killed a run which had already
     completed a full sprint, a test round, a security review and a milestone
@@ -1010,7 +1010,7 @@ def test_a_repeated_command_reports_the_command_not_an_unknown_path() -> None:
 # "re-invoke to make progress" fallback returns identical state forever.
 #
 # Bounded only by MAX_GATES, that spun 1000 times in five seconds on
-# run-0b55ad49 and reported "Stopped after 1000 automatic approvals" when not
+# one run and reported "Stopped after 1000 automatic approvals" when not
 # one approval had happened.
 # ---------------------------------------------------------------------------
 
@@ -1074,7 +1074,7 @@ async def test_a_graph_with_nothing_to_resume_is_caught_quickly(runner, monkeypa
 def test_gate_exhaustion_reports_what_the_stage_kept_doing():
     """"Raise the ceiling" was the whole message, and it is often wrong advice.
 
-    Measured on run-db3a4a0b: `defect_fix_1_0` spent all 120 approvals running
+    Measured on one run: `defect_fix_1_0` spent all 120 approvals running
     `node test.js` against a test whose assertion could not be satisfied - the
     defect was "test.js AC-BE-1 regex was too strict, expected literal
     'todo_tasks' but code uses a constant". A larger budget would have bought
@@ -1105,3 +1105,80 @@ def test_the_repeat_guard_still_distinguishes_writes_from_commands():
 
     assert _repeat_is_a_loop(_Approval("write"))
     assert not _repeat_is_a_loop(_Approval("command"))
+
+
+async def test_a_run_keeps_the_delivery_mode_it_was_started_with(runner, dispatched, tmp_path, monkeypatch):
+    """Chosen per run, not a setting beside the models: a later change of the
+    deployment's default does not move a run already going."""
+    from app import delivery
+    from app.state import RepositoryContext
+
+    monkeypatch.setenv("DELIVERY_MODE", "fast")
+    _register(runner)
+    repository = RepositoryContext(root_path=str(tmp_path), branch="main", commit="abc", status="clean")
+
+    await runner.start_run("run-1", document=None, repository=repository, delivery_mode="thorough")
+
+    record = runner.run_store.load("run-1")
+    assert record.delivery_mode == "thorough"
+    with delivery.for_the_run(record.delivery_mode):
+        assert delivery.mode() == "thorough" and not delivery.fast()
+    assert delivery.mode() == "fast", "outside the run, the deployment's default"
+
+
+async def test_a_run_started_without_a_choice_takes_the_deployment_s(runner, dispatched, tmp_path, monkeypatch):
+    from app.state import RepositoryContext
+
+    monkeypatch.setenv("DELIVERY_MODE", "fast")
+    _register(runner)
+    repository = RepositoryContext(root_path=str(tmp_path), branch="main", commit="abc", status="clean")
+
+    await runner.start_run("run-1", document=None, repository=repository)
+
+    assert runner.run_store.load("run-1").delivery_mode == "fast"
+
+
+async def test_a_run_started_without_the_frontier_model_keeps_every_stage_on_the_build_model(runner, dispatched, tmp_path, monkeypatch):
+    """Owner, 2026-10-15: a choice on the run - unchecked, all the work happens on the local model."""
+    from app.models.roles import build_judgement_model, on_the_build_model_only
+    from app.state import RepositoryContext
+
+    _register(runner)
+    repository = RepositoryContext(root_path=str(tmp_path), branch="main", commit="abc", status="clean")
+
+    await runner.start_run("run-1", document=None, repository=repository, use_frontier_model=False)
+
+    record = runner.run_store.load("run-1")
+    assert record.local_only is True
+    local = object()
+    frontier_settings = {
+        "LLM_PROVIDER": "local", "OPENAI_MODEL": "local-y", "OPENAI_BASE_URL": "http://localhost:1/v1",
+        "OPENAI_API_KEY": "k", "JUDGEMENT_MODEL": "frontier-x",
+    }
+    assert getattr(build_judgement_model(local, frontier_settings), "model_name", None) == "frontier-x"
+    with on_the_build_model_only(record.local_only):
+        assert build_judgement_model(local, frontier_settings) is local
+
+
+async def test_a_run_started_without_saying_uses_the_frontier_model(runner, dispatched, tmp_path):
+    from app.state import RepositoryContext
+
+    _register(runner)
+    repository = RepositoryContext(root_path=str(tmp_path), branch="main", commit="abc", status="clean")
+
+    await runner.start_run("run-1", document=None, repository=repository)
+
+    assert runner.run_store.load("run-1").local_only is False
+
+
+def test_the_worker_works_a_run_on_the_models_it_was_started_with():
+    from pathlib import Path
+
+    source = Path("src/app/server/tasks.py").read_text()
+    assert 'on_the_build_model_only(bool(getattr(record, "local_only", False)))' in source
+    store = Path("src/app/server/run_store.py").read_text()
+    assert "ADD COLUMN IF NOT EXISTS local_only" in store
+    # Every SELECT carries the columns the record is rebuilt from - the pin
+    # moves with the newest one (completion_gaps, Initiative J.4) so a SELECT
+    # left behind fails here rather than as a record missing a field.
+    assert store.count("delivery_mode, local_only, approval_timeout_minutes, completion_gaps FROM runs") == 3

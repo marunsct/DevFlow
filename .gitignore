@@ -28,3 +28,21 @@ patch*.py
 patch*.diff
 test_out.txt
 coverage.xml
+
+# Handover archive - contains env-secrets.txt with real credentials.
+harness-handover-*.zip
+harness-handover/
+audit_output.txt
+run-fd891220-3fb2-4959-a511-f42c29f957ad.jsonl
+
+# Where the runtime writes when DATA_DIR is unset, which is "." by default.
+# An ad-hoc `python3 -c` against any tool - a sandbox call, a transcript write -
+# drops its files here, and two ledger entries for temporary directories that
+# stopped existing in September were committed that way. The test suite sets
+# DATA_DIR to a temporary directory of its own, so nothing here is ever wanted.
+/ledger/
+/journal/
+/transcripts/
+/context/
+/workspaces/
+/uploads/

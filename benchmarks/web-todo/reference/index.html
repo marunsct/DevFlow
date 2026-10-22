@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>To-Do</title>
+  <style>
+    * { box-sizing: border-box; } body { font-family: sans-serif; margin: 0; padding: 1rem; max-width: 40rem; }
+    input, textarea { width: 100%; } li { margin: .5rem 0; }
+  </style>
+</head>
+<body>
+  <form id="add">
+    <label for="title">Title</label><input id="title">
+    <label for="description">Description</label><textarea id="description"></textarea>
+    <button type="submit">Add task</button>
+  </form>
+  <nav><button data-filter="all">All</button><button data-filter="active">Active</button><button data-filter="completed">Completed</button></nav>
+  <ul id="list"></ul>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

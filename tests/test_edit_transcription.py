@@ -7,7 +7,7 @@ harness pays in every stack it builds.
 
 The repair chain already forgave line numbers, doubled backslashes, JSON
 escaping, a different left margin and blank lines. Two residual faults
-survived it, both measured on run-519a9d8a:
+survived it, both measured on one run:
 
 1. The repairs were applied to the original `find` one at a time and never
    composed, so a passage carrying two faults at once defeated all of them.
@@ -248,7 +248,7 @@ def test_a_stale_line_number_is_refused_rather_than_applied(workspace):
     with pytest.raises(RepositoryToolError) as caught:
         replace_approved_lines(workspace, "p/j.py", 2, 2, "x", expect_start="a = 1")
 
-    assert "numbering has moved" in str(caught.value)
+    assert "is not what you expected" in str(caught.value)
     assert target.read_text(encoding="utf-8") == "a = 1\nb = 2\nc = 3\n"
 
 
@@ -324,7 +324,7 @@ def test_a_targeted_change_cannot_skip_the_guards(workspace):
 # ---------------------------------------------------------------------------
 # One stray quote at the end, from closing the JSON string a character late.
 #
-# Measured on run-eb48de7a: `specialist_ui_ux_0` sent an 85-line passage that
+# Measured on one run: `specialist_ui_ux_0` sent an 85-line passage that
 # matched `tests/app.test.ts` exactly except for a trailing `"`, twice. The
 # diff reported it correctly - `you sent: });"` against `file has: });` - and
 # every line but the last was right.

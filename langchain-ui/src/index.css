@@ -1,25 +1,316 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
-@theme {
-  --color-primary: #6366f1;
-  --color-primary-hover: #818cf8;
-  --color-primary-foreground: #ffffff;
-  --color-muted: #94a3b8;
-  --color-success: #22c55e;
-  --color-success-glow: rgba(34, 197, 94, 0.3);
-  --color-warning: #f59e0b;
-  --color-warning-glow: rgba(245, 158, 11, 0.3);
-  --color-danger: #ef4444;
-  --color-danger-glow: rgba(239, 68, 68, 0.3);
-  --color-surface: #0f172a;
-  --color-surface-raised: #1e293b;
-  --color-surface-overlay: #334155;
-  --color-border: #334155;
-  --color-border-subtle: #1e293b;
-  --color-text-primary: #f1f5f9;
-  --color-text-secondary: #94a3b8;
-  --color-text-muted: #64748b;
+/* The control room's design system (plan Part 15). Three layers:
+   1. per-theme values, set on <html data-theme="graphite|paper|contrast|system">;
+   2. semantic tokens with theme-independent names (bg-surface, fg, status-ok-fg...);
+   3. the Tailwind mapping below, so every utility (bg-surface, text-text-primary,
+      border-border...) follows the active theme with no change to a component.
+   The contrast of every pair is checked by scripts/ui/theme_contrast.mjs. */
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-sans-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-sans-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-sans-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-sans-latin-700-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/ibm-plex-mono-latin-500-normal.woff2') format('woff2');
+}
+
+/* ---- Layer 1+2: graphite (the default dark theme) ---- */
+/* Not `:root[...]` for the three named themes: any element carrying the attribute
+   (a theme card's miniature) paints itself with that theme's tokens. */
+:root,
+[data-theme="graphite"],
+:root[data-theme="system"] {
+  color-scheme: dark;
+  --bg-canvas: #15171c;
+  --bg-surface: #1c1f26;
+  --bg-raised: #242830;
+  --bg-overlay: rgba(255, 255, 255, 0.05);
+  --bg-overlay-strong: rgba(255, 255, 255, 0.09);
+  --bg-inset: #12141a;
+  --bg-scrim: rgba(0, 0, 0, 0.6);
+  --fg: #e8eaef;
+  --fg-muted: #a6afbd;
+  --fg-subtle: #9aa3b2;
+  --fg-on-accent: #0b1020;
+  --border: #343945;
+  --border-strong: #6c7486;
+  --border-focus: #8fa6ff;
+  --accent: #6e8bff;
+  --accent-hover: #8aa1ff;
+  --accent-soft: rgba(110, 139, 255, 0.14);
+  --accent-text: #9db2ff;
+  --status-ok-fg: #3fb68b;
+  --status-ok-bg: #163a2e;
+  --status-ok-border: #1f5a45;
+  --status-warn-fg: #e2a33a;
+  --status-warn-bg: #3b2e12;
+  --status-warn-border: #5c4719;
+  --status-danger-fg: #ef7a76;
+  --status-danger-bg: #3d1c1b;
+  --status-danger-border: #66302e;
+  --status-info-fg: #6fb4f0;
+  --status-info-bg: #14293b;
+  --status-info-border: #1f4261;
+  --status-attention-fg: #9db2ff;
+  --status-attention-bg: rgba(110, 139, 255, 0.14);
+  --status-attention-border: #6e8bff;
+  --code-bg: #12141a;
+  --code-fg: #d6dbe5;
+  --diff-add-bg: rgba(63, 182, 139, 0.14);
+  --diff-add-fg: #5cd0a5;
+  --diff-del-bg: rgba(229, 96, 92, 0.14);
+  --diff-del-fg: #f08c88;
+  --diff-hunk-bg: rgba(110, 139, 255, 0.1);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --ring: #8fa6ff;
+  --scrollbar: #343945;
+  --scrollbar-hover: #4a5160;
+}
+
+/* ---- Paper (light) ---- */
+[data-theme="paper"] {
+  color-scheme: light;
+  --bg-canvas: #f4f5f7;
+  --bg-surface: #ffffff;
+  --bg-raised: #eef0f3;
+  --bg-overlay: rgba(15, 23, 42, 0.05);
+  --bg-overlay-strong: rgba(15, 23, 42, 0.09);
+  --bg-inset: #e9ecf0;
+  --bg-scrim: rgba(15, 23, 42, 0.45);
+  --fg: #1b1f27;
+  --fg-muted: #5b6474;
+  --fg-subtle: #5a6373;
+  --fg-on-accent: #ffffff;
+  --border: #d7dbe2;
+  --border-strong: #7d8594;
+  --border-focus: #3350d6;
+  --accent: #3350d6;
+  --accent-hover: #2a43b3;
+  --accent-soft: rgba(51, 80, 214, 0.1);
+  --accent-text: #3350d6;
+  --status-ok-fg: #17694a;
+  --status-ok-bg: #ddf3ea;
+  --status-ok-border: #a9dcc6;
+  --status-warn-fg: #8a5a00;
+  --status-warn-bg: #fbefd3;
+  --status-warn-border: #ecd08f;
+  --status-danger-fg: #b42318;
+  --status-danger-bg: #fbe3e1;
+  --status-danger-border: #f0b1ac;
+  --status-info-fg: #0f5f9e;
+  --status-info-bg: #dcecf9;
+  --status-info-border: #a8cdea;
+  --status-attention-fg: #3350d6;
+  --status-attention-bg: rgba(51, 80, 214, 0.1);
+  --status-attention-border: #3350d6;
+  --code-bg: #eef0f3;
+  --code-fg: #1b1f27;
+  --diff-add-bg: rgba(30, 127, 90, 0.12);
+  --diff-add-fg: #17694a;
+  --diff-del-bg: rgba(180, 35, 24, 0.1);
+  --diff-del-fg: #a31f15;
+  --diff-hunk-bg: rgba(51, 80, 214, 0.08);
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.12);
+  --shadow-2: 0 8px 24px rgba(15, 23, 42, 0.16);
+  --ring: #3350d6;
+  --scrollbar: #c3c9d3;
+  --scrollbar-hover: #9aa2b0;
+}
+
+/* ---- Contrast (dark, AAA) ---- */
+[data-theme="contrast"] {
+  color-scheme: dark;
+  --bg-canvas: #000000;
+  --bg-surface: #0a0a0a;
+  --bg-raised: #141414;
+  --bg-overlay: rgba(255, 255, 255, 0.1);
+  --bg-overlay-strong: rgba(255, 255, 255, 0.18);
+  --bg-inset: #000000;
+  --bg-scrim: rgba(0, 0, 0, 0.8);
+  --fg: #ffffff;
+  --fg-muted: #d0d0d0;
+  --fg-subtle: #cbcbcb;
+  --fg-on-accent: #000000;
+  --border: #8a8a8a;
+  --border-strong: #c0c0c0;
+  --border-focus: #ffd166;
+  --accent: #9db4ff;
+  --accent-hover: #bccaff;
+  --accent-soft: rgba(157, 180, 255, 0.14);
+  --accent-text: #9db4ff;
+  --status-ok-fg: #5ce0a8;
+  --status-ok-bg: #002b1c;
+  --status-ok-border: #5ce0a8;
+  --status-warn-fg: #ffd166;
+  --status-warn-bg: #2e2200;
+  --status-warn-border: #ffd166;
+  --status-danger-fg: #ff9b95;
+  --status-danger-bg: #330b09;
+  --status-danger-border: #ff9b95;
+  --status-info-fg: #9fd0ff;
+  --status-info-bg: #04223b;
+  --status-info-border: #9fd0ff;
+  --status-attention-fg: #9db4ff;
+  --status-attention-bg: rgba(157, 180, 255, 0.14);
+  --status-attention-border: #9db4ff;
+  --code-bg: #000000;
+  --code-fg: #ffffff;
+  --diff-add-bg: rgba(92, 224, 168, 0.2);
+  --diff-add-fg: #8af0c4;
+  --diff-del-bg: rgba(255, 123, 116, 0.2);
+  --diff-del-fg: #ffb4af;
+  --diff-hunk-bg: rgba(157, 180, 255, 0.18);
+  --shadow-1: none;
+  --shadow-2: none;
+  --ring: #ffd166;
+  --scrollbar: #8a8a8a;
+  --scrollbar-hover: #c0c0c0;
+}
+
+/* "system" follows the light preference with the paper values. */
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    color-scheme: light;
+    --bg-canvas: #f4f5f7;
+    --bg-surface: #ffffff;
+    --bg-raised: #eef0f3;
+    --bg-overlay: rgba(15, 23, 42, 0.05);
+    --bg-overlay-strong: rgba(15, 23, 42, 0.09);
+    --bg-inset: #e9ecf0;
+    --bg-scrim: rgba(15, 23, 42, 0.45);
+    --fg: #1b1f27;
+    --fg-muted: #5b6474;
+    --fg-subtle: #5a6373;
+    --fg-on-accent: #ffffff;
+    --border: #d7dbe2;
+    --border-strong: #7d8594;
+    --border-focus: #3350d6;
+    --accent: #3350d6;
+    --accent-hover: #2a43b3;
+    --accent-soft: rgba(51, 80, 214, 0.1);
+    --accent-text: #3350d6;
+    --status-ok-fg: #17694a;
+    --status-ok-bg: #ddf3ea;
+    --status-ok-border: #a9dcc6;
+    --status-warn-fg: #8a5a00;
+    --status-warn-bg: #fbefd3;
+    --status-warn-border: #ecd08f;
+    --status-danger-fg: #b42318;
+    --status-danger-bg: #fbe3e1;
+    --status-danger-border: #f0b1ac;
+    --status-info-fg: #0f5f9e;
+    --status-info-bg: #dcecf9;
+    --status-info-border: #a8cdea;
+    --status-attention-fg: #3350d6;
+    --status-attention-bg: rgba(51, 80, 214, 0.1);
+    --status-attention-border: #3350d6;
+    --code-bg: #eef0f3;
+    --code-fg: #1b1f27;
+    --diff-add-bg: rgba(30, 127, 90, 0.12);
+    --diff-add-fg: #17694a;
+    --diff-del-bg: rgba(180, 35, 24, 0.1);
+    --diff-del-fg: #a31f15;
+    --diff-hunk-bg: rgba(51, 80, 214, 0.08);
+    --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.12);
+    --shadow-2: 0 8px 24px rgba(15, 23, 42, 0.16);
+    --ring: #3350d6;
+    --scrollbar: #c3c9d3;
+    --scrollbar-hover: #9aa2b0;
+  }
+}
+
+/* ---- Accent variants: only the accent changes (graphite and paper pairs) ---- */
+:root[data-accent="violet"] { --accent: #9b7bff; --accent-hover: #b39bff; --status-attention-bg: rgba(155, 123, 255, 0.14); --accent-soft: rgba(155, 123, 255, 0.14); --accent-text: #b8a2ff; --border-focus: #b8a2ff; --ring: #b8a2ff; --status-attention-fg: #b8a2ff; --status-attention-border: #9b7bff; }
+:root[data-accent="teal"] { --accent: #2fb8a8; --accent-hover: #4bcdbd; --status-attention-bg: rgba(47, 184, 168, 0.14); --accent-soft: rgba(47, 184, 168, 0.14); --accent-text: #5fd3c5; --border-focus: #5fd3c5; --ring: #5fd3c5; --status-attention-fg: #5fd3c5; --status-attention-border: #2fb8a8; }
+:root[data-accent="amber"] { --accent: #e0a030; --accent-hover: #efb54d; --status-attention-bg: rgba(224, 160, 48, 0.14); --accent-soft: rgba(224, 160, 48, 0.14); --accent-text: #f0be5c; --border-focus: #f0be5c; --ring: #f0be5c; --status-attention-fg: #f0be5c; --status-attention-border: #e0a030; }
+:root[data-accent="rose"] { --accent: #f0708f; --accent-hover: #f58aa3; --status-attention-bg: rgba(240, 112, 143, 0.14); --accent-soft: rgba(240, 112, 143, 0.14); --accent-text: #f79ab0; --border-focus: #f79ab0; --ring: #f79ab0; --status-attention-fg: #f79ab0; --status-attention-border: #f0708f; }
+:root[data-accent="neutral"] { --accent: #c9ced8; --accent-hover: #e1e4ea; --status-attention-bg: rgba(201, 206, 216, 0.12); --accent-soft: rgba(201, 206, 216, 0.12); --accent-text: #d6dae2; --border-focus: #d6dae2; --ring: #d6dae2; --status-attention-fg: #d6dae2; --status-attention-border: #c9ced8; }
+/* On the light theme the accent variants need dark enough text: the contrast script is the authority. */
+:root[data-theme="paper"][data-accent="violet"] { --accent: #6a3fd6; --accent-hover: #5632b0; --status-attention-bg: rgba(106, 63, 214, 0.1); --accent-soft: rgba(106, 63, 214, 0.1); --accent-text: #6a3fd6; --border-focus: #6a3fd6; --ring: #6a3fd6; --status-attention-fg: #6a3fd6; --status-attention-border: #6a3fd6; }
+:root[data-theme="paper"][data-accent="teal"] { --accent: #0b6b61; --accent-hover: #095850; --status-attention-bg: rgba(11, 107, 97, 0.1); --accent-soft: rgba(11, 107, 97, 0.1); --accent-text: #0b6b61; --border-focus: #0b6b61; --ring: #0b6b61; --status-attention-fg: #0b6b61; --status-attention-border: #0b6b61; }
+:root[data-theme="paper"][data-accent="amber"] { --accent: #8a5a00; --accent-hover: #6f4800; --status-attention-bg: rgba(138, 90, 0, 0.1); --accent-soft: rgba(138, 90, 0, 0.1); --accent-text: #8a5a00; --border-focus: #8a5a00; --ring: #8a5a00; --status-attention-fg: #8a5a00; --status-attention-border: #8a5a00; }
+:root[data-theme="paper"][data-accent="rose"] { --accent: #b3274a; --accent-hover: #911e3b; --status-attention-bg: rgba(179, 39, 74, 0.1); --accent-soft: rgba(179, 39, 74, 0.1); --accent-text: #b3274a; --border-focus: #b3274a; --ring: #b3274a; --status-attention-fg: #b3274a; --status-attention-border: #b3274a; }
+:root[data-theme="paper"][data-accent="neutral"] { --accent: #3b4352; --accent-hover: #2a303c; --status-attention-bg: rgba(59, 67, 82, 0.1); --accent-soft: rgba(59, 67, 82, 0.1); --accent-text: #3b4352; --border-focus: #3b4352; --ring: #3b4352; --status-attention-fg: #3b4352; --status-attention-border: #3b4352; }
+:root[data-theme="paper"][data-accent] { --fg-on-accent: #ffffff; }
+
+/* ---- Density: row heights and card padding ---- */
+:root { --density-pad: 1rem; --density-row: 2.5rem; }
+:root[data-density="compact"] { --density-pad: 0.625rem; --density-row: 2rem; }
+
+/* ---- Layer 3: the Tailwind mapping ---- */
+@theme inline {
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  --color-canvas: var(--bg-canvas);
+  --color-surface: var(--bg-surface);
+  --color-surface-raised: var(--bg-raised);
+  --color-surface-overlay: var(--bg-raised);
+  --color-inset: var(--bg-inset);
+  --color-overlay: var(--bg-overlay);
+  --color-overlay-strong: var(--bg-overlay-strong);
+  --color-scrim: var(--bg-scrim);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text-primary: var(--fg);
+  --color-text-secondary: var(--fg-muted);
+  --color-text-muted: var(--fg-subtle);
+  --color-muted: var(--fg-subtle);
+  --color-primary: var(--accent);
+  --color-primary-hover: var(--accent-hover);
+  --color-primary-foreground: var(--fg-on-accent);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--fg-on-accent);
+  --color-success: var(--status-ok-fg);
+  --color-success-bg: var(--status-ok-bg);
+  --color-warning: var(--status-warn-fg);
+  --color-warning-bg: var(--status-warn-bg);
+  --color-danger: var(--status-danger-fg);
+  --color-danger-bg: var(--status-danger-bg);
+  --color-info: var(--status-info-fg);
+  --color-info-bg: var(--status-info-bg);
+  --color-attention: var(--status-attention-fg);
+  --color-code: var(--code-bg);
+  --color-code-fg: var(--code-fg);
 }
 
 @layer base {
@@ -28,40 +319,34 @@
   }
 
   body {
-    background-color: #020617;
-    color: #f1f5f9;
-    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    background-color: var(--bg-canvas);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
+  code, kbd, pre, samp {
+    font-family: var(--font-mono);
+  }
+
   /* Custom scrollbar */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #334155;
-    border-radius: 3px;
+    background: var(--scrollbar);
+    border-radius: 4px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #475569;
+    background: var(--scrollbar-hover);
   }
-}
-
-/* Gradient animation for buttons and accents */
-@keyframes gradient-shift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-@keyframes pulse-glow {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
 }
 
 @keyframes fade-in {
@@ -75,12 +360,12 @@
 }
 
 @keyframes scale-in {
-  from { opacity: 0; transform: scale(0.95); }
+  from { opacity: 0; transform: scale(0.97); }
   to { opacity: 1; transform: scale(1); }
 }
 
 .animate-fade-in {
-  animation: fade-in 0.3s ease-out forwards;
+  animation: fade-in 0.2s ease-out forwards;
 }
 
 /* A new entry arriving in the live feed. It rises a few pixels as it fades in,
@@ -96,64 +381,90 @@
   animation: activity-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Respect a reader who has asked the system for less movement. */
-@media (prefers-reduced-motion: reduce) {
-  .animate-activity-in {
-    animation: none;
-  }
-}
-
 .animate-slide-in-right {
-  animation: slide-in-right 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .animate-scale-in {
-  animation: scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.gradient-btn {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
-  background-size: 200% 200%;
-  animation: gradient-shift 3s ease infinite;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
-}
-.gradient-btn:hover {
-  box-shadow: 0 6px 25px rgba(99, 102, 241, 0.5);
-  transform: translateY(-1px);
-}
-.gradient-btn:active {
-  transform: translateY(0);
-}
-
-.glass-card {
-  background: rgba(30, 41, 59, 0.7);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(51, 65, 85, 0.5);
+/* Surfaces. Plain and flat: a border, no blur, no glow (the ledger is the hero,
+   not the chrome). The old class names stay so no component needs an edit. */
+.glass-card,
+.glass-card-strong {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-1);
 }
 
 .glass-card-strong {
-  background: rgba(30, 41, 59, 0.9);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(51, 65, 85, 0.6);
+  background: var(--bg-raised);
 }
 
-/* Status glow badges */
-.status-running {
-  box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
-  border-color: rgba(99, 102, 241, 0.5);
+/* The primary action: one solid accent. */
+.gradient-btn {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  transition: background-color 0.15s ease;
 }
-.status-success {
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
-  border-color: rgba(34, 197, 94, 0.5);
+.gradient-btn:hover {
+  background: var(--accent-hover);
 }
-.status-warning {
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
-  border-color: rgba(245, 158, 11, 0.5);
+
+/* Status badges carry their colour in a border; the glow is gone. */
+.status-running { border-color: var(--status-attention-border); }
+.status-success { border-color: var(--status-ok-border); }
+.status-warning { border-color: var(--status-warn-border); }
+.status-danger { border-color: var(--status-danger-border); }
+
+/* Accessibility. Unlayered on purpose: these win over the utilities. */
+.text-primary {
+  color: var(--accent-text);
 }
-.status-danger {
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
-  border-color: rgba(239, 68, 68, 0.5);
+
+.text-danger {
+  color: var(--status-danger-fg);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* High contrast: a border on what can be operated - controls, fields, tabs,
+   a disclosure's summary - and containers keep their own. Applied to every
+   element it boxed each heading, label and icon on the page (plan BG.12). */
+[data-theme="contrast"] :is(button, input, select, textarea, [role="tab"], summary) {
+  border-width: max(1px, 1px);
+}
+[data-theme="contrast"] .glass-card,
+[data-theme="contrast"] .glass-card-strong {
+  border-width: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 100;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: var(--fg-on-accent);
+}
+
+.skip-link:focus {
+  top: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

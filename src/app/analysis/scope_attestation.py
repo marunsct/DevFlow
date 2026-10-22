@@ -16,8 +16,8 @@ findings, of which 87 blocked:
 
 No brief in this repository - low, medium or high - contains the words
 "accessibility", "aria", "wcag", "screen reader" or "contrast". Neither does
-any specification: `accessibility` appears in **zero** of run-519a9d8a's
-documents, and in one of run-cac07d52's, which is the review that raised it.
+any specification: `accessibility` appears in **zero** of one run's
+documents, and in one of one run's, which is the review that raised it.
 Thirteen sprints were held up for a requirement nobody stated, and seven runs
 in the last sixty failures ended with "the milestone review still required
 changes after N revisions".
@@ -64,7 +64,7 @@ _REVIEW_DOCUMENTS = ("milestone_review.md", "architecture_review.md", "security_
 #: says "screen reader" has asked for accessibility without using the word.
 #:
 #: Matched on whole words. The first version used substrings and
-#: `accessib` matched "files are accessible via HTTPS" in run-cac07d52's
+#: `accessib` matched "files are accessible via HTTPS" in one run's
 #: tools-and-models document - a sentence about file access attesting
 #: accessibility, which would have let the very findings this check exists to
 #: cap go on blocking. `auth` would likewise have matched "author" in every

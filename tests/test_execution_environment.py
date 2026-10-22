@@ -1,6 +1,6 @@
 """The stack selector must not choose a testing approach nothing can run.
 
-Measured on run-3da8dd91: it selected "Manual (browser DevTools)" for a
+Measured on one run: it selected "Manual (browser DevTools)" for a
 client-side app. The technical lead faithfully delegated "Execute all Sprint 1
 test cases manually in a browser against the completed index.html". The testing
 specialist then found no browser - none is installed in the sandbox image and
@@ -130,7 +130,7 @@ def test_the_old_browser_advice_is_gone():
 #
 # The stack selector's prompt states, in as many words, that there is no
 # browser and that "'Manual browser testing' cannot be carried out here by
-# anyone". On run-78804673 it read that and chose "Manual browser testing".
+# anyone". On one run it read that and chose "Manual browser testing".
 #
 # An instruction that has failed is not made truer by repetition. The same
 # lesson as the architecture reviewer, which was told not to write a document
@@ -176,7 +176,7 @@ def test_a_runnable_approach_is_accepted(runnable):
 def test_choosing_no_runner_is_refused(absent):
     """"None" is "manual testing" in a shorter word.
 
-    Measured on run-2f252e4e: the selector answered "None", reasoning that
+    Measured on one run: the selector answered "None", reasoning that
     "installing a test runner would consume the entire code budget", and
     shipped a checklist for a human who does not exist. `node --test` installs
     nothing and costs no lines, so there was no budget to consume.
@@ -196,7 +196,7 @@ def test_the_refusal_says_what_to_choose_instead():
     # The message used to end "'none' is valid only if the product genuinely
     # needs no verification", which is the sentence the selector took up.
     assert "'none' is valid" not in message
-    assert "install nothing" in message
+    assert "installs nothing" in message
 
 
 def test_the_validator_explains_why_the_prompt_was_not_enough():
@@ -205,15 +205,16 @@ def test_the_validator_explains_why_the_prompt_was_not_enough():
     # Wrapped across lines in the source, so compare without line breaks.
     source = " ".join(inspect.getsource(TechnologyStack).split())
 
-    assert "run-78804673" in source
     assert "is not made truer by repetition" in source
+    # The evidence is kept in the commit that added it, not as a run id here.
+    assert not __import__("re").search(r"run[- ][0-9a-f]{8}\b", source)
 
 
 def test_the_selector_prefers_a_runner_the_runtime_provides():
     """A runnable framework is not automatically the right one.
 
     The schema validator refuses testing approaches nothing can execute, which
-    pushed run-cbd22a34 from "Manual browser testing" to Vitest - correct, but
+    pushed one run from "Manual browser testing" to Vitest - correct, but
     it installed 175 MB against a brief reading "No external dependencies
     beyond basic HTML/CSS/JS". `node --test` ships with the runtime, is on the
     testing specialist's allowlist, and passes the validator.
@@ -229,8 +230,13 @@ def test_the_selector_prefers_a_runner_the_runtime_provides():
     flat = " ".join(_SYSTEM_PROMPT.split())
 
     assert "Prefer a runner the runtime already provides" in flat
-    assert "node --test" in flat
-    assert "run-cbd22a34" in flat
+    # Named for every language rather than by one runtime's command.
+    assert "A runner that ships with the language's runtime costs nothing" in flat
+    # The measurement stays; the run id does not. It cannot be looked up from
+    # inside a run, and the docstring above is where it is kept for whoever
+    # changes this rule next.
+    assert "46 MB to 221 MB" in flat
+    assert not __import__("re").search(r"run-[0-9a-f]{6,}", flat)
 
 
 def test_a_runtime_runner_still_passes_the_validator():

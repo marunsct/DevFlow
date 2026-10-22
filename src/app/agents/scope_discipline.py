@@ -3,7 +3,7 @@
 Scope inflation in this pipeline is not one agent's mistake. It compounds
 down the chain, and each step is locally reasonable:
 
-Measured on run-c4f17841 (brief_medium), whose brief names FastAPI or Express,
+Measured on one run (brief_medium), whose brief names FastAPI or Express,
 React or Vue, JWT, migrations and Docker - and mentions Helm, Kubernetes,
 Prometheus, Grafana, Redis, Celery and encryption exactly zero times:
 
@@ -37,10 +37,10 @@ Scope discipline - the brief is the boundary:
 - Judge what is here against what was asked for. "This is missing" is only a
   defect when the intake asked for it; otherwise it is an idea, and ideas do
   not block.
-- Observed on run-c4f17841: a brief naming FastAPI, React, JWT, migrations and
-  Docker produced three blocking findings demanding Helm charts, a Prometheus
-  metrics endpoint and pgcrypto encryption at rest. The brief mentions none of
-  those words. Each step that got there was reasonable given the step before
+- Observed: a brief naming a web framework, a UI library, token authentication,
+  migrations and containers produced three blocking findings demanding cluster
+  deployment charts, a metrics endpoint and encryption at rest. The brief
+  mentions none of those words. Each step that got there was reasonable given the step before
   it, and the result was a task dashboard that could not proceed without
   Kubernetes deployment artefacts.
 

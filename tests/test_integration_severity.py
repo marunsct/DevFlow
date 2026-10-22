@@ -1,6 +1,6 @@
 """A finding that breaks the product, told apart from one that is untidy.
 
-run-499c771a's milestone reviewer read the cross-file evidence and accepted the
+One run's milestone reviewer read the cross-file evidence and accepted the
 milestone with: "The cross-file check identified unused CSS classes; this does
 not affect functionality but could be cleaned up." That is a fair reading of
 dead CSS. It is the reading this split exists to stop being applied to a script

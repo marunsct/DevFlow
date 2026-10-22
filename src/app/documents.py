@@ -172,8 +172,7 @@ def read_document(
         # `brief_low_236ab395.md` - which exists nowhere an agent can read, and
         # a filename in a prompt is an affordance: it invites a read.
         #
-        # Measured across runs 2b5def74, da6c5e19, 5d83e946, 36eb1260 and
-        # 3ddd443f: `product_manager` opens by trying to read that exact string
+        # Measured across five runs: `product_manager` opens by trying to read that exact string
         # and gets an error for its first call of the run. A previous fix
         # removed the name from the brief that wraps this text; the name was in
         # the text itself, and only the run transcript showed that.

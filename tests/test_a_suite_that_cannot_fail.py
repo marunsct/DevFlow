@@ -1,6 +1,6 @@
 r"""Two ways a test file reports something other than the truth about the code.
 
-Both measured on run f81808a4, on the same file, within one hour.
+Both measured on one run, on the same file, within one hour.
 
 It was first written as its whole suite, 164 bytes:
 
@@ -156,7 +156,7 @@ def test_the_reviewer_is_told_these_were_checked():
 
 
 def test_the_context_form_is_reported():
-    """The third spelling, and the one that cost run f81808a4 most.
+    """The third spelling, and the one that cost one run most.
 
     `specialist_testing_3` hit `t.ok is not a function`, then spent 35 model
     calls sending one `find` six times while it worked the API out.

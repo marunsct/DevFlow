@@ -1,6 +1,6 @@
 """A command that timed out is refused rather than run a second time.
 
-Run 0c5aabdb's `specialist_backend_1` ran `node simple-to-do-list-app/index.js`
+One run's `specialist_backend_1` ran `node simple-to-do-list-app/index.js`
 twice and spent four minutes of wall clock on a server the sandbox has nobody
 to connect to - which is exactly what the timeout message says, delivered
 after the second 120 seconds had already been paid.
@@ -107,7 +107,7 @@ def test_the_refusal_keeps_the_advice_the_timeout_gives(tmp_path, monkeypatch):
 
     outcome = SandboxExecutor.execute(SERVER, str(tmp_path), "backend_specialist")
 
-    assert "Nothing here will connect to a server" in outcome["error"]
+    assert "belongs in the test runner's own configuration" in outcome["error"]
 
 
 def test_a_first_run_is_not_refused(tmp_path, monkeypatch):
@@ -122,3 +122,75 @@ def test_a_first_run_is_not_refused(tmp_path, monkeypatch):
     SandboxExecutor.execute(SERVER, str(tmp_path), "backend_specialist")
 
     assert ran["called"] is True
+
+
+SUITE = ["npx", "playwright", "test", "--reporter=line"]
+
+
+def test_a_timeout_under_a_shorter_limit_does_not_predict_a_longer_one(tmp_path):
+    """One run's `test_round_0` timed this suite out at the 120-second default.
+    The next call would have had the 300-second test limit and was refused as
+    "would time out again"; the stage then ran the suite one test at a time,
+    about twenty-five invocations, though it had passed in seventy seconds
+    under the test limit earlier in the run."""
+    _ledger(tmp_path, [_timeout_entry(command=SUITE)])
+
+    assert timed_out_this_way_before(str(tmp_path), SUITE, category="test") == 0
+    assert timed_out_this_way_before(str(tmp_path), SUITE, category="default") == 1
+
+
+def test_a_timeout_under_the_same_limit_still_counts(tmp_path):
+    _ledger(tmp_path, [{**_timeout_entry(command=SUITE), "category": "test"}])
+
+    assert timed_out_this_way_before(str(tmp_path), SUITE, category="test") == 1
+
+
+def test_the_suite_runs_again_under_the_test_limit(tmp_path, monkeypatch):
+    _ledger(tmp_path, [_timeout_entry(command=SUITE)])
+    seen = {}
+
+    def _fake_run(cls, command, repo_root, role_name="general", category="default", *args, **kwargs):
+        seen["category"] = category
+        return {"returncode": "0", "stdout": "18 passed", "stderr": ""}
+
+    monkeypatch.setattr(SandboxExecutor, "_run", classmethod(_fake_run))
+
+    outcome = SandboxExecutor.execute(SUITE, str(tmp_path), "testing_specialist")
+
+    assert seen.get("category") == "test"
+    assert "error" not in outcome
+
+
+def test_its_own_refusals_are_not_counted_as_timeouts(tmp_path):
+    """One run's count went "timed out 2 time(s)", 3, 4, 5, 6 across calls that
+    were all refused and never ran: each refusal was recorded, and it says
+    "already timed out"."""
+    refusal = {
+        **_timeout_entry(command=SUITE),
+        "category": "test",
+        "error": "Not running this again: it has already timed out 2 time(s) in this run and would time out again.",
+    }
+    _ledger(tmp_path, [_timeout_entry(command=SUITE), refusal, refusal])
+
+    assert timed_out_this_way_before(str(tmp_path), SUITE, category="default") == 1
+    assert timed_out_this_way_before(str(tmp_path), SUITE, category="test") == 0
+
+
+def test_a_change_since_the_timeout_lets_it_run_again(tmp_path):
+    """A change can be the fix for the hang. One run's `npm test` timed out
+    twice and was then refused five times - to the stages fixing the hang and
+    the test rounds after them - so nothing could check the fix."""
+    import os
+    import time
+
+    (tmp_path / "app").mkdir()
+    entry = {**_timeout_entry(), "at": "2026-09-16T20:00:00+00:00"}
+    _ledger(tmp_path, [entry, entry])
+    assert timed_out_this_way_before(str(tmp_path), SERVER) == 2
+
+    changed = tmp_path / "app" / "index.js"
+    changed.write_text("process.exit(0)\n", encoding="utf-8")
+    later = time.time()
+    os.utime(changed, (later, later))
+
+    assert timed_out_this_way_before(str(tmp_path), SERVER) == 0

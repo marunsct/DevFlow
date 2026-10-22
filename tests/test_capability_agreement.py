@@ -13,7 +13,7 @@ positions at once:
 So the stage that chooses the testing approach was told a browser could not
 exist; if it chose one anyway and phrased it the natural way, the validator
 threw the whole answer away; and the specialist downstream was ordered to use
-one regardless. Run 519a9d8a spent six refusals and part of seven sprint
+one regardless. One run spent six refusals and part of seven sprint
 cycles inside that contradiction.
 
 This is root-cause class A in its most expensive form: one fact, four copies,
@@ -36,9 +36,17 @@ def _a_browser_is_runnable() -> bool:
 
 
 def test_a_mandated_runner_is_on_the_allowlist_of_the_roles_told_to_use_it():
-    """If a rule orders a tool, the roles it orders must be able to run it."""
-    if "Playwright" not in TESTABILITY_RULE:
-        pytest.skip("the testability rule no longer mandates Playwright")
+    """If guidance orders a tool, the roles it orders must be able to run it.
+
+    The order moved from the testability rule to the seed row of the stacks
+    that render a page, so that is where it is looked for. It must not quietly
+    skip when the wording moves: a mandate nobody can obey is the defect this
+    file exists to catch.
+    """
+    from app.plugins.seed import SEED_INSTRUCTIONS
+
+    mandating = [name for name, text in SEED_INSTRUCTIONS.items() if "with Playwright" in text]
+    assert mandating, "no stack's guidance orders Playwright any more; revisit this file"
     for role in ("ui_ux_specialist", "testing_specialist"):
         assert "playwright" in allowed_executables(role), (
             f"{role} is told Playwright is mandatory and cannot name it. "

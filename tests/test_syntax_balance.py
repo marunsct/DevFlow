@@ -1,6 +1,6 @@
 """A structurally broken file, caught where it was written.
 
-run-e37a2bd8 lost a sprint to one edit. `confirmDeletePrompt` had its
+One run lost a sprint to one edit. `confirmDeletePrompt` had its
 `return new Promise((resolve) => {` removed and its closing `});` left behind.
 The write was accepted; the break surfaced two stages later as "Syntax error in
 app.mjs at line 206", and three remediation attempts edited around line 206 -
@@ -77,9 +77,11 @@ def test_indentation_errors_are_caught_in_python_where_braces_would_miss_them() 
 
 def test_files_with_no_grammar_here_are_not_judged() -> None:
     """`.json` is no longer in this list: it has a real grammar, so it moved to
-    the checked side with Python."""
-    for name in ("notes.md", "styles.css", "page.html", "config.yaml"):
+    the checked side with Python. So did `.css`, read by its grammar since
+    the brace count was found blind to a missing colon."""
+    for name in ("notes.md", "page.html", "config.yaml"):
         assert structural_problem(name, "see ) here { and } there") is None
+    assert structural_problem("styles.css", "see ) here { and } there") is not None
 
 
 def test_an_empty_file_is_not_a_problem() -> None:
@@ -93,7 +95,7 @@ def test_the_write_tools_use_it() -> None:
     from app.tools import repository
 
     source = inspect.getsource(repository)
-    assert "_structural_note(relative_path, content)" in source
+    assert "_structural_note(relative_path, content, refuse=False)" in source
     assert source.count("_structural_note(") >= 3  # helper, write, edit
 
 
@@ -104,30 +106,24 @@ def test_the_forgiving_match_path_also_gets_the_note(tmp_path) -> None:
     forgiving match that tolerates line numbers, JSON escaping or a different
     indent. The notes were attached to the exact path only.
 
-    That cost run-3ddd443f. At 12:52:03 `test_round_0` removed a passage
+    That cost one run. At 12:52:03 `test_round_0` removed a passage
     through the forgiving path and got no structural note; the edit left a
     brace unclosed, and `node --test` failed four times with "Unexpected end of
     input" before the next edit - through the exact path - finally reported it.
     """
     from app.tools.repository import edit_approved_artifact, write_approved_artifact
 
-    # TypeScript deliberately, and the reason is the point. This used to be
-    # written as `app.js`, where the edit left `export function init() {`
-    # unclosed and `node --check` accepted it - the script goal parses a
-    # typeless `.js`, and it was only the brace counter that noticed. That was
-    # a bug in the parse check, not a property worth testing against: Node
-    # loads such a file with the module goal and refuses it, which
-    # `_the_module_goal_also_rejects` now reproduces, so the same edit is
-    # refused rather than noted.
-    #
-    # `.ts` is not in `PARSEABLE` - Node cannot parse it and this codebase
-    # does not pretend otherwise - so the structural note is the only check in
-    # play, which is exactly what this test is about: that the *forgiving
-    # match path* carries it at all.
-    write_approved_artifact(tmp_path, "p/app.ts", "function init() {\n  const f = 1;\n}\n")
+    # A language with no exact parser here, and the reason is the point. This
+    # was `app.js` and then `app.ts`, and each time the language gained a real
+    # parser - `node --check` with the module goal, then the TypeScript
+    # compiler - the same edit came to be refused rather than noted. The
+    # bracket count is the only check in play for Kotlin (see
+    # `grammar_parse`), which is what this test is about: that the *forgiving
+    # match path* carries the note at all.
+    write_approved_artifact(tmp_path, "p/app.kt", "fun init() {\n  val f = 1\n}\n")
 
     # An indent that does not match the file forces the forgiving path.
-    result = edit_approved_artifact(tmp_path, "p/app.ts", "    const f = 1;\n", "  if (x) {\n")
+    result = edit_approved_artifact(tmp_path, "p/app.kt", "    val f = 1\n", "  if (x) {\n")
 
     assert "note" in result, "the forgiving path must carry the checks too"
     assert "do not balance" in result["note"]
@@ -151,7 +147,7 @@ def test_both_edit_paths_build_their_result_in_one_place() -> None:
 
 
 def test_the_import_that_cost_a_sprint_is_caught() -> None:
-    """run-82e1dbdb wrote this more than ten times.
+    """One run wrote this more than ten times.
 
     `import { assert } from 'node:test'` parses, looks right, and fails only
     when the test runs - so the sprint spent all three remediation attempts on
@@ -194,7 +190,7 @@ def test_a_package_whose_exports_are_unknown_is_left_alone() -> None:
 
 
 def test_commonjs_in_an_mjs_file_is_caught() -> None:
-    """Three of run-82e1dbdb's failures were "require is not defined in ES
+    """Three of one run's failures were "require is not defined in ES
     module scope"."""
     problem = structural_problem("a.mjs", "const x = require('./a.js');\n")
 
@@ -226,7 +222,7 @@ def test_a_broken_package_json_is_refused(tmp_path) -> None:
     broken one does not fail the file that contains it - it fails everything
     near it.
 
-    run-0deeb8bf wrote one and got "Error parsing
+    One run wrote one and got "Error parsing
     simple-to-do-list-app/package.json: Expected property name or '}' in JSON
     at position 73" from `package_json_reader`: a stack trace naming an
     internal Node module, two stages away from the write.
@@ -275,7 +271,7 @@ def test_an_ordinary_json_file_is_checked_too() -> None:
 @pytest.mark.parametrize("name", ["expect", "beforeAll", "afterAll", "vi"])
 def test_a_jest_api_imported_from_node_test_names_the_replacement(name: str) -> None:
     """Listing what `node:test` exports does not tell a model it has the wrong
-    library. run-a7150a6c wrote `import { test, expect } from "node:test"` and
+    library. One run wrote `import { test, expect } from "node:test"` and
     then spent three greps hunting `expect(` through its own test files.
     """
     problem = structural_problem("a.test.mjs", f"import {{ test, {name} }} from 'node:test';\n")

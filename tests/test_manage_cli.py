@@ -187,7 +187,7 @@ def test_a_row_that_drifted_from_its_gate_is_repaired(run_store, capsys):
     assert "Repaired 1 run(s)." in capsys.readouterr().out
 
 
-def test_a_dry_run_reports_without_writing(run_store, capsys):
+def test_a_dry_run_of_reconcile_reports_without_writing(run_store, capsys):
     _stored_run(run_store, "run-dry", "failed", "awaiting_user_review:specification")
 
     assert manage.reconcile_runs(dry_run=True) == 0
@@ -252,7 +252,7 @@ def test_a_single_run_can_be_targeted(run_store):
     assert run_store.load("run-b").model_overrides == {"model_name": "old-b"}
 
 
-def test_a_dry_run_reports_without_writing(run_store, capsys):
+def test_a_dry_run_of_clearing_overrides_reports_without_writing(run_store, capsys):
     _pinned_run(run_store, "run-dry", {"model_name": "old-model"})
 
     assert manage.clear_run_overrides(dry_run=True) == 0
@@ -309,7 +309,7 @@ def test_reconcile_does_not_unrepair_a_damaged_run(run_store):
 # power, a container replaced mid-task - nothing writes a terminal status. The
 # row then says `running` forever: `resume_run` compare-and-sets from `failed`
 # so it refuses, and `reconcile-runs` only repairs rows parked on a pause. Hit
-# twice on run-0b55ad49, both times needing hand-written SQL to get out of.
+# twice on one run, both times needing hand-written SQL to get out of.
 # ---------------------------------------------------------------------------
 
 

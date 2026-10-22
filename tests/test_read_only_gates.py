@@ -1,6 +1,6 @@
 """Looking around must not spend the budget meant for building.
 
-Measured on run-3f8e387d: `specialist_testing_2` used all 120 of its approval
+Measured on one run: `specialist_testing_2` used all 120 of its approval
 gates and was stopped before finishing. What it spent them on:
 
     5x  run_terminal_command ['ls', '-la', '/app/data/workspaces/t7-run-...']

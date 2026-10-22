@@ -1,6 +1,6 @@
 """Catch a structurally broken source file at the moment it is written.
 
-run-e37a2bd8 lost a whole sprint to one edit. `confirmDeletePrompt` had its
+One run lost a whole sprint to one edit. `confirmDeletePrompt` had its
 `return new Promise((resolve) => {` removed and its closing `});` left behind:
 
     export function confirmDeletePrompt(id, simulate = false) {
@@ -24,11 +24,14 @@ is looking at a stack trace.
 
 Two checkers, by what can be known exactly:
 
-- **Python** is parsed with `ast`, which is the real grammar. A failure there
-  is certain, so it is worth refusing over.
+- **Python** is compiled, which is the real grammar and the checks its compiler
+  makes after parsing. A failure there is certain, so it is worth refusing over.
 - **C-family** braces are counted, which is a structure check and not a parse.
   It cannot see a missing semicolon or a bad keyword, and it is deliberately
   conservative about what it does see - see `_confidently_unbalanced`.
+- **Everything with a parser of its own** - TOML, YAML, XML, the scripts
+  inside a page, and the languages whose grammar measured exact - is parsed
+  by `app.analysis.grammar_parse`, and counted only where that says nothing.
 
 Neither is a linter. The aim is the one failure that is cheap to detect,
 impossible for the model to diagnose afterwards, and fatal to a run.
@@ -36,14 +39,15 @@ impossible for the model to diagnose afterwards, and fatal to a run.
 
 from __future__ import annotations
 
-import ast
 import json
 import re
 from dataclasses import dataclass
 
 #: Extensions whose brackets balance the C way.
-_BRACED = frozenset({".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".java", ".c",
-                     ".h", ".cpp", ".cs", ".go", ".rs", ".php", ".swift", ".kt"})
+_BRACED = frozenset({".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts",
+                     ".java", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".m", ".mm",
+                     ".cs", ".go", ".rs", ".php", ".swift", ".kt", ".kts", ".dart",
+                     ".scala", ".groovy", ".gradle", ".zig", ".sol"})
 
 _OPEN = {"(": ")", "[": "]", "{": "}"}
 _CLOSE = {")": "(", "]": "[", "}": "{"}
@@ -166,7 +170,7 @@ def _confidently_unbalanced(text: str) -> Imbalance | None:
 #: thing a model guesses at most often - `assert` is the *default* export of
 #: `node:assert`, not a named one, and `node:test` does not export it at all.
 #:
-#: run-82e1dbdb wrote `import { assert } from 'node:test'` and
+#: One run wrote `import { assert } from 'node:test'` and
 #: `import { assert } from 'node:assert'` more than ten times. Each one is
 #: valid-looking, parses cleanly, and fails only when the test runs - so the
 #: sprint spent all three remediation attempts on it and the run ended with the
@@ -190,7 +194,7 @@ _NODE_NAMED_EXPORTS["node:assert/strict"] = _NODE_NAMED_EXPORTS["node:assert"]
 #: model reaching for these has the right idea and the wrong library, and the
 #: list of what `node:test` does export does not tell it that.
 #:
-#: run-a7150a6c wrote `import { test, expect } from "node:test"` and then spent
+#: One run wrote `import { test, expect } from "node:test"` and then spent
 #: three `grep`s hunting `expect(` through its own test files.
 _JEST_ONLY = frozenset({"expect", "jest", "vi", "vitest", "beforeAll", "afterAll"})
 
@@ -282,7 +286,7 @@ def _broken_json(relative_path: str, content: str) -> str | None:
 
     `package.json` is the one that matters most: Node reads it to resolve every
     module in the directory, so a broken one does not fail the file that
-    contains it, it fails everything near it. run-0deeb8bf wrote one and got
+    contains it, it fails everything near it. One run wrote one and got
     "Error parsing simple-to-do-list-app/package.json: Expected property name
     or '}' in JSON at position 73" from `package_json_reader` - a stack trace
     naming an internal Node module, two stages from the write.
@@ -306,6 +310,157 @@ def _broken_json(relative_path: str, content: str) -> str | None:
             )
             + "Send the file again as complete, valid JSON."
         )
+    twice = _a_key_given_twice(content)
+    if twice:
+        return (
+            f"This JSON gives the key \"{twice}\" twice in one object. A parser "
+            "keeps only the last and drops the other without a word, so one of "
+            "the two blocks is not in effect - the usual result of adding a "
+            "block that was already there. Keep one, with everything it needs "
+            "in it. Send the file again as complete, valid JSON."
+        )
+    return None
+
+
+#: Comma repairs tried on one file before it is called broken.
+_MOST_COMMAS_PUT_RIGHT = 4
+
+
+def json_with_its_commas_put_right(content: str) -> tuple[str, list[str]] | None:
+    """JSON that fails only for its commas, repaired, with what was done; else None.
+
+    A line edit to a JSON file changes which member is last. Adding a line after
+    the last member leaves the old last one without its comma; adding one before
+    a closing brace leaves the new one with a comma it must not have. Nothing
+    else about the edit is wrong.
+
+    Measured on one run, by the second session reading every failed call: 13 of
+    24 were edits to `package.json`, by four stages, each adding one dependency
+    or changing the test script - "Expecting ',' delimiter" five times over.
+    It is the most expensive file in every run audited that day.
+
+    Only commas, and only where the parser itself says one is missing or one
+    too many: a comma is added at the end of the line before the one the parser
+    stopped on, or the comma before a closing bracket is removed. The result
+    must parse and give no key twice, or nothing is returned and the refusal
+    stands exactly as before.
+    """
+    try:
+        json.loads(content)
+        return None
+    except ValueError:
+        pass
+    text = content
+    done: list[str] = []
+    for _ in range(_MOST_COMMAS_PUT_RIGHT):
+        try:
+            json.loads(text)
+            break
+        except ValueError as failure:
+            message = getattr(failure, "msg", str(failure))
+            position = getattr(failure, "pos", None)
+            if position is None:
+                return None
+            before = text[:position].rstrip()
+            if message.startswith("Expecting ',' delimiter"):
+                # The value before this point ended and another member follows.
+                if not before or before[-1] in ",{[:":
+                    return None
+                line = before.count("\n") + 1
+                text = before + "," + text[len(before):]
+                done.append(f"a comma was added at the end of line {line}")
+            elif (
+                message.startswith(("Expecting property name", "Expecting value"))
+                and position < len(text) and text[position] in "}]" and before.endswith(",")
+            ):
+                line = before.count("\n") + 1
+                text = before[:-1] + text[len(before):]
+                done.append(f"the comma at the end of line {line} was removed")
+            else:
+                return None
+    else:
+        return None
+    try:
+        json.loads(text)
+    except ValueError:
+        return None
+    if not done or _a_key_given_twice(text):
+        return None
+    return text, done
+
+
+def _a_key_given_twice(content: str) -> str:
+    """The first key that appears twice in one JSON object, or "".
+
+    Legal to a parser and never what was meant. One run's `package.json` held
+    two identical `"jest"` blocks after an edit added one that was already
+    there, and a stage before it had been refused by the runner for "multiple
+    configurations".
+    """
+    found: list[str] = []
+
+    def pairs(items: list[tuple[str, object]]) -> dict:
+        seen: set[str] = set()
+        for key, _value in items:
+            if key in seen and not found:
+                found.append(key)
+            seen.add(key)
+        return dict(items)
+
+    try:
+        json.loads(content, object_pairs_hook=pairs)
+    except ValueError:
+        return ""
+    return found[0] if found else ""
+
+
+#: Stylesheets, plain and preprocessed. All of them nest with braces and
+#: nothing else.
+_STYLESHEETS = frozenset({".css", ".scss", ".less"})
+
+_A_STYLE_COMMENT_OR_STRING = re.compile(
+    r"/\*.*?\*/|\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*'", re.S
+)
+
+
+def _unbalanced_stylesheet(content: str) -> str | None:
+    """A stylesheet whose braces do not pair, with the line to look at.
+
+    A browser does not refuse one; it recovers, and what it recovers to is not
+    what was written. A `}` with nothing open is read as the start of the next
+    rule's selector, which makes that selector invalid and drops the whole
+    rule - silently. One run shipped a stylesheet with a stray `}` after its
+    list rule: every test passed, the review accepted it, and the rule styling
+    each task was not applied.
+
+    Braces only, with comments and quoted strings blanked first, so a `}` in a
+    `content: "}"` or a comment is not counted. Certain in the way a parse is:
+    there is no reading of CSS in which an unpaired brace is intended.
+    """
+    blanked = _A_STYLE_COMMENT_OR_STRING.sub(
+        lambda found: re.sub(r"[^\n]", " ", found.group(0)), content
+    )
+    open_at: list[int] = []
+    for number, line in enumerate(blanked.splitlines(), 1):
+        for character in line:
+            if character == "{":
+                open_at.append(number)
+            elif character == "}":
+                if not open_at:
+                    return (
+                        f"The braces in this stylesheet do not pair: the '}}' on line "
+                        f"{number} closes nothing. A browser reads it as the start of "
+                        "the next rule's selector, which makes that selector invalid "
+                        "and drops the rule that follows without any error. Remove "
+                        "it, or restore the '{' it was meant to close."
+                    )
+                open_at.pop()
+    if open_at:
+        return (
+            f"The braces in this stylesheet do not pair: the '{{' opened on line "
+            f"{open_at[-1]} is never closed, so every rule after it is read as "
+            "part of that block and none of them applies. Close it."
+        )
     return None
 
 
@@ -322,16 +477,51 @@ def structural_problem(relative_path: str, content: str) -> str | None:
     if suffix == ".json":
         return _broken_json(relative_path, content)
 
+    if suffix in _STYLESHEETS:
+        # The grammar where there is one measured exact, the count where not.
+        from app.analysis.grammar_parse import reads_stylesheet, stylesheet_problem
+
+        if reads_stylesheet(relative_path):
+            parsed = stylesheet_problem(relative_path, content)
+            # The grammar decides whether it is broken; where the fault is a
+            # brace, the count says which one in plainer words.
+            return None if parsed is None else (_unbalanced_stylesheet(content) or parsed)
+        return _unbalanced_stylesheet(content)
+
     if suffix == ".py":
         try:
-            ast.parse(content)
+            # Compiled, not only parsed: `await` in a plain `def`, `return` or
+            # `yield` outside a function and `break` outside a loop pass the
+            # parser and fail as the module is imported. Measured live: a test
+            # file with `await` in a plain `def` was written without a word,
+            # and every test in it failed to collect. Nothing is run.
+            compile(content, relative_path or "<file>", "exec", dont_inherit=True)
         except SyntaxError as failure:
             where = f" on line {failure.lineno}" if failure.lineno else ""
-            return f"Python cannot parse this file{where}: {failure.msg}."
+            # `def class(x)` reports "invalid syntax" and names a line, which is
+            # the JavaScript failure in `app.analysis.reserved_words` with a
+            # vaguer message: the line is legal everywhere the word is not
+            # reserved, so the line is not the thing to look at.
+            try:
+                from app.analysis.reserved_words import why_the_name_cannot_work
+
+                reserved = why_the_name_cannot_work(relative_path, content)
+            except Exception:  # noqa: BLE001 - a hint on a hint must not fail
+                reserved = ""
+            return f"Python cannot parse this file{where}: {failure.msg}.{reserved}"
         except ValueError:
             # Null bytes and similar; not a syntax question.
             return None
         return None
+
+    # A language with a parser of its own here is read by that - a grammar
+    # sees the missing comma a bracket count cannot. See `grammar_parse` for
+    # which languages those are, and why the rest stay with the count below.
+    from app.analysis.grammar_parse import parse_problem
+
+    parsed = parse_problem(relative_path, content)
+    if parsed:
+        return parsed
 
     if suffix not in _BRACED:
         return None
@@ -357,4 +547,4 @@ def structural_problem(relative_path: str, content: str) -> str | None:
     )
 
 
-__all__ = ["Imbalance", "structural_problem"]
+__all__ = ["Imbalance", "json_with_its_commas_put_right", "structural_problem"]

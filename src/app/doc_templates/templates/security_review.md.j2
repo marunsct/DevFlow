@@ -1,0 +1,31 @@
+{#- docs/security_review.md - the security reviewer's decision.
+    Context: o (SecurityReviewOutput), findings (o.findings, most severe first). -#}
+# Security Review
+
+## Findings
+{% if findings %}
+| Severity | Category | Description | Affected files | Remediation |
+|---|---|---|---|---|
+{% for f in findings %}
+| **{{ f.severity | cell | title }}** | {{ f.category | cell }} | {{ f.description | cell }} | {{ f.affected_files | join(", ") | cell }} | {{ f.remediation | cell }} |
+{% endfor %}
+{% else %}
+No findings were recorded.
+{% endif %}
+
+## Local-only Exceptions
+{{ o.local_only_exceptions | bullets("None recorded.") }}
+
+## Status: {{ o.status or "unknown" }}{% if not_shown %} (over part of the source){% endif %}
+
+{% if shown is not none %}
+## Coverage
+{% if not_shown %}
+The request carried {{ shown | length }} file(s) in full. {{ not_shown | length }} reviewable file(s) did not fit and were not shown; the reviewer was told to open them itself:
+{{ not_shown | bullets("None.") }}
+{% else %}
+Every reviewable changed file ({{ shown | length }}) was shown to the reviewer in full.
+{% endif %}
+{% endif %}
+
+<!-- Generated from the reviewer's structured decision. Editing this file does not change the workflow's routing. -->

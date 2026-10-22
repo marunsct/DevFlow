@@ -2,7 +2,7 @@
 
 `TESTABILITY_RULE` tells the model, in these words, to "let Playwright manage
 the server itself - declare a `webServer` in `playwright.config.ts`".
-Run-ed05e20e's model did exactly that, with `command: 'node server.mjs'`, and
+One run's model did exactly that, with `command: 'node server.mjs'`, and
 two checks reported `server.mjs` as blocking:
 
   task-manager/server.mjs starts an HTTP server, and this run's stack declares

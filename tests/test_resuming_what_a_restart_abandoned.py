@@ -162,3 +162,45 @@ def test_a_dry_run_resumes_nothing(monkeypatch):
     manage.recover_orphaned_runs(dry_run=True)
 
     assert called == []
+
+
+def test_waiting_for_the_model_server_retries_until_it_answers(monkeypatch):
+    answers = [RunConflict("No model server answered at x"), None]
+    resumed = []
+
+    def resume(run_id):
+        outcome = answers.pop(0)
+        if outcome is not None:
+            raise outcome
+        resumed.append(run_id)
+
+    monkeypatch.setattr(manage, "_resume_one", resume)
+    worker = manage._resume_when_the_model_answers("run-x", wait=10, every=1, sleep=lambda s: None)
+    worker.join(timeout=5)
+
+    assert resumed == ["run-x"]
+
+
+def test_a_refused_resume_for_an_absent_model_server_is_waited_on_not_dropped(monkeypatch):
+    waited = []
+    monkeypatch.setattr(manage, "_worker_ran_out_of_memory", lambda: False)
+    monkeypatch.setattr(manage, "_resume_one", lambda run_id: (_ for _ in ()).throw(
+        RunConflict("No model server answered at http://host:9090/v1/models")))
+    monkeypatch.setattr(manage, "_resume_when_the_model_answers", lambda run_id: waited.append(run_id))
+
+    assert manage.resume_runs_a_restart_abandoned(["run-a"]) == 1
+    assert waited == ["run-a"]
+
+
+class RunConflict(Exception):
+    """The runner's own refusal, by its name: importing the runner needs the server's secrets."""
+
+
+def test_a_recovered_run_waits_long_enough_for_a_cold_start():
+    """Measured on 2026-10-20: the host lost power, the stack was back within minutes, the
+    local model server answered only after the 15 minutes this waited, and the run was left
+    failed until a person resumed it. A try is one readiness call every `MODEL_RETRY_SECONDS`."""
+    from app.server import manage
+
+    assert manage.MODEL_WAIT_SECONDS >= 60 * 60
+    assert manage.MODEL_RETRY_SECONDS <= 60

@@ -9,7 +9,7 @@ reports its syntax errors without executing a line, and Node is on every role's
 allowlist because the products this harness builds are mostly JavaScript. Five
 checks took 83 milliseconds in the worker container.
 
-run-454adf22 is what it is for: `app.js` written with a stray `try`, and the
+One run is what it is for: `app.js` written with a stray `try`, and the
 whole of `test_round_0` spent discovering `SyntaxError: Unexpected token 'try'`
 at line 83, then a triage and a defect-fix stage routing it back.
 """
@@ -77,7 +77,7 @@ def test_a_broken_write_is_refused_and_nothing_lands(tmp_path: Path) -> None:
 
 @needs_node
 def test_an_edit_that_breaks_the_file_is_refused(tmp_path: Path) -> None:
-    """The edit that did this on run-e37a2bd8 removed an opening line and left
+    """The edit that did this on one run removed an opening line and left
     its closing one, and the write was accepted."""
     write_approved_artifact(tmp_path, "proj/package.json", '{"name": "p", "type": "module"}')
     write_approved_artifact(tmp_path, "proj/app.js", GOOD)
@@ -120,7 +120,7 @@ def test_a_missing_node_is_not_a_failure(tmp_path: Path, monkeypatch) -> None:
 def test_a_duplicate_identifier_is_shown_both_declarations(tmp_path: Path) -> None:
     """Node names the second one. The agent needs the first.
 
-    run-04576307's `specialist_backend_2` had five consecutive edits refused,
+    One run's `specialist_backend_2` had five consecutive edits refused,
     one of them `Identifier 'newTitle' has already been declared`, and still
     could not place the fault from a line number alone.
     """
@@ -166,3 +166,34 @@ def test_a_shadowed_name_in_an_inner_scope_is_not_a_duplicate(tmp_path: Path) ->
     )
 
     assert parse_error(tmp_path / "d.mjs", body) is None
+
+
+@needs_node
+def test_a_name_exported_twice_names_both_exports(tmp_path: Path) -> None:
+    """One run's stage was told "Duplicate export of 'FilterState'" at the
+    `export { ... }` closing the file, five times, and never shown the
+    `export const FilterState` near the top."""
+    body = (
+        "export const FilterState = { ALL: 'all' };\n"
+        "function applyFilter(tasks) {\n  return tasks;\n}\n"
+        "export { FilterState, applyFilter };\n"
+    )
+
+    problem = parse_error(tmp_path / "app.mjs", body)
+
+    assert problem is not None
+    assert "`FilterState` is exported on lines 1 and 5" in problem
+
+
+@needs_node
+def test_a_renamed_export_is_counted_by_its_exported_name(tmp_path: Path) -> None:
+    body = (
+        "export function run() {}\n"
+        "function go() {}\n"
+        "export { go as run };\n"
+    )
+
+    problem = parse_error(tmp_path / "app.mjs", body)
+
+    assert problem is not None
+    assert "`run` is exported on lines 1 and 3" in problem

@@ -8,7 +8,7 @@ image on Node 20.20.2:
     import instead
     ReferenceError: module is not defined in ES module scope
 
-Run d6297b2f is what this is for. `specialist_testing_1` added
+One run is what this is for. `specialist_testing_1` added
 `"type":"module"` to the manifest while four of its five test files still used
 `require('../app.js')`, then converted them one at a time, each discovered by
 a separate failing `npm test`.

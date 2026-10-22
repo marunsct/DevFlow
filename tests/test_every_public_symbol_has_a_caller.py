@@ -1,6 +1,6 @@
 """Every public class and function in `src/app` has a caller outside its own module.
 
-This is the test `docs/harness-hardening-plan-part3.md` item 1 asks for, and it is
+This is the test Part III of the hardening plan (`docs/improvement-plan.md §E1`) item 1 asks for, and it is
 the §1-B rule from Part I applied to build configuration instead of source code:
 a rule defined over part of the set it governs. The coverage `omit` list used to
 be written per directory (`src/app/deploy/*`, `src/app/analysis/*`, ...), which
@@ -62,35 +62,11 @@ EXTERNAL_REFERENCERS = {
     "evaluation/evaluate.py",
 }
 
-# Public symbols that have no caller today, recorded so this test can be landed
-# before the backlog removes them. Each entry is a debt the plan tracks:
-#
-# - `MetricsTracker` / `get_metrics_payload` — plan-part3 §3.1. `/metrics` reports
-#   zeros because nothing constructs the tracker. Item 2 wires it.
-# - `CIGenerator`, `ComposeGenerator`, `DockerGenerator` — plan-part3 §4. Three
-#   generators with no caller; what they emit is not secure either. Item 5 decides
-#   whether they are wired or deleted, and this entry is removed by whichever it is.
-# - `DependencyManager` — the scaffolding dependency resolver; `resolve_dependencies`
-#   is reached, the class that carries it is not.
-# - `TokenData`, `get_user_from_token` — auth helpers the token flow no longer
-#   reaches; `get_current_user` does the work both were written to do.
-# - `EventResponse` — a response model defined for an event route that was never
-#   registered.
-# - `TestRunner` — a test-runner abstraction the sandbox's own runner superseded.
-#
-# This list must shrink, never grow. A new entry means a new unwired symbol, which
-# is the failure this test exists to catch.
-KNOWN_UNWIRED = {
-    "deploy/ci_generator.py: CIGenerator",
-    "deploy/compose_generator.py: ComposeGenerator",
-    "deploy/docker_generator.py: DockerGenerator",
-    "observability/metrics.py: get_metrics_payload",
-    "scaffolding/dependencies.py: DependencyManager",
-    "server/auth.py: TokenData",
-    "server/auth.py: get_user_from_token",
-    "server/models.py: EventResponse",
-    "tools/testing/runner.py: TestRunner",
-}
+# Public symbols with no caller, recorded rather than fixed. Empty since the
+# review of 2026-10-04 removed the last of them (docs/improvement-plan.md §E1,
+# R5); a new entry means a new unwired symbol, which is the failure this test
+# exists to catch, so it must stay empty.
+KNOWN_UNWIRED: set[str] = set()
 
 # Decorators that make a function the target of a framework's dispatch rather than
 # of a Python call. FastAPI registers the handler under a route; the name is never

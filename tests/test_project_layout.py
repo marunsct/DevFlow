@@ -3,13 +3,13 @@
 Each stage builds its own agent and none can see what an earlier one chose, so
 without a stated convention each invents a layout and they disagree:
 
-- run-64df2b20 put `test_auth.py` and `auth.test.js` in one `tests/` directory,
+- one run put `test_auth.py` and `auth.test.js` in one `tests/` directory,
   beside `__init__.py`, `requirements.txt` and `package.json`.
-- run-7b11cb67 wrote `css/style.css` first, so `css` became the project.
-- run-2b5def74 finished with two `tests/` directories holding three files of
+- one run wrote `css/style.css` first, so `css` became the project.
+- one run finished with two `tests/` directories holding three files of
   the same names.
 
-The convention is deliberately not one fixed skeleton. run-da6c5e19 shipped a
+The convention is deliberately not one fixed skeleton. One run shipped a
 flat five-file project with a passing suite, and inventing `ui/`, `db/`,
 `model/` for it would add structure nobody needs.
 """
@@ -35,7 +35,7 @@ def test_the_convention_names_the_project_after_the_product():
 
 
 def test_a_small_product_is_told_to_stay_flat():
-    """run-da6c5e19 shipped five files in one directory and a passing suite."""
+    """One run shipped five files in one directory and a passing suite."""
     flat = _flat(PROJECT_LAYOUT)
 
     assert "Keep it FLAT" in flat
@@ -81,7 +81,7 @@ def _summary(root: Path) -> list[str]:
 
 
 def test_two_languages_in_one_directory_is_reported(tmp_path: Path):
-    """run-64df2b20's actual shape, in a project whose stack was Python."""
+    """One run's actual shape, in a project whose stack was Python."""
     tests = tmp_path / "med2" / "tests"
     tests.mkdir(parents=True)
     (tests / "test_auth.py").write_text("def test_a(): pass\n", encoding="utf-8")
@@ -104,7 +104,7 @@ def test_two_manifests_in_one_directory_is_reported(tmp_path: Path):
 
 
 def test_a_flat_single_language_project_is_not_reported(tmp_path: Path):
-    """run-da6c5e19's shape, which worked."""
+    """One run's shape, which worked."""
     project = tmp_path / "task-manager"
     project.mkdir()
     for name in ("app.js", "app.test.mjs", "index.html", "style.css", "package.json"):

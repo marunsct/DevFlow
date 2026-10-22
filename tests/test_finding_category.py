@@ -5,7 +5,7 @@ The exact shape `app.agents.severity` was written for, one field along.
 vocabulary; `category` was a bare `Literal` and was not, so one unrecognised
 word threw away a whole review.
 
-Measured live on run-cac07d52 at 05:36, on a model swapped in mid-run:
+Measured live on one run at 05:36, on a model swapped in mid-run:
 
     Stage milestone_reviewer sent an answer that does not satisfy its
     schema (findings.4.category); returning the validation errors

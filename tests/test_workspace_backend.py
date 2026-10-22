@@ -4,7 +4,7 @@ The sandbox points HOME at `.agent-home` inside the workspace so package caches
 land per-run. In container mode that is not a choice - only the workspace is
 mounted, so anything a command writes must be inside it.
 
-Measured on run-61c5a5b6: 42 tool results across ten stages carried
+Measured on one run: 42 tool results across ten stages carried
 `.agent-home`, every `ls /` opened with it, and one `npm install` left 26 cache
 blobs with sha512 filenames. `list_repository_files` skipped it; `ls`, `glob`
 and `grep` come from the deep-agent backend and did not.
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from app.agents.workspace_backend import WorkspaceBackend, _is_hidden, _path_of
+from app.agents.workspace_backend import READ_WITHHELD_MARKER, WorkspaceBackend, _is_hidden, _path_of
 
 
 @pytest.fixture
@@ -131,33 +131,49 @@ def backend(tmp_path):
     return WorkspaceBackend(str(tmp_path), virtual_mode=True)
 
 
-def test_an_invented_prefix_is_told_where_the_file_is(backend) -> None:
+def test_an_invented_prefix_is_served_not_refused(backend) -> None:
     """The guesses agents actually make, from the stored runs.
 
-    On run-3f8e387d - the run that died of gate exhaustion - 72 reads failed
+    On one run - the run that died of gate exhaustion - 72 reads failed
     and 56 of them (77%) named a file that was in the workspace under a
     different path. The error named only the path the agent had invented, so
     it invented another.
+
+    Naming the real path fixed the second invention. It did not fix the cost:
+    the stage still spent a model call re-asking with the path it had just been
+    handed. Measured again on 2026-09-21, `technical_lead` did exactly that four
+    times over `/home/user/workspace/task-manager/...`.
+
+    So the read is now served. This supersedes the older assertion that these
+    return an error - the hint was right and a hint is not what the stage
+    needed. `_the_one_path_it_meant` is stricter than the hint it replaces: the
+    basename must be unique in the workspace AND the path asked for must end
+    with the workspace path, so the request has to agree about the directory
+    too. `test_a_project_file_named_at_the_root_is_located` below covers the
+    case that still gets a hint, and still does.
     """
     for invented in (
         "/home/user/docs/plan.md",
         "/workspace/docs/plan.md",
         "/app/data/workspaces/t1/docs/plan.md",
     ):
-        error = backend.read(invented).error
-        assert "/docs/plan.md" in error
-        assert "relative to the workspace root" in error
+        result = backend.read(invented)
+        assert not getattr(result, "error", None), (
+            f"{invented} should have been served, not refused"
+        )
+        content = (getattr(result, "file_data", None) or {}).get("content", "")
+        assert "# plan" in content, f"{invented} returned no content"
 
 
 def test_a_project_file_named_at_the_root_is_located(backend) -> None:
-    """`/app.js` when the file is `todo-app/app.js` - run-2f252e4e made this
-    call 21 times and run-3f8e387d 87 times."""
+    """`/app.js` when the file is `todo-app/app.js` - one run made this
+    call 21 times and one run 87 times."""
     assert "/todo-app/app.js" in backend.read("/app.js").error
 
 
 def test_a_missing_directory_is_located_too(tmp_path) -> None:
     """`ls` misses directory names, which have no extension to match on:
-    run-2eb3aa24 asked for `/simple-to-do-list-app` four times."""
+    One run asked for `/simple-to-do-list-app` four times."""
     (tmp_path / "nested/todo-app").mkdir(parents=True)
     backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
 
@@ -195,7 +211,7 @@ def test_the_agent_s_own_cache_is_never_suggested(tmp_path) -> None:
 
 
 def test_an_unchanged_repeat_read_is_told_so(backend) -> None:
-    """Measured on run-44e9fc83's `specialist_backend_1`: 39 tool calls, 17 of
+    """Measured on one run's `specialist_backend_1`: 39 tool calls, 17 of
     them the same `read_file` of `app.js` at the same range, in runs of six,
     five and four, two to three seconds apart, with no write between them."""
     first = backend.read("/todo-app/app.js")
@@ -220,9 +236,9 @@ def test_the_content_comes_back_while_the_note_is_only_a_note(backend) -> None:
 def test_the_bytes_are_withheld_once_the_note_has_been_ignored(backend) -> None:
     """Hint, note, refuse - the escalation this codebase arrives at everywhere.
 
-    Measured on run-84e05d4b's `specialist_backend_1`: eleven byte-identical
+    Measured on one run's `specialist_backend_1`: eleven byte-identical
     reads of `/docs/architecture_review.md` in one stage, each answered with a
-    note saying so and each followed by another. run-44e9fc83 did seventeen of
+    note saying so and each followed by another. One run did seventeen of
     `app.js`.
     """
     from app.agents.workspace_backend import READS_BEFORE_WITHHOLDING
@@ -322,7 +338,7 @@ def test_different_ranges_of_one_file_are_counted_apart(tmp_path) -> None:
 
 
 def test_a_range_already_served_is_told_so(tmp_path) -> None:
-    """The exact sequence from run-6412366b's `specialist_ui_ux_0`, reading a
+    """The exact sequence from one run's `specialist_ui_ux_0`, reading a
     984-line index.html that had not changed since it was written:
 
         offset=  0 limit=100   100 new lines
@@ -341,7 +357,9 @@ def test_a_range_already_served_is_told_so(tmp_path) -> None:
 
     def seen(offset: int, limit: int) -> bool:
         result = backend.read("/index.html", offset=offset, limit=limit)
-        return "already read lines" in result.file_data["content"]
+        # The same window again is answered with where its lines are (Initiative AQ).
+        content = result.file_data["content"]
+        return "already read lines" in content or READ_WITHHELD_MARKER in content
 
     assert not seen(0, 100)
     assert not seen(310, 80)
@@ -360,16 +378,15 @@ def test_a_write_clears_what_was_seen(tmp_path) -> None:
     backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
 
     backend.read("/index.html", offset=0, limit=100)
-    assert "already read lines" in backend.read(
+    assert READ_WITHHELD_MARKER in backend.read(
         "/index.html", offset=0, limit=100
     ).file_data["content"]
 
     time.sleep(0.01)
     page.write_text("\n".join(f"CHANGED {i}" for i in range(1, 250)), encoding="utf-8")
 
-    assert "already read lines" not in backend.read(
-        "/index.html", offset=0, limit=100
-    ).file_data["content"]
+    again = backend.read("/index.html", offset=0, limit=100).file_data["content"]
+    assert "already read lines" not in again and READ_WITHHELD_MARKER not in again
 
 
 def test_the_check_keys_on_the_file_not_the_returned_slice(tmp_path) -> None:
@@ -400,9 +417,9 @@ def test_a_wrong_project_guess_is_told_the_real_name(tmp_path) -> None:
     the guess is the only part missing.
 
     Measured across six runs, 53 failed listings of a directory that never
-    existed while the marker sat on disk the whole time: ae4b717e 16,
-    37476645 11, 304add54 8, db3a4a0b 8, 2eb3aa24 5, d6369866 5.
-    run-ae4b717e's ui specialist asked for `task-manager-ui` eleven times and
+    existed while the marker sat on disk the whole time - 16, 11, 8, 8, 5
+    and 5 per run.
+    One run's ui specialist asked for `task-manager-ui` eleven times and
     `task-manager` - the real one - four.
     """
     from app.tools.repository import PROJECT_MARKER
@@ -448,7 +465,7 @@ def test_the_real_name_is_never_hinted_at_itself(tmp_path) -> None:
 
 
 def test_the_same_file_under_two_spellings_shares_one_count(tmp_path) -> None:
-    """Measured on run-f0630b10's `specialist_ui_ux_0`.
+    """Measured on one run's `specialist_ui_ux_0`.
 
     It read one `index.html` 54 times, alternating between
     `task-manager/index.html` (36 reads) and `/task-manager/index.html` (17).
@@ -500,7 +517,7 @@ def test_a_file_it_cannot_stat_is_never_called_unchanged(tmp_path) -> None:
 def test_the_notice_comes_before_the_content(tmp_path) -> None:
     """A notice after the payload is read last or not at all.
 
-    Measured on run-3c0c31d2: `technical_lead` read one 3,847-character
+    Measured on one run: `technical_lead` read one 3,847-character
     `milestone_plan.md` seven times, and the notice fired from the second read
     onward - appended after all 3,847 characters. Six of those seven calls were
     made having already been told.
@@ -537,3 +554,59 @@ def test_the_content_is_still_complete_when_a_notice_is_added(tmp_path) -> None:
         content = backend.read("/a.js").file_data["content"]
         for line in ("line one", "line two", "line three"):
             assert line in content
+
+def test_path_traversal_is_caught(tmp_path: Path) -> None:
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+    
+    # Each operation outside the workspace should return an error result, not crash
+    read = backend.read("../outside.txt")
+    assert getattr(read, "error", None) and "Path traversal" in getattr(read, "error")
+    
+    write = backend.write("../outside.txt", "content")
+    assert getattr(write, "error", None) and "Path traversal" in getattr(write, "error")
+    
+    ls = backend.ls("../outside")
+    assert getattr(ls, "error", None) and "Path traversal" in getattr(ls, "error")
+    
+    glob = backend.glob("*.txt", "../outside")
+    assert getattr(glob, "error", None) and "Path traversal" in getattr(glob, "error")
+    
+    edit = backend.edit("../outside.txt", "content", "new")
+    assert getattr(edit, "error", None) and "Path traversal" in getattr(edit, "error")
+    
+    delete = backend.delete("../outside.txt")
+    assert getattr(delete, "error", None) and "Path traversal" in getattr(delete, "error")
+
+
+def test_outside_root_directory_is_caught(tmp_path: Path) -> None:
+    """A path resolving outside the workspace (e.g. via symlinks created by a venv)
+    must return an error result, never crash the process with an unhandled ValueError.
+    """
+    outside_dir = tmp_path.parent / "external_dir"
+    outside_dir.mkdir(exist_ok=True)
+    (outside_dir / "file.txt").write_text("hello", encoding="utf-8")
+    (tmp_path / "ext_link").symlink_to(outside_dir)
+
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    read = backend.read("/ext_link/file.txt")
+    assert getattr(read, "error", None) and "outside root directory" in getattr(read, "error")
+
+    ls = backend.ls("/ext_link")
+    assert getattr(ls, "error", None) and "outside root directory" in getattr(ls, "error")
+
+    glob = backend.glob("*.txt", "/ext_link")
+    assert getattr(glob, "error", None) and "outside root directory" in getattr(glob, "error")
+
+    grep = backend.grep("hello", path="/ext_link")
+    assert grep.matches == []
+
+    write = backend.write("/ext_link/file.txt", "content")
+    assert getattr(write, "error", None) and "outside root directory" in getattr(write, "error")
+
+    edit = backend.edit("/ext_link/file.txt", "hello", "world")
+    assert getattr(edit, "error", None) and "outside root directory" in getattr(edit, "error")
+
+    delete = backend.delete("/ext_link/file.txt")
+    assert getattr(delete, "error", None) and "outside root directory" in getattr(delete, "error")
+

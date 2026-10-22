@@ -56,6 +56,7 @@ class AgentActivityStream(BaseCallbackHandler):
         self.run_id = run_id
         self.stage = stage
         self._published = 0
+        self._announced = False
 
     # -- publishing ---------------------------------------------------------
 
@@ -107,6 +108,33 @@ class AgentActivityStream(BaseCallbackHandler):
 
     # -- callbacks ----------------------------------------------------------
 
+    def _announce(self) -> None:
+        """Say the stage has begun, once, at its first model call.
+
+        Every other event here is a reply's text, a tool call or a result, and a
+        stage that answers in structured output alone - an intake, a technology
+        consultation - publishes none of them. The run page builds its steps and
+        its activity from these events, so it said "Not started yet" while two
+        stages had finished and a third was working.
+        """
+        if self._announced:
+            return
+        self._announced = True
+        try:
+            from app.server.runner import _stage_narration
+
+            meaning = _stage_narration(self.stage, auto_approve=False)[0]
+        except Exception:  # noqa: BLE001 - the stage's name is narration enough
+            meaning = self.stage
+        self._publish("stage_change", meaning or self.stage, {"status": "running"})
+
+    def on_chat_model_start(self, serialized: Any, messages: Any, **kwargs: Any) -> None:  # noqa: ARG002
+        self._announce()
+
+    def on_llm_start(self, serialized: Any, prompts: Any, **kwargs: Any) -> None:  # noqa: ARG002
+        self._announce()
+
+
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:  # noqa: ARG002
         try:
             for generations in getattr(response, "generations", []) or []:
@@ -143,10 +171,16 @@ def activity_stream_enabled() -> bool:
 def build_activity_callbacks(run_id: str | None, stage: str) -> list[BaseCallbackHandler]:
     """The callbacks to attach to one agent invocation; empty when unavailable.
 
-    Two handlers with different jobs. `AgentActivityStream` feeds the dashboard
-    and clips at 2,000 characters; the transcript keeps the full prompt and the
-    full reply for debugging a run long after it ended. They are built together
-    so a run cannot end up with one and not the other.
+    Three handlers with different jobs. `AgentActivityStream` feeds the
+    dashboard and clips at 2,000 characters; the transcript keeps the full
+    prompt and the full reply for debugging a run long after it ended; the cost
+    handler accumulates this run's token spend so the ceiling in `runner` has a
+    number to check. They are built together so a run cannot end up with one
+    and not the others - which is exactly how the cost handler came to exist,
+    fully written, attached to nothing (plan-part3 §3.2).
+
+    Each is built in its own `try`, because a handler that cannot be
+    constructed should cost the run its own telemetry and not the other two.
     """
     if not run_id:
         return []
@@ -163,7 +197,42 @@ def build_activity_callbacks(run_id: str | None, stage: str) -> list[BaseCallbac
             handlers.append(build_transcript_callback(run_id, stage))
     except Exception:  # noqa: BLE001 - a record must never cost the run its agent
         logger.debug("Could not build the transcript callback", exc_info=True)
+    try:
+        handlers.append(_build_cost_callback(run_id))
+    except Exception:  # noqa: BLE001 - see above: accounting must not cost a run
+        logger.debug("Could not build the cost callback", exc_info=True)
     return handlers
+
+
+def _build_cost_callback(run_id: str) -> BaseCallbackHandler:
+    """The per-run cost handler, told which provider and model to price against.
+
+    Settings are read here rather than in the handler because the handler fires
+    on every model call and `effective_settings` reaches the database. Resolving
+    once per stage keeps the call path off it.
+
+    The configured model is a default, not a verdict: `on_llm_end` prices the
+    model the response actually reports when it carries one, which is what makes
+    a fallback route price as the fallback rather than as the primary.
+    """
+    from app.observability.cost_tracker import CostTrackingCallbackHandler
+
+    provider = ""
+    model = ""
+    try:
+        # `app.models._runtime_settings` rather than `effective_settings`
+        # directly: it already falls back to the environment when there is no
+        # database, which the CLI and the tests rely on. Reimplementing that
+        # here would be a second copy of a rule that has to agree with the one
+        # the model factory uses, and the two would drift.
+        from app.models import _runtime_settings
+
+        resolved = _runtime_settings()
+        provider = getattr(resolved, "llm_provider", "") or ""
+        model = getattr(resolved, "model_name", "") or ""
+    except Exception:  # noqa: BLE001 - an unpriced total beats no total
+        logger.debug("Could not resolve settings for cost tracking", exc_info=True)
+    return CostTrackingCallbackHandler(run_id, provider=provider, model=model)
 
 
 def publish_stage_outcome(
@@ -173,7 +242,7 @@ def publish_stage_outcome(
 
     A stage's answer reaches the run through its structured response, and the
     structured response is not a message - so nothing in the event stream
-    carries it. The effect on run-5d83e946 was that sprint 2's milestone was
+    carries it. The effect on one run was that sprint 2's milestone was
     rejected and the reasons appeared nowhere an operator could see: the sprint
     simply went round again. The reasons existed, in the next stage's prompt,
     which is not somewhere anyone can look.

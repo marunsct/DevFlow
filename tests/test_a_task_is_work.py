@@ -1,6 +1,6 @@
 """A delegated task that says there is nothing to do.
 
-run-bb1ee9bb's milestone plan read
+One run's milestone plan read
 
     #### backend — N/A
     #### database — N/A

@@ -1,6 +1,6 @@
 """An answer the model put inside a single key.
 
-run-454adf22's `specialist_testing` sent
+One run's `specialist_testing` sent
 
     {"SpecialistOutput": {"changed_files": [...], "decisions": [...], ...}}
 
@@ -87,7 +87,7 @@ def test_what_is_not_a_wrapped_object_comes_back_as_it_went_in(payload) -> None:
 # --- and the reason it exists ---------------------------------------------
 
 
-def test_the_run_454adf22_message_is_now_an_answer() -> None:
+def test_the_measured_message_is_now_an_answer() -> None:
     message = AIMessage(content=json.dumps({"SpecialistOutput": ANSWER}), id="m")
 
     found = _answer_in(message, SpecialistOutput)

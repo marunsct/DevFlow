@@ -57,7 +57,7 @@ def test_principal_architect_agent_factory_creates_graph() -> None:
 def test_a_revision_is_told_to_change_nothing_else() -> None:
     """The instruction guarded removal and said nothing about addition.
 
-    On run-37476645 four consecutive architecture reviews returned
+    On one run four consecutive architecture reviews returned
     changes_required with 5, then 4, then 6, then 8 findings, escalating from
     minor to blocking, each round raising subjects the round before had not
     mentioned - an export prompt, a persistent banner, a quota warning.

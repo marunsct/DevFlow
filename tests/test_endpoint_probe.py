@@ -1,6 +1,6 @@
 """A model server that is not there must not look like one that is slow.
 
-Measured on run-18c0e34c: Docker Desktop wedged, the worker died, and the run
+Measured on one run: Docker Desktop wedged, the worker died, and the run
 sat at `awaiting_approval:principal_architect` reporting `running` for about
 ten hours. Nothing in the pipeline ever asked whether the endpoint answered.
 
@@ -172,7 +172,7 @@ def test_a_refused_connection_is_not_read_as_dns():
 # so every check that asks "is anything serving here" passes, and the run dies
 # on its first model call instead.
 #
-# Measured on run-eb48de7a: LM Studio unloaded its model thirty-five minutes
+# Measured on one run: LM Studio unloaded its model thirty-five minutes
 # in, and the next call returned `400 - No models loaded`. The harness
 # reported that well; what it could not do was refuse to start, because the
 # probe had already called the endpoint healthy.

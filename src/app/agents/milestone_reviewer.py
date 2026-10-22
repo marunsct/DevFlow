@@ -11,12 +11,13 @@ from __future__ import annotations
 from app.agents.severity import validator_for as severity_in
 from app.agents.project_layout import WORKSPACE_ROOT_NOTE
 
+import re
 from pathlib import Path
 from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.agents.finding_category import validator_for as category_in
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
@@ -31,10 +32,14 @@ _NAME = "milestone_reviewer"
 class MilestoneReviewFinding(BaseModel):
     """One specific issue found while reviewing the milestone."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     severity: Literal["blocking", "major", "minor", "suggestion"] = Field(
-        ..., description="How serious this finding is."
+        ..., description=(
+            "How serious this finding is. While every test passes, a blocking or major finding names "
+            "the acceptance criterion or test case (AC-n, TC-...) it holds the sprint to; one that "
+            "names none is recorded as minor."
+        )
     )
 
     # Four schemas in this harness name severity and no two agree, so the word
@@ -54,7 +59,7 @@ class MilestoneReviewFinding(BaseModel):
         "security",
         "regression",
         # A bucket of its own because it is none of the above, and this model
-        # reaches for it: `code_quality` 24 times in run-cac07d52 alone.
+        # reaches for it: `code_quality` 24 times in one run alone.
         "code_quality",
         # So an unrecognised category is preserved rather than guessed at.
         # No brief ever says "other", so `scope_attestation` caps such a
@@ -63,8 +68,8 @@ class MilestoneReviewFinding(BaseModel):
         "other",
     ] = Field(..., description="The type of issue found.")
 
-    # `severity` has been forgiven since run-0deeb8bf; `category` was a bare
-    # Literal and was not. Measured live on run-cac07d52 at 05:36: one
+    # `severity` has been forgiven since one run; `category` was a bare
+    # Literal and was not. Measured live on one run at 05:36: one
     # unrecognised word rejected a whole milestone review and cost three and a
     # half minutes re-generating it. See `app.agents.finding_category`.
     _known_category = field_validator("category", mode="before")(
@@ -83,13 +88,33 @@ class MilestoneReviewFinding(BaseModel):
     )
 
 
+#: What `blocked` does, in the words both the schema and its refusal use.
+#: Kept beside `app.graph.workflow.MILESTONE_REVIEW_NEXT_STAGE`, which routes on
+#: it: a reviewer told the run ends when it does not picks a status for a
+#: consequence that never happens.
+BLOCKED_MEANS = (
+    "this sprint is recorded as failed and the Technical Lead plans it again "
+    "from the start, fixing none of your findings and using one of the "
+    "milestone's revisions"
+)
+
+
 class MilestoneReviewOutput(BaseModel):
     """Structured review decision produced by the Milestone Reviewer."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     status: Literal["accepted", "changes_required", "blocked"] = Field(
-        ..., description="Routing decision: accepted, changes required, or blocked."
+        ...,
+        description=(
+            "What happens next. 'accepted': the sprint continues. "
+            "'changes_required': the Technical Lead re-plans and the "
+            "specialists fix your findings - this is the one to use for "
+            "anything that can be fixed, however severe. 'blocked': "
+            + BLOCKED_MEANS
+            + " - use it only when the milestone cannot proceed for a reason "
+            "no fix to its findings could resolve."
+        ),
     )
     findings: list[MilestoneReviewFinding] = Field(default_factory=list)
     acceptance_evidence: str = Field(
@@ -99,6 +124,55 @@ class MilestoneReviewOutput(BaseModel):
         ..., description="Whether documentation was reviewed."
     )
     tests_reviewed: bool = Field(..., description="Whether tests were reviewed.")
+
+    @model_validator(mode="after")
+    def _blocked_means_unfixable(self) -> "MilestoneReviewOutput":
+        """Refuse `blocked` for findings that state how to fix themselves.
+
+        The three statuses have wildly different consequences and the schema
+        said only "Routing decision: accepted, changes required, or blocked."
+        `changes_required` re-plans the milestone and lets specialists fix the
+        findings; `blocked` records the sprint as failed and plans it again
+        from the start, fixing none of them. (It once ended the run; the
+        owner's sprint re-run made it re-plan instead, and this text said
+        "ends the run" long after - see `BLOCKED_MEANS`.) Nothing told the
+        reviewer that.
+
+        Measured on one run, which died sixteen minutes in. Its review was
+        good - `toggleTask` absent so every checkbox did nothing, filter buttons
+        with no handlers, and no tests for either - and every finding carried a
+        precise `required_remediation`. It chose "blocked" because its findings
+        were severity "blocking", which is the natural reading of the word, and
+        the run ended without one revision being attempted. One run's
+        reviewer called the same class of defect `changes_required` and got
+        three.
+
+        The prompt already says to use `changes_required` for a blocking
+        finding, and this reviewer read past it - class A of
+        the hardening plan (`docs/improvement-plan.md §E1`), where guidance
+        loses and corrections win. So this is a correction: a finding that says how to remedy itself
+        is remediable by definition, and a status meaning "nothing can be done"
+        cannot be carried by a list of things to do.
+
+        Costs one model call and returns the validation error, which is the
+        same conversation one call earlier - against a run that otherwise ends.
+        """
+        if self.status != "blocked" or not self.findings:
+            return self
+        remediable = [f for f in self.findings if (f.required_remediation or "").strip()]
+        if len(remediable) != len(self.findings):
+            return self
+        raise ValueError(
+            f"status='blocked' means {BLOCKED_MEANS}, so nothing will be "
+            f"fixed, but all {len(self.findings)} of your findings state a "
+            "`required_remediation`, so they are fixable. Use "
+            "'changes_required': the Technical Lead re-plans the milestone and "
+            "the specialists carry out exactly the remediations you wrote. "
+            "Reserve 'blocked' for a milestone that cannot proceed for a reason "
+            "no work inside this run could resolve - and then say so in a "
+            "finding with no remediation, because there is none."
+        )
+
 
 
 def _execution_evidence(repository_root: str) -> str:
@@ -116,17 +190,25 @@ def _execution_evidence(repository_root: str) -> str:
         return "The execution record could not be read for this workspace."
 
 
-def _integration_evidence(repository_root: str, stack: Any = None) -> str:
+def _integration_evidence(
+    repository_root: str, stack: Any = None, document_text: str = ""
+) -> str:
     """What the files in this workspace say about each other. Never raises.
 
     Each specialist writes files that are defensible alone, and no stage checks
-    whether they connect. On run-95ca3f72 that let a stylesheet target an id no
+    whether they connect. On one run that let a stylesheet target an id no
     page declared, and a script no page loaded, through four review stages.
+
+    `document_text` is the operator's brief, passed through because two of the
+    checks compare the product against it rather than against the run's own
+    restatement of it. One run redefined "edit" as "toggling completion
+    status" in its technical specification and shipped without editing, and
+    every check agreed, because every check read the specification.
     """
     try:
         from app.analysis.integration_checks import summarise_integration
 
-        return summarise_integration(repository_root, stack)
+        return summarise_integration(repository_root, stack, document_text)
     except Exception:  # noqa: BLE001 - a reviewer without evidence still reviews
         return "The cross-file checks could not be run for this workspace."
 
@@ -134,7 +216,7 @@ def _integration_evidence(repository_root: str, stack: Any = None) -> str:
 def _how_text_reaches_the_page(repository_root: str) -> str:
     """How this product puts text into the DOM, stated as fact, or "".
 
-    Run 1c9854c7 was killed by a finding that was not true. After three
+    One run was killed by a finding that was not true. After three
     revisions this stage recorded
 
         [major] security: The addTask function inserts user-provided task text
@@ -165,7 +247,7 @@ def _how_text_reaches_the_page(repository_root: str) -> str:
 def _against_the_brief(document_text: str, repository_root: str) -> str:
     """What the brief asks for and the product does not have, or "".
 
-    Run 0c5aabdb was accepted here. Its architecture review returned "approved"
+    One run was accepted here. Its architecture review returned "approved"
     with no findings, both security reviews "passed", and this stage raised one
     blocking finding - a missing npm test script - then accepted a product with
     no HTML, no CSS and no front-end JavaScript, for a brief whose first
@@ -210,12 +292,23 @@ def _against_the_brief(document_text: str, repository_root: str) -> str:
             + "\n\n"
         )
     if missing:
+        # The closing sentences are for a product that breaks the brief. Two
+        # of the things listed here are not that - a note that only test-only
+        # packages are declared, and a gap in the test setup - and following
+        # "it is not a finding" with "a milestone whose product does not have
+        # what the brief asks for is not complete" told the reviewer both.
+        breaks_the_brief = [item for item in missing if not _is_only_a_note(item)]
         parts.append(
             "Checked deterministically against what was built:\n"
             + "\n".join(f"- {item}" for item in missing)
-            + "\n\nThat is not a reading of the brief; it is what is on disk. "
-            "A milestone whose product does not have what the brief asks for is "
-            "not complete, whatever its tests do.\n\n"
+            + "\n\nThat is not a reading of the brief; it is what is on disk."
+            + (
+                " A milestone whose product does not have what the brief asks "
+                "for is not complete, whatever its tests do."
+                if breaks_the_brief
+                else " Nothing in it is the product breaking the brief."
+            )
+            + "\n\n"
         )
     else:
         parts.append(
@@ -223,6 +316,16 @@ def _against_the_brief(document_text: str, repository_root: str) -> str:
             "its tests do.\n\n"
         )
     return "".join(parts)
+
+
+def _is_only_a_note(item: str) -> bool:
+    """Whether a checked statement says the brief is NOT broken.
+
+    `what_the_brief_forbids_that_is_there` writes two of these, each ending in
+    words this matches; everything else it and its sibling return is a
+    violation.
+    """
+    return "it is not a finding" in item or "gap in the test setup" in item
 
 
 #: How many of each kind to carry. A milestone has a handful of specialists.
@@ -288,6 +391,86 @@ def what_the_specialists_reported(outputs: Any) -> str:
     return "".join(parts)
 
 
+def what_you_said_last_time(previous: Any, revisions_used: int, revisions_allowed: int) -> str:
+    """The reviewer's own previous findings, and what is left of the budget.
+
+    The reviewer has been reviewing blind. `revision_comments` carries its
+    findings forward to the technical lead, so the builders know what was
+    asked; the reviewer itself is handed a fresh conversation with no record
+    of what it said last round, and it contradicts itself.
+
+    Measured on the two runs that failed at the revision limit:
+
+    One run, milestone two, round 2 raised as **minor** - "init() is the
+    main DOM wiring entry point exported from ui.js, but no automated test
+    exercises it". Round 3 raised the same defect as **blocking** - "The init()
+    function exported from ui.js has no automated test coverage" - and that
+    round was the third, so the run ended there. Nothing about the file had
+    changed to make it worse; the reviewer simply weighted it differently.
+
+    One run, round 1 certified the size explicitly in its acceptance
+    evidence: "Confirmed 447 code lines (non-blank, non-comment) is under the
+    500-line brief limit". Round 3 raised **major** "Application source files
+    total 631 lines ... exceeding the brief's stated constraint" - a fair
+    finding on its own, but one the same reviewer had passed twice, and the
+    round it appeared in was the last one available.
+
+    Both runs spent their three revisions on a moving target. This hands the
+    reviewer what it said before and how much room is left, which is what it
+    would have had if the rounds were one conversation.
+
+    Deliberately not enforced by clamping severities: matching "init() has no
+    test coverage" to "no automated test exercises init()" needs fuzzy text
+    matching, and a wrong match would silence a real blocking finding, which is
+    a worse failure than the one being fixed.
+    """
+    findings = list(getattr(previous, "findings", None) or [])
+    if not findings and not revisions_used:
+        return ""
+
+    parts = ["--- What you found on this milestone last time ---\n"]
+    if findings:
+        for finding in findings[:MAX_REPORTED_PER_KIND]:
+            severity = getattr(finding, "severity", "?")
+            category = getattr(finding, "category", "?")
+            description = str(getattr(finding, "description", "")).strip()
+            parts.append(f"- [{severity}] {category}: {description}\n")
+        parts.append(
+            "\nEvery one of these is either fixed or still open, and saying "
+            "which is part of this review. A finding you raised before and do "
+            "not raise again reads as fixed, so only drop it if you checked. "
+            "A defect you called optional last round is optional this round "
+            "too: re-weighing the same unchanged code is how a milestone "
+            "spends its revisions without converging.\n\n"
+        )
+    if revisions_allowed:
+        left = max(revisions_allowed - revisions_used, 0)
+        parts.append(
+            f"This is revision {revisions_used + 1} of {revisions_allowed}. "
+        )
+        if left <= 1:
+            parts.append(
+                "It is the last one. If you require changes now the run ENDS "
+                "with nothing delivered - not another round of fixes. A "
+                "blocking or major finding here has to be worth the whole "
+                "product; anything smaller belongs at minor or suggestion, "
+                "where it is recorded and the milestone still ships.\n\n"
+            )
+        else:
+            parts.append(
+                f"After {left} more the run ends with whatever is built, so "
+                "findings that matter belong in this round rather than the "
+                "next one.\n\n"
+            )
+    return "".join(parts)
+
+
+def _what_the_specialists_found(findings: dict[str, list[str]] | None) -> str:
+    from app.agents.advice_review import findings_block
+
+    return findings_block(findings)
+
+
 def build_milestone_review_request(
     milestone_goal: str,
     changed_files: list[str],
@@ -297,13 +480,44 @@ def build_milestone_review_request(
     stack: Any = None,
     document_text: str = "",
     specialist_outputs: Any = None,
+    previous_review: Any = None,
+    revisions_used: int = 0,
+    revisions_allowed: int = 0,
+    sprint_scope: str = "",
+    acceptance: str = "",
+    specialist_findings: dict[str, list[str]] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
-    """Build the Deep Agent input from the milestone artifacts awaiting review."""
+    """Build the Deep Agent input from the milestone artifacts awaiting review.
+
+    `specialist_findings` is what the consulted specialists found of their
+    adopted advice not built this sprint. See `app.agents.advice_review`.
+
+    `acceptance` is the harness's own run of the locked acceptance suite (see
+    `app.acceptance.requests.acceptance_block`): which criteria pass, measured,
+    not reported.
+
+    `sprint_scope` is this sprint's goal, scope, what the plan deferred and the
+    later sprints' goals. Without it the reviewer had the brief and the
+    milestone goal only, and blocked one run's first sprint for not editing or
+    deleting - the work its own plan gave to sprint 2.
+    """
     files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
+    scope_text = (
+        f"--- This sprint's scope, from the sprint plan ---\n{sprint_scope}\n\n"
+        "Judge the work against this sprint's scope. Work the plan gives to a later "
+        "sprint is not missing yet: do not raise it as blocking or major - at most "
+        "a suggestion. The last sprint's review checks the whole brief.\n\n"
+        if sprint_scope.strip()
+        else ""
+    )
     brief = (
         WORKSPACE_ROOT_NOTE
         + _against_the_brief(document_text, repository_root)
         + what_the_specialists_reported(specialist_outputs)
+        + what_you_said_last_time(previous_review, revisions_used, revisions_allowed)
+        + scope_text
+        + acceptance
+        + _what_the_specialists_found(specialist_findings)
         + f"--- Milestone goal under review ---\n{milestone_goal}\n\n"
         f"--- Changed files ---\n{files_text}\n\n"
         f"--- Test evidence ---\n{test_evidence}\n\n"
@@ -311,7 +525,7 @@ def build_milestone_review_request(
         f"--- Commands actually executed in this workspace ---\n"
         f"{_execution_evidence(repository_root)}\n"
         f"\n--- Cross-file checks (deterministic, not a model's opinion) ---\n"
-        f"{_integration_evidence(repository_root, stack)}\n"
+        f"{_integration_evidence(repository_root, stack, document_text)}\n"
         f"{_how_text_reaches_the_page(repository_root)}"
     )
     return {"messages": [{"role": "user", "content": brief}]}
@@ -337,10 +551,11 @@ Responsibilities:
 {TESTING_DEPENDENCY_RULE}
 
 A test-only dependency is not a violation, and reading one as a violation is
-the defect. `@playwright/test`, `vitest`, `jest`, `jsdom` and the like sitting
-in `devDependencies` with an empty or absent `dependencies` block break no
-constraint a brief places on the product: `npm ci --omit=dev` installs none of
-them, so the user receives nothing of them. Filing that as a BLOCKING finding
+the defect. Test runners, browser drivers and test helpers declared in the
+manifest's test-only or development scope, with the product's own dependency
+list empty or absent, break no constraint a brief places on the product: a
+production install leaves every one of them out, so the user receives nothing
+of them. Filing that as a BLOCKING finding
 does not protect the brief - it overrules the testing the brief never forbade,
 and the remediation it asks for ("remove the test framework") is the wrong
 answer by construction. The deterministic check reports a real violation as
@@ -369,6 +584,17 @@ Constraints:
   and must become a finding, at blocking severity when it means code cannot
   run - a stylesheet targeting an id no page declares, or a module nothing
   loads, is dead code however well written it is.
+- A criterion that holds "for every" capability under some condition - an
+  input method, an interface, a platform, a permission level, a failure mode -
+  is checked capability by capability, not by the parts you happened to
+  inspect. List every capability the milestone offers and find, in the code or
+  a test, how each one is reached under that condition. One with no such path
+  fails the criterion; evidence about some entry points is not evidence about
+  the others.
+- A limit or refusal the product applies where a value is created must hold on
+  every other path that sets the same value - update, import, restore, a
+  second interface to the same data. A path that accepts what another refuses
+  is a finding, whichever path the tests covered.
 - Treat the executed-command record as authoritative over any specialist's
   description of its own testing. A milestone whose specialists report passing
   tests, but whose record shows no test command ran, is not verified - raise it
@@ -404,9 +630,88 @@ def create_milestone_reviewer_agent(
     )
 
 
+#: How many proven problems become findings at once. A lead handed more than
+#: this cannot act on them in one revision, and the rest return on the next
+#: review because the checks that found them are still there.
+MAX_PROVEN_FINDINGS = 6
+
+
+def findings_for_what_the_checks_proved(
+    repository_root: str | Path, stack: Any = None, brief: str = ""
+) -> list[MilestoneReviewFinding]:
+    """Findings the harness raises itself, for defects it can demonstrate.
+
+    A review that asks for changes and records `findings: []` leaves the
+    workflow nothing to route on and the lead nothing to assign. The existing
+    answer is to re-review on a fresh conversation, and when that still returns
+    nothing, to hand the lead the reviewer's prose instead. Prose is not a task.
+
+    Measured on one run: `index.html` linked a `style.css` that was not in
+    the workspace, `_broken_local_references` proved it, `summarise_integration`
+    put it in front of the reviewer under the heading that calls it a blocking
+    finding, and the reviewer wrote it out in prose with an empty `findings`
+    list. Three revisions later the run failed and the stylesheet was still
+    missing. Two other proven defects went the same way in the same review.
+
+    So the harness stops asking. These problems are decided by reading the
+    files - a reference either resolves or it does not - and nothing about that
+    needs a model's agreement to be true. `blocking` because
+    `summarise_integration` already tells the reviewer this tier "means a
+    feature DOES NOT WORK"; `correctness` because that is what a feature which
+    does not work is.
+
+    Only ever consulted where the reviewer has already said changes are needed,
+    so this can neither fail a sprint the reviewer accepted nor invent a reason
+    to revise one.
+    """
+    from app.analysis.integration_checks import problems_that_break_the_product
+
+    findings: list[MilestoneReviewFinding] = []
+    for problem in problems_that_break_the_product(repository_root, stack, brief)[
+        :MAX_PROVEN_FINDINGS
+    ]:
+        findings.append(
+            MilestoneReviewFinding(
+                severity="blocking",
+                category="correctness",
+                description=problem,
+                # Named from the problem text so the lead can delegate it
+                # without guessing. `affected_files` is what the task list
+                # reads to scope a specialist's work.
+                affected_files=_files_named_in(problem),
+                required_remediation=(
+                    "Fix this in the files named. It was found by reading the "
+                    "workspace, not by judgement, so it is still true until "
+                    "the files change - re-stating it as acceptable will not "
+                    "clear it."
+                ),
+            )
+        )
+    return findings
+
+
+#: A workspace-relative path in a problem sentence: `docs/x.md`, `app.js`,
+#: `src/main.jsx`. Bare words and sentence punctuation are not paths, so a
+#: dot and an extension of one to six letters are both required.
+_A_PATH_IN_A_SENTENCE = re.compile(r"(?<![\w/.-])([\w./-]+\.[A-Za-z]{1,6})\b")
+
+
+def _files_named_in(problem: str) -> list[str]:
+    """The files a problem sentence names, in the order it names them."""
+    seen: list[str] = []
+    for candidate in _A_PATH_IN_A_SENTENCE.findall(problem):
+        if candidate not in seen:
+            seen.append(candidate)
+    return seen
+
+
 __all__ = [
+    "MAX_PROVEN_FINDINGS",
     "MilestoneReviewFinding",
     "MilestoneReviewOutput",
     "build_milestone_review_request",
     "create_milestone_reviewer_agent",
+    "findings_for_what_the_checks_proved",
+    "what_the_specialists_reported",
+    "what_you_said_last_time",
 ]

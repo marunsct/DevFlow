@@ -191,3 +191,24 @@ def test_deleting_removes_the_row(run_store):
     run_store.save(_record("run-del"))
     run_store.delete("run-del")
     assert run_store.load("run-del") is None
+
+
+def test_a_save_never_writes_back_a_stale_task_id(run_store):
+    """The API records the task it dispatched; a worker's record, loaded before
+    that, still holds the previous task's id. Its routine persist wrote that id
+    back, and a pause then revoked a task that no longer existed."""
+    run_store.save(_record("run-task", status="failed", task_id="task-old"))
+    stale = run_store.load("run-task")
+    run_store.set_task_id("run-task", "task-new")
+
+    stale.status = "running"
+    run_store.save(stale)
+
+    assert run_store.load("run-task").task_id == "task-new"
+    assert run_store.load("run-task").status == "running"
+
+
+def test_a_new_run_s_first_save_records_its_task_id(run_store):
+    run_store.save(_record("run-first", task_id="task-1"))
+
+    assert run_store.load("run-first").task_id == "task-1"

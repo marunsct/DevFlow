@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type {
   RunStatusResponse,
   LogEntry,
@@ -15,29 +15,53 @@ import {
   submitReview,
   submitApproval,
   cancelRun,
+  pauseRun,
   resumeRun,
+  getRewindPoints,
+  rewindRun,
   cloneRun,
+  downloadHandover,
+  downloadTranscript,
   startRun,
+  type RewindPoint,
   getStreamTicket,
   getWizard
 } from '../api';
 import { LogViewer } from '../components/LogViewer';
+import { LatestChange } from '../components/LatestChange';
+import { AuditTable } from '../components/AuditTable';
+import { ModelPressure } from '../components/ModelPressure';
+import { Timeline } from '../components/Timeline';
+import { Tabs } from '../ui';
+import { ChangesPanel } from '../components/ChangesPanel';
+import { SteeringBox } from '../components/SteeringBox';
 import { ArtifactList } from '../components/ArtifactList';
 import { ExecutionFlow } from '../components/ExecutionFlow';
 import { AgentActivity } from '../components/AgentActivity';
 import { ReviewPanel } from '../components/ReviewPanel';
 import { ApprovalGate } from '../components/ApprovalGate';
 import { WizardDashboard } from '../components/WizardDashboard';
-import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Copy, ListChecks, LayoutGrid } from 'lucide-react';
-import { describeStage, describeStatus } from '../lib/activity';
+import { SprintSummaryPanel } from '../components/SprintSummaryPanel';
+import { DeliveryPanel } from '../components/DeliveryPanel';
+import { OwnerRating } from '../components/OwnerRating';
+import { RunFigures } from '../components/RunFigures';
+import { fixLoop, useTypicalTime } from '../lib/runSummary';
+import { holdingTheModel, useServerHealth } from '../lib/serverHealth';
+import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Pause, Copy, ListChecks, LayoutGrid, RotateCcw, Download } from 'lucide-react';
+import { describeStage, describeStatus, RESUMABLE } from '../lib/activity';
+import { useNow } from '../lib/usePageVisible';
+import { useFeedback } from '../components/Feedback';
 
 
 
 export const RunDashboard: React.FC = () => {
+  const { notify, confirm: askConfirm } = useFeedback();
   const { runId } = useParams<{ runId: string }>();
   const navigate = useNavigate();
 
   const [run, setRun] = useState<RunStatusResponse | null>(null);
+  const [rewindPoints, setRewindPoints] = useState<RewindPoint[] | null>(null);
+  const [rewindTo, setRewindTo] = useState<string>('');
   const [logs, setLogs] = useState<LogEntry[]>([]);
   // The wizard model: the finished phase structure of the run, derived on the
   // server from its event history and graph state. Fetched alongside the run
@@ -47,11 +71,48 @@ export const RunDashboard: React.FC = () => {
   const [approval, setApproval] = useState<ApprovalPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Whether the live stream is connected: it reconnects on its own, and said
+  // nothing while it did - a stopped feed looked like a quiet run.
+  const [streamDown, setStreamDown] = useState(false);
+  const live = !!run && !['completed', 'failed', 'cancelled'].includes(run.status);
+  const now = useNow(live);
+  const typical = useTypicalTime(run?.delivery_mode, run?.criteria_total);
+  // On a server that serves one request at a time, another run on it holds this one's calls.
+  const health = useServerHealth();
+  // A moment chosen on the timeline, for the feed to show.
+  const [focusAt, setFocusAt] = useState<string | null>(null);
+  const waitingOn = holdingTheModel(health, runId);
+  // The tab says what the run needs, so a gate is seen from another tab.
+  useEffect(() => {
+    if (!run) return;
+    const waiting = run.status === 'waiting_for_review' || run.status === 'waiting_for_approval';
+    const mark = waiting ? '\u23F8 Needs you' : run.status === 'failed' ? '\u2716 Failed' : run.status === 'completed' ? '\u2714 Done' : run.status === 'running' ? '\u25B6' : '';
+    document.title = `${mark ? mark + ' \u00B7 ' : ''}${run.run_id.slice(0, 12)} \u00B7 DevFlow.ai`;
+    return () => { document.title = 'DevFlow.ai'; };
+  }, [run?.status, run?.run_id]);
   const [actionLoading, setActionLoading] = useState(false);
   // The centre column carries two different audiences: what the run produced,
   // and the raw event log. Tabs let each have the full width instead of
   // splitting it and leaving both cramped.
-  const [centreTab, setCentreTab] = useState<'results' | 'log'>('results');
+  // Kept in the address, so a link or a reload opens the same view and change.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const viewParam = searchParams.get('view');
+  type CentreTab = 'activity' | 'results' | 'log' | 'changes' | 'audit';
+  const centreTab: CentreTab =
+    viewParam === 'log' || viewParam === 'changes' || viewParam === 'results' || viewParam === 'audit' ? viewParam : 'activity';
+  const selectedChange = searchParams.get('change');
+  const setCentreTab = (tab: CentreTab) => {
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'activity') next.delete('view'); else next.set('view', tab);
+    if (tab !== 'changes') next.delete('change');
+    setSearchParams(next, { replace: true });
+  };
+  const selectChange = (sha: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('view', 'changes');
+    if (sha) next.set('change', sha); else next.delete('change');
+    setSearchParams(next, { replace: true });
+  };
   // A failure message can be a paragraph or twenty lines. Collapsed by default
   // so a short screen still has room for the panels underneath; the first lines
   // carry the summary, and the rest is one click away.
@@ -82,6 +143,8 @@ export const RunDashboard: React.FC = () => {
   // past history the user had never seen.
   const logsById = useRef<Map<string, LogEntry>>(new Map());
   const historyCursor = useRef(0);
+  // Whether the live stream is open: while it is, it carries every event.
+  const streamOpen = useRef(false);
   const lastSequence = useRef(0);
 
   const mergeLogs = (incoming: LogEntry[]) => {
@@ -103,13 +166,24 @@ export const RunDashboard: React.FC = () => {
   };
 
   const fetchInFlight = useRef(false);
+  // A refresh asked for while one is in flight. Dropping it left the page on
+  // the stage the in-flight read saw, until the next event or a reload.
+  const fetchAgain = useRef(false);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The stage the last streamed event came from. The runner announces a
+  // `stage_change` only at a gate; the stages between two gates (the specialist
+  // consults, say) arrive as agent events alone, and the header, the progress
+  // panel and the artifacts stayed on the first of them until a reload.
+  const lastEventStage = useRef('');
 
   const fetchState = async () => {
     if (!runId) return;
     // One refresh at a time. Without this an event burst stacks overlapping
     // round-trips, each of which is two or three API calls.
-    if (fetchInFlight.current) return;
+    if (fetchInFlight.current) {
+      fetchAgain.current = true;
+      return;
+    }
     fetchInFlight.current = true;
     try {
       const runData = await getRun(runId);
@@ -143,11 +217,15 @@ export const RunDashboard: React.FC = () => {
       }
 
       // History paging uses its own cursor, independent of what the live
-      // stream has already delivered.
-      const logsData = await getLogs(runId, 200, historyCursor.current);
-      if (logsData.logs?.length) {
-        historyCursor.current += logsData.logs.length;
-        mergeLogs(logsData.logs);
+      // stream has already delivered - and only while the stream is down: an
+      // open stream replays everything after the last event it saw, so paging
+      // the same events again cost a request each refresh and gave nothing.
+      if (!streamOpen.current) {
+        const logsData = await getLogs(runId, 200, historyCursor.current);
+        if (logsData.logs?.length) {
+          historyCursor.current += logsData.logs.length;
+          mergeLogs(logsData.logs);
+        }
       }
 
       setError(null);
@@ -162,6 +240,10 @@ export const RunDashboard: React.FC = () => {
       setLoading(false);
     } finally {
       fetchInFlight.current = false;
+      if (fetchAgain.current) {
+        fetchAgain.current = false;
+        scheduleRefetch();
+      }
     }
   };
 
@@ -212,6 +294,8 @@ export const RunDashboard: React.FC = () => {
 
       ws.onopen = () => {
         attempt = 0;
+        streamOpen.current = true;
+        setStreamDown(false);
       };
 
       ws.onmessage = (event) => {
@@ -233,7 +317,9 @@ export const RunDashboard: React.FC = () => {
           const logEntry: LogEntry = JSON.parse(message.data);
           mergeLogs([logEntry]);
 
-          if (['stage_change', 'error', 'complete', 'approval_request', 'review_request', 'approval_auto'].includes(logEntry.event_type)) {
+          const movedOn = !!logEntry.stage && logEntry.stage !== lastEventStage.current;
+          if (logEntry.stage) lastEventStage.current = logEntry.stage;
+          if (movedOn || ['stage_change', 'artifact', 'error', 'complete', 'approval_request', 'review_request', 'approval_auto'].includes(logEntry.event_type)) {
             scheduleRefetch();
           }
         } catch (err) {
@@ -243,7 +329,11 @@ export const RunDashboard: React.FC = () => {
 
       ws.onerror = () => ws?.close();
       ws.onclose = () => {
-        if (isSubscribed) scheduleReconnect();
+        streamOpen.current = false;
+        if (isSubscribed) {
+          setStreamDown(true);
+          scheduleReconnect();
+        }
       };
     };
 
@@ -276,7 +366,7 @@ export const RunDashboard: React.FC = () => {
       setReview(null);
       await fetchState();
     } catch (err: any) {
-      alert("Failed to submit review: " + (err.response?.data?.detail || err.message));
+      notify("Failed to submit review: " + (err.response?.data?.detail || err.message));
     } finally {
       setActionLoading(false);
     }
@@ -290,19 +380,34 @@ export const RunDashboard: React.FC = () => {
       setApproval(null);
       await fetchState();
     } catch (err: any) {
-      alert("Failed to submit approval: " + (err.response?.data?.detail || err.message));
+      notify("Failed to submit approval: " + (err.response?.data?.detail || err.message));
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleCancel = async () => {
-    if (!runId || !confirm('Are you sure you want to cancel this run?')) return;
+    if (!runId || !(await askConfirm({
+      title: 'Cancel this run?',
+      message: 'It stops at the next stage boundary and cannot be resumed. Pause it instead to continue later.',
+      confirmLabel: 'Cancel run',
+      danger: true,
+    }))) return;
     try {
       await cancelRun(runId);
       await fetchState();
     } catch (err: any) {
-      alert("Failed to cancel: " + (err.response?.data?.detail || err.message));
+      notify("Failed to cancel: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handlePause = async () => {
+    if (!runId) return;
+    try {
+      await pauseRun(runId);
+      await fetchState();
+    } catch (err: any) {
+      notify("Failed to pause: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -312,7 +417,37 @@ export const RunDashboard: React.FC = () => {
       await resumeRun(runId);
       await fetchState();
     } catch (err: any) {
-      alert("Failed to resume: " + (err.response?.data?.detail || err.message));
+      notify("Failed to resume: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const openRewind = async () => {
+    if (!runId) return;
+    try {
+      const points = await getRewindPoints(runId);
+      setRewindPoints(points);
+      setRewindTo(points.length ? points[points.length - 1].checkpoint_id : '');
+    } catch (err: any) {
+      notify("Failed to list rewind points: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleRewind = async () => {
+    if (!runId || !rewindTo) return;
+    const point = rewindPoints?.find((p) => p.checkpoint_id === rewindTo);
+    if (!(await askConfirm({
+      title: `Rewind to "${point ? describeStage(point.stage).title : rewindTo}"?`,
+      message: 'The run starts again from there. Files made after that point are removed (a snapshot of them is kept).',
+      confirmLabel: 'Rewind',
+      danger: true,
+    }))) return;
+    try {
+      const done = await rewindRun(runId, rewindTo);
+      setRewindPoints(null);
+      if (!done.files_restored) notify('Rewound. No snapshot of the files existed for that point, so they were left as they are.', 'info');
+      await fetchState();
+    } catch (err: any) {
+      notify("Failed to rewind: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -322,7 +457,7 @@ export const RunDashboard: React.FC = () => {
       const clonedRun = await cloneRun(runId);
       navigate(`/runs/${clonedRun.run_id}`);
     } catch (err: any) {
-      alert("Failed to clone: " + (err.response?.data?.detail || err.message));
+      notify("Failed to clone: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -341,7 +476,7 @@ export const RunDashboard: React.FC = () => {
       await startRun(runId, {});
       await fetchState();
     } catch (err: any) {
-      alert("Failed to start: " + (err.response?.data?.detail || err.message));
+      notify("Failed to start: " + (err.response?.data?.detail || err.message));
     } finally {
       setActionLoading(false);
     }
@@ -358,11 +493,11 @@ export const RunDashboard: React.FC = () => {
     );
   }
 
-  if (error || !run) {
+  if (!run) {
     return (
       <div className="max-w-lg mx-auto mt-20 p-8 glass-card rounded-2xl text-center">
         <AlertCircle className="h-12 w-12 text-danger mx-auto mb-4" />
-        <h2 className="text-lg font-bold text-white mb-2">Error Loading Run</h2>
+        <h2 className="text-lg font-bold text-text-primary mb-2">Error Loading Run</h2>
         <p className="text-text-secondary">{error || "Run not found"}</p>
         <Link to="/runs" className="inline-block mt-6 text-primary hover:text-primary-hover text-sm font-medium">
           &larr; Back to Runs
@@ -373,14 +508,14 @@ export const RunDashboard: React.FC = () => {
 
 
   const statusConfig: Record<string, { bg: string; text: string; glow: string; icon: any }> = {
-    created: { bg: 'bg-slate-500/20', text: 'text-slate-300', glow: '', icon: Clock },
-    running: { bg: 'bg-primary/20', text: 'text-primary', glow: 'status-running', icon: Activity },
-    waiting_for_review: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
-    waiting_for_approval: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
-    completed: { bg: 'bg-success/20', text: 'text-success', glow: 'status-success', icon: CheckCircle2 },
-    failed: { bg: 'bg-danger/20', text: 'text-danger', glow: 'status-danger', icon: XCircle },
-    cancelled: { bg: 'bg-slate-500/20', text: 'text-slate-400', glow: '', icon: XCircle },
-    paused: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: Clock },
+    created: { bg: 'bg-overlay-strong', text: 'text-text-secondary', glow: '', icon: Clock },
+    running: { bg: 'bg-accent-soft', text: 'text-primary', glow: 'status-running', icon: Activity },
+    waiting_for_review: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
+    waiting_for_approval: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
+    completed: { bg: 'bg-success-bg', text: 'text-success', glow: 'status-success', icon: CheckCircle2 },
+    failed: { bg: 'bg-danger-bg', text: 'text-danger', glow: 'status-danger', icon: XCircle },
+    cancelled: { bg: 'bg-overlay-strong', text: 'text-text-secondary', glow: '', icon: XCircle },
+    paused: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: Clock },
   };
 
   const config = statusConfig[run.status] || statusConfig.created;
@@ -391,7 +526,7 @@ export const RunDashboard: React.FC = () => {
   // node was current but never how long any of it had taken, which is the first
   // thing anyone watching a long build wants to know.
   const startedAt = new Date(run.created_at).getTime();
-  const endedAt = isTerminal ? new Date(run.updated_at).getTime() : Date.now();
+  const endedAt = isTerminal ? new Date(run.updated_at).getTime() : now;
   const totalSeconds = Math.max(0, Math.round((endedAt - startedAt) / 1000));
   const elapsed =
     totalSeconds < 60
@@ -401,6 +536,8 @@ export const RunDashboard: React.FC = () => {
         : `${Math.floor(totalSeconds / 3600)}h ${Math.floor((totalSeconds % 3600) / 60)}m`;
 
   const stageCopy = describeStage(run.current_stage);
+  // Panels that read the run's state again when it moves to another stage or status.
+  const stageKey = `${run.current_stage ?? ''}:${run.status}`;
   const statusCopy = describeStatus(run.status);
 
   const actionButton =
@@ -412,11 +549,24 @@ export const RunDashboard: React.FC = () => {
     // grows and scrolls. Pinning the height instead made the workspace overflow
     // its container on a short screen and render underneath the footer.
     <div className="animate-fade-in flex flex-col gap-4 xl:min-h-[calc(100vh-11rem)]">
+      {(error || streamDown) && (
+        <div role="status" className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning-bg px-4 py-2 text-sm text-warning">
+          <span className="h-2 w-2 rounded-full bg-warning animate-pulse" aria-hidden="true" />
+          {error
+            ? `${error} The page shows the last state it loaded.`
+            : 'Live updates paused - reconnecting. The page shows the last state it loaded.'}
+        </div>
+      )}
+      {live && waitingOn && (
+        <div role="status" className="rounded-xl border border-border bg-overlay px-4 py-2 text-sm text-text-secondary">
+          The model serves one request at a time and {waitingOn} is on it: this run's calls wait for it to free the model.
+        </div>
+      )}
       {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           to="/runs"
-          className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-white transition-colors"
+          className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           All runs
@@ -427,8 +577,8 @@ export const RunDashboard: React.FC = () => {
             onClick={() => handleViewModeChange(viewMode === 'wizard' ? 'classic' : 'wizard')}
             className={`${actionButton} ${
               viewMode === 'wizard'
-                ? 'text-primary/90 border-primary/30 hover:border-primary/60 hover:bg-primary/5'
-                : 'text-white/80 border-white/20 hover:border-white/50 hover:bg-white/5'
+                ? 'text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5'
+                : 'text-text-secondary border-border hover:border-border-strong hover:bg-overlay'
             }`}
             title={viewMode === 'wizard' ? 'Switch to classic dashboard' : 'Switch to guided wizard'}
           >
@@ -437,23 +587,68 @@ export const RunDashboard: React.FC = () => {
           </button>
           {run.status === 'created' && (
             <button onClick={handleStart} disabled={actionLoading}
-              className={`${actionButton} text-success/90 border-success/30 hover:border-success/60 hover:bg-success/5 disabled:opacity-50`}>
+              className={`${actionButton} text-success border-success/30 hover:border-success/60 hover:bg-success/5 disabled:opacity-50`}>
               <Play className="h-3.5 w-3.5" /> Start
             </button>
           )}
-          {run.status === 'failed' && !run.error?.startsWith('Interrupted:') && (
+          {run.status === 'running' && (
+            <button onClick={handlePause}
+              className={`${actionButton} text-warning border-warning/30 hover:border-warning/60 hover:bg-warning/5`}
+              title="Stop at the next step and keep the run to resume later">
+              <Pause className="h-3.5 w-3.5" /> Pause
+            </button>
+          )}
+          {RESUMABLE.includes(run.status) && !run.error?.startsWith('Interrupted:') && (
             <button onClick={handleResume}
-              className={`${actionButton} text-primary/90 border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
+              className={`${actionButton} text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
               <Play className="h-3.5 w-3.5" /> Resume
             </button>
           )}
+          {(RESUMABLE.includes(run.status) || run.status === 'completed') && rewindPoints === null && (
+            <button onClick={openRewind}
+              className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}
+              title="Go back to the start of an earlier stage and run from there">
+              <RotateCcw className="h-3.5 w-3.5" /> Rewind
+            </button>
+          )}
+          {rewindPoints !== null && (
+            <span className="flex items-center gap-2 flex-wrap">
+              <select aria-label="The stage to go back to" value={rewindTo} onChange={(e) => setRewindTo(e.target.value)}
+                className="bg-surface/50 border border-border/50 rounded-lg px-2 py-1 text-xs text-text-primary max-w-[16rem]">
+                {rewindPoints.map((p) => (
+                  <option key={p.checkpoint_id} value={p.checkpoint_id}>
+                    {describeStage(p.stage).title}{p.sprint ? ` (sprint ${p.sprint})` : ''}
+                    {p.at ? ` - ${new Date(p.at).toLocaleString()}` : ''}
+                  </option>
+                ))}
+              </select>
+              <button onClick={handleRewind} disabled={!rewindTo}
+                className={`${actionButton} text-warning border-warning/30 hover:border-warning/60 hover:bg-warning/5 disabled:opacity-50`}>
+                <RotateCcw className="h-3.5 w-3.5" /> Rewind here
+              </button>
+              <button onClick={() => setRewindPoints(null)}
+                className={`${actionButton} text-text-secondary border-border hover:border-border-strong`}>
+                Close
+              </button>
+            </span>
+          )}
           <button onClick={handleClone}
-            className={`${actionButton} text-white/80 border-white/20 hover:border-white/50 hover:bg-white/5`}>
+            className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}>
             <Copy className="h-3.5 w-3.5" /> Clone
+          </button>
+          <button onClick={() => void downloadHandover(runId!)}
+            title="The run's documents, decisions and acceptance suite, as one zip"
+            className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}>
+            <Download className="h-3.5 w-3.5" /> Handover pack
+          </button>
+          <button onClick={() => void downloadTranscript(runId!)}
+            title="Every model call, reply, tool call and result of the run, as text"
+            className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}>
+            <Download className="h-3.5 w-3.5" /> Transcript
           </button>
           {!isTerminal && (
             <button onClick={handleCancel}
-              className={`${actionButton} text-danger/90 border-danger/30 hover:border-danger/60 hover:bg-danger/5`}>
+              className={`${actionButton} text-danger border-danger/30 hover:border-danger/60 hover:bg-danger/5`}>
               <Ban className="h-3.5 w-3.5" /> Cancel
             </button>
           )}
@@ -471,7 +666,7 @@ export const RunDashboard: React.FC = () => {
                 <StatusIcon className={`h-4 w-4 ${config.text}`} />
               </span>
               <div className="min-w-0">
-                <h1 className="text-base sm:text-lg font-semibold text-white leading-tight truncate">
+                <h1 className="text-base sm:text-lg font-semibold text-text-primary leading-tight truncate">
                   {stageCopy.title}
                 </h1>
                 {/* A terminal run's stage title already *is* its status
@@ -485,11 +680,39 @@ export const RunDashboard: React.FC = () => {
             <p className="text-[13px] text-text-secondary leading-relaxed mt-2.5">
               {stageCopy.blurb}
             </p>
+            {fixLoop(run.remediation, run.current_stage) && (
+              <p className="mt-1.5 text-xs text-text-secondary tabular-nums">{fixLoop(run.remediation, run.current_stage)}</p>
+            )}
+            {/* A completed run that knows what it did not prove says so here,
+                beside the green badge - the record must not read as a plain
+                success (Initiative J.4). */}
+            {run.completion_gaps && run.completion_gaps.length > 0 && (
+              <div className="mt-3 rounded-xl border border-warning/30 bg-warning-bg px-3 py-2">
+                <p className="text-xs font-semibold text-warning">
+                  Completed with {run.completion_gaps.length} gap{run.completion_gaps.length === 1 ? '' : 's'} it did not prove
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {run.completion_gaps.map((gap, index) => (
+                    <li key={index} className="text-xs text-text-secondary leading-relaxed">
+                      • {gap}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {/* The workspace tells the truth after the run ends: what the
+                NON-DELIVERABLE marker says, on the run card (Initiative J.6). */}
+            {run.non_deliverable && (
+              <div className="mt-3 rounded-xl border border-danger/30 bg-danger-bg px-3 py-2">
+                <p className="text-xs font-semibold text-danger">Marked non-deliverable</p>
+                <p className="mt-0.5 text-xs text-text-secondary leading-relaxed">{run.non_deliverable}</p>
+              </div>
+            )}
           </div>
 
           <dl className="flex flex-wrap items-start gap-x-5 sm:gap-x-7 gap-y-3">
             <div>
-              <dt className="text-[11px] text-text-muted uppercase tracking-wider">Started</dt>
+              <dt className="text-xs text-text-muted uppercase tracking-wider">Started</dt>
               <dd className="mt-1 text-[13px] text-text-primary tabular-nums">
                 {new Date(run.created_at).toLocaleString([], {
                   month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -497,21 +720,25 @@ export const RunDashboard: React.FC = () => {
               </dd>
             </div>
             <div>
-              <dt className="text-[11px] text-text-muted uppercase tracking-wider">
+              <dt className="text-xs text-text-muted uppercase tracking-wider">
                 {isTerminal ? 'Took' : 'Running for'}
               </dt>
-              <dd className="mt-1 text-[13px] text-text-primary tabular-nums">{elapsed}</dd>
+              <dd className="mt-1 text-[13px] text-text-primary tabular-nums">
+                {elapsed}
+                {!isTerminal && typical && <span className="block max-w-56 text-xs text-text-muted">{typical}</span>}
+              </dd>
             </div>
             <div>
-              <dt className="text-[11px] text-text-muted uppercase tracking-wider">Documents</dt>
+              <dt className="text-xs text-text-muted uppercase tracking-wider">Documents</dt>
               <dd className="mt-1 text-[13px] text-text-primary tabular-nums">
                 {run.artifacts?.length ?? 0} produced
               </dd>
             </div>
+            <RunFigures run={run} />
           </dl>
         </div>
 
-        <p className="mt-3 pt-3 border-t border-border/30 text-[11px] text-text-muted font-mono truncate">
+        <p className="mt-3 pt-3 border-t border-border/30 text-xs text-text-muted font-mono truncate">
           {run.run_id}
         </p>
 
@@ -520,7 +747,7 @@ export const RunDashboard: React.FC = () => {
             workspace off a 768px screen entirely, so it is clamped and expands
             on request. */}
         {run.error && (
-          <div className="mt-3 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-[13px] text-danger">
+          <div className="mt-3 rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-[13px] text-danger">
             <p
               className={`whitespace-pre-wrap leading-relaxed ${
                 errorOpen ? 'max-h-64 overflow-y-auto pr-1' : 'line-clamp-2'
@@ -530,8 +757,10 @@ export const RunDashboard: React.FC = () => {
             </p>
             {run.error.length > 160 && (
               <button
+                type="button"
+                aria-expanded={errorOpen}
                 onClick={() => setErrorOpen((v) => !v)}
-                className="mt-1.5 text-[12px] font-medium text-danger/80 hover:text-danger underline underline-offset-2"
+                className="mt-1.5 text-[12px] font-medium text-danger hover:text-danger underline underline-offset-2"
               >
                 {errorOpen ? 'Show less' : 'Show the full reason'}
               </button>
@@ -549,58 +778,136 @@ export const RunDashboard: React.FC = () => {
       {/* Anything waiting on a person goes full width, above the workspace. It
           is the only thing on the page that is a request rather than a report. */}
       {review && (
-        <ReviewPanel runId={runId!} review={review} onSubmit={handleReviewSubmit} isLoading={actionLoading} />
+        <>
+          <GateDeadline run={run} now={now} />
+          <ReviewPanel runId={runId!} review={review} onSubmit={handleReviewSubmit} isLoading={actionLoading} />
+        </>
       )}
       {approval && (
-        <ApprovalGate runId={runId!} approval={approval} onSubmit={handleApprovalSubmit} isLoading={actionLoading} />
+        <>
+          <GateDeadline run={run} now={now} />
+          <ApprovalGate runId={runId!} approval={approval} onSubmit={handleApprovalSubmit} isLoading={actionLoading} />
+        </>
+      )}
+
+      {/* The owner's direction to a run that is still going. */}
+      {!isTerminal && run.status !== 'paused' && run.status !== 'waiting_for_budget' && <SteeringBox runId={runId!} stage={run.current_stage} />}
+      {run.status === 'paused' && (
+        <p role="status" className="text-sm text-text-muted">Resume the run to send it a direction.</p>
       )}
 
       {/* Workspace: the guided wizard or the classic dashboard. The wizard
           presents the run as phases (intake, design, sprints, summary) with a
-          detail panel; the classic dashboard shows stages + log + activity. */}
+          detail panel, under the sprints and the criteria. The classic
+          dashboard is a rail, a work area and a ledger (plan BG.4): the stages
+          with their times, the work in real tabs, and what is proven beside
+          it, so a 1366x768 screen shows all three without scrolling. */}
       {viewMode === 'wizard' ? (
-        <WizardDashboard run={run} model={wizard} />
+        <>
+          <SprintSummaryPanel runId={runId!} refreshKey={stageKey} />
+          <DeliveryPanel runId={runId!} refreshKey={stageKey} />
+          {run?.status === 'completed' && <OwnerRating runId={runId!} />}
+          <WizardDashboard run={run} model={wizard} />
+        </>
       ) : (
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_23rem] xl:flex-1 xl:min-h-[28rem]">
-        <div className="min-h-0 h-[22rem] sm:h-[26rem] lg:h-[32rem] xl:h-auto">
-          <ExecutionFlow stages={run.stages || []} currentStage={run.current_stage} isTerminal={isTerminal} />
-        </div>
-
-        <div className="min-h-0 h-[26rem] sm:h-[30rem] lg:h-[32rem] xl:h-auto glass-card rounded-2xl flex flex-col overflow-hidden">
-          <div className="flex-none flex items-center gap-1 px-3 py-2.5 border-b border-border/40">
-            {([
-              { id: 'results', label: 'Results', count: run.artifacts?.length ?? 0 },
-              { id: 'log', label: 'Technical log', count: logs.length },
-            ] as const).map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setCentreTab(tab.id)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
-                  centreTab === tab.id
-                    ? 'bg-white/[0.07] text-white'
-                    : 'text-text-muted hover:text-text-secondary hover:bg-white/[0.03]'
-                }`}
-              >
-                {tab.label}
-                <span className="text-[11px] tabular-nums opacity-60">{tab.count}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="flex-1 min-h-0">
-            {centreTab === 'results' ? (
-              <ArtifactList artifacts={run.artifacts} runId={runId!} />
-            ) : (
-              <LogViewer logs={logs} />
-            )}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_23rem] 2xl:grid-cols-[22rem_minmax(0,1fr)_28rem] min-[2200px]:grid-cols-[26rem_minmax(0,1fr)_34rem] xl:flex-1 xl:min-h-[28rem]">
+        {/* At desktop width each column fills the row and scrolls inside it:
+            no column's length sets the row's height, so the page ends where
+            the window does. */}
+        <div className="relative min-h-0 h-[22rem] sm:h-[26rem] lg:h-[32rem] xl:h-auto">
+          <div className="flex h-full flex-col gap-3 xl:absolute xl:inset-0">
+            <LatestChange runId={runId!} refreshKey={stageKey} onOpen={selectChange} />
+            <ModelPressure runId={runId!} live={live} slotContext={health?.slot_context} />
+            <div className="flex-1 min-h-0">
+              <ExecutionFlow stages={run.stages || []} currentStage={run.current_stage} isTerminal={isTerminal} />
+            </div>
           </div>
         </div>
 
-        <div className="min-h-0 h-[26rem] sm:h-[30rem] lg:h-[24rem] lg:col-span-2 xl:col-span-1 xl:h-auto">
-          <AgentActivity logs={logs} isRunning={!isTerminal} />
+        <div className="relative min-h-0 h-[26rem] sm:h-[30rem] lg:h-[32rem] xl:h-auto">
+        <div className="h-full xl:absolute xl:inset-0 glass-card rounded-2xl flex flex-col overflow-hidden px-3 pt-1">
+          <Tabs
+            label="The run's work"
+            className="flex h-full min-h-0 flex-col"
+            panelClassName="flex-1 min-h-0"
+            selected={centreTab}
+            onSelect={(id) => setCentreTab(id as CentreTab)}
+            items={[
+              {
+                id: 'activity',
+                label: 'Activity',
+                content: (
+                  <div className="flex h-full flex-col">
+                    <Timeline
+                      runId={runId!}
+                      startedAt={run.created_at}
+                      endedAt={isTerminal && run.updated_at ? Date.parse(run.updated_at) : now}
+                      stages={run.stages || []}
+                      logs={logs}
+                      onPick={setFocusAt}
+                    />
+                    <div className="flex-1 min-h-0">
+                      <AgentActivity logs={logs} isRunning={!isTerminal} bare focusAt={focusAt} />
+                    </div>
+                  </div>
+                ),
+              },
+              {
+                id: 'changes',
+                label: 'Changes',
+                content: <ChangesPanel runId={runId!} refreshKey={stageKey} selected={selectedChange} onSelect={selectChange} />,
+              },
+              {
+                id: 'log',
+                label: <>Log <span className="text-xs tabular-nums text-text-muted">{logs.length}</span></>,
+                content: <LogViewer logs={logs} />,
+              },
+              {
+                id: 'results',
+                label: <>Artifacts <span className="text-xs tabular-nums text-text-muted">{run.artifacts?.length ?? 0}</span></>,
+                content: <ArtifactList artifacts={run.artifacts} runId={runId!} />,
+              },
+              { id: 'audit', label: 'Audit', content: <AuditTable runId={runId!} refreshKey={stageKey} /> },
+            ]}
+          />
+        </div>
+        </div>
+
+        {/* The ledger scrolls inside its column: its length must not set the
+            row's height, or the work area and the rail stretch with it. */}
+        <div className="relative min-h-0 lg:col-span-2 xl:col-span-1">
+          <div className="space-y-4 xl:absolute xl:inset-0 xl:overflow-y-auto">
+            {/* Acceptance criteria, screenshots and the decision log, then the
+                sprints - refreshed as the run moves between stages. */}
+            <DeliveryPanel runId={runId!} refreshKey={stageKey} onOpenChange={selectChange} />
+            {run?.status === 'completed' && <OwnerRating runId={runId!} />}
+            <SprintSummaryPanel runId={runId!} refreshKey={stageKey} />
+          </div>
         </div>
       </div>
       )}
     </div>
+  );
+};
+
+
+/** Whether a waiting gate approves itself, and when - or that it waits for the person however long it takes. */
+const GateDeadline: React.FC<{ run: RunStatusResponse; now: number }> = ({ run, now }) => {
+  if (!run.gate_deadline) {
+    return (
+      <p role="status" className="text-sm text-text-secondary">
+        This step waits for you however long it takes - nothing approves it on its own.
+      </p>
+    );
+  }
+  const at = new Date(run.gate_deadline);
+  const minutes = Math.max(0, Math.round((at.getTime() - now) / 60000));
+  const clock = at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return (
+    <p role="status" className="text-sm text-warning">
+      {minutes > 0
+        ? `Approves itself at ${clock} (in ${minutes} min) unless you decide first.`
+        : 'Approving itself now: its waiting time has passed.'}
+    </p>
   );
 };

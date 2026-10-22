@@ -8,7 +8,7 @@ counted as repeating itself.
 
 Measured across every stored transcript, 26 combinations of stage, refusal and
 path were refused three or more times, costing 72 model calls past the second.
-Run 551640d3's `test_round_0` wrote `docs/technical_specification.md` ten times
+One run's `test_round_0` wrote `docs/technical_specification.md` ten times
 with different content each time - a document the workflow renders and no agent
 may write - and was refused ten times without the guard ever seeing a repeat.
 """
@@ -91,7 +91,7 @@ def test_another_file_is_counted_on_its_own(call):
 def test_a_policy_refusal_counts_across_files(call):
     """For a refusal about what a file IS, the path is not part of the event.
 
-    Measured on run-cac07d52's `test_round_0`: refused a write to
+    Measured on one run's `test_round_0`: refused a write to
     `docs/technical_specification.md`, then `docs/milestone_review.md`, then
     `docs/technical_specification.md` again - the same refusal in the same
     words, three times in one stage - and nothing ever fired, because two

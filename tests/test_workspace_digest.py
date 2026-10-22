@@ -2,7 +2,7 @@
 
 An agent is built per stage and none can see what an earlier one learned, so
 each opens the same way: list the root, list the project, read the same files.
-Measured on run-61c5a5b6: 257 `read_file` calls over 22 distinct files, and the
+Measured on one run: 257 `read_file` calls over 22 distinct files, and the
 opening moves of `technical_lead`, `test_round_0`, `milestone_review`,
 `security_review` and every specialist were near-identical.
 
@@ -40,7 +40,20 @@ def test_the_digest_names_every_file_with_its_size(workspace: Path) -> None:
     digest = render_workspace_digest(workspace)
 
     assert "todo-app/app.js" in digest
-    assert "docs/plan.md (21 lines)" in digest
+    assert "docs/plan.md (20 lines)" in digest
+
+
+def test_the_count_agrees_with_the_read_tool(workspace: Path) -> None:
+    """Twenty "# Plan" lines are twenty lines, as `read_file` reports them.
+
+    The digest counted newlines plus one, and on one run listed
+    `logic.test.mjs (114 lines)` beside a read reporting "of 113"."""
+    (workspace / "docs/no-final-newline.md").write_text("a\nb", encoding="utf-8")
+
+    digest = render_workspace_digest(workspace)
+
+    assert "docs/no-final-newline.md (2 lines)" in digest
+    assert "todo-app/index.html (1 lines)" in digest
 
 
 def test_the_digest_names_what_a_code_file_defines(workspace: Path) -> None:
@@ -55,7 +68,7 @@ def test_the_digest_names_what_a_code_file_defines(workspace: Path) -> None:
 def test_the_agent_s_own_package_cache_is_not_the_workspace(workspace: Path) -> None:
     """The sandbox points HOME inside the workspace, so npm's cache lands there.
 
-    Measured on run-61c5a5b6: one `npm install` left 26 `_cacache` blobs with
+    Measured on one run: one `npm install` left 26 `_cacache` blobs with
     sha512 filenames, and they filled the listing ahead of the application.
     """
     cache = workspace / ".agent-home/.npm/_cacache/content-v2/sha512/0c/6f"
@@ -116,12 +129,12 @@ def test_the_digest_arrives_on_the_opening_call(workspace: Path) -> None:
 
 
 def test_it_is_given_on_later_calls_too(workspace: Path) -> None:
-    """The reverse of what this file asserted until run-2eb3aa24.
+    """The reverse of what this file asserted until one run.
 
     The old rule was "by the second call the agent has the digest". It does
     not: `override` applies to one call and is never written to stored
     history, so from the second call the agent has no map and goes looking.
-    Measured on run-2eb3aa24's `principal_architect` - six identical
+    Measured on one run's `principal_architect` - six identical
     `ls {'path': '/'}` and four `ls` of a project directory that did not exist
     yet, in one stage, against a digest that had already said what was there.
     """
@@ -193,7 +206,7 @@ def test_a_workspace_holding_only_its_seed_files_says_nothing_is_built_yet(
     a listing and not an answer, and its prompt tells it to ground every
     conclusion in repository evidence.
 
-    Run d6297b2f is the proof. Its first model call carried the digest
+    One run is the proof. Its first model call carried the digest
 
         The workspace as it stands. This is what is there ...
           .gitignore (9 lines)
@@ -230,7 +243,7 @@ def test_an_unreadable_workspace_still_says_nothing_at_all() -> None:
 def test_documents_without_code_say_nothing_is_built_yet(tmp_path: Path) -> None:
     """The state every stage before the first specialist is in.
 
-    Run 1c9854c7's `architecture_review` was handed a digest of four `docs/`
+    One run's `architecture_review` was handed a digest of four `docs/`
     files and `.gitignore`. It spent a `read_file` on `/app.test.mjs` - a file
     its own specification plans - and then recorded a finding: "Specification
     references a test file 'app.test.mjs' but the repository does not contain

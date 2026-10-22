@@ -1,0 +1,133 @@
+"""A stage running without thinking is stopped after three identical calls running.
+
+Measured on one run: 35% of the tool calls made without thinking repeated the
+call before them exactly, against 3% with thinking on. One fix stage sent one
+refused edit 6 times and one refused `replace_lines` 13 times; two stages read
+one file 14 times. Every repeat came after the stage lost a reply to reasoning
+and was asked on without it, and the ordinary rungs wait for refusals.
+"""
+
+from __future__ import annotations
+
+import re
+from types import SimpleNamespace
+
+from langchain_core.messages import AIMessage
+from pydantic import BaseModel
+
+from app.agents.settled_answer import (
+    SAME_CALL_RUNNING_WITHOUT_THINKING,
+    _the_same_call_running,
+    _the_same_call_running_notice,
+    build_settled_answer_middleware,
+)
+
+BANNED = ("task", "tasks", "to-do", "todo", "button", "click", "checkbox")
+
+
+class _Tool:
+    type = "tool"
+
+    def __init__(self, content: str, call_id: str) -> None:
+        self.content, self.tool_call_id = content, call_id
+
+
+def _call(n: int, args: dict, name: str = "read_file") -> list[object]:
+    return [
+        SimpleNamespace(type="ai", content="", tool_calls=[{"name": name, "args": args, "id": f"c{n}"}]),
+        _Tool("1  const a = 1;", f"c{n}"),
+    ]
+
+
+def _repeats(times: int) -> list[object]:
+    return [m for n in range(times) for m in _call(n, {"file_path": "app/main.js", "limit": 50})]
+
+
+def test_the_threshold_is_three_running() -> None:
+    assert _the_same_call_running(_repeats(SAME_CALL_RUNNING_WITHOUT_THINKING)) == ("read_file", 3)
+    assert _the_same_call_running(_repeats(SAME_CALL_RUNNING_WITHOUT_THINKING - 1)) is None
+
+
+def test_a_different_call_between_breaks_the_run() -> None:
+    messages = [*_repeats(2), *_call(9, {"file_path": "app/other.js"}), *_call(10, {"file_path": "app/main.js", "limit": 50})]
+
+    assert _the_same_call_running(messages) is None
+
+
+def test_the_notice_fits_any_product() -> None:
+    notice = _the_same_call_running_notice("read_file", 3)
+    outside = re.sub(r"`[^`]*`", "", notice).lower()
+    for word in BANNED:
+        assert not re.search(rf"\b{word}\b", outside), word
+
+
+class _Answer(BaseModel):
+    ok: bool = True
+
+
+class _Request:
+    def __init__(self, messages, tools):
+        self.messages, self.tools, self.model, self.model_settings = messages, tools, None, {}
+
+    def override(self, **changes):
+        return _Request(changes.get("messages", self.messages), changes.get("tools", self.tools))
+
+
+def _sent(messages) -> _Request:
+    tools = [SimpleNamespace(name="read_file"), SimpleNamespace(name="edit_artifact")]
+    sent: list = []
+    middleware = build_settled_answer_middleware(_Answer, "defect_fix", step_limit=40)
+    middleware.wrap_model_call(_Request(messages, tools), lambda request: sent.append(request))
+    return sent[0]
+
+
+def test_without_thinking_the_tool_is_withheld() -> None:
+    """Thinking stays off for the rest of a visit that lost two replies."""
+    lost = AIMessage(content="", response_metadata={"finish_reason": "length"})
+    request = _sent([SimpleNamespace(type="human", content="Fix it."), lost, *_call(90, {"file_path": "x"}), lost, *_repeats(3)])
+
+    assert [tool.name for tool in request.tools] == ["edit_artifact"]
+    assert "sent it the same arguments 3 times in a row" in str(request.messages[-1]["content"])
+
+
+def test_with_thinking_on_the_ordinary_rungs_decide() -> None:
+    """Including after a single lost reply, once the reply after it is made."""
+    lost = AIMessage(content="", response_metadata={"finish_reason": "length"})
+    request = _sent([SimpleNamespace(type="human", content="Fix it."), lost, *_repeats(3)])
+
+    assert [tool.name for tool in request.tools] == ["read_file", "edit_artifact"]
+
+
+def test_with_thinking_on_a_call_answered_the_same_four_times_running_is_withheld() -> None:
+    # Measured on one run: one install command twelve times in a row, each answered
+    # "Requirement already satisfied", with thinking on.
+    from app.agents.settled_answer import SAME_CALL_SAME_ANSWER_RUNNING, _the_same_call_answered_the_same
+
+    def install(n: int, took: str) -> list[object]:
+        return [
+            SimpleNamespace(type="ai", content="", tool_calls=[{"name": "run_terminal_command",
+                                                                "args": {"command": ["pip", "install", "bcrypt"]}, "id": f"i{n}"}]),
+            _Tool(f'{{"stdout": "Requirement already satisfied: bcrypt", "took": "{took}s"}}', f"i{n}"),
+        ]
+
+    four = [m for n in range(SAME_CALL_SAME_ANSWER_RUNNING) for m in install(n, f"0.{n}")]
+    assert _the_same_call_answered_the_same(four) == ("run_terminal_command", 4)
+    assert _the_same_call_answered_the_same(four[:-2]) is None
+
+    tools = [SimpleNamespace(name="run_terminal_command"), SimpleNamespace(name="edit_artifact")]
+    sent: list = []
+    middleware = build_settled_answer_middleware(_Answer, "specialist_backend_3", step_limit=40)
+    middleware.wrap_model_call(_Request([SimpleNamespace(type="human", content="Build it."), *four], tools),
+                               lambda request: sent.append(request))
+    assert [tool.name for tool in sent[0].tools] == ["edit_artifact"]
+
+
+def test_the_same_call_answered_differently_is_not_a_loop() -> None:
+    from app.agents.settled_answer import _the_same_call_answered_the_same
+
+    runs = []
+    for n, out in enumerate(["1 failed", "2 failed", "1 failed", "0 failed"]):
+        runs += [SimpleNamespace(type="ai", content="", tool_calls=[{"name": "run_terminal_command",
+                                                                     "args": {"command": ["npm", "test"]}, "id": f"t{n}"}]),
+                 _Tool(out, f"t{n}")]
+    assert _the_same_call_answered_the_same(runs) is None

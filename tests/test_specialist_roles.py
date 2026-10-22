@@ -1,6 +1,6 @@
 """The six role slugs, written the way models actually write them.
 
-run-0deeb8bf's Testing specialist named itself "Testing Specialist" as the
+One run's Testing specialist named itself "Testing Specialist" as the
 `owner` of a defect it had described correctly. `owner` is required, so the
 spelling lost the description, the reproduction steps and the routing.
 """

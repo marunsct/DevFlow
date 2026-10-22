@@ -5,8 +5,8 @@ file changes between that read and the edit, `find` no longer matches and the
 tool answers "Could not find that text", optionally with a diff of the lines
 that differ. The model is then left to work out *why* its own copy is wrong.
 
-It usually cannot, because the change was not its doing. Measured on run
-8d28ee3f, `specialist_ui_ux_0`: the stage wrote `package.json`, ran
+It usually cannot, because the change was not its doing. Measured on one
+run, `specialist_ui_ux_0`: the stage wrote `package.json`, ran
 `npm install --save-dev jest-environment-jsdom`, and then tried to edit the
 file using the text it had written. npm had reformatted the manifest and added
 a dependency, so the diff it got back read:
@@ -62,6 +62,25 @@ def remember(relative_path: str, content: str) -> None:
         seen.pop(next(iter(seen)))
 
 
+def remember_if_unseen(relative_path: str, content: str) -> None:
+    """Record `content` as seen only when this stage has seen nothing of the file yet.
+
+    The project memory hands a stage the files it holds on every model call.
+    Writing their visit-start text with `remember` each time overwrote what the
+    stage's own edit had just recorded, so the next edit was judged against
+    text the stage had since changed and the failure was blamed on "a command
+    you ran" (Initiative AM). Whoever saw the file first stands; an edit or a
+    read, which know more, still use `remember`.
+    """
+    seen = store(_PURPOSE, _FALLBACK)
+    key = the_same_place(relative_path)
+    if key in seen:
+        return
+    seen[key] = _digest(content)
+    while len(seen) > MAX_FILES_REMEMBERED:
+        seen.pop(next(iter(seen)))
+
+
 def record_state(relative_path: str, content: str) -> None:
     """Remember that this stage has left `relative_path` holding `content`."""
     history = store(_HISTORY, _FALLBACK_HISTORY)
@@ -82,7 +101,7 @@ def returned_to_an_earlier_state(relative_path: str, content: str) -> bool:
     with new arguments and let it through. The file oscillates and the stage
     spends its budget.
 
-    Measured on run 8d28ee3f, `defect_fix_1_0`, which made 67 tool calls
+    Measured on one run, `defect_fix_1_0`, which made 67 tool calls
     against a 40-call budget - 23 edits and 16 reads of one file. Its edits to
     `app.js` ran: `console.log(...)` -> `global.console.log(...)` ->
     `console.log(...)` -> `console.log(...)`, each reported "edited", toggling
@@ -121,8 +140,8 @@ def what_replaced_it(relative_path: str, find: str) -> str | None:
     itself.
 
     `_already_applied` in `repository` catches the narrower case where the
-    whole edit is re-sent - same `find`, same `replace`. Measured on run
-    f81808a4, `specialist_testing_3` sent one `find` six times with the
+    whole edit is re-sent - same `find`, same `replace`. Measured on one
+    run, `specialist_testing_3` sent one `find` six times with the
     replacement varying each time, so that check stayed silent and the stage
     was answered with a character diff six times over.
     """
@@ -159,7 +178,7 @@ def where_this_stage_moved_it(relative_path: str) -> str | None:
 
     A read or an edit that misses at a path the stage renamed itself is not a
     missing file - it is a stale name, and the stage knows the new one because
-    it chose it. Measured on run d6297b2f: `specialist_backend_0` moved
+    it chose it. Measured on one run: `specialist_backend_0` moved
     `test/loadTasks.test.mjs` to `test/loadTasks.test.js`, then spent a
     `read_file` and an `edit_artifact` on the old name, each answered only
     "not found". That stage ran 47 model calls against a next-longest of 10.
@@ -188,6 +207,36 @@ def times_warned_about_undoing(relative_path: str) -> int:
     return store(_UNDO_WARNINGS, _FALLBACK_UNDO_WARNINGS).get(the_same_place(relative_path), 0)
 
 
+_MOCK_DOM_WARNINGS = "times this stage was told it was building a DOM by hand"
+
+#: How many times to say it before refusing the write. The same threshold as
+#: the undo refusal, and for the same reason: a note the model has ignored
+#: twice is not a note that needs rewording.
+#:
+#: Measured on one run. `specialist_testing_1` was told nine times that
+#: "This test builds a browser API by hand ... Mocking the DOM is no longer
+#: permitted. You MUST write a browser-based test using Playwright", and grew
+#: the mock from 145 lines to 1,195 - Proxy traps over a `Map` for `dataset` -
+#: while being told. It then spent three whole conversations debugging the
+#: mock rather than the product, reached its model-call budget on each, and
+#: the run failed with nothing delivered.
+MOCK_DOM_WARNINGS_BEFORE_REFUSING = 2
+
+
+def record_mock_dom_warning(relative_path: str) -> None:
+    """Remember that this stage has been told this file hand-builds a DOM."""
+    warned = store(_MOCK_DOM_WARNINGS, _FALLBACK_MOCK_DOM_WARNINGS)
+    key = the_same_place(relative_path)
+    warned[key] = warned.get(key, 0) + 1
+
+
+def times_warned_about_a_mock_dom(relative_path: str) -> int:
+    """How often this stage has been told this file builds a browser by hand."""
+    return store(_MOCK_DOM_WARNINGS, _FALLBACK_MOCK_DOM_WARNINGS).get(
+        the_same_place(relative_path), 0
+    )
+
+
 _DELETIONS = "files this stage has deleted"
 
 #: Deletions remembered per stage. A stage clearing up after itself removes a
@@ -213,10 +262,16 @@ def this_stage_deleted_it(relative_path: str) -> bool:
     "there is nothing to delete, run `ls`" sends it to look for the answer it
     already has.
 
-    Measured on run 551640d3: twelve failed deletes across two stages, ten of
+    Measured on one run: twelve failed deletes across two stages, ten of
     them on a path that same stage had deleted successfully a moment earlier.
     """
     return bool(store(_DELETIONS, _FALLBACK_DELETIONS).get(the_same_place(relative_path)))
+
+
+def has_seen_this_version(relative_path: str, content: str) -> bool:
+    """Whether this stage has read or written the file as it is now."""
+    seen = store(_PURPOSE, _FALLBACK)
+    return seen.get(the_same_place(relative_path)) == _digest(content)
 
 
 def changed_since_seen(relative_path: str, content: str) -> bool:
@@ -249,6 +304,7 @@ _FALLBACK_MOVES: dict[str, str] = {}
 
 #: And the undo-warning counter's.
 _FALLBACK_UNDO_WARNINGS: dict[str, int] = {}
+_FALLBACK_MOCK_DOM_WARNINGS: dict[str, int] = {}
 
 #: And the deletion log's.
 _FALLBACK_DELETIONS: dict[str, bool] = {}
@@ -261,6 +317,7 @@ def forget_everything() -> None:
     _FALLBACK_REPLACEMENTS.clear()
     _FALLBACK_MOVES.clear()
     _FALLBACK_UNDO_WARNINGS.clear()
+    _FALLBACK_MOCK_DOM_WARNINGS.clear()
     _FALLBACK_DELETIONS.clear()
 
 
@@ -270,6 +327,7 @@ __all__ = [
     "changed_since_seen",
     "forget_everything",
     "MAX_MOVES_REMEMBERED",
+    "MOCK_DOM_WARNINGS_BEFORE_REFUSING",
     "UNDO_WARNINGS_BEFORE_REFUSING",
     "MAX_REPLACEMENTS_PER_FILE",
     "MAX_DELETIONS_REMEMBERED",
@@ -280,6 +338,8 @@ __all__ = [
     "record_state",
     "remember",
     "this_stage_deleted_it",
+    "record_mock_dom_warning",
+    "times_warned_about_a_mock_dom",
     "times_warned_about_undoing",
     "what_replaced_it",
     "where_this_stage_moved_it",

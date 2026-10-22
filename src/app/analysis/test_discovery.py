@@ -1,6 +1,6 @@
 """Catch a test file the project's runner will never collect.
 
-run-d3965815's security specialist wrote `todo-app/app.test_xss.mjs`: a real
+One run's security specialist wrote `todo-app/app.test_xss.mjs`: a real
 test file, with real assertions, for a real XSS concern. Node's test runner
 collects `*.test.mjs`, `*-test.mjs`, `*_test.mjs`, `test-*.mjs`, `test.mjs` and
 anything under a `test/` directory. `app.test_xss.mjs` is none of those, so
@@ -22,6 +22,7 @@ file it just wrote.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 #: Node's default patterns, as globs reduced to what they mean for a basename:
 #: `*.test.?js`, `*-test.?js`, `*_test.?js`, `test-*.?js`, `test.?js`.
@@ -34,7 +35,7 @@ import re
 #:     ok  add-task-test.mjs   ok  add.test.mjs   ok  add_task_test.mjs
 #:     ok  test-add-task.mjs   ok  test.mjs       --  test_add_task.mjs
 #:
-#: Five of six collected. run-04576307 wrote `test_add_task.mjs`,
+#: Five of six collected. One run wrote `test_add_task.mjs`,
 #: `test_delete_task.mjs`, `test_edit_task.mjs`, `test_filter_tasks.mjs`,
 #: `test_persistence.mjs` and `test_toggle_task.mjs` - six suites, none of
 #: which Node runs, and this check called every one of them fine.
@@ -114,10 +115,10 @@ _RELATIVE_IMPORT = re.compile(
 )
 
 
-def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None:
+def tests_nothing_of_the_project(relative_path: str, content: str, target: Path | None = None) -> str | None:
     """Why this test file tests no project code, or None if it does.
 
-    run-84e05d4b wrote `simple-to-do-list-app/app.test.js` with four passing
+    One run wrote `simple-to-do-list-app/app.test.js` with four passing
     tests:
 
         package.json has correct name
@@ -137,7 +138,7 @@ def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None
     file that imports only those and reads files by name is asserting about
     the repository, not exercising it.
 
-    A framework import is not required - run-a7150a6c wrote `app.test.mjs`
+    A framework import is not required - one run wrote `app.test.mjs`
     importing only `fs`, reading `index.html`, and throwing if a `<link>` tag
     was missing. A file the project calls a test and that imports none of the
     project is the same finding whether or not it uses `node:test`.
@@ -147,7 +148,7 @@ def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None
     be worse than letting a documentation test through.
     """
     # A framework import, or a name that says "test". Requiring the import
-    # missed the shape run-a7150a6c produced: `app.test.mjs` importing only
+    # missed the shape one run produced: `app.test.mjs` importing only
     # `fs`, reading `index.html`, and throwing if a `<link>` tag is absent.
     # No `node:test`, so the first version of this check said nothing - about a
     # file called `app.test.mjs` that tests no application code at all.
@@ -159,14 +160,58 @@ def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None
         return None
     if _RELATIVE_IMPORT.search(content):
         return None
+    # A project's own module imported by name - `from notes_api.db import
+    # insert` - is as much the project as `./app.js`. Only relative imports
+    # were seen, so every Python test file got this note.
+    if target is not None and _imports_a_module_the_project_has(content, target):
+        return None
+    # The acceptance suite tests the product from outside, by design: the
+    # harness's own setup starts it, and the tests meet it over its interface.
+    # One run's black-box suite was told to import the module under test, in
+    # another language's syntax.
+    if target is not None and _in_the_acceptance_suite(relative_path, target):
+        return None
     return (
         "This file declares tests and imports nothing from the project, so it "
-        "cannot be exercising any of its code - `node:test`, `assert`, `fs` and "
-        "`path` are the standard library. Tests that only read files by name "
-        "assert that the repository looks a certain way, which passes whether "
-        "or not the product works. Import the module under test "
-        "(`import { addTask } from './app.js'`) and assert on what it does."
+        "cannot be exercising any of its code: what it uses is the standard "
+        "library and the test runner. Tests that only read files by name assert "
+        "that the repository looks a certain way, which passes whether or not the "
+        "product works. Import the module under test and assert on what it does."
     )
+
+
+#: The first name an import statement imports by name, in the languages that
+#: import a project's own modules that way.
+_IMPORTED_BY_NAME = re.compile(r"^\s*(?:from|import)\s+([A-Za-z_]\w*)", re.M)
+
+
+def _imports_a_module_the_project_has(content: str, target: Path) -> bool:
+    """Whether an import by name names a package or module beside this file or above it, up to three levels."""
+    names = set(_IMPORTED_BY_NAME.findall(content or ""))
+    if not names:
+        return False
+    folder = Path(target).parent
+    for _ in range(4):
+        for name in names:
+            if (folder / name).is_dir() or any(path.is_file() for path in folder.glob(f"{name}.*")):
+                return True
+        if folder.parent == folder:
+            break
+        folder = folder.parent
+    return False
+
+
+def _in_the_acceptance_suite(relative_path: str, target: Path) -> bool:
+    """Whether the file is in this run's acceptance suite directory. Never raises."""
+    try:
+        from app.acceptance import suite
+
+        parts = Path(relative_path).parts
+        root = Path(target).resolve().parents[len(parts) - 1] if parts else None
+        directory = suite.directory(root) if root else None
+        return bool(directory) and Path(target).resolve().is_relative_to(Path(directory).resolve())
+    except Exception:  # noqa: BLE001 - the note is given as before
+        return False
 
 
 #: A browser API being built by hand in a test file.
@@ -174,7 +219,7 @@ def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None
 #: `localStorage` and `sessionStorage` are deliberately NOT here. They are a
 #: string-keyed map with four methods, a mock of one is complete in five lines,
 #: and it does not collapse the way a `document` stub does. Including them
-#: meant run-740edb6b's `addTask.test.mjs` - which mocks `localStorage`, sets
+#: meant one run's `addTask.test.mjs` - which mocks `localStorage`, sets
 #: up no DOM, and fails with `document is not defined` - was told its
 #: localStorage mock was the problem. The note was wrong about the file it
 #: fired on, and the right note for that file could not fire.
@@ -189,7 +234,13 @@ _HAS_A_REAL_DOM = re.compile(
 )
 
 
-def a_dom_built_by_hand(relative_path: str, content: str) -> str | None:
+#: A test putting a page of its own in place of the one its runner gives it.
+_A_SECOND_DOM = re.compile(
+    r"""\bglobal(?:This)?\.(?:document|window|navigator)\s*=|\bnew\s+JSDOM\s*\("""
+)
+
+
+def a_dom_built_by_hand(relative_path: str, content: str, dom_given: str = "") -> str | None:
     """Why this test's hand-built browser API will not hold, or None.
 
     Three runs have lost remediation rounds to the same thing. A browser
@@ -201,12 +252,12 @@ def a_dom_built_by_hand(relative_path: str, content: str) -> str | None:
     It works until the code under test touches something the mock does not
     have, and then the failure is `TypeError: Cannot read properties of
     undefined (reading 'children')` inside application code - which reads as an
-    application bug and is not one. run-d3965815 spent three remediation
-    rounds and its whole sprint on exactly that; run-0deeb8bf and run-84e05d4b
+    application bug and is not one. One run spent three remediation
+    rounds and its whole sprint on exactly that; two runs
     lost stages to the same shape.
 
     The sandbox grants a network to the `install` category, so `npm install
-    jsdom` genuinely works here - measured on run-84e05d4b, "added 39
+    jsdom` genuinely works here - measured on one run, "added 39
     packages". A real DOM is available and costs one command.
 
     `--save-dev`, because `tests/brief_low.md` says "No external dependencies
@@ -217,9 +268,33 @@ def a_dom_built_by_hand(relative_path: str, content: str) -> str | None:
 
     A note, not a refusal. A tiny stub for one function is a reasonable thing
     to write, and this cannot tell that from a mock that is about to collapse.
+
+    `dom_given` names where the unit tests' own browser globals come from, when
+    the project's stack pack provides them. There any page a test builds -
+    jsdom included - is a second one, swapped in halfway: its elements and
+    events are not the ones the rest of the globals belong to, and jsdom
+    rejects them ("parameter 1 is not of type 'Event'"). Four runs spent their
+    first sprint on hand-made DOM setups before the pack gave them one.
     """
+    from app.analysis.file_kinds import is_test
+
+    if not is_test(relative_path):
+        return None
     if not _DECLARES_TESTS.search(content or ""):
         return None
+    if dom_given:
+        if not _A_SECOND_DOM.search(content):
+            return None
+        return (
+            f"This test sets up a page of its own. Unit tests here already run "
+            f"with a browser's globals - `document`, `window`, `localStorage`, "
+            f"`Event` and the rest - from {dom_given}, which the harness keeps. A "
+            "second page replaces them halfway: its elements and events belong to "
+            "a different window, so the code under test fails on objects that are "
+            "not its own. Delete the setup and use `document` and `window` as they "
+            "are; put the markup a test needs into `document.body.innerHTML` in "
+            "`beforeEach`."
+        )
     if not _HAND_ROLLED_DOM.search(content):
         return None
     if _HAS_A_REAL_DOM.search(content):
@@ -260,11 +335,114 @@ _PROVIDES_A_DOM = re.compile(
 )
 
 
-def a_test_that_needs_a_dom(relative_path: str, content: str, project: "Path | None" = None) -> str | None:
+#: `import { a, b as c } from './x'` - the braces and the specifier.
+_NAMED_IMPORT = re.compile(r"""import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]""")
+
+#: Where a module-level function starts: `function f(`, `const f = (...) =>`,
+#: `const f = function`, each optionally exported or async.
+_FUNCTION_START = re.compile(
+    r"""(?m)^[ \t]*(?:export\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\("""
+    r"""|^[ \t]*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*"""
+    r"""(?:async\s+)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)"""
+)
+
+
+def _imported_names(content: str, specifier: str) -> set[str] | None:
+    """The names this test imports from `specifier`, or None when it cannot tell.
+
+    None - a default or namespace import, or `require` - means "possibly all of
+    it", which is what the check assumed for every import before.
+    """
+    names: set[str] = set()
+    found = False
+    for match in _NAMED_IMPORT.finditer(content or ""):
+        if match.group(2) != specifier:
+            continue
+        found = True
+        for part in match.group(1).split(","):
+            name = part.strip().split(" as ")[0].strip()
+            if name:
+                names.add(name)
+    return names if found else None
+
+
+def _closing_brace(text: str, opening: int) -> int:
+    """The index of the brace closing the one at `opening`, skipping strings and comments."""
+    depth, i, n = 0, opening, len(text)
+    while i < n:
+        c = text[i]
+        if c in "'\"`":
+            i += 1
+            while i < n and text[i] != c:
+                i += 2 if text[i] == "\\" else 1
+        elif text.startswith("//", i):
+            i = text.find("\n", i)
+            if i < 0:
+                return n
+        elif text.startswith("/*", i):
+            i = text.find("*/", i)
+            if i < 0:
+                return n
+            i += 1
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return n
+
+
+def _function_bodies(module: str) -> dict[str, str]:
+    """Each module-level function's body, by name."""
+    bodies: dict[str, str] = {}
+    for match in _FUNCTION_START.finditer(module):
+        name = match.group(1) or match.group(2)
+        opening = module.find("{", match.end())
+        line_end = module.find("\n", match.end())
+        if match.group(2) and (opening < 0 or (0 <= line_end < opening and "{" not in module[match.end():line_end + 1])):
+            # An arrow function with an expression body: the rest of its line.
+            bodies[name] = module[match.end(): line_end if line_end >= 0 else len(module)]
+            continue
+        if opening < 0:
+            continue
+        bodies[name] = module[opening: _closing_brace(module, opening) + 1]
+    return bodies
+
+
+def _reaches_the_dom(module: str, names: set[str]) -> bool | None:
+    """Whether calling any of `names` can touch `document` or `window`.
+
+    Follows calls to other functions of the same module. None when a name is
+    not a function this can read - a class, an object - so the caller keeps
+    to what it did before rather than guessing.
+    """
+    bodies = _function_bodies(module)
+    if any(name not in bodies for name in names):
+        return None
+    pending, seen = list(names), set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        body = bodies[name]
+        if _UNGUARDED_DOM.search(body):
+            return True
+        pending += [
+            other for other in bodies
+            if other not in seen and re.search(rf"(?<![\w$.]){re.escape(other)}\s*\(", body)
+        ]
+    return False
+
+
+def a_test_that_needs_a_dom(
+    relative_path: str, content: str, project: "Path | None" = None, dom_given: str = ""
+) -> str | None:
     """Why this test will throw `document is not defined`, or None.
 
-    Four runs have ended a stage on it - run-0deeb8bf, run-d3965815,
-    run-84e05d4b and run-740edb6b, whose `addTask.test.mjs` imported `addTask`
+    Four runs have ended a stage on it - four runs, whose `addTask.test.mjs` imported `addTask`
     from a module whose render path calls `document.getElementById`, mocked
     `localStorage` and nothing else, and reported
 
@@ -282,9 +460,15 @@ def a_test_that_needs_a_dom(relative_path: str, content: str, project: "Path | N
     be said without guessing is that the module reaches for `document`, the
     test provides none, and this is the error that follows if the path taken
     touches it.
+
+    Never where the project's pack gives its unit tests a page (`dom_given`):
+    there `document` is defined, and the note would send a working test to
+    another runner.
     """
     from pathlib import Path
 
+    if dom_given:
+        return None
     if not _DECLARES_TESTS.search(content or "") and not _is_test_name(relative_path):
         return None
     if _PROVIDES_A_DOM.search(content or ""):
@@ -304,6 +488,15 @@ def a_test_that_needs_a_dom(relative_path: str, content: str, project: "Path | N
             except (OSError, UnicodeDecodeError):
                 break
             if not _UNGUARDED_DOM.search(module):
+                break
+            # Only what the test takes from the module. One run's
+            # `logic.test.mjs` imported `createTask`, `editTask` and two
+            # serialisers - none of which touches the DOM - from an `app.js`
+            # whose render path does, and was told on every edit that it MUST
+            # be rewritten as a Playwright test, beside a Playwright suite that
+            # already existed.
+            imported = _imported_names(content, specifier)
+            if imported is not None and _reaches_the_dom(module, imported) is False:
                 break
             return (
                 f"`{specifier}` uses `document` or `window`, and this test sets up "
@@ -327,7 +520,9 @@ def _is_test_name(relative_path: str) -> bool:
 __all__ = [
     "a_dom_built_by_hand",
     "a_test_that_needs_a_dom",
+    "a_suite_that_asserts_only_constants",
     "a_suite_that_only_checks_things_exist",
+    "holds_no_test",
     "tests_nothing_of_the_project",
     "tests_the_runner_will_never_call",
     "undiscoverable_test",
@@ -336,7 +531,7 @@ __all__ = [
 
 #: Calls that make a test able to fail. Deliberately broad across runners:
 #: `node:assert`, Jest/Vitest `expect`, chai's `should`/`expect`, and a bare
-#: `throw` written by hand, which is how run-a7150a6c's test asserted.
+#: `throw` written by hand, which is how one run's test asserted.
 _AN_ASSERTION = re.compile(
     r"""(?<![\w.$])assert\s*[.(]"""
     r"""|(?<![\w.$])expect\s*\("""
@@ -360,10 +555,125 @@ _A_TEST_CASE = re.compile(
 )
 
 
+#: A test declared the way a runner outside JavaScript finds it.
+_A_TEST_DECLARED_ELSEWHERE = re.compile(
+    r"""^\s*(?:async\s+)?def\s+test\w*\s*\("""
+    r"""|^\s*func\s+Test\w*\s*\("""
+    r"""|^\s*#\[(?:\w+::)?test\]"""
+    r"""|^\s*@(?:Test|ParameterizedTest|pytest\.\w+)\b"""
+    r"""|(?<![\w.$])(?:describe|context|suite)\s*(?:\.\w+\s*)?\(""",
+    re.MULTILINE,
+)
+
+
+def holds_no_test(content: str) -> bool:
+    """Whether a file with a test's name registers no test and asserts nothing.
+
+    A script that imports the product and prints what it finds is a probe,
+    whatever it is called. One run's fix stage wrote `test_load.js` and
+    `test_run.js` - each a few lines ending in `console.log` - and could not
+    remove them afterwards, because the name is one a runner collects.
+
+    True only when nothing in it could be a test: no registered case in any
+    spelling this module knows, and no assertion. Anything else is evidence,
+    and stays.
+    """
+    return not (
+        _A_TEST_CASE.search(content)
+        or _A_TEST_DECLARED_ELSEWHERE.search(content)
+        or _AN_ASSERTION.search(content)
+    )
+
+
+#: A test switched off where it stands, in the spellings runners accept:
+#: `test.skip(`, `it.todo(`, `describe.skip(`, `xit(`, a bare `skip(`, and the
+#: decorators and calls other languages use for the same thing.
+_A_CASE_SWITCHED_OFF = re.compile(
+    r"""(?<![\w.$])(?:test|it|describe|suite|context)\s*\.\s*(?:skip|todo|fixme)\s*\("""
+    r"""|(?<![\w.$])(?:xit|xtest|xdescribe|skip|todo)\s*\(\s*['"`]"""
+    r"""|^\s*@(?:pytest\.mark\.skip\w*|unittest\.skip\w*|Disabled|Ignore)\b"""
+    r"""|^\s*#\[ignore\]"""
+    r"""|(?<![\w.$])(?:pytest\.skip|t\.Skip\w*|self\.skipTest)\s*\(""",
+    re.MULTILINE,
+)
+
+#: A registered case with whatever modifier it carries: `test(`, `it.only(`,
+#: `test.skip(`.
+_A_CASE_AND_ITS_MODIFIER = re.compile(
+    r"""(?<![\w.$])(?:test|it)\s*(?:\.\s*(\w+)\s*)?\(\s*['"`]""", re.MULTILINE
+)
+
+
+def how_many_tests_run(content: str) -> int:
+    """How many tests in this file a runner would actually execute.
+
+    Registered cases, less the ones switched off where they stand. An
+    estimate, and only ever compared with itself: the same file before a
+    change and after it.
+    """
+    cases = sum(
+        1 for found in _A_CASE_AND_ITS_MODIFIER.finditer(content)
+        if (found.group(1) or "").lower() not in {"skip", "todo", "fixme"}
+    )
+    elsewhere = [
+        found for found in _A_TEST_DECLARED_ELSEWHERE.finditer(content)
+        if not re.match(r"\s*(?:describe|context|suite|@pytest)", found.group(0))
+    ]
+    switched_off = len(_A_CASE_SWITCHED_OFF.findall(content)) if elsewhere else 0
+    return cases + max(0, len(elsewhere) - switched_off)
+
+
+def a_suite_this_change_switches_off(relative_path: str, before: str, after: str) -> str | None:
+    """Why this change is refused, when it leaves a working test file running nothing.
+
+    Measured on one run. A testing stage wrote 72 lines of real assertions, ran
+    them, and was answered "Failed to import app.js: document is not defined" -
+    a true finding about the product. It then replaced all 72 lines with
+
+        skip('Unit tests are skipped due to environment constraints');
+
+    and did the same to the browser spec. Both edits were answered "edited".
+    The next `npm test` exited 0 having run nothing, a fix stage returned "All
+    good", and the ledger held a passing suite that every later gate would
+    have read as evidence the product works.
+
+    Deleting a test is refused for exactly this reason; emptying one where it
+    stands is the same act through another tool.
+
+    Only a file that had tests which ran and assertions in them, and would be
+    left with none that run. A change that drops some and keeps others is an
+    ordinary edit, and a file that never had a test is not this.
+    """
+    from app.analysis.file_kinds import is_test
+
+    if not is_test(relative_path):
+        return None
+    had = how_many_tests_run(before)
+    if not had or not _AN_ASSERTION.search(before):
+        return None
+    if how_many_tests_run(after):
+        return None
+    how = (
+        "what replaces them is switched off with `skip`"
+        if _A_CASE_SWITCHED_OFF.search(after) else "what replaces them registers no test"
+    )
+    return (
+        f"Refusing to change '{relative_path}': it holds {had} test"
+        f"{'s' if had != 1 else ''} that run, and this would leave none - {how}. "
+        "A test command that runs nothing passes whatever the product does, and "
+        "every stage after this one would read that pass as evidence the product "
+        "works. A test that fails is a finding, not an obstacle: if the product is "
+        "what is wrong - it cannot be loaded where the tests run, say - report that "
+        "in `defects` or `blockers` and leave the test failing; if the test is "
+        "wrong, correct it so it still checks what it was written to check. "
+        "Nothing was changed."
+    )
+
+
 def a_test_that_asserts_nothing(relative_path: str, content: str) -> str | None:
     """Why this test file cannot fail, or None if it can.
 
-    Run f81808a4 wrote `simple-to-do-list-app/main.test.js` as its whole
+    One run wrote `simple-to-do-list-app/main.test.js` as its whole
     suite, 164 bytes:
 
         import assert from 'node:assert';
@@ -446,7 +756,7 @@ _A_TEST_CASE_IN_ANY_FORM = re.compile(
 def tests_the_runner_will_never_call(relative_path: str, content: str) -> str | None:
     """Why this file's cases never run, or None if they do.
 
-    Run d6297b2f's test round hit `ReferenceError: describe is not defined` -
+    One run's test round hit `ReferenceError: describe is not defined` -
     a Jest-shaped suite under `node --test` - and fixed it by moving every case
     inside a default-exported function:
 
@@ -499,7 +809,7 @@ def tests_the_runner_will_never_call(relative_path: str, content: str) -> str | 
 _ONLY_CHECKS_IT_EXISTS = re.compile(
     # `'undefined'` is deliberately absent. `typeof window !== 'undefined'` is
     # feature detection, which application code does constantly and which is
-    # not an assertion about anything; including it reported run 551640d3's
+    # not an assertion about anything; including it reported one run's
     # `app.js` as a suite that only checks things exist.
     r"""typeof\s+\w+\s*(?:,\s*|===?\s*)['"](?:function|object)['"]"""
     r"""|['"](?:function|object)['"]\s*===?\s*typeof\s+\w+"""
@@ -522,7 +832,7 @@ def a_suite_that_only_checks_things_exist(relative_path: str, content: str) -> s
     so the suite is green the moment the exports exist and says nothing
     whatever about what they do.
 
-    Run 1c9854c7 wrote `app.test.js` as five cases of exactly one form:
+    One run wrote `app.test.js` as five cases of exactly one form:
 
         test('loadTasks is a function', () => {
           assert.strictEqual(typeof loadTasks, 'function');
@@ -555,6 +865,56 @@ def a_suite_that_only_checks_things_exist(relative_path: str, content: str) -> s
         "their bodies do, so it cannot fail for a stub or an empty function "
         "and is not evidence that anything works. Assert what each function "
         "returns or changes, for an input you choose."
+    )
+
+
+#: One assertion call and what it is given, when that is a single parenthesised
+#: argument list with nothing nested in it.
+_AN_ASSERTION_CALL = re.compile(
+    r"""(?<![\w.$])(?:assert(?:\.\w+)?|expect|(?:\w+\.)?(?:strictEqual|deepStrictEqual|equal|ok)|\.toBe\w*|\.toEqual)"""
+    r"""\s*\(([^()]*)\)"""
+)
+
+#: Arguments made of literals alone: numbers, booleans, null, quoted strings,
+#: arithmetic and comparison. Nothing named, so nothing from the product.
+_ONLY_LITERALS = re.compile(
+    r"""^(?:\s|\d+(?:\.\d+)?|true|false|null|undefined|None|True|False"""
+    r"""|'[^']*'|"[^"]*"|[-+*/%=!<>,&|])*$"""
+)
+
+
+def a_suite_that_asserts_only_constants(relative_path: str, content: str) -> str | None:
+    """Why this suite proves nothing, or None if it may prove something.
+
+    One run finished with 26 passing tests in its Sprint Record, and 4 of its
+    20 unit tests were files like this, written by stages clearing their own
+    debugging:
+
+        test('quick placeholder', () => {
+          assert.strictEqual(1 + 1, 2);
+        });
+
+    `a_test_that_asserts_nothing` passes it - there is an assertion - and
+    `a_suite_that_only_checks_things_exist` does too, because what it checks is
+    not an export. An assertion whose arguments name nothing can only ever
+    pass. Fires only when every assertion in the file is one.
+    """
+    if not _DECLARES_TESTS.search(content or "") and not _A_TEST_CASE_IN_ANY_FORM.search(content or ""):
+        return None
+    assertions = _AN_ASSERTION.findall(content or "")
+    if not assertions:
+        return None
+    calls = _AN_ASSERTION_CALL.findall(content or "")
+    if len(calls) < len(assertions) or not all(_ONLY_LITERALS.match(arguments) for arguments in calls):
+        return None
+    cases = _A_TEST_CASE_IN_ANY_FORM.findall(content or "")
+    named = ", ".join(f"'{name}'" for name in cases[:3] if name)
+    return (
+        f"{relative_path} asserts only constants - `assert.ok(true)`, `1 + 1 === 2` "
+        "and the like" + (f" ({named})" if named else "") + ". It passes whatever "
+        "the product does, so it is not evidence of anything and adds a passing "
+        "test to every count. Assert on what the product's code returns or "
+        "changes, or delete it."
     )
 
 
@@ -599,7 +959,7 @@ _ASSERTION_NAMES = ("assert", "expect", "strict", *(_ASSERTIONS_NOT_ON_NODE_TEST
 def assertions_called_on_the_test_module(relative_path: str, content: str) -> str | None:
     """Why every test in this file throws TypeError, or None if they do not.
 
-    Run f81808a4 wrote `simple-to-do-list-app/main.test.js` with
+    One run wrote `simple-to-do-list-app/main.test.js` with
 
         import assert from 'node:test';
         ...
@@ -622,7 +982,7 @@ def assertions_called_on_the_test_module(relative_path: str, content: str) -> st
     'node:test'` is the correct form and names the function, not the module.
     """
     # The test context is the third spelling of this confusion, and the one
-    # that cost run f81808a4 most. Verified in the run image on Node 20.20.2:
+    # that cost one run most. Verified in the run image on Node 20.20.2:
     #
     #     t.ok -> undefined   t.equal -> undefined   t.assert -> object
     #
@@ -645,7 +1005,7 @@ def assertions_called_on_the_test_module(relative_path: str, content: str) -> st
                 )
 
     # The named form first: `import { test, assert } from 'node:test'` binds
-    # `assert` to undefined, and the first call on it throws. Run f81808a4
+    # `assert` to undefined, and the first call on it throws. One run
     # wrote both forms in turn, for the same file, an hour apart.
     for match in _NAMED_IMPORTS_FROM_NODE_TEST.finditer(content):
         names = (match.group(1) or match.group(2) or "").replace("\n", " ")
@@ -754,7 +1114,7 @@ def a_call_the_signature_does_not_accept(
     on its own - the test either fails somewhere unrelated or, worse, passes
     on a premise that was never established.
 
-    Run 9bd3a091 wrote
+    One run wrote
 
         addTask(storage, 'Active Task', '', false)
 
@@ -764,7 +1124,7 @@ def a_call_the_signature_does_not_accept(
     `storage.setItem is not a function` - the run's only discoverable suite,
     nothing of the product tested. The same call was written into two files.
 
-    Run 9506d3ab is the quieter half of the pair: `addTask('Completed Task
+    One run is the quieter half of the pair: `addTask('Completed Task
     1', '', true)` against `addTask(title, description)`. The `true` meant to
     mark the task complete was dropped, nothing threw, and the assertions
     about completed tasks ran against tasks that were never completed.
@@ -841,7 +1201,7 @@ def a_suite_calling_a_global_node_does_not_define(
         # pass 0   # fail 1
 
     `_suites_calling_a_global_node_does_not_define` already finds this, at a
-    milestone review. It cost run d6297b2f and run 0afef410 a round each
+    milestone review. It cost two runs a round each
     before that, and four of the fifty-eight stored workspaces still carry it.
     This is the same question asked at the write, where one import fixes it.
 
@@ -910,12 +1270,12 @@ def a_name_this_test_defines_instead_of_importing(
     application does - the assertions are real, the logic is real, and none of
     it is connected to the product. Every gate downstream reads the pass.
 
-    `_redefined_instead_of_imported` finds it at a milestone review, and run
-    1cd4597b is why that is not enough: `crud.test.mjs` and `filter.test.mjs`
+    `_redefined_instead_of_imported` finds it at a milestone review, and one
+    run is why that is not enough: `crud.test.mjs` and `filter.test.mjs`
     each defined their own `loadTasks` beside an import of the module that
     exports it, the finding was reported at the end of two consecutive
     sprints, and both files still carried it. Five more workspaces end this
-    way, run 1ae7671d with eight files.
+    way, one run with eight files.
 
     The evidence is all there at the write: the file names a relative module,
     so that module is on disk, and whether it defines a name that module

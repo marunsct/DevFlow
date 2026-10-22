@@ -1,6 +1,6 @@
 """Every event type the code emits must be one `RunEvent` accepts.
 
-run-84e05d4b reached its third sprint and died on
+One run reached its third sprint and died on
 
     ValidationError: 1 validation error for RunEvent
     event_type

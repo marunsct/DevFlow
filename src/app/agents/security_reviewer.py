@@ -98,9 +98,41 @@ def _the_source_under_review(changed_files: list[str], repository_root: str) -> 
     handed test evidence, the execution ledger and the cross-file checks; the
     architecture reviewer is handed the specification. This one was handed
     filenames.
+
+    Bounded by `SOURCE_BUDGET`, so a large product's files may not all fit. A
+    file that does not fit is named, every one of them - this used to stop at
+    the first and drop the rest without a word - and the reviewer is told to
+    open those itself. The workflow records the same list in the review
+    document (`source_coverage`), so a pass over part of the source says so.
     """
+    shown, not_shown = _select(changed_files, repository_root)
+    if not shown and not not_shown:
+        return (
+            "None of the changed files could be read for this request. Open "
+            "them with your read tools before deciding anything.\n"
+        )
+    parts = [f"\n--- {name} ---\n{body}" for name, body in shown]
+    parts += [f"\n--- {name} (not shown: the budget for this request is full) ---" for name in not_shown]
+    request = (
+        "--- The source under review, in full ---"
+        + "".join(parts)
+        + "\n\nThis is the code itself, not a summary. Judge it on what is "
+        "here; use your read tools only for something this does not show.\n"
+    )
+    if not_shown:
+        request += (
+            f"\n{len(not_shown)} file(s) above are not shown. Open each of them with your "
+            "read tools before deciding: a review that passes code it never read is "
+            "recorded as covering only what it read.\n"
+        )
+    return request
+
+
+def _select(changed_files: list[str], repository_root: str) -> tuple[list[tuple[str, str]], list[str]]:
+    """The reviewable changed files that fit the budget, with their text, and those that do not."""
     root = Path(repository_root)
-    shown: list[str] = []
+    shown: list[tuple[str, str]] = []
+    not_shown: list[str] = []
     used = 0
     for name in changed_files:
         path = (root / name).resolve()
@@ -113,30 +145,26 @@ def _the_source_under_review(changed_files: list[str], repository_root: str) -> 
         except OSError:
             continue
         if used + len(body) > SOURCE_BUDGET:
-            shown.append(f"\n--- {name} (not shown: the budget for this request is full) ---")
-            break
+            not_shown.append(name)
+            continue
         used += len(body)
-        shown.append(f"\n--- {name} ---\n{body}")
-    if not shown:
-        return (
-            "None of the changed files could be read for this request. Open "
-            "them with your read tools before deciding anything.\n"
-        )
-    return (
-        "--- The source under review, in full ---"
-        + "".join(shown)
-        + "\n\nThis is the code itself, not a summary. Judge it on what is "
-        "here; use your read tools only for something this does not show.\n"
-    )
+        shown.append((name, body))
+    return shown, not_shown
+
+
+def source_coverage(changed_files: list[str], repository_root: str) -> tuple[list[str], list[str]]:
+    """(files shown to the reviewer in full, reviewable files the budget left out)."""
+    shown, not_shown = _select(changed_files, repository_root)
+    return [name for name, _ in shown], not_shown
 
 
 def _how_text_reaches_the_page(repository_root: str) -> str:
     """What the product uses to write to the DOM, stated rather than inferred.
 
     `how_the_page_receives_text` was built for the milestone reviewer, which
-    recorded a major XSS finding in run 1c9854c7 against a product whose only
+    recorded a major XSS finding in one run against a product whose only
     text write was `textContent`. The security reviewer is the stage whose job
-    this is, and it was never given the fact: run 08acb1ee's security review
+    this is, and it was never given the fact: one run's security review
     reported "renders task names using innerHTML without sanitization" against
     a product with no `innerHTML` assignment of any content at all - only
     `textContent`, three times over.
@@ -169,6 +197,29 @@ def build_security_review_request(
     return {"messages": [{"role": "user", "content": brief}]}
 
 
+#: Measured on one run: a browser-only product with no accounts kept its
+#: records in the browser's own storage; this review rated "stored without
+#: encryption, readable via devtools or extensions" medium, the milestone
+#: review made it major, and the last sprint spent two attempts base64-encoding
+#: the records - which protects nothing - instead of finishing its work.
+BROWSER_KEPT_DATA = """Data a product keeps in its own user's browser belongs to that user. Reading
+it with the browser's own tools is not a leak, and encrypting it with a key the
+same page holds protects nothing - neither is a finding. What is one: such data
+sent somewhere the user did not ask, or read back in a way that runs it as code.
+And the harness's own test setup - the files the project contract names as
+kept - is not the product: a finding about one of them is not this review's."""
+
+
+#: Measured on one run: this review asked for `SECRET_KEY` to be moved to the
+#: environment, the work order made the product refuse to start without it,
+#: and every acceptance test failed - the suite starts the product with only
+#: `PORT` and `DATA_DIR` set, as the environment contract tells every stage.
+SECRETS_HERE = """A secret is read from the environment with a development default, or generated
+at first start and kept under `DATA_DIR`: the tests start the product with
+only `PORT` and `DATA_DIR` set. A production secret in the code is a finding;
+a remediation keeps the product starting when the variable is unset."""
+
+
 _SYSTEM_PROMPT = f"""You are the Security Reviewer for this workflow.
 
 Your role is to independently review changed files and tool permissions for
@@ -182,6 +233,10 @@ Responsibilities:
 - Document any valid exceptions for local-only features in `local_only_exceptions`.
 
 {SCOPE_DISCIPLINE}
+
+{BROWSER_KEPT_DATA}
+
+{SECRETS_HERE}
 
 Constraints:
 - Do not modify application source code; you only review and record findings.
@@ -211,7 +266,7 @@ def create_security_reviewer_agent(
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         # The workflow renders `docs/security_review.md` from the decision.
         # A reviewer holding a write tool it is not asked to use is the shape
-        # that cost run-78804673, run-c826ae90 and run-0b18e403 a stage each.
+        # that cost three runs a stage each.
         can_write=False,
     )
 
@@ -221,4 +276,5 @@ __all__ = [
     "SecurityReviewOutput",
     "build_security_review_request",
     "create_security_reviewer_agent",
+    "source_coverage",
 ]

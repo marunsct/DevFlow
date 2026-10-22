@@ -4,9 +4,9 @@ It used to produce the whole thing twice from one understanding: Markdown
 written to `docs/technical_specification.md`, and the same content again as the
 structured response the pipeline routes on. Nothing reconciled them - the shape
 that let a 1 KB `docs/spec.md` sit beside a 51 KB
-`docs/technical_specification.md` on run-0b55ad49.
+`docs/technical_specification.md` on one run.
 
-The cost was not only divergence. Measured on run-0edfcd33: the architect wrote
+The cost was not only divergence. Measured on one run: the architect wrote
 the document, then reported in prose - "The technical specification has been
 written to `docs/technical_specification.md`" - on three fresh conversations,
 each ending in a ~100,000 character message, and the run failed. It had spent

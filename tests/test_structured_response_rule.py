@@ -5,7 +5,7 @@ conversation instead of returning it through the schema. The text often *is*
 the right JSON - but nothing downstream sees it, because the workflow reads
 `structured_response`, not the last message.
 
-Measured twice in one afternoon, on two different agents, in run-c826ae90:
+Measured twice in one afternoon, on two different agents, in one run:
 
     product_manager:       "**Product intake complete.** Here is the structured
                            summary:" -> next stage died on
@@ -35,7 +35,12 @@ AGENTS = [
     "technical_lead",
     "security_reviewer",
     "milestone_reviewer",
+    "acceptance_reviewer",
+    "code_reviewer",
     "specialists",
+    "specialist_advice",
+    "advice_review",
+    "suite_dispute",
 ]
 
 
@@ -80,8 +85,10 @@ def test_re_sending_is_discouraged(agent):
 def test_the_rule_records_where_it_came_from():
     from app.agents import structured_response
 
-    assert "run-c826ae90" in structured_response.__doc__
+    # The failure it answers, in its own words; the run it happened on is in
+    # the commit history, not the source.
     assert "KeyError: 'product_intake'" in structured_response.__doc__
+    assert not __import__("re").search(r"run[- ][0-9a-f]{8}\b", structured_response.__doc__)
 
 
 def test_every_agent_with_a_response_format_is_covered():

@@ -100,3 +100,27 @@ def test_accepted_risk_requires_a_reason() -> None:
 
     cycle = accept_risk(cycle, 0, reason="Low-traffic browser; scheduled for next sprint.")
     assert is_sprint_acceptable(cycle) is True
+
+
+def test_a_passing_round_that_uses_the_last_attempt_exhausts_the_sprint() -> None:
+    """A round that passes while an earlier defect is still open is charged an
+    attempt. When that was the last one the sprint is out of attempts, and has
+    to say so: one run's round left the count at its limit unmarked, the next
+    failing round raised the limit, and the run ended with no re-plan."""
+    cycle = start_remediation("Sprint 1: login", max_attempts=2)
+    cycle = record_test_run(cycle, command=["pytest"], passed=False, new_defects=[_sample_defect()])
+    assert cycle.attempt == 1 and cycle.escalated is False
+
+    cycle = record_test_run(cycle, command=["pytest"], passed=True)
+
+    assert cycle.attempt == 2
+    assert cycle.escalated is True
+
+
+def test_a_passing_round_with_nothing_open_exhausts_nothing() -> None:
+    cycle = start_remediation("Sprint 1: login", max_attempts=1)
+
+    cycle = record_test_run(cycle, command=["pytest"], passed=True)
+
+    assert cycle.attempt == 0
+    assert cycle.escalated is False

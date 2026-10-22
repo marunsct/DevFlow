@@ -1,6 +1,6 @@
 """Recording what a stage decided, where someone can see it.
 
-Measured on run-5d83e946: sprint 2's milestone was rejected and the reasons
+Measured on one run: sprint 2's milestone was rejected and the reasons
 appeared nowhere an operator could look. A stage's answer reaches the run
 through its structured response, and a structured response is not a message,
 so the event stream carried none of it. The reasons existed - in the next

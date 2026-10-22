@@ -1,7 +1,7 @@
 """A delegated task that asks a specialist to change a file it cannot.
 
 `PROJECT_LAYOUT` tells the Technical Lead these documents belong to the
-workflow. run-01f03ed9 shows a prompt is not enough: the lead delegated
+workflow. One run shows a prompt is not enough: the lead delegated
 "update `docs/milestone_review.md` with the test results", and
 `specialist_documentation_1` spent twelve model calls on it - writing a
 `# Task Status` note four times, byte-identical, explaining that the task
@@ -33,7 +33,7 @@ def test_every_workflow_document_is_recognised(name: str) -> None:
     assert "`decisions`" in brief
 
 
-def test_the_run_01f03ed9_task(tmp_path) -> None:
+def test_the_measured_task(tmp_path) -> None:
     brief = _brief(
         "Update docs/milestone_review.md with the test results for this milestone.",
         ["The file reflects the latest run"],

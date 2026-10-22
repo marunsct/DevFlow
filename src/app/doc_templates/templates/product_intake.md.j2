@@ -1,0 +1,32 @@
+{#- docs/product_intake.md - the product manager's intake of the brief.
+    Context: o (ProductManagerOutput). -#}
+# Product Intake{% if o.product_name %} — {{ o.product_name }}{% endif %}
+
+## Users and stakeholders
+{{ o.users_and_stakeholders | section }}
+
+## Problems and desired outcomes
+{{ o.problems_and_desired_outcomes | section }}
+
+## Core workflows
+{{ o.core_workflows | section }}
+
+## MVP Candidates
+{{ o.mvp_candidates | section }}
+
+## Deferred scope
+{{ o.deferred_scope | section }}
+
+## Constraints
+{{ o.constraints | section }}
+
+## Evidence vs Assumptions
+{{ o.evidence_vs_assumptions | section }}
+
+## Success measures
+{{ o.success_measures | section }}
+
+## Open questions
+{{ o.open_questions | section }}
+
+<!-- Generated from this stage's structured response. Editing this file does not change what the pipeline reads. -->

@@ -54,12 +54,17 @@ class RunEvent(BaseModel):
         # A gate answered with a denial rather than an approval, because the
         # stage asked for the same thing over and over. Added with the runner
         # code that emits it - and not, the first time, at the same moment:
-        # run-84e05d4b reached its third sprint and then died on
+        # One run reached its third sprint and then died on
         # `ValidationError: Input should be 'stage_change', 'log', ... [type=
         # literal_error, input_value='approval_denied']`. The whole test suite
         # passed, because no test ran the runner's denial path against this
         # model. See `test_event_types_are_registered`.
         "approval_denied",
+        # A run parked at its `MAX_RUN_COST_USD` ceiling, naming the spend. Not
+        # `error`: the run is intact and the operator may simply raise the
+        # ceiling and resume. Registered here in the same change as the runner
+        # code that emits it, which is the lesson of `approval_denied` above.
+        "budget_pause",
         "error",
         "complete",
         # Agent activity. One event per assistant message, tool call and tool

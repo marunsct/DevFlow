@@ -4,7 +4,7 @@ Every reviewer used to be asked for the same information twice: once as a
 Markdown artifact for a person to read, and once as a structured response for
 the workflow to route on. Nothing reconciled them.
 
-Observed on run-95ca3f72: the milestone reviewer wrote a complete four-row
+Observed on one run: the milestone reviewer wrote a complete four-row
 findings table into `docs/milestone_review.md` - the root `package.json`
 overriding the test script, duplicate CI installs, a wrong line-count path, a
 README citing a script that does not exist - and returned
@@ -66,52 +66,23 @@ def _findings_table(findings: list[Any], *, context_column: str, context_field: 
     return "\n".join(rows)
 
 
+def _most_severe_first(review: Any) -> list[Any]:
+    return sorted(list(getattr(review, "findings", None) or []), key=_severity_rank)
+
+
 def render_milestone_review(review: Any, milestone_goal: str) -> str:
-    """The Markdown a person reads, built from the decision the workflow routes on."""
-    findings = list(getattr(review, "findings", None) or [])
-    status = str(getattr(review, "status", "") or "unknown")
+    """The Markdown a person reads, built from the decision the workflow routes on.
 
-    parts = [f"# Milestone Review: {milestone_goal or 'Milestone'}", ""]
+    Laid out by `app/doc_templates/templates/milestone_review.md.j2`. A review that
+    requires changes and records no findings says so in words - the exact
+    shape that failed one run, and one a reader should be able to see.
+    """
+    from app.doc_templates import render_document
 
-    parts.append("## Findings")
-    if findings:
-        parts.append(
-            _findings_table(findings, context_column="Category", context_field="category")
-        )
-    else:
-        # Said plainly rather than left blank. A review that requires changes
-        # and records no findings is the exact shape that failed run-95ca3f72,
-        # and a reader should be able to see it in the document.
-        parts.append(
-            "No structured findings were recorded."
-            if status == "accepted"
-            else (
-                "No structured findings were recorded. The account below is the "
-                "only statement of what needs to change."
-            )
-        )
-    parts.append("")
-
-    parts.append("## Acceptance Evidence")
-    parts.append(str(getattr(review, "acceptance_evidence", "") or "None recorded."))
-    parts.append("")
-
-    parts.append("## What Was Reviewed")
-    parts.append(
-        f"- Documentation reviewed: {'yes' if getattr(review, 'documentation_reviewed', False) else 'no'}"
+    return render_document(
+        "milestone_review", o=review, findings=_most_severe_first(review),
+        milestone_goal=milestone_goal,
     )
-    parts.append(
-        f"- Tests reviewed: {'yes' if getattr(review, 'tests_reviewed', False) else 'no'}"
-    )
-    parts.append("")
-
-    parts.append(f"## Status: {status}")
-    parts.append("")
-    parts.append(
-        "<!-- Generated from the reviewer's structured decision. Editing this "
-        "file does not change the workflow's routing. -->"
-    )
-    return "\n".join(parts)
 
 
 def render_architecture_review(review: Any) -> str:
@@ -119,50 +90,34 @@ def render_architecture_review(review: Any) -> str:
 
     The architecture reviewer has the same two-copy structure the milestone
     reviewer had - a prose artifact and a schema, asked for separately. On
-    run-c4f17841 the two happened to agree, which is luck rather than a
+    one run the two happened to agree, which is luck rather than a
     property: nothing reconciles them, and the milestone reviewer's copies
-    disagreed on run-95ca3f72 badly enough to fail the run.
+    disagreed on one run badly enough to fail the run.
 
     Its findings carry `evidence` - the spec section or ADR - where a milestone
-    finding carries `category`, so the table's middle column differs.
+    finding carries `category`, so the table's middle column differs. Laid out
+    by `app/doc_templates/templates/architecture_review.md.j2`.
     """
-    findings = list(getattr(review, "findings", None) or [])
-    status = str(getattr(review, "status", "") or "unknown")
+    from app.doc_templates import render_document
 
-    parts = ["# Architecture Review", ""]
+    return render_document("architecture_review", o=review, findings=_most_severe_first(review))
 
-    parts.append("## Findings")
-    if findings:
-        parts.append(
-            _findings_table(findings, context_column="Evidence", context_field="evidence")
-        )
-    else:
-        parts.append(
-            "No findings were recorded."
-            if status == "approved"
-            else (
-                "No findings were recorded, so this review states no change for "
-                "the architect to make."
-            )
-        )
-    parts.append("")
 
-    for heading, attribute, empty in (
-        ("Approval Conditions", "approval_conditions", "None."),
-        ("Accepted Risks", "accepted_risks", "None recorded."),
-    ):
-        parts.append(f"## {heading}")
-        entries = list(getattr(review, attribute, None) or [])
-        parts.extend([f"- {entry}" for entry in entries] if entries else [empty])
-        parts.append("")
+def render_security_review(
+    review: Any, shown: list[str] | None = None, not_shown: list[str] | None = None
+) -> str:
+    """`docs/security_review.md`, from `templates/security_review.md.j2`.
 
-    parts.append(f"## Status: {status}")
-    parts.append("")
-    parts.append(
-        "<!-- Generated from the reviewer's structured decision. Editing this "
-        "file does not change the workflow's routing. -->"
+    `shown` and `not_shown` are the files the request carried in full and those
+    its budget left out (`security_reviewer.source_coverage`); with any left
+    out, a pass is recorded as a pass over part of the source.
+    """
+    from app.doc_templates import render_document
+
+    return render_document(
+        "security_review", o=review, findings=_most_severe_first(review),
+        shown=shown, not_shown=not_shown or [],
     )
-    return "\n".join(parts)
 
 
-__all__ = ["render_architecture_review", "render_milestone_review"]
+__all__ = ["render_architecture_review", "render_milestone_review", "render_security_review"]

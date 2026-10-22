@@ -55,6 +55,18 @@ class TechnologyStack(BaseModel):
     database: str = Field(..., description="Database technology (e.g., PostgreSQL, MongoDB).")
     testing_framework: str = Field(..., description="Testing framework (e.g., Jest, Pytest).")
     additional_tools: list[str] = Field(default_factory=list, description="Other notable tools to scaffold.")
+    # Optional for the same reason as `frontend_framework`. It picks the stack
+    # pack the project is scaffolded from (`app.stacks.choose_pack`); left
+    # empty, the frameworks and the brief decide.
+    product_kind: str = Field(
+        default="",
+        description=(
+            "What kind of product this is: browser_app (a user interface in a web "
+            "browser), http_api (a service called over HTTP), fullstack (a browser "
+            "interface backed by its own HTTP service), cli (a program run from a "
+            "terminal) or library (code other programs import)."
+        ),
+    )
 
     @field_validator("testing_framework")
     @classmethod
@@ -69,7 +81,7 @@ class TechnologyStack(BaseModel):
 
         Stated in the stack selector's prompt first, including the sentence
         "'Manual browser testing' cannot be carried out here by anyone". On
-        run-78804673 the selector read that and chose "Manual browser testing"
+        one run the selector read that and chose "Manual browser testing"
         anyway. An instruction that has failed twice is not made truer by
         repetition; this removes the option instead.
 
@@ -98,32 +110,88 @@ class TechnologyStack(BaseModel):
         )
 
         impossible = ("manual", "by hand", "devtools", "browser testing", "visual inspection")
+        # Checks that run and never fail. `console.assert`, a logged message and
+        # a printed line all exit 0 whatever they find, so a suite made of them
+        # is green by construction and reports no counts. One run's stack chose
+        # "Browser Console Assertions" for its logic; the architect's
+        # specification then read "use console.assert and manual verification".
+        # Only when no real runner is named: "pytest, with plain assert" is a
+        # runner that happens to mention its assertions.
+        never_fails = ("console", "print", "logging", "log output")
+        # Assertions in any form of the word, with no runner beside them. The
+        # list held "assertion" and "assert statements", and one run's selector
+        # answered "Custom asserts" - "a lightweight custom assert harness" run
+        # in the browser - which neither spelled.
+        only_asserts = re.search(r"\bassert", lowered) is not None
+        # A harness the project is to write for itself, by any name for it.
+        # After "Custom asserts" was refused, one run's selector answered
+        # "Custom harness": the same thing, with the word the check looked for
+        # taken out. What makes it not a runner is that nothing exists yet to
+        # execute a test or report a count - not what its assertions are called.
+        # Only words that say hand-made: "a lightweight framework" describes
+        # real runners this table has never heard of.
+        hand_made = re.search(
+            r"\b(custom|bespoke|hand[- ]?(?:written|rolled|made)|home[- ]?(?:grown|made)"
+            r"|in[- ]house|diy)\b[^,;]{0,40}"
+            r"\b(harness|runner|framework|test(?:ing)? (?:script|utility|helper)s?|suite)\b",
+            lowered,
+        ) is not None
+        if (
+            only_asserts or hand_made or any(marker in lowered for marker in never_fails)
+        ) and not names_a_runner:
+            raise ValueError(
+                f"'{text}' is not a test runner: assertions written to a console, a "
+                "log or standard output leave the command's exit code at 0 whatever "
+                "they find, so nothing can tell a failing check from a passing one "
+                "and no test count is ever reported. Name a runner that executes the "
+                "tests and exits non-zero when one fails - the runner that ships with "
+                "the language's runtime installs nothing and adds no dependency."
+            )
         if any(marker in lowered for marker in impossible) and not names_a_runner:
             raise ValueError(
                 f"'{text}' cannot be carried out in this environment: there is no "
                 "browser, no display, and no person watching the workspace, so "
                 "nothing can perform a manual or visual check. Choose something "
-                "that runs headless and reports a pass or fail. `node --test` and "
-                "Python's `unittest` are built into their runtimes: they install "
-                "nothing, add no dependency, and cost no lines of product code."
+                "that runs headless and reports a pass or fail. A runner that "
+                "ships with the language's runtime installs nothing, adds no "
+                "dependency, and costs no lines of product code."
             )
         # "None" is the same answer wearing a shorter word, and the previous
         # version of this message licensed it outright: it ended "'none' is
         # valid only if the product genuinely needs no verification". On
-        # run-2f252e4e the selector answered "None", citing the size guidance
+        # one run the selector answered "None", citing the size guidance
         # that warns against *installed* runners, and shipped a human checklist
         # instead of a test suite. A built-in runner costs nothing, so there is
         # no product here that needs no verification.
-        if not text or lowered in ("none", "n/a", "na", "no testing", "nothing", "-"):
+        #
+        # Matched as a leading word, not the whole value. One run's selector
+        # answered "None (not required for MVP)", which the exact comparison
+        # let through; the browser-runner rewrite then recorded "None (not
+        # required for MVP) for the logic, Playwright for the page" as the
+        # stack's testing framework.
+        if not text or (
+            (_DECLINES_A_RUNNER.match(lowered) or _TESTING_IS_OPTIONAL.search(lowered))
+            and not names_a_runner
+        ):
             raise ValueError(
-                "A testing framework is required. `node --test` and Python's "
-                "`unittest` are part of their runtimes - nothing to install, no "
-                "dependency, no lines of product code - so choosing none only "
+                "A testing framework is required. Most languages ship a test "
+                "runner with their runtime - nothing to install, no dependency, "
+                "no lines of product code - so choosing none only "
                 "means nothing will ever answer 'did this work?'. Name the "
                 "runner the project will actually use."
             )
         return text
 
+
+
+#: An answer that opens by declining a runner: "None", "N/A - ...",
+#: "No tests for now", "Nothing (the MVP is small)".
+_DECLINES_A_RUNNER = re.compile(
+    r"^\s*(?:none|n/?a|nothing|-+|no\s+(?:test\w*|framework|runner|automated\s+test\w*))(?![\w/-])"
+)
+
+#: An answer that calls testing optional anywhere in it.
+_TESTING_IS_OPTIONAL = re.compile(r"\bnot\s+(?:required|needed|necessary|applicable)\b")
 
 
 class TechnologyChoice(BaseModel):
@@ -219,7 +287,7 @@ def build_tools_models_request(
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on
-        # run-0b55ad49, agents retried `ls` against that exact string four times
+        # one run, agents retried `ls` against that exact string four times
         # in a row, and fed it to shell commands, every attempt failing with
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
@@ -248,7 +316,6 @@ Responsibilities:
 
 Constraints:
 - Do not modify application source code and do not install dependencies.
-- Do not change repo files except through the approved artifact tool.
 - No implementation dependency should be treated as decided just because you
   named it here; this artifact is a proposal for human approval.
 - Do not write a document. The workflow renders `docs/tools_and_models.md` from the
@@ -256,12 +323,6 @@ Constraints:
   either way - and only through that response. Writing it yourself
   produces the same work twice from one understanding, and the two
   copies then disagree.
-- Every write_artifact call pauses for a human decision before anything is
-  saved; never claim the artifact is saved until a tool result confirms it.
-- **Write the complete artifact in ONE single write_artifact call.** Do NOT
-  make follow-up edit calls to refine, fix typos, or improve the document after
-  the initial write. The document must be complete and correct before you write
-  it. Once the write is confirmed, immediately return your structured response.
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.

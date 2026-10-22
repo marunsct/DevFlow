@@ -216,14 +216,70 @@ def _read_int(environment: Mapping[str, str], name: str) -> int | None:
         return None
 
 
+def _the_deployment_s() -> Mapping[str, str]:
+    """The deployment's environment with the settings page's values over it.
+
+    The process environment alone describes the deployment as it was started:
+    one worker read a 100,000-token window from it while the settings page
+    said 130,000, and every budget followed the former.
+    """
+    try:
+        from app.server.runtime_settings import effective_environment
+
+        return effective_environment()
+    except Exception:  # noqa: BLE001 - the deployed environment still stands
+        return os.environ
+
+
 def context_window(environment: Mapping[str, str] | None = None) -> int:
     """The configured context window, in tokens."""
-    env = environment if environment is not None else os.environ
+    env = environment if environment is not None else _the_deployment_s()
     value = _read_int(env, "MODEL_CONTEXT_WINDOW")
     if value is None:
-        return DEFAULT_CONTEXT_WINDOW
+        value = DEFAULT_CONTEXT_WINDOW
+    # No larger than what the server gives one request (`server_profile`):
+    # forty-odd calls were refused at 20-48k tokens under a 100k setting.
+    try:
+        from app.models.server_profile import current
+
+        slot = getattr(current(), "slot_context", None)
+    except Exception:  # noqa: BLE001
+        slot = None
+    if slot:
+        value = min(value, slot)
+        if slot < MIN_VIABLE_WINDOW:
+            # The smaller truth stands (Initiative AO.2): raising the window past
+            # what the server gives one request sends requests it will refuse.
+            _say_once(
+                f"The model server gives each request {slot:,} tokens, below the "
+                f"{MIN_VIABLE_WINDOW:,} a stage needs to work well; budgeting for {slot:,}. "
+                "Fewer slots on the server give each one more."
+            )
+            return slot
+    else:
+        # Only once the server has been asked: the window is first computed at
+        # worker start, before the profile is read, and "not asked yet" is not
+        # "the server has no facts".
+        try:
+            from app.models.server_profile import asked
+
+            was_asked = asked()
+        except Exception:  # noqa: BLE001
+            was_asked = False
+        if was_asked:
+            _say_once("The model server reports no slot or context facts; using the configured window.")
     # A window smaller than the framing plus a minimum reply cannot run anything.
     return max(value, MIN_VIABLE_WINDOW)
+
+
+_SAID: set[str] = set()
+
+
+def _say_once(message: str) -> None:
+    """Log `message` once per process, at warning level."""
+    if message not in _SAID:
+        _SAID.add(message)
+        logger.warning(message)
 
 
 @dataclass(frozen=True)
@@ -265,16 +321,21 @@ class ContextBudget:
         *,
         keep_recent_messages: int | None = None,
         max_output_tokens: int | None = None,
+        floor: int = MIN_VIABLE_WINDOW,
     ) -> "ContextBudget":
         # Clamped here as well as in `context_window`, so a budget built
         # directly - by a test, or by a caller passing a model's advertised
-        # window - cannot produce limits that were never satisfiable.
-        window_tokens = max(window_tokens, MIN_VIABLE_WINDOW)
+        # window - cannot produce limits that were never satisfiable. `floor`
+        # is lower only for a window the server itself reports (AO.2).
+        window_tokens = max(window_tokens, floor)
         keep = keep_recent_messages or DEFAULT_KEEP_RECENT_MESSAGES
 
         if max_output_tokens is None:
             output = int(window_tokens * OUTPUT_FRACTION)
             output = max(MIN_OUTPUT_TOKENS, min(MAX_OUTPUT_TOKENS, output))
+        elif int(max_output_tokens) <= 0:
+            # 0 or negative means uncapped: no artificial ceiling on model output tokens.
+            output = 0
         else:
             # A chosen reply ceiling still has to leave a usable conversation
             # behind it. Reply, conversation and framing share one window, so
@@ -286,7 +347,11 @@ class ContextBudget:
             spare = window_tokens - FRAMING_TOKENS - MIN_INPUT_CEILING_TOKENS
             output = max(MIN_OUTPUT_TOKENS, min(int(max_output_tokens), spare))
 
-        ceiling = window_tokens - output - FRAMING_TOKENS
+        if window_tokens < MIN_VIABLE_WINDOW:
+            # A slot below the floor: the reply takes a quarter and the framing
+            # what it must, and the conversation keeps the rest.
+            output = min(output or window_tokens // 4, window_tokens // 4) if output else 0
+        ceiling = max(1_024, window_tokens - (output or (window_tokens // 4)) - min(FRAMING_TOKENS, window_tokens // 4))
 
         document_chars = int(ceiling * DOCUMENT_FRACTION) * CHARS_PER_TOKEN
         tool_bytes = max(
@@ -326,7 +391,7 @@ class ContextBudget:
         place knows the full picture - and so `describe` can report a budget
         that is no longer internally consistent.
         """
-        env = environment if environment is not None else os.environ
+        env = environment if environment is not None else _the_deployment_s()
         window = context_window(env)
 
         keep = _read_int(env, "CTX_KEEP_MESSAGES")
@@ -338,6 +403,7 @@ class ContextBudget:
             window,
             keep_recent_messages=keep,
             max_output_tokens=_read_int(env, "MODEL_MAX_OUTPUT_TOKENS"),
+            floor=min(window, MIN_VIABLE_WINDOW),
         )
 
         overrides = {

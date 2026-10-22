@@ -19,12 +19,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import os
 from datetime import datetime, timezone
 
 from celery import Celery
 from celery.signals import (
+    after_setup_logger,
+    after_setup_task_logger,
     task_failure,
+    task_postrun,
+    task_prerun,
     worker_process_init,
     worker_process_shutdown,
     worker_ready,
@@ -50,7 +55,7 @@ celery_app.conf.update(
     # One dispatch runs the graph until it pauses or finishes, and on an
     # unattended run that means the *whole* workflow: a dozen stages, each a
     # sequence of model calls. Against a local model that is hours of work, and
-    # the old hour-long ceiling cut it off mid-stage - measured on run-0b55ad49,
+    # the old hour-long ceiling cut it off mid-stage - measured on one run,
     # 54.3 minutes of healthy progress from stack_selector to technical_lead,
     # then SoftTimeLimitExceeded with the specialists still ahead of it.
     #
@@ -59,8 +64,8 @@ celery_app.conf.update(
     # Nothing is lost when it fires - the graph checkpoints at every node
     # boundary and the run resumes from the last one - but each cut costs a
     # manual resume, so the ceiling should be reached only by a real hang.
-    task_time_limit=int(os.environ.get("CELERY_TASK_TIME_LIMIT", "21900")),
-    task_soft_time_limit=int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "21600")),
+    task_time_limit=int(os.environ.get("CELERY_TASK_TIME_LIMIT", "43500")),
+    task_soft_time_limit=int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "43200")),
     worker_max_tasks_per_child=int(os.environ.get("CELERY_MAX_TASKS_PER_CHILD", "50")),
     broker_connection_retry_on_startup=True,
 )
@@ -70,12 +75,43 @@ celery_app.conf.update(
 _RETRYABLE = (ConnectionError, TimeoutError, OSError)
 
 _runner = None
+#: The pid that built `_runner`. See `_get_runner`.
+_runner_owner: int | None = None
 
 
 #: How long the recovery lock is held. Long enough that a second worker
 #: starting beside this one does not repeat the work, short enough that a
 #: worker killed mid-recovery does not block the next start for long.
 _RECOVERY_LOCK_SECONDS = 120
+
+
+#: When this worker started, for telling its own calls from a dead process's.
+_WORKER_STARTED = time.time()
+
+
+@worker_ready.connect
+def _forget_the_calls_of_a_previous_worker(**_kwargs) -> None:
+    """Drop in-flight markers a dead worker left, so a deploy does not wait on them. See `call_gate`."""
+    try:
+        from app.models.call_gate import forget_calls_from_before
+
+        removed = forget_calls_from_before(_WORKER_STARTED)
+        if removed:
+            logger.info("Removed %d model-call marker(s) a previous worker left behind", removed)
+    except Exception:  # noqa: BLE001 - the deploy's own age limit still applies
+        logger.debug("Could not clear old model-call markers", exc_info=True)
+
+
+@worker_ready.connect
+def _record_whether_commands_can_run(**_kwargs) -> None:
+    """Tell the API whether this worker can run commands. See `app.server.execution_readiness`."""
+    try:
+        from app.server.execution_readiness import record_this_workers_readiness
+        from app.server.redis_client import get_redis_client
+
+        record_this_workers_readiness(get_redis_client())
+    except Exception:  # noqa: BLE001 - a worker that cannot report still takes tasks
+        logger.warning("Could not report whether commands can run", exc_info=True)
 
 
 @worker_ready.connect
@@ -150,12 +186,24 @@ def _recover_runs_their_worker_abandoned(**_kwargs) -> None:
 _SWEEP_ATTEMPTS = 6
 _SWEEP_INTERVAL_SECONDS = 5
 
+#: How long the sweep waits before looking a second time. Sized to the grace
+#: `recover_orphaned_runs` gives a recently-touched run, because that is exactly
+#: what the second look is for: a run inside the window on the first pass has to
+#: be judged once it leaves it. A module constant so a test can shorten it -
+#: blocking a daemon thread for two minutes is free in a worker and is not free
+#: in a test suite.
+_SECOND_SWEEP_DELAY_SECONDS: float | None = None
+
 
 def _sweep_for_abandoned_runs() -> None:
     """Run the orphan sweep once the broker can answer. Never raises."""
     import time
 
-    from app.server.manage import _live_task_ids, recover_orphaned_runs
+    from app.server.manage import (
+        RECENTLY_TOUCHED_SECONDS,
+        _live_task_ids,
+        recover_orphaned_runs,
+    )
 
     for attempt in range(_SWEEP_ATTEMPTS):
         time.sleep(_SWEEP_INTERVAL_SECONDS)
@@ -164,7 +212,49 @@ def _sweep_for_abandoned_runs() -> None:
                 # Not "nothing is running" - "cannot tell yet". The difference
                 # is the whole safety property; see `_live_task_ids`.
                 continue
-            recover_orphaned_runs(dry_run=False)
+            # `logger.info`, not the default `print`: this runs on a worker
+            # startup thread, where Celery's `redirect_stdouts` turns every
+            # `print` into a WARNING. The healthy outcome was being logged as a
+            # warning on every worker start.
+            # The grace belongs here, not in the function's default: this is
+            # the caller that guesses, from a broker reply that can be
+            # incomplete seconds after a hand-off. See
+            # `RECENTLY_TOUCHED_SECONDS`.
+            recover_orphaned_runs(
+                dry_run=False, emit=logger.info,
+                grace_seconds=RECENTLY_TOUCHED_SECONDS,
+            )
+            # Once more, after the grace window a freshly-dispatched run is
+            # protected by. A run that is genuinely gone stops touching its row,
+            # so it is still caught; one that is working has moved on and is
+            # skipped again. Without this second look, a run abandoned moments
+            # before the worker restarted would stay `running` for ever, which
+            # is the state this sweep exists to clear.
+            delay = (
+                RECENTLY_TOUCHED_SECONDS
+                if _SECOND_SWEEP_DELAY_SECONDS is None
+                else _SECOND_SWEEP_DELAY_SECONDS
+            )
+            time.sleep(delay)
+            try:
+                recover_orphaned_runs(
+                    dry_run=False, emit=logger.info,
+                    grace_seconds=RECENTLY_TOUCHED_SECONDS,
+                )
+            except Exception:  # noqa: BLE001 - a sweep must never take a worker down
+                logger.warning("Second orphan sweep failed", exc_info=True)
+            # And a run an earlier recovery left failed whose resume was lost
+            # (plan OP.1): no sweep reads failed rows otherwise.
+            try:
+                from app.server.manage import resume_runs_a_restart_abandoned, runs_a_restart_left_failed
+                from app.server.run_store import RunStore
+
+                left = runs_a_restart_left_failed(RunStore.shared().list_all(limit=500))
+                if left:
+                    logger.info("Resuming %d run(s) a restart left failed: %s", len(left), ", ".join(left))
+                    resume_runs_a_restart_abandoned(left)
+            except Exception:  # noqa: BLE001 - a sweep must never take a worker down
+                logger.warning("Could not resume the runs a restart left failed", exc_info=True)
             return
         except Exception:  # noqa: BLE001 - a sweep must never take a worker down
             logger.warning("Could not recover abandoned runs", exc_info=True)
@@ -181,12 +271,68 @@ def _sweep_for_abandoned_runs() -> None:
 def _init_worker_process(**_kwargs) -> None:
     """Build the per-process runner once, after fork."""
     global _runner
+
+    # This process makes every model call, so it is where a proxy origin error
+    # shows up. Installing the observer here turns a bare `524` in the log into
+    # a sentence naming the cause. See `app.observability.proxy_timeouts`.
+    from app.observability.proxy_timeouts import install as _install_proxy_diagnostics
+
+    _install_proxy_diagnostics()
     from app.server.events import EventBus
     from app.server.run_store import RunStore
     from app.server.runner import WorkflowRunner
 
+    global _runner_owner
     _runner = WorkflowRunner(event_bus=EventBus(), run_store=RunStore.shared())
+    _runner_owner = os.getpid()
     logger.info("Worker process initialised")
+
+
+@after_setup_logger.connect
+@after_setup_task_logger.connect
+def _name_the_run_on_every_line(logger=None, **_kwargs) -> None:
+    """Every log line carries `[run stage]`. See `app.observability.log_context`."""
+    try:
+        from app.observability.log_context import install
+
+        install(logger)
+    except Exception:  # noqa: BLE001 - logging as it was beats no logging
+        pass
+
+
+@task_prerun.connect
+def _the_run_this_task_executes(task=None, args=None, kwargs=None, **_other) -> None:
+    """Name the task's run on lines logged outside a graph node; cleared after the task."""
+    from app.observability import log_context
+
+    run_id = (kwargs or {}).get("run_id") or (args[0] if args else None)
+    log_context._TASK_RUN.set(str(run_id) if run_id else None)
+
+
+@task_postrun.connect
+def _no_run_after_the_task(**_kwargs) -> None:
+    from app.observability import log_context
+
+    log_context._TASK_RUN.set(None)
+
+
+@task_prerun.connect
+def _install_diagnostics_once_logging_is_up(**_kwargs) -> None:
+    """Re-attach the proxy-timeout observer now Celery's handlers exist.
+
+    `worker_process_init` fires before Celery finishes installing its logging
+    handlers, so an observer attached there sees the `httpx` logger and no
+    handlers at all. `install()` is idempotent per target, so calling it again
+    here costs nothing and picks up the handlers that appeared in between.
+    Verified on 2026-09-21: attached only at process init, two live `524`
+    responses went past without the diagnostic firing.
+    """
+    try:
+        from app.observability.proxy_timeouts import install
+
+        install()
+    except Exception:  # noqa: BLE001 - a diagnostic must never fail a task
+        logger.debug("Could not install the proxy-timeout observer", exc_info=True)
 
 
 @worker_process_shutdown.connect
@@ -197,9 +343,14 @@ def _shutdown_worker_process(**_kwargs) -> None:
 
 
 def _get_runner():
-    """Return the process-wide runner, building it if a signal did not fire."""
+    """Return this process's runner, building it if a signal did not fire.
+
+    One built in another process is never returned. The orphan sweep runs in
+    the Celery parent and builds a runner there; a worker forked from it later
+    must not drive runs through the parent's connections.
+    """
     global _runner
-    if _runner is None:
+    if _runner is None or _runner_owner != os.getpid():
         _init_worker_process()
     return _runner
 
@@ -245,7 +396,57 @@ def _mark_failed(run_id: str, message: str) -> None:
         logger.error("Could not mark run %s as failed", run_id, exc_info=True)
 
 
-@celery_app.task(bind=True, name="execute_workflow_run", max_retries=2)
+# `ignore_result` because nothing reads one. The run's state lives in the run
+# store, which is what every caller queries; no `AsyncResult` is constructed
+# anywhere in `app.server`. Storing a result was therefore write-only - until a
+# cancellation made it worse than useless.
+#
+# `cancel_run` revokes with `terminate=True, signal="SIGTERM"`, which raises
+# `SystemExit` inside the pool child. Celery then tries to store that exception
+# as the task's result, and the JSON serializer cannot encode it. Measured on
+# 2026-09-20, cancelling one run:
+#
+#     Pool callback raised exception: EncodeError(
+#         TypeError('Object of type SystemExit is not JSON serializable'))
+#
+# followed by two full tracebacks, for a cancellation that had already been
+# recorded correctly in the database. The run was fine; the log said otherwise,
+# and a concurrent run on the same worker was left looking like the suspect.
+#: Statuses that end a run. Anything else, on a task that is about to return
+#: without running, is a row nothing will ever move again.
+_TERMINAL_STATUSES = ("completed", "failed", "cancelled")
+
+
+def _record_a_cancellation_nothing_else_will(runner: Any, run_id: str, status: str) -> None:
+    """Mark a cancelled run cancelled when this task is the last thing to see it.
+
+    `cancel_run` leaves a running run to its worker: "which will see the flag
+    and record the cancellation itself". That holds while the worker is alive.
+    Measured on one run: the worker was killed mid-command, the run was
+    cancelled while nothing was executing it, the recovery sweep resumed it,
+    and the resumed task found the cancel flag and returned here - having
+    recorded nothing. The row read `running` from then on with no task behind
+    it, every later sweep saw "a live task", and the next run could not start
+    beside it.
+
+    Never raises: a task that cannot record this still must not run the graph.
+    """
+    if status in _TERMINAL_STATUSES:
+        return
+    try:
+        runner.run_store.compare_and_set_status(
+            run_id,
+            status,
+            "cancelled",
+            updated_at=datetime.now(timezone.utc).isoformat(),
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("Could not record the cancellation of run %s", run_id, exc_info=True)
+
+
+@celery_app.task(
+    bind=True, name="execute_workflow_run", max_retries=2, ignore_result=True
+)
 def execute_workflow_run(
     self,
     run_id: str,
@@ -253,44 +454,65 @@ def execute_workflow_run(
     decision_payload: dict | None = None,
 ) -> None:
     """Run one segment of a workflow graph."""
-    runner = _get_runner()
-    record = runner.run_store.load(run_id)
-    if record is None:
-        logger.error("Run %s not found; nothing to execute", run_id)
-        return
-
-    if runner.run_store.is_cancel_requested(run_id):
-        logger.info("Run %s was cancelled before execution started", run_id)
-        return
-
-    if decision_payload:
-        record.pending_decision_payload = decision_payload
-
-    document = None
-    if record.document_paths and not resume:
-        from app.documents import read_document
-
-        try:
-            document = read_document(record.document_paths)
-        except Exception as exc:  # noqa: BLE001
-            _mark_failed(run_id, f"Could not read the uploaded documents: {exc}")
-            return
-
-    repository = None
-    if record.repo_root:
-        from app.tools.repository import build_repository_context
-
-        try:
-            repository = build_repository_context(record.repo_root, allow_subdirectories=True)
-        except Exception as exc:  # noqa: BLE001
-            _mark_failed(run_id, f"Could not prepare the workspace: {exc}")
-            return
+    from app.server.runner import _explain_failure
 
     try:
+        runner = _get_runner()
+        record = runner.run_store.load(run_id)
+        if record is None:
+            logger.error("Run %s not found; nothing to execute", run_id)
+            return
+
+        # What the build model's server gives each request, read once per
+        # segment (a deploy or a model change between segments re-reads it).
+        from app.models import server_profile
+
+        profile = server_profile.record()
+        # What this segment runs on (plan MF.1): every deploy restarts the
+        # worker, so a run on more than one harness version is seen as one.
+        from app.observability.provenance import record_the_segment
+
+        record_the_segment(run_id, record, profile)
+
+        if runner.run_store.is_cancel_requested(run_id):
+            logger.info("Run %s was cancelled before execution started", run_id)
+            _record_a_cancellation_nothing_else_will(runner, run_id, record.status)
+            return
+
+        if decision_payload:
+            record.pending_decision_payload = decision_payload
+
+        document = None
+        if record.document_paths and not resume:
+            from app.documents import read_document
+
+            try:
+                document = read_document(record.document_paths)
+            except Exception as exc:  # noqa: BLE001
+                _mark_failed(run_id, _explain_failure(exc))
+                return
+
+        repository = None
+        if record.repo_root:
+            from app.tools.repository import build_repository_context
+
+            try:
+                repository = build_repository_context(record.repo_root, allow_subdirectories=True)
+            except Exception as exc:  # noqa: BLE001
+                _mark_failed(run_id, _explain_failure(exc))
+                return
+
         # asyncio.run gives each task its own loop and closes it afterwards.
         # get_event_loop() was deprecated in this position and raises outright
         # under the threads and gevent worker pools.
-        asyncio.run(runner._run_loop(record, document, repository, resume=resume))
+        # In the run's own delivery mode, whatever the deployment's is now.
+        # And on the models it was started with: the frontier model or not.
+        from app import delivery
+        from app.models.roles import on_the_build_model_only
+
+        with delivery.for_the_run(getattr(record, "delivery_mode", "")), \
+                on_the_build_model_only(bool(getattr(record, "local_only", False))):
+            asyncio.run(runner._run_loop(record, document, repository, resume=resume))
     except _RETRYABLE as exc:
         if self.request.retries < self.max_retries:
             countdown = 5 * (2**self.request.retries)
@@ -306,7 +528,7 @@ def execute_workflow_run(
         # outside it. Not retried: re-running would duplicate file writes and
         # model spend.
         logger.exception("Run %s failed permanently", run_id)
-        _mark_failed(run_id, f"{type(exc).__name__}: {exc}")
+        _mark_failed(run_id, _explain_failure(exc))
         raise
 
 

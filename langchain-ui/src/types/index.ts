@@ -1,192 +1,45 @@
-export interface RunStage {
-  name: string;
-  meaning: string;
-  started_at: string | null;
-  ended_at: string | null;
-  status: string;
-  duration_seconds: number | null;
-  retry_count: number;
-  /** Approvals this stage passed through - progress, not repetition. */
-  approval_count: number;
-  /** Which sprint the stage belongs to; 0 is the planning before the first. */
-  sprint: number;
-}
-
-export interface ArtifactInfo {
-  path: string;
-  kind: string;
-  revision: number;
-  created_by: string;
-  stage: string;
-}
-
-export interface ReviewInfo {
-  point: string;
-  status: string;
-  reviewer: string;
-  revision: number;
-  comments: string | null;
-  updated_at: string;
-}
-
-export interface RemediationInfo {
-  attempt: number;
-  max_attempts: number;
-  escalated: boolean;
-  defect_count: number;
-  test_runs: number;
-}
-
-export interface RunStatusResponse {
-  run_id: string;
-  thread_id: string;
-  status:
-    | "created"
-    | "running"
-    | "waiting_for_approval"
-    | "waiting_for_review"
-    | "paused"
-    | "failed"
-    | "cancelled"
-    | "completed";
-  current_stage: string | null;
-  stage_meaning: string | null;
-  created_at: string;
-  updated_at: string;
-  stages: RunStage[];
-  artifacts: ArtifactInfo[];
-  reviews: ReviewInfo[];
-  remediation: RemediationInfo | null;
-  error: string | null;
-}
-
-export interface RunSummary {
-  run_id: string;
-  status: string;
-  current_stage: string | null;
-  created_at: string;
-  document_name: string | null;
-}
-
-export interface RunListResponse {
-  runs: RunSummary[];
-  total: number;
-}
+/**
+ * What the server sends and accepts is generated from its OpenAPI schema
+ * (`api.gen.ts`, written by `scripts/ui/openapi_schema.py`), so a field renamed
+ * on one side fails this build. Only what the schema does not describe - the
+ * event stream, the review form - is written by hand below.
+ */
+export type {
+  ApprovalDecisionRequest,
+  BriefPreview,
+  CallUsage,
+  ArtifactInfo,
+  CreateRunResponse,
+  ModelProfile,
+  RemediationInfo,
+  ReviewInfo,
+  RunCostSummary,
+  RunListResponse,
+  RunStage,
+  RunStatusResponse,
+  RunSummary,
+  RunUsage,
+  SettingsView,
+  ServerHealth,
+  SprintDefectView,
+  SprintRevision,
+  SprintView,
+  SprintsResponse,
+  StageUsage,
+  StartRunRequest,
+  WizardModel,
+  WizardNote,
+  WizardReview,
+  WizardSection,
+  WizardStep,
+  WizardSummary,
+} from './api.gen';
 
 /* ------------------------------------------------------------------ *
  * Wizard model - the guided phase view of a run, built by the server.
  * Field names mirror `WizardModel` in `src/app/server/models.py`; the API
  * hands the browser a finished model and the UI only renders it.
  * ------------------------------------------------------------------ */
-
-export interface WizardNote {
-  /** Stable event id - the list key. */
-  id: string;
-  /** Event type ('log', 'tool_call', 'review_request', 'error', ...) - used to pick an icon. */
-  kind: string;
-  /** The line as written for a human to read. */
-  message: string;
-}
-
-export interface WizardReview {
-  point: string;
-  revision: number;
-  requested_at: string | null;
-  outcome: "approved" | "changes" | "skipped" | "pending";
-  comment: string | null;
-}
-
-export interface WizardStep {
-  name: string;
-  title: string;
-  blurb: string;
-  started_at: string | null;
-  /** Null while the step is still in flight. */
-  ended_at: string | null;
-  status: "done" | "active" | "waiting" | "upcoming" | "idle" | "error";
-  status_label: string;
-  duration_seconds: number | null;
-  /** Log lines that happened while this step ran, expandable in the UI. */
-  events: WizardNote[];
-}
-
-export interface SprintRevision {
-  /** 1 for the first pass; increments on each rejection. */
-  number: number;
-  steps: WizardStep[];
-  /** The end-of-sprint review, once one was requested. */
-  review: WizardReview | null;
-  /** Why this revision was rejected - present only when a later revision exists. */
-  rejection_comment: string | null;
-  saw_advance: boolean;
-}
-
-export interface WizardSection {
-  id: string;
-  kind: "intake" | "design" | "sprint" | "summary";
-  title: string;
-  blurb: string;
-  status: "done" | "active" | "waiting" | "upcoming" | "idle";
-  status_label: string;
-  sprint_number: number | null;
-  /** Present for kind='sprint' sections. */
-  revisions: SprintRevision[];
-  /** Steps that belong to the phase itself (intake/design), not a revision. */
-  steps: WizardStep[];
-}
-
-export interface WizardSummary {
-  /** From the sprint plan when it exists; null means "not yet planned". */
-  sprints_planned: number | null;
-  sprints_executed: number;
-  revisions_total: number;
-  test_runs: number;
-  defects_found: number;
-  documents_produced: number;
-  approvals_passed: number;
-  reviews_approved: number;
-  reviews_changes: number;
-  reviews_skipped: number;
-  reviews_pending: number;
-  started_at: string | null;
-  ended_at: string | null;
-  status: string;
-  status_label: string;
-  error: string | null;
-}
-
-export interface WizardModel {
-  /** In build order: intake, design, sprints 1..n, final summary. */
-  sections: WizardSection[];
-  summary: WizardSummary;
-  /** Which section the run is currently inside, if any. */
-  current_section_id: string | null;
-}
-
-/** Provider configuration as the API exposes it: credentials are masked. */
-export interface SettingsView {
-  llm_provider: string;
-  openai_base_url: string;
-  model_name: string;
-  /** The model's context window in tokens; every context budget derives from it. */
-  model_context_window: number;
-  /** The longest single reply in tokens; shares the window with the conversation. */
-  model_max_output_tokens: number;
-  /** 'default' leaves the model server's own setting alone; 'on'/'off' override it. */
-  thinking_mode: 'default' | 'on' | 'off';
-  /** How much of the reply budget thinking may spend. */
-  thinking_effort: 'low' | 'medium' | 'high';
-  /** Read-only: the tokens thinking actually gets at the current setting. */
-  thinking_budget_tokens?: number;
-  /** Read-only: what that window currently implies, so a change shows its consequences. */
-  derived_budgets?: Record<string, number>;
-  openai_api_key_hint?: string | null;
-  anthropic_api_key_hint?: string | null;
-  google_api_key_hint?: string | null;
-  openai_api_key_configured: boolean;
-  anthropic_api_key_configured: boolean;
-  google_api_key_configured: boolean;
-}
 
 export interface ApprovalPayload {
   artifact_path: string;
@@ -196,17 +49,14 @@ export interface ApprovalPayload {
   stage: string;
 }
 
-export interface ApprovalDecisionRequest {
-  action: "approve" | "reject";
-  reason: string | null;
-}
-
 export interface ReviewPayload {
   point: string;
   artifact_id: string;
   revision: number;
   comments: string | null;
   available_actions: string[];
+  /** The workspace path of the document the review is about, when it has one. */
+  document?: string | null;
 }
 
 export interface ReviewDecisionRequest {
@@ -214,41 +64,7 @@ export interface ReviewDecisionRequest {
   comment: string | null;
 }
 
-export interface LogEntry {
-  /** Stable per-event identifier, used to deduplicate history and live events. */
-  event_id: string;
-  event_type: string;
-  run_id: string;
-  timestamp: string;
-  sequence: number;
-  stage: string;
-  message: string;
-  metadata?: Record<string, unknown>;
-}
+// A run's event and a page of them: generated from the server's schema, so an
+// event type added there reaches this build (plan UI-S4).
+export type { RunEvent as LogEntry, EventPage as EventResponse } from './api.gen';
 
-export interface EventResponse {
-  run_id: string;
-  total: number;
-  offset: number;
-  limit: number;
-  logs: LogEntry[];
-}
-
-export interface StartRunRequest {
-  review_policy?: Record<string, boolean>;
-  reviewer?: string;
-  /** A label for the run's workspace. The server owns the actual path. */
-  workspace_label?: string;
-  allow_subdirectories?: boolean;
-  auto_approve?: boolean;
-  llm_provider?: string;
-  openai_base_url?: string;
-  model_name?: string;
-}
-
-export interface CreateRunResponse {
-  run_id: string;
-  thread_id: string;
-  status: string;
-  created_at: string;
-}

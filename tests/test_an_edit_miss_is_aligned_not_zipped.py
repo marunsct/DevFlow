@@ -4,7 +4,7 @@ Comparing line 1 to line 1, line 2 to line 2 and so on is true only while the
 two texts stay in step. One inserted line makes every line after it look
 different, and the report is then mostly noise about lines that match.
 
-Measured on run d6297b2f: `specialist_testing_1` sent a 31-line passage
+Measured on one run: `specialist_testing_1` sent a 31-line passage
 against a 29-line file that had gained two import lines at the top, and was
 told 21 lines differed. Two of them did. It sent the same passage twice more
 and finished the stage without making the edit. Edit find-misses are the
@@ -26,7 +26,7 @@ assert.strictEqual(tasks.length, 1);
 """
 
 #: The same passage as the file, but still carrying the CommonJS line the file
-#: no longer has - the shape that cost run d6297b2f three calls.
+#: no longer has - the shape that cost one run three calls.
 SENT = """// addTask.test.js
 const { addTask } = require('../app.js');
 global.localStorage = { _store: new Map() };
@@ -81,7 +81,7 @@ def test_an_exact_passage_reports_nothing():
 
 
 def test_a_single_wrong_character_is_still_reported():
-    """The case the whole helper was written for - run-0deeb8bf's `// ` prefix."""
+    """The case the whole helper was written for - one run's `// ` prefix."""
     sent = FILE.replace("let tasks = [];", "// let tasks = [];")
 
     message = _how_it_differs(FILE, sent)

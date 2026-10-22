@@ -7,8 +7,7 @@ specialist chooses alone: the page gets a plain `<script>` tag, the application
 file gets `export`, the suite gets `import`, and the three do not agree.
 
 That disagreement is the most expensive recurring failure in this harness. Five
-separate cross-file checks exist to catch its shapes, and runs 0c5aabdb,
-d6297b2f, 0afef410, 7e960f06, 1ae7671d and 551640d3 each spent rounds on it.
+separate cross-file checks exist to catch its shapes, and six runs each spent rounds on it.
 
 What is stated is not a preference. Both combinations work and a stage may pick
 either; what cannot work is picking differently in three files.
@@ -43,7 +42,7 @@ def test_a_javascript_stack_is_told_the_choice_is_shared():
 
 
 def test_both_working_combinations_are_named():
-    """Neither is prescribed - a stage may pick either, and run 1ae7671d did."""
+    """Neither is prescribed - a stage may pick either, and one run did."""
     note = describe_stack(_stack())
 
     assert 'script type="module"' in note

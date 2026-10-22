@@ -10,6 +10,8 @@ a choice was made.
 
 from __future__ import annotations
 
+import re
+
 import logging
 import os
 from pathlib import Path
@@ -23,8 +25,13 @@ from app.agents.scope_discipline import SCOPE_DISCIPLINE
 from app.agents.project_layout import PROJECT_LAYOUT
 from app.agents.testability import TESTABILITY_RULE
 from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
+from app.agents.project_layout import PLANNED_PROJECT_DIRECTORY
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
+from app.tools.docs import docs_tools
+from app.tools.web_search import web_tools
+from app.tools.mcp_tools import tools_for as mcp_tools_for
+from app.tools.package_registry import lookup_tools
 from app.state import RepositoryContext
 
 logger = logging.getLogger(__name__)
@@ -57,6 +64,87 @@ class ArchitectureDecisionRecord(BaseModel):
     )
 
 
+#: A testing entry that needs a person, or a check that cannot fail.
+_NEEDS_A_PERSON = re.compile(
+    r"\bmanual(?:ly)?\b[^.;]*\b(?:test|verif|check|inspect|review)"
+    r"|\bvisual(?:ly)?\s+(?:inspect|check|verif)"
+    r"|\bby hand\b|\beyeball"
+    r"|console\.assert|\bconsole\s+assert",
+    re.I,
+)
+#: The entry rules such checks out - before naming them ("no manual steps") or
+#: after ("manual testing is refused", "manual and visual checks are excluded").
+#: Only the first was recognised once: on one run an entry reading "Manual
+#: testing alone is refused - no human runs tests here" was sent back as a
+#: plan for manual testing, twice, and the third answer came back with two
+#: required sections empty.
+_NEGATED = re.compile(
+    r"\b(?:no|not|never|without|instead of|rather than|replac\w*|avoid\w*|eliminat\w*)\b"
+    r"[^.;]{0,20}\b(?:manual|visual|by hand|console)"
+    r"|\b(?:manual|visual|by hand|console)\w*\b[^.;]{0,60}?\b(?:is|are|be|been|get|gets)\s+"
+    r"(?:\w+\s+)?(?:refus\w*|exclud\w*|forbid\w*|prohibit\w*|disallow\w*|reject\w*|ruled out|"
+    r"banned|not\s+(?:used|allowed|permitted|valid|possible|planned|relied))"
+    r"|\b(?:manual|visual|by hand|console)\w*\b[^.;]{0,60}?\b(?:never|not)\s+"
+    r"(?:used|allowed|permitted|valid|possible|planned|relied|happen\w*|run)\b",
+    re.I,
+)
+
+
+def testing_nobody_can_run(specification: Any) -> list[str]:
+    """The specification's testing entries that nothing here can carry out.
+
+    There is no person watching the workspace and no display, so a manual or
+    visual check never happens, and a `console.assert` exits 0 whatever it finds.
+    One run's specification read "No test framework dependencies - use
+    console.assert and manual verification"; every test written from it would
+    have passed. An entry that rules these out ("no manual steps") is kept.
+    """
+    found: list[str] = []
+    for entry in getattr(specification, "testing", None) or []:
+        text = " ".join(str(entry).split())
+        if _NEEDS_A_PERSON.search(text) and not _NEGATED.search(text):
+            found.append(text)
+    return found
+
+
+def the_sections_a_specification_has(*, reader: str) -> str:
+    """The specification's fixed sections, said to whoever is about to ask for,
+    or be asked for, one it does not have.
+
+    The specification is a schema, and its sections are that schema's fields.
+    Neither side was told. Measured on one run: the reviewer required a
+    "ui_design" section, then "code_size_governance", "testing_infrastructure"
+    and "deployment_artifacts"; the architect, who cannot add a field, wrote
+    what it could into the sections that exist; the reviewer found the named
+    sections still missing; and after six revisions of the same four findings
+    the run ended without a line of code.
+
+    Read off `TechnicalSpecificationOutput`, so it cannot drift from it.
+    """
+    names = ", ".join(
+        f"`{name}`" for name in TechnicalSpecificationOutput.model_fields
+    )
+    fixed = (
+        "The specification has a fixed set of sections, and no revision can add "
+        f"one: {names}.\n"
+    )
+    if reader == "reviewing":
+        return (
+            fixed
+            + "So do not require a new section by name - it cannot be created, "
+            "and the finding would come back unresolved however good the revision "
+            "is. Say what is missing and which of those sections it belongs in, "
+            "and judge the next revision by whether the content is there, "
+            "wherever it was put.\n\n"
+        )
+    return (
+        fixed
+        + "Where a required change asks for a new section, put what it asks for "
+        "in the existing section it belongs to, in full - the review reads for "
+        "the content, not for the heading.\n\n"
+    )
+
+
 class TechnicalSpecificationOutput(BaseModel):
     """Structured technical specification produced by the Principal Architect.
 
@@ -66,7 +154,7 @@ class TechnicalSpecificationOutput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    product_scope: str = Field(..., description="What this release covers and explicitly defers.")
+    product_scope: str = Field(default="", description="What this release covers and explicitly defers.")
     component_boundaries: list[str] = Field(default_factory=list)
     domain_model: list[str] = Field(default_factory=list)
     api_and_event_contracts: list[str] = Field(default_factory=list)
@@ -77,6 +165,106 @@ class TechnicalSpecificationOutput(BaseModel):
     deployment: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
     acceptance_criteria: list[str] = Field(default_factory=list)
+    # Optional, like every section here, so a specification written before
+    # these existed still loads. Required by `specialist_advice` when advice was
+    # given: an interface design for a product with an interface, and one line
+    # per advice item.
+    interface_design: list[str] = Field(
+        default_factory=list,
+        description=(
+            "For a product a person uses: the layout at a phone's width and a "
+            "desktop's, each control's states, the feedback after each action, "
+            "accessibility, and the visual style - from the UI/UX advice adopted."
+        ),
+    )
+    # Plan items C and J.3 (owner decision 2026-10-18): the interface as lines
+    # the harness can check without a model. Recorded when the acceptance
+    # suite is locked and checked at release (`app.acceptance.interface_contract`).
+    interface_contract: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The product's interface as exact checkable lines, each starting with the criterion "
+            "it serves, in one of three forms: `AC-3 GET /api/notes -> 200` (a route, the method, "
+            "and the status it answers a bare request with), `AC-1 page /login textbox \"Email\"` "
+            "(a control's ARIA role and accessible name on a page a visitor opens directly), and "
+            "`AC-5 command notes add milk -> exit 0` (a command and its exit code). Use the same "
+            "paths and names as the routes, pages and commands above; the acceptance tests and the "
+            "release check use exactly these."
+        ),
+    )
+    specialist_advice_decisions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "One line per specialist advice item, starting with its id: adopted and "
+            "where, or declined and why."
+        ),
+    )
+    # The detail a builder works from without guessing. A faster, smaller model
+    # writes the code from this document (`app.models.roles`): every name,
+    # shape, message and step it would otherwise have to invent is here, so
+    # two work orders invent nothing differently.
+    file_plan: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every file the product will have, one entry each: its path, its purpose, what it "
+            "exports (each name with its parameters and return value) and which files it imports from."
+        ),
+    )
+    function_contracts: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every public function, method, handler, route and component, one entry each: its "
+            "file, exact name and signature (parameters with types, return type), what it does "
+            "step by step, what it returns for each kind of input, and each error it raises or "
+            "status it answers with, word for word."
+        ),
+    )
+    data_contracts: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every record, request body, response body, stored file and setting, one entry each: "
+            "each field's name, type, whether it is required, its constraints (length, range, "
+            "format), its default, and one literal example of the whole shape."
+        ),
+    )
+    error_catalogue: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every failure a user or caller can cause and every failure of something the product "
+            "depends on, one entry each: the condition, the exact message or status the product "
+            "gives, and what it leaves unchanged."
+        ),
+    )
+    implementation_order: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The order to build in, one step per entry: the file, exactly what to add to it, and "
+            "how to check it works before the next step - a command to run or a test that passes."
+        ),
+    )
+    test_cases: list[str] = Field(
+        default_factory=list,
+        description=(
+            "For each acceptance criterion, the tests that prove it: each test's name carrying the "
+            "criterion id, the data it sets up, its steps, and its exact assertions."
+        ),
+    )
+    configuration: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every environment variable, port, path, command and dependency (with its version) the "
+            "product reads or needs, one entry each, with its default."
+        ),
+    )
+    library_usage: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every call the product makes into a third-party library or framework, one entry each: "
+            "the library and the version it is built against, the exact import statement, and the "
+            "exact call with its arguments and what it returns, as that version's documentation "
+            "gives it - read with `read_docs`, not recalled."
+        ),
+    )
     decisions: list[ArchitectureDecisionRecord] = Field(
         default_factory=list, description="Every material decision made while producing this specification."
     )
@@ -102,6 +290,44 @@ def _revision_budget() -> int:
 
 
 REVISION_DOCUMENT_BUDGET = _revision_budget()
+
+
+def _revision_specification_budget() -> int:
+    """Characters of the previous specification carried into a revision request.
+
+    The previous specification is already stored in project memory and written
+    to `docs/technical_specification.md`. Dumping an enormous (e.g. 150k+ char)
+    document verbatim leaves no room for the model to generate the revision.
+    """
+    raw = os.environ.get("CTX_REVISION_SPECIFICATION_BUDGET", "25000").strip()
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            logger.warning("Malformed CTX_REVISION_SPECIFICATION_BUDGET=%r; using default 25000", raw)
+    return 25_000
+
+
+REVISION_SPECIFICATION_BUDGET = _revision_specification_budget()
+
+
+def _specification_excerpt(text: str, budget: int) -> str:
+    """The previous specification, trimmed to a budget if overly large."""
+    if budget <= 0 or len(text) <= budget:
+        return text
+    # Every section in part, so a section the review names is never the cut tail.
+    from app.agents.text_budget import _every_section_in_part
+
+    shared = _every_section_in_part(text, budget, "the previous specification")
+    if shared is not None:
+        return shared + (" The full document is recorded in project memory at "
+                         "`docs/technical_specification.md`. Only return the sections you are revising.")
+    return (
+        text[:budget]
+        + f"\n\n[Excerpt: {len(text):,} characters of the previous specification were trimmed to "
+        f"{budget:,} for this revision. The full document is recorded in project memory at "
+        "`docs/technical_specification.md`. Only return the sections you are revising.]"
+    )
 """Characters of the original upload to carry into a *revision* request.
 
 A revision is a targeted edit, not a fresh reading of the brief. It already
@@ -192,27 +418,35 @@ def _the_briefs_own_constraints(document: Any) -> str:
         return ""
 
 
+def _the_specialists_advice(advice: dict[str, list[str]] | None) -> str:
+    """The specialists' numbered advice and what to do with it, or "". See `app.agents.specialist_advice`."""
+    from app.agents.specialist_advice import advice_block
+
+    return advice_block(advice)
+
+
 def build_architecture_request(
     product_intake_text: str,
     tools_and_models_text: str,
     stack_selection_text: str,
     repository: RepositoryContext,
     document: DocumentContent,
+    advice: dict[str, list[str]] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the approved intake, tools/models plan, and repo context."""
     brief = (
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on
-        # run-0b55ad49, agents retried `ls` against that exact string four times
+        # one run, agents retried `ls` against that exact string four times
         # in a row, and fed it to shell commands, every attempt failing with
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         # The brief's own constraints, quoted, before anything derived from
-        # them. The whole document appears below and that was not enough: run
-        # 0c5aabdb's specification said "Backend: Express server" with the
-        # brief in front of it, and runs d6297b2f and 551640d3 wrote "Use
+        # them. The whole document appears below and that was not enough: one
+        # run's specification said "Backend: Express server" with the
+        # brief in front of it, and two runs wrote "Use
         # Node's built-in test runner with jsdom for DOM simulation" into a
         # specification for a brief reading "No external dependencies beyond
         # basic HTML/CSS/JS". The specialists that installed jsdom were
@@ -221,9 +455,10 @@ def build_architecture_request(
         + f"--- Approved product intake (/docs/product_intake.md) ---\n{product_intake_text}\n\n"
         f"--- Approved tools and models plan (/docs/tools_and_models.md) ---\n{tools_and_models_text}\n\n"
         f"--- Approved stack selection (/docs/technology_stack.md) ---\n{stack_selection_text}\n\n"
-        f"--- Original uploaded documents ---\n"
+        + _the_specialists_advice(advice)
+        + f"--- Original uploaded documents ---\n"
         f"{_document_excerpt(document, INITIAL_DOCUMENT_BUDGET) if INITIAL_DOCUMENT_BUDGET else document.text}\n\n"
-        f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
+        + PLANNED_PROJECT_DIRECTORY
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
@@ -236,6 +471,7 @@ def build_architecture_revision_request(
     stack_selection_text: str,
     repository: RepositoryContext,
     document: DocumentContent,
+    advice: dict[str, list[str]] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the input that sends a rejected specification back for a new revision.
 
@@ -262,15 +498,15 @@ def build_architecture_revision_request(
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on
-        # run-0b55ad49, agents retried `ls` against that exact string four times
+        # one run, agents retried `ls` against that exact string four times
         # in a row, and fed it to shell commands, every attempt failing with
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         # The brief's own constraints, quoted, before anything derived from
-        # them. The whole document appears below and that was not enough: run
-        # 0c5aabdb's specification said "Backend: Express server" with the
-        # brief in front of it, and runs d6297b2f and 551640d3 wrote "Use
+        # them. The whole document appears below and that was not enough: one
+        # run's specification said "Backend: Express server" with the
+        # brief in front of it, and two runs wrote "Use
         # Node's built-in test runner with jsdom for DOM simulation" into a
         # specification for a brief reading "No external dependencies beyond
         # basic HTML/CSS/JS". The specialists that installed jsdom were
@@ -279,22 +515,27 @@ def build_architecture_revision_request(
         + f"--- Approved product intake (/docs/product_intake.md) ---\n{product_intake_text}\n\n"
         f"--- Approved tools and models plan (/docs/tools_and_models.md) ---\n{tools_and_models_text}\n\n"
         f"--- Approved stack selection (/docs/technology_stack.md) ---\n{stack_selection_text}\n\n"
-        f"--- Original uploaded documents (excerpt) ---\n"
+        + _the_specialists_advice(advice)
+        + f"--- Original uploaded documents (excerpt) ---\n"
         f"{_document_excerpt(document, REVISION_DOCUMENT_BUDGET)}\n\n"
         "Your previous technical specification was NOT accepted. Produce a new "
         "revision that resolves every required change listed below.\n\n"
-        f"--- Your previous specification ---\n{previous_specification_text}\n\n"
+        f"--- Your previous specification ---\n{_specification_excerpt(previous_specification_text, REVISION_SPECIFICATION_BUDGET)}\n\n"
         f"--- Required changes ---\n{changes_text}\n\n"
+        + the_sections_a_specification_has(reader="revising")
+        + "Send only the sections you change, each one complete: a section you "
+        "leave out of your answer is kept exactly as it is in your previous "
+        "specification above, so there is no need to write the others again. "
         "Address every item explicitly. Do not silently drop specification "
         "content or ADRs that were not flagged, and do not add scope that was "
         "not asked for: a revision resolves the listed findings and changes "
         "nothing else. New sections, new features and new behaviours added "
         "here arrive unreviewed and under-specified, and the next review finds "
-        "them. On run-37476645 four consecutive reviews returned "
+        "them. Four consecutive reviews of one specification returned "
         "changes_required with 5, then 4, then 6, then 8 findings, escalating "
         "from minor to blocking, each round raising subjects the round before "
         "had not mentioned.\n\n"
-        f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
+        + PLANNED_PROJECT_DIRECTORY
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
@@ -316,6 +557,23 @@ Responsibilities:
 - List open questions instead of guessing when evidence is missing.
 - Define acceptance criteria specific enough for an independent reviewer to
   check without asking you follow-up questions.
+- Write the specification down to the smallest detail: a faster, less capable
+  model builds the product from it and must not have to guess anything. Name
+  every file, every exported name with its parameters and return value, every
+  field of every data shape with its type, constraints and an example, every
+  error with its exact message or status, the order to build in with a check
+  for each step, the tests for each acceptance criterion with their exact
+  assertions, and every setting the product reads. Where two parts meet, write
+  the contract once, exactly, so both sides are built to the same words.
+- Give every call into a library or framework as its documentation gives it
+  for the version you pin: the import statement and the call, word for word,
+  read with `read_docs`. A smaller model recalls these wrongly more often than
+  anything else.
+- Make the configuration allow everything the files do. The module system,
+  the import paths (with or without file extensions), the source and test
+  directories, and the names of the test runners' configuration files are
+  stated once and agree everywhere: a builder copies both the configuration
+  and the files, and where the two disagree the build fails.
 
 {SCOPE_DISCIPLINE}
 
@@ -335,9 +593,14 @@ Constraints:
   document: `product_scope`, `component_boundaries`, `domain_model`,
   `api_and_event_contracts`, `data_flows`, `security_and_privacy`,
   `reliability_and_observability`, `testing`, `deployment`,
-  `acceptance_criteria`, `open_questions`, and `decisions` for the ADRs. A
-  section you leave empty is a section the document says nothing about.
-- Keep the output structured and concise.
+  `acceptance_criteria`, `open_questions`, and `decisions` for the ADRs - and
+  the detail a builder works from: `file_plan`, `function_contracts`,
+  `data_contracts`, `error_catalogue`, `implementation_order`, `test_cases`,
+  `configuration` and `library_usage`, one entry per file, function, shape,
+  failure, step, test, setting and library call. A section you leave empty is a section the document says
+  nothing about.
+- Keep each entry precise and complete rather than short: an entry a builder
+  has to interpret is one two builders will interpret differently.
 
 Return the response in the required output schema only.
 
@@ -365,6 +628,8 @@ def create_principal_architect_agent(
         # Its document is rendered from the structured response, so it needs no
         # write tool - see `app.agents.artifact_document`.
         can_write=False,
+        # Versions move faster than any model's training: see `app.tools.package_registry`.
+        extra_tools=[*lookup_tools(), *docs_tools(), *web_tools(), *mcp_tools_for("principal_architect", repo_root)],
     )
 
 

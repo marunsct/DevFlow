@@ -35,7 +35,7 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) 
   if (!artifacts || artifacts.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-2 px-6 text-center">
-        <span className="grid place-items-center h-10 w-10 rounded-xl bg-white/[0.03]">
+        <span className="grid place-items-center h-10 w-10 rounded-xl bg-overlay">
           <FileText className="h-4 w-4 text-text-muted" />
         </span>
         <p className="text-sm text-text-secondary">Nothing produced yet</p>
@@ -59,22 +59,22 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) 
     <div className="h-full overflow-y-auto p-3">
       {files.length > 0 && (
         <>
-          <p className="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-text-muted">
+          <p className="px-3 pb-1.5 text-xs font-medium uppercase tracking-wider text-text-muted">
             Documents you can read
           </p>
           <ul className="space-y-1 mb-4">
             {files.map((artifact, index) => (
               <li
                 key={`${artifact.path}-${index}`}
-                className="group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-white/[0.04]"
+                className="group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-overlay"
               >
-                <span className="flex-none grid place-items-center h-9 w-9 rounded-lg bg-primary/12 text-primary/90">
+                <span className="flex-none grid place-items-center h-9 w-9 rounded-lg bg-primary/12 text-primary">
                   <FileText className="h-4 w-4" />
                 </span>
 
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-medium text-white truncate">{readableName(artifact)}</p>
-                  <p className="text-[11px] text-text-muted/80 font-mono truncate" title={artifact.path}>
+                  <p className="text-[13px] font-medium text-text-primary truncate">{readableName(artifact)}</p>
+                  <p className="text-xs text-text-muted font-mono truncate" title={artifact.path}>
                     {artifact.path}
                     {artifact.revision > 1 && ` · version ${artifact.revision}`}
                   </p>
@@ -84,7 +84,7 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) 
                   <button
                     onClick={() => setViewing(artifact)}
                     title="Read this document"
-                    className="p-2 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                    className="p-2 text-text-muted hover:text-primary hover:bg-accent-soft rounded-lg transition-colors"
                   >
                     <Eye className="h-4 w-4" />
                   </button>
@@ -95,7 +95,7 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) 
                       void downloadArtifact(runId, artifact.path);
                     }}
                     title="Download"
-                    className="p-2 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                    className="p-2 text-text-muted hover:text-primary hover:bg-accent-soft rounded-lg transition-colors"
                   >
                     <Download className="h-4 w-4" />
                   </button>
@@ -108,7 +108,7 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) 
 
       {results.length > 0 && (
         <>
-          <p className="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-text-muted">
+          <p className="px-3 pb-1.5 text-xs font-medium uppercase tracking-wider text-text-muted">
             Steps that finished
           </p>
           <ul className="space-y-0.5">
@@ -117,7 +117,7 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) 
                 key={`${artifact.path}-${index}`}
                 className="flex items-center gap-3 rounded-xl px-3 py-2"
               >
-                <span className="flex-none grid place-items-center h-7 w-7 rounded-lg bg-white/[0.04] text-text-muted">
+                <span className="flex-none grid place-items-center h-7 w-7 rounded-lg bg-overlay text-text-muted">
                   <Boxes className="h-3.5 w-3.5" />
                 </span>
                 <p className="min-w-0 flex-1 truncate text-[13px] text-text-secondary">

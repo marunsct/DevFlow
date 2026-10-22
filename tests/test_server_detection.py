@@ -4,7 +4,7 @@
 Every other way of starting a server - `rails server`, `flask run`,
 `uvicorn`, `dotnet run`, `php -S`, `mix phx.server`, `ng serve` - ran until
 the timeout and returned nothing, and the agent then retried it. That is the
-pattern that cost run-e9e7f48f.
+pattern that cost one run.
 
 The timeout scaling added the same day made it cost more: on a Rust or Java
 stack an undetected server now waits several times as long before the harness
@@ -98,7 +98,7 @@ def test_every_language_the_stack_can_choose_has_a_server_form():
 # ---------------------------------------------------------------------------
 # Installing a server is not running one.
 #
-# Measured live on run-ed05e20e: `specialist_backend_2` was refused
+# Measured live on one run: `specialist_backend_2` was refused
 # `npm install -D serve` twice, told "it runs until it is stopped, and nothing
 # here will stop it" about a command that would have exited in seconds. Every
 # word-matching check here saw `serve` and called it a server.

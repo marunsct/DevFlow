@@ -1,6 +1,6 @@
 """Audit one run's transcript: cost, waste, and what the harness prevented.
 
-    python3 scripts/audit_run.py <path-to-transcript.jsonl> [workspace]
+    python3 scripts/audit_run.py <path-to-transcript.jsonl> [workspace] [brief]
 
 With a workspace path, it also answers the question the transcript cannot: does
 the product work? Every run in this harness's history that shipped something
@@ -12,7 +12,7 @@ section runs the cross-file checks over the workspace and prints what blocks.
 Transcripts live at `DATA_DIR/transcripts/<run-id>.jsonl`; from a deployment,
 `docker compose exec -T worker cat /app/data/transcripts/<run-id>.jsonl > /tmp/run.jsonl`.
 
-Every number in `docs/harness-hardening-plan.md` §4b came out of this. The
+Every number in the old hardening plan's run measurements came out of this. The
 three lines that matter, and what each is for:
 
 - **refusals that prevented damage** - a broken file the harness stopped
@@ -31,18 +31,12 @@ third, so keep it in step with the messages in `app/tools/repository.py`.
 """
 import json, sys, collections, re, os
 
-SAVED = (
-    "Node cannot parse", "Refusing to write", "Refusing to change",
-    "already been applied", "exactly as it is", "already contained exactly",
-    "is a test, and tests are part of what", "already holds this module",
-    "you have already been told that twice",
-    # Found missing by sweeping every distinct error across runs 60-67 rather
-    # than reading them one at a time, which is how the first three of these
-    # went unnoticed:
-    "so it is ambiguous which one",   # editing one of N identical passages at random
-    "it can execute arbitrary code",  # `node -e`, with a file-based alternative given
-    "Moving onto it would delete it", # a move that would silently destroy the target
-)
+# The markers live in `app.observability.transcript_metrics`, which is the
+# reduction the harness itself runs. Two copies drifted once already: this
+# list was missing every sandbox refusal, so six of run b0db10b1's eight
+# "costly failures" were guards working, and the number this script exists
+# to drive down rose whenever one fired.
+from app.observability.transcript_metrics import PREVENTED_DAMAGE as SAVED
 
 def load(path):
     rows = []
@@ -189,6 +183,36 @@ def _the_stack_this_run_chose(workspace):
         return None
 
 
+def _the_brief_this_run_was_given(workspace):
+    """The operator's brief, from the path the audit was given, or "".
+
+    `summarise_integration` takes it because two of its checks compare the
+    product against the operator's own words rather than the run's
+    restatement of them - see `_actions_the_brief_requires`. This script
+    passed no brief at all, so those two checks were silently inert here
+    while they were live at the gate, and the audit could report a clean
+    product that the milestone reviewer would have blocked.
+
+    Deliberately not `docs/product_intake.md`. That is the run's restatement,
+    and reading it would reproduce the exact failure the checks exist to
+    catch.
+    """
+    path = _BRIEF_PATH[0]
+    if not path:
+        return ""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            return handle.read()
+    except OSError as exc:
+        print(f"  could not read the brief at {path}: {exc}")
+        return ""
+
+
+#: Set from the command line, because the workspace does not contain the
+#: brief - the run was started from a file outside it.
+_BRIEF_PATH = [""]
+
+
 def the_product(workspace):
     """What the deterministic checks say about the built product.
 
@@ -204,7 +228,16 @@ def the_product(workspace):
     except Exception as exc:  # noqa: BLE001 - the audit still has value without it
         print(f"\nthe product: could not load the checks ({exc})")
         return
-    report = summarise_integration(workspace, _the_stack_this_run_chose(workspace))
+    brief = _the_brief_this_run_was_given(workspace)
+    report = summarise_integration(workspace, _the_stack_this_run_chose(workspace), brief)
+    if not brief:
+        print(
+            "\n  NOTE: no brief given, so the two checks that compare the product "
+            "against the operator's own brief did not run. Pass the brief as a "
+            "third argument. Without it this report reads the run's own "
+            "documents, which is exactly what a run that redefines a "
+            "requirement out of existence has already edited."
+        )
     # On the phrase without its verb: the summary writes "means" for one
     # finding and "mean" for several, so matching the singular reported "no
     # blocking problems" for every workspace that had more than one - silent
@@ -219,8 +252,16 @@ def the_product(workspace):
             print(f"  {line.strip()[:150]}")
 
 
-if len(sys.argv) > 2:
+# Guarded, as `server/manage.py` guards its own entry point. Without this,
+# importing the module runs it against whatever `sys.argv` happens to hold: a
+# test that read `SAVED` from here died with
+# `IsADirectoryError: Is a directory: 'tests/'` because pytest's first argument
+# became the transcript path.
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        raise SystemExit(__doc__.strip().splitlines()[2].strip())
     main(sys.argv[1])
-    the_product(sys.argv[2])
-else:
-    main(sys.argv[1])
+    if len(sys.argv) > 3:
+        _BRIEF_PATH[0] = sys.argv[3]
+    if len(sys.argv) > 2:
+        the_product(sys.argv[2])

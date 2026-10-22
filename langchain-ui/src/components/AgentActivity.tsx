@@ -11,10 +11,12 @@ import {
   Search,
   Sparkles,
   Terminal,
+  UserCheck,
 } from 'lucide-react';
 import {
   describeAction,
   describeStage,
+  laneOf,
   pathFromResult,
   readRangeFromResult,
   shortenPath,
@@ -27,9 +29,29 @@ interface AgentActivityProps {
   logs: LogEntry[];
   /** Whether the run is still going, so an unfinished action can show as live. */
   isRunning?: boolean;
+  /** Inside another card (a tab of the run's work area): no card of its own. */
+  bare?: boolean;
+  /** A moment to show: the feed scrolls to its first entry from then (the timeline, plan BG.14). */
+  focusAt?: string | null;
 }
 
-const ACTIVITY_TYPES = new Set(['agent_message', 'tool_call', 'tool_result']);
+/** How many entries the feed shows at once, and adds each time earlier ones are asked for. */
+const SHOWN_AT_ONCE = 300;
+
+/**
+ * `stage_change` and `log` are in the feed too: a stage that answers in
+ * structured output alone - an intake, a technology consultation - sends no
+ * message and no tool call, so without its start and its outcome the feed said
+ * "Nothing to show yet" while the steps beside it were finishing.
+ */
+const ACTIVITY_TYPES = new Set(['agent_message', 'tool_call', 'tool_result', 'review_decision', 'approval_decision', 'stage_change', 'log']);
+
+/**
+ * A result the harness gave instead of what was asked - a read of something the
+ * agent already has, a listing after reading is done (plan BG.8). Not a
+ * failure of the work, and shown as what it is.
+ */
+const HELD_BACK = /is in the project memory at the start of this conversation|You have already read lines|same bytes|Refusing to read .{0,200}? again|reading is done for this stage|Not looking/;
 
 const KIND_ICON = {
   write: FileText,
@@ -41,7 +63,7 @@ const KIND_ICON = {
 
 interface Item {
   key: string;
-  type: 'message' | 'action';
+  type: 'message' | 'action' | 'decision' | 'note';
   stage: string;
   at: string;
   text: string;
@@ -55,6 +77,8 @@ interface Item {
   failed?: boolean;
   /** An action whose result has not arrived yet. */
   pending?: boolean;
+  /** The harness answered with what the agent already had, instead of what it asked. */
+  heldBack?: boolean;
 }
 
 /** Consecutive items from the same workflow step, shown under one heading. */
@@ -90,6 +114,35 @@ function buildItems(logs: LogEntry[]): Item[] {
     const stage = entry.stage || '';
     const at = entry.timestamp;
 
+    if (entry.event_type === 'review_decision' || entry.event_type === 'approval_decision') {
+      // The owner's own decisions, in their place in the feed.
+      const action = String(entry.metadata?.action ?? '');
+      const point = String(entry.metadata?.review_point ?? '');
+      const verb = action === 'approve' ? 'approved' : action === 'changes' ? 'asked for changes to' : action === 'skip' ? 'skipped'
+        : action === 'reject' ? 'rejected' : action;
+      const what = point ? describeStage(point).title : 'the request';
+      const comment = (entry.message || '').split(' — ').slice(1).join(' — ');
+      items.push({ key, type: 'decision', stage, at, text: `You ${verb} ${what}`, detail: comment || undefined });
+      continue;
+    }
+
+    if (entry.event_type === 'stage_change') {
+      // A step starting, named as the steps list names it; its meaning beneath.
+      const name = stage.replace(/^awaiting_approval:/, '');
+      const meaning = (entry.message || '').trim();
+      items.push({ key, type: 'note', stage, at, text: `Started: ${describeStage(name).title}`,
+        detail: meaning && meaning !== name ? meaning : undefined });
+      continue;
+    }
+
+    if (entry.event_type === 'log') {
+      // What a step decided: its first line, the rest beneath.
+      const [first, ...rest] = (entry.message || '').trim().split('\n');
+      if (!first) continue;
+      items.push({ key, type: 'note', stage, at, text: first, detail: rest.join('\n').trim() || undefined });
+      continue;
+    }
+
     if (entry.event_type === 'agent_message') {
       const raw = (entry.message || '').trim();
       if (!raw) continue;
@@ -114,10 +167,12 @@ function buildItems(logs: LogEntry[]): Item[] {
     // feed one line per action; only a failure changes what is displayed,
     // because a successful result adds nothing a reader needs.
     const previous = items[items.length - 1];
-    const failed = entry.metadata?.failed === true || /^Failed:/i.test(entry.message || '');
+    const heldBack = HELD_BACK.test(entry.message || '');
+    const failed = !heldBack && (entry.metadata?.failed === true || /^Failed:/i.test(entry.message || ''));
     if (previous && previous.type === 'action') {
       previous.detail = entry.message;
       previous.pending = false;
+      previous.heldBack = heldBack;
       // Fill in a filename the call itself could not supply, so a write stops
       // being narrated as "Saved a document".
       if (!failed && !previous.target && previous.kind === 'write') {
@@ -204,7 +259,7 @@ const MessageRow: React.FC<{
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-text-muted hover:text-text-secondary transition-colors"
+            className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-text-muted hover:text-text-secondary transition-colors"
             aria-expanded={open}
           >
             <ChevronRight className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} />
@@ -216,7 +271,7 @@ const MessageRow: React.FC<{
             // rather than as another progress update. Height-capped with its own
             // scroll: one expanded verification matrix is long enough to fill the
             // whole panel and bury the updates on either side of it.
-            <div className="mt-1.5 max-h-80 overflow-y-auto border-l-2 border-border/60 pl-3">
+            <div tabIndex={0} className="mt-1.5 max-h-80 overflow-y-auto border-l-2 border-border/60 pl-3">
               <Markdown>{item.reasoning}</Markdown>
             </div>
           )}
@@ -239,7 +294,7 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
         onClick={() => item.detail && setOpen((v) => !v)}
         aria-expanded={item.detail ? open : undefined}
         className={`w-full flex items-start gap-2 rounded-lg py-1.5 pl-2 pr-1 text-left transition-colors ${
-          item.failed ? 'hover:bg-danger/10' : 'hover:bg-white/[0.04]'
+          item.failed ? 'hover:bg-danger-bg' : 'hover:bg-overlay'
         }`}
       >
         {/* State first, then kind. Whether it finished is the more urgent fact. */}
@@ -248,6 +303,8 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
             <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
           ) : item.failed ? (
             <span className="h-1.5 w-1.5 rounded-full bg-danger" />
+          ) : item.heldBack ? (
+            <span className="h-1.5 w-1.5 rounded-full bg-text-muted" />
           ) : (
             <Check className="h-3.5 w-3.5 text-success/70" />
           )}
@@ -256,20 +313,25 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
         <Icon className={`mt-0.5 h-3.5 w-3.5 flex-none ${item.failed ? 'text-danger' : 'text-text-muted'}`} />
 
         <span className="min-w-0 flex-1">
-          <span className={`block text-[13px] leading-snug ${item.failed ? 'text-danger' : 'text-slate-300'}`}>
+          <span className={`block text-[13px] leading-snug ${item.failed ? 'text-danger' : 'text-text-secondary'}`}>
             {item.text}
           </span>
+          {item.heldBack && (
+            <span className="mt-0.5 inline-block rounded bg-overlay px-1.5 py-px text-xs font-medium text-text-muted">
+              held back: already read
+            </span>
+          )}
           {(item.target || item.range) && (
             <span className="mt-0.5 flex items-center gap-1.5 min-w-0">
               {item.target && (
-                <span className="text-[11px] text-text-muted font-mono truncate" title={item.target}>
+                <span className="text-xs text-text-muted font-mono truncate" title={item.target}>
                   {shortenPath(item.target)}
                 </span>
               )}
               {/* Which part of the file, kept as its own chip so it survives the
                   truncation that a long path would otherwise impose on it. */}
               {item.range && (
-                <span className="flex-none rounded bg-white/[0.06] px-1.5 py-px text-[10px] font-medium tabular-nums text-text-secondary">
+                <span className="flex-none rounded bg-overlay px-1.5 py-px text-xs font-medium tabular-nums text-text-secondary">
                   {item.range}
                 </span>
               )}
@@ -279,19 +341,41 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
 
         {item.detail && (
           <ChevronRight
-            className={`mt-0.5 h-3.5 w-3.5 flex-none text-text-muted transition-transform ${open ? 'rotate-90' : ''} opacity-0 group-hover:opacity-100`}
+            className={`mt-0.5 h-3.5 w-3.5 flex-none text-text-muted transition-transform ${open ? 'rotate-90' : ''} opacity-0 group-hover:opacity-100 group-focus-within:opacity-100`}
           />
         )}
       </button>
 
       {open && item.detail && (
-        <pre className="mb-2 ml-8 mr-1 mt-1 max-h-56 overflow-auto rounded-lg bg-black/30 p-3 text-[11px] leading-relaxed text-text-secondary whitespace-pre-wrap break-all">
+        <pre tabIndex={0} className="mb-2 ml-8 mr-1 mt-1 max-h-56 overflow-auto rounded-lg bg-inset p-3 text-xs leading-relaxed text-text-secondary whitespace-pre-wrap break-all">
           {item.detail}
         </pre>
       )}
     </div>
   );
 };
+
+/** A step starting, or what it decided: quieter than a message, so the work stays the headline. */
+const NoteRow: React.FC<{ item: Item }> = ({ item }) => (
+  <div className="my-0.5 flex items-start gap-2 py-1 pl-2 pr-2" data-testid="activity-note">
+    <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-none text-text-muted" aria-hidden="true" />
+    <span className="min-w-0 text-[13px] leading-snug text-text-secondary">
+      {item.text}
+      {item.detail && <span className="block text-[12px] text-text-muted">{item.detail}</span>}
+    </span>
+  </div>
+);
+
+/** One of the owner's decisions - an approval, a review answered - in its place in the feed. */
+const DecisionRow: React.FC<{ item: Item }> = ({ item }) => (
+  <div className="my-1 flex items-start gap-2 rounded-lg border border-primary/30 bg-accent-soft py-1.5 pl-2 pr-2">
+    <UserCheck className="mt-0.5 h-3.5 w-3.5 flex-none text-primary" aria-hidden="true" />
+    <span className="min-w-0 text-[13px] leading-snug text-text-primary">
+      {item.text}
+      {item.detail && <span className="block text-[12px] text-text-secondary">“{item.detail}”</span>}
+    </span>
+  </div>
+);
 
 /**
  * A running narration of what the workflow is doing, newest at the bottom.
@@ -302,11 +386,24 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
  * Each action carries its own state, so an unfinished one reads as in progress
  * instead of looking identical to a finished one.
  */
-export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = false }) => {
+export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = false, bare = false, focusAt = null }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pinned, setPinned] = useState(true);
-  const items = useMemo(() => buildItems(logs), [logs]);
-  const groups = useMemo(() => groupByStage(items), [items]);
+  const all = useMemo(() => buildItems(logs), [logs]);
+  // Lanes, when the feed has more than one (plan BG.8): the roles working side
+  // by side in parallel mode, or planning, testing and fixes in order.
+  const lanes = useMemo(() => [...new Set(all.map((item) => laneOf(item.stage)))], [all]);
+  const [lane, setLane] = useState<string | null>(null);
+  const items = useMemo(() => (lane ? all.filter((item) => laneOf(item.stage) === lane) : all), [all, lane]);
+  // The newest entries only, and earlier ones on request (plan UI-S4): 876
+  // entries were 10,361 elements, nine in ten of the page, rebuilt each time
+  // the tab was opened; a run's 5,000-event cap would be six times that.
+  const [shownCount, setShownCount] = useState(SHOWN_AT_ONCE);
+  const hidden = Math.max(0, items.length - shownCount);
+  const shown = useMemo(() => items.slice(hidden), [items, hidden]);
+  const groups = useMemo(() => groupByStage(shown), [shown]);
+  // What a screen reader hears: the newest progress update, not every action.
+  const headline = useMemo(() => [...all].reverse().find((item) => item.type === 'message')?.text ?? '', [all]);
 
   // How many arrived while the reader was scrolled away, so the catch-up
   // control can say what it is offering instead of just "go to the end".
@@ -391,6 +488,25 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
     );
   }, [streamingKey]);
 
+  // A moment older than the entries shown: show back to it first.
+  const [reach, setReach] = useState<string | null>(null);
+  if (focusAt !== reach) {
+    setReach(focusAt);
+    if (focusAt) {
+      const index = items.findIndex((item) => Date.parse(item.at) >= Date.parse(focusAt));
+      if (index >= 0 && index < hidden) setShownCount(items.length - index + 20);
+    }
+  }
+
+  // Taken to a moment from the timeline: the first entry from then, centred.
+  useEffect(() => {
+    if (!focusAt || !scrollRef.current) return;
+    const from = Date.parse(focusAt);
+    const target = [...scrollRef.current.querySelectorAll<HTMLElement>('[data-at]')]
+      .find((element) => Date.parse(element.dataset.at ?? '') >= from);
+    target?.scrollIntoView?.({ block: 'center' });
+  }, [focusAt, shownCount]);
+
   const live = items.length > 0;
   // Only the newest action can still be in flight; anything earlier was settled
   // by whatever came after it, whether or not its own result was recorded.
@@ -398,18 +514,36 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
   const working = isRunning && items[items.length - 1]?.pending === true;
 
   return (
-    <div className="glass-card rounded-2xl flex flex-col h-full overflow-hidden">
+    <div className={`${bare ? '' : 'glass-card rounded-2xl '}flex flex-col h-full overflow-hidden`}>
       <div className="flex-none px-4 py-3 border-b border-border/40 flex items-center gap-2.5">
-        <span className="grid place-items-center h-7 w-7 rounded-lg bg-primary/15">
+        <span className="grid place-items-center h-7 w-7 rounded-lg bg-accent-soft">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
         </span>
         <div className="min-w-0">
-          <h3 className="font-semibold text-white text-sm leading-none">Live progress</h3>
-          <p className="text-[11px] text-text-muted mt-1 leading-none">What the workflow is doing right now</p>
+          <h2 className="font-semibold text-text-primary text-sm leading-none">Live progress</h2>
+          <p className="text-xs text-text-muted mt-1 leading-none">What the workflow is doing right now</p>
         </div>
-        {live && <span className="ml-auto text-[11px] text-text-muted tabular-nums">{items.length}</span>}
+        {live && <span className="ml-auto text-xs text-text-muted tabular-nums">{items.length}</span>}
       </div>
+      {lanes.length > 1 && (
+        <div role="group" aria-label="Show one lane" className="flex-none flex flex-wrap gap-1.5 px-4 py-2 border-b border-border/40">
+          {[null, ...lanes].map((name) => (
+            <button
+              key={name ?? 'all'}
+              type="button"
+              aria-pressed={lane === name}
+              onClick={() => setLane(name)}
+              className={`rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize ${
+                lane === name ? 'border-primary/50 bg-accent-soft text-primary' : 'border-border text-text-secondary hover:bg-overlay'
+              }`}
+            >
+              {name ?? 'All'}
+            </button>
+          ))}
+        </div>
+      )}
 
+      <p role="status" aria-live="polite" className="sr-only">{headline}</p>
       <div className="flex-1 min-h-0 flex flex-col">
         {/* The scroller is absolutely positioned inside a relative box rather
             than being a flex child. As a flex child its height resolved against
@@ -420,11 +554,20 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
           <div
             ref={scrollRef}
             onScroll={onScroll}
-            className="absolute inset-0 overflow-y-auto px-2 py-3 flex flex-col"
+            role="log"
+            // Off: every action read aloud as it lands drowned the reader. The
+            // newest headline is announced by the status line below instead.
+            aria-live="off"
+            aria-label="Agent activity"
+            tabIndex={0}
+            // No padding above: a step's heading sticks to the scroller's top
+            // edge, and with padding there the entries scrolled visibly through
+            // the strip between the heading and the toolbar above it.
+            className="absolute inset-0 overflow-y-auto px-2 pb-3 flex flex-col"
           >
             {!live ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 text-center">
-                <span className="grid place-items-center h-10 w-10 rounded-xl bg-white/[0.03]">
+                <span className="grid place-items-center h-10 w-10 rounded-xl bg-overlay">
                   <Sparkles className="h-4 w-4 text-text-muted" />
                 </span>
                 <p className="text-sm text-text-secondary">Nothing to show yet</p>
@@ -438,6 +581,15 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
               // arrive. Preferred over `justify-end` on the scroller, which leaves
               // the earliest entries unreachable in several browsers.
               <div className="mt-auto">
+                {hidden > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShownCount((count) => count + SHOWN_AT_ONCE)}
+                    className="mb-2 w-full rounded-lg border border-border/60 py-1.5 text-xs font-medium text-text-secondary hover:bg-overlay hover:text-text-primary"
+                  >
+                    Show {Math.min(SHOWN_AT_ONCE, hidden)} earlier ({hidden} not shown)
+                  </button>
+                )}
                 {groups.map((group, index) => {
                   const span = formatSpan(group.from, group.to);
                   return (
@@ -447,17 +599,21 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
                       {/* Fully opaque. At 95% the entries scrolling underneath
                           showed through as a smear of half-legible text along
                           the top edge of the panel. */}
-                      <header className="sticky top-0 z-10 -mx-2 flex items-baseline gap-2 border-b border-border/40 bg-[#172033] px-4 py-1.5">
-                        <h4 className="text-[11px] font-semibold uppercase tracking-wider text-text-secondary truncate">
+                      <header className="sticky top-0 z-10 -mx-2 flex items-baseline gap-2 border-b border-border/40 bg-surface-raised px-4 py-1.5">
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-text-secondary truncate">
                           {describeStage(group.stage).title}
-                        </h4>
-                        {span && <span className="ml-auto text-[11px] text-text-muted tabular-nums">{span}</span>}
+                        </h3>
+                        {span && <span className="ml-auto text-xs text-text-muted tabular-nums">{span}</span>}
                       </header>
 
                       <div className="space-y-0.5 pt-1">
                         {group.items.map((item) => (
-                          <div key={item.key} className="animate-activity-in">
-                            {item.type === 'message' ? (
+                          <div key={item.key} data-at={item.at} className="animate-activity-in">
+                            {item.type === 'decision' ? (
+                              <DecisionRow item={item} />
+                            ) : item.type === 'note' ? (
+                              <NoteRow item={item} />
+                            ) : item.type === 'message' ? (
                               <MessageRow
                                 item={item}
                                 stream={item.key === streamingKey}
@@ -494,7 +650,7 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
             <button
               type="button"
               onClick={scrollToEnd}
-              className="w-full flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-[11px] font-medium text-text-secondary hover:text-white hover:bg-white/[0.04] transition-colors"
+              className="w-full flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-overlay transition-colors"
             >
               <ArrowDown className="h-3 w-3" />
               {missed > 0 ? `${missed} new ${missed === 1 ? 'update' : 'updates'}` : 'Jump to latest'}

@@ -1,0 +1,28 @@
+{#- docs/milestone_review.md - the milestone reviewer's decision.
+    Context: o (MilestoneReviewOutput), findings (o.findings, most severe first),
+    milestone_goal (str). -#}
+# Milestone Review: {{ milestone_goal or "Milestone" }}
+
+## Findings
+{% if findings %}
+| Severity | Category | Description | Required remediation |
+|---|---|---|---|
+{% for f in findings %}
+| **{{ f.severity | cell | title }}** | {{ f.category | cell }} | {{ f.description | cell }}{% if f.affected_files %} (files: {{ f.affected_files | join(", ") | cell }}){% endif %} | {{ f.required_remediation | cell }} |
+{% endfor %}
+{% elif o.status == "accepted" %}
+No structured findings were recorded.
+{% else %}
+No structured findings were recorded. The account below is the only statement of what needs to change.
+{% endif %}
+
+## Acceptance Evidence
+{{ o.acceptance_evidence or "None recorded." }}
+
+## What Was Reviewed
+- Documentation reviewed: {{ o.documentation_reviewed | yesno }}
+- Tests reviewed: {{ o.tests_reviewed | yesno }}
+
+## Status: {{ o.status or "unknown" }}
+
+<!-- Generated from the reviewer's structured decision. Editing this file does not change the workflow's routing. -->

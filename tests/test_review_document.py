@@ -4,7 +4,7 @@ Every reviewer used to be asked for the same information twice - a Markdown
 artifact for a person, a structured response for the router - with nothing
 reconciling them.
 
-Observed on run-95ca3f72: `docs/milestone_review.md` carried a complete
+Observed on one run: `docs/milestone_review.md` carried a complete
 four-row findings table while `MilestoneReviewOutput.findings` was `[]`. The
 workflow routes on the structured field, so it sent the technical lead back to
 re-plan against an empty revision request and failed the run after three
@@ -62,7 +62,7 @@ def test_the_worst_finding_is_listed_first():
 
 
 def test_a_review_with_no_findings_says_so_rather_than_leaving_a_blank():
-    """The shape that failed run-95ca3f72 must be visible in the document."""
+    """The shape that failed one run must be visible in the document."""
     review = _Review(findings=[], evidence="the root package.json test script is exit 1")
 
     document = render_milestone_review(review, "Sprint 1")
@@ -123,7 +123,7 @@ class _ArchReview:
 
 
 def test_the_architecture_review_document_carries_its_findings():
-    """Same two-copy structure as the milestone review; on run-c4f17841 the
+    """Same two-copy structure as the milestone review; on one run the
     copies happened to agree, which is luck rather than a property."""
     from app.agents.review_document import render_architecture_review
 
@@ -175,7 +175,7 @@ def test_the_architecture_reviewer_is_not_told_to_write_a_document():
 def test_a_reviewer_whose_document_is_generated_holds_no_write_tool():
     """Telling it not to write was not enough; it kept the tool and used it.
 
-    Measured on run-c826ae90: the architecture reviewer was instructed "Do not
+    Measured on one run: the architecture reviewer was instructed "Do not
     write a review document", still held `write_artifact`, and wrote
     `docs/architecture_review.md` five times in a row - printing its structured
     response into the conversation as prose between each write and never
@@ -220,7 +220,7 @@ def test_every_reviewer_is_read_only():
 
     The security reviewer was the last one still holding a write tool with no
     rendered document of its own. It had never misbehaved - neither had the
-    stack selector, until run-0b18e403 ended at stage three when it finally
+    stack selector, until one run ended at stage three when it finally
     used the tool it had always had.
     """
     import inspect

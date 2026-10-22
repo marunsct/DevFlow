@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from app.server.events import EventBus
 from app.server.progress import create_progress_router
 from app.server.runner import WorkflowRunner
+from app.server.models import ServerHealth
 from app.server.runs import create_runs_router
 from app.server.context import set_correlation_id
 from app.server.uploads import ensure_upload_dir
@@ -73,14 +74,28 @@ def create_app(
         """Open shared resources on startup and close them on shutdown."""
         from app.server.auth import close_db_pool, init_db, init_db_pool
 
+        # Names a proxy origin timeout in the log rather than leaving a bare
+        # status code. See `app.observability.proxy_timeouts`.
+        from app.observability.proxy_timeouts import install as _install_proxy_diagnostics
+
+        _install_proxy_diagnostics()
+
         ensure_upload_dir(effective_upload_dir)
         # Built here rather than at import so the URL is read after the
         # environment is fully assembled, and so a failure stops startup.
         init_db_pool()
         init_db()
+        # Gates that approve themselves after the run's timeout
+        # (`app.server.approval_timeouts`).
+        import asyncio
+
+        from app.server.approval_timeouts import sweep_for_ever
+
+        sweeper = asyncio.create_task(sweep_for_ever(runner))
         try:
             yield
         finally:
+            sweeper.cancel()
             close_db_pool()
             RunStore.reset_shared()
             from app.server.redis_client import close_async_redis, close_redis_pool
@@ -151,6 +166,7 @@ def create_app(
 
     from app.server.auth import auth_router, get_current_active_user, require_admin
     from app.server.settings import settings_router
+    from app.server.lessons_api import lessons_router
 
     runs_router = create_runs_router(runner, event_bus, effective_upload_dir, effective_repo_root)
     progress_router = create_progress_router(runner, event_bus)
@@ -159,6 +175,7 @@ def create_app(
     application.include_router(runs_router)
     application.include_router(progress_router, prefix="/api/runs", tags=["progress"])
     application.include_router(settings_router)
+    application.include_router(lessons_router)
 
     _mount_metrics(application)
 
@@ -211,10 +228,44 @@ def create_app(
         except Exception:  # noqa: BLE001
             status["celery"] = "error"
 
-        if any(v == "error" for k, v in status.items() if k != "status"):
+        # How many slots are taken, and how many there are. A full worker is
+        # the difference between "queued" and "broken" and nothing here
+        # distinguished them: an operator watching a run that had not started
+        # could not tell whether it was waiting or wedged. Reported rather
+        # than judged - a full pool is a healthy pool doing its job, so this
+        # never makes readiness fail.
+        def _slots() -> dict[str, Any]:
+            from app.server.run_store import RunStore
+            from app.server.runner import _max_concurrent_runs
+
+            return {
+                "in_flight": RunStore.shared().count_in_flight(),
+                "limit": _max_concurrent_runs() or None,
+            }
+
+        try:
+            status["runs"] = await run_in_threadpool(_slots)
+        except Exception:  # noqa: BLE001 - never fail readiness over a count
+            pass
+
+        if any(
+            v == "error" for k, v in status.items() if k not in ("status", "runs")
+        ):
             status["status"] = "error"
             raise HTTPException(status_code=503, detail=status)
         return status
+
+    @application.get("/api/health/server", tags=["health"], response_model=ServerHealth)
+    async def health_server(user: Any = Depends(get_current_active_user)) -> ServerHealth:
+        """The build model's server as it describes itself, and the runs on it. Never a model call."""
+        from starlette.concurrency import run_in_threadpool
+
+        from app.server.server_health import read_server_health
+
+        tenant = None if getattr(user, "role", "") == "admin" else getattr(user, "tenant_id", None)
+        records = runner.run_store.list_all(tenant_id=tenant, limit=200, offset=0)
+        busy = [record.run_id for record in records if record.status == "running"]
+        return await run_in_threadpool(read_server_health, busy)
 
     @application.get("/api/health/models", tags=["health"])
     async def health_models(_: Any = Depends(require_admin)) -> dict[str, Any]:
@@ -238,6 +289,11 @@ def _mount_metrics(application: FastAPI) -> None:
     unauthenticated, which is the normal posture for a metrics port that is not
     routed publicly.
     """
+    # Before the instrumentator, which creates its own metrics: importing this
+    # is what names this process's mmap files uniquely, and a metric created
+    # ahead of it keeps the `os.getpid()` name that collides across container
+    # restarts. See `app.observability.metrics`.
+    import app.observability.metrics  # noqa: F401 - imported for its side effect
     from prometheus_fastapi_instrumentator import Instrumentator
 
     scrape_token = os.environ.get("METRICS_SCRAPE_TOKEN", "").strip()

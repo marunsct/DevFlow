@@ -1,6 +1,6 @@
 """A fixed command must not read like a broken one.
 
-Run 0afef410's milestone reviewer was handed the execution ledger as a
+One run's milestone reviewer was handed the execution ledger as a
 chronological list and nothing else:
 
     25 command(s) executed, 4 succeeded:
@@ -27,7 +27,7 @@ import pytest
 
 from app.tools.sandbox import summarise_executions
 
-#: The shape run 0afef410 produced, cut down to the part that misled.
+#: The shape one run produced, cut down to the part that misled.
 HISTORY = [
     ("testing_specialist", ["npm", "test"], 1),
     ("testing_specialist", ["npm", "test"], 1),

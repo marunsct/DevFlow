@@ -1,6 +1,6 @@
 """The brief's own technical constraints, for the stage that chooses the stack.
 
-Run 0c5aabdb chose `Express` with `JSON File Storage` for a brief whose
+One run chose `Express` with `JSON File Storage` for a brief whose
 Technical Constraints section reads, in full:
 
     - Single-page application
@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from app.analysis.walk import files_under
 
 #: Headings whose body states what the product may and may not be built with.
 #: Matched on the heading text, so any level of `#` and any trailing colon.
@@ -65,6 +66,21 @@ _A_RESTRICTION = re.compile(
 MAX_CONSTRAINT_LINES = 12
 
 
+def _not_the_product() -> frozenset[str]:
+    """The directories no scan here should enter.
+
+    It was `node_modules` alone. One run's milestone reviewer was told, as a
+    deterministic finding, "aab42732f01924e5/package.json declares `serve`.
+    The brief rules that out" - a manifest npx had written into its own cache,
+    `.agent-home/.npm/_npx/aab42732f01924e5/`, under the sandbox's HOME. The
+    reviewer then listed `/aab42732f01924e5`, which does not exist. Every other
+    check skips the same set this returns; this one now does too.
+    """
+    from app.tools.repository import IGNORED_DIRECTORIES
+
+    return IGNORED_DIRECTORIES
+
+
 def _section_under(text: str, heading: re.Match[str]) -> str:
     """The body below `heading`, ending at the next heading of the same level."""
     level = len(heading.group(1))
@@ -80,7 +96,7 @@ def constraint_lines(document_text: str) -> list[str]:
 
     Sections first, because a brief that has a constraints heading has said
     where they are. The loose pattern then adds restrictions stated elsewhere -
-    run 0c5aabdb's brief also says "Single-page application" under a heading
+    one run's brief also says "Single-page application" under a heading
     this would find, but other briefs bury the same thing in an overview.
     """
     if not document_text:
@@ -108,6 +124,41 @@ def constraint_lines(document_text: str) -> list[str]:
     for match in _A_RESTRICTION.finditer(document_text):
         keep(match.group(1))
 
+    return found[:MAX_CONSTRAINT_LINES]
+
+
+#: Headings whose body is what the brief will be judged by.
+_ACCEPTANCE_HEADINGS = (
+    "acceptance criteria",
+    "success criteria",
+    "success measures",
+    "success metrics",
+    "definition of done",
+    "done criteria",
+)
+
+
+def acceptance_lines(document_text: str) -> list[str]:
+    """The brief's own acceptance criteria, as the lines that state them.
+
+    One run's brief said "Users can add, edit, delete tasks" under
+    `## Acceptance Criteria`. The intake's success measures paraphrased it as
+    "create, read, update, and delete", deferred "Task editing (beyond
+    status)", and the specification excluded editing in its scope - every
+    stage after the intake read the paraphrase, and none read the brief.
+    """
+    if not document_text:
+        return []
+    found: list[str] = []
+    seen: set[str] = set()
+    for heading in _HEADING.finditer(document_text):
+        if heading.group(2).strip().lower().rstrip(":") not in _ACCEPTANCE_HEADINGS:
+            continue
+        for line in _section_under(document_text, heading).splitlines():
+            cleaned = re.sub(r"^\s*(?:[-*+]|\d+[.)])\s*", "", line).strip()
+            if cleaned and len(cleaned) <= 300 and cleaned.lower() not in seen:
+                seen.add(cleaned.lower())
+                found.append(cleaned)
     return found[:MAX_CONSTRAINT_LINES]
 
 
@@ -207,12 +258,12 @@ def _packages_the_code_imports(project: Path) -> set[str]:
     """Every package name the scripts under `project` import.
 
     A bare specifier that is not a Node builtin is a dependency whether or not
-    anything declared it - which is how run 9bd3a091 imported `jsdom` into
+    anything declared it - which is how one run imported `jsdom` into
     three test files under an empty `devDependencies`, a full `node_modules`
     and a lockfile of thirty-nine packages.
     """
     imported: set[str] = set()
-    for script in project.rglob("*"):
+    for script in files_under(project, _not_the_product()):
         if script.suffix not in _A_SCRIPT or "node_modules" in script.parts:
             continue
         try:
@@ -234,6 +285,24 @@ def _packages_the_code_imports(project: Path) -> set[str]:
     return imported
 
 
+def _packages_the_lockfile_installs(project: Path) -> set[str]:
+    """Names `npm ci` puts at the top of `node_modules`, from the lockfile.
+
+    Declared packages and the ones they bring with them. Empty when there is
+    no lockfile or it cannot be read, so nothing is excused on a guess.
+    """
+    try:
+        locked = json.loads((project / "package-lock.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    prefix = "node_modules/"
+    return {
+        key[len(prefix):]
+        for key in (locked.get("packages") or {})
+        if key.startswith(prefix) and prefix not in key[len(prefix):]
+    }
+
+
 def _imported_only_by_tests(project: Path, package: str) -> bool:
     """Whether `package` is imported only by files this project owns as tests.
 
@@ -248,7 +317,7 @@ def _imported_only_by_tests(project: Path, package: str) -> bool:
     `file_kinds` classifies it as `config` rather than `test` - correctly, it is
     not a test - so a check that asked only `is_test` saw the runner's config as
     product code and reported the package as a shipped dependency. Measured on
-    run-519a9d8a, whose milestone review then filed "package.json declares
+    one run, whose milestone review then filed "package.json declares
     @playwright/test, violating the brief" as BLOCKING and ended the run, three
     remediation rounds later, over a devDependency that ships to nobody. The
     config belongs to the suite, not the product: nothing in `dependencies`
@@ -257,7 +326,7 @@ def _imported_only_by_tests(project: Path, package: str) -> bool:
     from app.analysis.file_kinds import classify_file, is_test
 
     try:
-        for script in project.rglob("*"):
+        for script in files_under(project, _not_the_product()):
             if script.suffix not in _A_SCRIPT or "node_modules" in script.parts:
                 continue
             relative = str(script.relative_to(project))
@@ -284,11 +353,11 @@ def what_the_brief_forbids_that_is_there(
 
     `what_the_brief_asked_for_that_is_missing` checks one direction - the
     brief asks for a page, the product has none. Nothing checked the other,
-    and it is the direction run 0c5aabdb failed in: a brief reading "No
+    and it is the direction one run failed in: a brief reading "No
     external dependencies beyond basic HTML/CSS/JS" against a product built on
     Express with a 32KB lockfile.
 
-    Run 551640d3 is the same thing in a quieter form. It installed `jsdom` to
+    One run is the same thing in a quieter form. It installed `jsdom` to
     get a DOM for its tests - a reasonable engineering instinct, and exactly
     what the brief forbids - leaving a full `node_modules` and a 29KB
     lockfile. Nothing reported it: the cross-file checks look at how files
@@ -304,7 +373,7 @@ def what_the_brief_forbids_that_is_there(
     Only the product's dependencies are reported. `devDependencies` are not
     shipped - `npm ci --omit=dev` in a production image installs none of them -
     so a test runner sitting there breaks no constraint, and a package imported
-    only by test files is treated the same way. Measured on run-2d9066e2, which
+    only by test files is treated the same way. Measured on one run, which
     spent all three of its remediation attempts on `@playwright/test` in
     devDependencies against a brief reading "No external dependencies beyond
     basic HTML/CSS/JS" and failed without a product defect in it. The
@@ -320,7 +389,7 @@ def what_the_brief_forbids_that_is_there(
     found: list[str] = []
     try:
         root = Path(repository_root)
-        for manifest in sorted(root.rglob("package.json")):
+        for manifest in sorted(files_under(root, _not_the_product(), "package.json")):
             if "node_modules" in manifest.parts:
                 continue
             try:
@@ -330,7 +399,7 @@ def what_the_brief_forbids_that_is_there(
             # The brief constrains what ships, and only that. `devDependencies`
             # are the developer's: they are not installed by `npm ci --omit=dev`
             # in a production image and never reach the user, so a test runner
-            # sitting there violates nothing. Measured on run-2d9066e2, which
+            # sitting there violates nothing. Measured on one run, which
             # spent all three remediation attempts on `@playwright/test` in
             # devDependencies against a brief reading "No external dependencies
             # beyond basic HTML/CSS/JS" and failed without a product defect.
@@ -373,7 +442,44 @@ def what_the_brief_forbids_that_is_there(
                 - set(dev_only)
                 - _NOT_A_DEPENDENCY
             )
+            # Not undeclared in any way that matters: a package only the tests
+            # import, which the lockfile installs because a declared package
+            # brings it. One run's suite imported `@jest/globals` under a
+            # declared `jest`, and the reviewer was told - as a fact about what
+            # is on disk - that the product broke the brief's rule on
+            # dependencies. It repeated that through the last revision allowed.
+            locked = _packages_the_lockfile_installs(manifest.parent)
+            undeclared = [
+                name
+                for name in undeclared
+                if not (name in locked and _imported_only_by_tests(manifest.parent, name))
+            ]
+            # An undeclared package only the tests import is a gap in the test
+            # setup, and is said as one. It used to be reported in the words of
+            # a product dependency - "The brief rules that out ... a reviewer
+            # cannot accept the milestone" - and one run's reviewer, told that
+            # about `@playwright/test`, required every reference to Playwright
+            # removed "so the product has no external dependencies", on the
+            # last revision the run was allowed.
+            for_the_tests_only = [
+                name for name in undeclared if _imported_only_by_tests(manifest.parent, name)
+            ]
+            undeclared = [name for name in undeclared if name not in for_the_tests_only]
+            if for_the_tests_only:
+                found.append(
+                    f"{manifest.parent.name}/package.json: the tests import "
+                    + ", ".join(f"`{name}`" for name in for_the_tests_only[:6])
+                    + " without declaring it, so `npm ci` will not install it and the "
+                    "suite fails on any other machine. That is a gap in the test "
+                    "setup - declare it under `devDependencies` - and not the product "
+                    "taking a dependency: nothing the product ships imports it, so "
+                    "the brief's constraint on dependencies is not what it breaks."
+                )
             if not packages and not undeclared and not test_only:
+                continue
+            if not packages and not undeclared and for_the_tests_only:
+                # Said above; the note that everything is declared and test-only
+                # would contradict it.
                 continue
             how = []
             if packages:
@@ -391,11 +497,20 @@ def what_the_brief_forbids_that_is_there(
                 # is exactly what the constraint asks for. Say so rather than
                 # falling silent, so a reviewer reading the note knows the
                 # check ran and the product itself carries no dependencies.
-                how.append(
-                    "declares no product dependencies; "
+                #
+                # And end it there. This note used to carry the violation's
+                # closing sentences too - "The brief rules that out ... a
+                # reviewer cannot accept the milestone" - straight after saying
+                # nothing was wrong.
+                found.append(
+                    f"{manifest.parent.name}/package.json declares no product "
+                    "dependencies; "
                     + ", ".join(f"`{name}`" for name in sorted(test_only)[:6])
-                    + " are devDependencies used for testing only and are not shipped"
+                    + " are devDependencies used for testing only and are not "
+                    "shipped. That is what the brief's constraint on dependencies "
+                    "asks for: nothing here breaks it, and it is not a finding."
                 )
+                continue
             found.append(
                 f"{manifest.parent.name}/package.json "
                 + " and ".join(how)
@@ -414,7 +529,7 @@ def what_the_brief_asked_for_that_is_missing(
 ) -> list[str]:
     """Requirements the brief states plainly that the product does not have.
 
-    Run 0c5aabdb completed. Its architecture review returned "approved" with no
+    One run completed. Its architecture review returned "approved" with no
     findings, both security reviews "passed", and the milestone review raised
     one blocking finding - a missing npm test script - then "accepted". What it
     delivered was:
@@ -463,6 +578,7 @@ def what_the_brief_asked_for_that_is_missing(
 
 __all__ = [
     "MAX_CONSTRAINT_LINES",
+    "acceptance_lines",
     "constraint_lines",
     "constraints_note",
     "what_the_brief_asked_for_that_is_missing",

@@ -4,12 +4,12 @@ The architect used to produce the specification twice: once as Markdown
 written to disk, and once as the structured response the pipeline routes on.
 The two were generated separately from the same understanding, and nothing
 reconciled them - the same shape that let a 1 KB `docs/spec.md` sit beside a
-51 KB `docs/technical_specification.md` on run-0b55ad49, with the reviewer
+51 KB `docs/technical_specification.md` on one run, with the reviewer
 reading whichever it found first.
 
 The cost is not only divergence. A full specification is roughly 40 KB of
 prose; asking for it twice doubles the most expensive generation in the
-pipeline. Measured on run-0edfcd33, the architect wrote the document, then
+pipeline. Measured on one run, the architect wrote the document, then
 reported in prose - "The technical specification has been written to
 `docs/technical_specification.md`" - on three fresh conversations in a row,
 each ending in a ~100,000 character message. It had spent itself on the
@@ -36,6 +36,17 @@ _SECTIONS: tuple[tuple[str, str], ...] = (
     ("testing", "Testing"),
     ("deployment", "Deployment"),
     ("acceptance_criteria", "Acceptance Criteria"),
+    ("interface_design", "Interface Design"),
+    ("interface_contract", "Interface Contract"),
+    ("file_plan", "File Plan"),
+    ("function_contracts", "Function Contracts"),
+    ("data_contracts", "Data Contracts"),
+    ("error_catalogue", "Error Catalogue"),
+    ("implementation_order", "Implementation Order"),
+    ("test_cases", "Test Cases"),
+    ("configuration", "Configuration"),
+    ("library_usage", "Library Usage"),
+    ("specialist_advice_decisions", "Specialist Advice and Decisions"),
     ("open_questions", "Open Questions"),
 )
 
@@ -56,7 +67,7 @@ def _as_lines(value: Any) -> list[str]:
 
     Delegates to the general renderer so both share one behaviour - in
     particular the unpacking of JSON a model has put into a prose field, which
-    `product_scope` arrived as on run-78804673.
+    `product_scope` arrived as on one run.
     """
     from app.agents.artifact_document import _value_lines
 
@@ -64,41 +75,15 @@ def _as_lines(value: Any) -> list[str]:
 
 
 def render_specification(specification: Any, product_name: str = "") -> str:
-    """The Markdown a person reads, built from the decision the pipeline routes on."""
-    title = f"Technical Specification — {product_name}" if product_name else "Technical Specification"
-    parts: list[str] = [f"# {title}", ""]
+    """The Markdown a person reads, built from the decision the pipeline routes on.
 
-    for field, heading in _SECTIONS:
-        lines = _as_lines(getattr(specification, field, None))
-        parts.append(f"## {heading}")
-        # Said plainly rather than left blank: an empty required section is
-        # something a reviewer should see, not something to hide.
-        parts.extend(lines if lines else ["_Not specified._"])
-        parts.append("")
+    Laid out by `app/doc_templates/templates/technical_specification.md.j2`. An
+    empty required section says so rather than vanishing: it is something a
+    reviewer should see, not something to hide.
+    """
+    from app.doc_templates import render_document
 
-    decisions = list(getattr(specification, "decisions", None) or [])
-    parts.append("## Decisions (ADR)")
-    if not decisions:
-        parts.extend(["_No architecture decisions were recorded._", ""])
-    else:
-        parts.append("")
-        for index, record in enumerate(decisions, 1):
-            heading = str(getattr(record, "title", "") or f"Decision {index}").strip()
-            parts.append(f"### ADR-{index:02d} — {heading}")
-            for field, label in _ADR_FIELDS:
-                lines = _as_lines(getattr(record, field, None))
-                if not lines:
-                    continue
-                parts.append(f"**{label}:**")
-                parts.extend(lines)
-                parts.append("")
-            parts.append("")
-
-    parts.append(
-        "<!-- Generated from the architect's structured specification. Editing "
-        "this file does not change what the pipeline reads. -->"
-    )
-    return "\n".join(parts).rstrip() + "\n"
+    return render_document("technical_specification", o=specification, product_name=product_name)
 
 
 __all__ = ["render_specification"]

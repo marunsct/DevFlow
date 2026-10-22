@@ -5,7 +5,7 @@ The workspace is rooted at `/`, so `/task-manager/app.js`,
 filesystem tool here accepts all three. Three guards keyed on the raw
 argument, so each spelling got its own allowance before anything was said.
 
-Found on run-ed05e20e's `specialist_ui_ux_1`, which read `style.css` six times
+Found on one run's `specialist_ui_ux_1`, which read `style.css` six times
 as `/task-manager/style.css` and four more as `task-manager/style.css`, and
 `app.js` six and four the same way.
 

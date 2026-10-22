@@ -10,7 +10,7 @@ neither, reports
     # pass 0   # fail 1
 
 `_suites_calling_a_global_node_does_not_define` already finds it at a
-milestone review, and it cost run d6297b2f and run 0afef410 a round each
+milestone review, and it cost two runs a round each
 before that. This asks the same question at the write, where one import line
 fixes it.
 """

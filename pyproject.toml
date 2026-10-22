@@ -51,6 +51,8 @@ dependencies = [
     # it ships by default so enabling durable storage is a config change rather
     # than an image rebuild.
     "boto3>=1.35.0",
+    "tree-sitter-language-pack<1",
+    "langchain-mcp-adapters>=0.1",
 ]
 
 [project.optional-dependencies]
@@ -59,6 +61,7 @@ test = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=5.0.0",
+    "pytest-xdist>=3.6.0",
     "testcontainers[postgres,redis]>=3.7.1",
 ]
 
@@ -69,47 +72,22 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The document templates are read from disk at render time, so an installed copy
+# of the package needs them beside the code. See `app.doc_templates`.
+[tool.setuptools.package-data]
+"app.doc_templates" = ["templates/*.md.j2"]
+
 [tool.coverage.run]
 branch = true
 source = ["src/app"]
-# Item 1 of `docs/harness-hardening-plan-part3.md` narrowed this list from whole
-# directories to the modules that are actually untested.
-#
-# The previous list omitted `deploy/*`, `scaffolding/*`, `analysis/*` and
-# `build/*` as directories. That was the §1-B mistake from Part I — a rule
-# defined over part of the set it governs: the list was written to exclude
-# entry points and generators that are exercised end-to-end, and it silently
-# grew to hide every module in those directories, including ones with no caller
-# at all. Coverage reported 80%+ while `MetricsTracker`, `BuildVerifier` and the
-# three `deploy` generators were entirely unwired, because they were not being
-# measured at all.
-#
-# The modules named below are the ones that genuinely have no test coverage
-# today. Everything else in those directories is imported by `tests/` and is
-# therefore measured. Keeping this list per-module rather than per-directory is
-# what makes an untested module visible: a new module with no test shows up as
-# uncovered instead of being hidden by its parent directory.
+# Per module, never per directory: a directory glob hid every unwired module
+# beneath it - `deploy/`, `scaffolding/`, `build/` and `static_analyzer` sat in
+# one for weeks with no caller at all. Those modules are gone, and
+# `tests/test_every_module_is_reached.py` fails on the next one.
 omit = [
     # CLI entry point. Runs the whole workflow interactively; covered by
     # end-to-end runs, not by unit tests.
     "src/app/main.py",
-    # `deploy/` — three generators with no caller in the codebase. See
-    # plan-part3 §4: they are unwired, and what they emit is not secure
-    # (default password, no USER directive, `curl | sh` in generated CI).
-    # Omitted until §4 decides whether to wire or retire them.
-    "src/app/deploy/ci_generator.py",
-    "src/app/deploy/compose_generator.py",
-    "src/app/deploy/docker_generator.py",
-    # `scaffolding/` — `registry` is imported by tests and is measured;
-    # these two are not.
-    "src/app/scaffolding/dependencies.py",
-    "src/app/scaffolding/executor.py",
-    # `analysis/` — every module here except `static_analyzer` is imported by
-    # `tests/` and is measured. `static_analyzer` has no caller.
-    "src/app/analysis/static_analyzer.py",
-    # `build/` — `BuildVerifier` has no caller; it carries a comment noting
-    # that it is not wired in. See plan-part3 §4.2.
-    "src/app/build/verifier.py",
 ]
 
 [tool.coverage.report]

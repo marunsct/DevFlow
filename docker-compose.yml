@@ -16,6 +16,7 @@
 # Nothing can start insecurely; only `build` stops needing secrets it never used.
 x-app-env: &app-env
   ENV: ${ENV:-production}
+  MODEL_REQUEST_TIMEOUT_SECONDS: 1800
   JWT_SECRET_KEY: "${JWT_SECRET_KEY:-}"
   ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
   AUTH_DB_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@db:5432/${POSTGRES_DB:-langchain}"
@@ -24,6 +25,71 @@ x-app-env: &app-env
   DATA_DIR: /app/data
   WORKFLOW_UPLOAD_DIR: /app/data/uploads
   WORKFLOW_WORKSPACE_ROOT: /app/data/workspaces
+  # What the stages may reach beyond the workspace (docs/HANDOVER.md section 2.0):
+  # registries, documentation, runtimes, the running page, a setup stage for a
+  # stack no pack covers. Each is on unless set to false. MCP servers are the
+  # owner's choice and off until configured (app/tools/mcp_tools.py).
+  PACKAGE_LOOKUP_ENABLED: ${PACKAGE_LOOKUP_ENABLED:-true}
+  DOCS_LOOKUP_ENABLED: ${DOCS_LOOKUP_ENABLED:-true}
+  # The web, for what is newer than the model (app/tools/web_search.py): the
+  # private SearXNG below. And the official MCP server of a library the product
+  # uses, found in the MCP Registry (app/tools/mcp_registry.py): remote, read-only.
+  WEB_SEARCH_ENABLED: ${WEB_SEARCH_ENABLED:-true}
+  SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
+  HARNESS_MCP_DISCOVERY: ${HARNESS_MCP_DISCOVERY:-true}
+  SANDBOX_RUNTIMES_ENABLED: ${SANDBOX_RUNTIMES_ENABLED:-true}
+  # Group 2 switches (app/observability/provenance.py SWITCHES): each is off
+  # unless the host sets it, so a subsystem is measured by exporting its
+  # switches before `loop.sh deploy`. These two change nothing the model does
+  # during a run and are on (owner, 2026-10-22).
+  LESSON_DISTILLER: ${LESSON_DISTILLER:-on}
+  CHANGE_REQUEST_RUNS: ${CHANGE_REQUEST_RUNS:-on}
+  ASK_SPECIFICATION: ${ASK_SPECIFICATION:-on}
+  ASSUMPTIONS_GATE: ${ASSUMPTIONS_GATE:-on}
+  CANONICAL_MEMORY: ${CANONICAL_MEMORY:-on}
+  CODE_GRAPH_TOOL: ${CODE_GRAPH_TOOL:-on}
+  DECISION_LEDGER: ${DECISION_LEDGER:-on}
+  DEFECT_CALL_CAP: ${DEFECT_CALL_CAP:-on}
+  FIX_CYCLE: ${FIX_CYCLE:-on}
+  INTERFACE_CHANGES_NAMED: ${INTERFACE_CHANGES_NAMED:-on}
+  INTERFACE_CLASH_CHECK: ${INTERFACE_CLASH_CHECK:-on}
+  LOCALISE_FIRST: ${LOCALISE_FIRST:-on}
+  PROJECT_GRAPH_BUILDERS: ${PROJECT_GRAPH_BUILDERS:-on}
+  PROJECT_GRAPH_FIXES: ${PROJECT_GRAPH_FIXES:-on}
+  REGRESSION_CONTRACT: ${REGRESSION_CONTRACT:-on}
+  RELEASE_AUDITS: ${RELEASE_AUDITS:-on}
+  RELEASE_DOCS_REQUIRED: ${RELEASE_DOCS_REQUIRED:-on}
+  SCREENSHOT_RUBRIC: ${SCREENSHOT_RUBRIC:-on}
+  SHARED_FACTS: ${SHARED_FACTS:-on}
+  STABLE_TOOLS: ${STABLE_TOOLS:-on}
+  STATE_AT_DISPATCH: ${STATE_AT_DISPATCH:-on}
+  STEERING_AT_THE_TAIL: ${STEERING_AT_THE_TAIL:-on}
+  VERIFY_AFTER_WRITE: ${VERIFY_AFTER_WRITE:-on}
+  WHERE_THINGS_STAND: ${WHERE_THINGS_STAND:-on}
+  # Plan QM.2 ships off: the owner has not turned it on (2026-10-22). It adds
+  # fix stages to a sprint whose criteria pass, so it is measured before it is
+  # part of the baseline. Changes tried per sprint: MUTATION_GUIDED_TESTS_CHANGES.
+  MUTATION_GUIDED_TESTS: ${MUTATION_GUIDED_TESTS:-off}
+  MUTATION_GUIDED_TESTS_CHANGES: ${MUTATION_GUIDED_TESTS_CHANGES:-6}
+  PAGE_VIEW_ENABLED: ${PAGE_VIEW_ENABLED:-true}
+  CUSTOM_STACK_SETUP: ${CUSTOM_STACK_SETUP:-true}
+  # At most this many agents of one run at once in parallel mode: work orders,
+  # defect fixes and reviews (`workflow.max_parallel`).
+  HARNESS_MAX_PARALLEL: ${HARNESS_MAX_PARALLEL:-6}
+  # fast or thorough (app.delivery); the settings page overrides it.
+  DELIVERY_MODE: ${DELIVERY_MODE:-fast}
+  FAST_CODE_REVIEW: ${FAST_CODE_REVIEW:-false}
+  # Harness switches, for A/B runs set from .env. Empty means the code's own
+  # default, at every one of these (tests/test_the_toggles_reach_the_container.py).
+  LINE_EDITS: ${LINE_EDITS:-}
+  ENVIRONMENT_CONTRACT: ${ENVIRONMENT_CONTRACT:-}
+  WORKSPACE_DIGEST: ${WORKSPACE_DIGEST:-}
+  PROJECT_MEMORY: ${PROJECT_MEMORY:-}
+  HARNESS_TASK_LIST: ${HARNESS_TASK_LIST:-}
+  ESCALATE_AFTER_ATTEMPTS: ${ESCALATE_AFTER_ATTEMPTS:-}
+  ALREADY_KNOWN: ${ALREADY_KNOWN:-}
+  HARNESS_MCP_SERVERS: ${HARNESS_MCP_SERVERS:-}
+  CONTEXT7_API_KEY: "${CONTEXT7_API_KEY:-}"
   # Postgres, so the API and the worker share one checkpoint store. SQLite put a
   # separate database inside each container's ephemeral layer.
   CHECKPOINTER_TYPE: ${CHECKPOINTER_TYPE:-postgres}
@@ -46,6 +112,24 @@ x-app-env: &app-env
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   GOOGLE_API_KEY: "${GOOGLE_API_KEY:-${GEMINI_API_KEY:-}}"
   METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
+  # Shared metric storage. The recorders run in the worker and `/metrics` is
+  # served by the app, so a per-process registry can only report what the API
+  # itself increments - `run_total` moved and `stage_duration_seconds` stayed
+  # empty forever. Both services mount `appdata`, so they share this directory.
+  # Unset it to go back to per-process metrics.
+  PROMETHEUS_MULTIPROC_DIR: ${PROMETHEUS_MULTIPROC_DIR:-/app/data/prometheus}
+  # Per-run spending ceiling in US dollars; empty or 0 disables it. A run that
+  # reaches it pauses at the next stage boundary as `waiting_for_budget` and
+  # waits for a person - it does not fail. See .env.example.
+  MAX_RUN_COST_USD: ${MAX_RUN_COST_USD:-}
+  MAX_RUN_TOKENS: ${MAX_RUN_TOKENS:-}
+  # Runs that may execute at once; unset or 0 means no limit. This
+  # deployment's model server answers one request at a time, so two runs
+  # contend rather than go faster - measured 2026-09-20, when orphan
+  # recovery resumed one run as another was started.
+  MAX_CONCURRENT_RUNS: ${MAX_CONCURRENT_RUNS:-}
+  # JSON corrections to the built-in model price table.
+  MODEL_PRICES_JSON: ${MODEL_PRICES_JSON:-}
   # Encrypts provider credentials set through the settings page. Falls back
   # to deriving from JWT_SECRET_KEY, so rotating that one makes stored
   # credentials unreadable until they are re-entered.
@@ -55,8 +139,8 @@ x-app-env: &app-env
   # Durable storage for uploads and run artifacts. Unset OBJECT_STORE_BUCKET to
   # fall back to the local filesystem under DATA_DIR/objects; the code path is
   # the same either way, so this is a deployment choice rather than a code one.
-  OBJECT_STORE_BUCKET: ${OBJECT_STORE_BUCKET:-langchain-artifacts}
-  OBJECT_STORE_ENDPOINT: ${OBJECT_STORE_ENDPOINT:-http://minio:9000}
+  OBJECT_STORE_BUCKET: ${OBJECT_STORE_BUCKET:-}
+  OBJECT_STORE_ENDPOINT: ${OBJECT_STORE_ENDPOINT:-}
   OBJECT_STORE_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
   OBJECT_STORE_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-}"
   # TLS terminates outside the compose network; MinIO is reached over http here.
@@ -107,7 +191,12 @@ services:
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-}"
       POSTGRES_DB: ${POSTGRES_DB:-langchain}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # A directory in this repository rather than a named volume, so the
+      # database survives the Docker volumes being removed or recreated - a
+      # rebuild that dropped `pgdata` took every account and run record with
+      # it. `data/` is gitignored, so none of this is ever committed. Set
+      # PGDATA_DIR to keep it somewhere else.
+      - ${PGDATA_DIR:-./data/postgres}:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-langchain}"]
       interval: 10s
@@ -135,36 +224,6 @@ services:
         limits:
           memory: 768m
 
-  minio:
-    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      # No default. MinIO refuses to start without one, which is the check that
-      # matters - the same pattern as POSTGRES_PASSWORD above.
-      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-}"
-    volumes:
-      - miniodata:/data
-    ports:
-      # The S3 API and the web console, bound to loopback: reaching them from
-      # outside the host should go through a reverse proxy. The host-side ports
-      # are configurable because 9000/9001 are popular and often already taken -
-      # nothing in the stack uses them, since app and worker reach MinIO by
-      # service name on the compose network.
-      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
-      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          memory: 1g
-
   app:
     build: .
     restart: unless-stopped
@@ -175,8 +234,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
+      # minio:
+      #   condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -196,6 +255,31 @@ services:
           cpus: "2"
           memory: 2g
 
+  # Web search for the stages (app/tools/web_search.py). Private: no port on the
+  # host, reachable only by the app and the worker on the compose network, JSON
+  # API on and no rate limiter (docker/searxng/settings.yml). SEARXNG_SECRET is
+  # in .env; without it SearXNG does not start and the search tool says so.
+  searxng:
+    image: searxng/searxng:2026.10.4-d48c4b555
+    restart: unless-stopped
+    expose:
+      - "8080"
+    volumes:
+      - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      SEARXNG_SECRET: "${SEARXNG_SECRET:-}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz | grep -q OK"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512m
+
   worker:
     build: .
     restart: unless-stopped
@@ -204,8 +288,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
+      # minio:
+      #   condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -217,8 +301,8 @@ services:
       - ${DOCKER_SOCKET:-/dev/null}:/var/run/docker.sock
     environment:
       <<: *app-env
-      CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-21900}
-      CELERY_TASK_SOFT_TIME_LIMIT: ${CELERY_TASK_SOFT_TIME_LIMIT:-21600}
+      CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-43500}
+      CELERY_TASK_SOFT_TIME_LIMIT: ${CELERY_TASK_SOFT_TIME_LIMIT:-43200}
     command:
       - celery
       - -A
@@ -251,7 +335,8 @@ services:
           memory: 8g
 
 volumes:
-  pgdata:
+  # pgdata: replaced by ./data/postgres (see the `db` service). Not declared, so
+  # `docker compose down -v` cannot remove the old volume or the new directory.
   redisdata:
   appdata:
-  miniodata:
+  # miniodata:

@@ -1,6 +1,6 @@
 """The ids and data attributes a script reaches for, against what pages declare.
 
-run-499c771a is the first run of this harness to reach `complete`. It shipped a
+One run is the first run of this harness to reach `complete`. It shipped a
 to-do app that could not add a task and rendered nothing:
 
     app.js:    document.getElementById("task-form")
@@ -33,7 +33,7 @@ def _findings(tmp_path: Path, files: dict[str, str]) -> list[str]:
     return _hooks_javascript_reaches_for(_source_files(tmp_path), tmp_path)
 
 
-RUN_499C771A_HTML = """<!DOCTYPE html>
+MEASURED_PAGE_HTML = """<!DOCTYPE html>
 <html><body>
 <form id="add-task-form"><input id="task-title"></form>
 <div id="filters">
@@ -49,7 +49,7 @@ def test_an_id_no_page_declares_is_reported(tmp_path: Path) -> None:
     findings = _findings(
         tmp_path,
         {
-            "app/index.html": RUN_499C771A_HTML,
+            "app/index.html": MEASURED_PAGE_HTML,
             "app/app.js": 'const form = document.getElementById("task-form");\n',
         },
     )
@@ -61,7 +61,7 @@ def test_a_data_attribute_no_element_sets_is_reported(tmp_path: Path) -> None:
     findings = _findings(
         tmp_path,
         {
-            "app/index.html": RUN_499C771A_HTML,
+            "app/index.html": MEASURED_PAGE_HTML,
             "app/app.js": "const s = btn.dataset.status;\n",
         },
     )
@@ -73,7 +73,7 @@ def test_an_id_the_page_declares_is_fine(tmp_path: Path) -> None:
     findings = _findings(
         tmp_path,
         {
-            "app/index.html": RUN_499C771A_HTML,
+            "app/index.html": MEASURED_PAGE_HTML,
             "app/app.js": (
                 'document.getElementById("add-task-form");\n'
                 'document.getElementById("task-list");\n'
@@ -90,7 +90,7 @@ def test_an_id_the_script_creates_is_fine(tmp_path: Path) -> None:
     findings = _findings(
         tmp_path,
         {
-            "app/index.html": RUN_499C771A_HTML,
+            "app/index.html": MEASURED_PAGE_HTML,
             "app/app.js": (
                 'const el = document.createElement("div");\n'
                 'el.id = "toast";\n'
@@ -106,7 +106,7 @@ def test_a_data_attribute_the_script_sets_is_fine(tmp_path: Path) -> None:
     findings = _findings(
         tmp_path,
         {
-            "app/index.html": RUN_499C771A_HTML,
+            "app/index.html": MEASURED_PAGE_HTML,
             "app/app.js": "btn.dataset.taskId = task.id;\nconst id = btn.dataset.taskId;\n",
         },
     )
@@ -147,7 +147,7 @@ def test_a_test_file_is_not_judged(tmp_path: Path) -> None:
     findings = _findings(
         tmp_path,
         {
-            "app/index.html": RUN_499C771A_HTML,
+            "app/index.html": MEASURED_PAGE_HTML,
             "app/app.test.mjs": 'document.getElementById("fixture-root");\n',
         },
     )

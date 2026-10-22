@@ -53,12 +53,15 @@ def test_the_no_shell_advice_names_something_that_works() -> None:
         assert "npm run" in text or "run_terminal_command" in text
 
 
-def test_the_verification_example_is_runnable() -> None:
-    """An example is strong guidance; `["pytest", "-q"]` pointed at a program
-    that is not installed."""
+def test_the_verification_example_sends_nobody_to_an_absent_program() -> None:
+    """An example is strong guidance; `["pytest", "-q"]` once pointed at a
+    program that is not installed. The example is now a placeholder: it names
+    no program at all, so it cannot name a missing one, and it favours no
+    language."""
     from app.agents.specialists import VerificationRun
 
     description = VerificationRun.model_fields["command"].description or ""
 
-    assert "pytest" not in description
-    assert "npm" in description or "node" in description
+    for name in ("pytest", "npm", "node", "jest"):
+        assert name not in description
+    assert "<program>" in description

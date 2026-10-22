@@ -29,6 +29,8 @@ import logging
 import re
 import urllib.error
 import urllib.request
+
+from app.models.endpoints import host_header_for
 from typing import Mapping
 
 logger = logging.getLogger(__name__)
@@ -88,6 +90,92 @@ def limit_from_error(message: str) -> int | None:
     return None
 
 
+#: Window sizes to try, largest first, when a refusal does not name the limit.
+#: Context windows are configuration values, not arbitrary numbers: a server is
+#: loaded with a power of two, or with one of a handful of round figures near
+#: one. Walking a ladder of those lands on the real value in at most a few
+#: requests, where a binary search would take seventeen and land *near* it.
+#:
+#: Written because the single-probe design cannot answer for the servers this
+#: deployment actually uses. Measured 2026-09-21 against
+#: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` behind llama.cpp: the refusal is a bare
+#: HTTP 400 with no number in it, so detection returned None and the operator
+#: was told to "set the window by hand" - which is how `MODEL_CONTEXT_WINDOW`
+#: came to be a hand-entered 130,000 that nothing had ever confirmed, with
+#: every derived budget resting on it.
+_COMMON_WINDOWS = (
+    262_144, 200_000, 131_072, 128_000, 65_536, 32_768, 16_384, 8_192, 4_096,
+)
+
+
+def _accepts(
+    endpoint: str, api_key: str, model: str, tokens: int, timeout: int
+) -> bool | None:
+    """Whether the server accepts a prompt of `tokens`. None when unreachable.
+
+    `max_tokens: 1` throughout: this measures what the server will *read*, and
+    generating more than a token would add minutes per rung for nothing.
+    """
+    body = json.dumps(
+        {
+            "model": model,
+            "messages": [{"role": "user", "content": "word " * tokens}],
+            "max_tokens": 1,
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        endpoint,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {api_key or 'none'}",
+            "Content-Type": "application/json",
+            **host_header_for(endpoint),
+        },
+    )
+    try:
+        urllib.request.urlopen(request, timeout=timeout)
+        return True
+    except urllib.error.HTTPError:
+        return False
+    except Exception:  # noqa: BLE001 - unreachable is not the same as refused
+        logger.warning("Probe rung of %d tokens could not be sent", tokens, exc_info=True)
+        return None
+
+
+def _largest_accepted(
+    endpoint: str, api_key: str, model: str, *, ceiling: int, timeout: int
+) -> tuple[int | None, str]:
+    """The largest rung of `_COMMON_WINDOWS` the server accepts, below `ceiling`.
+
+    A rung that is accepted bounds the window from below, and the next rung up
+    having been refused bounds it from above, so the pair together is a
+    measurement rather than the "accepted, so at least this" the single probe
+    could offer.
+
+    One word is not one token. `"word "` tokenises to roughly one token on every
+    tokeniser this has been tried against, and the rung is reported as the
+    figure that was sent - an operator setting a window from it is setting one
+    the server has demonstrably accepted, which is the property that matters.
+    """
+    rungs = [rung for rung in _COMMON_WINDOWS if rung < ceiling]
+    for rung in rungs:
+        verdict = _accepts(endpoint, api_key, model, rung, timeout)
+        if verdict is None:
+            return None, "The model server stopped answering during the probe."
+        if verdict:
+            return rung, (
+                f"The server refused {ceiling:,} tokens without naming a limit, "
+                f"then accepted {rung:,}. Its window is at least {rung:,} and "
+                "below the next size up."
+            )
+    smallest = rungs[-1] if rungs else ceiling
+    return None, (
+        f"The server refused every size down to {smallest:,} tokens. Either it "
+        "is loaded with a very small window or it is refusing for some other "
+        "reason; set the window by hand."
+    )
+
+
 def detect_context_window(
     base_url: str, api_key: str, model: str, *, timeout: int = PROBE_TIMEOUT_SECONDS
 ) -> tuple[int | None, str]:
@@ -100,7 +188,9 @@ def detect_context_window(
     if not base_url or not model:
         return None, "No model server is configured."
 
-    endpoint = f"{base_url.rstrip('/')}/chat/completions"
+    from app.models.endpoints import reached_from_here
+
+    endpoint = f"{reached_from_here(base_url)[0].rstrip('/')}/chat/completions"
     body = json.dumps(
         {
             "model": model,
@@ -112,7 +202,10 @@ def detect_context_window(
     request = urllib.request.Request(
         endpoint,
         data=body,
-        headers={"Authorization": f"Bearer {api_key or 'none'}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {api_key or 'none'}", "Content-Type": "application/json",
+            **host_header_for(endpoint),
+        },
     )
 
     try:
@@ -125,9 +218,11 @@ def detect_context_window(
         found = limit_from_error(detail)
         if found is not None:
             return found, f"The server refused a {PROBE_TOKENS:,}-token request and reported {found:,}."
-        return None, (
-            f"The server refused the probe but did not say what its limit is "
-            f"(HTTP {refusal.code}). Set the window by hand."
+        # Refused, and silent about why. Most local servers are: llama.cpp
+        # answers a bare HTTP 400. Walk down until one is accepted, which turns
+        # "set it by hand" into a number the server has agreed to.
+        return _largest_accepted(
+            endpoint, api_key, model, ceiling=PROBE_TOKENS, timeout=timeout
         )
     except Exception as exc:  # noqa: BLE001 - see docstring
         logger.warning("Context-window probe failed", exc_info=True)
@@ -152,4 +247,9 @@ def detect_from_settings(environment: Mapping[str, str], secrets: Mapping[str, s
     )
 
 
-__all__ = ["PROBE_TOKENS", "detect_context_window", "detect_from_settings", "limit_from_error"]
+__all__ = [
+    "PROBE_TOKENS",
+    "detect_context_window",
+    "detect_from_settings",
+    "limit_from_error",
+]

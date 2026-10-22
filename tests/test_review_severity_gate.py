@@ -5,7 +5,7 @@ findings. Until this gate, nothing routed on the grade: `status` alone decided,
 so a reviewer that wrote `changes_required` over nothing but `minor` findings
 sent the work back exactly as hard as one that found a blocking defect.
 
-That killed run-da4df814. Its six architecture reviews went:
+That killed one run. Its six architecture reviews went:
 
     1   8 findings, 2 blocking   - legitimate
     2   4 findings, all minor    - sent back
@@ -49,7 +49,7 @@ def _review(*severities: str) -> ArchitectureReviewOutput:
 
 
 def test_minor_findings_do_not_block() -> None:
-    """Rounds 2, 3 and 4 of run-da4df814."""
+    """Rounds 2, 3 and 4 of one run."""
     assert _findings_that_block(_review("minor", "minor", "minor", "minor")) == []
 
 
@@ -106,7 +106,7 @@ def test_a_review_with_no_findings_blocks_nothing() -> None:
 
 def test_both_reviewers_route_on_it() -> None:
     """Fixing the reviewer that happened to fail is how this codebase has
-    shipped the same bug four times. Architecture failed run-da4df814;
+    shipped the same bug four times. Architecture failed one run;
     milestone had the identical hole and no run had reached it yet.
     """
     import inspect
@@ -122,7 +122,7 @@ def test_both_reviewers_route_on_it() -> None:
     # than blocking. Matched on the call rather than its exact arguments so
     # the next argument added here does not read as the routing being lost.
     assert "_findings_that_block(review" in source[architecture:architecture + 4000]
-    assert "_findings_that_block(review" in source[milestone:milestone + 6000]
+    assert "_findings_that_block(review" in source[milestone:milestone + 12000]
 
 
 def test_both_reviewers_are_given_the_workspace_to_judge_scope() -> None:
@@ -134,6 +134,6 @@ def test_both_reviewers_are_given_the_workspace_to_judge_scope() -> None:
     source = inspect.getsource(workflow)
     for node in ("def architecture_review_node", "def milestone_review_node"):
         start = source.index(node)
-        window = source[start:start + 6000]
+        window = source[start:start + 12000]
         call = window[window.index("_findings_that_block(review"):][:120]
         assert "root_path" in call, f"{node} judges scope without the workspace"

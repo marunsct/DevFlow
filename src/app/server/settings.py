@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Literal
+from typing import Any, Literal, Mapping
 
 from app.agents.thinking import thinking_budget_tokens
 
@@ -78,6 +78,25 @@ class SettingsView(BaseModel):
     openai_api_key_configured: bool = False
     anthropic_api_key_configured: bool = False
     google_api_key_configured: bool = False
+    execution_mode: str = "linear"
+    delivery_mode: str = "thorough"
+    #: The judgement model (`app.models.roles`). An empty name means every
+    #: stage runs on the model above.
+    judgement_provider: str = ""
+    judgement_base_url: str = ""
+    judgement_model_name: str = ""
+    judgement_context_window: int = 0
+    judgement_max_output_tokens: int = 0
+    judgement_api_key_hint: str | None = None
+    judgement_api_key_configured: bool = False
+    #: The two tiers (`app.models.roles`): failed tries on the build model
+    #: before the judgement model takes over, and whether it also plans.
+    escalate_after_attempts: int = 2
+    plan_on_judgement_model: bool = True
+    #: Whether the build model's endpoint, and the judgement model's, have a
+    #: key of their own saved (`runtime_settings.endpoint_keys`).
+    endpoint_key_saved: bool = False
+    judgement_endpoint_key_saved: bool = False
 
 
 class SettingsUpdate(BaseModel):
@@ -145,8 +164,45 @@ class SettingsUpdate(BaseModel):
     openai_api_key: str | None = Field(default=None, max_length=512, repr=False)
     anthropic_api_key: str | None = Field(default=None, max_length=512, repr=False)
     google_api_key: str | None = Field(default=None, max_length=512, repr=False)
+    # None keeps what is stored: a page loaded before this field existed sent
+    # no value, and a default here saved "thorough" over the deployment's
+    # "fast" for one owner who had only changed the model's address.
+    delivery_mode: Literal["fast", "thorough"] | None = Field(
+        default=None,
+        description="fast: one sprint for a small product, files drafted from the specification, "
+        "harness-run test rounds, building without reasoning. thorough: the full pipeline. "
+        "Left out, the stored choice stands.",
+    )
+    execution_mode: Literal["linear", "parallel"] = Field(
+        default="linear",
+        description=(
+            "'linear' runs sprint stages one at a time; 'parallel' fans out "
+            "specialist tasks using LangGraph's Send API for concurrent execution."
+        ),
+    )
 
-    @field_validator("openai_api_key", "anthropic_api_key", "google_api_key")
+    # The judgement model: the architect, QA, the reviews, the test rounds and
+    # the fixes run on it (see `app.models.roles`). Empty fields are the default
+    # model's; an empty name turns it off.
+    judgement_provider: str = Field(default="", max_length=40)
+    judgement_base_url: str = Field(default="", max_length=500)
+    judgement_model_name: str = Field(default="", max_length=200)
+    judgement_context_window: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
+    judgement_max_output_tokens: int = Field(
+        default=0, ge=0, le=MAX_CONTEXT_WINDOW,
+        description="The judgement model's longest single reply, in tokens. 0 derives it from its window.",
+    )
+    judgement_api_key: str | None = Field(default=None, max_length=512, repr=False)
+    escalate_after_attempts: int = Field(
+        default=2, ge=1, le=10,
+        description="Failed tries on the build model before a stage or a defect goes to the judgement model.",
+    )
+    plan_on_judgement_model: bool = Field(
+        default=True,
+        description="Whether intake, stack choice, the sprint plan and the work orders run on the judgement model.",
+    )
+
+    @field_validator("openai_api_key", "anthropic_api_key", "google_api_key", "judgement_api_key")
     @classmethod
     def _clean_credential(cls, value: str | None) -> str | None:
         if value is None:
@@ -168,6 +224,19 @@ class SettingsUpdate(BaseModel):
         if normalised not in ALLOWED_PROVIDERS:
             raise ValueError(f"Unknown provider '{value}'. Choose one of: {', '.join(sorted(ALLOWED_PROVIDERS))}.")
         return normalised
+
+    @field_validator("judgement_provider")
+    @classmethod
+    def _known_judgement_provider(cls, value: str) -> str:
+        normalised = value.strip().lower()
+        if normalised and normalised not in ALLOWED_PROVIDERS:
+            raise ValueError(f"Unknown provider '{value}'. Choose one of: {', '.join(sorted(ALLOWED_PROVIDERS))}.")
+        return normalised
+
+    @field_validator("judgement_base_url")
+    @classmethod
+    def _safe_judgement_base_url(cls, value: str) -> str:
+        return cls._safe_base_url(value) if value.strip() else ""
 
     @field_validator("openai_base_url")
     @classmethod
@@ -227,7 +296,56 @@ def _current_view() -> SettingsView:
         openai_api_key_configured=bool(s.openai_api_key),
         anthropic_api_key_configured=bool(s.anthropic_api_key),
         google_api_key_configured=bool(s.google_api_key),
+        execution_mode=getattr(s, "execution_mode", "linear") or "linear",
+        delivery_mode=_the_delivery_mode(),
+        **_judgement_view(),
     )
+
+
+def _judgement_view() -> dict[str, Any]:
+    from app.models.roles import escalate_after, plans_on_the_judgement_model
+
+    environment = runtime_settings.effective_environment()
+    try:
+        window = int(str(environment.get("JUDGEMENT_CONTEXT_WINDOW") or "0").strip() or 0)
+    except ValueError:
+        window = 0
+    try:
+        reply = int(str(environment.get("JUDGEMENT_MAX_OUTPUT_TOKENS") or "0").strip() or 0)
+    except ValueError:
+        reply = 0
+    key = str(environment.get("JUDGEMENT_API_KEY") or "")
+    return {
+        "judgement_provider": str(environment.get("JUDGEMENT_PROVIDER") or ""),
+        "judgement_base_url": str(environment.get("JUDGEMENT_BASE_URL") or ""),
+        "judgement_model_name": str(environment.get("JUDGEMENT_MODEL") or ""),
+        "judgement_context_window": window,
+        "judgement_max_output_tokens": reply,
+        "judgement_api_key_hint": _mask(key),
+        "judgement_api_key_configured": bool(key),
+        "escalate_after_attempts": escalate_after(environment),
+        "plan_on_judgement_model": plans_on_the_judgement_model(environment),
+        **_endpoints_with_keys(environment),
+    }
+
+
+def _the_delivery_mode() -> str:
+    from app import delivery
+
+    try:
+        return delivery.mode(runtime_settings.effective_environment())
+    except Exception:  # noqa: BLE001 - the page still loads
+        return delivery.THOROUGH
+
+
+def _endpoints_with_keys(environment: Mapping[str, str]) -> dict[str, bool]:
+    keys = runtime_settings.endpoint_keys()
+    provider = str(environment.get("LLM_PROVIDER") or "local").strip().lower()
+    return {
+        "endpoint_key_saved": runtime_settings.endpoint_id(provider, str(environment.get("OPENAI_BASE_URL") or "")) in keys,
+        "judgement_endpoint_key_saved": bool(str(environment.get("JUDGEMENT_MODEL") or "").strip())
+        and runtime_settings.endpoint_id(*runtime_settings.judgement_endpoint(environment)) in keys,
+    }
 
 
 @settings_router.get("", response_model=SettingsView)
@@ -271,6 +389,15 @@ async def detect_context_window_endpoint(
     return DetectedWindow(detected=detected, explanation=explanation)
 
 
+def _check_read_only() -> None:
+    if os.environ.get("SETTINGS_READ_ONLY", "").strip().lower() in {"1", "true", "yes"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Provider settings are managed by deployment configuration and cannot be "
+                   "changed through the API in this environment.",
+        )
+
+
 @settings_router.put("", response_model=SettingsView)
 async def update_settings(
     payload: SettingsUpdate, user: UserInDB = Depends(require_admin)
@@ -282,12 +409,7 @@ async def update_settings(
     handler (the version before that) mutated a file the deployment also reads at
     startup, which made runtime state and deployed configuration diverge.
     """
-    if os.environ.get("SETTINGS_READ_ONLY", "").strip().lower() in {"1", "true", "yes"}:
-        raise HTTPException(
-            status_code=403,
-            detail="Provider settings are managed by deployment configuration and cannot be "
-                   "changed through the API in this environment.",
-        )
+    _check_read_only()
 
     # Persisted, not written to this process's environment. The agents do not
     # even run in this container - they run in the Celery worker, which has its
@@ -298,32 +420,73 @@ async def update_settings(
             "openai_base_url": payload.openai_base_url,
             "model_name": payload.model_name,
             "model_context_window": str(payload.model_context_window),
-            # Empty clears the override, so the reply ceiling goes back to being
-            # derived from the window rather than pinned to a stale number.
-            "model_max_output_tokens": (
-                str(payload.model_max_output_tokens)
-                if payload.model_max_output_tokens
-                else ""
-            ),
+            # Stored as given, 0 included: 0 is a choice - no ceiling on a
+            # reply (`ContextBudget.from_window`) - not an absent value. Stored
+            # as empty it cleared the override, the ceiling was derived from
+            # the window again, and the page showed 32,000 after its owner
+            # saved 0.
+            "model_max_output_tokens": str(payload.model_max_output_tokens),
             # Stored as the strings `_read_bool` and the effort lookup expect,
             # so a value read back out of Postgres parses the same way one read
             # out of the environment does.
             "thinking_mode": payload.thinking_mode,
             "thinking_effort": payload.thinking_effort,
+            "execution_mode": payload.execution_mode,
+            **({"delivery_mode": payload.delivery_mode} if payload.delivery_mode else {}),
+            # Empty clears each override, which with an empty name turns the
+            # judgement model off.
+            "judgement_provider": payload.judgement_provider,
+            "judgement_base_url": payload.judgement_base_url,
+            "judgement_model_name": payload.judgement_model_name.strip(),
+            "judgement_context_window": (
+                str(payload.judgement_context_window) if payload.judgement_context_window else ""
+            ),
+            "judgement_max_output_tokens": (
+                str(payload.judgement_max_output_tokens) if payload.judgement_max_output_tokens else ""
+            ),
+            "escalate_after_attempts": str(payload.escalate_after_attempts),
+            "plan_on_judgement_model": "true" if payload.plan_on_judgement_model else "false",
         },
         actor=user.username,
     )
+
+    # Remembered as a saved model, so switching back to it later is a pick
+    # from a list rather than six fields typed again. A failure here must not
+    # undo a settings change that has already been applied.
+    try:
+        from app.server import model_profiles
+
+        model_profiles.remember(payload.model_dump(), target="build", actor=user.username)
+        if payload.judgement_model_name and payload.judgement_model_name.strip():
+            model_profiles.remember(payload.model_dump(), target="frontier", actor=user.username)
+    except Exception:  # noqa: BLE001 - the applied settings stand either way
+        logger.warning("Could not remember the model configuration", exc_info=True)
 
     submitted = {
         "openai_api_key": payload.openai_api_key,
         "anthropic_api_key": payload.anthropic_api_key,
         "google_api_key": payload.google_api_key,
+        "judgement_api_key": payload.judgement_api_key,
     }
     # None means "leave alone"; "" means "delete". Only the keys the form
     # actually touched are written.
     changed_credentials = runtime_settings.save_secrets(
         {k: v for k, v in submitted.items() if v is not None}, actor=user.username
     )
+    # And as the key of the endpoint each was typed for, so every endpoint keeps
+    # its own: switching models no longer sends one server's key to another.
+    provider = (payload.llm_provider or "local").strip().lower()
+    typed = {"anthropic": payload.anthropic_api_key, "gemini": payload.google_api_key,
+             "google": payload.google_api_key}.get(provider, payload.openai_api_key)
+    if typed is not None:
+        runtime_settings.save_endpoint_key(provider, payload.openai_base_url, typed, actor=user.username)
+    if payload.judgement_api_key is not None and payload.judgement_model_name.strip():
+        runtime_settings.save_endpoint_key(*runtime_settings.judgement_endpoint({
+            "LLM_PROVIDER": provider,
+            "OPENAI_BASE_URL": payload.openai_base_url,
+            "JUDGEMENT_PROVIDER": payload.judgement_provider,
+            "JUDGEMENT_BASE_URL": payload.judgement_base_url,
+        }), payload.judgement_api_key, actor=user.username)
 
     record_audit(
         actor=user.username,
@@ -334,6 +497,7 @@ async def update_settings(
             "llm_provider": payload.llm_provider,
             "openai_base_url": payload.openai_base_url,
             "model_name": payload.model_name,
+            "judgement_model_name": payload.judgement_model_name.strip(),
             # Which credentials changed, never their values. This row is
             # long-lived and is read by people investigating incidents.
             "credentials_changed": sorted(changed_credentials),
@@ -344,6 +508,247 @@ async def update_settings(
         user.username, ", ".join(sorted(changed_credentials)) or "none",
     )
     return _current_view()
+
+
+class ModelProfile(BaseModel):
+    """A model configuration saved earlier, ready to fill the form again.
+
+    Never a credential: those stay write-only. Each endpoint keeps the key last
+    saved for it (`runtime_settings.endpoint_keys`), so picking a profile picks
+    its key too.
+    """
+
+    id: str
+    label: str
+    target: str = "build"
+    llm_provider: str | None = None
+    openai_base_url: str | None = None
+    model_name: str | None = None
+    model_context_window: int | None = None
+    model_max_output_tokens: int | None = None
+    thinking_mode: str | None = None
+    thinking_effort: str | None = None
+    judgement_provider: str | None = None
+    judgement_base_url: str | None = None
+    judgement_model_name: str | None = None
+    judgement_context_window: int | None = None
+    judgement_max_output_tokens: int | None = None
+    escalate_after_attempts: int | None = None
+    plan_on_judgement_model: bool | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+class LocalModelSettingsPayload(BaseModel):
+    """Save the local build model configuration specifically."""
+
+    llm_provider: str = Field(default="local")
+    openai_base_url: str = Field(default="")
+    model_name: str = Field(default="")
+    model_context_window: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
+    model_max_output_tokens: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
+    thinking_mode: Literal["default", "on", "off"] = Field(default="default")
+    thinking_effort: Literal["low", "medium", "high"] = Field(default="medium")
+    api_key: str | None = Field(default=None, max_length=512, repr=False)
+
+    @field_validator("api_key")
+    @classmethod
+    def _clean_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if cleaned.startswith("****") or any(c in cleaned for c in "\n\r\x00"):
+            return None
+        return cleaned
+
+
+class FrontierModelSettingsPayload(BaseModel):
+    """Save the frontier judgement model configuration specifically, or select No Model."""
+
+    judgement_provider: str = Field(default="")
+    judgement_base_url: str = Field(default="")
+    judgement_model_name: str = Field(default="")
+    judgement_context_window: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
+    judgement_max_output_tokens: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
+    judgement_api_key: str | None = Field(default=None, max_length=512, repr=False)
+    escalate_after_attempts: int = Field(default=2, ge=1, le=10)
+    plan_on_judgement_model: bool = Field(default=True)
+    no_model: bool = Field(default=False, description="Explicitly select no frontier model (local only).")
+
+    @field_validator("judgement_api_key")
+    @classmethod
+    def _clean_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if cleaned.startswith("****") or any(c in cleaned for c in "\n\r\x00"):
+            return None
+        return cleaned
+
+
+@settings_router.put("/local", response_model=SettingsView)
+async def update_local_model_settings(
+    payload: LocalModelSettingsPayload,
+    user: UserInDB = Depends(require_admin),
+) -> SettingsView:
+    """Save only the local build model settings and remember its profile."""
+    _check_read_only()
+    runtime_settings.save(
+        {
+            "llm_provider": payload.llm_provider,
+            "openai_base_url": payload.openai_base_url,
+            "model_name": payload.model_name,
+            "model_context_window": str(payload.model_context_window) if payload.model_context_window else "",
+            # 0 is a choice, not an absent value: see `update_settings`.
+            "model_max_output_tokens": str(payload.model_max_output_tokens),
+            "thinking_mode": payload.thinking_mode,
+            "thinking_effort": payload.thinking_effort,
+        },
+        actor=user.username,
+    )
+    if payload.api_key is not None:
+        provider = (payload.llm_provider or "local").strip().lower()
+        runtime_settings.save_endpoint_key(provider, payload.openai_base_url, payload.api_key, actor=user.username)
+        key_var = {"anthropic": "anthropic_api_key", "gemini": "google_api_key", "google": "google_api_key"}.get(
+            provider, "openai_api_key"
+        )
+        runtime_settings.save_secrets({key_var: payload.api_key}, actor=user.username)
+
+    try:
+        from app.server import model_profiles
+
+        model_profiles.remember(payload.model_dump(), target="build", actor=user.username)
+    except Exception:
+        logger.warning("Could not remember the local model profile", exc_info=True)
+
+    record_audit(
+        actor=user.username,
+        tenant_id=user.tenant_id,
+        action="settings.local_model.update",
+        subject="local-model-configuration",
+        detail={
+            "llm_provider": payload.llm_provider,
+            "openai_base_url": payload.openai_base_url,
+            "model_name": payload.model_name,
+        },
+    )
+    return _current_view()
+
+
+@settings_router.put("/frontier", response_model=SettingsView)
+async def update_frontier_model_settings(
+    payload: FrontierModelSettingsPayload,
+    user: UserInDB = Depends(require_admin),
+) -> SettingsView:
+    """Save only the frontier judgement model settings, or select No Model to turn it off."""
+    _check_read_only()
+    if payload.no_model or not payload.judgement_model_name.strip():
+        runtime_settings.save(
+            {
+                "judgement_provider": "",
+                "judgement_base_url": "",
+                "judgement_model_name": "",
+                "judgement_context_window": "0",
+                "judgement_max_output_tokens": "",
+            },
+            actor=user.username,
+        )
+        record_audit(
+            actor=user.username,
+            tenant_id=user.tenant_id,
+            action="settings.frontier_model.update",
+            subject="frontier-model-configuration",
+            detail={"no_model": True, "selected_model": "none"},
+        )
+        return _current_view()
+
+    runtime_settings.save(
+        {
+            "judgement_provider": payload.judgement_provider,
+            "judgement_base_url": payload.judgement_base_url,
+            "judgement_model_name": payload.judgement_model_name.strip(),
+            "judgement_context_window": (
+                str(payload.judgement_context_window) if payload.judgement_context_window else ""
+            ),
+            "judgement_max_output_tokens": (
+                str(payload.judgement_max_output_tokens) if payload.judgement_max_output_tokens else ""
+            ),
+            "escalate_after_attempts": str(payload.escalate_after_attempts),
+            "plan_on_judgement_model": "true" if payload.plan_on_judgement_model else "false",
+        },
+        actor=user.username,
+    )
+    if payload.judgement_api_key is not None:
+        effective = runtime_settings.effective_environment()
+        runtime_settings.save_endpoint_key(
+            *runtime_settings.judgement_endpoint({
+                "LLM_PROVIDER": effective.get("LLM_PROVIDER", "local"),
+                "OPENAI_BASE_URL": effective.get("OPENAI_BASE_URL", ""),
+                "JUDGEMENT_PROVIDER": payload.judgement_provider,
+                "JUDGEMENT_BASE_URL": payload.judgement_base_url,
+            }),
+            payload.judgement_api_key,
+            actor=user.username,
+        )
+        runtime_settings.save_secrets({"judgement_api_key": payload.judgement_api_key}, actor=user.username)
+
+    try:
+        from app.server import model_profiles
+
+        model_profiles.remember(payload.model_dump(), target="frontier", actor=user.username)
+    except Exception:
+        logger.warning("Could not remember the frontier model profile", exc_info=True)
+
+    record_audit(
+        actor=user.username,
+        tenant_id=user.tenant_id,
+        action="settings.frontier_model.update",
+        subject="frontier-model-configuration",
+        detail={
+            "judgement_provider": payload.judgement_provider,
+            "judgement_base_url": payload.judgement_base_url,
+            "judgement_model_name": payload.judgement_model_name.strip(),
+            "no_model": False,
+        },
+    )
+    return _current_view()
+
+
+@settings_router.get("/frontier/status")
+async def frontier_status(user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+    """Whether the frontier model a run would use is configured and answering - a model listing, never a model call."""
+    from starlette.concurrency import run_in_threadpool
+
+    from app.models.frontier_check import check_frontier
+
+    return await run_in_threadpool(check_frontier)
+
+
+@settings_router.get("/models", response_model=list[ModelProfile])
+async def list_model_profiles(
+    target: str | None = None,
+    user: UserInDB = Depends(get_current_active_user),
+) -> list[ModelProfile]:
+    """Every model configuration saved so far, most recently saved first."""
+    from app.server import model_profiles
+
+    return [ModelProfile(**profile) for profile in model_profiles.list_profiles(target=target)]
+
+
+@settings_router.delete("/models/{profile_id}", status_code=204)
+async def delete_model_profile(profile_id: str, user: UserInDB = Depends(require_admin)) -> None:
+    """Forget one saved configuration. The active settings are not changed."""
+    from app.server import model_profiles
+
+    if not model_profiles.forget(profile_id):
+        raise HTTPException(status_code=404, detail="No saved model with that id.")
+    record_audit(
+        actor=user.username,
+        tenant_id=user.tenant_id,
+        action="settings.model_profile.delete",
+        subject=profile_id,
+        detail={},
+    )
 
 
 __all__ = ["settings_router"]

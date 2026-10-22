@@ -3,7 +3,7 @@
 It used to receive its task, its acceptance criteria, and nothing about the
 technology. Each specialist then guessed, and reasonable guesses differ.
 
-Measured on run-64df2b20, whose stack selection was Python / FastAPI /
+Measured on one run, whose stack selection was Python / FastAPI /
 PostgreSQL / pytest / React, the project directory ended up holding two
 complete, incompatible backends:
 
@@ -67,7 +67,7 @@ def test_the_host_path_is_not_quoted_to_the_agent():
 
     Quoting the host path sends agents looking under a root that does not exist
     for them - measured as seven failed reads and one failed `ls` on
-    run-95ca3f72, every one for a file that was present.
+    one run, every one for a file that was present.
     """
     brief = _brief()
 
@@ -93,7 +93,7 @@ def test_an_empty_stack_adds_no_section():
 
 def test_a_client_only_stack_omits_the_frontend_line():
     # `node --test` rather than "none": a testing framework is now required,
-    # because "none" was how run-2f252e4e shipped a human checklist instead of
+    # because "none" was how one run shipped a human checklist instead of
     # a suite. This test is about the frontend line, not the runner.
     stack = TechnologyStack(
         language="JavaScript", framework="none", database="localStorage",
@@ -109,7 +109,7 @@ def test_a_client_only_stack_omits_the_frontend_line():
 # --- the sibling builders ------------------------------------------------
 #
 # Putting the stack in `build_specialist_task_request` alone was not enough.
-# Observed live on run-18c0e34c, whose stack chose
+# Observed live on one run, whose stack chose
 # "testing_framework: None - manual browser testing against a written
 # checklist (zero dependencies)": the test round reasoned "Let me create a
 # comprehensive test suite using Jest" and ran
@@ -149,7 +149,7 @@ def test_the_test_round_is_told_not_to_install_a_framework():
     flat = " ".join(content.split())
 
     assert "Do not install a test framework" in flat
-    assert "npm init" in flat
+    assert "initialising a package manager" in flat
     assert "report that as a blocker instead of installing it" in flat
 
 
@@ -198,7 +198,7 @@ def test_no_testing_framework_is_refused(value: str) -> None:
     """The previous message licensed it outright - it ended "'none' is valid
     only if the product genuinely needs no verification".
 
-    Measured on run-2f252e4e: the selector answered "None", citing the size
+    Measured on one run: the selector answered "None", citing the size
     guidance that warns against *installed* runners, and shipped a checklist
     for a human who does not exist. A built-in runner costs nothing, so no
     product here needs no verification.
@@ -228,7 +228,7 @@ def test_the_refusal_names_the_free_option() -> None:
         TechnologyStack.model_validate(_stack(testing_framework="None"))
 
     message = str(caught.value)
-    assert "node --test" in message
+    assert "ship a test runner with their runtime" in message
     assert "nothing to install" in message
 
 

@@ -1,0 +1,56 @@
+{#- docs/milestone_plan.md - the technical lead's plan for one sprint, written as
+    work orders a developer new to the codebase can follow.
+    Context: o (MilestonePlanOutput). -#}
+# Milestone Plan — {{ o.selected_sprint_goal | text("Milestone") }}
+
+## Milestone scope
+{{ o.milestone_scope | bullets("_Not specified._") }}
+
+## Work orders
+{% for t in o.delegated_tasks %}
+
+### {{ loop.index }}. {{ t.title | text(t.task_description | first_line("Untitled task")) }} — {{ t.specialist_role }}
+
+**Task:**
+{{ t.task_description | section }}
+
+**Files:**
+{{ t.files | bullets("not stated") }}
+
+**Interfaces:**
+{{ t.interfaces | bullets("not stated") }}
+
+**Steps:**
+{{ t.steps | bullets("not stated", numbered=True) }}
+
+**Edge cases:**
+{{ t.edge_cases | bullets("not stated") }}
+
+**Test cases:**
+{{ t.test_cases | bullets("not stated") }}
+
+**Verification:**
+{{ t.verification | bullets("not stated") }}
+
+**Out of scope:**
+{{ t.out_of_scope | bullets("not stated") }}
+
+**Acceptance criteria:**
+{{ t.acceptance_criteria | bullets("not stated") }}
+{% else %}
+_No work was delegated._
+{% endfor %}
+
+## Integration notes
+{{ o.integration_notes | bullets("None recorded.") }}
+
+## Review task assignments
+{{ o.review_task_assignments | bullets("None recorded.") }}
+
+## Carried-forward decisions
+{{ o.carried_forward_decisions | bullets("None recorded.") }}
+
+## Blockers
+{{ o.blockers | bullets("None recorded.") }}
+
+<!-- Generated from this stage's structured response. Editing this file does not change what the pipeline reads. -->

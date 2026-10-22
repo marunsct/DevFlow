@@ -1,12 +1,12 @@
 """The rule that stops a brief from outlawing its own test suite.
 
-run-2d9066e2's brief forbids external dependencies and `TESTABILITY_RULE`
+One run's brief forbids external dependencies and `TESTABILITY_RULE`
 mandates Playwright for browser UI. Both were read as binding, so the sprint
 spent all three remediation attempts on the contradiction and the run failed
 without a product defect in it. The constraint was never aimed at the test
 suite; nothing said it was, and nothing said it was not.
 
-run-551640d3 failed from the other side: it installed `jsdom` for its tests and
+One run failed from the other side: it installed `jsdom` for its tests and
 recorded the decision as a *risk* - "which would introduce an external
 dependency" - because the constraint it was reading did not distinguish the
 product's dependencies from its own.
@@ -19,6 +19,8 @@ on that ground.
 """
 
 from __future__ import annotations
+
+import pytest
 
 import json
 
@@ -61,26 +63,40 @@ def test_the_rule_makes_a_refusal_to_test_a_blocking_finding_for_reviewers():
     assert "not a risk" in TESTING_DEPENDENCY_RULE
 
 
-def test_the_rule_tells_builders_which_scope_to_use():
-    """Without the per-ecosystem scope an agent that accepts the rule still
-    does not know where to put the package, and the constraint is honoured in
-    the breach. Spans the stacks this harness builds in, not one of them.
-    """
+@pytest.mark.parametrize(
+    ("language", "scope"),
+    [
+        ("javascript", "devDependencies"),
+        ("typescript", "devDependencies"),
+        ("node", "devDependencies"),
+        ("python", "dependency-groups"),
+        ("java", "<scope>test</scope>"),
+        ("kotlin", "testImplementation"),
+        ("rust", "[dev-dependencies]"),
+        ("php", "require-dev"),
+        ("ruby", "group :test"),
+        ("csharp", "test project"),
+        ("go", "go test"),
+    ],
+)
+def test_each_language_s_own_guidance_names_its_test_only_scope(language, scope):
+    """Without the scope an agent that accepts the rule still does not know where
+    to put the package. Each language's seed row says it, and a run receives the
+    row for its own stack - not a table of every ecosystem in every prompt."""
+    from app.plugins.seed import SEED_INSTRUCTIONS
+
+    assert scope in SEED_INSTRUCTIONS[language], (language, scope)
+
+
+def test_the_rule_names_no_ecosystem():
+    """A rule that names one ecosystem's tools is a rule every other run ignores,
+    and one that lists all of them spends every run's prompt on the others."""
     for phrase in (
-        "devDependencies",
-        "testImplementation",
-        "[dev-dependencies]",
-        "require-dev",
-        "group :test",
-        "dependency-groups",
+        "devDependencies", "testImplementation", "[dev-dependencies]", "require-dev",
+        "group :test", "dependency-groups", "npm", "Playwright", "pytest",
     ):
-        assert phrase in TESTING_DEPENDENCY_RULE, phrase
-
-
-def test_the_rule_does_not_prefer_one_language():
-    """A rule that only names npm is a rule a Python, Go or Java run ignores."""
-    for phrase in ("Python", "Java", "Rust", "PHP", "Ruby", ".NET", "Go"):
-        assert phrase in TESTING_DEPENDENCY_RULE, phrase
+        assert phrase not in TESTING_DEPENDENCY_RULE, phrase
+    assert "FRAMEWORK CAPABILITIES" in _flat(TESTING_DEPENDENCY_RULE)
 
 
 def test_the_rule_reaches_every_agent_that_can_walk_into_the_contradiction():
@@ -117,7 +133,7 @@ def test_the_sandbox_does_not_refuse_a_test_scoped_install(tmp_path):
     """The rule tells an agent to `npm i -D @playwright/test`; the sandbox must
     not refuse the install it asks for.
 
-    Measured on run-519a9d8a: the refusal blocked the only suite that can
+    Measured on one run: the refusal blocked the only suite that can
     exercise a real DOM, the model installed the package *without* the flag to
     get past it, and the milestone reviewer then filed the undeclared package
     as a blocking defect from the other direction. Refusing the test-scoped

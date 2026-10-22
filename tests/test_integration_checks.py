@@ -1,7 +1,7 @@
 """Files written separately have to refer to each other.
 
 Each specialist writes its own files and each is defensible alone. Nothing
-checked whether they connect, and that is where run-95ca3f72's milestone 1
+checked whether they connect, and that is where one run's milestone 1
 broke: a stylesheet targeting an id no page declared, and a module no page
 loaded, both passed four review stages.
 
@@ -9,6 +9,8 @@ Every case below is taken from a defect that actually shipped.
 """
 
 from __future__ import annotations
+
+import json
 
 import pytest
 
@@ -24,7 +26,7 @@ def _workspace(tmp_path, files: dict[str, str]):
 
 
 def test_a_stylesheet_targeting_a_missing_id_is_reported(tmp_path):
-    """run-95ca3f72: `#app-placeholder` styled, `#app` written."""
+    """One run: `#app-placeholder` styled, `#app` written."""
     root = _workspace(
         tmp_path,
         {
@@ -55,8 +57,24 @@ def test_a_hex_colour_is_not_an_id_selector(tmp_path):
     assert "No cross-file problems found" in report
 
 
+def test_setup_file_imported_in_test_command_is_not_stranded(tmp_path):
+    """`--import` flags execute their file so they shouldn't be stranded."""
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": json.dumps(
+                {"scripts": {"test": "node --import ./test-setup.mjs --test 'tests/**/*.test.js'"}}
+            ),
+            "test-setup.mjs": 'import { test } from "node:test";',
+            "tests/app.test.js": "import '../test-setup.mjs';"
+        },
+    )
+    report = summarise_integration(root)
+    assert "No cross-file problems found" in report
+
+
 def test_a_script_nothing_loads_is_reported(tmp_path):
-    """run-95ca3f72: `script.js` exported a function; no page had a script tag."""
+    """One run: `script.js` exported a function; no page had a script tag."""
     root = _workspace(
         tmp_path,
         {
@@ -116,7 +134,7 @@ def test_a_remote_reference_is_not_checked(tmp_path):
 
 
 def test_esm_source_under_a_commonjs_test_config_is_reported(tmp_path):
-    """run-95ca3f72: `export function` with `testEnvironment: 'node'`, no transform."""
+    """One run: `export function` with `testEnvironment: 'node'`, no transform."""
     root = _workspace(
         tmp_path,
         {
@@ -206,7 +224,7 @@ def test_the_reviewer_is_given_the_checks(tmp_path):
 # --- stack conformance ---------------------------------------------------
 #
 # Nothing downstream checked the code against the stack the run chose. On
-# run-64df2b20 the selection was Python / FastAPI / PostgreSQL / pytest, and
+# one run the selection was Python / FastAPI / PostgreSQL / pytest, and
 # the project directory held package.json with express and mongoose, a jest
 # suite, an index.ts and a FastAPI main.py. Three languages, a MongoDB driver
 # against a chosen PostgreSQL, and every test round running jest.
@@ -335,7 +353,7 @@ def test_the_reviewer_is_given_the_stack_conflicts(tmp_path):
 # --- size against the brief's cap ----------------------------------------
 #
 # A brief that caps the product - brief_low says "Maximum 500 lines of code" -
-# is a constraint no stage ever checked against what was built. run-18c0e34c
+# is a constraint no stage ever checked against what was built. One run
 # shipped 631 application lines, 391 of them CSS, and passed every review.
 # The reviewer holds the brief and can compare; it just needed someone to count.
 
@@ -406,12 +424,12 @@ def test_the_reviewer_receives_the_size(tmp_path):
 #
 # A manifest is read by tooling, by CI and by the next person. When it
 # disagrees with the project it sends all three somewhere wrong. Every case
-# below shipped in run-3da8dd91, which completed and passed every milestone
+# below shipped in one run, which completed and passed every milestone
 # review.
 
 
 def test_the_npm_placeholder_test_script_is_reported(tmp_path):
-    """The exact artefact that cost run-95ca3f72 its entire sprint."""
+    """The exact artefact that cost one run its entire sprint."""
     root = _workspace(
         tmp_path,
         {"package.json": '{"scripts": {"test": "echo \\"Error: no test specified\\" && exit 1"}}'},
@@ -445,7 +463,7 @@ def test_a_main_that_exists_is_not_reported(tmp_path):
 
 
 def test_a_test_package_declared_as_a_runtime_dependency_is_reported(tmp_path):
-    """run-3da8dd91 shipped jsdom under `dependencies` against a brief that
+    """One run shipped jsdom under `dependencies` against a brief that
     rules out external dependencies. The app loaded nothing; the manifest
     claimed otherwise."""
     root = _workspace(
@@ -491,7 +509,7 @@ def test_an_unparseable_manifest_is_reported_not_raised(tmp_path):
 def test_more_test_packages_are_recognised_as_dev_only(tmp_path, package):
     """A list of known names only covers the names on it.
 
-    run-cbd22a34's milestone reviewer found `linkedom` declared as a production
+    One run's milestone reviewer found `linkedom` declared as a production
     dependency and this check did not, because the name was not listed. The
     list grows when a run shows a gap.
     """
@@ -509,7 +527,7 @@ def test_more_test_packages_are_recognised_as_dev_only(tmp_path, package):
 def test_a_script_nothing_loads_is_not_counted_as_the_application(tmp_path):
     """The size report is the one number a reviewer judges the brief against.
 
-    Measured on run-61c5a5b6, against a brief capping the product at 500 lines:
+    Measured on one run, against a brief capping the product at 500 lines:
     the report said 901, of which 447 were `verify-milestone.mjs` and three
     abandoned cleanup scripts. The application was 454 - inside the cap. The
     reviewer would have been shown nearly double it.
@@ -573,7 +591,7 @@ def test_a_product_with_no_strays_reports_no_extra_bucket(tmp_path):
 def test_a_test_that_redefines_the_code_is_reported(tmp_path):
     """A green suite that proves nothing.
 
-    Measured on run-2b5def74: `app.js` called `init()` at module scope, so the
+    Measured on one run: `app.js` called `init()` at module scope, so the
     testing specialist wrote "it cannot be directly imported in a headless Node
     environment. Instead, this test file defines the same pure logic functions
     inline" - and six tests passed against a copy.
@@ -650,7 +668,7 @@ def test_the_report_separates_code_from_blank_and_comment(tmp_path):
     """A brief capping "lines of code" means the code lines.
 
     Reporting only the raw count left the reviewer comparing a number against a
-    limit that means something else: on run-2b5def74 nothing could say whether
+    limit that means something else: on one run nothing could say whether
     609 raw lines broke a 500-line cap. They did not - 315 of them were code.
     """
     from app.analysis.integration_checks import summarise_integration
@@ -726,7 +744,7 @@ def test_an_application_embedded_in_html_is_reported(tmp_path):
     suite reported elsewhere - one step earlier, and for a reason nobody can
     fix after the fact.
 
-    Measured on run-2f252e4e: a specification describing pure functions, a
+    Measured on one run: a specification describing pure functions, a
     storage adapter and an `init()` - correctly - with all of it placed in a
     single `index.html`, "No external files, no build step, no module system".
     """
@@ -779,7 +797,7 @@ def test_an_undeclared_module_type_is_not_a_finding_on_this_runtime(tmp_path):
     reports `# tests 1 # pass 1 # fail 0`. Node has detected module syntax in a
     typeless `.js` since 20.19.
 
-    The original evidence from run-da6c5e19 was the *agent's* note in its own
+    The original evidence from one run was the *agent's* note in its own
     test file, "we can't directly import app.js", recorded here as Node's
     behaviour. It was the agent's misdiagnosis, and the check enshrined it.
 
@@ -826,7 +844,7 @@ def test_an_mjs_test_is_a_test(name: str):
     exactly what a testable design produces - and the pattern matched only
     `.js`, so those files were reported as orphaned probes nothing runs.
 
-    Measured on run-da6c5e19: the two files that proved the copy-test fix had
+    Measured on one run: the two files that proved the copy-test fix had
     worked were the two the report told the reviewer to delete.
     """
     from app.analysis.file_kinds import is_application
@@ -845,7 +863,7 @@ def test_an_mjs_application_file_is_not_a_test(name: str):
 
 
 def test_a_class_nothing_applies_is_reported(tmp_path):
-    """Found on run-da6c5e19's second sprint by a reviewer reading three files
+    """Found on one run's second sprint by a reviewer reading three files
     against each other: `.task-text` and `.empty-message` were styled and used
     by nothing."""
     from app.analysis.integration_checks import summarise_integration
@@ -885,7 +903,7 @@ def test_a_class_added_at_runtime_is_not_reported(tmp_path):
 
 
 def test_the_check_is_conservative_about_common_words(tmp_path):
-    """A word used for another reason keeps its rule. On run-da6c5e19 `.active`
+    """A word used for another reason keeps its rule. On one run `.active`
     was genuinely dead, and this check correctly left it alone because "active"
     is one of that product's filter names - the reviewer caught it instead."""
     from app.analysis.integration_checks import summarise_integration
@@ -908,7 +926,7 @@ def test_a_document_naming_a_file_that_does_not_exist_is_reported(tmp_path):
     """A document is the one artefact nobody executes, so a wrong instruction
     survives every test round and reaches whoever tries to use the product.
 
-    Measured on run-cbb1a5fc: `docs/deployment.md` said "Run with
+    Measured on one run: `docs/deployment.md` said "Run with
     `node server.js`" for a project containing app.js, app.test.mjs,
     index.html, package.json and style.css. Four milestone reviews read that
     document and none tried the command.
@@ -1006,7 +1024,7 @@ def test_a_project_with_no_tests_is_not_asked_for_a_test_script(tmp_path):
 def test_importing_a_module_and_shadowing_its_exports_is_still_a_copy(tmp_path):
     """The defect wearing an import.
 
-    Measured on run-5d83e946: `script.test.mjs` opened with "Inline copies of
+    Measured on one run: `script.test.mjs` opened with "Inline copies of
     the pure functions (mirrors script.js exactly)", ran every behavioural
     assertion against those copies, and closed with nine tests that did import
     the real module - to assert `typeof mod.addTask === 'function'` and nothing
@@ -1087,7 +1105,7 @@ def test_a_renamed_import_binds_the_name_on_the_right(tmp_path):
 def test_a_product_over_its_declared_budget_is_reported(tmp_path):
     """The comparison the harness had both operands for and did not make.
 
-    Measured on run-1d1b6c9c: the milestone review was handed `550 of them
+    Measured on one run: the milestone review was handed `550 of them
     code`, directly under a sentence saying that is the number a cap means. The
     cap appears six times in that run's own documents, once as the acceptance
     criterion "Total source code stays within the 500-line limit". The review
@@ -1132,7 +1150,7 @@ def test_a_product_inside_its_budget_says_nothing(tmp_path):
 
 
 def test_tests_do_not_count_against_the_product_budget(tmp_path):
-    """A brief capping "lines of code" does not mean the suite. run-18c0e34c
+    """A brief capping "lines of code" does not mean the suite. One run
     was 631 lines of application and 1,558 of tests the round had installed."""
     from app.analysis.integration_checks import summarise_integration
 
@@ -1212,13 +1230,13 @@ def test_the_budget_check_and_the_size_report_count_the_same_lines(tmp_path):
 def test_a_test_that_opens_a_cwd_relative_path_is_reported(tmp_path):
     """The defect that passes every check the workflow makes.
 
-    On run-9ff00d5b the suite read `'./todo-app/index.html'`, and the test
+    On one run the suite read `'./todo-app/index.html'`, and the test
     round ran `node --test todo-app/app.test.mjs` from the workspace root,
     where that resolves. It passed eight times. From inside the project
     directory - which is where anyone handed the project runs it - every test
     fails with ENOENT.
 
-    run-5d83e946 hit the same shape with `path.resolve('./script.js')`, the
+    One run hit the same shape with `path.resolve('./script.js')`, the
     test round happened to run from the other directory, the tests failed, and
     a defect-fix round corrected it. The difference between a caught defect and
     a shipped one was which directory the command happened to use.
@@ -1285,7 +1303,7 @@ def test_a_referenced_file_that_is_empty_is_reported(tmp_path):
     loads an empty script does nothing. Both look correct to a check that only
     asks whether the file is there.
 
-    Measured on run-5f4cdd55: index.html linked `style.css` on line 6, the file
+    Measured on one run: index.html linked `style.css` on line 6, the file
     was zero bytes, the reference check passed, and the size report counted it
     as one line of the product.
     """
@@ -1399,7 +1417,7 @@ def test_a_ui_that_already_has_playwright_is_left_alone(tmp_path):
 # ---------------------------------------------------------------------------
 # A suite the gating command cannot run at all.
 #
-# Measured on run-cac07d52, which COMPLETED. Its `scripts.test` is
+# Measured on one run, which COMPLETED. Its `scripts.test` is
 # `node --test tests/` and collected 34 passing tests, while
 # `tests/app.test.ts` held five Playwright tests reachable only through
 # `scripts["test:e2e"]`. No stage in this pipeline runs anything but
@@ -1408,19 +1426,21 @@ def test_a_ui_that_already_has_playwright_is_left_alone(tmp_path):
 # all five failed.
 #
 # `_tests_the_project_never_runs` could not see them: it considered only
-# `.js`, `.mjs` and `.cjs`. A `.ts` suite is not stranded by accident -
-# `node --test` cannot parse TypeScript - it is stranded by design, and the
-# design is what needed reporting.
+# `.js`, `.mjs` and `.cjs`. A `.ts` suite the command does not collect is
+# stranded by design, and the design is what needed reporting. (Node 24 runs
+# TypeScript it collects, with the types stripped; JSX it cannot load at all.)
 # ---------------------------------------------------------------------------
+
+#: The unit command as it reads on Node 24, which refuses a directory argument.
+_UNIT_PATTERN = "node --test 'tests/**/*.test.mjs'"
 
 
 def test_a_typescript_suite_the_test_command_cannot_run_is_reported(tmp_path):
     root = _workspace(
         tmp_path,
         {
-            "package.json": '{"name":"a","version":"1.0.0",'
-                            '"scripts":{"test":"node --test tests/",'
-                            '"test:e2e":"npx playwright test"}}',
+            "package.json": json.dumps({"name": "a", "version": "1.0.0", "scripts": {
+                "test": _UNIT_PATTERN, "test:e2e": "npx playwright test"}}),
             "app.js": "export function go() { return 1; }\n",
             "tests/unit.test.mjs": "import {test} from 'node:test';\ntest('x',()=>{});\n",
             "tests/app.test.ts": "import { test } from '@playwright/test';\ntest('ui', async () => {});\n",
@@ -1429,7 +1449,7 @@ def test_a_typescript_suite_the_test_command_cannot_run_is_reported(tmp_path):
 
     report = summarise_integration(root)
 
-    assert "does not parse TypeScript" in report
+    assert "which never runs" in report
     assert "app.test.ts" in report
     assert "test:e2e" in report, "the message must name the script that does run it"
 
@@ -1438,14 +1458,49 @@ def test_it_says_when_nothing_runs_the_suite_at_all(tmp_path):
     root = _workspace(
         tmp_path,
         {
-            "package.json": '{"name":"a","version":"1.0.0",'
-                            '"scripts":{"test":"node --test tests/"}}',
+            "package.json": json.dumps({"name": "a", "version": "1.0.0", "scripts": {"test": _UNIT_PATTERN}}),
             "app.js": "export function go() { return 1; }\n",
             "tests/app.test.ts": "import { test } from '@playwright/test';\ntest('ui', async () => {});\n",
         },
     )
 
     assert "Nothing in the project runs them at all" in summarise_integration(root)
+
+
+def test_typescript_the_command_collects_is_not_reported(tmp_path):
+    """Measured in the run image on Node 24.21: a bare `node --test` ran
+    `tests/f.test.ts` (`# pass 1`), so a suite in TypeScript that the command
+    collects is not stranded."""
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": json.dumps({"name": "a", "version": "1.0.0", "scripts": {"test": "node --test"}}),
+            "app.js": "export function go() { return 1; }\n",
+            "tests/app.test.ts": "import { test } from 'node:test';\nimport assert from 'node:assert';\n"
+                                 "const n: number = 1;\ntest('x', () => assert.equal(n, 1));\n",
+        },
+    )
+
+    from app.analysis.integration_checks import _source_files, _tests_the_project_never_runs
+
+    assert _tests_the_project_never_runs(_source_files(root), root) == []
+
+
+def test_jsx_is_never_run_by_node(tmp_path):
+    """Node 24 stops at ERR_UNKNOWN_FILE_EXTENSION on `.tsx`, however it is named."""
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": json.dumps({"name": "a", "version": "1.0.0", "scripts": {"test": "node --test"}}),
+            "app.js": "export function go() { return 1; }\n",
+            "tests/view.test.tsx": "import { test } from 'node:test';\ntest('x', () => {});\n",
+        },
+    )
+
+    report = summarise_integration(root)
+
+    assert "view.test.tsx" in report
+    assert "cannot load JSX" in report
 
 
 def test_an_all_javascript_project_is_not_newly_flagged(tmp_path):
@@ -1480,7 +1535,7 @@ def test_the_stranded_typescript_suite_blocks(tmp_path):
     """A suite no gate runs is a false green, and a false green must block.
 
     Classified untidy at first, for want of a phrase in `_BREAKS_BEHAVIOUR`.
-    Run-cac07d52 COMPLETED with five Playwright tests that had never executed
+    One run COMPLETED with five Playwright tests that had never executed
     once, and all five failed when run afterwards.
     """
     root = _workspace(
@@ -1530,7 +1585,7 @@ def test_every_blocking_marker_still_appears_in_a_real_message():
 # A blocking finding against a suite that demonstrably passes, whose remedy
 # would have broken it.
 #
-# Measured live on run-ed05e20e. `task-manager/app.spec.js` opens
+# Measured live on one run. `task-manager/app.spec.js` opens
 #
 #     import { test, expect } from '@playwright/test';
 #
@@ -1599,3 +1654,154 @@ def test_a_file_that_really_imports_nothing_is_still_reported(tmp_path):
     report = summarise_integration(root)
     assert "and nothing imports" in report
     assert "a feature DOES NOT WORK" in report, "it stops the suite running, so it blocks"
+
+
+class TestAnAttributeTheScriptSetsItself:
+    """A script that sets an attribute is not reading one nothing sets.
+
+    `_JS_ASSIGNS_ID` has covered the `setAttribute` form since it was written;
+    the data-attribute side covered only `element.dataset.x = ...`. That is the
+    §1-B mistake again - a rule defined over part of the set it governs.
+
+    One run built inline editing whose inputs carry
+    `setAttribute('data-field', 'title')` and whose save handler reads
+    `li.querySelector('[data-field="title"]')`. It was reported for reading an
+    attribute "which no HTML element sets. It is `undefined` every time", as a
+    blocking finding, against code that works.
+    """
+
+    def _page(self, tmp_path):
+        (tmp_path / "index.html").write_text(
+            '<!doctype html><html><body><ul id="task-list"></ul>'
+            '<script src="app.js"></script></body></html>'
+        )
+
+    def _problems(self, tmp_path):
+        from app.analysis.integration_checks import (
+            _hooks_javascript_reaches_for,
+            _source_files,
+        )
+
+        return _hooks_javascript_reaches_for(_source_files(tmp_path), tmp_path)
+
+    def test_set_attribute_then_read_by_selector_is_fine(self, tmp_path):
+        self._page(tmp_path)
+        (tmp_path / "app.js").write_text(
+            "const el = document.getElementById('task-list');\n"
+            "const input = document.createElement('input');\n"
+            "input.setAttribute('data-field', 'title');\n"
+            "const found = el.querySelector('[data-field=\"title\"]');\n"
+        )
+        assert self._problems(tmp_path) == []
+
+    def test_dataset_assignment_then_read_by_selector_is_fine(self, tmp_path):
+        """The early subtraction let the selector path put it back."""
+        self._page(tmp_path)
+        (tmp_path / "app.js").write_text(
+            "const el = document.getElementById('task-list');\n"
+            "el.dataset.field = 'title';\n"
+            "const found = el.querySelector('[data-field=\"title\"]');\n"
+        )
+        assert self._problems(tmp_path) == []
+
+    def test_an_attribute_genuinely_nobody_sets_is_still_reported(self, tmp_path):
+        self._page(tmp_path)
+        (tmp_path / "app.js").write_text(
+            "const el = document.getElementById('task-list');\n"
+            "const found = el.querySelector('[data-status=\"done\"]');\n"
+        )
+        problems = self._problems(tmp_path)
+        assert len(problems) == 1 and "data-status" in problems[0]
+
+    def test_a_camel_cased_dataset_write_matches_the_dashed_attribute(self, tmp_path):
+        self._page(tmp_path)
+        (tmp_path / "app.js").write_text(
+            "const el = document.getElementById('task-list');\n"
+            "el.dataset.taskId = '1';\n"
+            "const found = el.querySelector('[data-task-id=\"1\"]');\n"
+        )
+        assert self._problems(tmp_path) == []
+
+
+class TestABrowserHelperIsNotACopy:
+    """An end-to-end helper shares a name with the application and nothing else.
+
+    `addTask(page, title)` types into a form and clicks a button.
+    `addTask(title, description)` returns an object. Importing the second in
+    place of the first would defeat the test, which is why one run's
+    milestone reviewer rebutted this finding in its own words: "importing the
+    JS module would defeat the purpose of end-to-end verification and is not
+    required or expected". One run was reported for the same thing.
+
+    Two reviewers pushing back on a blocking finding is the signal the finding
+    is wrong - and a specialist sent to fix working code is what cost one
+    run its life.
+    """
+
+    def _problems(self, tmp_path):
+        from app.analysis.integration_checks import (
+            _redefined_instead_of_imported,
+            _source_files,
+        )
+
+        return _redefined_instead_of_imported(_source_files(tmp_path), tmp_path)
+
+    def _app(self, tmp_path):
+        (tmp_path / "app.js").write_text(
+            "export function addTask(title, description) {\n"
+            "  return { title, description };\n}\n"
+        )
+
+    def test_a_playwright_fixture_is_not_reported(self, tmp_path):
+        self._app(tmp_path)
+        (tmp_path / "fixtures.ts").write_text(
+            "import { expect, type Page } from '@playwright/test';\n"
+            "export async function addTask(page: Page, title: string): Promise<void> {\n"
+            "  await page.fill('#task-title', title);\n"
+            "  await page.click('#add');\n}\n"
+        )
+        assert self._problems(tmp_path) == []
+
+    def test_a_helper_taking_page_first_is_not_reported(self, tmp_path):
+        self._app(tmp_path)
+        (tmp_path / "e2e.spec.js").write_text(
+            "export async function addTask(page, title) {\n"
+            "  await page.getByRole('textbox').fill(title);\n}\n"
+        )
+        assert self._problems(tmp_path) == []
+
+    def test_a_unit_test_copying_the_application_is_still_reported(self, tmp_path):
+        """The defect this check exists for must survive the exemption."""
+        self._app(tmp_path)
+        (tmp_path / "app.test.mjs").write_text(
+            "import { test } from 'node:test';\n"
+            "function addTask(title, description) { return { title, description }; }\n"
+            "test('adds', () => { addTask('a', 'b'); });\n"
+        )
+
+        problems = self._problems(tmp_path)
+
+        assert len(problems) == 1
+        assert "addTask" in problems[0]
+        assert "tests a copy" in problems[0]
+
+    def test_a_copy_that_merely_mentions_a_page_variable_is_still_reported(
+        self, tmp_path
+    ):
+        """The exemption is for a driver, not for the word `page` appearing."""
+        self._app(tmp_path)
+        (tmp_path / "app.test.mjs").write_text(
+            "import { test } from 'node:test';\n"
+            "function addTask(title, description) { return { title, description }; }\n"
+            "const page = 1;\n"
+            "test('adds', () => { addTask('a', 'b'); });\n"
+        )
+        assert len(self._problems(tmp_path)) == 1
+
+
+
+def test_a_setup_file_given_with_an_equals_sign_is_followed() -> None:
+    from app.analysis.integration_checks import _explicitly_imported_in_command
+
+    assert _explicitly_imported_in_command("node --test --import=./tests/setup.mjs tests/") == ["./tests/setup.mjs"]
+    assert _explicitly_imported_in_command("node --test --require=./setup.cjs") == ["./setup.cjs"]

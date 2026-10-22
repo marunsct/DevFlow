@@ -207,7 +207,7 @@ def _record(status="running", stage=""):
 
 def test_a_running_run_reports_the_stage_it_is_actually_in():
     """`current_stage` is written by the runner's gate loop, and that loop only
-    turns when the graph pauses. Measured on run-7b11cb67: ten minutes of steady
+    turns when the graph pauses. Measured on one run: ten minutes of steady
     work, a model call every thirty seconds, and a blank stage on screen."""
     from app.server.runs import _stage_in_flight
 

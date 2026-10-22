@@ -4,11 +4,11 @@ Each wrote a document to `docs/` *and* returned the same content as the
 structured response the pipeline routes on, generated separately from one
 understanding with nothing reconciling them. Measured costs:
 
-- Divergence: run-0b55ad49 left a 1 KB `docs/spec.md` beside a 51 KB
+- Divergence: one run left a 1 KB `docs/spec.md` beside a 51 KB
   `docs/technical_specification.md`; the reviewer read the thin one and blocked
   a sprint over detail that was in the other file.
 - Double generation: the specification is ~40 KB of prose, asked for twice.
-- Confusion about "done": run-0edfcd33's architect wrote the document, then
+- Confusion about "done": one run's architect wrote the document, then
   reported in prose on three fresh conversations, each ~100,000 characters, and
   the run failed. From its side the schema was redundant - it had delivered.
 """
@@ -140,7 +140,7 @@ def test_json_stuffed_into_a_prose_field_is_unpacked():
     """Models put structure into string fields; the content is right, the
     container is wrong.
 
-    Measured on run-78804673: the architect's `product_scope` - a prose field -
+    Measured on one run: the architect's `product_scope` - a prose field -
     arrived as `{"in_scope": [...], "deferred_scope": [...]}`, and rendering it
     verbatim produced a single 1,200-character line no reader would read.
     """
@@ -202,7 +202,7 @@ def test_both_renderers_share_one_behaviour():
 #   3. `can_write=False` went to the two reviewers, and the five agents
 #      converted to generated documents afterwards kept their write tool
 #
-# The third cost run-78804673, which failed at `technical_lead`: "asked to
+# The third cost one run, which failed at `technical_lead`: "asked to
 # write the same thing 5 times in a row... The repeated request was:
 # docs/milestone_plan.md". Told not to write, still holding the tool, no cue
 # for when to stop - exactly what the architecture reviewer had done hours
@@ -246,7 +246,7 @@ def test_agents_that_do_write_code_keep_their_tools():
 def test_a_read_only_agent_is_not_told_how_to_write():
     """Contradictory instructions cost a stage.
 
-    Measured on run-db3a4a0b: the scrum master - whose document the workflow
+    Measured on one run: the scrum master - whose document the workflow
     now renders - received "CRITICAL DIRECTORY RULES: Write all document
     artifacts ... inside `docs/`" alongside its own "Do not write a document".
     It went looking for the tool and reported "I don't have a `write_artifact`
@@ -289,7 +289,7 @@ def test_no_agent_writes_a_document_the_workflow_also_renders():
     `test_no_agent_is_told_not_to_write_while_holding_a_write_tool` only finds
     an agent whose prompt says "Do not write a". The stack selector's did not
     say it, so the test passed while the stage held a write tool and wrote
-    `docs/technology_stack.md` itself. On run-0b18e403 it printed its selection
+    `docs/technology_stack.md` itself. On one run it printed its selection
     into the conversation, wrote the document, printed it again, wrote again -
     five identical writes, and the repeat guard ended the run at stage three.
 

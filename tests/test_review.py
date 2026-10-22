@@ -84,7 +84,7 @@ def test_build_revision_prompt_includes_artifact_and_comments() -> None:
 # The rerun limit, and what it says when it fires
 #
 # The budget counts *rejections*, which are not the same as failures to
-# improve. On run-0b55ad49 all three were spent on defects in the workflow
+# improve. On one run all three were spent on defects in the workflow
 # itself - a sandbox limit that broke every test, a prompt example that built
 # the project in the wrong directory, two competing npm projects - each fixed
 # between rejections. The budget was exhausted before the agent had been given

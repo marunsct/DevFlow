@@ -6,7 +6,7 @@ recommending `make`, a budget warning threatening a restart that never
 happened, and advice naming `pytest` as its example. Each cost a stage, and
 each was invisible until a run walked into it.
 
-The tool list is the same fault with the sharpest consequence: run-db3a4a0b's
+The tool list is the same fault with the sharpest consequence: one run's
 scrum master was handed "CRITICAL DIRECTORY RULES: write all document artifacts
 inside `docs/`" beside "Do not write a document", went looking for the tool,
 and reported "I don't have a `write_artifact` tool or any file-writing/editing

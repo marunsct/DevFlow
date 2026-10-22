@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -51,7 +51,42 @@ class Defect(BaseModel):
     regression_test: str | None = Field(
         default=None, description="The regression test added for this defect, once fixed."
     )
+    caught_by: str = Field(
+        default="",
+        description=(
+            "The test command that was already failing when this defect was reported, "
+            "or ''. A defect a test already catches needs no new test: that command "
+            "passing is its proof. Set by the controller, never by a specialist."
+        ),
+    )
+    source: str = Field(
+        default="",
+        description="Which check raised it. Set by the controller, never by a specialist.",
+    )
+    failing_criteria: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The acceptance criteria this defect names that the harness's own run of "
+            "the locked suite found failing when it was reported. Set by the "
+            "controller, never by a specialist."
+        ),
+    )
+    found_in_round: int | None = Field(
+        default=None,
+        description="The test round that raised it. Set by the controller, never by a specialist.",
+    )
     status: DefectStatus = Field(default="open")
+    fix_attempts: int = Field(
+        default=0, ge=0,
+        description="Fix stages that ran on this defect and left it open, or were reverted.",
+    )
+    attempts: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Each fix stage that ran on it: the stage, the files it changed, what it did and "
+            "how it ended (plan PH.2). Set by the controller, never by a specialist."
+        ),
+    )
     verified_by: str = Field(
         default="",
         description=(
@@ -62,6 +97,13 @@ class Defect(BaseModel):
     )
     accepted_risk_reason: str | None = Field(
         default=None, description="Why this defect was accepted as a risk instead of fixed, if applicable."
+    )
+    resolution: str = Field(
+        default="",
+        description=(
+            "How it was fixed: the fixing specialist's own decisions and the files it "
+            "changed. Set by the controller from that specialist's result."
+        ),
     )
 
 
@@ -100,6 +142,12 @@ _DEFECT_NOISE = frozenset({
 })
 
 
+#: Checks whose defects are one template filled in with the site each names
+#: (`app.acceptance.mutation_guided`): two of them share nearly every word and
+#: are still two problems, so neither is ever a restatement of another.
+TEMPLATED_SOURCES = frozenset({"mutation"})
+
+
 def _defect_terms(description: str) -> frozenset[str]:
     """The meaningful words of a defect description, for comparing two of them."""
     # Dots and dashes are kept inside a token so `jest.config.js` survives, then
@@ -116,7 +164,7 @@ def recurrence_of(defect: Defect, earlier: Sequence[Defect]) -> Defect | None:
     the fix did not work. Treating it as new spends another attempt on the same
     problem and tells the specialist nothing it does not already believe.
 
-    Measured on run-95ca3f72, which exhausted all six remediation attempts:
+    Measured on one run, which exhausted all six remediation attempts:
 
         fixed: Regression test fails due to missing y18n module import
         fixed: Regression test fails due to improper import of y18n module.
@@ -130,11 +178,13 @@ def recurrence_of(defect: Defect, earlier: Sequence[Defect]) -> Defect | None:
     notice that two sentences are about the same thing, and a false negative
     just restores today's behaviour.
     """
+    if getattr(defect, "source", "") in TEMPLATED_SOURCES:
+        return None
     terms = _defect_terms(defect.description)
     if len(terms) < 2:
         return None
     for candidate in earlier:
-        if candidate.status != "fixed":
+        if candidate.status != "fixed" or getattr(candidate, "source", "") in TEMPLATED_SOURCES:
             continue
         candidate_terms = _defect_terms(candidate.description)
         if not candidate_terms:
@@ -144,6 +194,49 @@ def recurrence_of(defect: Defect, earlier: Sequence[Defect]) -> Defect | None:
         if overlap >= 2 and overlap / smaller >= 0.6:
             return candidate
     return None
+
+
+def recurrence_chain(defect: Defect, earlier: Sequence[Defect]) -> list[Defect]:
+    """Every fixed defect this one restates, newest first, each found from the one after it.
+
+    One generation was followed: a problem fixed and raised again three times
+    counted only the latest fix, so its calls never reached the cap and its
+    tries never reached the escalation rung.
+    """
+    chain: list[Defect] = []
+    pool, current = list(earlier), defect
+    while pool:
+        # The nearest earlier generation first, so none is stepped over.
+        found = recurrence_of(current, list(reversed(pool)))
+        if found is None:
+            break
+        chain.append(found)
+        pool = pool[:next(i for i, d in enumerate(pool) if d is found)]
+        current = found
+    return chain
+
+
+def _tries_of(defect: Defect) -> int:
+    """A defect's own failed fixes: its reverts, or its attempts that did not fix it, whichever says more.
+
+    Only a revert was counted: a fix measured and left open counted none, so
+    the candidate fixes, the judgement model and the last attempt's note all
+    waited for a revert that a left-open defect never has.
+    """
+    unfixed = sum(1 for a in (getattr(defect, "attempts", None) or [])
+                  if isinstance(a, dict) and not str(a.get("outcome") or "").startswith("fixed"))
+    return max(int(defect.fix_attempts or 0), unfixed)
+
+
+def failed_fix_tries(cycle: RemediationCycle, index: int) -> int:
+    """How many times fixing this problem has failed: its own fixes, and the fix of the defect it restates.
+
+    A defect marked fixed that comes back is recorded as a new one
+    (`recurrence_of`); the fix that did not hold is a failed try of the same
+    problem, and so is every one before it.
+    """
+    defect = cycle.defects[index]
+    return _tries_of(defect) + sum(_tries_of(earlier) + 1 for earlier in recurrence_chain(defect, cycle.defects[:index]))
 
 
 def recurring_defect_note(cycle: RemediationCycle) -> str:
@@ -185,6 +278,12 @@ def start_remediation(
     return RemediationCycle(sprint_goal=sprint_goal, max_attempts=max_attempts)
 
 
+#: Rounds a sprint may run in total, however they are counted. The budget
+#: below can decline to charge a round against `max_attempts`; this is what
+#: stops that becoming unbounded, and it is derived so the two cannot drift.
+ROUNDS_PER_ATTEMPT_CEILING = 2
+
+
 def record_test_run(
     cycle: RemediationCycle,
     *,
@@ -192,17 +291,57 @@ def record_test_run(
     passed: bool,
     summary: str = "",
     new_defects: list[Defect] | None = None,
+    charge_the_budget: bool = True,
 ) -> RemediationCycle:
     """Record one executed test command and any newly discovered defects.
 
+    `charge_the_budget` is False for a round that found nothing wrong with the
+    product - only with the tests. The caller decides that, because deciding
+    it means knowing which files are tests, and that is not this module's
+    business.
+
+    Measured on one run, which failed after three attempts with a working
+    product: 43 of its 43 unit tests passed, all five features the brief names
+    were built, and the cross-file checks found one stranded spec and a
+    518-line product against a 500-line cap. Of the eleven defects it spent
+    those attempts on, **seven were in `ui.pw.test.mjs`** - the Playwright
+    suite the run had just written - and its second round was nothing else:
+
+        round 1   2 in app.js, 2 in ui.pw.test.mjs
+        round 2   0 in app.js, 3 in ui.pw.test.mjs
+        round 3   2 in app.js, 2 in ui.pw.test.mjs
+
+    A suite settling down is not the product failing, and charging it against
+    a budget meant for the product is how a run dies with the product working.
+
     Raises:
         RemediationLimitExceeded: if the test failed and recording this
-            attempt would exceed `max_attempts`, so the caller pauses the
-            sprint with an actionable error instead of looping forever on a
-            defect that never gets fixed.
+            attempt would exceed `max_attempts`, or if the sprint has run more
+            rounds than any budget allows, so the caller pauses the sprint with
+            an actionable error instead of looping forever.
     """
-    next_attempt = cycle.attempt + (0 if passed else 1)
-    if not passed and next_attempt > cycle.max_attempts:
+    # A round that passes while an earlier defect is still open has not cleared
+    # the sprint: the workflow sends it straight back to remediation. Both
+    # bounds below were written for failing rounds only, and `defect_remediation`
+    # leaves a defect open on purpose when its fix names no regression test,
+    # trusting "the next test round will count this as another failed attempt".
+    # The next round passed. Measured on one run: a defect no stage could close
+    # looped test_round_3 -> defect_fix_4_3 -> test_round_4 ... test_round_7 ->
+    # defect_fix_8_3 with every round green and no limit ever reached.
+    still_open = any(getattr(d, "status", "") == "open" for d in cycle.defects)
+    cleared = passed and not still_open
+    rounds_so_far = len(cycle.test_runs) + 1
+    if not cleared and rounds_so_far > cycle.max_attempts * ROUNDS_PER_ATTEMPT_CEILING:
+        raise RemediationLimitExceeded(
+            f"Sprint '{cycle.sprint_goal}' has run {rounds_so_far} verification "
+            f"rounds, the ceiling for a sprint allowed {cycle.max_attempts} "
+            "remediation attempts. Rounds that found only test defects are not "
+            "charged against those attempts, and this is what bounds that: the "
+            "suite is not settling. A human must intervene."
+        )
+
+    next_attempt = cycle.attempt + (0 if cleared or not charge_the_budget else 1)
+    if not cleared and next_attempt > cycle.max_attempts:
         raise RemediationLimitExceeded(
             f"Sprint '{cycle.sprint_goal}' has failed remediation {cycle.attempt} time(s), "
             f"reaching the limit of {cycle.max_attempts} attempts. Escalating instead of "
@@ -217,7 +356,17 @@ def record_test_run(
                 TestRunRecord(command=command, passed=passed, summary=summary),
             ],
             "defects": [*cycle.defects, *(new_defects or [])],
-            "escalated": next_attempt >= cycle.max_attempts and not passed,
+            # Not cleared, rather than not passed. A round that passes while an
+            # earlier defect is still open is charged an attempt like any other,
+            # and when that attempt was the last, the sprint is out of them. It
+            # used to be marked exhausted only by a round with defects of its
+            # own, so this one left the count at its limit and said nothing:
+            # the next failing round raised `RemediationLimitExceeded`, and one
+            # run ended there - no re-plan, no Sprint Record - where every
+            # other exhausted sprint is planned again.
+            "escalated": (
+                next_attempt >= cycle.max_attempts and not cleared and charge_the_budget
+            ),
         }
     )
 
@@ -228,6 +377,7 @@ def mark_defect_fixed(
     *,
     regression_test: str,
     verified_by: str = "",
+    resolution: str = "",
 ) -> RemediationCycle:
     """Mark one defect fixed, requiring a regression test if the defect needs one.
 
@@ -264,6 +414,7 @@ def mark_defect_fixed(
             "status": "fixed",
             "regression_test": regression_test,
             "verified_by": verified_by,
+            "resolution": resolution,
         }
     )
     return cycle.model_copy(update={"defects": updated_defects})
@@ -328,7 +479,7 @@ def build_defect_report(cycle: RemediationCycle) -> str:
         outcome = "PASSED" if run.passed else "FAILED"
         lines.append(f"- {' '.join(run.command)}: {outcome} {run.summary}".rstrip())
     for defect in cycle.defects:
-        # "fixed" on its own was a claim, not a finding. run-d3965815's final
+        # "fixed" on its own was a claim, not a finding. One run's final
         # message reported two of three defects fixed while the same suite
         # failed from the first test round to the last, because "fixed" meant
         # the specialist had named a test. Say which fixes anything actually

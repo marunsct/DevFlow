@@ -32,6 +32,9 @@ from psycopg2.pool import ThreadedConnectionPool
 
 from app.server.runner import RunRecord
 
+from app.server.process_local import owned_here
+from app.server.schema_lock import lock_schema
+
 logger = logging.getLogger(__name__)
 
 _CREATE_TABLE = """
@@ -54,7 +57,11 @@ CREATE TABLE IF NOT EXISTS runs (
     tenant_id       TEXT NOT NULL DEFAULT 'default',
     task_id         TEXT,
     cancel_requested BOOLEAN NOT NULL DEFAULT FALSE,
-    model_overrides TEXT NOT NULL DEFAULT '{}'
+    model_overrides TEXT NOT NULL DEFAULT '{}',
+    delivery_mode   TEXT NOT NULL DEFAULT '',
+    local_only      BOOLEAN NOT NULL DEFAULT FALSE,
+    approval_timeout_minutes INTEGER,
+    completion_gaps   TEXT NOT NULL DEFAULT '[]'
 );
 """
 
@@ -65,6 +72,22 @@ _MIGRATIONS = (
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS task_id TEXT",
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS model_overrides TEXT NOT NULL DEFAULT '{}'",
+    # Why the stop flag was raised: 'cancel' (the default) or 'pause'. The
+    # worker stops the same way for both, at a stage boundary; only the status
+    # it records differs, and a paused run is resumed, not ended.
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS stop_reason TEXT",
+    # The run's own delivery mode, chosen when it starts (`app.delivery`).
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS delivery_mode TEXT NOT NULL DEFAULT ''",
+    # Whether the run was started to use the build model only, no frontier
+    # model for any stage (`app.models.roles.on_the_build_model_only`).
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS local_only BOOLEAN NOT NULL DEFAULT FALSE",
+    # Minutes a gate waits for a person before it approves itself; NULL waits
+    # for ever (`app.server.approval_timeouts`).
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS approval_timeout_minutes INTEGER",
+    # What the release knew it did not prove: deferred criteria, problems the
+    # suite was locked with, an unproven setup (Initiative J.4). A completed
+    # run with a non-empty list is never plain "completed" on any surface.
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS completion_gaps TEXT NOT NULL DEFAULT '[]'",
     "CREATE INDEX IF NOT EXISTS runs_tenant_created_idx ON runs (tenant_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS runs_owner_idx ON runs (owner)",
 )
@@ -80,8 +103,8 @@ _MIGRATIONS = (
 # here is built from a value that reaches the process at runtime; every such
 # value is passed as a bound parameter.
 _INSERT_SQL = """
-    INSERT INTO runs (run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    INSERT INTO runs (run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode, local_only, approval_timeout_minutes, completion_gaps)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT (run_id) DO UPDATE SET
         thread_id        = EXCLUDED.thread_id,
         status           = EXCLUDED.status,
@@ -97,17 +120,25 @@ _INSERT_SQL = """
         repo_root        = EXCLUDED.repo_root,
         owner            = EXCLUDED.owner,
         tenant_id        = EXCLUDED.tenant_id,
-        task_id          = COALESCE(EXCLUDED.task_id, runs.task_id),
-        model_overrides  = EXCLUDED.model_overrides
+        task_id          = COALESCE(runs.task_id, EXCLUDED.task_id),
+        model_overrides  = EXCLUDED.model_overrides,
+        delivery_mode    = EXCLUDED.delivery_mode,
+        local_only       = EXCLUDED.local_only,
+        approval_timeout_minutes = EXCLUDED.approval_timeout_minutes,
+        completion_gaps    = EXCLUDED.completion_gaps
 """
 
-_SELECT_ONE_SQL = "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides FROM runs WHERE run_id = %s"
-_LIST_ALL_SQL = "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides FROM runs ORDER BY created_at DESC LIMIT %s OFFSET %s"
+_SELECT_ONE_SQL = "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode, local_only, approval_timeout_minutes, completion_gaps FROM runs WHERE run_id = %s"
+_LIST_ALL_SQL = "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode, local_only, approval_timeout_minutes, completion_gaps FROM runs ORDER BY created_at DESC LIMIT %s OFFSET %s"
 _LIST_TENANT_SQL = (
-    "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides FROM runs WHERE tenant_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s"
+    "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode, local_only, approval_timeout_minutes, completion_gaps FROM runs WHERE tenant_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s"
 )
 _COUNT_ALL_SQL = "SELECT COUNT(*) FROM runs"
 _COUNT_TENANT_SQL = "SELECT COUNT(*) FROM runs WHERE tenant_id = %s"
+#: Runs holding a worker slot right now. `running` is the only status that
+#: occupies one: every pause - approval, review, budget - has released the
+#: worker and is waiting on a human.
+_COUNT_IN_FLIGHT_SQL = "SELECT COUNT(*) FROM runs WHERE status = 'running'"
 
 
 def database_url() -> str:
@@ -119,6 +150,7 @@ class RunStore:
     """Durable store for ``RunRecord`` metadata."""
 
     _shared: Optional["RunStore"] = None
+    _shared_owner: Optional[int] = None
     _shared_lock = threading.Lock()
 
     def __init__(self, db_url: str | None = None) -> None:
@@ -133,21 +165,35 @@ class RunStore:
         up to 20 connections and never closing it, which exhausted Postgres after
         a few dozen tasks.
         """
+        # Per process, not per class: a store built in the Celery parent is
+        # inherited by every worker it forks later, and two processes on one
+        # connection is a dropped connection. See `app.server.process_local`.
         with cls._shared_lock:
-            if cls._shared is None:
+            if cls._shared is None or not owned_here(cls._shared_owner):
                 cls._shared = cls()
+                cls._shared_owner = os.getpid()
             return cls._shared
 
     @classmethod
     def reset_shared(cls) -> None:
         with cls._shared_lock:
-            if cls._shared is not None:
+            # An inherited store is dropped, never closed: closing it here
+            # closes the parent's connections.
+            if cls._shared is not None and owned_here(cls._shared_owner):
                 cls._shared.close()
             cls._shared = None
+            cls._shared_owner = None
 
     def _ensure_schema(self) -> None:
+        """Create the runs table and apply the additive migrations.
+
+        Runs when a store is constructed, which happens in the API and in the
+        worker, so two processes starting together race on the `CREATE TABLE IF
+        NOT EXISTS` unless they are serialised. See `app.server.schema_lock`.
+        """
         with self.get_connection() as conn:
             with conn.cursor() as cur:
+                lock_schema(cur)
                 cur.execute(_CREATE_TABLE)
                 for statement in _MIGRATIONS:
                     cur.execute(statement)
@@ -162,6 +208,10 @@ class RunStore:
             conn.rollback()
             raise
         finally:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             self._pool.putconn(conn)
 
     # ------------------------------------------------------------------
@@ -176,6 +226,12 @@ class RunStore:
         would let a worker's routine persist reset a cancellation that arrived
         while it was mid-step - which is precisely how the previous
         implementation made cancel a no-op.
+
+        ``task_id`` is the same kind of field: ``set_task_id`` owns it, and a
+        save keeps the stored one. A worker's record was loaded before the API
+        recorded the task that worker was running, so its routine persist wrote
+        the previous task's id back - and a pause revoked a task that no longer
+        existed, leaving the run going until its next stage boundary.
         """
         with self.get_connection() as conn:
             with conn.cursor() as cur:
@@ -201,6 +257,10 @@ class RunStore:
                         record.task_id,
                         bool(record.cancel_requested),
                         json.dumps(record.model_overrides or {}),
+                        str(record.delivery_mode or ""),
+                        bool(getattr(record, "local_only", False)),
+                        getattr(record, "approval_timeout_minutes", None),
+                        json.dumps([str(gap) for gap in (getattr(record, "completion_gaps", None) or [])]),
                     ),
                 )
             conn.commit()
@@ -240,6 +300,27 @@ class RunStore:
             conn.commit()
         return changed == 1
 
+    def record_stage(self, run_id: str, stage: str, meaning: str, updated_at: str) -> bool:
+        """Name the stage a running run has entered; nothing changes unless it is `running`.
+
+        The row was written only when the graph handed control back - at a
+        pause or the end - so a run that went through five stages without a
+        pause showed the last one that paused for over an hour.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE runs
+                       SET current_stage = %s, stage_meaning = %s, updated_at = %s
+                     WHERE run_id = %s AND status = 'running'
+                    """,
+                    (stage, meaning, updated_at, run_id),
+                )
+                changed = cur.rowcount
+            conn.commit()
+        return changed == 1
+
     def request_cancel(self, run_id: str, updated_at: str) -> bool:
         """Flag a run for cancellation without clobbering the worker's status.
 
@@ -250,13 +331,50 @@ class RunStore:
         with self.get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE runs SET cancel_requested = TRUE, updated_at = %s "
+                    "UPDATE runs SET cancel_requested = TRUE, stop_reason = 'cancel', updated_at = %s "
                     "WHERE run_id = %s AND status NOT IN ('completed','failed','cancelled')",
                     (updated_at, run_id),
                 )
                 changed = cur.rowcount
             conn.commit()
         return changed == 1
+
+    def request_pause(self, run_id: str, updated_at: str) -> bool:
+        """Flag a running run to stop at its next stage boundary and wait to be resumed.
+
+        The same flag a cancel raises, so the worker stops the same way; the
+        reason makes it record `paused` and keep everything (see
+        `WorkflowRunner._finish_stopped`). Only a running run can be paused: a
+        run parked on a person is already waiting.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE runs SET cancel_requested = TRUE, stop_reason = 'pause', updated_at = %s "
+                    "WHERE run_id = %s AND status = 'running'",
+                    (updated_at, run_id),
+                )
+                changed = cur.rowcount
+            conn.commit()
+        return changed == 1
+
+    def stop_reason(self, run_id: str) -> str:
+        """Why the run's stop flag was raised: 'pause', or 'cancel' for anything else."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT stop_reason FROM runs WHERE run_id = %s", (run_id,))
+                row = cur.fetchone()
+        return "pause" if row and row[0] == "pause" else "cancel"
+
+    def clear_stop(self, run_id: str) -> None:
+        """Lower the stop flag, for a run being resumed."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE runs SET cancel_requested = FALSE, stop_reason = NULL WHERE run_id = %s",
+                    (run_id,),
+                )
+            conn.commit()
 
     def is_cancel_requested(self, run_id: str) -> bool:
         with self.get_connection() as conn:
@@ -330,6 +448,20 @@ class RunStore:
                     cur.execute(_COUNT_ALL_SQL)
                 return int(cur.fetchone()[0])
 
+    def count_in_flight(self) -> int:
+        """How many runs are executing right now, across every tenant.
+
+        Counted in the database rather than from Celery, because the question
+        is asked at dispatch by whichever API worker took the request and
+        Celery's own inspection is a broadcast with a timeout. The status is
+        written before the task is dispatched and cleared by the worker, so
+        this is the same fact one join earlier.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(_COUNT_IN_FLIGHT_SQL)
+                return int(cur.fetchone()[0])
+
     @staticmethod
     def _row_to_record(row: dict) -> RunRecord:
         def _json(value: Any, default: Any) -> Any:
@@ -361,6 +493,10 @@ class RunStore:
             task_id=row.get("task_id"),
             cancel_requested=bool(row.get("cancel_requested")),
             model_overrides=_json(row.get("model_overrides"), {}),
+            delivery_mode=str(row.get("delivery_mode") or ""),
+            local_only=bool(row.get("local_only")),
+            approval_timeout_minutes=row.get("approval_timeout_minutes"),
+            completion_gaps=_json(row.get("completion_gaps"), []),
         )
 
     def close(self) -> None:

@@ -10,7 +10,7 @@ parse error and `node --check` refuses it at the write already; `require` in
 an ES module is perfectly good syntax and fails only when it runs, so no
 parser sees it and the cost lands on whoever runs the file.
 
-Measured live on run-eb48de7a. `specialist_testing_5` wrote
+Measured live on one run. `specialist_testing_5` wrote
 `todo-app/test_core.js` opening `const assert = require('assert');` into a
 project whose `package.json` says `"type": "module"`. The write was accepted
 in silence. The next call ran it and got `ReferenceError: require is not

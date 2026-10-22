@@ -130,7 +130,7 @@ def test_the_brief_never_quotes_the_host_workspace_path():
 
     Quoting it and then instructing the agent not to use it does not work:
     agents retried `ls` against that exact string four times in a row on
-    run-0b55ad49, every attempt failing with path_not_found.
+    one run, every attempt failing with path_not_found.
     """
     from types import SimpleNamespace
 
@@ -158,8 +158,7 @@ def test_the_brief_names_no_file_the_agent_could_try_to_read() -> None:
     The previous version showed the upload's basename instead of its host path,
     on the reasoning that the name was safe where the path was not. It is not:
     the stored name carries an upload suffix (`brief_low_aa06a786.md`) and names
-    nothing in a workspace rooted at "/". Measured on runs 2b5def74, da6c5e19,
-    5d83e946 and again on run-36eb1260, where `product_manager` spent its first
+    nothing in a workspace rooted at "/". Measured on three runs and again on one run, where `product_manager` spent its first
     two calls on `read_file` and then `glob` for that exact string.
     """
     import re
@@ -188,40 +187,6 @@ def test_the_brief_names_no_file_the_agent_could_try_to_read() -> None:
     assert "Build a to-do app" in brief
 
 
-def test_the_brief_names_no_file_the_agent_could_try_to_read() -> None:
-    """A filename in a prompt is an affordance: it invites a read.
-
-    The previous version showed the upload's basename instead of its host path,
-    on the reasoning that the name was safe where the path was not. It is not:
-    the stored name carries an upload suffix (`brief_low_aa06a786.md`) and names
-    nothing in a workspace rooted at "/". Measured on runs 2b5def74, da6c5e19,
-    5d83e946 and again on run-36eb1260, where `product_manager` spent its first
-    two calls on `read_file` and then `glob` for that exact string.
-    """
-    import re
-
-    from app.agents.product_manager import build_intake_request
-    from app.documents import DocumentContent
-
-    document = DocumentContent(
-        source_path="/app/data/uploads/brief_low_aa06a786.md",
-        source_type="markdown",
-        text="# Build a to-do app\nIt must store tasks.",
-        truncated=False,
-    )
-
-    class _Repo:
-        branch = "main"
-        commit = "abc123"
-
-    brief = build_intake_request(document, _Repo())["messages"][0]["content"]
-
-    assert "brief_low_aa06a786" not in brief
-    assert "/app/data/uploads" not in brief
-    assert not re.search(r"\b[\w-]+\.(md|markdown|txt|docx|pdf|csv)\b", brief)
-    assert "Build a to-do app" in brief
-
-
 def test_the_document_text_carries_no_stored_filename(tmp_path) -> None:
     """The leak a previous fix missed, found by the run transcript.
 
@@ -230,9 +195,9 @@ def test_the_document_text_carries_no_stored_filename(tmp_path) -> None:
     `--- Document: brief_low_236ab395.md ---`, the stored upload name, which
     exists nowhere an agent can read.
 
-    Measured across runs 2b5def74, da6c5e19, 5d83e946, 36eb1260 and 3ddd443f:
+    Measured across five runs:
     `product_manager` opens by trying to read that exact string and gets an
-    error for its first call of the run. Only run-189ac60e's transcript - the
+    error for its first call of the run. Only one run's transcript - the
     first record of what the model was actually sent - showed where it came
     from.
     """

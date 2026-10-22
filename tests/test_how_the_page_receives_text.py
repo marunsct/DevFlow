@@ -1,6 +1,6 @@
 """Which DOM-writing API the product uses, stated as fact.
 
-Run 1c9854c7 was killed by a finding that was not true. After three revisions
+One run was killed by a finding that was not true. After three revisions
 the milestone review recorded
 
     [major] security: The addTask function inserts user-provided task text

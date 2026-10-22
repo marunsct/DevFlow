@@ -18,10 +18,17 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 
 import argparse
+import json
+from collections import Counter
+from typing import Any, Callable
 import secrets
 import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 from app.server.auth import (
     get_db_connection,
@@ -239,7 +246,7 @@ def _worker_ran_out_of_memory() -> bool:
     "the container went away" message sends the operator looking for an
     infrastructure fault that did not happen.
 
-    Measured on run-cbd22a34: `npx vitest run` forked one worker per CPU, each
+    Measured on one run: `npx vitest run` forked one worker per CPU, each
     permitted `SANDBOX_MEMORY_LIMIT` of heap by RLIMIT_DATA, and the tree
     reached `memory.peak = 4,294,975,488` - exactly the container's limit. The
     kernel killed the Celery workers mid-test. Per-process rlimits do not bound
@@ -264,6 +271,44 @@ def _worker_ran_out_of_memory() -> bool:
 #: run that kills its worker every time it starts would otherwise restart for
 #: ever, and each restart costs the whole stage.
 _RESUMED_ON_START: set[str] = set()
+
+
+#: The words recovery writes on a run its worker abandoned. See `recover_orphaned_runs`.
+STOPPED_WORKER_MARKER = "The worker running this stage stopped without finishing"
+
+#: How recent a run a restart left failed must be for a starting worker to resume it.
+RESTART_RESUME_WINDOW_HOURS = 12
+
+
+def runs_a_restart_left_failed(records: list, *, within_hours: float = RESTART_RESUME_WINDOW_HOURS) -> list[str]:
+    """Runs recovery marked failed for a stopped worker, recently, that nothing resumed (plan OP.1).
+
+    Recovery marks such a run failed and resumes it - and when that resume was
+    lost (the broker restarted with the host, or the worker died before it
+    claimed the task) no later sweep looks at it again: sweeps read `running`
+    rows only. The handover told the operator to `POST /resume` by hand after
+    every host restart. Only a run with recovery's own words, failed within
+    `within_hours` and not asked to cancel: a paused run is someone's decision
+    and is never touched, nor is a run failed for any other reason.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    since = datetime.now(timezone.utc) - timedelta(hours=within_hours)
+    found = []
+    for record in records:
+        if record.status != "failed" or not str(record.error or "").startswith(STOPPED_WORKER_MARKER):
+            continue
+        if getattr(record, "cancel_requested", False):
+            continue
+        try:
+            when = datetime.fromisoformat(str(record.updated_at))
+        except (TypeError, ValueError):
+            continue
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        if when >= since:
+            found.append(record.run_id)
+    return found
 
 
 def resume_runs_a_restart_abandoned(run_ids: list[str]) -> int:
@@ -317,9 +362,69 @@ def resume_runs_a_restart_abandoned(run_ids: list[str]) -> int:
             _resume_one(run_id)
             queued += 1
             logger.info("Resumed run %s, abandoned by a worker that stopped", run_id)
-        except Exception:  # noqa: BLE001 - one bad run must not block the rest
+            # In the transcript too, so an audit can tell a call the restart
+            # cut off - and the stage ran again - from a resume that replayed
+            # a finished one. See `scripts/loop/audit_live.py`.
+            try:
+                from app.observability.transcript import record
+
+                record(run_id, "", "resumed", why="the worker that ran it stopped (a deploy or a crash)")
+            except Exception:  # noqa: BLE001 - the resume stands without its note
+                pass
+        except Exception as error:  # noqa: BLE001 - one bad run must not block the rest
+            if _the_model_is_not_up_yet(error):
+                _resume_when_the_model_answers(run_id)
+                queued += 1
+                continue
             logger.warning("Could not resume run %s", run_id, exc_info=True)
     return queued
+
+
+#: How long, and how often, a recovered run waits for its model server. Long
+#: enough for a cold start: measured on 2026-10-20, the power to the host was
+#: cut, the stack was back within minutes, the local model server answered only
+#: after the 15 minutes this used to wait, and the run was left failed until a
+#: person resumed it. A try is one readiness call every `MODEL_RETRY_SECONDS`.
+MODEL_WAIT_SECONDS = 2 * 60 * 60
+MODEL_RETRY_SECONDS = 30
+
+
+def _the_model_is_not_up_yet(error: Exception) -> bool:
+    """Whether a resume was refused only because the model server did not answer."""
+    return type(error).__name__ == "RunConflict" and "No model server answered" in str(error)
+
+
+def _resume_when_the_model_answers(run_id: str, *, wait: float = MODEL_WAIT_SECONDS,
+                                   every: float = MODEL_RETRY_SECONDS, sleep: Any = None) -> threading.Thread:
+    """Resume `run_id` once its model server answers, trying again every `every` seconds for `wait`.
+
+    Measured on one run: the whole stack restarted while the owner switched
+    the local model server; the recovered run's resume found no server yet
+    and the run was left failed until a person resumed it.
+    """
+    import time
+
+    pause = sleep or time.sleep
+    logger.warning("Run %s waits for its model server before it resumes (up to %d min)", run_id, int(wait // 60))
+
+    def attempt() -> None:
+        waited = 0.0
+        while waited < wait:
+            pause(every)
+            waited += every
+            try:
+                _resume_one(run_id)
+                logger.info("Resumed run %s once its model server answered", run_id)
+                return
+            except Exception as error:  # noqa: BLE001 - tried again until the wait is over
+                if not _the_model_is_not_up_yet(error):
+                    logger.warning("Could not resume run %s", run_id, exc_info=True)
+                    return
+        logger.warning("Run %s was not resumed: its model server did not answer in %d min", run_id, int(wait // 60))
+
+    worker = threading.Thread(target=attempt, name=f"resume-{run_id[:12]}", daemon=True)
+    worker.start()
+    return worker
 
 
 def _resume_one(run_id: str) -> None:
@@ -339,8 +444,70 @@ def _resume_one(run_id: str) -> None:
     asyncio.run(_get_runner().resume_run(run_id))
 
 
-def recover_orphaned_runs(dry_run: bool = False) -> int:
+def _touched_within(record: Any, seconds: float) -> bool:
+    """Whether this run was written to within `seconds`. False if unknowable.
+
+    False on a missing or unparseable timestamp, so a row that cannot be dated
+    is judged the way it was before this existed rather than protected for ever.
+    """
+    from datetime import datetime, timezone
+
+    stamp = getattr(record, "updated_at", None)
+    if not stamp:
+        return False
+    try:
+        when = datetime.fromisoformat(str(stamp))
+    except (TypeError, ValueError):
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - when).total_seconds() < seconds
+
+
+#: A run touched more recently than this is never judged orphaned, whatever the
+#: broker says. `updated_at` is a liveness signal that does not depend on
+#: inspect timing, and inspect timing is what went wrong.
+#:
+#: Measured on one run, 2026-09-21. It was dispatched at 15:45:00 as task
+#: `fce6686c` and the worker's startup sweep ran eleven seconds later, while
+#: that task was executing. `_live_task_ids()` answered - so the "no worker
+#: replied" guard did not fire - but its reply did not yet list a task handed
+#: to a pool child moments earlier. The run was marked failed, resumed as task
+#: `ed7d5341`, and then ran twice: two executions of one run interleaving
+#: stages into one workspace and one transcript, contending for the same model
+#: server. The docstring below already named that damage - "guessing wrong here
+#: puts two writers on one thread" - and the guess was still available to make.
+#:
+#: 60 seconds is five times the dispatch race measured, and far shorter than
+#: any real abandonment. It was 120 on the reasoning that nothing is lost by
+#: waiting, since the sweep looks again - but the second look waits this long
+#: too, and every deploy into a live run restarts the worker: measured on one
+#: gate run, each of two deploys left the run idle about three minutes, two of
+#: them this wait.
+#:
+#: Applied by the automatic startup sweep and not by the CLI, which defaults to
+#: no grace at all. The two callers are asking different questions. The sweep
+#: guesses, from a broker reply that can be incomplete seconds after a
+#: hand-off. A human running `manage.py recover-orphans` has looked and
+#: decided, and making them wait two minutes to act on their own judgement
+#: would be answering a question they did not ask.
+RECENTLY_TOUCHED_SECONDS = 60
+
+
+def recover_orphaned_runs(
+    dry_run: bool = False,
+    emit: Callable[[str], None] = print,
+    grace_seconds: float = 0.0,
+) -> int:
     """Return runs whose worker died to a state that can be resumed.
+
+    `emit` is where the narration goes. It defaults to `print` because this is a
+    CLI command first, but the worker calls it too, on a startup thread - and
+    Celery's `redirect_stdouts` captures `print` at WARNING, so the healthy
+    outcome ("No orphaned runs; every running row has a live task") was arriving
+    in the log as a warning on every single worker start. A line that means
+    "everything is fine", logged at the level reserved for things that are not,
+    is how a log stops being read.
 
     A run is handed to one Celery task, and the row says `running` for as long
     as that task lives. If the process dies without unwinding - the host loses
@@ -368,7 +535,7 @@ def recover_orphaned_runs(dry_run: bool = False) -> int:
     oom_killed = _worker_ran_out_of_memory()
     live = _live_task_ids()
     if live is None:
-        print("No worker answered, so nothing can be judged orphaned. Nothing changed.")
+        emit("No worker answered, so nothing can be judged orphaned. Nothing changed.")
         return 1
 
     store = RunStore.shared()
@@ -382,13 +549,24 @@ def recover_orphaned_runs(dry_run: bool = False) -> int:
         offset += 500
 
     repaired = 0
+    deferred = 0
     recovered: list[str] = []
     for record in records:
         if record.status != "running":
             continue
         if record.task_id and record.task_id in live:
             continue
-        print(f"{record.run_id}: running -> failed  (stage: {record.current_stage or '?'})")
+        if _touched_within(record, grace_seconds):
+            # Alive by the one signal that does not depend on the broker
+            # answering in time. See `RECENTLY_TOUCHED_SECONDS`.
+            emit(
+                f"{record.run_id}: running, and touched in the last "
+                f"{grace_seconds:.0f}s - too recent to call abandoned. "
+                "Looking again shortly."
+            )
+            deferred += 1
+            continue
+        emit(f"{record.run_id}: running -> failed  (stage: {record.current_stage or '?'})")
         repaired += 1
         if dry_run:
             continue
@@ -413,21 +591,27 @@ def recover_orphaned_runs(dry_run: bool = False) -> int:
         store.save(record)
         recovered.append(record.run_id)
 
+    if deferred:
+        emit(
+            f"{deferred} run(s) were too recently touched to judge. A run that "
+            "has genuinely stopped goes quiet, so the next sweep will see it."
+        )
+
     if repaired and oom_killed:
-        print(
+        emit(
             "\nThis worker container has been OOM-killed; that is the likely cause. "
             "See the runs' error text for what to change."
         )
     if not repaired:
-        print("No orphaned runs; every running row has a live task.")
+        emit("No orphaned runs; every running row has a live task.")
     elif dry_run:
-        print(f"\n{repaired} run(s) would be recovered. Re-run without --dry-run to apply.")
+        emit(f"\n{repaired} run(s) would be recovered. Re-run without --dry-run to apply.")
     else:
         queued = resume_runs_a_restart_abandoned(recovered)
         if queued:
-            print(f"\nRecovered {repaired} run(s) and resumed {queued} of them.")
+            emit(f"\nRecovered {repaired} run(s) and resumed {queued} of them.")
         else:
-            print(f"\nRecovered {repaired} run(s). Resume them to continue.")
+            emit(f"\nRecovered {repaired} run(s). Resume them to continue.")
     return 0
 
 
@@ -482,6 +666,320 @@ def clear_run_overrides(run_id: str | None = None, dry_run: bool = False) -> int
     return 0
 
 
+#: A workspace is not stale while its run could still write to it. Terminal
+#: means the workflow will not reopen it: the run store's own vocabulary.
+TERMINAL_RUN_STATUSES = frozenset({"completed", "failed", "cancelled"})
+
+
+def _directory_size(path: Path) -> int:
+    total = 0
+    for item in path.rglob("*"):
+        try:
+            if item.is_file() and not item.is_symlink():
+                total += item.stat().st_size
+        except OSError:  # noqa: PERF203 - a file that vanished mid-walk is 0
+            continue
+    return total
+
+
+def _run_id_in(name: str) -> str:
+    """The run id embedded in a workspace directory name, or "".
+
+    `allocate_workspace` names them `<label>-<run_id>`, and the label is free
+    text, so the run id is recognised by its own prefix rather than by position.
+    """
+    marker = name.find("run-")
+    return name[marker:] if marker >= 0 else ""
+
+
+def _megabytes(size: int) -> str:
+    """A size in MB, never rounding something that exists down to nothing.
+
+    One decimal place is the right resolution for a report whose point is
+    which workspaces are large, and it prints anything under 50 KB as
+    "0.0 MB" - which reads as empty. A workspace that holds a few files is
+    not empty, and a column of zeroes is what makes an operator stop reading.
+    """
+    if 0 < size < 102_400:
+        return f"{'<0.1':>9s} MB"
+    return f"{size / 1_048_576:9.1f} MB"
+
+
+def _workspace_directories(root: Path) -> list[Path]:
+    """Every run workspace under `root`, in either layout it may be in.
+
+    Two layouts are on disk at once. `allocate_workspace` originally put a
+    workspace directly under the root; tenant segments were added later, and
+    since then it writes `<root>/<tenant>/<workspace>`. `delete_workspace`
+    was written to cope with both - "checked against the configured root
+    rather than a tenant's directory under it, so this keeps working for
+    workspaces allocated before there were tenant segments" - and the first
+    version of this report was not.
+
+    What that cost, on this deployment: the six pre-tenant workspaces were
+    read as tenant directories, so their `.git` and `docs` subdirectories were
+    listed as workspaces in their own right, the total came to 908 MB against
+    a real 1.1 GB, and none of the six was ever offered for deletion because a
+    `docs` directory carries no run id and its status reads "no run", which is
+    not terminal. Under-reporting and under-deleting is the safe direction to
+    be wrong in, and still wrong.
+
+    A directory is a workspace if its name carries a run id; otherwise it is
+    a tenant segment and its children are looked at instead. That is the same
+    test the rest of this module uses to find a run, and it needs no list of
+    known tenant names.
+    """
+    found: list[Path] = []
+    for entry in sorted(p for p in root.iterdir() if p.is_dir()):
+        if _run_id_in(entry.name):
+            found.append(entry)
+            continue
+        found.extend(sorted(p for p in entry.iterdir() if p.is_dir()))
+    return found
+
+
+def workspaces(older_than_days: float | None = None, delete: bool = False) -> int:
+    """Report what the run workspaces are costing, and optionally reclaim it.
+
+    Nothing ages these out. `delete_workspace` exists and is called from one
+    place - `DELETE /api/runs/{id}` - so a workspace survives for as long as
+    the deployment does. Measured on this deployment: 846 MB across twelve
+    runs of a to-do list, most of it `node_modules` and `.agent-home/.npm`
+    that each run installs again.
+
+    Deletion is opt-in twice over: `--older-than-days` has no default, and
+    without `--delete` this only reports. A workspace whose run is not
+    terminal is never offered, however old it is - a run parked for a human
+    decision is still going to be resumed.
+    """
+    from app.server.run_store import RunStore
+    from app.server.workspaces import delete_workspace, workspace_root
+
+    root = workspace_root()
+    if not root.exists():
+        print(f"No workspace root at {root}.")
+        return 0
+
+    store = RunStore.shared()
+    now = time.time()
+    rows: list[tuple[Path, int, float, str]] = []
+    for workspace in _workspace_directories(root):
+        run_id = _run_id_in(workspace.name)
+        record = store.load(run_id) if run_id else None
+        status = getattr(record, "status", None) or ("unknown" if run_id else "no run")
+        age_days = (now - workspace.stat().st_mtime) / 86400
+        rows.append((workspace, _directory_size(workspace), age_days, str(status)))
+
+    if not rows:
+        print(f"No workspaces under {root}.")
+        return 0
+
+    total = sum(size for _, size, _, _ in rows)
+    for workspace, size, age_days, status in sorted(rows, key=lambda r: -r[1]):
+        print(
+            f"{_megabytes(size)}  {age_days:6.1f}d  {status:10s} "
+            f"{workspace.relative_to(root)}"
+        )
+    print(f"{_megabytes(total)}  total across {len(rows)} workspace(s)")
+
+    if older_than_days is None:
+        print("\nPass --older-than-days N to see what could be reclaimed.")
+        return 0
+
+    stale = [
+        (workspace, size)
+        for workspace, size, age_days, status in rows
+        if age_days >= older_than_days and status in TERMINAL_RUN_STATUSES
+    ]
+    held = [
+        (workspace, status)
+        for workspace, _, age_days, status in rows
+        if age_days >= older_than_days and status not in TERMINAL_RUN_STATUSES
+    ]
+    for workspace, status in held:
+        print(f"\nKept {workspace.name}: its run is {status}, not finished.")
+    if not stale:
+        print(f"\nNothing older than {older_than_days} day(s) is safe to remove.")
+        return 0
+
+    reclaim = sum(size for _, size in stale)
+    if not delete:
+        for workspace, size in stale:
+            print(f"\nWould delete {workspace.name} ({size / 1_048_576:.1f} MB)")
+        print(
+            f"\n{reclaim / 1_048_576:.1f} MB in {len(stale)} workspace(s) could be "
+            "reclaimed. Re-run with --delete to apply. The files are gone "
+            "afterwards; the run's artifacts in object storage are not touched."
+        )
+        return 0
+
+    for workspace, size in stale:
+        delete_workspace(workspace)
+        print(f"Deleted {workspace.name} ({size / 1_048_576:.1f} MB)")
+    print(f"\nReclaimed {reclaim / 1_048_576:.1f} MB.")
+    return 0
+
+
+#: The tables a run's graph state is spread across, in the order a delete has
+#: to touch them. No foreign keys tie them together, so the order is chosen
+#: rather than enforced: writes and blobs reference a checkpoint that is left
+#: until last, so an interrupted delete leaves orphaned rows rather than a
+#: checkpoint whose contents have gone.
+CHECKPOINT_TABLES = ("checkpoint_writes", "checkpoint_blobs", "checkpoints")
+
+
+def _threads_of(thread_id: str) -> tuple[str, str]:
+    """The SQL patterns matching every thread a run owns.
+
+    A run's graph writes under its own `thread_id`, and every gated stage runs
+    an inner agent under `f"{outer_thread_id}:{stage_name}:{uuid}"` - see
+    `_run_gated_agent`. So one run of fourteen accounts for a share of the 522
+    distinct threads on this deployment, and deleting only the outer thread
+    would leave almost all of its rows behind.
+    """
+    return thread_id, f"{thread_id}:%"
+
+
+def _age_in_days(record: Any, now: datetime) -> float:
+    """How old a run is, from a timestamp the store keeps as text.
+
+    `runs.created_at` is a `TEXT` column and `RunRecord` carries it through as
+    the string it was read as, so subtracting it from a `datetime` raises -
+    which is what the first version of `checkpoints` did the moment it met a
+    real record. The unit tests passed because the fake record held a
+    `datetime`, which is the mistake worth remembering here: a fixture that is
+    tidier than production tests something production does not do.
+
+    An unreadable stamp reads as age zero, so a run whose date cannot be
+    parsed is never old enough to be offered for deletion.
+    """
+    stamp = getattr(record, "created_at", None)
+    if not stamp:
+        return 0.0
+    if isinstance(stamp, datetime):
+        when = stamp
+    else:
+        try:
+            when = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return 0.0
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (now - when).total_seconds() / 86400
+
+
+def checkpoints(older_than_days: float | None = None, delete: bool = False) -> int:
+    """Report what the graph checkpoints are costing, and optionally reclaim it.
+
+    Nothing prunes these. There is no `DELETE FROM checkpoint...` anywhere in
+    `src/app` and no thread-deletion call, so every superstep of every run ever
+    executed is still on disk. Measured on this deployment: 144 MB of database
+    for fourteen runs of a to-do list app, 136 MB of it checkpoints - about
+    10 MB per run, across 522 threads.
+
+    The same two-flag shape as `workspaces`, for the same reason: this is the
+    only record of how a run reached its state, and a run that has not finished
+    still needs it to resume. `--older-than-days` has no default and `--delete`
+    is separate from it.
+    """
+    from app.server.run_store import RunStore
+
+    store = RunStore.shared()
+    records, offset = [], 0
+    while True:
+        page = store.list_all(limit=500, offset=offset)
+        records.extend(page)
+        if len(page) < 500:
+            break
+        offset += 500
+
+    now = datetime.now(timezone.utc)
+    rows: list[tuple[Any, float, int]] = []
+    with store.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT pg_size_pretty(pg_database_size(current_database()))")
+            db_size = cursor.fetchone()[0]
+            for record in records:
+                thread = getattr(record, "thread_id", "") or ""
+                if not thread:
+                    continue
+                exact, prefix = _threads_of(thread)
+                cursor.execute(
+                    "SELECT count(*) FROM checkpoints "
+                    "WHERE thread_id = %s OR thread_id LIKE %s",
+                    (exact, prefix),
+                )
+                count = cursor.fetchone()[0]
+                rows.append((record, _age_in_days(record, now), count))
+
+    if not rows:
+        print("No runs, so no checkpoints.")
+        return 0
+
+    for record, age_days, count in sorted(rows, key=lambda r: -r[2]):
+        print(
+            f"{count:8,d} checkpoints  {age_days:6.1f}d  {record.status:10s} "
+            f"{record.run_id}"
+        )
+    print(f"{sum(c for _, _, c in rows):8,d} checkpoints  across {len(rows)} run(s)")
+    print(f"The database is {db_size} in total.")
+
+    if older_than_days is None:
+        print("\nPass --older-than-days N to see what could be reclaimed.")
+        return 0
+
+    stale = [
+        (record, count)
+        for record, age_days, count in rows
+        if age_days >= older_than_days
+        and record.status in TERMINAL_RUN_STATUSES
+        and count
+    ]
+    held = [
+        (record, count)
+        for record, age_days, count in rows
+        if age_days >= older_than_days and record.status not in TERMINAL_RUN_STATUSES
+    ]
+    for record, _count in held:
+        print(
+            f"\nKept {record.run_id}: its run is {record.status}, not finished. "
+            "Its checkpoints are how it would resume."
+        )
+    if not stale:
+        print(f"\nNothing older than {older_than_days} day(s) is safe to remove.")
+        return 0
+
+    total = sum(count for _, count in stale)
+    if not delete:
+        for record, count in stale:
+            print(f"\nWould delete {count:,} checkpoints for {record.run_id}")
+        print(
+            f"\n{total:,} checkpoints across {len(stale)} run(s) could be "
+            "reclaimed. Re-run with --delete to apply. The run rows, the "
+            "transcripts and the workspaces are not touched - only the graph "
+            "state, which means those runs can no longer be resumed or "
+            "replayed."
+        )
+        return 0
+
+    removed = 0
+    with store.get_connection() as conn:
+        for record, count in stale:
+            exact, prefix = _threads_of(record.thread_id)
+            with conn.cursor() as cursor:
+                for table in CHECKPOINT_TABLES:
+                    cursor.execute(
+                        f"DELETE FROM {table} "  # noqa: S608 - a literal from CHECKPOINT_TABLES
+                        "WHERE thread_id = %s OR thread_id LIKE %s",
+                        (exact, prefix),
+                    )
+            conn.commit()
+            removed += count
+            print(f"Deleted {count:,} checkpoints for {record.run_id}")
+    print(f"\nReclaimed the graph state of {len(stale)} run(s), {removed:,} checkpoints.")
+    return 0
+
+
 def list_users() -> int:
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -494,6 +992,108 @@ def list_users() -> int:
     print(f"{'USERNAME':<24} {'ROLE':<10} {'TENANT':<16} STATUS")
     for username, role, tenant, disabled in rows:
         print(f"{username:<24} {role:<10} {tenant:<16} {'disabled' if disabled else 'active'}")
+    return 0
+
+
+#: The Redis list `tasks.handle_task_failure` writes to. Named here so this
+#: reader and that writer cannot drift apart.
+DEAD_LETTER_KEY = "celery_dlq"
+
+#: How many entries one report prints in full. The list is trimmed to 1,000 by
+#: the writer, and a report nobody finishes reading is the problem this fixes.
+MAX_FAILURES_LISTED = 20
+
+
+def failed_tasks(clear: bool = False, limit: int = MAX_FAILURES_LISTED) -> int:
+    """Report the tasks that died permanently, and optionally forget them.
+
+    `handle_task_failure` has written every permanently failed task to a Redis
+    list since it was added. Nothing in the product reads that list. Two writes,
+    no readers, so a worker crash was recorded and then not reported to anybody -
+    which is the shape of failure this harness keeps finding in its own gates.
+
+    Nine entries were sitting in it when this was written, and each one is
+    something an operator would have wanted to know the same day:
+
+        x2  'WorkflowRunner' object has no attribute '_run_loop'
+        x2  unexpected character after line continuation character (sandbox...)
+        x2  Worker exited prematurely: signal 9 (SIGKILL)
+        x1  SoftTimeLimitExceeded()
+        x1  connection already closed
+        x1  -241
+
+    The two `SyntaxError`s are the harness's own module, so two runs died
+    because `sandbox.py` was briefly unparseable. The two SIGKILLs are the
+    worker being killed, which `_worker_ran_out_of_memory` exists to explain.
+    None of it reached a log anybody reads.
+
+    Grouped by exception first, because the count is the thing that says whether
+    a crash is a one-off or a pattern, and then listed newest first with the run
+    each belonged to, because that is what makes one investigable.
+
+    `--clear` empties the list, which is how a report stops repeating what has
+    already been dealt with. Reporting is the default, as with every other
+    command here.
+    """
+    from app.server.redis_client import get_redis_client
+
+    try:
+        client = get_redis_client()
+        raw = client.lrange(DEAD_LETTER_KEY, 0, -1)
+    except Exception as error:  # noqa: BLE001 - an unreachable Redis is the answer
+        print(f"Could not read the dead-letter list: {error}")
+        return 1
+
+    entries = []
+    unreadable = 0
+    for item in raw or []:
+        if isinstance(item, bytes):
+            item = item.decode("utf-8", "replace")
+        try:
+            parsed = json.loads(item)
+        except Exception:  # noqa: BLE001 - a malformed entry is still a failure
+            unreadable += 1
+            continue
+        if isinstance(parsed, dict):
+            entries.append(parsed)
+        else:
+            unreadable += 1
+
+    if not entries and not unreadable:
+        print("No permanently failed tasks recorded.")
+        return 0
+
+    counts: Counter[str] = Counter(
+        str(entry.get("exception") or "(no exception recorded)") for entry in entries
+    )
+    print(f"{len(entries)} permanently failed task(s) recorded"
+          + (f", and {unreadable} entr(y/ies) that could not be parsed" if unreadable else "")
+          + ".\n")
+    print("By exception:")
+    for exception, count in counts.most_common():
+        print(f"  x{count:<4} {exception[:96]}")
+
+    # Newest first: the writer uses LPUSH, so the list is already in that order.
+    print(f"\n{'FAILED AT':<21} {'RUN':<20} {'RESUME':<7} EXCEPTION")
+    for entry in entries[:limit]:
+        kwargs = entry.get("kwargs") if isinstance(entry.get("kwargs"), dict) else {}
+        run_id = str((kwargs or {}).get("run_id") or "-")
+        resume = str((kwargs or {}).get("resume"))
+        when = str(entry.get("failed_at") or "")[:19]
+        print(f"{when:<21} {run_id[:20]:<20} {resume:<7} "
+              f"{str(entry.get('exception'))[:60]}")
+    if len(entries) > limit:
+        print(f"... and {len(entries) - limit} more; pass --limit to see them.")
+
+    if clear:
+        try:
+            client.delete(DEAD_LETTER_KEY)
+        except Exception as error:  # noqa: BLE001
+            print(f"\nCould not clear the list: {error}")
+            return 1
+        print(f"\nCleared {len(raw or [])} entr(y/ies).")
+    else:
+        print("\nNothing was changed. Pass --clear once these have been dealt with.")
     return 0
 
 
@@ -535,6 +1135,52 @@ def main(argv: list[str] | None = None) -> int:
     pins.add_argument("run_id", nargs="?", help="One run; omit for every run")
     pins.add_argument("--dry-run", action="store_true", help="Report without changing anything")
 
+    spaces = sub.add_parser(
+        "workspaces",
+        help="Report what run workspaces are using on disk, and optionally reclaim it",
+    )
+    spaces.add_argument(
+        "--older-than-days",
+        type=float,
+        help="Offer workspaces at least this old whose run has finished",
+    )
+    spaces.add_argument(
+        "--delete",
+        action="store_true",
+        help="Actually remove them; without this the command only reports",
+    )
+
+    points = sub.add_parser(
+        "checkpoints",
+        help="Report what graph checkpoints are costing, and optionally reclaim it",
+    )
+    points.add_argument(
+        "--older-than-days",
+        type=float,
+        help="Offer the checkpoints of runs at least this old that have finished",
+    )
+    points.add_argument(
+        "--delete",
+        action="store_true",
+        help="Actually remove them; without this the command only reports",
+    )
+
+    dead = sub.add_parser(
+        "failed-tasks",
+        help="Report the tasks that died permanently, from the dead-letter list",
+    )
+    dead.add_argument(
+        "--clear",
+        action="store_true",
+        help="Forget them once dealt with; without this the command only reports",
+    )
+    dead.add_argument(
+        "--limit",
+        type=int,
+        default=MAX_FAILURES_LISTED,
+        help=f"How many to list individually (default {MAX_FAILURES_LISTED})",
+    )
+
     disable = sub.add_parser("disable-user", help="Disable an account")
     disable.add_argument("username")
 
@@ -550,12 +1196,18 @@ def main(argv: list[str] | None = None) -> int:
         return create_user(args.username, args.password, args.role, args.tenant)
     if args.command == "set-role":
         return set_role(args.username, args.role)
+    if args.command == "failed-tasks":
+        return failed_tasks(clear=args.clear, limit=args.limit)
     if args.command == "list-users":
         return list_users()
     if args.command == "recover-orphans":
         return recover_orphaned_runs(args.dry_run)
     if args.command == "reconcile-runs":
         return reconcile_runs(args.dry_run)
+    if args.command == "checkpoints":
+        return checkpoints(args.older_than_days, args.delete)
+    if args.command == "workspaces":
+        return workspaces(args.older_than_days, args.delete)
     if args.command == "clear-run-overrides":
         return clear_run_overrides(args.run_id, args.dry_run)
     if args.command == "disable-user":

@@ -1,6 +1,6 @@
 """The intake carries the brief's constraints even when the model omits them.
 
-Run 0c5aabdb rendered `## Constraints / _Not specified._` for a brief with a
+One run rendered `## Constraints / _Not specified._` for a brief with a
 `## Technical Constraints` heading and four lines under it. The principal
 architect writes the specification from the intake and never sees the brief, so
 "Backend: Express server" went into a product whose brief says "No external

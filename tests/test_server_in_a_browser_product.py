@@ -1,6 +1,6 @@
 """A server in a product whose own stack says there is none.
 
-run-bb1ee9bb chose "Vanilla JavaScript" with "Web LocalStorage" and wrote its
+One run chose "Vanilla JavaScript" with "Web LocalStorage" and wrote its
 own rationale: "Web LocalStorage meets this requirement without any server or
 additional libraries ... the application runs entirely in the browser". A
 specialist then wrote a 3,696-byte `server.js` - `createServer` from
@@ -50,7 +50,7 @@ def _check(tmp_path: Path, files: dict[str, str], stack) -> list[str]:
     return _a_server_in_a_browser_only_product(_source_files(tmp_path), tmp_path, stack)
 
 
-def test_the_run_bb1ee9bb_server_is_reported(tmp_path: Path) -> None:
+def test_the_measured_server_is_reported(tmp_path: Path) -> None:
     (problem,) = _check(tmp_path, {"server.js": SERVER}, BROWSER)
 
     assert "starts an HTTP server" in problem

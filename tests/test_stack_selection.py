@@ -1,6 +1,6 @@
 """A stack selection has to record every choice the brief asks for.
 
-Measured on run-c4f17841 (brief_medium), whose brief names both
+Measured on one run (brief_medium), whose brief names both
 "Backend: Python/FastAPI or Node.js/Express" and "Frontend: React or Vue.js":
 
     {"language": "Python", "framework": "FastAPI", "database": "PostgreSQL",

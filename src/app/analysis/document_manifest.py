@@ -175,6 +175,32 @@ def why_it_does_not_belong(relative_parts: tuple[str, ...]) -> str:
     )
 
 
+def not_rendered_yet(relative_path: str) -> str:
+    """Why a workflow document is missing, or "" if the path is not one.
+
+    The layout brief names every document in `docs/` and says to read them,
+    but most exist only once the stage that renders them has run. One run's
+    `technical_lead`, in the first sprint, read `docs/security_review.md` -
+    which the security review renders at the end of a milestone - and was
+    answered only "File does not exist within the repository".
+
+    Only called for a path that is missing, so "has not run yet" is what the
+    absence means: a document is rendered as its stage finishes.
+    """
+    parts = [part for part in relative_path.replace("\\", "/").split("/") if part not in ("", ".")]
+    if len(parts) != 2 or parts[0] != "docs" or not parts[1].lower().endswith(".md"):
+        return ""
+    document = BY_STEM.get(_stem_of(parts[1]))
+    if document is None:
+        return ""
+    return (
+        f" It is {document.summary}, which the workflow renders from the "
+        f"'{document.stage}' stage's structured response, and that stage has not "
+        "run yet in this run - there is nothing to read until it does. Work from "
+        "the documents in `docs/` that exist now."
+    )
+
+
 def describe() -> str:
     """The set, as one sentence for a prompt. Rendered, never restated."""
     return (
@@ -193,5 +219,6 @@ __all__ = [
     "closest_rendered",
     "describe",
     "is_rendered",
+    "not_rendered_yet",
     "why_it_does_not_belong",
 ]

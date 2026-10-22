@@ -2,7 +2,7 @@
 
 `VerificationRun`'s docstring has always said "a claim here is checked against
 `read_execution_ledger`, which is what makes it evidence rather than
-assertion". No such check existed until this module. run-d3965815's final
+assertion". No such check existed until this module. One run's final
 message to the human reported two of three defects fixed while `app.test.mjs`
 failed continuously from the first test round to the last - because "fixed"
 meant "the specialist named a test" and nothing more.
@@ -45,7 +45,7 @@ def test_a_command_that_really_passed_proves_the_fix(workspace) -> None:
 
 
 def test_a_command_that_failed_proves_nothing(workspace) -> None:
-    """The run-d3965815 shape: claimed fixed, suite still red."""
+    """The one run shape: claimed fixed, suite still red."""
     _ledger(workspace, [{"command": ["node", "--test", "."], "returncode": "1"}])
 
     claims = [VerificationRun(command=["node", "--test", "."], exit_code=0)]

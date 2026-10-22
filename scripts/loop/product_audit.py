@@ -131,6 +131,17 @@ elif (project / "go.mod").exists():
     command = ["go", "test", "./..."]
 elif (project / "Cargo.toml").exists():
     command = ["cargo", "test"]
+# The run's own unit test command when the stack contract records one: a
+# Python product's packages are in its `.venv`, and `python -m pytest` with
+# the worker's interpreter failed to collect a product whose run passed 34 tests.
+try:
+    from app.stacks import contract as _contract
+
+    recorded = list((_contract.read(root) or {}).get("unit_test") or [])
+except Exception:  # noqa: BLE001 - the manifest's command, as before
+    recorded = []
+if recorded:
+    command = [str(part) for part in recorded]
 if command is None:
     print("  no test command declared by a manifest")
     raise SystemExit(0)

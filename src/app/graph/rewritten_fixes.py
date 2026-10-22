@@ -210,11 +210,20 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
         neighbours, _ = project_memory.render(root, MEMORY_CHARACTERS, focus=f"{path}\n{failure}")
     else:
         neighbours = _neighbours(root, path, SimpleNamespace(files=others), detail)
+    # What happened to the attempts before this one: a rewrite asked again
+    # exactly as before wrote the same change, and was reverted for the same
+    # broken test - measured on the first all-on run, two identical requests
+    # and two identical reverts in one sprint attempt.
+    from app.agents.ledger import earlier_attempts
+
+    actual = str(getattr(defect, "actual_behavior", "") or "").strip()
     return "\n\n".join(part for part in (
         f"Correct the file `{path}` of this product so the failure below no longer happens. "
         f"The stack: {_stack_line(stack)}.",
         f"--- The defect ---\n{getattr(defect, 'description', '')}\n"
-        f"Expected: {getattr(defect, 'expected_behavior', '')}",
+        f"Expected: {getattr(defect, 'expected_behavior', '')}"
+        + (f"\nActual: {actual}" if actual else ""),
+        earlier_attempts(defect).strip(),
         f"--- What failed ---\n{failure}" if failure.strip() else "",
         ("--- The compiler still reports, in the files just written ---\n" + "\n".join(diagnostics)) if diagnostics else "",
         detail.strip(),

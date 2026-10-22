@@ -186,3 +186,21 @@ def test_a_defect_with_no_tests_of_its_own_gets_no_candidates(tmp_path):
     )
 
     assert kept is None and model.calls == 0
+
+
+def test_a_rewrite_is_told_what_happened_to_the_attempts_before_it(tmp_path):
+    """Asked again exactly as before, a rewrite wrote the same change and was reverted for the same broken
+    test, twice in one sprint attempt."""
+    import os as _os
+    from unittest import mock as _mock
+
+    root = _workspace(tmp_path)
+    defect = SimpleNamespace(
+        description="The unit tests fail.", expected_behavior="They pass.", affected_files=["notes-api/src/store.ts"],
+        actual_behavior="Reverted: it broke 1 test(s) that passed before it: unit: test_hash_is_not_plaintext",
+        reproduction_steps=[], attempts=[{"stage": "defect_fix_1_0", "files": ["notes-api/src/store.ts"],
+                                          "did": "returned text", "outcome": "reverted: it broke test_hash_is_not_plaintext"}],
+    )
+    with _mock.patch.dict(_os.environ, {"DECISION_LEDGER": "on"}):
+        text = rewritten_fixes.fix_request(root, "notes-api/src/store.ts", defect, "x", None, None, [], [])
+    assert "Reverted: it broke 1 test(s)" in text and "Earlier attempts at this defect" in text

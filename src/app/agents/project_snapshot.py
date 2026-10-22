@@ -43,6 +43,13 @@ _LOCKFILE_NAMES = frozenset({
 })
 
 
+def _when() -> str:
+    """The clock, or a time-free phrase under `CANONICAL_MEMORY` (plan PX.3)."""
+    from app.agents.canonical_memory import when
+
+    return when(time.strftime("%H:%M:%S"))
+
+
 def _numbered(text: str) -> str:
     """`text` numbered the way `read_file` numbers it, so a line range carries over."""
     try:
@@ -108,7 +115,7 @@ def project_snapshot(repo_root: str | Path) -> str:
             # on a model that writes 2,000-4,000 tokens a turn.
             return (
                 f"The project directory `{project}/` has no files yet "
-                f"({time.strftime('%H:%M:%S')}): nothing has been built, so there is "
+                f"({_when()}): nothing has been built, so there is "
                 "nothing in it to list, search or read. What this stage works from is "
                 "in this request and the documents under `docs/`."
             )
@@ -147,7 +154,7 @@ def project_snapshot(repo_root: str | Path) -> str:
         )
         return (
             f"The project's files as they stood when this stage started "
-            f"({time.strftime('%H:%M:%S')}), numbered the way `read_file` numbers them. "
+            f"({_when()}), numbered the way `read_file` numbers them. "
             "You do not need to read a file below to know what it says. Another "
             "task may change a file after this point: the workspace listing at the "
             "end of each request gives every file's current line count, and if it "

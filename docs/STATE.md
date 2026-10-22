@@ -33,6 +33,7 @@ week are in `docs/archive/`.
 | `INTERFACE_CHANGES_NAMED` | PH.3 a builder's report names the interfaces it changed | `app/agents/interface_changes.py` |
 | `ASK_SPECIFICATION` | CM.4 a bounded question to the specification, the architect on a miss | `app/agents/ask_specification.py` |
 | `STABLE_TOOLS` | PX.2 a withheld tool stays listed and is refused (prefix cache) | `app/agents/stable_tools.py` |
+| `CANONICAL_MEMORY` | PX.3 memory and snapshot in the same bytes across a sprint's visits | `app/agents/canonical_memory.py` |
 | `INTERFACE_CLASH_CHECK` | CM.3 join: a removed definition another work order still uses is a defect | `app/agents/interface_clashes.py` |
 | `PROJECT_GRAPH_FIXES` / `PROJECT_GRAPH_BUILDERS` / `CODE_GRAPH_TOOL` | CG.2 / CG.3 code-graph neighbourhood for fixers / builders; CG.4 the `code_graph` tool | `app/analysis/project_graph.py` |
 | `REGRESSION_CONTRACT` | BW.1 a seeded product's green tests are the first baseline | `app/acceptance/regression_contract.py` |

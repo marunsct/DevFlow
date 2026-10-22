@@ -134,11 +134,15 @@ def current(repo_root: str | Path) -> dict[str, str]:
 
 
 def _ranked(files: dict[str, str], focus: str, unserved: tuple[str, ...] = ()) -> list[str]:
+    from app.agents.canonical_memory import enabled as canonical_order
     from app.analysis.file_kinds import classify_file
+
+    # The order no request changes, under `CANONICAL_MEMORY` (plan PX.3).
+    canonical = canonical_order()
 
     def rank(path: str) -> tuple[int, int, str]:
         name = path.rsplit("/", 1)[-1]
-        named = path in focus or (len(name) > 4 and name in focus)
+        named = not canonical and (path in focus or (len(name) > 4 and name in focus))
         if named and not path.startswith("docs/"):
             return (-1, 0, path)
         # A copy nothing serves comes after everything that is the product, so
@@ -280,6 +284,10 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
         return "", {}
     held: dict[str, str] = {}
     parts: list[str] = []
+    from app.agents.canonical_memory import enabled as canonical_order
+
+    canonical = canonical_order()
+    after_the_rest: list[str] = []
     left_out: list[str] = []
     used = 0
     try:
@@ -300,7 +308,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
             digest = digest_of(text, focus, min(LARGEST_FILE_CHARACTERS, budget_characters - used))
             if digest:
                 block = f"=== {path} (outline and the sections this request points at; read others by line) ===\n{digest}\n"
-                parts.append(block)
+                # Chosen by the request's words, so after what every request shares (plan PX.3).
+                (after_the_rest if canonical else parts).append(block)
                 used += len(block)
                 continue
         if len(text) > LARGEST_FILE_CHARACTERS or used + len(block) > budget_characters:
@@ -309,6 +318,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
         parts.append(block)
         held[path] = text
         used += len(block)
+    parts += after_the_rest
     if not parts:
         return "", {}
     head = (

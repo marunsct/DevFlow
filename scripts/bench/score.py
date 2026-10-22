@@ -64,10 +64,18 @@ def _node_runner() -> Path:
 
 
 def _python_runner() -> Path:
+    """The runner's interpreter, with pytest and httpx importable.
+
+    Ready only when they import, not when the interpreter exists: an install
+    cut off part-way (a scoring command whose output pipe closed early) left
+    the interpreter without pytest, every later score reused it, and a run
+    whose product passed its suite was scored 0/10 as a false acceptance.
+    """
     home = RUNNERS / "py"
     python = home / "bin" / "python"
     if not python.exists():
         _run([sys.executable, "-m", "venv", str(home)], RUNNERS if RUNNERS.exists() else Path("/tmp"))
+    if _run([str(python), "-c", "import pytest, httpx"], home).returncode != 0:
         _run([str(python), "-m", "pip", "install", "--quiet", "pytest", "httpx"], home)
     return python
 
@@ -250,8 +258,15 @@ def score(
         result["quality_tests"] = quality
     result["harness"] = harness_verdict(product, status, completion_gaps)
     result.update(brief_pairing(own_brief))
+    # No report means the tests never ran - a broken runner, not a broken
+    # product. Scored 0 it read as a false acceptance and went into the KPI
+    # ledger as one; unscored, it says what happened and is left out.
+    result["unscored"] = not tests
+    if result["unscored"]:
+        result["score"] = None
     result["false_acceptance"] = (
-        result["harness"]["status"] == "completed" and result["score"] < 1.0 and not result["brief_mismatch"]
+        not result["unscored"] and result["harness"]["status"] == "completed"
+        and result["score"] < 1.0 and not result["brief_mismatch"]
     )
     # What the release knew it did not prove, top level as well: the outcome
     # dashboard and `report.py` read the export without walking `harness`.
@@ -272,7 +287,10 @@ if __name__ == "__main__":
     result = score(
         product, bench, out, sys.argv[4] if len(sys.argv) > 4 else "", gaps, sys.argv[6] if len(sys.argv) > 6 else "",
     )
-    print(f"{result['benchmark']}: {result['passed']}/{result['total']} hidden tests pass (score {result['score']})")
+    if result["unscored"]:
+        print(f"{result['benchmark']}: UNSCORED - the hidden tests produced no report; see the notes below")
+    else:
+        print(f"{result['benchmark']}: {result['passed']}/{result['total']} hidden tests pass (score {result['score']})")
     if "quality_total" in result:
         print(f"  quality: {result['quality_passed']}/{result['quality_total']} of the brief's edges held")
     if result["brief_mismatch"]:

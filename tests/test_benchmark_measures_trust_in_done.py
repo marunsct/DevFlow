@@ -160,3 +160,24 @@ def test_a_deploy_waits_for_the_live_stage_to_end() -> None:
     deploy = loop[loop.index("\ndeploy)"):loop.index("\n  ;;", loop.index("\ndeploy)"))]
     assert "BOUNDARY_WAIT:-1800" in deploy
     assert deploy.index("last_stage") < deploy.index('touch $gate/hold')
+
+
+def test_a_run_whose_hidden_tests_never_ran_is_unscored_not_a_false_acceptance(tmp_path, monkeypatch) -> None:
+    """A runner whose install was cut off part-way had no pytest; every hidden test 'failed' with no report,
+    and a run whose product passed its suite was scored 0/10 as a false acceptance and entered the ledger."""
+    (tmp_path / "bench" / "hidden").mkdir(parents=True)
+    (tmp_path / "bench" / "bench.json").write_text(json.dumps({"kind": "http_api", "runner": "pytest", "tests": 10}))
+    (tmp_path / "product").mkdir()
+    monkeypatch.setattr(score, "_python_runner", lambda: Path("/bin/false"))
+    monkeypatch.setattr(score, "harness_verdict", lambda product, status, gaps=None: {"status": "completed", "completion_gaps": []})
+    result = score.score(tmp_path / "product", tmp_path / "bench", tmp_path / "out.json", "completed")
+    assert result["unscored"] is True and result["score"] is None and result["false_acceptance"] is False
+    row = report.summarise([result])["bench"]
+    assert row["scored"] == 0 and row["false_acceptances"] == 0
+
+
+def test_a_runner_is_ready_only_when_pytest_imports_not_when_its_python_exists():
+    import inspect
+
+    source = inspect.getsource(score._python_runner)
+    assert '"import pytest, httpx"' in source

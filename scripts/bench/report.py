@@ -36,6 +36,10 @@ def summarise(results: list[dict]) -> dict[str, dict]:
             # the pairing, so it is counted apart and in nothing else.
             row["brief_mismatch"] += 1
             continue
+        if result.get("unscored"):
+            # The hidden tests never ran (a broken runner): no score at all,
+            # not a 0 that reads as a product that failed every test.
+            continue
         status = (result.get("harness") or {}).get("status", "unknown")
         row["scored"] += 1
         row["scores"].append(float(result.get("score") or 0.0))

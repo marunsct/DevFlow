@@ -292,6 +292,15 @@ failures)
   ;;
 reads)  in_worker redundant_reads.py "${2:-$(current)}" ;;
 patterns) shift; in_worker patterns.py "$@" ;;
+documents)
+  # A finished run's unit-test and acceptance-test documents (plans DT.1, DT.6), from a copy of its
+  # workspace without what installs made, written on the host into data/documents/<run>/.
+  run="${2:?name a run}"; copy=$(mktemp -d)
+  docker compose exec -T worker sh -c "cd /app/data/workspaces/default/workspace-$run && tar --exclude=.venv --exclude=node_modules --exclude=__pycache__ -cf - ." | tar -xf - -C "$copy"
+  gaps=$("${DB[@]}" "select completion_gaps from runs where run_id='$run'" 2>/dev/null | head -1)
+  PYTHONPATH="$ROOT/src" "$PY" "$HERE/documents.py" "$copy" "$run" "data/documents/$run" "$gaps"
+  rm -rf "$copy"
+  ;;
 lessons) shift; in_worker lessons.py "${@:-list}" ;;
 timing) shift; in_worker run_timing.py "${@:-$(current)}" ;;
 kpi)

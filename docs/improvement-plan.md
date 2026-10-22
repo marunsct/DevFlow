@@ -2,7 +2,7 @@
 
 > **Unified plan (consolidated 2026-10-19).** This file is the only improvement plan.
 > - It carries the original plan (§1–4, Initiatives A–I) and Appendices 1–8
->   (Initiatives J–BL, EF, CM, OS, RL, PH, CG and Appendix 7's MF, RC, IN, BW, PN, OP, CH, EV, SF and Appendix 8's SL, SAP, DT, RD, with the UI parts).
+>   (Initiatives J–BL, EF, CM, OS, RL, PH, CG and Appendix 7's MF, RC, IN, BW, PN, OP, CH, EV, SF and Appendix 8's SL, RV, SAP, DT, RD, with the UI parts).
 > - **Before implementing: Part 21** is the single implementation order and
 >   **Part 22** resolves the contradictions and lists what not to implement.
 > - Section E holds the two earlier plan documents, merged here.
@@ -3490,7 +3490,7 @@ Every stage keeps the standing rules (`AGENTS.md`):
 Each stage's gate is judged by the two-run rule (Part 20).
 
 *Added 2026-10-22 (Appendix 8, customer stacks, SAP, templates, legacy docs):*
-- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
+- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
 - **Group 2, behind switches:** SL.5, SAP.1 → SAP.2 → SAP.3, SAP.4 → SAP.5, DT.5, RD.1, RD.3, RD.5, RD.6.
 
 *Added 2026-10-21 (Appendix 7, the discipline layer):*
@@ -4003,6 +4003,37 @@ checked by the harness; the model is told, not trusted.**
 | SL.7 | Enforcement through each ecosystem's own linter where one exists, the harness's regex check otherwise: the profile's rules (SL.2) override the pack's defaults (SL.6) per stack, and the pack maps the merged rules into the linter's configuration file at scaffold — `ruff` `N` (pep8-naming) rules, `@typescript-eslint/naming-convention`, `golangci-lint`/`revive` naming, checkstyle `*Name` checks, `abaplint.json` `object_naming` and `local_class_naming` with the customer's prefixes and namespace; the linter runs at the CI gate as a check family and its findings are defects; file and folder names are checked at write time by the write guard (SL.3). The model reads the merged rules once in its instructions; the linter holds them | 1 — now | P1 | PROPOSED |
 | SL.8 | Rules the harness cannot lint are still structured, not prose: database table and column case, route and endpoint case (`/kebab-case` vs `/snake_case`), environment-variable prefix, commit-message form — kept in the profile as named fields, checked by the harness's own detectors where it already reads those surfaces (the integration checks read routes; the environment contract reads variables), reported as findings elsewhere | 1 — now | P2 | PROPOSED |
 
+<a id="plan-rv"></a>
+### RV — Organisation review policy and a learned review checklist (Q1, continued 11:09 JST)
+
+**What exists.** Five reviewer roles with fixed prompts: `code_reviewer` (the batch against its
+work orders and criteria; findings `{work_order, severity, file, problem, …}` become defects or
+advice), `security_reviewer` (with `SECRETS_HERE` and the source under review), `architecture_reviewer`,
+`acceptance_reviewer`, `milestone_reviewer`. Finding categories and severities are normalised
+(`finding_category.py`, `severity.py`); every finding's disposition is recorded in the Sprint Record
+(`with_dispositions`: fixed, superseded, open, sent back). There is no place for a customer's review
+policy, and nothing accumulates what reviews keep finding.
+
+**Design.** Two stores, one mechanism. A *policy* is what the organisation says must be reviewed; a
+*checklist* is the policy plus what the harness has learned the reviewer keeps finding. Both are
+structured items, never prose; an item is either a **check** the harness runs or a **judgement** the
+reviewer must answer per item with a citation — and the harness verifies the answer's shape, as it
+already does for specialist advice (`unanswered()`).
+
+| ID | Change | Group | Priority | Status |
+|---|---|---|---|---|
+| RV.1 | Review policy in the organisation profile (SL.2), per reviewer stage: items `{id, text, stage: code|security|architecture|acceptance|milestone, severity_floor, applies_to: stacks/kinds, kind: check|judgement, check: linter rule / integration-check family / regex (for `check` items)}`; a `.md` policy document may be uploaded and is split into proposed items the owner confirms. Injected into the reviewer's request as one numbered, byte-stable "Organisation review policy" block (ADR-0011) | 1 — now, inactive until configured | P1 | PROPOSED |
+| RV.2 | Reviewer answers per item: each reviewer's output gains `policy: [{id, result: met|not_met|not_applicable, file, evidence}]`; the harness refuses an answer that skips an item (the `specialist_advice` pattern); a `not_met` becomes a finding at the item's severity floor, through the existing defect/advice split. Items of kind `check` are run by the harness at the CI gate and never asked of the model | 1 — now | P1 | PROPOSED |
+| RV.3 | Learned checklist: every review finding is normalised to a shape (stage, category, the problem's form with paths and names blanked, stack) and counted across runs; a shape found in ≥3 runs — or found and *fixed* in ≥2 — becomes a *proposed* checklist item with its evidence runs, in a signed, owner-approved store like the lessons' (`plugins/lessons.py` pattern: proposed → approved → rejected, never injected unapproved). The owner adds and edits items in the same store. Approved items join the policy block for that stage and stack | 1 — now | P1 | PROPOSED |
+| RV.4 | Checks beat judgement: for a proposed item whose shape matches a known deterministic family (an unreached export, a secret without a default, an unrouted endpoint, a naming rule, a licence) the harness proposes it as a `check` bound to that detector or linter rule, so it leaves the model's prompt and runs at the gate; the family table lives beside the integration checks, stack specifics in packs | 1 — now | P2 | PROPOSED |
+| RV.5 | Precision loop: an item whose findings the owner marks "not a problem" at review gates three times is flagged for retirement; an item whose findings are fixed is kept; both from `with_dispositions`, shown beside each item with its hit and fix counts | 1 — now | P2 | PROPOSED |
+| RV.6 | Checklist report per run: every policy and checklist item with its result, evidence (file, finding, check output) and who decided it (harness check or reviewer), in the sprint evidence page, in `DocumentFacts` (DT.1) for a *code review report* document type (DT.3), and on the review gate's page; Settings → Organisation gets a *Review policy* tab with the proposals inbox | 1 — now | P1 | PROPOSED |
+
+**Why structured items on a local model:** a free-text policy pasted into a reviewer prompt is read
+once and partly; numbered items the reviewer must answer one by one, with the harness checking that
+each was answered, are what made specialist advice stick (the architect's adopted/declined record).
+Effort: RV.1–RV.2 1½ days, RV.3 1 day, RV.4 1 day, RV.5–RV.6 1½ days.
+
 <a id="plan-sap"></a>
 ### SAP — CAP, Fiori and RAP as stacks (Q2)
 
@@ -4100,7 +4131,7 @@ and the citation check makes invention visible and countable. Effort: RD.2 1 day
 RD.4 ½ day, RD.5 1½ days, RD.6 2 days, RD.7 1 day.
 
 **Placement in Part 21 (added 2026-10-22, this appendix):**
-- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
+- **Group 1, now:** SL.1–SL.4, SL.6–SL.8, RV.1–RV.6, SAP.6–SAP.7, DT.1–DT.4, DT.6, RD.2, RD.4, RD.7.
 - **Group 2, after the measured runs, each behind its switch:** SL.5, SAP.1 → SAP.2 → SAP.3, SAP.4 → SAP.5 (needs the owner's SAP system), DT.5, RD.1, RD.3, RD.5, RD.6.
 - Dependencies: DT before RD's documents; SAP.4 before SAP.5; BW.1/BW.2 and CG.1 (built) under RD.
 
@@ -4903,6 +4934,12 @@ the item: what it changes, why, and the evidence (review findings in
 | SL.6 | stack-wise naming defaults as pack data (files, identifiers, objects, CAP/Fiori/ABAP names) | P1 | PROPOSED 2026-10-22 (group 1) | [SL](#plan-sl) |
 | SL.7 | naming enforced through each ecosystem's linter config from the merged rules; CI-gate check family | P1 | PROPOSED 2026-10-22 (group 1) | [SL](#plan-sl) |
 | SL.8 | non-lintable naming rules (tables, routes, env vars, commits) as structured fields checked by existing detectors | P2 | PROPOSED 2026-10-22 (group 1) | [SL](#plan-sl) |
+| RV.1 | organisation review policy per reviewer stage, structured items, byte-stable block | P1 | PROPOSED 2026-10-22 (group 1, inactive until configured) | [RV](#plan-rv) |
+| RV.2 | reviewers answer every policy item; harness verifies; `check` items run at the gate | P1 | PROPOSED 2026-10-22 (group 1) | [RV](#plan-rv) |
+| RV.3 | learned checklist from recurring review findings, owner-approved, plus owner items | P1 | PROPOSED 2026-10-22 (group 1) | [RV](#plan-rv) |
+| RV.4 | checklist items promoted to deterministic checks where a detector exists | P2 | PROPOSED 2026-10-22 (group 1) | [RV](#plan-rv) |
+| RV.5 | precision loop from dispositions: retire noisy items, keep fixed ones | P2 | PROPOSED 2026-10-22 (group 1) | [RV](#plan-rv) |
+| RV.6 | checklist report per run; code-review report document; Review policy tab | P1 | PROPOSED 2026-10-22 (group 1) | [RV](#plan-rv) |
 | SAP.1 | `sap_cap_node` pack with `@cap-js/mcp-server` | P1 | PROPOSED 2026-10-22 (group 2) | [SAP](#plan-sap) |
 | SAP.2 | `sap_fiori_elements_cap` pack, UI generated by the harness | P1 | PROPOSED 2026-10-22 (group 2, after SAP.1; spike first) | [SAP](#plan-sap) |
 | SAP.3 | `ui5_freestyle` pack | P3 | PROPOSED 2026-10-22 (group 2) | [SAP](#plan-sap) |

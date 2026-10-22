@@ -29,13 +29,30 @@ def criteria_text(criteria: Sequence[Criterion], deferred: dict[str, str] | None
     return "\n".join(lines)
 
 
+#: Said to the writer of a suite that runs against one service for its whole
+#: session. Measured on a gate run: a test asserted a signed-in account's list
+#: was empty after signing in to an account an earlier test had filled; it
+#: could pass for no product, the suite was reopened and reviewed twice.
+#: One pack said it; the others start their service the same way.
+SHARED_STORE = (
+    "The service keeps its data for the whole run of the suite, shared by every test, so a test "
+    "must not assume it starts empty: create what it reads under names no other test uses (a "
+    "username of its own, say), and look for its own records rather than counting all of them."
+)
+#: The kinds of product whose suite runs against one long-lived service.
+_A_SHARED_SERVICE = frozenset({"http_api", "fullstack"})
+
+
 def _how_to_write_them(repo_root: str | Path, project: str, acceptance_dir: str, stack: Any) -> str:
     found = contract.the_pack(repo_root)
     if found is not None:
         pack, record = found
         command = " ".join(record.get("acceptance_test") or pack.acceptance_test)
+        guide = pack.filled(pack.acceptance_guide, project, record.get('title') or project, record.get('package'))
+        if getattr(pack, "kind", "") in _A_SHARED_SERVICE and "starts empty" not in guide:
+            guide = guide.rstrip() + "\n" + SHARED_STORE
         return (
-            f"{pack.filled(pack.acceptance_guide, project, record.get('title') or project, record.get('package'))}\n"
+            f"{guide}\n"
             f"Run the suite with `{command}` in `{project}/`."
         )
     testing = str(getattr(stack, "testing_framework", "") or "the stack's testing framework")

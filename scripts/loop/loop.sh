@@ -358,6 +358,18 @@ fitness) shift; in_worker model_fitness.py "$@" ;;
 reasoning-probe) shift; in_worker reasoning_probe.py "${@:-plan}" ;;
 diagnose) shift; in_worker model_diagnose.py "$@" ;;
 resumed) sh "$HERE/await_resume.sh" ;;
+resume)
+  # Resume a failed, paused or cancelled run in place from its last checkpoint (refused while the model is unreachable).
+  run="${2:-$(current)}"
+  : "${LOOP_USER:?set LOOP_USER to the loop operator account}"
+  : "${LOOP_PASSWORD:?set LOOP_PASSWORD for that account}"
+  token=$(curl -s -X POST "$API/api/auth/token" --data-urlencode "username=$LOOP_USER" \
+            --data-urlencode "password=$LOOP_PASSWORD" |
+          "$PY" -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  curl -s -X POST "$API/api/runs/$run/resume" -H "Authorization: Bearer $token"
+  echo
+  ;;
+resume-when-ready) shift; "$PY" "$HERE/resume_when_ready.py" "$@" ;;
 stage)
   [ -n "${2:-}" ] || { echo "usage: loop.sh stage <stage> [HH:MM UTC]" >&2; exit 2; }
   in_worker stage_trace.py "$(current)" "$2" "${3:-}"

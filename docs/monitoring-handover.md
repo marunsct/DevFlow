@@ -658,6 +658,10 @@ working (the tool-approval check can fail transiently), schedule a retry about
 
 ### 0.5 Things that bite
 
+- The owner's model server can stop (a crash, a restart, the host's network): `loop.sh ready` says NOTREADY with
+  "Network is unreachable", the live run fails with a connection error and keeps its checkpoints. Start nothing.
+  `loop.sh resume-when-ready <run>` (in the background) resumes the same run once ALL READY; a new run is not
+  needed. Never start or load the model yourself.
 - Never restart the worker within two minutes of another restart or deploy: the orphan sweep takes a
   120 s lock (`harness:recover-orphans`), the second worker logs "Another worker is recovering abandoned
   runs; skipping", and nothing sweeps again - the run stays "running" with no worker. Recover it by hand:

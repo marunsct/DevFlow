@@ -1268,6 +1268,30 @@ def _pointed_reads(messages: list[Any]) -> int:
     )
 
 
+#: How much of a refusal's opening is its kind, once what it quotes and counts are taken out.
+_KIND_CHARACTERS = 80
+_QUOTED = re.compile(r"'[^']*'|`[^`]*`")
+
+
+#: The tools a refusal of the same kind does not make a loop of (see `_a_tool_refused_identically`).
+_WRITES_A_FILE = frozenset({"write_artifact", "edit_artifact", "replace_lines", "replace_approved_lines",
+                            "delete_artifact", "move_artifact"})
+
+
+def _the_kind_of(refusal: str) -> str:
+    """A refusal's opening with what it quotes and every number taken out: what kind of refusal it is."""
+    text = refusal
+    try:
+        found = json.loads(refusal[refusal.index("{"):]) if "{" in refusal else None
+        if isinstance(found, dict) and isinstance(found.get("error"), str):
+            text = found["error"]
+    except ValueError:
+        pass
+    plain = _QUOTED.sub("X", text)
+    plain = re.sub(r"\d+", "N", plain)
+    return " ".join(plain.split())[:_KIND_CHARACTERS]
+
+
 def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
     """The tool this stage keeps calling to the same failure, and how often.
 
@@ -1330,6 +1354,18 @@ def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
             continue
         key = (pair[0], "invalid_tool") if "is not a valid tool" in content else pair
         failures[key] = failures.get(key, 0) + 1
+        # And by the kind of refusal: a stage that changes its call a little
+        # each time - a different shell line, refused the same way - was never
+        # the same call twice. Measured on one run: a fixer sent ten shell
+        # lines in a minute, each refused as a whole command line in one
+        # string, and nothing escalated. The kind is the refusal's opening
+        # with whatever it quotes and counts taken out, so no guard's wording
+        # is matched.
+        # Not for a tool that writes: a stage editing a file that does not yet
+        # parse is refused the same way edit after edit while it fixes it.
+        if pair[0] not in _WRITES_A_FILE:
+            kind = (pair[0], "kind:" + _the_kind_of(content))
+            failures[kind] = failures.get(kind, 0) + 1
     if not failures:
         return None
     (name, _identity), count = max(failures.items(), key=lambda item: item[1])
@@ -1913,8 +1949,17 @@ def build_settled_answer_middleware(
             )
             request = _without_reasoning_after_a_lost_reply(request, stage_name, lost)
             request = _with_cut_replies_shortened(request)
+            # Older refusals as a line each in what the model reads; the
+            # guards below still count the conversation as it is stored.
+            from app.agents.refusal_folding import with_old_refusals_folded
+
+            counted = request
+            request = with_old_refusals_folded(request)
             try:
-                messages = getattr(request, "messages", None)
+                # Counted as stored - folded refusals would read as none - and
+                # sent as folded (`refusal_folding`).
+                messages = getattr(counted, "messages", None)
+                sent_messages = getattr(request, "messages", None) or messages
                 if not isinstance(messages, list) or not messages:
                     return handler(request)
                 last_ai = next(
@@ -1931,6 +1976,14 @@ def build_settled_answer_middleware(
                         "shape an answer has",
                         stage_name or "?",
                     )
+                    # Asked again with only its schema allowed, where the
+                    # server enforces that (`structured_extraction`); the
+                    # reminder below when it cannot be had.
+                    from app.agents.structured_extraction import answered_in_its_schema
+
+                    extracted = answered_in_its_schema(request, schema, stage_name)
+                    if extracted is not None:
+                        return extracted
                 elif correction:
                     logger.info(
                         "Stage %s sent an answer that does not satisfy its schema "
@@ -2210,7 +2263,7 @@ def build_settled_answer_middleware(
                     refused_fallback = {**overrides, "model_settings": spiral_plainer}
                 if withheld_here:
                     correction += stable_tools_notice(withheld_here)
-                corrected = [*messages, {"role": "user", "content": correction}]
+                corrected = [*sent_messages, {"role": "user", "content": correction}]
                 if refused_fallback is not None:
                     refused_fallback = request.override(messages=corrected, **refused_fallback)
                 if "tools" in overrides:

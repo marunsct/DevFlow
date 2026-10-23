@@ -48,6 +48,8 @@ SWITCHES: dict[str, str] = {
     "OBSERVATION_FOLDING": "app.agents.observation_folding",
     "REPLY_SALVAGE": "app.models.reply_salvage",
     "MODEL_GUIDANCE": "app.models.model_guidance",
+    "STRUCTURED_EXTRACTION": "app.agents.structured_extraction",
+    "REFUSALS_FOLDED": "app.agents.refusal_folding",
     "GUIDE_ANSWER_IN_SCHEMA": "app.models.guidance:answer_in_schema_switch",
     "GUIDE_STOP_WHEN_DONE": "app.models.guidance:stop_when_done_switch",
     "GUIDE_NO_REPETITION": "app.models.guidance:no_repetition_switch",

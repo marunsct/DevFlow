@@ -16,7 +16,7 @@ week are in `docs/archive/`.
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | **LFM2.5-24B-A2B** (owner, ~18:15 JST) at :8888, 3 slots, 131,072 tokens; reply ceiling uncapped (owner's setting). Diagnosed: tools 3/3, forced answers 3/3 (2/2 long), no reasoning switch honoured; deep: plan in schema 1-2/3 -> 3/3 and stop-when-done 1/3 -> 3/3 with its two guidance lines |
 | Owner's model settings | the owner's; never changed by the loop |
-| Peer sessions | **03:27-04:57 JST: a second session (also believing itself the sole driver) ran concurrently** - both deployed and scored run-3bfd71ee at once (mixed_versions, a collided mutation run, LF.219/LF.220 found and deployed by the other session). Confirmed via `ListAgents` at 04:57 that no other session is reachable now; this session (langchain-90) resumes alone. |
+| Peer sessions | none since 04:57 JST 2026-10-23 (this session, langchain-90, drives alone) |
 
 ## Last runs
 
@@ -36,7 +36,6 @@ stage-shaped checks, a steering profile per model (tier, chosen guides, owner ov
 reminder for weak models), Settings > Models "Diagnose this model and set its guidance". Deploy before gate
 run 2, then re-diagnose LFM2.5 from the settings page (its profile then replaces MD.2's two kept lines).
 MD.4 (research roadmap) planned.
-
 ## Built and deployed (b408660, 11:18 JST): model diagnosis and reply salvage (owner ~10:50-11:10 JST)
 
 - **MD.1:** a model never seen is diagnosed at a run segment's start (and before the next call when the server's

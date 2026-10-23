@@ -79,6 +79,21 @@ def test_a_section_answered_empty_that_already_held_nothing_stays_empty():
     assert revised is not None and revised.testing == ["u"] and revised.decisions == []
 
 
+def test_the_request_gives_the_form_of_every_section_to_rewrite_even_one_that_holds_nothing():
+    """Measured: an empty section had no form to copy, the reply invented record keys, and nine fields failed to validate."""
+    previous = Spec(product_scope="Notes.", file_plan=["a"], testing=["t"], decisions=[])
+    model = _Model(["decisions"], {"decisions": ["d"]})
+
+    specification_parts.revised_in_place(previous, "- add the missing decision", model, "")
+
+    asked = model.asked[-1]
+    form = asked.split("--- The form of each section (JSON schema) ---\n")[1].split("\n\n")[0]
+    assert set(json.loads(form)) == {"decisions"}
+    assert "Decisions and why." in form
+    assert not BANNED.search(asked.split("--- The form of each section")[0].split("--- Required changes")[0])
+    assert not BANNED.search("--- The form of each section (JSON schema) ---")
+
+
 def test_a_model_that_cannot_name_the_sections_and_cannot_revise_leaves_it_to_the_architect():
     assert specification_parts.revised_in_place(PREVIOUS, "- change", _Model([], {}), "") is None
 

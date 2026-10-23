@@ -220,6 +220,19 @@ def _bounded_by_what_the_review_names(chosen: list[str], required_changes: str, 
     return [*[name for name in chosen if name in named], *[n for n in named if n not in chosen], *extra]
 
 
+def _the_form_of(parameters: dict[str, Any], names: Any) -> str:
+    """The schema of the named sections, so a section that holds nothing yet still has a form to be written in.
+
+    Measured: a section that was an empty list was rewritten with record keys
+    of the reply's own (`summary` for `context` and `decision`), since the
+    "form of the current value" was none - nine validation errors, and the
+    revision thrown away.
+    """
+    properties = (parameters or {}).get("properties") or {}
+    form = {name: properties[name] for name in names if name in properties}
+    return "--- The form of each section (JSON schema) ---\n" + json.dumps(form, default=str) if form else ""
+
+
 def revised_in_place(specification: Any, required_changes: str, model: Any, context: str) -> Any | None:
     """`specification` with only the sections the changes touch rewritten, or None to revise as before."""
     from langchain_core.messages import HumanMessage, SystemMessage
@@ -250,9 +263,10 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
             context.strip(),
             f"--- Required changes ---\n{required_changes.strip()[:20_000]}",
             "--- The specification's core, as it stands ---\n" + json.dumps(core, indent=1, default=str),
+            _the_form_of(parameters, names),
             "--- The sections to rewrite, as they stand ---\n" + json.dumps(current, indent=1, default=str),
             "Reply with one JSON object and nothing else. Its keys are exactly: " + ", ".join(names)
-            + ". Each value has the same form as the section's current value.",
+            + ". Each value has the form its schema gives, whatever the section holds now.",
         ) if part)
         try:
             reply = model.invoke([

@@ -4527,6 +4527,11 @@ def _a_source_file_that_does_not_parse(files: list[Path], root: Path) -> list[st
     for path in files:
         if "node_modules" in path.parts or parsed >= _PARSED_AT_MOST:
             continue
+        # A throwaway is not the product: the one-liner a command was run from (`tmp-inline-<hash>.py`) held
+        # a stage's own typo, and the check raised it as a defect for a fixer - measured, the first
+        # defect of a sprint.
+        if _A_SCRATCH_SCRIPT.search(path.name):
+            continue
         relative = str(path.relative_to(root))
         suffix = path.suffix.lower()
         exact = suffix in {".py", ".json", ".css", ".scss", ".less"} or is_certain(relative)

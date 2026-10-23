@@ -264,6 +264,28 @@ def describe(support: Support | None) -> str:
 
 # --- the salvage ------------------------------------------------------------
 
+#: The tail a cut-off text is judged by, and the longest unit whose repetition fills it.
+_TAIL_CHARACTERS = 400
+_LONGEST_REPEATED_UNIT = 16
+
+
+def repeating(text: str) -> bool:
+    """Whether `text` ends in one short unit over and over: a model stuck, not a reply cut short.
+
+    Measured on the first live continuation: a drafted test file ended
+    `"never-issued-token-000000..."` to the cap, and continuing it wrote more
+    zeros twice. Such a reply has nothing to continue.
+    """
+    tail = text[-_TAIL_CHARACTERS:]
+    if len(tail) < _TAIL_CHARACTERS:
+        return False
+    for size in range(1, _LONGEST_REPEATED_UNIT + 1):
+        unit = tail[-size:]
+        if (unit * (_TAIL_CHARACTERS // size + 1)).endswith(tail):
+            return True
+    return False
+
+
 def _lost(message: Any) -> bool:
     return not str(getattr(message, "content", "") or "").strip() and not (getattr(message, "tool_calls", None) or ()) \
         and not (getattr(message, "invalid_tool_calls", None) or ())
@@ -284,6 +306,8 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
             return result
         lost, cut = _lost(message), _cut_text(message)
         if not (lost or cut):
+            return result
+        if cut and repeating(str(message.content or "")):
             return result
         support = measure_if_new(model)
         if support is None or not support.salvages or (cut and not support.continuation):
@@ -306,7 +330,7 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
                 return _with_the_salvage(result, fresh, "reasoning")
             rest, _echoed = _without_the_echo(content, text) if support.echoes else (content, False)
             text += rest
-            if finish != "length":
+            if finish != "length" or repeating(text):
                 break
         return _with_the_text(result, text, "continuation", finish)
     except Exception:  # noqa: BLE001 - the reply as it was
@@ -347,4 +371,4 @@ def _summed(one: Any, two: Any) -> Any:
 
 __all__ = ["ENOUGH", "MOST_CONTINUATIONS", "MOST_REASONING_CHARACTERS", "ON_BY_DEFAULT", "RECORD_KEY", "SALVAGED",
            "SHAPES", "Support", "begun_reply", "describe", "enabled", "forget", "keep", "measure", "measure_if_new",
-           "recorded", "remember_reasoning", "salvaged", "served_name"]
+           "recorded", "remember_reasoning", "repeating", "salvaged", "served_name"]

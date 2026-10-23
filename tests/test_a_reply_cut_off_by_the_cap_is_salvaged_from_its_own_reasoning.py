@@ -169,3 +169,31 @@ def test_a_server_that_continues_nothing_is_kept_as_supporting_nothing():
 
 def test_what_the_model_is_told_uses_none_of_the_banned_words():
     assert not BANNED.search(reply_salvage.ENOUGH)
+
+
+def test_text_stuck_repeating_one_unit_is_not_continued():
+    """The first live continuation went on a drafted file ending `"never-issued-token-000..."` to the cap."""
+    _supported()
+    server = _Server([])
+    cut = _cut('unknown_token = "never-issued-token-' + "0" * 2_000)
+
+    assert reply_salvage.salvaged(_model(server), [], cut) is cut
+    assert server.sent == []
+
+
+def test_a_continuation_that_starts_repeating_stops_there():
+    _supported()
+    server = _Server([_completion("ab" * 400, finish="length"), _completion("never sent")])
+    cut = _cut("def a():\n    return 1\n")
+
+    result = reply_salvage.salvaged(_model(server), [], cut)
+
+    assert len(server.sent) == 1
+    assert result.generations[0].generation_info["finish_reason"] == "length"
+
+
+def test_ordinary_text_is_not_taken_for_a_repetition():
+    code = "".join(f"def handler_{n}(request):\n    return {{'value': {n}}}, 200\n\n" for n in range(40))
+    assert not reply_salvage.repeating(code)
+    assert reply_salvage.repeating("x = '" + "0" * 500)
+    assert reply_salvage.repeating("ab" * 300)

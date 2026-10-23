@@ -17,6 +17,8 @@ import subprocess
 import logging
 import threading
 import tomllib
+import contextlib
+import contextvars
 from collections import OrderedDict
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
@@ -1787,8 +1789,30 @@ _COMMANDS_HELD_TO_THE_LINE = (_THE_ACCEPTANCE_AUTHOR, _A_TEST_ROUND)
 _MOST_HELD_BYTES = 40 * 1024 * 1024
 
 
+#: Set while the harness only asks whether a write would be refused, with nothing written or refused.
+_JUST_ASKING: contextvars.ContextVar[bool] = contextvars.ContextVar("just_asking_whether_a_write_is_refused", default=False)
+
+
+@contextlib.contextmanager
+def just_asking():
+    """Inside it the write guards answer as always but count no refusal.
+
+    Measured on one run: before and after every command the harness asked the
+    guards about every file in the workspace, and each product file counted as
+    a refused write. The acceptance author's count stood at 124 after six
+    commands with one real refusal among them, so that one said "every one
+    will be refused: stop and return your structured response".
+    """
+    token = _JUST_ASKING.set(True)
+    try:
+        yield
+    finally:
+        _JUST_ASKING.reset(token)
+
+
 def _not_this_stage_s(root: Path, target: Path) -> bool:
-    return bool(_the_harness_s_own_or_the_locked_suite(root, target) or _a_tester_changing_the_product(root, target))
+    with just_asking():
+        return bool(_the_harness_s_own_or_the_locked_suite(root, target) or _a_tester_changing_the_product(root, target))
 
 
 def _workspace_files(root: Path) -> list[Path]:
@@ -2131,6 +2155,8 @@ def _outside_its_own_files() -> str:
     through `edit_artifact` - fourteen calls, every one a different file or
     tool, so the count kept per file never reached its threshold.
     """
+    if _JUST_ASKING.get():
+        return ""
     try:
         from app.agents.stage_memory import store
 
@@ -2155,6 +2181,8 @@ def _again_and_again(shown: str) -> str:
     was refused `src/ui.js`, the interface work order's file, six times with
     six different `replace_lines`, the same refusal each time.
     """
+    if _JUST_ASKING.get():
+        return ""
     try:
         from app.agents.stage_memory import store
 

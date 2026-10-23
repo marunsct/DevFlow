@@ -35,9 +35,24 @@ _FENCE = re.compile(r"```[^\n`]*\n(.*?)```", re.S)
 _A_PATH = re.compile(r"[\w./@-]+\.[A-Za-z0-9]{1,8}\b")
 
 
+#: A line that opens or closes a fenced block.
+_FENCE_LINE = re.compile(r"^[ \t]*```", re.M)
+
+
 def the_content_in(reply: str) -> str:
-    """The file a reply holds: its longest fenced block, or the whole reply when it has none."""
+    """The file a reply holds: its longest fenced block, or the whole reply when it has none; "" when it was cut off.
+
+    A reply that reached the reply cap ends inside its block, with no closing
+    fence. That was taken as a file with no fence at all - the whole reply,
+    its opening ```` ```python ```` line included - and written over the file,
+    or, when the reply held a short block before the long one, the short one
+    was. A file longer than the cap allows is the large-codebase case of it.
+    "" is what every caller already treats as no draft: nothing is written and
+    the file stays as it was.
+    """
     text = str(reply or "")
+    if len(_FENCE_LINE.findall(text)) % 2:
+        return ""
     blocks = _FENCE.findall(text)
     if blocks:
         return max(blocks, key=len).rstrip() + "\n"

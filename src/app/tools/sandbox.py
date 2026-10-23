@@ -2032,6 +2032,40 @@ def _what_to_do_with_that_argument(
     )
 
 
+#: What joins commands, or sends one's output elsewhere, in a shell's command line.
+_SHELL_JOINS = ("&&", "||", ";", "|", ">", "<", "$(", "`")
+
+
+def _a_command_line_in_one_string(argv: list[str], permitted: Sequence[str], role_name: str) -> str:
+    """Why a whole command line as the first item is refused, and what to send instead.
+
+    The program was the line's last path part: `cd /workspace/app && cat
+    app/routes.py | head -50` was refused as "'routes.py | head -50' is not
+    permitted", with the list of permitted programs. Measured on one run: a
+    fixer sent eight such lines in a minute, each told a different fragment of
+    its own line was not permitted, and none that there is no shell.
+    """
+    line = argv[0]
+    first_word = os.path.basename(line.split()[0])
+    joined = any(mark in line for mark in _SHELL_JOINS)
+    message = (
+        f"'{line[:120]}' is a whole command line in one string. There is no shell here, so nothing splits it "
+        "or runs its parts: send one program per call, the program name as the first item of `command` and "
+        "each argument as its own item."
+    )
+    if joined:
+        message += (" Commands joined with `&&`, `||`, `;` or `|`, and redirections, are separate calls - or "
+                    "one script file, run as one command.")
+    if first_word == "cd":
+        message += " To run a command in a folder, give the folder as `working_directory`; `cd` is not a program."
+    elif first_word not in permitted:
+        message += (f" '{first_word}' is not permitted for role '{role_name}' either."
+                    f"{_what_to_do_instead(first_word)} {_what_can_actually_run(permitted)}")
+    elif not joined:
+        message += f" '{first_word}' is permitted - send {[first_word, *line.split()[1:], *argv[1:]]!r}."
+    return message
+
+
 def validate_command(
     command: Sequence[str], role_name: str, repo_root: str | Path | None = None
 ) -> list[str]:
@@ -2045,9 +2079,12 @@ def validate_command(
     if not argv:
         raise CommandNotAllowed("Command cannot be empty.")
 
+    permitted = allowed_executables(role_name, repo_root)
+    if len(argv[0].split()) > 1:
+        raise CommandNotAllowed(_a_command_line_in_one_string(argv, permitted, role_name))
+
     executable = os.path.basename(argv[0])
 
-    permitted = allowed_executables(role_name, repo_root)
     if executable not in permitted:
         # A whole command line packed into the first element is not a missing
         # permission, and saying so sends the agent looking for the wrong fix.

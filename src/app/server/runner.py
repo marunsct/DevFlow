@@ -235,6 +235,24 @@ BUDGET_PAUSE_STATUS = "waiting_for_budget"
 RESUMABLE_STATUSES = ("failed", BUDGET_PAUSE_STATUS, "paused", "cancelled")
 
 
+def _a_worker_is_running(task_id: str | None) -> bool:
+    """Whether a worker reports this task among the ones it is executing now; False when none answers or it has no task.
+
+    Asked only on a cancel. A worker that does not answer within a second is
+    taken as not running it: a run cancelled that a worker was running stops at
+    its next check of the flag either way.
+    """
+    if not task_id:
+        return False
+    try:
+        from app.server.tasks import celery_app
+
+        active = celery_app.control.inspect(timeout=1.0).active() or {}
+        return any(task.get("id") == task_id for tasks in active.values() for task in tasks or [])
+    except Exception:  # noqa: BLE001 - no answer is no worker
+        return False
+
+
 CANCELLABLE_WHILE_PARKED = (
     "created",
     "waiting_for_approval",
@@ -1284,6 +1302,13 @@ class WorkflowRunner:
                 "cancelled",
                 updated_at=now,
             )
+        elif record.status in ("running", "queued") and not _a_worker_is_running(record.task_id):
+            # "Running" with no worker running it - left so by a restart - has
+            # nobody to notice the flag either. Measured: the owner cancelled
+            # one such run again and again; each cancel touched the run, so
+            # orphan recovery kept judging it too recent to be abandoned, and
+            # it stayed "running" with the cancel requested.
+            self.run_store.compare_and_set_status(run_id, ("running", "queued"), "cancelled", updated_at=now)
 
         await self.event_bus.publish(
             run_id,

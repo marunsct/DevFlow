@@ -1182,3 +1182,31 @@ def test_the_worker_works_a_run_on_the_models_it_was_started_with():
     # moves with the newest one (completion_gaps, Initiative J.4) so a SELECT
     # left behind fails here rather than as a record missing a field.
     assert store.count("delivery_mode, local_only, approval_timeout_minutes, completion_gaps FROM runs") == 3
+
+
+async def test_cancelling_a_running_run_no_worker_runs_marks_it_terminal(runner, monkeypatch):
+    """Left "running" by a restart, with no worker running it, a cancel used to be flagged and never acted on:
+    each cancel touched the run, so orphan recovery kept judging it too recent to be abandoned."""
+    _register(runner, status="running", task_id="task-7")
+
+    import app.server.runner as runner_module
+    import app.server.tasks as tasks_module
+
+    monkeypatch.setattr(tasks_module.celery_app.control, "revoke", lambda *a, **k: None)
+    monkeypatch.setattr(runner_module, "_a_worker_is_running", lambda task_id: False)
+
+    await runner.cancel_run("run-1")
+    assert runner.run_store.load("run-1").status == "cancelled"
+
+
+async def test_a_run_a_worker_is_running_is_left_for_it_to_stop(runner, monkeypatch):
+    _register(runner, status="running", task_id="task-6")
+
+    import app.server.runner as runner_module
+    import app.server.tasks as tasks_module
+
+    monkeypatch.setattr(tasks_module.celery_app.control, "revoke", lambda *a, **k: None)
+    monkeypatch.setattr(runner_module, "_a_worker_is_running", lambda task_id: True)
+
+    await runner.cancel_run("run-1")
+    assert runner.run_store.load("run-1").status == "running" and runner.run_store.is_cancel_requested("run-1")

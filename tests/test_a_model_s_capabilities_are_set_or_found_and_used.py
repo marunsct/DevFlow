@@ -147,3 +147,27 @@ def test_finding_them_is_refused_while_a_run_is_live(client, monkeypatch) -> Non
 
     monkeypatch.setattr(settings, "_a_run_is_live", lambda: True)
     assert client.post("/api/settings/model/capabilities/fill").status_code == 409
+
+
+class _Restarting:
+    """A server that does not answer: every request a dropped connection."""
+
+    def create(self, **payload):
+        raise ConnectionError("Connection error.")
+
+
+def test_a_server_that_does_not_answer_leaves_the_capabilities_unknown():
+    """Measured on one fill: a restarting server's dropped connections were kept as "cannot"."""
+    found = capabilities.measure(_model(_Restarting()))
+    assert "reads_images" not in found and "forced_tool_enforced" not in found
+    assert "json_schema_answers" not in found and "multilingual" not in found
+
+
+def test_a_server_that_refuses_an_image_is_kept_as_not_reading_one():
+    class _Refuses:
+        def create(self, **payload):
+            error = RuntimeError("Error code: 400 - image input is not supported")
+            error.status_code = 400
+            raise error
+
+    assert capabilities.measure(_model(_Refuses()))["reads_images"]["value"] is False

@@ -380,6 +380,29 @@ def _ask_with_reasoning(model: Any, messages: list[dict], **extra: Any) -> tuple
             str(message.get("reasoning_content") or message.get("reasoning") or ""))
 
 
+def _refused(error: Exception) -> bool:
+    """Whether `error` is the server refusing the request - which says what the model takes - not failing to answer.
+
+    Measured on one fill: the server was restarting, every probe met a 502 or
+    a dropped connection, and each was kept as "cannot": forcing, JSON-schema
+    answers. A server that did not answer says nothing about the model.
+    """
+    status = getattr(error, "status_code", None) or getattr(getattr(error, "response", None), "status_code", None)
+    if isinstance(status, int):
+        return 400 <= status < 500
+    if isinstance(error, ValueError):  # the model's answer was not what was asked for
+        return True
+    return bool(re.match(r"\s*(?:Error code: )?4\d\d\b", str(error)))
+
+
+def _failed(out: dict, key: str, error: Exception, note: str) -> None:
+    """A probe that failed: "no" when the server refused it or the answer was wrong, unknown when it did not answer."""
+    if _refused(error):
+        out[key] = _found(False, "measured", f"{note}: {str(error)[:80]}")
+    else:
+        logger.info("Capability %s left unknown: the server did not answer (%s)", key, str(error)[:120])
+
+
 def measure(model: Any) -> dict[str, dict]:
     """Ask the model what only it can say: an image's colour, an answer to a schema, a reply in Japanese. Never raises."""
     out: dict[str, dict] = {}
@@ -391,7 +414,7 @@ def measure(model: Any) -> dict[str, dict]:
         out["reads_images"] = _found("red" in text.lower(), "measured",
                                      f"a red square, named {' '.join(text.split())[:30]!r}")
     except Exception as error:  # noqa: BLE001 - a server that refuses an image does not read one
-        out["reads_images"] = _found(False, "measured", f"an image was refused: {str(error)[:80]}")
+        _failed(out, "reads_images", error, "an image was refused")
     try:
         # A request no tool answers, with one tool required: a call back means
         # the server enforces `required`. Asked about the weather with the
@@ -406,7 +429,7 @@ def measure(model: Any) -> dict[str, dict]:
         out["forced_tool_enforced"] = _found(bool(calls), "measured", "one tool required for a request it does not fit: "
                                              + ("called it" if calls else "answered in text"))
     except Exception as error:  # noqa: BLE001
-        out["forced_tool_enforced"] = _found(False, "measured", f"refused: {str(error)[:80]}")
+        _failed(out, "forced_tool_enforced", error, "refused")
     try:
         schema = {"type": "object", "properties": {"city": {"type": "string"}, "population": {"type": "integer"}},
                   "required": ["city", "population"], "additionalProperties": False}
@@ -416,7 +439,7 @@ def measure(model: Any) -> dict[str, dict]:
         ok = isinstance(parsed, dict) and isinstance(parsed.get("population"), int) and "paris" in str(parsed.get("city", "")).lower()
         out["json_schema_answers"] = _found(ok, "measured", "a two-field schema" + ("" if ok else f": {text[:60]!r}"))
     except Exception as error:  # noqa: BLE001
-        out["json_schema_answers"] = _found(False, "measured", f"refused or not JSON: {str(error)[:80]}")
+        _failed(out, "json_schema_answers", error, "refused or not JSON")
     try:
         # Whether its replies carry reasoning at all: a model that answers a
         # one-number question in 41 tokens can still reason 100,000 on a stage.
@@ -432,7 +455,7 @@ def measure(model: Any) -> dict[str, dict]:
         out["multilingual"] = _found(japanese, "measured", "asked in Japanese" + (", answered in Japanese" if japanese else
                                                                                   f": {' '.join(text.split())[:40]!r}"))
     except Exception as error:  # noqa: BLE001
-        out["multilingual"] = _found(False, "measured", f"no answer: {str(error)[:80]}")
+        _failed(out, "multilingual", error, "no answer")
     return out
 
 

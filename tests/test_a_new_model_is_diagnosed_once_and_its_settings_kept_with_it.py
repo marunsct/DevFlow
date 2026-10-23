@@ -63,7 +63,7 @@ def test_a_model_that_cannot_be_forced_has_its_structured_answers_offered():
 
     assert by["tools offered"].works
     assert not by["a tool required"].works and not by["one tool named"].works
-    assert by["only offered names"].notes[0] == "called `edit_file`, not `write_artifact`"
+    assert by["only offered names"].notes[0] == "called `edit_file`, not `write_artifact` (not offered)"
     assert diagnosis.settings.structured_answers == "offered"
     assert diagnosis.settings.least_reasoning_effort == "none"
     assert diagnosis.settings.template_thinking_switch
@@ -116,3 +116,32 @@ def test_the_measured_reasoning_switch_is_used_without_asking_again(monkeypatch)
     diagnostics.apply(_model(_Server()), diagnosis)
 
     assert thinking._least_effort[("http://server/v1", "new-model")] == "none"
+
+
+class _Reads_first(_Server):
+    """Reads the file it is asked to change before writing it, as a careful model does."""
+
+    def create(self, **payload):
+        names = [t["function"]["name"] for t in payload.get("tools") or []]
+        if "write_artifact" in names and "read_file" in names and len(names) == 2:
+            self.sent.append(payload)
+            return _completion(_call("read_file", '{"file_path": "notes.txt"}'))
+        return super().create(**payload)
+
+
+def test_calling_another_offered_tool_first_is_not_a_made_up_name():
+    """LFM2.5 read the file before editing it; the advice said it called tools that were not offered."""
+    diagnosis = diagnostics.diagnose(_model(_Reads_first()), "careful-model")
+    by = {c.name: c for c in diagnosis.checks}
+
+    assert by["only offered names"].works
+    assert not any("not offered" in line for line in diagnosis.settings.advice)
+
+
+def test_the_advice_names_which_stage_shaped_check_fell_short():
+    checks = [diagnostics.Check(n, 3, 3) for n in ("tools offered", "a tool required", "one tool named",
+                                                   "one tool named, thinking off", "only offered names",
+                                                   "a structured answer forced")]
+    checks += [diagnostics.Check("forced after a long request", 2, 1), diagnostics.Check("a structured answer, offered", 3, 0)]
+    advice = " ".join(diagnostics.settled(checks, {}).advice)
+    assert "forced after a long request 1/2" in advice and "alike" not in advice

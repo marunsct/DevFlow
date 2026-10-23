@@ -120,7 +120,7 @@ def _refused(error: Exception) -> bool:
 
 
 def _tool_check(model: Any, name: str, *, tools: list[dict], ask: str | list[dict], wanted: str, args_ok: Any,
-                extra: dict | None = None, tries: int = TRIES) -> Check:
+                extra: dict | None = None, tries: int = TRIES, only_offered_names: bool = False) -> Check:
     passed = refused = 0
     notes: list[str] = []
     for _ in range(tries):
@@ -149,7 +149,14 @@ def _tool_check(model: Any, name: str, *, tools: list[dict], ask: str | list[dic
             notes.append(f"unreadable arguments for {called}: {str(function.get('arguments'))[:80]}")
             continue
         if called != wanted:
-            notes.append(f"called `{called}`, not `{wanted}`")
+            offered = {str((t.get("function") or {}).get("name") or "") for t in tools}
+            if only_offered_names and called in offered:
+                # Another tool it was given - reading a file before changing
+                # it - is a step, not a name it made up.
+                passed += 1
+                notes.append(f"called `{called}` first (offered)")
+                continue
+            notes.append(f"called `{called}`, not `{wanted}`" + ("" if called in offered else " (not offered)"))
             continue
         if not args_ok(arguments):
             notes.append(f"wrong arguments: {json.dumps(arguments)[:100]}")
@@ -335,7 +342,7 @@ def diagnose(model: Any, name: str = "") -> Diagnosis:
         _tool_check(model, "one tool named, thinking off", tools=[_WEATHER, _READ], ask=_ASK_WEATHER,
                     wanted="get_weather", args_ok=_paris, extra={**_named(_WEATHER), **_THINKING_OFF}),
         _tool_check(model, "only offered names", tools=[_READ, _WRITE], ask=_ASK_EDIT, wanted="write_artifact",
-                    args_ok=_the_edit),
+                    args_ok=_the_edit, only_offered_names=True),
         _tool_check(model, "the right one of many tools", tools=_stage_tools(), ask=_ASK_READ, wanted="read_file",
                     args_ok=lambda a: str(a.get("file_path", "")).endswith("app/main.py")),
     ]
@@ -378,8 +385,9 @@ def settled(checks: list[Check], cost: dict[str, int | None]) -> Settings:
             advice.append("forcing works on a small request but not on one shaped like a stage's; offered, the "
                           "answer is given: structured answers are offered")
         else:
-            advice.append("a stage-shaped structured answer fails forced and offered alike: this build may be too "
-                          "weak for the harness's stages (a higher-bit build of the model is the first thing to try)")
+            failing = ", ".join(f"{c.name} {c.passed}/{c.tries}" for c in stage_shaped if not c.works)
+            advice.append(f"a stage-shaped structured answer is unreliable forced ({failing}) and offered does no "
+                          "better: forced stays; long stages are where this build may fall short")
     forced_without_thinking = by["one tool named, thinking off"].works
     if forced:
         structured, only_off = "forced", False
@@ -391,7 +399,7 @@ def settled(checks: list[Check], cost: dict[str, int | None]) -> Settings:
         advice.append("forcing a tool does not work: structured answers offer their tool and ask for it")
     if not by["tools offered"].works:
         advice.append("even an offered tool is called wrongly: check the server's tool-call parser for this template")
-    wrong = [n for n in by["only offered names"].notes if n.startswith("called `")]
+    wrong = [n for n in by["only offered names"].notes if n.endswith("(not offered)")]
     if wrong:
         advice.append("the model calls tools that were not offered (" + "; ".join(wrong[:2]) + "): their names are "
                       "taken as aliases where `registry.TOOL_ALIASES` knows them")

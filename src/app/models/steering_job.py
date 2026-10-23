@@ -59,10 +59,38 @@ def run() -> None:
         workers = (server_profile.current().slots if server_profile.current() is not None else None) or 1
         deep_diagnosis.keep(deep_diagnosis.diagnose(model, name, workers=workers))
         diagnostics.apply(model, diagnostics.recorded(name))
-        set_status("idle", f"{name} diagnosed and its guidance saved")
+        set_status("running", "finding what the model can do: an image, a schema, another language, its model card")
+        from app.models import capabilities
+
+        capabilities.fill(model, name, str(getattr(model, "model_name", "") or ""))
+        set_status("idle", f"{name} diagnosed and its guidance and capabilities saved")
     except Exception as error:  # noqa: BLE001 - the page shows why
         logger.warning("The model's diagnosis failed", exc_info=True)
         set_status("failed", f"{type(error).__name__}: {str(error)[:300]}")
+
+
+def fill_capabilities() -> None:
+    """The settings page's "find what is missing": the serving model's capabilities found and kept. Never raises."""
+    try:
+        from app.models import build_default_chat_model, capabilities, reply_salvage, server_profile
+
+        set_status("running", "finding what the model can do: an image, a schema, another language, its model card")
+        server_profile.record()
+        model = build_default_chat_model()
+        name = reply_salvage.served_name(model)
+        capabilities.fill(model, name, str(getattr(model, "model_name", "") or ""))
+        set_status("idle", f"{name}: capabilities found and saved")
+    except Exception as error:  # noqa: BLE001
+        logger.warning("Finding the model's capabilities failed", exc_info=True)
+        set_status("failed", f"{type(error).__name__}: {str(error)[:300]}")
+
+
+def capabilities_view() -> dict[str, Any]:
+    from app.models import capabilities
+    from app.models.model_guidance import served_now
+
+    name = served_now()
+    return {"model": name, **status(), "fields": capabilities.resolved(name) if name else []}
 
 
 def view() -> dict[str, Any]:
@@ -107,4 +135,4 @@ def view() -> dict[str, Any]:
             "checks": checks, "guides": guides, "settings": settings}
 
 
-__all__ = ["run", "set_status", "status", "view"]
+__all__ = ["capabilities_view", "fill_capabilities", "run", "set_status", "status", "view"]

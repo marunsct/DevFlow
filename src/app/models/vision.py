@@ -2,9 +2,10 @@
 
 A page's screenshots help a reviewer only if its model reads images; sent to
 one that does not, they cost a refused request or a context full of base64.
-The owner can say so outright (`MODEL_READS_IMAGES=yes|no`); otherwise it is
-decided from the provider and the model's name, and a model this cannot place
-is taken not to read them - a review without pictures is the review there was
+The owner can say so outright (`MODEL_READS_IMAGES=yes|no`); otherwise what
+the model was measured to do (`capabilities.measure`: shown a red square, it
+names the colour), and only then the provider and the model's name - a model
+none of these can place is taken not to read them - a review without pictures is the review there was
 before, while a refused request is a stage lost.
 """
 
@@ -34,9 +35,40 @@ def reads_images(settings: Any) -> bool:
         return True
     if choice in _NO:
         return False
+    # What the model was found to do - shown a red square, it named the
+    # colour or did not (`capabilities`) - before any guess from its name.
+    measured = _measured(str(getattr(settings, "model_name", "") or ""))
+    if measured is not None:
+        return measured
     if str(getattr(settings, "llm_provider", "") or "").strip().lower() in _PROVIDERS_THAT_SEE:
         return True
     return bool(_FAMILIES_THAT_SEE.search(str(getattr(settings, "model_name", "") or "")))
+
+
+def _measured(model_name: str) -> bool | None:
+    """The kept `reads_images` capability of this model - under its served name or its configured one - or None."""
+    try:
+        from app.models.capabilities import value
+        from app.models.model_guidance import served_now
+
+        for name in dict.fromkeys(n for n in (served_now(), model_name) if n):
+            found = value(name, "reads_images")
+            if isinstance(found, bool):
+                return found
+    except Exception:  # noqa: BLE001 - unknown
+        pass
+    return None
+
+
+def the_build_model_reads_images() -> bool:
+    """Whether the model that builds and fixes reads images. Never raises: settings that cannot be read say no."""
+    try:
+        from app.config import load_settings
+        from app.server.runtime_settings import effective_environment
+
+        return reads_images(load_settings(effective_environment()))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def the_reviewer_reads_images() -> bool:
@@ -56,4 +88,4 @@ def the_reviewer_reads_images() -> bool:
         return False
 
 
-__all__ = ["reads_images", "the_reviewer_reads_images"]
+__all__ = ["reads_images", "the_build_model_reads_images", "the_reviewer_reads_images"]

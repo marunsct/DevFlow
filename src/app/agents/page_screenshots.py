@@ -42,6 +42,47 @@ def _the_screenshots(repo_root: str | Path) -> list[tuple[str, bytes]]:
     return found
 
 
+#: What a fixer is told of the screenshots after its request.
+FIXER_NOTE = (
+    "\n\n--- How the page looks now ---\n"
+    "After this text are screenshots of the page as it first loads, before anything is done on it: {shots}. "
+    "Use them to see what a person sees - what is missing, misplaced, unstyled or cut off - and fix what the "
+    "defect is about in the code; they show the page before your change."
+)
+
+
+def _with_images(request: dict[str, Any], shots: list[tuple[str, bytes]], note: str) -> dict[str, Any]:
+    messages = list(request.get("messages") or [])
+    last = dict(messages[-1])
+    text = last.get("content")
+    if not isinstance(text, str):
+        return request
+    last["content"] = [
+        {"type": "text", "text": text + note},
+        *({"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(data).decode("ascii")}}
+          for _, data in shots),
+    ]
+    return {**request, "messages": [*messages[:-1], last]}
+
+
+def with_the_page_for_a_fixer(request: dict[str, Any], repo_root: str | Path) -> dict[str, Any]:
+    """A fix request with the page's screenshots, when the build model reads images and the page has them.
+
+    Only the reviewer was shown the page: a layout fault reached the fixer as
+    the reviewer's words about it. Never raises: a fix without pictures is the
+    fix there was before.
+    """
+    try:
+        from app.models.vision import the_build_model_reads_images
+
+        shots = _the_screenshots(repo_root)
+        if not shots or not request.get("messages") or not the_build_model_reads_images():
+            return request
+        return _with_images(request, shots, FIXER_NOTE.format(shots=" and ".join(d for d, _ in shots)))
+    except Exception:  # noqa: BLE001
+        return request
+
+
 def with_the_page_screenshots(
     request: dict[str, Any], repo_root: str | Path, interface_design: Sequence[str] = ()
 ) -> dict[str, Any]:
@@ -89,4 +130,4 @@ def with_the_page_screenshots(
         return request
 
 
-__all__ = ["MOST_BYTES", "SCREENSHOTS", "with_the_page_screenshots"]
+__all__ = ["FIXER_NOTE", "MOST_BYTES", "SCREENSHOTS", "with_the_page_for_a_fixer", "with_the_page_screenshots"]

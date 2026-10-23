@@ -444,6 +444,14 @@ def _record_a_cancellation_nothing_else_will(runner: Any, run_id: str, status: s
         logger.warning("Could not record the cancellation of run %s", run_id, exc_info=True)
 
 
+@celery_app.task(name="fill_model_capabilities", ignore_result=True)
+def fill_model_capabilities() -> None:
+    """The settings page's "find what is missing" for the model's capabilities (`steering_job`)."""
+    from app.models.steering_job import fill_capabilities
+
+    fill_capabilities()
+
+
 @celery_app.task(name="diagnose_the_model", ignore_result=True)
 def diagnose_the_model() -> None:
     """The settings page's "diagnose this model" action, in the worker that reaches the model (`steering_job`)."""
@@ -494,6 +502,10 @@ def execute_workflow_run(
             from app.models.reply_salvage import served_name
 
             apply(served, recorded(served_name(served)))
+            from app.models import capabilities
+
+            if not capabilities.found_values(served_name(served)):
+                capabilities.fill(served, served_name(served), str(getattr(served, "model_name", "") or ""))
         except Exception:  # noqa: BLE001 - salvage is measured at the first reply that needs it instead
             pass
         # What this segment runs on (plan MF.1): every deploy restarts the

@@ -78,6 +78,10 @@ export interface CallUsage {
   stage: string;
 }
 
+export interface CapabilityValues {
+  values?: Record<string, unknown>;
+}
+
 /** Response after storing a codebase archive for a run. */
 export interface CodebaseUploadResponse {
   /** Stored size in bytes. */

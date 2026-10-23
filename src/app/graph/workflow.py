@@ -10459,6 +10459,12 @@ def build_workflow_graph(
 
         request = project_graph.with_the_neighbourhood(request, state["repository"].root_path, [
             *(defect.affected_files or []), *(f for _, d in co_defects for f in (d.affected_files or []))])
+        # The page as a person sees it, for a build model that reads images:
+        # only the reviewer was shown it. Last, as it makes the request's text
+        # a list of parts.
+        from app.agents.page_screenshots import with_the_page_for_a_fixer
+
+        request = with_the_page_for_a_fixer(request, state["repository"].root_path)
         return request, co_defects
 
     def _fixed_by_rewriting(state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0) -> Any:

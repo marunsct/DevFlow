@@ -758,6 +758,61 @@ async def diagnose_the_model(user: UserInDB = Depends(require_admin)) -> dict[st
     return {"status": "running", "message": "diagnosing the model"}
 
 
+@settings_router.get("/model/capabilities")
+async def model_capabilities(user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+    """What the serving model can do: the owner's values, else what was found, and where each came from (plan MD.5)."""
+    from app.models.steering_job import capabilities_view
+
+    return capabilities_view()
+
+
+class CapabilityValues(BaseModel):
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
+@settings_router.put("/model/capabilities")
+async def set_model_capabilities(payload: CapabilityValues, user: UserInDB = Depends(require_admin)) -> dict[str, Any]:
+    """The owner's values for the serving model's capabilities; null gives a field back to what is found."""
+    from fastapi import HTTPException
+
+    from app.models import capabilities
+    from app.models.model_guidance import served_now
+    from app.models.steering_job import capabilities_view
+
+    name = served_now()
+    if not name:
+        raise HTTPException(status_code=409, detail="No model is serving.")
+    try:
+        capabilities.set_owner_values(name, payload.values)
+    except KeyError as unknown:
+        raise HTTPException(status_code=404, detail=f"No capability {unknown}.")
+    except (TypeError, ValueError) as wrong:
+        raise HTTPException(status_code=422, detail=str(wrong))
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_capabilities",
+                 detail={"model": name, "keys": sorted(payload.values)})
+    return capabilities_view()
+
+
+@settings_router.post("/model/capabilities/fill", status_code=202)
+async def fill_model_capabilities(user: UserInDB = Depends(require_admin)) -> dict[str, Any]:
+    """Find every capability the owner has not set - asking the server, the model and its model card."""
+    from fastapi import HTTPException
+
+    from app.models.steering_job import set_status, status
+
+    if status().get("status") == "running":
+        return {"status": "running", "message": "already working on the model"}
+    if _a_run_is_live():
+        raise HTTPException(status_code=409, detail="A run is live: find the model's capabilities between runs, so "
+                                                    "the questions do not share the model's slots.")
+    from app.server.tasks import fill_model_capabilities as job
+
+    set_status("running", "queued")
+    job.delay()
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_capabilities_fill")
+    return {"status": "running", "message": "finding what the model can do"}
+
+
 class GuideOverride(BaseModel):
     override: bool | None = None
 

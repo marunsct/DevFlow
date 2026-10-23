@@ -297,6 +297,17 @@
     "title": "CallUsage",
     "type": "object"
    },
+   "CapabilityValues": {
+    "properties": {
+     "values": {
+      "additionalProperties": true,
+      "title": "Values",
+      "type": "object"
+     }
+    },
+    "title": "CapabilityValues",
+    "type": "object"
+   },
    "CodebaseUploadResponse": {
     "additionalProperties": false,
     "description": "Response after storing a codebase archive for a run.",
@@ -6165,6 +6176,111 @@
      }
     ],
     "summary": "Update Local Model Settings",
+    "tags": [
+     "settings"
+    ]
+   }
+  },
+  "/api/settings/model/capabilities": {
+   "get": {
+    "description": "What the serving model can do: the owner's values, else what was found, and where each came from (plan MD.5).",
+    "operationId": "model_capabilities_api_settings_model_capabilities_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Model Capabilities Api Settings Model Capabilities Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Model Capabilities",
+    "tags": [
+     "settings"
+    ]
+   },
+   "put": {
+    "description": "The owner's values for the serving model's capabilities; null gives a field back to what is found.",
+    "operationId": "set_model_capabilities_api_settings_model_capabilities_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CapabilityValues"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Set Model Capabilities Api Settings Model Capabilities Put",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Set Model Capabilities",
+    "tags": [
+     "settings"
+    ]
+   }
+  },
+  "/api/settings/model/capabilities/fill": {
+   "post": {
+    "description": "Find every capability the owner has not set - asking the server, the model and its model card.",
+    "operationId": "fill_model_capabilities_api_settings_model_capabilities_fill_post",
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Fill Model Capabilities Api Settings Model Capabilities Fill Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Fill Model Capabilities",
     "tags": [
      "settings"
     ]

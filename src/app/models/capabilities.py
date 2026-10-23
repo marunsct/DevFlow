@@ -67,8 +67,10 @@ FIELDS: tuple[Field, ...] = (
     Field("quantisation", "Quantisation", "text"),
     Field("recommended_sampling", "Recommended sampling", "text"),
     Field("model_card", "Model card", "text"),
+    Field("think_tag_tokens", "How it opens its reasoning", "text"),
 )
 BY_KEY = {field.key: field for field in FIELDS}
+
 
 
 def _record(model: str) -> dict:
@@ -137,6 +139,44 @@ def value(model: str, key: str) -> Any:
     return (found_values(model).get(key) or {}).get("value")
 
 
+# --- the reasoning tag, and what may never follow a reasoning prefill --------
+
+#: Tags a chat template may open a reply's reasoning with, most common first.
+#: Read from the served template, never assumed of a model.
+REASONING_TAGS = ("<think>", "<thinking>", "<reasoning>", "<|begin_of_thought|>", "<|thinking|>")
+_TAG_TOKENS = re.compile(r"^(\S+) = (\d+(?:[ ,]+\d+)*)$")
+
+
+def think_tag_tokens(root: str, headers: dict[str, str], template: str) -> dict | None:
+    """The reasoning tag the served template uses and the token ids the server makes of it; None when none. Never raises."""
+    tag = next((t for t in REASONING_TAGS if t in (template or "")), "")
+    if not tag:
+        return None
+    try:
+        request = urllib.request.Request(
+            root + "/tokenize", data=json.dumps({"content": tag, "add_special": False, "parse_special": True}).encode(),
+            headers={"Content-Type": "application/json", **headers})
+        with urllib.request.urlopen(request, timeout=LOOKUP_TIMEOUT_SECONDS) as reply:
+            tokens = json.load(reply).get("tokens") or []
+        ids = [int(t["id"] if isinstance(t, dict) else t) for t in tokens]
+    except Exception:  # noqa: BLE001 - no tokenizer endpoint: unknown
+        return None
+    if not ids:
+        return None
+    note = ("one token, so it can be banned after a reasoning prefill" if len(ids) == 1
+            else f"{len(ids)} tokens, so only a stop string can hold it back")
+    return _found(f"{tag} = {' '.join(map(str, ids))}", "server", note)
+
+
+def think_ban(model: str) -> tuple[str, int | None] | None:
+    """(the reasoning tag, its one token id or None when it is several) for `model`; None when unknown."""
+    found = _TAG_TOKENS.match(str(value(model, "think_tag_tokens") or "").strip())
+    if not found:
+        return None
+    ids = [int(i) for i in re.findall(r"\d+", found.group(2))]
+    return found.group(1), (ids[0] if len(ids) == 1 else None)
+
+
 # --- finding them ------------------------------------------------------------
 
 def _found(value: Any, source: str, note: str) -> dict:
@@ -157,6 +197,23 @@ def from_the_server() -> dict[str, dict]:
                 out["quantisation"] = _found(profile.quantisation, "server", f"from the file {profile.model}")
     except Exception:  # noqa: BLE001
         logger.debug("Could not read the server's profile", exc_info=True)
+    try:
+        from app.models import _runtime_settings
+        from app.models.endpoints import reached_from_here
+
+        settings = _runtime_settings()
+        reached, naming = reached_from_here(str(settings.openai_base_url or "").rstrip("/"))
+        root = reached[:-3] if reached.endswith("/v1") else reached
+        key = str(settings.openai_api_key or "")
+        headers = {**({"Authorization": f"Bearer {key}"} if key else {}), **naming}
+        with urllib.request.urlopen(urllib.request.Request(root + "/props", headers=headers),
+                                    timeout=LOOKUP_TIMEOUT_SECONDS) as reply:
+            template = str((json.load(reply) or {}).get("chat_template") or "")
+        tag = think_tag_tokens(root, headers, template)
+        if tag is not None:
+            out["think_tag_tokens"] = tag
+    except Exception:  # noqa: BLE001 - a server without /props or /tokenize says nothing
+        logger.debug("Could not read the server's reasoning tag", exc_info=True)
     return out
 
 
@@ -333,5 +390,6 @@ def fill(model: Any, name: str, configured: str = "") -> dict[str, dict]:
     return found
 
 
-__all__ = ["BY_KEY", "FIELDS", "Field", "fill", "found_values", "from_the_server", "from_what_was_measured", "look_up",
-           "measure", "owner_values", "resolved", "set_owner_values", "value"]
+__all__ = ["BY_KEY", "FIELDS", "Field", "REASONING_TAGS", "fill", "found_values", "from_the_server",
+           "from_what_was_measured", "look_up", "measure", "owner_values", "resolved", "set_owner_values", "think_ban",
+           "think_tag_tokens", "value"]

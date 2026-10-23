@@ -183,3 +183,22 @@ def test_every_guide_and_check_prompt_uses_none_of_the_banned_words():
         assert not BANNED.search(guide.line), guide.id
         assert set(guide.checks) <= set(deep_diagnosis.CHECKS), guide.id
     assert not BANNED.search(deep_diagnosis._SPEC) and not BANNED.search(deep_diagnosis._THE_RULE)
+
+
+class _Reasons_past_a_stage_s_reply(_Obeys_only_when_told):
+    """Answers short questions, and reasons to the cap on a planning-sized one."""
+
+    def create(self, **payload):
+        if payload.get("max_tokens") == deep_diagnosis.STAGE_REPLY_TOKENS:
+            self.sent.append(payload)
+            return _completion("", finish="length")
+        return super().create(**payload)
+
+
+def test_a_model_that_reasons_past_a_stage_s_reply_is_given_a_ceiling():
+    """Measured on one run: a model reasoned 80,000-144,000 tokens a reply; short questions never showed it."""
+    diagnosis = deep_diagnosis.diagnose(_model(_Reasons_past_a_stage_s_reply()), "new-model", workers=1)
+    by = {r.check: r for r in diagnosis.baseline}
+
+    assert by["an answer within a stage's reply"].passed == 0
+    assert diagnosis.reply_ceiling == deep_diagnosis.LOOPING_MODEL_CEILING

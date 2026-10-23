@@ -197,3 +197,15 @@ def test_ordinary_text_is_not_taken_for_a_repetition():
     assert not reply_salvage.repeating(code)
     assert reply_salvage.repeating("x = '" + "0" * 500)
     assert reply_salvage.repeating("ab" * 300)
+
+
+def test_a_salvage_that_comes_back_empty_says_so(caplog):
+    """Three cut-off replies of one run went unsalvaged with nothing to say whether salvage was tried."""
+    import logging
+
+    _supported()
+    server = _Server([_completion("", reasoning="more", finish="length")])
+    reply_salvage.remember_reasoning(REASONING)
+    with caplog.at_level(logging.INFO, logger="app.models.reply_salvage"):
+        reply_salvage.salvaged(_model(server), [], _cut())
+    assert "could not be salvaged" in caplog.text

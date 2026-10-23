@@ -324,7 +324,11 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
             response = model.client.create(**payload)
             content, more_reasoning, calls, finish = _reply(response)
             if lost and not content.strip() and not calls:
-                return result  # it reasoned again and answered nothing: the usual recovery takes it
+                # It reasoned again and answered nothing: the usual recovery
+                # takes it. Said, so an audit can tell this from no attempt.
+                logger.info("A reply cut off while reasoning could not be salvaged: asked to answer from its "
+                            "reasoning, it reasoned again (%s, %d characters)", finish, len(more_reasoning))
+                return result
             fresh = model._create_chat_result(response)
             if lost:
                 return _with_the_salvage(result, fresh, "reasoning")
@@ -333,7 +337,8 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
             if finish != "length" or repeating(text):
                 break
         return _with_the_text(result, text, "continuation", finish)
-    except Exception:  # noqa: BLE001 - the reply as it was
+    except Exception as error:  # noqa: BLE001 - the reply as it was
+        logger.info("A cut-off reply could not be salvaged: %s: %s", type(error).__name__, str(error)[:200])
         logger.debug("Could not salvage a cut-off reply", exc_info=True)
         return result
 

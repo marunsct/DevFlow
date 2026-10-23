@@ -38,8 +38,10 @@ logger = logging.getLogger(__name__)
 
 TRIES = 3
 REPLY_TOKENS = 6_000
-#: The ceiling chosen for a model seen looping to its limit: the largest reply
-#: the harness's stages were measured to finish with (33,613 tokens) fits.
+#: The ceiling chosen for a model seen looping, or reasoning past a stage's
+#: reply, while replies are uncapped: the largest reply a stage was measured to
+#: finish with (33,613 tokens) fits, and reply salvage (`reply_salvage`)
+#: answers a reply cut there from its own reasoning.
 LOOPING_MODEL_CEILING = 40_000
 RECORD_KEY = "deep_diagnosis"
 
@@ -331,6 +333,31 @@ def rule_kept_after_a_long_request(model: Any, guidance: str, reminded: bool = F
     return False, (f"called {', '.join(called)}" if called else f"answered as text ({finish})")
 
 
+#: A stage-sized answer's room: the longest reply a stage was measured to finish with is 33,613 tokens.
+STAGE_REPLY_TOKENS = 32_768
+
+
+def _answers_within_a_reply(model: Any, guidance: str) -> tuple[bool, str]:
+    """Whether a planning-sized request is answered before 32,768 tokens, or reasoned past them.
+
+    Measured on one run: a model reasoned 80,000-144,000 tokens a reply - most
+    of its window - on fix and planning stages, three of them answering
+    nothing. Short questions never showed it.
+    """
+    tool, _schema = _plan_tool()
+    name = tool["function"]["name"]
+    message, finish, usage = _reply(_create(model)(
+        model=model.model_name, max_tokens=STAGE_REPLY_TOKENS, stream=False, tools=[tool],
+        tool_choice={"type": "function", "function": {"name": name}},
+        messages=[*_with(guidance, "You are the Scrum Master. You plan the sprints that build a product from its "
+                                   "specification, each sprint delivering criteria a test can check."),
+                  {"role": "user", "content": _A_LONG_PROJECT[:30_000] + "\n" + _SPEC
+                   + "\nPlan the sprints and give your plan."}]))
+    if finish == "length":
+        return False, f"reasoned past {STAGE_REPLY_TOKENS:,} tokens"
+    return True, ""
+
+
 CHECKS: dict[str, Callable[[Any, str], tuple[bool, str]]] = {
     "a plan answered in its schema": _plan_in_schema,
     "the answer as a call, not as text": _answer_as_a_call,
@@ -343,6 +370,7 @@ CHECKS: dict[str, Callable[[Any, str], tuple[bool, str]]] = {
     "paths as given": _paths_as_given,
     "a refusal heeded": _refusal_heeded,
     "a rule kept after a long request": rule_kept_after_a_long_request,
+    "an answer within a stage's reply": _answers_within_a_reply,
 }
 
 
@@ -402,7 +430,7 @@ def diagnose(model: Any, name: str, workers: int = 3) -> Diagnosis:
         tried["end-of-request reminder"] = results
         reminder_helped = results[0].passed > before[rule]
     with_guidance = _measure(model, "\n".join(f"- {line}" for line in kept), list(CHECKS), workers) if kept else ()
-    looped = any(note.startswith("looped") for r in (*baseline, *with_guidance) for note in r.notes)
+    looped = any(note.startswith(("looped", "reasoned past")) for r in (*baseline, *with_guidance) for note in r.notes)
     diagnosis = Diagnosis(
         model=name, measured_at=datetime.now(timezone.utc).isoformat(timespec="seconds"), baseline=baseline,
         tried=tried, kept=tuple(kept), with_guidance=with_guidance,

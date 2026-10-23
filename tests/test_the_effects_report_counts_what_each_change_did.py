@@ -36,3 +36,15 @@ def test_a_salvaged_reply_is_counted_as_salvaged_not_lost():
     lines = "\n".join(effects(records, ""))
     assert "   1  replies lost to the output cap" in lines
     assert "   1  RS.1 replies cut off while reasoning" in lines and "   1  RS.1 replies cut off part way" in lines
+
+
+def test_a_long_reply_that_answered_is_not_lost():
+    """An architect's specification came back whole, as its tool call, at 33,613 tokens, and was counted as lost."""
+    effects = runpy.run_path(str(SCRIPT))["effects"]
+    records = [
+        {"kind": "model_response", "usage": {"output_tokens": 33_613}, "finish_reason": "tool_calls",
+         "tool_calls": "[{'name': 'TechnicalSpecificationOutput'}]"},
+        {"kind": "model_response", "usage": {"output_tokens": 32_768}, "finish_reason": "length", "text": "",
+         "tool_calls": "[]"},
+    ]
+    assert "   1  replies lost to the output cap" in "\n".join(effects(records, ""))

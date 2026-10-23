@@ -42,6 +42,19 @@ def _text(value) -> str:
     return value if isinstance(value, str) else json.dumps(value, default=str)
 
 
+def _lost(record: dict, usage: dict) -> bool:
+    """A reply cut off at the cap with nothing in it - `run_kpis`' rule; by size alone only when its end is not recorded.
+
+    By size alone a long reply that answered was lost: one architect's
+    specification came back whole, as its tool call, at 33,613 tokens.
+    """
+    finish = record.get("finish_reason")
+    if finish:
+        answered = bool(str(record.get("text") or "").strip()) or record.get("tool_calls") not in (None, "", "[]", [])
+        return finish == "length" and not answered
+    return int(usage.get("output_tokens") or 0) >= 32_000
+
+
 def effects(records: list[dict], decisions: str = "") -> list[str]:
     """The report's lines for these transcript records and this decision log."""
     counts: Counter = Counter()
@@ -68,7 +81,7 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
                 # RS.1: its usage counts the cut-off reply too, so it is past
                 # the cap, but it was answered (`app.models.reply_salvage`).
                 salvaged[str(record["salvaged"])] += 1
-            elif int(usage.get("output_tokens") or 0) >= 32_000:
+            elif _lost(record, usage):
                 lost += 1
         elif kind == "defect":
             defects[str(record.get("event") or "")] += 1

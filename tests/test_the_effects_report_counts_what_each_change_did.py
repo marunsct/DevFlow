@@ -23,3 +23,16 @@ def test_each_signal_is_counted_and_one_not_reached_says_so():
     assert "   1  LF.202 a criterion moved" in lines and "   1  AY.4 a defect left open at its call cap" in lines
     assert "   1  replies lost to the output cap" in lines and "defects: left open 1" in lines
     assert "LF.203 the lead told why a release was held: not reached" in lines
+
+
+def test_a_salvaged_reply_is_counted_as_salvaged_not_lost():
+    """RS.1: a salvaged reply's usage counts the cut-off attempt too, so it is past the cap but was answered."""
+    effects = runpy.run_path(str(SCRIPT))["effects"]
+    records = [
+        {"kind": "model_response", "usage": {"output_tokens": 33_100}, "salvaged": "reasoning"},
+        {"kind": "model_response", "usage": {"output_tokens": 9_000}, "salvaged": "continuation"},
+        {"kind": "model_response", "usage": {"output_tokens": 32_768}},
+    ]
+    lines = "\n".join(effects(records, ""))
+    assert "   1  replies lost to the output cap" in lines
+    assert "   1  RS.1 replies cut off while reasoning" in lines and "   1  RS.1 replies cut off part way" in lines

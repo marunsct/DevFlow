@@ -47,6 +47,7 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     counts: Counter = Counter()
     lost = lost_minutes = 0.0
     defects: Counter = Counter()
+    salvaged: Counter = Counter()
     for record in records:
         if not isinstance(record, dict):
             continue
@@ -63,7 +64,11 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
                     counts[label] += 1
         elif kind == "model_response":
             usage = record.get("usage") if isinstance(record.get("usage"), dict) else {}
-            if int(usage.get("output_tokens") or 0) >= 32_000:
+            if record.get("salvaged"):
+                # RS.1: its usage counts the cut-off reply too, so it is past
+                # the cap, but it was answered (`app.models.reply_salvage`).
+                salvaged[str(record["salvaged"])] += 1
+            elif int(usage.get("output_tokens") or 0) >= 32_000:
                 lost += 1
         elif kind == "defect":
             defects[str(record.get("event") or "")] += 1
@@ -77,6 +82,8 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     lines = [f"  {counts[label]:>4}  {label}" if counts[label] else f"     -  {label}: not reached"
              for label, _, _ in SIGNALS]
     lines.append(f"  {int(lost):>4}  replies lost to the output cap (the cost the reasoning work targets)")
+    lines.append(f"  {salvaged['reasoning']:>4}  RS.1 replies cut off while reasoning, answered from their reasoning")
+    lines.append(f"  {salvaged['continuation']:>4}  RS.1 replies cut off part way through their text, continued")
     if defects:
         lines.append("  defects: " + ", ".join(f"{event} {n}" for event, n in sorted(defects.items())))
     return lines

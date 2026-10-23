@@ -12,7 +12,7 @@ week are in `docs/archive/`.
 
 | | |
 |---|---|
-| Run | **QM.2 arm, run 1: run-85ad15b0** (started 08:23 JST) - tasks-api, fast, on **1f30088f**, all 25 switches on incl. `MUTATION_GUIDED_TESTS` (verified in worker and app). No mid-run deploys; compared with the all-on baseline on hidden, quality and mutation. |
+| Run | **QM.2 arm, run 1 (restarted): run-514174a4** (09:29 JST) - tasks-api, fast, on **0df9ec3c**, all 25 switches on incl. `MUTATION_GUIDED_TESTS` (verified). No mid-run deploys. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | Qwen3.6-35B-A3B (owner, back from LFM2.5 at 21:19): 2 slots, 262,144 tokens; server sampling = Qwen's *precise coding* profile (temperature 0.6, top_p 0.95, top_k 20, min_p 0, presence 0, repetition 1.0, max tokens 32,768); DevFlow context 260,000, reply ceiling 32,768 |
 | Owner's model settings | the owner's; never changed by the loop |
@@ -20,6 +20,7 @@ week are in `docs/archive/`.
 
 ## Last runs
 
+- **run-85ad15b0** (first QM.2 run, 1f30088f): **cancelled 09:21 JST** under MF.4's major-bug rule, hidden 0/10. Gunicorn listened but its routes were never served; the readiness request's 404 was cut from the start excerpt, the defect read "does not start", and four fixes over two sprint attempts rewrote start-up and hashing (each reverted). LF.221 fixed and deployed (0df9ec3c); QM.2 never got to act.
 - **run-1409658f** (1246bb22, all-on baseline): **completed 08:12 JST, hidden 10/10**, quality 6/7, mutation 0.667, 81 active min, 180 calls, 458k output tokens, 0 lost replies; sprint 1's first attempt left 4 defects open (KPI flag) and its replan fixed them.
 - **run-77f7752f** (1246bb22, not mixed): **completed 06:38 JST, hidden 10/10, quality 7/7** (best quality yet), 98 active min, 147 calls, 545k output tokens, 2 lost replies. **Mutation regression: 0.333 vs 0.708 mean** - 4 `True->False` success-flag mutants and `or`/`and` flips in app.py/models.py uncaught; direct evidence for turning on QM.2 (mutation-guided tests, still off).
 - **run-f13f7438 and run-8cced4a9 are the gated pair**, both on 1246bb22, hidden 10/10 each. run-8cced4a9 ran the whole way on 1246bb22 (not mixed); run-f13f7438 likewise (1246bb22, not mixed) - **59 active min**, 133 calls, 337k output tokens, 0 replies lost, 0 tool failures, quality 6/7, mutation 0.5; sprint 1 took 2 attempts (a unit test the fixers' writes kept failing), sprint 2 passed with no defect; first scored 0/10 by a half-built hidden-test runner (LF.219, built and fixed by the other session) - corrected. run-8cced4a9: 108 active min, 507k output tokens, 2 lost replies, quality 6/7, mutation 0.625; LF.214-class import fixed live; LF.217 (UI sprint counter) bundled. **Gate verdict: the all-on baseline holds 10/10 hidden on both, at 108 and 59 active minutes against 199-233 before.**

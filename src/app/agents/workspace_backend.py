@@ -249,6 +249,18 @@ READ_FAILURES_BEFORE_SAYING_SO = 1
 #: in here", short of reprinting a `node_modules`.
 MAX_DIRECTORY_ENTRIES = 30
 
+#: The most entries one `ls`, `glob` or `grep` hands the model. A directory of
+#: a large codebase holds thousands, and deepagents stops a listing only at
+#: 80,000 characters - about 20,000 tokens, most of this model's window - of
+#: paths no one reads past the first screen. A small project's listings are
+#: never this long, so they come back exactly as before.
+MOST_ENTRIES_SHOWN = 200
+#: The last entry of a listing cut at `MOST_ENTRIES_SHOWN`.
+THE_REST_NOT_LISTED = (
+    "... and {more} more entries, not listed here. List one of the folders above, or glob a "
+    "pattern, to find the one you need."
+)
+
 #: After this many identical reads of unchanged bytes, say so. The second read
 #: of a file is ordinary - a model checks its work. The sixth is a loop.
 REPEATS_BEFORE_SAYING_SO = 2
@@ -1262,7 +1274,13 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         entries = getattr(result, "entries", None)
         if not entries:
             return result
-        return replace(result, entries=[e for e in entries if not _is_hidden(e, path)])
+        shown = [e for e in entries if not _is_hidden(e, path)]
+        if len(shown) > MOST_ENTRIES_SHOWN:
+            # `ls` has no field that says a listing is partial, so the last
+            # entry says it, where the list is read.
+            more = len(shown) - MOST_ENTRIES_SHOWN
+            shown = [*shown[:MOST_ENTRIES_SHOWN], {"path": THE_REST_NOT_LISTED.format(more=more), "is_dir": False}]
+        return replace(result, entries=shown)
 
     def glob(self, pattern: str, path: str | None = None) -> Any:
         try:
@@ -1275,7 +1293,11 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         matches = getattr(result, "matches", None)
         if not matches:
             return result
-        return replace(result, matches=[m for m in matches if not _is_hidden(m, path)])
+        shown = [m for m in matches if not _is_hidden(m, path)]
+        if len(shown) > MOST_ENTRIES_SHOWN:
+            # deepagents' own note for a partial glob: narrow the pattern or the path.
+            return replace(result, matches=shown[:MOST_ENTRIES_SHOWN], truncated=True, truncation_reason="budget")
+        return replace(result, matches=shown)
 
     def grep(self, *args: Any, **kwargs: Any) -> Any:
         try:
@@ -1292,7 +1314,12 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         if not matches:
             return result
         under = kwargs.get("path", args[1] if len(args) > 1 else None)
-        return replace(result, matches=[m for m in matches if not _is_hidden(m, under)])
+        shown = [m for m in matches if not _is_hidden(m, under)]
+        if kwargs.get("max_count") is None and len(shown) > MOST_ENTRIES_SHOWN:
+            # A count the agent asked for is its own; without one, deepagents'
+            # note for a partial search says to narrow it or raise `max_count`.
+            return replace(result, matches=shown[:MOST_ENTRIES_SHOWN], truncated=True)
+        return replace(result, matches=shown)
 
     def _each_alternative(self, result: Any, *args: Any, **kwargs: Any) -> Any:
         """A literal miss on `a|b|c`, searched as `a`, `b` and `c` instead.

@@ -173,6 +173,11 @@ def _the_files(
     for name in dict.fromkeys([*named, *mentioned]):
         candidates = [root / name, *root.glob(f"*/{name}")]
         target = next((c for c in candidates if c.is_file()), None)
+        if target is None:
+            # Deeper than one folder: the one file whose path ends so (see `the_file_ending`).
+            from app.analysis.walk import the_file_ending
+
+            target = the_file_ending(root, name, IGNORED_DIRECTORIES)
         if target is None or any(part in IGNORED_DIRECTORIES for part in target.parts):
             continue
         relative = target.relative_to(root).as_posix()

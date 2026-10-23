@@ -579,7 +579,9 @@ def _a_unit_test_file_exists(project: Any, pack: Any) -> bool:
     pattern = str(getattr(pack, "unit_pattern", "") or "")
     if not unit_dir or not pattern:
         return True  # nothing to look for: claim nothing
+    from app.analysis.walk import files_under
+
     folder = project / unit_dir
-    return folder.is_dir() and any(
-        "node_modules" not in found.parts for found in folder.rglob(pattern)
-    )
+    # A pack whose unit tests sit beside the code (`unit_dir="."`) names the
+    # whole project here, `node_modules` and all.
+    return folder.is_dir() and any(True for _ in files_under(folder, ("node_modules",), pattern))

@@ -108,8 +108,10 @@ def suite_files(repo_root: str | Path) -> list[Path]:
     if root is None or not root.is_dir():
         return []
     report = _the_report(repo_root)
+    from app.analysis.walk import files_under
+
     return sorted(
-        path for path in root.rglob("*")
+        path for path in files_under(root, _NOT_THE_SUITE)
         if path.is_file() and not (set(path.relative_to(root).parts) & _NOT_THE_SUITE)
         and path != report
     )

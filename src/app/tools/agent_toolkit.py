@@ -37,6 +37,17 @@ from app.tools.repository import (
 
 logger = logging.getLogger(__name__)
 
+#: The most lines `read_repository_file` returns when asked for a whole file:
+#: `read_file`'s own default window, `workspace_paths.DEFAULT_READ_LINES` - not
+#: imported, because that module imports this one.
+MOST_LINES_READ_WHOLE = 400
+
+#: What a whole-file read past `MOST_LINES_READ_WHOLE` says after its first window.
+FIRST_WINDOW_NOTE = (
+    "This file has {total} lines; the first {shown} are above. Read the rest by giving start_line and "
+    "line_count, or search the file for the name you need."
+)
+
 
 def build_repository_read_tools(repo_root: str, allow_subdirectories: bool = True) -> list[BaseTool]:
     """Return read-only repository tools bound to a fixed repository root.
@@ -85,7 +96,14 @@ def build_repository_read_tools(repo_root: str, allow_subdirectories: bool = Tru
         """
         try:
             if start_line == 1 and line_count is None:
-                return read_text_file(repo_root, relative_path)
+                text = read_text_file(repo_root, relative_path)
+                if text.count("\n") < MOST_LINES_READ_WHOLE:
+                    return text
+                # A file of a large codebase runs to thousands of lines, and
+                # whole it filled the window. The first window and where the
+                # rest is, as `read_file` pages a file it was not given a limit for.
+                window = read_text_lines(repo_root, relative_path, start_line=1, line_count=MOST_LINES_READ_WHOLE)
+                return {**window, "note": FIRST_WINDOW_NOTE.format(shown=window["end_line"], total=window["total_lines"])}
             return read_text_lines(
                 repo_root, relative_path, start_line=start_line, line_count=line_count
             )

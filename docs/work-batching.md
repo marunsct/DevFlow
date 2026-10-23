@@ -14,7 +14,7 @@ From `loop.sh patterns` (292 transcripts since 2026-10-20) and the run in hand:
 
 | Evidence | Number |
 |---|---|
-| One defect shown to a fixer | 333 stages, **56% fixed**, median 19.5k output tokens, **14% cut off** |
+| One defect shown to a fixer (before the cap of three; `MOST_BUNDLED_DEFECTS` now holds it there) | 333 stages, **56% fixed**, median 19.5k output tokens, **14% cut off** |
 | Two or three defects | 17 stages, 53% fixed, median 58k tokens, 47% cut off |
 | Four or more defects | 78 stages, **26% fixed**, median 73k tokens, **62% cut off** |
 | p90 reply size, by stage | acceptance_review 24.9k, technical_lead 21.9k, scrum_master 18.9k, architecture_review 16.3k, principal_architect 15.8k |
@@ -91,7 +91,7 @@ settings page next to the guides), plus a master `WORK_BATCHING`. Same conventio
 | Stage | Unit | Coverage check | Existing precedent | Why here |
 |---|---|---|---|---|
 | Acceptance author | acceptance criterion (`AC-n`), grouped by area | each `AC-n` has a test | `suite.criteria(root)` already lists them; the runner is proven by the setup | 17k tokens a call on Ornith, whole suite in one go |
-| Defect fix | defects per fixer | each defect has a stage | defect bundle size already exists | 1 defect: 56% fixed, 14% cut; 4+: 26%, 62% (first thing to check: what sets the bundle size today) |
+| Defect fix | defects per fixer | each defect has a stage | `MOST_BUNDLED_DEFECTS = 2` already caps a fixer at three (read 2026-10-24); the 4+ rows are history | nothing to build: 2-3 defects fix as often and cost the same a defect as one (WB.3 dropped) |
 | Principal architect | spec section; for big products, component by component | no empty section | `specification_parts` (core + parts), LF.215 revisions | 13.6k tokens a call on Ornith; big products will exceed any single reply |
 | Technical lead, scrum master | milestone | every work order has an owner file set | none | p90 21.9k and 18.9k; 11% and 8% cut off |
 | Reviews (acceptance, architecture, milestone, security) | file group, for large codebases | each file read by one reviewer | SZ size work (project map ranking) | p90 16-25k; clean-context reviewer per Cognition |
@@ -130,7 +130,7 @@ The owner will not read every test result, so the safeguards have to run by them
 | WB.8 | `loop.sh scan`: tokens a call and minutes a stage against the last five runs' medians, longest replies, redundant reads, a model's outliers; run at every audit | Cheap, no deploy, and it is how suggestions surface without a bug |
 | WB.1 | The work-plan module, the capacity check in the diagnosis, shadow records, `effects` lines | Everything else rests on it; inert |
 | WB.2 | Acceptance author batches | Largest per-call cost on this model; the unit and the coverage check are exact |
-| WB.3 | Fixer bundle size set by capacity | Strongest existing evidence; first read what sets it today |
+| WB.3 | ~~Fixer bundle size set by capacity~~ | Dropped: already capped at three, and 2-3 defects match one (see section 4) |
 | WB.4 | Specification core and parts by size | For products larger than one reply |
 | WB.5 | Work orders and sprint planning per milestone | |
 | WB.6 | Review sharding for large codebases | |

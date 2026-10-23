@@ -167,6 +167,32 @@ def _the_project_ignores(root: Path, relative: str) -> bool:
         return False
     return done.returncode == 0
 
+def _a_test_report(root: Path, relative: str, target: Path) -> bool:
+    """Whether the file is a test runner's report: one the setup declares, or any JUnit XML document.
+
+    Measured live, on a setup whose `.gitignore` did not list its `reports/` folder: two fixes in a
+    row took `reports/unit.xml`, named in the failure text, as the file to rewrite - 27,000 tokens
+    spent on a file the next run overwrites, both defects left open, the sprint planned again.
+    `_the_project_ignores` answers only when the project's ignore file happens to say so.
+    """
+    try:
+        from app.stacks import contract
+
+        record = contract.read(root) or {}
+        project = str(record.get("project") or "")
+        declared = {f"{project}/{record[key]}".strip("/") for key in ("unit_report", "acceptance_report") if record.get(key)}
+        if relative in declared:
+            return True
+    except Exception:  # noqa: BLE001 - the content decides
+        pass
+    if target.suffix.lower() == ".xml":
+        try:
+            return "<testsuite" in target.read_text(encoding="utf-8", errors="replace")[:2_000]
+        except OSError:
+            return False
+    return False
+
+
 def _the_files(
     root: Path, named: list[str], mentioned: list[str], judged_by_the_suite: bool, tests_from_the_text: bool,
     may_write: Callable[[str], bool],
@@ -193,7 +219,8 @@ def _the_files(
         # fixes as what failed, and each rewrote the probe and was recorded
         # as having fixed its defect.
         is_a_test = classify_file(relative) == "test"
-        if is_scratch(relative) or (judged_by_the_suite and is_a_test) or _the_project_ignores(root, relative):
+        if (is_scratch(relative) or (judged_by_the_suite and is_a_test) or _the_project_ignores(root, relative)
+                or _a_test_report(root, relative, target)):
             continue
         if is_a_test and name not in own and not tests_from_the_text:
             continue

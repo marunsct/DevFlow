@@ -2082,6 +2082,21 @@ def validate_command(
     permitted = allowed_executables(role_name, repo_root)
     if len(argv[0].split()) > 1:
         raise CommandNotAllowed(_a_command_line_in_one_string(argv, permitted, role_name))
+    # Before any check of a permitted program's arguments: a shell line split
+    # into items - `["python", "-m", "uvicorn", ..., "&&", ...]` - was answered
+    # about the module `-m` names, and its operator never mentioned. A program
+    # not permitted (`cd`, a builtin) keeps its own refusal below.
+    operator = _uses_a_shell_operator(argv) if os.path.basename(argv[0]) in permitted else None
+    if operator is not None:
+        raise CommandNotAllowed(
+            f"'{operator}' is a shell operator and there is no shell here, so it "
+            f"would be passed to '{os.path.basename(argv[0])}' as an ordinary "
+            "argument. The command would run, exit successfully and not do what "
+            "you meant - a redirect writes no file, a pipe feeds nothing. "
+            "To create or change a file use write_artifact or edit_artifact; to "
+            "use the output of one command in another, run them separately and "
+            "read the result."
+        )
 
     executable = os.path.basename(argv[0])
 
@@ -2123,18 +2138,6 @@ def validate_command(
                     f"'{executable} -m {module}' is not permitted: it can execute arbitrary code. "
                     f"Allowed modules: {', '.join(sorted(_ALLOWED_PYTHON_MODULES))}."
                 )
-
-    operator = _uses_a_shell_operator(argv)
-    if operator is not None:
-        raise CommandNotAllowed(
-            f"'{operator}' is a shell operator and there is no shell here, so it "
-            f"would be passed to '{os.path.basename(argv[0])}' as an ordinary "
-            "argument. The command would run, exit successfully and not do what "
-            "you meant - a redirect writes no file, a pipe feeds nothing. "
-            "To create or change a file use write_artifact or edit_artifact; to "
-            "use the output of one command in another, run them separately and "
-            "read the result."
-        )
 
     code_to_check = _code_given_to_node_check(argv)
     if code_to_check is not None:

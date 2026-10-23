@@ -46,3 +46,11 @@ def test_a_proper_command_is_still_validated_as_before():
 
 def test_the_refusal_uses_none_of_the_banned_words():
     assert not BANNED.search(_refusal(["cd app && ls | head"]))
+
+
+def test_a_shell_line_split_into_items_is_told_about_its_operator_first():
+    """`["cd", "/app", "&&", ".venv/bin/python", "-m", "uvicorn", ...]` was answered about the `-m` module."""
+    said = _refusal(["cd", "/tasks-api", "&&", "python", "-m", "uvicorn", "tasks_api.main:app"])
+    assert "`cd` is not a program" in said and "working_directory" in said
+    said = _refusal(["python3", "-m", "uvicorn", "app:app", "|", "head"])
+    assert "shell operator" in said and "Allowed modules" not in said

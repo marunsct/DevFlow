@@ -1126,6 +1126,36 @@ def _where_its_data_lives(root: str | Path | None) -> str:
     except Exception:  # noqa: BLE001 - a hint without it is the hint as it was
         return ""
 
+#: A service's own words that it is up and taking requests, across servers and languages.
+_LISTENING = re.compile(
+    r"Listening at|listening on|Uvicorn running on|Running on https?://|Server (?:is )?(?:running|listening|started)|"
+    r"Now listening on|Application startup complete|started server on|Puma starting|Started \w+ in \d",
+    re.I,
+)
+#: An HTTP status a request was answered with, as clients and test runners print it.
+_AN_HTTP_STATUS = re.compile(
+    r"HTTP Error ([45]\d\d)|\b([45]\d\d) (?:Not Found|NOT FOUND|Method Not Allowed|Internal Server Error)\b|"
+    r"\bstatus(?: code)?[\s:=]+([45]\d\d)\b",
+)
+
+
+def _it_listened_and_answered(text: str) -> str:
+    """The HTTP status the readiness request was answered with, when the output shows the service listening; else "".
+
+    A service that started and listened, and answered the suite's readiness
+    request with an error status, was reported as never having started.
+    Measured on a measured run: gunicorn listened, the readiness request to
+    the health route answered 404 for thirty seconds, the suite said "did not
+    start", and four fixes in two sprint attempts rewrote start-up code and
+    password hashing - each reverted - while the routes were never registered.
+    The 404 sat in the output past the six cause lines the excerpt keeps.
+    """
+    if not _LISTENING.search(text):
+        return ""
+    found = _AN_HTTP_STATUS.search(text)
+    return next((group for group in found.groups() if group), "") if found else ""
+
+
 #: A start that failed for want of a setting: a required field, an unset variable, a missing secret.
 _A_MISSING_SETTING = re.compile(
     r"Field required|environment variable[^\n]{0,60}(?:not set|is required|missing)|"
@@ -1197,6 +1227,17 @@ def the_product_did_not_start(output: str, root: str | Path | None = None) -> st
     middle = ("\n...\n" + "\n".join(causes)) if causes else ""
     excerpt = ("\n".join(head) + middle + ("\n...\n" + "\n".join(ending) if ending else ""))[:2_400]
     hint = ""
+    answered = _it_listened_and_answered(text)
+    if answered:
+        # Ahead of the excerpt: a defect carries the first 1,500 characters of
+        # this, and the cause is the one thing a fixer must not lose.
+        lead = (
+            f"The product started - its output shows it listening - but the request the suite makes to see that "
+            f"it is up was answered {answered}. How it starts is not what is wrong: the route that request asks "
+            "for is not served. Check that the routes are registered with the application the start command "
+            "runs; a route defined in a module nothing imports is never served."
+        )
+        return f"{PRODUCT_DID_NOT_START}: no test could reach it. {lead} Its output:\n{excerpt}"
     if _A_DATA_FILE_NOT_OPENED.search(text):
         guide = _where_its_data_lives(root)
         hint = (

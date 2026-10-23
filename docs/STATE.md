@@ -6,13 +6,13 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-24 00:35 JST.
+**As of:** 2026-10-24 01:00 JST.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | **run-2b891f3f** (tasks-api gate, Ornith-1.5-35B-A3B, all switches on, harness 2744a74 -> bfc8bfb at 00:34 JST, mixed_versions) started 23:54 JST after the owner's reboot. LF.247 deployed mid-run (an in-place spec revision was dropped for an empty-list section: 9.5 min lost, then a full rewrite). Before it: run-c6d33923 cancelled 23:14; LF.241-LF.246 deployed (diagnosis state, cancel, settings page naming, no image to a server without vision). Owner's Ornith diagnosis kept: tier standard 0.667, guides keep_to_role + one_program_a_command. |
+| Run | **run-2b891f3f** (tasks-api gate, Ornith-1.5-35B-A3B, all switches on, harness 2744a74 -> bfc8bfb at 00:34 -> 413a4d3 at 00:59 JST, mixed_versions) started 23:54 JST after the owner's reboot. LF.247 and LF.248 (an in-place revision is given each section's schema: an empty section had no form and the reply's records failed to join) deployed mid-run (an in-place spec revision was dropped for an empty-list section: 9.5 min lost, then a full rewrite). Before it: run-c6d33923 cancelled 23:14; LF.241-LF.246 deployed (diagnosis state, cancel, settings page naming, no image to a server without vision). Owner's Ornith diagnosis kept: tier standard 0.667, guides keep_to_role + one_program_a_command. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | **Ornith-1.5-35B-A3B** (owner, ~23:15 JST) at :8888, 3 slots, 262,144 tokens; reply ceiling the deployment's own; vision off (server). Diagnosed 23:32 JST: tier standard, 2 guides on; reasoning_effort=none honoured. |
 | Owner's model settings | the owner's; never changed by the loop |

@@ -128,9 +128,13 @@ for ok, line in results:
 # What the harness knows of the build model's family, and what it measured
 # (Initiative BH). Information only: it never decides readiness.
 try:
+    from app.models import server_profile
+    from app.models.model_guidance import served_as
     from app.models.registry import describe
 
-    print("MODEL " + describe(str(_runtime_settings().model_name or "")))
+    # Named as the worker names the model (the server's file), or its measurements read "unmeasured".
+    server_profile.record()
+    print("MODEL " + describe(served_as(str(_runtime_settings().model_name or ""))))
 except ImportError:  # an image from before the registry
     pass
 print("ALL READY" if all(ok for ok, _ in results) else "NOT ALL READY")

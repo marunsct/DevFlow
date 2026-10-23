@@ -121,7 +121,8 @@ def test_nothing_is_salvaged_with_the_switch_off(monkeypatch):
 
 def test_a_salvage_that_reasons_again_and_answers_nothing_leaves_the_reply_to_the_usual_recovery():
     _supported()
-    server = _Server([_completion("", reasoning="more thinking", finish="length")])
+    server = _Server([_completion("", reasoning="more thinking", finish="length"),
+                      _completion("", reasoning="and more", finish="length")])
     reply_salvage.remember_reasoning(REASONING)
     cut = _cut()
 
@@ -204,8 +205,24 @@ def test_a_salvage_that_comes_back_empty_says_so(caplog):
     import logging
 
     _supported()
-    server = _Server([_completion("", reasoning="more", finish="length")])
+    server = _Server([_completion("", reasoning="more", finish="length"), _completion("", reasoning="more", finish="length")])
     reply_salvage.remember_reasoning(REASONING)
     with caplog.at_level(logging.INFO, logger="app.models.reply_salvage"):
         reply_salvage.salvaged(_model(server), [], _cut())
     assert "could not be salvaged" in caplog.text
+
+
+def test_a_shape_that_reasons_again_after_a_long_request_gives_way_to_the_other_and_it_is_kept():
+    """Measured on one run: from the `reasoning_field` shape, a fix stage's long request reasoned again to the ceiling."""
+    _supported()
+    server = _Server([_completion("", reasoning="thinking again", finish="length"),
+                      _completion("Changed the status code to 201.")])
+    reply_salvage.remember_reasoning(REASONING)
+
+    result = reply_salvage.salvaged(_model(server), [HumanMessage(content="Fix the defect.")], _cut())
+
+    assert result.generations[0].message.content == "Changed the status code to 201."
+    assert server.sent[1]["messages"][-1]["content"].startswith("<think>")
+    assert all(p["max_tokens"] <= reply_salvage.SALVAGE_REPLY_TOKENS for p in server.sent)
+    reply_salvage.forget()
+    assert reply_salvage.recorded("local-model").long_shape == "think_tags"

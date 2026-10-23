@@ -55,6 +55,10 @@ ENOUGH = "I have reasoned enough about this. I will give my answer now, from wha
 MOST_REASONING_CHARACTERS = 48_000
 #: Continuations of one reply cut off part way through its text, at most.
 MOST_CONTINUATIONS = 2
+#: The most a salvage's own reply may run. One that reasoned again ran to the
+#: model's ceiling - 40,000 tokens, about four minutes - for nothing; an answer
+#: from finished reasoning, a whole file included, is far less.
+SALVAGE_REPLY_TOKENS = 16_000
 #: The probe's reply ceiling: an answer to its questions is a few tokens.
 PROBE_REPLY_TOKENS = 256
 #: A probe reply that reasoned more than this ignored the begun reply and thought again.
@@ -81,6 +85,9 @@ class Support:
     continuation: bool = False
     #: Whether the server's reply repeats the begun text before continuing it.
     echoes: bool = False
+    #: The shape that answered after a long request, when it was not `shape`:
+    #: the probe's short question passed with one and a stage's long one did not.
+    long_shape: str = ""
     model: str = ""
     measured_at: str = ""
 
@@ -315,6 +322,8 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
         if lost and (not reasoning.strip() or (kwargs.get("tools") and not support.tools)):
             return result
         kept = reasoning[-MOST_REASONING_CHARACTERS:]
+        if lost:
+            return _answered_from_its_reasoning(model, messages, stop, kwargs, support, kept, result)
         text = str(message.content or "") if cut else ""
         finish = "length"
         for _ in range(MOST_CONTINUATIONS if cut else 1):
@@ -323,15 +332,6 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
             payload["messages"].append(begun_reply(support.shape, kept, text))
             response = model.client.create(**payload)
             content, more_reasoning, calls, finish = _reply(response)
-            if lost and not content.strip() and not calls:
-                # It reasoned again and answered nothing: the usual recovery
-                # takes it. Said, so an audit can tell this from no attempt.
-                logger.info("A reply cut off while reasoning could not be salvaged: asked to answer from its "
-                            "reasoning, it reasoned again (%s, %d characters)", finish, len(more_reasoning))
-                return result
-            fresh = model._create_chat_result(response)
-            if lost:
-                return _with_the_salvage(result, fresh, "reasoning")
             rest, _echoed = _without_the_echo(content, text) if support.echoes else (content, False)
             text += rest
             if finish != "length" or repeating(text):
@@ -341,6 +341,44 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
         logger.info("A cut-off reply could not be salvaged: %s: %s", type(error).__name__, str(error)[:200])
         logger.debug("Could not salvage a cut-off reply", exc_info=True)
         return result
+
+
+def _answered_from_its_reasoning(model: Any, messages: list[Any], stop: Any, kwargs: dict, support: Support,
+                                 kept: str, result: Any) -> Any:
+    """The reply asked of its own reasoning, in the shape that answered after a long request, else each other shape once.
+
+    Measured on one run: a model whose probe answered in the `reasoning_field`
+    shape reasoned again from it on a fix stage's long request - 173,569
+    characters, to its ceiling - so nothing was salvaged; the template's own
+    closing tag, written into the reply, is the other way to say the
+    reasoning is over.
+    """
+    first = support.long_shape or support.shape
+    for shape in (first, *(s for s in SHAPES if s != first)):
+        payload = model._get_request_payload(messages, stop=stop, **kwargs)
+        payload["stream"] = False
+        payload["max_tokens"] = min(int(payload.get("max_tokens") or SALVAGE_REPLY_TOKENS), SALVAGE_REPLY_TOKENS)
+        payload["messages"].append(begun_reply(shape, kept))
+        response = model.client.create(**payload)
+        content, more_reasoning, calls, finish = _reply(response)
+        if content.strip() or calls:
+            if shape != first or not support.long_shape:
+                _keep_the_long_shape(support, shape)
+            return _with_the_salvage(result, model._create_chat_result(response), "reasoning")
+        # Said, so an audit can tell this from no attempt.
+        logger.info("A reply cut off while reasoning could not be salvaged in the %s shape: asked to answer from "
+                    "its reasoning, it reasoned again (%s, %d characters)", shape, finish, len(more_reasoning))
+    return result
+
+
+def _keep_the_long_shape(support: Support, shape: str) -> None:
+    try:
+        from dataclasses import replace
+
+        if support.model:
+            keep(support.model, replace(support, long_shape=shape))
+    except Exception:  # noqa: BLE001 - used for this call at least
+        pass
 
 
 def _with_the_salvage(original: Any, fresh: Any, kind: str) -> Any:

@@ -601,6 +601,16 @@ def build_plugin_instructions_middleware(repo_root: str, role: str = "") -> Any:
             tail = direction.strip() if at_the_tail() else ""
             if not tail:
                 instructions += direction
+            # A model whose steering profile asks for it reads its guidance
+            # once more at the end of the request (`app.models.guidance`).
+            try:
+                from app.models.model_guidance import reminder
+
+                again = reminder()
+            except Exception:  # noqa: BLE001 - no reminder
+                again = ""
+            if again:
+                tail = f"{tail}\n\n{again}".strip()
             if not instructions and not tail:
                 return handler(request)
 

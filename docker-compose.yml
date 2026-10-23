@@ -82,6 +82,16 @@ x-app-env: &app-env
   # The serving model's own guidance and reply ceiling, measured by its deep
   # diagnosis (owner, 2026-10-23: make a model that does not obey behave as asked).
   MODEL_GUIDANCE: ${MODEL_GUIDANCE:-on}
+  # Each item of the general guidance catalogue, its own switch: on lets a
+  # model's steering profile use it, off withholds it from every model.
+  GUIDE_ANSWER_IN_SCHEMA: ${GUIDE_ANSWER_IN_SCHEMA:-on}
+  GUIDE_STOP_WHEN_DONE: ${GUIDE_STOP_WHEN_DONE:-on}
+  GUIDE_NO_REPETITION: ${GUIDE_NO_REPETITION:-on}
+  GUIDE_KEEP_TO_ROLE: ${GUIDE_KEEP_TO_ROLE:-on}
+  GUIDE_EXACT_ARGUMENTS: ${GUIDE_EXACT_ARGUMENTS:-on}
+  GUIDE_ONE_PROGRAM_A_COMMAND: ${GUIDE_ONE_PROGRAM_A_COMMAND:-on}
+  GUIDE_PATHS_AS_GIVEN: ${GUIDE_PATHS_AS_GIVEN:-on}
+  GUIDE_HEED_REFUSALS: ${GUIDE_HEED_REFUSALS:-on}
   PAGE_VIEW_ENABLED: ${PAGE_VIEW_ENABLED:-true}
   CUSTOM_STACK_SETUP: ${CUSTOM_STACK_SETUP:-true}
   # At most this many agents of one run at once in parallel mode: work orders,

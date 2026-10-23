@@ -28,6 +28,15 @@ week are in `docs/archive/`.
 - **run-bf8a972f** (shakedown 1, all 24 switches on, 07ef4de -> 9e881ff -> fc93ecd, mixed_versions): **completed 22:18 JST, hidden 10/10**, 140 active min (previous tasks-api runs 199-233), 715k output tokens (-33%), 2 replies lost to the cap (4-6), 247 calls. Sprint 1 took 3 attempts (a locked test contradicting the spec - dispute, QA repair; two identical rewrites reverted - LF.216); sprint 2 passed on its first measurement (AC-7 placed with the item routes). Bugs fixed live: LF.214, LF.216; bundled: LF.212, LF.213, LF.215. **LF.217 built 23:41 JST, bundled (UI only - never counted against a gate run's score):** fast delivery's sprint-planning path makes no model call, so the run page's sprint counter (counts `technical_lead` visits) silently skipped the sprint it opened; the next sprint's header wore the wrong number (owner screenshot, run-8cced4a9). Now narrates itself.
 - **run-10d79850** (Measure pair 4 run 1, f8b3c82a): **cancelled 19:56 JST** by the owner's rule (no value left) after 206 min in sprint 1 attempt 2; hidden **4/10**. Sprint 1 could not pass AC-7 (its only test needs sprint 2's item routes - LF.202); 6 replies lost to the output cap (32 min, 23% of model time); a docstring read as an import put `of==0.0.1` in the manifest (LF.207).
 
+## Built 2026-10-23 ~20:10 JST, pushed, not deployed (gate run 1 live): general model steering (MD.3)
+
+Owner: guidance general, not per model; weaker models steered more; each guide its own switch; a settings
+action to diagnose and save; keep growing the checks. Eight guides (`GUIDE_<ID>`, on in compose), eleven
+stage-shaped checks, a steering profile per model (tier, chosen guides, owner overrides, end-of-request
+reminder for weak models), Settings > Models "Diagnose this model and set its guidance". Deploy before gate
+run 2, then re-diagnose LFM2.5 from the settings page (its profile then replaces MD.2's two kept lines).
+MD.4 (research roadmap) planned.
+
 ## Built and deployed (b408660, 11:18 JST): model diagnosis and reply salvage (owner ~10:50-11:10 JST)
 
 - **MD.1:** a model never seen is diagnosed at a run segment's start (and before the next call when the server's

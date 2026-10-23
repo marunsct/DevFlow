@@ -543,7 +543,7 @@ A call to a tool the model call withheld is refused, not run
 (`SettledAnswerMiddleware.wrap_tool_call`).
 `loop.sh diagnose [--again] [--deep]` prints the served model's diagnosis (plan MD.1; `--deep` adds MD.2, the guidance measured to help it, kept as its `model:` row of `plugin_instructions`): tools offered, required and
 named, stage-shaped structured answers, recall, the fitness and edit probes, each reasoning switch's cost, and
-reply salvage (RS.1). A model never seen is diagnosed automatically at a run segment's start (~2.5 minutes, once
+reply salvage (RS.1). Settings > Models has "Diagnose this model and set its guidance" and an Auto/On/Off control per guide (MD.3; refused while a run is live). A model never seen is diagnosed automatically at a run segment's start (~2.5 minutes, once
 per model) and kept in `DATA_DIR/model-fitness/<served name>.json`; `--again` re-measures. Owner 2026-10-23:
 every new model is diagnosed and the harness adapts from the result; no reasoning cap - reply salvage instead.
 

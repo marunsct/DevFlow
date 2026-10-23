@@ -444,6 +444,14 @@ def _record_a_cancellation_nothing_else_will(runner: Any, run_id: str, status: s
         logger.warning("Could not record the cancellation of run %s", run_id, exc_info=True)
 
 
+@celery_app.task(name="diagnose_the_model", ignore_result=True)
+def diagnose_the_model() -> None:
+    """The settings page's "diagnose this model" action, in the worker that reaches the model (`steering_job`)."""
+    from app.models.steering_job import run
+
+    run()
+
+
 @celery_app.task(
     bind=True, name="execute_workflow_run", max_retries=2, ignore_result=True
 )

@@ -136,6 +136,10 @@ export interface FrontierModelSettingsPayload {
   plan_on_judgement_model?: boolean;
 }
 
+export interface GuideOverride {
+  override?: boolean | null;
+}
+
 export interface HTTPValidationError {
   detail: ValidationError[];
 }

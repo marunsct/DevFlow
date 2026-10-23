@@ -163,7 +163,7 @@ export const ModelGuidancePanel: React.FC = () => {
             type="button"
             onClick={diagnose}
             disabled={starting || running}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
           >
             {running ? 'Diagnosing…' : 'Diagnose this model and set its guidance'}
           </button>

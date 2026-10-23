@@ -14,11 +14,12 @@ happened in, asked `TRIES` times:
 - a role kept when the failure in front of it is another role's to fix;
 - stopping when the tests it was asked about pass.
 
-Then each candidate line of guidance (`CANDIDATES`) is tried against the checks
-it is for, and kept only if it raised their pass count; the kept lines are
-asked together once more, as the stages will see them. They are kept as the
-model's row of the plugin-instruction table (`model_guidance.keep`), where a
-person can edit them. A reply ceiling is chosen when a check saw the model
+Then each item of the general guidance catalogue (`app.models.guidance`) is
+tried against the checks it is for, where the model fell short, and recorded
+as helping if it raised their pass count; the helping lines are asked together
+once more, as the stages will see them. What the measurement calls for is kept
+as the model's steering profile (`guidance.chosen_by`), the lines themselves
+staying general rows of the plugin-instruction table. A reply ceiling is chosen when a check saw the model
 loop to its limit. Uses the model's server for several minutes; asked in
 parallel across its slots.
 """
@@ -42,25 +43,12 @@ REPLY_TOKENS = 6_000
 LOOPING_MODEL_CEILING = 40_000
 RECORD_KEY = "deep_diagnosis"
 
-#: (name, line, the checks it is for). Said as what to do, in the harness's words.
-CANDIDATES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
-    ("answer in its schema",
-     "Give your answer as one call of your answer tool, never as text. Give every field the type its "
-     "schema names: a list as a list of separate items, one line as one string, a number as a number.",
-     ("a plan answered in its schema", "the answer as a call, not as text")),
-    ("no repetition",
-     "Never write the same line, item or phrase twice. If you notice you are repeating yourself, stop "
-     "writing it and finish your answer.",
-     ("a long list without repeating itself",)),
-    ("keep to the role",
-     "Change only what your request names as yours. A fault in another part is reported in your answer, "
-     "not fixed: never write or change another part's files, by a file tool or by a command.",
-     ("a role kept",)),
-    ("stop when done",
-     "When the checks you were asked to make pass, stop and give your answer straight away; do not look "
-     "further.",
-     ("stopping when its tests pass",)),
-)
+def candidates() -> tuple[tuple[str, str, tuple[str, ...]], ...]:
+    """(guide id, its line, the checks it is for), from the general catalogue (`app.models.guidance`)."""
+    from app.models.guidance import GUIDES
+
+    return tuple((guide.id, guide.line, guide.checks) for guide in GUIDES)
+
 
 _SPEC = (
     "The specification's criteria: AC-1 sign up with a username and password; AC-2 sign in and receive a "
@@ -88,6 +76,10 @@ class Diagnosis:
     with_guidance: tuple[Result, ...] = ()
     reply_ceiling: int | None = None
     seconds: int = 0
+    #: The guides measured to raise the pass count of the checks they are for.
+    helped: tuple[str, ...] = ()
+    #: Whether repeating the rule at the end of the request kept it after a long one.
+    reminder_helped: bool = False
 
 
 def _create(model: Any) -> Callable[..., Any]:
@@ -239,12 +231,118 @@ def _stops_when_done(model: Any, guidance: str) -> tuple[bool, str]:
     return False, (f"went on: {', '.join(called)}" if called else f"no call ({finish})")
 
 
+_EDIT = _tool("edit_artifact", "Replace one exact passage of a file.",
+              {"relative_path": {"type": "string"}, "find": {"type": "string"}, "replace": {"type": "string"}},
+              ["relative_path", "find", "replace"])
+_GIVE = _tool("give_answer", "Give the answer to the request.", {"value": {"type": "string"}}, ["value"])
+
+
+def _exact_arguments(model: Any, guidance: str) -> tuple[bool, str]:
+    message, finish, _ = _reply(_create(model)(
+        model=model.model_name, max_tokens=REPLY_TOKENS, stream=False, tools=[_WRITE],
+        messages=[*_with(guidance, "You are a backend specialist building a product."),
+                  {"role": "user", "content": "Create the file tasks-api/notes.txt holding the word hello."}]))
+    calls = _calls(message)
+    if not calls:
+        return False, f"no call ({finish})"
+    given = set(calls[0][1])
+    if given == {"relative_path", "content"}:
+        return True, ""
+    return False, f"arguments {sorted(given)}"
+
+
+def _one_program(model: Any, guidance: str) -> tuple[bool, str]:
+    message, finish, _ = _reply(_create(model)(
+        model=model.model_name, max_tokens=REPLY_TOKENS, stream=False, tools=[_RUN],
+        messages=[*_with(guidance, "You are a backend specialist. Commands run in the workspace."),
+                  {"role": "user", "content": "List the files in tasks-api, then show the first lines of tasks-api/app.py."}]))
+    calls = [args for name, args in _calls(message) if name == "run_terminal_command"]
+    if not calls:
+        return False, f"no command ({finish})"
+    for args in calls:
+        command = [str(part) for part in (args.get("command") or [])]
+        joined = " ".join(command)
+        if any(mark in joined for mark in ("&&", "||", ";", " | ")) or (command and " " in command[0]):
+            return False, f"ran `{joined[:80]}`"
+    return True, ""
+
+
+def _paths_as_given(model: Any, guidance: str) -> tuple[bool, str]:
+    message, finish, _ = _reply(_create(model)(
+        model=model.model_name, max_tokens=REPLY_TOKENS, stream=False, tools=[_READ],
+        messages=[*_with(guidance, "You are a backend specialist. The project is the folder tasks-api/ of the "
+                                   "workspace; its files are tasks-api/app.py and tasks-api/models.py."),
+                  {"role": "user", "content": "Read the project's app.py."}]))
+    calls = [args for name, args in _calls(message) if name == "read_file"]
+    if not calls:
+        return False, f"no read ({finish})"
+    path = str(calls[0].get("file_path") or "").removeprefix("./")
+    return (True, "") if path == "tasks-api/app.py" else (False, f"read `{path}`")
+
+
+def _refusal_heeded(model: Any, guidance: str) -> tuple[bool, str]:
+    message, finish, _ = _reply(_create(model)(
+        model=model.model_name, max_tokens=REPLY_TOKENS, stream=False, tools=[_RUN, _EDIT],
+        messages=[*_with(guidance, "You are a backend specialist fixing one defect."),
+                  {"role": "user", "content": "In tasks-api/app.py change `status_code = 200` to `status_code = 201`."},
+                  {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {
+                      "name": "run_terminal_command",
+                      "arguments": json.dumps({"command": ["sed", "-i", "s/200/201/", "tasks-api/app.py"]})}}]},
+                  {"role": "tool", "tool_call_id": "c1", "content": "{\"error\": \"'sed' is not permitted here. To change "
+                   "a file, use `edit_artifact`, which replaces one exact passage.\"}"}]))
+    calls = _calls(message)
+    if any(name == "run_terminal_command" and "sed" in " ".join(map(str, args.get("command") or []))
+           for name, args in calls):
+        return False, "sent the refused command again"
+    if any(name == "edit_artifact" for name, _ in calls):
+        return True, ""
+    return False, (f"called {', '.join(n for n, _ in calls)}" if calls else f"no call ({finish})")
+
+
+def _role_kept_while_building(model: Any, guidance: str) -> tuple[bool, str]:
+    message, finish, _ = _reply(_create(model)(
+        model=model.model_name, max_tokens=REPLY_TOKENS, stream=False, tools=[_READ, _WRITE],
+        messages=[*_with(guidance, "You are the acceptance test author. You write only the files under "
+                                   "tasks-api/acceptance/. The product's modules are built by other roles."),
+                  {"role": "user", "content": "Write the acceptance test for creating an item: POST /items answers 201 "
+                                              "with the item. The product's tasks_api/models.py does not exist yet."}]))
+    for name, args in _calls(message):
+        path = str(args.get("relative_path") or "")
+        if name == "write_artifact" and not path.startswith("tasks-api/acceptance/"):
+            return False, f"wrote {path}"
+    return True, ""
+
+
+#: What a stage's long request carries before it is asked: the project, about 20,000 tokens of it.
+_A_LONG_PROJECT = "".join(
+    f"=== app/module_{n}.py ===\ndef handler_{n}(request):\n    return {{'value': {n}}}, 200\n\n" for n in range(700))
+_THE_RULE = "Answer every request by calling give_answer, never as text."
+
+
+def rule_kept_after_a_long_request(model: Any, guidance: str, reminded: bool = False) -> tuple[bool, str]:
+    tail = [{"role": "user", "content": _THE_RULE}] if reminded else []
+    message, finish, _ = _reply(_create(model)(
+        model=model.model_name, max_tokens=REPLY_TOKENS, stream=False, tools=[_GIVE, _READ],
+        messages=[*_with(guidance, "You are a backend specialist. " + _THE_RULE),
+                  {"role": "user", "content": _A_LONG_PROJECT + "\nWhat does handler_7 return?"}, *tail]))
+    called = [n for n, _ in _calls(message)]
+    if "give_answer" in called:
+        return True, ""
+    return False, (f"called {', '.join(called)}" if called else f"answered as text ({finish})")
+
+
 CHECKS: dict[str, Callable[[Any, str], tuple[bool, str]]] = {
     "a plan answered in its schema": _plan_in_schema,
     "the answer as a call, not as text": _answer_as_a_call,
     "a long list without repeating itself": _no_repetition,
     "a role kept": _role_kept,
     "stopping when its tests pass": _stops_when_done,
+    "a role kept while building": _role_kept_while_building,
+    "exact argument names": _exact_arguments,
+    "one program a command": _one_program,
+    "paths as given": _paths_as_given,
+    "a refusal heeded": _refusal_heeded,
+    "a rule kept after a long request": rule_kept_after_a_long_request,
 }
 
 
@@ -279,7 +377,8 @@ def diagnose(model: Any, name: str, workers: int = 3) -> Diagnosis:
     before = _passes(baseline)
     tried: dict[str, tuple[Result, ...]] = {}
     kept: list[str] = []
-    for label, line, targets in CANDIDATES:
+    helped: list[str] = []
+    for label, line, targets in candidates():
         short = [t for t in targets if before.get(t, TRIES) < TRIES]
         if not short:
             continue
@@ -288,23 +387,44 @@ def diagnose(model: Any, name: str, workers: int = 3) -> Diagnosis:
         after = _passes(results)
         if sum(after.values()) > sum(before[t] for t in short):
             kept.append(line)
+            helped.append(label)
+    reminder_helped = False
+    rule = "a rule kept after a long request"
+    if before.get(rule, TRIES) < TRIES:
+        def reminded(model_: Any, guidance: str) -> tuple[bool, str]:
+            return rule_kept_after_a_long_request(model_, guidance, reminded=True)
+
+        CHECKS["the rule repeated at the end"] = reminded
+        try:
+            results = _measure(model, "", ["the rule repeated at the end"], workers)
+        finally:
+            CHECKS.pop("the rule repeated at the end", None)
+        tried["end-of-request reminder"] = results
+        reminder_helped = results[0].passed > before[rule]
     with_guidance = _measure(model, "\n".join(f"- {line}" for line in kept), list(CHECKS), workers) if kept else ()
     looped = any(note.startswith("looped") for r in (*baseline, *with_guidance) for note in r.notes)
     diagnosis = Diagnosis(
         model=name, measured_at=datetime.now(timezone.utc).isoformat(timespec="seconds"), baseline=baseline,
         tried=tried, kept=tuple(kept), with_guidance=with_guidance,
         reply_ceiling=LOOPING_MODEL_CEILING if looped else None, seconds=int(time.monotonic() - started),
+        helped=tuple(helped), reminder_helped=reminder_helped,
     )
     logger.info("Deep diagnosis of %s in %d s: %d line(s) of guidance kept", name, diagnosis.seconds, len(kept))
     return diagnosis
 
 
 def keep(diagnosis: Diagnosis) -> None:
-    from app.models import model_guidance
+    """The diagnosis, and the steering profile it calls for, kept against the model; the owner's overrides stay."""
+    from app.models import guidance
     from app.models.registry import merge_into_fitness
 
     merge_into_fitness(diagnosis.model, {RECORD_KEY: asdict(diagnosis)})
-    model_guidance.keep(diagnosis.model, list(diagnosis.kept))
+    profile = guidance.chosen_by(diagnosis)
+    earlier = guidance.recorded(diagnosis.model)
+    if earlier is not None:
+        profile.overrides = dict(earlier.overrides)
+    guidance.keep(profile)
+    guidance.ensure_rows()
 
 
 def recorded(name: str) -> dict | None:
@@ -321,7 +441,7 @@ def report(diagnosis: Diagnosis) -> str:
     lines = [f"deep diagnosis of {diagnosis.model} ({diagnosis.seconds} s)"]
     after = _passes(diagnosis.with_guidance) if diagnosis.with_guidance else {}
     for result in diagnosis.baseline:
-        lines.append(f"  {result.check:<38} {result.passed}/{result.tries}"
+        lines.append(f"  {result.check:<36} {result.passed}/{result.tries}"
                      + (f" -> {after[result.check]}/{TRIES} with the kept guidance" if result.check in after else "")
                      + (f"  - {result.notes[0]}" if result.notes else ""))
     for label, results in diagnosis.tried.items():
@@ -331,5 +451,5 @@ def report(diagnosis: Diagnosis) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["CANDIDATES", "CHECKS", "Diagnosis", "LOOPING_MODEL_CEILING", "RECORD_KEY", "Result", "TRIES", "diagnose",
+__all__ = ["CHECKS", "candidates", "Diagnosis", "LOOPING_MODEL_CEILING", "RECORD_KEY", "Result", "TRIES", "diagnose",
            "keep", "recorded", "report"]

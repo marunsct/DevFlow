@@ -496,6 +496,23 @@
     "title": "FrontierModelSettingsPayload",
     "type": "object"
    },
+   "GuideOverride": {
+    "properties": {
+     "override": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Override"
+     }
+    },
+    "title": "GuideOverride",
+    "type": "object"
+   },
    "HTTPValidationError": {
     "properties": {
      "detail": {
@@ -6148,6 +6165,124 @@
      }
     ],
     "summary": "Update Local Model Settings",
+    "tags": [
+     "settings"
+    ]
+   }
+  },
+  "/api/settings/model/steering": {
+   "get": {
+    "description": "The serving model's diagnosis and the guidance it gets (plan MD.3, `app.models.steering_job`).",
+    "operationId": "model_steering_api_settings_model_steering_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Model Steering Api Settings Model Steering Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Model Steering",
+    "tags": [
+     "settings"
+    ]
+   }
+  },
+  "/api/settings/model/steering/diagnose": {
+   "post": {
+    "description": "Diagnose the serving model afresh and save the guidance it needs against it; refused while a run is live.",
+    "operationId": "diagnose_the_model_api_settings_model_steering_diagnose_post",
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Diagnose The Model Api Settings Model Steering Diagnose Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Diagnose The Model",
+    "tags": [
+     "settings"
+    ]
+   }
+  },
+  "/api/settings/model/steering/guides/{guide_id}": {
+   "put": {
+    "description": "One guide on, off, or back to what the diagnosis chose, for the serving model.",
+    "operationId": "set_guide_override_api_settings_model_steering_guides__guide_id__put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "guide_id",
+      "required": true,
+      "schema": {
+       "title": "Guide Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/GuideOverride"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Set Guide Override Api Settings Model Steering Guides  Guide Id  Put",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Set Guide Override",
     "tags": [
      "settings"
     ]

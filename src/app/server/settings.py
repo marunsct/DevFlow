@@ -724,6 +724,67 @@ async def frontier_status(user: UserInDB = Depends(get_current_active_user)) -> 
     return await run_in_threadpool(check_frontier)
 
 
+@settings_router.get("/model/steering")
+async def model_steering(user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+    """The serving model's diagnosis and the guidance it gets (plan MD.3, `app.models.steering_job`)."""
+    from app.models.steering_job import view
+
+    return view()
+
+
+def _a_run_is_live() -> bool:
+    from app.server.run_store import RunStore
+
+    return any(str(r.status) in ("running", "queued") for r in RunStore.shared().list_all(limit=50))
+
+
+@settings_router.post("/model/steering/diagnose", status_code=202)
+async def diagnose_the_model(user: UserInDB = Depends(require_admin)) -> dict[str, Any]:
+    """Diagnose the serving model afresh and save the guidance it needs against it; refused while a run is live."""
+    from fastapi import HTTPException
+
+    from app.models.steering_job import set_status, status
+
+    if status().get("status") == "running":
+        return {"status": "running", "message": "already diagnosing"}
+    if _a_run_is_live():
+        raise HTTPException(status_code=409, detail="A run is live: diagnose the model between runs, so the two do "
+                                                    "not share the model's slots.")
+    from app.server.tasks import diagnose_the_model as job
+
+    set_status("running", "queued")
+    job.delay()
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_diagnosis")
+    return {"status": "running", "message": "diagnosing the model"}
+
+
+class GuideOverride(BaseModel):
+    override: bool | None = None
+
+
+@settings_router.put("/model/steering/guides/{guide_id}")
+async def set_guide_override(
+    guide_id: str, payload: GuideOverride, user: UserInDB = Depends(require_admin)
+) -> dict[str, Any]:
+    """One guide on, off, or back to what the diagnosis chose, for the serving model."""
+    from fastapi import HTTPException
+
+    from app.models import guidance
+    from app.models.model_guidance import served_now
+    from app.models.steering_job import view
+
+    name = served_now()
+    if not name:
+        raise HTTPException(status_code=409, detail="No model is serving.")
+    try:
+        guidance.set_override(name, guide_id, payload.override)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"No guide {guide_id}.")
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_guide",
+                 subject=guide_id, detail={"override": payload.override, "model": name})
+    return view()
+
+
 @settings_router.get("/models", response_model=list[ModelProfile])
 async def list_model_profiles(
     target: str | None = None,

@@ -48,6 +48,14 @@ SWITCHES: dict[str, str] = {
     "OBSERVATION_FOLDING": "app.agents.observation_folding",
     "REPLY_SALVAGE": "app.models.reply_salvage",
     "MODEL_GUIDANCE": "app.models.model_guidance",
+    "GUIDE_ANSWER_IN_SCHEMA": "app.models.guidance:answer_in_schema_switch",
+    "GUIDE_STOP_WHEN_DONE": "app.models.guidance:stop_when_done_switch",
+    "GUIDE_NO_REPETITION": "app.models.guidance:no_repetition_switch",
+    "GUIDE_KEEP_TO_ROLE": "app.models.guidance:keep_to_role_switch",
+    "GUIDE_EXACT_ARGUMENTS": "app.models.guidance:exact_arguments_switch",
+    "GUIDE_ONE_PROGRAM_A_COMMAND": "app.models.guidance:one_program_a_command_switch",
+    "GUIDE_PATHS_AS_GIVEN": "app.models.guidance:paths_as_given_switch",
+    "GUIDE_HEED_REFUSALS": "app.models.guidance:heed_refusals_switch",
 }
 
 UNKNOWN = "unknown"

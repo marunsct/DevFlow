@@ -1,16 +1,13 @@
-"""Instructions for one model, kept in the plugin-instruction table and added to every stage's prompt while it serves (behind `MODEL_GUIDANCE`).
+"""The serving model's steering in every stage's request (behind `MODEL_GUIDANCE`).
 
-The stack's guidance is a row of `plugin_instructions` per language and
-framework (`app.plugins.seed`); a model's is a row too, under `model:<served
-name>`, appended by the same middleware when that model is the one serving.
-Like any row it can be edited in the table, and an edit is never overwritten.
-
-What goes in it is measured, not written from a model card: the deep
-diagnosis (`app.models.deep_diagnosis`) asks the model questions shaped like
-the stages that went wrong for it, once without guidance and once with each
-candidate line, and keeps only the lines that made it do as asked more often.
-A model that needs none gets none - a line that changes nothing is prompt
-every stage pays for.
+The guidance itself is general - one catalogue, each item its own switch
+(`app.models.guidance`) - and kept as `guide:<id>` rows of the plugin-
+instruction table, which the plugin middleware appends after the stack's rows.
+Which items a model gets, and whether it also gets them repeated at the end of
+each request, is its steering profile, chosen by its deep diagnosis
+(`app.models.deep_diagnosis`) and changed per item on the settings page. A
+model that needs none gets none - a line that changes nothing is prompt every
+stage pays for.
 
 With it, a per-model reply ceiling: where the deployment leaves replies
 uncapped and the model was measured to loop to its limit, its requests carry
@@ -63,27 +60,27 @@ def served_now() -> str:
 
 
 def guidance_key() -> list[str]:
-    """The table key of the serving model's guidance, as one plugin key; [] when off or unknown."""
+    """The table keys of the guides active for the serving model (`app.models.guidance`); [] when off or unknown."""
     if not enabled():
         return []
     served = served_now()
-    return [key_for(served)] if served else []
+    if not served:
+        return []
+    from app.models.guidance import active_keys
+
+    return active_keys(served)
 
 
-def keep(served: str, lines: list[str]) -> None:
-    """Keep `lines` as `served`'s guidance; an empty list clears it."""
-    from app.server.plugin_store import PluginStore
-
-    PluginStore.shared().update_instructions(key_for(served), "\n".join(f"- {line}" for line in lines))
-
-
-def kept(served: str) -> str:
-    try:
-        from app.server.plugin_store import PluginStore
-
-        return PluginStore.shared().get_instructions(key_for(served)) or ""
-    except Exception:  # noqa: BLE001
+def reminder() -> str:
+    """The end-of-request reminder for the serving model, when its profile asks for one; "" otherwise."""
+    if not enabled():
         return ""
+    served = served_now()
+    if not served:
+        return ""
+    from app.models.guidance import reminder as its_reminder
+
+    return its_reminder(served)
 
 
 def deep_if_new(model: Any) -> None:
@@ -124,5 +121,5 @@ def ceiling_for(server: tuple[str, str]) -> int | None:
         return _CEILINGS.get(server)
 
 
-__all__ = ["ON_BY_DEFAULT", "PREFIX", "ceiling_for", "enabled", "guidance_key", "keep", "kept", "key_for",
-           "deep_if_new", "served_now", "set_ceiling"]
+__all__ = ["ON_BY_DEFAULT", "PREFIX", "ceiling_for", "deep_if_new", "enabled", "guidance_key", "key_for", "reminder",
+           "served_now", "set_ceiling"]

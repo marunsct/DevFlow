@@ -341,7 +341,7 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
             payload["stream"] = False
             payload["messages"].append(begun_reply(support.shape, kept, text))
             _with_its_reasoning_kept_closed(payload, support.model or served_name(model))
-            response = model.client.create(**payload)
+            response = _sent(model, payload)
             content, more_reasoning, calls, finish = _reply(response)
             rest, _echoed = _without_the_echo(content, text) if support.echoes else (content, False)
             text += rest
@@ -396,7 +396,7 @@ def _answered_from_its_reasoning(model: Any, messages: list[Any], stop: Any, kwa
         payload["max_tokens"] = min(int(payload.get("max_tokens") or SALVAGE_REPLY_TOKENS), SALVAGE_REPLY_TOKENS)
         payload["messages"].append(begun_reply(shape, kept))
         _with_its_reasoning_kept_closed(payload, support.model or served_name(model))
-        response = model.client.create(**payload)
+        response = _sent(model, payload)
         content, more_reasoning, calls, finish = _reply(response)
         if content.strip() or calls:
             if shape != first or not support.long_shape:
@@ -410,6 +410,21 @@ def _answered_from_its_reasoning(model: Any, messages: list[Any], stop: Any, kwa
     return result
 
 
+def _sent(model: Any, payload: dict) -> Any:
+    """`payload` sent; a server that refuses its `logit_bias` is asked again without it, the stop string still in.
+
+    The ban is an aid. A server whose front end rejects the field in any form must not cost the
+    salvage of a reply that took minutes to produce.
+    """
+    try:
+        return model.client.create(**payload)
+    except Exception as error:  # noqa: BLE001 - only this refusal is retried
+        if "logit_bias" not in payload or "logit_bias" not in str(error):
+            raise
+        logger.info("The server refused the reasoning-tag ban (%s); asking again without it", str(error)[:120])
+        return model.client.create(**{k: v for k, v in payload.items() if k != "logit_bias"})
+
+
 def _with_its_reasoning_kept_closed(payload: dict, model_name: str) -> None:
     """`payload` unable to open the reasoning again: its tag banned when it is one token, and a stop either way.
 
@@ -417,7 +432,7 @@ def _with_its_reasoning_kept_closed(payload: dict, model_name: str) -> None:
     again and reasoned on to the ceiling (measured on one run, 173,569
     characters). Re-opening is its trained reflex after the template's opening
     tag, which nothing in the request forbade. With the tag as one token the
-    server can be told never to produce it (`logit_bias` with `false`); as
+    server can be told never to produce it (`logit_bias`, -100); as
     several tokens, a stop string ends the reply where it would start. The tag
     and its tokens are what the model's server reported (`capabilities`).
     Unknown: the request is left as it was. Never raises.
@@ -430,7 +445,10 @@ def _with_its_reasoning_kept_closed(payload: dict, model_name: str) -> None:
             return
         tag, token = ban
         if token is not None and not payload.get("logit_bias"):
-            payload["logit_bias"] = [[token, False]]
+            # An object, as the OpenAI API names it: one model's server answered the list form
+            # llama.cpp itself takes with 400 "logit_bias: Input should be a valid dictionary", and the
+            # reply cut at the ceiling was lost. A bias of -100 is a ban in effect on every server.
+            payload["logit_bias"] = {str(token): -100}
         stops = payload.get("stop")
         stops = [stops] if isinstance(stops, str) else list(stops or [])
         if tag not in stops:

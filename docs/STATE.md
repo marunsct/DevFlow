@@ -6,13 +6,13 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-23 23:00 JST.
+**As of:** 2026-10-23 23:10 JST.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | none - run-ea0a7402 (test run on LFM2.5) **cancelled 22:36 JST** at the owner's word: 11 fix stages, 16 defects still open, fixes reverted; it gave LF.230-LF.236. The steering playbook (reports/Steering stubborn local models.md) built: MD.6, MD.7, LF.237-LF.239; a fresh tasks-api run on LFM2.5 measures it. |
+| Run | **fresh tasks-api run on Ornith-1.5-35B-A3B** (owner's new model, 4 slots, 262k) on **dc of LF.240**, every playbook item deployed; its first segment diagnoses the new model (MD.1/MD.2/MD.5). run-ea0a7402 (LFM2.5 test run) cancelled 22:36. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | **LFM2.5-24B-A2B** (owner, ~18:15 JST) at :8888, 3 slots, 131,072 tokens; reply ceiling uncapped (owner's setting). Diagnosed: tools 3/3, forced answers 3/3 (2/2 long), no reasoning switch honoured; deep: plan in schema 1-2/3 -> 3/3 and stop-when-done 1/3 -> 3/3 with its two guidance lines |
 | Owner's model settings | the owner's; never changed by the loop |

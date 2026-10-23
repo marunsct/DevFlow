@@ -27,23 +27,94 @@ def _status_file() -> Path:
     return Path(os.environ.get("DATA_DIR") or "data") / "model-fitness" / "_diagnosis-status.json"
 
 
+#: How often a running job says it is still running.
+HEARTBEAT_SECONDS = 30
+#: A "running" status not refreshed for this long belongs to a job that is not
+#: running: its worker restarted, a deploy stopped it, or none picked it up.
+STALE_SECONDS = 120
+#: What the page is told of such a job.
+STOPPED = ("The diagnosis stopped without finishing - its worker restarted or none picked it up, or the model "
+           "server went away. Start it again.")
+
+
+def _now() -> float:
+    import time
+
+    return time.time()
+
+
 def set_status(status: str, message: str = "") -> None:
     path = _status_file()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"status": status, "message": message,
+    path.write_text(json.dumps({"status": status, "message": message, "beat": _now(),
                                 "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}), encoding="utf-8")
 
 
-def status() -> dict[str, str]:
+def _beat() -> None:
+    """The running status refreshed, its message kept."""
     try:
         found = json.loads(_status_file().read_text(encoding="utf-8"))
-        return {"status": str(found.get("status") or "idle"), "message": str(found.get("message") or "")}
+        if found.get("status") == "running":
+            found["beat"] = _now()
+            _status_file().write_text(json.dumps(found), encoding="utf-8")
+    except (OSError, ValueError):
+        pass
+
+
+class _Beating:
+    """While a job runs, its status is refreshed every `HEARTBEAT_SECONDS`, so a job that dies is seen to have."""
+
+    def __enter__(self) -> "_Beating":
+        import threading
+
+        self._stop = threading.Event()
+
+        def loop() -> None:
+            while not self._stop.wait(HEARTBEAT_SECONDS):
+                _beat()
+
+        threading.Thread(target=loop, daemon=True, name="diagnosis-heartbeat").start()
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self._stop.set()
+
+
+def status() -> dict[str, str]:
+    """The job's state for the page; a "running" one whose heartbeat stopped is "failed", so it can be started again.
+
+    Measured: the page stayed on "diagnosing" through a closed model server and
+    a restart of every container - the file said running, nothing ever said
+    otherwise, and the action refused to start while it did.
+    """
+    try:
+        found = json.loads(_status_file().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {"status": "idle", "message": ""}
+    state = str(found.get("status") or "idle")
+    if state == "running" and _now() - float(found.get("beat") or 0) > STALE_SECONDS:
+        return {"status": "failed", "message": STOPPED}
+    return {"status": state, "message": str(found.get("message") or "")}
 
 
 def run() -> None:
     """Diagnose the serving model afresh and keep everything against it. Never raises; failure is a status."""
+    with _Beating():
+        _run()
+
+
+def _gone(model: Any) -> bool:
+    """Whether the model server stopped answering during the job; said as the job's failure."""
+    from app.models import diagnostics
+
+    if diagnostics.the_model_answers(model):
+        return False
+    set_status("failed", "the model server stopped answering during the diagnosis - nothing from that part was "
+                         "kept; load the model, then diagnose it again")
+    return True
+
+
+def _run() -> None:
     try:
         from app.models import build_default_chat_model, deep_diagnosis, diagnostics, reply_salvage, server_profile
 
@@ -55,12 +126,17 @@ def run() -> None:
             set_status("failed", "the model server does not answer a request - load the model, then diagnose it")
             return
         tools = diagnostics.diagnose(model, name)
+        if _gone(model):
+            return
         diagnostics.keep(tools)
         set_status("running", "measuring whether a cut-off reply can be finished")
         reply_salvage.measure(model, name)
         set_status("running", "asking the stage-shaped questions, with and without each guide")
         workers = (server_profile.current().slots if server_profile.current() is not None else None) or 1
-        deep_diagnosis.keep(deep_diagnosis.diagnose(model, name, workers=workers))
+        deep = deep_diagnosis.diagnose(model, name, workers=workers)
+        if _gone(model):
+            return
+        deep_diagnosis.keep(deep)
         diagnostics.apply(model, diagnostics.recorded(name))
         set_status("running", "finding what the model can do: an image, a schema, another language, its model card")
         from app.models import capabilities
@@ -74,6 +150,11 @@ def run() -> None:
 
 def fill_capabilities() -> None:
     """The settings page's "find what is missing": the serving model's capabilities found and kept. Never raises."""
+    with _Beating():
+        _fill_capabilities()
+
+
+def _fill_capabilities() -> None:
     try:
         from app.models import build_default_chat_model, capabilities, reply_salvage, server_profile
 
@@ -138,4 +219,4 @@ def view() -> dict[str, Any]:
             "checks": checks, "guides": guides, "settings": settings}
 
 
-__all__ = ["capabilities_view", "fill_capabilities", "run", "set_status", "status", "view"]
+__all__ = ["HEARTBEAT_SECONDS", "STALE_SECONDS", "STOPPED", "capabilities_view", "fill_capabilities", "run", "set_status", "status", "view"]

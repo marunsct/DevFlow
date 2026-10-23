@@ -497,6 +497,15 @@ class CompatibleChatOpenAI(ChatOpenAI):
         if (str(self.openai_api_base or ""), str(self.model_name or "")) in _NO_FORCED_TOOL_WHILE_THINKING:
             if payload.get("tool_choice") not in (None, "auto", "none"):
                 payload["tool_choice"] = "auto"
+        # The sampling the owner turned on for the serving model on the
+        # settings page, and the DRY sampler (`capabilities`); nothing unless
+        # turned on - sampling is the owner's (ADR-0008).
+        try:
+            from app.models.capabilities import with_the_owner_s_sampling
+
+            with_the_owner_s_sampling(payload, str(self.model_name or ""))
+        except Exception:  # noqa: BLE001 - the request as it was
+            pass
         return payload
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):  # type: ignore[override]

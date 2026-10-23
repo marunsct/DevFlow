@@ -68,9 +68,14 @@ FIELDS: tuple[Field, ...] = (
     Field("recommended_sampling", "Recommended sampling", "text"),
     Field("model_card", "Model card", "text"),
     Field("think_tag_tokens", "How it opens its reasoning", "text"),
+    Field("send_sampling", "Send the recommended sampling with every request", "bool"),
+    Field("sampling_to_send", "Sampling to send", "text"),
+    Field("dry_sampler", "Use the DRY repetition sampler", "bool"),
 )
 BY_KEY = {field.key: field for field in FIELDS}
-
+#: Fields only the owner sets: sampling is the owner's (ADR-0008), so nothing
+#: found ever turns it on. Off until turned on on the settings page.
+OWNER_ONLY = frozenset({"send_sampling", "dry_sampler"})
 
 
 def _record(model: str) -> dict:
@@ -121,6 +126,8 @@ def resolved(model: str) -> list[dict[str, Any]]:
     for field in FIELDS:
         if field.key in owned:
             value, source, note = owned[field.key], "owner", "set on the settings page"
+        elif field.key in OWNER_ONLY:
+            value, source, note = False, "owner", "off until it is turned on here"
         elif field.key in found:
             value, source, note = found[field.key].get("value"), found[field.key].get("source", "measured"), \
                 found[field.key].get("note", "")
@@ -136,6 +143,8 @@ def value(model: str, key: str) -> Any:
     owned = owner_values(model)
     if key in owned:
         return owned[key]
+    if key in OWNER_ONLY:
+        return False
     return (found_values(model).get(key) or {}).get("value")
 
 
@@ -175,6 +184,91 @@ def think_ban(model: str) -> tuple[str, int | None] | None:
         return None
     ids = [int(i) for i in re.findall(r"\d+", found.group(2))]
     return found.group(1), (ids[0] if len(ids) == 1 else None)
+
+
+# --- the owner's sampling, sent with every request -------------------------
+
+#: The DRY sampler's settings when the owner turns it on: the tuned values of
+#: the DRY evaluation (multiplier 0.8, base 1.75, allowed length 2; arXiv
+#: 2608.22761), over a 1,024-token window - the server's default of 64 is far
+#: too short for a long reply.
+DRY_MULTIPLIER = 0.8
+DRY_BASE = 1.75
+DRY_ALLOWED_LENGTH = 2
+DRY_PENALTY_LAST_N = 1024
+#: The names a sampling line may use: the request field each goes to, and
+#: whether the OpenAI request defines it (else it is the server's own field).
+_SAMPLING_FIELDS = {
+    "temperature": ("temperature", True), "top_p": ("top_p", True),
+    "presence_penalty": ("presence_penalty", True), "frequency_penalty": ("frequency_penalty", True),
+    "top_k": ("top_k", False), "min_p": ("min_p", False),
+    "repetition_penalty": ("repeat_penalty", False), "repeat_penalty": ("repeat_penalty", False),
+}
+_A_SETTING = re.compile(r"\b([a-z_]+)\s*[=: ]\s*(-?\d+(?:\.\d+)?)", re.I)
+
+
+def parsed_sampling(text: str) -> dict[str, tuple[str, float, bool]]:
+    """`"temperature 0.6, top_k 50"` as {name: (request field, value, an OpenAI field?)}; unknown names left out."""
+    out: dict[str, tuple[str, float, bool]] = {}
+    for name, number in _A_SETTING.findall(str(text or "")):
+        known = _SAMPLING_FIELDS.get(name.lower())
+        if known is None:
+            continue
+        number_value = float(number)
+        out[name.lower()] = (known[0], int(number_value) if known[0] == "top_k" else number_value, known[1])
+    return out
+
+
+#: How long a lookup of the owner's sampling is reused: it runs on every request.
+SAMPLING_CACHE_SECONDS = 15.0
+_SAMPLING_CACHE: dict[str, tuple[float, dict, dict]] = {}
+
+
+def sampling_for(model_name: str) -> tuple[dict, dict]:
+    """(OpenAI fields, the server's own fields) the owner turned on for the serving build model; ({}, {}) otherwise."""
+    import time
+
+    now = time.monotonic()
+    held = _SAMPLING_CACHE.get(model_name)
+    if held and held[0] > now:
+        return held[1], held[2]
+    top: dict = {}
+    extra: dict = {}
+    try:
+        from app.models import _runtime_settings
+        from app.models.model_guidance import served_now
+
+        if model_name and model_name == str(_runtime_settings().model_name or ""):
+            served = served_now() or model_name
+            if value(served, "send_sampling") is True:
+                for field, number, openai in parsed_sampling(str(value(served, "sampling_to_send") or "")).values():
+                    (top if openai else extra)[field] = number
+            if value(served, "dry_sampler") is True:
+                extra.update({"dry_multiplier": DRY_MULTIPLIER, "dry_base": DRY_BASE,
+                              "dry_allowed_length": DRY_ALLOWED_LENGTH, "dry_penalty_last_n": DRY_PENALTY_LAST_N})
+    except Exception:  # noqa: BLE001 - nothing sent
+        top, extra = {}, {}
+    _SAMPLING_CACHE[model_name] = (now + SAMPLING_CACHE_SECONDS, top, extra)
+    return top, extra
+
+
+def with_the_owner_s_sampling(payload: dict, model_name: str) -> dict:
+    """`payload` with the sampling the owner turned on for this model; a value the request already has wins."""
+    top, extra = sampling_for(model_name)
+    for field, number in top.items():
+        payload.setdefault(field, number)
+    if extra:
+        body = dict(payload.get("extra_body") or {})
+        for field, number in extra.items():
+            if field not in payload:
+                body.setdefault(field, number)
+        payload["extra_body"] = body
+    return payload
+
+
+def forget_sampling() -> None:
+    """Drop the cached lookups. For tests, and after the owner changes a value."""
+    _SAMPLING_CACHE.clear()
 
 
 # --- finding them ------------------------------------------------------------
@@ -385,11 +479,16 @@ def fill(model: Any, name: str, configured: str = "") -> dict[str, dict]:
     found: dict[str, dict] = {}
     for source in (look_up([configured, name]), from_the_server(), from_what_was_measured(name), measure(model)):
         found.update(source)  # later, more direct sources win
+    if "recommended_sampling" in found:
+        # What would be sent, should the owner turn sampling on; the owner may edit it.
+        found["sampling_to_send"] = _found(found["recommended_sampling"]["value"], found["recommended_sampling"]["source"],
+                                           "the recommended sampling; sent only once it is turned on")
     found["_at"] = {"value": datetime.now(timezone.utc).isoformat(timespec="seconds"), "source": "measured", "note": ""}
     merge_into_fitness(name, {FOUND_KEY: found})
     return found
 
 
-__all__ = ["BY_KEY", "FIELDS", "Field", "REASONING_TAGS", "fill", "found_values", "from_the_server",
-           "from_what_was_measured", "look_up", "measure", "owner_values", "resolved", "set_owner_values", "think_ban",
-           "think_tag_tokens", "value"]
+__all__ = ["BY_KEY", "DRY_ALLOWED_LENGTH", "DRY_BASE", "DRY_MULTIPLIER", "DRY_PENALTY_LAST_N", "FIELDS", "Field",
+           "OWNER_ONLY", "REASONING_TAGS", "fill", "forget_sampling", "found_values", "from_the_server",
+           "from_what_was_measured", "look_up", "measure", "owner_values", "parsed_sampling", "resolved", "sampling_for",
+           "set_owner_values", "think_ban", "think_tag_tokens", "value", "with_the_owner_s_sampling"]

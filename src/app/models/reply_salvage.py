@@ -337,6 +337,7 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
             payload = model._get_request_payload(messages, stop=stop, **kwargs)
             payload["stream"] = False
             payload["messages"].append(begun_reply(support.shape, kept, text))
+            _with_its_reasoning_kept_closed(payload, support.model or served_name(model))
             response = model.client.create(**payload)
             content, more_reasoning, calls, finish = _reply(response)
             rest, _echoed = _without_the_echo(content, text) if support.echoes else (content, False)
@@ -391,6 +392,7 @@ def _answered_from_its_reasoning(model: Any, messages: list[Any], stop: Any, kwa
         payload["stream"] = False
         payload["max_tokens"] = min(int(payload.get("max_tokens") or SALVAGE_REPLY_TOKENS), SALVAGE_REPLY_TOKENS)
         payload["messages"].append(begun_reply(shape, kept))
+        _with_its_reasoning_kept_closed(payload, support.model or served_name(model))
         response = model.client.create(**payload)
         content, more_reasoning, calls, finish = _reply(response)
         if content.strip() or calls:
@@ -403,6 +405,35 @@ def _answered_from_its_reasoning(model: Any, messages: list[Any], stop: Any, kwa
         logger.info("A reply cut off while reasoning could not be salvaged in the %s shape: asked to answer from "
                     "its reasoning, it reasoned again (%s, %d characters)", shape, finish, len(more_reasoning))
     return result
+
+
+def _with_its_reasoning_kept_closed(payload: dict, model_name: str) -> None:
+    """`payload` unable to open the reasoning again: its tag banned when it is one token, and a stop either way.
+
+    A model given its own reasoning back, closed, opened its reasoning tag
+    again and reasoned on to the ceiling (measured on one run, 173,569
+    characters). Re-opening is its trained reflex after the template's opening
+    tag, which nothing in the request forbade. With the tag as one token the
+    server can be told never to produce it (`logit_bias` with `false`); as
+    several tokens, a stop string ends the reply where it would start. The tag
+    and its tokens are what the model's server reported (`capabilities`).
+    Unknown: the request is left as it was. Never raises.
+    """
+    try:
+        from app.models.capabilities import think_ban
+
+        ban = think_ban(model_name) if model_name else None
+        if ban is None:
+            return
+        tag, token = ban
+        if token is not None and not payload.get("logit_bias"):
+            payload["logit_bias"] = [[token, False]]
+        stops = payload.get("stop")
+        stops = [stops] if isinstance(stops, str) else list(stops or [])
+        if tag not in stops:
+            payload["stop"] = [*stops, tag]
+    except Exception:  # noqa: BLE001 - the request as it was
+        logger.debug("Could not keep the reasoning closed", exc_info=True)
 
 
 def _without_the_reasoning_it_was_given(message: Any, begun: dict) -> None:

@@ -11,6 +11,7 @@ import ast
 import io
 import json
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 SOURCE = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "model_ready.py").read_text()
@@ -20,8 +21,6 @@ def _answers():
     tree = ast.parse(SOURCE)
     function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "answers")
     scope = {"json": json, "urllib": urllib}
-    import urllib.request  # noqa: F401 - the function uses it
-
     exec(compile(ast.Module(body=[function], type_ignores=[]), "model_ready", "exec"), scope)
     return scope["answers"]
 

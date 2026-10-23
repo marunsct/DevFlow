@@ -396,11 +396,32 @@ def _answered_from_its_reasoning(model: Any, messages: list[Any], stop: Any, kwa
         if content.strip() or calls:
             if shape != first or not support.long_shape:
                 _keep_the_long_shape(support, shape)
-            return _with_the_salvage(result, model._create_chat_result(response), "reasoning")
+            fresh = model._create_chat_result(response)
+            _without_the_reasoning_it_was_given(fresh.generations[0].message, begun_reply(shape, kept))
+            return _with_the_salvage(result, fresh, "reasoning")
         # Said, so an audit can tell this from no attempt.
         logger.info("A reply cut off while reasoning could not be salvaged in the %s shape: asked to answer from "
                     "its reasoning, it reasoned again (%s, %d characters)", shape, finish, len(more_reasoning))
     return result
+
+
+def _without_the_reasoning_it_was_given(message: Any, begun: dict) -> None:
+    """The salvaged answer's text without the begun reply the server echoed back before it.
+
+    Measured on one run: the server returns the whole assistant message, the
+    begun part included, so a salvaged fix answer began `<think>` and tens of
+    thousands of characters of the model's own reasoning - and the stage's
+    answer reader rightly called it "prose where the schema was expected".
+    """
+    text = getattr(message, "content", "")
+    if not isinstance(text, str) or not text:
+        return
+    begun_text = str(begun.get("content") or "")
+    if begun_text and text.startswith(begun_text):
+        text = text[len(begun_text):]
+    elif "</think>" in text and text.lstrip().startswith("<think>"):
+        text = text.split("</think>", 1)[1]
+    message.content = text.lstrip("\n")
 
 
 def _keep_the_long_shape(support: Support, shape: str) -> None:

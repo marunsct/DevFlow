@@ -260,3 +260,22 @@ def test_a_request_that_leaves_no_room_is_not_salvaged(monkeypatch):
 
     assert reply_salvage.salvaged(_model(server), [], cut) is cut
     assert server.sent == []
+
+
+def test_the_begun_reply_the_server_echoes_is_not_taken_for_the_answer():
+    """Measured on one run: salvaged fix answers began `<think>` and the model's own reasoning, read as prose."""
+    reply_salvage.keep("local-model", reply_salvage.Support(shape="think_tags", tools=True, continuation=True,
+                                                            long_shape="think_tags", model="local-model"))
+    reply_salvage.remember_reasoning(REASONING)
+    echoed = reply_salvage.begun_reply("think_tags", REASONING)["content"] + '{"changed_files": ["app/routes.py"]}'
+    server = _Server([_completion(echoed)])
+
+    result = reply_salvage.salvaged(_model(server), [HumanMessage(content="Fix the defect.")], _cut())
+
+    assert result.generations[0].message.content == '{"changed_files": ["app/routes.py"]}'
+
+
+def test_a_leading_closed_reasoning_block_is_taken_off_the_answer_too():
+    message = AIMessage(content="<think>\nhalf a word of reasoning\n</think>\n\nThe answer.")
+    reply_salvage._without_the_reasoning_it_was_given(message, {"content": "something else"})
+    assert message.content == "The answer."

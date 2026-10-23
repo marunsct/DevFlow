@@ -6,13 +6,13 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-23 18:38 JST.
+**As of:** 2026-10-23 20:37 JST.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | **Fresh gate run 1: run-ea0a7402** (18:37 JST) - tasks-api, fast, on **d77684b**, 27 of 28 switches on (`OBSERVATION_FOLDING` off), LFM2.5-24B-A2B (owner), with its measured guidance (MD.2, two lines) and diagnosis (MD.1). No mid-run deploys. run-ec1e5ae2 cancelled 18:30 (two models). |
+| Run | **run-ea0a7402** (18:37 JST, tasks-api, fast, LFM2.5) - **a test run now (owner 20:20 JST): pause, fix, deploy, rewind until no insight is left**. Paused 20:23, deployed **7588e46** (MD.3, LF.230, LF.231), LFM2.5 re-diagnosed (standard, 0.694; guides answer_in_schema + stop_when_done; reply ceiling 40,000 - it reasoned past a stage's reply 2 of 3), rewound to `defect_remediation` (sprint 1) at 20:36. mixed_versions. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | **LFM2.5-24B-A2B** (owner, ~18:15 JST) at :8888, 3 slots, 131,072 tokens; reply ceiling uncapped (owner's setting). Diagnosed: tools 3/3, forced answers 3/3 (2/2 long), no reasoning switch honoured; deep: plan in schema 1-2/3 -> 3/3 and stop-when-done 1/3 -> 3/3 with its two guidance lines |
 | Owner's model settings | the owner's; never changed by the loop |

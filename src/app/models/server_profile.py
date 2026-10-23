@@ -38,6 +38,8 @@ class ServerProfile:
     quantisation: str = ""
     #: The model file the server holds, by its name.
     model: str = ""
+    #: Whether the server holds a vision part for it (`modalities.vision`); None when it does not say.
+    reads_images: bool | None = None
 
     @property
     def bits(self) -> int | None:
@@ -66,11 +68,13 @@ def from_props(props: dict[str, Any]) -> ServerProfile:
     path = str(props.get("model_path") or "")
     name = path.replace("\\", "/").rsplit("/", 1)[-1]
     found = _QUANT.findall(name)
+    vision = (props.get("modalities") or {}).get("vision") if isinstance(props.get("modalities"), dict) else None
     return ServerProfile(
         slots=slots if isinstance(slots, int) and slots > 0 else None,
         slot_context=context if isinstance(context, int) and context > 0 else None,
         quantisation=found[-1].upper() if found else "",
         model=name,
+        reads_images=vision if isinstance(vision, bool) else None,
     )
 
 
@@ -94,6 +98,8 @@ def read(base_url: str, api_key: str = "") -> ServerProfile | None:
 
 
 _RECORDED: ServerProfile | None = None
+#: When this process last read the server (`record`), on the monotonic clock.
+_READ_AT = 0.0
 #: Whether a read of the server was attempted in this process. Before it, "no facts" means
 #: "not asked yet", which is not what a server that has none is.
 _TRIED = False
@@ -101,8 +107,11 @@ _TRIED = False
 
 def record() -> ServerProfile | None:
     """Read the build model's server profile and keep it for this process. Never raises."""
-    global _RECORDED, _TRIED
+    global _RECORDED, _TRIED, _READ_AT
+    import time
+
     _TRIED = True
+    _READ_AT = time.monotonic()
     try:
         from app.models import _runtime_settings
 
@@ -205,17 +214,37 @@ def current() -> ServerProfile | None:
     return _RECORDED
 
 
+#: How old, at most, the profile the settings page names a model by may be.
+PAGE_MAX_AGE_SECONDS = 30
+
+
+def recent(max_age: float = PAGE_MAX_AGE_SECONDS, *, clock: Any = None) -> ServerProfile | None:
+    """The profile, read again when this process's read is older than `max_age` or there was none. Never raises.
+
+    For a process no run reads the server in - the API the settings page asks:
+    it never read the server, so it named the model by its configured name
+    while the diagnosis kept what it measured under the server's own, and the
+    page showed nothing of it. A model swapped since is named afresh too.
+    """
+    import time
+
+    if not _TRIED or (clock or time.monotonic)() - _READ_AT > max_age:
+        return record()
+    return _RECORDED
+
+
 def asked() -> bool:
     """Whether the server's profile has been read in this process (it may have said nothing)."""
     return _TRIED
 
 
 def forget() -> None:
-    global _RECORDED, _TRIED, _LAST_CHECK, _UNREACHABLE
+    global _RECORDED, _TRIED, _LAST_CHECK, _UNREACHABLE, _READ_AT
     _RECORDED = None
+    _READ_AT = 0.0
     _TRIED = False
     _LAST_CHECK = 0.0
     _UNREACHABLE = False
 
 
-__all__ = ["ServerProfile", "asked", "check_again", "current", "forget", "from_props", "read", "record", "what_changed"]
+__all__ = ["PAGE_MAX_AGE_SECONDS", "ServerProfile", "asked", "check_again", "current", "forget", "from_props", "read", "recent", "record", "what_changed"]

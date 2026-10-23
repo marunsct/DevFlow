@@ -12,7 +12,7 @@ week are in `docs/archive/`.
 
 | | |
 |---|---|
-| Run | none - run-c6d33923 (Ornith, 22:55) failed at once: the server had no model loaded; then left "running" by a restart with no worker, the owner's cancels did not take (LF.244) - cancelled 23:14. Fixed tonight: LF.241 (nothing measured of a model the server does not answer for), LF.242 (`ready` sends a request), LF.243 (a stopped diagnosis is shown as stopped), LF.244. Next run waits for the owner's word on the model. |
+| Run | none - run-c6d33923 (Ornith, 22:55) failed at once: the server had no model loaded; then left "running" by a restart with no worker, the owner's cancels did not take (LF.244) - cancelled 23:14. Fixed tonight: LF.241 (nothing measured of a model the server does not answer for), LF.242 (`ready` sends a request), LF.243 (a stopped diagnosis is shown as stopped), LF.244. LF.245 (the settings page names the model as the worker does; no image sent to a server without vision). Owner's Ornith diagnosis finished 23:32 JST (740 s). Next run waits for the owner's word. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | **LFM2.5-24B-A2B** (owner, ~18:15 JST) at :8888, 3 slots, 131,072 tokens; reply ceiling uncapped (owner's setting). Diagnosed: tools 3/3, forced answers 3/3 (2/2 long), no reasoning switch honoured; deep: plan in schema 1-2/3 -> 3/3 and stop-when-done 1/3 -> 3/3 with its two guidance lines |
 | Owner's model settings | the owner's; never changed by the loop |

@@ -47,16 +47,30 @@ def key_for(served: str) -> str:
 def served_now() -> str:
     """The served model's name, as its measurements are kept under; "" when not known."""
     try:
-        from app.models.server_profile import current
-
-        profile = current()
-        if profile is not None and profile.model:
-            return profile.model
         from app.models import _runtime_settings
 
-        return str(_runtime_settings().model_name or "")
+        return served_as(str(_runtime_settings().model_name or ""))
     except Exception:  # noqa: BLE001
         return ""
+
+
+def served_as(configured: str) -> str:
+    """The name a model's measurements are kept under: the server's own when it says, else `configured`.
+
+    No network: the process reads the server first (`server_profile.record`
+    in the worker, `server_profile.recent` behind the settings page). What was
+    kept under the configured name meanwhile is moved to the served one
+    (`registry.fold_into_served`).
+    """
+    from app.models import server_profile
+
+    profile = server_profile.current()
+    if profile is None or not profile.model:
+        return configured
+    from app.models.registry import fold_into_served
+
+    fold_into_served(profile.model, configured)
+    return profile.model
 
 
 def guidance_key() -> list[str]:
@@ -126,4 +140,4 @@ def ceiling_for(server: tuple[str, str]) -> int | None:
 
 
 __all__ = ["ON_BY_DEFAULT", "PREFIX", "ceiling_for", "deep_if_new", "enabled", "guidance_key", "key_for", "reminder",
-           "served_now", "set_ceiling"]
+           "served_as", "served_now", "set_ceiling"]

@@ -169,20 +169,32 @@ def _fill_capabilities() -> None:
         set_status("failed", f"{type(error).__name__}: {str(error)[:300]}")
 
 
-def capabilities_view() -> dict[str, Any]:
-    from app.models import capabilities
+def page_model() -> str:
+    """The served model as the settings page names it: the server read afresh, so it is named as the worker names it.
+
+    Measured: the API process never read the server, named the model by its
+    configured name, and the page showed nothing the diagnosis had kept under
+    the server's - nor did the runs see the capabilities the owner set there.
+    """
+    from app.models import server_profile
     from app.models.model_guidance import served_now
 
-    name = served_now()
+    server_profile.recent()
+    return served_now()
+
+
+def capabilities_view() -> dict[str, Any]:
+    from app.models import capabilities
+
+    name = page_model()
     return {"model": name, **status(), "fields": capabilities.resolved(name) if name else []}
 
 
 def view() -> dict[str, Any]:
     """What the settings page shows of the serving model's steering."""
     from app.models import deep_diagnosis, diagnostics, guidance
-    from app.models.model_guidance import served_now
 
-    name = served_now()
+    name = page_model()
     profile = guidance.recorded(name) if name else None
     deep = deep_diagnosis.recorded(name) if name else None
     tools = diagnostics.recorded(name) if name else None
@@ -219,4 +231,4 @@ def view() -> dict[str, Any]:
             "checks": checks, "guides": guides, "settings": settings}
 
 
-__all__ = ["HEARTBEAT_SECONDS", "STALE_SECONDS", "STOPPED", "capabilities_view", "fill_capabilities", "run", "set_status", "status", "view"]
+__all__ = ["HEARTBEAT_SECONDS", "STALE_SECONDS", "STOPPED", "capabilities_view", "fill_capabilities", "page_model", "run", "set_status", "status", "view"]

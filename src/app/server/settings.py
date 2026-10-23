@@ -776,10 +776,9 @@ async def set_model_capabilities(payload: CapabilityValues, user: UserInDB = Dep
     from fastapi import HTTPException
 
     from app.models import capabilities
-    from app.models.model_guidance import served_now
-    from app.models.steering_job import capabilities_view
+    from app.models.steering_job import capabilities_view, page_model
 
-    name = served_now()
+    name = page_model()
     if not name:
         raise HTTPException(status_code=409, detail="No model is serving.")
     try:
@@ -825,10 +824,9 @@ async def set_guide_override(
     from fastapi import HTTPException
 
     from app.models import guidance
-    from app.models.model_guidance import served_now
-    from app.models.steering_job import view
+    from app.models.steering_job import page_model, view
 
-    name = served_now()
+    name = page_model()
     if not name:
         raise HTTPException(status_code=409, detail="No model is serving.")
     try:

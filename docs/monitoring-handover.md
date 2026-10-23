@@ -652,6 +652,11 @@ working (the tool-approval check can fail transiently), schedule a retry about
 
 ### 0.5 Things that bite
 
+- The model is named one way in every process: the file the server reports
+  (`model_guidance.served_as`). The worker reads the server per segment; the
+  API's settings page reads it afresh (`steering_job.page_model`, at most every
+  30 s). `tests/conftest.py` stubs `server_profile.read` for every test, so a
+  test that needs a profile sets one - none reads the developer's server.
 - Deploy = `docker compose build app worker && docker compose up -d app worker`.
   There is no source mount; a restart deploys nothing. `loop.sh deploy`
   compares the image's files with the working tree.

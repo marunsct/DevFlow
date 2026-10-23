@@ -114,15 +114,13 @@ def _the_last_reasoning() -> str:
 
 def served_name(model: Any) -> str:
     """The name a model's measurement is kept under: the file the server holds, else the configured name."""
+    configured = str(getattr(model, "model_name", "") or "unknown")
     try:
-        from app.models.server_profile import current
+        from app.models.model_guidance import served_as
 
-        profile = current()
-        if profile is not None and profile.model:
-            return profile.model
+        return served_as(configured)
     except Exception:  # noqa: BLE001
-        pass
-    return str(getattr(model, "model_name", "") or "unknown")
+        return configured
 
 
 def _path(name: str):

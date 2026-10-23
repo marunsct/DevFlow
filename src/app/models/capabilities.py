@@ -301,6 +301,10 @@ def from_the_server() -> dict[str, dict]:
                 out["context_window"] = _found(profile.slot_context, "server", "tokens a request gets (/props)")
             if profile.quantisation:
                 out["quantisation"] = _found(profile.quantisation, "server", f"from the file {profile.model}")
+            if profile.reads_images is not None:
+                out["reads_images"] = _found(profile.reads_images, "server",
+                                             "the server holds a vision part for it" if profile.reads_images
+                                             else "the server holds no vision part for it (/props)")
     except Exception:  # noqa: BLE001
         logger.debug("Could not read the server's profile", exc_info=True)
     try:
@@ -403,16 +407,29 @@ def _failed(out: dict, key: str, error: Exception, note: str) -> None:
         logger.info("Capability %s left unknown: the server did not answer (%s)", key, str(error)[:120])
 
 
-def measure(model: Any) -> dict[str, dict]:
-    """Ask the model what only it can say: an image's colour, an answer to a schema, a reply in Japanese. Never raises."""
+class _NoImages(Exception):
+    """The server holds no vision part, so no image is sent."""
+
+
+def measure(model: Any, no_images: bool = False) -> dict[str, dict]:
+    """Ask the model what only it can say: an image's colour, an answer to a schema, a reply in Japanese. Never raises.
+
+    `no_images`: the server said it holds no vision part. An image is not sent
+    then - measured, the request met a 400 on a server that holds none, and
+    the owner's server hung on the image it was sent.
+    """
     out: dict[str, dict] = {}
     try:
+        if no_images:
+            raise _NoImages
         image = "data:image/png;base64," + base64.b64encode(_png((220, 20, 20))).decode("ascii")
         text, _ = _ask(model, [{"role": "user", "content": [
             {"type": "text", "text": "What colour is this image? Reply with one word."},
             {"type": "image_url", "image_url": {"url": image}}]}])
         out["reads_images"] = _found("red" in text.lower(), "measured",
                                      f"a red square, named {' '.join(text.split())[:30]!r}")
+    except _NoImages:
+        pass  # the server's own answer stands
     except Exception as error:  # noqa: BLE001 - a server that refuses an image does not read one
         _failed(out, "reads_images", error, "an image was refused")
     try:
@@ -530,8 +547,10 @@ def fill(model: Any, name: str, configured: str = "") -> dict[str, dict]:
     found: dict[str, dict] = {}
     # The model itself is asked only when it answers at all; the card and the
     # server's account are kept either way.
-    asked = measure(model) if the_model_answers(model) else {}
-    for source in (look_up([configured, name]), from_the_server(), from_what_was_measured(name), asked):
+    from_server = from_the_server()
+    server_says_no = (from_server.get("reads_images") or {}).get("value") is False
+    asked = measure(model, no_images=server_says_no) if the_model_answers(model) else {}
+    for source in (look_up([configured, name]), from_server, from_what_was_measured(name), asked):
         found.update(source)  # later, more direct sources win
     if "recommended_sampling" in found:
         # What would be sent, should the owner turn sampling on; the owner may edit it.

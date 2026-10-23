@@ -102,6 +102,19 @@ def no_research_reaches_the_network():
     yield
 
 
+@pytest.fixture(autouse=True)
+def no_model_server_is_read(monkeypatch):
+    """The model server's `/props` is never read from a test; a test that needs a profile sets one.
+
+    The settings page reads the server afresh to name the served model
+    (`steering_job.page_model`); from a test that would read the developer's
+    own server, and its profile would be every later test's.
+    """
+    from app.models import server_profile
+
+    monkeypatch.setattr(server_profile, "read", lambda *args, **kwargs: None)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def an_openai_key_that_is_not_a_secret():
     """A dummy `OPENAI_API_KEY` for the tests that build a real client.

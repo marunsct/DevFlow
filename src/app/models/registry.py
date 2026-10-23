@@ -14,10 +14,13 @@ changes what a stage is offered.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -119,6 +122,39 @@ def merge_into_fitness(model_name: str, measured: dict) -> Path:
     return path
 
 
+def fold_into_served(served: str, configured: str) -> None:
+    """What was kept under a model's configured name, moved into its file under the server's name. Never raises.
+
+    One model, two names: the server's file name, which runs and the
+    diagnosis keep their measurements under, and the configured name, which
+    the settings page used when its process had not read the server. The
+    owner's capability settings went to one file and the runs read the other.
+    What the served file already holds wins; the configured file is removed.
+    """
+    if not served or not configured or _slug(served) == _slug(configured):
+        return
+    old = fitness_dir() / f"{_slug(configured)}.json"
+    if not old.is_file():
+        return
+    try:
+        stray = json.loads(old.read_text(encoding="utf-8"))
+        path = fitness_dir() / f"{_slug(served)}.json"
+        try:
+            kept = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            kept = {}
+        merged = {**stray, **kept}
+        for key, value in stray.items():
+            if isinstance(value, dict) and isinstance(kept.get(key), dict):
+                merged[key] = {**value, **kept[key]}
+        merged["model"] = served
+        path.write_text(json.dumps(merged, indent=1, sort_keys=True), encoding="utf-8")
+        old.unlink()
+        logger.info("Kept what was saved under %s with the served model %s", configured, served)
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not fold %s into %s", configured, served, exc_info=True)
+
+
 def record_edit_rates(model_name: str, rates: dict[str, float]) -> Path:
     """Keep a model's measured well-formed rates; the path written."""
     return merge_into_fitness(model_name, rates)
@@ -161,4 +197,4 @@ def describe(model_name: str) -> str:
 
 
 __all__ = ["TOOL_ALIASES", "FAMILIES", "FamilyProfile", "GENERIC", "WELL_FORMED_EDITS", "describe", "edit_preference",
-           "measured_edit_rates", "merge_into_fitness", "profile_for", "record_edit_rates"]
+           "fold_into_served", "measured_edit_rates", "merge_into_fitness", "profile_for", "record_edit_rates"]

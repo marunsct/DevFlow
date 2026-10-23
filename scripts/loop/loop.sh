@@ -297,6 +297,11 @@ failures)
   ;;
 reads)  in_worker redundant_reads.py "${2:-$(current)}" ;;
 patterns) shift; in_worker patterns.py "$@" ;;
+scan)
+  # The improvement scan (WB.8): where the run spends far more than the recent runs; read at every audit.
+  run="${2:-$(cat "$STATE/current_run.txt" 2>/dev/null)}"
+  in_worker scan.py "$run"
+  ;;
 documents)
   # A finished run's unit-test and acceptance-test documents (plans DT.1, DT.6), from a copy of its
   # workspace without what installs made, written on the host into data/documents/<run>/.

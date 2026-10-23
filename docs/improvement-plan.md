@@ -5729,7 +5729,7 @@ run are in `docs/monitoring-handover.md` §0 under the day.
 
 | Row | What | Status | Evidence |
 |---|---|---|---|
-| WB.8 | `loop.sh scan`: tokens a call and minutes a stage against the last five runs' medians, longest replies, redundant reads, a model's outliers; read at every audit with `loop.sh patterns` | FILED 2026-10-24, build first (no deploy needed) | Ornith 17k tokens a call in the acceptance author against Qwen's 1-2k went unremarked for two audits |
+| WB.8 | `loop.sh scan`: tokens a call and minutes a stage against the last five runs' medians, longest replies, redundant reads, a model's outliers; read at every audit with `loop.sh patterns` | BUILT 2026-10-24 `scripts/loop/scan.py`, `loop.sh scan`; test `test_the_scan_names_a_stage_far_out_against_the_recent_runs.py` | Ornith 17k tokens a call in the acceptance author against Qwen's 1-2k went unremarked for two audits |
 | WB.1 | Work-plan module (items, core, carry, join), a capacity check in the deep diagnosis (most items finished in one reply), shadow `work_split` records, `effects` lines; inert | FILED, after the running gate run | `work-batching.md` section 3 |
 | WB.2 | Acceptance author in batches of criteria (one file a group, shared helpers first, `AC-n` coverage check) | FILED | 14 calls, 240k tokens, 17k a call on Ornith |
 | WB.3 | Fixer bundle size set by the model's capacity (first read what sets it today) | FILED | 1 defect 56% fixed / 14% cut; 4+ defects 26% / 62% (`loop.sh patterns`, confounded) |

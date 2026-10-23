@@ -658,6 +658,12 @@ working (the tool-approval check can fail transiently), schedule a retry about
 
 ### 0.5 Things that bite
 
+- Never restart the worker within two minutes of another restart or deploy: the orphan sweep takes a
+  120 s lock (`harness:recover-orphans`), the second worker logs "Another worker is recovering abandoned
+  runs; skipping", and nothing sweeps again - the run stays "running" with no worker. Recover it by hand:
+  `docker compose exec -T worker python -c "from app.server.manage import recover_orphaned_runs; recover_orphaned_runs()"`
+  (try `dry_run=True` first), then `loop.sh resumed`. A model setting that is applied at segment start (the
+  reply ceiling) needs that restart; wait out the lock first.
 - The model is named one way in every process: the file the server reports
   (`model_guidance.served_as`). The worker reads the server per segment; the
   API's settings page reads it afresh (`steering_job.page_model`, at most every

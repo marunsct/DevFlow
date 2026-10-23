@@ -6,7 +6,7 @@ effort well, so find another way; research how others do it; apply it to every s
 products will get much more complex; add no defect; keep quality; suggest such changes without
 being asked, because the owner does not watch every result.
 
-Status: **designed, nothing built.** Rows WB.1-WB.8 in `docs/improvement-plan.md`.
+Status: **WB.8 built; WB.2 built and tested on Ornith, refuted for that model (see section 8); WB.3 dropped.** Rows WB.1-WB.8 in `docs/improvement-plan.md`.
 
 ## 1. What our own data says
 
@@ -158,6 +158,36 @@ Three honest reasons.
 The fix is procedural, so it holds without anyone remembering: every audit runs `loop.sh patterns`
 (and `loop.sh scan` once WB.8 exists), the report carries an "improvement" line whether or not
 anything failed, and open suggestions are listed in `docs/STATE.md` so they survive a new session.
+
+## 8. First measurement (2026-10-24, Ornith-1.5-35B-A3B, tasks-api)
+
+The acceptance author was rewound and re-run in batches (11 criteria as 4, 4, 3) on the same
+specification and setup. **Result: batching did not cut the cost, so `BATCH_ACCEPTANCE_AUTHOR` is off
+by default** (the code stays, inert). Part 1 alone: 3 calls, 63k tokens, 16 minutes and no file written,
+against 14 calls, 258k tokens, 65 minutes for the whole suite. Each call reasoned 30k tokens (120-130k
+characters) before a trivial `ls` or `read_file`: the cost is **per turn**, not per unit of work, so
+more batches meant more turns.
+
+What the whole run's 97 replies show (`loop.sh scan` and the transcript):
+
+| Kind of turn | Turns | Tokens | A turn |
+|---|---|---|---|
+| Final answer, no tools | 37 | 382k (39%) | 10.3k |
+| Only reads (ls, read_file, grep) | 24 | 336k (35%) | **14.0k** |
+| Writes | 18 | 188k (19%) | 10.5k |
+| Runs a command | 18 | 50k (5%) | 2.8k |
+
+Reading and listing cost more a turn than writing. And the spend is a tail: the median reply is
+3,777 tokens (about Qwen's), but **21 of 97 replies are over 16,000 tokens and hold 73% of all
+output**; a ceiling at 24,000 would trim about 23%, at 16,000 about 37%.
+
+What this changes in the plan: the lever for a heavy-thinking model is the *tail of single turns*,
+not the size of the work. A ceiling with reply salvage (already built, measured supported on Ornith)
+is the direct tool, and it is a setting. So Ornith now has `reply_ceiling` 24,000 in its fitness
+record (first value, trimming the 14 longest replies); the rest of run-2b891f3f runs under it. The
+judge is the run: hidden score, quality set, replies salvaged against lost (`loop.sh effects`),
+and minutes. Splitting work stays on the list for products too large for any single reply
+(WB.4-WB.6), where the reason is size, not thinking.
 
 ## Sources
 

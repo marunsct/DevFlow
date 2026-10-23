@@ -72,6 +72,9 @@ x-app-env: &app-env
   # sprint: MUTATION_GUIDED_TESTS_CHANGES.
   MUTATION_GUIDED_TESTS: ${MUTATION_GUIDED_TESTS:-on}
   MUTATION_GUIDED_TESTS_CHANGES: ${MUTATION_GUIDED_TESTS_CHANGES:-6}
+  # Old long tool results folded to their opening once a stage's conversation
+  # reaches half the window (built 2026-10-23; off until the owner turns it on).
+  OBSERVATION_FOLDING: ${OBSERVATION_FOLDING:-off}
   PAGE_VIEW_ENABLED: ${PAGE_VIEW_ENABLED:-true}
   CUSTOM_STACK_SETUP: ${CUSTOM_STACK_SETUP:-true}
   # At most this many agents of one run at once in parallel mode: work orders,

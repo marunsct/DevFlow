@@ -21,9 +21,9 @@ from app.observability.provenance import SWITCHES
 COMPOSE = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text()
 
 #: Switches built and not yet turned on by the owner, each off in compose and
-#: in its code. Empty since 2026-10-23 08:08 JST, when the owner turned plan
-#: QM.2 (`MUTATION_GUIDED_TESTS`) on as its own measured arm.
-NOT_TURNED_ON_YET: frozenset[str] = frozenset()
+#: in its code. Emptied 2026-10-23 08:08 JST, when the owner turned plan QM.2
+#: (`MUTATION_GUIDED_TESTS`) on as its own measured arm.
+NOT_TURNED_ON_YET: frozenset[str] = frozenset({"OBSERVATION_FOLDING"})
 
 
 def test_every_switch_is_passed_through_and_defaults_on():

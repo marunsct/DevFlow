@@ -6,13 +6,13 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-23 11:22 JST.
+**As of:** 2026-10-23 17:30 JST.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | **QM.2 arm, run 1 (third start): run-ec1e5ae2** (11:19 JST) - tasks-api, fast, on **b408660**, 26 of 27 switches on (`MUTATION_GUIDED_TESTS`, `REPLY_SALVAGE` on; `OBSERVATION_FOLDING` off), Qwen3.8-Flash-Next (owner). No mid-run deploys. run-514174a4 cancelled 11:17 (ran on three models). |
+| Run | **run-ec1e5ae2** (11:19 JST, b408660, tasks-api, fast) - began as QM.2 arm run 1 on Qwen3.8-Flash-Next; paused by the owner 16:53 and 17:16 JST, **resumed ~17:20 on LFM2.5-24B-A2B** (auto-diagnosed in 73 s, MD.1). Two models: not usable as the QM.2 arm; now in sprint 1's first fix stage. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | **Qwen3.8-Flash-Next-GSQ-RCO IQ1_M** (`qwen3.8-flash-next-coder-iq1_m`, owner, ~11:00 JST) at **:9090**, 1 slot, 524,288 tokens; XML tool-call template. The owner: a 3-bit 125B MoE despite the IQ1_M in its name (the name-based quantisation reading is wrong for this build). Diagnosed (MD.1): forced/named tools 3/3, stage-shaped forced answer 3/3 and 2/2 after 20k tokens, recall ok, 3/5 fitness probes (lists/searches via the terminal), `reasoning_effort=none` honoured (3 vs 50 tokens), reply salvage supported |
 | Owner's model settings | the owner's; never changed by the loop |

@@ -226,3 +226,37 @@ def test_a_shape_that_reasons_again_after_a_long_request_gives_way_to_the_other_
     assert all(p["max_tokens"] <= reply_salvage.SALVAGE_REPLY_TOKENS for p in server.sent)
     reply_salvage.forget()
     assert reply_salvage.recorded("local-model").long_shape == "think_tags"
+
+
+def _cut_at(input_tokens):
+    message = AIMessage(content="", usage_metadata={"input_tokens": input_tokens, "output_tokens": 40_000,
+                                                    "total_tokens": input_tokens + 40_000})
+    return ChatResult(generations=[ChatGeneration(message=message, generation_info={"finish_reason": "length"})])
+
+
+def test_the_kept_reasoning_is_cut_to_what_fits_beside_the_request(monkeypatch):
+    """Measured on one run: a salvage was refused as "Message too long: 149266 tokens exceeds the context"."""
+    from app.models import server_profile
+
+    _supported()
+    monkeypatch.setattr(server_profile, "current", lambda: server_profile.ServerProfile(slot_context=131_072))
+    server = _Server([_completion("Fixed.")])
+    reply_salvage.remember_reasoning("r" * 200_000)
+
+    reply_salvage.salvaged(_model(server), [], _cut_at(100_000))
+
+    kept = server.sent[0]["messages"][-1]["reasoning_content"]
+    assert len(kept) <= (131_072 - 100_000 - reply_salvage.SALVAGE_REPLY_TOKENS - 1_024) * 3 + len(reply_salvage.ENOUGH) + 2
+
+
+def test_a_request_that_leaves_no_room_is_not_salvaged(monkeypatch):
+    from app.models import server_profile
+
+    _supported()
+    monkeypatch.setattr(server_profile, "current", lambda: server_profile.ServerProfile(slot_context=131_072))
+    server = _Server([])
+    reply_salvage.remember_reasoning("r" * 200_000)
+    cut = _cut_at(120_000)
+
+    assert reply_salvage.salvaged(_model(server), [], cut) is cut
+    assert server.sent == []

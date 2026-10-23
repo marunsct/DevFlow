@@ -323,6 +323,13 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
             return result
         kept = reasoning[-MOST_REASONING_CHARACTERS:]
         if lost:
+            room = _room_for_the_reasoning(message)
+            if room is not None and room < MOST_REASONING_CHARACTERS:
+                if room < SMALLEST_KEPT_CHARACTERS:
+                    logger.info("A reply cut off while reasoning was not salvaged: its request leaves no room in "
+                                "the window for its reasoning and an answer")
+                    return result
+                kept = reasoning[-room:]
             return _answered_from_its_reasoning(model, messages, stop, kwargs, support, kept, result)
         text = str(message.content or "") if cut else ""
         finish = "length"
@@ -341,6 +348,31 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
         logger.info("A cut-off reply could not be salvaged: %s: %s", type(error).__name__, str(error)[:200])
         logger.debug("Could not salvage a cut-off reply", exc_info=True)
         return result
+
+
+#: Less kept reasoning than this is not worth an answer from it.
+SMALLEST_KEPT_CHARACTERS = 4_000
+#: Characters a token is counted as, as the context budget counts them.
+_CHARS_PER_TOKEN = 3
+
+
+def _room_for_the_reasoning(message: Any) -> int | None:
+    """Characters of reasoning that fit beside the request and an answer in the window; None when unknown.
+
+    Measured on one run: a salvage of a large fix stage's reply was refused as
+    "Message too long: 149266 tokens exceeds the context" - the request, the
+    48,000 characters of reasoning kept, and the answer's room did not fit.
+    """
+    try:
+        from app.models.server_profile import current
+
+        window = (current().slot_context if current() is not None else None)
+        used = int(((getattr(message, "usage_metadata", None) or {}).get("input_tokens")) or 0)
+        if not window or not used:
+            return None
+        return max(0, (window - used - SALVAGE_REPLY_TOKENS - 1_024) * _CHARS_PER_TOKEN)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _answered_from_its_reasoning(model: Any, messages: list[Any], stop: Any, kwargs: dict, support: Support,

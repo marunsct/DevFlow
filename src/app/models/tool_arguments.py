@@ -522,6 +522,30 @@ def _bare(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", cleaned.lower())
 
 
+def _the_call_it_wraps(call: dict[str, Any], parameters: dict[str, Any]) -> None:
+    """A call wrapping an offered tool's call - its name in one argument, its arguments in another - made that call.
+
+    Measured on one run: a sprint planner sent its whole plan as
+    `Skill({"skill": "SprintPlanOutput", "arguments": {...}})`. `Skill` is not
+    offered, so the call was refused and the plan thrown away; its next
+    answer, sent properly, had dropped half of it. A call to a tool not
+    offered, holding exactly one value that names an offered tool and one
+    object, is that tool's call with that object. Never raises.
+    """
+    try:
+        name, args = str(call.get("name") or ""), call.get("args")
+        if name in parameters or not isinstance(args, dict):
+            return
+        named = [value.strip() for value in args.values() if isinstance(value, str) and value.strip() in parameters]
+        objects = [value for value in args.values() if isinstance(value, dict)]
+        if len(named) != 1 or len(objects) != 1 or len(args) != 2:
+            return
+        logger.info("A call to `%s` wrapping `%s` taken as that call", name, named[0])
+        call["name"], call["args"] = named[0], objects[0]
+    except Exception:  # noqa: BLE001 - the refusal stands
+        return
+
+
 def _taken_as_the_tool_it_learned_elsewhere(call: dict[str, Any], parameters: dict[str, Any]) -> None:
     """A call to a tool known by another harness's name, renamed to the offered one it means (M.5). Never raises."""
     try:
@@ -605,6 +629,7 @@ def decode_structured_arguments(result: Any, tools: Any) -> Any:
         except Exception:  # noqa: BLE001 - a recovery that cannot run changes nothing
             logger.info("Invalid tool calls could not be recovered", exc_info=True)
         for call in getattr(message, "tool_calls", None) or []:
+            _the_call_it_wraps(call, parameters)
             _taken_as_the_tool_it_learned_elsewhere(call, parameters)
             offered = _the_offered_tool_meant(str(call.get("name") or ""), parameters, call.get("args"))
             if offered is not None:

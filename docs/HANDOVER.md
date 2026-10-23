@@ -417,6 +417,10 @@ test that fails on the old code:
   `plugins/seed.py`, a per-language table or service (`sandbox.CODE_AS_A_FILE`, `language_service`) - never
   a special case in generic code, and a fix for one stack must not hinder another: check it against the
   others before it ships (LF.70).
+- **Owner, 2026-10-23: the product works on small and large codebases.** Plan every change for both: ask what
+  it does at 10 files and at 10,000. Keep the small-codebase path exact and switch to the bounded one (ranking,
+  skeletons, caps that say what they cut) only past a measured size, chosen at run time; test both sides of the
+  threshold (plan SZ.1-SZ.11).
 - **Owner, 2026-10-20: the routine audit runs every 10 minutes** (cron `3,13,23,33,43,53 * * * *`).
   After a restart of this session the crons are gone and must be re-created: the 10-minute audit and the two
   90-minute deep analyses (`13 0,3,6,9,12,15,18,21` and `43 1,4,7,10,13,16,19,22`). After a host restart check

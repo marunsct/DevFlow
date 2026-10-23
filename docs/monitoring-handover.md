@@ -554,6 +554,12 @@ docker exec langchain-app-1 python -m app.server.manage create-user harness-test
 
 ### 0.4 One iteration, step by step
 
+**Every audit, bug or no bug (owner 2026-10-24):** also run `loop.sh patterns` (and `loop.sh scan`
+once WB.8 exists) and report an *improvement* line - tokens a call by stage against the last
+five runs, the longest replies, redundant reads, minutes in the stage - and add any open
+suggestion to `docs/STATE.md` "Next actions". The owner does not read every result; a
+suggestion that is not written down and reported does not reach them.
+
 ```sh
 export LOOP_USER=harness-test LOOP_PASSWORD=loop-test-only-pw-2026   # the operator account (0.3.1)
 scripts/loop/loop.sh ready                             # last line must be ALL READY; otherwise start nothing

@@ -297,6 +297,7 @@ failures)
   ;;
 reads)  in_worker redundant_reads.py "${2:-$(current)}" ;;
 patterns) shift; in_worker patterns.py "$@" ;;
+ceiling) shift; in_worker set_ceiling.py "$@" ;;
 scan)
   # The improvement scan (WB.8): where the run spends far more than the recent runs; read at every audit.
   run="${2:-$(cat "$STATE/current_run.txt" 2>/dev/null)}"

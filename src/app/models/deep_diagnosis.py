@@ -446,7 +446,16 @@ def keep(diagnosis: Diagnosis) -> None:
     from app.models import guidance
     from app.models.registry import merge_into_fitness
 
-    merge_into_fitness(diagnosis.model, {RECORD_KEY: asdict(diagnosis)})
+    record = asdict(diagnosis)
+    # A ceiling chosen from what the model did on real runs (`loop.sh ceiling`) outlives a new
+    # diagnosis: the diagnosis only sets one when the model loops, and measured on one model it
+    # would have dropped the ceiling the runs had shown it needs (21 of 97 replies over 16,000
+    # tokens held 73% of the output).
+    earlier_record = recorded(diagnosis.model) or {}
+    if earlier_record.get("reply_ceiling") and earlier_record.get("reply_ceiling_from"):
+        record["reply_ceiling"] = earlier_record["reply_ceiling"]
+        record["reply_ceiling_from"] = earlier_record["reply_ceiling_from"]
+    merge_into_fitness(diagnosis.model, {RECORD_KEY: record})
     profile = guidance.chosen_by(diagnosis)
     earlier = guidance.recorded(diagnosis.model)
     if earlier is not None:

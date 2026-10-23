@@ -126,6 +126,41 @@ def scan(paths: list[str], run: str) -> list[str]:
     return lines
 
 
+#: A ceiling is suggested when this share of replies, over this size, hold most of the output.
+TAIL_OVER = 16_000
+TAIL_SHARE_OF_REPLIES = 0.10
+TAIL_SHARE_OF_OUTPUT = 0.5
+SUGGESTED_CEILING = 24_000
+
+
+def tail_of(path: str) -> list[int]:
+    sizes = []
+    with open(path, errors="replace") as handle:
+        for line in handle:
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if record.get("kind") == "model_response":
+                sizes.append(int((record.get("usage") or {}).get("output_tokens") or 0))
+    return sizes
+
+
+def ceiling_suggestion(sizes: list[int]) -> str:
+    """A line naming a reply ceiling when a few long replies hold most of the output; "" when the tail is light."""
+    total = sum(sizes)
+    big = [size for size in sizes if size > TAIL_OVER]
+    if len(sizes) < 20 or not big or total <= 0:
+        return ""
+    held = sum(big) / total
+    if len(big) / len(sizes) < TAIL_SHARE_OF_REPLIES or held < TAIL_SHARE_OF_OUTPUT:
+        return ""
+    saved = sum(max(0, size - SUGGESTED_CEILING) for size in sizes) / total
+    return (f"REPLY CEILING: {len(big)} of {len(sizes)} replies are over {TAIL_OVER:,} tokens and hold {held:.0%} of the "
+            f"output; a ceiling of {SUGGESTED_CEILING:,} would trim about {saved:.0%} (reply salvage answers a cut-off "
+            f"reply) -> `loop.sh ceiling {SUGGESTED_CEILING} \"<why>\"`, taken at the next segment start")
+
+
 def main(argv: list[str]) -> int:
     root = os.environ.get("DATA_DIR") or "/app/data"
     paths = sorted(glob.glob(os.path.join(root, "transcripts", "run-*.jsonl")), key=os.path.getmtime)
@@ -134,6 +169,10 @@ def main(argv: list[str]) -> int:
         print("name a run")
         return 2
     lines = scan(paths, run if run.startswith("run-") else "run-" + run)
+    mine = next((p for p in paths if os.path.basename(p).startswith(run if run.startswith("run-") else "run-" + run)), None)
+    suggestion = ceiling_suggestion(tail_of(mine)) if mine else ""
+    if suggestion:
+        lines.append(suggestion)
     print("\n".join(lines) if lines else "nothing is far out against the recent runs")
     return 0
 

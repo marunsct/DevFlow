@@ -468,6 +468,19 @@ def execute_workflow_run(
         from app.models import server_profile
 
         profile = server_profile.record()
+        # A model not seen before is diagnosed now, while no stage waits for
+        # the server - tools, reasoning, reply salvage - and what was measured
+        # is kept with the model and used for it (`app.models.diagnostics`).
+        try:
+            from app.models import build_default_chat_model
+            from app.models.diagnostics import diagnose_if_new
+            from app.models.reply_salvage import measure_if_new
+
+            served = build_default_chat_model()
+            diagnose_if_new(served)
+            measure_if_new(served)
+        except Exception:  # noqa: BLE001 - salvage is measured at the first reply that needs it instead
+            pass
         # What this segment runs on (plan MF.1): every deploy restarts the
         # worker, so a run on more than one harness version is seen as one.
         from app.observability.provenance import record_the_segment

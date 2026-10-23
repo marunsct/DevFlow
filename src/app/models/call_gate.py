@@ -141,7 +141,17 @@ def a_model_call(server: str = "") -> Iterator[None]:
         try:
             from app.models import server_profile
 
-            server_profile.check_again(run)
+            noticed = server_profile.check_again(run)
+            if any(part.startswith("model ") for part in noticed.split(": ", 1)[-1].split(", ")):
+                # Another model behind the same server: diagnosed before this
+                # call, as a run's first segment would (`app.models.diagnostics`).
+                from app.models import build_default_chat_model
+                from app.models.diagnostics import diagnose_if_new
+                from app.models.reply_salvage import measure_if_new
+
+                served = build_default_chat_model()
+                diagnose_if_new(served)
+                measure_if_new(served)
         except Exception:  # noqa: BLE001 - telemetry never stops a call
             pass
     key = _server_key(server)

@@ -46,6 +46,7 @@ SWITCHES: dict[str, str] = {
     "LESSON_DISTILLER": "app.plugins.lesson_distiller",
     "MUTATION_GUIDED_TESTS": "app.acceptance.mutation_guided",
     "OBSERVATION_FOLDING": "app.agents.observation_folding",
+    "REPLY_SALVAGE": "app.models.reply_salvage",
 }
 
 UNKNOWN = "unknown"

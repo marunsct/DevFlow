@@ -520,6 +520,11 @@ class CompatibleChatOpenAI(ChatOpenAI):
                 "offered instead of forced from now on", server[1] or server[0],
             )
             result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+        # A reply cut off by the cap, salvaged from its own reasoning where
+        # this model's server was measured to allow it (`app.models.reply_salvage`).
+        from app.models.reply_salvage import salvaged
+
+        result = salvaged(self, messages, result, stop=stop, **kwargs)
         # An object sent as a string of JSON is decoded where the tool wants
         # an object (`app.models.tool_arguments`).
         return decode_structured_arguments(result, kwargs.get("tools"))
@@ -582,6 +587,11 @@ class CompatibleChatOpenAI(ChatOpenAI):
             for generation, choice in zip(result.generations, data.get("choices") or []):
                 message = (choice or {}).get("message") or {}
                 reasoning = message.get("reasoning_content") or message.get("reasoning")
+                from app.models.reply_salvage import remember_reasoning
+
+                # Whole, for this thread only: what a reply cut off while
+                # reasoning is salvaged from (`app.models.reply_salvage`).
+                remember_reasoning(reasoning.strip() if isinstance(reasoning, str) else "")
                 if isinstance(reasoning, str) and reasoning.strip():
                     generation.message.additional_kwargs[REASONING_FIELD] = (
                         reasoning.strip()[-REASONING_CARRIED_CHARS:]

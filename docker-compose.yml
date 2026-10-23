@@ -75,6 +75,10 @@ x-app-env: &app-env
   # Old long tool results folded to their opening once a stage's conversation
   # reaches half the window (built 2026-10-23; off until the owner turns it on).
   OBSERVATION_FOLDING: ${OBSERVATION_FOLDING:-off}
+  # A reply cut off by the cap is salvaged from its own reasoning where the
+  # model's server was measured to allow it (owner, 2026-10-23: on, enabled per
+  # model by the measurement kept with it).
+  REPLY_SALVAGE: ${REPLY_SALVAGE:-on}
   PAGE_VIEW_ENABLED: ${PAGE_VIEW_ENABLED:-true}
   CUSTOM_STACK_SETUP: ${CUSTOM_STACK_SETUP:-true}
   # At most this many agents of one run at once in parallel mode: work orders,

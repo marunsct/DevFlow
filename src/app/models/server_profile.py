@@ -138,6 +138,11 @@ def what_changed(before: ServerProfile, after: ServerProfile) -> list[str]:
         changes.append(f"tokens per slot {before.slot_context or '?'} -> {after.slot_context or '?'}")
     if before.quantisation != after.quantisation:
         changes.append(f"quantisation {before.quantisation or '?'} -> {after.quantisation or '?'}")
+    # The model itself: a server restarted with another model at the same slots
+    # and context was no change at all, and what was measured of the old one
+    # (reply salvage, `app.models.reply_salvage`) went on being used for it.
+    if before.model != after.model:
+        changes.append(f"model {before.model or '?'} -> {after.model or '?'}")
     return changes
 
 

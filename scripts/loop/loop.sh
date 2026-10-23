@@ -44,6 +44,7 @@
 #                                            for orphan recovery to resume it (await_resume.sh)
 #   scripts/loop/loop.sh freshness           pins in the stack packs a major version behind their registry
 #                                            (pack_freshness.py, on the host)
+#   scripts/loop/loop.sh diagnose [--again]  the served model's tools, reasoning and reply salvage, kept with it
 #   scripts/loop/loop.sh reasoning-probe [run]  does the server shorten replies when asked to think less? prints a plan
 #                                            unless given `run` (uses the model: only when no run waits)
 #   scripts/loop/loop.sh lessons [min-runs]  failed-call shapes recurring across runs, by language: candidates
@@ -349,6 +350,7 @@ checks)
 ready)  in_worker model_ready.py ;;
 fitness) shift; in_worker model_fitness.py "$@" ;;
 reasoning-probe) shift; in_worker reasoning_probe.py "${@:-plan}" ;;
+diagnose) shift; in_worker model_diagnose.py "$@" ;;
 resumed) sh "$HERE/await_resume.sh" ;;
 stage)
   [ -n "${2:-}" ] || { echo "usage: loop.sh stage <stage> [HH:MM UTC]" >&2; exit 2; }

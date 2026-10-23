@@ -599,6 +599,9 @@ def build_transcript_callback(run_id: str | None, stage: str) -> Any:
                             finish_reason=(getattr(generation, "generation_info", None) or {}).get(
                                 "finish_reason"
                             ),
+                            # How a reply cut off by the cap was salvaged, if it was
+                            # (`app.models.reply_salvage`).
+                            salvaged=(getattr(generation, "generation_info", None) or {}).get("harness_salvaged") or "",
                         )
             except Exception:  # noqa: BLE001
                 logger.debug("Could not record a model response", exc_info=True)

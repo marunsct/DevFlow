@@ -57,6 +57,7 @@ FIELDS: tuple[Field, ...] = (
     Field("thinking_switch", "How its reasoning is turned down", "choice",
           ("none", "chat template", "reasoning effort", "both")),
     Field("native_tool_calls", "Calls tools natively", "bool"),
+    Field("forced_tool_enforced", "A required tool call is enforced by the server", "bool"),
     Field("parallel_tool_calls", "Several calls in one reply", "bool"),
     Field("json_schema_answers", "Answers to a JSON schema", "bool"),
     Field("continues_a_begun_reply", "Continues a reply it was given the start of", "bool"),
@@ -228,13 +229,24 @@ def sampling_for(model_name: str) -> tuple[dict, dict]:
     """(OpenAI fields, the server's own fields) the owner turned on for the serving build model; ({}, {}) otherwise."""
     import time
 
-    now = time.monotonic()
+    # Its own clock, not `monotonic`: a call's pace is measured on that one
+    # (`app.models`), and this runs inside every call.
+    now = time.perf_counter()
     held = _SAMPLING_CACHE.get(model_name)
     if held and held[0] > now:
         return held[1], held[2]
     top: dict = {}
     extra: dict = {}
     try:
+        from app.models.server_profile import current
+
+        # Nothing else is read unless the owner turned something on: this runs
+        # in every call, and the settings it would read keep clocks of their own.
+        profile = current()
+        names = [n for n in ((profile.model if profile is not None else ""), model_name) if n]
+        if not any(value(n, "send_sampling") is True or value(n, "dry_sampler") is True for n in names):
+            _SAMPLING_CACHE[model_name] = (now + SAMPLING_CACHE_SECONDS, top, extra)
+            return top, extra
         from app.models import _runtime_settings
         from app.models.model_guidance import served_now
 
@@ -380,6 +392,21 @@ def measure(model: Any) -> dict[str, dict]:
                                      f"a red square, named {' '.join(text.split())[:30]!r}")
     except Exception as error:  # noqa: BLE001 - a server that refuses an image does not read one
         out["reads_images"] = _found(False, "measured", f"an image was refused: {str(error)[:80]}")
+    try:
+        # A request no tool answers, with one tool required: a call back means
+        # the server enforces `required`. Asked about the weather with the
+        # weather tool, a model calls it anyway and forcing looks to work.
+        greet = {"type": "function", "function": {"name": "record_greeting", "description": "Record a greeting.",
+                 "parameters": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}}}
+        response = model.root_client.chat.completions.create(
+            model=model.model_name, max_tokens=PROBE_REPLY_TOKENS, stream=False, tools=[greet], tool_choice="required",
+            messages=[{"role": "user", "content": "Say hello to me in one word."}])
+        data = response if isinstance(response, dict) else response.model_dump(warnings=False)
+        calls = ((((data.get("choices") or [{}])[0] or {}).get("message") or {}).get("tool_calls")) or []
+        out["forced_tool_enforced"] = _found(bool(calls), "measured", "one tool required for a request it does not fit: "
+                                             + ("called it" if calls else "answered in text"))
+    except Exception as error:  # noqa: BLE001
+        out["forced_tool_enforced"] = _found(False, "measured", f"refused: {str(error)[:80]}")
     try:
         schema = {"type": "object", "properties": {"city": {"type": "string"}, "population": {"type": "integer"}},
                   "required": ["city", "population"], "additionalProperties": False}

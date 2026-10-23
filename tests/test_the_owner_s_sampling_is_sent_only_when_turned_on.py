@@ -23,8 +23,12 @@ def _serving(tmp_path, monkeypatch):
     import app.models as models
     from app.models import model_guidance
 
+    from app.models import server_profile
+
     monkeypatch.setattr(models, "_runtime_settings", lambda: SimpleNamespace(model_name="build-model"))
     monkeypatch.setattr(model_guidance, "served_now", lambda: "served-model")
+    # The served name as a worker knows it: from the server's own account of itself.
+    monkeypatch.setattr(server_profile, "current", lambda: server_profile.ServerProfile(model="served-model"))
     capabilities.forget_sampling()
     yield
     capabilities.forget_sampling()

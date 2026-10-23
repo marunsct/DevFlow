@@ -36,6 +36,8 @@ class _Sees_and_speaks_japanese:
     def create(self, **payload):
         self.sent.append(payload)
         content = payload["messages"][-1]["content"]
+        if payload.get("tool_choice") == "required":
+            return {"choices": [{"finish_reason": "stop", "message": {"content": "Hello!"}}]}
         if isinstance(content, list):
             return _completion("Red.")
         if payload.get("response_format"):
@@ -63,6 +65,7 @@ def test_the_model_is_asked_what_only_it_can_say():
     assert found["json_schema_answers"]["value"] is True
     assert found["multilingual"]["value"] is True
     assert found["reasons"]["value"] is True and "24 characters" in found["reasons"]["note"]
+    assert found["forced_tool_enforced"]["value"] is False and "answered in text" in found["forced_tool_enforced"]["note"]
 
 
 def test_a_model_that_refuses_an_image_does_not_read_one():

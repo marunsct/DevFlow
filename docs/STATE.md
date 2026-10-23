@@ -6,13 +6,13 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-23 21:41 JST.
+**As of:** 2026-10-23 23:00 JST.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | **run-ea0a7402** (18:37 JST, tasks-api, fast, LFM2.5) - **a test run now (owner 20:20 JST): pause, fix, deploy, rewind until no insight is left**. Paused 20:23, deployed **7588e46** (MD.3, LF.230, LF.231), LFM2.5 re-diagnosed (standard, 0.694; guides answer_in_schema + stop_when_done; reply ceiling 40,000 - it reasoned past a stage's reply 2 of 3), rewound to `defect_remediation` at 20:36; replies then 1.6-16k tokens (were 80-144k). 20:50 paused, deployed **3c80dcc** (MD.5 capabilities + fixer screenshots, LF.232 salvage shape fallback), rewound again 20:52 (LF.232's other shape answered live 21:07). 21:30 deployed **9bec4a5** (LF.233, LF.234), 21:39 **5bcf812** (LF.235: echoed reasoning off salvaged answers), each resumed in place. mixed_versions. |
+| Run | none - run-ea0a7402 (test run on LFM2.5) **cancelled 22:36 JST** at the owner's word: 11 fix stages, 16 defects still open, fixes reverted; it gave LF.230-LF.236. The steering playbook (reports/Steering stubborn local models.md) built: MD.6, MD.7, LF.237-LF.239; a fresh tasks-api run on LFM2.5 measures it. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | **LFM2.5-24B-A2B** (owner, ~18:15 JST) at :8888, 3 slots, 131,072 tokens; reply ceiling uncapped (owner's setting). Diagnosed: tools 3/3, forced answers 3/3 (2/2 long), no reasoning switch honoured; deep: plan in schema 1-2/3 -> 3/3 and stop-when-done 1/3 -> 3/3 with its two guidance lines |
 | Owner's model settings | the owner's; never changed by the loop |

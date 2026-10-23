@@ -262,6 +262,13 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
             found = _the_object_in(reply) or {}
             decoded = with_structure_decoded({k: v for k, v in found.items() if k in names}, parameters)
             written = {k: v for k, v in decoded.items() if v not in (None, "", [], {})}
+            # A section answered with an empty value is a section left as it
+            # stands: measured, a reply wrote the one section the changes
+            # touched and answered an empty list for a second that held none,
+            # and the nine minutes it took were thrown away for a full rewrite.
+            for name in names:
+                if name not in written and name in decoded and decoded[name] is not None and not decoded[name] and name in current:
+                    written[name] = current[name]
             if len(written) < len(names):
                 logger.info("A revision of %s came back without %s", ", ".join(names),
                             ", ".join(n for n in names if n not in written))

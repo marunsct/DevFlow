@@ -59,6 +59,26 @@ def test_a_section_that_comes_back_empty_leaves_the_revision_to_the_architect():
     assert specification_parts.revised_in_place(PREVIOUS, "- change", model, "") is None
 
 
+def test_a_section_answered_with_an_empty_list_is_left_as_it_stands_and_the_others_are_kept():
+    """Measured: the one changed section came back written, a second came back `[]`, and the revision was dropped."""
+    model = _Model(["testing", "decisions"], {"testing": ["node:test, 2 tiers"], "decisions": []})
+
+    revised = specification_parts.revised_in_place(PREVIOUS, "- the testing section is thin", model, "")
+
+    assert revised is not None
+    assert revised.testing == ["node:test, 2 tiers"]
+    assert revised.decisions == PREVIOUS.decisions
+
+
+def test_a_section_answered_empty_that_already_held_nothing_stays_empty():
+    previous = Spec(product_scope="Notes.", file_plan=["a"], testing=["t"], decisions=[])
+    model = _Model(["testing", "decisions"], {"testing": ["u"], "decisions": []})
+
+    revised = specification_parts.revised_in_place(previous, "- change", model, "")
+
+    assert revised is not None and revised.testing == ["u"] and revised.decisions == []
+
+
 def test_a_model_that_cannot_name_the_sections_and_cannot_revise_leaves_it_to_the_architect():
     assert specification_parts.revised_in_place(PREVIOUS, "- change", _Model([], {}), "") is None
 

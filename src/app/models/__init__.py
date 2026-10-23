@@ -480,6 +480,17 @@ class CompatibleChatOpenAI(ChatOpenAI):
                     payload[key] = min(payload[key], cap)
             if "max_tokens" not in payload and "max_completion_tokens" not in payload:
                 payload["max_tokens"] = cap
+        if "max_tokens" not in payload and "max_completion_tokens" not in payload:
+            # The deployment leaves replies uncapped: the ceiling the serving
+            # model's diagnosis chose, if any (`app.models.model_guidance`).
+            try:
+                from app.models.model_guidance import ceiling_for
+
+                chosen = ceiling_for((str(self.openai_api_base or ""), str(self.model_name or "")))
+                if chosen:
+                    payload["max_tokens"] = chosen
+            except Exception:  # noqa: BLE001
+                pass
         deadline = getattr(_REPLY_CAP, "deadline", None)
         if deadline:
             payload["timeout"] = deadline

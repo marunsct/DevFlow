@@ -79,6 +79,9 @@ x-app-env: &app-env
   # model's server was measured to allow it (owner, 2026-10-23: on, enabled per
   # model by the measurement kept with it).
   REPLY_SALVAGE: ${REPLY_SALVAGE:-on}
+  # The serving model's own guidance and reply ceiling, measured by its deep
+  # diagnosis (owner, 2026-10-23: make a model that does not obey behave as asked).
+  MODEL_GUIDANCE: ${MODEL_GUIDANCE:-on}
   PAGE_VIEW_ENABLED: ${PAGE_VIEW_ENABLED:-true}
   CUSTOM_STACK_SETUP: ${CUSTOM_STACK_SETUP:-true}
   # At most this many agents of one run at once in parallel mode: work orders,

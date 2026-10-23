@@ -47,6 +47,7 @@ SWITCHES: dict[str, str] = {
     "MUTATION_GUIDED_TESTS": "app.acceptance.mutation_guided",
     "OBSERVATION_FOLDING": "app.agents.observation_folding",
     "REPLY_SALVAGE": "app.models.reply_salvage",
+    "MODEL_GUIDANCE": "app.models.model_guidance",
 }
 
 UNKNOWN = "unknown"

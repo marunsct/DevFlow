@@ -44,7 +44,7 @@
 #                                            for orphan recovery to resume it (await_resume.sh)
 #   scripts/loop/loop.sh freshness           pins in the stack packs a major version behind their registry
 #                                            (pack_freshness.py, on the host)
-#   scripts/loop/loop.sh diagnose [--again]  the served model's tools, reasoning and reply salvage, kept with it
+#   scripts/loop/loop.sh diagnose [--again] [--deep]  the served model's tools, reasoning, reply salvage and (--deep) guidance, kept with it
 #   scripts/loop/loop.sh reasoning-probe [run]  does the server shorten replies when asked to think less? prints a plan
 #                                            unless given `run` (uses the model: only when no run waits)
 #   scripts/loop/loop.sh lessons [min-runs]  failed-call shapes recurring across runs, by language: candidates

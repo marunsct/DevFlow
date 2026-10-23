@@ -449,6 +449,12 @@ def apply(model: Any, diagnosis: Diagnosis | None) -> None:
         # switched per call here, so a forced call would still reason.
         if diagnosis.settings.structured_answers == "offered" or diagnosis.settings.force_only_without_thinking:
             _NO_FORCED_TOOL_WHILE_THINKING.add(server)
+        # The reply ceiling the deep diagnosis chose for a model seen looping
+        # (`app.models.deep_diagnosis`, used behind `MODEL_GUIDANCE`).
+        from app.models import deep_diagnosis, model_guidance
+
+        deep = deep_diagnosis.recorded(diagnosis.model) or {}
+        model_guidance.set_ceiling(server, deep.get("reply_ceiling"))
         if diagnosis.reasoning_tokens:
             # The switch the diagnosis measured, so the per-process probe of
             # `thinking.least_reasoning_effort` does not ask again.

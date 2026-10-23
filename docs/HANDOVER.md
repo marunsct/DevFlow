@@ -541,7 +541,7 @@ sets `/app/data/loop/gate/hold` (new calls wait), waits for
 hold (`app.models.call_gate`).
 A call to a tool the model call withheld is refused, not run
 (`SettledAnswerMiddleware.wrap_tool_call`).
-`loop.sh diagnose [--again]` prints the served model's diagnosis (plan MD.1): tools offered, required and
+`loop.sh diagnose [--again] [--deep]` prints the served model's diagnosis (plan MD.1; `--deep` adds MD.2, the guidance measured to help it, kept as its `model:` row of `plugin_instructions`): tools offered, required and
 named, stage-shaped structured answers, recall, the fitness and edit probes, each reasoning switch's cost, and
 reply salvage (RS.1). A model never seen is diagnosed automatically at a run segment's start (~2.5 minutes, once
 per model) and kept in `DATA_DIR/model-fitness/<served name>.json`; `--again` re-measures. Owner 2026-10-23:

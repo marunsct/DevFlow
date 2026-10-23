@@ -3,7 +3,8 @@
 Runs INSIDE the worker - `scripts/loop/loop.sh diagnose` - and prints what is
 kept for the model the server holds now. A model never diagnosed is diagnosed
 first (a few minutes of small requests); `--again` diagnoses it afresh and
-keeps the new result. Uses the owner's model: run it between runs, never
+keeps the new result; `--deep` also asks whether it does as a stage asks
+and keeps the guidance lines that helped (`app.models.deep_diagnosis`). Uses the owner's model: run it between runs, never
 while a stage waits for the server. Changes no server setting.
 """
 import os
@@ -25,3 +26,17 @@ os.environ.setdefault("REPLY_SALVAGE", "on")
 support = None if "--again" in sys.argv else reply_salvage.recorded(name)
 support = support or reply_salvage.measure(model, name)
 print(f"  reply salvage: {reply_salvage.describe(support)}")
+
+if "--deep" in sys.argv:
+    from app.models import deep_diagnosis
+
+    deep = None if "--again" in sys.argv else deep_diagnosis.recorded(name)
+    if deep is None:
+        print(f"deep diagnosis of {name} ...", flush=True)
+        slots = (server_profile.current().slots if server_profile.current() is not None else None) or 1
+        made = deep_diagnosis.diagnose(model, name, workers=slots)
+        deep_diagnosis.keep(made)
+        print(deep_diagnosis.report(made))
+    else:
+        print(f"  deep diagnosis kept {deep.get('measured_at')}: {len(deep.get('kept') or [])} guidance line(s), "
+              f"reply ceiling {deep.get('reply_ceiling') or 'none'} (--deep --again to measure afresh)")

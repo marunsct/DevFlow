@@ -479,6 +479,13 @@ def execute_workflow_run(
             served = build_default_chat_model()
             diagnose_if_new(served)
             measure_if_new(served)
+            from app.models.model_guidance import deep_if_new
+
+            deep_if_new(served)
+            from app.models.diagnostics import apply, recorded
+            from app.models.reply_salvage import served_name
+
+            apply(served, recorded(served_name(served)))
         except Exception:  # noqa: BLE001 - salvage is measured at the first reply that needs it instead
             pass
         # What this segment runs on (plan MF.1): every deploy restarts the

@@ -568,6 +568,14 @@ def build_plugin_instructions_middleware(repo_root: str, role: str = "") -> Any:
         def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
             keywords = _extract_stack_keywords(repo_root)
             keys = [*_with_the_setup_notes(keywords, repo_root), *_the_pack_s_name(repo_root)]
+            # The serving model's own guidance, a row of the same table
+            # (`app.models.model_guidance`, behind `MODEL_GUIDANCE`).
+            try:
+                from app.models.model_guidance import guidance_key
+
+                keys += guidance_key()
+            except Exception:  # noqa: BLE001 - no guidance is the stack's guidance alone
+                pass
             instructions = get_plugin_instructions(keys, role) if keys else ""
             # The owner's direction for this run, sent while it runs, after
             # the stack's instructions (`app.server.steering`).

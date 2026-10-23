@@ -152,6 +152,12 @@ def a_model_call(server: str = "") -> Iterator[None]:
                 served = build_default_chat_model()
                 diagnose_if_new(served)
                 measure_if_new(served)
+                from app.models.diagnostics import apply, recorded
+                from app.models.model_guidance import deep_if_new
+                from app.models.reply_salvage import served_name
+
+                deep_if_new(served)
+                apply(served, recorded(served_name(served)))
         except Exception:  # noqa: BLE001 - telemetry never stops a call
             pass
     key = _server_key(server)

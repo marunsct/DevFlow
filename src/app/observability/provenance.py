@@ -49,6 +49,7 @@ SWITCHES: dict[str, str] = {
     "REPLY_SALVAGE": "app.models.reply_salvage",
     "MODEL_GUIDANCE": "app.models.model_guidance",
     "STRUCTURED_EXTRACTION": "app.agents.structured_extraction",
+    "BATCH_ACCEPTANCE_AUTHOR": "app.graph.acceptance_batches",
     "REFUSALS_FOLDED": "app.agents.refusal_folding",
     "GUIDE_ANSWER_IN_SCHEMA": "app.models.guidance:answer_in_schema_switch",
     "GUIDE_STOP_WHEN_DONE": "app.models.guidance:stop_when_done_switch",

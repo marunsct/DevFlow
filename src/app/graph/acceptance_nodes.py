@@ -25,6 +25,7 @@ from langchain_core.runnables import RunnableConfig
 from app.acceptance import requests as acceptance_requests
 from app.acceptance import suite
 from app.acceptance.criteria import number
+from app.graph import acceptance_batches
 from app.agents.shared_facts import with_the_facts
 from app.stacks import contract, pack_named
 
@@ -335,6 +336,50 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
 
 # --- acceptance author ---------------------------------------------------------
 
+def _written_in_batches(state, config, agent, root, criteria, batches, round_, request_for):
+    """The suite written a batch of criteria at a time; (the last update, every blocker), or (the pause, None).
+
+    A batch is done when its criteria are covered, so a stage resumed after a pause or a deploy
+    goes on at the first batch not done. Each batch has its own conversation. A criterion still
+    without a test afterwards, and not set aside, is asked for once more, alone; what is still
+    missing then is left to the review, as it is when the suite is written whole.
+    """
+    from app.graph.workflow import _run_gated_agent
+
+    blockers: list = []
+    update: dict = {}
+
+    def write(name: str, group: list, note: str):
+        nonlocal update
+        done = _run_gated_agent(
+            state, config, stage_name=f"acceptance_author_{round_}_{name}", agent=agent,
+            initial_request=request_for(group, note), output_key="__acceptance_author__", next_stage="acceptance_review",
+        )
+        if "__acceptance_author__" not in done:
+            return done
+        blockers.extend(getattr(done.pop("__acceptance_author__"), "blockers", None) or [])
+        update = done
+        return None
+
+    for index, group in enumerate(batches):
+        covered = suite.coverage(root)
+        if all(criterion.id in covered for criterion in group):
+            continue
+        files = sorted({name for name, _ in suite.declared_tests(root)})
+        paused = write(f"g{index}", group, acceptance_batches.note(index, len(batches), group, files))
+        if paused is not None:
+            return paused, None
+    covered, set_aside = suite.coverage(root), set(suite.deferred(root)) | set(acceptance_requests.not_automatable(blockers))
+    missing = [criterion for criterion in criteria if criterion.id not in covered and criterion.id not in set_aside]
+    if missing:
+        logger.info("Batched acceptance suite: %s still have no test; asked for once more", ", ".join(c.id for c in missing))
+        files = sorted({name for name, _ in suite.declared_tests(root)})
+        paused = write("fill", missing, acceptance_batches.note(len(batches), len(batches) + 1, missing, files))
+        if paused is not None:
+            return paused, None
+    return update, blockers
+
+
 def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]:
     """QA writes the acceptance suite from the numbered criteria."""
     from app.agents.specialists import create_specialist_agent
@@ -360,25 +405,35 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         "testing", model=ctx.model if delivery.fast() else ctx.judgement_model, checkpointer=ctx.checkpointer,
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
     )
-    request = acceptance_requests.build_author_request(
-        root, criteria, _stack(state), feedback=feedback, change_requests=suite.change_requests(root),
-        brief=getattr(state.get("document"), "text", "") or "",
-        testability=_the_testability_advice(state),
-        interface_contract=getattr(state.get("technical_specification"), "interface_contract", None) or (),
-        specification=state.get("technical_specification"),
-    )
-    update = _run_gated_agent(
-        state, config,
-        stage_name=f"acceptance_author_{round_}",
-        agent=agent,
-        initial_request=request,
-        output_key="__acceptance_author__",
-        next_stage="acceptance_review",
-    )
-    if "__acceptance_author__" not in update:
-        return update
-    output = update.pop("__acceptance_author__")
-    reasons = acceptance_requests.not_automatable(getattr(output, "blockers", None) or [])
+    def request_for(group: list, note: str = "") -> dict:
+        return acceptance_requests.build_author_request(
+            root, group, _stack(state), feedback=feedback, change_requests=suite.change_requests(root),
+            brief=getattr(state.get("document"), "text", "") or "",
+            testability=_the_testability_advice(state),
+            interface_contract=getattr(state.get("technical_specification"), "interface_contract", None) or (),
+            specification=state.get("technical_specification"),
+            batch_note=note,
+        )
+
+    # Only a first writing, in the whole, is split: a repair is small and made against a built product.
+    batches = acceptance_batches.plan(criteria) if round_ == 0 and not feedback else [criteria]
+    if len(batches) > 1:
+        update, blockers = _written_in_batches(state, config, agent, root, criteria, batches, round_, request_for)
+        if blockers is None:
+            return update  # paused for approval, or retrying
+    else:
+        update = _run_gated_agent(
+            state, config,
+            stage_name=f"acceptance_author_{round_}",
+            agent=agent,
+            initial_request=request_for(criteria),
+            output_key="__acceptance_author__",
+            next_stage="acceptance_review",
+        )
+        if "__acceptance_author__" not in update:
+            return update
+        blockers = getattr(update.pop("__acceptance_author__"), "blockers", None) or []
+    reasons = acceptance_requests.not_automatable(blockers)
     # A criterion the suite has a test for is automatable: that test is how.
     # Deferring it takes it out of the release gate. One run's QA, repairing a
     # reopened suite and unable to fix the product, listed the product's bugs as

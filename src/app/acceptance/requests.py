@@ -161,6 +161,7 @@ def build_author_request(
     testability: Sequence[str] = (),
     interface_contract: Sequence[str] = (),
     specification: Any = None,
+    batch_note: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """The QA stage's brief: write the acceptance suite before anything is built.
 
@@ -209,6 +210,7 @@ def build_author_request(
         "You are the QA engineer. " + state_of_the_product + "Once "
         "reviewed, the suite is locked, and the product is finished when it passes.\n\n"
         f"--- Acceptance criteria ---\n{criteria_text(criteria, deferred)}\n\n"
+        f"{batch_note}"
         f"{_how_each_was_made_testable(testability)}"
         f"{requests_text}"
         f"{feedback_text}"

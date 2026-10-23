@@ -86,6 +86,7 @@ x-app-env: &app-env
   # refused calls folded to a line each (owner, 2026-10-23: build the steering
   # playbook - reports/Steering stubborn local models.md).
   STRUCTURED_EXTRACTION: ${STRUCTURED_EXTRACTION:-on}
+  BATCH_ACCEPTANCE_AUTHOR: ${BATCH_ACCEPTANCE_AUTHOR:-on}
   REFUSALS_FOLDED: ${REFUSALS_FOLDED:-on}
   # Each item of the general guidance catalogue, its own switch: on lets a
   # model's steering profile use it, off withholds it from every model.

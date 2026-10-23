@@ -227,7 +227,50 @@ MOST_MAP_CHARACTERS = 20_000
 MOST_DEFINITIONS_PER_FILE = 12
 
 
-def map_of(files: dict[str, str]) -> str:
+#: Files named one by one as left out of the memory, at most; the rest are counted.
+MOST_NAMED_LEFT_OUT = 60
+
+
+def _definitions(text: str) -> list[str]:
+    found = []
+    for line in text.splitlines():
+        if _DEFINES.match(line):
+            found.append(" ".join(line.strip().rstrip("{:").split())[:120])
+            if len(found) >= MOST_DEFINITIONS_PER_FILE:
+                break
+    return found
+
+
+def _by_relevance(entries: dict[str, list[str]], focus: str, importance: dict[str, int],
+                  root: str | Path | None = None) -> list[str]:
+    """The files most worth a place first: those `focus` names, their neighbours, those defining its words, the most imported.
+
+    Agentless localises by files, then their definitions; Aider's repository
+    map ranks files by how much the rest of the code refers to them. Both
+    without a parser per language here: the words and the import counts.
+    """
+    words = set(_WORD.findall(focus.lower()))
+    named = {path for path in entries if path in focus or (len(path.rsplit("/", 1)[-1]) > 4 and path.rsplit("/", 1)[-1] in focus)}
+    near: set[str] = set()
+    if root is not None and named:
+        try:
+            from app.analysis.project_graph import build
+
+            graph = build(root)
+            near = {other for path in named for other in (*graph.get(path, {}).get("imports", []),
+                                                          *graph.get(path, {}).get("imported_by", []))} - named
+        except Exception:  # noqa: BLE001 - no graph, no neighbours
+            pass
+
+    def score(path: str) -> tuple[int, int, int, str]:
+        said = sum(1 for d in entries[path] for w in _WORD.findall(d.lower()) if w in words)
+        return (0 if path in named else 1 if path in near else 2, -said, -importance.get(path, 0), path)
+
+    return sorted(entries, key=score)
+
+
+def map_of(files: dict[str, str], focus: str = "", most_characters: int = MOST_MAP_CHARACTERS,
+           importance: dict[str, int] | None = None, root: str | Path | None = None) -> str:
     """For each file, the lines that define something - its functions, classes and types - one file a line.
 
     A large project's files do not all fit; naming the ones left out told a
@@ -235,24 +278,41 @@ def map_of(files: dict[str, str]) -> str:
     lines that define something are most of what a reader needs to know
     which one to open (the idea of Aider's repository map, without a parser
     per language).
+
+    While every file fits, the map is in path order, as it always was. Past
+    `most_characters` it was cut there too - alphabetically, so on a large
+    project the map held `api/` and `app/` and never `src/` - and said
+    nothing of the rest. Now the files most worth a place come first
+    (`_by_relevance`: by `focus`, else by `importance`, how many files import
+    each; with `root`, the code graph's neighbours of the files `focus`
+    names next), and a last line counts the files left out.
     """
-    lines: list[str] = []
+    entries = {path: found for path in sorted(files) if (found := _definitions(files[path]))}
+    lines = [f"- {path}: " + " | ".join(found) for path, found in entries.items()]
+    if sum(len(line) for line in lines) <= most_characters:
+        return "\n".join(lines)
+    chosen: list[str] = []
     used = 0
-    for path in sorted(files):
-        found = []
-        for line in files[path].splitlines():
-            if _DEFINES.match(line):
-                found.append(" ".join(line.strip().rstrip("{:").split())[:120])
-                if len(found) >= MOST_DEFINITIONS_PER_FILE:
-                    break
-        if not found:
+    for path in _by_relevance(entries, focus, importance or {}, root):
+        entry = f"- {path}: " + " | ".join(entries[path])
+        if used + len(entry) > most_characters:
             continue
-        entry = f"- {path}: " + " | ".join(found)
-        if used + len(entry) > MOST_MAP_CHARACTERS:
-            break
-        lines.append(entry)
+        chosen.append(entry)
         used += len(entry)
-    return "\n".join(lines)
+    left = len(entries) - len(chosen)
+    note = (f"\n({left:,} more files define things not shown here; search for a name or list a folder to find them.)"
+            if left else "")
+    return "\n".join(chosen) + note
+
+
+def importance_of(repo_root: str | Path) -> dict[str, int]:
+    """How many of the project's files import each one, from the harness's code graph; {} when there is none."""
+    try:
+        from app.analysis.project_graph import build
+
+        return {path: len(node.get("imported_by") or []) for path, node in build(repo_root).items()}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def where_things_stand(repo_root: str | Path, files: dict[str, str]) -> str:
@@ -348,11 +408,22 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
         "by the harness. Use them as they are here; read a file only if it is named at the end as not "
         "included.]\n\n"
     ) + where_things_stand(repo_root, files)
-    tail = ("\nNot included here (read when needed): " + ", ".join(left_out) + "\n") if left_out else ""
+    # Named one by one only up to `MOST_NAMED_LEFT_OUT`, in the memory's own
+    # order: a large project's left-out list was every path it has, larger
+    # than the memory itself and outside its budget.
+    named = left_out[:MOST_NAMED_LEFT_OUT]
+    more = len(left_out) - len(named)
+    tail = ("\nNot included here (read when needed): " + ", ".join(named)
+            + (f", and {more:,} more (list a folder or search to find them)" if more else "") + "\n") if left_out else ""
     if held_back:
         tail += ("\nNot included because every test in them is for a criterion a later sprint builds: "
                  + ", ".join(held_back) + "\n")
-    shapes = map_of({path: files[path] for path in left_out if not path.startswith("docs/")})
+    sources = {path: files[path] for path in left_out if not path.startswith("docs/")}
+    # Ranked by the request only when the memory's order may follow it
+    # (`CANONICAL_MEMORY` off); otherwise by what does not change between
+    # requests, so the memory stays the same, and cached, from call to call.
+    shapes = map_of(sources, focus="" if canonical else focus,
+                    importance=importance_of(repo_root) if sum(map(len, sources.values())) > MOST_MAP_CHARACTERS else None)
     if shapes:
         tail += "\nWhat those files define (read one when you need its body):\n" + shapes + "\n"
     return head + "\n".join(parts) + tail, held

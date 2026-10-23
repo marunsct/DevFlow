@@ -74,8 +74,10 @@ def source_files(project: Path, kept: set[str] | frozenset[str] = frozenset()) -
     harness puts back before every suite run - a change there is undone
     before any test sees it.
     """
+    from app.analysis.walk import files_under
+
     files = []
-    for path in sorted(project.rglob("*")):
+    for path in sorted(files_under(project, SKIPPED_PARTS, skip_hidden=True)):
         relative = path.relative_to(project)
         if not path.is_file() or path.suffix not in SOURCE_SUFFIXES:
             continue

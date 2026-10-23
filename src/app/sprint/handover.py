@@ -39,9 +39,11 @@ def files_of(repo_root: str | Path) -> list[str]:
     for top in ("docs", _acceptance_directory(root)):
         if not top or not (root / top).is_dir():
             continue
+        from app.analysis.walk import files_under
+
         found += sorted(
-            path.relative_to(root).as_posix() for path in (root / top).rglob("*")
-            if path.is_file() and "node_modules" not in path.parts
+            path.relative_to(root).as_posix() for path in files_under(root / top, ("node_modules",))
+            if "node_modules" not in path.parts
         )
     found += [name for name in _RECORDS if (root / name).is_file()]
     return found

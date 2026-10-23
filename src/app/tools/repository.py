@@ -7142,10 +7142,11 @@ def clear_the_throwaways_left_behind(repo_root: str | Path) -> list[str]:
         if not pinned:
             return removed
         project = root / pinned
+        from app.analysis.walk import files_under
+
         everything = [
-            path for path in project.rglob("*")
-            if path.is_file()
-            and not any(
+            path for path in files_under(project, {*IGNORED_DIRECTORIES, *_NOT_SWEPT, "node_modules"})
+            if not any(
                 part in IGNORED_DIRECTORIES or part in _NOT_SWEPT or part == "node_modules"
                 for part in path.relative_to(project).parts[:-1]
             )

@@ -67,7 +67,12 @@ def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, nam
     if not argv or not base.is_dir():
         return []
     found: list[dict[str, str]] = []
-    for path in sorted(p for p in base.rglob("*") if p.is_file() and fnmatch.fnmatch(p.name, pattern)):
+    from app.analysis.walk import files_under
+
+    # Not into `node_modules`: a suite with its own dependencies holds
+    # thousands of files there, and a package's own `*.spec.js` is no test of
+    # this product.
+    for path in sorted(p for p in files_under(base, ("node_modules",)) if fnmatch.fnmatch(p.name, pattern)):
         relative = path.relative_to(Path(repo_root) / project).as_posix()
         if naming is not None:
             try:

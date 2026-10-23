@@ -556,10 +556,11 @@ def _files_the_sprint_names_and_nobody_is_given(
         base = Path(repo_root or "") / project_dir if project_dir else Path(repo_root or "")
         existing: set[str] = set()
         if repo_root and base.is_dir():
+            from app.analysis.walk import files_under
             from app.tools.repository import IGNORED_DIRECTORIES
 
-            for path in base.rglob("*"):
-                if path.is_file() and not any(part in IGNORED_DIRECTORIES for part in path.parts):
+            for path in files_under(base, IGNORED_DIRECTORIES):
+                if not any(part in IGNORED_DIRECTORIES for part in path.parts):
                     existing.add(path.name.lower())
         # What this project calls a file, beside what files are generally
         # called: `store.read()` in a scope is a call, not a file to hand out.

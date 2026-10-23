@@ -3460,6 +3460,102 @@ def _typography_insensitive_span(original: str, find: str) -> tuple[int, int] | 
     return start, start + len(plain_find)
 
 
+def _a_repaired_span(original: str, find: str) -> tuple[tuple[int, int], str] | None:
+    """Where a `find` that matches nowhere as given matches once repaired, and what was forgiven; else None.
+
+    Before refusing, try the two things that are wrong with a `find` far more
+    often than the agent's intent is: line-number prefixes copied out of
+    `read_file`, and a different left margin. Each fallback still requires a
+    *unique* match, so the exactness guarantee is unchanged - only the
+    transcription is forgiven. Shared by `edit_approved_artifact` and
+    `content_with_passage_replaced`.
+    """
+    attempts: list[tuple[str, str]] = []
+    # Composed, not tried one at a time. Each repair used to be applied
+    # to the original `find` alone, so a passage carrying BOTH faults
+    # defeated both: `\\\\n` collapses to `\\n`, which is still a
+    # literal backslash-n and still not the newline the file holds, and
+    # neither candidate ever matched.
+    #
+    # Measured on one run's `test_round_1`, which sent
+    # `...index.html`;\\n    await page.evaluate(...)` - double-escaped
+    # around a JSON-escaped newline - and was answered with a quoted
+    # near-miss it could not act on. Composing costs three extra string
+    # searches on a call that has already failed.
+    for candidate, explanation in _transcription_repairs(find):
+        attempts.append((candidate, explanation))
+    attempts.append((
+        find,
+        "Matched ignoring indentation - the passage you gave was indented "
+        "differently from the file. Copy indentation exactly from what you read.",
+    ))
+
+    for candidate, explanation in attempts:
+        if candidate != find and original.count(candidate) == 1:
+            start = original.index(candidate)
+            span: tuple[int, int] | None = (start, start + len(candidate))
+        else:
+            span = _indentation_insensitive_span(original, candidate)
+        if span is None:
+            # Blank lines are the other part of a passage an agent
+            # reconstructs rather than reads. See
+            # `_blank_line_insensitive_span`.
+            span = _blank_line_insensitive_span(original, candidate)
+            if span is not None:
+                explanation = (
+                    "Matched ignoring blank lines and indentation - every line "
+                    "you gave is in the file, in that order, but the spacing "
+                    "between them differs. Copy the passage exactly from what "
+                    "you read, blank lines included."
+                )
+        if span is None:
+            # Typographic characters the model wrote plainly, or the
+            # other way round (Initiative G, the Unicode half).
+            span = _typography_insensitive_span(original, candidate)
+            if span is not None:
+                explanation = (
+                    "Matched ignoring quotes, dashes and non-breaking spaces written "
+                    "differently from the file (curly or straight, a long dash or a "
+                    "hyphen). Copy those characters exactly from what you read."
+                )
+        if span is not None:
+            return span, explanation
+    return None
+
+
+def content_with_passage_replaced(relative_path: str, original: str, find: str, replace: str) -> str:
+    """`original` with the one passage `find` replaced by `replace`, written nowhere.
+
+    The matching `edit_approved_artifact` does - exactly once, else the same
+    repairs of a transcribed passage, each still unique - for a caller that
+    applies several edits to one file and writes the result once, through the
+    write path and its parse checks. Raises RepositoryToolError, saying why,
+    when `find` is empty or matches no passage or several.
+    """
+    if not find:
+        raise RepositoryToolError(
+            "The SEARCH part is empty. Copy the lines to change from the file into it."
+        )
+    occurrences = original.count(find)
+    if occurrences == 1:
+        return original.replace(find, replace, 1)
+    if occurrences > 1:
+        raise RepositoryToolError(
+            f"That SEARCH text appears {occurrences} times in '{relative_path}', so it is "
+            f"ambiguous which one to change. It starts at {_where_each_match_starts(original, find)}. "
+            "Add a line around it that differs between them."
+        )
+    repaired = _a_repaired_span(original, find)
+    if repaired is not None:
+        (start, end), _ = repaired
+        written = _the_replacement_without_its_find_s_gutter(find, replace)
+        return original[:start] + written + original[end:]
+    raise RepositoryToolError(
+        f"Could not find that SEARCH text in '{relative_path}'. It must match the file exactly, "
+        f"including whitespace and punctuation.{_how_it_differs(original, find)}"
+    )
+
+
 def edit_approved_artifact(
     repo_root: str | Path, relative_path: str, find: str, replace: str
 ) -> dict[str, str]:
@@ -3511,62 +3607,9 @@ def edit_approved_artifact(
             return _already_there(target, root, relative_path, replace, wrapped)
 
         if occurrences == 0:
-            # Before refusing, try the two things that are wrong with a `find`
-            # far more often than the agent's intent is: line-number prefixes
-            # copied out of `read_file`, and a different left margin. Each
-            # fallback still requires a *unique* match, so the exactness
-            # guarantee is unchanged - only the transcription is forgiven.
-            attempts: list[tuple[str, str]] = []
-            # Composed, not tried one at a time. Each repair used to be applied
-            # to the original `find` alone, so a passage carrying BOTH faults
-            # defeated both: `\\\\n` collapses to `\\n`, which is still a
-            # literal backslash-n and still not the newline the file holds, and
-            # neither candidate ever matched.
-            #
-            # Measured on one run's `test_round_1`, which sent
-            # `...index.html`;\\n    await page.evaluate(...)` - double-escaped
-            # around a JSON-escaped newline - and was answered with a quoted
-            # near-miss it could not act on. Composing costs three extra string
-            # searches on a call that has already failed.
-            for candidate, explanation in _transcription_repairs(find):
-                attempts.append((candidate, explanation))
-            attempts.append((
-                find,
-                "Matched ignoring indentation - the passage you gave was indented "
-                "differently from the file. Copy indentation exactly from what you read.",
-            ))
-
-            for candidate, explanation in attempts:
-                if candidate != find and original.count(candidate) == 1:
-                    start = original.index(candidate)
-                    span = (start, start + len(candidate))
-                else:
-                    span = _indentation_insensitive_span(original, candidate)
-                if span is None:
-                    # Blank lines are the other part of a passage an agent
-                    # reconstructs rather than reads. See
-                    # `_blank_line_insensitive_span`.
-                    span = _blank_line_insensitive_span(original, candidate)
-                    if span is not None:
-                        explanation = (
-                            "Matched ignoring blank lines and indentation - every line "
-                            "you gave is in the file, in that order, but the spacing "
-                            "between them differs. Copy the passage exactly from what "
-                            "you read, blank lines included."
-                        )
-                if span is None:
-                    # Typographic characters the model wrote plainly, or the
-                    # other way round (Initiative G, the Unicode half).
-                    span = _typography_insensitive_span(original, candidate)
-                    if span is not None:
-                        explanation = (
-                            "Matched ignoring quotes, dashes and non-breaking spaces written "
-                            "differently from the file (curly or straight, a long dash or a "
-                            "hyphen). Copy those characters exactly from what you read."
-                        )
-                if span is None:
-                    continue
-                start, end = span
+            repaired = _a_repaired_span(original, find)
+            if repaired is not None:
+                (start, end), explanation = repaired
                 written = _the_replacement_without_its_find_s_gutter(find, replace)
                 if written != replace:
                     explanation += " The same line numbers were removed from your `replace`."

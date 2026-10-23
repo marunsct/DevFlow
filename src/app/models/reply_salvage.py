@@ -254,7 +254,12 @@ def measure_if_new(model: Any) -> Support | None:
         return None
     try:
         name = served_name(model)
-        return recorded(name) or measure(model, name)
+        found = recorded(name)
+        if found is not None:
+            return found
+        from app.models.diagnostics import the_model_answers
+
+        return measure(model, name) if the_model_answers(model) else None
     except Exception:  # noqa: BLE001
         logger.debug("Could not measure reply salvage", exc_info=True)
         return None

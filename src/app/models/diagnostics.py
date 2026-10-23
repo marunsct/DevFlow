@@ -466,6 +466,25 @@ def apply(model: Any, diagnosis: Diagnosis | None) -> None:
         logger.debug("Could not apply the model's diagnosis", exc_info=True)
 
 
+def the_model_answers(model: Any) -> bool:
+    """Whether the model server answers one small request at all - before anything about the model is measured.
+
+    Measured on one run's start: the server had no model loaded and answered
+    every request "No model loaded" (400). The diagnosis ran in no time and
+    kept each refusal as the model's: "forcing a tool does not work", "reply
+    salvage not supported", no guidance - all of it about a server, none about
+    the model. Never raises.
+    """
+    try:
+        response = _create(model)(model=model.model_name, messages=[{"role": "user", "content": "Reply with: ready"}],
+                                  max_tokens=64, stream=False)
+        data = response if isinstance(response, dict) else response.model_dump(warnings=False)
+        return bool(data.get("choices"))
+    except Exception as error:  # noqa: BLE001 - it does not answer
+        logger.info("The model server does not answer, so nothing about the model is measured: %s", str(error)[:160])
+        return False
+
+
 def diagnose_if_new(model: Any) -> Diagnosis | None:
     """The kept diagnosis of the served model, diagnosed now when there is none, and applied. Never raises."""
     try:
@@ -474,6 +493,8 @@ def diagnose_if_new(model: Any) -> Diagnosis | None:
         name = served_name(model)
         diagnosis = recorded(name)
         if diagnosis is None:
+            if not the_model_answers(model):
+                return None
             diagnosis = diagnose(model, name)
             keep(diagnosis)
         apply(model, diagnosis)
@@ -498,5 +519,5 @@ def report(diagnosis: Diagnosis) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["Check", "Diagnosis", "PASSES_AT", "RECORD_KEY", "Settings", "TRIES", "apply", "diagnose", "diagnose_if_new",
+__all__ = ["the_model_answers", "Check", "Diagnosis", "PASSES_AT", "RECORD_KEY", "Settings", "TRIES", "apply", "diagnose", "diagnose_if_new",
            "keep", "recorded", "report", "settled"]

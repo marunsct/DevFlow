@@ -524,10 +524,14 @@ def look_up(names: list[str]) -> dict[str, dict]:
 
 def fill(model: Any, name: str, configured: str = "") -> dict[str, dict]:
     """Find every field not set by the owner, measured over looked-up over the server's; keep it. Never raises."""
+    from app.models.diagnostics import the_model_answers
     from app.models.registry import merge_into_fitness
 
     found: dict[str, dict] = {}
-    for source in (look_up([configured, name]), from_the_server(), from_what_was_measured(name), measure(model)):
+    # The model itself is asked only when it answers at all; the card and the
+    # server's account are kept either way.
+    asked = measure(model) if the_model_answers(model) else {}
+    for source in (look_up([configured, name]), from_the_server(), from_what_was_measured(name), asked):
         found.update(source)  # later, more direct sources win
     if "recommended_sampling" in found:
         # What would be sent, should the owner turn sampling on; the owner may edit it.

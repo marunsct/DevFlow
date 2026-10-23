@@ -94,6 +94,10 @@ def deep_if_new(model: Any) -> None:
         name = served_name(model)
         if deep_diagnosis.recorded(name) is not None:
             return
+        from app.models.diagnostics import the_model_answers
+
+        if not the_model_answers(model):
+            return
         try:
             from app.models.server_profile import current
 

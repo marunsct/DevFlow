@@ -145,3 +145,34 @@ def test_the_advice_names_which_stage_shaped_check_fell_short():
     checks += [diagnostics.Check("forced after a long request", 2, 1), diagnostics.Check("a structured answer, offered", 3, 0)]
     advice = " ".join(diagnostics.settled(checks, {}).advice)
     assert "forced after a long request 1/2" in advice and "alike" not in advice
+
+
+class _No_model_loaded:
+    def __init__(self):
+        self.sent = 0
+
+    def create(self, **payload):
+        self.sent += 1
+        error = RuntimeError("Error code: 400 - {'error': {'message': 'No model loaded.'}}")
+        error.status_code = 400
+        raise error
+
+
+def test_nothing_is_measured_of_a_model_the_server_does_not_serve(monkeypatch):
+    """Measured on one run's start: "No model loaded" to every probe was kept as the model's own failures."""
+    from app.models import capabilities, deep_diagnosis, model_guidance, reply_salvage
+
+    monkeypatch.setenv("REPLY_SALVAGE", "on")
+    monkeypatch.setenv("MODEL_GUIDANCE", "on")
+    server = _No_model_loaded()
+    model = _model(server)
+
+    assert diagnostics.diagnose_if_new(model) is None and diagnostics.recorded("new-model") is None
+    assert reply_salvage.measure_if_new(model) is None and reply_salvage.recorded("new-model") is None
+    model_guidance.deep_if_new(model)
+    assert deep_diagnosis.recorded("new-model") is None
+    monkeypatch.setattr(capabilities, "look_up", lambda names: {})
+    monkeypatch.setattr(capabilities, "from_the_server", lambda: {})
+    found = capabilities.fill(model, "new-model")
+    assert "forced_tool_enforced" not in found and "reads_images" not in found
+    assert server.sent <= 6  # one small request a measurement, nothing more

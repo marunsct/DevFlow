@@ -51,6 +51,9 @@ def run() -> None:
         server_profile.record()
         model = build_default_chat_model()
         name = reply_salvage.served_name(model)
+        if not diagnostics.the_model_answers(model):
+            set_status("failed", "the model server does not answer a request - load the model, then diagnose it")
+            return
         tools = diagnostics.diagnose(model, name)
         diagnostics.keep(tools)
         set_status("running", "measuring whether a cut-off reply can be finished")

@@ -89,7 +89,14 @@ def what_failed(defect: Any, repo_root: str | Path, last_failure: Any = None) ->
         printed = "\n".join(str(last_failure.get(k) or "") for k in ("command", "stdout", "stderr")).strip()
         if printed:
             parts.append(f"{THE_LAST_FAILING_COMMAND}\n{printed}")
-    return "\n\n".join(parts)[:MOST_FAILURE_CHARACTERS]
+    text = "\n\n".join(parts)
+    if len(text) > MOST_FAILURE_CHARACTERS:
+        # Cut from the front, so frames outside the project would push the
+        # project's own lines and the assertion out first (plan SZ.3).
+        from app.analysis.tracebacks import without_outside_frames
+
+        text = without_outside_frames(text, repo_root)
+    return text[:MOST_FAILURE_CHARACTERS]
 
 
 def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Callable[[str], bool]) -> list[str]:
@@ -205,16 +212,23 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
     from app.graph.drafting import _neighbours, _stack_line
     from types import SimpleNamespace
 
+    from app.graph import anchored_edits
+
     detail = specification_for_the_work_order(specification, SimpleNamespace(files=[path], interfaces=[])) if specification else ""
     now = (root / path).read_text(encoding="utf-8", errors="replace")
+    # Too long to come back whole within a reply: its outline and the parts
+    # the failure points at, answered by anchored edits (plan SZ.2).
+    long_file = anchored_edits.too_long_to_rewrite(now)
+    unapplied = [line for line in diagnostics if anchored_edits.AN_EDIT_NOT_APPLIED in line]
+    diagnostics = [line for line in diagnostics if anchored_edits.AN_EDIT_NOT_APPLIED not in line]
     from app.agents import project_memory
 
     if project_memory.enabled():
         # The whole project as it is now, the files the failure names first,
         # rather than only the files this one imports. See `app.agents.project_memory`.
-        neighbours, _ = project_memory.render(root, MEMORY_CHARACTERS, focus=f"{path}\n{failure}")
+        neighbours, held = project_memory.render(root, MEMORY_CHARACTERS, focus=f"{path}\n{failure}")
     else:
-        neighbours = _neighbours(root, path, SimpleNamespace(files=others), detail)
+        neighbours, held = _neighbours(root, path, SimpleNamespace(files=others), detail), {}
     # What happened to the attempts before this one: a rewrite asked again
     # exactly as before wrote the same change, and was reverted for the same
     # broken test - measured on the first all-on run, two identical requests
@@ -231,16 +245,48 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
         earlier_attempts(defect).strip(),
         f"--- What failed ---\n{failure}" if failure.strip() else "",
         ("--- The compiler still reports, in the files just written ---\n" + "\n".join(diagnostics)) if diagnostics else "",
+        ("--- Edits from the last pass that were not made, and why ---\n" + "\n".join(unapplied)) if unapplied else "",
         detail.strip(),
         f"--- The project ---\n{neighbours}" if neighbours else "",
-        f"--- `{path}` as it is now ---\n{now}",
+        (anchored_edits.in_the_memory(path) if held.get(path) == now
+         else anchored_edits.excerpt(path, now, failure, _the_defect_s_words(defect))) if long_file
+        else f"--- `{path}` as it is now ---\n{now}",
         # The facts every builder and judge reads (plan CM.1).
         the_facts_section(root).strip(),
+        anchored_edits.instruction(path) if long_file else
         f"Reply with the complete corrected content of `{path}` and nothing else, in one fenced "
         "code block. Change only what the failure needs; keep every name, signature and "
         "message the specification gives. If this file needs no change for this failure, "
         "reply with it unchanged.",
     ) if part)
+
+
+def _the_defect_s_words(defect: Any) -> str:
+    return "\n".join(str(getattr(defect, field, "") or "") for field in ("description", "expected_behavior", "actual_behavior"))
+
+
+#: What a whole-file fix is told it replies with; see `anchored_edits.SYSTEM` for a long file.
+WHOLE_FILE_SYSTEM = "You correct source files of a software product. You reply with one file's complete content in one fenced code block."
+
+
+def _system_for(text: str) -> str:
+    from app.graph import anchored_edits
+
+    return anchored_edits.SYSTEM if anchored_edits.too_long_to_rewrite(text) else WHOLE_FILE_SYSTEM
+
+
+def _the_reply_s_file(path: str, original: str, reply: Any) -> str:
+    """The file a reply makes of `original`: its whole content, or `original` with its anchored edits made.
+
+    Raises RepositoryToolError when an anchored edit cannot be made (`anchored_edits.applied`).
+    """
+    from app.graph import anchored_edits
+    from app.graph.drafting import the_content_in
+
+    text = getattr(reply, "content", reply) if not isinstance(reply, str) else reply
+    if anchored_edits.too_long_to_rewrite(original):
+        return anchored_edits.applied(path, original, text if isinstance(text, str) else str(text))
+    return the_content_in(text)
 
 
 def fix_by_rewriting(
@@ -259,7 +305,8 @@ def fix_by_rewriting(
     from langchain_core.messages import HumanMessage, SystemMessage
 
     from app.agents.specialists import SpecialistOutput
-    from app.graph.drafting import the_content_in
+    from app.graph.anchored_edits import AN_EDIT_NOT_APPLIED
+    from app.tools.repository import RepositoryToolError
 
     root = Path(repo_root)
     if write is None:
@@ -296,16 +343,22 @@ def fix_by_rewriting(
                     if not changed:
                         return None
                     break
+                current = (root / path).read_text(encoding="utf-8", errors="replace")
                 reply = active_model.invoke([
-                    SystemMessage(content="You correct source files of a software product. You reply with "
-                                          "one file's complete content in one fenced code block."),
+                    SystemMessage(content=_system_for(current)),
                     HumanMessage(content=fix_request(root, path, defect, failure, specification, stack,
                                                      [f for f in files if f != path], diagnostics)),
                 ], **config_for_this_run("defect_fix"))
-                content = the_content_in(getattr(reply, "content", reply) if not isinstance(reply, str) else reply)
+                try:
+                    content = _the_reply_s_file(path, current, reply)
+                except RepositoryToolError as unapplied:
+                    # An anchored edit that matched nowhere or more than once:
+                    # the file stays as it was and the next pass is told why.
+                    diagnostics = [*diagnostics, f"- In `{path}`: {unapplied}"]
+                    continue
                 if not content.strip():
                     continue
-                if content != (root / path).read_text(encoding="utf-8", errors="replace"):
+                if content != current:
                     try:
                         write(str(root), path, content)
                     except Exception as refused:  # noqa: BLE001 - the next pass is told what was refused
@@ -315,11 +368,13 @@ def fix_by_rewriting(
                         continue
                     if path not in changed:
                         changed.append(path)
+                    # Made now: what an earlier pass was told of its edits is past.
+                    diagnostics = [d for d in diagnostics if not (AN_EDIT_NOT_APPLIED in d and f"`{path}`" in d)]
             except Exception as error:  # noqa: BLE001 - the agent loop takes what this could not
                 logger.info("Rewrite of %s for a fix failed: %s", path, str(error)[:200])
                 if not changed:
                     return None
-        refused = [line for line in diagnostics if "language service is sure of" in line]
+        refused = [line for line in diagnostics if "language service is sure of" in line or AN_EDIT_NOT_APPLIED in line]
         diagnostics = [*refused, *(diagnose(changed) if diagnose and changed else [])]
         if not diagnostics:
             break
@@ -364,7 +419,6 @@ def fix_by_candidates(
     from langchain_core.messages import HumanMessage, SystemMessage
 
     from app.agents.specialists import SpecialistOutput
-    from app.graph.drafting import the_content_in
 
     root = Path(repo_root)
     if write is None:
@@ -407,12 +461,13 @@ def fix_by_candidates(
             if active_model is None or not hasattr(active_model, "invoke"):
                 return index, path, ""
             reply = active_model.invoke([
-                SystemMessage(content="You correct source files of a software product. You reply with "
-                                      "one file's complete content in one fenced code block."),
+                SystemMessage(content=_system_for(originals[path])),
                 HumanMessage(content=fix_request(root, path, defect, failure, specification, stack,
                                                  [f for f in files if f != path], [])),
             ], **config_for_this_run("defect_fix"))
-            return index, path, the_content_in(getattr(reply, "content", reply) if not isinstance(reply, str) else reply)
+            # A long file's anchored edits that cannot be made leave this
+            # candidate without the file, like a reply that failed.
+            return index, path, _the_reply_s_file(path, originals[path], reply)
         except Exception as error:  # noqa: BLE001 - one candidate fewer
             logger.info("A candidate rewrite of %s failed: %s", path, str(error)[:200])
             return index, path, ""

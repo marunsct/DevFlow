@@ -3204,18 +3204,26 @@ def _truncate(text: str, label: str = "output", workspace: str | None = None) ->
     The tail is kept as well as the head: a build's actual error is almost
     always in the last lines, and a head-only cut reliably discards it.
 
-    `workspace` only tags the entry with the run it came from. The journal is one
+    `workspace` tags the entry with the run it came from. The journal is one
     shared directory, so without the tag `read_command_output` could neither list
     a run's own entries nor keep from offering another run's.
+
+    Before the cut, the runs of stack frames outside the project are collapsed
+    (`app.analysis.tracebacks`, plan SZ.3), so the cut falls on what remains;
+    the journal keeps the output whole.
     """
     if len(text) <= MAX_OUTPUT_SIZE:
         return text
 
+    from app.analysis.tracebacks import without_outside_frames
     from app.tools.journal import scope_of, write_entry
 
     reference = write_entry(label, text, scope=scope_of(workspace))
-    head = text[: int(MAX_OUTPUT_SIZE * 0.4)]
-    tail = text[-int(MAX_OUTPUT_SIZE * 0.4):]
+    shown = without_outside_frames(text, workspace)
+    if len(shown) <= MAX_OUTPUT_SIZE:
+        return shown + (f"\n\n...[full output saved as {reference}]...\n" if reference else "")
+    head = shown[: int(MAX_OUTPUT_SIZE * 0.4)]
+    tail = shown[-int(MAX_OUTPUT_SIZE * 0.4):]
     pointer = (
         f"\n\n...[{len(text) - len(head) - len(tail)} bytes omitted"
         + (f"; full output saved as {reference}" if reference else "")

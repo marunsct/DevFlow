@@ -42,8 +42,38 @@ def check(label, s):
     except Exception as error:  # noqa: BLE001 - any failure is "not ready"
         return False, f"NOTREADY {head} ({type(error).__name__}: {str(error)[:80]})"
     if s.model_name in served:
+        answered = answers(reached, naming, key, s.model_name)
+        if answered:
+            return False, f"NOTREADY {head} (listed, but it does not answer a request: {answered})"
         return True, f"READY {head} ({len(served)} models listed){server_facts(reached, naming, key)}"
     return False, f"NOTREADY {head} (served there: {served[:20]})"
+
+
+def answers(reached, naming, key, model_name):
+    """"" when the model answers one small request; else what the server said instead.
+
+    Listed is not served: a server that lists every model it has on disk
+    answered each request "No model loaded" - the check said ALL READY, a run
+    started, and it failed at its first stage while the new model's automatic
+    diagnosis kept the refusals as the model's own.
+    """
+    body = json.dumps({"model": model_name, "messages": [{"role": "user", "content": "Reply with: ready"}],
+                       "max_tokens": 16, "stream": False}).encode()
+    request = urllib.request.Request(
+        reached + "/chat/completions", data=body, method="POST",
+        headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {key}"} if key else {}), **naming},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=120) as reply:
+            return "" if json.load(reply).get("choices") else "no choices in its reply"
+    except urllib.error.HTTPError as error:
+        try:
+            said = json.load(error).get("error", {}).get("message", "")
+        except Exception:  # noqa: BLE001
+            said = ""
+        return f"HTTP {error.code} {str(said)[:80]}".strip()
+    except Exception as error:  # noqa: BLE001
+        return f"{type(error).__name__}: {str(error)[:80]}"
 
 
 def server_facts(reached, naming, key):

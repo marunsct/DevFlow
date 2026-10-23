@@ -4,6 +4,7 @@ import { ModelServerCard } from '../components/ModelServerCard';
 import { RunDefaultsCard } from '../components/RunDefaultsCard';
 import { useServerHealth } from '../lib/serverHealth';
 import { LessonsPanel } from '../components/LessonsPanel';
+import { ModelGuidancePanel } from '../components/ModelGuidancePanel';
 import { AppearanceSettings } from '../components/AppearanceSettings';
 import React, { useEffect, useState } from 'react';
 import { Server, User, Shield, Info, Save, Trash2 } from 'lucide-react';
@@ -349,6 +350,7 @@ export const Settings: React.FC = () => {
             content: (
               <div className="space-y-6">
                 <ModelServerCard health={health} />
+                <ModelGuidancePanel />
                 {/* Server Configuration */}
                 <div className="glass-card rounded-2xl overflow-hidden">
                   <div className="px-6 py-4 border-b border-border/50 flex items-center gap-2">

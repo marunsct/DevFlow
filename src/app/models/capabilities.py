@@ -176,11 +176,6 @@ def from_what_was_measured(model: str) -> dict[str, dict]:
                 check = by["two calls in one reply"]
                 out["parallel_tool_calls"] = _found(check.works, "measured", f"two calls in one reply: {check.passed}/{check.tries}")
             cost = diagnosis.reasoning_tokens or {}
-            served = cost.get("as served")
-            if served:
-                lowest = min((v for v in cost.values() if v), default=served)
-                out["reasons"] = _found(served > 2 * max(lowest, 1) or served > 200, "measured",
-                                        f"{served} output tokens for a one-number question as served")
             template = diagnosis.settings.template_thinking_switch
             effort = bool(diagnosis.settings.least_reasoning_effort)
             out["thinking_switch"] = _found(
@@ -208,11 +203,18 @@ def _png(rgb: tuple[int, int, int], size: int = 32) -> bytes:
 
 
 def _ask(model: Any, messages: list[dict], **extra: Any) -> tuple[str, str]:
+    content, finish, _reasoning = _ask_with_reasoning(model, messages, **extra)
+    return content, finish
+
+
+def _ask_with_reasoning(model: Any, messages: list[dict], **extra: Any) -> tuple[str, str, str]:
     response = model.root_client.chat.completions.create(
         model=model.model_name, messages=messages, max_tokens=PROBE_REPLY_TOKENS, stream=False, **extra)
     data = response if isinstance(response, dict) else response.model_dump(warnings=False)
     choice = (data.get("choices") or [{}])[0] or {}
-    return str((choice.get("message") or {}).get("content") or ""), str(choice.get("finish_reason") or "")
+    message = choice.get("message") or {}
+    return (str(message.get("content") or ""), str(choice.get("finish_reason") or ""),
+            str(message.get("reasoning_content") or message.get("reasoning") or ""))
 
 
 def measure(model: Any) -> dict[str, dict]:
@@ -237,6 +239,15 @@ def measure(model: Any) -> dict[str, dict]:
         out["json_schema_answers"] = _found(ok, "measured", "a two-field schema" + ("" if ok else f": {text[:60]!r}"))
     except Exception as error:  # noqa: BLE001
         out["json_schema_answers"] = _found(False, "measured", f"refused or not JSON: {str(error)[:80]}")
+    try:
+        # Whether its replies carry reasoning at all: a model that answers a
+        # one-number question in 41 tokens can still reason 100,000 on a stage.
+        _text, _finish, reasoning = _ask_with_reasoning(model, [{"role": "user", "content":
+            "A train leaves at 9:40 and the trip takes 2 hours 35 minutes. When does it arrive? Answer with the time."}])
+        out["reasons"] = _found(bool(reasoning.strip()), "measured",
+                                f"its reply carried {len(reasoning):,} characters of reasoning")
+    except Exception as error:  # noqa: BLE001
+        logger.debug("Could not ask whether the model reasons: %s", error)
     try:
         text, _ = _ask(model, [{"role": "user", "content": "日本の首都はどこですか？一文で答えてください。"}])
         japanese = bool(re.search(r"[぀-ヿ一-鿿]", text)) and ("東京" in text)

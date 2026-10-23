@@ -40,6 +40,9 @@ class _Sees_and_speaks_japanese:
             return _completion("Red.")
         if payload.get("response_format"):
             return _completion(json.dumps({"city": "Paris", "population": 2100000}))
+        if "train" in content:
+            return {"choices": [{"finish_reason": "stop", "message": {"content": "12:15",
+                                                                         "reasoning_content": "9:40 plus 2:35 is 12:15."}}]}
         return _completion("日本の首都は東京です。")
 
 
@@ -59,12 +62,14 @@ def test_the_model_is_asked_what_only_it_can_say():
     assert found["reads_images"]["value"] is True and "red square" in found["reads_images"]["note"]
     assert found["json_schema_answers"]["value"] is True
     assert found["multilingual"]["value"] is True
+    assert found["reasons"]["value"] is True and "24 characters" in found["reasons"]["note"]
 
 
 def test_a_model_that_refuses_an_image_does_not_read_one():
     found = capabilities.measure(_model(_Blind()))
     assert found["reads_images"]["value"] is False and "refused" in found["reads_images"]["note"]
     assert found["multilingual"]["value"] is False
+    assert found["reasons"]["value"] is False  # no reasoning came back
 
 
 def test_the_model_card_is_read_for_what_the_model_cannot_be_asked(monkeypatch):

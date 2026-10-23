@@ -89,7 +89,14 @@ def what_failed(defect: Any, repo_root: str | Path, last_failure: Any = None) ->
         printed = "\n".join(str(last_failure.get(k) or "") for k in ("command", "stdout", "stderr")).strip()
         if printed:
             parts.append(f"{THE_LAST_FAILING_COMMAND}\n{printed}")
-    return "\n\n".join(parts)[:MOST_FAILURE_CHARACTERS]
+    text = "\n\n".join(parts)
+    if len(text) > MOST_FAILURE_CHARACTERS:
+        # Cut from the front, so frames outside the project would push the
+        # project's own lines and the assertion out first (plan SZ.3).
+        from app.analysis.tracebacks import without_outside_frames
+
+        text = without_outside_frames(text, repo_root)
+    return text[:MOST_FAILURE_CHARACTERS]
 
 
 def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Callable[[str], bool]) -> list[str]:

@@ -213,6 +213,12 @@ def _neighbours(root: Path, path: str, task: Any, detail: str) -> str:
         candidates = [root / other, *(root.glob(f"*/{other}"))]
         target = next((c for c in candidates if c.is_file()), None)
         if target is None:
+            # Deeper than one folder: the one file whose path ends so (see `the_file_ending`).
+            from app.analysis.walk import the_file_ending
+            from app.tools.repository import IGNORED_DIRECTORIES
+
+            target = the_file_ending(root, other, IGNORED_DIRECTORIES)
+        if target is None:
             continue
         try:
             text = target.read_text(encoding="utf-8")[:MOST_ONE_NEIGHBOUR_CHARACTERS]

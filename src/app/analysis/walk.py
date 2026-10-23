@@ -55,4 +55,32 @@ def directories_under(root: str | Path, skip: Iterable[str] = (), name: str = "*
                 yield directory / sub
 
 
-__all__ = ["directories_under", "files_under"]
+def the_file_ending(root: str | Path, name: str, skip: Iterable[str] = ()) -> Path | None:
+    """The one file under `root` whose path ends with `name`, the shallowest such; None when none, or two tie.
+
+    A failure names a file as its traceback prints it: `store.py`,
+    `items/store.py`, rarely the whole path. Looked up as `root/name` or one
+    folder down, a file deeper in a large codebase's tree -
+    `services/api/items/store.py` - was never found, and the defect that named
+    it went to an agent loop to find it by reading.
+    """
+    wanted = name.strip().lstrip("./")
+    if not wanted:
+        return None
+    ending = "/" + wanted
+    best: list[Path] = []
+    depth = None
+    base = Path(root)
+    for path in files_under(base, skip, Path(wanted).name):
+        relative = "/" + path.relative_to(base).as_posix()
+        if not relative.endswith(ending):
+            continue
+        parts = relative.count("/")
+        if depth is None or parts < depth:
+            best, depth = [path], parts
+        elif parts == depth:
+            best.append(path)
+    return best[0] if len(best) == 1 else None
+
+
+__all__ = ["directories_under", "files_under", "the_file_ending"]

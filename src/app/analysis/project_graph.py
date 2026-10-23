@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import threading
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -42,39 +44,104 @@ def builders_enabled() -> bool:
     return is_on("PROJECT_GRAPH_BUILDERS", False)
 
 
+#: A line that defines something in a language `reachability.FAMILIES` has no
+#: row for, and the name it defines. Those files get no import edges here -
+#: following imports takes a resolver per language - but their definitions
+#: alone answer `where_is`, which in a Go, Java, Rust, Ruby, PHP, C# or Swift
+#: project found nothing at all and sent the agent to search instead.
+_DEFINES_ELSEWHERE = re.compile(
+    r"^[ \t]*(?:(?:public|private|protected|internal|static|final|abstract|sealed|open|override|async|export|"
+    r"default|data|partial|pub(?:\([a-z]+\))?)[ \t]+)*"
+    r"(?:class|interface|struct|enum|trait|record|object|module|impl|type|def|fun|func|fn|function)[ \t]+"
+    r"(?:\([^)]*\)[ \t]*)?([A-Za-z_]\w*)",
+    re.M,
+)
+#: Source files read for their definitions alone (see `_DEFINES_ELSEWHERE`).
+_ELSEWHERE_SUFFIXES = (".go", ".rs", ".java", ".kt", ".cs", ".rb", ".php", ".swift")
+
+_LOCK = threading.Lock()
+#: root -> (the source files as they were when it was built, the graph). Built
+#: afresh on every `neighbourhood`, `where_is` and `who_uses` - each fix request
+#: and each `code_graph` call - the graph read every source file of the project
+#: each time: nothing on a ten-file product, a full read of a large codebase
+#: per call.
+_BUILT: dict[str, tuple[tuple[tuple[str, int, int], ...], dict[str, dict[str, list[str]]]]] = {}
+
+
+def _sources(project: Path) -> list[tuple[Path, str]]:
+    """The project's source files, each with the `FAMILIES` row it is read by ("" for its definitions alone)."""
+    from app.analysis.reachability import FAMILIES, family_of
+
+    found = []
+    for directory, subdirectories, files in os.walk(project):
+        subdirectories[:] = [d for d in subdirectories if d not in _SKIPPED and not d.startswith(".")]
+        for name in files:
+            family = family_of(name)
+            if family in FAMILIES or name.endswith(_ELSEWHERE_SUFFIXES):
+                found.append((Path(directory) / name, family if family in FAMILIES else ""))
+    return found
+
+
+def _as_they_are(paths: Iterable[Path]) -> tuple[tuple[str, int, int], ...]:
+    """Each file's path, modification time and size; a file that cannot be read is left out."""
+    seen = []
+    for path in paths:
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        seen.append((path.as_posix(), stat.st_mtime_ns, stat.st_size))
+    return tuple(seen)
+
+
 def build(root: str | Path) -> dict[str, dict[str, list[str]]]:
-    """{file: {imports, imported_by, defines, criteria}} for the project's source files, workspace-relative. Never raises."""
-    from app.analysis.reachability import FAMILIES, _defined, family_of
+    """{file: {imports, imported_by, defines, criteria}} for the project's source files, workspace-relative. Never raises.
+
+    The graph built last, while no source file and no acceptance test file has
+    changed since.
+    """
+    from app.analysis.reachability import FAMILIES, _defined
 
     root = Path(root).resolve()
     graph: dict[str, dict[str, list[str]]] = {}
     try:
+        from app.acceptance import suite
         from app.tools.repository import pinned_project_directory
 
         project = root / (pinned_project_directory(root) or "")
-        for directory, subdirectories, files in os.walk(project):
-            subdirectories[:] = [d for d in subdirectories if d not in _SKIPPED and not d.startswith(".")]
-            for name in files:
-                path = Path(directory) / name
-                family = FAMILIES.get(family_of(name))
-                if family is None:
-                    continue
-                text = path.read_text(encoding="utf-8", errors="replace")
-                relative = path.relative_to(root).as_posix()
+        sources = _sources(project)
+        # The suite's test names give the criteria, so its files are part of
+        # what the graph was built from.
+        signature = (*_as_they_are(p for p, _ in sources), *_as_they_are(suite.suite_files(root)))
+        with _LOCK:
+            held = _BUILT.get(str(root))
+        if held and held[0] == signature:
+            return held[1]
+        for path, family_name in sources:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            relative = path.relative_to(root).as_posix()
+            if family_name:
+                family = FAMILIES[family_name]
                 imports = sorted(p.resolve().relative_to(root).as_posix() for p in family.imports(path, text, project, {})
                                  if p.resolve().is_relative_to(root))
-                graph[relative] = {"imports": imports, "imported_by": [], "defines": sorted(_defined(text, family)),
-                                   "criteria": []}
+                defines = sorted(_defined(text, family))
+            else:
+                imports, defines = [], sorted({m.group(1) for m in _DEFINES_ELSEWHERE.finditer(text)})
+            graph[relative] = {"imports": imports, "imported_by": [], "defines": defines, "criteria": []}
         for relative, node in graph.items():
             for target in node["imports"]:
                 if target in graph:
                     graph[target]["imported_by"].append(relative)
         _criteria_of_the_tests(root, graph)
         try:
-            (root / GRAPH_FILE).parent.mkdir(parents=True, exist_ok=True)
-            (root / GRAPH_FILE).write_text(json.dumps(graph, indent=1), encoding="utf-8")
+            written, target = json.dumps(graph, indent=1), root / GRAPH_FILE
+            if not target.is_file() or target.read_text(encoding="utf-8") != written:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(written, encoding="utf-8")
         except OSError:
             pass
+        with _LOCK:
+            _BUILT[str(root)] = (signature, graph)
     except Exception:  # noqa: BLE001 - no graph is no neighbourhood
         logger.debug("Could not build the project graph", exc_info=True)
     return graph
@@ -164,15 +231,24 @@ def where_is(root: str | Path, name: str) -> list[str]:
     return (exact or [f for f, n in graph.items() if any(wanted.lower() in d.lower() for d in n["defines"])])[:8]
 
 
-def who_uses(root: str | Path, path: str) -> dict[str, list[str]]:
+def who_uses(root: str | Path, path: str) -> dict[str, Any]:
     """What imports `path`, which acceptance tests reach it and their criteria; {} for a file the graph does not hold."""
     graph, relative = build(root), str(path).strip().removeprefix("./").lstrip("/")
     node = graph.get(relative)
     if node is None:
         return {}
     tests = [other for other, n in graph.items() if relative in n["imports"] and n["criteria"]]
-    return {"imported_by": node["imported_by"][:12], "tests": tests[:6],
-            "criteria": sorted({c for t in tests for c in graph[t]["criteria"]})[:12], "defines": node["defines"][:20]}
+    answer: dict[str, Any] = {"imported_by": node["imported_by"][:12], "tests": tests[:6],
+                              "criteria": sorted({c for t in tests for c in graph[t]["criteria"]})[:12],
+                              "defines": node["defines"][:20]}
+    from app.analysis.reachability import FAMILIES, family_of
+
+    if family_of(relative) not in FAMILIES:
+        # Its definitions are read, its imports are not: an empty
+        # `imported_by` here is not "nothing uses it".
+        answer["note"] = (f"The code graph does not follow imports in `{relative}`'s language, so what uses it is "
+                          "not known here. Search the files for its names to find out.")
+    return answer
 
 
 def build_tool(repo_root: str | Path) -> Any:

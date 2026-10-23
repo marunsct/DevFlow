@@ -6,15 +6,15 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-23 23:15 JST.
+**As of:** 2026-10-23 23:55 JST.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | none - run-c6d33923 (Ornith, 22:55) failed at once: the server had no model loaded; then left "running" by a restart with no worker, the owner's cancels did not take (LF.244) - cancelled 23:14. Fixed tonight: LF.241 (nothing measured of a model the server does not answer for), LF.242 (`ready` sends a request), LF.243 (a stopped diagnosis is shown as stopped), LF.244. LF.245 (the settings page names the model as the worker does; no image sent to a server without vision). Owner's Ornith diagnosis finished 23:32 JST (740 s). Next run waits for the owner's word. |
+| Run | **run-2b891f3f** (tasks-api gate, Ornith-1.5-35B-A3B, all switches on, harness 2744a74) started 23:54 JST after the owner's reboot. Before it: run-c6d33923 cancelled 23:14; LF.241-LF.246 deployed (diagnosis state, cancel, settings page naming, no image to a server without vision). Owner's Ornith diagnosis kept: tier standard 0.667, guides keep_to_role + one_program_a_command. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
-| Model | **LFM2.5-24B-A2B** (owner, ~18:15 JST) at :8888, 3 slots, 131,072 tokens; reply ceiling uncapped (owner's setting). Diagnosed: tools 3/3, forced answers 3/3 (2/2 long), no reasoning switch honoured; deep: plan in schema 1-2/3 -> 3/3 and stop-when-done 1/3 -> 3/3 with its two guidance lines |
+| Model | **Ornith-1.5-35B-A3B** (owner, ~23:15 JST) at :8888, 3 slots, 262,144 tokens; reply ceiling the deployment's own; vision off (server). Diagnosed 23:32 JST: tier standard, 2 guides on; reasoning_effort=none honoured. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Peer sessions | none since 04:57 JST 2026-10-23 (this session, langchain-90, drives alone) |
 

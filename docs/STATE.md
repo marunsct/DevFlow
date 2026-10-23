@@ -6,13 +6,13 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 
-**As of:** 2026-10-23 23:10 JST.
+**As of:** 2026-10-23 23:15 JST.
 
 ## Live now
 
 | | |
 |---|---|
-| Run | **fresh tasks-api run on Ornith-1.5-35B-A3B** (owner's new model, 4 slots, 262k) on **dc of LF.240**, every playbook item deployed; its first segment diagnoses the new model (MD.1/MD.2/MD.5). run-ea0a7402 (LFM2.5 test run) cancelled 22:36. |
+| Run | none - run-c6d33923 (Ornith, 22:55) failed at once: the server had no model loaded; then left "running" by a restart with no worker, the owner's cancels did not take (LF.244) - cancelled 23:14. Fixed tonight: LF.241 (nothing measured of a model the server does not answer for), LF.242 (`ready` sends a request), LF.243 (a stopped diagnosis is shown as stopped), LF.244. Next run waits for the owner's word on the model. |
 | Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
 | Model | **LFM2.5-24B-A2B** (owner, ~18:15 JST) at :8888, 3 slots, 131,072 tokens; reply ceiling uncapped (owner's setting). Diagnosed: tools 3/3, forced answers 3/3 (2/2 long), no reasoning switch honoured; deep: plan in schema 1-2/3 -> 3/3 and stop-when-done 1/3 -> 3/3 with its two guidance lines |
 | Owner's model settings | the owner's; never changed by the loop |

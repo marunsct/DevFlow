@@ -606,11 +606,89 @@ def library_directory() -> Path:
 
 
 def library_key(stack: Any) -> str:
+    """The exact wording of the stack, as a file name. Kept so an entry written before `canonical_key` is found."""
     return re.sub(r"[^a-z0-9]+", "-", _stack_line(stack).lower()).strip("-")[:120] or "stack"
 
 
+#: What a stack is made of, by the names the stack selector uses for them. A table, not a rule: a name missing
+#: here falls back to the first word the selector wrote, and the entry is then found only by that word.
+_LANGUAGES = (
+    ("typescript", ("typescript",)), ("javascript", ("javascript", "node.js", "nodejs")), ("python", ("python",)),
+    ("ruby", ("ruby",)), ("go", ("golang", "go")), ("rust", ("rust",)), ("java", ("java",)), ("kotlin", ("kotlin",)),
+    ("php", ("php",)), ("csharp", ("c#", "csharp", ".net")),
+)
+_FRAMEWORKS = (
+    ("hono", ("hono",)), ("express", ("express",)), ("fastify", ("fastify",)), ("koa", ("koa",)),
+    ("nest", ("nestjs", "nest.js")), ("fastapi", ("fastapi",)), ("flask", ("flask",)), ("django", ("django",)),
+    ("stdlib", ("standard library", "standard-library", "stdlib", "http.server", "net/http")),
+    ("sinatra", ("sinatra",)), ("rails", ("rails",)), ("gin", ("gin",)), ("spring", ("spring",)),
+    ("axum", ("axum",)), ("actix", ("actix",)), ("laravel", ("laravel",)),
+)
+_UNIT_RUNNERS = (
+    ("vitest", ("vitest",)), ("jest", ("jest",)), ("mocha", ("mocha",)),
+    ("nodetest", ("node:test", "node --test", "node test runner", "node's test runner")),
+    ("pytest", ("pytest",)), ("unittest", ("unittest",)), ("rspec", ("rspec",)), ("minitest", ("minitest",)),
+    ("gotest", ("go test", "testing package")), ("phpunit", ("phpunit",)), ("junit", ("junit",)),
+)
+#: An acceptance runner is not the unit runner: named only when nothing else is.
+_ONLY_ACCEPTANCE = ("playwright",)
+
+
+def _first_of(table: tuple, text: str) -> str:
+    """The canonical name whose alias appears earliest in `text`; "" when none does."""
+    best, at = "", len(text) + 1
+    for name, aliases in table:
+        for alias in aliases:
+            found = re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", text)
+            if found and found.start() < at:
+                best, at = name, found.start()
+    return best
+
+
+def canonical_key_of(text: str) -> str:
+    """`language|framework|unit runner` of a stack described in words, or "" when its language is not known."""
+    lowered = str(text or "").lower().replace("-", " ").replace("_", " ")
+    language = _first_of(_LANGUAGES, lowered)
+    if not language:
+        return ""
+    framework = _first_of(_FRAMEWORKS, lowered) or _word_after("framework", lowered) or "none"
+    runner = _first_of(_UNIT_RUNNERS, lowered) or ("playwright" if "playwright" in lowered else "none")
+    return f"{language}|{framework}|{runner}"
+
+
+def _word_after(label: str, text: str) -> str:
+    """The word that follows `label` in a file name or a sentence - how a framework outside the table is named."""
+    found = re.search(rf"(?<![a-z0-9]){label}[ :]+([a-z0-9][a-z0-9.]*)", text)
+    return found.group(1).strip(".") if found else ""
+
+
+def canonical_key(stack: Any) -> str:
+    framework = str(getattr(stack, "framework", "") or "")
+    parts = [str(getattr(stack, "language", "") or ""), f"framework {framework}", str(getattr(stack, "testing_framework", "") or "")]
+    return canonical_key_of(" ".join(parts))
+
+
+def _entry_for(stack: Any) -> Path | None:
+    """The library file for this stack: its exact wording, else the newest entry of the same language, framework and runner."""
+    directory = library_directory()
+    exact = directory / f"{library_key(stack)}.json"
+    if exact.is_file():
+        return exact
+    wanted = canonical_key(stack)
+    if not wanted or not directory.is_dir():
+        return None
+    entries = [(path, canonical_key_of(path.stem)) for path in directory.glob("*.json")]
+    matches = [path for path, key in entries if key == wanted]
+    if not matches:
+        # An old entry's file name was cut at 120 characters, often before its runner: language and framework alone
+        # then decide, and the proof the caller runs rejects a wrong runner.
+        language, framework, _runner = wanted.split("|")
+        matches = [path for path, key in entries if key == f"{language}|{framework}|none"]
+    return max(matches, key=lambda path: path.stat().st_mtime, default=None)
+
+
 def remember(stack: Any, replayable: dict[str, Any]) -> None:
-    """Keep a proven setup for later runs on the same stack."""
+    """Keep a proven setup for later runs on the same stack: under the stack's own wording, and findable by what it is."""
     try:
         directory = library_directory()
         directory.mkdir(parents=True, exist_ok=True)
@@ -619,10 +697,58 @@ def remember(stack: Any, replayable: dict[str, Any]) -> None:
         logger.debug("Could not keep the proven setup", exc_info=True)
 
 
-def replay(project_root: Path, stack: Any) -> list[str]:
-    """Write a setup proven in an earlier run for this stack into `project_root`; the paths written, or []."""
+def _chosen_by(model: Any, stack: Any) -> Path | None:
+    """The library entry a model picks as the closest to this stack, or None. Never raises, and asks at most once.
+
+    The names a stack selector uses vary from run to run, and a table of aliases cannot keep up with them; reading
+    two lines and saying "that one is close enough" is what a model does easily. A wrong pick costs nothing but the
+    proof the caller runs on the replayed files, which no agent is asked to read.
+    """
     try:
-        record = json.loads((library_directory() / f"{library_key(stack)}.json").read_text(encoding="utf-8"))
+        entries = sorted(library_directory().glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)[:12]
+        if not entries or model is None:
+            return None
+        lines = []
+        for number, path in enumerate(entries, 1):
+            record = json.loads(path.read_text(encoding="utf-8"))
+            declared = json.loads(record.get("declaration") or "{}") if isinstance(record.get("declaration"), str) else {}
+            lines.append(
+                f"{number}. stack: {path.stem.replace('-', ' ')[:110]}; unit test: {' '.join(declared.get('unit_test') or [])}; "
+                f"files: {', '.join(sorted(record.get('files') or {}))[:120]}"
+            )
+        from langchain_core.messages import HumanMessage
+
+        from app.agents.thinking import without_reasoning
+
+        asked = (
+            "Setups proven in earlier runs, each for a stack:\n" + "\n".join(lines)
+            + f"\n\nThis run's stack: {_stack_line(stack)}.\n\nWhich one is close enough to start from: the same "
+            "language and framework, and a test runner the project can use as it stands? Reply with its number alone, "
+            "or 0 if none is."
+        )
+        reply = without_reasoning(model).invoke([HumanMessage(content=asked)])
+        text = reply.content if isinstance(reply.content, str) else " ".join(str(part) for part in reply.content)
+        found = re.search(r"\d+", text or "")
+        number = int(found.group(0)) if found else 0
+        return entries[number - 1] if 1 <= number <= len(entries) else None
+    except Exception:  # noqa: BLE001 - nothing is replayed, and the agent sets the project up as before
+        logger.debug("Could not ask for a library entry", exc_info=True)
+        return None
+
+
+def replay(project_root: Path, stack: Any, model: Any = None) -> list[str]:
+    """Write a setup proven in an earlier run for this stack into `project_root`; the paths written, or [].
+
+    A stack the selector worded differently from the run that proved the setup still finds it (same language,
+    framework and unit runner): measured, three Python entries and a Hono one sat in the library unused because
+    each run's wording differed. The caller proves the replayed files again before any agent is asked, so a
+    wrong match is rejected there.
+    """
+    entry = _entry_for(stack) or _chosen_by(model, stack)
+    if entry is None:
+        return []
+    try:
+        record = json.loads(entry.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
     files = record.get("files") if isinstance(record, dict) else None
@@ -648,5 +774,5 @@ def leave_to_the_agents(project_root: Path) -> None:
 __all__ = [
     "ATTEMPTS", "DECLARATION_FILE", "PROVEN_SETUP", "already_set_up", "leave_to_the_agents",
     "build_setup_request", "enabled", "library_key", "pack_from", "problems_with", "prove", "read_declaration",
-    "remember", "replay",
+    "remember", "replay", "canonical_key", "canonical_key_of",
 ]

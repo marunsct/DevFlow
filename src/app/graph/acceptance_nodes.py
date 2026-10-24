@@ -271,7 +271,7 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         return _handing_on(**update, stage="acceptance_author")
 
     if attempt == 0 and not resuming:
-        replayed = custom_setup.replay(project_root, stack)
+        replayed = custom_setup.replay(project_root, stack, ctx.model)
         if replayed:
             proven = custom_setup.prove(root, project, stack, brief=brief, title=title or project)
             if proven.ok:

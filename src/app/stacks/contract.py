@@ -108,6 +108,40 @@ def installed(repo_root: str | Path, runner: Any = None) -> None:  # noqa: ARG00
 INSTALL_FAILED = "failed after the project's manifest changed"
 
 
+#: How each installer says a pinned version does not exist, by registry: the pattern captures the package name.
+_NO_SUCH_VERSION = (
+    ("npm", re.compile(r"No matching version found for (@?[^@\s]+)@")),
+    ("pypi", re.compile(r"(?:No matching distribution found for|Could not find a version that satisfies the requirement) "
+                        r"([A-Za-z0-9][A-Za-z0-9_.-]*)")),
+)
+
+
+def _the_versions_that_exist(said: str) -> str:
+    """What the registry has for each package an installer says has no such version, or "".
+
+    Measured on a small-model run: a fixer pinned `async-mutex@^2.3.0`, the installer said no such version existed, and
+    every rewrite of the manifest from that message pinned a version the registry also lacks - the product never
+    installed. The registry's current release is a fact the harness can look up and hand over; a model's guess at it
+    is not.
+    """
+    try:
+        from app.tools import package_registry
+
+        if not package_registry.enabled():
+            return ""
+        lines: list[str] = []
+        for ecosystem, pattern in _NO_SUCH_VERSION:
+            for name in dict.fromkeys(pattern.findall(said or "")):
+                found = package_registry.look_up(ecosystem, name)
+                if found.get("version"):
+                    lines.append(f"The registry's current release of `{name}` is {found['version']}: pin that, or a "
+                                 "version the registry lists, not a version it does not have.")
+        return ("\n" + "\n".join(lines[:4])) if lines else ""
+    except Exception:  # noqa: BLE001 - the note goes without the lookup
+        logger.debug("Could not look up the versions that exist", exc_info=True)
+        return ""
+
+
 def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) -> list[str]:
     """Install the project's dependencies again when a manifest changed since the last install. Never raises.
 
@@ -147,7 +181,8 @@ def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) 
                 # package written into `requirements.txt` failed every install,
                 # and the note said only that the command failed.
                 return [f"`{' '.join(argv)}` {INSTALL_FAILED}"
-                        + (f"; it ended:\n{tail}" if tail else ".")]
+                        + (f"; it ended:\n{tail}" if tail else ".")
+                        + _the_versions_that_exist(said)]
         installed(repo_root)
         logger.info("The project's manifest changed since its last install; installed again")
         return ["The project's dependencies were installed again: a manifest changed since the last install."]

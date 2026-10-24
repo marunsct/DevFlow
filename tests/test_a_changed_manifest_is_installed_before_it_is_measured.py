@@ -123,3 +123,60 @@ def test_a_failed_install_says_what_the_installer_said(tmp_path):
     notes = contract.install_if_the_manifests_changed(tmp_path, failing)
 
     assert notes and "No matching distribution found for recharts" in notes[0]
+
+
+class _FailingRunner:
+    def __init__(self, said):
+        self.said = said
+
+    def __call__(self, argv, category, working_directory):
+        return {"returncode": "1", "stdout": "", "stderr": self.said}
+
+
+def test_a_pinned_version_the_registry_lacks_comes_back_with_the_one_it_has(tmp_path, monkeypatch):
+    """Measured: a fixer pinned `async-mutex@^2.3.0`; every rewrite from the installer's message pinned another missing
+    version, because the message names the missing one and not the existing ones."""
+    from app.tools import package_registry
+
+    _project(tmp_path)
+    (tmp_path / "shop" / "package.json").write_text(json.dumps({"dependencies": {"async-mutex": "^2.3.0"}}))
+    monkeypatch.setattr(package_registry, "enabled", lambda: True)
+    asked = []
+    monkeypatch.setattr(package_registry, "look_up",
+                        lambda ecosystem, name, **kw: asked.append((ecosystem, name)) or {"version": "0.5.0"})
+    said = ("npm error code ETARGET\nnpm error notarget No matching version found for async-mutex@^2.3.0.\n"
+            "npm error notarget In most cases you or one of your dependencies are requesting a package version that "
+            "doesn't exist.")
+
+    notes = contract.install_if_the_manifests_changed(tmp_path, _FailingRunner(said))
+
+    assert asked == [("npm", "async-mutex")]
+    assert len(notes) == 1 and contract.INSTALL_FAILED in notes[0] and "No matching version found" in notes[0]
+    assert "current release of `async-mutex` is 0.5.0" in notes[0]
+
+
+def test_a_scoped_package_and_a_python_requirement_are_looked_up_too():
+    found = []
+    from app.stacks.contract import _NO_SUCH_VERSION
+
+    for ecosystem, pattern in _NO_SUCH_VERSION:
+        found += [(ecosystem, name) for name in pattern.findall(
+            "npm notarget No matching version found for @hono/node-server@^9.0.0.\n"
+            "ERROR: No matching distribution found for fastapi==99.0\n"
+            "ERROR: Could not find a version that satisfies the requirement uvicorn==99 (from versions: 0.1)")]
+    assert ("npm", "@hono/node-server") in found
+    assert ("pypi", "fastapi") in found and ("pypi", "uvicorn") in found
+
+
+def test_the_note_goes_without_the_lookup_when_the_registry_cannot_be_read(tmp_path, monkeypatch):
+    from app.tools import package_registry
+
+    _project(tmp_path)
+    (tmp_path / "shop" / "package.json").write_text(json.dumps({"dependencies": {"x": "^9"}}))
+    monkeypatch.setattr(package_registry, "enabled", lambda: True)
+    monkeypatch.setattr(package_registry, "look_up", lambda *a, **k: {"error": "no registry"})
+
+    notes = contract.install_if_the_manifests_changed(
+        tmp_path, _FailingRunner("npm error notarget No matching version found for x@^9."))
+
+    assert len(notes) == 1 and "current release" not in notes[0]

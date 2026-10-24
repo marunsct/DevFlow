@@ -110,11 +110,22 @@ def test_typescript_runs_without_a_build_on_erasable_syntax_only():
 
 
 @pytest.mark.parametrize("language, framework", [
-    ("TypeScript", "Hono"), ("JavaScript", "Hono"), ("TypeScript", "Elysia"), ("JavaScript", "Fastify"),
+    ("JavaScript", "Hono"), ("TypeScript", "Elysia"), ("JavaScript", "Fastify"),
 ])
 def test_a_framework_no_pack_knows_gets_no_pack_rather_than_another_s(language, framework):
-    """Hono read as "no framework" and was given the Nest pack: only listed frameworks counted as frameworks."""
+    """Hono read as "no framework" and was given the Nest pack: only listed frameworks counted as frameworks.
+
+    Hono in TypeScript has a pack of its own now (below); Hono in JavaScript has none, and gets none rather than the
+    TypeScript one.
+    """
     assert choose_pack(_stack(language, framework), "A small HTTP service API") is None
+
+
+@pytest.mark.parametrize("framework", ["Hono", "Hono (web framework)", "Hono 4"])
+def test_hono_in_typescript_gets_its_own_pack_not_nest_s(framework):
+    """Measured: with no Hono pack the setup agent (a small model) invented a test API that does not exist
+    (`createTestClient` in `hono/testing`) and the run could not run its acceptance suite."""
+    assert choose_pack(_stack("TypeScript", framework), "A small HTTP service API").name == "node-hono-api"
 
 
 @pytest.mark.parametrize("language, framework, chosen", [

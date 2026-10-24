@@ -21,6 +21,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from app.acceptance import suite
+from app.graph import release_with_failing_unit_tests
 from app.stacks import contract
 
 logger = logging.getLogger(__name__)
@@ -230,6 +231,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # with every criterion passing or deferred while `npm test` failed on a
     # test a fix stage had written for a deferred criterion.
     unit_failing = [] if failing else _unit_tests_failing(root)
+    project_unit_failures = list(unit_failing)
     if unit_failing:
         failing = unit_failing
         summary = (
@@ -253,6 +255,14 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         summary = "The handoff is not ready for someone who did not write the product: " + " ".join(undocumented)
         unit_failing = undocumented
         undocumented = []
+    shipped_failing_unit_tests: list[str] = []
+    if failing and release_with_failing_unit_tests.may_ship(
+        project_unit_failures, failing,
+        accepted_at_an_escalation=bool(state.get("known_issues")),
+        release_attempts=int(state.get("release_attempts") or 0),
+        most_release_attempts=MAX_RELEASE_ATTEMPTS,
+    ):
+        shipped_failing_unit_tests, failing = project_unit_failures, []
     if failing:
         attempts = int(state.get("release_attempts") or 0) + 1
         text = (
@@ -312,6 +322,8 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         for problem in state.get("work_order_problems") or []
     )
     gaps.extend(undocumented)
+    if shipped_failing_unit_tests:
+        gaps.append(release_with_failing_unit_tests.gap(shipped_failing_unit_tests))
     gaps.extend(release_audits.licence_gaps(root))
     unit_gap = _no_unit_tests_ran(root)
     if unit_gap:

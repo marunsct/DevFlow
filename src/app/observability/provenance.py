@@ -50,6 +50,7 @@ SWITCHES: dict[str, str] = {
     "MODEL_GUIDANCE": "app.models.model_guidance",
     "STRUCTURED_EXTRACTION": "app.agents.structured_extraction",
     "BATCH_ACCEPTANCE_AUTHOR": "app.graph.acceptance_batches",
+    "RELEASE_WITH_FAILING_UNIT_TESTS": "app.graph.release_with_failing_unit_tests",
     "REFUSALS_FOLDED": "app.agents.refusal_folding",
     "GUIDE_ANSWER_IN_SCHEMA": "app.models.guidance:answer_in_schema_switch",
     "GUIDE_STOP_WHEN_DONE": "app.models.guidance:stop_when_done_switch",

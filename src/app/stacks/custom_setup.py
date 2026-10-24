@@ -354,7 +354,18 @@ def _declared(text: str, project_root: Path, fallback_kind: str, *, files_writte
         problems.append("every `kept_files` entry must be a path inside the project")
     if len(smoke) < 2 or any(name is None for name in smoke):
         problems.append("`smoke_files` must list the unit and the acceptance smoke test")
-    missing = [name for name in [*kept, *smoke] if name and not (project_root / name).is_file()] if files_written else []
+    wanted = [name for name in [*kept, *smoke] if name] if files_written else []
+    # A folder is not a file the harness can keep, whether or not it exists: measured, a setup listed
+    # `node_modules` under `kept_files`, the message said it "does not exist", the setup ran the install
+    # to make it, and the same message came back - twice, the setup was left to the agents.
+    folders = [name for name in wanted if (project_root / name).is_dir()]
+    missing = [name for name in wanted if not (project_root / name).exists()]
+    if folders:
+        problems.append(
+            "these declared entries are folders, and `kept_files` and `smoke_files` list files: "
+            + ", ".join(f"`{name}`" for name in folders)
+            + " - name the files you want kept, or leave the folder out (what `install` makes is made again)"
+        )
     if missing:
         problems.append("these declared files do not exist: " + ", ".join(f"`{name}`" for name in missing))
     kind = str(data.get("kind") or "").strip().lower().replace("-", "_")

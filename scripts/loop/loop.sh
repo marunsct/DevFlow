@@ -369,6 +369,7 @@ resume)
   curl -s -X POST "$API/api/runs/$run/resume" -H "Authorization: Bearer $token"
   echo
   ;;
+ship) shift; "$HERE/ship.sh" "$@" ;;
 resume-when-ready) shift; "$PY" "$HERE/resume_when_ready.py" "$@" ;;
 stage)
   [ -n "${2:-}" ] || { echo "usage: loop.sh stage <stage> [HH:MM UTC]" >&2; exit 2; }

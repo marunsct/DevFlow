@@ -112,4 +112,8 @@ TEST_BUGS = (
     r"fixture '[^']+' not found",
     # A request to an address the suite never serves (see the JavaScript packs').
     r"host='(?:localhost|127\.0\.0\.1|::1)', port=(?:80|443)\)",
+    # A dict, list or set used as a key or set member: `json={{"title": ""}}` (a set holding a dict, double braces
+    # carried over from a template), raised by the test's own line before any request is made. Measured on a
+    # small-model run: five locked tests carried it, none could pass, and the sprint spent two hours on them.
+    r"TypeError: unhashable type: '(?:dict|list|set)'",
 )

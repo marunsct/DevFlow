@@ -697,6 +697,15 @@ def remember(stack: Any, replayable: dict[str, Any]) -> None:
         logger.debug("Could not keep the proven setup", exc_info=True)
 
 
+def _command_words(command: Any) -> str:
+    """A declared command as words: one argv list, a list of them (a setup may declare several), or a string."""
+    if isinstance(command, str):
+        return command
+    if isinstance(command, (list, tuple)):
+        return " ".join(_command_words(part) for part in command)
+    return ""
+
+
 def _chosen_by(model: Any, stack: Any) -> Path | None:
     """The library entry a model picks as the closest to this stack, or None. Never raises, and asks at most once.
 
@@ -713,7 +722,7 @@ def _chosen_by(model: Any, stack: Any) -> Path | None:
             record = json.loads(path.read_text(encoding="utf-8"))
             declared = json.loads(record.get("declaration") or "{}") if isinstance(record.get("declaration"), str) else {}
             lines.append(
-                f"{number}. stack: {path.stem.replace('-', ' ')[:110]}; unit test: {' '.join(declared.get('unit_test') or [])}; "
+                f"{number}. stack: {path.stem.replace('-', ' ')[:110]}; unit test: {_command_words(declared.get('unit_test'))}; "
                 f"files: {', '.join(sorted(record.get('files') or {}))[:120]}"
             )
         from langchain_core.messages import HumanMessage

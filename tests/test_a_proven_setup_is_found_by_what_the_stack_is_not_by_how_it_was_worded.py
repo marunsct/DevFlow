@@ -134,3 +134,25 @@ def test_a_model_that_says_none_or_fails_replays_nothing(_library, tmp_path):
             raise RuntimeError("the server is down")
 
     assert custom_setup.replay(project, _stack("Go", "Gin", "go test"), _Broken()) == []
+
+
+def test_a_model_pick_is_asked_when_an_entry_declares_its_unit_command_as_a_list_of_commands(tmp_path):
+    """Measured: an entry whose declaration held a list of argv lists made the pick raise, the broad except hid it,
+    and no entry was ever offered to the model: a stack whose runner differed from every entry's set itself up from nothing."""
+    directory = tmp_path / "library"
+    (directory / "language-typescript-framework-hono-testing-jest.json").write_text(json.dumps({
+        "declaration": json.dumps({"unit_test": [["npm", "test"]]}), "files": {"package.json": "{}"}}))
+    (directory / "language-typescript-framework-hono-testing-vitest.json").write_text(json.dumps({
+        "declaration": json.dumps({"unit_test": ["npx", "vitest", "run"]}), "files": {"package.json": "{}"}}))
+    asked = []
+
+    class _Model:
+        def invoke(self, messages, **_kwargs):
+            asked.append(messages[0].content)
+            return SimpleNamespace(content="1")
+
+    stack = _stack("TypeScript", "Hono", "node:test for unit tests, Playwright for acceptance tests")
+    chosen = custom_setup._chosen_by(_Model(), stack)
+
+    assert asked and "npm test" in asked[0] and "npx vitest run" in asked[0]
+    assert chosen is not None and chosen.name.startswith("language-typescript-framework-hono")

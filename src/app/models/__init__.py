@@ -341,6 +341,18 @@ def _remember_the_refusal(server: tuple[str, str]) -> None:
 _NO_FORCED_TOOL_WHILE_THINKING: set[tuple[str, str]] = _refusals_remembered()
 
 
+#: (address, model) of servers that take only the strings none, auto and required as a tool choice: a named choice is
+#: sent to them as `required`. Learnt from a refusal, or from the model's diagnosis (`diagnostics.apply`).
+_NAMED_CHOICE_BECOMES_REQUIRED: set[tuple[str, str]] = set()
+
+
+def takes_only_string_tool_choices(error: Exception) -> bool:
+    """Whether `error` is a server refusing a named tool choice because it takes only strings, `required` among them."""
+    status = getattr(error, "status_code", None)
+    text = str(error)
+    return status == 400 and "tool_choice" in text and "Supported string values" in text and "required" in text
+
+
 def refuses_a_forced_tool_while_thinking(error: Exception) -> bool:
     """Whether `error` is a server refusing a forced tool call because the model is reasoning."""
     status = getattr(error, "status_code", None)
@@ -494,6 +506,11 @@ class CompatibleChatOpenAI(ChatOpenAI):
         deadline = getattr(_REPLY_CAP, "deadline", None)
         if deadline:
             payload["timeout"] = deadline
+        # Before the downgrade below: `required` is the form this engine enforces; `auto` made its parser reject the
+        # model's output (measured, 0-1 of 3 replies answered) and `required` never did.
+        if (str(self.openai_api_base or ""), str(self.model_name or "")) in _NAMED_CHOICE_BECOMES_REQUIRED:
+            if isinstance(payload.get("tool_choice"), dict):
+                payload["tool_choice"] = "required"
         if (str(self.openai_api_base or ""), str(self.model_name or "")) in _NO_FORCED_TOOL_WHILE_THINKING:
             if payload.get("tool_choice") not in (None, "auto", "none"):
                 payload["tool_choice"] = "auto"
@@ -532,6 +549,19 @@ class CompatibleChatOpenAI(ChatOpenAI):
         try:
             result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
         except Exception as error:  # noqa: BLE001 - re-raised unless this is the refusal
+            if server not in _NAMED_CHOICE_BECOMES_REQUIRED and takes_only_string_tool_choices(error):
+                _NAMED_CHOICE_BECOMES_REQUIRED.add(server)
+                logger.warning(
+                    "%s takes only string tool choices; a named choice is sent as `required` from now on",
+                    server[1] or server[0],
+                )
+                result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+                from app.models.reply_salvage import salvaged
+
+                result = salvaged(self, messages, result, stop=stop, **kwargs)
+                from app.models.tool_arguments import decode_structured_arguments as _decoded
+
+                return _decoded(result, kwargs.get("tools"))
             if server in _NO_FORCED_TOOL_WHILE_THINKING or not refuses_a_forced_tool_while_thinking(error):
                 raise
             _remember_the_refusal(server)

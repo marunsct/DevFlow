@@ -80,7 +80,8 @@ class Check:
 class Settings:
     """What the harness does for this model, from its diagnosis."""
 
-    #: "forced" - a structured answer forces its tool; "offered" - it is offered and asked for.
+    #: "forced" - a structured answer forces its tool; "offered" - it is offered and asked for; "required" - the
+    #: engine refuses a named tool choice but enforces `required`, so a named choice is sent as `required`.
     structured_answers: str = "forced"
     #: Forcing works only with thinking off: force then, offer otherwise.
     force_only_without_thinking: bool = False
@@ -354,6 +355,9 @@ def diagnose(model: Any, name: str = "") -> Diagnosis:
                         wanted=answer["function"]["name"], args_ok=_reported(schema), extra=named),
             _tool_check(model, "a structured answer, offered", tools=[*_stage_tools(), answer], ask=_a_stage_s_work(),
                         wanted=answer["function"]["name"], args_ok=_reported(schema)),
+            _tool_check(model, "a structured answer, required", tools=[*_stage_tools(), answer], ask=_a_stage_s_work(),
+                        wanted=answer["function"]["name"], args_ok=_reported(schema), only_offered_names=True,
+                        extra={"tool_choice": "required"}),
             _tool_check(model, "forced after a long request", tools=[*_stage_tools(), answer],
                         ask=_a_stage_s_work(_A_LONG_PROJECT + "\n"), wanted=answer["function"]["name"],
                         args_ok=_reported(schema), extra=named, tries=2),
@@ -389,8 +393,21 @@ def settled(checks: list[Check], cost: dict[str, int | None]) -> Settings:
             advice.append(f"a stage-shaped structured answer is unreliable forced ({failing}) and offered does no "
                           "better: forced stays; long stages are where this build may fall short")
     forced_without_thinking = by["one tool named, thinking off"].works
+    # An engine that takes only the strings none, auto and required refuses the named form with a 400 about its
+    # type, which says nothing about forcing: `required` forces. Measured on an LM Studio server, where `auto` made
+    # the model's output fail the engine's own parser and `required` never did.
+    only_strings = any("Supported string values" in note for note in by["one tool named"].notes)
+    required_in_a_stage = by.get("a structured answer, required")
+    required_works = bool(
+        not forced and only_strings and by["a tool required"].works
+        and required_in_a_stage is not None and required_in_a_stage.works
+    )
     if forced:
         structured, only_off = "forced", False
+    elif required_works:
+        structured, only_off = "required", False
+        advice.append("the engine refuses a named tool choice but enforces `required`: a structured answer's named "
+                      "choice is sent as `required`")
     elif forced_without_thinking:
         structured, only_off = "forced", True
         advice.append("a forced tool works only with thinking off: structured answers are forced with thinking off")
@@ -442,9 +459,11 @@ def apply(model: Any, diagnosis: Diagnosis | None) -> None:
     if diagnosis is None:
         return
     try:
-        from app.models import _NO_FORCED_TOOL_WHILE_THINKING
+        from app.models import _NAMED_CHOICE_BECOMES_REQUIRED, _NO_FORCED_TOOL_WHILE_THINKING
 
         server = (str(getattr(model, "openai_api_base", "") or ""), str(getattr(model, "model_name", "") or ""))
+        if diagnosis.settings.structured_answers == "required":
+            _NAMED_CHOICE_BECOMES_REQUIRED.add(server)
         # Forced only with thinking off is offered too: thinking is not
         # switched per call here, so a forced call would still reason.
         if diagnosis.settings.structured_answers == "offered" or diagnosis.settings.force_only_without_thinking:

@@ -353,6 +353,51 @@ def _repaired_where_the_compiler_says(
 CONTENT_REFUSALS = ("language service is sure of", "cannot parse this file")
 
 
+#: What a work order promises in its `interfaces`, in the words the lead writes them: `export function makeThing(...)`,
+#: `export interface Thing`, `def make_thing(`, `class Thing`.
+_A_PROMISED_NAME = re.compile(
+    r"\bexport\s+(?:default\s+)?(?:async\s+)?(?:abstract\s+)?(?:interface|class|function|const|let|type|enum)\s+([A-Za-z_$][\w$]*)"
+    r"|\b(?:def|class)\s+([A-Za-z_]\w*)"
+)
+_A_DEFINITION = (
+    r"(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:abstract\s+)?"
+    r"(?:interface|class|function|const|let|var|type|enum|def|fn|func|struct|trait)\s+{name}\b"
+)
+
+
+def promised_names(task: Any) -> list[str]:
+    """The names a work order says its files will export or define; [] when it names none."""
+    found: list[str] = []
+    for line in getattr(task, "interfaces", None) or []:
+        for match in _A_PROMISED_NAME.finditer(str(line)):
+            name = match.group(1) or match.group(2)
+            if name and name not in found:
+                found.append(name)
+    return found
+
+
+def not_defined_in(names: list[str], files: dict[str, str]) -> list[str]:
+    """The promised names no drafted file defines (the word only mentioned or imported does not count)."""
+    return [
+        name for name in names
+        if not any(re.search(_A_DEFINITION.format(name=re.escape(name)), text) for text in files.values())
+    ]
+
+
+def _promised_but_not_written(task: Any, written: list[str], root: Path) -> list[str]:
+    """The names the work order promises that none of its written files defines; [] when it names none or all are there."""
+    names = promised_names(task)
+    if not names:
+        return []
+    texts: dict[str, str] = {}
+    for path in written:
+        try:
+            texts[path] = (root / path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+    return not_defined_in(names, texts) if texts else []
+
+
 def draft_work_orders(
     tasks: list[Any],
     specification: Any,
@@ -437,6 +482,13 @@ def draft_work_orders(
         if not mine and not any(str(p) in never_written for p in (getattr(task, "files", None) or [])):
             continue
         written = [path for path, _ in mine]
+        # A file drafted from a specification that does not describe what the work order adds comes out as the
+        # file it was: measured, a work order to add a SQLite store was recorded as done with `store.ts` unchanged.
+        # A work order is done when what it promised is there; else the agent loop builds it, as for a failed file.
+        absent = _promised_but_not_written(task, written, root)
+        if absent:
+            logger.info("Work order %d is left to the agent loop: its files do not define %s", index, ", ".join(absent))
+            continue
         skipped = [str(p) for p in (getattr(task, "files", None) or []) if str(p) in never_written]
         drafted[index] = SpecialistOutput(
             changed_files=written,

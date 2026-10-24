@@ -122,6 +122,25 @@ def _answer_tool() -> tuple[dict, Any]:
     return convert_to_openai_tool(SpecialistOutput), SpecialistOutput
 
 
+def _forced_call(handle: Any, **payload: Any) -> Any:
+    """A request that forces its one tool, in the form the engine accepts: named, else `required` with that tool offered.
+
+    Measured on an LM Studio server: a named `tool_choice` is a 400 ("Invalid tool_choice type: 'object'. Supported
+    string values: none, auto, required"), so every check that forces the answer tool failed and the model was
+    scored weak for what the engine refuses. `required` with a single tool offered forces it the same.
+    """
+    create = _create(handle)
+    try:
+        return create(**payload)
+    except Exception as error:  # noqa: BLE001 - only this refusal is retried
+        text = str(error)
+        named = isinstance(payload.get("tool_choice"), dict)
+        if named and len(payload.get("tools") or []) == 1 and "tool_choice" in text and (
+                "Supported string values" in text or "Invalid tool_choice type" in text):
+            return create(**{**payload, "tool_choice": "required"})
+        raise
+
+
 def _with(guidance: str, system: str) -> list[dict]:
     return [{"role": "system", "content": system + (f"\n\n{guidance}" if guidance else "")}]
 
@@ -142,8 +161,8 @@ def _calls(message: dict) -> list[tuple[str, dict]]:
 def _plan_in_schema(model: Any, guidance: str) -> tuple[bool, str]:
     tool, schema = _plan_tool()
     name = tool["function"]["name"]
-    message, finish, _ = _reply(_create(model)(
-        model=model.model_name, max_tokens=REPLY_TOKENS, stream=False, tools=[tool],
+    message, finish, _ = _reply(_forced_call(
+        model, model=model.model_name, max_tokens=REPLY_TOKENS, stream=False, tools=[tool],
         tool_choice={"type": "function", "function": {"name": name}},
         messages=[*_with(guidance, "You are the Scrum Master. You plan the sprints that build a product from its "
                                    "specification, each sprint delivering criteria a test can check."),
@@ -346,8 +365,8 @@ def _answers_within_a_reply(model: Any, guidance: str) -> tuple[bool, str]:
     """
     tool, _schema = _plan_tool()
     name = tool["function"]["name"]
-    message, finish, usage = _reply(_create(model)(
-        model=model.model_name, max_tokens=STAGE_REPLY_TOKENS, stream=False, tools=[tool],
+    message, finish, usage = _reply(_forced_call(
+        model, model=model.model_name, max_tokens=STAGE_REPLY_TOKENS, stream=False, tools=[tool],
         tool_choice={"type": "function", "function": {"name": name}},
         messages=[*_with(guidance, "You are the Scrum Master. You plan the sprints that build a product from its "
                                    "specification, each sprint delivering criteria a test can check."),

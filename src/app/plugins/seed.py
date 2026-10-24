@@ -276,7 +276,18 @@ _JAVASCRIPT_TESTING = """Testing JavaScript and TypeScript:
   a quoted pattern, never a directory - or `vitest run tests`) or
   its configuration ignores the other (`testPathIgnorePatterns: ['/e2e/']` for
   Jest, `exclude: ['e2e/**', 'node_modules/**']` for Vitest), and Playwright's
-  configuration sets `testDir: 'e2e'`."""
+  configuration sets `testDir: 'e2e'`.
+- A JUNIT XML REPORT COMES FROM THE RUNNER'S OWN REPORTER - never write a
+  reporter class of your own: a hand-written one wrote no file under a newer
+  runner, the setup could not be proven, and the project was left unproven.
+  Vitest has one built in and there is no separate package for it: in the
+  `test` section of its configuration, `reporters: ['default', 'junit']` and
+  `outputFile: { junit: '<path>' }`. Jest's is the `jest-junit` package, named
+  in `reporters: ['default', 'jest-junit']`. Node's own runner takes it as flags:
+  `node --test --test-reporter=junit --test-reporter-destination=<path>`.
+  Playwright: `reporter: [['junit', { outputFile: '<path>' }]]`. A package
+  lookup that says a reporter package does not exist is the sign you are
+  looking for something the runner already has."""
 
 #: How JavaScript tests are written, whoever set the runner up.
 _JAVASCRIPT_TEST_WRITING = """Writing JavaScript tests:

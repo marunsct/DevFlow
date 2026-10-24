@@ -5748,4 +5748,14 @@ run are in `docs/monitoring-handover.md` §0 under the day.
 | WB.6 | Review sharding for large codebases, clean-context reviewer | FILED | p90 16-25k |
 | WB.7 | Settings page: capacity, per-stage `BATCH_<STAGE>` switches, last fallbacks | FILED | guides' panel as the model |
 
+### One writer, independent checkers (owner question 2026-10-24; review in [single-writer-review.md](single-writer-review.md))
+
+| Row | What | Status |
+|---|---|---|
+| SW.1 | `loop.sh scan` reports defects by source and who wrote the product, per run | FILED |
+| SW.2 | QA writes the suite before product code; setup stops at the smoke path (the three setup fixes stay) | FILED |
+| SW.3 | A single builder stage with the run-and-fix loop, for products whose working set fits a context budget, behind `SINGLE_BUILDER` with a fallback | FILED |
+| SW.4 | The measured arm: two runs each, same model, current flow against the new one (MF.4 gate) | FILED |
+| SW.5 | Above the budget: module-by-module writers with a carried interface ledger, shared with WB | FILED |
+
 Rules for the set: each stage its own switch, code default off; shadow records before anything acts; identical request when capacity covers the work; coverage check then fall back to the single call; resumable per batch; a quality gate (hidden, quality, mutation not lower; minutes, tokens a call or cut-offs lower) before default-on.

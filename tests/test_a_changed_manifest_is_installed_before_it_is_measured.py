@@ -180,3 +180,20 @@ def test_the_note_goes_without_the_lookup_when_the_registry_cannot_be_read(tmp_p
         tmp_path, _FailingRunner("npm error notarget No matching version found for x@^9."))
 
     assert len(notes) == 1 and "current release" not in notes[0]
+
+
+def test_the_versions_that_exist_survive_the_cut_a_defect_makes_of_the_note(tmp_path, monkeypatch):
+    """The defect built from the note keeps its first 900 characters; with several missing versions the registry's
+    answers, written after the installer's own lines, were cut off before the last of them."""
+    from app.tools import package_registry
+
+    _project(tmp_path)
+    (tmp_path / "shop" / "package.json").write_text(json.dumps({"dependencies": {"a-lib": "^9"}}))
+    monkeypatch.setattr(package_registry, "enabled", lambda: True)
+    monkeypatch.setattr(package_registry, "look_up", lambda ecosystem, name, **kw: {"version": "0.5.0"})
+    said = ("npm warn ERESOLVE overriding peer dependency\n" * 40
+            + "".join(f"npm error notarget No matching version found for library-number-{n}@^9.0.0.\n" for n in range(1, 4)))
+
+    note = contract.install_if_the_manifests_changed(tmp_path, _FailingRunner(said))[0]
+
+    assert "current release of `library-number-3` is 0.5.0" in note[:900]

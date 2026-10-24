@@ -136,7 +136,7 @@ def _the_versions_that_exist(said: str) -> str:
                 if found.get("version"):
                     lines.append(f"The registry's current release of `{name}` is {found['version']}: pin that, or a "
                                  "version the registry lists, not a version it does not have.")
-        return ("\n" + "\n".join(lines[:4])) if lines else ""
+        return (". " + " ".join(lines[:4])) if lines else ""
     except Exception:  # noqa: BLE001 - the note goes without the lookup
         logger.debug("Could not look up the versions that exist", exc_info=True)
         return ""
@@ -180,9 +180,11 @@ def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) 
                 # What the installer said: measured on one gate run, a JavaScript
                 # package written into `requirements.txt` failed every install,
                 # and the note said only that the command failed.
+                # The versions that exist come first: the defect built from this note keeps its first 900
+                # characters, and an installer's warnings can fill them before its error is reached.
                 return [f"`{' '.join(argv)}` {INSTALL_FAILED}"
-                        + (f"; it ended:\n{tail}" if tail else ".")
-                        + _the_versions_that_exist(said)]
+                        + _the_versions_that_exist(said)
+                        + (f"; it ended:\n{tail}" if tail else ".")]
         installed(repo_root)
         logger.info("The project's manifest changed since its last install; installed again")
         return ["The project's dependencies were installed again: a manifest changed since the last install."]

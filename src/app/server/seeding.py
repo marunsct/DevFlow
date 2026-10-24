@@ -374,7 +374,7 @@ def _clean_git_error(stderr: str, token: str | None) -> str:
 def _git_value(repo: Path, args: list[str]) -> str:
     try:
         result = subprocess.run(  # noqa: S603 - argv list, no shell
-            ["git", *args], cwd=repo, capture_output=True, text=True, timeout=15, check=False
+            ["git", *args], cwd=repo, capture_output=True, text=True, errors="replace", timeout=15, check=False
         )
     except (OSError, subprocess.TimeoutExpired):
         return ""

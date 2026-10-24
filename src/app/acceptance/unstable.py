@@ -26,7 +26,7 @@ _NOT_THE_PRODUCT = (":(exclude,glob).harness/**", ":(exclude,glob)**/test-result
 
 def _git(root: Path, *args: str) -> str | None:
     try:
-        done = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=30)
+        done = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout if done.returncode == 0 else None

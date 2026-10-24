@@ -83,7 +83,7 @@ def audit_command(pack: Any) -> str:
 def _tracked(root: Path) -> list[str]:
     try:
         result = subprocess.run(["git", "-C", str(root), "ls-files", "-co", "--exclude-standard"],
-                                capture_output=True, text=True, timeout=30)
+                                capture_output=True, text=True, errors="replace", timeout=30)
         if result.returncode == 0:
             return [line for line in result.stdout.splitlines() if line.strip()]
     except (OSError, subprocess.SubprocessError):

@@ -34,7 +34,7 @@ def enabled() -> bool:
 def _before(root: Path, relative: str) -> str:
     try:
         done = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{relative}"],
-                              capture_output=True, text=True, timeout=10)
+                              capture_output=True, text=True, errors="replace", timeout=10)
     except (OSError, subprocess.SubprocessError):
         return ""
     return done.stdout if done.returncode == 0 else ""

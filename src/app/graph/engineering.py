@@ -730,7 +730,7 @@ def _lines_added(root: str, base: str, relative: str) -> set[int] | None:
 
     try:
         done = subprocess.run(["git", "-C", root, "diff", "-U0", base, "--", relative],
-                              capture_output=True, text=True, timeout=30)
+                              capture_output=True, text=True, errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return set()
     if done.returncode != 0:

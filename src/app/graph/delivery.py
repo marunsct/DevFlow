@@ -64,7 +64,7 @@ def _what_changed(root: str, since: str | None) -> str:
     try:
         result = subprocess.run(
             ["git", "diff", "--stat", since, "HEAD", "--", ".", ":(exclude)docs"],
-            cwd=root, capture_output=True, text=True, timeout=30, check=False,
+            cwd=root, capture_output=True, text=True, errors="replace", timeout=30, check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return ""
@@ -81,13 +81,13 @@ def _previous_sprint_tag(root: str, sprint_number: int) -> str | None:
             tag = f"sprint-{sprint_number - 1}"
             check = subprocess.run(
                 ["git", "rev-parse", "--verify", "--quiet", tag],
-                cwd=root, capture_output=True, text=True, timeout=10, check=False,
+                cwd=root, capture_output=True, text=True, errors="replace", timeout=10, check=False,
             )
             if check.returncode == 0:
                 return tag
         first = subprocess.run(
             ["git", "rev-list", "--max-parents=0", "HEAD"],
-            cwd=root, capture_output=True, text=True, timeout=10, check=False,
+            cwd=root, capture_output=True, text=True, errors="replace", timeout=10, check=False,
         )
         return first.stdout.strip().splitlines()[0] if first.stdout.strip() else None
     except (OSError, subprocess.SubprocessError, IndexError):

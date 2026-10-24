@@ -1835,7 +1835,7 @@ def _ignored_by_git(root: Path, relatives: list[str]) -> set[str]:
         return set()
     try:
         done = subprocess.run(["git", "-C", str(root), "check-ignore", "--stdin"], input="\n".join(relatives),
-                              capture_output=True, text=True, timeout=20)
+                              capture_output=True, text=True, errors="replace", timeout=20)
     except (OSError, subprocess.SubprocessError):
         return set()
     return {line.strip() for line in done.stdout.splitlines() if line.strip()}
@@ -7744,7 +7744,7 @@ def _git_value(root: Path, args: list[str]) -> str | None:
             ["git", *args],
             cwd=str(root),
             capture_output=True,
-            text=True,
+            text=True, errors="replace",
             check=False,
             timeout=10,
         )

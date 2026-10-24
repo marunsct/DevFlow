@@ -146,6 +146,12 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
     found = files(mentioned_in(own))
     if last and len(found) == len(files([])):
         found = files(mentioned_in(own) + mentioned_in(last))
+    owing = [name for name in _modules_missing_an_export(own, root) if may_write(name)]
+    if owing:
+        # The module that should export it is the file to write; the test that imports it is left as it is.
+        from app.analysis.file_kinds import classify_file
+
+        found = [*owing, *(name for name in found if name not in owing and classify_file(name) != "test")][:MOST_FILES]
     return found
 
 
@@ -193,6 +199,55 @@ def _a_test_report(root: Path, relative: str, target: Path) -> bool:
     return False
 
 
+#: TypeScript's ESM idiom: a module is imported by the name of the file it compiles to.
+_COMPILED_TO = {".js": (".ts", ".tsx"), ".jsx": (".tsx",), ".mjs": (".mts",), ".cjs": (".cts",)}
+
+
+def _its_typescript_sources(name: str) -> list[str]:
+    """`src/store.ts` for `src/store.js`: the sources a compiled name stands for; [] for any other name.
+
+    Measured: a test failed on "Module '../src/store.js' has no exported member", the fix looked for
+    `src/store.js`, found no such file (it is `store.ts`), and rewrote only the test.
+    """
+    for suffix, sources in _COMPILED_TO.items():
+        if name.endswith(suffix):
+            return [name[: -len(suffix)] + source for source in sources]
+    return []
+
+
+#: How a missing export is worded, by language tool: the module that should have exported it is group 1.
+_A_MISSING_EXPORT = (
+    re.compile(r"""[Mm]odule ['"]+([^'"\n]+?)['"]+ has no exported member"""),
+    re.compile(r"""requested module ['"]([^'"\n]+)['"] does not provide an export named"""),
+)
+
+
+def _modules_missing_an_export(failure: str, root: Path) -> list[str]:
+    """The product source files a failure says should export something they do not: where the fix belongs.
+
+    An import error is reported in the file that imports; the repair is in the module that is imported. Measured:
+    the fix rewrote the importing test to define the missing function itself, the type error went away, and the
+    feature was never built.
+    """
+    from app.analysis.file_kinds import classify_file
+    from app.analysis.walk import the_file_ending
+    from app.tools.repository import IGNORED_DIRECTORIES
+
+    found: list[str] = []
+    for pattern in _A_MISSING_EXPORT:
+        for match in pattern.finditer(failure):
+            spec = match.group(1).strip().lstrip("./")
+            for spelling in (spec, *_its_typescript_sources(spec)):
+                target = the_file_ending(root, spelling, IGNORED_DIRECTORIES)
+                if target is None:
+                    continue
+                relative = target.relative_to(root).as_posix()
+                if classify_file(relative) != "test" and relative not in found:
+                    found.append(relative)
+                break
+    return found
+
+
 def _the_files(
     root: Path, named: list[str], mentioned: list[str], judged_by_the_suite: bool, tests_from_the_text: bool,
     may_write: Callable[[str], bool],
@@ -204,13 +259,17 @@ def _the_files(
     own = set(named)
     found: list[str] = []
     for name in dict.fromkeys([*named, *mentioned]):
-        candidates = [root / name, *root.glob(f"*/{name}")]
-        target = next((c for c in candidates if c.is_file()), None)
-        if target is None:
-            # Deeper than one folder: the one file whose path ends so (see `the_file_ending`).
-            from app.analysis.walk import the_file_ending
+        target = None
+        for spelling in (name, *_its_typescript_sources(name)):
+            candidates = [root / spelling, *root.glob(f"*/{spelling}")]
+            target = next((c for c in candidates if c.is_file()), None)
+            if target is None:
+                # Deeper than one folder: the one file whose path ends so (see `the_file_ending`).
+                from app.analysis.walk import the_file_ending
 
-            target = the_file_ending(root, name, IGNORED_DIRECTORIES)
+                target = the_file_ending(root, spelling, IGNORED_DIRECTORIES)
+            if target is not None:
+                break
         if target is None or any(part in IGNORED_DIRECTORIES for part in target.parts):
             continue
         relative = target.relative_to(root).as_posix()

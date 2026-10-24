@@ -14,6 +14,7 @@ from pathlib import Path
 
 from app.acceptance import junit, suite
 from app.acceptance.criteria import number
+from app.stacks import contract, pack_named
 
 BRIEF = "# Brief\n## Features\n- Add a note\n- Delete a note\n- Edit a note\n"
 
@@ -96,3 +97,32 @@ def test_a_title_with_an_escaped_quote_is_found_in_the_report(tmp_path) -> None:
     result = _ran(junit.TestResult(name="[AC-1] keeps a note's text"))
 
     assert suite.tests_the_runner_never_ran(tmp_path, result) == []
+
+
+def test_a_file_the_runner_does_not_collect_is_named_as_the_reason(tmp_path, monkeypatch) -> None:
+    """Measured: a TypeScript service's QA wrote `api.spec.ts` where the runner collects `*.spec.js`; four rounds said
+    only "make it a test of its own", the model kept the file, and the run failed with a suite that proved nothing."""
+    (tmp_path / ".project-directory").write_text("notes\n")
+    suite.save_criteria(tmp_path, number(BRIEF))
+    spec = tmp_path / "notes" / "acceptance" / "api.spec.ts"
+    spec.parent.mkdir(parents=True, exist_ok=True)
+    spec.write_text("test('[AC-1] adds a note', async ({ request }) => {});\n")
+    contract.write(tmp_path, pack_named("node-hono-api"), "notes", "Notes")
+
+    missing = suite.tests_the_runner_never_ran(tmp_path, _ran(junit.TestResult(name="[AC-2] other")))
+
+    assert len(missing) == 1
+    assert "`api.spec.ts` does not match" in missing[0] and "`*.spec.js`" in missing[0]
+    assert "inside another test's body" not in missing[0]
+
+
+def test_a_file_the_runner_does_collect_keeps_the_general_advice(tmp_path, monkeypatch) -> None:
+    _suite(tmp_path)
+    contract.write(tmp_path, pack_named("node-hono-api"), "notes", "Notes")
+    result = _ran(junit.TestResult(name="[AC-1] adds a note"),
+                  junit.TestResult(name="Notes › [AC-2] deletes a note", outcome="failed",
+                                   message="did not expect test() to be called here."))
+
+    missing = suite.tests_the_runner_never_ran(tmp_path, result)
+
+    assert len(missing) == 1 and "inside another test's body" in missing[0] and "does not match" not in missing[0]

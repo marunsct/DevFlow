@@ -1025,11 +1025,33 @@ def tests_the_runner_never_ran(repo_root: str | Path, result: AcceptanceResult) 
             continue
         missing.append(
             f"`{name}` in {shown} is written but the runner never ran it: it is not in the "
-            "runner's report at all, so its criterion is untested whatever is built. A test "
-            "written inside another test's body, or after a block left unclosed, is never "
-            "collected. Make it a test of its own."
+            "runner's report at all, so its criterion is untested whatever is built. "
+            + (_a_file_the_runner_does_not_collect(repo_root, shown)
+               or "A test written inside another test's body, or after a block left unclosed, is never "
+                  "collected. Make it a test of its own.")
         )
     return missing
+
+
+def _a_file_the_runner_does_not_collect(repo_root: str | Path, shown: Any) -> str:
+    """Why a file's tests never run when its name is not one the runner collects; "" when it is, or unknown.
+
+    Measured on a small-model run: a TypeScript service's QA wrote `api.spec.ts` where the runner collects
+    `*.spec.js`; four rounds said only "make it a test of its own", the model kept the file, and the run
+    failed with a suite that proved nothing.
+    """
+    try:
+        from fnmatch import fnmatch
+
+        pattern = str((contract.read(repo_root) or {}).get("acceptance_pattern") or "")
+        name = Path(str(shown)).name
+        if pattern and not fnmatch(name, pattern):
+            return (f"The file's name is the reason: the runner collects only files matching `{pattern}` in the "
+                    f"acceptance folder, and `{name}` does not match, so nothing in it ever runs. Put its tests in a "
+                    f"file whose name matches `{pattern}` (write the test code in the language that pattern names).")
+    except Exception:  # noqa: BLE001 - the general advice stands
+        return ""
+    return ""
 
 
 #: What a runner prints when the product it should test never came up: the

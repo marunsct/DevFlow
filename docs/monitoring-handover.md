@@ -707,6 +707,11 @@ working (the tool-approval check can fail transiently), schedule a retry about
   `BOUNDARY_WAIT=0 loop.sh deploy` (no live run, so no boundary), then `loop.sh resume <run>` with
   `LOOP_USER`/`LOOP_PASSWORD` set from HANDOVER §3; the run continues from its last checkpoint.
 
+- **Start a run in a call of its own, never chained after `score` or `kpi` (2026-10-25).** A chained
+  `score && ... && bench X` that ran past the tool's timeout moved to the background and started its run
+  15 minutes later, a minute after the same run had been started by hand: two live runs on one model, and
+  `current_run.txt` pointing at the newer. Cancel the duplicate and rewrite `data/loop/current_run.txt`.
+
 ### 0.5.1 Parked: known, not fixed
 
 - A stage's own notes shipped in the product: one run's fix stage, unable to find a fault, wrote

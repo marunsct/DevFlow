@@ -49,7 +49,8 @@ CONFTEST = '''"""Runs the program the way a user does. The harness owns this fil
 
 `run_cli("add", "x")` runs `python -m {{package}} add x` as its own process in
 the test's own empty directory and returns the finished process: `.returncode`,
-`.stdout` and `.stderr`.
+`.stdout` and `.stderr`. The test itself works in that directory too, so a file
+it writes by a relative name is the file the program finds by that name.
 """
 
 import os
@@ -63,7 +64,9 @@ PROJECT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture
-def run_cli(tmp_path):
+def run_cli(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
     def run(*args: str, input: str | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
         environment = {**os.environ, "PYTHONPATH": str(PROJECT), "HOME": str(tmp_path), **(env or {})}
         return subprocess.run(
@@ -103,8 +106,10 @@ functions. Take the `run_cli` fixture and run the program exactly as a user
 would: `finished = run_cli("add", "Buy milk")`, then check `finished.returncode`,
 `finished.stdout` and `finished.stderr`. Each test runs in its own empty
 directory (pytest's `tmp_path`, which is also the program's working directory
-and HOME), so files the program writes there are the test's to read, and nothing
-carries between tests. To prove something persists, run the program twice.
+and HOME, and the test's own while it uses `run_cli`), so a file the test writes
+by a relative name (`Path("input.txt").write_text(...)`) is the file the program
+finds as `input.txt`, files the program writes there are the test's to read, and
+nothing carries between tests. To prove something persists, run the program twice.
 """ + _python.NAMING
 
 PACK = StackPack(

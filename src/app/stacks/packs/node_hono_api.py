@@ -107,8 +107,9 @@ GUIDE = """The service is Hono in TypeScript: `createApp()` in `src/app.ts` buil
 `app.route('/items', itemsApp)`); read a JSON body with `await c.req.json()` and answer with
 `c.json(body, status)`. Unit tests go in `test/`, named `<area>.spec.ts`, using Jest: Hono needs no
 server for them, `await createApp().request('/items', { method: 'POST', body: JSON.stringify({ ... }),
-headers: { 'content-type': 'application/json' } })` returns a standard `Response`. There is no
-`hono/testing` test client to import. Run them with `npm test`; build with `npm run build`. Import a
+headers: { 'content-type': 'application/json' } })` returns a standard `Response`. Use that, not a
+client library: `hono/testing` exports only `testClient`, which needs the route types, and nothing else
+(no `createClient`, no `createTestClient`). Run them with `npm test`; build with `npm run build`. Import a
 file of your own without an extension (`import { x } from './x'`). Install a dependency with
 `npm install <name>` (`--save-dev` for one only tests use)."""
 

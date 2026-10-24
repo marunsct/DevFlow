@@ -21,8 +21,11 @@ def test_the_pack_builds_a_hono_app_that_its_unit_test_calls_in_memory():
 
 def test_the_guide_names_the_test_api_a_builder_must_not_invent():
     guide = pack_named("node-hono-api").guide
-    assert "`app.request" in guide or "createApp().request" in guide
-    assert "no\n`hono/testing` test client" in guide or "no `hono/testing`" in guide.replace("\n", " ")
+    flat = guide.replace("\n", " ")
+    assert "createApp().request" in flat
+    # `hono/testing` exports `testClient` and nothing else: the guide must not deny what exists nor allow what does not.
+    assert "exports only `testClient`" in flat and "no `createClient`" in flat and "no `createTestClient`" in flat
+    assert "There is no `hono/testing`" not in flat
 
 
 def test_the_manifest_declares_hono_and_the_runner_the_commands_use():

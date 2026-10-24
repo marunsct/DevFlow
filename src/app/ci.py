@@ -88,6 +88,24 @@ WHERE = " \u203a "
 _RANK = {"passed": 0, "skipped": 1, "failed": 2}
 
 
+#: A value a test's name carries that differs on every run: a uuid or a run of eight or more hex digits, as a
+#: parametrized test gets from `uuid4().hex[:8]` in its id. Such a name never matches the one measured before.
+_VOLATILE = re.compile(
+    r"(?<![0-9A-Za-z])(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{8,})(?![0-9A-Za-z])"
+)
+
+
+def stable(key: str) -> str:
+    """`key` with its per-run values replaced, so the same test has the same key on every run.
+
+    Measured on a small-model run: an acceptance test was parametrized on a random user name
+    (`test_ac1_signup[user_02dc5292-password123]`), so each measurement named it differently; every fix then
+    "broke" the test that passed before it, and seven fixes - one of which had made three tests pass - were
+    reverted for it.
+    """
+    return _VOLATILE.sub("~", key)
+
+
 def outcomes_of(tests: Sequence[Any]) -> dict[str, str]:
     """Each test's outcome, keyed by where it lives and its name.
 
@@ -110,7 +128,7 @@ def outcomes_of(tests: Sequence[Any]) -> dict[str, str]:
                 (getattr(test, "within", "") or "").strip(), (getattr(test, "suite", "") or "").strip()
             ) if part
         )
-        key = f"{where}{WHERE}{test.name}" if where else test.name
+        key = stable(f"{where}{WHERE}{test.name}" if where else test.name)
         outcome = str(getattr(test, "outcome", "") or "failed")
         kept = found.get(key)
         if kept is None or _RANK.get(outcome, 2) > _RANK.get(kept, 2):
@@ -127,6 +145,9 @@ def _outcome_now(now: dict[str, str], key: str) -> str | None:
     """The outcome `key` has in `now`, by its full key or - for a snapshot taken
     before keys carried where a test lives - by name, passing only if every test
     of that name passes."""
+    if key in now:
+        return now[key]
+    key = stable(key)  # a snapshot taken before keys were made stable
     if key in now:
         return now[key]
     name = _bare(key)

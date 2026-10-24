@@ -3,7 +3,7 @@
 Owner question 2026-10-24: the setup stage already builds the product before any sprint starts. Do bugs
 come from the wrong agent building it? If one agent can write everything, why keep so many agents?
 
-Status: **review and proposal; nothing built.** Rows SW.1-SW.5 in `docs/improvement-plan.md`.
+Status: **review; direction set by the owner 2026-10-24 (section 9); rows SW.1-SW.5 and SP.1-SP.6 in `docs/improvement-plan.md`.**
 
 ## 1. What our own data says
 
@@ -149,3 +149,23 @@ single-threaded, keep the checking independent.**
 | SW.5 | Module-by-module mode for large products (shares the carry ledger with WB) |
 
 Not recommended: option B. The data supports fewer *writing* roles, not fewer *checking* roles.
+
+## 9. Owner direction, 2026-10-24: the workers build the product, the harness does the setup, every worker learns
+
+The owner's three points, and how they change the recommendation above:
+
+1. **Capture a setup once it is right, so no agent starts blind.** A library of proven setups already exists
+   (`custom_setup.remember` / `replay`), but it almost never hit: it was keyed by the selector's exact wording, and it
+   kept only setups proved at setup time. Now (LF.259) a stack is matched by language, framework and unit runner, and
+   when no rule matches the model picks from a short list; the harness proves whatever is replayed. Next: harvest a
+   setup from a finished run that passed (SP.2), and promote a setup replayed successfully twice to a code pack (SP.3).
+2. **The harness does the work, the model verifies.** Order: pack, then library replay (deterministic, proved by the
+   harness), and only then an agent, which adjusts and verifies instead of inventing (SP.4). The setup stage is
+   fenced to the declaration, kept and smoke files, so it cannot write the product (SP.5).
+3. **Workers build the product** (acceptance suite before, red first; workers build against it), **each learning**
+   (SP.6). This supersedes the "one builder" proposal in section 5: that finding says why the workers did worse
+   (open loop, narrow view, parallel writers), not that they should go. So the fix is to the workers: every writer runs
+   and fixes in its own conversation, sees the interface contract and a ledger of what neighbours declared, and writes
+   in sequence where files depend on one another. A single builder remains only as a measuring arm (SW.4), to know
+   what the workers must beat. Per-role lessons (`lessons.json`, defects already carry the owning role) are shown to
+   the role that owns the defect, and the measure is defects per role per run.

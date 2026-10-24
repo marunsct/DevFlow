@@ -5759,4 +5759,15 @@ run are in `docs/monitoring-handover.md` §0 under the day.
 | SW.4 | The measured arm: two runs each, same model, current flow against the new one (MF.4 gate) | FILED |
 | SW.5 | Above the budget: module-by-module writers with a carried interface ledger, shared with WB | FILED |
 
+### Setups captured and replayed, workers that build and learn (owner 2026-10-24)
+
+| Row | What | Status |
+|---|---|---|
+| SP.1 | A proven setup is found by what the stack is, else by the model's pick, and always proved by the harness (LF.259) | BUILT |
+| SP.2 | Harvest a setup from a finished run that passed (declaration inferred from the package scripts and the QA's declared command; real tests as smoke tests), prove it in a clean copy by the harness, keep it | FILED |
+| SP.3 | Promote a library entry replayed successfully on two runs to a code pack, tested by `verify_packs` | FILED |
+| SP.4 | Order of setup: pack, library replay, then an agent that verifies and adjusts; stacks composed from component recipes (runtime, framework, runner) | FILED |
+| SP.5 | Fence the setup stage to its declaration, kept files and smoke files, so the workers build the product; QA writes the suite first (SW.2) | FILED |
+| SP.6 | Per-role lessons: a defect's lesson is shown to the role that owns it; report defects per role per run | FILED (the lessons store and the owning role exist) |
+
 Rules for the set: each stage its own switch, code default off; shadow records before anything acts; identical request when capacity covers the work; coverage check then fall back to the single call; resumable per batch; a quality gate (hidden, quality, mutation not lower; minutes, tokens a call or cut-offs lower) before default-on.

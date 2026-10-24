@@ -93,6 +93,9 @@ x-app-env: &app-env
   # A sprint planned again starts from the best product it has had (owner away, 2026-10-24; measured: 14 of 18
   # criteria fell to 0 after a re-plan).
   KEEP_THE_BEST_ATTEMPT: ${KEEP_THE_BEST_ATTEMPT:-on}
+  # A fix that makes many tests pass and breaks one worker-written unit test stays (owner away, 2026-10-25;
+  # measured: a fix that made 12 pass and broke 1 was reverted, five times over).
+  KEEP_NET_GAINS: ${KEEP_NET_GAINS:-on}
   REFUSALS_FOLDED: ${REFUSALS_FOLDED:-on}
   # Each item of the general guidance catalogue, its own switch: on lets a
   # model's steering profile use it, off withholds it from every model.

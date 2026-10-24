@@ -803,6 +803,15 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list
         certain = what_the_fix_made_certain_to_fail(root, base)
         if certain:
             broken = ["it wrote code the language service is sure fails when it runs: " + "; ".join(certain[:3])]
+    gained_now = after.passing() - (before.passing() if before is not None else set())
+    from app.graph import net_gain
+
+    if broken and net_gain.keeps(lost, gained_now, product_runs=not after.problem):
+        logger.warning(
+            "Kept %s: it made %d test(s) pass and broke %d unit test(s), which the next round raises: %s",
+            stage_name, len(gained_now), len(lost), "; ".join(lost[:3]),
+        )
+        broken = []
     if broken and ci.revert_to(root, base):
         # What the reverted fix had gained as well, so whether a whole fix
         # should go for one broken test can be measured: the snapshot after a

@@ -106,3 +106,39 @@ def test_the_planner_puts_the_best_product_back_before_a_sprint_is_planned_again
     source = (Path(__file__).resolve().parent.parent / "src" / "app" / "graph" / "workflow.py").read_text()
     assert "best_attempt.restore_if_worse(state[\"repository\"].root_path)" in source
     assert "best_attempt.note(state[\"repository\"].root_path)" in source
+
+
+def test_a_bad_redraft_is_undone_at_its_first_measurement_and_a_good_one_is_left(tmp_path, monkeypatch):
+    """A re-plan's redraft took one product from 14 of 18 criteria to 0; undone at once, not after a round of fixers."""
+    root = _repo(tmp_path)
+    _measured(monkeypatch, root, 14)
+    best_attempt.note(root)
+    (root / "src" / "app.ts").write_text("export const app = 'redrafted and broken';\n")
+    _measured(monkeypatch, root, 0)
+
+    # not a re-plan, or not its first measurement: nothing is done
+    assert best_attempt.after_a_redraft(root, test_round=0, replans=0) == ""
+    assert best_attempt.after_a_redraft(root, test_round=1, replans=1) == ""
+    assert "redrafted" in (root / "src" / "app.ts").read_text()
+
+    said = best_attempt.after_a_redraft(root, test_round=0, replans=1)
+
+    assert "passes 0 acceptance tests now and passed 14" in said
+    assert (root / "src" / "app.ts").read_text() == "export const app = 'working';\n"
+
+
+def test_a_redraft_that_is_as_good_or_better_is_not_undone(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    _measured(monkeypatch, root, 12)
+    best_attempt.note(root)
+    (root / "src" / "app.ts").write_text("export const app = 'redrafted';\n")
+    _measured(monkeypatch, root, 14)
+
+    assert best_attempt.after_a_redraft(root, test_round=0, replans=1) == ""
+    assert "redrafted" in (root / "src" / "app.ts").read_text()
+
+
+def test_the_round_plans_the_sprint_again_at_once_when_the_best_was_put_back():
+    source = (Path(__file__).resolve().parent.parent / "src" / "app" / "graph" / "workflow.py").read_text()
+    assert "best_attempt.after_a_redraft(" in source
+    assert "the redraft left the product worse than its best; the best was put back" in source

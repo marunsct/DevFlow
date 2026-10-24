@@ -72,6 +72,20 @@ def note(root: str | Path) -> None:
         logger.debug("Could not note the best attempt", exc_info=True)
 
 
+def after_a_redraft(root: str | Path, *, test_round: int, replans: int) -> str:
+    """At the first measurement of a re-planned sprint: put the best product back if the redraft left it clearly worse.
+
+    Measured on three runs in one night: a re-plan's redraft took a product from 14 of 18 criteria to 0, from 17 to 12,
+    and from 4 tests to 0. Putting the best back only at the next re-plan cost a whole round of fixers on the wreck.
+    A redraft is a gamble that sometimes pays (one took a product from 1 to 12 criteria); a bad one is undone at its
+    first measurement and the sprint is planned again. Returns what was done, or "" (not a re-plan's first round, no
+    clear drop, or off), in which case the round goes on as it does.
+    """
+    if test_round != 0 or replans <= 0:
+        return ""
+    return restore_if_worse(root)
+
+
 def _kept(path: str, locked: set[str]) -> bool:
     """Whether a path stays as it is: the locked suite, the harness's own files, what git ignores anyway."""
     parts = Path(path).parts

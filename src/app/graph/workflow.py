@@ -10147,6 +10147,21 @@ def build_workflow_graph(
         from app.graph import best_attempt
 
         best_attempt.note(state["repository"].root_path)
+        if best_attempt.after_a_redraft(
+            state["repository"].root_path, test_round=test_round, replans=int(state.get("sprint_replan_count") or 0),
+        ):
+            # The redraft left the product clearly worse than its best: the best is back, so the sprint is planned
+            # again at once, not after a whole round of fixers on the wreck (KEEP_THE_BEST_ATTEMPT).
+            spent = state.get("remediation") or start_remediation(
+                milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS
+            )
+            return _replan_or_escalate(
+                state,
+                {"remediation": spent, "test_round": test_round + 1, "pending_approval": None,
+                 "pending_inner_thread_id": None, "pending_decision": None},
+                spent,
+                "the redraft left the product worse than its best; the best was put back",
+            )
         if unreported_criteria:
             logger.warning(
                 "test_round_%d raised %d defect(s) for failing acceptance criteria its report left out",

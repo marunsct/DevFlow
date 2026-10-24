@@ -10144,6 +10144,9 @@ def build_workflow_graph(
             logger.debug("Could not compare the round's report with the acceptance suite", exc_info=True)
             unreported_criteria = []
         logger.info("test_round_%d: %s", test_round, the_round_s_measurement(state["repository"].root_path))
+        from app.graph import best_attempt
+
+        best_attempt.note(state["repository"].root_path)
         if unreported_criteria:
             logger.warning(
                 "test_round_%d raised %d defect(s) for failing acceptance criteria its report left out",
@@ -10337,6 +10340,10 @@ def build_workflow_graph(
         nobody had been given a chance to fix.
         """
         revision_count = state.get("sprint_replan_count", 0) + 1
+        # A sprint planned again starts from the best product it has had (KEEP_THE_BEST_ATTEMPT).
+        from app.graph import best_attempt
+
+        best_attempt.restore_if_worse(state["repository"].root_path)
         # Every defect still open ends its story here: the ledger had it
         # raised and nothing after, which reads like a round cut short.
         from app.observability import defect_ledger

@@ -815,28 +815,33 @@ def _bytes_of(size: str, fallback: int) -> int:
         return fallback
 
 
-def _process_memory(workspace: str | Path | None) -> int:
+def _process_memory(workspace: str | Path | None, argv: list[str] | None = None) -> int:
     """The data limit for each process of a command in this workspace, in bytes.
 
     The configured limit, or more where the project's pack says its toolchain
     needs more (`StackPack.process_memory`). Read from the pack the contract
     names, which the scaffold writes before its first install, so the
-    scaffold's own commands get it too.
+    scaffold's own commands get it too. A command that starts a Node program
+    gets the Node toolchain's room whatever the project is: a stack no pack
+    covers (its setup written by an agent or replayed from the library) has no
+    pack to say so, and its test runner's worker threads then could not start.
     """
     configured = _memory_limit_bytes()
+    starts_node = bool(argv) and Path(str(argv[0])).name in _NODE_LAUNCHERS
+    on_node = max(configured, NODE_TOOLCHAIN_MEMORY) if starts_node else configured
     try:
         from app.stacks import contract
 
         found = contract.the_pack(workspace)
     except Exception:  # noqa: BLE001 - then the configured limit stands
-        return configured
+        return on_node
     if not found:
-        return configured
+        return on_node
     pack, record = found
     need = _bytes_of(pack.process_memory, 0) if pack.process_memory else 0
     if _its_tests_run_on_node(pack, record):
         need = max(need, NODE_TOOLCHAIN_MEMORY)
-    return max(configured, need)
+    return max(on_node, need)
 
 
 #: The data limit a toolchain that runs its tests on Node needs. Measured in the
@@ -4768,7 +4773,7 @@ class SandboxExecutor:
                 cwd=run_in or workspace,
                 env=_child_environment(workspace, extra_env),
                 timeout=timeout,
-                data_bytes=_process_memory(workspace),
+                data_bytes=_process_memory(workspace, argv),
                 ends_at_its_summary=_runs_tests(argv),
             )
         except subprocess.TimeoutExpired as expired:

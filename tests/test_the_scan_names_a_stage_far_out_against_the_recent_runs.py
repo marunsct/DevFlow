@@ -62,3 +62,35 @@ def test_a_small_run_is_no_baseline(tmp_path):
              _run(tmp_path, "run-now", {"acceptance_author_0": (5, 9_000)})]
 
     assert scan.scan(paths, "run-now") == []
+
+
+def _records(directory: Path, name: str, records: list[dict]) -> str:
+    path = directory / f"{name}.jsonl"
+    path.write_text("\n".join(json.dumps(r) for r in records))
+    return str(path)
+
+
+def test_the_scan_says_who_wrote_the_product_and_what_defects_were_raised(tmp_path):
+    path = _records(tmp_path, "run-x", [
+        {"kind": "tool_call", "tool": "write_artifact", "stage": "stack_setup_0", "args": {"relative_path": "notes-api/src/app.ts"}},
+        {"kind": "tool_call", "tool": "write_artifact", "stage": "stack_setup_0", "args": {"relative_path": "notes-api/src/store.ts"}},
+        {"kind": "tool_call", "tool": "write_artifact", "stage": "stack_setup_0", "args": {"relative_path": "notes-api/tests/store.test.ts"}},
+        {"kind": "tool_call", "tool": "write_artifact", "stage": "stack_setup_0", "args": {"relative_path": "notes-api/package.json"}},
+        {"kind": "tool_call", "tool": "edit_artifact", "stage": "defect_fix_1_0", "args": {"relative_path": "notes-api/src/app.ts"}},
+        {"kind": "model_response", "stage": "drafting_1_0"},
+        {"kind": "defect", "event": "raised", "source": "acceptance suite", "sprint": 1, "index": 0, "description": "a"},
+        {"kind": "defect", "event": "raised", "source": "acceptance suite", "sprint": 1, "index": 0, "description": "a"},
+        {"kind": "defect", "event": "raised", "source": "language service", "sprint": 1, "index": 1, "description": "b"},
+    ])
+
+    wrote, defects = scan.provenance(path)
+
+    assert wrote == {"setup": 2, "fixers": 1, "drafting": 1}
+    assert defects == {"acceptance suite": 1, "language service": 1}
+    line = scan.provenance_line(wrote, defects)
+    assert line.startswith("PRODUCT WRITTEN BY (writes/calls): setup 2") and "DEFECTS RAISED 2: " in line
+
+
+def test_a_run_that_wrote_no_source_and_raised_no_defect_says_so(tmp_path):
+    assert scan.provenance_line(*scan.provenance(_records(tmp_path, "run-y", []))) == \
+        "PRODUCT WRITTEN BY (writes/calls): no source written. DEFECTS RAISED 0: none"

@@ -161,6 +161,59 @@ def ceiling_suggestion(sizes: list[int]) -> str:
             f"reply) -> `loop.sh ceiling {SUGGESTED_CEILING} \"<why>\"`, taken at the next segment start")
 
 
+#: Files that are not the product: tests, configuration, manifests, documents, reports.
+_NOT_PRODUCT = ("test", "spec", "acceptance", "e2e", "vitest", "jest", "config", "package", "readme", "docs/",
+                ".json", "tsconfig", "stack-setup", "reports/", "test-results/")
+_SOURCE = re.compile(r"\.(py|ts|tsx|js|jsx|mjs|go|rs|rb|java|php|sh)$")
+
+
+def _who(stage: str) -> str:
+    stage = str(stage or "")
+    for prefix, label in (("stack_setup", "setup"), ("drafting", "drafting"), ("specialist", "builders"),
+                          ("defect_fix", "fixers"), ("acceptance_author", "qa")):
+        if stage.startswith(prefix):
+            return label
+    return "other"
+
+
+def provenance(path: str) -> tuple[dict[str, int], dict[str, int]]:
+    """Who wrote the product, and what defects were raised: (file writes by stage kind, defects by source).
+
+    Drafting writes a file in one model call with no write tool, so its calls are counted as writes. A product
+    written by the setup stage is not a product the build stages built, and a run's defects differ with it
+    (docs/single-writer-review.md); this is the standing number for that comparison.
+    """
+    wrote: collections.Counter = collections.Counter()
+    defects: collections.Counter = collections.Counter()
+    seen: set = set()
+    with open(path, errors="replace") as handle:
+        for line in handle:
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            kind = record.get("kind")
+            if kind == "tool_call" and record.get("tool") in ("write_artifact", "edit_artifact", "replace_lines"):
+                args = record.get("args") or {}
+                name = str(args.get("relative_path") or args.get("file_path") or "").lower()
+                if _SOURCE.search(name) and not any(mark in name for mark in _NOT_PRODUCT):
+                    wrote[_who(record.get("stage"))] += 1
+            elif kind == "model_response" and str(record.get("stage") or "").startswith("drafting"):
+                wrote["drafting"] += 1
+            elif kind == "defect" and record.get("event") == "raised":
+                key = (record.get("sprint"), record.get("index"), str(record.get("description"))[:60])
+                if key not in seen:
+                    seen.add(key)
+                    defects[str(record.get("source") or "unknown")] += 1
+    return dict(wrote), dict(defects)
+
+
+def provenance_line(wrote: dict[str, int], defects: dict[str, int]) -> str:
+    built = ", ".join(f"{who} {n}" for who, n in sorted(wrote.items(), key=lambda kv: -kv[1])) or "no source written"
+    raised = ", ".join(f"{source} {n}" for source, n in sorted(defects.items(), key=lambda kv: -kv[1])) or "none"
+    return f"PRODUCT WRITTEN BY (writes/calls): {built}. DEFECTS RAISED {sum(defects.values())}: {raised}"
+
+
 def main(argv: list[str]) -> int:
     root = os.environ.get("DATA_DIR") or "/app/data"
     paths = sorted(glob.glob(os.path.join(root, "transcripts", "run-*.jsonl")), key=os.path.getmtime)
@@ -173,6 +226,8 @@ def main(argv: list[str]) -> int:
     suggestion = ceiling_suggestion(tail_of(mine)) if mine else ""
     if suggestion:
         lines.append(suggestion)
+    if mine:
+        lines.append(provenance_line(*provenance(mine)))
     print("\n".join(lines) if lines else "nothing is far out against the recent runs")
     return 0
 

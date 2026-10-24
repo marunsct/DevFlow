@@ -5753,7 +5753,7 @@ run are in `docs/monitoring-handover.md` §0 under the day.
 
 | Row | What | Status |
 |---|---|---|
-| SW.1 | `loop.sh scan` reports defects by source and who wrote the product, per run | FILED |
+| SW.1 | `loop.sh scan` reports defects by source and who wrote the product, per run | BUILT 2026-10-24 (`scan.provenance`; test in `test_the_scan_names_a_stage_far_out_against_the_recent_runs.py`) |
 | SW.2 | QA writes the suite before product code; setup stops at the smoke path (the three setup fixes stay) | FILED |
 | SW.3 | A single builder stage with the run-and-fix loop, for products whose working set fits a context budget, behind `SINGLE_BUILDER` with a fallback | FILED |
 | SW.4 | The measured arm: two runs each, same model, current flow against the new one (MF.4 gate) | FILED |

@@ -232,7 +232,9 @@ class TechnicalSpecificationOutput(BaseModel):
         description=(
             "Every failure a user or caller can cause and every failure of something the product "
             "depends on, one entry each: the condition, the exact message or status the product "
-            "gives, and what it leaves unchanged."
+            "gives, and what it leaves unchanged. A value the product requires is refused when it is "
+            "empty or only whitespace once trimmed, exactly as when it is missing: list that with the "
+            "missing case, for every required text value."
         ),
     )
     implementation_order: list[str] = Field(

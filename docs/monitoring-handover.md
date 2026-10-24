@@ -701,6 +701,12 @@ working (the tool-approval check can fail transiently), schedule a retry about
   worker's runner are per process (`app.server.process_local`); a new one must
   be too.
 
+- **A run `failed` with a Python exception is a harness bug, not a model fault (LF.264).** `loop.sh status` shows
+  the exception as the failure reason; read the traceback in `docker compose logs worker`. A decode error
+  (`UnicodeDecodeError`) is a `ValueError`, so the `except (OSError, SubprocessError)` around a subprocess does
+  not catch it: read command output with `errors="replace"`. To recover: fix, `loop.sh ship`,
+  `BOUNDARY_WAIT=0 loop.sh deploy` (no live run, so no boundary), then `loop.sh resume <run>` with
+  `LOOP_USER`/`LOOP_PASSWORD` set from HANDOVER §3; the run continues from its last checkpoint.
 ### 0.5.1 Parked: known, not fixed
 
 - A stage's own notes shipped in the product: one run's fix stage, unable to find a fault, wrote

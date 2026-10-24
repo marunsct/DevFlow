@@ -4702,6 +4702,20 @@ class SandboxExecutor:
             search = os.pathsep.join((venv, search))
         return shutil.which(name, path=search)
 
+    @staticmethod
+    def _a_project_binary_off_the_path(name: str, workspace: str, run_in: str | None) -> str:
+        """The `node_modules/.bin/<name>` a command's bare name stands for, relative to its folder, or "".
+
+        Measured: a setup declared `["vitest", "run"]`; vitest was installed, the sandbox said it was "not
+        installed - run `npm install`", and the setup (which had run it) could not tell what was wrong.
+        """
+        try:
+            base = Path(workspace) / str(run_in or "")
+            found = base / "node_modules" / ".bin" / name
+            return f"node_modules/.bin/{name}" if "/" not in name and found.exists() else ""
+        except (OSError, ValueError):
+            return ""
+
     @classmethod
     def _execute_here(
         cls,
@@ -4726,6 +4740,15 @@ class SandboxExecutor:
         except CommandNotAllowed as exc:
             return {"error": str(exc)}
         if executable is None:
+            local = cls._a_project_binary_off_the_path(argv[0], workspace, run_in)
+            if local:
+                return {
+                    "error": (
+                        f"'{argv[0]}' is installed in the project (`{local}`) but is not on the PATH here, so it is "
+                        f"not run by its bare name. Run it as `npx {argv[0]} ...`, or through an npm script "
+                        f"(`npm test`, `npm run <script>`)."
+                    )
+                }
             return {
                 "error": (
                     f"'{argv[0]}' is not installed in this environment. Install it into "

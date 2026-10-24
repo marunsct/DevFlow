@@ -277,6 +277,11 @@ _JAVASCRIPT_TESTING = """Testing JavaScript and TypeScript:
   its configuration ignores the other (`testPathIgnorePatterns: ['/e2e/']` for
   Jest, `exclude: ['e2e/**', 'node_modules/**']` for Vitest), and Playwright's
   configuration sets `testDir: 'e2e'`.
+- A PROJECT'S OWN TOOL IS RUN THROUGH `npx` OR AN NPM SCRIPT. What `npm install`
+  puts in `node_modules/.bin` (`vitest`, `jest`, `tsc`, `playwright`) is not on
+  the PATH of a command the harness runs, so a declared `["vitest", "run"]` is
+  "not installed" even though it is. Declare `["npx", "vitest", "run"]`, or
+  `["npm", "test"]` / `["npm", "run", "<script>"]`.
 - A JUNIT XML REPORT COMES FROM THE RUNNER'S OWN REPORTER - never write a
   reporter class of your own: a hand-written one wrote no file under a newer
   runner, the setup could not be proven, and the project was left unproven.

@@ -164,4 +164,8 @@ PACK = service_pack(
     ci_setup=(),
     release_files={"Dockerfile": DOCKERFILE, ".dockerignore": js.DOCKERIGNORE},
     kept_scripts={"test": UNIT_SCRIPT, "start": "node src/main.ts"},
+    # The server's bootstrap is the pack's: it serves `createApp()` on `HOST` and `PORT`. Three small-model runs rewrote
+    # it (a host of `127.0.0-1`, a call to a `startServer` of its own, an import of a module that was not there) and
+    # the product did not start for the first half hour; the application is what the team writes, in `src/app.ts`.
+    kept_files=("src/main.ts",),
 )

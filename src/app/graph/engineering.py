@@ -347,7 +347,7 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
     ]
 
 
-_UNKNOWN_IMPORT = re.compile(r'"([^"]+)" is unknown import symbol')
+_UNKNOWN_IMPORT = re.compile(r'"([^"]+)" is unknown import symbol|has no exported member \'([^\']+)\'')
 
 
 def _names_their_modules_lack(root: str, project: Path | None, findings: dict[str, list[dict]]) -> dict:
@@ -372,7 +372,7 @@ def _names_their_modules_lack(root: str, project: Path | None, findings: dict[st
             if answer is None:
                 continue
             module = answer[0].relative_to(Path(root)).as_posix() if answer[0].is_relative_to(Path(root)) else str(answer[0])
-            key = (module, name.group(1))
+            key = (module, name.group(1) or name.group(2))
             importers.setdefault(key, [])
             if relative not in importers[key]:
                 importers[key].append(relative)

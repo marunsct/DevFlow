@@ -36,6 +36,9 @@ PARTS = (
      "interface_contract", "specialist_advice_decisions", "open_questions"),
 )
 
+#: The sections written in parts that fix the names writers use.
+NAMING_SECTIONS = frozenset({"function_contracts", "error_catalogue", "implementation_order"})
+
 #: What the architect's request says, in fast delivery.
 CORE_NOTE = (
     "\n\nWrite only these sections of the specification: " + ", ".join(CORE) + ". The others - "
@@ -124,6 +127,18 @@ def with_the_parts_written(specification: Any, model: Any, context: str) -> Any:
     parameters = convert_to_openai_tool(type(specification))["function"]["parameters"]
 
     def write(names: tuple[str, ...]) -> dict[str, Any]:
+        written = ask(names)
+        # A section that fixes names and came back empty is asked for once more (NAMING_STANDARD): the writers
+        # downstream take their names from it, and "Not specified" left each to invent its own.
+        from app.stacks.naming import enabled
+
+        missing = tuple(n for n in names if n in NAMING_SECTIONS and n not in written) if enabled() else ()
+        if missing:
+            logger.info("Asking again for the specification sections %s", ", ".join(missing))
+            written = {**written, **ask(missing)}
+        return written
+
+    def ask(names: tuple[str, ...]) -> dict[str, Any]:
         try:
             messages = [
                 SystemMessage(content="You write sections of software technical specifications as JSON."),

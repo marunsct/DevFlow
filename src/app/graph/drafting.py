@@ -265,6 +265,15 @@ def _where_dependencies_go(root: Path) -> str:
         return ""
 
 
+def _the_naming_standard(stack: Any) -> str:
+    try:
+        from app.stacks.naming import standard_for
+
+        return standard_for(stack)
+    except Exception:  # noqa: BLE001 - the request as it was
+        return ""
+
+
 def draft_request(root: Path, path: str, task: Any, specification: Any, stack: Any,
                   diagnostics: list[str] | None = None) -> str:
     """What one file's draft is asked; `diagnostics` are what the compiler reported on its last draft."""
@@ -294,6 +303,7 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         ("--- The compiler reports, in the draft above ---\n" + "\n".join(diagnostics)) if diagnostics else "",
         # The layout every builder and judge reads (plan CM.1).
         the_facts_section(root, built=False).strip(),
+        _the_naming_standard(stack),
         _where_dependencies_go(root),
         f"Reply with the complete content of `{path}` and nothing else, in one fenced code block. "
         "Every name, signature, message, import and library call is the one the specification "

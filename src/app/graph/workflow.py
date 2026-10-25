@@ -2639,6 +2639,16 @@ def _another_work_order_writes_it(root: str, importer: str, finding: dict, stage
     )
 
 
+def _the_names_the_module_has(project: Path, importer: Path, finding: dict) -> str:
+    """What the module an import reads defines, after a finding about a missing name; "" when it cannot say."""
+    try:
+        from app.analysis.language_service import the_names_the_module_has
+
+        return the_names_the_module_has(project, importer, finding)
+    except Exception:  # noqa: BLE001 - the finding goes out as it was
+        return ""
+
+
 def _diagnostics_in_files_touched(
     state: Any, result: dict[str, Any], structured_response: Any, stage_name: str = "",
 ) -> list[str]:
@@ -2694,6 +2704,7 @@ def _diagnostics_in_files_touched(
                         continue
                     line = finding.get("line", "?")
                     msg = finding.get("message", "")
+                    msg += _the_names_the_module_has(project or Path(root), target, finding)
                     diagnostics.append(f"- In `{relative}` line {line}: {msg}")
                     if len(diagnostics) >= 4:
                         return diagnostics
@@ -8598,6 +8609,12 @@ def build_workflow_graph(
             from app.graph.specification_parts import CORE_NOTE
 
             request["messages"][-1]["content"] += CORE_NOTE
+        # One naming standard, before any name is written (NAMING_STANDARD).
+        from app.stacks.naming import standard_for
+
+        naming = standard_for(getattr(state.get("stack_selection"), "technology_stack", None))
+        if naming:
+            request["messages"][-1]["content"] += "\n\n" + naming
         # The layout the scaffold will set up, before the file plan is written:
         # cheaper than the repair after it, which on one run never ran.
         if not required_changes:

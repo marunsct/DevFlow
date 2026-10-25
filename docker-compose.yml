@@ -96,6 +96,9 @@ x-app-env: &app-env
   # A fix that makes many tests pass and breaks one worker-written unit test stays (owner away, 2026-10-25;
   # measured: a fix that made 12 pass and broke 1 was reverted, five times over).
   KEEP_NET_GAINS: ${KEEP_NET_GAINS:-on}
+  # One naming standard per language in the specification and every draft, and the sections that fix names asked
+  # for again when empty (owner, 2026-10-25: name mismatches between files).
+  NAMING_STANDARD: ${NAMING_STANDARD:-on}
   REFUSALS_FOLDED: ${REFUSALS_FOLDED:-on}
   # Each item of the general guidance catalogue, its own switch: on lets a
   # model's steering profile use it, off withholds it from every model.

@@ -588,9 +588,51 @@ def _python_module_defines(project: Path, importer: Path, line: str) -> tuple[Pa
     return None
 
 
+_SCRIPT_IMPORT_FROM = __import__("re").compile(r"""\bfrom\s+['"]([^'"]+)['"]|\brequire\(\s*['"]([^'"]+)['"]\s*\)""")
+#: What a JavaScript or TypeScript module exports: `export function f`, `export const c`, `export { a, b as c }`, `export default`.
+_SCRIPT_EXPORTED = __import__("re").compile(
+    r"^\s*export\s+(?:declare\s+)?(?:default\s+)?(?:async\s+)?(?:abstract\s+)?"
+    r"(?:function\*?|class|const|let|var|interface|type|enum|namespace)\s+([A-Za-z_$][\w$]*)",
+    __import__("re").M,
+)
+_SCRIPT_EXPORT_LIST = __import__("re").compile(r"^\s*export\s*(?:type\s*)?\{([^}]*)\}", __import__("re").M)
+_SCRIPT_DEFAULT = __import__("re").compile(r"^\s*export\s+default\b", __import__("re").M)
+_SCRIPT_EXTENSIONS = (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")
+
+
+def _script_module_defines(project: Path, importer: Path, line: str) -> tuple[Path, list[str]] | None:
+    """The module a relative `import ... from './m'` line reads, and the names it exports; None when not found here."""
+    import re
+
+    found = _SCRIPT_IMPORT_FROM.search(line or "")
+    specifier = (found.group(1) or found.group(2)) if found else ""
+    if not specifier.startswith("."):
+        return None
+    stem = (importer.parent / specifier).resolve()
+    # TypeScript writes `./m.js` for a file that is `m.ts`.
+    bare = stem.with_suffix("") if stem.suffix in _SCRIPT_EXTENSIONS else stem
+    candidates = [stem] if stem.suffix in _SCRIPT_EXTENSIONS else []
+    candidates += [Path(f"{bare}{extension}") for extension in _SCRIPT_EXTENSIONS]
+    candidates += [bare / f"index{extension}" for extension in _SCRIPT_EXTENSIONS]
+    for candidate in candidates:
+        if candidate.is_file():
+            text = candidate.read_text(encoding="utf-8", errors="replace")
+            names = list(_SCRIPT_EXPORTED.findall(text))
+            for listed in _SCRIPT_EXPORT_LIST.findall(text):
+                for part in listed.split(","):
+                    name = re.split(r"\s+as\s+", part.strip())[-1].strip()
+                    if name and name != "default":
+                        names.append(name)
+            if _SCRIPT_DEFAULT.search(text):
+                names.append("default")
+            return candidate, sorted(dict.fromkeys(names))
+    return None
+
+
 #: What a module defines, by the importer's suffix: `(project, importer, import line) -> (module, names)`.
 _MODULE_DEFINES: dict[str, Callable[[Path, Path, str], tuple[Path, list[str]] | None]] = {
     ".py": _python_module_defines,
+    **{suffix: _script_module_defines for suffix in (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")},
 }
 
 
@@ -601,6 +643,34 @@ def what_the_module_defines(project: Path, importer: Path, line: str) -> tuple[P
         return reader(project, importer, line) if reader else None
     except Exception:  # noqa: BLE001 - a finding goes out as it was
         return None
+
+
+#: A name an import asks for that the module does not have: Pyright's wording, then TypeScript's.
+_A_MISSING_NAME = __import__("re").compile(
+    r"\"([^\"]+)\" is unknown import symbol|has no exported member '([^']+)'|has no default export"
+)
+
+
+def the_names_the_module_has(project: Path, importer: Path, finding: dict) -> str:
+    """A sentence naming what the module an import reads really defines, for a finding about a missing name; else "".
+
+    The compiler says which name is missing and not which exist, so a writer guesses again: measured over one night,
+    `create_access_token` imported from a module that defined `create_token`, `createApp` from one that exported
+    `app`. The harness can read the module; a model's guess at it is not a fact.
+    """
+    message = str(finding.get("message") or "")
+    wanted = _A_MISSING_NAME.search(message)
+    if wanted is None:
+        return ""
+    answer = what_the_module_defines(project, importer, str(finding.get("text") or ""))
+    if answer is None:
+        return ""
+    module, names = answer
+    try:
+        shown = module.relative_to(project).as_posix()
+    except ValueError:
+        shown = module.name
+    return (f" `{shown}` defines: {', '.join(names[:25])}" if names else f" `{shown}` defines no names")
 
 
 #: The service that reads each suffix, as a finding names it; the rest are the TypeScript service's.
@@ -666,5 +736,5 @@ _READ_TOGETHER[".py"] = lambda project, targets: python_underlined_together(proj
 
 __all__ = [
     "BOTH", "BROWSER", "NODE", "SUFFIXES", "Underlined", "python_underlined", "python_underlined_together", "runs_in",
-    "service_name", "underlined", "underlined_any", "underlined_in", "what_the_module_defines",
+    "service_name", "the_names_the_module_has", "underlined", "underlined_any", "underlined_in", "what_the_module_defines",
 ]

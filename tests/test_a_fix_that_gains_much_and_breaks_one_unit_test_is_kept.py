@@ -55,11 +55,24 @@ def test_one_gained_for_one_broken_is_reverted_as_before(monkeypatch):
     assert reverted == ["abc1234"]
 
 
-def test_a_fix_that_breaks_an_acceptance_test_is_always_reverted(monkeypatch):
+def test_a_fix_that_breaks_an_acceptance_test_needs_a_bigger_gain_to_stay(monkeypatch):
+    """Measured: a fix that made 5 tests pass and broke 1 criterion was reverted, a net gain of four thrown away."""
     reverted = []
     _measure(monkeypatch, *_snapshots(12, unit_lost=0, acceptance_lost=1), reverted)
+    assert engineering.after_a_fix("/workspace", "abc1234", "defect_fix_1_0", "x") == [] and reverted == []
 
+    _measure(monkeypatch, *_snapshots(3, unit_lost=0, acceptance_lost=1), reverted)
     assert engineering.after_a_fix("/workspace", "abc1234", "defect_fix_1_0", "x") == ["acceptance: a0"]
+    assert reverted == ["abc1234"]
+
+
+def test_five_gained_for_one_criterion_stays_and_five_for_two_does_not(monkeypatch):
+    reverted = []
+    _measure(monkeypatch, *_snapshots(5, unit_lost=0, acceptance_lost=1), reverted)
+    assert engineering.after_a_fix("/workspace", "abc1234", "defect_fix_2_4", "x") == [] and reverted == []
+
+    _measure(monkeypatch, *_snapshots(5, unit_lost=0, acceptance_lost=2), reverted)
+    assert engineering.after_a_fix("/workspace", "abc1234", "defect_fix_2_4", "x")
     assert reverted == ["abc1234"]
 
 
@@ -82,6 +95,8 @@ def test_it_is_a_switch_and_off_the_fix_is_reverted_as_before(monkeypatch):
 
 def test_the_ratio_scales_with_what_was_broken():
     assert net_gain.keeps(["unit: a"], ["x"] * 3, product_runs=True)
+    assert not net_gain.keeps(["acceptance: a"], ["x"] * 3, product_runs=True)
+    assert net_gain.keeps(["acceptance: a"], ["x"] * 4, product_runs=True)
     assert not net_gain.keeps(["unit: a", "unit: b"], ["x"] * 5, product_runs=True)
     assert net_gain.keeps(["unit: a", "unit: b"], ["x"] * 6, product_runs=True)
     assert not net_gain.keeps(["unit: a"], ["x"] * 2, product_runs=True)

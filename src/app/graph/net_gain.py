@@ -5,9 +5,10 @@ sign-up), and was reverted whole; four more fixes that each repaired one criteri
 reverted too, so the sprint went round again with nothing gained. The gate protects what passed before it; it did
 not weigh what the fix gained.
 
-The fix stays when it gained at least `MIN_GAINED` tests and `RATIO` times as many as it broke, broke only unit tests
-(never an acceptance test, which is the locked spec), and left the product able to build and start. The broken test is
-not hidden: the snapshot kept is the one after the fix, so the next test round finds that unit test failing and raises
+The fix stays when it gained at least `MIN_GAINED` tests and `RATIO` times as many as it broke, and left the product
+able to build and start. If it also broke a locked acceptance test (the spec), it must have gained at least
+`MIN_GAINED_IF_A_CRITERION_IS_LOST`: a fix that made 5 tests pass and broke one criterion was reverted whole in a
+later run, a net gain of four thrown away. The broken test is not hidden: the snapshot kept is the one after the fix, so the next test round finds that unit test failing and raises
 it as a defect like any other. Off, a fix that broke anything that passed is reverted, as before.
 """
 from __future__ import annotations
@@ -21,6 +22,7 @@ ON_BY_DEFAULT = False
 
 #: The least a fix must gain to be weighed against what it broke, and how many times what it broke.
 MIN_GAINED = 3
+MIN_GAINED_IF_A_CRITERION_IS_LOST = 4
 RATIO = 3
 
 
@@ -32,6 +34,6 @@ def keeps(lost: Collection[str], gained: Collection[str], *, product_runs: bool)
     """Whether a fix that broke the tests in `lost` and made those in `gained` pass stays."""
     if not enabled() or not product_runs or not lost:
         return False
-    if any(not str(name).startswith("unit: ") for name in lost):
-        return False
-    return len(gained) >= MIN_GAINED and len(gained) >= RATIO * len(lost)
+    a_criterion_lost = any(not str(name).startswith("unit: ") for name in lost)
+    least = MIN_GAINED_IF_A_CRITERION_IS_LOST if a_criterion_lost else MIN_GAINED
+    return len(gained) >= least and len(gained) >= RATIO * len(lost)

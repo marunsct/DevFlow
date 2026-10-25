@@ -112,3 +112,50 @@ def test_the_tool_is_offered_to_a_specialist_and_not_when_the_switch_is_off(tmp_
     assert "exports_tools" in vars(specialists)
     monkeypatch.setenv("PACKAGE_EXPORTS_NAMED", "off")
     assert package_exports.exports_tools(tmp_path) == []
+
+
+def _hono_with_paths(project: Path) -> None:
+    package = project / "node_modules" / "hono"
+    package.mkdir(parents=True, exist_ok=True)
+    (package / "package.json").write_text(json.dumps({"name": "hono", "exports": {
+        ".": {"types": "./a.d.ts"}, "./cors": {"types": "./b.d.ts"}, "./body-limit": {"types": "./c.d.ts"},
+        "./package.json": "./package.json"}}))
+
+
+def test_a_path_a_package_does_not_export_comes_back_with_the_paths_it_does(tmp_path):
+    """`import ... from 'hono/middleware'`: Hono exports no such path; the compiler said only "cannot find module"."""
+    _hono_with_paths(tmp_path)
+    assert package_exports.package_paths(tmp_path, "hono/middleware") == ["hono", "hono/body-limit", "hono/cors"]
+    assert package_exports.package_paths(tmp_path, "hono/cors") is None  # a path it exports
+    assert package_exports.package_paths(tmp_path, "nothing-installed/x") is None
+    assert package_exports.package_paths(tmp_path, "./local") is None
+
+
+def test_the_finding_for_a_missing_path_names_the_paths(tmp_path):
+    _hono_with_paths(tmp_path)
+    importer = tmp_path / "src" / "app.ts"
+    importer.parent.mkdir()
+    finding = {"message": "Cannot find module 'hono/middleware' or its corresponding type declarations.",
+               "text": "import { bodyLimit } from 'hono/middleware';"}
+
+    said = language_service.the_names_the_module_has(tmp_path, importer, finding)
+
+    assert "`hono/middleware` is not a path that package exports" in said and "hono/body-limit, hono/cors" in said
+
+
+def test_the_defect_for_a_missing_path_carries_the_paths(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    _hono_with_paths(tmp_path)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.ts").write_text("import { bodyLimit } from 'hono/middleware';\n")
+    finding = {"line": 1, "message": "Cannot find module 'hono/middleware' or its corresponding type declarations.",
+               "text": "import { bodyLimit } from 'hono/middleware';"}
+    monkeypatch.setattr("app.graph.engineering.ci.changed_since", lambda root, since: ["src/app.ts"])
+    monkeypatch.setattr("app.analysis.language_service.underlined_in", lambda root, files, project, most: {"src/app.ts": [finding]})
+    monkeypatch.setattr(engineering, "_what_the_compiler_says", lambda *a, **k: [])
+    monkeypatch.setattr(engineering, "_owner_of", lambda state, text: "backend")
+
+    defects = engineering.underlined_in_the_batch(SimpleNamespace(), str(tmp_path), "abc")
+
+    assert any("hono/body-limit, hono/cors" in d.expected_behavior for d in defects)

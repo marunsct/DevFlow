@@ -673,7 +673,7 @@ def the_names_the_module_has(project: Path, importer: Path, finding: dict) -> st
     message = str(finding.get("message") or "")
     wanted = _A_MISSING_NAME.search(message)
     if wanted is None:
-        return ""
+        return _the_paths_the_package_has(project, message)
     answer = what_the_module_defines(project, importer, str(finding.get("text") or ""))
     if answer is None:
         return ""
@@ -687,6 +687,22 @@ def the_names_the_module_has(project: Path, importer: Path, finding: dict) -> st
     except ValueError:
         shown = module.name
     return (f" `{shown}` defines: {', '.join(names[:25])}" if names else f" `{shown}` defines no names")
+
+
+_A_MISSING_MODULE = __import__("re").compile(r"Cannot find module '([^']+)'")
+
+
+def _the_paths_the_package_has(project: Path, message: str) -> str:
+    """A sentence naming the import paths of an installed package, after a finding about a path it does not export; else ""."""
+    found = _A_MISSING_MODULE.search(message)
+    if found is None:
+        return ""
+    from app.analysis import package_exports
+
+    paths = package_exports.package_paths(project, found.group(1))
+    if not paths:
+        return ""
+    return f" `{found.group(1)}` is not a path that package exports; the paths it exports are: {', '.join(paths[:30])}"
 
 
 #: The service that reads each suffix, as a finding names it; the rest are the TypeScript service's.

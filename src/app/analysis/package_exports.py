@@ -229,3 +229,33 @@ def exports_tools(repo_root: str | Path) -> list:
         return exports_of(repo_root, module)
 
     return [module_exports]
+
+
+# --- a path the package does not export ---------------------------------------------
+
+def package_paths(project: Path, specifier: str) -> list[str] | None:
+    """The import paths an installed JavaScript package offers (`hono`, `hono/cors`, ...) when `specifier` is not one.
+
+    Measured on a small-model run: `import { bodyLimit } from 'hono/middleware'`, a path Hono does not export; the compiler
+    said only "cannot find module", Node `ERR_PACKAGE_PATH_NOT_EXPORTED`. The package's manifest lists the paths it exports.
+    None when the package is not installed, the path is one it exports, or its manifest lists none.
+    """
+    if not enabled() or not specifier or specifier.startswith((".", "/", "node:")):
+        return None
+    name, subpath = _split(specifier)
+    for base in (project, project.parent):
+        package = base / "node_modules" / name
+        if not package.is_dir():
+            continue
+        try:
+            exports = json.loads((package / "package.json").read_text(encoding="utf-8")).get("exports")
+        except (OSError, ValueError):
+            return None
+        if not isinstance(exports, dict):
+            return None
+        keys = [key for key in exports if key.startswith(".") and "*" not in key and key != "./package.json"]
+        if not keys or subpath in exports:
+            return None
+        offered = sorted(name if key == "." else f"{name}/{key[2:]}" for key in keys)
+        return offered[:MOST_NAMES]
+    return None

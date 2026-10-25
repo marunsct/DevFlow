@@ -280,7 +280,7 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
     certain, and named by file and line. See `app.analysis.language_service`.
     """
     from app.agents.specialists import ReportedDefect
-    from app.analysis.language_service import ALL_SUFFIXES, service_name, underlined_in
+    from app.analysis.language_service import ALL_SUFFIXES, service_name, the_names_the_module_has, underlined_in
 
     try:
         from app.tools.repository import pinned_project_directory
@@ -312,6 +312,9 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
             lines = ", ".join(str(f["line"]) for f in where[:6])
             module, defined, importers = missing.get((relative, message), ("", [], []))
             expected = "Every name the code uses is defined or imported, and every import names something its module exports."
+            if "Cannot find module" in message:
+                # A path an installed package does not export: say which paths it does (PACKAGE_EXPORTS_NAMED).
+                expected += the_names_the_module_has(project or Path(root), Path(root) / relative, where[0])
             if module and not importers:
                 expected += (
                     f" `{module}` is a package and exports only {', '.join(f'`{n}`' for n in defined[:20]) or 'nothing readable'}: "

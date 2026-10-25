@@ -1109,7 +1109,7 @@ def _a_file_the_runner_does_not_collect(repo_root: str | Path, shown: Any) -> st
 #: What a runner prints when the product it should test never came up: the
 #: server it starts exited, or the build that server serves failed.
 _NEVER_STARTED = re.compile(
-    r"(?:webServer was not able to start|Process from config\.webServer|Build failed in|"
+    r"(?:webServer was not able to start|Process from config\.webServer|Timed out waiting \d+ms from config\.webServer|Build failed in|"
     r"\berror during build\b|Address already in use|EADDRINUSE|"
     r"(?:server|service) (?:exited|did not start|failed to start))",
     re.I,

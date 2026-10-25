@@ -65,6 +65,11 @@ it yourself: the acceptance suite's configuration builds and starts it."""
 
 GITIGNORE = js.GITIGNORE
 
+#: How a person (or anything that deploys it) starts the service: the pack's own start command, from the project.
+START_SCRIPT = """#!/bin/sh
+cd "$(dirname "$0")" && %s
+"""
+
 
 def service_pack(
     *,
@@ -93,6 +98,11 @@ def service_pack(
     relative_import_extension: str = "",
 ) -> StackPack:
     """A pack for an HTTP service in its own language, accepted through Playwright's `request` fixture."""
+    # The brief names the service by its `start.sh`, and the suite runs that script when the project has one
+    # (`the_brief_s_start_or`). Left to the team, a small model wrote one that ran the module defining the
+    # application and never listening: the web server timed out and no test ran. The pack writes it, from its own
+    # start command, and keeps it - as the Python packs do.
+    script = {"start.sh": START_SCRIPT % start} if "\n" not in start.strip() else {}
     return StackPack(
         name=name,
         title=title,
@@ -105,6 +115,7 @@ def service_pack(
         files={
             "package.json": PACKAGE_JSON,
             **files,
+            **script,
             "playwright.config.js": js.playwright_config(js.the_brief_s_start_or(start), "/health", server_timeout_ms=server_timeout_ms),
             ".gitignore": GITIGNORE + gitignore,
         },
@@ -117,7 +128,7 @@ def service_pack(
         acceptance_dir="acceptance",
         acceptance_pattern="*.spec.js",
         unit_pattern=unit_pattern,
-        kept_files=("playwright.config.js", *kept_files),
+        kept_files=("playwright.config.js", *script, *kept_files),
         kept_scripts={"test:acceptance": "playwright test", **(kept_scripts or {})},
         entrypoint=entrypoint,
         required_exports=dict(required_exports or {}),

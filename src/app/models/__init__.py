@@ -274,6 +274,16 @@ def record_pace(server: tuple[str, str], tokens: int, seconds: float) -> None:
         _PACE.setdefault(server, deque(maxlen=PACE_SAMPLES)).append(tokens / seconds)
 
 
+def expected_reply_tokens(cap: int | None, ceiling: int | None) -> int:
+    """The longest reply a call may be expected to need: its cap, else the model's ceiling, else the longest real one.
+
+    A model with no reply ceiling (one whose replies are short, so none was set) had no pace to measure a call
+    against, so a request the server never answered kept the configured limit - thirty minutes - before it was
+    asked again. Measured: a run sat 13 minutes on one request while the same server answered new ones in 0.3 s.
+    """
+    return cap or ceiling or LARGEST_LEGITIMATE_OUTPUT_TOKENS
+
+
 def paced_timeout(server: tuple[str, str], reply_tokens: int | None, configured: Any) -> float | None:
     """Seconds a call may take given how fast this server has been, or None to keep the configured limit.
 
@@ -602,7 +612,7 @@ class CompatibleChatOpenAI(ChatOpenAI):
         while True:
             started = time.monotonic()
             _REPLY_CAP.tokens = cap
-            _REPLY_CAP.deadline = paced_timeout(server, cap or ceiling, self.request_timeout)
+            _REPLY_CAP.deadline = paced_timeout(server, expected_reply_tokens(cap, ceiling), self.request_timeout)
             try:
                 result = super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
                 record_pace(server, _reply_tokens(result), time.monotonic() - started)

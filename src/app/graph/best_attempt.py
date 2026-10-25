@@ -92,8 +92,8 @@ def _kept(path: str, locked: set[str]) -> bool:
     return path in locked or ".harness" in parts or ".git" in parts or "node_modules" in parts
 
 
-def restore_if_worse(root: str | Path) -> str:
-    """Put the product back to its best commit when it passes clearly fewer acceptance tests now; what was done, or "". Never raises."""
+def restore_if_worse(root: str | Path, *, margin: int = MARGIN) -> str:
+    """Put the product back to its best commit when it passes `margin` fewer acceptance tests now; what was done, or "". Never raises."""
     if not enabled():
         return ""
     try:
@@ -103,7 +103,7 @@ def restore_if_worse(root: str | Path) -> str:
         root = Path(root)
         best = _read(root)
         now = _passed_now(root)
-        if not best or now is None or int(best.get("passed") or 0) - now < MARGIN:
+        if not best or now is None or int(best.get("passed") or 0) - now < margin:
             return ""
         best_commit = str(best.get("commit") or "")
         current = ci.commit(root, "Before the best attempt is put back")

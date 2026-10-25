@@ -10375,7 +10375,9 @@ def build_workflow_graph(
         # A sprint planned again starts from the best product it has had (KEEP_THE_BEST_ATTEMPT).
         from app.graph import best_attempt
 
-        best_attempt.restore_if_worse(state["repository"].root_path)
+        # Even one test fewer than the best is worse here: a run released at 17 of 18 criteria, with AC-14 deferred,
+        # after an earlier attempt had passed all 18.
+        best_attempt.restore_if_worse(state["repository"].root_path, margin=1)
         # Every defect still open ends its story here: the ledger had it
         # raised and nothing after, which reads like a round cut short.
         from app.observability import defect_ledger

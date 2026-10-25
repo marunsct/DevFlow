@@ -104,7 +104,7 @@ def test_a_suite_that_did_not_run_puts_nothing_back_and_a_switch_off_does_nothin
 def test_the_planner_puts_the_best_product_back_before_a_sprint_is_planned_again():
     """The re-plan path calls it: the wiring, read from the source, since the graph needs a whole run to build."""
     source = (Path(__file__).resolve().parent.parent / "src" / "app" / "graph" / "workflow.py").read_text()
-    assert "best_attempt.restore_if_worse(state[\"repository\"].root_path)" in source
+    assert "best_attempt.restore_if_worse(state[\"repository\"].root_path, margin=1)" in source
     assert "best_attempt.note(state[\"repository\"].root_path)" in source
 
 
@@ -142,3 +142,25 @@ def test_the_round_plans_the_sprint_again_at_once_when_the_best_was_put_back():
     source = (Path(__file__).resolve().parent.parent / "src" / "app" / "graph" / "workflow.py").read_text()
     assert "best_attempt.after_a_redraft(" in source
     assert "the redraft left the product worse than its best; the best was put back" in source
+
+
+def test_when_a_sprint_is_about_to_be_planned_again_one_test_fewer_than_the_best_is_put_back(tmp_path, monkeypatch):
+    """A run reached 18 of 18 criteria, was planned again, and released at 17 of 18 with AC-14 deferred."""
+    root = _repo(tmp_path)
+    _measured(monkeypatch, root, 18)
+    best_attempt.note(root)
+    (root / "src" / "app.ts").write_text("export const app = 'one test worse';\n")
+    _measured(monkeypatch, root, 17)
+
+    assert best_attempt.restore_if_worse(root) == ""  # the default margin treats one test as noise
+    assert "one test worse" in (root / "src" / "app.ts").read_text()
+
+    said = best_attempt.restore_if_worse(root, margin=1)
+
+    assert "passes 17 acceptance tests now and passed 18" in said
+    assert (root / "src" / "app.ts").read_text() == "export const app = 'working';\n"
+
+
+def test_the_replan_path_asks_for_a_margin_of_one():
+    source = (Path(__file__).resolve().parent.parent / "src" / "app" / "graph" / "workflow.py").read_text()
+    assert "best_attempt.restore_if_worse(state[\"repository\"].root_path, margin=1)" in source

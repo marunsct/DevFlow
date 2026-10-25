@@ -562,6 +562,11 @@ def _files_the_sprint_names_and_nobody_is_given(
             for path in files_under(base, IGNORED_DIRECTORIES):
                 if not any(part in IGNORED_DIRECTORIES for part in path.parts):
                     existing.add(path.name.lower())
+        # The documents the harness keeps beside the project (the specification, the sprint record) exist
+        # too: a scope that names one was sent back three times for a file the lead cannot be given to write.
+        docs = Path(repo_root or "") / "docs"
+        if repo_root and project_dir and docs.is_dir():
+            existing.update(path.name.lower() for path in docs.iterdir() if path.is_file())
         # What this project calls a file, beside what files are generally
         # called: `store.read()` in a scope is a call, not a file to hand out.
         in_use = {name.rsplit(".", 1)[-1] for name in listed | existing if "." in name}

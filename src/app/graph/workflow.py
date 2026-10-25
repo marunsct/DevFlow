@@ -10382,6 +10382,12 @@ def build_workflow_graph(
         nobody had been given a chance to fix.
         """
         revision_count = state.get("sprint_replan_count", 0) + 1
+        # A fully green acceptance suite with only a unit test open is where the re-plans stop (SETTLE_WHEN_ACCEPTANCE_IS_GREEN).
+        from app.graph import settle_when_green
+
+        if settle_when_green.applies(state["repository"].root_path, getattr(cycle, "defects", None), revision_count - 1):
+            why = f"{why}; every acceptance test passes and only the unit tests fail"
+            revision_count = MAX_MILESTONE_REVISIONS + 1
         # A sprint planned again starts from the best product it has had (KEEP_THE_BEST_ATTEMPT).
         from app.graph import best_attempt
 

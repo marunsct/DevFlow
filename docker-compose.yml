@@ -108,6 +108,10 @@ x-app-env: &app-env
   # The compiler's missing-name errors go with the "product does not start" defect, so a fixer sees them all at once and
   # not the runtime's one crash at a time (owner, 2026-10-25; measured: three runs lost their first half hour to it).
   START_DEFECT_NAMES_COMPILER_ERRORS: ${START_DEFECT_NAMES_COMPILER_ERRORS:-on}
+  # A sprint whose acceptance suite is fully green is not planned again for the model's own failing unit tests alone; it
+  # goes to the escalation, which accepts it with the problem recorded (owner, 2026-10-26; measured: 18 of 18 criteria
+  # for 40 minutes of re-plans).
+  SETTLE_WHEN_ACCEPTANCE_IS_GREEN: ${SETTLE_WHEN_ACCEPTANCE_IS_GREEN:-on}
   # One naming standard per language in the specification and every draft, and the sections that fix names asked
   # for again when empty (owner, 2026-10-25: name mismatches between files).
   NAMING_STANDARD: ${NAMING_STANDARD:-on}

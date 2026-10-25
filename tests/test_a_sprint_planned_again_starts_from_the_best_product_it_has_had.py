@@ -164,3 +164,29 @@ def test_when_a_sprint_is_about_to_be_planned_again_one_test_fewer_than_the_best
 def test_the_replan_path_asks_for_a_margin_of_one():
     source = (Path(__file__).resolve().parent.parent / "src" / "app" / "graph" / "workflow.py").read_text()
     assert "best_attempt.restore_if_worse(state[\"repository\"].root_path, margin=1)" in source
+
+
+def test_the_suite_is_measured_again_once_the_best_is_put_back(tmp_path, monkeypatch):
+    """A run was stopped for 21 failing criteria, read from the wrecked product's saved result, with the best product
+    (12 of them passing) already back on disk."""
+    root = _repo(tmp_path)
+    _measured(monkeypatch, root, 14)
+    best_attempt.note(root)
+    (root / "src" / "app.ts").write_text("export const app = 'wrecked';\n")
+    _measured(monkeypatch, root, 0)
+    measured = []
+    monkeypatch.setattr(suite, "run", lambda repo, *a, **k: measured.append(Path(repo).name) or None)
+
+    assert best_attempt.restore_if_worse(root, margin=1)
+
+    assert measured == [root.name]
+
+
+def test_nothing_is_measured_when_nothing_was_put_back(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    _measured(monkeypatch, root, 14)
+    best_attempt.note(root)
+    measured = []
+    monkeypatch.setattr(suite, "run", lambda repo, *a, **k: measured.append(1))
+
+    assert best_attempt.restore_if_worse(root) == "" and measured == []

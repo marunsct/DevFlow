@@ -115,6 +115,13 @@ def restore_if_worse(root: str | Path, *, margin: int = MARGIN) -> str:
         if not paths or not ci.restore_paths(root, best_commit, paths):
             return ""
         ci.commit(root, f"Put back the best attempt ({best['passed']} acceptance tests passed; {now} did)")
+        # What the harness decides next (which criteria still fail, whether more than half the product is
+        # undelivered) reads the suite's last saved result. That was the wrecked product's: a run was stopped for
+        # 21 failing criteria with its best product, 12 of them passing, already back on disk.
+        try:
+            suite.run(root)
+        except Exception:  # noqa: BLE001 - the restore stands; the next measurement corrects the record
+            logger.debug("Could not measure the product that was put back", exc_info=True)
         said = (f"The product passes {now} acceptance tests now and passed {best['passed']} at its best; "
                 f"{len(paths)} file(s) were put back as they were then.")
         logger.warning(said)

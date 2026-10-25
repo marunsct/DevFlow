@@ -181,7 +181,7 @@ PACK = StackPack(
     wired_by_imports=True,
     unit_test_names=_python.UNIT_TEST_NAMES,
     test_helpers=_python.TEST_HELPERS,
-    kept_files=("pytest.ini", "acceptance/conftest.py"),
+    kept_files=("pytest.ini", "acceptance/conftest.py", "start.sh"),
     kept_scripts={},
     smoke_files={
         "tests/test_scaffold_smoke.py": SMOKE_UNIT,

@@ -428,6 +428,20 @@ def _this_scaffold_s_own(repo_root: Path, pack: StackPack, project: str) -> bool
     return bool(record) and record.get("pack") == pack.name and record.get("project") == project \
         and not _contract.scaffolded(record)
 
+def make_a_script_executable(target: Path, content: str) -> None:
+    """A file the pack writes that starts with `#!` is a script: it is run by its name, so it can be.
+
+    Measured: a pack's `start.sh` was written without the execute bit, a fixer for the criterion "the project has a
+    start.sh that starts the service" rewrote it to get one, and its rewrite replaced the pack's command with one that
+    only worked inside the test run's environment.
+    """
+    if content.startswith("#!"):
+        try:
+            target.chmod(target.stat().st_mode | 0o111)
+        except OSError:
+            pass
+
+
 def scaffold(
     repo_root: str | Path,
     pack: StackPack,
@@ -458,6 +472,7 @@ def scaffold(
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+        make_a_script_executable(target, content)
     # Recorded before the first command, as not yet proven: the sandbox reads
     # the pack's needs from it (`sandbox._process_memory`), and a toolchain
     # that needs more than every pack gets failed its own smoke test without.

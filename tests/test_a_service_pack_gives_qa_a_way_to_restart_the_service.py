@@ -16,7 +16,7 @@ from app.stacks import contract, pack_named
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 
 
-@pytest.mark.parametrize("name", ["node-hono-api", "node-hono-native-api", "go-http-api", "php-slim-api"])
+@pytest.mark.parametrize("name", ["node-hono-api", "node-hono-native-api", "node-http-api", "go-http-api", "php-slim-api"])
 def test_the_pack_writes_and_keeps_the_helper(name):
     pack = pack_named(name)
     assert "acceptance/service.cjs" in pack.kept_files
@@ -73,3 +73,8 @@ def test_the_helper_starts_stops_and_restarts_on_the_same_data(tmp_path):
 
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == "kept,none"
+
+
+def test_the_express_pack_keeps_its_start_script_too():
+    pack = pack_named("node-http-api")
+    assert "start.sh" in pack.kept_files and pack.files["start.sh"].startswith("#!/bin/sh")

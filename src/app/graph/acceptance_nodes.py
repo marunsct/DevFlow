@@ -27,7 +27,7 @@ from app.acceptance import suite
 from app.acceptance.criteria import number
 from app.graph import acceptance_batches
 from app.agents.shared_facts import with_the_facts
-from app.stacks import contract, pack_named
+from app.stacks import compiler_errors, contract, pack_named
 
 logger = logging.getLogger(__name__)
 
@@ -1148,7 +1148,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             severity="blocking",
             reproduction_steps=f"Run `{command}` in the project directory: the product fails before any test runs.",
             expected_behavior="The product builds and starts, and the acceptance suite's tests run against it.",
-            actual_behavior=never_started[:1500],
+            actual_behavior=never_started[:1500] + compiler_errors.the_errors(_root(state)),
             affected_files=[],
             owner=_owner_for(state, never_started),
         ))

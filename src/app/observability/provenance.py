@@ -56,6 +56,7 @@ SWITCHES: dict[str, str] = {
     "PACKAGE_EXPORTS_NAMED": "app.analysis.package_exports",
     "PACK_ENTRY_EXPORTS_KEPT": "app.stacks.entry_exports",
     "HONO_NATIVE_TEST_RUNNER": "app.stacks.packs.node_hono_native_api",
+    "START_DEFECT_NAMES_COMPILER_ERRORS": "app.stacks.compiler_errors",
     "NAMING_STANDARD": "app.stacks.naming",
     "REFUSALS_FOLDED": "app.agents.refusal_folding",
     "GUIDE_ANSWER_IN_SCHEMA": "app.models.guidance:answer_in_schema_switch",

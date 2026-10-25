@@ -103,6 +103,9 @@ class StackPack:
     test_helpers: tuple[str, ...] = ()
     #: Where screenshots and other evidence the acceptance run leaves are found.
     evidence_dir: str = ""
+    #: The command that type-checks the project without writing anything, run in the project directory; () when
+    #: there is none. Read when the product does not start (`compiler_errors`).
+    typecheck: tuple[str, ...] = ()
     #: The file the drafted service's routes or handlers live in, which the
     #: scaffold writes as a stub. While it is still byte-identical to that
     #: stub, nothing the run drafted is wired into the service the acceptance

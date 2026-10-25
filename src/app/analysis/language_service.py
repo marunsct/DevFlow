@@ -79,7 +79,7 @@ MOST_FINDINGS = 8
 BROWSER, NODE, BOTH = "browser", "node", "both"
 
 _SCRIPT = r"""
-const [compiler, project, target, runtime, checkNames] = process.argv.slice(1);
+const [compiler, project, target, nodeTypes, runtime, checkNames] = process.argv.slice(1);
 const ts = require(compiler);
 const fs = require('fs'), path = require('path');
 let content = '';
@@ -106,12 +106,20 @@ process.stdin.on('data', d => content += d).on('end', () => {
     + ' declare var exports: any; declare var __dirname: string; declare var __filename: string;'
     + ' declare var Buffer: any; declare var global: any; declare var setImmediate: any;'
     + ' declare var clearImmediate: any;';
-  if (runtime !== 'browser') roots.push(NODE_GLOBALS);
+  // The project's own `@types/node`, when it is told to read it: the built-in modules (`node:fs/promises`) are then
+  // checked for the names an import asks of them. Without it they are unresolved and nothing about them is said.
+  const typeRoots = nodeTypes === '1'
+    ? [path.join(project, 'node_modules', '@types'), path.join(project, '..', 'node_modules', '@types')]
+        .filter(d => fs.existsSync(path.join(d, 'node')))
+    : [];
+  const withNodeTypes = typeRoots.length > 0;
+  if (runtime !== 'browser' && !withNodeTypes) roots.push(NODE_GLOBALS);
   const options = {
     allowJs: true, checkJs: true, noEmit: true, strict: false, noImplicitAny: false,
     strictNullChecks: false, target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext,
     moduleResolution: ts.ModuleResolutionKind.Bundler, jsx: ts.JsxEmit.Preserve,
-    lib: ['lib.esnext.d.ts', 'lib.dom.d.ts', 'lib.dom.iterable.d.ts'], types: [], skipLibCheck: true,
+    lib: ['lib.esnext.d.ts', 'lib.dom.d.ts', 'lib.dom.iterable.d.ts'], types: withNodeTypes ? ['node'] : [],
+    ...(withNodeTypes ? { typeRoots } : {}), skipLibCheck: true,
     maxNodeModuleJsDepth: 0, allowImportingTsExtensions: true,
     // A browser loads modules as ES modules and nothing else: a default import
     // from a module with no default export fails as the page loads. Node may
@@ -216,10 +224,35 @@ process.stdin.on('data', d => content += d).on('end', () => {
     }
     return true;
   }
+  // What the module an import at `pos` names really exports, for a built-in module that lacks a name asked of it.
+  function exportsAt(sf, pos, wanted) {
+    if (!withNodeTypes) return '';
+    for (let n = nodeAt(sf, pos); n; n = n.parent) {
+      if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier) {
+        if (!/^node:/.test(n.moduleSpecifier.text)) return '';
+        const symbol = checker.getSymbolAtLocation(n.moduleSpecifier);
+        if (!symbol) return '';
+        // The names a program can import and use: values, not the types a module also declares.
+        const isValue = e => {
+          try { return ((e.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(e) : e).flags & ts.SymbolFlags.Value) !== 0; }
+          catch { return true; }
+        };
+        const names = checker.getExportsOfModule(symbol).filter(isValue).map(e => e.name).filter(x => x !== 'default');
+        if (!names.length) return '';
+        const near = names.filter(x => wanted && (x.toLowerCase().includes(wanted.toLowerCase())
+          || wanted.toLowerCase().includes(x.toLowerCase())));
+        const rest = names.filter(x => !near.includes(x)).sort();
+        return ' `' + n.moduleSpecifier.text + '` exports only: ' + [...near, ...rest].slice(0, 40).join(', ')
+          + ' - import one of those, or write the function yourself';
+      }
+    }
+    return '';
+  }
   function describe(d, sf) {
     const at = sf.getLineAndCharacterOfPosition(d.start);
-    return { line: at.line + 1, code: d.code,
-             message: ts.flattenDiagnosticMessageText(d.messageText, ' ').split(path.resolve(project) + path.sep).join(''),
+    let message = ts.flattenDiagnosticMessageText(d.messageText, ' ').split(path.resolve(project) + path.sep).join('');
+    if (d.code === 2305) message += exportsAt(sf, d.start, sf.text.slice(d.start, d.start + (d.length || 0)));
+    return { line: at.line + 1, code: d.code, message,
              text: sf.text.split('\n')[at.line].trim().slice(0, 160) };
   }
   // The file an import at `pos` loads, as the compiler resolves it; '' when it
@@ -332,6 +365,18 @@ def runs_in(repo_root: str | Path) -> str:
     return found[0].code_runs_in or BOTH
 
 
+def _reads_node_types() -> bool:
+    """Whether the built-in modules are checked against the project's `@types/node` (behind `PACKAGE_EXPORTS_NAMED`).
+
+    Measured on a small-model run: `import { promises as fs } from 'node:fs/promises'` - a name that module does not
+    export - stopped the product at start-up, `tsc` reported it, and this service said nothing: it reads no type
+    declarations of Node's own, so every `node:` import was unresolved and left alone.
+    """
+    from app.analysis import package_exports
+
+    return package_exports.enabled()
+
+
 def underlined(repo_root: str | Path, target: Path, content: str, project: Path | None = None) -> Underlined | None:
     """The language service's certain findings for `target` holding `content`; None when it cannot run.
 
@@ -370,7 +415,8 @@ def underlined(repo_root: str | Path, target: Path, content: str, project: Path 
     runtime = runs_in(root) if kind == "application" else BOTH
     try:
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [node, "-e", _SCRIPT, compiler, str(project), str(target), runtime, "1" if check_names else "0"],
+            [node, "-e", _SCRIPT, compiler, str(project), str(target), "1" if _reads_node_types() else "0",
+             runtime, "1" if check_names else "0"],
             input=content, capture_output=True, text=True, timeout=TIMEOUT_SECONDS,
         )
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing

@@ -1,0 +1,105 @@
+"""The compiler's errors that name something which does not exist, added to the "product does not start" defect (behind `START_DEFECT_NAMES_COMPILER_ERRORS`).
+
+Measured over three small-model runs on a TypeScript service: the product did not start for the first half hour, and
+each fixer was shown the one crash the runtime printed - a package path Hono does not export, then a name
+`node:fs/promises` does not have, then a host written `127.0.0-1` - one at a time, a fix and a round apart. The
+compiler had the whole list at the first round (14 errors in one project). A pack that declares a `typecheck`
+command has it run once when the product fails to start, and the errors that name a missing name, export, member or
+module - not the type complaints Node's own type stripping never reads - go with the defect, with what each package
+really exports where the language service knows it.
+"""
+from __future__ import annotations
+
+import logging
+import re
+from pathlib import Path
+from typing import Any, Callable, Sequence
+
+from app.switches import is_on
+
+logger = logging.getLogger(__name__)
+
+#: Off in code like every switch; the compose file turns it on.
+ON_BY_DEFAULT = False
+
+#: How many errors go with the defect.
+MOST_ERRORS = 12
+
+#: Errors about something that is not there: a name, a module, an export, a member, a path. The rest are type
+#: complaints (an implicit `any`, a value of the wrong type) that do not stop a program Node runs as it is.
+_MISSING = frozenset({2304, 2305, 2306, 2307, 2339, 2551, 2552, 2614, 2724, 2792})
+
+_ERROR = re.compile(r"^(?P<file>[^\s(][^(]*)\((?P<line>\d+),\d+\):\s+error\s+TS(?P<code>\d+):\s+(?P<message>.*)$")
+
+Runner = Callable[[Sequence[str], str, str], dict[str, Any]]
+
+
+def enabled() -> bool:
+    return is_on("START_DEFECT_NAMES_COMPILER_ERRORS", ON_BY_DEFAULT)
+
+
+def parse(output: str) -> list[tuple[str, int, int, str]]:
+    """`(file, line, code, message)` for each error line of the compiler's output that names something missing."""
+    found: list[tuple[str, int, int, str]] = []
+    for line in str(output or "").splitlines():
+        match = _ERROR.match(line.strip())
+        if match is None or "node_modules" in match["file"]:
+            continue
+        code = int(match["code"])
+        if code in _MISSING:
+            found.append((match["file"].strip(), int(match["line"]), code, match["message"].strip()))
+    return found
+
+
+def _what_the_module_has(project: Path, file: str, line: int, message: str) -> str:
+    """The sentence naming what the module an import reads really exports, when the language service can say."""
+    if "has no exported member" not in message:
+        return ""
+    try:
+        from app.analysis.language_service import the_names_the_module_has
+
+        importer = project / file
+        text = importer.read_text(encoding="utf-8", errors="replace").splitlines()[line - 1]
+        return the_names_the_module_has(project, importer, {"message": message, "text": text})
+    except Exception:  # noqa: BLE001 - the error stands as the compiler said it
+        return ""
+
+
+def the_errors(repo_root: str | Path, runner: Runner | None = None) -> str:
+    """The text to add to the start defect: the compiler's missing-name errors, or "" when off, undeclared or clean."""
+    if not enabled():
+        return ""
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(repo_root)
+        if found is None or not getattr(found[0], "typecheck", ()):
+            return ""
+        pack, record = found
+        project = str(record.get("project") or "")
+        if runner is None:
+            from app.stacks.scaffold import sandbox_runner
+
+            runner = sandbox_runner(repo_root)
+        outcome = runner(list(pack.typecheck), "default", project) or {}
+        output = f"{outcome.get('stdout') or ''}\n{outcome.get('stderr') or ''}"
+        errors = parse(output)[:MOST_ERRORS]
+        if not errors:
+            return ""
+        base = Path(repo_root) / project if project else Path(repo_root)
+        prefix = f"{project}/" if project else ""
+        lines = [
+            f"- {prefix}{file} line {line}: {message}{_what_the_module_has(base, file, line, message)}"
+            for file, line, _code, message in errors
+        ]
+        return (
+            f"\n\nThe compiler (`{' '.join(pack.typecheck)}`) also reports these names, modules or members that do not "
+            "exist in the product's files. Each is something the product cannot run with, not only the first one the "
+            "runtime stopped on; correct all of them in this one change:\n" + "\n".join(lines)
+        )
+    except Exception:  # noqa: BLE001 - a check that cannot run adds nothing
+        logger.debug("Could not add the compiler's errors to the start defect", exc_info=True)
+        return ""
+
+
+__all__ = ["MOST_ERRORS", "ON_BY_DEFAULT", "enabled", "parse", "the_errors"]

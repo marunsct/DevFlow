@@ -96,6 +96,7 @@ def service_pack(
     entrypoint: str = "",
     required_exports: Mapping[str, tuple[str, ...]] | None = None,
     relative_import_extension: str = "",
+    typecheck: tuple[str, ...] = (),
 ) -> StackPack:
     """A pack for an HTTP service in its own language, accepted through Playwright's `request` fixture."""
     # The brief names the service by its `start.sh`, and the suite runs that script when the project has one
@@ -133,6 +134,7 @@ def service_pack(
         entrypoint=entrypoint,
         required_exports=dict(required_exports or {}),
         relative_import_extension=relative_import_extension,
+        typecheck=typecheck,
         smoke_files={smoke_unit[0]: smoke_unit[1], "acceptance/scaffold-smoke.spec.js": SMOKE_ACCEPTANCE},
         guide=f"{guide}\n{DATA_GUIDE}",
         data_store=DATA_GUIDE,

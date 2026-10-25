@@ -2943,6 +2943,11 @@ def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
 
         from app.graph.acceptance_nodes import THE_PRODUCT_DOES_NOT_START
 
+        # What the suite's own run does first: the harness's files put back and a relative import given the
+        # extension its runtime needs. Measured on a small-model run: a fixer wrote `./app.js` for `./app.ts`
+        # (Node runs the `.ts` itself), the tests it was told "still fail" failed on that import alone, and it
+        # spent the stage on the same edit; the harness corrected the import only at the next suite run.
+        contract.enforce(root)
         if str(getattr(defect, "description", "") or "").startswith(THE_PRODUCT_DOES_NOT_START):
             # The suite starts the product its own way; unit tests that pass say
             # nothing about whether it does. Closing this on them left the same

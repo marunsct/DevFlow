@@ -31,6 +31,7 @@ from app.agents.technical_lead import SpecialistRole
 from app.tools.docs import docs_tools
 from app.tools.web_search import web_tools
 from app.tools.mcp_tools import tools_for as mcp_tools_for
+from app.analysis.package_exports import exports_tools
 from app.tools.package_registry import lookup_tools
 from app.tools.page_view import page_view_tools
 from app.tools.runtimes import runtime_tools
@@ -1380,6 +1381,8 @@ def create_specialist_agent(
         build_journal_read_tool(resolved_repo_root),
         # Versions move faster than any model's training: see `app.tools.package_registry`.
         *lookup_tools(),
+        # What an installed package really exports, before a name is imported from it (WM.1, PACKAGE_EXPORTS_NAMED).
+        *exports_tools(resolved_repo_root),
         # A framework's or package's current documentation, the web for what is
         # newer than the model, and the MCP servers: see `app.tools.docs`,
         # `app.tools.web_search` and `app.tools.mcp_tools`.

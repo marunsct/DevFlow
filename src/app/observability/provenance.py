@@ -54,6 +54,7 @@ SWITCHES: dict[str, str] = {
     "KEEP_THE_BEST_ATTEMPT": "app.graph.best_attempt",
     "KEEP_NET_GAINS": "app.graph.net_gain",
     "PACKAGE_EXPORTS_NAMED": "app.analysis.package_exports",
+    "PACK_ENTRY_EXPORTS_KEPT": "app.stacks.entry_exports",
     "NAMING_STANDARD": "app.stacks.naming",
     "REFUSALS_FOLDED": "app.agents.refusal_folding",
     "GUIDE_ANSWER_IN_SCHEMA": "app.models.guidance:answer_in_schema_switch",

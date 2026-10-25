@@ -117,6 +117,9 @@ class StackPack:
     #: `backend/app/`, the served page stayed the scaffold's `src/App.tsx`, and
     #: every page test failed its first control while 13 fixers chased criteria.
     entrypoints: tuple[str, ...] = ()
+    #: Names an entry file of the scaffold must keep exporting, by file relative to the project: the pack's own
+    #: smoke test and start file import them (`app.stacks.entry_exports`).
+    required_exports: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     #: Whether the product's code reaches its modules only through imports, so
     #: a source file under an entrypoint's folder that no import reaches is
     #: code the product never runs (`app.analysis.reachability`). Off for a

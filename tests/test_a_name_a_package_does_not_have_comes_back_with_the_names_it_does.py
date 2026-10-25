@@ -92,3 +92,23 @@ def test_off_it_says_nothing(tmp_path, monkeypatch):
     _hono(tmp_path)
     monkeypatch.setenv("PACKAGE_EXPORTS_NAMED", "off")
     assert package_exports.script_package_exports(tmp_path, "hono/testing") is None
+
+
+def test_a_model_can_look_before_it_writes_with_the_module_exports_tool(tmp_path):
+    _hono(tmp_path)
+    tools = package_exports.exports_tools(tmp_path)
+    assert [t.name for t in tools] == ["module_exports"]
+
+    answered = tools[0].invoke({"module": "hono/testing"})
+
+    assert answered["exports"] == ["testClient"] and "Only these names exist" in answered["note"]
+    assert "error" in tools[0].invoke({"module": "nothing-installed"})
+    assert "error" in tools[0].invoke({"module": "./local"})
+
+
+def test_the_tool_is_offered_to_a_specialist_and_not_when_the_switch_is_off(tmp_path, monkeypatch):
+    from app.agents import specialists
+
+    assert "exports_tools" in vars(specialists)
+    monkeypatch.setenv("PACKAGE_EXPORTS_NAMED", "off")
+    assert package_exports.exports_tools(tmp_path) == []

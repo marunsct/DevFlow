@@ -10139,6 +10139,11 @@ def build_workflow_graph(
             reported = reported + raised_by("page check", acceptance_nodes.interface_defects(state))
         except Exception:  # noqa: BLE001 - the round's own report stands
             logger.debug("Could not check how the page is presented", exc_info=True)
+        # What the pack's scaffold depends on and a rewrite dropped (PACK_ENTRY_EXPORTS_KEPT).
+        try:
+            reported = reported + raised_by("pack contract", acceptance_nodes.pack_contract_defects(state))
+        except Exception:  # noqa: BLE001 - the round's own report stands
+            logger.debug("Could not check what the pack's entry file must export", exc_info=True)
         reported, later_work = _defects_a_later_sprint_builds(reported, state)
         if later_work:
             logger.warning(

@@ -99,6 +99,8 @@ x-app-env: &app-env
   # A name an import asks of a package that does not have it comes back with what the package really exports
   # (owner, 2026-10-25: tune the harness for weaker models; measured: createClient/createTestClient from hono/testing).
   PACKAGE_EXPORTS_NAMED: ${PACKAGE_EXPORTS_NAMED:-on}
+  # A pack's entry file that stops exporting what the scaffold's own files import is a defect at once (owner, 2026-10-25).
+  PACK_ENTRY_EXPORTS_KEPT: ${PACK_ENTRY_EXPORTS_KEPT:-on}
   # One naming standard per language in the specification and every draft, and the sections that fix names asked
   # for again when empty (owner, 2026-10-25: name mismatches between files).
   NAMING_STANDARD: ${NAMING_STANDARD:-on}

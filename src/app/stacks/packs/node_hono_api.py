@@ -137,6 +137,7 @@ CMD ["node", "dist/main.js"]
 PACK = service_pack(
     name="node-hono-api",
     entrypoint="src/app.ts",
+    required_exports={"src/app.ts": ("createApp",)},
     title="HTTP service in TypeScript on Hono",
     language="typescript",
     frameworks=("hono",),

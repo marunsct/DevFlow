@@ -957,6 +957,32 @@ def sprint_already_done(state: Any) -> str:
     )
 
 
+def pack_contract_defects(state: Any) -> list[Any]:
+    """A defect for each export the pack's scaffold depends on that a stage's rewrite of its entry file dropped."""
+    from app.agents.specialists import ReportedDefect
+    from app.stacks import entry_exports
+
+    root = _root(state)
+    lost = entry_exports.what_the_entry_no_longer_exports(root)
+    if not lost:
+        return []
+    defects = []
+    for path, name in lost:
+        defects.append(ReportedDefect(
+            description=f"{path} no longer exports `{name}`, which the scaffold's start file and unit smoke test import.",
+            severity="major",
+            reproduction_steps=f"Read {path}: it has no `export` of `{name}`.",
+            expected_behavior=(
+                f"{path} keeps exporting `{name}`: the harness's own files import it by that name, and so "
+                "do the tests written for it. Add routes to what it builds; do not replace or rename it."
+            ),
+            actual_behavior=f"{path} does not export `{name}`.",
+            affected_files=[path],
+            owner=_owner_for(state, ""),
+        ))
+    return defects
+
+
 def interface_defects(state: Any) -> list[Any]:
     """Defects in how the page is presented that a script can prove, for its UI/UX owner.
 

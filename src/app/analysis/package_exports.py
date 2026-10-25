@@ -178,3 +178,54 @@ def python_package_exports(project: Path, dotted: str) -> list[str] | None:
             chosen = listed if listed else [n for n in names if not n.startswith("_")]
             return sorted(dict.fromkeys(chosen))[:MOST_NAMES]
     return None
+
+
+# --- the tool a model can look with ------------------------------------------------
+
+def _project_of(repo_root: str | Path) -> Path:
+    root = Path(repo_root)
+    try:
+        from app.tools.repository import pinned_project_directory
+
+        pinned = pinned_project_directory(root)
+    except Exception:  # noqa: BLE001 - the workspace root is searched instead
+        pinned = None
+    return root / pinned if pinned else root
+
+
+def exports_of(repo_root: str | Path, module: str) -> dict:
+    """What the installed package or module `module` exports, for the tool; {"error": ...} when it cannot be read."""
+    module = str(module or "").strip()
+    if not module or module.startswith((".", "/")):
+        return {"error": "Name an installed package or one of its subpaths, as an import writes it "
+                         "(`hono/testing`, `@hono/node-server`, `fastapi`, `jwt`); for a file of this project, read it."}
+    project = _project_of(repo_root)
+    for read in (script_package_exports, python_package_exports):
+        names = read(project, module)
+        if names is not None:
+            return {"module": module, "exports": names,
+                    "note": "Only these names exist; import from this list or write the function yourself."}
+    return {"error": f"`{module}` is not installed in this project, or its files cannot be read. "
+                     "Install it first, or check the name with look_up_package."}
+
+
+def exports_tools(repo_root: str | Path) -> list:
+    """The `module_exports` tool as a list, empty when it is switched off."""
+    if not enabled():
+        return []
+    from langchain_core.tools import tool
+
+    @tool
+    def module_exports(module: str) -> dict:
+        """Read the names an installed package really exports, before importing a name from it.
+
+        Use it whenever you are about to import something from a package you are not sure of: a name you remember
+        may not exist (a test client, a helper). Reads the installed files; runs nothing.
+
+        Args:
+            module: the package or subpath as an import writes it - `hono/testing`, `@hono/node-server`,
+                `fastapi`, `jwt`, `sqlalchemy.orm`.
+        """
+        return exports_of(repo_root, module)
+
+    return [module_exports]

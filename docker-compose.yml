@@ -96,6 +96,9 @@ x-app-env: &app-env
   # A fix that makes many tests pass and breaks one worker-written unit test stays (owner away, 2026-10-25;
   # measured: a fix that made 12 pass and broke 1 was reverted, five times over).
   KEEP_NET_GAINS: ${KEEP_NET_GAINS:-on}
+  # A name an import asks of a package that does not have it comes back with what the package really exports
+  # (owner, 2026-10-25: tune the harness for weaker models; measured: createClient/createTestClient from hono/testing).
+  PACKAGE_EXPORTS_NAMED: ${PACKAGE_EXPORTS_NAMED:-on}
   # One naming standard per language in the specification and every draft, and the sections that fix names asked
   # for again when empty (owner, 2026-10-25: name mismatches between files).
   NAMING_STANDARD: ${NAMING_STANDARD:-on}

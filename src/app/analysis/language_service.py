@@ -585,6 +585,12 @@ def _python_module_defines(project: Path, importer: Path, line: str) -> tuple[Pa
                     elif isinstance(node, (ast.Import, ast.ImportFrom)):
                         names += [(a.asname or a.name).split(".")[0] for a in node.names if a.name != "*"]
                 return candidate, sorted(dict.fromkeys(names))
+    if not dots:
+        from app.analysis import package_exports
+
+        names = package_exports.python_package_exports(project, spec)
+        if names is not None:
+            return Path(spec), names
     return None
 
 
@@ -606,8 +612,14 @@ def _script_module_defines(project: Path, importer: Path, line: str) -> tuple[Pa
 
     found = _SCRIPT_IMPORT_FROM.search(line or "")
     specifier = (found.group(1) or found.group(2)) if found else ""
-    if not specifier.startswith("."):
+    if not specifier:
         return None
+    if not specifier.startswith("."):
+        # A package, not a file of the project: what it really exports (a relative Path marks it as not the project's).
+        from app.analysis import package_exports
+
+        names = package_exports.script_package_exports(project, specifier)
+        return (Path(specifier), names) if names is not None else None
     stem = (importer.parent / specifier).resolve()
     # TypeScript writes `./m.js` for a file that is `m.ts`.
     bare = stem.with_suffix("") if stem.suffix in _SCRIPT_EXTENSIONS else stem
@@ -666,6 +678,10 @@ def the_names_the_module_has(project: Path, importer: Path, finding: dict) -> st
     if answer is None:
         return ""
     module, names = answer
+    if not module.is_absolute():
+        # A package: nothing in the project can add a name to it.
+        return (f" `{module.as_posix()}` is a package; it exports only: {', '.join(names[:25]) or 'nothing readable'}"
+                " - import one of those, or write the function yourself")
     try:
         shown = module.relative_to(project).as_posix()
     except ValueError:

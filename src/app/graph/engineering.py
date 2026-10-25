@@ -312,7 +312,12 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
             lines = ", ".join(str(f["line"]) for f in where[:6])
             module, defined, importers = missing.get((relative, message), ("", [], []))
             expected = "Every name the code uses is defined or imported, and every import names something its module exports."
-            if module:
+            if module and not importers:
+                expected += (
+                    f" `{module}` is a package and exports only {', '.join(f'`{n}`' for n in defined[:20]) or 'nothing readable'}: "
+                    "import one of those names or write the function yourself; a name cannot be added to a package."
+                )
+            elif module:
                 expected += (
                     f" `{module}` defines {', '.join(f'`{n}`' for n in defined[:20]) or 'nothing at its top level'}; "
                     f"{len(importers)} file(s) import this name from it ({', '.join(importers[:6])}): define it in "
@@ -370,6 +375,10 @@ def _names_their_modules_lack(root: str, project: Path | None, findings: dict[st
                 continue
             answer = what_the_module_defines(base, Path(root) / relative, str(finding.get("text") or ""))
             if answer is None:
+                continue
+            if not answer[0].is_absolute():
+                # A package: nothing in the project defines its names, so there are no importers to bundle.
+                seen[(relative, str(finding["message"]))] = (answer[0].as_posix(), answer[1], [])
                 continue
             module = answer[0].relative_to(Path(root)).as_posix() if answer[0].is_relative_to(Path(root)) else str(answer[0])
             key = (module, name.group(1) or name.group(2))

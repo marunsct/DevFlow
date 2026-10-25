@@ -706,6 +706,7 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
     result.overlaps, result.small_targets = _read_layout_findings(runtime_file)
     result.accessibility = _read_accessibility(runtime_file)
     _with_the_pages_they_failed_on(repo_root, project, result)
+    _with_the_errors_the_service_logged(repo_root, project, result)
     return _judged(repo_root, result, save)
 
 
@@ -758,6 +759,57 @@ def _with_the_pages_they_failed_on(repo_root: str | Path, project: str, result: 
             ))
         tests.append(test)
     result.report = replace(result.report, tests=tests)
+
+
+#: Where a pack's acceptance setup writes what the service printed while the suite ran.
+SERVICE_LOG = "test-results/service.log"
+MOST_SERVICE_ERRORS = 2
+_A_TRACEBACK = "Traceback (most recent call last):"
+_A_SERVER_ERROR = re.compile(r"\b50\d\b|Internal Server Error", re.I)
+_AN_EXCEPTION_LINE = re.compile(r"^[A-Za-z_][\w.]*(?:Error|Exception|Exit|Warning)\b.*$")
+_SERVICE_ERRORS_MARK = "\nThe service logged this while the suite ran:\n"
+
+
+def the_errors_a_service_logged(repo_root: str | Path, project: str) -> list[str]:
+    """The last distinct errors the service logged, each as its exception line and where in the project it was raised.
+
+    A test that meets a 500 learns only that the service failed; the traceback the service printed names the cause
+    (measured: `TypeError: 'password' is an invalid keyword argument for Account`, a route and a model that disagreed
+    on a field name, which fixers did not find in five rounds without it). Never raises.
+    """
+    try:
+        text = (Path(repo_root) / project / SERVICE_LOG).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    found: dict[str, str] = {}
+    for block in text.split(_A_TRACEBACK)[1:]:
+        lines = [line.rstrip() for line in block.splitlines()]
+        exception = next((line.strip() for line in reversed(lines) if _AN_EXCEPTION_LINE.match(line.strip())), "")
+        if not exception:
+            continue
+        frames = [line.strip() for line in lines
+                  if line.strip().startswith("File ") and ".py" in line and "site-packages" not in line]
+        found.pop(exception, None)
+        found[exception] = f"{exception}" + (f" ({frames[-1]})" if frames else "")
+    return list(found.values())[-MOST_SERVICE_ERRORS:]
+
+
+def _with_the_errors_the_service_logged(repo_root: str | Path, project: str, result: AcceptanceResult) -> None:
+    """Add what the service logged to each failing test that met a server error. Never raises."""
+    try:
+        errors = the_errors_a_service_logged(repo_root, project)
+        if not errors:
+            return
+        added = "".join(f"- {error[:400]}\n" for error in errors)
+        tests = [
+            replace(test, message=f"{test.message}{_SERVICE_ERRORS_MARK}{added}")
+            if test.outcome == "failed" and _A_SERVER_ERROR.search(test.message or "")
+            and _SERVICE_ERRORS_MARK not in (test.message or "") else test
+            for test in result.report.tests
+        ]
+        result.report = replace(result.report, tests=tests)
+    except Exception:  # noqa: BLE001 - the failures stand without it
+        return
 
 
 def _a_near_miss(pack: Any, message: str, page: str) -> str:

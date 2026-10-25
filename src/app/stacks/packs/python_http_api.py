@@ -44,6 +44,7 @@ from pathlib import Path
 import pytest
 
 PROJECT = Path(__file__).resolve().parent.parent
+LOG = PROJECT / "test-results" / "service.log"
 
 
 def _free_port() -> int:
@@ -66,10 +67,15 @@ class Service:
         # The way the brief starts it, when the project has its `start.sh`:
         # what the customer runs is what every test here proves starts.
         brief_s_way = ["sh", "start.sh"] if (PROJECT / "start.sh").is_file() else None
+        # Everything the service prints goes to a file the harness reads when a test meets a server error: a
+        # 500 says nothing about its cause, the traceback the service logged does. (A file, not a pipe: a pipe
+        # nobody reads fills up and stops the service.)
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        self._log = open(LOG, "a", encoding="utf-8")
         self._process = subprocess.Popen(
             brief_s_way or [sys.executable, "-m", "uvicorn", "{{package}}.main:app",
              "--host", "127.0.0.1", "--port", str(self.port)],
-            cwd=PROJECT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            cwd=PROJECT, env=env, stdout=self._log, stderr=subprocess.STDOUT, text=True,
             start_new_session=True,
         )
         deadline = time.monotonic() + 30
@@ -80,7 +86,7 @@ class Service:
             except OSError:
                 if self._process.poll() is not None or time.monotonic() > deadline:
                     self.stop()
-                    output = self._process.stdout.read() if self._process.stdout else ""
+                    output = LOG.read_text(encoding="utf-8", errors="replace") if LOG.is_file() else ""
                     pytest.fail(f"The service did not start:\\n{output[-3000:]}")
                 time.sleep(0.2)
 
@@ -95,6 +101,9 @@ class Service:
                 os.killpg(self._process.pid, 9)
             except ProcessLookupError:
                 pass
+        log = getattr(self, "_log", None)
+        if log is not None and not log.closed:
+            log.close()
 
     def restart(self) -> None:
         self.stop()
@@ -103,6 +112,7 @@ class Service:
 
 @pytest.fixture(scope="session")
 def service(tmp_path_factory):
+    LOG.unlink(missing_ok=True)
     running = Service(tmp_path_factory.mktemp("service-data"))
     running.start()
     yield running

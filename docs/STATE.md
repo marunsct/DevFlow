@@ -146,6 +146,5 @@ printed; the operator account only (`docs/HANDOVER.md` §3).
 Session reading at start, before this file existed: about 12,000 lines (MF.6). Now: this
 file, then only what the next action needs. Each session notes its fixes and their cost here
 when it hands over.
-
 | Session | Fixes | Notes |
 |---|---|---|| 2026-10-21 to 10-24 (langchain-90) | LF.119-LF.252, CM.1-3, EF.11, AY.2, PH.1-4, CG.1-3, RL.1-3, SZ.1-11, RS.1, MD.1-MD.7, WB.2 (off), WB.8, WB.9, MF.1/3/5 | taken over 10-21 14:18 JST; owner hands off from 10-24 02:35 JST |

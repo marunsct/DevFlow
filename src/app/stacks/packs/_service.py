@@ -49,6 +49,84 @@ the same service, so a test must create what it reads and look for its own
 records rather than counting all of them.
 """ + js.NAMING
 
+#: The harness's own helper for the one thing the suite's single running service cannot do: stop the service and start
+#: it again on the same data. It runs the project's `start.sh` (which the pack writes and keeps) on a free port and the
+#: data folder the test names. Measured over five runs: QA marked every persistence criterion "cannot be verified, the
+#: server runs once per suite" and shipped it deferred; one product lost its notes on a restart and the hidden test caught it.
+SERVICE_HELPER = """'use strict';
+// Kept by the harness. Starts the project's own start script on a free port and a data folder of the test's choosing, so a
+// test can stop the service and start it again on the same data.
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const net = require('node:net');
+const os = require('node:os');
+const path = require('node:path');
+
+const PROJECT = path.resolve(__dirname, '..');
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+  });
+}
+
+async function waitUntilUp(baseURL, child, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) throw new Error('the service exited with code ' + child.exitCode + ' before it answered');
+    try {
+      await fetch(baseURL + '/health');
+      return;
+    } catch (error) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+  throw new Error('the service did not answer within ' + timeoutMs + ' ms');
+}
+
+async function startService({ dataDir, timeoutMs = 60000 } = {}) {
+  const directory = dataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'service-data-'));
+  const port = await freePort();
+  const child = spawn('sh', ['start.sh'], {
+    cwd: PROJECT,
+    env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: directory },
+    stdio: 'ignore',
+    detached: true,
+  });
+  const baseURL = 'http://127.0.0.1:' + port;
+  try {
+    await waitUntilUp(baseURL, child, timeoutMs);
+  } catch (error) {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch (ignored) { /* already gone */ }
+    throw error;
+  }
+  return {
+    baseURL,
+    dataDir: directory,
+    async stop() {
+      if (child.exitCode !== null) return;
+      const exited = new Promise((resolve) => child.once('exit', resolve));
+      try { process.kill(-child.pid, 'SIGTERM'); } catch (ignored) { /* already gone */ }
+      await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5000))]);
+      try { process.kill(-child.pid, 'SIGKILL'); } catch (ignored) { /* already gone */ }
+    },
+  };
+}
+
+module.exports = { startService };
+"""
+
+RESTART_GUIDE = """A criterion about the data surviving a restart is tested, not deferred: `acceptance/service.cjs` is the harness's
+helper that starts the project's own `start.sh` on a free port and a data folder you name. In a test: `import service from
+'./service.cjs'; const { startService } = service;` (in a CommonJS file, `const { startService } = require('./service.cjs')`), then
+`const first = await startService(); ...write through first.baseURL with fetch ...; await first.stop(); const second = await
+startService({ dataDir: first.dataDir }); ...read the same records through second.baseURL...; await second.stop();`. Do not edit the helper."""
+
 #: What "every test runs on the file database" means for the schema.
 ON_THE_FILE_DATABASE = (
     "The schema, its column types, its queries and its migrations must work on that file "
@@ -117,6 +195,7 @@ def service_pack(
             "package.json": PACKAGE_JSON,
             **files,
             **script,
+            "acceptance/service.cjs": SERVICE_HELPER,
             "playwright.config.js": js.playwright_config(js.the_brief_s_start_or(start), "/health", server_timeout_ms=server_timeout_ms),
             ".gitignore": GITIGNORE + gitignore,
         },
@@ -129,7 +208,7 @@ def service_pack(
         acceptance_dir="acceptance",
         acceptance_pattern="*.spec.js",
         unit_pattern=unit_pattern,
-        kept_files=("playwright.config.js", *script, *kept_files),
+        kept_files=("playwright.config.js", "acceptance/service.cjs", *script, *kept_files),
         kept_scripts={"test:acceptance": "playwright test", **(kept_scripts or {})},
         entrypoint=entrypoint,
         required_exports=dict(required_exports or {}),
@@ -138,7 +217,7 @@ def service_pack(
         smoke_files={smoke_unit[0]: smoke_unit[1], "acceptance/scaffold-smoke.spec.js": SMOKE_ACCEPTANCE},
         guide=f"{guide}\n{DATA_GUIDE}",
         data_store=DATA_GUIDE,
-        acceptance_guide=ACCEPTANCE_GUIDE,
+        acceptance_guide=f"{ACCEPTANCE_GUIDE}\n{RESTART_GUIDE}",
         stack=stack,
         evidence_dir="test-results/evidence",
         test_bugs=js.TEST_BUGS,

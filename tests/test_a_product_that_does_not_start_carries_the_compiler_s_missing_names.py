@@ -114,3 +114,26 @@ def test_a_package_path_the_package_does_not_export_comes_back_with_the_paths_it
     text = compiler_errors.the_errors(project, runner)
 
     assert "hono/body-limit" in text and "hono/cors" in text
+
+
+def test_a_value_of_the_wrong_kind_is_kept_and_the_product_s_files_come_first():
+    output = (
+        "test/app.test.ts(3,5): error TS2345: Argument of type 'x' is not assignable to parameter of type 'y'.\n"
+        "src/app.ts(25,3): error TS2769: No overload matches this call.\n"
+        "src/app.ts(7,1): error TS7006: Parameter 'c' implicitly has an 'any' type.\n"
+    )
+    kept = compiler_errors.parse(output)
+    assert [(f, c) for f, _l, c, _m in kept] == [("src/app.ts", 2769), ("test/app.test.ts", 2345)]
+
+
+def test_the_native_pack_keeps_its_tsconfig(tmp_path):
+    pack = pack_named("node-hono-native-api")
+    assert "tsconfig.json" in pack.kept_files
+    contract.write(tmp_path, pack, "notes", "Notes")
+    project = tmp_path / "notes"
+    project.mkdir(exist_ok=True)
+    (project / "tsconfig.json").write_text('{"compilerOptions": {"module": "esnext", "moduleResolution": "nodenext"}}')
+
+    contract.enforce(tmp_path)
+
+    assert '"module": "nodenext"' in (project / "tsconfig.json").read_text()

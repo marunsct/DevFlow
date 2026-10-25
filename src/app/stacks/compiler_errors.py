@@ -29,6 +29,10 @@ MOST_ERRORS = 12
 #: complaints (an implicit `any`, a value of the wrong type) that do not stop a program Node runs as it is.
 _MISSING = frozenset({2304, 2305, 2306, 2307, 2339, 2551, 2552, 2614, 2724, 2792})
 
+#: A value of the wrong kind where a function or a component is wanted - a router handed to `app.use` for `app.route`
+#: made every request throw in one run - and "no overload matches".
+_THE_WRONG_KIND = frozenset({2345, 2769})
+
 _ERROR = re.compile(r"^(?P<file>[^\s(][^(]*)\((?P<line>\d+),\d+\):\s+error\s+TS(?P<code>\d+):\s+(?P<message>.*)$")
 
 Runner = Callable[[Sequence[str], str, str], dict[str, Any]]
@@ -46,9 +50,10 @@ def parse(output: str) -> list[tuple[str, int, int, str]]:
         if match is None or "node_modules" in match["file"]:
             continue
         code = int(match["code"])
-        if code in _MISSING:
+        if code in _MISSING or code in _THE_WRONG_KIND:
             found.append((match["file"].strip(), int(match["line"]), code, match["message"].strip()))
-    return found
+    # The product's files first: its own faults stop it, a test's do not.
+    return sorted(found, key=lambda item: (item[0].startswith(("test", "acceptance", "tests"))))
 
 
 def _what_the_module_has(project: Path, file: str, line: int, message: str) -> str:

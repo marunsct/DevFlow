@@ -168,5 +168,7 @@ PACK = service_pack(
     # The server's bootstrap is the pack's: it serves `createApp()` on `HOST` and `PORT`. Three small-model runs rewrote
     # it (a host of `127.0.0-1`, a call to a `startServer` of its own, an import of a module that was not there) and
     # the product did not start for the first half hour; the application is what the team writes, in `src/app.ts`.
-    kept_files=("src/main.ts",),
+    # `tsconfig.json` is kept for the same reason: a run changed its `module` setting and `tsc` then reported only the
+    # configuration, so no compiler error reached the fixers.
+    kept_files=("src/main.ts", "tsconfig.json"),
 )

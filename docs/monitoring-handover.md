@@ -712,6 +712,10 @@ working (the tool-approval check can fail transiently), schedule a retry about
   15 minutes later, a minute after the same run had been started by hand: two live runs on one model, and
   `current_run.txt` pointing at the newer. Cancel the duplicate and rewrite `data/loop/current_run.txt`.
 
+- **Never cap `loop.sh score` with `timeout` (2026-10-25).** It copies the workspace, starts the product and runs the
+  hidden tests and the mutation probe; a 330 s cap cut it short and the run read `UNSCORED - the hidden tests produced
+  no report`. Run it in the background and read its log.
+
 ### 0.5.1 Parked: known, not fixed
 
 - A stage's own notes shipped in the product: one run's fix stage, unable to find a fault, wrote

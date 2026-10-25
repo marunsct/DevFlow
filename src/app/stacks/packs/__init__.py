@@ -17,6 +17,7 @@ from app.stacks.packs.go_http_api import PACK as GO_HTTP_API
 from app.stacks.packs.go_programs import GO_CLI, GO_LIBRARY
 from app.stacks.packs.java_spring_api import PACK as JAVA_SPRING_API
 from app.stacks.packs.node_hono_api import PACK as NODE_HONO_API
+from app.stacks.packs.node_hono_native_api import PACK as NODE_HONO_NATIVE_API
 from app.stacks.packs.node_http_api import PACK as NODE_HTTP_API
 from app.stacks.packs.node_nest_api import PACK as NODE_NEST_API
 from app.stacks.packs.node_programs import NODE_CLI, NODE_LIBRARY, TYPESCRIPT_CLI, TYPESCRIPT_LIBRARY
@@ -40,6 +41,7 @@ ALL_PACKS = (
     NODE_HTTP_API,
     NODE_NEST_API,
     NODE_HONO_API,
+    NODE_HONO_NATIVE_API,
     REACT_EXPRESS,
     VUE_EXPRESS,
     REACT_FASTAPI,

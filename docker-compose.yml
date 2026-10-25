@@ -101,6 +101,9 @@ x-app-env: &app-env
   PACKAGE_EXPORTS_NAMED: ${PACKAGE_EXPORTS_NAMED:-on}
   # A pack's entry file that stops exporting what the scaffold's own files import is a defect at once (owner, 2026-10-25).
   PACK_ENTRY_EXPORTS_KEPT: ${PACK_ENTRY_EXPORTS_KEPT:-on}
+  # A measured arm, not the baseline (owner, 2026-10-25): Hono run by Node itself with node:test, no Jest or ts-jest, for
+  # weaker models. Off until its runs are compared with the Jest pack's.
+  HONO_NATIVE_TEST_RUNNER: ${HONO_NATIVE_TEST_RUNNER:-off}
   # One naming standard per language in the specification and every draft, and the sections that fix names asked
   # for again when empty (owner, 2026-10-25: name mismatches between files).
   NAMING_STANDARD: ${NAMING_STANDARD:-on}

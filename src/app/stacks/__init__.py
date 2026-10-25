@@ -529,6 +529,18 @@ def _framework_fits(pack: StackPack, stack: Any) -> bool:
 
 
 def choose_pack(stack: Any, text: str = "", rationale: str = "") -> StackPack | None:
+    """The pack for this stack and brief (see `_pack_that_fits`), or its measured arm when that arm is switched on."""
+    pack = _pack_that_fits(stack, text, rationale)
+    if pack is not None and pack.name == "node-hono-api":
+        from app.stacks.packs.node_hono_native_api import enabled
+
+        # A measured arm (owner 2026-10-25): Hono run by Node itself, with node:test, for weaker models.
+        if enabled():
+            return pack_named("node-hono-native-api") or pack
+    return pack
+
+
+def _pack_that_fits(stack: Any, text: str = "", rationale: str = "") -> StackPack | None:
     """The pack for this stack and brief, or None when no pack fits.
 
     A pack fits when it is for this kind of product, in the stack's language,

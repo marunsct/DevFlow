@@ -53,7 +53,8 @@ def parse(output: str) -> list[tuple[str, int, int, str]]:
 
 def _what_the_module_has(project: Path, file: str, line: int, message: str) -> str:
     """The sentence naming what the module an import reads really exports, when the language service can say."""
-    if "has no exported member" not in message:
+    # A name a module lacks, or a package path it does not export (`Cannot find module 'hono/middleware'`).
+    if "has no exported member" not in message and "Cannot find module '" not in message:
         return ""
     try:
         from app.analysis.language_service import the_names_the_module_has

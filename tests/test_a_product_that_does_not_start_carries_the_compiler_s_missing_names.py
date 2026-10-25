@@ -94,3 +94,23 @@ def test_the_start_defect_carries_the_errors(project, monkeypatch):
     defects = acceptance_nodes.failing_due_defects({}, [])
 
     assert defects and "The compiler also reports: X" in defects[0].actual_behavior
+
+
+def test_a_package_path_the_package_does_not_export_comes_back_with_the_paths_it_does(project, monkeypatch):
+    import json
+
+    monkeypatch.setenv("START_DEFECT_NAMES_COMPILER_ERRORS", "on")
+    monkeypatch.setenv("PACKAGE_EXPORTS_NAMED", "on")
+    package = project / "notes" / "node_modules" / "hono"
+    package.mkdir(parents=True)
+    (package / "package.json").write_text(json.dumps({"name": "hono", "exports": {
+        ".": "./dist/index.js", "./cors": "./dist/cors.js", "./body-limit": "./dist/body-limit.js"}}))
+    (project / "notes" / "src" / "app.ts").write_text("import { bodyLimit } from 'hono/middleware';\n")
+
+    def runner(argv, category, working_directory):
+        return {"stdout": "src/app.ts(1,26): error TS2307: Cannot find module 'hono/middleware' or its corresponding "
+                          "type declarations.\n"}
+
+    text = compiler_errors.the_errors(project, runner)
+
+    assert "hono/body-limit" in text and "hono/cors" in text

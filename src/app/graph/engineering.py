@@ -781,6 +781,30 @@ def what_the_fix_made_certain_to_fail(root: str, base: str) -> list[str]:
         return []
 
 
+def what_the_fix_did_to_the_install(root: str, base: str) -> str:
+    """Why the project's dependencies no longer install, when this fix edited a manifest and the install now fails; "".
+
+    Measured on a small-model run: a fix pinned `python-jose==4.3.0`, which does not exist, and the five fixers after it
+    each ended "its own tests still fail" on a project nothing could install, for the rest of the round; the defect that
+    carried the registry's answer was raised only when the round ended. A fix that makes the install fail is reverted at
+    once, with the installer's words and what the registry has. An install that was already failing is not this fix's.
+    """
+    try:
+        from app.analysis.manifests import MANIFEST_NAMES
+        from app.stacks.contract import INSTALL_FAILED
+
+        notes = [str(line) for line in (suite.last_result(root) or {}).get("repairs") or [] if INSTALL_FAILED in str(line)]
+        if not notes:
+            return ""
+        changed = ci._git(root, "diff", "--name-only", base)
+        names = {Path(line.strip()).name for line in (changed.stdout.splitlines() if changed is not None else []) if line.strip()}
+        if not names & MANIFEST_NAMES:
+            return ""
+        return "it broke the install: " + " ".join(notes[-1].split())[:600]
+    except Exception:  # noqa: BLE001 - a check that cannot run blames nothing
+        return ""
+
+
 def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list[str]:
     """Measure the fix. A fix that broke what passed before it is reverted; returns what it broke."""
     if not base or not ci_applies(root):
@@ -789,6 +813,9 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list
     after = ci.take(root, f"after {stage_name}")
     lost = ci.regressions(before, after)
     broken = _broken_tests(lost, before, after)
+    broke_the_install = what_the_fix_did_to_the_install(root, base)
+    if broke_the_install:
+        broken = [broke_the_install, *broken]
     if broken and after.problem:
         # Every test "broke" because none could run: the cause goes first, or
         # the next fixer reads a list of tests and never the build error.
@@ -815,7 +842,7 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list
     gained_now = after.passing() - (before.passing() if before is not None else set())
     from app.graph import net_gain
 
-    if broken and net_gain.keeps(lost, gained_now, product_runs=not after.problem):
+    if broken and net_gain.keeps(lost, gained_now, product_runs=not after.problem and not broke_the_install):
         logger.warning(
             "Kept %s: it made %d test(s) pass and broke %d unit test(s), which the next round raises: %s",
             stage_name, len(gained_now), len(lost), "; ".join(lost[:3]),

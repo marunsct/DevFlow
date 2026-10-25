@@ -101,9 +101,10 @@ x-app-env: &app-env
   PACKAGE_EXPORTS_NAMED: ${PACKAGE_EXPORTS_NAMED:-on}
   # A pack's entry file that stops exporting what the scaffold's own files import is a defect at once (owner, 2026-10-25).
   PACK_ENTRY_EXPORTS_KEPT: ${PACK_ENTRY_EXPORTS_KEPT:-on}
-  # A measured arm, not the baseline (owner, 2026-10-25): Hono run by Node itself with node:test, no Jest or ts-jest, for
-  # weaker models. Off until its runs are compared with the Jest pack's.
-  HONO_NATIVE_TEST_RUNNER: ${HONO_NATIVE_TEST_RUNNER:-off}
+  # Hono run by Node itself with node:test, no Jest or ts-jest, for weaker models. On from 2026-10-26 02:00 JST after six
+  # runs with the model in use: hidden 9, 9, 9, 8, 9 of 9 and one 0 (mixed versions), against 1, 0, 0, 0, 0 for the Jest
+  # pack. Not yet measured on a stronger model; `off` brings the Jest pack back.
+  HONO_NATIVE_TEST_RUNNER: ${HONO_NATIVE_TEST_RUNNER:-on}
   # The compiler's missing-name errors go with the "product does not start" defect, so a fixer sees them all at once and
   # not the runtime's one crash at a time (owner, 2026-10-25; measured: three runs lost their first half hour to it).
   START_DEFECT_NAMES_COMPILER_ERRORS: ${START_DEFECT_NAMES_COMPILER_ERRORS:-on}

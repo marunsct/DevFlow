@@ -418,6 +418,10 @@ def enforce(repo_root: str | Path) -> list[str]:
                 f"{project}/{shadow.relative_to(root).as_posix()} was read in place of the harness's "
                 f"{project}/{relative}; it has been removed - the harness's configuration is the one that runs."
             )
+    if getattr(pack, "relative_import_extension", ""):
+        from app.stacks import import_extensions
+
+        repairs.extend(f"{project}: {line}" for line in import_extensions.put_the_extensions_on(root, pack.relative_import_extension))
     if pack.kept_scripts:
         repairs.extend(_put_back_the_scripts(root, project, pack))
     repairs.extend(_put_back_the_toolchain(root, project, pack, rendered))

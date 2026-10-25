@@ -120,6 +120,9 @@ class StackPack:
     #: Names an entry file of the scaffold must keep exporting, by file relative to the project: the pack's own
     #: smoke test and start file import them (`app.stacks.entry_exports`).
     required_exports: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    #: ".ts" for a pack whose TypeScript Node runs as it is: the harness adds the extension to a relative import that
+    #: lacks it (`app.stacks.import_extensions`). "" for every other pack.
+    relative_import_extension: str = ""
     #: Whether the product's code reaches its modules only through imports, so
     #: a source file under an entrypoint's folder that no import reaches is
     #: code the product never runs (`app.analysis.reachability`). Off for a

@@ -46,6 +46,18 @@ def test_files_as_the_best_attempt_had_them_are_kept_on_a_re_plan(product):
     assert kept == {"src/app.ts"}
 
 
+def test_a_product_as_good_as_its_best_keeps_its_files_as_they_are_now(product):
+    """Measured: at 8 of 9 tests the fixers had improved files since the best commit; only one was kept, the rest were
+    redrafted, and the product fell to 2 of 10."""
+    (product / "src" / "store.ts").write_text("export const store = 2;\n")
+    (product / suite.RESULT_FILE).write_text(json.dumps({"ran": True, "passed": 15, "failed": 4}))
+
+    kept = best_attempt.files_the_best_attempt_already_has(
+        product, ["src/app.ts", "src/store.ts", "src/new.ts"], replans=1)
+
+    assert kept == {"src/app.ts", "src/store.ts"}
+
+
 @pytest.mark.parametrize("replans, best, failed", [(0, 15, 5), (1, 0, 5), (1, 4, 15)])
 def test_no_re_plan_no_best_or_a_weak_best_redrafts_everything(product, replans, best, failed):
     record = json.loads((product / ".harness" / "best-attempt.json").read_text())

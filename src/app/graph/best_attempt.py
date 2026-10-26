@@ -171,9 +171,16 @@ def files_the_best_attempt_already_has(root: str | Path, paths: list[str], *, re
         total = int(last.get("passed") or 0) + int(last.get("failed") or 0)
         if passed <= 0 or not commit or total <= 0 or passed * 2 < total:
             return set()
+        # The product as it stands, when it passes as many tests as the best: its files are the best files, whatever
+        # the fixers changed since that commit. Measured: a re-plan at 8 of 9 tests kept one file - the fixers had
+        # improved the others since the best commit - redrafted five, and the product fell to 2 of 10.
+        as_good_now = int(last.get("passed") or 0) >= passed
         kept: set[str] = set()
         for path in paths:
             if not (root / path).is_file():
+                continue
+            if as_good_now:
+                kept.add(path)
                 continue
             same = ci._git(root, "diff", "--quiet", commit, "--", path)
             if same is not None and same.returncode == 0:

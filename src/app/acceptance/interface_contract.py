@@ -65,6 +65,13 @@ MOST_CHECKS = 40
 _A_TEMPLATE = re.compile(r"\{[^}]*\}|/:[A-Za-z_]")
 
 
+def _a_write_that_needs_a_body(check: "Check") -> bool:
+    """A `POST`/`PUT`/`PATCH` line that says it succeeds: the probe sends a bare request, which a product that checks
+    its input rightly refuses. Measured on one run: `AC-1 POST /notes -> 201` was failed at release for the 422 the
+    product gave a request with no title, on a product that passed every hidden test."""
+    return check.kind == "http" and check.method in ("POST", "PUT", "PATCH") and 200 <= check.status < 300
+
+
 @dataclass(frozen=True)
 class Check:
     """One line of the contract, parsed."""
@@ -87,6 +94,10 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
     unreadable: list[str] = []
     for raw in lines or []:
         line = " ".join(str(raw).split()).strip(" -*`")
+        # A line the specification quoted whole, `"AC-1 POST /notes -> 201"`: measured on one run, every line of the
+        # contract was written so and none was read. Only a quote at both ends goes, so a page line's `"Email"` stays.
+        while len(line) > 1 and line[0] == line[-1] and line[0] in "\"'" and line.count(line[0]) % 2 == 0 and not _PAGE.match(line):
+            line = line[1:-1].strip(" -*`")
         if not line:
             continue
         # A note after the form says what the line is for, and is no part of
@@ -279,8 +290,13 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
         run = runner or suite._sandbox_runner(root)  # noqa: SLF001 - the suite's own runner
         probe = PROBE_RUNNERS.get(found[0].probe_runner) if found else None
         templated = [c for c in locked if c.kind in ("http", "page") and _A_TEMPLATE.search(c.path)]
-        web = [c for c in locked if c.kind in ("http", "page") and c not in templated]
-        unchecked = [*unreadable, *(f"{c.line} (a route with a parameter in it)" for c in templated)]
+        writes = [c for c in locked if _a_write_that_needs_a_body(c) and c not in templated]
+        web = [c for c in locked if c.kind in ("http", "page") and c not in templated and c not in writes]
+        unchecked = [
+            *unreadable,
+            *(f"{c.line} (a route with a parameter in it)" for c in templated),
+            *(f"{c.line} (a write that succeeds only with a body; the probe sends none)" for c in writes),
+        ]
         if probe is None:
             unchecked += [f"{c.line} (no runner on this stack probes a {c.kind} line)" for c in web]
             web = []

@@ -217,3 +217,23 @@ def test_a_line_set_aside_at_the_lock_is_read_again_at_release(tmp_path, monkeyp
 
     assert gaps == ["1 line(s) of the interface contract were not checked at release: "
                     "AC-2 GET /api/notes/{id} -> 200 (a route with a parameter in it)"]
+
+
+def test_a_line_quoted_whole_is_read_and_a_page_line_keeps_its_name():
+    checks, unreadable = ic.parse(['"AC-1 POST /notes -> 201"', "'AC-2 GET /notes -> 200'", 'AC-4 page /login textbox "Email"'])
+    assert unreadable == []
+    assert [(c.method, c.path, c.status) for c in checks[:2]] == [("POST", "/notes", 201), ("GET", "/notes", 200)]
+    assert checks[2].name == "Email"
+
+
+def test_a_write_that_succeeds_only_with_a_body_is_unchecked_not_failed(tmp_path, monkeypatch):
+    _locked_project(tmp_path, monkeypatch)
+    ic.record_at_lock(tmp_path, ["AC-1 POST /notes -> 201"])
+
+    gaps = ic.what_the_contract_checks_find(tmp_path, runner=lambda *a: 1 / 0)
+
+    assert gaps == ["1 line(s) of the interface contract were not checked at release: AC-1 POST /notes -> 201 "
+                    "(a write that succeeds only with a body; the probe sends none)"]
+    assert not BANNED.search(" ".join(gaps))
+    refused, _ = ic.parse(["AC-7 POST /notes -> 422"])
+    assert not ic._a_write_that_needs_a_body(refused[0])

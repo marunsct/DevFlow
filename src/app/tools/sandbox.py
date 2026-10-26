@@ -4870,6 +4870,10 @@ class SandboxExecutor:
                 )
         finally:
             _FOR_THE_HARNESS.reset(token)
+        # A service a test started with the restart helper and never stopped is stopped now (see `stray_services`).
+        from app.acceptance.stray_services import stop_strays
+
+        stop_strays(repo_root)
         # What the command wrote, so a conversation that read a file before a
         # formatter, a generator or an install rewrote it is not told it still
         # holds it (Initiative AO.9). Only for a command that ran.

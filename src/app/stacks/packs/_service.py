@@ -63,6 +63,18 @@ const os = require('node:os');
 const path = require('node:path');
 
 const PROJECT = path.resolve(__dirname, '..');
+// Every service started here, stopped when this process ends even if a test never calls `stop()`.
+const STARTED = new Set();
+function stopAll() {
+  for (const pid of STARTED) {
+    try { process.kill(-pid, 'SIGKILL'); } catch (ignored) { /* already gone */ }
+  }
+  STARTED.clear();
+}
+process.once('exit', stopAll);
+for (const signalName of ['SIGINT', 'SIGTERM']) {
+  process.once(signalName, () => { stopAll(); process.exit(1); });
+}
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -94,10 +106,13 @@ async function startService({ dataDir, timeoutMs = 60000 } = {}) {
   const port = await freePort();
   const child = spawn('sh', ['start.sh'], {
     cwd: PROJECT,
-    env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: directory },
+    env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: directory, HARNESS_SERVICE_OF: PROJECT },
     stdio: 'ignore',
     detached: true,
   });
+  // The test process may end without waiting for the service; its exit handler then stops it.
+  child.unref();
+  STARTED.add(child.pid);
   const baseURL = 'http://127.0.0.1:' + port;
   try {
     await waitUntilUp(baseURL, child, timeoutMs);
@@ -114,6 +129,7 @@ async function startService({ dataDir, timeoutMs = 60000 } = {}) {
       try { process.kill(-child.pid, 'SIGTERM'); } catch (ignored) { /* already gone */ }
       await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5000))]);
       try { process.kill(-child.pid, 'SIGKILL'); } catch (ignored) { /* already gone */ }
+      STARTED.delete(child.pid);
     },
   };
 }

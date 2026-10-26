@@ -72,3 +72,26 @@ def test_the_restart_guide_keeps_the_helper_to_the_restart_criterion():
     assert "only that criterion uses the" in guide and "data: { ... }" in guide
     assert "with fetch" not in guide
     assert not BANNED.search(guide.split("A criterion about the data")[-1])
+
+
+JSON_OPTION = """import { test, expect } from '@playwright/test';
+test('[AC-1] creates', async ({ request }) => {
+  const res = await request.post('/notes', { json: { title: 'a', body: 'b' } });
+  expect(res.status()).toBe(201);
+  const created = await res.json();
+  const upd = await request.put(`/notes/${created.id}`, {
+    json: { title: 'n' },
+  });
+});
+test('[AC-2] a route answers', async ({ page, request }) => {
+  await page.route('**/x', (route) => route.fulfill({ json: { ok: true } }));
+  const note = { json: 'a field called json' };
+  await request.post('/notes', { data: note });
+});
+"""
+
+
+def test_a_json_option_the_fixture_does_not_read_is_found_and_fulfill_is_not(tmp_path):
+    found = suite.requests_with_a_fetch_body(_suite(tmp_path, JSON_OPTION))
+    assert len(found) == 1 and "line(s) 3, 7:" in found[0] and "`json:` option" in found[0]
+    assert not BANNED.search(found[0])

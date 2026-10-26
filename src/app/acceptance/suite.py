@@ -669,6 +669,13 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         return _judged(repo_root, result, save)
     argv, report_path, project = command
     report_file = Path(repo_root) / project / report_path
+    if not repairs:
+        # Nothing was put back or installed, and the product is as it was when last measured: that run stands (MEASURE_ONCE).
+        from app.acceptance.measured_once import saved_run_if_unchanged
+
+        kept = saved_run_if_unchanged(repo_root, " ".join(argv), report_file)
+        if kept is not None:
+            return _judged(repo_root, kept, save)
     junit.clear(report_file)
     runtime_file = _runtime_report(repo_root, project)
     if runtime_file is not None:

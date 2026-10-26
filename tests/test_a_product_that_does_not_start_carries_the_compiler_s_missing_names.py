@@ -137,3 +137,14 @@ def test_the_native_pack_keeps_its_tsconfig(tmp_path):
     contract.enforce(tmp_path)
 
     assert '"module": "nodenext"' in (project / "tsconfig.json").read_text()
+
+
+def test_a_type_imported_as_a_value_is_kept_because_node_stops_on_it():
+    output = (
+        "src/datastore.ts(4,10): error TS1484: 'Note' is a type and must be imported using a type-only import when "
+        "'verbatimModuleSyntax' is enabled.\n"
+        "src/index.ts(1,15): error TS1485: 'Note' resolves to a type-only declaration and must be re-exported using a "
+        "type-only re-export when 'verbatimModuleSyntax' is enabled.\n"
+        "test/x.test.ts(10,27): error TS7006: Parameter 'baseURL' implicitly has an 'any' type.\n"
+    )
+    assert [code for _file, _line, code, _message in compiler_errors.parse(output)] == [1484, 1485]

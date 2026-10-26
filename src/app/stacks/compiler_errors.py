@@ -33,6 +33,11 @@ _MISSING = frozenset({2304, 2305, 2306, 2307, 2339, 2551, 2552, 2614, 2724, 2792
 #: made every request throw in one run - and "no overload matches".
 _THE_WRONG_KIND = frozenset({2345, 2769})
 
+#: A type imported as a value (`import { Note }` where `Note` is an interface), and its re-export form. Node's type
+#: stripping keeps the import and the program stops with "does not provide an export named 'Note'": measured on a
+#: small-model run, the start defect named another error and the fixers never saw this one.
+_A_TYPE_IMPORTED_AS_A_VALUE = frozenset({1484, 1485})
+
 _ERROR = re.compile(r"^(?P<file>[^\s(][^(]*)\((?P<line>\d+),\d+\):\s+error\s+TS(?P<code>\d+):\s+(?P<message>.*)$")
 
 Runner = Callable[[Sequence[str], str, str], dict[str, Any]]
@@ -50,7 +55,7 @@ def parse(output: str) -> list[tuple[str, int, int, str]]:
         if match is None or "node_modules" in match["file"]:
             continue
         code = int(match["code"])
-        if code in _MISSING or code in _THE_WRONG_KIND:
+        if code in _MISSING or code in _THE_WRONG_KIND or code in _A_TYPE_IMPORTED_AS_A_VALUE:
             found.append((match["file"].strip(), int(match["line"]), code, match["message"].strip()))
     # The product's files first: its own faults stop it, a test's do not.
     return sorted(found, key=lambda item: (item[0].startswith(("test", "acceptance", "tests"))))

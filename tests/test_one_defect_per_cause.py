@@ -97,3 +97,19 @@ class TestWhatIsOne:
         reported = [_d("one thing"), _d("another")]
 
         assert _one_defect_per_cause(reported) == reported
+
+
+def test_a_pack_contract_finding_leads_the_unit_test_symptom_it_is_merged_with():
+    symptom = _d(
+        "The unit tests fail. It says: SyntaxError: The requested module './app.ts' does not provide an export named "
+        "'createApp'", ["notes-api/src/app.ts"], source="test round", owner="backend",
+    )
+    cause = _d(
+        "notes-api/src/app.ts no longer exports `createApp`, which the scaffold's start file and unit smoke test import.",
+        ["notes-api/src/app.ts"], source="pack contract", owner="backend",
+    )
+
+    merged = _one_defect_per_cause([symptom, cause])
+
+    assert len(merged) == 1
+    assert merged[0].description.startswith("notes-api/src/app.ts no longer exports `createApp`")

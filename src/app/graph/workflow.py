@@ -5319,12 +5319,15 @@ def _names_a_cause(defect: Any) -> bool:
 
     The language service's findings (a name at a file and line, a package no
     manifest declares) are certain and say where the change is; a failing
-    test only says something is wrong.
+    test only says something is wrong. So is the pack contract's (an entry
+    file that no longer exports what the pack's start file imports): measured
+    on a small-model run, it was merged under "The unit tests fail" and the
+    fixers never read which name was gone.
     """
     from app.analysis import dependency_drift
 
     return (
-        str(getattr(defect, "source", "") or "") == "language service"
+        str(getattr(defect, "source", "") or "") in {"language service", "pack contract"}
         or str(getattr(defect, "description", "") or "").startswith(dependency_drift.OPENING)
     )
 

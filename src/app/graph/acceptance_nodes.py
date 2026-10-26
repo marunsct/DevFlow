@@ -1366,8 +1366,26 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
         *suite.tests_that_cannot_pass(root, result),
         *suite.tests_left_behind_by_their_own_change(root, result),
         *suite.vacuous_green(root, result),
+        *_due_criteria_with_no_test(root, due),
     ]
     return acceptance_requests.acceptance_block(result, due), broken
+
+
+def _due_criteria_with_no_test(root: str, due: list[str]) -> list[str]:
+    """The suite's gaps for criteria due now that no locked test names: QA's to write, not a fixer's to build.
+
+    Measured on a small-model run: the suite was locked with AC-15 untested, every round raised it as a product
+    defect, the dispatch closed it at once (no test of it failed), and the sprint was planned again - four rounds
+    and a re-plan in two minutes, at 17 of 18 with every test passing. A product change cannot give a criterion a
+    test.
+    """
+    wanted = {str(item) for item in due or ()}
+    if not wanted:
+        return []
+    try:
+        return [gap for gap in suite.gaps(root) if gap.split(" ", 1)[0] in wanted]
+    except Exception:  # noqa: BLE001 - a check that cannot run reopens nothing
+        return []
 
 
 #: Where a suite repaired for a failed attempt's dispute goes back to: the

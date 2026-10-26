@@ -824,7 +824,8 @@ def passing_since_reported(state: Any, failing: list[str]) -> list[str]:
     if not failing:
         return []
     latest = ci.load(_root(state), "latest")
-    measured_since = rf"(?:before|after) defect_fix_{int(state.get('test_round', 0) or 0)}_\d+"
+    # A batch of fixes run side by side is measured as `defect_fix_{round}_batch` (`defect_fix_parallel_node`).
+    measured_since = rf"(?:before|after) defect_fix_{int(state.get('test_round', 0) or 0)}_(?:\d+|batch)"
     if latest is None or not re.fullmatch(measured_since, str(latest.label or "")):
         return []
     for criterion in failing:
@@ -1309,7 +1310,10 @@ def tests_that_fail_alone(repo_root: Any, names: list[str]) -> tuple[list[str], 
         for shown, declared in suite.declared_tests(repo_root):
             for tag in junit.tags_in(declared):
                 tagged.setdefault(tag, set()).add(shown)
-        runs = each_file(repo_root, contract.read(repo_root) or {}, sandbox_runner(repo_root))
+        # Only the files that hold a disputed test: the others have no bearing on the dispute, and a service suite
+        # runs each file with its own server (deep review 2026-10-26).
+        disputed = {tag for name in names for tag in junit.tags_in(name)}
+        runs = each_file(repo_root, contract.read(repo_root) or {}, sandbox_runner(repo_root), naming=disputed or None)
         outcome = {str(run.get("file")): str(run.get("outcome")) for run in runs}
     except Exception:  # noqa: BLE001 - a check that cannot run re-measures nothing
         logger.warning("Could not re-measure the disputed tests file by file", exc_info=True)

@@ -376,6 +376,11 @@ def json_with_its_commas_put_right(content: str) -> tuple[str, list[str]] | None
                 line = before.count("\n") + 1
                 text = before[:-1] + text[len(before):]
                 done.append(f"the comma at the end of line {line} was removed")
+            elif message.startswith("Illegal trailing comma") and position < len(text) and text[position] == ",":
+                # Python 3.13 and later name the comma itself and point at it.
+                line = text[:position].count("\n") + 1
+                text = text[:position] + text[position + 1:]
+                done.append(f"the comma at the end of line {line} was removed")
             else:
                 return None
     else:

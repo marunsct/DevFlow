@@ -114,3 +114,15 @@ def test_a_file_that_allows_comments_is_left_to_its_own_reader(tmp_path: Path) -
     write_approved_artifact(tmp_path, "app/tsconfig.json", content)
 
     assert (tmp_path / "app" / "tsconfig.json").read_text(encoding="utf-8") == content
+
+
+def test_a_trailing_comma_is_removed_whichever_way_the_parser_words_it():
+    """Python 3.12 says "Expecting property name"; 3.13 and later "Illegal trailing comma" and point at the comma."""
+    from app.analysis.syntax_balance import json_with_its_commas_put_right
+
+    fixed = json_with_its_commas_put_right('{\n  "a": 1,\n  "b": [1, 2,],\n}\n')
+
+    assert fixed is not None
+    import json
+
+    assert json.loads(fixed[0]) == {"a": 1, "b": [1, 2]}

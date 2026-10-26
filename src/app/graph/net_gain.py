@@ -35,5 +35,10 @@ def keeps(lost: Collection[str], gained: Collection[str], *, product_runs: bool)
     if not enabled() or not product_runs or not lost:
         return False
     a_criterion_lost = any(not str(name).startswith("unit: ") for name in lost)
+    # The locked suite is the definition of done: a fix that makes several of its tests pass and breaks only the
+    # workers' unit tests stays whatever the count. Measured on a small-model run: a fix that brought up a product
+    # that had not started for an hour made 15 tests pass, broke 8 unit tests, and was reverted for the ratio.
+    if not a_criterion_lost and sum(1 for name in gained if not str(name).startswith("unit: ")) >= MIN_GAINED:
+        return True
     least = MIN_GAINED_IF_A_CRITERION_IS_LOST if a_criterion_lost else MIN_GAINED
     return len(gained) >= least and len(gained) >= RATIO * len(lost)

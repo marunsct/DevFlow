@@ -97,6 +97,16 @@ def test_the_ratio_scales_with_what_was_broken():
     assert net_gain.keeps(["unit: a"], ["x"] * 3, product_runs=True)
     assert not net_gain.keeps(["acceptance: a"], ["x"] * 3, product_runs=True)
     assert net_gain.keeps(["acceptance: a"], ["x"] * 4, product_runs=True)
-    assert not net_gain.keeps(["unit: a", "unit: b"], ["x"] * 5, product_runs=True)
-    assert net_gain.keeps(["unit: a", "unit: b"], ["x"] * 6, product_runs=True)
+    assert not net_gain.keeps(["unit: a", "unit: b"], ["unit: x"] * 5, product_runs=True)
+    assert net_gain.keeps(["unit: a", "unit: b"], ["unit: x"] * 6, product_runs=True)
     assert not net_gain.keeps(["unit: a"], ["x"] * 2, product_runs=True)
+
+
+def test_a_fix_that_gains_locked_tests_and_breaks_only_unit_tests_stays_whatever_the_ratio(monkeypatch):
+    monkeypatch.setenv("KEEP_NET_GAINS", "on")
+    lost = [f"unit: test/notes.test.ts › case {n}" for n in range(8)]
+    gained = [f"acceptance › [AC-{n}] works" for n in range(5)] + [f"unit: test/other.test.ts › {n}" for n in range(10)]
+    assert net_gain.keeps(lost, gained, product_runs=True) is True
+    # Unit tests alone still answer to the ratio, and a lost criterion still needs the larger gain.
+    assert net_gain.keeps(lost, [f"unit: x › {n}" for n in range(15)], product_runs=True) is False
+    assert net_gain.keeps(["acceptance › [AC-1] a"], ["acceptance › [AC-2] b", "acceptance › [AC-3] c", "acceptance › [AC-4] d"], product_runs=True) is False

@@ -398,6 +398,22 @@ def _check_read_only() -> None:
         )
 
 
+def _the_frontier_fields(payload: Any) -> dict[str, str]:
+    """The frontier (judgement) model's stored overrides from a save that names one."""
+    return {
+        "judgement_provider": payload.judgement_provider,
+        "judgement_base_url": payload.judgement_base_url,
+        "judgement_model_name": payload.judgement_model_name.strip(),
+        "judgement_context_window": (
+            str(payload.judgement_context_window) if payload.judgement_context_window else ""
+        ),
+        "judgement_max_output_tokens": (
+            str(payload.judgement_max_output_tokens) if payload.judgement_max_output_tokens else ""
+        ),
+        "plan_on_judgement_model": "true" if payload.plan_on_judgement_model else "false",
+    }
+
+
 @settings_router.put("", response_model=SettingsView)
 async def update_settings(
     payload: SettingsUpdate, user: UserInDB = Depends(require_admin)
@@ -433,19 +449,13 @@ async def update_settings(
             "thinking_effort": payload.thinking_effort,
             "execution_mode": payload.execution_mode,
             **({"delivery_mode": payload.delivery_mode} if payload.delivery_mode else {}),
-            # Empty clears each override, which with an empty name turns the
-            # judgement model off.
-            "judgement_provider": payload.judgement_provider,
-            "judgement_base_url": payload.judgement_base_url,
-            "judgement_model_name": payload.judgement_model_name.strip(),
-            "judgement_context_window": (
-                str(payload.judgement_context_window) if payload.judgement_context_window else ""
-            ),
-            "judgement_max_output_tokens": (
-                str(payload.judgement_max_output_tokens) if payload.judgement_max_output_tokens else ""
-            ),
+            # The frontier model only when this save carries one. It has its own
+            # section and its own "No model" (`PUT /settings/frontier`); written
+            # empty from here, a general save six seconds after a frontier save
+            # wiped the frontier model the owner had just set (audit log,
+            # 2026-10-26 15:09:19 and 15:09:25 UTC).
+            **(_the_frontier_fields(payload) if payload.judgement_model_name.strip() else {}),
             "escalate_after_attempts": str(payload.escalate_after_attempts),
-            "plan_on_judgement_model": "true" if payload.plan_on_judgement_model else "false",
         },
         actor=user.username,
     )

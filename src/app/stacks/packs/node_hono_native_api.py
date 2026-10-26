@@ -81,13 +81,18 @@ export function createApp(): Hono {
 }
 """
 
+#: Measured on a small-model run: the first draft made `createApp` `async`, the start file served the `fetch` of a
+#: Promise, every request answered 500, and no fix, guide or note brought the model to undo it in four sprint
+#: attempts (hidden 0/9). The pack's own start file awaits the factory, which serves either form.
 MAIN = """import { serve } from '@hono/node-server';
 import { createApp } from './app.ts';
 
 const port = Number(process.env.PORT || 3000);
 const hostname = process.env.HOST || '127.0.0.1';
+// Awaited, so a `createApp` that loads its data first and returns a Promise is served all the same.
+const app = await createApp();
 
-serve({ fetch: createApp().fetch, port, hostname }, () => {
+serve({ fetch: app.fetch, port, hostname }, () => {
   console.log(`Listening on http://${hostname}:${port}`);
 });
 """
@@ -97,7 +102,7 @@ import { test } from 'node:test';
 import { createApp } from '../src/app.ts';
 
 test('the service reports its health', async () => {
-  const response = await createApp().request('/health');
+  const response = await (await createApp()).request('/health');
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { status: 'ok' });
 });

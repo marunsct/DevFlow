@@ -125,6 +125,13 @@ def _what_the_language_service_finds(state: Any) -> list[Any]:
 #: (`workflow._one_defect_per_root_error` reads it).
 THE_PAGE_WHEN_IT_FAILED = "\nThe page when it failed:\n"
 
+def _what_the_start_shows(root: str) -> str:
+    """What the product printed and answered when started the way the suite starts it (`start_probe`); "" when off."""
+    from app.acceptance.start_probe import what_the_start_shows
+
+    return what_the_start_shows(root)
+
+
 def _root(state: Any) -> str:
     return state["repository"].root_path
 
@@ -1149,7 +1156,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             severity="blocking",
             reproduction_steps=f"Run `{command}` in the project directory: the product fails before any test runs.",
             expected_behavior="The product builds and starts, and the acceptance suite's tests run against it.",
-            actual_behavior=never_started[:1500] + compiler_errors.the_errors(_root(state)),
+            actual_behavior=never_started[:1500] + _what_the_start_shows(_root(state)) + compiler_errors.the_errors(_root(state)),
             affected_files=[],
             owner=_owner_for(state, never_started),
         ))

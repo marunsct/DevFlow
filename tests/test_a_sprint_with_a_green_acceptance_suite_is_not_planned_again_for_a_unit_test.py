@@ -63,3 +63,22 @@ def test_the_replan_asks_before_it_plans_again():
     body = source[source.index("def _replan_or_escalate("):source.index("def defect_remediation_node(")]
     assert "settle_when_green.applies(" in body
     assert body.index("settle_when_green.applies(") < body.index("if revision_count > MAX_MILESTONE_REVISIONS:")
+
+
+WORDED_BY_THE_ROUND = SimpleNamespace(
+    status="open", caught_by="npm test", failing_criteria=[],
+    description="The error handler answers with 'Internal Server Error' where the test expects an empty body",
+)
+
+
+def test_a_unit_test_defect_the_round_worded_itself_settles_too(tmp_path):
+    _result(tmp_path)
+    assert settle_when_green.applies(tmp_path, [WORDED_BY_THE_ROUND, UNIT], replans=1) is True
+
+
+def test_a_worded_defect_with_no_failing_command_or_naming_a_criterion_does_not(tmp_path):
+    _result(tmp_path)
+    opinion = SimpleNamespace(status="open", caught_by="", failing_criteria=[], description="The code could be cleaner")
+    naming = SimpleNamespace(status="open", caught_by="npm test", failing_criteria=["AC-5"], description="Delete is wrong")
+    assert settle_when_green.applies(tmp_path, [opinion], replans=1) is False
+    assert settle_when_green.applies(tmp_path, [naming], replans=1) is False

@@ -1924,6 +1924,7 @@ def requests_with_a_fetch_body(repo_root: str | Path) -> list[str]:
         if not _USES_THE_REQUEST_FIXTURE.search(text):
             continue
         lines: list[int] = []
+        as_json: list[int] = []
         for match in _BODY_KEY.finditer(text):
             literal = _the_object_around(text, match.start())
             if literal and _FETCH_STYLE_SIBLING.search(literal):
@@ -1935,14 +1936,15 @@ def requests_with_a_fetch_body(repo_root: str | Path) -> list[str]:
             if opening >= 0 and not text[opening + 1:match.start()].strip() and _OPTIONS_OF_A_FIXTURE_CALL.search(
                 text[max(0, opening - 300):opening]
             ):
-                lines.append(text.count("\n", 0, match.start()) + 1)
-        lines = sorted(set(lines))
+                as_json.append(text.count("\n", 0, match.start()) + 1)
+        named = "`json:`" if as_json and not lines else "`body:` in fetch-style options"
+        lines = sorted(set(lines + as_json))
         if not lines:
             continue
         where = ", ".join(str(n) for n in lines[:8]) + (" ..." if len(lines) > 8 else "")
         problems.append(
-            f"`{path.relative_to(root).as_posix()}` line(s) {where}: a request body is passed as `body:` in "
-            "fetch-style options, which Playwright's `request` fixture does not read - the service receives no body "
+            f"`{path.relative_to(root).as_posix()}` line(s) {where}: a request body is passed as {named}, "
+            "which Playwright's `request` fixture does not read - the service receives no body "
             "and answers 400, on every product (a `json:` option is not read either; only `route.fulfill` has one). "
             "Send it as `data: { ... }` (`request.post(path, { data: note })`); `headers` may stay, `method` is the "
             "function's name."

@@ -93,5 +93,5 @@ test('[AC-2] a route answers', async ({ page, request }) => {
 
 def test_a_json_option_the_fixture_does_not_read_is_found_and_fulfill_is_not(tmp_path):
     found = suite.requests_with_a_fetch_body(_suite(tmp_path, JSON_OPTION))
-    assert len(found) == 1 and "line(s) 3, 7:" in found[0] and "`json:` option" in found[0]
+    assert len(found) == 1 and "line(s) 3, 7: a request body is passed as `json:`," in found[0]
     assert not BANNED.search(found[0])

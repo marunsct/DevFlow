@@ -32,6 +32,11 @@ def _git(root: Path, *args: str) -> str | None:
     return done.stdout if done.returncode == 0 else None
 
 
+#: Bounds on reading untracked files for the fingerprint.
+MOST_UNTRACKED_FILES = 2_000
+MOST_UNTRACKED_BYTES = 1_000_000
+
+
 def fingerprint(repo_root: str | Path) -> str:
     """The product's state as git sees it - its commit and its uncommitted changes; "" without a repository."""
     root = Path(repo_root)
@@ -40,7 +45,15 @@ def fingerprint(repo_root: str | Path) -> str:
         return ""
     diff = _git(root, "diff", "HEAD", "--", ".", *_NOT_THE_PRODUCT) or ""
     untracked = _git(root, "ls-files", "--others", "--exclude-standard", "--", ".", *_NOT_THE_PRODUCT) or ""
-    return hashlib.sha256(f"{head.strip()}\n{diff}\n{untracked}".encode()).hexdigest()[:20]
+    # An untracked file by its content too, not its name alone: a new file changed again before anything committed
+    # it read as unchanged, and a measurement taken before the change would stand (`measured_once`).
+    contents = hashlib.sha256()
+    for name in sorted(line for line in untracked.splitlines() if line.strip())[:MOST_UNTRACKED_FILES]:
+        try:
+            contents.update(name.encode() + b"\0" + (root / name).read_bytes()[:MOST_UNTRACKED_BYTES])
+        except OSError:
+            contents.update(name.encode() + b"\0?")
+    return hashlib.sha256(f"{head.strip()}\n{diff}\n{untracked}\n{contents.hexdigest()}".encode()).hexdigest()[:20]
 
 
 def unchanged_since_the_suite_measured(repo_root: str | Path) -> bool:

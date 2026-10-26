@@ -59,6 +59,7 @@ SWITCHES: dict[str, str] = {
     "START_DEFECT_NAMES_COMPILER_ERRORS": "app.stacks.compiler_errors",
     "SETTLE_WHEN_ACCEPTANCE_IS_GREEN": "app.graph.settle_when_green",
     "STALL_RULE": "app.graph.stalled_sprint",
+    "BUILDER_FACTS": "app.graph.builder_facts",
     "NAMING_STANDARD": "app.stacks.naming",
     "REFUSALS_FOLDED": "app.agents.refusal_folding",
     "GUIDE_ANSWER_IN_SCHEMA": "app.models.guidance:answer_in_schema_switch",

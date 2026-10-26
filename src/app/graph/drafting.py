@@ -274,6 +274,15 @@ def _the_naming_standard(stack: Any) -> str:
         return ""
 
 
+def _the_builder_s_facts(root: Path, path: str) -> str:
+    try:
+        from app.graph.builder_facts import section
+
+        return section(root, path)
+    except Exception:  # noqa: BLE001 - the request as it was
+        return ""
+
+
 def draft_request(root: Path, path: str, task: Any, specification: Any, stack: Any,
                   diagnostics: list[str] | None = None) -> str:
     """What one file's draft is asked; `diagnostics` are what the compiler reported on its last draft."""
@@ -303,6 +312,8 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         ("--- The compiler reports, in the draft above ---\n" + "\n".join(diagnostics)) if diagnostics else "",
         # The layout every builder and judge reads (plan CM.1).
         the_facts_section(root, built=False).strip(),
+        # What a fixer is told after a failure, told before the file is written (BUILDER_FACTS).
+        _the_builder_s_facts(root, path),
         _the_naming_standard(stack),
         _where_dependencies_go(root),
         f"Reply with the complete content of `{path}` and nothing else, in one fenced code block. "
@@ -345,6 +356,11 @@ def _repaired_where_the_compiler_says(
     tasks = {path: task for _, path, task in jobs}
     for _pass in range(MOST_REPAIR_PASSES):
         reported = diagnose(written) if written else []
+        # The compiler's own errors beside the language service's: `tsc` reports a router handed to `app.use`, the
+        # service does not (BUILDER_FACTS).
+        from app.graph.builder_facts import compiler_lines
+
+        reported = [*reported, *(line for line in compiler_lines(repo_root, written) if line not in reported)]
         if not reported:
             return
         failing = [path for path in written if any(f"`{path}`" in line for line in reported)]

@@ -115,6 +115,9 @@ x-app-env: &app-env
   # A sprint whose last two re-plan attempts did not beat the best product so far goes to the escalation instead of being
   # planned again (owner's standing direction, 2026-10-26; measured: 30 to 60 minutes flat in three runs).
   STALL_RULE: ${STALL_RULE:-on}
+  # The drafting builder is given what a fixer is told after a failure: the pack's guide, the installed packages' real
+  # exports and the compiler's errors on its draft (owner, 2026-10-26: measured arm against the last run with it off).
+  BUILDER_FACTS: ${BUILDER_FACTS:-on}
   # One naming standard per language in the specification and every draft, and the sections that fix names asked
   # for again when empty (owner, 2026-10-25: name mismatches between files).
   NAMING_STANDARD: ${NAMING_STANDARD:-on}

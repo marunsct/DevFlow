@@ -516,6 +516,7 @@ class WorkflowGraphState(TypedDict, total=False):
     # made to pass. Counted apart from `milestone_revision_count`, which is the
     # milestone review's: see `_replan_or_escalate`.
     sprint_replan_count: int
+    sprint_best_history: list
     sprint_plan: SprintPlanOutput
     # Success measures a sprint plan left unassigned or only partly delivered,
     # as {"measure": n, "missing": [items]}, carried into the one re-plan that
@@ -10388,6 +10389,13 @@ def build_workflow_graph(
         if settle_when_green.applies(state["repository"].root_path, getattr(cycle, "defects", None), revision_count - 1):
             why = f"{why}; every acceptance test passes and only the unit tests fail"
             revision_count = MAX_MILESTONE_REVISIONS + 1
+        # Attempts that stop beating the best product end where the re-plan limit does (STALL_RULE).
+        from app.graph import stalled_sprint
+
+        best_history = stalled_sprint.record(state["repository"].root_path, state.get("sprint_best_history"))
+        if stalled_sprint.stalled(best_history):
+            why = f"{why}; the last {stalled_sprint.AFTER_FLAT_ATTEMPTS} attempts did not beat the best product"
+            revision_count = MAX_MILESTONE_REVISIONS + 1
         # A sprint planned again starts from the best product it has had (KEEP_THE_BEST_ATTEMPT).
         from app.graph import best_attempt
 
@@ -10450,6 +10458,7 @@ def build_workflow_graph(
             specialist_outputs={},
             defect_cursor=0,
             sprint_replan_count=revision_count,
+            sprint_best_history=best_history,
         )
 
     def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_index: int) -> tuple[dict[str, Any], list[tuple[int, Any]]]:
@@ -11801,6 +11810,7 @@ def build_workflow_graph(
             "revision_comments": [],
             "milestone_revision_count": 0,
             "sprint_replan_count": 0,
+            "sprint_best_history": [],
         }
 
     def complete_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001

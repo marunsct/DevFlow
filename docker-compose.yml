@@ -112,6 +112,9 @@ x-app-env: &app-env
   # goes to the escalation, which accepts it with the problem recorded (owner, 2026-10-26; measured: 18 of 18 criteria
   # for 40 minutes of re-plans).
   SETTLE_WHEN_ACCEPTANCE_IS_GREEN: ${SETTLE_WHEN_ACCEPTANCE_IS_GREEN:-on}
+  # A sprint whose last two re-plan attempts did not beat the best product so far goes to the escalation instead of being
+  # planned again (owner's standing direction, 2026-10-26; measured: 30 to 60 minutes flat in three runs).
+  STALL_RULE: ${STALL_RULE:-on}
   # One naming standard per language in the specification and every draft, and the sections that fix names asked
   # for again when empty (owner, 2026-10-25: name mismatches between files).
   NAMING_STANDARD: ${NAMING_STANDARD:-on}

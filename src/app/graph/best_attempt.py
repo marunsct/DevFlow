@@ -148,6 +148,10 @@ class _KeepOnAReplan:
 keep_on_a_replan_switch = _KeepOnAReplan()
 
 
+#: The re-plan from which a product under half the suite keeps its files too.
+AFTER_A_FULL_REDRAFT = 2
+
+
 def files_the_best_attempt_already_has(root: str | Path, paths: list[str], *, replans: int) -> set[str]:
     """The planned files a re-plan's redraft should leave as they are; empty when off or not a re-plan (behind `KEEP_THE_BEST_ON_A_REPLAN`).
 
@@ -169,7 +173,10 @@ def files_the_best_attempt_already_has(root: str | Path, paths: list[str], *, re
         commit = str(best.get("commit") or "")
         last = suite.last_result(root) or {}
         total = int(last.get("passed") or 0) + int(last.get("failed") or 0)
-        if passed <= 0 or not commit or total <= 0 or passed * 2 < total:
+        # Under half the suite the first re-plan redrafts whole, which has paid; from the second on one full redraft
+        # has been tried. Measured on a small-model run: at 4 of 11 two re-plans in a row redrafted every file, each
+        # fell to 0, and the run was stopped with the undo putting 3 files back each time.
+        if passed <= 0 or not commit or total <= 0 or (passed * 2 < total and replans < AFTER_A_FULL_REDRAFT):
             return set()
         # The product as it stands, when it passes as many tests as the best: its files are the best files, whatever
         # the fixers changed since that commit. Measured: a re-plan at 8 of 9 tests kept one file - the fixers had

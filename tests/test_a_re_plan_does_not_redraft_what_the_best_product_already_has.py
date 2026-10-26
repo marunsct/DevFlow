@@ -94,3 +94,13 @@ def test_the_re_plan_s_redraft_asks_which_files_to_keep():
 
     assert "files_the_best_attempt_already_has(" in inspect.getsource(workflow)
     assert "kept=kept" in inspect.getsource(workflow)
+
+
+def test_from_the_second_re_plan_a_weak_best_keeps_its_files_too(product):
+    """Measured: at 4 of 11 two re-plans in a row redrafted every file and each fell to 0; the run was stopped."""
+    record = json.loads((product / ".harness" / "best-attempt.json").read_text())
+    (product / ".harness" / "best-attempt.json").write_text(json.dumps({**record, "passed": 4}))
+    (product / suite.RESULT_FILE).write_text(json.dumps({"ran": True, "passed": 0, "failed": 11}))
+
+    assert best_attempt.files_the_best_attempt_already_has(product, ["src/app.ts"], replans=1) == set()
+    assert best_attempt.files_the_best_attempt_already_has(product, ["src/app.ts", "src/new.ts"], replans=2) == {"src/app.ts"}

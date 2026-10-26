@@ -22,7 +22,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any, Callable, Collection
 
 logger = logging.getLogger(__name__)
 
@@ -434,6 +434,7 @@ def draft_work_orders(
     write: Write | None = None,
     workers: int = 1,
     diagnose: Callable[[list[str]], list[str]] | None = None,
+    kept: Collection[str] = (),
 ) -> dict[int, Any]:
     """Each work order whose files were all drafted, by its index, with the output an agent would return.
 
@@ -468,8 +469,10 @@ def draft_work_orders(
         for index, task in enumerate(tasks)
         for path in (getattr(task, "files", None) or [])
         if str(path).strip() and not str(path).endswith("/") and str(path) not in never_written
+        # A file the best attempt already has, on a re-plan, stays as it is (`best_attempt.files_the_best_attempt_already_has`).
+        and str(path) not in kept
     ]
-    if not jobs and not never_written:
+    if not jobs and not never_written and not kept:
         return {}
 
     def run(job: tuple[int, str, Any]) -> tuple[int, str, bool]:
@@ -505,13 +508,14 @@ def draft_work_orders(
         mine = [(path, ok) for i, path, ok in results if i == index]
         if not all(ok for _, ok in mine):
             continue
-        if not mine and not any(str(p) in never_written for p in (getattr(task, "files", None) or [])):
+        if not mine and not any(str(p) in never_written or str(p) in kept for p in (getattr(task, "files", None) or [])):
             continue
         written = [path for path, _ in mine]
+        left = [str(p) for p in (getattr(task, "files", None) or []) if str(p) in kept]
         # A file drafted from a specification that does not describe what the work order adds comes out as the
         # file it was: measured, a work order to add a SQLite store was recorded as done with `store.ts` unchanged.
         # A work order is done when what it promised is there; else the agent loop builds it, as for a failed file.
-        absent = _promised_but_not_written(task, written, root)
+        absent = _promised_but_not_written(task, [*written, *left], root)
         if absent:
             logger.info("Work order %d is left to the agent loop: its files do not define %s", index, ", ".join(absent))
             continue
@@ -521,7 +525,8 @@ def draft_work_orders(
             tests=[path for path in written if classify_file(path) == "test"],
             decisions=["Drafted from the specification, one call per file (fast delivery)."]
             + [f"`{path}` is a credential file no stage writes; its settings take development defaults."
-               for path in skipped],
+               for path in skipped]
+            + [f"`{path}` was left as the best attempt so far had it." for path in left],
         )
     logger.info(
         "Drafted %d of %d work order(s) from the specification (%d of %d files)",

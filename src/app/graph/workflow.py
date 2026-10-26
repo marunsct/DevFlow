@@ -9617,6 +9617,13 @@ def build_workflow_graph(
         tasks, split = in_work_orders_of_at_most(tasks)
         if split:
             logger.info("Fast delivery: %d work order(s) of more than three files split into parts", split)
+        from app.graph.best_attempt import files_the_best_attempt_already_has
+
+        kept = files_the_best_attempt_already_has(
+            state["repository"].root_path,
+            [str(path) for task in tasks for path in (getattr(task, "files", None) or [])],
+            replans=int(state.get("sprint_replan_count") or 0),
+        )
         drafted = draft_work_orders(
             tasks, specification, getattr(state.get("stack_selection"), "technology_stack", None),
             state["repository"].root_path, _the_build_model(state, "drafting"), workers=concurrent_requests(),
@@ -9624,6 +9631,7 @@ def build_workflow_graph(
             diagnose=lambda files: _diagnostics_in_files_touched(
                 state, {"messages": []}, __import__("types").SimpleNamespace(changed_files=files), "drafting",
             ),
+            kept=kept,
         )
         outputs = {
             f"specialist_{tasks[index].specialist_role}_{index}": output for index, output in drafted.items()

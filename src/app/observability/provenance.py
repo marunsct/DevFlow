@@ -61,6 +61,7 @@ SWITCHES: dict[str, str] = {
     "STALL_RULE": "app.graph.stalled_sprint",
     "BUILDER_FACTS": "app.graph.builder_facts",
     "MEASURE_ONCE": "app.acceptance.measured_once",
+    "KEEP_THE_BEST_ON_A_REPLAN": "app.graph.best_attempt:keep_on_a_replan_switch",
     "NAMING_STANDARD": "app.stacks.naming",
     "REFUSALS_FOLDED": "app.agents.refusal_folding",
     "GUIDE_ANSWER_IN_SCHEMA": "app.models.guidance:answer_in_schema_switch",

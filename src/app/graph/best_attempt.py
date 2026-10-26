@@ -129,3 +129,60 @@ def restore_if_worse(root: str | Path, *, margin: int = MARGIN) -> str:
     except Exception:  # noqa: BLE001 - the sprint is planned again as it would have been
         logger.debug("Could not put back the best attempt", exc_info=True)
         return ""
+
+
+def keep_on_a_replan_enabled() -> bool:
+    return is_on("KEEP_THE_BEST_ON_A_REPLAN", False)
+
+
+class _KeepOnAReplan:
+    """`KEEP_THE_BEST_ON_A_REPLAN` as the switch registry reads one: off in code, the compose file turns it on."""
+
+    ON_BY_DEFAULT = False
+
+    @staticmethod
+    def enabled() -> bool:
+        return keep_on_a_replan_enabled()
+
+
+keep_on_a_replan_switch = _KeepOnAReplan()
+
+
+def files_the_best_attempt_already_has(root: str | Path, paths: list[str], *, replans: int) -> set[str]:
+    """The planned files a re-plan's redraft should leave as they are; empty when off or not a re-plan (behind `KEEP_THE_BEST_ON_A_REPLAN`).
+
+    Measured over a day of small-model runs: a re-plan redrafted every planned file, and the best-attempt undo had
+    to put the product back in about half the runs (16 tests to 15, 7 to 0, 3 to 0, 24 to 23), each time after a whole
+    test round on the wreck. On a re-plan whose best product passes at least half of the suite, a planned file that
+    is still exactly as it was in that best product is not drafted again; new files and changed files are. A product
+    that passes less than half keeps the full redraft, which has sometimes paid (1 criterion to 12).
+    """
+    if not keep_on_a_replan_enabled() or replans < 1 or not paths:
+        return set()
+    try:
+        from app import ci
+        from app.acceptance import suite
+
+        root = Path(root)
+        best = _read(root)
+        passed = int(best.get("passed") or 0)
+        commit = str(best.get("commit") or "")
+        last = suite.last_result(root) or {}
+        total = int(last.get("passed") or 0) + int(last.get("failed") or 0)
+        if passed <= 0 or not commit or total <= 0 or passed * 2 < total:
+            return set()
+        kept: set[str] = set()
+        for path in paths:
+            if not (root / path).is_file():
+                continue
+            same = ci._git(root, "diff", "--quiet", commit, "--", path)
+            if same is not None and same.returncode == 0:
+                kept.add(path)
+        if kept:
+            logger.info("A re-plan leaves %d file(s) as the best attempt had them (%d of %d tests passed)",
+                        len(kept), passed, total)
+        return kept
+    except Exception:  # noqa: BLE001 - the redraft goes on as it always did
+        logger.debug("Could not tell which files the best attempt has", exc_info=True)
+        return set()
+

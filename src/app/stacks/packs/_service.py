@@ -137,11 +137,13 @@ async function startService({ dataDir, timeoutMs = 60000 } = {}) {
 module.exports = { startService };
 """
 
-RESTART_GUIDE = """A criterion about the data surviving a restart is tested, not deferred: `acceptance/service.cjs` is the harness's
-helper that starts the project's own `start.sh` on a free port and a data folder you name. In a test: `import service from
-'./service.cjs'; const { startService } = service;` (in a CommonJS file, `const { startService } = require('./service.cjs')`), then
-`const first = await startService(); ...write through first.baseURL with fetch ...; await first.stop(); const second = await
-startService({ dataDir: first.dataDir }); ...read the same records through second.baseURL...; await second.stop();`. Do not edit the helper."""
+RESTART_GUIDE = """A criterion about the data surviving a restart is tested, not deferred, and only that criterion uses the
+harness's helper `acceptance/service.cjs`; every other test uses the `request` fixture against the service the
+configuration already started. For the restart criterion: `const { startService } = require('./service.cjs');` then
+`const first = await startService(); await request.post(first.baseURL + '/items', { data: { ... } }); await first.stop();
+const second = await startService({ dataDir: first.dataDir }); const kept = await request.get(second.baseURL + '/items');
+... await second.stop();`. Requests always send a body as `data: { ... }` - the `request` fixture does not read a `body:`
+option and the service would receive nothing. Do not edit the helper."""
 
 #: What "every test runs on the file database" means for the schema.
 ON_THE_FILE_DATABASE = (

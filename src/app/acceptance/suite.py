@@ -1859,6 +1859,75 @@ def locators_with_invalid_name_option(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+#: A key of a `fetch`-style options object, which Playwright's `request` fixture does not read.
+_BODY_KEY = re.compile(r"\bbody\s*:")
+_FETCH_STYLE_SIBLING = re.compile(r"\b(?:method|headers)\s*:")
+_USES_THE_REQUEST_FIXTURE = re.compile(r"\brequest\s*\.\s*(?:post|put|patch|delete|fetch|get|head)\s*\(")
+
+
+def _the_object_around(text: str, at: int) -> str:
+    """The object literal `{ ... }` that holds position `at`, or ""."""
+    depth = 0
+    start = -1
+    for i in range(at, -1, -1):
+        ch = text[i]
+        if ch == "}":
+            depth += 1
+        elif ch == "{":
+            if depth == 0:
+                start = i
+                break
+            depth -= 1
+    if start < 0:
+        return ""
+    depth = 0
+    for j in range(start, min(len(text), start + 4_000)):
+        if text[j] == "{":
+            depth += 1
+        elif text[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:j + 1]
+    return ""
+
+
+def requests_with_a_fetch_body(repo_root: str | Path) -> list[str]:
+    """Tests that hand Playwright's `request` fixture a `fetch`-style `body:`, which it does not read.
+
+    Measured on two runs of a small model: every write in the locked suite was `request.fetch(url, { method: 'POST',
+    headers: {...}, body: JSON.stringify(note) })` - Playwright's request API takes `data`, so the service received no
+    body and answered 400; the whole suite was red on a product that passed every hidden test, and the run was stopped
+    as failed after the fixers were spent on it. The misuse is found by its shape: an object literal with a `body:` and a
+    `method:` or `headers:` beside it, in a file that calls the `request` fixture.
+    """
+    root = Path(repo_root)
+    problems: list[str] = []
+    for path in suite_files(repo_root):
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not _USES_THE_REQUEST_FIXTURE.search(text):
+            continue
+        lines: list[int] = []
+        for match in _BODY_KEY.finditer(text):
+            literal = _the_object_around(text, match.start())
+            if literal and _FETCH_STYLE_SIBLING.search(literal):
+                lines.append(text.count("\n", 0, match.start()) + 1)
+        if not lines:
+            continue
+        where = ", ".join(str(n) for n in lines[:8]) + (" ..." if len(lines) > 8 else "")
+        problems.append(
+            f"`{path.relative_to(root).as_posix()}` line(s) {where}: a request body is passed as `body:` in "
+            "fetch-style options, which Playwright's `request` fixture does not read - the service receives no body "
+            "and answers 400, on every product. Send it as `data: { ... }` (`request.post(path, { data: note })`); "
+            "`headers` may stay, `method` is the function's name."
+        )
+    return problems[:6]
+
+
 def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     """Whether a ledger entry is a run of the locked acceptance suite.
 
@@ -1930,6 +1999,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *locators_that_do_not_exist(repo_root),
         *locators_by_a_name_the_role_never_has(repo_root),
         *locators_with_invalid_name_option(repo_root),
+        *requests_with_a_fetch_body(repo_root),
         *tests_that_never_open_the_page(repo_root),
         *tests_that_access_storage_before_opening_the_page(repo_root),
         *tests_that_expect_what_they_never_gave(repo_root),

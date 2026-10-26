@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 ON_BY_DEFAULT = False
 
 #: Bounds that keep a small model's request short.
-MOST_GUIDE_CHARACTERS = 2_500
+MOST_GUIDE_CHARACTERS = 3_000
 MOST_PACKAGES = 8
 MOST_NAMES = 40
 MOST_PATHS = 80

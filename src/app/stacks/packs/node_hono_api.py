@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.stacks.packs import _javascript as js
-from app.stacks.packs._service import service_pack
+from app.stacks.packs._service import FACTORY_GUIDE, service_pack
 
 UNIT_SCRIPT = "jest --ci --reporters=default --reporters=jest-junit"
 
@@ -156,7 +156,7 @@ PACK = service_pack(
     start="npm run build && exec node dist/main.js",
     server_timeout_ms=120_000,
     smoke_unit=("test/scaffold-smoke.spec.ts", SMOKE_UNIT),
-    guide=GUIDE,
+    guide=f"{GUIDE}\n{FACTORY_GUIDE}",
     stack={
         "language": "TypeScript",
         "framework": "Hono",

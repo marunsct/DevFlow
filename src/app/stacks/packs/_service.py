@@ -137,6 +137,15 @@ async function startService({ dataDir, timeoutMs = 60000 } = {}) {
 module.exports = { startService };
 """
 
+#: The factory the kept start file calls is called as it is: measured on a small-model run, `createApp` was made
+#: `async` to load the data first, the kept start file then served the `fetch` of a Promise, and every request
+#: answered 500 for two sprint attempts.
+FACTORY_GUIDE = (
+    "`createApp()` returns the application itself, never a Promise: the start file calls it and uses the result at "
+    "once, so it is not `async`. Data the service needs is loaded inside the handlers that use it (or once, on the "
+    "first request), not before `createApp` returns."
+)
+
 RESTART_GUIDE = """A criterion about the data surviving a restart is tested, not deferred, and only that criterion uses the
 harness's helper `acceptance/service.cjs`; every other test uses the `request` fixture against the service the
 configuration already started. For the restart criterion: `const { startService } = require('./service.cjs');` then

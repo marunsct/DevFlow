@@ -11,7 +11,7 @@ namespaces, no parameter properties), and relative imports that name the `.ts` f
 from __future__ import annotations
 
 from app.stacks.packs import _javascript as js
-from app.stacks.packs._service import service_pack
+from app.stacks.packs._service import FACTORY_GUIDE, service_pack
 from app.switches import is_on
 
 #: Off in code like every switch; the compose file decides whether the arm runs (`app.stacks.choose_pack`).
@@ -155,7 +155,7 @@ PACK = service_pack(
     start="exec node src/main.ts",
     server_timeout_ms=60_000,
     smoke_unit=("test/scaffold-smoke.test.ts", SMOKE_UNIT),
-    guide=GUIDE,
+    guide=f"{GUIDE}\n{FACTORY_GUIDE}",
     stack={
         "language": "TypeScript",
         "framework": "Hono",

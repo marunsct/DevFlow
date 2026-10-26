@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
-from app.stacks.packs._service import RESTART_GUIDE, SERVICE_HELPER
+from app.stacks.packs._service import FACTORY_GUIDE, RESTART_GUIDE, SERVICE_HELPER
 
 PACKAGE_JSON = """{
   "name": "{{project}}",
@@ -137,7 +137,7 @@ PACK = StackPack(
         "tests/scaffold-smoke.test.js": SMOKE_UNIT,
         "acceptance/scaffold-smoke.spec.js": SMOKE_ACCEPTANCE,
     },
-    guide=GUIDE,
+    guide=f"{GUIDE}\n{FACTORY_GUIDE}",
     acceptance_guide=f"{ACCEPTANCE_GUIDE}\n{RESTART_GUIDE}",
     stack={
         "language": "JavaScript",

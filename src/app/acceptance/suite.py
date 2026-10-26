@@ -1935,6 +1935,49 @@ def requests_with_a_fetch_body(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+#: A response the `request` fixture returned: `const res = await request.post(...)`.
+_A_FIXTURE_RESPONSE = re.compile(
+    r"\b(?:const|let|var)\s+(\w+)\s*=\s*await\s+request\s*\.\s*(?:post|put|patch|delete|fetch|get|head)\s*\("
+)
+#: What Playwright's response has as methods; read without the call each is a function, never the value.
+_RESPONSE_METHODS = ("status", "ok", "statusText", "headers")
+
+
+def responses_read_without_the_call(repo_root: str | Path) -> list[str]:
+    """Tests that read the `request` fixture's `status`, `ok`, `statusText` or `headers` as a property.
+
+    Measured on a small-model run: `expect(response.status).toBe(201)` beside `expect(resp.status()).toBe(200)` in the
+    same file. On Playwright's response these are methods, so the assertion compares a function with 201 and fails on
+    every product - a red test charged to the product. Found by its shape: a name assigned from `await request.<verb>(`
+    read as `<name>.status` with no call after it.
+    """
+    root = Path(repo_root)
+    problems: list[str] = []
+    for path in suite_files(repo_root):
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        names = sorted(set(_A_FIXTURE_RESPONSE.findall(text)))
+        if not names:
+            continue
+        uncalled = re.compile(
+            rf"\b(?:{'|'.join(map(re.escape, names))})\s*\.\s*(?:{'|'.join(_RESPONSE_METHODS)})\b(?!\s*\()"
+        )
+        lines = sorted({text.count("\n", 0, match.start()) + 1 for match in uncalled.finditer(text)})
+        if not lines:
+            continue
+        where = ", ".join(str(n) for n in lines[:8]) + (" ..." if len(lines) > 8 else "")
+        problems.append(
+            f"`{path.relative_to(root).as_posix()}` line(s) {where}: a response from the `request` fixture is read as "
+            "`.status`, `.ok`, `.statusText` or `.headers` without calling it. On Playwright's response these are "
+            "methods, so the assertion compares a function and fails on every product. Call it: `res.status()`."
+        )
+    return problems[:6]
+
+
 def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     """Whether a ledger entry is a run of the locked acceptance suite.
 
@@ -2007,6 +2050,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *locators_by_a_name_the_role_never_has(repo_root),
         *locators_with_invalid_name_option(repo_root),
         *requests_with_a_fetch_body(repo_root),
+        *responses_read_without_the_call(repo_root),
         *tests_that_never_open_the_page(repo_root),
         *tests_that_access_storage_before_opening_the_page(repo_root),
         *tests_that_expect_what_they_never_gave(repo_root),

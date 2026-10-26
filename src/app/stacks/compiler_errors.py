@@ -76,7 +76,7 @@ def _what_the_module_has(project: Path, file: str, line: int, message: str) -> s
         return ""
 
 
-def _in_a_kept_file(project: Path, file: str, line: int) -> str:
+def _in_a_kept_file(project: Path, file: str, line: int, prefix: str = "") -> str:
     """What to do about an error in a file the harness keeps: the file stays, what it uses changes.
 
     Measured on a small-model run: `createApp` was made `async`, the kept `src/main.ts` then handed `serve` the
@@ -84,12 +84,25 @@ def _in_a_kept_file(project: Path, file: str, line: int) -> str:
     stage may change - so nothing pointed at `createApp`.
     """
     try:
-        text = (project / file).read_text(encoding="utf-8", errors="replace").splitlines()[line - 1].strip()
+        whole = (project / file).read_text(encoding="utf-8", errors="replace")
+        text = whole.splitlines()[line - 1].strip()
     except (OSError, IndexError):
-        text = ""
+        whole, text = "", ""
     shown = f" (`{text[:160]}`)" if text else ""
-    return (f" - this file is the harness's and stays exactly as it is{shown}: change what it uses, in the product's "
-            "own files, so that this line is right as written.")
+    # Where the names on that line come from, so the change lands in the file that defines them.
+    sources = []
+    for names, spec in _NAMED_IMPORT.findall(whole):
+        used = [name for name in re.findall(r"[A-Za-z_$][\w$]*", names) if name != "type" and re.search(rf"\b{re.escape(name)}\b", text)]
+        if used and spec.startswith("."):
+            target = (Path(file).parent / spec).as_posix()
+            sources.append(f"`{', '.join(used)}` in `{prefix}{target.removeprefix('./')}`")
+    where = f" - {'; '.join(sources)}" if sources else ", in the product's own files"
+    return (f" - this file is the harness's and stays exactly as it is{shown}: change what it uses{where}, so that "
+            "this line is right as written.")
+
+
+#: `import { a, b } from './x.ts'` - the names and the module.
+_NAMED_IMPORT = re.compile(r"""import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]""")
 
 
 def the_errors(repo_root: str | Path, runner: Runner | None = None) -> str:
@@ -118,7 +131,7 @@ def the_errors(repo_root: str | Path, runner: Runner | None = None) -> str:
         kept = contract.kept_paths(repo_root)
         lines = [
             f"- {prefix}{file} line {line}: {message}{_what_the_module_has(base, file, line, message)}"
-            f"{_in_a_kept_file(base, file, line) if f'{prefix}{file}' in kept else ''}"
+            f"{_in_a_kept_file(base, file, line, prefix) if f'{prefix}{file}' in kept else ''}"
             for file, line, _code, message in errors
         ]
         return (

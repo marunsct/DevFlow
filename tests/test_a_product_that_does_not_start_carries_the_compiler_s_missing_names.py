@@ -165,5 +165,5 @@ def test_an_error_in_a_file_the_harness_keeps_says_to_change_what_it_uses(projec
 
     kept_line, own_line = [line for line in text.splitlines() if line.startswith("- ")]
     assert "stays exactly as it is (`serve({ fetch: createApp().fetch, port: 3000 });`)" in kept_line
-    assert "change what it uses" in kept_line and "stays exactly" not in own_line
+    assert "change what it uses - `createApp` in `notes/src/app.ts`" in kept_line and "stays exactly" not in own_line
     assert not BANNED.search(text)

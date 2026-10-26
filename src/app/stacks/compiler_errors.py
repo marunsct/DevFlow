@@ -76,6 +76,22 @@ def _what_the_module_has(project: Path, file: str, line: int, message: str) -> s
         return ""
 
 
+def _in_a_kept_file(project: Path, file: str, line: int) -> str:
+    """What to do about an error in a file the harness keeps: the file stays, what it uses changes.
+
+    Measured on a small-model run: `createApp` was made `async`, the kept `src/main.ts` then handed `serve` the
+    `fetch` of a Promise, every request answered 500, and the compiler's error was on `main.ts` line 7 - a file no
+    stage may change - so nothing pointed at `createApp`.
+    """
+    try:
+        text = (project / file).read_text(encoding="utf-8", errors="replace").splitlines()[line - 1].strip()
+    except (OSError, IndexError):
+        text = ""
+    shown = f" (`{text[:160]}`)" if text else ""
+    return (f" - this file is the harness's and stays exactly as it is{shown}: change what it uses, in the product's "
+            "own files, so that this line is right as written.")
+
+
 def the_errors(repo_root: str | Path, runner: Runner | None = None) -> str:
     """The text to add to the start defect: the compiler's missing-name errors, or "" when off, undeclared or clean."""
     if not enabled():
@@ -99,8 +115,10 @@ def the_errors(repo_root: str | Path, runner: Runner | None = None) -> str:
             return ""
         base = Path(repo_root) / project if project else Path(repo_root)
         prefix = f"{project}/" if project else ""
+        kept = contract.kept_paths(repo_root)
         lines = [
             f"- {prefix}{file} line {line}: {message}{_what_the_module_has(base, file, line, message)}"
+            f"{_in_a_kept_file(base, file, line) if f'{prefix}{file}' in kept else ''}"
             for file, line, _code, message in errors
         ]
         return (

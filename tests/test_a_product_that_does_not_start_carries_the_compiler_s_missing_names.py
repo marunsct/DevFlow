@@ -148,3 +148,22 @@ def test_a_type_imported_as_a_value_is_kept_because_node_stops_on_it():
         "test/x.test.ts(10,27): error TS7006: Parameter 'baseURL' implicitly has an 'any' type.\n"
     )
     assert [code for _file, _line, code, _message in compiler_errors.parse(output)] == [1484, 1485]
+
+
+def test_an_error_in_a_file_the_harness_keeps_says_to_change_what_it_uses(project, monkeypatch):
+    monkeypatch.setenv("START_DEFECT_NAMES_COMPILER_ERRORS", "on")
+    monkeypatch.setattr(contract, "kept_paths", lambda root: frozenset({"notes/src/main.ts"}))
+    (project / "notes" / "src" / "main.ts").write_text(
+        "import { serve } from '@hono/node-server';\nimport { createApp } from './app.ts';\n"
+        "serve({ fetch: createApp().fetch, port: 3000 });\n"
+    )
+    output = (
+        "src/main.ts(3,28): error TS2339: Property 'fetch' does not exist on type 'Promise<Hono>'.\n"
+        "src/app.ts(9,3): error TS2304: Cannot find name 'store'.\n"
+    )
+    text = compiler_errors.the_errors(project, runner=lambda argv, category, where: {"stdout": output, "returncode": 2})
+
+    kept_line, own_line = [line for line in text.splitlines() if line.startswith("- ")]
+    assert "stays exactly as it is (`serve({ fetch: createApp().fetch, port: 3000 });`)" in kept_line
+    assert "change what it uses" in kept_line and "stays exactly" not in own_line
+    assert not BANNED.search(text)

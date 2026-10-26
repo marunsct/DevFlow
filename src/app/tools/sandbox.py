@@ -4859,6 +4859,14 @@ class SandboxExecutor:
         # A command is held to the line the stage's file tools are (see
         # `repository.what_a_command_may_not_change`).
         held = None
+        # The imports Node will load are named before the command runs, and
+        # before the files it may not change are noted, so the repair is not
+        # put back after it (see `imports_before_a_run`).
+        put_right = ""
+        if not for_the_harness:
+            from app.stacks.imports_before_a_run import put_right as _put_the_imports_right
+
+            put_right = _put_the_imports_right(repo_root)
         if not for_the_harness:
             from app.tools.repository import what_a_command_may_not_change
 
@@ -4894,6 +4902,9 @@ class SandboxExecutor:
             changed = files_changed_since(repo_root, begun)
             if changed:
                 outcome = {**outcome, "files_changed": changed}
+        if put_right and isinstance(outcome, dict):
+            earlier = str(outcome.get("note") or "")
+            outcome = {**outcome, "note": (earlier + "\n\n" if earlier else "") + put_right}
         return outcome
 
     @classmethod

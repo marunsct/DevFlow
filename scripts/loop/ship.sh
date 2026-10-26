@@ -21,6 +21,6 @@ git add -A src tests docs scripts docker-compose.yml 2>/dev/null
 if git diff --cached --quiet; then echo "nothing to commit ($summary)"; exit 0; fi
 git commit -q -m "$message
 
-Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>" || exit 1
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" || exit 1
 git push -q main harness-hardening-session 2>&1 | grep -v credential
 echo "SHIPPED $(git log --oneline -1) - $summary"

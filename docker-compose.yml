@@ -127,6 +127,9 @@ x-app-env: &app-env
   # When the product does not start for the suite, the harness starts it the same way and says what it printed and
   # how its readiness URL answered (measured: a /health answering 503 hid behind a 60-second timeout for 40 minutes).
   START_PROBE: ${START_PROBE:-on}
+  # A command a stage runs sees the `.ts` on its relative imports that the harness would add before measuring
+  # (measured: two testing work orders spent 55 calls on `../src/datastore.js` while `datastore.ts` existed).
+  EXTENSIONS_BEFORE_A_RUN: ${EXTENSIONS_BEFORE_A_RUN:-on}
   # One naming standard per language in the specification and every draft, and the sections that fix names asked
   # for again when empty (owner, 2026-10-25: name mismatches between files).
   NAMING_STANDARD: ${NAMING_STANDARD:-on}

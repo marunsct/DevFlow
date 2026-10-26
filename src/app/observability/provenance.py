@@ -63,6 +63,7 @@ SWITCHES: dict[str, str] = {
     "MEASURE_ONCE": "app.acceptance.measured_once",
     "KEEP_THE_BEST_ON_A_REPLAN": "app.graph.best_attempt:keep_on_a_replan_switch",
     "START_PROBE": "app.acceptance.start_probe",
+    "EXTENSIONS_BEFORE_A_RUN": "app.stacks.imports_before_a_run",
     "NAMING_STANDARD": "app.stacks.naming",
     "REFUSALS_FOLDED": "app.agents.refusal_folding",
     "GUIDE_ANSWER_IN_SCHEMA": "app.models.guidance:answer_in_schema_switch",

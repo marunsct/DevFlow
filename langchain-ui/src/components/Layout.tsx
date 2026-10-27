@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Home, Layers, List, Settings, LogOut } from 'lucide-react';
+import { Home, Layers, List, Settings, LogOut, ToggleRight } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { NeedsYouInbox } from './NeedsYouInbox';
 import { CommandPalette } from './CommandPalette';
@@ -55,6 +55,10 @@ export const Header: React.FC = () => {
             <Link to="/settings" className={linkClass('/settings')} aria-label="Settings" aria-current={isActive('/settings') ? 'page' : undefined}>
               <Settings className="h-4 w-4" />
               <span className="hidden sm:inline">Settings</span>
+            </Link>
+            <Link to="/admin" className={linkClass('/admin')} aria-label="Admin" aria-current={isActive('/admin') ? 'page' : undefined}>
+              <ToggleRight className="h-4 w-4" />
+              <span className="hidden sm:inline">Admin</span>
             </Link>
             <NeedsYouInbox />
             <ServerDot health={health} />

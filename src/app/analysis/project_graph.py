@@ -37,10 +37,12 @@ _SKIPPED = {"node_modules", ".venv", "venv", "__pycache__", "dist", "build", "te
 
 
 def fixes_enabled() -> bool:
+    """CG.2: a fixer's request carries what the harness's code graph knows of the files its defect touches."""
     return is_on("PROJECT_GRAPH_FIXES", False)
 
 
 def builders_enabled() -> bool:
+    """CG.3: a builder's request carries the code graph's map of the files and names its work order touches."""
     return is_on("PROJECT_GRAPH_BUILDERS", False)
 
 

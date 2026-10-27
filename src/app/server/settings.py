@@ -848,6 +848,52 @@ async def set_guide_override(
     return view()
 
 
+class SwitchEntry(BaseModel):
+    """One switch on the admin page: what it does, and where its value comes from."""
+
+    name: str
+    module: str
+    summary: str
+    details: str = ""
+    #: The code's own default (`ON_BY_DEFAULT`).
+    default: bool
+    #: The deployed environment's value (the compose file), or None when it sets none.
+    docker: bool | None = None
+    #: The admin page's setting, or None when the switch follows the environment.
+    setting: bool | None = None
+    on: bool
+    #: Which of the three decided `on`: "setting", "docker" or "default".
+    source: Literal["setting", "docker", "default"]
+
+
+class SwitchSetting(BaseModel):
+    #: On, off, or None to follow the deployed environment again.
+    setting: bool | None = None
+
+
+@settings_router.get("/switches", response_model=list[SwitchEntry])
+async def list_switches(user: UserInDB = Depends(get_current_active_user)) -> list[SwitchEntry]:
+    """Every switch, what it does, and whether it is on: the admin page's setting, else Docker, else the code."""
+    from app.server import switch_catalogue
+
+    return [SwitchEntry(**entry) for entry in switch_catalogue.entries()]
+
+
+@settings_router.put("/switches/{name}", response_model=list[SwitchEntry])
+async def set_switch(name: str, payload: SwitchSetting, user: UserInDB = Depends(require_admin)) -> list[SwitchEntry]:
+    """Set one switch on or off for every process, or back to the deployed environment's value (`null`)."""
+    from app.observability.provenance import SWITCHES
+    from app.server import switch_catalogue
+
+    if name not in SWITCHES:
+        raise HTTPException(status_code=404, detail=f"No switch {name}.")
+    _check_read_only()
+    runtime_settings.save_switch(name, payload.setting, actor=user.username)
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.switch",
+                 subject=name, detail={"setting": payload.setting})
+    return [SwitchEntry(**entry) for entry in switch_catalogue.entries()]
+
+
 @settings_router.get("/models", response_model=list[ModelProfile])
 async def list_model_profiles(
     target: str | None = None,

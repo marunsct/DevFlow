@@ -130,6 +130,8 @@ x-app-env: &app-env
   # A command a stage runs sees the `.ts` on its relative imports that the harness would add before measuring
   # (measured: two testing work orders spent 55 calls on `../src/datastore.js` while `datastore.ts` existed).
   EXTENSIONS_BEFORE_A_RUN: ${EXTENSIONS_BEFORE_A_RUN:-on}
+  # Switches set on the admin page (/admin) beat the values above, in every process (`app.switches`).
+  SWITCH_OVERRIDES_FROM_SETTINGS: ${SWITCH_OVERRIDES_FROM_SETTINGS:-on}
   # One naming standard per language in the specification and every draft, and the sections that fix names asked
   # for again when empty (owner, 2026-10-25: name mismatches between files).
   NAMING_STANDARD: ${NAMING_STANDARD:-on}

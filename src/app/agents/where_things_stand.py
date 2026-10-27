@@ -40,6 +40,10 @@ class _StateAtDispatch:
     """PH.4's switch: `STATE_AT_DISPATCH`, off until measured."""
 
     ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("The \"where things stand\" block a builder or fixer is given also names the files changed since "
+                   "the CI gate last measured the product, so a stage knows what moved under it before it starts "
+                   "(plan PH.4).")
 
     @staticmethod
     def enabled() -> bool:

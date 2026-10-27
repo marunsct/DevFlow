@@ -384,12 +384,84 @@ def clear_secrets(keys: list[str] | None = None) -> None:
 
 def reset_cache() -> None:
     """Forget the cached overrides. For tests and for an explicit refresh."""
-    global _cache, _cache_expires_at, _secret_cache, _secret_cache_expires_at
+    global _cache, _cache_expires_at, _secret_cache, _secret_cache_expires_at, _switch_cache, _switch_cache_expires_at
     with _cache_lock:
         _cache = {}
         _cache_expires_at = 0.0
         _secret_cache = {}
         _secret_cache_expires_at = 0.0
+        _switch_cache = {}
+        _switch_cache_expires_at = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Switches
+# ---------------------------------------------------------------------------
+
+#: A switch an administrator set on the admin page, stored as `switch:<NAME>` = `on` or `off`. A switch with no row
+#: follows the deployed environment, and the code's own default after that (`app.switches.is_on`).
+SWITCH_PREFIX = "switch:"
+
+_switch_cache: dict[str, bool] = {}
+_switch_cache_expires_at = 0.0
+
+
+def _read_switches_from_db() -> dict[str, bool]:
+    from app.server.auth import get_db_connection
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            ensure_table(cur, "runtime_settings", SETTINGS_TABLE_SQL)
+            cur.execute("SELECT key, value FROM runtime_settings WHERE key LIKE %s", (SWITCH_PREFIX + "%",))
+            rows = cur.fetchall()
+        conn.commit()
+    return {key[len(SWITCH_PREFIX):]: value == "on" for key, value in rows if value in ("on", "off")}
+
+
+def switch_overrides(*, refresh: bool = False) -> dict[str, bool]:
+    """The switches set on the admin page, cached for `CACHE_TTL_SECONDS` per process. Never raises."""
+    global _switch_cache, _switch_cache_expires_at
+
+    now = time.monotonic()
+    if not refresh and now < _switch_cache_expires_at:
+        return dict(_switch_cache)
+    try:
+        fresh = _read_switches_from_db()
+    except Exception:  # noqa: BLE001 - the environment still decides when the table cannot be read
+        logger.warning("Could not read the switch settings; using the environment", exc_info=True)
+        with _cache_lock:
+            _switch_cache_expires_at = now + CACHE_TTL_SECONDS
+        return dict(_switch_cache)
+    with _cache_lock:
+        _switch_cache = fresh
+        _switch_cache_expires_at = now + CACHE_TTL_SECONDS
+    return dict(fresh)
+
+
+def save_switch(name: str, value: bool | None, *, actor: str = "unknown") -> None:
+    """Set a switch on or off for every process, or clear it (`None`) so the environment decides again."""
+    from app.server.auth import get_db_connection
+
+    key = SWITCH_PREFIX + name
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            ensure_table(cur, "runtime_settings", SETTINGS_TABLE_SQL)
+            if value is None:
+                cur.execute("DELETE FROM runtime_settings WHERE key = %s", (key,))
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO runtime_settings (key, value, updated_at, updated_by)
+                    VALUES (%s, %s, NOW(), %s)
+                    ON CONFLICT (key) DO UPDATE
+                       SET value = EXCLUDED.value,
+                           updated_at = EXCLUDED.updated_at,
+                           updated_by = EXCLUDED.updated_by
+                    """,
+                    (key, "on" if value else "off", actor),
+                )
+        conn.commit()
+    switch_overrides(refresh=True)
 
 
 #: Where each provider reads its credential from.

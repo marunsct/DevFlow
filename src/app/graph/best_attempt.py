@@ -139,6 +139,9 @@ class _KeepOnAReplan:
     """`KEEP_THE_BEST_ON_A_REPLAN` as the switch registry reads one: off in code, the compose file turns it on."""
 
     ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("A re-plan's redraft leaves alone the planned files the best product already has as they are, "
+                   "instead of rewriting every file and wrecking a product that partly works (LF.295, LF.312).")
 
     @staticmethod
     def enabled() -> bool:

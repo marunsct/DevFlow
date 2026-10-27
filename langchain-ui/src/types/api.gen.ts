@@ -647,6 +647,23 @@ export interface SteeringNote {
   text: string;
 }
 
+/** One switch on the admin page: what it does, and where its value comes from. */
+export interface SwitchEntry {
+  default: boolean;
+  details: string;
+  docker: boolean | null;
+  module: string;
+  name: string;
+  on: boolean;
+  setting: boolean | null;
+  source: "setting" | "docker" | "default";
+  summary: string;
+}
+
+export interface SwitchSetting {
+  setting?: boolean | null;
+}
+
 export interface Token {
   access_token: string;
   expires_in: number | null;

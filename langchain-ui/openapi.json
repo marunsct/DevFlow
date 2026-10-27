@@ -2740,6 +2740,94 @@
     "title": "SteeringNote",
     "type": "object"
    },
+   "SwitchEntry": {
+    "description": "One switch on the admin page: what it does, and where its value comes from.",
+    "properties": {
+     "default": {
+      "title": "Default",
+      "type": "boolean"
+     },
+     "details": {
+      "default": "",
+      "title": "Details",
+      "type": "string"
+     },
+     "docker": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Docker"
+     },
+     "module": {
+      "title": "Module",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "on": {
+      "title": "On",
+      "type": "boolean"
+     },
+     "setting": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Setting"
+     },
+     "source": {
+      "enum": [
+       "setting",
+       "docker",
+       "default"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
+     "summary": {
+      "title": "Summary",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "module",
+     "summary",
+     "default",
+     "on",
+     "source"
+    ],
+    "title": "SwitchEntry",
+    "type": "object"
+   },
+   "SwitchSetting": {
+    "properties": {
+     "setting": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Setting"
+     }
+    },
+    "title": "SwitchSetting",
+    "type": "object"
+   },
    "Token": {
     "properties": {
      "access_token": {
@@ -6499,6 +6587,99 @@
      }
     ],
     "summary": "Delete Model Profile",
+    "tags": [
+     "settings"
+    ]
+   }
+  },
+  "/api/settings/switches": {
+   "get": {
+    "description": "Every switch, what it does, and whether it is on: the admin page's setting, else Docker, else the code.",
+    "operationId": "list_switches_api_settings_switches_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SwitchEntry"
+         },
+         "title": "Response List Switches Api Settings Switches Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "List Switches",
+    "tags": [
+     "settings"
+    ]
+   }
+  },
+  "/api/settings/switches/{name}": {
+   "put": {
+    "description": "Set one switch on or off for every process, or back to the deployed environment's value (`null`).",
+    "operationId": "set_switch_api_settings_switches__name__put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "name",
+      "required": true,
+      "schema": {
+       "title": "Name",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SwitchSetting"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SwitchEntry"
+         },
+         "title": "Response Set Switch Api Settings Switches  Name  Put",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Set Switch",
     "tags": [
      "settings"
     ]

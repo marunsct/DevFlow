@@ -1111,6 +1111,46 @@ def tests_the_runner_never_ran(repo_root: str | Path, result: AcceptanceResult) 
     return missing
 
 
+def rename_files_the_runner_skips(repo_root: str | Path) -> list[str]:
+    """Rename suite files the runner skips only for their name's separator (`delete_spec.js` for `*.spec.js`); what moved.
+
+    Measured on one run: QA wrote five files named `<x>_spec.js` where the runner collects `*.spec.js`. Told each
+    time that the name was the reason, it wrote right-named copies of three and left two, and after five rounds the
+    run failed with a suite that proved nothing. Only a pattern `*<suffix>` whose suffix starts with a dot, only a
+    name that ends in `_` or `-` and the rest of that suffix, and only when the right name is free. Never raises.
+    """
+    try:
+        from fnmatch import fnmatch
+
+        record = contract.read(repo_root) or {}
+        pattern = str(record.get("acceptance_pattern") or "")
+        if not (pattern.startswith("*.") and "*" not in pattern[1:]):
+            return []
+        suffix = pattern[1:]
+        folder = Path(repo_root) / str(record.get("project") or "") / str(record.get("acceptance_dir") or "")
+        if not folder.is_dir():
+            return []
+        moved: list[str] = []
+        for path in sorted(folder.rglob("*")):
+            name = path.name
+            if not path.is_file() or "node_modules" in path.parts or fnmatch(name, pattern):
+                continue
+            for separator in ("_", "-"):
+                if name.endswith(separator + suffix[1:]) and len(name) > len(suffix):
+                    target = path.with_name(name[: -len(suffix)] + suffix)
+                    if not target.exists():
+                        path.rename(target)
+                        root = Path(repo_root)
+                        moved.append(f"{path.relative_to(root).as_posix()} -> {target.relative_to(root).as_posix()}")
+                    break
+        if moved:
+            logger.warning("Renamed suite files the runner skipped by their names: %s", "; ".join(moved))
+        return moved
+    except Exception:  # noqa: BLE001 - the review's own finding stands
+        logger.debug("Could not rename the suite files the runner skips", exc_info=True)
+        return []
+
+
 def _a_file_the_runner_does_not_collect(repo_root: str | Path, shown: Any) -> str:
     """Why a file's tests never run when its name is not one the runner collects; "" when it is, or unknown.
 

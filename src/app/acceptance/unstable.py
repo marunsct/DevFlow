@@ -24,6 +24,12 @@ _NOT_THE_PRODUCT = (":(exclude,glob).harness/**", ":(exclude,glob)**/test-result
                     ":(exclude,glob)**/__pycache__/**", ":(exclude,glob)docs/**")
 
 
+def _the_harness_s(path: str) -> bool:
+    """Whether `path` is one `_NOT_THE_PRODUCT` leaves out: the harness's records, test results, caches."""
+    parts = path.split("/")
+    return parts[0] in (".harness", "docs") or "test-results" in parts[:-1] or "__pycache__" in parts[:-1]
+
+
 def _git(root: Path, *args: str) -> str | None:
     try:
         done = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, errors="replace", timeout=30)
@@ -40,9 +46,15 @@ MOST_UNTRACKED_BYTES = 1_000_000
 def fingerprint(repo_root: str | Path) -> str:
     """The product's state as git sees it - its commit and its uncommitted changes; "" without a repository."""
     root = Path(repo_root)
-    head = _git(root, "rev-parse", "HEAD")
-    if head is None:
+    # The product's files as committed, not the commit's id: the harness commits its own records between
+    # measurements, and a fingerprint that began with HEAD read an unchanged product as changed (measured: the unit
+    # tests, five minutes each on a test that never settled, ran again after each such commit).
+    tree = _git(root, "ls-tree", "-r", "HEAD")
+    if tree is None:
         return ""
+    # `ls-tree` takes no exclusions: the same paths are left out here as the pathspecs leave out below.
+    head = "\n".join(line for line in tree.splitlines()
+                     if not _the_harness_s(line.split("\t", 1)[-1] if "\t" in line else line))
     diff = _git(root, "diff", "HEAD", "--", ".", *_NOT_THE_PRODUCT) or ""
     untracked = _git(root, "ls-files", "--others", "--exclude-standard", "--", ".", *_NOT_THE_PRODUCT) or ""
     # An untracked file by its content too, not its name alone: a new file changed again before anything committed

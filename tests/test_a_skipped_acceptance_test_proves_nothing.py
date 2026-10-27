@@ -67,6 +67,17 @@ def test_a_test_skipped_after_another_failed_is_not_named_when_it_is_written_to_
     assert suite.vacuous_green(tmp_path, result) == []
 
 
+def test_a_skipped_stub_of_a_criterion_another_test_runs_for_is_not_named(tmp_path) -> None:
+    """Measured on the same run: QA wrote the criteria's tests in a new file and left the stubs; the review
+    refused the suite for the stubs alone until its rounds ran out."""
+    _suite(tmp_path, SPEC + "test('[AC-2] deletes a note for real', async ({ request }) => {});\n")
+    result = _ran(junit.TestResult(name="[AC-1] adds a note"),
+                  junit.TestResult(name="[AC-2] deletes a note", outcome="skipped"),
+                  junit.TestResult(name="[AC-2] deletes a note for real", outcome="failed"))
+
+    assert suite.vacuous_green(tmp_path, result) == []
+
+
 def test_a_defect_whose_own_tests_were_all_skipped_is_not_measured_passing(tmp_path) -> None:
     report = tmp_path / "acceptance.xml"
     report.write_text(

@@ -1407,14 +1407,21 @@ def tests_the_runner_skipped(repo_root: str | Path, result: AcceptanceResult) ->
         except OSError:
             continue
     nothing_failed = not any(test.outcome == "failed" for test in result.report.tests)
-    return [
-        f"`{test.name}` is skipped: the runner reports it skipped, so it proves nothing about "
-        f"{', '.join(junit.tags_in(test.name))} whatever is built. A skipped test is no test - write its "
-        "checks and let it run; it fails until the product does what it checks, which is how the suite "
-        "starts. A criterion no automated test can check is deferred with its reason instead."
-        for test in skipped
-        if nothing_failed or any(name.split("\\", 1)[0] in test.name for name in written)
-    ]
+    # A criterion another of its tests ran for is tested; its stub left beside it proves nothing either way.
+    # Measured on the same run: QA wrote the tests in a new file, left the stubs, and the review refused the
+    # suite for the stubs alone until its rounds ran out.
+    ran = {tag for test in result.report.tests if test.outcome != "skipped" for tag in junit.tags_in(test.name)}
+    named: list[str] = []
+    for test in skipped:
+        untested = [tag for tag in junit.tags_in(test.name) if tag not in ran]
+        if not untested or not (nothing_failed or any(name.split("\\", 1)[0] in test.name for name in written)):
+            continue
+        named.append(
+            f"`{test.name}` is skipped: the runner reports it skipped, so it proves nothing about "
+            f"{', '.join(untested)} whatever is built. A skipped test is no test - write its "
+            "checks and let it run; it fails until the product does what it checks, which is how the suite "
+            "starts. A criterion no automated test can check is deferred with its reason instead.")
+    return named
 
 
 def tests_that_need_what_they_never_made(repo_root: str | Path, result: AcceptanceResult) -> list[str]:

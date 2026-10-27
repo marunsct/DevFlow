@@ -4,7 +4,7 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 03:48 JST. run-3f097c14 **9/9, locked 17/0**, mutation 0.917 (LF.348-350 fixed a unit test that hung each run for 5 min, run 4 times a round). Twelve 9/9 in a row on notes-api-hono. **run-799b0a77** started 03:47 JST on `7db2c343` (clean: LF.316-350).
+**As of:** 2026-10-28 04:47 JST. run-799b0a77 **9/9, locked 15/0**, mutation 0.917, 53 min (LF.351 server log in defects, LF.352 a cause the product hid, deployed into it); thirteen 9/9 in a row. Built overnight from the backlog and live audits: LF.337-352 (F3 last try, F7 anchors, F9 fingerprints, B7 contract alternatives, B8 corrected lines, B9 import claims, B11 mutation with unit tests, scratch names, route listing, ambiguity calls, Node test timeout, unit run kept, product fingerprint by files, server log, hidden cause). **run-f523de50** started 04:46 JST on `e212af75` (clean).
 ## Live now
 | | |
 |---|---|

@@ -119,7 +119,8 @@ runs the file, write only TypeScript that is types and nothing else: type annota
 type`; NOT `enum`, `namespace`, class parameter properties (`constructor(private x: T)`) or decorators. Import your own
 files with their extension, `import { x } from './x.ts'`, and packages by name. Add routes to the application
 (`app.get('/items', (c) => c.json(items))`, `app.post(...)`, a `Hono` per area mounted with `app.route('/items',
-itemsApp)`); read a JSON body with `await c.req.json()` and answer with `c.json(body, status)`.
+itemsApp)`); read a JSON body with `await c.req.json()` and
+return the answer the context builds - `return c.json(body, status)`: a handler that calls it without `return`, or is typed `void`, answers nothing, and every request then fails inside the server with `res.body.getReader is not a function`.
 Unit tests go in `test/`, named `<area>.test.ts`, with Node's own runner: `import { test } from 'node:test'`,
 `import assert from 'node:assert/strict'`, and call the application in memory - `await createApp().request('/items',
 { method: 'POST', body: JSON.stringify({ ... }), headers: { 'content-type': 'application/json' } })` returns a standard

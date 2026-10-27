@@ -120,13 +120,12 @@ type`; NOT `enum`, `namespace`, class parameter properties (`constructor(private
 files with their extension, `import { x } from './x.ts'`, and packages by name. Add routes to the application
 (`app.get('/items', (c) => c.json(items))`, `app.post(...)`, an area's routes as their own `new Hono()` - there is no `Router` - mounted with `app.route('/items',
 itemsApp)`); read a JSON body with `await c.req.json()` and
-return the answer the context builds - `return c.json(body, status)`: a handler that calls it without `return`, or is typed `void`, answers nothing, and every request then fails inside the server with `res.body.getReader is not a function`.
+return the answer the context builds - `return c.json(body, status)`: a handler that calls it without `return` answers nothing (every request then fails with `res.body.getReader is not a function`), and one that returns a plain object fails with `Invalid status code`.
 Unit tests go in `test/`, named `<area>.test.ts`, with Node's own runner: `import { test } from 'node:test'`,
 `import assert from 'node:assert/strict'`, and call the application in memory - `await createApp().request('/items',
 { method: 'POST', body: JSON.stringify({ ... }), headers: { 'content-type': 'application/json' } })` returns a standard
 `Response`. Use that, not a client library: `hono/testing` exports only `testClient`, which needs the route types, and
-nothing else (no `createClient`, no `createTestClient`). Before you finish, run `npm run typecheck` (it only checks;
-it writes nothing) and `npm test`. Install a dependency with `npm install <name>`; look up what a package exports with
+nothing else (no `createClient`, no `createTestClient`). Before you finish, run `npm run typecheck` and `npm test`. Install a dependency with `npm install <name>`; look up what a package exports with
 the `module_exports` tool before importing a name you are not sure of."""
 
 DOCKERFILE = """# {{title}}: build with `docker build -t {{project}} .`, run with

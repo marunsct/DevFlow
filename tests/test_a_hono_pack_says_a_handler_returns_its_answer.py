@@ -22,5 +22,8 @@ BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I
 def test_the_guide_says_to_return_the_answer_and_names_the_server_s_error(name):
     guide = pack_named(name).guide
     assert "return c.json(" in guide and "res.body.getReader is not a function" in guide
+    # Measured on a later run: `app.get('/health', () => ({ status: 'ok' }))` - a plain object, read by the server
+    # as a response whose status is `ok`; every request failed with "Invalid status code: ok".
+    assert "a plain object" in guide and "Invalid status code" in guide
     assert len(guide) <= MOST_GUIDE_CHARACTERS
     assert not BANNED.search(guide)

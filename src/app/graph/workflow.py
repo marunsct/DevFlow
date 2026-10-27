@@ -1279,10 +1279,28 @@ def _noted_as_reverted(cycle: Any, indices: list[int], broke: list[str], *, in_a
         else f"A fix was tried and reverted, because it broke what passed before it: {'; '.join(broke[:5])}.{unit_guidance}"
     )
     return cycle.model_copy(update={"defects": [
-        item.model_copy(update={"actual_behavior": f"{item.actual_behavior}\n{note}"})
+        item.model_copy(update={"actual_behavior": f"{item.actual_behavior}\n{note}{_the_unit_tests_are_out_of_date(item, broke)}"})
         if position in indices else item
         for position, item in enumerate(cycle.defects)
     ]})
+
+
+#: What a unit-test defect is told when its fix broke the locked acceptance suite. Measured on one run: the unit tests
+#: called the product's factory as it was before a fix made it asynchronous, and two fixes in turn changed the product
+#: to suit them, broke three and then seven passing acceptance tests, and were reverted; the sprint was planned again.
+UNIT_TESTS_AGAINST_THE_SUITE = (
+    "\nThe product before this fix passed those acceptance tests, and no fix may change them: where the unit tests "
+    "and the acceptance suite disagree, the unit tests are out of date. Change the unit tests to use the product as "
+    "it now is - its functions as they are now called, what they now return - keep each test's name, leave the "
+    "product as it is, and say in your answer that the unit tests were out of date."
+)
+
+
+def _the_unit_tests_are_out_of_date(defect: Any, broke: list[str]) -> str:
+    """`UNIT_TESTS_AGAINST_THE_SUITE` for a failing-unit-tests defect whose fix broke acceptance tests; else ""."""
+    if not str(getattr(defect, "description", "") or "").startswith(UNIT_TESTS_FAIL):
+        return ""
+    return UNIT_TESTS_AGAINST_THE_SUITE if any(item.startswith("acceptance:") for item in broke) else ""
 
 
 def _a_revert_escalates_this_fix(cycle: Any, defect_index: int) -> bool:

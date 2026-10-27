@@ -3120,10 +3120,18 @@ def _settle_the_fix(
         # reply at all now answers this way (`_blocked_for_want_of_room`).
         # The next round measures it again.
         update["remediation"] = cycle
+        # A package it says cannot be loaded, loaded by the harness: the next fixer is given the fact, not the claim.
+        loads = _what_a_claimed_unloadable_package_does(state["repository"].root_path, list(fix_result.blockers))
+        if loads:
+            defects = list(cycle.defects)
+            defects[defect_index] = defect.model_copy(
+                update={"actual_behavior": f"{defect.actual_behavior or ''}\n{loads}".strip()})
+            update["remediation"] = cycle.model_copy(update={"defects": defects})
         defect_ledger.note(
             "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
             sprint=state.get("current_sprint_index", 0),
-            detail="the fix stage changed nothing and reported: " + "; ".join(map(str, fix_result.blockers))[:300],
+            detail="the fix stage changed nothing and reported: " + "; ".join(map(str, fix_result.blockers))[:300]
+            + (f" - {loads}" if loads else ""),
         )
     elif (measured_now := _the_defect_s_tests_in(state["repository"].root_path, measured, defect)) is False:
         # Its own tests still fail, measured after the fix. Closed, the next
@@ -3368,6 +3376,54 @@ def _the_mutation_probe(state: Any, cycle: Any, test_round: int) -> dict[str, An
         "stage": "defect_remediation",
         "defect_cursor": 0,
     }
+
+
+#: How each runtime is asked whether a package loads: the command, with `{name}` for the package. Node imports it as
+#: the product does (an ES module, or a CommonJS one through its default).
+_LOAD_A_PACKAGE = {
+    "node": ["node", "-e", "import('{name}').then(m => console.log('LOADS', Object.keys(m).slice(0, 8).join(', ')))"
+                           ".catch(e => { console.log('FAILS', String(e && e.message || e).slice(0, 300)); process.exit(1); })"],
+}
+#: Words of a claim that something cannot be loaded.
+_A_LOADING_CLAIM = re.compile(r"\b(?:import|imports|imported|require|load|loads|resolve|module|ESM|CommonJS)\b", re.I)
+
+
+def _what_a_claimed_unloadable_package_does(repo_root: str, blockers: list[str]) -> str:
+    """What loading a declared package the blockers say cannot be loaded shows, or "". Never raises.
+
+    Measured on one run: two fixers reported that `sqlite3` could not be imported as an ES module, changed nothing,
+    and one ran to the call cap; `await import('sqlite3')` loaded it in the project. A runtime the table does not
+    name, or a claim naming no declared package, says nothing.
+    """
+    try:
+        import json as _json
+
+        from app.stacks import contract
+        from app.stacks.scaffold import sandbox_runner
+
+        text = " ".join(map(str, blockers or []))
+        found = contract.the_pack(repo_root)
+        command = _LOAD_A_PACKAGE.get(str(getattr(found[0], "code_runs_in", "") or "")) if found else None
+        if not command or not _A_LOADING_CLAIM.search(text):
+            return ""
+        project = str(found[1].get("project") or "")
+        manifest = _json.loads((Path(repo_root) / project / "package.json").read_text(encoding="utf-8"))
+        declared = [*(manifest.get("dependencies") or {}), *(manifest.get("devDependencies") or {})]
+        named = [name for name in declared if re.search(rf"(?<![\w@/-]){re.escape(name)}(?![\w/-])", text, re.I)]
+        if not named:
+            return ""
+        name = named[0]
+        outcome = sandbox_runner(repo_root)([part.replace("{name}", name) for part in command], "probe", project) or {}
+        said = str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "")
+        if "LOADS" in said:
+            exports = said.split("LOADS", 1)[1].strip().splitlines()[0][:200] if said.split("LOADS", 1)[1].strip() else ""
+            return (f"The harness loaded it: `{name}` loads in this project (its exports: {exports or 'none listed'}). "
+                    "Loading it is not what is wrong; the cause is elsewhere.")
+        if "FAILS" in said:
+            return f"The harness tried loading `{name}` in this project and it fails: {said.split('FAILS', 1)[1].strip()[:300]}"
+        return ""
+    except Exception:  # noqa: BLE001 - the claim stands as it was made
+        return ""
 
 
 def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:

@@ -7936,12 +7936,14 @@ def _a_dispute_may_be_held_now(state: Any, also: list[str] | None = None) -> boo
 _REVERTED_FOR = re.compile(r"A fix was tried and reverted, because it broke what passed before it: (.+?)\.(?:\n|$)")
 
 
-#: Reverted fixes, each breaking one passing locked test, before that test stops reverting a fix alone.
-REVERTS_BEFORE_A_TEST_IS_CONTESTED = 3
+#: Reverted fixes, each breaking one passing locked test, before that test stops reverting a fix alone: two, the
+#: evidence a dispute is held on (`_a_locked_test_two_fixes_broke`). Counted within an attempt, which a re-plan starts
+#: afresh: measured on one run, three never came in one attempt while the same test reverted eight fixes over four.
+REVERTS_BEFORE_A_TEST_IS_CONTESTED = 2
 
 
 def _a_contested_test_past_repair(state: Any, cycle: Any) -> str:
-    """A passing locked test that three reverted fixes broke and the suite may no longer be repaired for; else "".
+    """A passing locked test that two reverted fixes broke and the suite may no longer be repaired for; else "".
 
     Measured on one run: every fix of a DELETE criterion was reverted for breaking a test that asserted JSON on every
     response, a 204 included - eight times over four attempts - with the suite's repairs spent, so no dispute could

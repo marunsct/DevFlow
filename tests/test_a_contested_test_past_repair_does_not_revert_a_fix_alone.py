@@ -1,4 +1,4 @@
-"""Once a passing locked test has been the only casualty of three reverted fixes and the suite may not be repaired
+"""Once a passing locked test has been the only casualty of two reverted fixes in an attempt and the suite may not be repaired
 for it, breaking it alone no longer reverts a fix that makes other tests pass.
 
 Measured on one run: `DELETE /notes/{id}` answers 204 in the brief, and AC-7's test asserted a JSON content type on
@@ -45,11 +45,11 @@ def test_the_contested_test_is_named_only_after_three_reverts_with_the_repairs_s
     from types import SimpleNamespace
 
     note = f"A fix was tried and reverted, because it broke what passed before it: {CONTESTED}."
-    cycle = SimpleNamespace(defects=[SimpleNamespace(actual_behavior=note) for _ in range(3)])
+    cycle = SimpleNamespace(defects=[SimpleNamespace(actual_behavior=note) for _ in range(2)])
     spent = {"suite_repairs": 4, "suite_repaired_tests": []}
     monkeypatch.setattr("app.graph.acceptance_nodes.MAX_SUITE_REPAIRS_IN_ALL", 4)
 
     assert workflow._a_contested_test_past_repair(spent, cycle) == CONTESTED
     assert workflow._a_contested_test_past_repair({"suite_repairs": 0}, cycle) == "", "still repairable: disputed instead"
-    two = SimpleNamespace(defects=cycle.defects[:2])
-    assert workflow._a_contested_test_past_repair(spent, two) == ""
+    one = SimpleNamespace(defects=cycle.defects[:1])
+    assert workflow._a_contested_test_past_repair(spent, one) == "", "one revert is a bad fix"

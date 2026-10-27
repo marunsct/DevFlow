@@ -21,6 +21,8 @@ not show it for a `.js` file either. These codes are kept because each means
 the code fails when it runs:
 
     2304, 2552  a name nothing defines          -> ReferenceError
+    1361, 1362  a name imported or exported with `import type`/`export type`
+                used as a value: stripped with the types -> ReferenceError
     2448-2450   a const/let, class or enum used before its declaration runs
                                                 -> ReferenceError ("Cannot access
                                                    'x' before initialization")
@@ -136,7 +138,7 @@ process.stdin.on('data', d => content += d).on('end', () => {
     return get(f, lang, onError, fresh);
   };
   const program = ts.createProgram(roots, options, host);
-  const NAMES = new Set([2304, 2552, 2448, 2449, 2450]);
+  const NAMES = new Set([2304, 2552, 2448, 2449, 2450, 1361, 1362]);
   const IMPORTS = new Set([2305, 2614, 1192, 2613, 2306, 2307]);
   // A call of a method on a built-in type that no built-in type has at all.
   const MISSING_MEMBER = new Set([2339, 2551]);

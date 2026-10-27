@@ -139,9 +139,12 @@ module.exports = { startService };
 
 #: The factory the kept start file calls is called as it is: measured on a small-model run, `createApp` was made
 #: `async` to load the data first, the kept start file then served the `fetch` of a Promise, and every request
-#: answered 500 for two sprint attempts.
+#: answered 500 for two sprint attempts. On the next two runs the draft wrote `export default function
+#: createApp(dataDir)` - a default export with a parameter - and the service did not load.
 FACTORY_GUIDE = (
-    "`createApp()` returns the application itself, never a Promise: the start file calls it and uses the result at "
+    "`createApp()` is a named export (`export function createApp()`, not `export default`) that takes no "
+    "parameters: the start file calls it with none, so it reads what it needs - `DATA_DIR`, limits - from the "
+    "environment itself. It returns the application itself, never a Promise: the start file uses the result at "
     "once, so it is not `async`. Data the service needs is loaded inside the handlers that use it (or once, on the "
     "first request), not before `createApp` returns."
 )

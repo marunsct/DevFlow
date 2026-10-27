@@ -33,6 +33,17 @@ def test_every_service_pack_guide_reaches_the_builders_whole():
 def test_the_native_pack_s_start_file_serves_a_factory_that_returns_a_promise():
     pack = pack_named("node-hono-native-api")
     main = pack.files["src/main.ts"]
-    assert "const app = await createApp();" in main and "fetch: app.fetch" in main
+    assert "const app = await factory();" in main and "fetch: app.fetch" in main
     assert "createApp().fetch" not in main
     assert "await (await createApp()).request('/health')" in pack.smoke_files["test/scaffold-smoke.test.ts"]
+
+
+def test_the_native_pack_s_start_file_takes_the_named_factory_or_the_default_export():
+    main = pack_named("node-hono-native-api").files["src/main.ts"]
+    assert "import * as entry from './app.ts';" in main
+    assert "exported.createApp ?? exported.default" in main
+
+
+def test_the_guide_says_the_factory_is_a_named_export_with_no_parameters():
+    guide = pack_named("node-hono-native-api").guide
+    assert "not `export default`" in guide and "takes no parameters" in guide and "from the environment" in guide

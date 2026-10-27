@@ -83,14 +83,19 @@ export function createApp(): Hono {
 
 #: Measured on a small-model run: the first draft made `createApp` `async`, the start file served the `fetch` of a
 #: Promise, every request answered 500, and no fix, guide or note brought the model to undo it in four sprint
-#: attempts (hidden 0/9). The pack's own start file awaits the factory, which serves either form.
+#: attempts (hidden 0/9). The pack's own start file awaits the factory, which serves either form. Two later runs
+#: wrote it as the default export; the start file takes `createApp` or the default, whichever the module has.
 MAIN = """import { serve } from '@hono/node-server';
-import { createApp } from './app.ts';
+import type { Hono } from 'hono';
+import * as entry from './app.ts';
 
 const port = Number(process.env.PORT || 3000);
 const hostname = process.env.HOST || '127.0.0.1';
-// Awaited, so a `createApp` that loads its data first and returns a Promise is served all the same.
-const app = await createApp();
+// The named `createApp`, or the module's default export, awaited: a factory written either way, or returning a
+// Promise, is served all the same.
+const exported = entry as unknown as Record<string, unknown>;
+const factory = (exported.createApp ?? exported.default) as () => Hono | Promise<Hono>;
+const app = await factory();
 
 serve({ fetch: app.fetch, port, hostname }, () => {
   console.log(`Listening on http://${hostname}:${port}`);

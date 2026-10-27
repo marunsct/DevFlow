@@ -4,7 +4,7 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 02:14 JST. run-b75438d4 **hidden 9/9, locked 25/0**, 71 min, 226 calls, mutation 0.75 suite / 0.833 with unit tests (LF.345); LF.346 (start check lists the served routes) fixed its `/health/health` start. **run-8d3b5844** started 02:13 JST on `7330fa89` (clean).
+**As of:** 2026-10-28 02:47 JST. Last two: run-b75438d4 9/9 (71 min; LF.346 fixed its `/health/health` start), run-8d3b5844 **9/9, 31 min**, 211 calls, no KPI flag (LF.347 live). **run-3f097c14** started 02:46 JST on `2570c1a0` (clean).
 ## Live now
 | | |
 |---|---|

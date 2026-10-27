@@ -93,7 +93,7 @@ def test_a_batch_that_broke_what_passed_is_reverted_and_its_defects_fixed_alone(
 
     measured: list[str] = []
 
-    def after(root, base, stage_name, description):
+    def after(root, base, stage_name, description, contested=""):
         measured.append(stage_name)
         return ["[AC-1] lists notes"] if stage_name.endswith("_batch") else []
 

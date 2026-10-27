@@ -808,8 +808,12 @@ def what_the_fix_did_to_the_install(root: str, base: str) -> str:
         return ""
 
 
-def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list[str]:
-    """Measure the fix. A fix that broke what passed before it is reverted; returns what it broke."""
+def after_a_fix(root: str, base: str, stage_name: str, description: str, contested: str = "") -> list[str]:
+    """Measure the fix. A fix that broke what passed before it is reverted; returns what it broke.
+
+    `contested`: a passing locked test past judging (`workflow._a_contested_test_past_repair`); a fix whose only
+    casualty is that test, and that made others pass, is kept.
+    """
     if not base or not ci_applies(root):
         return []
     before = ci.load(root, "latest")
@@ -850,6 +854,12 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list
             "Kept %s: it made %d test(s) pass and broke %d unit test(s), which the next round raises: %s",
             stage_name, len(gained_now), len(lost), "; ".join(lost[:3]),
         )
+        broken = []
+    if broken and contested and broken == [contested] and gained_now and not after.problem:
+        # The test the suite could not be repaired for, broken alone by a fix that makes others pass: measured on one
+        # run, eight such fixes of a DELETE criterion were reverted for a test asserting JSON on a 204.
+        logger.warning("Kept %s: it made %d test(s) pass and broke only the contested %s", stage_name,
+                       len(gained_now), contested)
         broken = []
     if broken and ci.revert_to(root, base):
         # What the reverted fix had gained as well, so whether a whole fix

@@ -7936,6 +7936,36 @@ def _a_dispute_may_be_held_now(state: Any, also: list[str] | None = None) -> boo
 _REVERTED_FOR = re.compile(r"A fix was tried and reverted, because it broke what passed before it: (.+?)\.(?:\n|$)")
 
 
+#: Reverted fixes, each breaking one passing locked test, before that test stops reverting a fix alone.
+REVERTS_BEFORE_A_TEST_IS_CONTESTED = 3
+
+
+def _a_contested_test_past_repair(state: Any, cycle: Any) -> str:
+    """A passing locked test that three reverted fixes broke and the suite may no longer be repaired for; else "".
+
+    Measured on one run: every fix of a DELETE criterion was reverted for breaking a test that asserted JSON on every
+    response, a 204 included - eight times over four attempts - with the suite's repairs spent, so no dispute could
+    judge it. Such a test no longer reverts, alone, a fix that makes other tests pass (`engineering.after_a_fix`).
+    """
+    try:
+        from collections import Counter
+
+        from app.graph.acceptance_nodes import may_repair
+
+        counts: Counter[str] = Counter()
+        for defect in getattr(cycle, "defects", None) or []:
+            for match in _REVERTED_FOR.finditer(str(getattr(defect, "actual_behavior", "") or "")):
+                for name in match.group(1).split("; "):
+                    if name.strip().startswith("acceptance:"):
+                        counts[name.strip()] += 1
+        name = next((n for n, c in counts.most_common() if c >= REVERTS_BEFORE_A_TEST_IS_CONTESTED), "")
+        if not name or may_repair(state, [f"`{_the_test_named(name)}`"]):
+            return ""
+        return name
+    except Exception:  # noqa: BLE001 - the revert gate stands as it was
+        return ""
+
+
 def _a_locked_test_two_fixes_broke(cycle: Any) -> str:
     """A locked acceptance test that two fixes in this attempt were reverted for breaking, or "".
 
@@ -10883,7 +10913,8 @@ def build_workflow_graph(
 
             fix_result = update.pop("__fix_result__")
         broke = engineering.after_a_fix(
-            state["repository"].root_path, fix_base, stage_name, defect.description
+            state["repository"].root_path, fix_base, stage_name, defect.description,
+            contested=_a_contested_test_past_repair(state, cycle),
         )
         from app.observability import defect_ledger
 

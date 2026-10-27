@@ -4,7 +4,7 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 00:15 JST.
+**As of:** 2026-10-28 00:05 JST.
 ## Live now
 | | |
 |---|---|
@@ -98,7 +98,7 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
 - B5 **F1c** [covered by the static fixture checks LF.289/300/302/328/329/333; revisit if a false-red round recurs] at lock, a harness probe of the contract (POST then GET); a suite failing every write while the probe succeeds is suspect and goes to QA before any fixer. Measure: false-red rounds.
 - B6 [held: measure LF.330/331/336 first] route handler of the wrong type (TS2769 on a route registration) refused at the write (three crash-at-start runs today).
 - B7 [built LF.340, measuring] release contract check reads "A or B" statuses and probes `/x/:id` routes after creating one.
-- B8 a check that knows the exact fix hands QA the replacement line.
+- B8 [built LF.343, measuring] a check that knows the exact fix hands QA the replacement line.
 - B9 [built LF.341, measuring] a fixer's "cannot import X" claim is checked by the harness (`import('X')`) and answered.
 - B10 F4 `reasoning_effort` per stage (arm); F5 plan role check; F6 skeleton tests from the specification; F8 API section once per stage; F10 memory/orphan check in `loop.sh ready`; F11 page-selector contract (browser family).
 - Measuring now: LF.334 (mutation probe beside failing unit tests) and LF.335 (first re-read gets lines) - mutation score, probe fired, model calls.

@@ -1990,6 +1990,27 @@ def _the_kind_assigned(text: str, name: str, at: int) -> str:
     return kind
 
 
+#: Corrected lines quoted with a finding, at most.
+MOST_CORRECTED_LINES = 4
+
+
+def _the_lines_corrected(text: str, lines: list[int], correct: Any) -> str:
+    """` Each line as it should read: ...` for the lines a check names, or "" (deep review B8).
+
+    Measured on one run: told what was wrong with two tests, QA's repair fixed one reading and kept the other, and the
+    suite's repairs were spent. A check that knows the exact correction hands it over.
+    """
+    source = text.splitlines()
+    pairs = []
+    for number in lines[:MOST_CORRECTED_LINES]:
+        if 0 < number <= len(source):
+            before = source[number - 1].strip()
+            after = correct(before)
+            if after and after != before:
+                pairs.append(f"line {number}: `{before[:160]}` -> `{after[:160]}`")
+    return (" Each line as it should read - " + "; ".join(pairs) + ".") if pairs else ""
+
+
 def requests_with_a_fetch_body(repo_root: str | Path) -> list[str]:
     """Tests that hand Playwright's `request` fixture a `fetch`-style `body:`, which it does not read.
 
@@ -2085,6 +2106,7 @@ def responses_read_without_the_call(repo_root: str | Path) -> list[str]:
             f"`{path.relative_to(root).as_posix()}` line(s) {where}: a response from the `request` fixture is read as "
             "`.status`, `.ok`, `.statusText` or `.headers` without calling it. On Playwright's response these are "
             "methods, so the assertion compares a function and fails on every product. Call it: `res.status()`."
+            + _the_lines_corrected(text, lines, lambda line: uncalled.sub(lambda m: m.group(0) + "()", line))
         )
     return problems[:6]
 
@@ -2150,6 +2172,7 @@ def fetch_calls_written_like_the_fixture(repo_root: str | Path) -> list[str]:
                     f"`{shown}` line(s) {', '.join(map(str, lines[:8]))}: a `fetch` response's `status`, `ok` or "
                     "`statusText` is called like a method. On a `fetch` response these are values, so the call throws "
                     "on every product. Read it without the call: `res.status`."
+                    + _the_lines_corrected(text, lines, lambda line: re.sub(called.pattern + r"\s*\)", lambda m: m.group(0)[:m.group(0).rindex("(")].rstrip(), line))
                 )
     return problems[:6]
 
@@ -2192,7 +2215,9 @@ def reads_of_what_the_test_does_not_have(repo_root: str | Path) -> list[str]:
         ):
             lines = sorted({text.count("\n", 0, m.start()) + 1 for m in pattern.finditer(text)})
             if lines:
-                problems.append(f"`{shown}` line(s) {', '.join(map(str, lines[:8]))}: the test {why}")
+                corrected = (_the_lines_corrected(text, lines, lambda line: _THE_FIXTURE_S_BASEURL.sub("baseURL", line))
+                             if pattern is _THE_FIXTURE_S_BASEURL else "")
+                problems.append(f"`{shown}` line(s) {', '.join(map(str, lines[:8]))}: the test {why}{corrected}")
     return problems[:6]
 
 

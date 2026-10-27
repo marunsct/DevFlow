@@ -149,10 +149,13 @@ FACTORY_GUIDE = (
     "first request), not before `createApp` returns."
 )
 
+#: How the restart test loads the helper follows the file: measured on one run, a guide that showed only `require` had QA
+#: write it inside a test of a file Node loads as an ES module, where `require` is not defined.
 RESTART_GUIDE = """A criterion about the data surviving a restart is tested, not deferred, and only that criterion uses the
 harness's helper `acceptance/service.cjs`; every other test uses the `request` fixture against the service the
-configuration already started. For the restart criterion: `const { startService } = require('./service.cjs');` then
-`const first = await startService(); await request.post(first.baseURL + '/items', { data: { ... } }); await first.stop();
+configuration already started. Load the helper once, at the top of the file, the way the file loads
+`@playwright/test`: `import { startService } from './service.cjs';` beside an `import`, `const { startService } =
+require('./service.cjs');` beside a `require`. For the restart criterion: `const first = await startService(); await request.post(first.baseURL + '/items', { data: { ... } }); await first.stop();
 const second = await startService({ dataDir: first.dataDir }); const kept = await request.get(second.baseURL + '/items');
 ... await second.stop();`. Requests always send a body as `data: { ... }` - the `request` fixture does not read a `body:`
 option and the service would receive nothing. Do not edit the helper."""

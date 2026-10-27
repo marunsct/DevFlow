@@ -2351,6 +2351,50 @@ def tests_that_want_json_from_a_204(repo_root: str | Path, contract_lines: Seque
     return problems[:6]
 
 
+#: A service a test starts with the harness's helper: its name, and what it was started with.
+_A_SERVICE_STARTED = re.compile(r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*await\s+startService\s*\(([^)]*)\)")
+
+
+def tests_that_restart_on_data_they_never_wrote(repo_root: str | Path) -> list[str]:
+    """Restart tests that start a service on a fresh data folder, send it nothing, and restart on that folder.
+
+    Measured on one run: the restart test wrote its record through the `request` fixture - the suite's own server,
+    with its own data folder - then started a service on a fresh folder, stopped it, started a second on that folder
+    and read the record from it: 404 on every product, and the only acceptance test left failing. A service whose
+    `baseURL` the test never uses received nothing, so the one restarted on its `dataDir` starts empty.
+    """
+    root = Path(repo_root)
+    problems: list[str] = []
+    for path in suite_files(repo_root):
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        starts = [m.start() for m in _A_TEST_CALL.finditer(text)]
+        for at, start in enumerate(starts):
+            block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
+            for started in _A_SERVICE_STARTED.finditer(block):
+                name, given = started.group(1), started.group(2)
+                if "dataDir" in given or re.search(rf"\b{re.escape(name)}\s*\.\s*baseURL\b", block):
+                    continue
+                if not re.search(rf"dataDir\s*:\s*{re.escape(name)}\s*\.\s*dataDir\b", block[started.end():]):
+                    continue
+                line = text.count("\n", 0, start + started.start()) + 1
+                problems.append(
+                    f"`{path.relative_to(root).as_posix()}` line {line}: the test starts `{name}` on a fresh data "
+                    f"folder and never sends it anything (`{name}.baseURL` is not used), then starts a service on "
+                    f"`{name}.dataDir` and reads from it. What it wrote through `request` went to the suite's own "
+                    f"server, whose data folder is another one, so the restarted service starts empty on every "
+                    f"product. Write through `{name}.baseURL` before `{name}.stop()` - `await request.post({name}"
+                    f".baseURL + '/...', {{ data: {{ ... }} }})` - and read the same record back from the second "
+                    "service."
+                )
+                break
+    return problems[:6]
+
+
 def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     """Whether a ledger entry is a run of the locked acceptance suite.
 
@@ -2427,6 +2471,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *fetch_calls_written_like_the_fixture(repo_root),
         *reads_of_what_the_test_does_not_have(repo_root),
         *tests_that_want_json_from_a_204(repo_root),
+        *tests_that_restart_on_data_they_never_wrote(repo_root),
         *tests_that_never_open_the_page(repo_root),
         *tests_that_access_storage_before_opening_the_page(repo_root),
         *tests_that_expect_what_they_never_gave(repo_root),

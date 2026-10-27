@@ -94,10 +94,10 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
 - B1 **F3** [built LF.337, measuring] one last single-call rewrite aimed at each deferred criterion before release (4 of 5 false acceptances shipped a deferred criterion). Measure: deferred criteria at release, hidden score.
 - B2 **F7** [built LF.338, measuring] an edit anchor that matches once after whitespace normalisation is applied; several matches plus a line hint, applied there. Measure: edit refusals per run.
 - B3 **F9** [built LF.339] each fix attempt records a fingerprint and a 300-character summary of what its fixer was shown. Measure: the ledger can answer "what changed between tries".
-- B4 **F2** defects localised to one file go to one fixer together; an anchored edit before a whole-file rewrite. Measure: fix stages and reverts per run.
-- B5 **F1c** at lock, a harness probe of the contract (POST then GET); a suite failing every write while the probe succeeds is suspect and goes to QA before any fixer. Measure: false-red rounds.
-- B6 route handler of the wrong type (TS2769 on a route registration) refused at the write (three crash-at-start runs today).
-- B7 release contract check reads "A or B" statuses and probes `/x/:id` routes after creating one.
+- B4 **F2** [mostly in place: rewrite-first, anchored replies, same-file bundles (cap 2, measured), closed-by-measurement; remaining - naming files for suite defects - only on measured need] defects localised to one file go to one fixer together; an anchored edit before a whole-file rewrite. Measure: fix stages and reverts per run.
+- B5 **F1c** [covered by the static fixture checks LF.289/300/302/328/329/333; revisit if a false-red round recurs] at lock, a harness probe of the contract (POST then GET); a suite failing every write while the probe succeeds is suspect and goes to QA before any fixer. Measure: false-red rounds.
+- B6 [held: measure LF.330/331/336 first] route handler of the wrong type (TS2769 on a route registration) refused at the write (three crash-at-start runs today).
+- B7 [built LF.340, measuring] release contract check reads "A or B" statuses and probes `/x/:id` routes after creating one.
 - B8 a check that knows the exact fix hands QA the replacement line.
 - B9 a fixer's "cannot import X" claim is checked by the harness (`import('X')`) and answered.
 - B10 F4 `reasoning_effort` per stage (arm); F5 plan role check; F6 skeleton tests from the specification; F8 API section once per stage; F10 memory/orphan check in `loop.sh ready`; F11 page-selector contract (browser family).

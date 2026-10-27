@@ -38,7 +38,8 @@ logger = logging.getLogger(__name__)
 #: The criterion a line serves; a line naming several serves the first. One
 #: specification wrote "AC-1 AC-2 AC-3 POST /auth/register -> 201".
 _CRITERION = r"((?:AC|CR)-\d+)(?:[\s,]+(?:AC|CR)-\d+)*"
-_HTTP = re.compile(_CRITERION + r"\s+(GET|POST|PUT|PATCH|DELETE)\s+(/\S*)\s*->\s*(\d{3})\s*$")
+#: One or more statuses: `-> 200`, `-> 200 or 404`, `-> 200 or 400/422 or 404`.
+_HTTP = re.compile(_CRITERION + r"\s+(GET|POST|PUT|PATCH|DELETE)\s+(/\S*)\s*->\s*(\d{3}(?:\s*(?:or|/|,)\s*\d{3})*)\s*$")
 #: A page control: the role and its name last, with any words naming where on
 #: the page it sits between the path and the role - one specification wrote 26
 #: of its page lines as `page /dashboard form textbox "Title"`, and every one
@@ -65,6 +66,39 @@ MOST_CHECKS = 40
 _A_TEMPLATE = re.compile(r"\{[^}]*\}|/:[A-Za-z_]")
 
 
+#: What a route's parameter is probed with: a record no product has, which a product that keeps its contract answers
+#: with the 4xx the line allows. Measured on several runs: every `/notes/:id` line went unchecked at release.
+A_RECORD_THAT_DOES_NOT_EXIST = "999999999"
+
+
+def _allowed(check: "Check") -> tuple[int, ...]:
+    return tuple(check.statuses or ()) or ((check.status,) if check.status else ())
+
+
+def _a_refusal_is_allowed(check: "Check") -> bool:
+    return any(400 <= code < 500 for code in _allowed(check))
+
+
+def checkable(checks: list["Check"]) -> list["Check"]:
+    """The HTTP and page checks a bare probe can settle, a route's parameters filled with a record that does not exist.
+
+    A route with a parameter, or a write that succeeds only with a body, is checkable when the line allows the 4xx a
+    product answers such a probe with; otherwise it stays unchecked, as before.
+    """
+    from dataclasses import replace as _with
+
+    kept: list[Check] = []
+    for check in checks:
+        if check.kind not in ("http", "page"):
+            continue
+        templated = bool(_A_TEMPLATE.search(check.path))
+        if (templated or _a_write_that_needs_a_body(check)) and not (check.kind == "http" and _a_refusal_is_allowed(check)):
+            continue
+        path = re.sub(r"\{[^}]*\}|:[A-Za-z_]\w*", A_RECORD_THAT_DOES_NOT_EXIST, check.path) if templated else check.path
+        kept.append(_with(check, path=path))
+    return kept
+
+
 def _a_write_that_needs_a_body(check: "Check") -> bool:
     """A `POST`/`PUT`/`PATCH` line that says it succeeds: the probe sends a bare request, which a product that checks
     its input rightly refuses. Measured on one run: `AC-1 POST /notes -> 201` was failed at release for the 422 the
@@ -82,6 +116,8 @@ class Check:
     method: str = ""
     path: str = ""
     status: int = 0
+    #: Every status the line allows; `status` is the first of them.
+    statuses: tuple[int, ...] = ()
     role: str = ""
     name: str = ""
     command: str = ""
@@ -105,7 +141,9 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
         # (updates reminder_at field)", and the line was dropped at the lock.
         line = _A_TRAILING_NOTE.sub("", line)
         if match := _HTTP.match(line):
-            checks.append(Check(match[1], "http", line, method=match[2], path=match[3], status=int(match[4])))
+            statuses = tuple(int(code) for code in re.findall(r"\d{3}", match[4]))
+            checks.append(Check(match[1], "http", line, method=match[2], path=match[3], status=statuses[0],
+                                statuses=statuses))
         elif match := _PAGE.match(line):
             role = _ROLE_OF_THE_ELEMENT.get(match[3], match[3])
             checks.append(Check(match[1], "page", line, path=match[2], role=role, name=match[4]))
@@ -157,8 +195,9 @@ def playwright_checks(checks: list[Check]) -> str:
             tests.append(
                 f"test({title}, async ({{ request }}) => {{\n"
                 f"  const answer = await request.fetch({_js(check.path)}, {{ method: {_js(check.method)}, failOnStatusCode: false }});\n"
-                f"  expect(answer.status()).toBe({check.status});\n"
-                "});\n"
+                + (f"  expect(answer.status()).toBe({_allowed(check)[0]});\n" if len(_allowed(check)) == 1
+                   else f"  expect({_js(list(_allowed(check)))}).toContain(answer.status());\n")
+                + "});\n"
             )
         elif check.kind == "page":
             tests.append(
@@ -289,9 +328,10 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
         project = root / project_name
         run = runner or suite._sandbox_runner(root)  # noqa: SLF001 - the suite's own runner
         probe = PROBE_RUNNERS.get(found[0].probe_runner) if found else None
-        templated = [c for c in locked if c.kind in ("http", "page") and _A_TEMPLATE.search(c.path)]
-        writes = [c for c in locked if _a_write_that_needs_a_body(c) and c not in templated]
-        web = [c for c in locked if c.kind in ("http", "page") and c not in templated and c not in writes]
+        web = checkable(locked)
+        settled = {c.line for c in web}
+        templated = [c for c in locked if c.kind in ("http", "page") and _A_TEMPLATE.search(c.path) and c.line not in settled]
+        writes = [c for c in locked if _a_write_that_needs_a_body(c) and c not in templated and c.line not in settled]
         unchecked = [
             *unreadable,
             *(f"{c.line} (a route with a parameter in it)" for c in templated),

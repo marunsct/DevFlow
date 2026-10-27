@@ -50,13 +50,26 @@ def enabled() -> bool:
 def parse(output: str) -> list[tuple[str, int, int, str]]:
     """`(file, line, code, message)` for each error line of the compiler's output that names something missing."""
     found: list[tuple[str, int, int, str]] = []
-    for line in str(output or "").splitlines():
+    lines = str(output or "").splitlines()
+    for at, line in enumerate(lines):
         match = _ERROR.match(line.strip())
         if match is None or "node_modules" in match["file"]:
             continue
         code = int(match["code"])
         if code in _MISSING or code in _THE_WRONG_KIND or code in _A_TYPE_IMPORTED_AS_A_VALUE:
-            found.append((match["file"].strip(), int(match["line"]), code, match["message"].strip()))
+            message = match["message"].strip()
+            # And the innermost line of its explanation, the one that says what is wrong: measured on one run,
+            # "No overload matches this call." went to the fixers without "Type 'void' is not assignable to type
+            # 'HandlerResponse<any>'" (a handler that returned nothing), and the product never started.
+            below = []
+            for following in lines[at + 1:]:
+                if not following[:1].isspace():
+                    break
+                if following.strip():
+                    below.append(following.strip())
+            if below and below[-1] != message:
+                message = f"{message} {below[-1][:240]}"
+            found.append((match["file"].strip(), int(match["line"]), code, message))
     # The product's files first: its own faults stop it, a test's do not.
     return sorted(found, key=lambda item: (item[0].startswith(("test", "acceptance", "tests"))))
 

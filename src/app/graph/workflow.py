@@ -3426,6 +3426,43 @@ def _what_a_claimed_unloadable_package_does(repo_root: str, blockers: list[str])
         return ""
 
 
+#: Where the harness keeps its last unit run with the product's fingerprint (MEASURE_ONCE).
+_UNIT_RUN_FILE = ".harness/unit-result.json"
+
+
+def _the_unit_run_kept(repo_root: str, command: list[Any]) -> tuple[bool, str] | None:
+    """The last unit run's (passed, output) when the product and the command are as they were then; else None."""
+    try:
+        from app.acceptance import measured_once
+        from app.acceptance.unstable import fingerprint
+
+        if not measured_once.enabled():
+            return None
+        saved = json.loads((Path(repo_root) / _UNIT_RUN_FILE).read_text(encoding="utf-8"))
+        if saved.get("command") != [str(part) for part in command] or saved.get("fingerprint") != fingerprint(repo_root):
+            return None
+        logger.info("The product is as the unit tests last measured it; that run stands")
+        return bool(saved.get("passed")), str(saved.get("output") or "")
+    except Exception:  # noqa: BLE001 - when in doubt, run them
+        return None
+
+
+def _keep_the_unit_run(repo_root: str, command: list[Any], passed: bool, output: str) -> None:
+    """Keep this unit run with the product's fingerprint, for `_the_unit_run_kept`. Never raises."""
+    try:
+        from app.acceptance import measured_once
+        from app.acceptance.unstable import fingerprint
+
+        if not measured_once.enabled():
+            return
+        target = Path(repo_root) / _UNIT_RUN_FILE
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({"command": [str(part) for part in command], "fingerprint": fingerprint(repo_root),
+                                      "passed": passed, "output": output[-20_000:]}), encoding="utf-8")
+    except Exception:  # noqa: BLE001 - the next run measures again
+        pass
+
+
 def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
     """Run the contract's unit test command: (whether it passed, its output).
 
@@ -3449,6 +3486,11 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
         reports = _the_unit_reports(repo_root, found, cmd)
         from app.acceptance import junit
 
+        # An unchanged product's unit run stands (MEASURE_ONCE): measured on one run, one test round ran the same
+        # `npm test` four times with no fix between, five minutes each on a unit test that never settled.
+        kept = _the_unit_run_kept(repo_root, cmd)
+        if kept is not None:
+            return kept
         for report in reports:
             junit.clear(report)
         runner = sandbox_runner(repo_root)
@@ -3462,6 +3504,7 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
         output = str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "")
         if rc != 0:
             output = (output.rstrip() + "\n" + _what_the_unit_reports_say(reports)).strip()
+        _keep_the_unit_run(repo_root, cmd, rc == 0, output)
         return rc == 0, output
     except Exception as error:  # noqa: BLE001 - procedural test failure falls back to agent triage
         return False, f"The harness could not run the unit tests: {error}"

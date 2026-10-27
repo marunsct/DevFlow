@@ -7903,7 +7903,12 @@ def _blames_a_locked_test(state: Any, blockers: list[str]) -> bool:
         return False
 
 
-def _a_dispute_may_be_held_now(state: Any) -> bool:
+def _the_test_named(entry: str) -> str:
+    """A test's own title from a revert's `acceptance: <file> › ... › <title>` entry."""
+    return str(entry).rsplit(" › ", 1)[-1].strip()
+
+
+def _a_dispute_may_be_held_now(state: Any, also: list[str] | None = None) -> bool:
     """Whether this attempt may have its failing locked tests judged before it ends.
 
     Measured on one run: sprint 4's locked responsive test had a logic error -
@@ -7919,7 +7924,11 @@ def _a_dispute_may_be_held_now(state: Any) -> bool:
     if _this_attempt(state) in (state.get("disputed_sprints") or []):
         return False
     failing = _the_locked_tests_still_failing(state)
-    return bool(failing) and may_repair(state, [f"`{name}`" for name, _, _ in failing])
+    # `also`: a passing locked test the dispute is about (two reverted fixes broke it). Measured on one run: every
+    # fix of a DELETE criterion was reverted for breaking another criterion's test, five times, and no dispute was
+    # held - the failing tests had been repaired already, the contested one never had.
+    contested = [f"`{_the_test_named(name)}`" for name in also or []]
+    return bool(failing) and may_repair(state, [*(f"`{name}`" for name, _, _ in failing), *contested])
 
 
 #: What a reverted fix leaves on its defect's actual behaviour. See the
@@ -10892,7 +10901,7 @@ def build_workflow_graph(
             noted = _with_the_attempt(noted, defect_index, stage_name, fix_result, f"reverted: it broke {'; '.join(broke[:3])}",
                                       defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name, started))
             contested = _a_locked_test_two_fixes_broke(noted)
-            if contested and _a_dispute_may_be_held_now(state):
+            if contested and _a_dispute_may_be_held_now(state, also=[contested]):
                 logger.warning(
                     "Two fixes were reverted for breaking the locked test %s; the QA lead "
                     "judges the failing locked tests before the round goes on", contested,

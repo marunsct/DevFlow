@@ -71,7 +71,12 @@ def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, nam
     if not argv or not base.is_dir():
         return []
     found: list[dict[str, str]] = []
+    from app.acceptance.suite import the_product_did_not_start
     from app.analysis.walk import files_under
+
+    # Once a file's run shows the product never came up, the rest would each wait out the same start: measured
+    # on one run, five files waited 60 seconds each after every write a fixer made.
+    never_started: dict[str, str] = {}
 
     # Not into `node_modules`: a suite with its own dependencies holds
     # thousands of files there, and a package's own `*.spec.js` is no test of
@@ -85,6 +90,9 @@ def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, nam
                 continue
             if not any(name in text for name in naming):
                 continue
+        if never_started:
+            found.append({"file": f"{project}/{relative}" if project else relative, **never_started})
+            continue
         report = Path(repo_root) / project / str(record.get("acceptance_report") or "") if record.get("acceptance_report") else None
         if naming is not None and report is not None:
             from app.acceptance import junit
@@ -102,6 +110,10 @@ def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, nam
             "outcome": "hung" if hung else verdict,
             "output": output.strip()[-MOST_OUTPUT_CHARACTERS:],
         })
+        if the_product_did_not_start(output):
+            never_started = {"outcome": found[-1]["outcome"],
+                             "output": f"Not run: the product did not start for {found[-1]['file']}, so it would "
+                                       "not start for this file either."}
     return found
 
 

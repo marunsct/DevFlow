@@ -1272,7 +1272,9 @@ TEST_BUGS = (
     r"First argument must use the object destructuring pattern",
     # Not a body that is not JSON: `response.json()` on a product's `404 Not Found` throws a SyntaxError
     # naming JSON. Measured on one run: fourteen right tests were sent back to QA as broken for it.
-    r"^(?!.*\bevaluate\b)(?!.*\bSyntaxError\b.*\bJSON\b).*\b(?:TypeError|ReferenceError|SyntaxError)\b",
+    # Nor a request nothing answered: Node's `fetch` says `TypeError: fetch failed` when no server is listening -
+    # measured on one run, a start-script test's request reopened the suite while the service had not come up.
+    r"^(?!.*\bevaluate\b)(?!.*\bSyntaxError\b.*\bJSON\b)(?!.*\bTypeError: fetch failed\b).*\b(?:TypeError|ReferenceError|SyntaxError)\b",
     r"^(?!.*\bevaluate\b).*Cannot read propert(?:y|ies) of (?:undefined|null)",
     r"^(?!.*\bevaluate\b).*\bis not a function\b",
     r"^(?!.*\bevaluate\b).*\bis not defined\b",

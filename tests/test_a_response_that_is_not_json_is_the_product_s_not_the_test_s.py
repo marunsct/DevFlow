@@ -30,3 +30,10 @@ def test_a_body_that_is_not_json_is_not_the_test_s_bug(message: str) -> None:
 def test_a_syntax_error_in_the_test_s_own_code_still_is() -> None:
     assert _a_test_bug("SyntaxError: Unexpected identifier 'expect'")
     assert _a_test_bug("TypeError: res.status is not a function")
+
+
+def test_a_request_nothing_answered_is_not_the_test_s_bug() -> None:
+    """Measured on one run: the start-script test's `fetch` got no answer - the service it started had not come up -
+    and `TypeError: fetch failed` reopened the locked suite as an error in the test's own code."""
+    assert not _a_test_bug("TypeError: fetch failed")
+    assert _a_test_bug("TypeError: res.status is not a function")

@@ -2047,6 +2047,68 @@ def responses_read_without_the_call(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+#: A plain `fetch(` call - not the fixture's `request.fetch(` - with the text up to its options object.
+_OPTIONS_OF_A_FETCH_CALL = re.compile(r"(?<![.\w])fetch\s*\((?:[^;{}]|\$\{[^}]*\})*,\s*$")
+_DATA_KEY = re.compile(r"\bdata\s*:")
+#: A response `fetch` returned: `const res = await fetch(...)`.
+_A_FETCH_RESPONSE = re.compile(r"\b(?:const|let|var)\s+(\w+)\s*=\s*await\s+fetch\s*\(")
+#: On a `fetch` response these are values, not methods: called, each throws "is not a function".
+_FETCH_RESPONSE_VALUES = ("status", "ok", "statusText")
+
+
+def fetch_calls_written_like_the_fixture(repo_root: str | Path) -> list[str]:
+    """Tests that call `fetch` the way Playwright's `request` fixture is called: a `data:` body, or `res.status()`.
+
+    The mirror of `requests_with_a_fetch_body` and `responses_read_without_the_call`. Measured on two runs of a
+    small model, in the test that restarts the service and so calls `fetch` itself: one passed its body as
+    `data: {...}`, which `fetch` does not send - the product answered 400 - and one called `res.status()`, a number on
+    a `fetch` response. Each was found only after the suite was locked, spent its repairs, and its criteria shipped
+    unproven.
+    """
+    root = Path(repo_root)
+    problems: list[str] = []
+    for path in suite_files(repo_root):
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        shown = path.relative_to(root).as_posix()
+        as_data = []
+        for match in _DATA_KEY.finditer(text):
+            opening = text.rfind("{", 0, match.start())
+            literal = _the_object_around(text, match.start())
+            # Its own keys only: a note sent as `data: { title, body }` has a `body:` of its own.
+            own = literal[1:-1]
+            while re.search(r"\{[^{}]*\}", own):
+                own = re.sub(r"\{[^{}]*\}", "", own)
+            if opening >= 0 and literal and not _BODY_KEY.search(own) and _OPTIONS_OF_A_FETCH_CALL.search(
+                text[max(0, opening - 300):opening]
+            ):
+                as_data.append(text.count("\n", 0, match.start()) + 1)
+        if as_data:
+            problems.append(
+                f"`{shown}` line(s) {', '.join(map(str, sorted(set(as_data))[:8]))}: a `fetch` call passes its body as "
+                "`data:`, which only Playwright's `request` fixture reads - `fetch` sends no body, and the service "
+                "answers 400 on every product. With `fetch`, send `body: JSON.stringify(...)` with a "
+                "`'Content-Type': 'application/json'` header."
+            )
+        names = sorted(set(_A_FETCH_RESPONSE.findall(text)))
+        if names:
+            called = re.compile(
+                rf"\b(?:{'|'.join(map(re.escape, names))})\s*\.\s*(?:{'|'.join(_FETCH_RESPONSE_VALUES)})\s*\("
+            )
+            lines = sorted({text.count("\n", 0, m.start()) + 1 for m in called.finditer(text)})
+            if lines:
+                problems.append(
+                    f"`{shown}` line(s) {', '.join(map(str, lines[:8]))}: a `fetch` response's `status`, `ok` or "
+                    "`statusText` is called like a method. On a `fetch` response these are values, so the call throws "
+                    "on every product. Read it without the call: `res.status`."
+                )
+    return problems[:6]
+
+
 def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     """Whether a ledger entry is a run of the locked acceptance suite.
 
@@ -2120,6 +2182,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *locators_with_invalid_name_option(repo_root),
         *requests_with_a_fetch_body(repo_root),
         *responses_read_without_the_call(repo_root),
+        *fetch_calls_written_like_the_fixture(repo_root),
         *tests_that_never_open_the_page(repo_root),
         *tests_that_access_storage_before_opening_the_page(repo_root),
         *tests_that_expect_what_they_never_gave(repo_root),

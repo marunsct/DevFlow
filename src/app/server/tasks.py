@@ -156,7 +156,15 @@ def _recover_runs_their_worker_abandoned(**_kwargs) -> None:
         # than a race: several workers come up together on every deploy.
         client = get_redis_client()
         if not client.set("harness:recover-orphans", "1", nx=True, ex=_RECOVERY_LOCK_SECONDS):
-            logger.info("Another worker is recovering abandoned runs; skipping")
+            # The lock may be a dead worker's: measured on one deploy, a worker that came up on a host restart took
+            # it and was replaced within the two minutes, its sweep died with it, and the run it should have
+            # resumed sat at `running` until the next worker start. So look again once the lock has lapsed.
+            logger.info("Another worker is recovering abandoned runs; looking again when its lock lapses")
+            import threading
+
+            threading.Thread(
+                target=_sweep_when_the_lock_lapses, args=(client,), name="orphan-sweep-later", daemon=True
+            ).start()
             return
     except Exception:  # noqa: BLE001 - no lock is a reason to skip, not to crash
         logger.warning("Could not take the orphan-recovery lock; skipping", exc_info=True)
@@ -178,6 +186,18 @@ def _recover_runs_their_worker_abandoned(**_kwargs) -> None:
     threading.Thread(
         target=_sweep_for_abandoned_runs, name="orphan-sweep", daemon=True
     ).start()
+
+
+def _sweep_when_the_lock_lapses(client) -> None:
+    """Take the recovery lock once the holder's has lapsed and sweep, unless another worker took it again. Never raises."""
+    try:
+        time.sleep(_RECOVERY_LOCK_SECONDS + 5)
+        if client.set("harness:recover-orphans", "1", nx=True, ex=_RECOVERY_LOCK_SECONDS):
+            _sweep_for_abandoned_runs()
+        else:
+            logger.info("Another worker took the orphan-recovery lock again; leaving the sweep to it")
+    except Exception:  # noqa: BLE001 - a worker that cannot run this must still accept tasks
+        logger.warning("The second orphan sweep failed", exc_info=True)
 
 
 #: How long to give this worker to become answerable on the broker before

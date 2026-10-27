@@ -35,9 +35,11 @@ def test_a_green_suite_with_only_a_unit_test_open_settles_after_one_replan(tmp_p
     assert settle_when_green.applies(tmp_path, [UNIT], replans=1) is True
 
 
-def test_the_first_exhaustion_still_gets_its_replan(tmp_path):
+def test_the_first_exhaustion_settles_too(tmp_path):
+    """Owner 2026-10-27: measured on one run, the one re-plan the rule waited for redrafted a product whose 12
+    acceptance tests all passed, for the model's own unit test, and the escalation then accepted it as it was."""
     _result(tmp_path)
-    assert settle_when_green.applies(tmp_path, [UNIT], replans=0) is False
+    assert settle_when_green.applies(tmp_path, [UNIT], replans=0) is True
 
 
 @pytest.mark.parametrize("fields", [{"failed": 1}, {"passed": 0}, {"ran": False}, {"problem": "The product did not start"}])

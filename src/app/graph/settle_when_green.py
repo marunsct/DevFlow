@@ -6,9 +6,10 @@ and measured again, each pass ending the same way. The acceptance suite is the r
 test that fails beside a fully green suite is a known issue the release records (`release_with_failing_unit_tests`),
 not a reason to redraft a product that works.
 
-The rule applies from the second exhaustion on (one re-plan has been given a chance), only when the suite ran, every
-acceptance test passed and every defect still open is a failing unit test. It sends the sprint where the re-plan limit
-does: to the escalation, which decides to accept it with the open problems recorded.
+The rule applies from the first exhaustion on (owner 2026-10-27: the one re-plan it used to wait for redrafted a
+product whose 12 acceptance tests all passed, and the escalation then accepted it as it was), only when the suite ran,
+every acceptance test passed and every defect still open is a failing unit test. It sends the sprint where the re-plan
+limit does: to the escalation, which decides to accept it with the open problems recorded.
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 ON_BY_DEFAULT = False
 
 #: A re-plan has already been tried this many times.
-AFTER_REPLANS = 1
+AFTER_REPLANS = 0
 
 #: How a defect from a failing unit-test run begins (`workflow.UNIT_TESTS_FAIL`).
 UNIT_TESTS_FAIL = "The unit tests fail."

@@ -532,6 +532,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
                 "product is missing for this reason."
             )
     problems.extend(suite.tests_that_cannot_pass(root, result))
+    # Against the specification's contract, before it is recorded at the lock (the rounds read the locked one).
+    problems.extend(suite.tests_that_want_json_from_a_204(
+        root, getattr(state.get("technical_specification"), "interface_contract", None) or ()))
     vacuous = suite.vacuous_green(root, result)
     problems.extend(vacuous)
     # Too lenient rather than impossible: a suite that passes a product it

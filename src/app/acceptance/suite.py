@@ -2299,6 +2299,58 @@ def reads_of_what_the_test_does_not_have(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+#: An assertion that a response's content type is JSON.
+_ASSERTS_JSON_CONTENT = re.compile(r"content-type['\"`]?\s*\]?[\s\S]{0,160}?(?:application/)?json", re.I)
+#: A DELETE request: the fixture's call, or a table entry a loop sends.
+_A_DELETE_CALL = re.compile(r"\.delete\s*\(")
+_A_DELETE_ENTRY = re.compile(r"method\s*:\s*['\"`]delete['\"`]", re.I)
+#: Where a test is declared.
+_A_TEST_CALL = re.compile(r"\btest\s*\(")
+
+
+def tests_that_want_json_from_a_204(repo_root: str | Path, contract_lines: Sequence[str] = ()) -> list[str]:
+    """Tests asserting a JSON content type on a DELETE the interface contract answers with 204 only (no body).
+
+    Measured on one run (hidden 5/9): a test looped over every endpoint, the DELETE included, asserting `content-type`
+    contains `application/json`; the contract said `DELETE /notes/{id} -> 204 or 404`, and every fix that made delete
+    right broke the test and was reverted, eight times. `contract_lines`: the specification's, before the suite is
+    locked; the locked contract after.
+    """
+    from app.acceptance import interface_contract
+
+    checks = interface_contract.parse(list(contract_lines))[0] if contract_lines else interface_contract.the_locked_contract(repo_root)
+    empty = [c for c in checks if c.kind == "http" and c.method == "DELETE"
+             and 204 in (c.statuses or (c.status,)) and not any(200 <= x < 300 and x != 204 for x in (c.statuses or (c.status,)))]
+    if not empty:
+        return []
+    root = Path(repo_root)
+    problems: list[str] = []
+    for path in suite_files(repo_root):
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        starts = [m.start() for m in _A_TEST_CALL.finditer(text)]
+        lines: list[int] = []
+        for at, start in enumerate(starts):
+            block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
+            if not _ASSERTS_JSON_CONTENT.search(block):
+                continue
+            looped = "for (" in text[max(0, start - 300):start] and _A_DELETE_ENTRY.search(text[:start])
+            if _A_DELETE_CALL.search(block) or _A_DELETE_ENTRY.search(block) or looped:
+                lines.append(text.count("\n", 0, start) + 1)
+        if lines:
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line(s) {', '.join(map(str, lines[:8]))}: a test asserts a JSON "
+                f"content type on a DELETE the interface contract answers with 204 (`{empty[0].line}`). A 204 has no "
+                "body and so no content type: the test fails on every product that keeps the contract. Leave the "
+                "DELETE out of the content-type check, or check it only on the 404 answer."
+            )
+    return problems[:6]
+
+
 def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     """Whether a ledger entry is a run of the locked acceptance suite.
 
@@ -2374,6 +2426,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *responses_read_without_the_call(repo_root),
         *fetch_calls_written_like_the_fixture(repo_root),
         *reads_of_what_the_test_does_not_have(repo_root),
+        *tests_that_want_json_from_a_204(repo_root),
         *tests_that_never_open_the_page(repo_root),
         *tests_that_access_storage_before_opening_the_page(repo_root),
         *tests_that_expect_what_they_never_gave(repo_root),

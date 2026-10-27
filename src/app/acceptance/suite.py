@@ -1929,19 +1929,23 @@ _OPTIONS_OF_A_FIXTURE_CALL = re.compile(
 _USES_THE_REQUEST_FIXTURE = re.compile(r"\brequest\s*\.\s*(?:post|put|patch|delete|fetch|get|head)\s*\(")
 
 
-def _the_object_around(text: str, at: int) -> str:
-    """The object literal `{ ... }` that holds position `at`, or ""."""
+def _the_start_of_the_object_around(text: str, at: int) -> int:
+    """Where the object literal that holds position `at` opens, or -1."""
     depth = 0
-    start = -1
     for i in range(at, -1, -1):
         ch = text[i]
         if ch == "}":
             depth += 1
         elif ch == "{":
             if depth == 0:
-                start = i
-                break
+                return i
             depth -= 1
+    return -1
+
+
+def _the_object_around(text: str, at: int) -> str:
+    """The object literal `{ ... }` that holds position `at`, or ""."""
+    start = _the_start_of_the_object_around(text, at)
     if start < 0:
         return ""
     depth = 0
@@ -1953,6 +1957,25 @@ def _the_object_around(text: str, at: int) -> str:
             if depth == 0:
                 return text[start:j + 1]
     return ""
+
+
+#: An assignment of a response: from the `request` fixture (group 2 "request") or a plain `fetch(` (group 2 "fetch").
+_A_RESPONSE_ASSIGNED = re.compile(
+    r"\b(?:const|let|var)?\s*(\w+)\s*=\s*await\s+(?:(request)\s*\.\s*(?:post|put|patch|delete|fetch|get|head)\s*\(|(?<![.\w])(fetch)\s*\()"
+)
+
+
+def _the_kind_assigned(text: str, name: str, at: int) -> str:
+    """"request" or "fetch": what the last assignment of `name` before position `at` called; "" when none.
+
+    Measured on one run: one spec named a fixture response `getResp` in one test and a `fetch` response `getResp`
+    in another, and a file-wide reading of the name sent QA to repair the right one.
+    """
+    kind = ""
+    for match in _A_RESPONSE_ASSIGNED.finditer(text, 0, at):
+        if match.group(1) == name:
+            kind = match.group(2) or match.group(3) or ""
+    return kind
 
 
 def requests_with_a_fetch_body(repo_root: str | Path) -> list[str]:
@@ -1979,6 +2002,10 @@ def requests_with_a_fetch_body(repo_root: str | Path) -> list[str]:
         as_json: list[int] = []
         for match in _BODY_KEY.finditer(text):
             literal = _the_object_around(text, match.start())
+            opening = _the_start_of_the_object_around(text, match.start())
+            # Not a plain `fetch(` call's options: `body:` is how `fetch` is given one.
+            if opening >= 0 and _OPTIONS_OF_A_FETCH_CALL.search(text[max(0, opening - 300):opening]):
+                continue
             if literal and _FETCH_STYLE_SIBLING.search(literal):
                 lines.append(text.count("\n", 0, match.start()) + 1)
         # `json:` is `route.fulfill`'s option, not the request fixture's: `request.post(path, { json: note })`
@@ -2035,7 +2062,10 @@ def responses_read_without_the_call(repo_root: str | Path) -> list[str]:
         uncalled = re.compile(
             rf"\b(?:{'|'.join(map(re.escape, names))})\s*\.\s*(?:{'|'.join(_RESPONSE_METHODS)})\b(?!\s*\()"
         )
-        lines = sorted({text.count("\n", 0, match.start()) + 1 for match in uncalled.finditer(text)})
+        lines = sorted({
+            text.count("\n", 0, match.start()) + 1 for match in uncalled.finditer(text)
+            if _the_kind_assigned(text, match.group(0).split(".")[0].strip(), match.start()) == "request"
+        })
         if not lines:
             continue
         where = ", ".join(str(n) for n in lines[:8]) + (" ..." if len(lines) > 8 else "")
@@ -2099,7 +2129,10 @@ def fetch_calls_written_like_the_fixture(repo_root: str | Path) -> list[str]:
             called = re.compile(
                 rf"\b(?:{'|'.join(map(re.escape, names))})\s*\.\s*(?:{'|'.join(_FETCH_RESPONSE_VALUES)})\s*\("
             )
-            lines = sorted({text.count("\n", 0, m.start()) + 1 for m in called.finditer(text)})
+            lines = sorted({
+                text.count("\n", 0, m.start()) + 1 for m in called.finditer(text)
+                if _the_kind_assigned(text, m.group(0).split(".")[0].strip(), m.start()) == "fetch"
+            })
             if lines:
                 problems.append(
                     f"`{shown}` line(s) {', '.join(map(str, lines[:8]))}: a `fetch` response's `status`, `ok` or "

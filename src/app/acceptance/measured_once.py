@@ -42,6 +42,11 @@ def saved_run_if_unchanged(repo_root: str | Path, command: str, report_file: Pat
         report = junit.read(report_file)
         if not report.found:
             return None
+        # The report on disk is the run that was saved, not one written since by part of the suite: measured on one
+        # run, a single file's re-measure left its ten tests where the suite's thirteen had been.
+        counts = (saved.get("passed"), saved.get("failed"), saved.get("skipped"))
+        if None not in counts and tuple(int(n or 0) for n in counts) != (report.passed, report.failed, report.skipped):
+            return None
         logger.info("The product is as the suite last measured it; that measurement stands")
         return suite.AcceptanceResult(
             ran=True,

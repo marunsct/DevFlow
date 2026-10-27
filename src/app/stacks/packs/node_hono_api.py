@@ -103,7 +103,7 @@ describe('the service', () => {
 
 GUIDE = """The service is Hono in TypeScript: `createApp()` in `src/app.ts` builds the `Hono` application and
 `src/main.ts` serves it with `@hono/node-server`. Add routes to the application
-(`app.get('/items', (c) => c.json(items))`, `app.post(...)`, a `Hono` per area mounted with
+(`app.get('/items', (c) => c.json(items))`, `app.post(...)`, an area's routes as their own `new Hono()` - there is no `Router` - mounted with
 `app.route('/items', itemsApp)`); read a JSON body with `await c.req.json()` and
 return the answer the context builds - `return c.json(body, status)`: a handler that calls it without `return`, or is typed `void`, answers nothing, and every request then fails inside the server with `res.body.getReader is not a function`. Unit tests go in `test/`, named `<area>.spec.ts`, using Jest: Hono needs no
 server for them, `await createApp().request('/items', { method: 'POST', body: JSON.stringify({ ... }),

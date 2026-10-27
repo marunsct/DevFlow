@@ -4,25 +4,19 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 07:40 JST. run-f523de50 **FAILED, hidden 5/9** (144 min): a locked test asserting JSON on a 204 DELETE reverted every correct fix (8x); LF.356-358 built for it, too late for the run. Streak of 13 9/9 ended; 23 runs: 20x 9/9, 2x 5/9, 1x 0/9. **run-27bce4ec** started 07:39 JST on `ef422255` (clean: LF.316-358).
+**As of:** 2026-10-28 08:30 JST. run-27bce4ec **completed, hidden 9/9** (38 min, AC-6 deferred: its restart test could not pass - LF.361). 24 runs: 21x 9/9, 2x 5/9, 1x 0/9. **run-35ce828d** started 08:27 JST on `1dd60f91` (clean: LF.316-362).
 ## Live now
 | | |
 |---|---|
-| Run | **run-2b891f3f** (tasks-api gate, Ornith-1.5-35B-A3B, all switches on, harness 2744a74 -> bfc8bfb at 00:34 -> 413a4d3 at 00:59 JST, mixed_versions) started 23:54 JST after the owner's reboot. LF.247 and LF.248 (an in-place revision is given each section's schema: an empty section had no form and the reply's records failed to join) deployed mid-run (an in-place spec revision was dropped for an empty-list section: 9.5 min lost, then a full rewrite). Before it: run-c6d33923 cancelled 23:14; LF.241-LF.246 deployed (diagnosis state, cancel, settings page naming, no image to a server without vision). Owner's Ornith diagnosis kept: tier standard 0.667, guides keep_to_role + one_program_a_command. |
-| Frozen | none - the baseline is not a Measure run; Measure pair 4 (f8b3c82a) ended at run 1 |
-| Model | **Ornith-1.5-35B-A3B** (owner, ~23:15 JST) at :8888, 3 slots, 262,144 tokens; reply ceiling the deployment's own; vision off (server). Diagnosed 23:32 JST: tier standard, 2 guides on; reasoning_effort=none honoured. |
+| Run | **run-35ce828d** (notes-api-hono, Fast, all switches on, harness 1dd60f91, not mixed) started 08:27 JST |
+| Model | gpt-oss-20b (the owner's), judged fine for the loop 2026-10-27 |
 | Owner's model settings | the owner's; never changed by the loop |
-| Peer sessions | none since 04:57 JST 2026-10-23 (this session, langchain-90, drives alone) |
+| Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs
-- **run-2b891f3f** (first Ornith run, tasks-api, 2744a74 -> 57e55c04, mixed_versions): **completed 05:35 JST 2026-10-24, hidden 10/10, quality 7/7**, locked suite 39/0, 226 active min, 998k output tokens, 159 calls, 97% model busy; 7 harness defects fixed in it (LF.245-LF.252), batching tried and refused (WB.2), reply ceiling 24,000 set from the tail. 8 release gaps, 7 of them locked tests over-asserting error text.
-- **run-85ad15b0** (first QM.2 run, 1f30088f): **cancelled 09:21 JST** under MF.4's major-bug rule, hidden 0/10. Gunicorn listened but its routes were never served; the readiness request's 404 was cut from the start excerpt, the defect read "does not start", and four fixes over two sprint attempts rewrote start-up and hashing (each reverted). LF.221 fixed and deployed (0df9ec3c); QM.2 never got to act.
-- **run-1409658f** (1246bb22, all-on baseline): **completed 08:12 JST, hidden 10/10**, quality 6/7, mutation 0.667, 81 active min, 180 calls, 458k output tokens, 0 lost replies; sprint 1's first attempt left 4 defects open (KPI flag) and its replan fixed them.
-- **run-77f7752f** (1246bb22, not mixed): **completed 06:38 JST, hidden 10/10, quality 7/7** (best quality yet), 98 active min, 147 calls, 545k output tokens, 2 lost replies. **Mutation regression: 0.333 vs 0.708 mean** - 4 `True->False` success-flag mutants and `or`/`and` flips in app.py/models.py uncaught; direct evidence for turning on QM.2 (mutation-guided tests, still off).
-- **run-f13f7438 and run-8cced4a9 are the gated pair**, both on 1246bb22, hidden 10/10 each. run-8cced4a9 ran the whole way on 1246bb22 (not mixed); run-f13f7438 likewise (1246bb22, not mixed) - **59 active min**, 133 calls, 337k output tokens, 0 replies lost, 0 tool failures, quality 6/7, mutation 0.5; sprint 1 took 2 attempts (a unit test the fixers' writes kept failing), sprint 2 passed with no defect; first scored 0/10 by a half-built hidden-test runner (LF.219, built and fixed by the other session) - corrected. run-8cced4a9: 108 active min, 507k output tokens, 2 lost replies, quality 6/7, mutation 0.625; LF.214-class import fixed live; LF.217 (UI sprint counter) bundled. **Gate verdict: the all-on baseline holds 10/10 hidden on both, at 108 and 59 active minutes against 199-233 before.**
-- **run-3bfd71ee** (a third all-on run, crossed by the two sessions' deploys: 1246bb22 -> bc153af (LF.219) -> 323e2f5 (LF.220), mixed_versions): **completed 03:21 JST, hidden 10/10**, quality 6/7 (20 items created at once: not all kept with their own ids), 100 active min, 195 calls, 511k output tokens, 1 lost reply. LF.220 (a fixer twice told its defect's tests pass is left only its answer) found and deployed in it by the other session. Mutation not taken: the two sessions' mutation runs collided.
-- **run-bf8a972f** (shakedown 1, all 24 switches on, 07ef4de -> 9e881ff -> fc93ecd, mixed_versions): **completed 22:18 JST, hidden 10/10**, 140 active min (previous tasks-api runs 199-233), 715k output tokens (-33%), 2 replies lost to the cap (4-6), 247 calls. Sprint 1 took 3 attempts (a locked test contradicting the spec - dispute, QA repair; two identical rewrites reverted - LF.216); sprint 2 passed on its first measurement (AC-7 placed with the item routes). Bugs fixed live: LF.214, LF.216; bundled: LF.212, LF.213, LF.215. **LF.217 built 23:41 JST, bundled (UI only - never counted against a gate run's score):** fast delivery's sprint-planning path makes no model call, so the run page's sprint counter (counts `technical_lead` visits) silently skipped the sprint it opened; the next sprint's header wore the wrong number (owner screenshot, run-8cced4a9). Now narrates itself.
-- **run-10d79850** (Measure pair 4 run 1, f8b3c82a): **cancelled 19:56 JST** by the owner's rule (no value left) after 206 min in sprint 1 attempt 2; hidden **4/10**. Sprint 1 could not pass AC-7 (its only test needs sprint 2's item routes - LF.202); 6 replies lost to the output cap (32 min, 23% of model time); a docstring read as an import put `of==0.0.1` in the manifest (LF.207).
-## Built 2026-10-23 ~20:10 JST, pushed, not deployed (gate run 1 live): general model steering (MD.3)
+- **run-27bce4ec** (ef422255 -> 5c41335 -> 47ecead, mixed_versions): **completed 08:17 JST, hidden 9/9**, 38 min, mutation 0.667 (0.75 with unit tests). AC-6 shipped deferred: its restart test wrote through the shared server and read a fresh service (LF.361). 11 unit tests shipped failing: two fixes changed the product to suit stale unit tests and were reverted (LF.362). The `require` in the suite came from the restart guide itself (LF.360/361).
+- **run-f523de50** (LF.355): **FAILED, hidden 5/9**, 144 min: a locked test asserting JSON on a 204 DELETE reverted every correct fix (8x); LF.356-359 built for it.
+- **run-799b0a77**: **completed, hidden 9/9**, 53 min.
+## Built 2026-10-23 (deployed since): general model steering (MD.3)
 Owner: guidance general, not per model; weaker models steered more; each guide its own switch; a settings
 action to diagnose and save; keep growing the checks. Eight guides (`GUIDE_<ID>`, on in compose), eleven
 stage-shaped checks, a steering profile per model (tier, chosen guides, owner overrides, end-of-request
@@ -84,10 +78,7 @@ whole suite with every switch on - the failures were the switches' intended beha
 | `SCREENSHOT_RUBRIC` | EV.2 page screenshots scored on a fixed checklist, KPI only | `app/acceptance/screenshot_rubric.py` |
 Each module's `ON_BY_DEFAULT` turns its items on for the before/after runs.
 ## The last three runs
-| Run | Brief | Result |
-|---|---|---|
-| run-ef034768 | tasks-api (Measure pair 3 run 2, fadd5a58) | **cancelled 16:18 JST** after 4 failed attempts at sprint 1 (unstable acceptance tests closed at dispatch and raised again - LF.185 - after LF.181/LF.184 cost attempt 1); its product still scores **10/10 hidden**; 29 defects left open, 6 replies lost to length |
-| run-7e5c11af | tasks-api (Measure pair 3 run 1, fadd5a58) | completed 12:22 JST, 199 min, **10/10 hidden**; 5 fix stages (was 15-16), but 2 suite repairs (two broken locked tests) and 3 milestone reviews; 4 replies lost to length |
+See **Last runs** above (notes-api-hono, hidden tests by `loop.sh score`).
 No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh product`).
 ## Next actions
 **Backlog, worked between audits without waiting for the owner (owner 2026-10-27 23:30 JST).** Each item: own switch, test proven failing on old code, ship, deploy at a boundary, measure on the next runs, record the result here. Source: deep review 2026-10-26 (F1-F11, Harness Product Review doc) and the end-of-run reviews.

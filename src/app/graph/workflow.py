@@ -2837,8 +2837,15 @@ def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
     # service's passing output from the page runner's timing line on, and the
     # failing test and its error - before it - were in no defect.
     causes = _what_the_failure_says(str(output or ""))
+    # The note a stage's own command gets for the same output: measured on one
+    # run, two fixes read `spawn /bin/sh ENOENT` - a child started in a working
+    # directory that does not exist - as "no shell here" and changed nothing.
+    from app.tools.sandbox import _a_missing_path_that_is_here
+
+    here = _a_missing_path_that_is_here({"stdout": str(output or "")})
     return ReportedDefect(
         description=UNIT_TESTS_FAIL + (f" It says:\n{causes}\n" if causes else "")
+        + (f" {here}\n" if here else "")
         + " The runner's output ends:\n" + (tail or "(no output)"),
         severity="major",
         reproduction_steps="Run the project's unit test command.",

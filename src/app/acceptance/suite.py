@@ -1369,7 +1369,45 @@ def vacuous_green(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
             "[AC-n] tag): tests that name no criterion prove no criterion, and every criterion "
             "reads \"untested\" whatever they show. Point each test at the criterion it checks."
         ]
-    return tests_the_runner_never_ran(repo_root, result)
+    return [*tests_the_runner_never_ran(repo_root, result), *tests_the_runner_skipped(repo_root, result)]
+
+
+#: A test declared skipped in the text, in the spellings of the runners that use titled tests:
+#: `test.skip(`, `it.fixme(`, `describe.todo(` and `xit(`; group 2 is its title.
+_WRITTEN_SKIPPED = re.compile(
+    r"""(?:\b(?:test|it|describe|scenario)(?:\.\w+)*\.(?:skip|fixme|todo)|\bx(?:it|test|describe))\(\s*(['"`])(.+?)\1""")
+
+
+def tests_the_runner_skipped(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
+    """Tests of a criterion the runner reports skipped, when written skipped or when no test failed.
+
+    A skipped test still carries its criterion's name, so every count by name
+    reads the criterion as tested. Measured on one run: a repair turned nine
+    tests into `test.skip(...)` with empty bodies, the suite was locked, and
+    each round charged those criteria to the product while nothing measured
+    them. A test skipped after another failed is a runner skipping the rest of
+    a serial group, and is named only when the text itself skips it.
+    """
+    if not result.ran or not result.report.found or not result.report.tests:
+        return []
+    skipped = [test for test in result.report.tests if test.outcome == "skipped" and junit.tags_in(test.name)]
+    if not skipped:
+        return []
+    written: list[str] = []
+    for path in suite_files(repo_root):
+        try:
+            written.extend(m.group(2) for m in _WRITTEN_SKIPPED.finditer(path.read_text(encoding="utf-8", errors="replace")))
+        except OSError:
+            continue
+    nothing_failed = not any(test.outcome == "failed" for test in result.report.tests)
+    return [
+        f"`{test.name}` is skipped: the runner reports it skipped, so it proves nothing about "
+        f"{', '.join(junit.tags_in(test.name))} whatever is built. A skipped test is no test - write its "
+        "checks and let it run; it fails until the product does what it checks, which is how the suite "
+        "starts. A criterion no automated test can check is deferred with its reason instead."
+        for test in skipped
+        if nothing_failed or any(name.split("\\", 1)[0] in test.name for name in written)
+    ]
 
 
 def tests_that_need_what_they_never_made(repo_root: str | Path, result: AcceptanceResult) -> list[str]:

@@ -50,7 +50,11 @@ def _its_own_tests(report: Path, naming: set[str]) -> str:
     own = [t for t in junit.read(report).tests if set(junit.tags_in(t.name)) & naming]
     if not own:
         return ""
-    return "finished" if all(t.outcome in ("passed", "skipped") for t in own) else "failed"
+    # Skipped is not passed: measured on one run, a defect whose tests were all
+    # written `test.skip(...)` was closed at dispatch as already fixed.
+    if not all(t.outcome in ("passed", "skipped") for t in own):
+        return "failed"
+    return "finished" if any(t.outcome == "passed" for t in own) else "skipped"
 
 
 def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, naming: set[str] | None = None) -> list[dict[str, str]]:

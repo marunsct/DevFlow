@@ -4,7 +4,7 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 00:05 JST.
+**As of:** 2026-10-28 00:20 JST.
 ## Live now
 | | |
 |---|---|

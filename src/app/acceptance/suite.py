@@ -312,6 +312,10 @@ def _declared_in(text: str) -> set[str]:
     return {m.group(2) for m in _TITLED.finditer(text or "")} | {m.group(1) for m in _NAMED.finditer(text or "")}
 
 
+def _skipped_in(text: str) -> set[str]:
+    return {m.group(2) for m in _WRITTEN_SKIPPED.finditer(text or "")}
+
+
 def tests_a_repair_would_drop(repo_root: str | Path, relative_path: str, content: str) -> list[str]:
     """The tests this file had when the suite was last locked that `content` drops, other than those under repair.
 
@@ -326,12 +330,15 @@ def tests_a_repair_would_drop(repo_root: str | Path, relative_path: str, content
     if not locked_version.is_file():
         return []
     try:
-        before = _declared_in(locked_version.read_text(encoding="utf-8", errors="replace"))
+        locked_text = locked_version.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return []
+    # A skipped stub holds no check to keep, and a test made into one is removed: measured on one run, a repair
+    # refused for removing tests wrote them back as empty `test.skip(...)`, and was then refused removing those.
+    before = _declared_in(locked_text) - _skipped_in(locked_text)
     under_repair = set(state.get("repairing") or [])
     return sorted(
-        name for name in before - _declared_in(content)
+        name for name in before - (_declared_in(content) - _skipped_in(content))
         if not any(name == test or name in test or test in name for test in under_repair)
     )
 

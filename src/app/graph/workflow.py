@@ -2680,11 +2680,18 @@ def _diagnostics_in_files_touched(
     for file_name in getattr(structured_response, "changed_files", None) or ():
         files_to_check.add(_without_a_leading_dot_slash(str(file_name)))
 
+    # Only writes that happened: measured on one run, QA was refused an edit of the product's `app.ts`, was
+    # then asked to fix that file's missing import, and spent sixteen more refused writes on it.
+    results = {
+        str(getattr(message, "tool_call_id", "")): getattr(message, "content", "")
+        for message in result.get("messages") or () if getattr(message, "type", None) == "tool"
+    }
     for message in result.get("messages") or ():
         for call in getattr(message, "tool_calls", None) or ():
             name = call.get("name") if isinstance(call, dict) else getattr(call, "name", "")
             args = (call.get("args") if isinstance(call, dict) else getattr(call, "args", None)) or {}
-            if name in _FILE_WRITES:
+            call_id = str(call.get("id") if isinstance(call, dict) else getattr(call, "id", ""))
+            if name in _FILE_WRITES and _a_tool_result_that_succeeded(results.get(call_id)):
                 for key in ("relative_path", "destination"):
                     if args.get(key):
                         files_to_check.add(_without_a_leading_dot_slash(str(args[key])))

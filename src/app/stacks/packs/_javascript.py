@@ -1266,7 +1266,9 @@ TEST_SOURCE_BUGS = (
 TEST_BUGS = (
     r"Playwright Test did not expect \S+ to be called here",
     r"First argument must use the object destructuring pattern",
-    r"^(?!.*\bevaluate\b).*\b(?:TypeError|ReferenceError|SyntaxError)\b",
+    # Not a body that is not JSON: `response.json()` on a product's `404 Not Found` throws a SyntaxError
+    # naming JSON. Measured on one run: fourteen right tests were sent back to QA as broken for it.
+    r"^(?!.*\bevaluate\b)(?!.*\bSyntaxError\b.*\bJSON\b).*\b(?:TypeError|ReferenceError|SyntaxError)\b",
     r"^(?!.*\bevaluate\b).*Cannot read propert(?:y|ies) of (?:undefined|null)",
     r"^(?!.*\bevaluate\b).*\bis not a function\b",
     r"^(?!.*\bevaluate\b).*\bis not defined\b",

@@ -65,3 +65,21 @@ def test_a_frame_on_an_ordinary_line_says_nothing(tmp_path):
     (project / "app.ts").write_text("export function f() {\n  return g();\n}\n")
 
     assert acceptance_nodes.what_the_logged_frames_hide(tmp_path, "Error: x\n    at f (file://notes-api/src/app.ts:2:3)") == ""
+
+
+def test_the_server_s_errors_are_kept_from_the_whole_output_not_its_tail(tmp_path, monkeypatch):
+    """Measured on the next run: the error behind `POST /notes` answering 500 was logged early in a long run, the
+    result kept only the output's last 3,000 characters, and the defects showed a later `NotFoundError` instead."""
+    from app.acceptance import junit, suite
+
+    early = "[WebServer] TypeError: Cannot read properties of undefined (reading 'title')\n" \
+            "[WebServer]     at createNote (file://notes-api/src/app.ts:41:20)\n"
+    long_tail = "".join(f"  {n}) [AC-{n}] something failed\n" for n in range(400))
+    monkeypatch.setattr(suite, "_command", lambda root: (["npx", "playwright", "test"], "report.xml", "notes-api"))
+    monkeypatch.setattr(junit, "read", lambda path: junit.Report(found=True, tests=[junit.TestResult(name="[AC-1] x", outcome="failed")]))
+    monkeypatch.setattr(suite, "criteria", lambda root: [])
+
+    result = suite.run(tmp_path, save=False, runner=lambda argv, category, project: {"returncode": 1, "stdout": early + long_tail})
+
+    assert "app.ts:41" in result.server_log and "app.ts:41" not in result.output
+    assert result.as_dict()["server_log"] == result.server_log

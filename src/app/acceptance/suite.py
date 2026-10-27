@@ -483,6 +483,8 @@ class AcceptanceResult:
     criteria: dict[str, CriterionResult] = field(default_factory=dict)
     change_requests: dict[str, CriterionResult] = field(default_factory=dict)
     output: str = ""
+    #: The errors the product's server logged while the suite ran, from the whole output (`what_the_server_logged`).
+    server_log: str = ""
     repairs: list[str] = field(default_factory=list)
     problem: str = ""
     #: What the product itself reported going wrong while the suite ran - a
@@ -575,6 +577,7 @@ class AcceptanceResult:
             # was saved with no output, and its cause had to be found by
             # running the command again by hand.
             "output": self.output,
+            "server_log": self.server_log,
             "runtime_problems": self.runtime_problems,
             "shows": self.shows,
             "phone_overflow": self.phone_overflow,
@@ -672,6 +675,40 @@ def _sandbox_runner(repo_root: str | Path) -> Runner:
     return sandbox_runner(repo_root)
 
 
+#: How a suite runner marks what the product's server printed: Playwright's `webServer` prefix.
+_A_SERVER_LINE = re.compile(r"^\[WebServer\] ?(.*)$")
+#: A server line that states an error, and a stack frame.
+_STATES_AN_ERROR = re.compile(r"\b(?:\w*Error|Exception|Traceback|panic|FATAL)\b")
+_A_FRAME = re.compile(r"^\s*at\s")
+#: Lines of the server's log a defect carries, at most.
+MOST_SERVER_LINES = 12
+
+
+def what_the_server_logged(output: str) -> str:
+    """The errors the product's server logged while the suite ran, with their frames in the product's own files; "".
+
+    Measured on one run: `POST /notes` answered 500 and the server logged `Error: Internal server error at
+    NotesRepository.save (src/services/persistence.ts:44)` under Playwright's `[WebServer]` prefix; no fixer was
+    shown it, and five in a row changed nothing or chased the tests.
+    """
+    kept: list[str] = []
+    for line in str(output or "").splitlines():
+        match = _A_SERVER_LINE.match(line.strip())
+        if match is None:
+            continue
+        text = match.group(1).rstrip()
+        if _A_FRAME.match(text):
+            if "node_modules" in text or "node:internal" in text or not kept:
+                continue
+        elif not _STATES_AN_ERROR.search(text):
+            continue
+        if text not in kept:
+            kept.append(text)
+        if len(kept) >= MOST_SERVER_LINES:
+            break
+    return "\n".join(kept)[:1_500]
+
+
 def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = True) -> AcceptanceResult:
     """Run the suite the way the harness always does, and read what it proved."""
     repairs = restore(repo_root)
@@ -712,6 +749,7 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         command=" ".join(argv),
         report=report,
         output=output[-OUTPUT_TAIL_CHARS:],
+        server_log=what_the_server_logged(output),
         repairs=repairs,
         problem="" if report.found else "the runner wrote no report; its output is below",
     )

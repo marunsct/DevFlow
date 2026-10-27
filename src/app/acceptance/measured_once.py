@@ -49,6 +49,7 @@ def saved_run_if_unchanged(repo_root: str | Path, command: str, report_file: Pat
             command=command,
             report=report,
             output=str(saved.get("output") or ""),
+            server_log=str(saved.get("server_log") or ""),
             repairs=[],
             problem=str(saved.get("problem") or ""),
             runtime_problems=list(saved.get("runtime_problems") or []),

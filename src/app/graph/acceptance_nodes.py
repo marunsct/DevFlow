@@ -1107,38 +1107,7 @@ def interface_defects(state: Any) -> list[Any]:
     return defects
 
 
-#: How a suite runner marks what the product's server printed: Playwright's `webServer` prefix.
-_A_SERVER_LINE = re.compile(r"^\[WebServer\] ?(.*)$")
-#: A server line that states an error, and a stack frame.
-_STATES_AN_ERROR = re.compile(r"\b(?:\w*Error|Exception|Traceback|panic|FATAL)\b")
-_A_FRAME = re.compile(r"^\s*at\s")
-#: Lines of the server's log a defect carries, at most.
-MOST_SERVER_LINES = 12
-
-
-def what_the_server_logged(output: str) -> str:
-    """The errors the product's server logged while the suite ran, with their frames in the product's own files; "".
-
-    Measured on one run: `POST /notes` answered 500 and the server logged `Error: Internal server error at
-    NotesRepository.save (src/services/persistence.ts:44)` under Playwright's `[WebServer]` prefix; no fixer was
-    shown it, and five in a row changed nothing or chased the tests.
-    """
-    kept: list[str] = []
-    for line in str(output or "").splitlines():
-        match = _A_SERVER_LINE.match(line.strip())
-        if match is None:
-            continue
-        text = match.group(1).rstrip()
-        if _A_FRAME.match(text):
-            if "node_modules" in text or "node:internal" in text or not kept:
-                continue
-        elif not _STATES_AN_ERROR.search(text):
-            continue
-        if text not in kept:
-            kept.append(text)
-        if len(kept) >= MOST_SERVER_LINES:
-            break
-    return "\n".join(kept)[:1_500]
+from app.acceptance.suite import what_the_server_logged  # noqa: E402 - kept here for its callers
 
 
 #: A product frame in a logged stack: `(file://)?<path>:<line>`.
@@ -1248,7 +1217,8 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             # Errors the page reports while it loads are the page's.
             owner=_owner_for(state, "page.load: " + "; ".join(str(p) for p in problems)),
         ))
-    logged = what_the_server_logged(str(saved.get("output") or ""))
+    # From the whole run, kept as it ran: the saved output is its tail, and an early error was cut (LF.355).
+    logged = str(saved.get("server_log") or "") or what_the_server_logged(str(saved.get("output") or ""))
     for entry in failing:
         if entry.get("id") in mentioned:
             continue

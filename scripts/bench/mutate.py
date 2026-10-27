@@ -62,28 +62,39 @@ def mutate(workspace: Path, out: Path, count: int = 12) -> dict:
         out.write_text(json.dumps(result, indent=2))
         return result
 
+    # The product's unit tests too: mutation-guided tests (QM.2) write unit tests proven to catch a change, and a
+    # score of the suite alone never showed them. `score` stays the suite's, for comparison across runs.
+    from app.acceptance import mutation_guided
+
+    unit_held = mutation_guided._passing(mutation_guided._run_the_unit_tests(copy)) or set()
     kept = set(found[0].kept_files) if found else set()
     for site in spread(sites(source_files(project, kept), project), count):
         original = apply(project, site)
         try:
             after = suite.run(copy, save=False)
+            unit_after = mutation_guided._passing(mutation_guided._run_the_unit_tests(copy)) if unit_held else None
         finally:
             (project / site["file"]).write_bytes(original)
         turned_red = sorted(held - _passing(after))
+        unit_red = sorted(unit_held - unit_after) if unit_after is not None else []
         result["mutants"].append({
             **site,
             "caught": bool(turned_red),
             "everything_failed": bool(turned_red) and len(turned_red) == len(held),
             "turned_red": turned_red,
+            "unit_tests_turned_red": unit_red,
         })
     tried = len(result["mutants"])
     caught = sum(m["caught"] for m in result["mutants"])
     specific = sum(m["caught"] and not m["everything_failed"] for m in result["mutants"])
+    with_unit = sum(m["caught"] or bool(m["unit_tests_turned_red"]) for m in result["mutants"])
     result.update({
         "tried": tried,
         "caught": caught,
         "score": round(caught / tried, 3) if tried else None,
         "caught_by_a_specific_test": specific,
+        "caught_with_unit_tests": with_unit,
+        "score_with_unit_tests": round(with_unit / tried, 3) if tried else None,
     })
     out.write_text(json.dumps(result, indent=2))
     shutil.rmtree(copy, ignore_errors=True)
@@ -100,7 +111,8 @@ if __name__ == "__main__":
     print(
         f"locked suite caught {result['caught']} of {result['tried']} changes "
         f"(score {result['score']}); {result['caught_by_a_specific_test']} by a specific test "
-        "rather than by everything failing"
+        "rather than by everything failing; with the unit tests too "
+        f"{result.get('caught_with_unit_tests')} (score {result.get('score_with_unit_tests')})"
     )
     for m in result["mutants"]:
         if not m["caught"]:

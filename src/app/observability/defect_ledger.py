@@ -33,4 +33,25 @@ def note(event: str, stage: str, *, defect: Any = None, round_: int | None = Non
         pass
 
 
-__all__ = ["note"]
+def shown(stage: str, defect: Any, request: Any, *, round_: int | None = None, index: int | None = None,
+          sprint: int | None = None) -> None:
+    """Record what one fixer was shown: a fingerprint of its request, its size and its sections. Never raises.
+
+    Deep review F9: the ledger held a defect's one-line description and outcome, not the request each fixer was
+    given, so "why did the second try succeed" could not be answered from data.
+    """
+    try:
+        import hashlib
+
+        text = request if isinstance(request, str) else "\n".join(
+            str(part.get("text", "")) if isinstance(part, dict) else str(part) for part in (request or []))
+        fingerprint = hashlib.sha1(text.encode("utf-8", errors="replace")).hexdigest()[:12]
+        sections = [line.strip("- ").strip() for line in text.splitlines() if line.startswith(("---", "## "))]
+        note("shown", stage, defect=defect, round_=round_, index=index, sprint=sprint,
+             detail=f"fingerprint {fingerprint}; {len(text)} characters; sections: "
+                    + ("; ".join(dict.fromkeys(sections)) or "none")[:300])
+    except Exception:  # noqa: BLE001 - a ledger must never fail the stage it records
+        pass
+
+
+__all__ = ["note", "shown"]

@@ -211,6 +211,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     failing: list[Any] = []
     summary = "There is no acceptance suite; the milestone reviews were the gate."
     if suite.is_locked(root):
+        # One last try at each deferred criterion with a locked test, before the suite decides (deep review F3).
+        from app.graph import last_try_on_deferred
+
+        last_try_on_deferred.try_them(root, state)
         result = suite.run(root)
         failing = result.failing()
         summary = result.summary()

@@ -126,6 +126,8 @@ x-app-env: &app-env
   KEEP_THE_BEST_ON_A_REPLAN: ${KEEP_THE_BEST_ON_A_REPLAN:-on}
   # A stage's first read of a file its memory holds gets the file's lines; the second, the pointer.
   FIRST_REREAD_ANSWERED: ${FIRST_REREAD_ANSWERED:-on}
+  # Each deferred criterion with a locked test gets one last rewrite before release (deep review F3).
+  LAST_TRY_ON_DEFERRED: ${LAST_TRY_ON_DEFERRED:-on}
   # When the product does not start for the suite, the harness starts it the same way and says what it printed and
   # how its readiness URL answered (measured: a /health answering 503 hid behind a 60-second timeout for 40 minutes).
   START_PROBE: ${START_PROBE:-on}

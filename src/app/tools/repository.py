@@ -3548,7 +3548,32 @@ def _a_repaired_span(original: str, find: str) -> tuple[tuple[int, int], str] | 
                 )
         if span is not None:
             return span, explanation
+    span = _whitespace_insensitive_span(original, find)
+    if span is not None:
+        return span, ("Matched ignoring spaces inside the lines - the passage you gave is spaced differently "
+                      "from the file. Copy spacing exactly from what you read.")
     return None
+
+
+#: The shortest passage, spaces left out, that is matched ignoring its spacing.
+_LEAST_FOR_A_SPACING_MATCH = 20
+
+
+def _whitespace_insensitive_span(original: str, find: str) -> tuple[int, int] | None:
+    """Where `find` matches once with every space, tab and newline left out of both; None otherwise (deep review F7).
+
+    Measured on one run: an anchor copied as `{a:1}` where the file reads `{ a: 1 }` was refused, and every such
+    refusal cost a model turn. Still exactly one match, and only for a passage long enough to identify one.
+    """
+    wanted = re.sub(r"\s+", "", find)
+    if len(wanted) < _LEAST_FOR_A_SPACING_MATCH:
+        return None
+    kept = [(i, ch) for i, ch in enumerate(original) if not ch.isspace()]
+    squeezed = "".join(ch for _, ch in kept)
+    at = squeezed.find(wanted)
+    if at < 0 or squeezed.find(wanted, at + 1) >= 0:
+        return None
+    return kept[at][0], kept[at + len(wanted) - 1][0] + 1
 
 
 def content_with_passage_replaced(relative_path: str, original: str, find: str, replace: str) -> str:
@@ -3725,6 +3750,17 @@ def edit_approved_artifact(
                 f"Could not find that text in '{relative_path}'. It must match exactly, "
                 f"including whitespace and punctuation.{detail}"
             )
+        if (occurrences > 1 and replace.startswith(find) and replace[len(find):].startswith("\n")
+                and original.rstrip().endswith(find.rstrip())):
+            # Text added after the last of them, which ends the file: an addition at the end, never ambiguous.
+            # Measured on one run: QA added a test after `});` and was refused nine times as ambiguous (F7).
+            at = original.rindex(find)
+            _write_unless_it_changes_nothing(
+                target, original, original[:at] + replace + original[at + len(find):], relative_path
+            )
+            return _edited(target, root, relative_path, replace,
+                           f"That text appears {occurrences} times; your `replace` keeps it and adds after it, "
+                           "and the last of them ends the file, so the addition went at the end of the file.", find)
         if occurrences > 1:
             raise RepositoryToolError(
                 f"That text appears {occurrences} times in '{relative_path}', so it is "

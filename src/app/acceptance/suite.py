@@ -165,6 +165,18 @@ def defer(repo_root: str | Path, reasons: dict[str, str]) -> None:
     save_criteria(repo_root, current, merged)
 
 
+def undefer(repo_root: str | Path, ids: list[str]) -> None:
+    """Take criteria off the deferred list: a later measurement proved them (`last_try_on_deferred`)."""
+    state = _state(repo_root)
+    state["deferred"] = {c: why for c, why in (state.get("deferred") or {}).items() if c not in set(ids)}
+    _save_state(repo_root, state)
+    from app.acceptance.criteria import render
+
+    doc = Path(repo_root) / "docs" / "acceptance_criteria.md"
+    if doc.parent.is_dir():
+        doc.write_text(render(criteria(repo_root), state["deferred"]), encoding="utf-8")
+
+
 # --- coverage ---------------------------------------------------------------
 
 #: A test declared with a free-text title: `test('[AC-3] ...')`, `it("...")`,

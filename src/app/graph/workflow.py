@@ -10605,6 +10605,13 @@ def build_workflow_graph(
         from app.agents.page_screenshots import with_the_page_for_a_fixer
 
         request = with_the_page_for_a_fixer(request, state["repository"].root_path)
+        # What this fixer was shown, so a later try can be compared with it (deep review F9).
+        from app.observability import defect_ledger
+
+        defect_ledger.shown(
+            f"defect_fix_{state.get('test_round', 0)}_{defect_index}", defect, request["messages"][-1]["content"],
+            round_=state.get("test_round", 0), index=defect_index, sprint=state.get("current_sprint_index", 0),
+        )
         return request, co_defects
 
     def _fixed_by_rewriting(state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0) -> Any:

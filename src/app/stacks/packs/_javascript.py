@@ -21,8 +21,12 @@ AXE_CORE = "4.14.0"
 #: test runs, so `tests/` itself cannot be named the way Node 20 allowed.
 UNIT_FILES = "'tests/**/{test,test-*,*[._-]test}.{js,mjs,cjs}'"
 
+#: Every test of Node's own runner fails at 20 seconds: measured on one run, a unit test whose promise never
+#: settled held `node --test` until the sandbox's five-minute limit, on every unit run the harness made.
+TEST_TIMEOUT = "--test-timeout=20000"
+
 UNIT_SCRIPT = (
-    "mkdir -p test-results && node --test --test-reporter=spec --test-reporter-destination=stdout "
+    f"mkdir -p test-results && node --test {TEST_TIMEOUT} --test-reporter=spec --test-reporter-destination=stdout "
     f"--test-reporter=junit --test-reporter-destination=test-results/unit.xml {UNIT_FILES}"
 )
 

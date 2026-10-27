@@ -4,7 +4,7 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 02:47 JST. Last two: run-b75438d4 9/9 (71 min; LF.346 fixed its `/health/health` start), run-8d3b5844 **9/9, 31 min**, 211 calls, no KPI flag (LF.347 live). **run-3f097c14** started 02:46 JST on `2570c1a0` (clean).
+**As of:** 2026-10-28 03:30 JST. run-8d3b5844 **9/9, 31 min** (LF.347 live). **run-3f097c14** (started 02:46 on `2570c1a0`): suite 17/0 by 03:07, then a model unit test that never settles held each unit run 5 min, run 4 times in one round - **LF.348** (Node test runner `--test-timeout=20000` in every pack) and **LF.349** (the harness's unit run of an unchanged product stands, MEASURE_ONCE) deployed (`d551b22c`), run paused and rewound to its test round at 03:29 (mixed_versions).
 ## Live now
 | | |
 |---|---|

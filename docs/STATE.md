@@ -4,7 +4,7 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 03:30 JST. run-8d3b5844 **9/9, 31 min** (LF.347 live). **run-3f097c14** (started 02:46 on `2570c1a0`): suite 17/0 by 03:07, then a model unit test that never settles held each unit run 5 min, run 4 times in one round - **LF.348** (Node test runner `--test-timeout=20000` in every pack) and **LF.349** (the harness's unit run of an unchanged product stands, MEASURE_ONCE) deployed (`d551b22c`), run paused and rewound to its test round at 03:29 (mixed_versions).
+**As of:** 2026-10-28 03:48 JST. run-3f097c14 **9/9, locked 17/0**, mutation 0.917 (LF.348-350 fixed a unit test that hung each run for 5 min, run 4 times a round). Twelve 9/9 in a row on notes-api-hono. **run-799b0a77** started 03:47 JST on `7db2c343` (clean: LF.316-350).
 ## Live now
 | | |
 |---|---|

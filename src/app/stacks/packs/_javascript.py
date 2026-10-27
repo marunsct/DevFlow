@@ -994,12 +994,48 @@ def module_system_mismatch(project_root: Path, path: Path, text: str) -> list[tu
     match = _A_REQUIRE_CALL.search(code)
     if not match:
         return []
+    line = code.count("\n", 0, match.start()) + 1
+    statement = code.splitlines()[line - 1] if line <= len(code.splitlines()) else ""
+    # Inside a function the call throws only when that code runs; at the top it throws as the file loads.
+    when = ("the test around it fails with `require is not defined`" if statement[:1].isspace()
+            else "it throws before its tests run")
     return [(
-        code.count("\n", 0, match.start()) + 1,
+        line,
         "uses CommonJS `require(...)` in a file Node loads as an ES module (`package.json` "
-        "says `\"type\": \"module\"`), so it throws before its tests run. Use `import` "
-        "(`import { test, expect } from '@playwright/test';`).",
+        f"says `\"type\": \"module\"`), so {when}. {_the_import_instead(code, statement)}",
     )]
+
+
+_A_REQUIRE_STATEMENT = re.compile(
+    r"""^\s*(?:const|let|var)\s+(\{[^}]*\}|[A-Za-z_$][\w$]*)\s*=\s*require\(\s*(['"])([^'"]+)\2\s*\)"""
+)
+_AN_IMPORT = re.compile(r"""^\s*import\s+([^'";]+?)\s+from\s+(['"])([^'"]+)\2""", re.M)
+
+
+def _the_import_instead(code: str, statement: str) -> str:
+    """The exact correction for one `require` statement: the line to delete, or the `import` to write at the top.
+
+    Measured on one run: told to "use `import` (`import { test, expect } from '@playwright/test';`)" about a
+    `require` inside one test of a module whose name the file already imported at its top, QA kept the line through
+    three review rounds and the suite was locked with it.
+    """
+    found = _A_REQUIRE_STATEMENT.match(statement)
+    if not found:
+        return "Load it with an `import` at the top of the file instead."
+    target, module = found.group(1), found.group(3)
+    names = ({part.split(":")[-1].strip() for part in target.strip("{} ").split(",") if part.strip()}
+             if target.startswith("{") else {target})
+    for imported in _AN_IMPORT.finditer(code):
+        if imported.group(3) != module:
+            continue
+        have = {part.split(" as ")[-1].strip() for part in imported.group(1).replace("{", ",").replace("}", ",").split(",")}
+        if names <= have:
+            where = code.count("\n", 0, imported.start()) + 1
+            return (f"Delete the line `{statement.strip()[:160]}`: line {where} already imports "
+                    f"{', '.join(f'`{name}`' for name in sorted(names))} from '{module}'.")
+    written = f"import {target.strip()} from '{module}';" if target.startswith("{") else (
+        f"import {target} from '{module}';")
+    return f"Delete it and write `{written}` at the top of the file, with the other imports."
 
 
 _AN_ASYNC_HELPER = re.compile(

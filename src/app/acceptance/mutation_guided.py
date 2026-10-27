@@ -75,12 +75,42 @@ def is_a_finding(defect: Any) -> bool:
     return str(getattr(defect, "source", "") or "") == SOURCE
 
 
-def _run_the_unit_tests(root: str | Path) -> bool | None:
-    """Whether the contract's unit test command passed; None when there is none to run."""
-    from app.graph.workflow import _run_unit_tests_procedurally
+def _run_the_unit_tests(root: str | Path) -> set[str] | bool | None:
+    """The unit tests that pass, by name from their reports; whether the command passed when no report names them.
+
+    None when there is no command to run. By name, so a change is noticed beside a unit test that already fails:
+    measured on every run of one day, the switch was on and never probed, because a test the model wrote always
+    failed and the probe asked that all of them pass first.
+    """
+    from app.acceptance import junit
+    from app.graph.workflow import _run_unit_tests_procedurally, _the_unit_reports
+    from app.stacks import contract
 
     passed, _ = _run_unit_tests_procedurally(str(root))
-    return passed
+    if passed is None:
+        return None
+    try:
+        record = contract.read(root) or {}
+        reports = [junit.read(path) for path in _the_unit_reports(str(root), record, list(record.get("unit_test") or []))]
+    except Exception:  # noqa: BLE001 - the command's verdict stands
+        reports = []
+    named = [report for report in reports if report.found and report.tests]
+    if not named:
+        return passed
+    return {test.name for report in named for test in report.tests if test.outcome == "passed"}
+
+
+#: What a run that says only "all passed" counts as, among names.
+_ALL = "(every unit test)"
+
+
+def _passing(result: set[str] | bool | None) -> set[str] | None:
+    """The tests a unit run passed, as names: `True` is all of them, `False` none, None unknown."""
+    if result is None:
+        return None
+    if isinstance(result, bool):
+        return {_ALL} if result else set()
+    return set(result)
 
 
 def _the_locked_suite(root: Path) -> Callable[[], set[str]] | None:
@@ -103,7 +133,7 @@ def _the_files_to_change(root: Path, project: Path, kept: set[str], changed: lis
 
 def probe(
     repo_root: str | Path, changed: list[str], *, count: int | None = None,
-    run_unit: Callable[[], bool | None] | None = None,
+    run_unit: Callable[[], set[str] | bool | None] | None = None,
     run_suite: Callable[[], set[str]] | None = None,
 ) -> list[dict]:
     """The deliberate changes no test noticed, each a site with the line it changed; [] when none or it cannot run.
@@ -131,9 +161,11 @@ def probe(
             return []
         run_unit = run_unit or (lambda: _run_the_unit_tests(root))
         run_suite = run_suite if run_suite is not None else _the_locked_suite(root)
-        if run_unit() is not True:
-            # A finding is settled by the unit tests passing without the change;
-            # unit tests that do not pass now could settle nothing.
+        before = _passing(run_unit())
+        if not before:
+            # A finding is settled by a unit test that passes without the change;
+            # with none passing now, nothing could settle it.
+            logger.info("Mutation-guided tests: no unit test passes now; nothing probed")
             return []
         held = run_suite() if run_suite is not None else set()
         chosen = mutation.spread(mutation.sites(files, project), count or changes_per_sprint())
@@ -153,7 +185,8 @@ def probe(
         original = mutation._journal_before_changing(root, project, site)
         tried += 1
         try:
-            noticed = run_unit() is not True
+            after = _passing(run_unit())
+            noticed = after is None or bool(before - after)
             if not noticed and run_suite is not None:
                 noticed = bool(held - run_suite())
         except Exception:  # noqa: BLE001 - an unmeasured change is no finding
@@ -277,7 +310,7 @@ def _located(root: Path, site: dict) -> dict | None:
 
 
 def settled(
-    repo_root: str | Path, defect: Any, *, run_unit: Callable[[], bool | None] | None = None,
+    repo_root: str | Path, defect: Any, *, run_unit: Callable[[], set[str] | bool | None] | None = None,
 ) -> bool | None:
     """Whether the unit tests now fail with the finding's change and pass without it; None when it cannot say.
 
@@ -306,9 +339,11 @@ def settled(
     except Exception:  # noqa: BLE001 - unmeasured is not settled
         logger.debug("Could not check a mutation finding", exc_info=True)
         return None
+    with_the_change, without_it = _passing(with_the_change), _passing(without_it)
     if with_the_change is None or without_it is None:
         return None
-    return with_the_change is False and without_it is True
+    # A unit test that passes without the change and fails with it, whatever else fails.
+    return bool(without_it - with_the_change)
 
 
 def equivalent_because(fix_result: Any) -> str:

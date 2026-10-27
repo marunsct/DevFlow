@@ -308,3 +308,61 @@ def test_the_release_lists_the_findings_left_as_gaps():
     from app.graph import delivery
 
     assert 'gaps.extend(state.get("mutation_gaps") or [])' in inspect.getsource(delivery.release)
+
+
+# --- beside unit tests that already fail -------------------------------------
+# Measured on every run of one day: the switch was on and never probed, because some unit test the model wrote
+# always failed and the probe asked that all of them pass first. The unit tests are measured as the set that passes.
+
+def _passing_unless_turned_round(product: Path, notices: bool):
+    """`kept` passes always, `broken` never; `compares` passes unless the comparison is turned round (when it notices)."""
+    def run():
+        turned = "a <= b" in (product / "src" / "calc.py").read_text(encoding="utf-8")
+        return {"kept"} | ({"compares"} if not (notices and turned) else set())
+    return run
+
+
+def test_a_change_no_test_notices_is_found_beside_a_unit_test_that_already_fails(product):
+    survivors = mutation_guided.probe(product, ["src/calc.py"], count=1,
+                                      run_unit=_passing_unless_turned_round(product, notices=False))
+
+    assert [(s["line"], s["original"], s["replacement"]) for s in survivors] == [(2, ">", "<=")]
+
+
+def test_a_change_that_makes_a_passing_unit_test_fail_is_noticed_beside_a_failing_one(product):
+    assert mutation_guided.probe(product, ["src/calc.py"], count=1,
+                                 run_unit=_passing_unless_turned_round(product, notices=True)) == []
+
+
+def test_settled_beside_a_unit_test_that_already_fails(product):
+    finding = mutation_guided.defect(_a_site(product))
+
+    assert mutation_guided.settled(product, finding, run_unit=_passing_unless_turned_round(product, notices=True)) is True
+    assert mutation_guided.settled(product, finding, run_unit=_passing_unless_turned_round(product, notices=False)) is False
+
+
+def test_only_unit_test_failures_open_beside_a_green_suite_is_where_the_probe_also_runs(tmp_path, monkeypatch):
+    """Measured on every run of one day: the probe ran only with nothing open, and a failing unit test the model
+    wrote was nearly always open, so a sprint whose criteria all passed was never probed."""
+    from app.graph import acceptance_nodes, workflow
+
+    unit = SimpleNamespace(status="open", description="The unit tests fail. It says: x", caught_by="", failing_criteria=[])
+    criterion = SimpleNamespace(status="open", description="[AC-5] Delete a note - the acceptance suite says ...",
+                                caught_by="npx playwright test", failing_criteria=["AC-5"])
+    state = {"repository": SimpleNamespace(root_path=str(tmp_path))}
+    monkeypatch.setattr(acceptance_nodes, "_failing_due", lambda state: ([], "npx playwright test"))
+    monkeypatch.setattr("app.acceptance.suite.last_result", lambda root: {"ran": True, "passed": 9, "failed": 0})
+
+    assert workflow._only_unit_tests_open_beside_a_green_suite(state, SimpleNamespace(defects=[unit])) is True
+    assert workflow._only_unit_tests_open_beside_a_green_suite(state, SimpleNamespace(defects=[unit, criterion])) is False
+    assert workflow._only_unit_tests_open_beside_a_green_suite(state, SimpleNamespace(defects=[])) is False
+
+
+def test_the_round_asks_for_the_probe_before_it_sends_unit_test_failures_to_a_fixer():
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+    at = source.index("_only_unit_tests_open_beside_a_green_suite(state, cycle)")
+    assert at < source.index('return _handing_on(**base_update, stage="defect_remediation", defect_cursor=0)', at - 2000)

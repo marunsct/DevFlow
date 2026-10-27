@@ -557,6 +557,34 @@ def _a_narrow_window(args: dict, text: str) -> bool:
     return 0 < wanted <= MOST_WINDOW_LINES
 
 
+#: The longest file a first re-read is answered with whole; a longer one gets the pointer at once.
+MOST_LINES_A_FIRST_REREAD_GETS = 400
+
+
+class _FirstRereadAnswered:
+    """`FIRST_REREAD_ANSWERED` as the switch registry reads one: off in code, the compose file turns it on."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("A stage's first read of a file it already holds in its opening project memory gets the file's "
+                   "numbered lines back; only a second read gets the pointer to the memory. Measured on one run, 28 "
+                   "of 197 model calls were such reads answered with a pointer that brought nothing back.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("FIRST_REREAD_ANSWERED", _FirstRereadAnswered.ON_BY_DEFAULT)
+
+
+first_reread_switch = _FirstRereadAnswered()
+
+
+def _numbered(content: str) -> str:
+    """`content` with each line's number, as a read of the file shows it."""
+    return "\n".join(f"{number:>6}\t{line}" for number, line in enumerate(content.splitlines(), start=1))
+
+
 def build_project_memory_middleware(repo_root: str) -> Any:
     """Middleware that hands each call the project memory, and answers a read of what it already holds."""
     from langchain.agents.middleware import AgentMiddleware
@@ -644,6 +672,17 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     remember(path, held)
                     from langchain_core.messages import ToolMessage
 
+                    answered = visit.setdefault("first_rereads_answered", [])
+                    if (first_reread_switch.enabled() and path not in answered
+                            and held.count("\n") + 1 <= MOST_LINES_A_FIRST_REREAD_GETS):
+                        # The first time, the lines themselves: a pointer is a turn that brings nothing back.
+                        answered.append(path)
+                        return ToolMessage(
+                            content=f"{_numbered(held)}\n\n[`{path}` is also held in the project memory at the "
+                                    "start of this conversation; a second read of it is answered from there.]",
+                            tool_call_id=call.get("id") or "",
+                            name="read_file",
+                        )
                     return ToolMessage(
                         content=f"`{path}` {HELD_POINTER}, whole and as "
                                 "it is now; it has not changed since. Use it, and any lines of it, from there. "

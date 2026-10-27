@@ -3316,6 +3316,24 @@ def _mutation_findings_set_aside(state: Any, cycle: Any, test_round: int) -> tup
     return cycle, list(dict.fromkeys([*known, *gaps]))
 
 
+def _only_unit_tests_open_beside_a_green_suite(state: Any, cycle: Any) -> bool:
+    """Whether the suite ran with every due criterion passing and every open defect is a failing unit test. Never raises."""
+    try:
+        from app.acceptance import suite
+        from app.graph import acceptance_nodes, settle_when_green
+
+        still_open = [d for d in getattr(cycle, "defects", None) or () if getattr(d, "status", "") == "open"]
+        if not still_open:
+            return False
+        failing, command = acceptance_nodes._failing_due(state)
+        saved = suite.last_result(state["repository"].root_path) or {}
+        if failing or not saved.get("ran") or int(saved.get("failed") or 0) > 0:
+            return False
+        return all(settle_when_green._a_unit_test_failure(d, command) for d in still_open)
+    except Exception:  # noqa: BLE001 - the round goes on as before
+        return False
+
+
 def _the_mutation_probe(state: Any, cycle: Any, test_round: int) -> dict[str, Any]:
     """The update for a sprint whose due criteria all pass: its findings to fix, or only that it was probed; {} when off.
 
@@ -10376,6 +10394,14 @@ def build_workflow_graph(
             )
 
         if any(defect.status == "open" for defect in cycle.defects):
+            if _only_unit_tests_open_beside_a_green_suite(state, cycle):
+                # The due criteria pass and only unit tests the model wrote fail: probe now, once an attempt, so
+                # its findings join this fix round. Measured on every run of one day: with a failing unit test
+                # nearly always open, the probe below - nothing open - was never reached (MUTATION_GUIDED_TESTS).
+                probed = _the_mutation_probe(state, cycle, test_round)
+                if probed.get("stage"):
+                    return _handing_on(**{**base_update, **probed})
+                base_update.update(probed)
             return _handing_on(**base_update, stage="defect_remediation", defect_cursor=0)
 
         # Tests pass and nothing is open. The acceptance gate is still the

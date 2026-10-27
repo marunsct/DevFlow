@@ -124,6 +124,8 @@ x-app-env: &app-env
   # A re-plan does not redraft a file the best product so far already has, when that product passes at least half
   # of the suite (deep review 2026-10-26: the best-attempt undo fired in about half the runs).
   KEEP_THE_BEST_ON_A_REPLAN: ${KEEP_THE_BEST_ON_A_REPLAN:-on}
+  # A stage's first read of a file its memory holds gets the file's lines; the second, the pointer.
+  FIRST_REREAD_ANSWERED: ${FIRST_REREAD_ANSWERED:-on}
   # When the product does not start for the suite, the harness starts it the same way and says what it printed and
   # how its readiness URL answered (measured: a /health answering 503 hid behind a 60-second timeout for 40 minutes).
   START_PROBE: ${START_PROBE:-on}

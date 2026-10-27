@@ -241,6 +241,10 @@ class StackPack:
     #: unknown. One acceptance file's run is given longer (`sandbox.timeout_for`), so the runner, not the
     #: sandbox's limit, is what says the server never came up.
     server_wait_ms: int = 0
+    #: A command, run in the project, that prints the routes the application serves, one `METHOD /path` a line; empty
+    #: when the pack has none. The start probe adds them when the readiness route is not served (a router mounted
+    #: under its own path once served `/health/health`).
+    list_routes: tuple[str, ...] = ()
 
 
     @property

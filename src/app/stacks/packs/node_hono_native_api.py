@@ -142,12 +142,21 @@ EXPOSE 3000
 CMD ["node", "src/main.ts"]
 """ % {"node": js.NODE_MAJOR}
 
+#: Prints the routes `createApp()` serves, merged as Hono mounts them (`app.routes`), one `METHOD /path` a line.
+LIST_ROUTES = (
+    "node", "--input-type=module", "-e",
+    "const m = await import('./src/app.ts'); const f = m.createApp ?? m.default; const app = await f();"
+    " const seen = new Set(); for (const r of app.routes ?? []) { if (r.method !== 'ALL') seen.add(r.method + ' ' + r.path); }"
+    " console.log([...seen].slice(0, 40).join('\\n'));",
+)
+
 PACK = service_pack(
     name="node-hono-native-api",
     entrypoint="src/app.ts",
     required_exports={"src/app.ts": ("createApp",)},
     relative_import_extension=".ts",
     typecheck=("npm", "run", "typecheck"),
+    list_routes=LIST_ROUTES,
     title="HTTP service in TypeScript on Hono, run by Node",
     language="typescript",
     frameworks=("hono",),

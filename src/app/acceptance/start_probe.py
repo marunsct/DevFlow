@@ -111,10 +111,39 @@ def what_the_start_shows(repo_root: str | Path) -> str:
                     f"answers {status.rsplit(' ', 1)[-1]} there is never considered started. The suite starts it with "
                     "`DATA_DIR` set to a folder that does not exist yet: the service creates what it needs there at "
                     "start, and its readiness answer does not depend on data being present.")
+        if re.search(r"answered 404", status):
+            hint += _the_routes_it_serves(repo_root, project, env)
         return (f"\n\nStarted the way the suite starts it (`sh start.sh`, `PORT` set, `DATA_DIR` a fresh folder), "
                 f"{status}. It printed:\n{shown}{hint}")
     except Exception:  # noqa: BLE001 - the defect goes out as it was
         logger.debug("Could not probe the product's start", exc_info=True)
+        return ""
+
+
+def _the_routes_it_serves(repo_root: str | Path, project: Path, env: dict) -> str:
+    """" The application ... serves these routes: ..." from the pack's own listing; "" when it has none. Never raises.
+
+    Measured on one run: a router whose route was `/health`, mounted with `app.route('/health', healthRouter)`,
+    served `/health/health`; the defect said the readiness route was not served, never which routes were, and the
+    product did not start through two rounds of fixes.
+    """
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(repo_root)
+        command = tuple(getattr(found[0], "list_routes", ()) or ()) if found else ()
+        if not command:
+            return ""
+        listed = subprocess.run(  # noqa: S603 - the pack's own listing, in the project
+            list(command), cwd=project, env=env, capture_output=True, text=True, timeout=20,
+        )
+        routes = [line.strip() for line in listed.stdout.splitlines() if line.strip()][:40]
+        if not routes:
+            return ""
+        return (" The application the start command runs has these as the routes it serves: "
+                + ", ".join(f"`{route}`" for route in routes)
+                + ". A route of a router mounted under a path is served at that path followed by its own.")
+    except Exception:  # noqa: BLE001 - the probe's report stands without it
         return ""
 
 

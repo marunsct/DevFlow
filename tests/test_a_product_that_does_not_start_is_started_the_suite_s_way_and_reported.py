@@ -72,3 +72,28 @@ def test_the_start_defect_carries_it():
     from app.graph import acceptance_nodes
 
     assert "_what_the_start_shows(_root(state))" in inspect.getsource(acceptance_nodes.failing_due_defects)
+
+
+ANSWERS_404 = """const http = require('http');
+console.log('Listening on ' + process.env.PORT);
+http.createServer((q, s) => { s.statusCode = 404; s.end('404 Not Found'); }).listen(Number(process.env.PORT), process.env.HOST);
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="no Node here")
+def test_a_readiness_route_answered_404_is_reported_with_the_routes_the_application_serves(tmp_path, monkeypatch):
+    """Measured on one run: `healthRouter.get('/health')` mounted with `app.route('/health', healthRouter)` served
+    `/health/health`; the defect said the route was not served, never which routes were, and the product did not start
+    through two rounds of fixes. The pack's own listing names them."""
+    root = _project(tmp_path, ANSWERS_404)
+    (root / "notes" / "routes.cjs").write_text("console.log('GET /health/health\\nPOST /notes');\n")
+    pack = pack_named("node-hono-native-api")
+    monkeypatch.setattr("app.stacks.contract.the_pack",
+                        lambda r: (type("P", (), {"list_routes": ("node", "routes.cjs")})(), {"project": "notes"}))
+
+    text = start_probe.what_the_start_shows(root)
+
+    assert "`GET /health` answered 404" in text
+    assert "GET /health/health" in text and "the routes it serves" in text
+    assert pack.list_routes, "the native Hono pack lists its application's routes"
+    assert not BANNED.search(text)

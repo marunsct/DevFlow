@@ -111,3 +111,21 @@ def test_a_testing_finding_about_only_the_locked_suite_s_files_is_set_aside(tmp_
     kept, set_aside = _defects_only_about([about_the_suite, about_the_product], ["AC-13"], tmp_path)
 
     assert set_aside == [about_the_suite] and kept == [about_the_product]
+
+
+def test_a_criterion_beyond_repair_is_deferred_with_why(tmp_path: Path) -> None:
+    """Measured on one run: the persistence criteria's only test was beyond repair, and each round still raised
+    "the acceptance suite says this does not work yet" for them; the sprint was planned again three times for
+    criteria no fix could prove. Deferred, the next measurement reads them as deferred, not failing."""
+    from app.acceptance.criteria import number
+
+    (tmp_path / ".project-directory").write_text("app\n")
+    suite.save_criteria(tmp_path, number("# Brief\n## Features\n- Add a note\n- Notes survive a restart\n"))
+    state = {"repository": SimpleNamespace(root_path=str(tmp_path))}
+
+    nodes.defer_what_is_beyond_repair(state, ["AC-2"], ["`[AC-2] restart` fails because of an error in the test's own code"])
+
+    reason = suite.deferred(tmp_path)["AC-2"]
+    assert "cannot pass" in reason and "AC-1" not in suite.deferred(tmp_path)
+    for word in BANNED:
+        assert not re.search(rf"\b{word}\b", reason.lower()), word

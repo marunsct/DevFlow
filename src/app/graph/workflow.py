@@ -10007,6 +10007,7 @@ def build_workflow_graph(
                     part for part in (acceptance_text, acceptance_nodes.beyond_repair_note(cannot_pass, beyond_repair))
                     if part
                 )
+                acceptance_nodes.defer_what_is_beyond_repair(state, beyond_repair, cannot_pass)
         failing_due, _ = acceptance_nodes._failing_due(state)
         # The round is the harness's own only on evidence: a locked suite whose
         # last run happened and passes everything due, the unit tests run and
@@ -10213,6 +10214,8 @@ def build_workflow_graph(
             )
         try:
             unreported_criteria = acceptance_nodes.failing_due_defects(state, reported)
+            # Nor the backstop's own for them: deferred above, they are no fix stage's.
+            unreported_criteria, _ = _defects_only_about(unreported_criteria, beyond_repair)
         except Exception:  # noqa: BLE001 - the round's own report stands
             logger.debug("Could not compare the round's report with the acceptance suite", exc_info=True)
             unreported_criteria = []

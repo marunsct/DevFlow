@@ -1460,6 +1460,33 @@ def beyond_repair(state: Any, broken: list[str]) -> list[str]:
     return sorted({tag for item in broken for tag in tags_in(item) if tag.startswith("AC-")})
 
 
+def defer_what_is_beyond_repair(state: Any, criteria: list[str], broken: list[str]) -> None:
+    """Defer the criteria `beyond_repair` names, each with why; never raises.
+
+    Measured on one run: the persistence criteria's only test was beyond
+    repair, each round still raised "the acceptance suite says this does not
+    work yet" for them, and the sprint was planned again three times for
+    criteria no fix could prove. Deferred, the next measurement reads them as
+    deferred, and the release names them among what it did not prove.
+    """
+    if not criteria:
+        return
+    try:
+        from app.acceptance.junit import tags_in
+
+        reasons = {}
+        for criterion in criteria:
+            why = next((item for item in broken if criterion in tags_in(item)), "")
+            reasons[criterion] = (
+                "its locked test cannot pass whatever is built, and the suite may not be repaired again in "
+                "this run" + (f": {why[:300]}" if why else "")
+            )
+        suite.defer(_root(state), reasons)
+        logger.warning("Deferred %s: their locked tests cannot pass and may not be repaired", ", ".join(criteria))
+    except Exception:  # noqa: BLE001 - the round goes on with them set aside, as before
+        logger.debug("Could not defer the criteria beyond repair", exc_info=True)
+
+
 def beyond_repair_note(broken: list[str], criteria: list[str]) -> str:
     """What a test round is told about the locked tests `beyond_repair` names."""
     return (

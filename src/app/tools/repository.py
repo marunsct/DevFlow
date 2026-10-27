@@ -3772,6 +3772,7 @@ def edit_approved_artifact(
                 "ambiguous, and the numbers are in the list above."
                 f"{_a_collision_on_one_line(original, find)}"
                 f"{_what_sits_around_each_match(original, find)}"
+                f"{_the_replace_lines_call_for_each_copy(original, find)}"
             )
 
         _write_unless_it_changes_nothing(
@@ -4072,6 +4073,29 @@ def _what_sits_around_each_match(text: str, find: str) -> str:
     if not blocks:
         return ""
     return "\n\n" + "\n\n".join(blocks)
+
+
+#: Copies of an ambiguous passage given their own `replace_lines` arguments, at most.
+_MOST_COPIES_GIVEN_A_CALL = 4
+
+
+def _the_replace_lines_call_for_each_copy(text: str, find: str) -> str:
+    """For each copy of `find`, the `replace_lines` arguments that change it alone; "" when it cannot say.
+
+    Measured on one run: QA sent one edit of a line every test repeats seven times, each refused as ambiguous with
+    the lines named, and identical calls doubled. The arguments themselves leave nothing to work out.
+    """
+    starts: list[int] = []
+    at = text.find(find)
+    while at >= 0 and len(starts) < _MOST_COPIES_GIVEN_A_CALL:
+        starts.append(text.count("\n", 0, at) + 1)
+        at = text.find(find, at + 1)
+    if len(starts) < 2:
+        return ""
+    span = find.rstrip("\n").count("\n")
+    calls = "; ".join(f"`start_line={n}, end_line={n + span}`" for n in dict.fromkeys(starts))
+    return (f" To change one copy only, call `replace_lines` with its lines and your new text - {calls} - each "
+            "replacing those whole lines.")
 
 
 def _where_each_match_starts(text: str, find: str) -> str:

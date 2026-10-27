@@ -45,3 +45,14 @@ def test_an_anchor_off_only_by_spacing_inside_a_line_is_applied(tmp_path, spec):
                            "test('[AC-2] lists', async ({ request }) => {\n  expect(2).toBe(22);")
 
     assert "toBe(22)" in spec.read_text(encoding="utf-8") and "toBe(2);" not in spec.read_text(encoding="utf-8")
+
+
+def test_an_ambiguous_edit_is_answered_with_the_exact_replace_lines_call_for_each_copy(tmp_path, spec):
+    """Measured on one run: QA sent the same edit of `const created = ...` (one copy per test) seven times, each
+    refused as ambiguous with the lines named; identical calls doubled. The refusal now names, for each copy, the
+    `replace_lines` arguments that change only it."""
+    with pytest.raises(RepositoryToolError) as refused:
+        edit_approved_artifact(tmp_path, "app/acceptance/notes.spec.js", "  expect(", "  expect(9 ")
+
+    message = str(refused.value)
+    assert "start_line=2, end_line=2" in message and "start_line=6, end_line=6" in message

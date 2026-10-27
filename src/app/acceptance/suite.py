@@ -2142,6 +2142,48 @@ def fetch_calls_written_like_the_fixture(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+#: `request.baseURL`: Playwright's request fixture has no such property.
+_THE_FIXTURE_S_BASEURL = re.compile(r"\brequest\s*\.\s*baseURL\b")
+#: The server's `PORT` read in the test process, which the suite never gives it.
+_THE_SERVER_S_PORT = re.compile(r"\bprocess\s*\.\s*env\s*\.\s*PORT\b|\bprocess\s*\.\s*env\s*\[\s*['\"]PORT['\"]\s*\]")
+
+
+def reads_of_what_the_test_does_not_have(repo_root: str | Path) -> list[str]:
+    """Tests that read `request.baseURL`, or the server's `PORT` in the test process: each is never what it means.
+
+    Measured on one run: both AC-15 tests read `request.baseURL` - `undefined`, the fixture has no such property - and
+    one compared it with `process.env.PORT ?? '3000'`; the suite gives `PORT` only to the server it starts. Both failed
+    on every product and went to the product's fixers. Only in a suite run by a pack's runner configuration, which
+    starts the server with `PORT` and hands the tests `baseURL`.
+    """
+    if contract.the_pack(repo_root) is None:
+        return []
+    root = Path(repo_root)
+    problems: list[str] = []
+    for path in suite_files(repo_root):
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        shown = path.relative_to(root).as_posix()
+        for pattern, why in (
+            (_THE_FIXTURE_S_BASEURL,
+             "reads `request.baseURL`, which Playwright's `request` fixture does not have - it is `undefined` on every "
+             "product. The address the suite reaches is the test's `baseURL` argument: `async ({ request, baseURL }) "
+             "=>`."),
+            (_THE_SERVER_S_PORT,
+             "reads `process.env.PORT` in the test. The suite gives `PORT` only to the server it starts, so the test "
+             "never has it and compares with its own fallback. The address, port included, is the test's `baseURL` "
+             "argument."),
+        ):
+            lines = sorted({text.count("\n", 0, m.start()) + 1 for m in pattern.finditer(text)})
+            if lines:
+                problems.append(f"`{shown}` line(s) {', '.join(map(str, lines[:8]))}: the test {why}")
+    return problems[:6]
+
+
 def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     """Whether a ledger entry is a run of the locked acceptance suite.
 
@@ -2216,6 +2258,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *requests_with_a_fetch_body(repo_root),
         *responses_read_without_the_call(repo_root),
         *fetch_calls_written_like_the_fixture(repo_root),
+        *reads_of_what_the_test_does_not_have(repo_root),
         *tests_that_never_open_the_page(repo_root),
         *tests_that_access_storage_before_opening_the_page(repo_root),
         *tests_that_expect_what_they_never_gave(repo_root),

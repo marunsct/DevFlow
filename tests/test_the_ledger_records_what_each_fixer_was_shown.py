@@ -32,3 +32,14 @@ def test_the_fix_request_is_recorded_as_it_is_sent():
     source = inspect.getsource(workflow)
     body = source[source.index("def _the_fix_request("):source.index("def _fixed_by_rewriting(")]
     assert "defect_ledger.shown(" in body
+
+
+def test_it_is_recorded_once_a_fixer_not_on_every_resume_of_its_stage():
+    """Measured on the run after it shipped: a stage that pauses for each gated tool call is built again on every
+    resume, and the entry was written every 6 to 10 seconds for one fixer."""
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+    body = source[source.index("def _the_fix_request("):source.index("def _fixed_by_rewriting(")]
+    at = body.index("defect_ledger.shown(")
+    assert 'if not state.get("pending_inner_thread_id")' in body[at - 400:at]

@@ -32,3 +32,17 @@ def test_the_check_puts_the_import_extension_right_before_it_runs_the_tests(tmp_
 
     assert workflow._the_defect_s_tests_pass(tmp_path, defect) is True
     assert "./app.ts'" in seen["main"] and "./app.js'" not in seen["main"]
+
+
+def test_a_failing_unit_run_is_measured_again_by_the_unit_tests_whatever_ids_their_names_carry(tmp_path, monkeypatch):
+    """Measured on two runs: unit tests named "AC-1 CreateNoteTest" sent the re-measure to the acceptance files of those
+    criteria, which passed, and the defect was closed every round with four unit tests still failing."""
+    contract.write(tmp_path, pack_named("node-hono-native-api"), "notes", "Notes")
+    folder = tmp_path / "notes" / "acceptance"
+    folder.mkdir(parents=True)
+    (folder / "a.spec.js").write_text("test('[AC-1] creates', () => {});\n")
+    monkeypatch.setattr(workflow, "_run_unit_tests_procedurally", lambda root: (False, "1 failing"))
+    monkeypatch.setattr("app.acceptance.per_file.each_file", lambda *a, **k: [{"outcome": "finished"}])
+    defect = SimpleNamespace(description=f"{workflow.UNIT_TESTS_FAIL} It says: AC-1 CreateNoteTest failed", affected_files=[])
+
+    assert workflow._the_defect_s_tests_pass(tmp_path, defect) is False

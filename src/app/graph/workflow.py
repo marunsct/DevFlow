@@ -2986,7 +2986,12 @@ def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
             # nothing about whether it does. Closing this on them left the same
             # defect to be raised again every round while no fixer ever saw it.
             return None
-        tags = {t for t in tags_in(str(getattr(defect, "description", "") or "")) if t.startswith(("AC-", "CR-"))}
+        # A failing unit run is answered by the unit tests alone, whatever ids their names carry: measured on two
+        # runs, unit tests named "AC-1 CreateNoteTest" sent the re-measure to the acceptance files of those
+        # criteria, which passed, and the defect was closed every round with four unit tests still failing.
+        unit_run = str(getattr(defect, "description", "") or "").startswith(UNIT_TESTS_FAIL)
+        tags = set() if unit_run else {
+            t for t in tags_in(str(getattr(defect, "description", "") or "")) if t.startswith(("AC-", "CR-"))}
         if tags:
             runs = each_file(root, contract.read(root) or {}, sandbox_runner(root), naming=tags)
             if runs:

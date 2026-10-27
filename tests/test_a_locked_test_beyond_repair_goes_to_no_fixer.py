@@ -91,3 +91,23 @@ def test_any_other_failing_command_still_is(workspace) -> None:
     defect = _a_suite_failure_the_round_did_not_report(str(workspace), "test_round_3", but_the_acceptance_suite=True)
 
     assert defect is not None and "`npm test` exited 1" in defect.description
+
+
+def test_a_testing_finding_about_only_the_locked_suite_s_files_is_set_aside(tmp_path: Path) -> None:
+    """Measured on one run: with the suite's repairs spent, the round reported "Acceptance test
+    all_ops.spec.js uses fetch and expects listRes.status()", owned by testing and naming no criterion;
+    two fix stages each answered that the locked suite was wrong and changed nothing."""
+    (tmp_path / ".harness").mkdir()
+    (tmp_path / ".harness" / "acceptance.json").write_text(json.dumps({"project": "app", "acceptance_dir": "acceptance"}))
+    (tmp_path / "app" / "acceptance").mkdir(parents=True)
+    (tmp_path / "app" / "acceptance" / "all_ops.spec.js").write_text("test('[AC-2] x', async () => {});\n")
+    about_the_suite = SimpleNamespace(
+        description="Acceptance test all_ops.spec.js uses fetch and expects listRes.status()", owner="testing",
+        reproduction_steps="", expected_behavior="", actual_behavior="", affected_files=["app/acceptance/all_ops.spec.js"])
+    about_the_product = SimpleNamespace(
+        description="all_ops.spec.js fails: the routes answer 500", owner="backend",
+        reproduction_steps="", expected_behavior="", actual_behavior="", affected_files=["app/src/routes.ts"])
+
+    kept, set_aside = _defects_only_about([about_the_suite, about_the_product], ["AC-13"], tmp_path)
+
+    assert set_aside == [about_the_suite] and kept == [about_the_product]

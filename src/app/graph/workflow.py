@@ -6817,17 +6817,31 @@ def _this_sprint_s_scope_for_review(state: Any) -> str:
         return ""
 
 
-def _defects_only_about(reported: list[Any], criteria: list[str]) -> tuple[list[Any], list[Any]]:
-    """(the reported defects a fix can close, those naming only `criteria`).
+def _defects_only_about(
+    reported: list[Any], criteria: list[str], root: str | Path | None = None,
+) -> tuple[list[Any], list[Any]]:
+    """(the reported defects a fix can close, those naming only `criteria` or only the locked suite's files).
 
     `criteria` are those whose locked tests cannot pass and may not be
     repaired again (`acceptance_nodes.beyond_repair`): a defect about them
-    alone has nothing a fix stage can change.
+    alone has nothing a fix stage can change. Nor has the testing role's
+    finding that names only the locked suite's own files: measured on one run,
+    "Acceptance test all_ops.spec.js uses fetch and expects listRes.status()"
+    named no criterion, and two fix stages each answered that the locked suite
+    was wrong and changed nothing.
     """
     if not criteria:
         return reported, []
     from app.acceptance.junit import tags_in
 
+    suite_names: set[str] = set()
+    if root is not None:
+        try:
+            from app.acceptance import suite as _suite
+
+            suite_names = {path.name for path in _suite.suite_files(root)}
+        except Exception:  # noqa: BLE001 - only the criteria decide, as before
+            suite_names = set()
     kept: list[Any] = []
     set_aside: list[Any] = []
     for item in reported:
@@ -6836,7 +6850,13 @@ def _defects_only_about(reported: list[Any], criteria: list[str]) -> tuple[list[
             for name in ("description", "reproduction_steps", "expected_behavior", "actual_behavior")
         )
         named = {tag for tag in tags_in(text) if tag.startswith("AC-")}
-        (set_aside if named and named <= set(criteria) else kept).append(item)
+        files = {Path(str(f)).name for f in getattr(item, "affected_files", None) or () if str(f).strip()}
+        about_the_suite_alone = (
+            bool(suite_names) and "testing" in str(getattr(item, "owner", "") or "").lower()
+            and any(name in text for name in suite_names) and files <= suite_names
+            and not (named - set(criteria))
+        )
+        (set_aside if (named and named <= set(criteria)) or about_the_suite_alone else kept).append(item)
     return kept, set_aside
 
 
@@ -10183,7 +10203,7 @@ def build_workflow_graph(
                 test_round, len(later_work),
                 "; ".join(str(getattr(item, "description", ""))[:60] for item in later_work[:4]),
             )
-        reported, unfixable = _defects_only_about(reported, beyond_repair)
+        reported, unfixable = _defects_only_about(reported, beyond_repair, state["repository"].root_path)
         if unfixable:
             logger.warning(
                 "test_round_%d reported %d defect(s) only about locked tests that cannot pass and may "

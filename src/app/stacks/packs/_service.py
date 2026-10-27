@@ -257,4 +257,5 @@ def service_pack(
         code_runs_in="node",
         ci_setup=(*ci_setup, *js.CI_SETUP),
         release_files=release_files,
+        server_wait_ms=server_timeout_ms,
     )

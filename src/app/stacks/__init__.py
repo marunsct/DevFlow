@@ -237,6 +237,10 @@ class StackPack:
     #: thread under 1.5 GB. The command's whole tree stays bounded by its real
     #: use (`sandbox._run_and_watch_the_tree`).
     process_memory: str = ""
+    #: How long the pack's acceptance suite waits for the product's server to answer, in milliseconds; 0 when
+    #: unknown. One acceptance file's run is given longer (`sandbox.timeout_for`), so the runner, not the
+    #: sandbox's limit, is what says the server never came up.
+    server_wait_ms: int = 0
 
 
     @property

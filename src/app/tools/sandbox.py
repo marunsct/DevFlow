@@ -707,13 +707,29 @@ def timeout_for(category: str, repo_root: str | Path | None = None) -> int:
     try:
         pinned = project_stack(repo_root)
     except Exception:  # noqa: BLE001 - a timeout must not fail the command
-        return base
-    if not pinned:
-        return base
+        pinned = None
     # The slowest toolchain in the stack decides. A Rust backend with a
     # TypeScript frontend builds at Rust's pace.
-    scale = max((TOOLCHAIN_TIMEOUT_SCALE.get(key, 1.0) for key in pinned), default=1.0)
-    return int(min(base * scale, MAX_TIMEOUT_SECONDS))
+    scale = max((TOOLCHAIN_TIMEOUT_SCALE.get(key, 1.0) for key in pinned or ()), default=1.0)
+    limit = base * scale
+    if category == "probe":
+        # One acceptance file's run outlasts the wait its suite gives the server, so a product that never comes
+        # up is reported by the runner. Measured on one run: both were 60 seconds, the sandbox stopped each run
+        # just before the runner said so, and every file waited its minute after each write.
+        try:
+            from app.stacks import contract
+
+            found = contract.the_pack(repo_root)
+            wait = found[0].server_wait_ms / 1000 if found else 0
+        except Exception:  # noqa: BLE001 - the limit as it was
+            wait = 0
+        if wait:
+            limit = max(limit, wait + PROBE_AFTER_THE_SERVER_WAIT_SECONDS)
+    return int(min(limit, MAX_TIMEOUT_SECONDS))
+
+
+#: Seconds one acceptance file's run is given beyond its suite's wait for the server.
+PROBE_AFTER_THE_SERVER_WAIT_SECONDS = 15
 
 #: The least a command is given after its last run used the whole limit, and
 #: the share of the limit it gets.

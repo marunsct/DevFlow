@@ -1139,6 +1139,46 @@ def what_the_server_logged(output: str) -> str:
     return "\n".join(kept)[:1_500]
 
 
+#: A product frame in a logged stack: `(file://)?<path>:<line>`.
+_A_PRODUCT_FRAME = re.compile(r"(?:file://)?((?:[\w@.-]+/)*[\w@.-]+\.(?:ts|tsx|js|mjs|cjs|py)):(\d+)")
+#: A line that throws an error of its own making, and a handler that catches one, per language family.
+_THROWS_ITS_OWN = re.compile(r"^\s*(?:throw\s+new\s+\w*Error\s*\(|raise\s+\w+\s*\()")
+_A_HANDLER = re.compile(r"\bcatch\s*(?:\(\s*(\w*)\s*\))?\s*\{|^\s*except\b[^:]*?(?:\bas\s+(\w+))?\s*:")
+
+
+def what_the_logged_frames_hide(root: str | Path, logged: str) -> str:
+    """A note when the first product frame logged throws an error of its own in place of the one it caught; "".
+
+    Measured on one run: the server logged `Error: Internal server error at NotesRepository.save
+    (persistence.ts:44)`, and line 44 was `throw new Error('Internal server error')` inside `catch (_)`: the real
+    cause - the folder the write needed did not exist - was thrown away, and the fixers saw only the replacement.
+    """
+    try:
+        for match in _A_PRODUCT_FRAME.finditer(str(logged or "")):
+            relative, number = match.group(1).lstrip("/"), int(match.group(2))
+            if "node_modules" in relative:
+                continue
+            path = Path(root) / relative
+            if not path.is_file():
+                continue
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            if not 0 < number <= len(lines) or not _THROWS_ITS_OWN.match(lines[number - 1]):
+                return ""
+            above = "\n".join(lines[max(0, number - 4):number - 1])
+            handler = _A_HANDLER.search(above)
+            if handler is None:
+                return ""
+            caught = handler.group(1) or handler.group(2) or ""
+            if caught and caught != "_" and re.search(rf"\b{re.escape(caught)}\b", lines[number - 1]):
+                return ""  # it passes on what it caught
+            return (f"`{relative}` line {number} throws its own error in place of the one it caught, so the real "
+                    "cause is in no log: let the caught error through, or carry it (as its cause, or in the "
+                    "message) while finding what fails.")
+        return ""
+    except Exception:  # noqa: BLE001 - the log stands as it was
+        return ""
+
+
 def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     """A defect for each due criterion that fails and that the round did not report.
 
@@ -1223,6 +1263,9 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             detail += f"{THE_PAGE_WHEN_IT_FAILED}{met}"
         if logged:
             detail += f"\nWhat the product's server logged while the suite ran:\n{logged}"
+            hidden = what_the_logged_frames_hide(_root(state), logged)
+            if hidden:
+                detail += f"\n{hidden}"
         defects.append(ReportedDefect(
             description=f"[{entry.get('id')}] {entry.get('text')} - the acceptance suite says this does not work yet.",
             severity="major",

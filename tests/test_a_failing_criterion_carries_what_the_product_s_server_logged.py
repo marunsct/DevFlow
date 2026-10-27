@@ -39,3 +39,29 @@ def test_nothing_logged_is_nothing_said():
 def test_each_failing_criterion_s_defect_carries_it():
     source = inspect.getsource(acceptance_nodes.failing_due_defects)
     assert "what_the_server_logged(" in source
+
+
+def test_an_error_the_product_put_in_place_of_the_one_it_caught_is_named(tmp_path):
+    """Measured on the same run: the logged frame was `throw new Error('Internal server error')` inside `catch (_)`;
+    the real cause - the folder the write needed did not exist - was thrown away, and the fixers saw only the
+    replacement."""
+    project = tmp_path / "notes-api"
+    (project / "src" / "services").mkdir(parents=True)
+    (project / "src" / "services" / "persistence.ts").write_text(
+        "export class R {\n  save(notes) {\n    try {\n      write(notes);\n    } catch (_) {\n"
+        "      throw new Error('Internal server error');\n    }\n  }\n}\n")
+    logged = ("Error: Internal server error\n"
+              "    at R.save (file://notes-api/src/services/persistence.ts:6:13)")
+
+    said = acceptance_nodes.what_the_logged_frames_hide(tmp_path, logged)
+
+    assert "notes-api/src/services/persistence.ts" in said and "line 6" in said
+    assert "throws its own error in place of the one it caught" in said
+
+
+def test_a_frame_on_an_ordinary_line_says_nothing(tmp_path):
+    project = tmp_path / "notes-api" / "src"
+    project.mkdir(parents=True)
+    (project / "app.ts").write_text("export function f() {\n  return g();\n}\n")
+
+    assert acceptance_nodes.what_the_logged_frames_hide(tmp_path, "Error: x\n    at f (file://notes-api/src/app.ts:2:3)") == ""

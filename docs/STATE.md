@@ -4,17 +4,17 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 09:20 JST. run-35ce828d **completed, hidden 9/9** (40 min, locked 23/0, mutation 0.917 - best yet; 4 wrong unit tests shipped failing - LF.365). 25 runs: 22x 9/9, 2x 5/9, 1x 0/9. LF.363 (a file's run replaced the suite's report: two needless repairs) and LF.364 (unit defect closed on acceptance files) found on it.
+**As of:** 2026-10-28 10:00 JST. run-683a23ed **completed, hidden 9/9** (29 min, locked 16/0, mutation 0.583 - the probe ran out of rounds; 4 unit tests shipped failing - fixers changed the product). 26 runs: 23x 9/9, 2x 5/9, 1x 0/9. LF.364/365 fired live; no needless suite repair since LF.363.
 ## Live now
 | | |
 |---|---|
-| Run | **run-683a23ed** (notes-api-hono, Fast, all switches on, harness 7788c76a, not mixed) started 09:19 JST |
+| Run | **run-b5a777f6** (notes-api-hono, Fast, all switches on, harness 1951ddb7, not mixed) started 09:55 JST |
 | Model | gpt-oss-20b (the owner's), judged fine for the loop 2026-10-27 |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs
+- **run-683a23ed** (7788c76a -> 1951ddb, mixed_versions): **completed 09:48 JST, hidden 9/9**, 29 min, locked 16/0, AC-15 deferred, mutation 0.583 (regression: three mutants raised, no round left). Unit defects reached fixers (LF.364) with the green-suite note (LF.365); both fixes changed product files and were reverted.
 - **run-35ce828d** (1dd60f91 -> 78994e2 -> 13de9b6, mixed_versions): **completed 09:07 JST, hidden 9/9**, 40 min, locked 23/0, mutation 0.917. Two needless suite repairs (LF.363), a unit defect closed every round on acceptance files (LF.364), an AC-18 dispute that kept the spec's 415 tests; 4 wrong unit tests shipped failing (LF.365).
-- **run-27bce4ec** (ef422255 -> 5c41335 -> 47ecead, mixed_versions): **completed 08:17 JST, hidden 9/9**, 38 min, mutation 0.667 (0.75 with unit tests). AC-6 shipped deferred: its restart test wrote through the shared server and read a fresh service (LF.361). 11 unit tests shipped failing: two fixes changed the product to suit stale unit tests and were reverted (LF.362). The `require` in the suite came from the restart guide itself (LF.360/361).
 - **run-f523de50** (LF.355): **FAILED, hidden 5/9**, 144 min: a locked test asserting JSON on a 204 DELETE reverted every correct fix (8x); LF.356-359 built for it.
 ## Built 2026-10-23 (deployed since): general model steering (MD.3)
 Owner: guidance general, not per model; weaker models steered more; each guide its own switch; a settings
@@ -100,6 +100,8 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
 - B17 [built LF.365, measuring] a green suite with only unit tests failing: send the unit-test defect with LF.362's out-of-date framing from the start, not only after a revert.
 - B18 [open] keep each suite measurement's report under its own name so MEASURE_ONCE never reads a shared path a partial run wrote (LF.363 guards it by counts); and a dispute that rules a test "cannot pass" because of what the implementation does is checked against the specification first (run-35ce828d's AC-18 415 tests).
 - B19 [LF.366 built for `request.baseURL`] the harness applies a correction it knows exactly instead of sending it to QA round after round; next candidates: LF.360's "delete the line, already imported" `require`, LF.343's corrected lines.
+- B20 [open] a unit-test defect beside a fully green suite goes first to a stage that may change only test files (run-683a23ed: both unit fixers edited product files despite LF.365's note, broke 20 and 6 unit tests, reverted).
+- B21 [open] the mutation probe gets its own small round budget once the suite is green, and each mutant defect says whether it is uncovered or surviving (run-683a23ed: 3 mutants, no round left, mutation 0.583).
 - B13b [built LF.357, measuring] once the suite's overall repair limit (4) is spent, a contradicting pair still has no answer: the contested test passes, so beyond-repair (failing tests only) never reaches it, and every fix of the other criterion is reverted (run-f523de50: seven times). Decide from the brief which side gives way (set the contested test aside, or keep the fix); design first.
 - B13 [built LF.356, measuring] two locked tests that contradict (every fix of AC-5's DELETE 204 reverted for breaking AC-7's "DELETE returns JSON", four times on run-f523de50) get no dispute once the suite's repairs are spent (`_a_dispute_may_be_held_now` needs `may_repair`): let the QA lead judge the pair by reclassification even then. Design first - it touches the dispute flow.
 - Measuring now (first fired on run-6929d37b: LF.334 probe 3 findings all settled; LF.337 tried AC-15, put back): LF.334 (mutation probe beside failing unit tests) and LF.335 (first re-read gets lines) - mutation score, probe fired, model calls.

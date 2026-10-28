@@ -2904,8 +2904,8 @@ def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: 
     """`test_result` with a defect for each contract line a bare request makes the server fail on, behind the switch.
 
     Measured on one run: a bare `POST /notes` and `PUT /notes/:id` answered 500 on a green suite; the contract's checks
-    ran only at release, so the crash shipped as a gap and no fixer was given it. Asked only of a green round: a red
-    one has its own defects, and the checks start the product once more. Never raises.
+    ran only at release, so the crash shipped as a gap and no fixer was given it. Asked when the locked suite is green:
+    a red one has its own defects, and the checks start the product once more. Never raises.
     """
     try:
         from app.acceptance import interface_contract
@@ -2914,6 +2914,8 @@ def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: 
 
         root = state["repository"].root_path
         if not interface_contract.server_errors_at_a_round_switch.enabled() or not acceptance_nodes.suite.is_locked(root):
+            return test_result
+        if any(str(d.description or "").startswith(interface_contract.SERVER_FAILED) for d in test_result.defects):
             return test_result
         errors = interface_contract.server_errors(root)
         if not errors:
@@ -10469,7 +10471,9 @@ def build_workflow_graph(
                 return update  # paused waiting for approval on a test artifact
 
         test_result: SpecialistOutput = update.pop("__test_result__")
-        if not test_result.defects and not failing_due and int(saved_run.get("failed") or 0) == 0:
+        # Asked whenever the locked suite is green, whatever else the round found: measured on one run, failing unit
+        # tests kept every round from being clean and the checks were never asked before release.
+        if not failing_due and int(saved_run.get("failed") or 0) == 0:
             test_result = _with_the_contract_s_server_errors(state, test_result, milestone)
         # CI's regressions and the code review's findings for this batch, once.
         reported: list[ReportedDefect] = _each_defect_once(

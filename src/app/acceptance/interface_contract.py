@@ -44,6 +44,13 @@ _HTTP = re.compile(_CRITERION + r"\s+(GET|POST|PUT|PATCH|DELETE)\s+(/\S*)\s*->\s
 #: the page it sits between the path and the role - one specification wrote 26
 #: of its page lines as `page /dashboard form textbox "Title"`, and every one
 #: was set aside as following no form.
+#: An HTTP line naming several methods or saying what it is for between its path and its arrow:
+#: `AC-3, AC-4 GET/PUT/DELETE /notes/{id} for non-existent -> 404`. Measured on one run: six of eight lines were
+#: written so, none was read, and none was checked at release.
+_HTTP_SEVERAL = re.compile(
+    _CRITERION + r"\s+((?:GET|POST|PUT|PATCH|DELETE)(?:\s*/\s*(?:GET|POST|PUT|PATCH|DELETE))*)\s+(/\S*)"
+    r"((?:\s+(?!->)\S+)*?)\s*->\s*(\d{3}(?:\s*(?:or|/|,)\s*\d{3})*)\s*$"
+)
 _PAGE = re.compile(_CRITERION + r"\s+page\s+(/\S*)\s+(?:[\w-]+\s+)*?([a-z]+)\s+\"([^\"]+)\"\s*$")
 _COMMAND = re.compile(_CRITERION + r"\s+command\s+(.+?)\s*->\s*exit\s+(\d+)\s*$")
 
@@ -122,6 +129,8 @@ class Check:
     name: str = ""
     command: str = ""
     exit_code: int = 0
+    #: What the line says it is for, between its path and its arrow ("for non-existent", "with invalid title").
+    note: str = ""
 
 
 def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
@@ -144,6 +153,11 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
             statuses = tuple(int(code) for code in re.findall(r"\d{3}", match[4]))
             checks.append(Check(match[1], "http", line, method=match[2], path=match[3], status=statuses[0],
                                 statuses=statuses))
+        elif match := _HTTP_SEVERAL.match(line):
+            statuses = tuple(int(code) for code in re.findall(r"\d{3}", match[5]))
+            for method in dict.fromkeys(m.strip() for m in match[2].split("/")):
+                checks.append(Check(match[1], "http", line, method=method, path=match[3], status=statuses[0],
+                                    statuses=statuses, note=match[4].strip()))
         elif match := _PAGE.match(line):
             role = _ROLE_OF_THE_ELEMENT.get(match[3], match[3])
             checks.append(Check(match[1], "page", line, path=match[2], role=role, name=match[4]))
@@ -353,15 +367,25 @@ def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Ch
             return None
         errors: list[tuple[Check, int]] = []
         for test in report.tests:
-            if getattr(test, "outcome", "") != "failed":
-                continue
-            number, received = _CHECK_NUMBER.search(test.name), _RECEIVED.search(str(test.message or ""))
-            if number and received and int(received.group(1)) >= 500 and 0 < int(number.group(1)) <= len(web):
-                errors.append((web[int(number.group(1)) - 1], int(received.group(1))))
+            check, status = _the_check_of(test, web), _a_server_error(test)
+            if getattr(test, "outcome", "") == "failed" and check is not None and status:
+                errors.append((check, status))
         return errors
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing
         logger.debug("Could not probe the interface contract for server errors", exc_info=True)
         return None
+
+
+def _the_check_of(test: Any, web: list[Check]) -> Check | None:
+    """The check a test of the probe is, by `contract N:` in its title; None when it names none."""
+    number = _CHECK_NUMBER.search(str(getattr(test, "name", "") or ""))
+    return web[int(number.group(1)) - 1] if number and 0 < int(number.group(1)) <= len(web) else None
+
+
+def _a_server_error(test: Any) -> int:
+    """The 5xx a failed test of the probe received, or 0."""
+    received = _RECEIVED.search(str(getattr(test, "message", "") or ""))
+    return int(received.group(1)) if received and int(received.group(1)) >= 500 else 0
 
 
 def _the_call(check: Check) -> str:
@@ -442,6 +466,14 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
         gaps.append("The interface contract's checks could not run at release: their runner wrote no report.")
     elif report is not None:
         failed = [t for t in report.tests if getattr(t, "outcome", "") not in ("passed", "skipped")]
+        # A line that says what it is about ("(duplicate) -> 409", "with an invalid title -> 400") is about a request
+        # the probe does not send: its bare request proves only that the server does not fail on it.
+        about_another_request = [t for t in failed if (check := _the_check_of(t, web)) is not None and check.note
+                                 and not _a_server_error(t)]
+        failed = [t for t in failed if t not in about_another_request]
+        unchecked += list(dict.fromkeys(
+            f"{c.line} (the probe sends a bare request; the line is about {c.note})"
+            for c in (_the_check_of(t, web) for t in about_another_request) if c is not None))
         logger.info("Interface contract at release: %d of %d check(s) failed", len(failed), len(report.tests))
         gaps += [
             (

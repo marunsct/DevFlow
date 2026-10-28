@@ -150,6 +150,15 @@ _A_PRODUCT_PREDICATE = re.compile(
     r"\b(?:is|are)\s+(?:missing|undefined|absent|unimplemented|hard-?coded)\b", re.I)
 
 
+#: A clause about the test's own steps, in the words the dispute asks for ("it asserts something its own steps never
+#: set up"), or saying it fails whatever the product does. Measured on one run: "it asserts that updated.title equals
+#: a freshly generated random string ...; its own steps never set up" matched "never set" as the product's, and a
+#: test no product can pass stayed locked.
+_THE_TEST_S_OWN = re.compile(
+    r"\b(?:its|the\s+test'?s?)\s+own\s+(?:steps|setup|calls?|requests?|data|values?|arguments?)\b|"
+    r"\b(?:would|will|must)\s+fail\s+(?:even|whatever|for\s+any|on\s+any|against\s+any)\b", re.I)
+
+
 def judged_by_the_code(why: str) -> bool:
     """Whether a reason sets a test aside for what the product does rather than for what the criterion says.
 
@@ -160,7 +169,7 @@ def judged_by_the_code(why: str) -> bool:
     reason is the product's only when no clause of it says the test asks for what the standard does not.
     """
     clauses = [clause for clause in re.split(r"[.;]", str(why or "")) if clause.strip()]
-    if any(_THE_TEST_OVERASKS.search(clause) for clause in clauses):
+    if any(_THE_TEST_OVERASKS.search(clause) or _THE_TEST_S_OWN.search(clause) for clause in clauses):
         return False
     return any(_THE_PRODUCT_DOES.search(clause) or _A_PRODUCT_PREDICATE.search(clause) for clause in clauses)
 

@@ -4,7 +4,7 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-29 04:42 JST. run-99a07406 (8th Qwen3.6 run, mixed 037b6e47 -> 92ffadfc, one rewind) **completed, hidden 9/9**, 73.4 active min, 175 calls, locked 11/0, mutation 0.75 (1.0 with unit). Built from it: LF.400 (a restarted stage is told how its last attempt ended), LF.401 (a pack's known errors give a defect its cause: Hono 204), LF.402 (a green sprint settles beside a finding read from the files), LF.403 (a note among a contract line's statuses; `corpus accept` reaches the worker); from run-0d97a96c: LF.404 (a runtime data file is not a file to hand out). 41 runs: 38x 9/9, 2x 5/9, 1x 0/9. Next: measure LF.398-403; verify review findings naming a package API.
+**As of:** 2026-10-29 04:42 JST. run-99a07406 (8th Qwen3.6 run, mixed 037b6e47 -> 92ffadfc, one rewind) **completed, hidden 9/9**, 73.4 active min, 175 calls, locked 11/0, mutation 0.75 (1.0 with unit). Built from it: LF.400 (a restarted stage is told how its last attempt ended), LF.401 (a pack's known errors give a defect its cause: Hono 204), LF.402 (a green sprint settles beside a finding read from the files), LF.403 (a note among a contract line's statuses; `corpus accept` reaches the worker); from run-0d97a96c: LF.404 (a runtime data file is not a file to hand out), LF.405 (a dispute about the test's own steps reopens it). 41 runs: 38x 9/9, 2x 5/9, 1x 0/9. Next: measure LF.398-403; verify review findings naming a package API.
 ## Live now
 | | |
 |---|---|

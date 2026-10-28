@@ -7788,8 +7788,39 @@ def _about_the_harness_s_files_only(finding: Any, repo_root: str) -> bool:
     named = {PurePosixPath(str(path)).name for path in getattr(finding, "affected_files", None) or []}
     named |= files_named_in(
         f"{getattr(finding, 'description', '')} {getattr(finding, 'remediation', '')}"
+        f" {getattr(finding, 'required_remediation', '')}"
     )
     return bool(named) and named <= kept
+
+
+def _findings_about_the_harness_s_files_made_minor(review: Any, repo_root: str) -> Any:
+    """`review` with each gating finding whose files are all the harness's own recorded as minor. Never raises.
+
+    No work order may change a file the harness keeps - `contract.enforce` puts it back before every run - so a
+    revision asked for one cannot be made, and the sprint is sent back for work nobody may do. Measured on one run:
+    the milestone review asked for signal handlers in the pack's kept start file `src/main.ts`. The security review
+    leaves such findings out (`_without_findings_about_the_harness_s_files`); the milestone review keeps them, minor,
+    because an emptied `changes_required` review is asked again.
+    """
+    try:
+        findings, moved = [], 0
+        for finding in getattr(review, "findings", None) or []:
+            if _severity_gates(getattr(finding, "severity", "")) and _about_the_harness_s_files_only(finding, repo_root):
+                moved += 1
+                finding = finding.model_copy(update={
+                    "severity": "minor",
+                    "description": (
+                        "The files this names are the harness's own, put back before every run, and no work order "
+                        f"may change them; not a reason to send the sprint back: {finding.description}"
+                    ),
+                })
+            findings.append(finding)
+        if not moved:
+            return review
+        logger.warning("Milestone review raised %d gating finding(s) about the harness's own files; recorded as minor", moved)
+        return review.model_copy(update={"findings": findings})
+    except Exception:  # noqa: BLE001 - the review as written stands
+        return review
 
 
 def _without_findings_about_the_harness_s_files(review: Any, repo_root: str) -> Any:
@@ -11699,7 +11730,7 @@ def build_workflow_graph(
             
         review: MilestoneReviewOutput = _a_pass_over_its_own_findings(
             _findings_no_measure_holds(_findings_the_command_record_contradicts(
-                _findings_about_a_server_only_the_tests_start(
+                _findings_about_a_server_only_the_tests_start(_findings_about_the_harness_s_files_made_minor(
                     _findings_the_dependency_check_contradicts(
                         _security_graded_by_its_own_review(
                             _findings_a_later_sprint_builds(update.pop("__milestone_review__"), state),
@@ -11708,7 +11739,7 @@ def build_workflow_graph(
                         state,
                     ),
                     state["repository"].root_path,
-                ),
+                ), state["repository"].root_path),
                 state["repository"].root_path,
             ), state["repository"].root_path),
             state["repository"].root_path,

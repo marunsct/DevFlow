@@ -2448,7 +2448,11 @@ def tests_that_restart_on_data_they_never_wrote(repo_root: str | Path) -> list[s
 _A_FILE_READ = re.compile(r"""\b(?:readFile(?:Sync)?|existsSync|statSync|open)\s*\(\s*(?:path\.\w+\([^)]*?)?['"`]([^'"`]+)['"`]""")
 
 
-def tests_that_assert_a_kept_file_s_text(repo_root: str | Path) -> list[str]:
+#: A test's title, from its declaration.
+_A_TEST_TITLE = re.compile(r"""test\s*\(\s*['"`]([^'"`]*)['"`]""")
+
+
+def tests_that_assert_a_kept_file_s_text(repo_root: str | Path, result: AcceptanceResult | None = None) -> list[str]:
     """Tests that read a file the harness keeps and assert what it contains: its text is not the product's to change.
 
     Measured on one run: a test read `./start.sh` and expected it to match `/DATA_DIR/`; the harness's start file
@@ -2460,6 +2464,10 @@ def tests_that_assert_a_kept_file_s_text(repo_root: str | Path) -> list[str]:
     kept = {Path(path).name for path in contract.kept_paths(repo_root)}
     if not kept:
         return []
+    # Only a test that fails: one that passes against the kept file proves nothing, but costs nothing either, and
+    # measured on one run a green suite was reopened for it, QA spent three rounds, and locked with it as it was.
+    failing = ({t.name for t in result.report.tests if t.outcome == "failed"}
+               if result is not None and result.ran and result.report.tests else None)
     root = Path(repo_root)
     problems: list[str] = []
     for path in suite_files(repo_root):
@@ -2474,6 +2482,11 @@ def tests_that_assert_a_kept_file_s_text(repo_root: str | Path) -> list[str]:
             block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
             if "expect(" not in block:
                 continue
+            if failing is not None:
+                titled = _A_TEST_TITLE.match(block)
+                title = titled.group(1).strip() if titled else ""
+                if not title or not any(title in name for name in failing):
+                    continue
             read = next((m for m in _A_FILE_READ.finditer(block) if Path(m.group(1)).name in kept), None)
             if read is None:
                 continue
@@ -2565,7 +2578,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *fetch_calls_written_like_the_fixture(repo_root),
         *reads_of_what_the_test_does_not_have(repo_root),
         *tests_that_want_json_from_a_204(repo_root),
-        *tests_that_assert_a_kept_file_s_text(repo_root),
+        *tests_that_assert_a_kept_file_s_text(repo_root, result),
         *tests_that_restart_on_data_they_never_wrote(repo_root),
         *tests_that_never_open_the_page(repo_root),
         *tests_that_access_storage_before_opening_the_page(repo_root),

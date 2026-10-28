@@ -54,4 +54,20 @@ def test_a_read_of_a_product_file_is_left(tmp_path):
 
 
 def test_it_is_among_the_tests_that_cannot_pass():
-    assert "tests_that_assert_a_kept_file_s_text(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+    assert "tests_that_assert_a_kept_file_s_text(repo_root, result)" in inspect.getsource(suite.tests_that_cannot_pass)
+
+
+def test_a_passing_read_of_the_kept_file_is_left_when_the_suite_s_result_is_known(tmp_path):
+    """Measured on one run: a green suite was reopened for a passing test of the start file's text; QA spent three
+    rounds and locked with it as it was. A passing test proves nothing but costs nothing; only a failing one cannot pass."""
+    from types import SimpleNamespace
+
+    root = _suite(tmp_path, WRONG)
+    passing = SimpleNamespace(ran=True, report=SimpleNamespace(tests=[
+        SimpleNamespace(name="[AC-15] start.sh exists and contains expected commands", outcome="passed"),
+        SimpleNamespace(name="[AC-1] creates", outcome="failed")]))
+    assert suite.tests_that_assert_a_kept_file_s_text(root, passing) == []
+    failing = SimpleNamespace(ran=True, report=SimpleNamespace(tests=[
+        SimpleNamespace(name="[AC-15] start.sh exists and contains expected commands", outcome="failed")]))
+    assert len(suite.tests_that_assert_a_kept_file_s_text(root, failing)) == 1
+    assert "tests_that_assert_a_kept_file_s_text(repo_root, result)" in inspect.getsource(suite.tests_that_cannot_pass)

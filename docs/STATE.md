@@ -4,12 +4,12 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 10:40 JST. run-b5a777f6 **completed, hidden 9/9** (32 min incl. a rewind; locked 18/0, nothing deferred, mutation 0.833). LF.368 (a dispute reason that judges by the code keeps the test locked) found, deployed and rewound into it; worked at once. 27 runs: 24x 9/9, 2x 5/9, 1x 0/9. B22 (Harness²) awaits the owner.
+**As of:** 2026-10-28 11:15 JST. run-0be12bd7 live (10:36 JST, 6f610a87 -> 5557133b at 11:14, mixed_versions), rewound to its second dispute. Found on it: a 79k-token reply repeating END.FINISHED (13.5 min) -> `loop.sh ceiling 12000` set from 6 runs' data (p99 3.7k); LF.369 (dispute 'never loads' wording); LF.370 (write guard excused a missing export of an existing module: 3 fixes reverted). 27 runs: 24x 9/9.
 ## Live now
 | | |
 |---|---|
 | Run | **run-0be12bd7** (notes-api-hono, Fast, all switches on, harness 6f610a87, not mixed) started 10:36 JST |
-| Model | gpt-oss-20b (the owner's), judged fine for the loop 2026-10-27 |
+| Model | gpt-oss-20b (the owner's), judged fine 2026-10-27; **reply ceiling 12,000 set 11:08 JST 2026-10-28 via `loop.sh ceiling`** (6 runs/1,479 calls: p99 3.7k, max legit 4.1k; one 79k reply looped) - harness request parameter with salvage, not a server setting |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs

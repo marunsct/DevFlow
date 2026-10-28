@@ -4,17 +4,17 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 16:10 JST. run-f9e8735b **completed, hidden 9/9** (135 min, the day's longest; locked 15/0; mutation 0.583; 7 unit tests shipped failing). Built from it: LF.377-383 (a matcher given nothing is the product's; installed-package exports; .mjs inline code; a silent 5xx named, located, and its contract cause raised; contract defects settled by their own check). 31 runs: 28x 9/9, 2x 5/9, 1x 0/9. Plan doc: deep-review items 3/7/8 partly done; next item 9.
+**As of:** 2026-10-28 17:00 JST. run-f37ca8de **completed, hidden 9/9** (47 min, 0 reverts, locked 11/0, mutation 0.583); LF.384 (16-call fix-stage cap, FIX_STAGE_CALL_CAP) held from its deploy, LF.385 fired. 32 runs: 29x 9/9, 2x 5/9, 1x 0/9. Next from the plan: item 16 (contract-line coverage at review), then 10, then 9b.
 ## Live now
 | | |
 |---|---|
-| Run | **run-f37ca8de** (notes-api-hono, Fast, all switches on, harness 5ad49d75, not mixed, ceiling 12k) started 16:05 JST |
+| Run | **run-280ad6d0** (notes-api-hono, Fast, all switches on, harness 99449cec, not mixed, ceiling 12k) started 16:55 JST |
 | Model | gpt-oss-20b (the owner's), judged fine 2026-10-27; **reply ceiling 12,000 set 11:08 JST 2026-10-28 via `loop.sh ceiling`** (6 runs/1,479 calls: p99 3.7k, max legit 4.1k; one 79k reply looped) - harness request parameter with salvage, not a server setting |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs
+- **run-f37ca8de** (5ad49d7 -> e155ef5 -> 99449ce, mixed_versions): **completed 16:52 JST, hidden 9/9**, 47 min, locked 11/0, 0 reverts, mutation 0.583. LF.384's cap held after its deploy (one 30-call stage before it); three mutation gaps judged equivalent; LF.385 caught a restart test reading `process.env.DATA_DIR`.
 - **run-f9e8735b** (e0eadeb9 -> ... -> 5ad49d7, mixed_versions, two rewinds): **completed 16:00 JST, hidden 9/9**, 135 min, locked 15/0, mutation 0.583. Two sprint attempts on a 500 the service never logged; LF.380-382 made it visible and named `createApp(storage)`; one fix went 7/15 -> 15/15. LF.383: the contract defect was judged by unrelated unit tests.
-- **run-bc7c108f** (7548dbda -> 7dcfdc6 -> 9938bb0 -> 8d89dbc -> e0eadeb9, mixed_versions): **completed 13:44 JST, hidden 9/9**, 69 min, locked 21/0, mutation 0.5. OOM-killed at 13:12 (unit tests grew `data/notes.json` to 205 MB: LF.375); dead 14 min unseen by the orphan check (B26); LF.373 fired on a passing test (LF.374). 12 unit tests shipped failing.
 - **run-f523de50** (LF.355): **FAILED, hidden 5/9**, 144 min: a locked test asserting JSON on a 204 DELETE reverted every correct fix (8x); LF.356-359 built for it.
 ## Built 2026-10-23 (deployed since): general model steering (MD.3)
 Owner: guidance general, not per model; weaker models steered more; each guide its own switch; a settings

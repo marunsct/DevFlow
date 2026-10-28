@@ -4,7 +4,7 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 11:15 JST. run-0be12bd7 live (10:36 JST, 6f610a87 -> 5557133b at 11:14, mixed_versions), rewound to its second dispute. Found on it: a 79k-token reply repeating END.FINISHED (13.5 min) -> `loop.sh ceiling 12000` set from 6 runs' data (p99 3.7k); LF.369 (dispute 'never loads' wording); LF.370 (write guard excused a missing export of an existing module: 3 fixes reverted). 27 runs: 24x 9/9.
+**As of:** 2026-10-28 11:20 JST. run-0be12bd7 live (10:36 JST, 6f610a87 -> 5557133b -> 7548dbda, mixed_versions), rewound twice to its second dispute: the QA lead set the brief's restart test aside for what the product does, re-worded after each fix (LF.369 'never loads', LF.371 'X is never called' - the predicate now decides, whatever the subject). Also on it: reply ceiling 12000 set from 6 runs' data after a 79k-token looping reply; LF.370 (write guard excused a missing export of an existing module: 3 fixes reverted). 27 runs: 24x 9/9.
 ## Live now
 | | |
 |---|---|

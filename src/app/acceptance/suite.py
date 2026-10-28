@@ -1042,6 +1042,10 @@ def _the_tests_sources(repo_root: str | Path) -> dict[str, tuple[str, str]]:
     return found
 
 
+#: A matcher given no value: the product answered without what the test reads, which is the product's to fix.
+_A_MATCHER_MET_NOTHING = re.compile(r"Matcher error:[\s\S]{0,200}?Received(?: has value)?:\s*(?:undefined|null)\b")
+
+
 def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Failures caused by the tests' own code, by the pack's own patterns.
 
@@ -1071,8 +1075,15 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
                 "can pass once the product works."
             )
             continue
-        if any(pattern.search(message) for pattern in patterns):
-            first = next((line.strip() for line in message.splitlines() if line.strip()), "")
+        # The runner's own words only: the page tree and the service log the harness appends carry the product's
+        # errors (`TypeError` on a page, a traceback), which are the product's. And a matcher met a value the product
+        # never gave - `expect(received).toMatch(expected)` ... `Received has value: undefined` - is the product's
+        # too: measured on one run, a missing `Location` header reopened the suite twice as "the test's own code".
+        said = message.split(_PAGE_MARK, 1)[0].split(_SERVICE_ERRORS_MARK, 1)[0]
+        if _A_MATCHER_MET_NOTHING.search(said):
+            continue
+        if any(pattern.search(said) for pattern in patterns):
+            first = next((line.strip() for line in said.splitlines() if line.strip()), "")
             broken.append(
                 f"`{test.name}` fails because of an error in the test's own code, not because the "
                 f"product is unbuilt: {first[:300]}. Fix the test so that it can pass once the "

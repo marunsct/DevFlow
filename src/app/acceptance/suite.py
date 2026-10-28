@@ -2184,6 +2184,14 @@ def _the_lines_corrected(text: str, lines: list[int], correct: Any) -> str:
     return (" Each line as it should read - " + "; ".join(pairs) + ".") if pairs else ""
 
 
+def _within_a_comment(text: str, at: int) -> bool:
+    """Whether position `at` of JavaScript source is inside a `//` or `/* */` comment (strings are not told apart)."""
+    line_start = text.rfind("\n", 0, at) + 1
+    if "//" in text[line_start:at] and not re.search(r"https?:$", text[line_start:at].split("//")[0]):
+        return True
+    return text.rfind("/*", 0, at) > text.rfind("*/", 0, at)
+
+
 def requests_with_a_fetch_body(repo_root: str | Path) -> list[str]:
     """Tests that hand Playwright's `request` fixture a `fetch`-style `body:`, which it does not read.
 
@@ -2207,6 +2215,11 @@ def requests_with_a_fetch_body(repo_root: str | Path) -> list[str]:
         lines: list[int] = []
         as_json: list[int] = []
         for match in _BODY_KEY.finditer(text):
+            if _within_a_comment(text, match.start()):
+                # Measured on one run: "Playwright's request fixture does not read a `body:` option, so we reach the
+                # service directly" above a correct `fetch(...)` call was read as the misuse, and the locked suite
+                # was reopened for a test that passed.
+                continue
             literal = _the_object_around(text, match.start())
             opening = _the_start_of_the_object_around(text, match.start())
             # Not a plain `fetch(` call's options: `body:` is how `fetch` is given one.

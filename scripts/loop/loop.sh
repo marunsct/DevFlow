@@ -346,7 +346,10 @@ corpus)
   # Accepted here and copied into the worker: `harvest` copies the worker's corpus over this one after every
   # scored run, and an acceptance made only here was undone by the next score, failing the suite again.
   accept) DATA_DIR=data PYTHONPATH="$ROOT/src" "$PY" -c 'from app.observability.reader_corpus import replay; print(replay(accept=True))'
-          docker cp data/corpus/. langchain-worker-1:/app/data/corpus/ >/dev/null 2>&1 \
+          # `docker cp` keeps the host's owner, and the worker's own user then cannot write a sample again: measured
+          # on the next scored run, the harvest failed with "Permission denied" on every file the accept had copied.
+          { docker cp data/corpus/. langchain-worker-1:/app/data/corpus/ >/dev/null 2>&1 \
+            && docker compose exec -T -u root worker sh -c 'chown -R "$(stat -c %u:%g /app/data)" /app/data/corpus' >/dev/null 2>&1; } \
             || echo "corpus: the accepted results were not copied into the worker; the next harvest will undo them" >&2 ;;
   *) DATA_DIR=data PYTHONPATH="$ROOT/src" "$PY" -c 'from app.observability.reader_corpus import sizes, replay; print(sizes()); print("changed:", replay())' ;;
   esac

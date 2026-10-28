@@ -382,6 +382,16 @@ def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Ch
         return None
 
 
+#: Statuses only a particular request draws: a conflict with what is stored, a body too large, a body of the wrong
+#: type, too many requests. Measured on one run: `AC-18 POST /notes -> 413` was failed at release for the 400 the
+#: product rightly gave the probe's empty body. 401 and 403 are not here: a bare request is what draws them.
+_DRAWN_BY_A_PARTICULAR_REQUEST = frozenset({409, 413, 415, 429})
+
+
+def _only_what_a_bare_request_cannot_draw(check: Check) -> bool:
+    return bool(_allowed(check)) and set(_allowed(check)) <= _DRAWN_BY_A_PARTICULAR_REQUEST
+
+
 def _the_check_of(test: Any, web: list[Check]) -> Check | None:
     """The check a test of the probe is, by `contract N:` in its title; None when it names none."""
     number = _CHECK_NUMBER.search(str(getattr(test, "name", "") or ""))
@@ -474,11 +484,12 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
         failed = [t for t in report.tests if getattr(t, "outcome", "") not in ("passed", "skipped")]
         # A line that says what it is about ("(duplicate) -> 409", "with an invalid title -> 400") is about a request
         # the probe does not send: its bare request proves only that the server does not fail on it.
-        about_another_request = [t for t in failed if (check := _the_check_of(t, web)) is not None and check.note
+        about_another_request = [t for t in failed if (check := _the_check_of(t, web)) is not None
+                                 and (check.note or _only_what_a_bare_request_cannot_draw(check))
                                  and not _a_server_error(t)]
         failed = [t for t in failed if t not in about_another_request]
         unchecked += list(dict.fromkeys(
-            f"{c.line} (the probe sends a bare request; the line is about {c.note})"
+            f"{c.line} (the probe sends a bare request; the line is about {c.note or 'a request it does not send'})"
             for c in (_the_check_of(t, web) for t in about_another_request) if c is not None))
         logger.info("Interface contract at release: %d of %d check(s) failed", len(failed), len(report.tests))
         gaps += [

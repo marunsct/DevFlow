@@ -14,3 +14,5 @@ def test_accept_copies_into_the_worker_after_accepting_here():
     assert "replay(accept=True)" in branch
     assert "docker cp data/corpus/. langchain-worker-1:/app/data/corpus/" in branch
     assert branch.index("replay(accept=True)") < branch.index("docker cp")
+    # The worker's own user must still be able to write a sample the accept copied in.
+    assert "chown -R" in branch and branch.index("docker cp") < branch.index("chown -R")

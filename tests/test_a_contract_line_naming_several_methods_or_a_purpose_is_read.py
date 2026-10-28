@@ -78,3 +78,27 @@ def test_a_note_among_the_statuses_is_no_part_of_the_check():
     ])
     assert unreadable == []
     assert [(c.method, c.statuses) for c in checks] == [("POST", (201, 400, 422)), ("GET", (200, 404))]
+
+
+def test_a_status_only_a_particular_request_draws_is_unchecked_not_failed(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.stacks import contract
+
+    monkeypatch.setattr(contract, "the_pack", lambda root: (SimpleNamespace(files={"playwright.config.js": ""}, probe_runner="playwright"), {"project": "app"}))
+    (tmp_path / "app").mkdir()
+    ic.record_at_lock(tmp_path, ["AC-18 POST /notes -> 413", "AC-20 GET /admin -> 401"])
+
+    def runner(argv, category, where):
+        (tmp_path / where / "test-results").mkdir(exist_ok=True)
+        (tmp_path / where / ic.REPORT_FILE).write_text(
+            '<testsuites><testsuite name="c" tests="2">'
+            '<testcase name="[AC-18] contract 1: x"><failure message="x">Expected: 413\nReceived: 400</failure></testcase>'
+            '<testcase name="[AC-20] contract 2: x"><failure message="x">Expected: 401\nReceived: 200</failure></testcase>'
+            "</testsuite></testsuites>")
+        return {"returncode": "1"}
+
+    gaps = ic.what_the_contract_checks_find(tmp_path, runner=runner)
+    failed = [g for g in gaps if "does not keep its interface contract" in g]
+    assert len(failed) == 1 and "contract 2" in failed[0]
+    assert any("AC-18 POST /notes -> 413 (the probe sends a bare request" in g for g in gaps)

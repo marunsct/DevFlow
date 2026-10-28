@@ -4,17 +4,17 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 21:20 JST. run-b4f264fe (3rd Qwen3.6 run) **completed, hidden 9/9**, 98 active min over 4 attempts (an intermittent `notes.json.tmp` rename race crashed the server mid-suite; the milestone review caught a PUT that never persisted), mutation 0.417. 35 runs: 32x 9/9, 2x 5/9, 1x 0/9. Next build: crash-mid-suite as one blocking defect; then plan item 16 with body shapes.
+**As of:** 2026-10-29 00:18 JST. run-32568792 (4th Qwen3.6 run) **completed, hidden 9/9**, 142 active min, 17 reverts (attempt 1, before LF.390 named the missing data dir), locked 11/0, mutation 0.75. Built from it: LF.390 (data dir may not exist), LF.391 (fix-stage reply cap 12k), LF.392 (`.body.<field>`), LF.393 (a stopped run's stage thread makes no more calls). 37 runs: 34x 9/9, 2x 5/9, 1x 0/9. Next: verify review findings naming a package API; plan item 16 with body shapes.
 ## Live now
 | | |
 |---|---|
-| Run | **run-32568792** (notes-api-hono, Fast, all switches on, harness c4f11015, Qwen3.6-35B-A3B MTP) started 21:16 JST |
+| Run | **run-12540387** (notes-api-hono, Fast, all switches on, harness 1584efde, Qwen3.6-35B-A3B MTP) started 00:15 JST 2026-10-29 |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner, 17:10 JST 2026-10-28) at :8888, 2 slots, context 184,320; owner's sampling: Qwen 'thinking, precise coding' (temp 0.6, top_p 0.95, top_k 20, min_p 0, repeat 1.0, presence 0). This server **reports cached tokens** (`cached_token_share` is real from here; LM Studio's gpt-oss did not). Diagnosed 17:24 JST: tools 3/3 everywhere, edits 100/100, structured answers forced, reasoning switch honoured, salvage supported; deep: no loop (no reply ceiling), weak at heeding a refusal (0/3) and answering as a call when offered (1/3); kept guide: stop when the checks pass. gpt-oss-20b keeps its 12k ceiling in its own record. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs
+- **run-32568792** (c4f1101 -> ... -> 1584efd, mixed_versions, one rewind): **completed 00:08 JST 10-29, hidden 9/9**, 142 active min, 246 calls, cache 66%, 17 reverts, locked 11/0, mutation 0.75. Missing data dir (LF.390), long fix replies (LF.391), `.body.id` test (LF.392), stale paused stage (LF.393). Milestone review asserted a nonexistent Hono `bodyLimit` constructor option.
 - **run-b4f264fe** (c4f11015, not mixed, Qwen3.6): **completed 21:13 JST, hidden 9/9**, 98 active min, 164 calls, cache 69%, tool failures 3.9%, 1 revert, locked 16/0, mutation 0.417 (0.667 with unit). Intermittent mid-suite crash (temp-file rename race) cost two attempts; dispute set aside AC-9 (inter-test dependence); milestone review caught PUT not persisting.
-- **run-1f70c434** (c4f11015, not mixed, Qwen3.6): **completed 19:28 JST, hidden 9/9**, 61 active min, 133 calls, tool failures 2.1%, cache 74%, locked 23/0, 0 reverts, mutation 0.75. `createApp` renamed by the draft, raised by LF.382 at round 0, restored by the second fixer; one equivalent-mutant verdict checked and correct.
 - **run-f523de50** (LF.355): **FAILED, hidden 5/9**, 144 min: a locked test asserting JSON on a 204 DELETE reverted every correct fix (8x); LF.356-359 built for it.
 ## Built 2026-10-23 (deployed since): general model steering (MD.3)
 Owner: guidance general, not per model; weaker models steered more; each guide its own switch; a settings

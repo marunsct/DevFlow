@@ -3089,6 +3089,12 @@ def _the_defect_s_tests_in(root: str, label: str, defect: Any) -> bool | None:
         left = dependency_drift.still_undeclared(Path(root) / project, str(getattr(defect, "description", "") or ""))
         if left is not None:
             return not left
+        # So is one about the scaffold's contract: by the check that raised it (`entry_exports.still_raised`).
+        from app.stacks import entry_exports
+
+        raised = entry_exports.still_raised(root, str(getattr(defect, "description", "") or ""))
+        if raised is not None:
+            return not raised
         snapshot = ci.load(root, "latest")
         if snapshot is None or snapshot.label != label:
             return None

@@ -103,3 +103,22 @@ def test_a_factory_callable_bare_is_left(tmp_path, text):
     (tmp_path / "notes" / "src" / "app.ts").write_text(text)
     (tmp_path / ".project-directory").write_text("notes\n")
     assert entry_exports.what_the_start_file_cannot_call(tmp_path) == []
+
+
+def test_a_contract_defect_is_settled_by_its_own_check_not_by_unit_tests(tmp_path):
+    """Measured on one run: `createApp()` was made callable bare and the defect was left open because unrelated unit
+    tests failed; the attempt was spent and the sprint planned again over a green suite."""
+    from app.graph import workflow
+
+    contract.write(tmp_path, pack_named("node-hono-native-api"), "notes", "Notes")
+    (tmp_path / "notes" / "src").mkdir(parents=True)
+    app_ts = tmp_path / "notes" / "src" / "app.ts"
+    app_ts.write_text("export function createApp(storage: Store): Hono { return new Hono(); }\n")
+    (tmp_path / ".project-directory").write_text("notes\n")
+    [defect] = acceptance_nodes.pack_contract_defects({"repository": SimpleNamespace(root_path=str(tmp_path))})
+    assert entry_exports.still_raised(tmp_path, defect.description) is True
+    assert workflow._the_defect_s_tests_in(str(tmp_path), "after defect_fix_1_0", defect) is False
+    app_ts.write_text("export function createApp(): Hono { return new Hono(); }\n")
+    assert entry_exports.still_raised(tmp_path, defect.description) is False
+    assert workflow._the_defect_s_tests_in(str(tmp_path), "after defect_fix_1_0", defect) is True
+    assert entry_exports.still_raised(tmp_path, "[AC-1] Create a note") is None

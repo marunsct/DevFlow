@@ -111,3 +111,18 @@ def what_the_start_file_cannot_call(repo_root: str | Path) -> list[tuple[str, st
     except Exception:  # noqa: BLE001 - a check that cannot run finds nothing
         return []
 
+
+def still_raised(repo_root: str | Path, description: str) -> bool | None:
+    """Whether a pack-contract defect with this description would be raised again now; None when it is not one.
+
+    A defect about the scaffold's contract is settled by the check that raised it, not by unit tests: measured on one
+    run, `createApp()` was made callable bare, and the defect was left open because unrelated unit tests failed; the
+    attempt was spent and the sprint planned again over a green suite.
+    """
+    text = str(description or "")
+    if " no longer exports `" not in text and " but the scaffold's start file" not in text:
+        return None
+    current = [f"{path} no longer exports `{name}`" for path, name in what_the_entry_no_longer_exports(repo_root)]
+    current += [f"{path} declares `{name}(" for path, name, _ in what_the_start_file_cannot_call(repo_root)]
+    return any(text.startswith(found) for found in current)
+

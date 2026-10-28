@@ -139,6 +139,7 @@ PACK = StackPack(
     },
     guide=f"{GUIDE}\n{FACTORY_GUIDE}",
     acceptance_guide=f"{ACCEPTANCE_GUIDE}\n{RESTART_GUIDE}",
+    data_dir_env="DATA_DIR",
     stack={
         "language": "JavaScript",
         "framework": "Express",

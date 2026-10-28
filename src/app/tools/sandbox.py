@@ -995,6 +995,32 @@ def _the_project_virtualenv(workspace: str) -> str | None:
     return None
 
 
+def _a_fresh_data_directory(workspace: str, category: str) -> Dict[str, str]:
+    """`{<pack.data_dir_env>: <a fresh directory>}` for a test run of a product that keeps data; {} otherwise.
+
+    The acceptance configuration the harness keeps starts the service with an empty data directory of its own; a
+    unit run had none. Measured on one run: unit tests posting megabyte bodies to the product's default data
+    directory on every round grew its data file to 205 MB, the service parsed all of it per request, and the worker
+    container was killed at its memory limit mid-stage. The directory is under the project's `test-results/`, which
+    git ignores. Never raises.
+    """
+    if category != "test":
+        return {}
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(workspace)
+        if not found or not getattr(found[0], "data_dir_env", ""):
+            return {}
+        pack, record = found
+        project = str(record.get("project") or "")
+        fresh = Path(workspace) / project / "test-results" / f"unit-data-{os.getpid()}-{time.time_ns()}"
+        fresh.mkdir(parents=True, exist_ok=True)
+        return {pack.data_dir_env: str(fresh)}
+    except Exception:  # noqa: BLE001 - a run without it is a run as before
+        return {}
+
+
 def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict[str, str]:
     """A minimal environment for a directly-executed command."""
     environment = {
@@ -4787,7 +4813,7 @@ class SandboxExecutor:
             result = _run_and_watch_the_tree(
                 [executable, *argv[1:]],
                 cwd=run_in or workspace,
-                env=_child_environment(workspace, extra_env),
+                env=_child_environment(workspace, {**_a_fresh_data_directory(workspace, category), **(extra_env or {})}),
                 timeout=timeout,
                 data_bytes=_process_memory(workspace, argv),
                 ends_at_its_summary=_runs_tests(argv),

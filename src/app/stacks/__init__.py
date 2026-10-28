@@ -106,6 +106,11 @@ class StackPack:
     #: The command that type-checks the project without writing anything, run in the project directory; () when
     #: there is none. Read when the product does not start (`compiler_errors`).
     typecheck: tuple[str, ...] = ()
+    #: The environment variable the product keeps its data under, when it has one: a test run gets a fresh directory
+    #: in it. Measured on one run: unit tests posting megabyte bodies to the product's default data directory on
+    #: every round grew its data file to 205 MB, the service parsed all of it per request, and the worker container
+    #: was killed at its memory limit mid-stage.
+    data_dir_env: str = ""
     #: The file the drafted service's routes or handlers live in, which the
     #: scaffold writes as a stub. While it is still byte-identical to that
     #: stub, nothing the run drafted is wired into the service the acceptance

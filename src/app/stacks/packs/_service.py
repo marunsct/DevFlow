@@ -252,6 +252,7 @@ def service_pack(
         guide=f"{guide}\n{DATA_GUIDE}",
         data_store=DATA_GUIDE,
         acceptance_guide=f"{ACCEPTANCE_GUIDE}\n{RESTART_GUIDE}",
+        data_dir_env="DATA_DIR",
         stack=stack,
         evidence_dir="test-results/evidence",
         test_bugs=js.TEST_BUGS,

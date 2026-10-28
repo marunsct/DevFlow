@@ -1169,11 +1169,56 @@ THE_SERVER_HID_THE_CAUSE = (
 )
 
 
-def the_server_hid_the_cause(messages: list[str], logged: str) -> str:
-    """`THE_SERVER_HID_THE_CAUSE` when a failing test received a 5xx and the server logged nothing; else ""."""
+def the_server_hid_the_cause(messages: list[str], logged: str, root: str | Path | None = None) -> str:
+    """`THE_SERVER_HID_THE_CAUSE` when a failing test received a 5xx and the server logged nothing; else "".
+
+    With `root`, the product's lines that answer 5xx from a `catch` are named: measured on one run, told only that
+    the handler hid the cause, the next fixers rewrote other files and the log stayed empty.
+    """
     if str(logged or "").strip():
         return ""
-    return THE_SERVER_HID_THE_CAUSE if any(_A_5XX_RECEIVED.search(str(m or "")) for m in messages) else ""
+    if not any(_A_5XX_RECEIVED.search(str(m or "")) for m in messages):
+        return ""
+    found = where_errors_become_5xx(root) if root is not None else []
+    return THE_SERVER_HID_THE_CAUSE + (
+        " It is answered here, from a catch that writes nothing: " + "; ".join(f"`{f}` line {n}" for f, n in found) + "."
+        if found else ""
+    )
+
+
+#: A line answering a 5xx status, and a `catch`/`except`/`rescue` opening a few lines above it.
+_A_5XX_ANSWER = re.compile(r"(?<![\w.])5\d\d(?![\w.])")
+_A_CATCH = re.compile(r"\b(?:catch|except|rescue|recover)\b")
+_A_LOG_CALL = re.compile(r"\b(?:console\.\w+|logger\.\w+|logging\.\w+|log\.\w+|print|eprintln!?|fmt\.Fprint\w*)\s*\(")
+_SOURCE_SUFFIXES = (".ts", ".tsx", ".js", ".mjs", ".cjs", ".py", ".rb", ".go", ".rs", ".java", ".kt", ".php")
+
+
+def where_errors_become_5xx(root: str | Path | None, most: int = 8) -> list[tuple[str, int]]:
+    """(file, line) of the product's lines that answer 5xx inside a catch block that logs nothing. Never raises."""
+    try:
+        from app.analysis.file_kinds import classify_file
+        from app.analysis.walk import files_under
+
+        base = Path(str(root))
+        found: list[tuple[str, int]] = []
+        for path in sorted(files_under(base, ("node_modules", ".git", ".harness", "test-results", ".venv"))):
+            relative = path.relative_to(base).as_posix()
+            if path.suffix.lower() not in _SOURCE_SUFFIXES or classify_file(relative) != "application":
+                continue
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            for at, line in enumerate(lines):
+                if not _A_5XX_ANSWER.search(line):
+                    continue
+                window = lines[max(0, at - 6):at + 1]
+                opened = max((i for i, w in enumerate(window) if _A_CATCH.search(w)), default=None)
+                if opened is None or any(_A_LOG_CALL.search(w) for w in window[opened:]):
+                    continue
+                found.append((relative, at + 1))
+                if len(found) >= most:
+                    return found
+        return found
+    except Exception:  # noqa: BLE001 - a note without the lines is the note as before
+        return []
 
 
 def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
@@ -1264,14 +1309,15 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             hidden = what_the_logged_frames_hide(_root(state), logged)
             if hidden:
                 detail += f"\n{hidden}"
-        detail += the_server_hid_the_cause([t.get("message") or "" for t in failed], logged)
+        hid = the_server_hid_the_cause([t.get("message") or "" for t in failed], logged, _root(state))
+        detail += hid
         defects.append(ReportedDefect(
             description=f"[{entry.get('id')}] {entry.get('text')} - the acceptance suite says this does not work yet.",
             severity="major",
             reproduction_steps=f"Run `{command}` in the project directory and read the {entry.get('id')} tests.",
             expected_behavior=str(entry.get("text") or ""),
             actual_behavior=detail + seen,
-            affected_files=[],
+            affected_files=sorted({f for f, _ in where_errors_become_5xx(_root(state))}) if hid else [],
             owner=_owner_for(state, detail),
         ))
     return [*installs, *defects]

@@ -232,6 +232,16 @@ BUDGET_PAUSE_STATUS = "waiting_for_budget"
 
 
 #: Statuses a run is resumed from, from its last checkpoint.
+def _remember_the_stop(run_id: str) -> None:
+    """Mark the run stopped in this process, so a stage thread the stopped task left running ends at its next model call."""
+    try:
+        from app.graph.workflow import remember_the_stop
+
+        remember_the_stop(run_id)
+    except Exception:  # noqa: BLE001 - the stop itself is recorded already
+        logger.debug("Could not remember the stop of %s", run_id, exc_info=True)
+
+
 RESUMABLE_STATUSES = ("failed", BUDGET_PAUSE_STATUS, "paused", "cancelled")
 
 
@@ -1983,6 +1993,7 @@ class WorkflowRunner:
                 record.repo_root, status="cancelled", reason="The run was cancelled before it finished."
             )
         self._persist(record)
+        _remember_the_stop(record.run_id)
         logger.info("Run %s cancelled", record.run_id)
         # Cancellation is a terminal outcome like any other, and leaves the same
         # journal and context files behind. Pruning only on complete/failed meant
@@ -1995,6 +2006,7 @@ class WorkflowRunner:
         record.status = "paused"
         record.updated_at = datetime.now(timezone.utc).isoformat()
         self._persist(record)
+        _remember_the_stop(record.run_id)
         logger.info("Run %s paused", record.run_id)
 
     def _update_record(self, record: RunRecord, state: dict[str, Any]) -> None:

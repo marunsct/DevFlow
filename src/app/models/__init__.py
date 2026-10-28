@@ -239,7 +239,6 @@ logger = logging.getLogger(__name__)
 
 #: The reply cap in force for the call this thread is making, if any.
 _REPLY_CAP = threading.local()
-
 #: The longest reply a defect-fix stage is asked for, behind `FIX_STAGE_REPLY_CAP`. Measured on one run: a fix stage's
 #: fourteen calls took thirteen minutes, eight of them in two replies of 28,448 and 23,446 tokens (mostly reasoning),
 #: while its other replies averaged under a thousand. A cut reply is answered by reply salvage from its kept reasoning;
@@ -584,7 +583,9 @@ class CompatibleChatOpenAI(ChatOpenAI):
         a stage that answers in prose is reminded to use its answer tool
         (`settled_answer`).
         """
-        from app.models.call_gate import a_model_call
+        from app.models.call_gate import _stop_if_this_run_was_stopped, a_model_call
+
+        _stop_if_this_run_was_stopped()
 
         # A deploy waits for this call to return (`app.models.call_gate`).
         with a_model_call(str(self.openai_api_base or "")):

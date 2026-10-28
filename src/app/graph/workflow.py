@@ -3865,6 +3865,22 @@ class RunCancelled(RuntimeError):
 _CANCELLED_RUNS: set[str] = set()
 
 
+def remember_the_stop(run_id: str | None) -> None:
+    """Remember, in this process, that `run_id` was stopped (paused or cancelled) - see `stopped_here`."""
+    if run_id:
+        _CANCELLED_RUNS.add(str(run_id))
+
+
+def stopped_here(run_id: str | None) -> bool:
+    """Whether this process stopped `run_id` and has not resumed it since. No database read.
+
+    A stage's agent loop runs in an executor thread that the stopped task does not end. Measured on one run: after a
+    pause, the paused stage kept calling the model for five minutes, beside the same run rewound in the other worker
+    process, and could have written into the workspace the rewind had just restored. Each model call asks this.
+    """
+    return bool(run_id) and str(run_id) in _CANCELLED_RUNS
+
+
 def forget_the_stop(run_id: str | None) -> None:
     """Forget, in this process, that `run_id` was asked to stop - it is being resumed.
 

@@ -192,3 +192,24 @@ def a_model_call(server: str = "") -> Iterator[None]:
                 )
                 logger.warning(text)
                 _tell_the_run(run, stage, text)
+
+
+
+def _stop_if_this_run_was_stopped() -> None:
+    """Raise the run's stop when this process paused or cancelled the run whose stage is calling (`workflow.stopped_here`)."""
+    import sys
+
+    if "app.graph.workflow" not in sys.modules:
+        return
+    from app.graph.workflow import RunCancelled, stopped_here
+
+    try:
+        from langgraph.config import get_config
+
+        from app.tracing import APP_RUN_ID_KEY
+
+        run_id = (get_config() or {}).get("configurable", {}).get(APP_RUN_ID_KEY)
+    except Exception:  # noqa: BLE001 - outside a run there is nothing to stop
+        return
+    if stopped_here(run_id):
+        raise RunCancelled(f"Run {run_id} was stopped; this stage's call is not made.")

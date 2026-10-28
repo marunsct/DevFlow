@@ -4,12 +4,12 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 17:16 JST. Owner switched the model to Qwen3.6-35B-A3B (MTP GGUF). run-280ad6d0 (gpt-oss) paused at 17:01 and to be cancelled; deep diagnosis of the new model running; then a fresh notes-api-hono run. Last gpt-oss run: run-f37ca8de 9/9 (47 min, 0 reverts). 32 runs: 29x 9/9.
+**As of:** 2026-10-28 17:26 JST. Model now Qwen3.6-35B-A3B MTP (owner, 17:10). run-280ad6d0 (gpt-oss) cancelled at 17:24 after the switch; **run-c9584d38** started 17:25 on 99449cec - the first Qwen3.6 run of the plan's era. Last gpt-oss run: run-f37ca8de 9/9 (47 min, 0 reverts). 32 runs: 29x 9/9.
 ## Live now
 | | |
 |---|---|
-| Run | **run-280ad6d0** (notes-api-hono, Fast, all switches on, harness 99449cec, not mixed, ceiling 12k) started 16:55 JST |
-| Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner, 17:10 JST 2026-10-28) at :8888, 2 slots, context 184,320; owner's sampling: Qwen 'thinking, precise coding' (temp 0.6, top_p 0.95, top_k 20, min_p 0, repeat 1.0, presence 0). This server **reports cached tokens** (`cached_token_share` is real from here; LM Studio's gpt-oss did not). Deep diagnosis running 17:12 JST. gpt-oss-20b keeps its 12k ceiling in its own record. |
+| Run | **run-c9584d38** (notes-api-hono, Fast, all switches on, harness 99449cec, **first Qwen3.6-35B-A3B MTP run**) started 17:25 JST |
+| Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner, 17:10 JST 2026-10-28) at :8888, 2 slots, context 184,320; owner's sampling: Qwen 'thinking, precise coding' (temp 0.6, top_p 0.95, top_k 20, min_p 0, repeat 1.0, presence 0). This server **reports cached tokens** (`cached_token_share` is real from here; LM Studio's gpt-oss did not). Diagnosed 17:24 JST: tools 3/3 everywhere, edits 100/100, structured answers forced, reasoning switch honoured, salvage supported; deep: no loop (no reply ceiling), weak at heeding a refusal (0/3) and answering as a call when offered (1/3); kept guide: stop when the checks pass. gpt-oss-20b keeps its 12k ceiling in its own record. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs

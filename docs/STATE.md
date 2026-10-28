@@ -4,7 +4,7 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-29 01:05 JST. run-12540387 (5th Qwen3.6 run, 1584efde) **completed, hidden 9/9** in 29.8 active min, 88 calls, 0 reverts, locked 12/0, mutation 0.75 (0.917 with unit) - the fastest run yet. Built from it: LF.394 (a milestone finding about the harness's own files is minor); from run-92d13786: LF.395 (`newContext` on the `request` fixture, five runs). 38 runs: 35x 9/9, 2x 5/9, 1x 0/9. Next: verify review findings naming a package API; plan item 16 with body shapes.
+**As of:** 2026-10-29 01:05 JST. run-12540387 (5th Qwen3.6 run, 1584efde) **completed, hidden 9/9** in 29.8 active min, 88 calls, 0 reverts, locked 12/0, mutation 0.75 (0.917 with unit) - the fastest run yet. Built from it: LF.394 (a milestone finding about the harness's own files is minor); from run-92d13786: LF.395 (`newContext` on the `request` fixture, five runs), LF.396 (a cut memory diff names where the rest changed). 38 runs: 35x 9/9, 2x 5/9, 1x 0/9. Next: verify review findings naming a package API; plan item 16 with body shapes.
 ## Live now
 | | |
 |---|---|

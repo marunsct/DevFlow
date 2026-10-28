@@ -505,6 +505,43 @@ def _the_read_tool_is_withheld() -> bool:
         return False
 
 
+#: A unified diff's hunk header: `@@ -57,2 +57,4 @@`.
+_A_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+#: The hunks past the cut named by where they are, and the longest first line quoted for each.
+MOST_HIDDEN_HUNKS_NAMED = 8
+HIDDEN_LINE_CHARS = 90
+
+
+def _where_the_rest_changed(rest: list[str]) -> str:
+    """`: at lines ...` for the hunks of a diff past its cut, each with its first changed line; the rest are in the file.
+
+    Measured on one run: a repair made three edits, and the note showed only the first two before "... 33 more changed
+    lines". The model read that as the whole of what it had done ("the update confirms only AC-8 and AC-9 were
+    applied"), disbelieved the edit tool's "already applied" and sent the third edit five times more until its tools
+    were withheld. A cut note names where the rest is and says those changes are in the file.
+    """
+    hunks: list[tuple[int, int, str]] = []
+    for line in rest:
+        header = _A_HUNK.match(line)
+        if header:
+            start = int(header.group(1))
+            hunks.append((start, start + max(int(header.group(2) or 1), 1) - 1, ""))
+        elif hunks and not hunks[-1][2] and line[:1] in "+-" and line[1:].strip():
+            hunks[-1] = (*hunks[-1][:2], line[:1] + " " + line[1:].strip()[:HIDDEN_LINE_CHARS])
+    if not hunks:
+        return "; they are in the file now, and `grep` finds any text in it"
+    named = [
+        (f"line {a}" if a == b else f"lines {a}-{b}") + (f" ({first})" if first else "")
+        for a, b, first in hunks[:MOST_HIDDEN_HUNKS_NAMED]
+    ]
+    if len(hunks) > MOST_HIDDEN_HUNKS_NAMED:
+        named.append(f"{len(hunks) - MOST_HIDDEN_HUNKS_NAMED} more place(s)")
+    return (
+        ", at " + "; ".join(named) + " of the file now. Those changes are in the file too: this shows only the "
+        "first of them, not all that was done. `grep` finds any text in it"
+    )
+
+
 def changes_since(snapshot: dict[str, str], now: dict[str, str]) -> str:
     """A note naming what changed since the memory was taken, for the end of a call; "" if nothing did.
 
@@ -531,7 +568,7 @@ def changes_since(snapshot: dict[str, str], now: dict[str, str]) -> str:
             lines.append(f"{path} ({len(now[path].splitlines())} lines now):")
             lines.extend(f"  {line}" for line in body)
             if more > 0:
-                lines.append(f"  ... {more} more changed lines; `grep` finds any text in the file")
+                lines.append(f"  ... {more} more changed lines, not shown" + _where_the_rest_changed(shown[len(body):]))
         if len(changed) > MOST_CHANGED_FILES_SHOWN:
             lines.append("Also changed: " + ", ".join(changed[MOST_CHANGED_FILES_SHOWN:40]))
     elif changed:

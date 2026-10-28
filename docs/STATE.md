@@ -4,17 +4,17 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 10:00 JST. run-683a23ed **completed, hidden 9/9** (29 min, locked 16/0, mutation 0.583 - the probe ran out of rounds; 4 unit tests shipped failing - fixers changed the product). 26 runs: 23x 9/9, 2x 5/9, 1x 0/9. LF.364/365 fired live; no needless suite repair since LF.363.
+**As of:** 2026-10-28 10:40 JST. run-b5a777f6 **completed, hidden 9/9** (32 min incl. a rewind; locked 18/0, nothing deferred, mutation 0.833). LF.368 (a dispute reason that judges by the code keeps the test locked) found, deployed and rewound into it; worked at once. 27 runs: 24x 9/9, 2x 5/9, 1x 0/9. B22 (Harness²) awaits the owner.
 ## Live now
 | | |
 |---|---|
-| Run | **run-b5a777f6** (notes-api-hono, Fast, all switches on, harness 1951ddb7, not mixed) started 09:55 JST |
+| Run | **run-0be12bd7** (notes-api-hono, Fast, all switches on, harness 6f610a87, not mixed) started 10:36 JST |
 | Model | gpt-oss-20b (the owner's), judged fine for the loop 2026-10-27 |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs
+- **run-b5a777f6** (3fb3728 -> 6f610a8 via pause/deploy/rewind at 10:20 JST): **completed 10:27 JST, hidden 9/9**, 32 min, locked 18/0, mutation 0.833; full review path ran (security, advice, milestone). Attempt 1 failed on a note shape the brief forbids; the dispute set the right tests aside for what the product does (LF.368); rewound dispute kept them, attempt 2 18/18.
 - **run-683a23ed** (7788c76a -> 1951ddb, mixed_versions): **completed 09:48 JST, hidden 9/9**, 29 min, locked 16/0, AC-15 deferred, mutation 0.583 (regression: three mutants raised, no round left). Unit defects reached fixers (LF.364) with the green-suite note (LF.365); both fixes changed product files and were reverted.
-- **run-35ce828d** (1dd60f91 -> 78994e2 -> 13de9b6, mixed_versions): **completed 09:07 JST, hidden 9/9**, 40 min, locked 23/0, mutation 0.917. Two needless suite repairs (LF.363), a unit defect closed every round on acceptance files (LF.364), an AC-18 dispute that kept the spec's 415 tests; 4 wrong unit tests shipped failing (LF.365).
 - **run-f523de50** (LF.355): **FAILED, hidden 5/9**, 144 min: a locked test asserting JSON on a 204 DELETE reverted every correct fix (8x); LF.356-359 built for it.
 ## Built 2026-10-23 (deployed since): general model steering (MD.3)
 Owner: guidance general, not per model; weaker models steered more; each guide its own switch; a settings

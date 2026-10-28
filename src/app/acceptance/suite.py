@@ -2430,6 +2430,10 @@ def tests_that_want_json_from_a_204(repo_root: str | Path, contract_lines: Seque
 _A_SERVICE_STARTED = re.compile(r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*await\s+startService\s*\(([^)]*)\)")
 
 
+#: A write the test sends to the suite's own server: the `request` fixture with a path, not another service's address.
+_A_WRITE_TO_THE_SUITE_S_SERVER = re.compile(r"""\brequest\s*\.\s*(?:post|put|patch)\s*\(\s*['"`]/""")
+
+
 def tests_that_restart_on_data_they_never_wrote(repo_root: str | Path) -> list[str]:
     """Restart tests that start a service on a fresh data folder, send it nothing, and restart on that folder.
 
@@ -2452,7 +2456,25 @@ def tests_that_restart_on_data_they_never_wrote(repo_root: str | Path) -> list[s
             block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
             for started in _A_SERVICE_STARTED.finditer(block):
                 name, given = started.group(1), started.group(2)
-                if "dataDir" in given or re.search(rf"\b{re.escape(name)}\s*\.\s*baseURL\b", block):
+                if "dataDir" in given:
+                    continue
+                # One service, no restart: the test writes through the suite's own server and reads the record back
+                # from a service it started on a fresh folder, which never saw the write. Measured on one run: the
+                # QA lead named this at the lock, and the test failed on every product until the attempt ran out.
+                elsewhere = _A_WRITE_TO_THE_SUITE_S_SERVER.search(block[:started.start()])
+                to_it = re.search(rf"\b(?:post|put|patch)\s*\(\s*`?\$?\{{?\s*{re.escape(name)}\s*\.\s*baseURL", block)
+                read_back = re.search(rf"\b{re.escape(name)}\s*\.\s*baseURL\b", block[started.end():])
+                if elsewhere and read_back and not to_it:
+                    line = text.count("\n", 0, start + started.start()) + 1
+                    problems.append(
+                        f"`{path.relative_to(root).as_posix()}` line {line}: the test writes through `request` to "
+                        f"the suite's own server, then reads the record back from `{name}`, a service it started on a "
+                        f"fresh data folder. `{name}` never saw that write, so it answers without the record on every "
+                        f"product. Write through `{name}.baseURL`, stop it, start a second service on `{name}.dataDir`, "
+                        "and read the record from that one."
+                    )
+                    break
+                if re.search(rf"\b{re.escape(name)}\s*\.\s*baseURL\b", block):
                     continue
                 if not re.search(rf"dataDir\s*:\s*{re.escape(name)}\s*\.\s*dataDir\b", block[started.end():]):
                     continue

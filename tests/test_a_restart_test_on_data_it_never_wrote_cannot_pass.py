@@ -69,3 +69,26 @@ def test_the_guide_loads_the_helper_as_the_file_loads_its_other_modules():
     assert "import { startService } from './service.cjs';" in guide
     assert guide.index("import { startService }") < guide.index("require('./service.cjs')")
     assert not BANNED.search(guide)
+
+
+ONE_SERVICE = """import { test, expect } from '@playwright/test';
+import { startService } from './service.cjs';
+test('[AC-6][AC-17] notes persist across a server restart', async ({ request }) => {
+  const createResp = await request.post('/notes', { data: { title: 'Persist Me', body: 'Stays' } });
+  const created = await createResp.json();
+  const svc = await startService();
+  try {
+    const notes = await (await request.get(`${svc.baseURL}/notes`)).json();
+    expect(notes.find((n) => n.id === created.id)).toBeDefined();
+  } finally {
+    await svc.stop();
+  }
+});
+"""
+
+
+def test_a_write_to_the_suite_s_server_read_back_from_a_fresh_service_is_found(tmp_path):
+    """Measured on one run: the QA lead named this at the lock, and it failed on every product until the attempt ran out."""
+    [found] = suite.tests_that_restart_on_data_they_never_wrote(_suite(tmp_path, ONE_SERVICE))
+    assert "line 6" in found and "`svc` never saw that write" in found
+    assert not BANNED.search(found)

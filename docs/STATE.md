@@ -4,17 +4,17 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 11:50 JST. run-0be12bd7 **completed, hidden 9/9** (60 min incl. two rewinds; locked 9/0 with the restart test kept; mutation 0.75). Four fixes made into it: reply ceiling 12k (a 79k looping reply), LF.369/371 (dispute re-wording), LF.370 (write guard excused a missing export). 28 runs: 25x 9/9, 2x 5/9, 1x 0/9. B22 (Harness²) awaits the owner.
+**As of:** 2026-10-28 12:40 JST. run-88eaaede **completed, hidden 9/9** (42 min; locked 16/0; mutation 0.5; 6 reverts, 12 open - a revision for 5 review findings broke 12 of 16 passing tests, recovered only by attempt 3's re-plan: B24 is next). LF.369-371/370/ceiling fired cleanly from the start. 29 runs: 26x 9/9, 2x 5/9, 1x 0/9. B22 (Harness²) awaits the owner.
 ## Live now
 | | |
 |---|---|
-| Run | **run-88eaaede** (notes-api-hono, Fast, all switches on, harness 7548dbda, not mixed, ceiling 12k) started 11:46 JST |
+| Run | **run-bc7c108f** (notes-api-hono, Fast, all switches on, harness 7548dbda, not mixed, ceiling 12k) started 12:35 JST |
 | Model | gpt-oss-20b (the owner's), judged fine 2026-10-27; **reply ceiling 12,000 set 11:08 JST 2026-10-28 via `loop.sh ceiling`** (6 runs/1,479 calls: p99 3.7k, max legit 4.1k; one 79k reply looped) - harness request parameter with salvage, not a server setting |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs
+- **run-88eaaede** (7548dbda, not mixed): **completed 12:28 JST, hidden 9/9**, 42 min, locked 16/0, mutation 0.5. Green at 15 min; the milestone-review revision broke 12 of 16 passing tests (`ci_gate` reported, fixers could not recover, attempt 3's re-plan did): B24. Scratch `tmp-inline-*.cjs` committed in the batch: B25.
 - **run-0be12bd7** (6f610a87 -> 5557133b -> 7548dbda, two pause/deploy/rewinds): **completed 11:36 JST, hidden 9/9**, 60 min, locked 9/0, mutation 0.75. One 79k-token looping reply (13.5 min) -> ceiling 12000; three fixes committed with a flagged missing import (LF.370); the dispute set the restart test aside three times in three wordings (LF.368-371) - held on the third, fixers then implemented load-on-startup. 1 wrong unit test shipped failing.
-- **run-b5a777f6** (3fb3728 -> 6f610a8 via pause/deploy/rewind at 10:20 JST): **completed 10:27 JST, hidden 9/9**, 32 min, locked 18/0, mutation 0.833; full review path ran (security, advice, milestone). Attempt 1 failed on a note shape the brief forbids; the dispute set the right tests aside for what the product does (LF.368); rewound dispute kept them, attempt 2 18/18.
 - **run-f523de50** (LF.355): **FAILED, hidden 5/9**, 144 min: a locked test asserting JSON on a 204 DELETE reverted every correct fix (8x); LF.356-359 built for it.
 ## Built 2026-10-23 (deployed since): general model steering (MD.3)
 Owner: guidance general, not per model; weaker models steered more; each guide its own switch; a settings

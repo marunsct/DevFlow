@@ -2846,11 +2846,24 @@ def _what_the_failure_says(output: str) -> str:
     return "\n".join(dict.fromkeys(stated[-MOST_CAUSE_LINES:]))[:1_000]
 
 
-def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
+#: What a failing-unit-tests defect is told when the locked suite passes in full beside it (deep review B17). Measured
+#: on two runs: the unit tests that shipped failing asserted a key order, a count other tests' data changed, and an
+#: empty 404 body the interface does not give; the fixers changed the product for them and were reverted.
+BESIDE_A_GREEN_SUITE = (
+    "The locked acceptance suite passes in full on this product, so it does what the specification asks. A unit test "
+    "that fails here may assert what the specification does not - an order of keys, a count that depends on data "
+    "other tests leave, a body the interface does not give. Correct such a test to what the specification and the "
+    "acceptance suite say, keeping its name; change the product only for a failure the specification backs, and say "
+    "in your answer which you did."
+)
+
+
+def _the_unit_tests_fail(milestone: Any, output: str, *, beside_a_green_suite: bool = False) -> Any:
     """The defect for a failing unit run, owned by the role that writes the product.
 
     Not the testing role's: a defect it owns is closed by changing the test,
-    and a failing unit test is first the product's to answer.
+    and a failing unit test is first the product's to answer. `beside_a_green_suite`: the locked suite passed in
+    full on the same product, and the fixer is told the unit test may be the one that is wrong.
     """
     from app.agents.specialists import ReportedDefect
 
@@ -2875,8 +2888,9 @@ def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
         severity="major",
         reproduction_steps="Run the project's unit test command.",
         expected_behavior="Every unit test passes.",
-        actual_behavior=("The unit test command exits non-zero. It says:\n" + causes) if causes
-        else "The unit test command exits non-zero.",
+        actual_behavior=(("The unit test command exits non-zero. It says:\n" + causes) if causes
+                         else "The unit test command exits non-zero.")
+        + (f"\n{BESIDE_A_GREEN_SUITE}" if beside_a_green_suite else ""),
         affected_files=[],
         owner=owner,
     )
@@ -10249,7 +10263,10 @@ def build_workflow_graph(
                 test_round, {True: "pass", False: "fail", None: "not recorded"}[unit_ok],
             )
             harness_defects: list[Any] = (
-                [] if unit_ok is not False else [_the_unit_tests_fail(milestone, unit_output)]
+                [] if unit_ok is not False else [_the_unit_tests_fail(
+                    milestone, unit_output,
+                    beside_a_green_suite=not failing_due and int(saved_run.get("failed") or 0) == 0,
+                )]
             )
             if failing_due:
                 # The suite ran and locked criteria failed: ask whether what it

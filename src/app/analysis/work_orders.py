@@ -567,6 +567,17 @@ def _files_the_sprint_names_and_nobody_is_given(
         docs = Path(repo_root or "") / "docs"
         if repo_root and project_dir and docs.is_dir():
             existing.update(path.name.lower() for path in docs.iterdir() if path.is_file())
+        # The scaffold's stub of the served entrypoint exists and is not built: measured on one run, the scope named
+        # `src/app.ts` - "complete Hono app with all six endpoints" - no work order listed it, and the plan went out
+        # with only the storage module in it; the first draft passed 2 of 18 criteria against the stub.
+        try:
+            from app.stacks.scaffold import entrypoint_is_still_the_stub
+
+            stub = entrypoint_is_still_the_stub(repo_root) if repo_root else None
+        except Exception:  # noqa: BLE001 - then every existing file counts as built, as before
+            stub = None
+        if stub:
+            existing.discard(PurePosixPath(stub).name.lower())
         # What this project calls a file, beside what files are generally
         # called: `store.read()` in a scope is a call, not a file to hand out.
         in_use = {name.rsplit(".", 1)[-1] for name in listed | existing if "." in name}

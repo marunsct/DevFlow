@@ -2647,6 +2647,114 @@ def tests_whose_success_status_the_contract_does_not_give(
     return problems[:6]
 
 
+#: A string or template literal: its body.
+_A_LITERAL = r"(?:`((?:[^`\\]|\\.)*)`|'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\")"
+#: `field: <literal>` inside a request's `data: { ... }`.
+_A_FIELD_SENT = re.compile(r"\b(\w+)\s*:\s*" + _A_LITERAL)
+#: `data: {` - where a request's fields begin.
+_DATA_OPENS = re.compile(r"\bdata\s*:\s*\{")
+#: `.title.startsWith(<literal>)`, `.title.includes(...)`, `.title.endsWith(...)`, or `.title === <literal>`.
+_A_FIELD_FILTERED = re.compile(
+    r"\.(\w+)\s*(?:\.\s*(startsWith|includes|endsWith)\s*\(\s*" + _A_LITERAL + r"\s*\)|===\s*" + _A_LITERAL + r")")
+_INTERPOLATED = re.compile(r"\$\{([^}]*)\}")
+
+
+def _the_brace_that_closes(text: str, after: int) -> int:
+    """Where the `{` just before `after` closes, past quoted and template text; the end of `text` if it never does."""
+    depth, at, quote = 1, after, ""
+    while at < len(text):
+        char = text[at]
+        if quote:
+            if char == "\\":
+                at += 1
+            elif char == quote:
+                quote = ""
+        elif char in "'\"`":
+            quote = char
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if not depth:
+                return at
+        at += 1
+    return len(text)
+
+
+def _literal_of(match: re.Match[str], first: int) -> str:
+    return next((g for g in match.groups()[first:first + 3] if g is not None), "")
+
+
+def _as_made(template: str) -> str:
+    """A sent value with each `${expr}` as a token of its own, the same for the same expression."""
+    return _INTERPOLATED.sub(lambda m: "\x00" + " ".join(m.group(1).split()) + "\x00", template)
+
+
+def _as_sought(template: str, made: set[str]) -> str:
+    """A filter as a pattern: `${expr}` the test also sent is that token; any other may be anything."""
+    parts, last = [], 0
+    for m in _INTERPOLATED.finditer(template):
+        parts.append(re.escape(template[last:m.start()]))
+        expr = " ".join(m.group(1).split())
+        parts.append(re.escape("\x00" + expr + "\x00") if expr in made else ".*")
+        last = m.end()
+    parts.append(re.escape(template[last:]))
+    return "".join(parts)
+
+
+def tests_that_filter_for_what_they_never_made(repo_root: str | Path) -> list[str]:
+    """Tests that look in a list for values by a pattern none of the values they sent could match.
+
+    Measured on one run: a test created `list-a-${slug}` and `list-b-${slug}`, kept the notes whose title
+    `startsWith(`list-${slug}-`)` and expected two - none of its titles starts so, and no product can pass it. The QA
+    lead read the test twice and called it sound. Found by its shape: the fields a test sends in `data: { ... }`,
+    the same field filtered by a literal, each `${expr}` the test also sent held fixed and any other free.
+    """
+    root = Path(repo_root)
+    problems: list[str] = []
+    for path in suite_files(repo_root):
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        starts = [m.start() for m in _A_TEST_CALL.finditer(text)]
+        found: list[str] = []
+        for at, start in enumerate(starts):
+            block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
+            sent: dict[str, list[str]] = {}
+            for opened in _DATA_OPENS.finditer(block):
+                end = _the_brace_that_closes(block, opened.end())
+                for field in _A_FIELD_SENT.finditer(block[opened.end():end]):
+                    sent.setdefault(field.group(1), []).append(_literal_of(field, 1))
+            if not sent:
+                continue
+            for wanted in _A_FIELD_FILTERED.finditer(block):
+                field, how = wanted.group(1), wanted.group(2) or "==="
+                literal = _literal_of(wanted, 2) if wanted.group(2) else _literal_of(wanted, 5)
+                values = sent.get(field) or []
+                if not values or not literal:
+                    continue
+                made = {" ".join(e.split()) for v in values for e in _INTERPOLATED.findall(v)}
+                pattern = _as_sought(literal, made)
+                rule = {"startsWith": f"{pattern}", "endsWith": f".*{pattern}$", "includes": f".*{pattern}",
+                        "===": f"{pattern}$"}[how]
+                if any(re.match(rule, _as_made(v), re.S) for v in values):
+                    continue
+                line = text.count("\n", 0, start + wanted.start()) + 1
+                shown = ", ".join(f"`{v}`" for v in values[:4])
+                found.append(f"line {line}: it keeps the `{field}` values that {how if how != '===' else 'equal'} "
+                             f"`{literal}`, and none it sent ({shown}) could")
+        if found:
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}`: a test looks for values none of the values it sent could be - "
+                + "; ".join(found[:6])
+                + ". It fails on every product. Look for what the test itself sent."
+            )
+    return problems[:6]
+
+
 #: A service a test starts with the harness's helper: its name, and what it was started with.
 _A_SERVICE_STARTED = re.compile(r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*await\s+startService\s*\(([^)]*)\)")
 
@@ -2848,6 +2956,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *fetch_calls_written_like_the_fixture(repo_root),
         *reads_of_what_the_test_does_not_have(repo_root),
         *tests_that_want_json_from_a_204(repo_root),
+        *tests_that_filter_for_what_they_never_made(repo_root),
         *tests_whose_success_status_the_contract_does_not_give(repo_root),
         *tests_that_assert_a_kept_file_s_text(repo_root, result),
         *tests_that_restart_on_data_they_never_wrote(repo_root),

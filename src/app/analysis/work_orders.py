@@ -575,9 +575,44 @@ def _files_the_sprint_names_and_nobody_is_given(
         return sorted(
             name for name in named
             if name.lower() not in known and not _another_spelling_of(name.lower(), known)
+            and not _data_the_product_writes(name, sprint_scope, repo_root)
         )
     except Exception:  # noqa: BLE001 - the plan is still checked for everything else
         return []
+
+
+#: Suffixes of a file a product keeps its data in, rather than one a work order writes.
+_DATA_SUFFIXES = (".json", ".jsonl", ".ndjson", ".db", ".sqlite", ".sqlite3", ".csv")
+#: How near its data directory a file's name must be named to be the product's data, in characters.
+_NEAR = 160
+
+
+def _data_the_product_writes(name: str, sprint_scope: str, repo_root: str | Path | None) -> bool:
+    """Whether `name` is a file the product writes in its data directory at run time, not one a work order writes.
+
+    Measured on one run: the scope named `notes.json`, which the specification says the service "reads from
+    DATA_DIR" and writes there, and the plan was sent back for a file no work order can be given - it exists only once
+    the product runs. Read from the pack's data-directory variable (`StackPack.data_dir_env`) named near the file
+    in the scope or the specification. Never raises.
+    """
+    try:
+        if not name.lower().endswith(_DATA_SUFFIXES) or not repo_root:
+            return False
+        from app.stacks import contract
+
+        found = contract.the_pack(Path(repo_root))
+        env = str(getattr(found[0], "data_dir_env", "") or "") if found else ""
+        if not env:
+            return False
+        words = env.lower().split("_")
+        camel = words[0] + "".join(w.title() for w in words[1:])
+        where = rf"(?:{re.escape(env)}|{re.escape(camel)}|data director(?:y|ies)|data folder)"
+        spec = Path(repo_root) / "docs" / "technical_specification.md"
+        text = sprint_scope + "\n" + (spec.read_text(encoding="utf-8", errors="replace") if spec.is_file() else "")
+        named = re.escape(name)
+        return bool(re.search(rf"{where}[\s\S]{{0,{_NEAR}}}?\b{named}|\b{named}[\s\S]{{0,{_NEAR}}}?{where}", text, re.I))
+    except Exception:  # noqa: BLE001 - then it is named as before
+        return False
 
 
 def _touches_product_code(files: Sequence[str]) -> bool:

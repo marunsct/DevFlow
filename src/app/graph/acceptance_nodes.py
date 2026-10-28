@@ -540,6 +540,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     # Against the specification's contract, before it is recorded at the lock (the rounds read the locked one).
     problems.extend(suite.tests_that_want_json_from_a_204(
         root, getattr(state.get("technical_specification"), "interface_contract", None) or ()))
+    problems.extend(suite.tests_whose_success_status_the_contract_does_not_give(
+        root, getattr(state.get("technical_specification"), "interface_contract", None) or ()))
     vacuous = suite.vacuous_green(root, result)
     problems.extend(vacuous)
     # Too lenient rather than impossible: a suite that passes a product it

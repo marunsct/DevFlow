@@ -2525,6 +2525,115 @@ def tests_that_want_json_from_a_204(repo_root: str | Path, contract_lines: Seque
     return problems[:6]
 
 
+#: `const res = await request.post('/notes'`: the name, the verb and the literal path (to its first `?`, quote or `${`).
+_A_NAMED_CALL = re.compile(
+    r"""\b(?:const|let|var)?\s*([A-Za-z_$][\w$]*)\s*=\s*await\s+request\s*\.\s*(get|post|put|patch|delete)\s*\(\s*['"`]([^'"`?]*)"""
+)
+#: `expect(res.status()).toBe(200)` or `.toEqual(200)`: the name and the status.
+_A_STATUS_ASSERTED = re.compile(r"expect\s*\(\s*([A-Za-z_$][\w$]*)\s*\.\s*status\s*\(\s*\)\s*\)\s*\.\s*(?:toBe|toEqual)\s*\(\s*(\d{3})\s*\)")
+#: A loop entry naming a call: `{ method: 'post', path: '/notes' ... }` (`url:` too), either key first.
+_AN_ENTRY = re.compile(
+    r"""\{(?:[^{}]|\{[^{}]*\})*?\bmethod\s*:\s*['"`](get|post|put|patch|delete)['"`](?:[^{}]|\{[^{}]*\})*?"""
+    r"""\b(?:path|url)\s*:\s*['"`]([^'"`?]*)(?:[^{}]|\{[^{}]*\})*\}"""
+    r"""|\{(?:[^{}]|\{[^{}]*\})*?\b(?:path|url)\s*:\s*['"`]([^'"`?]*)['"`](?:[^{}]|\{[^{}]*\})*?"""
+    r"""\bmethod\s*:\s*['"`](get|post|put|patch|delete)(?:[^{}]|\{[^{}]*\})*\}""",
+    re.I,
+)
+#: An entry that says its own status (`status: 201`), which a loop then asserts instead of one number for all.
+_AN_ENTRY_S_OWN_STATUS = re.compile(r"\b(?:status|expected\w*)\s*:\s*\d{3}")
+
+
+def _the_successes_by_route(checks: Sequence[Any]) -> list[tuple[str, re.Pattern[str], set[int], str]]:
+    """Each route of the contract: its method, its path as a pattern, the 2xx statuses it may answer, and a line."""
+    routes: dict[tuple[str, str], list[Any]] = {}
+    for check in checks:
+        if getattr(check, "kind", "") == "http" and check.method and check.path:
+            routes.setdefault((check.method.upper(), check.path.rstrip("/") or "/"), []).append(check)
+    found = []
+    for (method, path), lines in routes.items():
+        ok = {x for c in lines for x in (c.statuses or (c.status,)) if 200 <= x < 300}
+        if not ok:
+            continue
+        pattern = re.compile(
+            "^" + re.sub(r"\\\{[^}]*\\\}|/:[A-Za-z_]\w*", lambda m: "/[^/]+" if m.group(0).startswith("/") else "[^/]+",
+                         re.escape(path)) + "/?$"
+        )
+        found.append((method, pattern, ok, next(c.line for c in lines if set(c.statuses or (c.status,)) & ok)))
+    return found
+
+
+def _the_route(routes: list[tuple[str, re.Pattern[str], set[int], str]], method: str, path: str):
+    path = re.sub(r"\$\{[^}]*\}", "x", path).rstrip("/") or "/"
+    return next(((ok, line) for m, pattern, ok, line in routes if m == method.upper() and pattern.match(path)), None)
+
+
+def tests_whose_success_status_the_contract_does_not_give(
+    repo_root: str | Path, contract_lines: Sequence[str] = ()
+) -> list[str]:
+    """Tests asserting a success status the interface contract never gives for that call.
+
+    Measured on one run: a test looped over `GET /health` and `POST /notes` asserting `status()` is 200 for both; the
+    contract says `POST /notes -> 201`, so the test fails on every product that keeps it. It named no criterion, so the
+    rounds counted every criterion green beside a red suite. Only a 2xx asserted where the contract gives another 2xx
+    for the same method and path is named: a refusal a test sends on purpose (a 400 for a missing field) may be on a
+    line of its own or none. `contract_lines`: the specification's, before the suite is locked; the locked contract
+    after.
+    """
+    from app.acceptance import interface_contract
+
+    checks = interface_contract.parse(list(contract_lines))[0] if contract_lines else interface_contract.the_locked_contract(repo_root)
+    routes = _the_successes_by_route(checks)
+    if not routes:
+        return []
+    root = Path(repo_root)
+    problems: list[str] = []
+    for path in suite_files(repo_root):
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        starts = [m.start() for m in _A_TEST_CALL.finditer(text)]
+        wrong: list[str] = []
+        for at, start in enumerate(starts):
+            block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
+            line_of = lambda offset: text.count("\n", 0, start + offset) + 1  # noqa: E731
+            calls = [(call.start(), call.group(1), call.group(2), call.group(3)) for call in _A_NAMED_CALL.finditer(block)]
+            entries = [
+                ((m.group(1) or m.group(4)), (m.group(2) if m.group(1) else m.group(3)), m.group(0))
+                for m in _AN_ENTRY.finditer(block)
+            ]
+            for asserted in _A_STATUS_ASSERTED.finditer(block):
+                name, status = asserted.group(1), int(asserted.group(2))
+                if not 200 <= status < 300:
+                    continue
+                # The call the name was last given before the assertion: one name may hold several answers in turn.
+                named = next(((verb, where) for at_, held, verb, where in reversed(calls)
+                              if held == name and at_ < asserted.start()), None)
+                if named and not named[1].startswith(("http", "$")):
+                    route = _the_route(routes, *named)
+                    if route and status not in route[0]:
+                        wrong.append(f"line {line_of(asserted.start())}: `{named[0].upper()} {named[1]}` asserted {status}, "
+                                     f"the contract gives {'/'.join(map(str, sorted(route[0])))} (`{route[1]}`)")
+                    continue
+                for method, where, entry in entries:
+                    if _AN_ENTRY_S_OWN_STATUS.search(entry):
+                        continue
+                    route = _the_route(routes, method, where)
+                    if route and status not in route[0]:
+                        wrong.append(f"line {line_of(asserted.start())}: every entry of its loop asserted {status}, but "
+                                     f"`{method.upper()} {where}` is given {'/'.join(map(str, sorted(route[0])))} (`{route[1]}`)")
+        if wrong:
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}`: a test asserts a success status the interface contract does "
+                f"not give for that call - {'; '.join(sorted(set(wrong))[:6])}. It fails on every product that keeps "
+                "the contract. Assert the status the contract gives for each call; in a loop over several, give each "
+                "entry its own expected status."
+            )
+    return problems[:6]
+
+
 #: A service a test starts with the harness's helper: its name, and what it was started with.
 _A_SERVICE_STARTED = re.compile(r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*await\s+startService\s*\(([^)]*)\)")
 
@@ -2726,6 +2835,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *fetch_calls_written_like_the_fixture(repo_root),
         *reads_of_what_the_test_does_not_have(repo_root),
         *tests_that_want_json_from_a_204(repo_root),
+        *tests_whose_success_status_the_contract_does_not_give(repo_root),
         *tests_that_assert_a_kept_file_s_text(repo_root, result),
         *tests_that_restart_on_data_they_never_wrote(repo_root),
         *tests_that_never_open_the_page(repo_root),

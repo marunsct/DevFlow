@@ -302,6 +302,97 @@ def _run_each_command(checks: list[Check], project: str, runner: Any, failed: li
             failed.append(f"[{check.criterion}] {check.line} - it exited {code}")
 
 
+def _the_probe_s_report(project: Path, project_name: str, probe: dict[str, Any], web: list[Check], run: Any) -> Any:
+    """The runner's report of `web` checked against the product, the probe's own files removed after."""
+    from app.acceptance import junit
+
+    (project / CHECK_DIR).mkdir(parents=True, exist_ok=True)
+    (project / CHECK_DIR / "contract.spec.js").write_text(probe["checks"](web), encoding="utf-8")
+    (project / CONFIG_FILE).write_text(probe["config"](probe["base_config"]), encoding="utf-8")
+    report_file = project / REPORT_FILE
+    junit.clear(report_file)
+    try:
+        run(list(probe["command"]), "test", project_name)
+        return junit.read(report_file)
+    finally:
+        shutil.rmtree(project / CHECK_DIR, ignore_errors=True)
+        (project / CONFIG_FILE).unlink(missing_ok=True)
+
+
+#: What a failed status check reports it was given: `Received: 500`.
+_RECEIVED = re.compile(r"Received:\s*(?:\x1b\[[0-9;]*m)*\s*(\d{3})")
+#: Which check a test of the probe is: `contract 4:` in its title.
+_CHECK_NUMBER = re.compile(r"\bcontract (\d+):")
+#: How a defect raised for a server error at the contract's checks begins; `still_raised` reads it back.
+SERVER_FAILED = "The server fails on a request it should answer or refuse:"
+
+
+def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Check, int]] | None:
+    """Each HTTP line of the locked contract a bare request makes the product answer with a 5xx, with that status.
+
+    None when the checks cannot run (no locked contract, no probe runner on the pack, no report). Measured on one
+    run: a bare `POST /notes` and `PUT /notes/:id` - no body - answered 500 where the contract gives 400 and 404;
+    the checks ran only at release, so the crash shipped as a gap no fixer was ever given. Only a 5xx is named: a
+    4xx other than the line's may be a refusal the product makes first (a body checked before the record), but no
+    line of any contract is a server failing.
+    """
+    try:
+        from app.acceptance import suite
+        from app.stacks import contract
+
+        root = Path(repo_root)
+        web = [c for c in checkable(the_locked_contract(root)[:MOST_CHECKS]) if c.kind == "http"]
+        found = contract.the_pack(root)
+        probe = PROBE_RUNNERS.get(found[0].probe_runner) if found else None
+        if not web or probe is None:
+            return None
+        project_name = str((found[1] or {}).get("project") or "")
+        run = runner or suite._sandbox_runner(root)  # noqa: SLF001 - the suite's own runner
+        report = _the_probe_s_report(root / project_name, project_name, probe, web, run)
+        if report is None or not report.found:
+            return None
+        errors: list[tuple[Check, int]] = []
+        for test in report.tests:
+            if getattr(test, "outcome", "") != "failed":
+                continue
+            number, received = _CHECK_NUMBER.search(test.name), _RECEIVED.search(str(test.message or ""))
+            if number and received and int(received.group(1)) >= 500 and 0 < int(number.group(1)) <= len(web):
+                errors.append((web[int(number.group(1)) - 1], int(received.group(1))))
+        return errors
+    except Exception:  # noqa: BLE001 - a check that cannot run says nothing
+        logger.debug("Could not probe the interface contract for server errors", exc_info=True)
+        return None
+
+
+def _the_call(check: Check) -> str:
+    """`POST /notes`, as the line names it, with no criterion: a defect naming one is judged by that criterion's tests."""
+    return f"{check.method} {check.path}"
+
+
+def server_error_description(errors: list[tuple[Check, int]]) -> str:
+    """The defect's description for `errors`: each call, the status it gave and what the contract gives."""
+    each = "; ".join(
+        f"`{_the_call(check)}` sent with no body answered {status} where the contract gives "
+        f"{' or '.join(map(str, _allowed(check)))}"
+        for check, status in errors[:6]
+    )
+    return (
+        f"{SERVER_FAILED} {each}. A request the product cannot use - no body, a body that is not JSON, a record "
+        "that does not exist - is answered with the status the contract gives for it, never by the server failing."
+    )
+
+
+def still_raised(repo_root: str | Path, description: str, *, runner: Any = None) -> bool | None:
+    """Whether a server-error defect with this description would be raised again now; None when it is not one or the checks cannot run."""
+    text = str(description or "")
+    if not text.startswith(SERVER_FAILED):
+        return None
+    errors = server_errors(repo_root, runner=runner)
+    if errors is None:
+        return None
+    return any(f"`{_the_call(check)}`" in text for check, _ in errors)
+
+
 def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) -> list[str]:
     """A completion gap for each contract check the product fails at release, and one for what went unchecked; [] when none."""
     try:
@@ -340,19 +431,7 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
         if probe is None:
             unchecked += [f"{c.line} (no runner on this stack probes a {c.kind} line)" for c in web]
             web = []
-        report = None
-        if web:
-            (project / CHECK_DIR).mkdir(parents=True, exist_ok=True)
-            (project / CHECK_DIR / "contract.spec.js").write_text(probe["checks"](web), encoding="utf-8")
-            (project / CONFIG_FILE).write_text(probe["config"](probe["base_config"]), encoding="utf-8")
-            report_file = project / REPORT_FILE
-            junit.clear(report_file)
-            try:
-                run(list(probe["command"]), "test", project_name)
-                report = junit.read(report_file)
-            finally:
-                shutil.rmtree(project / CHECK_DIR, ignore_errors=True)
-                (project / CONFIG_FILE).unlink(missing_ok=True)
+        report = _the_probe_s_report(project, project_name, probe, web, run) if web else None
         failures, not_run = _the_commands_kept([c for c in locked if c.kind == "command"], root, project_name, run)
         unchecked += not_run
     except Exception:  # noqa: BLE001 - the release says nothing it cannot measure
@@ -378,3 +457,22 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
             + "; ".join(unchecked[:5]) + ("; ..." if len(unchecked) > 5 else "")
         )
     return gaps
+
+
+class _ServerErrorsAtARound:
+    """`CONTRACT_SERVER_ERRORS_AT_A_ROUND` as the switch registry reads one: off in code, the compose file turns it on."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("When a test round finds the locked suite green, the interface contract's checks are run against "
+                   "the product, and a 5xx any of them gets is raised as a defect. Measured on one run: a bare POST "
+                   "and PUT answered 500, found only at release, and shipped as a gap.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("CONTRACT_SERVER_ERRORS_AT_A_ROUND", _ServerErrorsAtARound.ON_BY_DEFAULT)
+
+
+server_errors_at_a_round_switch = _ServerErrorsAtARound()

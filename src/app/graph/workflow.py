@@ -2900,6 +2900,44 @@ def _the_unit_tests_fail(milestone: Any, output: str, *, beside_a_green_suite: b
 _PAGE_SUFFIXES = frozenset({".tsx", ".jsx", ".vue", ".svelte", ".html", ".astro"})
 
 
+def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: Any) -> Any:
+    """`test_result` with a defect for each contract line a bare request makes the server fail on, behind the switch.
+
+    Measured on one run: a bare `POST /notes` and `PUT /notes/:id` answered 500 on a green suite; the contract's checks
+    ran only at release, so the crash shipped as a gap and no fixer was given it. Asked only of a green round: a red
+    one has its own defects, and the checks start the product once more. Never raises.
+    """
+    try:
+        from app.acceptance import interface_contract
+        from app.agents.specialists import ReportedDefect
+        from app.graph import acceptance_nodes
+
+        root = state["repository"].root_path
+        if not interface_contract.server_errors_at_a_round_switch.enabled() or not acceptance_nodes.suite.is_locked(root):
+            return test_result
+        errors = interface_contract.server_errors(root)
+        if not errors:
+            return test_result
+        description = interface_contract.server_error_description(errors)
+        logger.warning("A green round's contract checks made the server fail on %d line(s)", len(errors))
+        defect = ReportedDefect(
+            description=description,
+            severity="major",
+            reproduction_steps="; ".join(
+                f"send `{check.method} {check.path}` with no body to the running service" for check, _ in errors[:6]),
+            expected_behavior="; ".join(
+                f"`{check.method} {check.path}` answers {' or '.join(map(str, check.statuses or (check.status,)))}"
+                for check, _ in errors[:6]),
+            actual_behavior="; ".join(f"`{check.method} {check.path}` answered {status}" for check, status in errors[:6]),
+            affected_files=sorted({f for f, _ in acceptance_nodes.where_errors_become_5xx(root)}),
+            owner=_the_unit_tests_fail(milestone, "").owner,
+        )
+        return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
+    except Exception:  # noqa: BLE001 - the round as measured stands
+        logger.debug("Could not add the contract's server errors to the round", exc_info=True)
+        return test_result
+
+
 def _the_served_app_is_the_scaffold_s_stub(relative: str, owner: str) -> Any:
     """The wiring defect for a served app that is still the scaffold's stub.
 
@@ -2995,6 +3033,12 @@ def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
         # (Node runs the `.ts` itself), the tests it was told "still fail" failed on that import alone, and it
         # spent the stage on the same edit; the harness corrected the import only at the next suite run.
         contract.enforce(root)
+        # A server error at the contract's checks is settled by those checks, run again (`interface_contract.still_raised`).
+        from app.acceptance import interface_contract
+
+        raised = interface_contract.still_raised(root, str(getattr(defect, "description", "") or ""))
+        if raised is not None:
+            return not raised
         if str(getattr(defect, "description", "") or "").startswith(THE_PRODUCT_DOES_NOT_START):
             # The suite starts the product its own way; unit tests that pass say
             # nothing about whether it does. Closing this on them left the same
@@ -3038,7 +3082,11 @@ def _the_suite_already_guards_it(state: Any, measured: str, defect: Any) -> bool
     description = str(getattr(defect, "description", "") or "")
     # A locked criterion, or the failing unit tests themselves: either way the
     # tests that were failing are the regression test, and they were just measured.
-    is_a_failing_test = description.startswith(UNIT_TESTS_FAIL) or any(
+    # A server error at the contract's checks has those checks for its regression test: they run at every green
+    # round and at release (`_with_the_contract_s_server_errors`).
+    from app.acceptance.interface_contract import SERVER_FAILED
+
+    is_a_failing_test = description.startswith((UNIT_TESTS_FAIL, SERVER_FAILED)) or any(
         t.startswith(("AC-", "CR-")) for t in tags_in(description)
     )
     if not is_a_failing_test:
@@ -3093,6 +3141,12 @@ def _the_defect_s_tests_in(root: str, label: str, defect: Any) -> bool | None:
         from app.stacks import entry_exports
 
         raised = entry_exports.still_raised(root, str(getattr(defect, "description", "") or ""))
+        if raised is not None:
+            return not raised
+        # And one about a server error at the contract's checks: by those checks, run again.
+        from app.acceptance import interface_contract
+
+        raised = interface_contract.still_raised(root, str(getattr(defect, "description", "") or ""))
         if raised is not None:
             return not raised
         snapshot = ci.load(root, "latest")
@@ -10415,6 +10469,8 @@ def build_workflow_graph(
                 return update  # paused waiting for approval on a test artifact
 
         test_result: SpecialistOutput = update.pop("__test_result__")
+        if not test_result.defects and not failing_due and int(saved_run.get("failed") or 0) == 0:
+            test_result = _with_the_contract_s_server_errors(state, test_result, milestone)
         # CI's regressions and the code review's findings for this batch, once.
         reported: list[ReportedDefect] = _each_defect_once(
             [*raised_by("test round", test_result.defects), *(state.get("review_defects") or [])]

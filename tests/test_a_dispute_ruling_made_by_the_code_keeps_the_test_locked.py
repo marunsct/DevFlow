@@ -42,3 +42,15 @@ def test_the_judgement_itself():
     assert suite_dispute.judged_by_the_code("the actual response has an extra field and the test fails")
     assert not suite_dispute.judged_by_the_code("the test requires a header the brief never mentions")
     assert not suite_dispute.judged_by_the_code("")
+
+
+def test_a_reason_whose_subject_is_the_product_s_own_symbol_is_still_the_product_s():
+    """Measured on one run, twice: after a rewind the QA lead re-worded the same product-behaviour reason with the
+    product's symbol as subject, and the earlier wording needed "the implementation"/"the product" to be named."""
+    for why in ("StorageService.load() is never called, so data is not loaded on startup.",
+                "the product never loads the existing notes.json on startup, so no data is persisted across restarts "
+                "as the test expects.",
+                "the restart handler never runs, and notes written before the restart are missing."):
+        assert suite_dispute.judged_by_the_code(why), why
+    assert not suite_dispute.judged_by_the_code("the test expects notes sorted by id, which the criterion never requires.")
+    assert not suite_dispute.judged_by_the_code("it asserts a note it never created is present.")

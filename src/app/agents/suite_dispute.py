@@ -141,6 +141,15 @@ _THE_TEST_OVERASKS = re.compile(
     re.I)
 
 
+#: A predicate about what the product does, whatever its subject - a product's own symbol as often as "the product":
+#: `StorageService.load() is never called`, `data is not loaded on startup`, `the handler never runs`.
+_A_PRODUCT_PREDICATE = re.compile(
+    r"\b(?:is|are|was|were|gets?)\s+(?:never|not)\s+\w+(?:ed|en)\b|"
+    r"\bnever\s+(?:called|invoked|runs?|executed|loaded|loads|read|reads|written|writes|persisted|persists|saved|saves|"
+    r"stored|stores|implemented|happens|reached|triggered|set|initiali[sz]ed|awaited|registered|mounted|wired)\b|"
+    r"\b(?:is|are)\s+(?:missing|undefined|absent|unimplemented|hard-?coded)\b", re.I)
+
+
 def judged_by_the_code(why: str) -> bool:
     """Whether a reason sets a test aside for what the product does rather than for what the criterion says.
 
@@ -153,7 +162,7 @@ def judged_by_the_code(why: str) -> bool:
     clauses = [clause for clause in re.split(r"[.;]", str(why or "")) if clause.strip()]
     if any(_THE_TEST_OVERASKS.search(clause) for clause in clauses):
         return False
-    return any(_THE_PRODUCT_DOES.search(clause) for clause in clauses)
+    return any(_THE_PRODUCT_DOES.search(clause) or _A_PRODUCT_PREDICATE.search(clause) for clause in clauses)
 
 
 def tests_it_names(answer: Any, failing_names: Sequence[str]) -> list[str]:

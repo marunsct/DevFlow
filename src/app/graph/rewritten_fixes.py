@@ -110,7 +110,14 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
     # rewrite took `tests/test_auth.py` from the run's last failing command,
     # rewrote it, and the defect was recorded as fixed with the login still
     # broken - and with it every test that needs a signed-in user.
-    judged_by_the_suite = any(
+    # A test is rewritten from failure text only for a defect the unit tests
+    # themselves raised, whose test may be the thing that is wrong; any defect
+    # still rewrites a test it names as its own.
+    tests_from_the_text = str(getattr(defect, "description", "") or "").startswith(_THE_UNIT_TESTS_FAIL)
+    # Not a failing unit run, whatever ids its tests' names carry: measured on two runs, unit tests named
+    # "AC-1 CreateNoteTest" made it read as the suite's, every test file was left out, and both fixes rewrote the
+    # product, broke other unit tests and were reverted.
+    judged_by_the_suite = not tests_from_the_text and any(
         t.startswith(("AC-", "CR-")) for t in tags_in(str(getattr(defect, "description", "") or ""))
     )
     named = [str(f).strip().lstrip("./") for f in getattr(defect, "affected_files", None) or [] if str(f).strip()]
@@ -123,10 +130,6 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
     # by another fixer's unit-test run, the run's last failure - the test file
     # broke 17 tests, and the revert took the stylesheet with it.
     own, _, last = failure.partition(THE_LAST_FAILING_COMMAND)
-    # A test is rewritten from failure text only for a defect the unit tests
-    # themselves raised, whose test may be the thing that is wrong; any defect
-    # still rewrites a test it names as its own.
-    tests_from_the_text = str(getattr(defect, "description", "") or "").startswith(_THE_UNIT_TESTS_FAIL)
 
     def mentioned_in(text: str) -> list[str]:
         # In the order the text names them, with a line or without - but not

@@ -138,6 +138,7 @@ PACK = service_pack(
     name="node-hono-api",
     entrypoint="src/app.ts",
     required_exports={"src/app.ts": ("createApp",)},
+    required_exports_called_bare=True,
     title="HTTP service in TypeScript on Hono",
     language="typescript",
     frameworks=("hono",),

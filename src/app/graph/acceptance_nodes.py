@@ -979,9 +979,23 @@ def pack_contract_defects(state: Any) -> list[Any]:
 
     root = _root(state)
     lost = entry_exports.what_the_entry_no_longer_exports(root)
-    if not lost:
+    called_bare = entry_exports.what_the_start_file_cannot_call(root)
+    if not lost and not called_bare:
         return []
     defects = []
+    for path, name, needed in called_bare:
+        defects.append(ReportedDefect(
+            description=f"{path} declares `{name}({needed})`, but the scaffold's start file and unit smoke test call `{name}()` with no arguments, so `{needed}` is undefined on every request.",
+            severity="blocking",
+            reproduction_steps=f"Read {path} and the pack's start file: it calls `{name}()`.",
+            expected_behavior=(
+                f"`{name}()` takes no parameters and makes what it needs itself (read the data directory from the "
+                "environment, create the store inside it), as the pack's guide says."
+            ),
+            actual_behavior=f"`{name}` requires `{needed}`; called with none, it is undefined wherever it is used.",
+            affected_files=[path],
+            owner=_owner_for(state, ""),
+        ))
     for path, name in lost:
         defects.append(ReportedDefect(
             description=f"{path} no longer exports `{name}`, which the scaffold's start file and unit smoke test import.",

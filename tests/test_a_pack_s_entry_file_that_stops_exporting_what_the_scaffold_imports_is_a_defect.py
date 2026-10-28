@@ -76,3 +76,30 @@ def test_off_it_reports_nothing(tmp_path, monkeypatch):
     _project(tmp_path, "export default function app() {}\n")
     monkeypatch.setenv("PACK_ENTRY_EXPORTS_KEPT", "off")
     assert entry_exports.what_the_entry_no_longer_exports(tmp_path) == []
+
+
+def test_a_required_export_the_start_file_calls_bare_that_now_needs_an_argument_is_a_defect(tmp_path):
+    """Measured on one run: `createApp(storage)` took the store as a parameter; the start file calls `createApp()`, every
+    handler read `undefined.storage` and answered 500, and two sprint attempts went on fixes to the routes."""
+    pack = pack_named("node-hono-native-api")
+    contract.write(tmp_path, pack, "notes", "Notes")
+    (tmp_path / "notes" / "src").mkdir(parents=True)
+    (tmp_path / "notes" / "src" / "app.ts").write_text(
+        "import type { JsonStorage } from './storage/jsonStorage.ts';\nexport function createApp(storage: JsonStorage): Hono {\n  return new Hono();\n}\n")
+    (tmp_path / ".project-directory").write_text("notes\n")
+    assert entry_exports.what_the_start_file_cannot_call(tmp_path) == [("notes/src/app.ts", "createApp", "storage")]
+    [defect] = acceptance_nodes.pack_contract_defects({"repository": SimpleNamespace(root_path=str(tmp_path))})
+    assert "createApp(storage)" in defect.description and defect.affected_files == ["notes/src/app.ts"]
+
+
+@pytest.mark.parametrize("text", [
+    "export function createApp(): Hono { return new Hono(); }\n",
+    "export function createApp(storage = new Store()) { return 1; }\n",
+    "export const createApp = (options?: Options) => 1;\n",
+])
+def test_a_factory_callable_bare_is_left(tmp_path, text):
+    contract.write(tmp_path, pack_named("node-hono-native-api"), "notes", "Notes")
+    (tmp_path / "notes" / "src").mkdir(parents=True)
+    (tmp_path / "notes" / "src" / "app.ts").write_text(text)
+    (tmp_path / ".project-directory").write_text("notes\n")
+    assert entry_exports.what_the_start_file_cannot_call(tmp_path) == []

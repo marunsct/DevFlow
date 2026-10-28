@@ -4340,6 +4340,40 @@ def _another_file_not_written_yet(root: Path, importer: Path, message: str) -> b
     return isinstance(table, dict) and any(not (root / planned).exists() for planned in table)
 
 
+#: A JavaScript test framework's own module, imported by a test: the runner it needs.
+_ANOTHER_RUNNER_IMPORTED = re.compile(r"""(?:from\s+|require\(\s*)['"](vitest|jest|@jest/globals|mocha|ava|tap|uvu|bun:test)['"]""")
+
+
+def _refuse_a_test_for_another_runner(target: Path, relative_path: str, content: str) -> None:
+    """Refuse a test file that imports a test framework the project's kept unit command does not run.
+
+    Measured on one run: the pack's kept `test` script runs `node --test`; the drafter wrote two unit test files
+    importing from `vitest` (and added vitest to the manifest), and both crashed with "Vitest failed to access its
+    internal state" under Node's runner. Only when the pack keeps a `test` script that runs `node --test`.
+    """
+    found = _ANOTHER_RUNNER_IMPORTED.search(content or "")
+    if not found:
+        return
+    try:
+        from app.analysis.file_kinds import classify_file
+        from app.stacks import contract
+
+        if classify_file(relative_path) != "test":
+            return
+        root = next((folder for folder in target.parents if (folder / ".harness").is_dir()), None)
+        pack = (contract.the_pack(root) or (None,))[0] if root is not None else None
+        if pack is None or "node --test" not in str((getattr(pack, "kept_scripts", None) or {}).get("test", "")):
+            return
+    except Exception:  # noqa: BLE001 - a check that cannot run refuses nothing
+        return
+    raise RepositoryToolError(
+        f"Refusing to write '{relative_path}': it imports from '{found.group(1)}', but this project's unit tests run "
+        "under Node's own runner (`node --test`), where that framework's functions do not work. Write the tests with "
+        "`import { test, describe } from 'node:test';` and `import assert from 'node:assert/strict';` instead, and do "
+        "not add the framework to the manifest. Nothing was written."
+    )
+
+
 def _refuse_if_it_adds_errors(target: Path, relative_path: str, content: str, previous: str, *, editing: bool = False) -> None:
     """Refuse a product file write that adds errors the language service is sure of, in every delivery mode.
 
@@ -5466,6 +5500,7 @@ def _write_unless_it_changes_nothing(
         _refuse_a_hand_built_dom_again(relative_path, updated, target)
         _refuse_rewriting_the_platform(relative_path, updated, original)
         _refuse_to_switch_a_suite_off(relative_path, original, updated)
+        _refuse_a_test_for_another_runner(target, relative_path, updated)
         _refuse_if_it_adds_errors(target, relative_path, updated, original, editing=True)
         try:
             _refuse_if_broken(relative_path, updated, editing=True)
@@ -6866,6 +6901,7 @@ def write_approved_artifact(
         if not _sent_again_past_a_grammar(relative_path, content):
             raise
     _refuse_if_node_cannot_parse(target, relative_path, content)
+    _refuse_a_test_for_another_runner(target, relative_path, content)
     _refuse_if_it_adds_errors(
         target, relative_path, content,
         target.read_text(encoding="utf-8", errors="replace") if target.is_file() else "",

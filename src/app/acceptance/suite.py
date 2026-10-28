@@ -2356,6 +2356,21 @@ def reads_of_what_the_test_does_not_have(repo_root: str | Path) -> list[str]:
                 corrected = (_the_lines_corrected(text, lines, lambda line: _THE_FIXTURE_S_BASEURL.sub("baseURL", line))
                              if pattern is _THE_FIXTURE_S_BASEURL else "")
                 problems.append(f"`{shown}` line(s) {', '.join(map(str, lines[:8]))}: the test {why}{corrected}")
+        # The server's data directory, read in the test: measured on one run, a restart test started a service on
+        # `process.env.DATA_DIR` to read what it wrote through `request`; the suite gives that variable only to the
+        # server, so the service started on a fresh folder and read nothing on every product.
+        variable = str(getattr((contract.the_pack(repo_root) or (None,))[0], "data_dir_env", "") or "")
+        if variable:
+            reads = re.compile(rf"\bprocess\s*\.\s*env\s*(?:\.\s*{re.escape(variable)}\b|\[\s*['\"]{re.escape(variable)}['\"]\s*\])")
+            lines = sorted({text.count("\n", 0, m.start()) + 1 for m in reads.finditer(text)})
+            if lines:
+                problems.append(
+                    f"`{shown}` line(s) {', '.join(map(str, lines[:8]))}: the test reads `process.env.{variable}`. The "
+                    f"suite gives `{variable}` only to the server it starts, so the test never has it and a service "
+                    "started on it begins on a fresh folder. A restart test writes through the service it started "
+                    "itself and restarts on that service's `dataDir`: `const first = await startService(); ... "
+                    "await startService({ dataDir: first.dataDir })`."
+                )
     return problems[:6]
 
 

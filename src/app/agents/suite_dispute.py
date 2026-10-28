@@ -132,7 +132,8 @@ def _what_a_line_says_of(lines: Sequence[str], spellings: Sequence[str]) -> str 
 _THE_PRODUCT_DOES = re.compile(
     r"\b(?:the\s+)?(?:implementation|product|code|actual(?:\s+\w+){0,2}|server|service|api|endpoint|handler|"
     r"response|returned\s+\w+)\b[^.;]{0,40}?\b(?:includes?|returns?|contains?|has|have|adds?|sends?|responds?|gives?|"
-    r"lacks?|omits?|parses?|sets?|uses?|does\s+not|doesn't|is\s+not|are\s+not)\b", re.I)
+    r"lacks?|omits?|parses?|sets?|uses?|loads?|reads?|writes?|persists?|stores?|saves?|ignores?|throws?|crash\w*|"
+    r"never\s+\w+|fails?\s+to|cannot|can't|did\s+not|didn't|does\s+not|doesn't|is\s+not|isn't|are\s+not|aren't)\b", re.I)
 #: A clause whose subject is the test asking for what the standard does not give.
 _THE_TEST_OVERASKS = re.compile(
     r"\b(?:test|it|assert\w*|expect\w*|asks?|requires?)\b[^.;]{0,100}?\b(?:criterion|criteria|brief|specification|spec|"

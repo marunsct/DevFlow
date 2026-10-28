@@ -4292,6 +4292,40 @@ def _javascript_parse_error(target: Path, relative_path: str, content: str) -> s
 _ABOUT_ANOTHER_FILE = re.compile(r"has no exported member|Cannot find module|is not a module|has no default export", re.I)
 
 
+#: A finding about a module that exists: its exports are what they are, and an import of one it lacks fails at load.
+_A_MISSING_EXPORT = re.compile(r"has no exported member|has no default export", re.I)
+_THE_MODULE_NAMED = re.compile(r"""Module\s+['"]+([^'"]+)['"]+""")
+#: What an import without an extension may name on disk.
+_MODULE_SUFFIXES = ("", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", "/index.ts", "/index.js")
+
+
+def _another_file_not_written_yet(root: Path, importer: Path, message: str) -> bool:
+    """Whether a finding about another file's exports is excused: that file, or a planned file, is not written yet.
+
+    Work orders run side by side, so an import of what another order has not written is no error of this write.
+    Once the module exists and every planned file is written - every fix stage - a name it does not export fails at
+    load, and the write is refused with the checker's own hint. Measured on one run: three fixes in a row rewrote a
+    route importing `{ StorageService }` from a module that exports only a default instance; each was committed,
+    broke the start, and was reverted.
+    """
+    if not _ABOUT_ANOTHER_FILE.search(message):
+        return False
+    if not _A_MISSING_EXPORT.search(message):
+        return True
+    named = _THE_MODULE_NAMED.search(message)
+    module = named.group(1) if named else ""
+    if not module.startswith("."):
+        return True
+    exists = any((importer.parent / (module + suffix)).is_file() for suffix in _MODULE_SUFFIXES)
+    if not exists:
+        return True
+    try:
+        table = json.loads((root / WORK_ORDER_FILES).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        table = {}
+    return isinstance(table, dict) and any(not (root / planned).exists() for planned in table)
+
+
 def _refuse_if_it_adds_errors(target: Path, relative_path: str, content: str, previous: str, *, editing: bool = False) -> None:
     """Refuse a product file write that adds errors the language service is sure of, in every delivery mode.
 
@@ -4320,7 +4354,7 @@ def _refuse_if_it_adds_errors(target: Path, relative_path: str, content: str, pr
     known = {f.get("message") for f in getattr(before, "here", None) or []}
     new = [
         f for f in getattr(after, "here", None) or []
-        if f.get("message") not in known and not _ABOUT_ANOTHER_FILE.search(str(f.get("message") or ""))
+        if f.get("message") not in known and not _another_file_not_written_yet(root, target, str(f.get("message") or ""))
     ]
     if new:
         found = "; ".join(f"line {f.get('line', '?')}: {f.get('message', '')}" for f in new[:6])

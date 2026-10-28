@@ -5783,8 +5783,25 @@ def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
     return merged
 
 
+#: A workspace path written in a finding: `notes-api/package.json`, `notes-api/test/notes.test.ts`.
+_A_PATH_IN_A_FINDING = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w.-]+\.(?:json|[cm]?[jt]sx?|py|toml|cfg|ya?ml))(?![\w/])")
+
+
+def _the_workspace_files_named(root: str | None, text: str, most: int = 6) -> list[str]:
+    """The files `text` names that exist in the workspace at `root`, in the order named; [] without a root."""
+    if not root:
+        return []
+    found: list[str] = []
+    for name in _A_PATH_IN_A_FINDING.findall(str(text or "")):
+        if name not in found and (Path(root) / name).is_file():
+            found.append(name)
+        if len(found) >= most:
+            break
+    return found
+
+
 def _proven_problems_the_round_left_out(
-    proven: list[str], reported: list[Any], milestone: Any
+    proven: list[str], reported: list[Any], milestone: Any, state_root: str | None = None
 ) -> list[Any]:
     """A defect for each proven problem no reported defect names, or [].
 
@@ -5834,6 +5851,8 @@ def _proven_problems_the_round_left_out(
             if any(opening and opening in text.lower() for text in told):
                 continue
         owner = next((owners[name] for name in sorted(named) if name in owners), "testing")
+        # The files it names are the fix's to change together: a fix given none changed one side and broke the other.
+        affected = _the_workspace_files_named(state_root, problem)
         try:
             left_out.append(ReportedDefect(
                 description=problem,
@@ -5841,7 +5860,7 @@ def _proven_problems_the_round_left_out(
                 reproduction_steps="Read the files it names; this was decided by comparing them.",
                 expected_behavior="The two files agree.",
                 actual_behavior=problem,
-                affected_files=[],
+                affected_files=affected,
                 owner=owner,
             ))
         except Exception:  # noqa: BLE001 - an owner the model type refuses
@@ -10377,7 +10396,7 @@ def build_workflow_graph(
                 _what_later_sprints_build(state),
                 getattr(state.get("document"), "text", "") or "",
             )
-            left_out = _proven_problems_the_round_left_out(still_proven, reported, milestone)
+            left_out = _proven_problems_the_round_left_out(still_proven, reported, milestone, state["repository"].root_path)
         except Exception:  # noqa: BLE001 - the round's own report stands
             logger.debug("Could not compare the round's report with what is proven", exc_info=True)
             left_out = []

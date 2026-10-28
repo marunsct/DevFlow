@@ -4018,6 +4018,20 @@ _TEST_RUNNERS: dict[str, tuple[str, ...]] = {
 }
 
 
+def _files_that_import(files: list[Path], root: Path, package: str, most: int = 8) -> list[str]:
+    """The files, relative to `root`, that import or require `package`."""
+    pattern = re.compile(rf"""(?:from\s+|require\(\s*|import\s+)['"]{re.escape(package)}(?:/[^'"]*)?['"]""")
+    found: list[str] = []
+    for path in files:
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".jsx", ".tsx"):
+            continue
+        if pattern.search(_read(path) or ""):
+            found.append(path.relative_to(root).as_posix())
+            if len(found) >= most:
+                break
+    return found
+
+
 def _a_test_runner_the_stack_did_not_choose(files: list[Path], root: Path, stack: Any) -> list[str]:
     """A test framework installed over the one the stack selected.
 
@@ -4067,12 +4081,17 @@ def _a_test_runner_the_stack_did_not_choose(files: list[Path], root: Path, stack
                    for alias in aliases):
                 continue
             chosen = getattr(stack, "testing_framework", "")
+            # Who imports it: measured on one run, three fixes in a row removed the package from the manifest alone,
+            # broke the 19 tests whose files still imported it, and were reverted.
+            importers = _files_that_import(files, root, package)
             problems.append(
                 f"{path.relative_to(root)} installs '{package}', but this run's "
                 f"stack chose '{chosen}' as the testing framework. Tests written "
                 "for a runner the stack did not choose fail on that runner's own "
                 "setup, not on the product. Either use the chosen approach or "
                 "change the stack."
+                + (f" These files import '{package}' and must be rewritten for the chosen approach in the same "
+                   f"change, before the package is removed: {', '.join(importers)}." if importers else "")
             )
     return problems
 

@@ -1012,6 +1012,17 @@ def other_scripts_that_run_them(scripts: dict, owned: dict) -> list[str]:
     )
 
 
+def _the_pack_keeps_this_test_script(root: Path, command: str) -> bool:
+    """Whether `command` is the `test` script the project's stack pack writes and keeps. Never raises."""
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(Path(root))
+        return bool(found) and str((found[0].kept_scripts or {}).get("test") or "").strip() == command.strip()
+    except Exception:  # noqa: BLE001 - then the finding reads as before
+        return False
+
+
 def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
     """Test files the project's own `npm test` will not execute.
 
@@ -1223,6 +1234,15 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
         )
         if not where:
             continue
+        if _the_pack_keeps_this_test_script(root, command):
+            # Measured on one run: told to widen the pattern of a script the harness puts back before every run, the
+            # sprint was planned again for a change no work order may make. The files move, or go.
+            why = (
+                f"which runs only what {', '.join(f'`{p}`' for p in patterns) or 'it names'} "
+                f"match{'' if len(patterns) > 1 else 'es'}. That command is the harness's own and is put back "
+                "before every run, so it is not to be changed: give each stranded file that is a test a name the "
+                "pattern matches, and delete each that nothing runs."
+            )
         problems.append(
             f"{manifest.relative_to(root)} runs `{command}`, {why} Stranded: {where}."
         )

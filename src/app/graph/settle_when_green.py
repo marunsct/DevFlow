@@ -30,6 +30,11 @@ AFTER_REPLANS = 0
 #: How a defect from a failing unit-test run begins (`workflow.UNIT_TESTS_FAIL`).
 UNIT_TESTS_FAIL = "The unit tests fail."
 
+#: Defects a check read from the files rather than from a test that failed. Measured on one run: every acceptance test
+#: and every unit test passed, and the sprint was planned again for a cross-file finding about scratch files a dead
+#: attempt left in the unit-test folder. Beside a green suite it is a known issue the release records.
+READ_FROM_THE_FILES = ("cross-file check",)
+
 
 def enabled() -> bool:
     return is_on("SETTLE_WHEN_ACCEPTANCE_IS_GREEN", ON_BY_DEFAULT)
@@ -50,7 +55,7 @@ def _a_unit_test_failure(defect: Any, acceptance_command: str) -> bool:
 
 
 def applies(root: str | Path, defects: Any, replans: int) -> bool:
-    """Whether the sprint should go to the escalation now: the acceptance suite is green and only unit tests are open."""
+    """Whether the sprint should go to the escalation now: the acceptance suite is green and only unit tests, or findings read from the files, are open."""
     if not enabled() or replans < AFTER_REPLANS:
         return False
     try:
@@ -64,10 +69,13 @@ def applies(root: str | Path, defects: Any, replans: int) -> bool:
         still_open = [d for d in defects or () if getattr(d, "status", "") == "open"]
         command = suite._command(root)
         acceptance = " ".join(command[0]) if command else ""
-        return bool(still_open) and all(_a_unit_test_failure(d, acceptance) for d in still_open)
+        return bool(still_open) and all(
+            _a_unit_test_failure(d, acceptance) or str(getattr(d, "source", "") or "") in READ_FROM_THE_FILES
+            for d in still_open
+        )
     except Exception:  # noqa: BLE001 - a rule that cannot tell leaves the sprint as it was
         logger.debug("Could not tell whether the acceptance suite is green", exc_info=True)
         return False
 
 
-__all__ = ["AFTER_REPLANS", "ON_BY_DEFAULT", "applies", "enabled"]
+__all__ = ["AFTER_REPLANS", "ON_BY_DEFAULT", "READ_FROM_THE_FILES", "applies", "enabled"]

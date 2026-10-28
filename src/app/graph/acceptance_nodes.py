@@ -1155,6 +1155,27 @@ def what_the_logged_frames_hide(root: str | Path, logged: str) -> str:
         return ""
 
 
+#: A test that received a server error status.
+_A_5XX_RECEIVED = re.compile(r"\b(?:Received|received|status(?: code)?|got|returned)\b\W{0,12}(5\d\d)\b")
+
+#: What a defect says when the service answered 5xx and logged nothing. Measured on one run: POST answered 500, the
+#: error handler returned JSON without logging, and ten fix stages changed headers and middleware around a cause
+#: none of them could see; each ended "its own tests still fail".
+THE_SERVER_HID_THE_CAUSE = (
+    "\nThe service answered a 5xx status and logged nothing while it did: its error handler hides the cause. First "
+    "make that handler write the error it caught - message and stack - to the process's standard error, keeping the "
+    "5xx answer, so the next measurement shows the cause; then fix the cause. A guess at the cause without that "
+    "trace changes the wrong file."
+)
+
+
+def the_server_hid_the_cause(messages: list[str], logged: str) -> str:
+    """`THE_SERVER_HID_THE_CAUSE` when a failing test received a 5xx and the server logged nothing; else ""."""
+    if str(logged or "").strip():
+        return ""
+    return THE_SERVER_HID_THE_CAUSE if any(_A_5XX_RECEIVED.search(str(m or "")) for m in messages) else ""
+
+
 def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     """A defect for each due criterion that fails and that the round did not report.
 
@@ -1243,6 +1264,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             hidden = what_the_logged_frames_hide(_root(state), logged)
             if hidden:
                 detail += f"\n{hidden}"
+        detail += the_server_hid_the_cause([t.get("message") or "" for t in failed], logged)
         defects.append(ReportedDefect(
             description=f"[{entry.get('id')}] {entry.get('text')} - the acceptance suite says this does not work yet.",
             severity="major",

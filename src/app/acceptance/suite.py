@@ -2272,6 +2272,21 @@ def responses_read_without_the_call(repo_root: str | Path) -> list[str]:
             text.count("\n", 0, match.start()) + 1 for match in uncalled.finditer(text)
             if _the_kind_assigned(text, match.group(0).split(".")[0].strip(), match.start()) == "request"
         })
+        # `.body` read as the parsed answer: measured on one run, `created.body.id` was `undefined`, the next request
+        # went to `/notes/undefined` and answered 400, and two attempts of fixes went on a test no product passes.
+        as_the_body = re.compile(rf"\b({'|'.join(map(re.escape, names))})\s*\.\s*body\b(?=\s*[.\[])")
+        body_lines = sorted({
+            text.count("\n", 0, match.start()) + 1 for match in as_the_body.finditer(text)
+            if _the_kind_assigned(text, match.group(1), match.start()) == "request"
+        })
+        if body_lines:
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line(s) {', '.join(map(str, body_lines[:8]))}: a response "
+                "from the `request` fixture is read as `.body.<field>`. On Playwright's response `body()` is a method "
+                "that gives the raw bytes, so `.body.id` is `undefined` on every product and every request built "
+                "from it fails. Read the parsed answer: `(await res.json()).id`, or `const data = await res.json()`."
+                + _the_lines_corrected(text, body_lines, lambda line: as_the_body.sub(lambda m: f"(await {m.group(1)}.json())", line))
+            )
         if not lines:
             continue
         where = ", ".join(str(n) for n in lines[:8]) + (" ..." if len(lines) > 8 else "")

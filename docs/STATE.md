@@ -4,12 +4,12 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 17:00 JST. run-f37ca8de **completed, hidden 9/9** (47 min, 0 reverts, locked 11/0, mutation 0.583); LF.384 (16-call fix-stage cap, FIX_STAGE_CALL_CAP) held from its deploy, LF.385 fired. 32 runs: 29x 9/9, 2x 5/9, 1x 0/9. Next from the plan: item 16 (contract-line coverage at review), then 10, then 9b.
+**As of:** 2026-10-28 17:16 JST. Owner switched the model to Qwen3.6-35B-A3B (MTP GGUF). run-280ad6d0 (gpt-oss) paused at 17:01 and to be cancelled; deep diagnosis of the new model running; then a fresh notes-api-hono run. Last gpt-oss run: run-f37ca8de 9/9 (47 min, 0 reverts). 32 runs: 29x 9/9.
 ## Live now
 | | |
 |---|---|
 | Run | **run-280ad6d0** (notes-api-hono, Fast, all switches on, harness 99449cec, not mixed, ceiling 12k) started 16:55 JST |
-| Model | gpt-oss-20b (the owner's), judged fine 2026-10-27; **reply ceiling 12,000 set 11:08 JST 2026-10-28 via `loop.sh ceiling`** (6 runs/1,479 calls: p99 3.7k, max legit 4.1k; one 79k reply looped) - harness request parameter with salvage, not a server setting |
+| Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner, 17:10 JST 2026-10-28) at :8888, 2 slots, context 184,320; owner's sampling: Qwen 'thinking, precise coding' (temp 0.6, top_p 0.95, top_k 20, min_p 0, repeat 1.0, presence 0). This server **reports cached tokens** (`cached_token_share` is real from here; LM Studio's gpt-oss did not). Deep diagnosis running 17:12 JST. gpt-oss-20b keeps its 12k ceiling in its own record. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs

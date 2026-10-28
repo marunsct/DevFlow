@@ -2299,6 +2299,55 @@ def responses_read_without_the_call(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+#: `request.newContext(` or `test.request.newContext(`: a context made from the name `request`.
+_A_NEW_CONTEXT = re.compile(r"\b((?:test\s*\.\s*)?request)\s*\.\s*newContext\s*\(")
+#: `request` imported from Playwright as the module's API (`import { request } ...`), not taken as the fixture.
+_REQUEST_IMPORTED = re.compile(
+    r"""(?:import\s*\{[^}]*\brequest\b(?!\s+as\b)[^}]*\}\s*from|\{[^}]*\brequest\b(?!\s*:)[^}]*\}\s*=\s*require\s*\()\s*['"]@playwright/test['"]"""
+)
+#: A test body that takes the `request` fixture: `async ({ request }) =>` or `async ({ page, request }) =>`.
+_TAKES_THE_FIXTURE = re.compile(r"async\s*\(\s*\{[^}]*\brequest\b[^}]*\}")
+
+
+def contexts_made_from_the_fixture(repo_root: str | Path) -> list[str]:
+    """Tests that call `newContext` on the `request` fixture, which has no such method.
+
+    Measured on five runs: every one in a restart test, reaching the second service through
+    `request.newContext({ baseURL: second.baseURL })` (once `test.request.newContext`). `newContext` belongs to the
+    `request` the module exports, not to the fixture a test is given, so the call throws "is not a function" on every
+    product. It throws only once the first service has run, after the review that locks the suite, so the suite was
+    reopened after the first draft. Found by its shape: the call inside a test that takes the fixture, or in a file
+    that never imports `request` from Playwright.
+    """
+    root = Path(repo_root)
+    problems: list[str] = []
+    for path in suite_files(repo_root):
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        imported = bool(_REQUEST_IMPORTED.search(text))
+        lines = []
+        for match in _A_NEW_CONTEXT.finditer(text):
+            opened = [m for m in re.finditer(r"\btest(?:\.\w+)?\s*\(", text[: match.start()])]
+            body_start = opened[-1].start() if opened else 0
+            takes_it = bool(_TAKES_THE_FIXTURE.search(text, body_start, match.start()))
+            if "." in match.group(1) or takes_it or not imported:
+                lines.append(text.count("\n", 0, match.start()) + 1)
+        if not lines:
+            continue
+        lines = sorted(set(lines))
+        problems.append(
+            f"`{path.relative_to(root).as_posix()}` line(s) {', '.join(map(str, lines[:8]))}: `newContext` is called "
+            "on the `request` fixture, which has no such method, so the test throws \"is not a function\" on every "
+            "product. The fixture already reaches any address: send each request to the full URL, "
+            "`await request.get(second.baseURL + '/items')`, and drop the new context."
+        )
+    return problems[:6]
+
+
 #: A plain `fetch(` call - not the fixture's `request.fetch(` - with the text up to its options object.
 _OPTIONS_OF_A_FETCH_CALL = re.compile(r"(?<![.\w])fetch\s*\((?:[^;{}]|\$\{[^}]*\})*,\s*$")
 _DATA_KEY = re.compile(r"\bdata\s*:")
@@ -2673,6 +2722,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *locators_with_invalid_name_option(repo_root),
         *requests_with_a_fetch_body(repo_root),
         *responses_read_without_the_call(repo_root),
+        *contexts_made_from_the_fixture(repo_root),
         *fetch_calls_written_like_the_fixture(repo_root),
         *reads_of_what_the_test_does_not_have(repo_root),
         *tests_that_want_json_from_a_204(repo_root),

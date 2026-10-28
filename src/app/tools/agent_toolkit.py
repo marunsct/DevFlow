@@ -680,6 +680,10 @@ def _code_flags_in_words() -> str:
     )
 
 
+#: Code written as an ES module: a static `import ... from` / `import '...'` / `export` at a line's start.
+_ESM_SYNTAX = re.compile(r"^\s*(?:import\s+[\w*{\s][^;\n]*?\sfrom\s+['\"]|import\s+['\"]|export\s+(?:default|const|function|class|async|\{))", re.M)
+
+
 def _code_on_the_command_line_as_a_file(
     command: Any, repo_root: str, working_directory: str | None, author: str = ""
 ) -> tuple[Any, str]:
@@ -710,6 +714,11 @@ def _code_on_the_command_line_as_a_file(
     extension, template = flags[str(command[at])]
     given = str(command[at + 1])
     code = template.replace("{code_json}", json.dumps(given)).replace("{code}", given)
+    # `.cjs` so `require` works whatever the package's module type - unless the code is written as a module: a
+    # `.cjs` file cannot `import`, and measured on one run two fixers' probes failed on that alone and each concluded
+    # "cannot run tests in this environment".
+    if extension == ".cjs" and _ESM_SYNTAX.search(code):
+        extension = ".mjs"
     try:
         from app.tools.repository import pinned_project_directory
 

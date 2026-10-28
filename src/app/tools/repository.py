@@ -4299,6 +4299,18 @@ _THE_MODULE_NAMED = re.compile(r"""Module\s+['"]+([^'"]+)['"]+""")
 _MODULE_SUFFIXES = ("", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", "/index.ts", "/index.js")
 
 
+def _the_package_is_installed(importer: Path, module: str) -> bool:
+    """Whether the package an import names (`hono`, `@scope/name`, with or without a subpath) is under the nearest `node_modules`."""
+    parts = module.split("/")
+    package = "/".join(parts[:2]) if module.startswith("@") and len(parts) > 1 else parts[0]
+    for folder in [importer.parent, *importer.parents]:
+        if (folder / "node_modules" / package).exists():
+            return True
+        if (folder / ".harness").is_dir():
+            break
+    return False
+
+
 def _another_file_not_written_yet(root: Path, importer: Path, message: str) -> bool:
     """Whether a finding about another file's exports is excused: that file, or a planned file, is not written yet.
 
@@ -4315,7 +4327,9 @@ def _another_file_not_written_yet(root: Path, importer: Path, message: str) -> b
     named = _THE_MODULE_NAMED.search(message)
     module = named.group(1) if named else ""
     if not module.startswith("."):
-        return True
+        # A package: its exports are known once it is installed. Measured on one run: `import bodyLimit from
+        # 'hono/body-limit'` (a named export only) was written twice, broke the start twice, and was reverted twice.
+        return not _the_package_is_installed(importer, module)
     exists = any((importer.parent / (module + suffix)).is_file() for suffix in _MODULE_SUFFIXES)
     if not exists:
         return True

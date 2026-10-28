@@ -765,6 +765,10 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         never_started = every_failure_is_the_start(report, repo_root)
         if never_started:
             result.problem = never_started
+        else:
+            crashed = the_product_crashed_mid_suite(report, output)
+            if crashed:
+                result.problem = crashed
     result.runtime_problems, result.shows = _read_runtime_report(runtime_file)
     result.phone_overflow = _read_phone_overflow(runtime_file)
     result.overlaps, result.small_targets = _read_layout_findings(runtime_file)
@@ -1403,6 +1407,37 @@ _A_MISSING_SETTING = re.compile(
     r"(?:SECRET|_KEY|TOKEN|PASSWORD|DATABASE_URL)[^\n]{0,40}(?:is not set|is required|must be set|not defined)",
     re.I,
 )
+
+
+#: A request that found nothing listening, or a connection cut: what every test after the service exited sees.
+_THE_SERVICE_WAS_GONE = re.compile(r"\b(?:ECONNREFUSED|ECONNRESET|socket hang up|Connection refused|Connection reset|"
+                                   r"RemoteDisconnected|connect: connection refused)\b", re.I)
+#: The last words of a process that died of an unhandled error, in any of the runtimes the packs start.
+_A_PROCESS_DIED = re.compile(r"(?m)^(?:\[WebServer\]\s*)?(?:Node\.js v\d+|Traceback \(most recent call last\)|panic: |"
+                             r"thread '[^']*' panicked|Segmentation fault|Aborted \(core dumped\)|Fatal error: )")
+#: The start of every "the product crashed while the suite ran" problem.
+PRODUCT_CRASHED = "The product crashed while the acceptance suite ran"
+
+
+def the_product_crashed_mid_suite(report: Any, output: str) -> str:
+    """The problem to record when the service died of an error part-way through and later tests found it gone; "".
+
+    Measured on one run: two saves raced on one temp file, the second `rename` failed, the rejection went unhandled
+    and Node exited mid-suite; the same product measured 15 of 16 in one round and 3 of 16 in another, every test
+    after the crash failed with `ECONNREFUSED`, and each became a criterion defect whose fixer looked at its own
+    route. Only when at least one test passed (the product started) and at least one failed on a connection.
+    """
+    tests = list(getattr(report, "tests", None) or ())
+    if not any(t.outcome == "passed" for t in tests):
+        return ""
+    gone = [t for t in tests if t.outcome == "failed" and _THE_SERVICE_WAS_GONE.search(t.message or "")]
+    died = _A_PROCESS_DIED.search(str(output or ""))
+    if not gone or not died:
+        return ""
+    start = str(output).rfind("\n", 0, max(0, died.start() - 1200)) + 1
+    trace = str(output)[start:died.end() + 200].strip()
+    return (f"{PRODUCT_CRASHED}: the service died of an unhandled error after {sum(t.outcome == 'passed' for t in tests)} "
+            f"test(s) had passed, and {len(gone)} later test(s) found nothing listening. Its last output:\n{trace[-1800:]}")
 
 
 def every_failure_is_the_start(report: Any, root: str | Path | None = None) -> str:

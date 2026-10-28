@@ -55,6 +55,9 @@ class Context:
 #: cannot answer for it - the suite starts the product on its own - so no probe of
 #: them closes it.
 THE_PRODUCT_DOES_NOT_START = "The product does not start for the acceptance suite, so no test can reach it."
+#: The one defect for a service that died part-way through the suite (`suite.the_product_crashed_mid_suite`).
+THE_PRODUCT_CRASHED = ("The product crashes while the acceptance suite runs: an unhandled error stops the service, and "
+                       "every test after it finds nothing listening.")
 
 
 def _the_install_that_failed(saved: dict[str, Any], state: Any) -> list[Any]:
@@ -1291,6 +1294,21 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             owner=_owner_for(state, never_started),
         ))
         return defects + installs + _what_the_language_service_finds(state)
+    if never_started.startswith(suite.PRODUCT_CRASHED):
+        # One defect for the one cause, first: the criteria it took down are its symptoms, each failing only on a
+        # connection to a service that was gone. A criterion with any other failure keeps its own defect.
+        defects.append(ReportedDefect(
+            description=THE_PRODUCT_CRASHED,
+            severity="blocking",
+            reproduction_steps=f"Run `{command}` in the project directory: the service exits part-way through the suite.",
+            expected_behavior="The service keeps answering for the whole suite; an error in one request is answered, not fatal.",
+            actual_behavior=never_started[:2200],
+            affected_files=[],
+            owner=_owner_for(state, never_started),
+        ))
+        failing = [entry for entry in failing if not all(
+            suite._THE_SERVICE_WAS_GONE.search(t.get("message") or "")
+            for t in (entry.get("tests") or []) if t.get("outcome") == "failed")]
     if problems:
         defects.append(ReportedDefect(
             description="The product reports errors by itself while it loads, before any test touches it.",

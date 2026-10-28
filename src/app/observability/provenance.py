@@ -63,6 +63,7 @@ SWITCHES: dict[str, str] = {
     "MEASURE_ONCE": "app.acceptance.measured_once",
     "KEEP_THE_BEST_ON_A_REPLAN": "app.graph.best_attempt:keep_on_a_replan_switch",
     "FIRST_REREAD_ANSWERED": "app.agents.project_memory:first_reread_switch",
+    "FIX_STAGE_CALL_CAP": "app.agents.settled_answer:fix_stage_call_cap",
     "LAST_TRY_ON_DEFERRED": "app.graph.last_try_on_deferred",
     "START_PROBE": "app.acceptance.start_probe",
     "EXTENSIONS_BEFORE_A_RUN": "app.stacks.imports_before_a_run",

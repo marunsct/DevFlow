@@ -1906,6 +1906,41 @@ def _with_cut_replies_shortened(request: Any) -> Any:
     except Exception:  # noqa: BLE001 - never fail the call over a saving
         return request
 
+#: The model calls a defect-fix stage may make, behind `FIX_STAGE_CALL_CAP`. Measured over ten runs: the median
+#: productive agent-loop fix was 12 calls; the five most expensive stages were loops of 36-40 calls that ended in a
+#: surrender ("we can't fix all", empty `changed_files`), 1.1-1.9M input tokens each, under the 40-call budget every
+#: stage shares. The answer is asked for at the cap, as at any budget, and the rewrite path stays for the next try.
+FIX_STAGE_MODEL_CALLS = 16
+
+
+def _the_step_limit(step_limit: int) -> int:
+    """`step_limit`, or `FIX_STAGE_MODEL_CALLS` for a defect-fix stage when that is smaller and the switch is on."""
+    if not step_limit or not fix_stage_call_cap.enabled():
+        return step_limit
+    from app.observability.transcript import _stage_from_config
+
+    return min(step_limit, FIX_STAGE_MODEL_CALLS) if _stage_from_config("").startswith("defect_fix_") else step_limit
+
+
+class _FixStageCallCap:
+    """`FIX_STAGE_CALL_CAP` as the switch registry reads one: off in code, the compose file turns it on."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("A defect-fix stage stops at 16 model calls instead of the 40 every stage shares, and is asked for "
+                   "its answer there. Over ten runs the median productive fix took 12 calls; the costliest stages were "
+                   "36-40-call loops that ended in a surrender.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("FIX_STAGE_CALL_CAP", _FixStageCallCap.ON_BY_DEFAULT)
+
+
+fix_stage_call_cap = _FixStageCallCap()
+
+
 def build_settled_answer_middleware(
     schema: Any, stage_name: str = "", step_limit: int = 0
 ) -> Any:
@@ -2005,7 +2040,7 @@ def build_settled_answer_middleware(
                     # could not be answered from the record at all, and the
                     # schema-failure count silently absorbed every warning.
                     # Diagnosing what you cannot see is finding 47 again.
-                    correction = _running_out_of_room(messages, step_limit, schema)
+                    correction = _running_out_of_room(messages, _the_step_limit(step_limit), schema)
                     if correction:
                         logger.info(
                             "Stage %s is close to its model-call budget; telling "
@@ -2095,7 +2130,7 @@ def build_settled_answer_middleware(
                     correction = f"{correction}\n\n{_FIXED_ANSWER_NOW_NOTICE}" if correction else _FIXED_ANSWER_NOW_NOTICE
                     logger.warning("Stage %s was told its defect is fixed and carried on; only its answer is left", stage_name or "?")
                 answer_only = (spiralled and not spiral_quiet) or _nothing_left_but_the_answer(
-                    messages, step_limit, schema
+                    messages, _the_step_limit(step_limit), schema
                 ) or (stalled and not writers) or (ignored and not writers) or stuck_on_a_failure or fixed_already
                 if ignored:
                     # Named as well: the model is told which call it kept
@@ -2138,7 +2173,7 @@ def build_settled_answer_middleware(
                             "written; withholding its tools so the only move left "
                             "is the answer",
                             stage_name or "?",
-                            step_limit - _model_calls_used(messages),
+                            _the_step_limit(step_limit) - _model_calls_used(messages),
                         )
                 # The two withholding rungs are independent. `repeated` used to
                 # be computed only when nothing else had produced a correction,
@@ -2367,7 +2402,7 @@ def build_settled_answer_middleware(
                 # after reading the refusal, 51 calls past its budget, until the
                 # run's own guard restarted it.
                 refused = _the_same_refused_answer_running(messages, schema)
-                over = bool(step_limit) and _model_calls_used(messages) >= step_limit
+                over = bool(_the_step_limit(step_limit)) and _model_calls_used(messages) >= _the_step_limit(step_limit)
                 if refused and (over or refused >= SAME_REFUSED_ANSWERS_BEFORE_ENDING):
                     logger.warning(
                         "Stage %s sent the same refused answer %d time(s) running%s; ending it so "
@@ -2428,7 +2463,7 @@ def build_settled_answer_middleware(
             # when a valid answer exists, and ending with a valid answer is
             # never worse than continuing without one. Under the budget,
             # repetition is still required.
-            if step_limit and _model_calls_used(messages) >= step_limit:
+            if _the_step_limit(step_limit) and _model_calls_used(messages) >= _the_step_limit(step_limit):
                 spent = _most_recent_answer(messages, schema)
                 if spent is not None:
                     logger.info(

@@ -4,17 +4,17 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 13:38 JST. run-bc7c108f live (12:35 JST; 7548dbda -> 7dcfdc6 -> 9938bb0 -> 8d89dbc, mixed_versions); suite 21/21 at round 1. **OOM-killed at 13:12 JST** (worker pool process, 8 GiB): unit tests had grown the product's `data/notes.json` to 205 MB (LF.375 built: a fresh data directory for every test run; deploying). Resumed 13:27 after 14 min dead while the orphan check saw a live task (B26). Also LF.372 (B24), LF.373/374 today. 29 runs: 26x 9/9.
+**As of:** 2026-10-28 13:50 JST. run-bc7c108f **completed, hidden 9/9** (69 min, 14 of them OOM-dead; locked 21/0; mutation 0.5; 12 unit tests shipped failing). LF.375 (fresh data directory per test run) built from it and live; LF.372-374 earlier today. 30 runs: 27x 9/9, 2x 5/9, 1x 0/9. B22 (Harness²) awaits the owner; B26 next.
 ## Live now
 | | |
 |---|---|
-| Run | **run-bc7c108f** (notes-api-hono, Fast, all switches on, harness 7548dbda, not mixed, ceiling 12k) started 12:35 JST |
+| Run | **run-f9e8735b** (notes-api-hono, Fast, all switches on, harness e0eadeb9, not mixed, ceiling 12k) started 13:45 JST |
 | Model | gpt-oss-20b (the owner's), judged fine 2026-10-27; **reply ceiling 12,000 set 11:08 JST 2026-10-28 via `loop.sh ceiling`** (6 runs/1,479 calls: p99 3.7k, max legit 4.1k; one 79k reply looped) - harness request parameter with salvage, not a server setting |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs
+- **run-bc7c108f** (7548dbda -> 7dcfdc6 -> 9938bb0 -> 8d89dbc -> e0eadeb9, mixed_versions): **completed 13:44 JST, hidden 9/9**, 69 min, locked 21/0, mutation 0.5. OOM-killed at 13:12 (unit tests grew `data/notes.json` to 205 MB: LF.375); dead 14 min unseen by the orphan check (B26); LF.373 fired on a passing test (LF.374). 12 unit tests shipped failing.
 - **run-88eaaede** (7548dbda, not mixed): **completed 12:28 JST, hidden 9/9**, 42 min, locked 16/0, mutation 0.5. Green at 15 min; the milestone-review revision broke 12 of 16 passing tests (`ci_gate` reported, fixers could not recover, attempt 3's re-plan did): B24. Scratch `tmp-inline-*.cjs` committed in the batch: B25.
-- **run-0be12bd7** (6f610a87 -> 5557133b -> 7548dbda, two pause/deploy/rewinds): **completed 11:36 JST, hidden 9/9**, 60 min, locked 9/0, mutation 0.75. One 79k-token looping reply (13.5 min) -> ceiling 12000; three fixes committed with a flagged missing import (LF.370); the dispute set the restart test aside three times in three wordings (LF.368-371) - held on the third, fixers then implemented load-on-startup. 1 wrong unit test shipped failing.
 - **run-f523de50** (LF.355): **FAILED, hidden 5/9**, 144 min: a locked test asserting JSON on a 204 DELETE reverted every correct fix (8x); LF.356-359 built for it.
 ## Built 2026-10-23 (deployed since): general model steering (MD.3)
 Owner: guidance general, not per model; weaker models steered more; each guide its own switch; a settings
@@ -94,8 +94,6 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
 - B10 F4 `reasoning_effort` per stage (arm); F5 plan role check; F6 skeleton tests from the specification; F8 API section once per stage; F10 memory/orphan check in `loop.sh ready`; F11 page-selector contract (browser family).
 - B11 [built LF.345] the release mutation score counts the unit tests too (or reports suite and unit apart): LF.334's proven unit tests are invisible in it.
 - B12 a criterion still failing after the second re-plan is deferred then, not after the third (both such criteria passed hidden on run-6929d37b).
-- B14 [built LF.359, measuring; the repair-limit part is covered: LF.353 renames at the review without reopening the suite, and only `reopen_the_suite_for` counts a repair] a locked test that reads a body or a JSON content type from a response the interface contract says is 204 contradicts the contract: catch it among `tests_that_cannot_pass` at the review (run-f523de50 failed 5/9 on one such test, AC-7, which reverted every correct DELETE fix). Also: mechanical corrections the harness makes itself (LF.353 renames) should not count against the suite's overall repair limit.
-- B15 [built LF.361, measuring] a restart test that writes through the shared server's `request` and reads from a service it started itself on a fresh data folder cannot pass (seen at a lock alongside LF.360's `require`); build a check if the repair does not catch it.
 - B16 [open] release gaps repeat "locked with this still open" review notes the final measurement contradicts (run-27bce4ec: eight notes said every route fails; the suite passed 13/14): drop or mark them at release.
 - B17 [built LF.365, measuring] a green suite with only unit tests failing: send the unit-test defect with LF.362's out-of-date framing from the start, not only after a revert.
 - B18 [dispute half built LF.368, measuring; report-name half open] keep each suite measurement's report under its own name so MEASURE_ONCE never reads a shared path a partial run wrote (LF.363 guards it by counts); and a dispute that rules a test "cannot pass" because of what the implementation does is checked against the specification first (run-35ce828d's AC-18 415 tests).

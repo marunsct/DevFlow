@@ -81,9 +81,26 @@ def after_a_redraft(root: str | Path, *, test_round: int, replans: int) -> str:
     first measurement and the sprint is planned again. Returns what was done, or "" (not a re-plan's first round, no
     clear drop, or off), in which case the round goes on as it does.
     """
-    if test_round != 0 or replans <= 0:
+    if not ((test_round == 0 and replans > 0) or _the_head_is_a_batch(root)):
         return ""
     return restore_if_worse(root)
+
+
+def _the_head_is_a_batch(root: str | Path) -> bool:
+    """Whether the last commit is a batch of work orders: this measurement is its first.
+
+    A re-plan is not the only redraft. Measured on one run: a milestone review's revision (five findings) was a
+    batch at round 4 of an attempt with no re-plan; it took a green product from 16 acceptance tests to 4, the best
+    stayed on record unused, twelve per-defect fixes could not reach the cause, and only the next re-plan put the
+    best back. The first measurement after any batch is judged the same way.
+    """
+    try:
+        from app import ci
+
+        done = ci._git(Path(root), "log", "-1", "--format=%s")
+        return bool(done) and done.returncode == 0 and done.stdout.strip().startswith("Work orders:")
+    except Exception:  # noqa: BLE001 - a record that cannot be read undoes nothing
+        return False
 
 
 def _kept(path: str, locked: set[str]) -> bool:

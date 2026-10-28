@@ -190,3 +190,21 @@ def test_nothing_is_measured_when_nothing_was_put_back(tmp_path, monkeypatch):
     monkeypatch.setattr(suite, "run", lambda repo, *a, **k: measured.append(1))
 
     assert best_attempt.restore_if_worse(root) == "" and measured == []
+
+
+def test_a_revision_batch_that_wrecks_a_green_product_is_undone_at_its_first_measurement(tmp_path, monkeypatch):
+    """Measured on one run: a milestone review's revision batch at round 4 (no re-plan) took 16 passing acceptance
+    tests to 4; the best stayed on record unused and twelve fixes could not reach the cause."""
+    from app import ci
+
+    root = _repo(tmp_path)
+    _measured(monkeypatch, root, 16)
+    best_attempt.note(root)
+    (root / "src" / "app.ts").write_text("export const app = 'revised and broken';\n")
+    ci.commit(root, "Work orders: Atomic persistence and secure dir permissions")
+    _measured(monkeypatch, root, 4)
+
+    said = best_attempt.after_a_redraft(root, test_round=4, replans=0)
+
+    assert "passes 4 acceptance tests now and passed 16" in said
+    assert (root / "src" / "app.ts").read_text() == "export const app = 'working';\n"

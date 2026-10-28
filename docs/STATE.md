@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | **run-35ce828d** (notes-api-hono, Fast, all switches on, harness 1dd60f91, not mixed) started 08:27 JST |
+| Run | **run-683a23ed** (notes-api-hono, Fast, all switches on, harness 7788c76a, not mixed) started 09:19 JST |
 | Model | gpt-oss-20b (the owner's), judged fine for the loop 2026-10-27 |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

@@ -136,6 +136,8 @@ bug or gap at any time, cancel immediately.
 
 **Shakedown runs (owner 2026-10-22 20:00 JST):** for the first couple of runs with every group 2 switch on, a confirmed harness bug is fixed immediately and the run paused, deployed and rewound to the earliest affected stage - `loop.sh rewind --pause-only; BOUNDARY_WAIT=0 loop.sh deploy; loop.sh rewind <stage>` - whatever the run's age (the 40-minute rule does not apply). Their scores are not arms; the gated runs start once a run passes with no new harness bug. Only a bug that changes the run's outcome or wastes its time is deployed this way; a fix that does not (measurement, log wording, tooling) is pushed and deployed with the next significant one (owner, 20:19 JST).
 
+- **Rewind to before the wrong verdict, not to the stage that read it** (2026-10-28): a rewind replays from the stage entry at or before the time given, keeping every ledger verdict written before it. To undo a fix stage's wrong "left open", give a time before that fix stage began (`loop.sh defects` shows it); rewinding to the round that read it replays the same verdict.
+
 **Mid-run deploys when defect fixed (owner instruction 2026-10-10 18:45 JST):**
 
 - When a harness defect or bottleneck is caught during a run, implement the fix and test immediately.

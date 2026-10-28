@@ -240,6 +240,44 @@ logger = logging.getLogger(__name__)
 #: The reply cap in force for the call this thread is making, if any.
 _REPLY_CAP = threading.local()
 
+#: The longest reply a defect-fix stage is asked for, behind `FIX_STAGE_REPLY_CAP`. Measured on one run: a fix stage's
+#: fourteen calls took thirteen minutes, eight of them in two replies of 28,448 and 23,446 tokens (mostly reasoning),
+#: while its other replies averaged under a thousand. A cut reply is answered by reply salvage from its kept reasoning;
+#: every other stage keeps the length it had (an architect's correct specification reply measured 22,810).
+FIX_STAGE_REPLY_TOKENS = 12_000
+
+
+def fix_stage_reply_cap(ceiling: int | None) -> int | None:
+    """`FIX_STAGE_REPLY_TOKENS` (or `ceiling` when smaller) for a `defect_fix_*` stage with the switch on; else None."""
+    try:
+        if not fix_stage_reply_cap_switch.enabled():
+            return None
+        from app.observability.transcript import _stage_from_config
+
+        if not _stage_from_config("").startswith("defect_fix_"):
+            return None
+        return min(FIX_STAGE_REPLY_TOKENS, ceiling) if ceiling and ceiling > 0 else FIX_STAGE_REPLY_TOKENS
+    except Exception:  # noqa: BLE001 - a cap that cannot be read asks for no cap
+        return None
+
+
+class _FixStageReplyCap:
+    """`FIX_STAGE_REPLY_CAP` as the switch registry reads one: off in code, the compose file turns it on."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("A defect-fix stage's replies are capped at 12,000 tokens; reply salvage answers a cut reply from its "
+                   "reasoning. Measured on one run, two fix-stage replies of 28k and 23k tokens took eight minutes.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("FIX_STAGE_REPLY_CAP", _FixStageReplyCap.ON_BY_DEFAULT)
+
+
+fix_stage_reply_cap_switch = _FixStageReplyCap()
+
 #: A failure after this long is the reply being cut off, not the call failing.
 SLOW_FAILURE_SECONDS = 60.0
 
@@ -607,7 +645,7 @@ class CompatibleChatOpenAI(ChatOpenAI):
             return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
         ceiling = self.max_tokens if isinstance(self.max_tokens, int) else None
         server = (str(self.openai_api_base or ""), str(self.model_name or ""))
-        cap = None
+        cap = fix_stage_reply_cap(ceiling)
         quick_failures = 0
         while True:
             started = time.monotonic()

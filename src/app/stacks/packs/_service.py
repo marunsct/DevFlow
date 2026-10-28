@@ -167,8 +167,11 @@ ON_THE_FILE_DATABASE = (
     "or a query only the server has stops the product before any test runs."
 )
 
+#: The data directory may not exist when the service starts: measured on one run, the suite handed the service a fresh
+#: `DATA_DIR` path, every first write failed `ENOENT`, each request answered 500, and four fixes in a row were reverted.
 DATA_GUIDE = """A service that stores data keeps it under the directory in the `DATA_DIR`
-environment variable (default `data/`), never in memory only; one meant for a
+environment variable (default `data/`), never in memory only. It may not exist yet: create it, with its parents,
+before the first write; a missing data file reads as empty. One meant for a
 database server reads its address from `DATABASE_URL` and, when that is unset,
 keeps a file database under `DATA_DIR`, which is what every test runs on. """ + ON_THE_FILE_DATABASE + """ The
 service listens on the port in `PORT` and the interface in `HOST`. Never start

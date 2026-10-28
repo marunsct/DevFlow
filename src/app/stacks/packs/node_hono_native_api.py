@@ -114,7 +114,7 @@ test('the service reports its health', async () => {
 """
 
 GUIDE = """The service is Hono in TypeScript, run by Node itself: `src/main.ts` serves `createApp()` from `src/app.ts` and
-`npm start` is `node src/main.ts` - there is no build step and no compiler output. Because Node strips the types and
+`npm start` is `node src/main.ts` - there is no build step. Because Node strips the types and
 runs the file, write only TypeScript that is types and nothing else: type annotations, `interface`, `type`, `import
 type`; NOT `enum`, `namespace`, class parameter properties (`constructor(private x: T)`) or decorators. Import your own
 files with their extension, `import { x } from './x.ts'`, and packages by name. Add routes to the application
@@ -125,8 +125,7 @@ Unit tests go in `test/`, named `<area>.test.ts`, with Node's own runner: `impor
 `import assert from 'node:assert/strict'`, and call the application in memory - `await createApp().request('/items',
 { method: 'POST', body: JSON.stringify({ ... }), headers: { 'content-type': 'application/json' } })` returns a standard
 `Response`. Use that, not a client library: `hono/testing` exports only `testClient`, which needs the route types, and
-nothing else (no `createClient`, no `createTestClient`). Before you finish, run `npm run typecheck` and `npm test`. Install a dependency with `npm install <name>`; look up what a package exports with
-the `module_exports` tool before importing a name you are not sure of."""
+nothing else (no `createClient`, no `createTestClient`). Before you finish, run `npm run typecheck` and `npm test`. Check a package's exports with `module_exports` before importing a name you are unsure of."""
 
 DOCKERFILE = """# {{title}}: build with `docker build -t {{project}} .`, run with
 # `docker run -p 3000:3000 -v {{project}}-data:/data {{project}}`.

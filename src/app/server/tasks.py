@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import time
+from typing import Callable
 import os
 from datetime import datetime, timezone
 
@@ -184,8 +185,52 @@ def _recover_runs_their_worker_abandoned(**_kwargs) -> None:
     import threading
 
     threading.Thread(
-        target=_sweep_for_abandoned_runs, name="orphan-sweep", daemon=True
+        target=_sweep_and_keep_sweeping, name="orphan-sweep", daemon=True
     ).start()
+
+
+#: How often the Celery parent looks again for a running row whose task is gone, after the start-time sweep.
+#: Measured on one run: the pool process was OOM-killed mid-stage and the row sat `running` for 14 minutes, until a
+#: deploy's restart swept; nothing had looked at running rows between restarts.
+_RECURRING_SWEEP_SECONDS = 90
+_RECURRING_LOCK_KEY = "harness:recover-orphans:recurring"
+
+
+def _a_quiet_emit(line: str) -> None:
+    """The sweep's words, at INFO when it changed something and at DEBUG when it found nothing."""
+    loud = "->" in line or "Recovered" in line or "Resum" in line or "OOM" in line
+    (logger.info if loud else logger.debug)(line)
+
+
+def _keep_sweeping(*, sleep: Callable[[float], None] | None = None, stop: Callable[[], bool] = lambda: False) -> None:
+    """Sweep for abandoned runs every `_RECURRING_SWEEP_SECONDS` for as long as this worker lives. Never raises.
+
+    The same guarded sweep as at start (`recover_orphaned_runs`: a row is touched only when the broker answers and
+    its task is in no worker's active, reserved or scheduled list, and it was not written to in the last minute),
+    under a short lock so one worker sweeps at a time.
+    """
+    from app.server.manage import RECENTLY_TOUCHED_SECONDS, recover_orphaned_runs
+
+    if _RECURRING_SWEEP_SECONDS <= 0:
+        return
+    pause = sleep or time.sleep
+    while not stop():
+        pause(_RECURRING_SWEEP_SECONDS)
+        try:
+            from app.server.redis_client import get_redis_client
+
+            client = get_redis_client()
+            if not client.set(_RECURRING_LOCK_KEY, "1", nx=True, ex=max(10, _RECURRING_SWEEP_SECONDS - 10)):
+                continue
+            recover_orphaned_runs(dry_run=False, emit=_a_quiet_emit, grace_seconds=RECENTLY_TOUCHED_SECONDS)
+        except Exception:  # noqa: BLE001 - a sweep must never take a worker down
+            logger.warning("The recurring orphan sweep failed; looking again later", exc_info=True)
+
+
+def _sweep_and_keep_sweeping() -> None:
+    """The start-time sweep, then the recurring one, on the same daemon thread."""
+    _sweep_for_abandoned_runs()
+    _keep_sweeping()
 
 
 def _sweep_when_the_lock_lapses(client) -> None:

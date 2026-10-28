@@ -69,3 +69,12 @@ def test_the_round_asks_whenever_the_suite_is_green():
     source = inspect.getsource(workflow)
     assert ('        if not failing_due and int(saved_run.get("failed") or 0) == 0:\n'
             "            test_result = _with_the_contract_s_server_errors(state, test_result, milestone)") in source
+
+
+def test_a_note_among_the_statuses_is_no_part_of_the_check():
+    checks, unreadable = ic.parse([
+        "AC-1 POST /notes -> 201 (with Note object) or 400/422",
+        "AC-3 GET /notes/{id} -> 200 (with Note object) or 404",
+    ])
+    assert unreadable == []
+    assert [(c.method, c.statuses) for c in checks] == [("POST", (201, 400, 422)), ("GET", (200, 404))]

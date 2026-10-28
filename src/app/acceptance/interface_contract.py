@@ -57,6 +57,8 @@ _COMMAND = re.compile(_CRITERION + r"\s+command\s+(.+?)\s*->\s*exit\s+(\d+)\s*$"
 #: A control named by its element where the contract asks for its ARIA role.
 _ROLE_OF_THE_ELEMENT = {"textarea": "textbox", "select": "combobox"}
 
+#: A parenthesised note after the arrow with a status before it: "-> 201 (with Note object) or 400".
+_A_NOTE_AMONG_THE_STATUSES = re.compile(r"(->\s*\d{3}(?:\s*(?:or|/|,)\s*\d{3})*)\s*\([^()]*\)")
 #: A parenthesised note at the end of a line: "-> 200 (updates the field)".
 _A_TRAILING_NOTE = re.compile(r"\s+\([^()]*\)\s*$")
 
@@ -149,6 +151,10 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
         # the check: one specification wrote "AC-11 PUT /tasks/{id} -> 200
         # (updates reminder_at field)", and the line was dropped at the lock.
         line = _A_TRAILING_NOTE.sub("", line)
+        # And one among the statuses: "AC-1 POST /notes -> 201 (with Note object) or 400/422". Measured on one run:
+        # four of six lines were written so and none was checked at release.
+        while (between := _A_NOTE_AMONG_THE_STATUSES.sub(r"\1", line)) != line:
+            line = between
         if match := _HTTP.match(line):
             statuses = tuple(int(code) for code in re.findall(r"\d{3}", match[4]))
             checks.append(Check(match[1], "http", line, method=match[2], path=match[3], status=statuses[0],

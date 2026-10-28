@@ -343,7 +343,11 @@ corpus)
     in_worker corpus.py "${3:-$(current)}"
     mkdir -p data/corpus && docker cp langchain-worker-1:/app/data/corpus/. data/corpus/ >/dev/null 2>&1 || true
     ;;
-  accept) DATA_DIR=data PYTHONPATH="$ROOT/src" "$PY" -c 'from app.observability.reader_corpus import replay; print(replay(accept=True))' ;;
+  # Accepted here and copied into the worker: `harvest` copies the worker's corpus over this one after every
+  # scored run, and an acceptance made only here was undone by the next score, failing the suite again.
+  accept) DATA_DIR=data PYTHONPATH="$ROOT/src" "$PY" -c 'from app.observability.reader_corpus import replay; print(replay(accept=True))'
+          docker cp data/corpus/. langchain-worker-1:/app/data/corpus/ >/dev/null 2>&1 \
+            || echo "corpus: the accepted results were not copied into the worker; the next harvest will undo them" >&2 ;;
   *) DATA_DIR=data PYTHONPATH="$ROOT/src" "$PY" -c 'from app.observability.reader_corpus import sizes, replay; print(sizes()); print("changed:", replay())' ;;
   esac
   ;;

@@ -253,6 +253,9 @@ class StackPack:
     #: when the pack has none. The start probe adds them when the readiness route is not served (a router mounted
     #: under its own path once served `/health/health`).
     list_routes: tuple[str, ...] = ()
+    #: An error a product on this stack is known to raise, by a phrase of its message, and what causes it; added to a
+    #: defect whose text carries the phrase (`app.stacks.known_errors`).
+    known_errors: Mapping[str, str] = field(default_factory=dict)
 
 
     @property

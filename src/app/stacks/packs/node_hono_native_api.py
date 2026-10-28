@@ -11,6 +11,7 @@ namespaces, no parameter properties), and relative imports that name the `.ts` f
 from __future__ import annotations
 
 from app.stacks.packs import _javascript as js
+from app.stacks.packs._hono import HONO_KNOWN_ERRORS
 from app.stacks.packs._service import FACTORY_GUIDE, service_pack
 from app.switches import is_on
 
@@ -150,6 +151,7 @@ LIST_ROUTES = (
 )
 
 PACK = service_pack(
+    known_errors=HONO_KNOWN_ERRORS,
     name="node-hono-native-api",
     entrypoint="src/app.ts",
     required_exports={"src/app.ts": ("createApp",)},

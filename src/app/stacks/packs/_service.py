@@ -213,6 +213,7 @@ def service_pack(
     relative_import_extension: str = "",
     typecheck: tuple[str, ...] = (),
     list_routes: tuple[str, ...] = (),
+    known_errors: Mapping[str, str] | None = None,
 ) -> StackPack:
     """A pack for an HTTP service in its own language, accepted through Playwright's `request` fixture."""
     # The brief names the service by its `start.sh`, and the suite runs that script when the project has one
@@ -269,4 +270,5 @@ def service_pack(
         release_files=release_files,
         server_wait_ms=server_timeout_ms,
         list_routes=list_routes,
+        known_errors=dict(known_errors or {}),
     )

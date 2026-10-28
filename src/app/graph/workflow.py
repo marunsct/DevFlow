@@ -10591,6 +10591,10 @@ def build_workflow_graph(
                     "failed; recording that as a defect", test_round,
                 )
                 reported = raised_by("test command", [unreported])
+        # An error the stack pack knows, given its cause (`app.stacks.known_errors`).
+        from app.stacks.known_errors import with_known_causes
+
+        reported = with_known_causes(state["repository"].root_path, reported)
         cycle = state.get("remediation") or start_remediation(
             milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS
         )

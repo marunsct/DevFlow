@@ -515,6 +515,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     rounds = int(state.get("acceptance_round") or 1)
     # A file the runner skips only for its name's separator is renamed, not sent back (five rounds once ran out on it).
     suite.rename_files_the_runner_skips(root)
+    # So is a read of `request.baseURL`, left through three rounds although each named the corrected line.
+    suite.correct_reads_of_the_fixture_s_baseurl(root)
     problems = suite.gaps(root)
     result = suite.run(root)
     if not result.ran:

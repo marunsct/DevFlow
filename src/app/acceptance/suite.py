@@ -1189,6 +1189,55 @@ def rename_files_the_runner_skips(repo_root: str | Path) -> list[str]:
         return []
 
 
+#: A test's fixture argument written as one destructured object: `async ({ request, page }) =>`.
+_THE_FIXTURE_ARGUMENT = re.compile(r"async\s*\(\s*\{([^{}()]*)\}\s*\)\s*=>")
+
+
+def correct_reads_of_the_fixture_s_baseurl(repo_root: str | Path) -> list[str]:
+    """Put `baseURL` for `request.baseURL` in each test that reads it, adding `baseURL` to its fixtures; what changed.
+
+    Measured on two runs: told the exact lines to change (`reads_of_what_the_test_does_not_have`), QA left
+    `request.baseURL` - `undefined` on every product - through three review rounds and the suite was locked with
+    it. The correction is mechanical and the harness makes it, as it renames a file the runner skips. Only in a
+    test whose fixtures are one destructured object it can read; any other is left to the review's finding.
+    Never raises.
+    """
+    changed: list[str] = []
+    try:
+        if contract.the_pack(repo_root) is None:
+            return []
+        root = Path(repo_root)
+        for path in suite_files(repo_root):
+            if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if not _THE_FIXTURE_S_BASEURL.search(text):
+                continue
+            starts = [m.start() for m in _A_TEST_CALL.finditer(text)] + [len(text)]
+            pieces, done, at = [], 0, 0
+            for begin, end in zip(starts, starts[1:]):
+                block = text[begin:end]
+                argument = _THE_FIXTURE_ARGUMENT.search(block)
+                if not _THE_FIXTURE_S_BASEURL.search(block) or argument is None:
+                    continue
+                names = [part.strip() for part in argument.group(1).split(",") if part.strip()]
+                head = block[:argument.end()]
+                if "baseURL" not in names:
+                    inner = argument.group(1)
+                    spaced = inner.rstrip() + ", baseURL" + inner[len(inner.rstrip()):]
+                    head = block[:argument.start(1)] + spaced + block[argument.end(1):argument.end()]
+                pieces += [text[at:begin], head, _THE_FIXTURE_S_BASEURL.sub("baseURL", block[argument.end():])]
+                at, done = end, done + 1
+            if done:
+                path.write_text("".join(pieces) + text[at:], encoding="utf-8")
+                changed.append(f"{path.relative_to(root).as_posix()}: `request.baseURL` -> `baseURL` in {done} test(s)")
+        if changed:
+            logger.warning("Corrected reads of the request fixture's baseURL: %s", "; ".join(changed))
+    except Exception:  # noqa: BLE001 - the review's own finding stands
+        logger.debug("Could not correct the reads of request.baseURL", exc_info=True)
+    return changed
+
+
 def _a_file_the_runner_does_not_collect(repo_root: str | Path, shown: Any) -> str:
     """Why a file's tests never run when its name is not one the runner collects; "" when it is, or unknown.
 

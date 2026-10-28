@@ -500,6 +500,7 @@ class WorkflowGraphState(TypedDict, total=False):
     # against a specification. See `_a_success_measure_the_specification_drops`.
     specification_coverage_checked: bool
     specification_deferrals_checked: bool
+    specification_kept_files_checked: bool
     specification_repair_count: int
     layout_repair_count: int
     # Per-stage count of attempts that ended without a structured response.
@@ -4995,6 +4996,88 @@ def _a_brief_feature_the_specification_defers(state: Any, spec_text: str) -> Any
     )
 
 
+#: Behaviour a specification has given the pack's kept start files that a review then sends a sprint back for:
+#: handling the stop signals. Narrow on purpose: measured over 20 specifications, broader words (validates,
+#: persists) named test lines and deferral lists in 13, and "creates the data directory" 9 runs that all passed,
+#: since the product creates it anyway; the stop signals cost a milestone revision and a blocking finding.
+_PRODUCT_BEHAVIOUR = re.compile(
+    r"\b(?:SIGTERM|SIGINT|signal\s+handl\w*|graceful(?:ly)?\s+shut\w*|shutdown\s+handl\w*)", re.I)
+#: How far after the file's name the behaviour may be named for the file to be its subject.
+_NEAR_ITS_NAME = 100
+#: A sentence about tests or about what is left out says nothing of what a file does.
+_NOT_ABOUT_THE_FILE = re.compile(r"\b(?:AC|CR)-\d+\b|\btests?\b|\bassert\w*|\bdefer\w*|\bout of scope\b", re.I)
+#: Another file named in a sentence, which the behaviour may belong to instead.
+_ANOTHER_FILE_NAMED = re.compile(r"\b[\w-]+\.(?:[cm]?[jt]sx?|py|rb|go|rs|java|kt|cs|php|sh|json|toml|ya?ml)\b")
+
+
+def _gives_it_behaviour(sentence: str, start: int, end: int) -> bool:
+    """Whether a sentence gives the file at `start:end` the behaviour: named soon after it, no other file between."""
+    if _NOT_ABOUT_THE_FILE.search(sentence):
+        return False
+    for match in _PRODUCT_BEHAVIOUR.finditer(sentence, end):
+        between = sentence[end:match.start()]
+        if len(between) <= _NEAR_ITS_NAME and not _ANOTHER_FILE_NAMED.search(between):
+            return True
+    return False
+
+
+def _behaviour_the_specification_gives_kept_files(state: Any, spec_text: str) -> Any:
+    """A major finding for each sentence of the specification that gives product behaviour to a file the pack keeps.
+
+    Measured on four runs: told the pack's files are the harness's and do nothing more, the specification still
+    wrote "Entry Point (src/main.ts - kept by harness): ... registering signal handlers for graceful shutdown ...
+    Creates DATA_DIR" and "start.sh creates DATA_DIR"; the design reviews left it open and a milestone review sent a
+    sprint back for it. Raised by the workflow like `_a_brief_feature_the_specification_defers`: once per run, and
+    never on the revision that would exhaust `MAX_ARCHITECTURE_REVISIONS`. Never raises.
+    """
+    try:
+        if state.get("specification_kept_files_checked"):
+            return None
+        if state.get("architecture_revision_count", 0) + 1 >= MAX_ARCHITECTURE_REVISIONS:
+            return None
+        from app.stacks import choose_pack
+
+        stack = getattr(state.get("stack_selection"), "technology_stack", None)
+        pack = choose_pack(stack, getattr(state.get("document"), "text", "") or "") if stack is not None else None
+        if pack is None:
+            return None
+        kept = {*pack.kept_files, *(["start.sh"] if "start.sh" in (pack.files or {}) else [])}
+        served = [e for e in (pack.entrypoint, *pack.entrypoints) if e and e not in kept]
+        names = {PurePosixPath(path).name: path for path in kept}
+        found: list[tuple[str, str]] = []
+        for sentence in re.split(r"(?<=[.!?])\s+|\n", spec_text or ""):
+            for name, path in names.items():
+                at = re.search(rf"(?<![\w.-]){re.escape(name)}\b", sentence)
+                if at and _gives_it_behaviour(sentence, at.start(), at.end()):
+                    found.append((path, " ".join(sentence.split())[:200]))
+                    break
+        if not found:
+            return None
+        from app.agents.architecture_reviewer import ArchitectureReviewFinding
+
+        files = sorted({path for path, _ in found})
+        return ArchitectureReviewFinding(
+            severity="major",
+            description=(
+                "The specification gives product behaviour to "
+                + ", ".join(f"`{path}`" for path in files)
+                + ", which the harness writes and keeps as it is - no work order may change "
+                + ("it" if len(files) == 1 else "them") + ": "
+                + "; ".join(f"\"{where}\"" for _, where in found[:4])
+                + "."
+            ),
+            evidence="Compared by the workflow against the files the stack's setup keeps.",
+            required_remediation=(
+                "Give that behaviour to the product's own files"
+                + (f" - `{served[0]}`, which the start file loads, or a module it imports" if served else "")
+                + " - in every section that names it, and say what the kept file does only as it is."
+            ),
+        )
+    except Exception:  # noqa: BLE001 - the review stands as written
+        logger.debug("Could not check the specification against the kept files", exc_info=True)
+        return None
+
+
 def _a_pass_over_its_own_findings(
     review: Any, repo_root: str | None, passing_status: str, stage_name: str
 ) -> Any:
@@ -9216,6 +9299,13 @@ def build_workflow_graph(
             )
             update["architecture_review"] = review
             update["specification_deferrals_checked"] = True
+        kept_finding = _behaviour_the_specification_gives_kept_files(state, spec_text)
+        if kept_finding is not None:
+            review = review.model_copy(
+                update={"findings": [*review.findings, kept_finding], "status": "changes_required"}
+            )
+            update["architecture_review"] = review
+            update["specification_kept_files_checked"] = True
 
         review = _a_pass_over_its_own_findings(
             review, state["repository"].root_path, "approved", "architecture_review"

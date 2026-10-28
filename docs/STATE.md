@@ -4,7 +4,7 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-29 02:58 JST. run-d907728e (7th Qwen3.6 run, 1e42bed6, LF.398 on) **completed, hidden 9/9** in 33.6 active min, 107 calls, locked 20/0, mutation 0.667 (0.917 with unit), 2 unit tests shipped failing (one fix reverted, sprint settled). LF.398 never fired: unit tests kept rounds unclean and 6 of 8 contract lines followed no form -> LF.399 (compound contract lines read; probe whenever the suite is green). 40 runs: 37x 9/9, 2x 5/9, 1x 0/9. Next: measure LF.398/399; verify review findings naming a package API.
+**As of:** 2026-10-29 02:58 JST. run-d907728e (7th Qwen3.6 run, 1e42bed6, LF.398 on) **completed, hidden 9/9** in 33.6 active min, 107 calls, locked 20/0, mutation 0.667 (0.917 with unit), 2 unit tests shipped failing (one fix reverted, sprint settled). LF.398 never fired: unit tests kept rounds unclean and 6 of 8 contract lines followed no form -> LF.399 (compound contract lines read; probe whenever the suite is green). From run-99a07406: LF.400 (a restarted stage is told how its last attempt ended). 40 runs: 37x 9/9, 2x 5/9, 1x 0/9. Next: measure LF.398/399; verify review findings naming a package API.
 ## Live now
 | | |
 |---|---|

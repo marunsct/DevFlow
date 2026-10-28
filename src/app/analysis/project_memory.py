@@ -439,6 +439,17 @@ def who_changed(root: str | Path, relative_path: str) -> str:
         return ""
 
 
+def files_changed_by(root: str | Path, stage: str) -> list[str]:
+    """The files `stage` was the last to change, oldest change first; [] when none or unknown. Never raises."""
+    try:
+        held = _load(Path(root))
+        mine = [(str(e.get("changed_at") or ""), path) for path, e in held.items()
+                if isinstance(e, dict) and stage and e.get("changed_by") == stage]
+        return [path for _, path in sorted(mine)]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def who_created(root: str | Path, relative_path: str) -> str:
     """The stage that first wrote this file, or "". Never raises.
 

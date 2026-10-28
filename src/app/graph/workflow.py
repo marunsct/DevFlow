@@ -2245,7 +2245,7 @@ def _restart_on_a_fresh_conversation(
     try:
         from app.agents.carry_over import carry_over_note
 
-        note = carry_over_note(inner_thread_id, repo_root)
+        note = carry_over_note(inner_thread_id, repo_root, stage_name, why)
     except Exception:  # noqa: BLE001 - never fail a restart over a hint
         note = ""
     if note:

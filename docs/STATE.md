@@ -4,17 +4,17 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-28 18:30 JST. First Qwen3.6 run run-c9584d38 **completed, hidden 9/9** (57 active min, 109 calls, 3.2k output tokens/call, cache 64%, tool failures 8.6%; 7 reverts all from one `vitest`-vs-`node:test` cause -> LF.386/388; restart variant -> LF.387). 33 runs: 30x 9/9, 2x 5/9, 1x 0/9. Next: plan item 16, then 10; measure thinking-off for edit stages before proposing it.
+**As of:** 2026-10-28 19:38 JST. run-1f70c434 (2nd Qwen3.6 run) **completed, hidden 9/9**, 61 active min, **0 reverts, nothing deferred, no KPI regression**, tool failures 2.1%, cache 74%, locked 23/0, mutation 0.75 - the day's cleanest run. 34 runs: 31x 9/9, 2x 5/9, 1x 0/9. Next from the plan: item 16, then 10.
 ## Live now
 | | |
 |---|---|
-| Run | **run-1f70c434** (notes-api-hono, Fast, all switches on, harness c4f11015, Qwen3.6-35B-A3B MTP) started 18:26 JST |
+| Run | **run-b4f264fe** (notes-api-hono, Fast, all switches on, harness c4f11015, Qwen3.6-35B-A3B MTP) started 19:35 JST |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner, 17:10 JST 2026-10-28) at :8888, 2 slots, context 184,320; owner's sampling: Qwen 'thinking, precise coding' (temp 0.6, top_p 0.95, top_k 20, min_p 0, repeat 1.0, presence 0). This server **reports cached tokens** (`cached_token_share` is real from here; LM Studio's gpt-oss did not). Diagnosed 17:24 JST: tools 3/3 everywhere, edits 100/100, structured answers forced, reasoning switch honoured, salvage supported; deep: no loop (no reply ceiling), weak at heeding a refusal (0/3) and answering as a call when offered (1/3); kept guide: stop when the checks pass. gpt-oss-20b keeps its 12k ceiling in its own record. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs
+- **run-1f70c434** (c4f11015, not mixed, Qwen3.6): **completed 19:28 JST, hidden 9/9**, 61 active min, 133 calls, tool failures 2.1%, cache 74%, locked 23/0, 0 reverts, mutation 0.75. `createApp` renamed by the draft, raised by LF.382 at round 0, restored by the second fixer; one equivalent-mutant verdict checked and correct.
 - **run-c9584d38** (first Qwen3.6-35B-A3B MTP run; 99449ce -> abe71b0 -> c2f4e04 -> c4f1101): **completed 18:22 JST, hidden 9/9**, 57 active min, 109 calls, cache 64%, tool failures 8.6%, locked 16/0, AC-15 deferred, mutation 0.583. Writes `vitest` tests out of habit (LF.386/388); a third restart-test shape (LF.387); one 32k runaway reply, no ceiling set (a correct 22.8k reply exists).
-- **run-f37ca8de** (5ad49d7 -> e155ef5 -> 99449ce, mixed_versions): **completed 16:52 JST, hidden 9/9**, 47 min, locked 11/0, 0 reverts, mutation 0.583. LF.384's cap held after its deploy (one 30-call stage before it); three mutation gaps judged equivalent; LF.385 caught a restart test reading `process.env.DATA_DIR`.
 - **run-f523de50** (LF.355): **FAILED, hidden 5/9**, 144 min: a locked test asserting JSON on a 204 DELETE reverted every correct fix (8x); LF.356-359 built for it.
 ## Built 2026-10-23 (deployed since): general model steering (MD.3)
 Owner: guidance general, not per model; weaker models steered more; each guide its own switch; a settings

@@ -19,6 +19,7 @@ product is wrong is not named, and stays the product's to fix.
 
 from __future__ import annotations
 
+import logging
 import re
 
 from pathlib import Path
@@ -111,6 +112,8 @@ def create_suite_dispute_agent(
 
 
 #: A test title's criterion tags: `[AC-5][AC-12] `.
+logger = logging.getLogger(__name__)
+
 _TAGS = re.compile(r"^(?:\s*\[[^\]]+\])+\s*")
 
 
@@ -123,6 +126,33 @@ def _what_a_line_says_of(lines: Sequence[str], spellings: Sequence[str]) -> str 
                 at = lowered.index(spelling.lower())
                 return line[at + len(spelling):].lstrip(" `:-–—").strip()
     return None
+
+
+#: A clause whose cause is what the product does: the implementation, the code, the actual answer.
+_THE_PRODUCT_DOES = re.compile(
+    r"\b(?:the\s+)?(?:implementation|product|code|actual(?:\s+\w+){0,2}|server|service|api|endpoint|handler|"
+    r"response|returned\s+\w+)\b[^.;]{0,40}?\b(?:includes?|returns?|contains?|has|have|adds?|sends?|responds?|gives?|"
+    r"lacks?|omits?|parses?|sets?|uses?|does\s+not|doesn't|is\s+not|are\s+not)\b", re.I)
+#: A clause whose subject is the test asking for what the standard does not give.
+_THE_TEST_OVERASKS = re.compile(
+    r"\b(?:test|it|assert\w*|expect\w*|asks?|requires?)\b[^.;]{0,100}?\b(?:criterion|criteria|brief|specification|spec|"
+    r"interface)\b[^.;]{0,40}?\b(?:does\s+not|do\s+not|doesn't|never|nowhere|not\s+(?:require|mention|state|say|specify|define|ask))\b",
+    re.I)
+
+
+def judged_by_the_code(why: str) -> bool:
+    """Whether a reason sets a test aside for what the product does rather than for what the criterion says.
+
+    Measured on two runs: "the implementation includes createdAt and updatedAt, which are not part of the criterion"
+    set aside the tests of a criterion that lists a record's three fields; "the implementation parses the body as
+    JSON regardless of header and responds with 200 instead of the 415 the specification defines" set aside the
+    specification's own test. Each is the product departing from the standard, which is the product's to fix. A
+    reason is the product's only when no clause of it says the test asks for what the standard does not.
+    """
+    clauses = [clause for clause in re.split(r"[.;]", str(why or "")) if clause.strip()]
+    if any(_THE_TEST_OVERASKS.search(clause) for clause in clauses):
+        return False
+    return any(_THE_PRODUCT_DOES.search(clause) for clause in clauses)
 
 
 def tests_it_names(answer: Any, failing_names: Sequence[str]) -> list[str]:
@@ -141,6 +171,10 @@ def tests_it_names(answer: Any, failing_names: Sequence[str]) -> list[str]:
         why = _what_a_line_says_of(lines, (name, _TAGS.sub("", name).strip(), clean_tag))
         # A name with no reason is not a judgement: one run's QA lead listed
         # nine names bare, eight of them a later sprint's unbuilt work.
+        if why and len(why.split()) >= 3 and judged_by_the_code(why):
+            # The code is not the standard (the prompt's rule): a test set aside for what the product does stays.
+            logger.warning("The QA lead set `%s` aside for what the product does, not what its criterion says; it stays locked: %s", name, why[:200])
+            continue
         if why and len(why.split()) >= 3:
             named.append(
                 f"`{name}` cannot pass for any product that does what its criterion says"
@@ -154,5 +188,6 @@ __all__ = [
     "SuiteDispute",
     "build_dispute_request",
     "create_suite_dispute_agent",
+    "judged_by_the_code",
     "tests_it_names",
 ]

@@ -4,7 +4,7 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-29 06:10 JST. run-0d97a96c (9th Qwen3.6 run, mixed 18577870 -> 5a98ac7d, one rewind) **completed, hidden 9/9**, 69.5 active min, 153 calls, locked 22/0, mutation 0.917. Built from it: LF.404 (a runtime data file is not a file to hand out), LF.405 (a dispute about the test's own steps reopens it), LF.406 (a 413/409/415/429 line is not failed on a bare probe; corpus accept keeps the worker's owner). 42 runs: 39x 9/9, 2x 5/9, 1x 0/9. Next: tell the architect which files the pack keeps (three runs attributed behaviour to them); measure LF.398-406.
+**As of:** 2026-10-29 06:10 JST. run-0d97a96c (9th Qwen3.6 run, mixed 18577870 -> 5a98ac7d, one rewind) **completed, hidden 9/9**, 69.5 active min, 153 calls, locked 22/0, mutation 0.917. Built from it: LF.404 (a runtime data file is not a file to hand out), LF.405 (a dispute about the test's own steps reopens it), LF.406 (a 413/409/415/429 line is not failed on a bare probe; corpus accept keeps the worker's owner). 42 runs: 39x 9/9, 2x 5/9, 1x 0/9. Built before the next run: LF.407 (kept files hold no planned behaviour, told to the architect and every builder). Next: measure LF.398-407 (does the spec still place behaviour in kept files?); verify review findings naming a package API.
 ## Live now
 | | |
 |---|---|

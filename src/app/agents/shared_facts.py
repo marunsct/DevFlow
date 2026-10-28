@@ -80,6 +80,12 @@ def layout_facts(pack: Any, project: str, package: str | None) -> list[str]:
     if kept:
         lines.append("- Kept by the harness, not the product's to write: "
                      + ", ".join(f"`{prefix}{path}`" for path in kept[:8]) + ".")
+    if kept or started:
+        # Measured on three runs: the specification put creating the data directory and checking the port in the
+        # pack's `start.sh`, and signal handling in its kept start file; the reviews then sent the sprint back for
+        # behaviour no work order may write there.
+        lines.append("- Those files do what they do now and nothing more: put whatever else the product must do - "
+                     "at start, at shutdown, with its settings or its data directory - in the product's own files.")
     return lines
 
 

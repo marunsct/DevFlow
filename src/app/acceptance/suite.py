@@ -2444,6 +2444,51 @@ def tests_that_restart_on_data_they_never_wrote(repo_root: str | Path) -> list[s
     return problems[:6]
 
 
+#: A read of a file from disk in a test: the path it names.
+_A_FILE_READ = re.compile(r"""\b(?:readFile(?:Sync)?|existsSync|statSync|open)\s*\(\s*(?:path\.\w+\([^)]*?)?['"`]([^'"`]+)['"`]""")
+
+
+def tests_that_assert_a_kept_file_s_text(repo_root: str | Path) -> list[str]:
+    """Tests that read a file the harness keeps and assert what it contains: its text is not the product's to change.
+
+    Measured on one run: a test read `./start.sh` and expected it to match `/DATA_DIR/`; the harness's start file
+    reads nothing but its service, and `contract.enforce` puts it back before every run, so the test failed on every
+    product and no fixer could reach it. The criterion such a test is for is proven by what the service does when
+    started through the kept file - it answers on `PORT`, keeps its data under `DATA_DIR` - which the suite's own
+    server already shows.
+    """
+    kept = {Path(path).name for path in contract.kept_paths(repo_root)}
+    if not kept:
+        return []
+    root = Path(repo_root)
+    problems: list[str] = []
+    for path in suite_files(repo_root):
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        starts = [m.start() for m in _A_TEST_CALL.finditer(text)]
+        for at, start in enumerate(starts):
+            block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
+            if "expect(" not in block:
+                continue
+            read = next((m for m in _A_FILE_READ.finditer(block) if Path(m.group(1)).name in kept), None)
+            if read is None:
+                continue
+            name = Path(read.group(1)).name
+            line = text.count("\n", 0, start) + 1
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line}: the test reads `{name}` and asserts what it "
+                f"contains. The harness keeps that file and puts it back before every run, so its text is not the "
+                "product's to change and the test cannot pass on any product. Prove the criterion by what the service "
+                "does when started through it - it answers on the suite's address and keeps its data under `DATA_DIR` "
+                "- through `request`, not by reading the file."
+            )
+    return problems[:6]
+
+
 def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     """Whether a ledger entry is a run of the locked acceptance suite.
 
@@ -2520,6 +2565,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *fetch_calls_written_like_the_fixture(repo_root),
         *reads_of_what_the_test_does_not_have(repo_root),
         *tests_that_want_json_from_a_204(repo_root),
+        *tests_that_assert_a_kept_file_s_text(repo_root),
         *tests_that_restart_on_data_they_never_wrote(repo_root),
         *tests_that_never_open_the_page(repo_root),
         *tests_that_access_storage_before_opening_the_page(repo_root),

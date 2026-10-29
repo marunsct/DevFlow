@@ -8,14 +8,14 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | **run-d96298ae** (**notes-api-hono**, Fast; bundles on; TARGETED_SUITE_REPAIR and STRUCTURED_DISPUTE_VERDICT on as measured arms; harness 7885d3c) started 18:58 JST 2026-10-29 |
+| Run | next: **notes-api-hono** (Fast) on 7885d3c, after ALL READY |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner, 17:10 JST 2026-10-28) at :8888, 2 slots, context 184,320; owner's sampling: Qwen 'thinking, precise coding' (temp 0.6, top_p 0.95, top_k 20, min_p 0, repeat 1.0, presence 0). This server **reports cached tokens** (`cached_token_share` is real from here; LM Studio's gpt-oss did not). Diagnosed 17:24 JST: tools 3/3 everywhere, edits 100/100, structured answers forced, reasoning switch honoured, salvage supported; deep: no loop (no reply ceiling), weak at heeding a refusal (0/3) and answering as a call when offered (1/3); kept guide: stop when the checks pass. gpt-oss-20b keeps its 12k ceiling in its own record. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs
+- **run-d96298ae** (notes-api-hono, 7885d3c, not mixed): **completed 20:20 JST 10-29, hidden 9/9**, 81.0 active min, 130 calls, locked 11/0, mutation 0.5 (KPI regression). ~37 min on 4 mutation defects (1 cured, 1 equivalent, 2 completion gaps); later-round mutation fixes did cure 3 times in the last 14 runs, so no cap. Backlog: hand the fixer a concrete input that tells the mutant apart.
 - **run-c99de99f** (tasks-api, held-out, 7885d3c, not mixed): **completed 18:46 JST 10-29, hidden 10/10, quality 7/7**, 83.2 active min, 182 calls, locked 23/0, mutation 0.5. LF.447 reached every stage, so the race did not recur. Sprint 1 took 3 attempts: 8 fixes reverted (same 10 broken, 0 gained) because the unit tests disagreed on row access; backlog: route a defect whose every fix breaks the same unit tests to the tests' owner.
 - **run-b115ca5c** (tasks-api, held-out, 3d9ecace, not mixed): **failed 15:30 JST 10-29 (replan limit), hidden 1/10**, visible 29/48 (best attempt 42). Cause: the product committed in a FastAPI `yield` dependency, which runs after the reply (FastAPI >=0.118), so every sign-in straight after sign-up got 401; unit tests via `TestClient` passed. Fixed as FastAPI seed guidance (LF.447). Open: a "same product, different suite results" timing hint (backlog B-timing).
-- **run-dba1ccf8** (fca7568b, not mixed): **completed 13:10 JST 10-29, hidden 9/9**, 43.7 active min, 108 calls, locked 11/0, mutation 1.0. SQLite design; unit tests written for Vitest globals on node:test (LF.443).
 ## Built 2026-10-23 (deployed since): general model steering (MD.3)
 Owner: guidance general, not per model; weaker models steered more; each guide its own switch; a settings
 action to diagnose and save; keep growing the checks. Eight guides (`GUIDE_<ID>`, on in compose), eleven

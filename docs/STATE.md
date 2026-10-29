@@ -16,7 +16,6 @@ week are in `docs/archive/`.
 - **run-dba1ccf8** (fca7568b, not mixed): **completed 13:10 JST 10-29, hidden 9/9**, 43.7 active min, 108 calls, locked 11/0, mutation 1.0. SQLite design; unit tests written for Vitest globals on node:test (LF.443).
 - **run-943927b0** (8d793eee -> fca7568b, mixed_versions, one rewind): **completed 12:18 JST 10-29, hidden 9/9**, 40.7 active min, 71 calls, locked 17/0, mutation 0.667. LF.408 and LF.410 worked; LF.441 fixed an LF.411 false positive.
 - **run-627cbf21** (tasks-api, held-out, 9e18db6a, not mixed): **completed 11:16 JST 10-29, hidden 10/10, quality 5/7**, 48.3 active min, 117 calls, locked 29/0, mutation 0.75. First draft did not start (undeclared `passlib`); shipped no unit tests; one contract line without an id unread.
-- **run-b4f264fe** (c4f11015, not mixed, Qwen3.6): **completed 21:13 JST, hidden 9/9**, 98 active min, 164 calls, cache 69%, tool failures 3.9%, 1 revert, locked 16/0, mutation 0.417 (0.667 with unit). Intermittent mid-suite crash (temp-file rename race) cost two attempts; dispute set aside AC-9 (inter-test dependence); milestone review caught PUT not persisting.
 ## Built 2026-10-23 (deployed since): general model steering (MD.3)
 Owner: guidance general, not per model; weaker models steered more; each guide its own switch; a settings
 action to diagnose and save; keep growing the checks. Eight guides (`GUIDE_<ID>`, on in compose), eleven

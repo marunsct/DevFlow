@@ -91,6 +91,9 @@ EXPERIMENTS_ON = {
     # changed nothing; the 19 that touched more all ended at full hidden scores. On 2026-10-29, owner agreeing; the
     # mutation score is watched for a weaker suite.
     "TARGETED_SUITE_REPAIR": "re-locks that changed only the repaired tests: 35 of 54",
+    # Tonight's prose reading of the dispute was wrong twice (LF.405, LF.411); on 2026-10-29 as the A/B arm, owner
+    # agreeing; its disputes are compared with the prose reading's.
+    "STRUCTURED_DISPUTE_VERDICT": "prose reading wrong in 2 disputes tonight; A/B against it",
 }
 
 _BUNDLE_OF = {member: bundle for bundle, members in BUNDLES.items() for member in members}

@@ -4,17 +4,17 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-29 10:27 JST. run-f9bbe2d6 (11th Qwen3.6 run, mixed 6e5ebe72 -> c819a56e) **completed, hidden 9/9**, 61.6 active min, 125 calls, locked 12/0, visible/hidden gap 0, tool failures 1.2%, mutation 0.917. Since then shipped and deployed (9e18db6a): LF.413-437 - owner-approved reasoning caps, acceptance A1/A3/A5-A7, the green-suite gate (LF.426), item 21, fix-loop A1-A4 (worktree agent), ops A1/A4-A7/A9/A11 + item 8 (worktree agent). 44 runs: 41x 9/9, 2x 5/9, 1x 0/9. Now: the held-out tasks-api run (plan item 23). Switches consolidated (LF.439, owner): 26 fixes built in, 4 premium bundles, 4 experiments - deploy after this run.
+**As of:** 2026-10-29 11:29 JST. **Held-out run-627cbf21 (tasks-api, Python/FastAPI, 9e18db6a) completed: hidden 10/10, quality 5/7, 48.3 active min** - the fastest tasks-api run in the ledger (15 earlier: 59-237 min, one 0/10): tonight's general fixes carry over. Switches consolidated (LF.439): 26 fixes built in, 4 premium bundles, 4 experiments - deployed 8d793eee, all resolve as intended. 45 runs: 42x full hidden score. Next: notes-api-hono on 8d793eee, then a second tasks-api run.
 ## Live now
 | | |
 |---|---|
-| Run | **run-627cbf21** (**tasks-api, held-out family**, Fast, all switches on, harness 9e18db6a, Qwen3.6-35B-A3B MTP) started 10:27 JST 2026-10-29 |
+| Run | **run-943927b0** (notes-api-hono, Fast, 8 switches: 4 premium bundles on, 4 experiments off; harness 8d793eee, Qwen3.6-35B-A3B MTP) started 11:29 JST 2026-10-29 |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner, 17:10 JST 2026-10-28) at :8888, 2 slots, context 184,320; owner's sampling: Qwen 'thinking, precise coding' (temp 0.6, top_p 0.95, top_k 20, min_p 0, repeat 1.0, presence 0). This server **reports cached tokens** (`cached_token_share` is real from here; LM Studio's gpt-oss did not). Diagnosed 17:24 JST: tools 3/3 everywhere, edits 100/100, structured answers forced, reasoning switch honoured, salvage supported; deep: no loop (no reply ceiling), weak at heeding a refusal (0/3) and answering as a call when offered (1/3); kept guide: stop when the checks pass. gpt-oss-20b keeps its 12k ceiling in its own record. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs
+- **run-627cbf21** (tasks-api, held-out, 9e18db6a, not mixed): **completed 11:16 JST 10-29, hidden 10/10, quality 5/7**, 48.3 active min, 117 calls, locked 29/0, mutation 0.75. First draft did not start (undeclared `passlib`); shipped no unit tests; one contract line without an id unread.
 - **run-f9bbe2d6** (6e5ebe72 -> c819a56e, mixed_versions): **completed 10:23 JST 10-29, hidden 9/9**, 61.6 active min, 125 calls, locked 12/0, mutation 0.917. First run with LF.408-415; the green-suite gate sent the sprint back twice before LF.426 landed.
-- **run-59ade0e8** (416d0095 -> 5065acd6, mixed_versions, three rewinds): **completed 09:09 JST 10-29, hidden 9/9**, 136.4 active min, 221 calls, locked 17/0, mutation 0.917. False reopen on a commented `body:` (LF.409); plan without the API (stub app.ts, LF.410); unpassable prefix filter the QA lead called sound (LF.411); milestone revision for shutdown wiring in kept main.ts (LF.408 for next).
 - **run-b4f264fe** (c4f11015, not mixed, Qwen3.6): **completed 21:13 JST, hidden 9/9**, 98 active min, 164 calls, cache 69%, tool failures 3.9%, 1 revert, locked 16/0, mutation 0.417 (0.667 with unit). Intermittent mid-suite crash (temp-file rename race) cost two attempts; dispute set aside AC-9 (inter-test dependence); milestone review caught PUT not persisting.
 ## Built 2026-10-23 (deployed since): general model steering (MD.3)
 Owner: guidance general, not per model; weaker models steered more; each guide its own switch; a settings

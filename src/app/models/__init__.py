@@ -277,6 +277,48 @@ class _FixStageReplyCap:
 
 fix_stage_reply_cap_switch = _FixStageReplyCap()
 
+#: The longest reply a planning or review stage is asked for, behind `PLAN_REVIEW_REPLY_CAP` (owner 2026-10-29).
+#: Measured on one model over ten runs: the technical lead's replies reached 30,000-46,000 tokens, about five minutes
+#: each, mostly reasoning; a cut reply is answered by reply salvage as a fix stage's is. The architect is left out:
+#: its correct specification replies measured up to 22,810.
+PLAN_REVIEW_REPLY_TOKENS = 20_000
+#: The stages it applies to, by the start of their names.
+PLAN_REVIEW_STAGES = ("technical_lead", "scrum_master", "architecture_review", "acceptance_review", "acceptance_dispute",
+                      "milestone_review", "security_review", "advice_review")
+
+
+def plan_review_reply_cap(ceiling: int | None) -> int | None:
+    """`PLAN_REVIEW_REPLY_TOKENS` (or `ceiling` when smaller) for a planning or review stage with the switch on; else None."""
+    try:
+        if not plan_review_reply_cap_switch.enabled():
+            return None
+        from app.observability.transcript import _stage_from_config
+
+        if not _stage_from_config("").startswith(PLAN_REVIEW_STAGES):
+            return None
+        return min(PLAN_REVIEW_REPLY_TOKENS, ceiling) if ceiling and ceiling > 0 else PLAN_REVIEW_REPLY_TOKENS
+    except Exception:  # noqa: BLE001 - a cap that cannot be read asks for no cap
+        return None
+
+
+class _PlanReviewReplyCap:
+    """`PLAN_REVIEW_REPLY_CAP` as the switch registry reads one: off in code, the compose file turns it on."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("The planning and review stages' replies are capped at 20,000 tokens; reply salvage answers a cut "
+                   "reply from its reasoning. Measured on one model, the technical lead's replies reached 30-46k "
+                   "tokens, about five minutes each.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("PLAN_REVIEW_REPLY_CAP", _PlanReviewReplyCap.ON_BY_DEFAULT)
+
+
+plan_review_reply_cap_switch = _PlanReviewReplyCap()
+
 #: A failure after this long is the reply being cut off, not the call failing.
 SLOW_FAILURE_SECONDS = 60.0
 
@@ -646,7 +688,7 @@ class CompatibleChatOpenAI(ChatOpenAI):
             return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
         ceiling = self.max_tokens if isinstance(self.max_tokens, int) else None
         server = (str(self.openai_api_base or ""), str(self.model_name or ""))
-        cap = fix_stage_reply_cap(ceiling)
+        cap = fix_stage_reply_cap(ceiling) or plan_review_reply_cap(ceiling)
         quick_failures = 0
         while True:
             started = time.monotonic()

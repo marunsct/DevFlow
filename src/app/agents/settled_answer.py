@@ -1594,7 +1594,61 @@ def _thinking_is_off_here(messages: list[Any], stage_name: str = "", lost_before
     """
     return _the_last_reply_was_all_reasoning(messages) or (
         max(lost_before, _replies_that_were_all_reasoning(messages)) >= LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
-    )
+    ) or _a_fix_stage_s_salvaged_replies_turn_thinking_off(messages, lost_before)
+
+
+def _salvaged_from_its_reasoning(message: Any) -> bool:
+    """Whether a reply reasoned to its cap and was answered by reply salvage from that reasoning."""
+    from app.models.reply_salvage import SALVAGED
+
+    return getattr(message, "type", None) == "ai" and str(
+        (getattr(message, "response_metadata", None) or {}).get(SALVAGED) or "") == "reasoning"
+
+
+def _a_fix_stage_s_salvaged_replies_turn_thinking_off(messages: list[Any], lost_before: int = 0) -> bool:
+    """In a defect-fix stage, a reply salvaged from reasoning counts as one lost to it (behind the switch; owner 2026-10-29).
+
+    A salvaged reply is not lost - it was answered - so thinking stayed on and the next reply reasoned to the cap
+    again. Measured on one model: nearly every call of a fix stage reasoned its whole 12,000-token reply, about four
+    minutes a tool call, with thinking switched off once in the stage. The reply after a salvaged one goes without
+    thinking, and two in the visit (with any lost) keep it off.
+    """
+    try:
+        if not salvaged_replies_switch.enabled():
+            return False
+        from app.observability.transcript import _stage_from_config
+
+        if not _stage_from_config("").startswith("defect_fix_"):
+            return False
+        replies = [message for message in messages if getattr(message, "type", None) == "ai"]
+        if not replies:
+            return False
+        if _salvaged_from_its_reasoning(replies[-1]):
+            return True
+        salvaged = sum(1 for message in replies if _salvaged_from_its_reasoning(message))
+        lost = max(lost_before, _replies_that_were_all_reasoning(messages))
+        return salvaged + lost >= LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
+    except Exception:  # noqa: BLE001 - then thinking is decided as before
+        return False
+
+
+class _SalvagedRepliesTurnThinkingOff:
+    """`SALVAGED_REPLIES_TURN_THINKING_OFF` as the switch registry reads one: off in code, the compose file turns it on."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("In a defect-fix stage, a reply that reasoned to its cap and was salvaged counts as one lost to "
+                   "reasoning: the next reply goes without thinking, and two keep it off for the stage. Measured on one "
+                   "model, nearly every fix call reasoned its whole 12k reply, about four minutes each.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("SALVAGED_REPLIES_TURN_THINKING_OFF", _SalvagedRepliesTurnThinkingOff.ON_BY_DEFAULT)
+
+
+salvaged_replies_switch = _SalvagedRepliesTurnThinkingOff()
 
 
 def _the_same_call_running(messages: list[Any]) -> tuple[str, int] | None:

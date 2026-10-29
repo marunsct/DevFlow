@@ -833,8 +833,9 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str, contest
     if broken:
         kept = _its_tests_without_its_product_change(root, base, before, broken, stage_name)
         if kept is not None:
+            # Committed first, and the measurement saved with that commit (see the end of this function).
+            kept.commit = ci.commit(root, f"Fix, its tests only: {description[:50]}") or kept.commit
             ci.save(root, kept)
-            ci.commit(root, f"Fix, its tests only: {description[:50]}")
             return []
     elif not after.passing() - (before.passing() if before is not None else set()):
         # Nothing passed before, so nothing could break, and the fix made
@@ -883,8 +884,11 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str, contest
             stage_name, len(broken), len(gained),
         )
         return broken
+    # Committed first, and the measurement saved with the commit it measured. Found in a code review: the snapshot
+    # was saved with the commit before the fix's own, so the next fix's `before_a_fix` read "the workspace moved
+    # since it was measured" and ran the unit tests and the acceptance suite again on the product just measured.
+    after.commit = ci.commit(root, f"Fix: {description[:60]}") or after.commit
     ci.save(root, after)
-    ci.commit(root, f"Fix: {description[:60]}")
     return []
 
 

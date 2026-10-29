@@ -3526,41 +3526,34 @@ def _what_a_claimed_unloadable_package_does(repo_root: str, blockers: list[str])
         return ""
 
 
-#: Where the harness keeps its last unit run with the product's fingerprint (MEASURE_ONCE).
-_UNIT_RUN_FILE = ".harness/unit-result.json"
-
-
 def _the_unit_run_kept(repo_root: str, command: list[Any]) -> tuple[bool, str] | None:
-    """The last unit run's (passed, output) when the product and the command are as they were then; else None."""
-    try:
-        from app.acceptance import measured_once
-        from app.acceptance.unstable import fingerprint
+    """The last unit run's (passed, output) when the product and the command are as they were then; else None.
 
-        if not measured_once.enabled():
-            return None
-        saved = json.loads((Path(repo_root) / _UNIT_RUN_FILE).read_text(encoding="utf-8"))
-        if saved.get("command") != [str(part) for part in command] or saved.get("fingerprint") != fingerprint(repo_root):
-            return None
-        logger.info("The product is as the unit tests last measured it; that run stands")
-        return bool(saved.get("passed")), str(saved.get("output") or "")
-    except Exception:  # noqa: BLE001 - when in doubt, run them
+    The record (`ci.UNIT_RUN_FILE`, MEASURE_ONCE) is one, shared with every CI snapshot.
+    """
+    from app import ci
+
+    saved = ci.the_unit_run_kept(repo_root, command)
+    if saved is None:
         return None
+    logger.info("The product is as the unit tests last measured it; that run stands")
+    return bool(saved.get("passed")), str(saved.get("output") or "")
 
 
 def _keep_the_unit_run(repo_root: str, command: list[Any], passed: bool, output: str) -> None:
-    """Keep this unit run with the product's fingerprint, for `_the_unit_run_kept`. Never raises."""
-    try:
-        from app.acceptance import measured_once
-        from app.acceptance.unstable import fingerprint
+    """Keep this unit run with the product's fingerprint, for `_the_unit_run_kept` and CI's snapshots. Never raises.
 
-        if not measured_once.enabled():
-            return
-        target = Path(repo_root) / _UNIT_RUN_FILE
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps({"command": [str(part) for part in command], "fingerprint": fingerprint(repo_root),
-                                      "passed": passed, "output": output[-20_000:]}), encoding="utf-8")
-    except Exception:  # noqa: BLE001 - the next run measures again
-        pass
+    Each test's outcome in the pack's report goes with it, so the next snapshot of the same product reads it
+    instead of running the unit tests again.
+    """
+    from app import ci
+
+    try:
+        outcomes = ci.unit_outcomes_in_the_pack_s_report(repo_root)
+    except Exception:  # noqa: BLE001 - kept without outcomes, a snapshot runs them again
+        outcomes = None
+    unit, found = outcomes if outcomes is not None else (None, False)
+    ci.keep_the_unit_run(repo_root, command, passed, output, unit, found)
 
 
 def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
@@ -3634,16 +3627,10 @@ def _the_unit_reports(repo_root: str, record: dict[str, Any], command: list[Any]
 
 def _what_the_unit_reports_say(reports: list[Path]) -> str:
     """The failing tests in the unit reports, each with its message; "" when none are found."""
+    from app import ci
     from app.acceptance import junit
 
-    failed = [test for report in reports for test in junit.read(report).tests if test.outcome == "failed"]
-    if not failed:
-        return ""
-    return "Failing tests, from the runner's report:\n" + "\n".join(
-        f"- {test.within + ' › ' if test.within else ''}{test.name}"
-        f"{' (' + test.file + ')' if test.file else ''}: {test.message[:600]}"
-        for test in failed[:12]
-    ) + (f"\n... and {len(failed) - 12} more" if len(failed) > 12 else "")
+    return ci.what_the_failing_unit_tests_say([test for report in reports for test in junit.read(report).tests])
 
 
 def _the_reply_was_cut_off_before_it_began(message: Any) -> bool:

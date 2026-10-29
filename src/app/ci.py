@@ -157,22 +157,114 @@ def _outcome_now(now: dict[str, str], key: str) -> str | None:
     return "passed" if all(outcome == "passed" for outcome in same) else "failed"
 
 
+#: Where the harness keeps its last unit run with the product's fingerprint (MEASURE_ONCE). The test round's unit run
+#: (`workflow._run_unit_tests_procedurally`) and every snapshot here write and read the same record.
+UNIT_RUN_FILE = f"{contract.HARNESS_DIR}/unit-result.json"
+
+
+def the_unit_run_kept(root: str | Path, command: Sequence[Any]) -> dict[str, Any] | None:
+    """The last unit run's record when the product and the command are as they were then; else None. Never raises.
+
+    The record holds `passed` and `output`, and `unit` (each test's outcome) with `found` when the pack's report
+    was read after the run.
+    """
+    try:
+        from app.acceptance import measured_once
+        from app.acceptance.unstable import fingerprint
+
+        if not measured_once.enabled():
+            return None
+        saved = json.loads((Path(root) / UNIT_RUN_FILE).read_text(encoding="utf-8"))
+        if not isinstance(saved, dict) or saved.get("command") != [str(part) for part in command]:
+            return None
+        if saved.get("fingerprint") != fingerprint(root):
+            return None
+        return saved
+    except Exception:  # noqa: BLE001 - when in doubt, run them
+        return None
+
+
+def keep_the_unit_run(
+    root: str | Path, command: Sequence[Any], passed: bool, output: str,
+    unit: dict[str, str] | None = None, found: bool = False,
+) -> None:
+    """Keep this unit run with the product's fingerprint, for `the_unit_run_kept`. Never raises."""
+    try:
+        from app.acceptance import measured_once
+        from app.acceptance.unstable import fingerprint
+
+        if not measured_once.enabled():
+            return
+        record: dict[str, Any] = {"command": [str(part) for part in command], "fingerprint": fingerprint(root),
+                                  "passed": bool(passed), "output": str(output or "")[-20_000:]}
+        if unit is not None:
+            record.update(unit=dict(unit), found=bool(found))
+        target = Path(root) / UNIT_RUN_FILE
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(record), encoding="utf-8")
+    except Exception:  # noqa: BLE001 - the next run measures again
+        pass
+
+
+def what_the_failing_unit_tests_say(tests: Sequence[Any]) -> str:
+    """The failing tests of a runner's report, each with its message; "" when none failed."""
+    failed = [test for test in tests or () if getattr(test, "outcome", "") == "failed"]
+    if not failed:
+        return ""
+    return "Failing tests, from the runner's report:\n" + "\n".join(
+        f"- {test.within + ' › ' if test.within else ''}{test.name}"
+        f"{' (' + test.file + ')' if test.file else ''}: {test.message[:600]}"
+        for test in failed[:12]
+    ) + (f"\n... and {len(failed) - 12} more" if len(failed) > 12 else "")
+
+
+def unit_outcomes_in_the_pack_s_report(root: str | Path) -> tuple[dict[str, str], bool] | None:
+    """Each unit test's outcome in the pack's unit report as it is on disk, and whether one was found; None without a pack."""
+    found = contract.the_pack(root)
+    if found is None:
+        return None
+    pack, record = found
+    parsed = junit.read(Path(root) / str(record.get("project") or "") / pack.unit_report)
+    return outcomes_of(parsed.tests), parsed.found
+
+
 def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], bool]:
+    """Each unit test's outcome now, and whether the runner's report was found.
+
+    An unchanged product's last unit run stands (MEASURE_ONCE), whichever of the test round or a snapshot ran it.
+    Found in a code review: the test round kept its unit run with the product's fingerprint, and every snapshot
+    still ran the unit tests again on the product they had just measured - once more per fix stage.
+    """
     found = contract.the_pack(root)
     if found is None:
         return {}, False
     pack, record = found
     project = str(record.get("project") or "")
-    report = Path(root) / project / pack.unit_report
-    junit.clear(report)
+    command = list(record.get("unit_test") or pack.unit_test)
     if runner is None:
         from app.stacks.scaffold import sandbox_runner
 
         runner = sandbox_runner(root)
-    contract.install_if_the_manifests_changed(root, runner)
-    runner(list(record.get("unit_test") or pack.unit_test), "test", project)
+    # An install made now changes what the tests run against, so the kept run no longer stands.
+    installed_now = contract.install_if_the_manifests_changed(root, runner)
+    kept = None if installed_now else the_unit_run_kept(root, command)
+    if kept is not None and isinstance(kept.get("unit"), dict):
+        logger.info("The product is as the unit tests last measured it; that run stands")
+        return {str(name): str(outcome) for name, outcome in kept["unit"].items()}, bool(kept.get("found"))
+    report = Path(root) / project / pack.unit_report
+    junit.clear(report)
+    outcome = runner(command, "test", project) or {}
     parsed = junit.read(report)
-    return outcomes_of(parsed.tests), parsed.found
+    unit = outcomes_of(parsed.tests)
+    from app.stacks.scaffold import _exit_code
+
+    passed = _exit_code(outcome) == 0 if isinstance(outcome, dict) else False
+    said = (str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "")) if isinstance(outcome, dict) else ""
+    if not passed:
+        # Read as the test round's own run reads, so the record says the same whichever ran it.
+        said = (said.rstrip() + "\n" + what_the_failing_unit_tests_say(parsed.tests)).strip()
+    keep_the_unit_run(root, command, passed, said, unit, parsed.found)
+    return unit, parsed.found
 
 
 def unit_failures(root: str | Path, runner: Runner | None = None) -> list[str]:

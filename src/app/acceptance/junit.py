@@ -60,8 +60,14 @@ class TestResult:
 
     @property
     def tags(self) -> tuple[str, ...]:
-        """The criterion and change-request ids this test names, in order."""
-        return tags_in(f"{self.suite} {self.name}")
+        """The criterion and change-request ids this test names, in order; its suite's only when its name has none.
+
+        Playwright's `classname` is the spec file, so a file named for one criterion tagged every test in it: a test of
+        AC-5 failing in `ac-3.spec.js` charged AC-3, the round raised it, dispatch found it passing and closed it, and
+        the next round raised it again - the loop `unstable.py` describes, on a right product (deep review, acceptance
+        A1). The test's own name carries its `describe` titles too, so nothing it names is lost.
+        """
+        return tags_in(self.name) or tags_in(f"{self.within} {self.suite}")
 
 
 @dataclass

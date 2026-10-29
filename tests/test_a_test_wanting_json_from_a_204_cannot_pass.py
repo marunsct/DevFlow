@@ -76,3 +76,22 @@ def test_the_review_and_the_rounds_ask_it():
 
     assert "tests_that_want_json_from_a_204(" in inspect.getsource(acceptance_nodes.acceptance_review)
     assert "tests_that_want_json_from_a_204(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+
+
+AFTER_A_LOOP = """import { test, expect } from '@playwright/test';
+const endpoints = [{ method: 'delete', url: '/notes/1' }];
+test('[AC-5] deletes each', async ({ request }) => {
+  for (const ep of endpoints) {
+    expect((await request.delete(ep.url)).status()).toBe(404);
+  }
+});
+test('[AC-7] create answers json', async ({ request }) => {
+  const res = await request.post('/notes', { data: { title: 'a' } });
+  expect(res.headers()['content-type']).toContain('application/json');
+});
+"""
+
+
+def test_a_loop_in_the_previous_test_does_not_count(tmp_path):
+    """Deep review, acceptance A6: the loop detection reached a `for (` in the previous test and flagged a right check."""
+    assert suite.tests_that_want_json_from_a_204(_suite(tmp_path, AFTER_A_LOOP), CONTRACT) == []

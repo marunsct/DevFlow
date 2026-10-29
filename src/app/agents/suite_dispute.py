@@ -185,9 +185,12 @@ def tests_it_names(answer: Any, failing_names: Sequence[str]) -> list[str]:
     """
     lines = [" ".join(str(line).split()) for line in getattr(answer, "cannot_pass", None) or []]
     named = []
-    for name in failing_names:
-        clean_tag = name.split()[0] if name.startswith("[") else name
-        why = _what_a_line_says_of(lines, (name, _TAGS.sub("", name).strip(), clean_tag))
+    # A bare tag stands for a test only when no other failing test carries it: two tests of one criterion named as
+    # "[AC-4]" reopened both, counted both against the cap, and told QA to change the right one (deep review, A3).
+    leading = [name.split()[0] if name.startswith("[") else name for name in failing_names]
+    for name, clean_tag in zip(failing_names, leading):
+        alone = leading.count(clean_tag) == 1
+        why = _what_a_line_says_of(lines, (name, _TAGS.sub("", name).strip(), clean_tag if alone else ""))
         # A name with no reason is not a judgement: one run's QA lead listed
         # nine names bare, eight of them a later sprint's unbuilt work.
         if why and len(why.split()) >= 3 and judged_by_the_code(why):

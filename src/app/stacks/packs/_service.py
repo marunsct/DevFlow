@@ -90,7 +90,7 @@ function freePort() {
 async function waitUntilUp(baseURL, child, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error('the service exited with code ' + child.exitCode + ' before it answered');
+    if (child.exitCode !== null) throw new Error('the service this test started stopped (code ' + child.exitCode + ') before it answered');
     try {
       await fetch(baseURL + '/health');
       return;

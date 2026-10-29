@@ -2189,6 +2189,10 @@ _JSON_KEY = re.compile(r"\bjson\s*:")
 _OPTIONS_OF_A_FIXTURE_CALL = re.compile(
     r"\brequest\s*\.\s*(?:post|put|patch|delete|fetch|get|head)\s*\((?:[^;{}]|\$\{[^}]*\})*,\s*$"
 )
+#: The text just before an options object handed to a helper that is given the fixture: `fetchJSON(request, '/x', `.
+_OPTIONS_OF_A_CALL_GIVEN_THE_FIXTURE = re.compile(
+    r"\b[A-Za-z_$][\w$]*\s*\(\s*request\s*,(?:[^;{}]|\$\{[^}]*\})*,\s*$"
+)
 _USES_THE_REQUEST_FIXTURE = re.compile(r"\brequest\s*\.\s*(?:post|put|patch|delete|fetch|get|head)\s*\(")
 
 
@@ -2302,6 +2306,11 @@ def requests_with_a_fetch_body(repo_root: str | Path) -> list[str]:
             opening = _the_start_of_the_object_around(text, match.start())
             # Not a plain `fetch(` call's options: `body:` is how `fetch` is given one.
             if opening >= 0 and _OPTIONS_OF_A_FETCH_CALL.search(text[max(0, opening - 300):opening]):
+                continue
+            # Only the options handed straight to the fixture: a table's row `{ method, path, body }`, sent later as
+            # `data: row.body`, is how a right table-driven suite reads (deep review, acceptance A5).
+            before = text[max(0, opening - 300):opening] if opening >= 0 else ""
+            if not (_OPTIONS_OF_A_FIXTURE_CALL.search(before) or _OPTIONS_OF_A_CALL_GIVEN_THE_FIXTURE.search(before)):
                 continue
             if literal and _FETCH_STYLE_SIBLING.search(literal):
                 lines.append(text.count("\n", 0, match.start()) + 1)
@@ -2573,6 +2582,19 @@ _A_DELETE_ENTRY = re.compile(r"method\s*:\s*['\"`]delete['\"`]", re.I)
 _A_TEST_CALL = re.compile(r"\btest\s*\(")
 
 
+def _inside_a_loop_over_a_delete(text: str, start: int) -> bool:
+    """Whether the test declared at `start` sits inside a `for` loop whose entries, declared before it, include a DELETE.
+
+    The loop must enclose the test - its brace still open where the test starts: measured in the deep review
+    (acceptance A6), a `for (` inside the previous test's body counted, and a right JSON check was flagged.
+    """
+    header = text.rfind("for (", max(0, start - 300), start)
+    if header < 0:
+        return False
+    between = text[header:start]
+    return between.count("{") > between.count("}") and bool(_A_DELETE_ENTRY.search(text[:header]))
+
+
 def tests_that_want_json_from_a_204(repo_root: str | Path, contract_lines: Sequence[str] = ()) -> list[str]:
     """Tests asserting a JSON content type on a DELETE the interface contract answers with 204 only (no body).
 
@@ -2603,7 +2625,7 @@ def tests_that_want_json_from_a_204(repo_root: str | Path, contract_lines: Seque
             block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
             if not _ASSERTS_JSON_CONTENT.search(block):
                 continue
-            looped = "for (" in text[max(0, start - 300):start] and _A_DELETE_ENTRY.search(text[:start])
+            looped = _inside_a_loop_over_a_delete(text, start)
             if _A_DELETE_CALL.search(block) or _A_DELETE_ENTRY.search(block) or looped:
                 lines.append(text.count("\n", 0, start) + 1)
         if lines:

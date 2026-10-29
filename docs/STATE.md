@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | **run-943927b0** (notes-api-hono, Fast, 8 switches: 4 premium bundles on, 4 experiments off; harness 8d793eee, Qwen3.6-35B-A3B MTP) started 11:29 JST 2026-10-29 |
+| Run | **run-943927b0** (notes-api-hono, Fast, 8 switches: 4 premium bundles on, 4 experiments off; harness 8d793eee -> fca7568b at 12:18 (LF.440/441, TARGETED_SUITE_REPAIR on), mixed_versions; rewound 12:18 to test round 0 before a false reopen (LF.441) - then 18/18 on the first draft, Qwen3.6-35B-A3B MTP) started 11:29 JST 2026-10-29 |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner, 17:10 JST 2026-10-28) at :8888, 2 slots, context 184,320; owner's sampling: Qwen 'thinking, precise coding' (temp 0.6, top_p 0.95, top_k 20, min_p 0, repeat 1.0, presence 0). This server **reports cached tokens** (`cached_token_share` is real from here; LM Studio's gpt-oss did not). Diagnosed 17:24 JST: tools 3/3 everywhere, edits 100/100, structured answers forced, reasoning switch honoured, salvage supported; deep: no loop (no reply ceiling), weak at heeding a refusal (0/3) and answering as a call when offered (1/3); kept guide: stop when the checks pass. gpt-oss-20b keeps its 12k ceiling in its own record. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

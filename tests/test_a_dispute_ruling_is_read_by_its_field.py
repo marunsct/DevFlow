@@ -47,3 +47,17 @@ def test_off_the_prose_is_read_and_the_model_sees_no_rulings(monkeypatch):
         suite_dispute.create_suite_dispute_agent)
     for field in DisputeRuling.model_fields.values():
         assert not BANNED.search(field.description or "")
+
+
+def test_an_answer_without_rulings_does_not_satisfy_the_schema():
+    """Measured on one run: both disputes under the switch returned no rulings, so the field taught nothing."""
+    import pydantic
+    import pytest
+
+    with pytest.raises(pydantic.ValidationError):
+        SuiteDisputeWithRulings(cannot_pass=[], rulings=[])
+    with pytest.raises(pydantic.ValidationError):
+        SuiteDisputeWithRulings(cannot_pass=[])
+    right = DisputeRuling(test=FAILING[1], the_test_is_wrong=False, the_test_asserts="the title changes",
+                          the_standard_says="AC-4 Update a note's title and body")
+    assert SuiteDisputeWithRulings(rulings=[right]).rulings == [right]

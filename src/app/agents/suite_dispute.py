@@ -81,10 +81,12 @@ class SuiteDisputeWithRulings(SuiteDispute):
     """The answer with one ruling per failing test, so the harness reads the verdict, not the wording."""
 
     rulings: list[DisputeRuling] = Field(
-        default_factory=list,
+        ...,
+        min_length=1,
         description=(
-            "One ruling for each failing test shown. The harness reopens a test only when its ruling says the "
-            "test is wrong and quotes the standard; `cannot_pass` is read only when there are no rulings."
+            "One ruling for each failing test shown - required, even when every failure is the product's (then each "
+            "ruling says the test is not wrong). The harness reopens a test only when its ruling says the test is "
+            "wrong and quotes the standard."
         ),
     )
 

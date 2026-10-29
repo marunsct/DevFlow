@@ -4,7 +4,7 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-29 11:29 JST. **Held-out run-627cbf21 (tasks-api, Python/FastAPI, 9e18db6a) completed: hidden 10/10, quality 5/7, 48.3 active min** - the fastest tasks-api run in the ledger (15 earlier: 59-237 min, one 0/10): tonight's general fixes carry over. Switches consolidated (LF.439): 26 fixes built in, 4 premium bundles, 4 experiments - deployed 8d793eee, all resolve as intended. 45 runs: 42x full hidden score. Next: notes-api-hono on 8d793eee, then a second tasks-api run.
+**As of:** 2026-10-29 11:29 JST. **Held-out run-627cbf21 (tasks-api, Python/FastAPI, 9e18db6a) completed: hidden 10/10, quality 5/7, 48.3 active min** - the fastest tasks-api run in the ledger (15 earlier: 59-237 min, one 0/10): tonight's general fixes carry over. Switches consolidated (LF.439): 26 fixes built in, 4 premium bundles, 4 experiments - deployed 8d793eee, all resolve as intended. 45 runs: 42x full hidden score. Next (owner agreed ~11:55 JST): the next run deploys LF.415 (TARGETED_SUITE_REPAIR) on as a measured arm - 35 of 54 past re-locks changed only the repaired tests; watch mutation score; the run after turns STRUCTURED_DISPUTE_VERDICT on (A/B against the prose reading); then a second tasks-api run.
 ## Live now
 | | |
 |---|---|

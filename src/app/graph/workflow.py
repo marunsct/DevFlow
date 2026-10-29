@@ -7842,6 +7842,18 @@ def _the_suite_the_ledger_measured(state: WorkflowGraphState) -> dict[str, int] 
         return None
 
 
+def _the_last_test_command(state: WorkflowGraphState) -> str:
+    """The command of the last test run this sprint recorded in the execution ledger, as one string; "" if none."""
+    try:
+        recorded = [dict(entry) for entry in (state.get("sprint_attempts") or [])]
+        since = max((str(entry.get("ended_at")) for entry in recorded if entry.get("ended_at")), default=None)
+        entry = last_test_run(_the_ledger(state["repository"].root_path, 1000), since=since) or {}
+        command = entry.get("command") or entry.get("argv") or ""
+        return " ".join(str(part) for part in command) if isinstance(command, (list, tuple)) else str(command)
+    except Exception:  # noqa: BLE001 - then the gate reads as before
+        return ""
+
+
 def _a_red_suite_the_review_called_green(state: WorkflowGraphState) -> str:
     """Why this sprint cannot be accepted on the review's word, or "".
 
@@ -7884,6 +7896,19 @@ def _a_red_suite_the_review_called_green(state: WorkflowGraphState) -> str:
     cases = _the_suite_the_ledger_measured(state)
     if not cases or not a_suite_that_did_not_pass(cases):
         return ""
+    # Another command's failing run beside a locked suite measured fully green is no reason to redraft: measured on
+    # three runs, the last ledger run was a unit-test or partial run (9 cases, 1 failed) while the suite stood at 18 of
+    # 18, and each sprint was sent back for a revision the owner's rule (LF.327) says a green sprint does not get; the
+    # failures ship as a known issue (`release_with_failing_unit_tests`).
+    from app.graph import settle_when_green
+
+    if settle_when_green.enabled() and settle_when_green.the_locked_suite_is_green(state["repository"].root_path):
+        last = str(_the_last_test_command(state) or "")
+        acceptance = settle_when_green.the_acceptance_command(state["repository"].root_path)
+        if acceptance and last and last != acceptance:
+            logger.info("The ledger's last failing run was `%s`, not the locked suite, which is green; not sent back",
+                        last[:120])
+            return ""
     # A failure the counts cannot show. A composite command - `npm test` chaining
     # `node --test` and `playwright test` - has its first runner's summary parsed,
     # so a later runner's failure leaves `failed: 0` beside a non-zero exit code.

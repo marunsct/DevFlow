@@ -54,6 +54,29 @@ def _a_unit_test_failure(defect: Any, acceptance_command: str) -> bool:
     return bool(caught_by) and caught_by != acceptance_command and not list(getattr(defect, "failing_criteria", None) or [])
 
 
+def the_locked_suite_is_green(root: str | Path) -> bool:
+    """Whether the harness's last run of the locked acceptance suite ran, passed tests and failed none. Never raises."""
+    try:
+        from app.acceptance import suite
+
+        result = suite.last_result(root) or {}
+        return (bool(result.get("ran")) and int(result.get("passed") or 0) > 0 and int(result.get("failed") or 0) == 0
+                and not str(result.get("problem") or ""))
+    except Exception:  # noqa: BLE001 - a rule that cannot tell says it is not green
+        return False
+
+
+def the_acceptance_command(root: str | Path) -> str:
+    """The locked suite's own command, as the execution ledger records commands; "" when unknown. Never raises."""
+    try:
+        from app.acceptance import suite
+
+        command = suite._command(root)  # noqa: SLF001 - the suite's own command
+        return " ".join(command[0]) if command else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def applies(root: str | Path, defects: Any, replans: int) -> bool:
     """Whether the sprint should go to the escalation now: the acceptance suite is green and only unit tests, or findings read from the files, are open."""
     if not enabled() or replans < AFTER_REPLANS:
@@ -78,4 +101,5 @@ def applies(root: str | Path, defects: Any, replans: int) -> bool:
         return False
 
 
-__all__ = ["AFTER_REPLANS", "ON_BY_DEFAULT", "READ_FROM_THE_FILES", "applies", "enabled"]
+__all__ = ["AFTER_REPLANS", "ON_BY_DEFAULT", "READ_FROM_THE_FILES", "applies", "enabled", "the_acceptance_command",
+           "the_locked_suite_is_green"]

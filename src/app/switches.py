@@ -82,9 +82,16 @@ BUNDLES: dict[str, tuple[str, ...]] = {
     "PREMIUM_CHANGE_REQUESTS": ("CHANGE_REQUEST_RUNS",),
 }
 
-#: Features being measured, each its own switch and off until its measurement says on (owner, 2026-10-29): bundled,
-#: they could not be measured apart.
+#: Features being measured, each its own switch (owner, 2026-10-29): bundled, they could not be measured apart. Off
+#: until a measurement says on; on as a measured arm once one has, watched until it moves to a bundle or the base.
 EXPERIMENTS = ("OBSERVATION_FOLDING", "BATCH_ACCEPTANCE_AUTHOR", "TARGETED_SUITE_REPAIR", "STRUCTURED_DISPUTE_VERDICT")
+#: The experiments deployed on, each with the measurement that turned it on.
+EXPERIMENTS_ON = {
+    # 54 re-locks over 60 runs: 35 touched only the one or two tests sent for repair, so the full review after them
+    # changed nothing; the 19 that touched more all ended at full hidden scores. On 2026-10-29, owner agreeing; the
+    # mutation score is watched for a weaker suite.
+    "TARGETED_SUITE_REPAIR": "re-locks that changed only the repaired tests: 35 of 54",
+}
 
 _BUNDLE_OF = {member: bundle for bundle, members in BUNDLES.items() for member in members}
 
@@ -123,4 +130,4 @@ def is_on(name: str, default: bool) -> bool:
     return default
 
 
-__all__ = ["BUILT_IN", "BUNDLES", "EXPERIMENTS", "bundle_of", "from_the_environment", "is_on", "operated", "stored"]
+__all__ = ["BUILT_IN", "BUNDLES", "EXPERIMENTS", "EXPERIMENTS_ON", "bundle_of", "from_the_environment", "is_on", "operated", "stored"]

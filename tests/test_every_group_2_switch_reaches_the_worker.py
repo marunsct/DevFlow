@@ -30,7 +30,9 @@ def test_the_operated_switches_reach_the_worker_bundles_on_and_experiments_off()
     for name in switches.BUNDLES:
         assert re.search(rf"^  {name}: \$\{{{name}:-on\}}$", COMPOSE, re.M), name
     for name in switches.EXPERIMENTS:
-        assert re.search(rf"^  {name}: \$\{{{name}:-off\}}$", COMPOSE, re.M), name
+        deployed = "on" if name in switches.EXPERIMENTS_ON else "off"
+        assert re.search(rf"^  {name}: \$\{{{name}:-{deployed}\}}$", COMPOSE, re.M), name
+    assert set(switches.EXPERIMENTS_ON) <= set(switches.EXPERIMENTS)
 
 
 def test_every_feature_is_built_in_bundled_or_an_experiment_once_and_none_is_deployed_on_its_own():

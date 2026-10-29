@@ -18,7 +18,6 @@ or transcript (CM.5).
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -32,12 +31,9 @@ ON_BY_DEFAULT = False
 
 def enabled() -> bool:
     """Whether builder and judge requests end with the facts (plan CM.1)."""
-    value = str(os.environ.get("SHARED_FACTS") or "").strip().lower()
-    if value in ("1", "on", "true", "yes"):
-        return True
-    if value in ("0", "off", "false", "no"):
-        return False
-    return ON_BY_DEFAULT
+    from app.switches import is_on
+
+    return is_on("SHARED_FACTS", ON_BY_DEFAULT)
 
 #: The heading every builder and judge reads the block under.
 HEADING = "--- The facts this work is built and judged under ---"

@@ -882,10 +882,10 @@ async def list_switches(user: UserInDB = Depends(get_current_active_user)) -> li
 @settings_router.put("/switches/{name}", response_model=list[SwitchEntry])
 async def set_switch(name: str, payload: SwitchSetting, user: UserInDB = Depends(require_admin)) -> list[SwitchEntry]:
     """Set one switch on or off for every process, or back to the deployed environment's value (`null`)."""
-    from app.observability.provenance import SWITCHES
     from app.server import switch_catalogue
+    from app.switches import operated
 
-    if name not in SWITCHES:
+    if name not in operated():
         raise HTTPException(status_code=404, detail=f"No switch {name}.")
     _check_read_only()
     runtime_settings.save_switch(name, payload.setting, actor=user.username)

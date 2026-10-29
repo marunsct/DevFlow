@@ -31,7 +31,7 @@ def test_a_judgement_model_of_its_own_still_writes_them():
 
 
 def test_off_until_its_before_and_after_runs_switch_it_on(monkeypatch):
-    monkeypatch.delenv("FIX_CYCLE")
+    monkeypatch.setenv("FIX_CYCLE", "off")
     assert fix_cycle.ON_BY_DEFAULT is False
     assert fix_cycle.the_candidate_model(BUILD, BUILD, FIXER) is None
     assert fix_cycle.the_candidate_model(JUDGE, BUILD, FIXER) is JUDGE

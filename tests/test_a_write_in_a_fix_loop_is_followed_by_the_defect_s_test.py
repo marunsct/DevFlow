@@ -42,7 +42,7 @@ def test_reads_failed_writes_other_stages_and_off_are_left_as_they_were():
         assert vaw.after_a_write("read_file", _written(), "run", "defect_fix_1_0").content == "Wrote app/main.py (12 lines)."
         assert vaw.after_a_write("edit_artifact", _written("error"), "run", "defect_fix_1_0").content.endswith("lines).")
         assert vaw.after_a_write("edit_artifact", _written(), "run", "specialist_backend_0").content.endswith("lines).")
-    with mock.patch.dict(os.environ, {"VERIFY_AFTER_WRITE": ""}), vaw.watching("run", "defect_fix_1_0", lambda: ran.append(1) or True):
+    with mock.patch.dict(os.environ, {"VERIFY_AFTER_WRITE": "off"}), vaw.watching("run", "defect_fix_1_0", lambda: ran.append(1) or True):
         assert vaw.after_a_write("edit_artifact", _written(), "run", "defect_fix_1_0").content.endswith("lines).")
     assert ran == []
 

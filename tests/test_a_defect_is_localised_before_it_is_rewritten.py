@@ -54,7 +54,7 @@ def test_on_a_failure_naming_no_file_is_localised_to_the_files_that_hold_the_nam
 def test_off_few_files_or_an_answer_that_confirms_nothing_leave_the_files_as_found(tmp_path):
     root = _project(tmp_path)
     model = _Model({"files": ["app/gone.py"], "symbols": [], "hypothesis": ""})
-    with mock.patch.dict(os.environ, {"LOCALISE_FIRST": ""}):
+    with mock.patch.dict(os.environ, {"LOCALISE_FIRST": "off"}):
         assert localisation.localised(DEFECT, "x", root, model, [], lambda _: True) == []
     with mock.patch.dict(os.environ, ON):
         assert localisation.localised(DEFECT, "x", root, model, ["app/main.py"], lambda _: True) == ["app/main.py"]

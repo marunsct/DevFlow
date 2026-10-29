@@ -60,7 +60,7 @@ def test_on_the_list_is_unchanged_the_call_is_told_and_the_tool_is_refused():
 
 
 def test_off_the_list_narrows_as_before():
-    _, sent = _sent("")
+    _, sent = _sent("off")
     assert "glob" not in [tool.name for tool in sent.tools]
 
 
@@ -70,7 +70,7 @@ def test_on_a_spent_research_share_leaves_its_tools_listed(monkeypatch):
     monkeypatch.setattr(research, "spent", lambda kind: True)
     tools = [SimpleNamespace(name=name) for tools in research._TOOL_OF.values() for name in tools] + [SimpleNamespace(name="ls")]
     middleware = research.build_research_share_middleware()
-    for switch, kept in (("on", len(tools)), ("", 1)):
+    for switch, kept in (("on", len(tools)), ("off", 1)):
         sent = []
         with mock.patch.dict(os.environ, {"STABLE_TOOLS": switch}):
             middleware.wrap_model_call(_Request([HumanMessage(content="x")], tools), lambda r: sent.append(r))

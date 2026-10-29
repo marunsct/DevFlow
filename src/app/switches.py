@@ -43,13 +43,84 @@ def from_the_environment(name: str) -> bool | None:
     return None
 
 
+#: Fixes for faults the runs demonstrated, and savings that change no outcome: part of the base product, always on
+#: (owner, 2026-10-29: "if it was a bug then it is fixed, no switch for bugs"). Not deployed, listed or recorded as
+#: switches; a test may still set the old name's variable to check the code path it replaced.
+BUILT_IN = frozenset({
+    "FIX_CYCLE", "VERIFY_AFTER_WRITE", "DEFECT_CALL_CAP", "LOCALISE_FIRST", "STABLE_TOOLS", "INTERFACE_CLASH_CHECK",
+    "INTERFACE_CHANGES_NAMED", "REPLY_SALVAGE", "RELEASE_WITH_FAILING_UNIT_TESTS", "KEEP_THE_BEST_ATTEMPT",
+    "KEEP_NET_GAINS", "PACKAGE_EXPORTS_NAMED", "PACK_ENTRY_EXPORTS_KEPT", "HONO_NATIVE_TEST_RUNNER",
+    "START_DEFECT_NAMES_COMPILER_ERRORS", "SETTLE_WHEN_ACCEPTANCE_IS_GREEN", "STALL_RULE", "MEASURE_ONCE",
+    "KEEP_THE_BEST_ON_A_REPLAN", "FIRST_REREAD_ANSWERED", "FIX_STAGE_CALL_CAP", "CONTRACT_SERVER_ERRORS_AT_A_ROUND",
+    "LAST_TRY_ON_DEFERRED", "START_PROBE", "EXTENSIONS_BEFORE_A_RUN", "REFUSALS_FOLDED",
+})
+
+#: The premium features, one switch a bundle over the base product (owner, 2026-10-29: a free base version, these
+#: behind a paid one). A feature follows its bundle; its own old variable is only a test's hook.
+BUNDLES: dict[str, tuple[str, ...]] = {
+    # The model's reasoning and replies tuned to the model serving the run: per-model guidance, reply caps, and
+    # thinking switched off where it only burns time.
+    "PREMIUM_MODEL_TUNING": (
+        "MODEL_GUIDANCE", "STEERING_AT_THE_TAIL", "STRUCTURED_EXTRACTION", "FIX_STAGE_REPLY_CAP",
+        "PLAN_REVIEW_REPLY_CAP", "SALVAGED_REPLIES_TURN_THINKING_OFF", "GUIDE_ANSWER_IN_SCHEMA",
+        "GUIDE_STOP_WHEN_DONE", "GUIDE_NO_REPETITION", "GUIDE_KEEP_TO_ROLE", "GUIDE_EXACT_ARGUMENTS",
+        "GUIDE_ONE_PROGRAM_A_COMMAND", "GUIDE_PATHS_AS_GIVEN", "GUIDE_HEED_REFUSALS",
+    ),
+    # What every stage knows of the project: shared facts, memory, the code graph, lessons from earlier runs.
+    "PREMIUM_PROJECT_INTELLIGENCE": (
+        "SHARED_FACTS", "CANONICAL_MEMORY", "WHERE_THINGS_STAND", "STATE_AT_DISPATCH", "PROJECT_GRAPH_FIXES",
+        "PROJECT_GRAPH_BUILDERS", "CODE_GRAPH_TOOL", "BUILDER_FACTS", "LESSON_DISTILLER", "DECISION_LEDGER",
+        "NAMING_STANDARD",
+    ),
+    # Verification beyond the acceptance suite: mutation-guided tests, the regression contract, page scoring,
+    # release audits and documents, and the specification's assumptions asked before building.
+    "PREMIUM_DEEP_VERIFICATION": (
+        "MUTATION_GUIDED_TESTS", "REGRESSION_CONTRACT", "SCREENSHOT_RUBRIC", "RELEASE_AUDITS", "RELEASE_DOCS_REQUIRED",
+        "ASSUMPTIONS_GATE", "ASK_SPECIFICATION",
+    ),
+    # Follow-up runs that change a finished product on request.
+    "PREMIUM_CHANGE_REQUESTS": ("CHANGE_REQUEST_RUNS",),
+}
+
+#: Features being measured, each its own switch and off until its measurement says on (owner, 2026-10-29): bundled,
+#: they could not be measured apart.
+EXPERIMENTS = ("OBSERVATION_FOLDING", "BATCH_ACCEPTANCE_AUTHOR", "TARGETED_SUITE_REPAIR", "STRUCTURED_DISPUTE_VERDICT")
+
+_BUNDLE_OF = {member: bundle for bundle, members in BUNDLES.items() for member in members}
+
+
+def bundle_of(name: str) -> str:
+    """The premium bundle a feature belongs to, or ""."""
+    return _BUNDLE_OF.get(name, "")
+
+
+def operated() -> tuple[str, ...]:
+    """The switches an operator sets - the bundles and the experiments - in the order the admin page lists them."""
+    return (*BUNDLES, *EXPERIMENTS)
+
+
 def is_on(name: str, default: bool) -> bool:
-    """Whether switch `name` is on: the admin page's setting, else its environment variable, else `default`."""
+    """Whether switch `name` is on.
+
+    Its own admin setting or variable first (a test's hook, or a setting stored before the bundles); then a built-in
+    fix is on, and a bundled feature follows its bundle's setting or variable; else `default`.
+    """
     setting = stored(name)
     if setting is not None:
         return setting
     environment = from_the_environment(name)
-    return default if environment is None else environment
+    if environment is not None:
+        return environment
+    if name in BUILT_IN:
+        return True
+    bundle = bundle_of(name)
+    if bundle:
+        chosen = stored(bundle)
+        if chosen is None:
+            chosen = from_the_environment(bundle)
+        if chosen is not None:
+            return chosen
+    return default
 
 
-__all__ = ["from_the_environment", "is_on", "stored"]
+__all__ = ["BUILT_IN", "BUNDLES", "EXPERIMENTS", "bundle_of", "from_the_environment", "is_on", "operated", "stored"]

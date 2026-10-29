@@ -24,53 +24,63 @@ def stored(monkeypatch):
 
 def test_a_stored_setting_beats_docker_which_beats_the_code_default(monkeypatch, stored):
     monkeypatch.setenv("SWITCH_OVERRIDES_FROM_SETTINGS", "on")
-    monkeypatch.setenv("START_PROBE", "on")
-    assert switches.is_on("START_PROBE", False) is True
-    stored["START_PROBE"] = False
-    assert switches.is_on("START_PROBE", False) is False
-    monkeypatch.delenv("START_PROBE")
+    monkeypatch.setenv("TARGETED_SUITE_REPAIR", "on")
+    assert switches.is_on("TARGETED_SUITE_REPAIR", False) is True
+    stored["TARGETED_SUITE_REPAIR"] = False
+    assert switches.is_on("TARGETED_SUITE_REPAIR", False) is False
+    monkeypatch.delenv("TARGETED_SUITE_REPAIR")
     stored.clear()
-    assert switches.is_on("START_PROBE", False) is False
-    assert switches.is_on("START_PROBE", True) is True
+    assert switches.is_on("TARGETED_SUITE_REPAIR", False) is False
+    assert switches.is_on("TARGETED_SUITE_REPAIR", True) is True
+
+
+def test_a_bundle_s_stored_setting_turns_its_features_off(monkeypatch, stored):
+    monkeypatch.setenv("SWITCH_OVERRIDES_FROM_SETTINGS", "on")
+    monkeypatch.setenv("PREMIUM_MODEL_TUNING", "on")
+    monkeypatch.delenv("MODEL_GUIDANCE", raising=False)
+    assert switches.is_on("MODEL_GUIDANCE", False) is True
+    stored["PREMIUM_MODEL_TUNING"] = False
+    assert switches.is_on("MODEL_GUIDANCE", True) is False
 
 
 def test_outside_the_services_the_stored_settings_are_not_read(monkeypatch, stored):
     monkeypatch.delenv("SWITCH_OVERRIDES_FROM_SETTINGS", raising=False)
-    monkeypatch.setenv("START_PROBE", "on")
-    stored["START_PROBE"] = False
-    assert switches.is_on("START_PROBE", False) is True
+    monkeypatch.setenv("TARGETED_SUITE_REPAIR", "on")
+    stored["TARGETED_SUITE_REPAIR"] = False
+    assert switches.is_on("TARGETED_SUITE_REPAIR", False) is True
 
 
-def test_every_switch_is_listed_with_what_it_does_and_where_its_value_comes_from(monkeypatch, stored):
-    monkeypatch.setenv("START_PROBE", "off")
-    monkeypatch.delenv("MEASURE_ONCE", raising=False)
-    stored["STALL_RULE"] = True
+def test_the_bundles_and_experiments_are_listed_with_what_they_do_and_where_their_value_comes_from(monkeypatch, stored):
+    monkeypatch.setenv("PREMIUM_MODEL_TUNING", "off")
+    monkeypatch.delenv("PREMIUM_CHANGE_REQUESTS", raising=False)
+    stored["TARGETED_SUITE_REPAIR"] = True
 
     listed = {entry["name"]: entry for entry in switch_catalogue.entries()}
 
-    assert list(listed) == list(SWITCHES)
+    assert list(listed) == list(switches.operated())
     for entry in listed.values():
         assert len(entry["summary"]) > 30, entry["name"]
         assert not any(generic in entry["summary"] for generic in _GENERIC), entry["name"]
-    assert (listed["START_PROBE"]["docker"], listed["START_PROBE"]["on"], listed["START_PROBE"]["source"]) == (
-        False, False, "docker")
-    assert (listed["MEASURE_ONCE"]["docker"], listed["MEASURE_ONCE"]["source"]) == (None, "default")
-    assert (listed["STALL_RULE"]["setting"], listed["STALL_RULE"]["on"], listed["STALL_RULE"]["source"]) == (
-        True, True, "setting")
-    assert listed["GUIDE_HEED_REFUSALS"]["summary"].startswith(
-        __import__("app.models.guidance", fromlist=["BY_ID"]).BY_ID["heed_refusals"].title)
+    assert (listed["PREMIUM_MODEL_TUNING"]["docker"], listed["PREMIUM_MODEL_TUNING"]["on"],
+            listed["PREMIUM_MODEL_TUNING"]["source"]) == (False, False, "docker")
+    assert (listed["PREMIUM_CHANGE_REQUESTS"]["docker"], listed["PREMIUM_CHANGE_REQUESTS"]["source"]) == (None, "default")
+    assert (listed["TARGETED_SUITE_REPAIR"]["setting"], listed["TARGETED_SUITE_REPAIR"]["on"],
+            listed["TARGETED_SUITE_REPAIR"]["source"]) == (True, True, "setting")
+    assert "- GUIDE_HEED_REFUSALS: " + __import__("app.models.guidance", fromlist=["BY_ID"]).BY_ID[
+        "heed_refusals"].title in listed["PREMIUM_MODEL_TUNING"]["details"]
 
 
 def test_the_page_lists_switches_and_an_administrator_sets_and_clears_one(client, monkeypatch):
-    monkeypatch.setenv("START_PROBE", "on")
+    monkeypatch.setenv("PREMIUM_DEEP_VERIFICATION", "on")
     listed = {entry["name"]: entry for entry in client.get("/api/settings/switches").json()}
-    assert listed["START_PROBE"]["source"] == "docker" and listed["START_PROBE"]["on"] is True
+    assert listed["PREMIUM_DEEP_VERIFICATION"]["source"] == "docker" and listed["PREMIUM_DEEP_VERIFICATION"]["on"] is True
 
-    off = {e["name"]: e for e in client.put("/api/settings/switches/START_PROBE", json={"setting": False}).json()}
-    assert (off["START_PROBE"]["setting"], off["START_PROBE"]["on"], off["START_PROBE"]["source"]) == (
-        False, False, "setting")
+    off = {e["name"]: e for e in client.put("/api/settings/switches/PREMIUM_DEEP_VERIFICATION", json={"setting": False}).json()}
+    assert (off["PREMIUM_DEEP_VERIFICATION"]["setting"], off["PREMIUM_DEEP_VERIFICATION"]["on"],
+            off["PREMIUM_DEEP_VERIFICATION"]["source"]) == (False, False, "setting")
 
-    back = {e["name"]: e for e in client.put("/api/settings/switches/START_PROBE", json={"setting": None}).json()}
-    assert (back["START_PROBE"]["setting"], back["START_PROBE"]["source"]) == (None, "docker")
+    back = {e["name"]: e for e in client.put("/api/settings/switches/PREMIUM_DEEP_VERIFICATION", json={"setting": None}).json()}
+    assert (back["PREMIUM_DEEP_VERIFICATION"]["setting"], back["PREMIUM_DEEP_VERIFICATION"]["source"]) == (None, "docker")
 
     assert client.put("/api/settings/switches/NO_SUCH_SWITCH", json={"setting": True}).status_code == 404
+    assert client.put("/api/settings/switches/STALL_RULE", json={"setting": False}).status_code == 404  # built in

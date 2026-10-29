@@ -12,7 +12,6 @@ agent loop.
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 #: Group 2 of the plan is measured before and after (ADR-0010): built while a
@@ -23,12 +22,9 @@ ON_BY_DEFAULT = False
 
 def enabled() -> bool:
     """Whether the bounded fix cycle runs (plan AY)."""
-    value = str(os.environ.get("FIX_CYCLE") or "").strip().lower()
-    if value in ("1", "on", "true", "yes"):
-        return True
-    if value in ("0", "off", "false", "no"):
-        return False
-    return ON_BY_DEFAULT
+    from app.switches import is_on
+
+    return is_on("FIX_CYCLE", ON_BY_DEFAULT)
 
 
 def the_candidate_model(judgement_model: Any, model: Any, fix_model: Any = None) -> Any | None:

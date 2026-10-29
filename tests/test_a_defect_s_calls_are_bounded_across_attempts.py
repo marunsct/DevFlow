@@ -31,7 +31,7 @@ def test_under_the_ceiling_the_defect_is_fixed_again_and_at_it_it_is_left_open_w
         why = defect_budget.spent_out(_cycle(25, 30, 12), 0)
     assert "67 model calls" in why and "changed the token check" in why
     assert not BANNED.search(why)
-    with mock.patch.dict(os.environ, {"DEFECT_CALL_CAP": ""}):
+    with mock.patch.dict(os.environ, {"DEFECT_CALL_CAP": "off"}):
         assert defect_budget.spent_out(_cycle(25, 30, 12), 0) == ""
     with mock.patch.dict(os.environ, {**ON, "DEFECT_CALLS_AT_MOST": "20"}):
         assert defect_budget.spent_out(_cycle(25), 0)
@@ -50,7 +50,7 @@ def test_an_attempt_s_calls_are_counted_from_the_transcript_since_it_started():
          mock.patch("app.observability.transcript.read_transcript", lambda run_id, kinds=None: records):
         assert defect_budget.calls_in("run", "defect_fix_1_0", "2026-10-22T01:00:00+00:00") == 3
         assert defect_budget.calls_in("run", "defect_fix_1_0", "") is None, "no start counts nothing"
-    with mock.patch.dict(os.environ, {"DEFECT_CALL_CAP": ""}):
+    with mock.patch.dict(os.environ, {"DEFECT_CALL_CAP": "off"}):
         assert defect_budget.calls_in("run", "defect_fix_1_0", "2026-10-22T01:00:00+00:00") is None
 
 

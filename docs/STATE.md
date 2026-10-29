@@ -4,7 +4,7 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-29 10:27 JST. run-f9bbe2d6 (11th Qwen3.6 run, mixed 6e5ebe72 -> c819a56e) **completed, hidden 9/9**, 61.6 active min, 125 calls, locked 12/0, visible/hidden gap 0, tool failures 1.2%, mutation 0.917. Since then shipped and deployed (9e18db6a): LF.413-437 - owner-approved reasoning caps, acceptance A1/A3/A5-A7, the green-suite gate (LF.426), item 21, fix-loop A1-A4 (worktree agent), ops A1/A4-A7/A9/A11 + item 8 (worktree agent). 44 runs: 41x 9/9, 2x 5/9, 1x 0/9. Now: the held-out tasks-api run (plan item 23).
+**As of:** 2026-10-29 10:27 JST. run-f9bbe2d6 (11th Qwen3.6 run, mixed 6e5ebe72 -> c819a56e) **completed, hidden 9/9**, 61.6 active min, 125 calls, locked 12/0, visible/hidden gap 0, tool failures 1.2%, mutation 0.917. Since then shipped and deployed (9e18db6a): LF.413-437 - owner-approved reasoning caps, acceptance A1/A3/A5-A7, the green-suite gate (LF.426), item 21, fix-loop A1-A4 (worktree agent), ops A1/A4-A7/A9/A11 + item 8 (worktree agent). 44 runs: 41x 9/9, 2x 5/9, 1x 0/9. Now: the held-out tasks-api run (plan item 23). Switches consolidated (LF.439, owner): 26 fixes built in, 4 premium bundles, 4 experiments - deploy after this run.
 ## Live now
 | | |
 |---|---|

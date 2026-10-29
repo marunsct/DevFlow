@@ -79,10 +79,9 @@ def test_the_round_and_the_settlement_ask_it():
     assert "description.startswith((UNIT_TESTS_FAIL, SERVER_FAILED))" in inspect.getsource(workflow._the_suite_already_guards_it)
 
 
-def test_the_switch_is_registered_and_on_in_compose():
-    from pathlib import Path
-
+def test_the_switch_is_registered_and_built_in():
+    from app import switches
     from app.observability import provenance
 
     assert "CONTRACT_SERVER_ERRORS_AT_A_ROUND" in provenance.SWITCHES
-    assert "CONTRACT_SERVER_ERRORS_AT_A_ROUND: ${CONTRACT_SERVER_ERRORS_AT_A_ROUND:-on}" in Path("docker-compose.yml").read_text()
+    assert "CONTRACT_SERVER_ERRORS_AT_A_ROUND" in switches.BUILT_IN  # a fix: always on (owner, 2026-10-29)

@@ -34,6 +34,22 @@ os.environ.setdefault("ENV", "development")
 
 
 @pytest.fixture(autouse=True)
+def _the_built_in_fixes_at_their_code_default(monkeypatch):
+    """Each built-in fix's old variable set off, as every test was written against: a test sets one on to test it.
+
+    The base product has them always on (`app.switches.BUILT_IN`, owner 2026-10-29). The suite was written while each
+    was a switch off in its code, and its tests turn on only the one they test; this keeps that. A test that sets
+    a variable itself, or clears one to see the product's default, still does.
+    """
+    from app.switches import BUILT_IN
+
+    for name in BUILT_IN:
+        if name not in os.environ:
+            monkeypatch.setenv(name, "off")
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _fail_a_hung_test():
     """Turn a hang into a stack trace that names the test.
 

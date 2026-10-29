@@ -43,15 +43,49 @@ def explanation(spec: str, obj: Any) -> tuple[str, str]:
     return _paragraphs(inspect.getdoc(inspect.getmodule(obj)) or "")
 
 
+#: What each premium bundle is, for the admin page; its features' own lines follow it.
+BUNDLE_SUMMARIES = {
+    "PREMIUM_MODEL_TUNING": "Adaptive model tuning: the model's reasoning and replies tuned to the model serving the run.",
+    "PREMIUM_PROJECT_INTELLIGENCE": "Project intelligence: shared facts, project memory, the code graph and lessons from "
+                                    "earlier runs, for every stage.",
+    "PREMIUM_DEEP_VERIFICATION": "Deep verification: mutation-guided tests, the regression contract, page scoring, "
+                                 "release audits and documents, and the specification's assumptions asked first.",
+    "PREMIUM_CHANGE_REQUESTS": "Change requests: follow-up runs that change a finished product on request.",
+}
+
+
+def _a_bundle(name: str, stored: dict[str, bool]) -> dict[str, Any]:
+    """A premium bundle's entry: its summary, the features it holds, and its value."""
+    from app import switches
+    from app.observability.provenance import SWITCHES, switch
+
+    lines = []
+    for member in switches.BUNDLES[name]:
+        try:
+            summary, _ = explanation(SWITCHES[member], switch(SWITCHES[member]))
+        except Exception:  # noqa: BLE001 - one unreadable feature does not hide the bundle
+            summary = "its module could not be read"
+        lines.append(f"- {member}: {summary}")
+    setting, environment = stored.get(name), switches.from_the_environment(name)
+    on, source = ((setting, "setting") if setting is not None else
+                  (environment, "docker") if environment is not None else (False, "default"))
+    return {"name": name, "module": "app.switches", "summary": BUNDLE_SUMMARIES.get(name, name),
+            "details": "\n".join(lines), "default": False, "docker": environment, "setting": setting,
+            "on": on, "source": source}
+
+
 def entries() -> list[dict[str, Any]]:
-    """One entry a switch, in the registry's order. A switch whose module cannot be read is listed as unreadable."""
+    """One entry a switch an operator sets - the premium bundles, then the experiments (owner, 2026-10-29).
+
+    Built-in fixes are not listed: they are always on. A switch whose module cannot be read is listed as unreadable.
+    """
     from app import switches
     from app.observability.provenance import SWITCHES, switch
     from app.server import runtime_settings
 
     stored = runtime_settings.switch_overrides()
-    listed: list[dict[str, Any]] = []
-    for name, spec in SWITCHES.items():
+    listed: list[dict[str, Any]] = [_a_bundle(name, stored) for name in switches.BUNDLES]
+    for name, spec in ((name, SWITCHES[name]) for name in switches.EXPERIMENTS):
         entry: dict[str, Any] = {"name": name, "module": spec}
         setting = stored.get(name)
         environment = switches.from_the_environment(name)
@@ -74,4 +108,4 @@ def entries() -> list[dict[str, Any]]:
     return listed
 
 
-__all__ = ["entries", "explanation"]
+__all__ = ["BUNDLE_SUMMARIES", "entries", "explanation"]

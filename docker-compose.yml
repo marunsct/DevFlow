@@ -38,125 +38,20 @@ x-app-env: &app-env
   SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
   HARNESS_MCP_DISCOVERY: ${HARNESS_MCP_DISCOVERY:-true}
   SANDBOX_RUNTIMES_ENABLED: ${SANDBOX_RUNTIMES_ENABLED:-true}
-  # Group 2 switches (app/observability/provenance.py SWITCHES): each is off
-  # unless the host sets it, so a subsystem is measured by exporting its
-  # switches before `loop.sh deploy`. These two change nothing the model does
-  # during a run and are on (owner, 2026-10-22).
-  LESSON_DISTILLER: ${LESSON_DISTILLER:-on}
-  CHANGE_REQUEST_RUNS: ${CHANGE_REQUEST_RUNS:-on}
-  ASK_SPECIFICATION: ${ASK_SPECIFICATION:-on}
-  ASSUMPTIONS_GATE: ${ASSUMPTIONS_GATE:-on}
-  CANONICAL_MEMORY: ${CANONICAL_MEMORY:-on}
-  CODE_GRAPH_TOOL: ${CODE_GRAPH_TOOL:-on}
-  DECISION_LEDGER: ${DECISION_LEDGER:-on}
-  DEFECT_CALL_CAP: ${DEFECT_CALL_CAP:-on}
-  FIX_CYCLE: ${FIX_CYCLE:-on}
-  INTERFACE_CHANGES_NAMED: ${INTERFACE_CHANGES_NAMED:-on}
-  INTERFACE_CLASH_CHECK: ${INTERFACE_CLASH_CHECK:-on}
-  LOCALISE_FIRST: ${LOCALISE_FIRST:-on}
-  PROJECT_GRAPH_BUILDERS: ${PROJECT_GRAPH_BUILDERS:-on}
-  PROJECT_GRAPH_FIXES: ${PROJECT_GRAPH_FIXES:-on}
-  REGRESSION_CONTRACT: ${REGRESSION_CONTRACT:-on}
-  RELEASE_AUDITS: ${RELEASE_AUDITS:-on}
-  RELEASE_DOCS_REQUIRED: ${RELEASE_DOCS_REQUIRED:-on}
-  SCREENSHOT_RUBRIC: ${SCREENSHOT_RUBRIC:-on}
-  SHARED_FACTS: ${SHARED_FACTS:-on}
-  STABLE_TOOLS: ${STABLE_TOOLS:-on}
-  STATE_AT_DISPATCH: ${STATE_AT_DISPATCH:-on}
-  STEERING_AT_THE_TAIL: ${STEERING_AT_THE_TAIL:-on}
-  VERIFY_AFTER_WRITE: ${VERIFY_AFTER_WRITE:-on}
-  WHERE_THINGS_STAND: ${WHERE_THINGS_STAND:-on}
-  # Plan QM.2: on as its own measured arm (owner, 2026-10-23 08:08 JST) after
-  # the all-on baseline's suites noticed as few as 4 of 12 deliberate changes.
-  # It adds fix stages to a sprint whose criteria pass. Changes tried per
-  # sprint: MUTATION_GUIDED_TESTS_CHANGES.
-  MUTATION_GUIDED_TESTS: ${MUTATION_GUIDED_TESTS:-on}
-  MUTATION_GUIDED_TESTS_CHANGES: ${MUTATION_GUIDED_TESTS_CHANGES:-6}
-  # Old long tool results folded to their opening once a stage's conversation
-  # reaches half the window (built 2026-10-23; off until the owner turns it on).
+  # Feature switches (owner 2026-10-29): bug fixes are built in and always on; the premium
+  # features come in four bundles over the free base; experiments stay off until measured.
+  # See `app.switches` for what each bundle holds.
+  PREMIUM_MODEL_TUNING: ${PREMIUM_MODEL_TUNING:-on}
+  PREMIUM_PROJECT_INTELLIGENCE: ${PREMIUM_PROJECT_INTELLIGENCE:-on}
+  PREMIUM_DEEP_VERIFICATION: ${PREMIUM_DEEP_VERIFICATION:-on}
+  PREMIUM_CHANGE_REQUESTS: ${PREMIUM_CHANGE_REQUESTS:-on}
   OBSERVATION_FOLDING: ${OBSERVATION_FOLDING:-off}
-  # A reply cut off by the cap is salvaged from its own reasoning where the
-  # model's server was measured to allow it (owner, 2026-10-23: on, enabled per
-  # model by the measurement kept with it).
-  REPLY_SALVAGE: ${REPLY_SALVAGE:-on}
-  # The serving model's own guidance and reply ceiling, measured by its deep
-  # diagnosis (owner, 2026-10-23: make a model that does not obey behave as asked).
-  MODEL_GUIDANCE: ${MODEL_GUIDANCE:-on}
-  # A stage's prose answer asked again with only its schema allowed, and older
-  # refused calls folded to a line each (owner, 2026-10-23: build the steering
-  # playbook - reports/Steering stubborn local models.md).
-  STRUCTURED_EXTRACTION: ${STRUCTURED_EXTRACTION:-on}
   BATCH_ACCEPTANCE_AUTHOR: ${BATCH_ACCEPTANCE_AUTHOR:-off}
-  # A product the locked suite accepts is released with its own failing unit tests recorded as a gap, not held
-  # back until the run stops (owner away, 2026-10-24; measured: hidden 9/9 on a run that ended failed).
-  RELEASE_WITH_FAILING_UNIT_TESTS: ${RELEASE_WITH_FAILING_UNIT_TESTS:-on}
-  # A sprint planned again starts from the best product it has had (owner away, 2026-10-24; measured: 14 of 18
-  # criteria fell to 0 after a re-plan).
-  KEEP_THE_BEST_ATTEMPT: ${KEEP_THE_BEST_ATTEMPT:-on}
-  # A fix that makes many tests pass and breaks one worker-written unit test stays (owner away, 2026-10-25;
-  # measured: a fix that made 12 pass and broke 1 was reverted, five times over).
-  KEEP_NET_GAINS: ${KEEP_NET_GAINS:-on}
-  # A name an import asks of a package that does not have it comes back with what the package really exports
-  # (owner, 2026-10-25: tune the harness for weaker models; measured: createClient/createTestClient from hono/testing).
-  PACKAGE_EXPORTS_NAMED: ${PACKAGE_EXPORTS_NAMED:-on}
-  # A pack's entry file that stops exporting what the scaffold's own files import is a defect at once (owner, 2026-10-25).
-  PACK_ENTRY_EXPORTS_KEPT: ${PACK_ENTRY_EXPORTS_KEPT:-on}
-  # Hono run by Node itself with node:test, no Jest or ts-jest, for weaker models. On from 2026-10-26 02:00 JST after six
-  # runs with the model in use: hidden 9, 9, 9, 8, 9 of 9 and one 0 (mixed versions), against 1, 0, 0, 0, 0 for the Jest
-  # pack. Not yet measured on a stronger model; `off` brings the Jest pack back.
-  HONO_NATIVE_TEST_RUNNER: ${HONO_NATIVE_TEST_RUNNER:-on}
-  # The compiler's missing-name errors go with the "product does not start" defect, so a fixer sees them all at once and
-  # not the runtime's one crash at a time (owner, 2026-10-25; measured: three runs lost their first half hour to it).
-  START_DEFECT_NAMES_COMPILER_ERRORS: ${START_DEFECT_NAMES_COMPILER_ERRORS:-on}
-  # A sprint whose acceptance suite is fully green is not planned again for the model's own failing unit tests alone; it
-  # goes to the escalation, which accepts it with the problem recorded (owner, 2026-10-26; measured: 18 of 18 criteria
-  # for 40 minutes of re-plans).
-  SETTLE_WHEN_ACCEPTANCE_IS_GREEN: ${SETTLE_WHEN_ACCEPTANCE_IS_GREEN:-on}
-  # A sprint whose last two re-plan attempts did not beat the best product so far goes to the escalation instead of being
-  # planned again (owner's standing direction, 2026-10-26; measured: 30 to 60 minutes flat in three runs).
-  STALL_RULE: ${STALL_RULE:-on}
-  # The drafting builder is given what a fixer is told after a failure: the pack's guide, the installed packages' real
-  # exports and the compiler's errors on its draft (owner, 2026-10-26: measured arm against the last run with it off).
-  BUILDER_FACTS: ${BUILDER_FACTS:-on}
-  # A product the suite has measured is not measured again until it changes: the fast path ran the suite two or three
-  # times a round on the same tree (deep review 2026-10-26).
-  MEASURE_ONCE: ${MEASURE_ONCE:-on}
-  # A re-plan does not redraft a file the best product so far already has, when that product passes at least half
-  # of the suite (deep review 2026-10-26: the best-attempt undo fired in about half the runs).
-  KEEP_THE_BEST_ON_A_REPLAN: ${KEEP_THE_BEST_ON_A_REPLAN:-on}
-  # A stage's first read of a file its memory holds gets the file's lines; the second, the pointer.
-  FIRST_REREAD_ANSWERED: ${FIRST_REREAD_ANSWERED:-on}
-  FIX_STAGE_CALL_CAP: ${FIX_STAGE_CALL_CAP:-on}
-  FIX_STAGE_REPLY_CAP: ${FIX_STAGE_REPLY_CAP:-on}
-  PLAN_REVIEW_REPLY_CAP: ${PLAN_REVIEW_REPLY_CAP:-on}
-  SALVAGED_REPLIES_TURN_THINKING_OFF: ${SALVAGED_REPLIES_TURN_THINKING_OFF:-on}
   TARGETED_SUITE_REPAIR: ${TARGETED_SUITE_REPAIR:-off}
   STRUCTURED_DISPUTE_VERDICT: ${STRUCTURED_DISPUTE_VERDICT:-off}
-  CONTRACT_SERVER_ERRORS_AT_A_ROUND: ${CONTRACT_SERVER_ERRORS_AT_A_ROUND:-on}
-  # Each deferred criterion with a locked test gets one last rewrite before release (deep review F3).
-  LAST_TRY_ON_DEFERRED: ${LAST_TRY_ON_DEFERRED:-on}
-  # When the product does not start for the suite, the harness starts it the same way and says what it printed and
-  # how its readiness URL answered (measured: a /health answering 503 hid behind a 60-second timeout for 40 minutes).
-  START_PROBE: ${START_PROBE:-on}
-  # A command a stage runs sees the `.ts` on its relative imports that the harness would add before measuring
-  # (measured: two testing work orders spent 55 calls on `../src/datastore.js` while `datastore.ts` existed).
-  EXTENSIONS_BEFORE_A_RUN: ${EXTENSIONS_BEFORE_A_RUN:-on}
+  MUTATION_GUIDED_TESTS_CHANGES: ${MUTATION_GUIDED_TESTS_CHANGES:-6}
   # Switches set on the admin page (/admin) beat the values above, in every process (`app.switches`).
   SWITCH_OVERRIDES_FROM_SETTINGS: ${SWITCH_OVERRIDES_FROM_SETTINGS:-on}
-  # One naming standard per language in the specification and every draft, and the sections that fix names asked
-  # for again when empty (owner, 2026-10-25: name mismatches between files).
-  NAMING_STANDARD: ${NAMING_STANDARD:-on}
-  REFUSALS_FOLDED: ${REFUSALS_FOLDED:-on}
-  # Each item of the general guidance catalogue, its own switch: on lets a
-  # model's steering profile use it, off withholds it from every model.
-  GUIDE_ANSWER_IN_SCHEMA: ${GUIDE_ANSWER_IN_SCHEMA:-on}
-  GUIDE_STOP_WHEN_DONE: ${GUIDE_STOP_WHEN_DONE:-on}
-  GUIDE_NO_REPETITION: ${GUIDE_NO_REPETITION:-on}
-  GUIDE_KEEP_TO_ROLE: ${GUIDE_KEEP_TO_ROLE:-on}
-  GUIDE_EXACT_ARGUMENTS: ${GUIDE_EXACT_ARGUMENTS:-on}
-  GUIDE_ONE_PROGRAM_A_COMMAND: ${GUIDE_ONE_PROGRAM_A_COMMAND:-on}
-  GUIDE_PATHS_AS_GIVEN: ${GUIDE_PATHS_AS_GIVEN:-on}
-  GUIDE_HEED_REFUSALS: ${GUIDE_HEED_REFUSALS:-on}
   PAGE_VIEW_ENABLED: ${PAGE_VIEW_ENABLED:-true}
   CUSTOM_STACK_SETUP: ${CUSTOM_STACK_SETUP:-true}
   # At most this many agents of one run at once in parallel mode: work orders,

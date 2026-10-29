@@ -21,7 +21,7 @@ def _stack():
 
 
 def test_the_jest_pack_is_chosen_while_the_arm_is_off(monkeypatch):
-    monkeypatch.delenv("HONO_NATIVE_TEST_RUNNER", raising=False)
+    monkeypatch.setenv("HONO_NATIVE_TEST_RUNNER", "off")
     assert choose_pack(_stack(), "A small HTTP service API").name == "node-hono-api"
 
 

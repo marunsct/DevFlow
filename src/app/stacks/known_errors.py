@@ -17,6 +17,13 @@ logger = logging.getLogger(__name__)
 KNOWN_CAUSE = "Known cause on this stack:"
 
 
+def _runs_node_test(pack: Any) -> bool:
+    """Whether the pack's unit tests run on `node --test`, by its kept test script or its manifest."""
+    script = str((getattr(pack, "kept_scripts", None) or {}).get("test") or "")
+    manifest = str((getattr(pack, "files", None) or {}).get("package.json") or "")
+    return "node --test" in script or "node --test" in manifest
+
+
 def with_known_causes(repo_root: str | Path, defects: list[Any]) -> list[Any]:
     """`defects`, each whose text carries an error the project's pack knows given its cause. Never raises."""
     try:
@@ -24,6 +31,10 @@ def with_known_causes(repo_root: str | Path, defects: list[Any]) -> list[Any]:
 
         found = contract.the_pack(Path(repo_root))
         known = dict(getattr(found[0], "known_errors", None) or {}) if found else {}
+        if found and _runs_node_test(found[0]):
+            from app.stacks.packs._javascript import NODE_TEST_KNOWN_ERRORS
+
+            known = {**NODE_TEST_KNOWN_ERRORS, **known}
     except Exception:  # noqa: BLE001 - the defects as raised stand
         return defects
     if not known:

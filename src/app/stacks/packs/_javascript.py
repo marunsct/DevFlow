@@ -1320,3 +1320,18 @@ TEST_BUGS = (
     # and every test using it failed on `connect ECONNREFUSED ::1:80`.
     r"\bconnect ECONNREFUSED (?:\[?::1\]?|127\.0\.0\.1|localhost):(?:80|443)\b",
 )
+
+
+#: Errors a unit test run by `node --test` is known to raise, by a phrase of the message, and their cause
+#: (`app.stacks.known_errors`). Measured on two runs: unit tests written for Vitest's globals failed "describe is not
+#: defined" on the pack's `node:test` runner, and both fixers rewrote the manifest and a Vitest config - the test
+#: command is the pack's and was put back - so neither fix could work and the tests shipped failing.
+NODE_TEST_KNOWN_ERRORS = {
+    phrase: (
+        "the unit tests run on Node's own `node:test`, which has no global `describe`, `it`, `test` or `expect`: "
+        "import them in each test file - `import { describe, it } from 'node:test'` and "
+        "`import assert from 'node:assert/strict'` - and assert with `assert`. The test command is the pack's and "
+        "is put back, so changing the manifest or adding a Vitest or Jest configuration cannot fix this."
+    )
+    for phrase in ("describe is not defined", "it is not defined", "expect is not defined", "vi is not defined")
+}

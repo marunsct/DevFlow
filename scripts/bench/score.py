@@ -271,8 +271,23 @@ def score(
     # What the release knew it did not prove, top level as well: the outcome
     # dashboard and `report.py` read the export without walking `harness`.
     result["completion_gaps"] = result["harness"]["completion_gaps"]
+    result.update(visible_and_hidden(result))
     out.write_text(json.dumps(result, indent=2))
     return result
+
+
+def visible_and_hidden(result: dict) -> dict:
+    """The locked suite's pass rate beside the hidden score, and the gap between them (plan item 21; SpecBench).
+
+    A run whose own suite passes far more than the hidden tests do measured itself on a weaker standard than the
+    one it is judged by - the integrity gap - and the score alone cannot show it. {} when either is unknown.
+    """
+    harness = result.get("harness") or {}
+    passed, failed = int(harness.get("locked_passed") or 0), int(harness.get("locked_failed") or 0)
+    if result.get("unscored") or passed + failed == 0 or result.get("score") is None:
+        return {}
+    visible = round(passed / (passed + failed), 3)
+    return {"visible_score": visible, "visible_hidden_gap": round(visible - float(result["score"]), 3)}
 
 
 if __name__ == "__main__":
@@ -301,6 +316,8 @@ if __name__ == "__main__":
         f"{harness.get('locked_failed', '?')} failed"
         + ("  <- FALSE ACCEPTANCE: the harness finished a product that fails hidden tests" if result["false_acceptance"] else "")
     )
+    if "visible_hidden_gap" in result:
+        print(f"  visible {result['visible_score']} vs hidden {result['score']} (gap {result['visible_hidden_gap']:+})")
     if result["completion_gaps"]:
         print(f"  completed with {len(result['completion_gaps'])} gap(s) the release knew it did not prove:")
         for gap in result["completion_gaps"]:

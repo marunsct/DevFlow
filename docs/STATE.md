@@ -4,15 +4,16 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-29 12:26 JST. run-943927b0 (notes-api-hono, mixed 8d793eee -> fca7568b, one rewind) **completed, hidden 9/9**, 40.7 active min, 71 calls, locked 17/0, mutation 0.667. LF.408 moved shutdown handling out of kept main.ts at the architecture review; LF.410 got the API into the plan; first draft 18/18 once LF.441 (an LF.411 false positive) was rewound past. Held-out tasks-api 10/10 in 48 min before it. 46 runs: 43x full hidden score. Now: TARGETED_SUITE_REPAIR's first clean measured run; STRUCTURED_DISPUTE_VERDICT next; a second tasks-api run after.
+**As of:** 2026-10-29 13:20 JST. run-dba1ccf8 (notes-api-hono, fca7568b, not mixed) **completed, hidden 9/9**, 43.7 active min, 108 calls, locked 11/0, mutation 1.0; LF.443 (node:test unit globals). notes-api-hono: four runs in a row at 9/9 in 41-62 min. Experiments on as measured arms: TARGETED_SUITE_REPAIR (no repair to act on in 2 runs), STRUCTURED_DISPUTE_VERDICT (from now). 47 runs: 44x full hidden score. Now: the second held-out tasks-api run.
 ## Live now
 | | |
 |---|---|
-| Run | **run-dba1ccf8** (notes-api-hono, Fast, bundles on, TARGETED_SUITE_REPAIR on (measured arm), 3 experiments off; harness fca7568b, Qwen3.6-35B-A3B MTP) started 12:26 JST 2026-10-29 |
+| Run | **run-b115ca5c** (**tasks-api, held-out, second run**; bundles on; TARGETED_SUITE_REPAIR and STRUCTURED_DISPUTE_VERDICT on as measured arms; harness 3d9ecace) started 13:20 JST 2026-10-29 |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner, 17:10 JST 2026-10-28) at :8888, 2 slots, context 184,320; owner's sampling: Qwen 'thinking, precise coding' (temp 0.6, top_p 0.95, top_k 20, min_p 0, repeat 1.0, presence 0). This server **reports cached tokens** (`cached_token_share` is real from here; LM Studio's gpt-oss did not). Diagnosed 17:24 JST: tools 3/3 everywhere, edits 100/100, structured answers forced, reasoning switch honoured, salvage supported; deep: no loop (no reply ceiling), weak at heeding a refusal (0/3) and answering as a call when offered (1/3); kept guide: stop when the checks pass. gpt-oss-20b keeps its 12k ceiling in its own record. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs
+- **run-dba1ccf8** (fca7568b, not mixed): **completed 13:10 JST 10-29, hidden 9/9**, 43.7 active min, 108 calls, locked 11/0, mutation 1.0. SQLite design; unit tests written for Vitest globals on node:test (LF.443).
 - **run-943927b0** (8d793eee -> fca7568b, mixed_versions, one rewind): **completed 12:18 JST 10-29, hidden 9/9**, 40.7 active min, 71 calls, locked 17/0, mutation 0.667. LF.408 and LF.410 worked; LF.441 fixed an LF.411 false positive.
 - **run-627cbf21** (tasks-api, held-out, 9e18db6a, not mixed): **completed 11:16 JST 10-29, hidden 10/10, quality 5/7**, 48.3 active min, 117 calls, locked 29/0, mutation 0.75. First draft did not start (undeclared `passlib`); shipped no unit tests; one contract line without an id unread.
 - **run-b4f264fe** (c4f11015, not mixed, Qwen3.6): **completed 21:13 JST, hidden 9/9**, 98 active min, 164 calls, cache 69%, tool failures 3.9%, 1 revert, locked 16/0, mutation 0.417 (0.667 with unit). Intermittent mid-suite crash (temp-file rename race) cost two attempts; dispute set aside AC-9 (inter-test dependence); milestone review caught PUT not persisting.

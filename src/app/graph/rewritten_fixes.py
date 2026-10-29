@@ -66,13 +66,19 @@ _THE_UNIT_TESTS_FAIL = "The unit tests fail."
 
 
 def what_failed(defect: Any, repo_root: str | Path, last_failure: Any = None) -> str:
-    """What the defect's failing tests and last failing command printed, as one text."""
-    parts: list[str] = []
+    """What the defect's failing tests and last failing command printed, as one text.
+
+    The defect's own words come first and the runner's output after them; over the budget, the output keeps at least
+    half of it. Found in a code review: each reverted fix added its note to the defect, the notes reached about 4,200
+    characters after three reverts, and the output after them was cut at test 23 of 79.
+    """
+    own: list[str] = []
     for field in ("actual_behavior", "reproduction_steps"):
         value = getattr(defect, field, "")
         text = "\n".join(map(str, value)) if isinstance(value, (list, tuple)) else str(value or "")
         if text.strip():
-            parts.append(text.strip())
+            own.append(text.strip())
+    parts: list[str] = []
     try:
         from app.acceptance import suite
         from app.acceptance.junit import tags_in
@@ -89,13 +95,19 @@ def what_failed(defect: Any, repo_root: str | Path, last_failure: Any = None) ->
         printed = "\n".join(str(last_failure.get(k) or "") for k in ("command", "stdout", "stderr")).strip()
         if printed:
             parts.append(f"{THE_LAST_FAILING_COMMAND}\n{printed}")
-    text = "\n\n".join(parts)
-    if len(text) > MOST_FAILURE_CHARACTERS:
-        # Cut from the front, so frames outside the project would push the
-        # project's own lines and the assertion out first (plan SZ.3).
-        from app.analysis.tracebacks import without_outside_frames
+    said, printed = "\n\n".join(own), "\n\n".join(parts)
+    if len(said) + len(printed) + 2 <= MOST_FAILURE_CHARACTERS:
+        return "\n\n".join(part for part in (said, printed) if part)
+    # Cut from the front, so frames outside the project would push the
+    # project's own lines and the assertion out first (plan SZ.3).
+    from app.analysis.tracebacks import without_outside_frames
 
-        text = without_outside_frames(text, repo_root)
+    said, printed = without_outside_frames(said, repo_root), without_outside_frames(printed, repo_root)
+    if not printed:
+        return said[:MOST_FAILURE_CHARACTERS]
+    room = max(MOST_FAILURE_CHARACTERS - len(printed) - 2, MOST_FAILURE_CHARACTERS // 2)
+    said = said[:room]
+    text = "\n\n".join(part for part in (said, printed) if part)
     return text[:MOST_FAILURE_CHARACTERS]
 
 

@@ -1,0 +1,76 @@
+{
+ "suite-01": {
+  "tests_that_restart_on_data_they_never_wrote": [
+   "`notes/acceptance/ac17.spec.js` line 8: the test starts `svc1` on a fresh data folder and never sends it anything (`svc1.baseURL` is not used), then starts a service on `svc1.dataDir` and reads from i"
+  ]
+ },
+ "suite-02": {},
+ "suite-03": {
+  "fetch_calls_written_like_the_fixture": [
+   "`notes/acceptance/notes.spec.js` line(s) 95: a `fetch` call passes its body as `data:`, which only Playwright's `request` fixture reads - `fetch` sends no body, and the service answers 400 on every pr"
+  ]
+ },
+ "suite-04": {
+  "tests_that_restart_on_data_they_never_wrote": [
+   "`notes/acceptance/api.spec.js` line 73: the test starts `svc1` on a fresh data folder and never sends it anything (`svc1.baseURL` is not used), then starts a service on `svc1.dataDir` and reads from i",
+   "`notes/acceptance/api.spec.js` line 154: the test starts `svc` on a fresh data folder and never sends it anything (`svc.baseURL` is not used), then starts a service on `svc.dataDir` and reads from it."
+  ]
+ },
+ "suite-05": {
+  "requests_with_a_fetch_body": [
+   "`notes/acceptance/ac18.spec.js` line(s) 17: a request body is passed as `body:` in fetch-style options, which Playwright's `request` fixture does not read - the service receives no body and answers 40"
+  ]
+ },
+ "suite-06": {},
+ "suite-07": {},
+ "suite-08": {},
+ "suite-09": {
+  "fetch_calls_written_like_the_fixture": [
+   "`notes/acceptance/all_ops.spec.js` line(s) 18: a `fetch` response's `status`, `ok` or `statusText` is called like a method. On a `fetch` response these are values, so the call throws on every product.",
+   "`notes/acceptance/notes.spec.js` line(s) 104: a `fetch` call passes its body as `data:`, which only Playwright's `request` fixture reads - `fetch` sends no body, and the service answers 400 on every p",
+   "`notes/acceptance/notes.spec.js` line(s) 106: a `fetch` response's `status`, `ok` or `statusText` is called like a method. On a `fetch` response these are values, so the call throws on every product. "
+  ]
+ },
+ "suite-10": {},
+ "suite-11": {
+  "tests_that_restart_on_data_they_never_wrote": [
+   "`notes/acceptance/notes.spec.js` line 82: the test starts `svc1` on a fresh data folder and never sends it anything (`svc1.baseURL` is not used), then starts a service on `svc1.dataDir` and reads from"
+  ]
+ },
+ "suite-12": {},
+ "suite-13": {},
+ "suite-14": {
+  "reads_of_what_the_test_does_not_have": [
+   "`notes/acceptance/ac15-port.spec.js` line(s) 5: the test reads `process.env.PORT` in the test. The suite gives `PORT` only to the server it starts, so the test never has it and compares with its own f"
+  ]
+ },
+ "suite-15": {},
+ "suite-16": {
+  "reads_of_what_the_test_does_not_have": [
+   "`notes/acceptance/ac15.spec.js` line(s) 18: the test reads `process.env.DATA_DIR`. The suite gives `DATA_DIR` only to the server it starts, so the test never has it and a service started on it begins "
+  ]
+ },
+ "suite-17": {},
+ "suite-18": {},
+ "suite-19": {
+  "tests_that_restart_on_data_they_never_wrote": [
+   "`notes/acceptance/api.spec.js` line 69: the test starts `first` on a fresh data folder and never sends it anything (`first.baseURL` is not used), then starts a service on `first.dataDir` and reads fro"
+  ]
+ },
+ "suite-20": {},
+ "suite-21": {
+  "tests_that_restart_on_data_they_never_wrote": [
+   "`notes/acceptance/notes.spec.js` line 170: the test starts `service1` on a fresh data folder and never sends it anything (`service1.baseURL` is not used), then starts a service on `service1.dataDir` a",
+   "`notes/acceptance/notes.spec.js` line 216: the test starts `service1` on a fresh data folder and never sends it anything (`service1.baseURL` is not used), then starts a service on `service1.dataDir` a"
+  ]
+ },
+ "suite-22": {},
+ "suite-23": {},
+ "suite-24": {},
+ "suite-25": {},
+ "suite-26": {},
+ "suite-27": {},
+ "suite-28": {},
+ "suite-29": {},
+ "suite-30": {}
+}

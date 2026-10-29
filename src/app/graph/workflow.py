@@ -6621,8 +6621,15 @@ def _closed_if_an_earlier_fix_resolved_it(
 
         defect = cycle.defects[defect_index]
         root = state["repository"].root_path
-        resolved = acceptance_nodes.passing_since_reported(state, list(defect.failing_criteria or []))
-        proof, why = ("", "") if resolved else _resolved_by_a_measurement(state, defect)
+        from app.acceptance import unstable
+
+        # A stored measurement closes a defect only while the product is as the suite measured it. Found in a code
+        # review: `ci.revert_to` puts the tree back, but the suite's saved result is git-ignored and survives it, so a
+        # reverted fix's green run closed another defect without a fixer and the next round raised it again. A
+        # product that changed since goes to the re-measure below, which reads the product as it is.
+        stale = acceptance_suite.is_locked(root) and not unstable.unchanged_since_the_suite_measured(root)
+        resolved = [] if stale else acceptance_nodes.passing_since_reported(state, list(defect.failing_criteria or []))
+        proof, why = ("", "") if resolved or stale else _resolved_by_a_measurement(state, defect)
         if proof:
             logger.warning(
                 "Defect '%s' is already fixed: %s; closed without a fixer", defect.description[:80], why,
@@ -6660,8 +6667,6 @@ def _closed_if_an_earlier_fix_resolved_it(
                 # Taken before the probe: a product keeping its store in a
                 # committed file is rewritten by the probe itself, and read
                 # after it the product had always "changed".
-                from app.acceptance import unstable
-
                 unchanged = unstable.unchanged_since_the_suite_measured(root)
                 if _the_defect_s_tests_pass(Path(root), defect):
                     # Passing alone on the very product the suite measured it

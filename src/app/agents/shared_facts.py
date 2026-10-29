@@ -76,6 +76,15 @@ def layout_facts(pack: Any, project: str, package: str | None) -> list[str]:
     if kept:
         lines.append("- Kept by the harness, not the product's to write: "
                      + ", ".join(f"`{prefix}{path}`" for path in kept[:8]) + ".")
+    scripts = sorted((getattr(pack, "kept_scripts", None) or {}))
+    if scripts:
+        # Measured on two runs: told nothing of them, both fixers of a failing unit run rewrote `package.json`'s test
+        # script and added another runner's configuration; the harness put the script back, and neither fix worked.
+        lines.append("- The manifest's " + ", ".join(f"`{name}`" for name in scripts)
+                     + f" script{'s are' if len(scripts) > 1 else ' is'} the harness's too, kept as "
+                     + ("they are" if len(scripts) > 1 else "it is")
+                     + ": a change to " + ("them" if len(scripts) > 1 else "it") + " is put back, so a fix goes in "
+                     "the code or the tests, never there.")
     if kept or started:
         # Measured on three runs: the specification put creating the data directory and checking the port in the
         # pack's `start.sh`, and signal handling in its kept start file; the reviews then sent the sprint back for

@@ -19,3 +19,11 @@ def test_a_pack_with_kept_files_says_they_hold_no_planned_behaviour():
     assert rule and "the product's own files" in rule[0] and "shutdown" in rule[0]
     assert not BANNED.search(rule[0])
     assert lines.index(rule[0]) > next(i for i, line in enumerate(lines) if "Kept by the harness" in line)
+
+
+def test_the_kept_manifest_scripts_are_named_too():
+    """Measured on two runs: both fixers of a failing unit run rewrote the kept `test` script, which was put back."""
+    lines = layout_facts(pack_named("node-hono-native-api"), "notes-api", None)
+    said = [line for line in lines if "script" in line and "put back" in line]
+    assert said and "`test`" in said[0] and "`start`" in said[0] and "never there" in said[0]
+    assert not BANNED.search(said[0])

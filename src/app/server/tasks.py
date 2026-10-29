@@ -104,6 +104,18 @@ def _forget_the_calls_of_a_previous_worker(**_kwargs) -> None:
 
 
 @worker_ready.connect
+def _lift_a_hold_a_previous_deploy_left(**_kwargs) -> None:
+    """Remove a model-call hold set before this worker started, so no call waits on a deploy that is over. See `call_gate`."""
+    try:
+        from app.models.call_gate import lift_a_hold_from_before
+
+        if lift_a_hold_from_before(_WORKER_STARTED):
+            logger.info("Lifted a model-call hold a deploy set before this worker started")
+    except Exception:  # noqa: BLE001 - a call still goes ahead once the hold's own limit passes
+        logger.debug("Could not lift an old model-call hold", exc_info=True)
+
+
+@worker_ready.connect
 def _record_whether_commands_can_run(**_kwargs) -> None:
     """Tell the API whether this worker can run commands. See `app.server.execution_readiness`."""
     try:
@@ -443,6 +455,43 @@ def handle_task_failure(sender=None, task_id=None, exception=None, args=None, kw
         client.ltrim("celery_dlq", 0, 999)
     except Exception:  # noqa: BLE001
         logger.error("Failed to write to the dead-letter queue", exc_info=True)
+    _recover_the_run_of_a_lost_worker(sender, task_id, exception, args, kwargs)
+
+
+def _a_lost_worker(exception: BaseException | None) -> bool:
+    """Whether a task failed because its pool process was killed: `WorkerLostError`, or the hard time limit."""
+    from celery.exceptions import TimeLimitExceeded, WorkerLostError
+
+    return isinstance(exception, (WorkerLostError, TimeLimitExceeded))
+
+
+def _recover_the_run_of_a_lost_worker(sender, task_id, exception, args, kwargs) -> None:
+    """Mark and resume a workflow run whose pool process was killed, now rather than at the next sweep. Never raises.
+
+    Found in review: a pool process lost to the OOM killer or a SIGKILL left
+    its row `running` until the recurring sweep judged it. Celery's parent
+    knows at once - it sends this failure with `WorkerLostError` - so the run
+    is marked the way recovery marks it and resumed the same way
+    (`manage.recover_a_run_whose_worker_was_lost`). On a thread: the resume
+    asks the model server and the broker, and this hook runs on the parent's
+    own loop.
+    """
+    try:
+        if getattr(sender, "name", "") != "execute_workflow_run" or not _a_lost_worker(exception):
+            return
+        run_id = (kwargs or {}).get("run_id") or (args[0] if args else None)
+        if not run_id:
+            return
+        import threading
+
+        from app.server.manage import recover_a_run_whose_worker_was_lost
+
+        threading.Thread(
+            target=recover_a_run_whose_worker_was_lost, args=(str(run_id), task_id),
+            name=f"lost-worker-{str(run_id)[:12]}", daemon=True,
+        ).start()
+    except Exception:  # noqa: BLE001 - the recurring sweep still finds it
+        logger.warning("Could not recover the run of a lost worker process", exc_info=True)
 
 
 def _mark_failed(run_id: str, message: str) -> None:

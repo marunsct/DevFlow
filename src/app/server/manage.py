@@ -238,8 +238,34 @@ def _live_task_ids() -> set[str] | None:
         return None
 
 
-def _worker_ran_out_of_memory() -> bool:
-    """Whether this worker container has been OOM-killed. Never raises.
+#: The cgroup's `oom_kill` count when this process last read it.
+_OOM_KILLS_LAST_COUNTED = 0
+#: When this process last saw that count rise (`time.monotonic`); None if it never has.
+_OOM_KILL_LAST_SEEN_AT: float | None = None
+
+#: How long an OOM kill, once seen, is still taken as the cause of what recovery finds. A kill orphans its runs at
+#: once; the recurring sweep judges them within its 90 s period plus the 60 s a recently touched run is spared, and
+#: the failure hook (`recover_a_run_whose_worker_was_lost`) at once. Five minutes covers both looks at one kill, and
+#: no later one.
+OOM_KILL_STAYS_CURRENT_SECONDS = 5 * 60
+
+
+def _oom_kill_count() -> int | None:
+    """The worker container's cgroup `oom_kill` count, or None where it cannot be read. Never raises."""
+    for path in ("/sys/fs/cgroup/memory.events", "/sys/fs/cgroup/memory/memory.oom_control"):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                for line in handle:
+                    name, _, value = line.partition(" ")
+                    if name == "oom_kill" and value.strip().isdigit():
+                        return int(value)
+        except OSError:
+            continue
+    return None
+
+
+def _worker_ran_out_of_memory(clock: Callable[[], float] = time.monotonic) -> bool:
+    """Whether this worker container was OOM-killed just now: its kill count rose within `OOM_KILL_STAYS_CURRENT_SECONDS`. Never raises.
 
     An OOM kill is invisible from the run's side: Celery reports
     `WorkerLostError: signal 9`, the row stays `running`, and the generic
@@ -252,25 +278,44 @@ def _worker_ran_out_of_memory() -> bool:
     kernel killed the Celery workers mid-test. Per-process rlimits do not bound
     a process tree, so the container limit is the real ceiling and the run died
     without anything naming the cause.
+
+    A rise in the count, not the count: found in review, the count only grows
+    for the container's life, so after one OOM kill every later recovery read
+    "OOM-killed" and resumed nothing - a run orphaned by a deploy hours later
+    stayed failed until the next deploy replaced the container.
     """
-    for path in ("/sys/fs/cgroup/memory.events", "/sys/fs/cgroup/memory/memory.oom_control"):
-        try:
-            with open(path, encoding="utf-8") as handle:
-                for line in handle:
-                    name, _, value = line.partition(" ")
-                    if name in {"oom_kill", "oom_kill_disable"} and value.strip().isdigit():
-                        if name == "oom_kill" and int(value) > 0:
-                            return True
-        except OSError:
-            continue
-    return False
+    global _OOM_KILLS_LAST_COUNTED, _OOM_KILL_LAST_SEEN_AT
+
+    count = _oom_kill_count()
+    now = clock()
+    if count is not None:
+        if count > _OOM_KILLS_LAST_COUNTED:
+            _OOM_KILL_LAST_SEEN_AT = now
+        _OOM_KILLS_LAST_COUNTED = count
+    return _OOM_KILL_LAST_SEEN_AT is not None and now - _OOM_KILL_LAST_SEEN_AT < OOM_KILL_STAYS_CURRENT_SECONDS
 
 
-#: Marks a run this process has already carried back onto the queue, so a
-#: run whose worker dies again is recovered again but resumed only once. A
-#: run that kills its worker every time it starts would otherwise restart for
-#: ever, and each restart costs the whole stage.
-_RESUMED_ON_START: set[str] = set()
+#: Marks a run this process has already carried back onto the queue, and
+#: when (`time.monotonic`), so a run whose worker dies again is recovered again
+#: but resumed only once. A run that kills its worker every time it starts
+#: would otherwise restart for ever, and each restart costs the whole stage.
+_RESUMED_ON_START: dict[str, float] = {}
+
+#: How long a resume is remembered. Found in review: remembered for the
+#: worker's life, a run resumed once and stopped again hours later - by a
+#: deploy, after hours of progress - was left failed until the next restart. A
+#: crash loop stops its worker again within the stage it restarts; a run that
+#: went two hours since its resume has moved on, and its next stop is a new event.
+RESUMED_ONCE_REMEMBERED_SECONDS = 2 * 60 * 60
+
+
+def _resumed_lately(run_id: str, clock: Callable[[], float] = time.monotonic) -> bool:
+    """Whether this process resumed `run_id` within `RESUMED_ONCE_REMEMBERED_SECONDS`; older resumes are forgotten."""
+    now = clock()
+    for remembered, at in list(_RESUMED_ON_START.items()):
+        if now - at >= RESUMED_ONCE_REMEMBERED_SECONDS:
+            _RESUMED_ON_START.pop(remembered, None)
+    return run_id in _RESUMED_ON_START
 
 
 #: The words recovery writes on a run its worker abandoned. See `recover_orphaned_runs`.
@@ -350,14 +395,14 @@ def resume_runs_a_restart_abandoned(run_ids: list[str]) -> int:
 
     queued = 0
     for run_id in run_ids:
-        if run_id in _RESUMED_ON_START:
+        if _resumed_lately(run_id):
             logger.warning(
                 "Run %s was already resumed once by this worker and its worker "
                 "stopped again; leaving it failed so a crash loop cannot run "
                 "for ever.", run_id,
             )
             continue
-        _RESUMED_ON_START.add(run_id)
+        _RESUMED_ON_START[run_id] = time.monotonic()
         try:
             _resume_one(run_id)
             queued += 1
@@ -494,6 +539,68 @@ def _touched_within(record: Any, seconds: float) -> bool:
 RECENTLY_TOUCHED_SECONDS = 60
 
 
+def _the_words_recovery_writes(oom_killed: bool) -> str:
+    """The error a run its worker abandoned is marked failed with; it begins with `STOPPED_WORKER_MARKER`."""
+    return (
+        "The worker running this stage stopped without finishing - the host or "
+        "the container went away mid-task. Nothing was lost: resume continues "
+        "from the last checkpoint and repeats only the interrupted step."
+        + (
+            "\n\nThis worker container has been OOM-killed at least once, so "
+            "that is the likely cause. A test runner that forks a worker per "
+            "CPU can exceed the container's memory limit while every single "
+            "process stays inside SANDBOX_MEMORY_LIMIT - per-process rlimits "
+            "do not bound a process tree. Raise the worker's memory limit, "
+            "lower SANDBOX_MEMORY_LIMIT, or choose a test runner that does "
+            "not fork (`node --test` rather than vitest or jest)."
+            if oom_killed
+            else ""
+        )
+    )
+
+
+def recover_a_run_whose_worker_was_lost(run_id: str, task_id: str | None) -> bool:
+    """Mark a run whose pool process Celery reported lost the way recovery marks it, and resume it. Never raises.
+
+    Found in review: when a pool process is killed - the kernel's OOM killer,
+    a SIGKILL, the hard time limit - Celery's parent sends `task_failure` with
+    `WorkerLostError`, and nothing but the dead-letter list heard it. The row
+    read `running` until the recurring sweep next looked and judged it (up to
+    90 s, plus the 60 s a recently touched run is spared), and the run's page
+    said it was running all that time.
+
+    The same marking and the same resume as `recover_orphaned_runs`, for this
+    one run, without asking the broker: Celery has just said this task's
+    process is gone. Only a row still `running` under this task id is touched;
+    one a newer task drives, or one that has since ended, is left alone.
+    Returns whether the run was marked.
+    """
+    if os.environ.get("RECOVER_ORPHANS_ON_START", "true").strip().lower() in {"0", "false", "no", "off"}:
+        return False
+    try:
+        from app.server.run_store import RunStore
+
+        store = RunStore.shared()
+        record = store.load(run_id)
+        if record is None or record.status != "running":
+            return False
+        if task_id and record.task_id and record.task_id != task_id:
+            return False
+        oom_killed = _worker_ran_out_of_memory()
+        if not store.compare_and_set_status(
+            run_id, "running", "failed",
+            updated_at=datetime.now(timezone.utc).isoformat(),
+            error=_the_words_recovery_writes(oom_killed),
+        ):
+            return False
+    except Exception:  # noqa: BLE001 - the recurring sweep still finds it
+        logger.warning("Could not mark run %s, whose worker was lost", run_id, exc_info=True)
+        return False
+    logger.info("Run %s: running -> failed, its worker process was lost (stage: %s)", run_id, record.current_stage or "?")
+    resume_runs_a_restart_abandoned([run_id])
+    return True
+
+
 def recover_orphaned_runs(
     dry_run: bool = False,
     emit: Callable[[str], None] = print,
@@ -571,22 +678,7 @@ def recover_orphaned_runs(
         if dry_run:
             continue
         record.status = "failed"
-        record.error = (
-            "The worker running this stage stopped without finishing - the host or "
-            "the container went away mid-task. Nothing was lost: resume continues "
-            "from the last checkpoint and repeats only the interrupted step."
-            + (
-                "\n\nThis worker container has been OOM-killed at least once, so "
-                "that is the likely cause. A test runner that forks a worker per "
-                "CPU can exceed the container's memory limit while every single "
-                "process stays inside SANDBOX_MEMORY_LIMIT - per-process rlimits "
-                "do not bound a process tree. Raise the worker's memory limit, "
-                "lower SANDBOX_MEMORY_LIMIT, or choose a test runner that does "
-                "not fork (`node --test` rather than vitest or jest)."
-                if oom_killed
-                else ""
-            )
-        )
+        record.error = _the_words_recovery_writes(oom_killed)
         record.updated_at = datetime.now(timezone.utc).isoformat()
         store.save(record)
         recovered.append(record.run_id)

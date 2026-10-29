@@ -89,7 +89,7 @@ def test_the_recovery_message_names_the_cause_and_the_fix():
     import inspect
 
     manage = _manage()
-    source = " ".join(inspect.getsource(manage.recover_orphaned_runs).split())
+    source = " ".join(inspect.getsource(manage._the_words_recovery_writes).split())
 
     # The message is built from adjacent string literals, so the source carries
     # the quote marks between them; compare on the words that matter.

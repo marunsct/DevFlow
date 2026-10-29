@@ -1136,7 +1136,34 @@ class WorkflowRunner:
             )
         # The stop flag a pause or a cancel raised would stop it again at once.
         self.run_store.clear_stop(run_id)
-        self._dispatch(run_id, resume=True, decision_payload=None)
+        try:
+            self._dispatch(run_id, resume=True, decision_payload=None)
+        except Exception:
+            self._put_back_a_resume_that_was_not_dispatched(run_id, resumable, record)
+            raise
+
+    def _put_back_a_resume_that_was_not_dispatched(
+        self, run_id: str, came_from: str, record: RunRecord | None
+    ) -> None:
+        """Return a run to the status it was resumed from, with its error, when no task was dispatched. Never raises.
+
+        Found in review: `resume_run` sets the row `running` before it
+        dispatches, so the dispatch's own failure - a broker that did not
+        answer, every run slot taken - left a row reading `running` under the
+        previous, finished task's id. Nothing was driving it, a resume refused
+        it ("not in one of the states a run resumes from"), and only the orphan
+        sweep, a minute and more later, moved it again. Put back as it was, it
+        can be resumed again at once, and a run recovery marked keeps the
+        words (`STOPPED_WORKER_MARKER`) that let a starting worker resume it.
+        """
+        try:
+            self.run_store.compare_and_set_status(
+                run_id, "running", came_from,
+                updated_at=datetime.now(timezone.utc).isoformat(),
+                error=(record.error if record is not None else None) or None,
+            )
+        except Exception:  # noqa: BLE001 - the dispatch's own error is the one the caller needs
+            logger.warning("Could not put run %s back after its resume was not dispatched", run_id, exc_info=True)
 
     def _graph_for(self, record: RunRecord) -> Any:
         return build_workflow_graph(

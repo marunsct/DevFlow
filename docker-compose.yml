@@ -368,6 +368,11 @@ services:
   worker:
     build: .
     restart: unless-stopped
+    # An init as PID 1 that reaps orphans. Celery is PID 1 otherwise, and a
+    # product's test servers and their children, once their parent exits, are
+    # handed to it and never waited for: zombies accumulate in the worker for
+    # the container's life.
+    init: true
     depends_on:
       db:
         condition: service_healthy

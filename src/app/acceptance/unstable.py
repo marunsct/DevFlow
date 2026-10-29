@@ -31,8 +31,17 @@ def _the_harness_s(path: str) -> bool:
 
 
 def _git(root: Path, *args: str) -> str | None:
+    """Git's answer, each stream kept to a head and a tail (`bounded_output`); None when git failed.
+
+    Read whole, `git diff HEAD` over a product that wrote a large file into
+    its own tree held all of it in the worker's memory to make a fingerprint.
+    What is left out of the middle still counts: the kept text names a digest
+    of the whole stream.
+    """
+    from app.tools.bounded_output import run_bounded
+
     try:
-        done = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, errors="replace", timeout=30)
+        done = run_bounded(["git", "-C", str(root), *args], text=True, errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout if done.returncode == 0 else None

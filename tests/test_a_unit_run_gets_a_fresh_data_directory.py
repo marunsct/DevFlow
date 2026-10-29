@@ -33,4 +33,5 @@ def test_a_product_without_one_and_a_caller_s_own_value_are_left(tmp_path, monke
     assert sandbox._a_fresh_data_directory(str(tmp_path), "test") == {}
     import inspect
     source = inspect.getsource(sandbox)
-    assert "{**_a_fresh_data_directory(workspace, category), **(extra_env or {})}" in source, "the caller's value wins"
+    assert "fresh_data = _a_fresh_data_directory(workspace, category)" in source
+    assert "{**fresh_data, **(extra_env or {})}" in source, "the caller's value wins"

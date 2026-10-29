@@ -2757,6 +2757,8 @@ _DATA_OPENS = re.compile(r"\bdata\s*:\s*\{")
 _A_FIELD_FILTERED = re.compile(
     r"\.(\w+)\s*(?:\.\s*(startsWith|includes|endsWith)\s*\(\s*" + _A_LITERAL + r"\s*\)|===\s*" + _A_LITERAL + r")")
 _INTERPOLATED = re.compile(r"\$\{([^}]*)\}")
+#: A helper called with the fixture first, and the rest of its arguments: `createNote(request, 'a', 'b')`.
+_A_CALL_GIVEN_THE_FIXTURE = re.compile(r"\b[A-Za-z_$][\w$]*\s*\(\s*request\s*,([^;]*?)\)\s*;")
 
 
 def _the_brace_that_closes(text: str, after: int) -> int:
@@ -2828,12 +2830,19 @@ def tests_that_filter_for_what_they_never_made(repo_root: str | Path) -> list[st
                 end = _the_brace_that_closes(block, opened.end())
                 for field in _A_FIELD_SENT.finditer(block[opened.end():end]):
                     sent.setdefault(field.group(1), []).append(_literal_of(field, 1))
+            # And what it sends through a helper given the fixture, by position, not field: measured on one run,
+            # `createNote(request, 'QA-crud-title', ...)` then `n.title === 'QA-crud-title'` was flagged as never sent.
+            through_a_helper = [
+                _literal_of(value, 0)
+                for call in _A_CALL_GIVEN_THE_FIXTURE.finditer(block)
+                for value in re.finditer(_A_LITERAL, call.group(1))
+            ]
             if not sent:
                 continue
             for wanted in _A_FIELD_FILTERED.finditer(block):
                 field, how = wanted.group(1), wanted.group(2) or "==="
                 literal = _literal_of(wanted, 2) if wanted.group(2) else _literal_of(wanted, 5)
-                values = sent.get(field) or []
+                values = (sent.get(field) or []) + (through_a_helper if sent.get(field) or through_a_helper else [])
                 if not values or not literal:
                     continue
                 made = {" ".join(e.split()) for v in values for e in _INTERPOLATED.findall(v)}

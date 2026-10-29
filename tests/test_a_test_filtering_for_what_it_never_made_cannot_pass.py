@@ -56,3 +56,23 @@ def test_matching_filters_and_free_expressions_are_left(tmp_path):
 
 def test_every_caller_of_the_cannot_pass_list_asks_it():
     assert "tests_that_filter_for_what_they_never_made(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+
+
+THROUGH_A_HELPER = """import { test, expect } from '@playwright/test';
+async function createNote(request, title, body) {
+  const res = await request.post('/notes', { data: { title, body } });
+  return { status: res.status(), body: await res.json() };
+}
+test('[AC-16] full CRUD cycle works end-to-end', async ({ request }) => {
+  const createRes = await createNote(request, 'QA-crud-title', 'QA-crud-body');
+  const notes = await (await request.get('/notes')).json();
+  expect(notes.some((n) => n.id === createRes.body.id && n.title === 'QA-crud-title')).toBeTruthy();
+  const res = await request.put('/notes/' + createRes.body.id, { data: { title: 'QA-crud-updated', body: 'b' } });
+  expect((await res.json()).title).toBe('QA-crud-updated');
+});
+"""
+
+
+def test_a_value_sent_through_a_helper_given_the_fixture_counts(tmp_path):
+    """Measured on one run: `createNote(request, 'QA-crud-title', ...)` then `n.title === 'QA-crud-title'` was flagged."""
+    assert suite.tests_that_filter_for_what_they_never_made(_suite(tmp_path, THROUGH_A_HELPER)) == []

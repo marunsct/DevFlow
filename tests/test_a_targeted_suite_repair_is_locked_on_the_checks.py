@@ -60,3 +60,25 @@ def test_the_review_skips_its_model_review_for_one(monkeypatch):
     source = inspect.getsource(acceptance_nodes.acceptance_review)
     assert "targeted = not problems and suite.targeted_repair_switch.enabled() and suite.only_the_repaired_tests_changed(root)" in source
     assert "if not problems and not targeted:" in source
+
+
+PY_HEAD = "import httpx\n\n\nclass TestItems:\n"
+PY_BROKEN = "    def test_ac5_mark_done(self, base_url):\n        r = httpx.patch(f'{base_url}/items/1', json={'done': 1})\n        assert r.status_code == 200\n        assert r.json()['done'] is True\n\n"
+PY_FIXED = "    def test_ac5_mark_done(self, base_url):\n        r = httpx.patch(f'{base_url}/items/1', json={'done': True})\n        assert r.status_code == 200\n        assert r.json()['done'] is True\n\n"
+PY_OTHER = "    def test_ac6_delete(self, base_url):\n        assert httpx.delete(f'{base_url}/items/1').status_code == 204\n"
+
+
+def test_a_python_suite_s_repair_of_its_own_test_is_targeted(tmp_path):
+    """Measured on the held-out family: a Python suite's repair read as a change to everything and was reviewed whole."""
+    contract.write(tmp_path, pack_named("python-http-api"), "tasks", "Tasks")
+    folder = tmp_path / "tasks" / "acceptance"
+    folder.mkdir(parents=True, exist_ok=True)
+    spec = folder / "test_items.py"
+    spec.write_text(PY_HEAD + PY_BROKEN + PY_OTHER)
+    suite.lock(tmp_path)
+    suite.unlock(tmp_path)
+    suite.repairing(tmp_path, ["test_ac5_mark_done"])
+    spec.write_text(PY_HEAD + PY_FIXED + PY_OTHER)
+    assert suite.only_the_repaired_tests_changed(tmp_path) is True
+    spec.write_text(PY_HEAD + PY_FIXED + PY_OTHER.replace("204", "200"))
+    assert suite.only_the_repaired_tests_changed(tmp_path) is False

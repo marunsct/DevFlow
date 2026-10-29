@@ -359,17 +359,40 @@ def tests_a_repair_would_drop(repo_root: str | Path, relative_path: str, content
 LEAST_ASSERTIONS_KEPT = 0.5
 
 
+#: A Python test function, at any indent (inside a `Test` class too): its name.
+_A_PYTHON_TEST = re.compile(r"^[ \t]*(?:async[ \t]+)?def[ \t]+(test_\w+)[ \t]*\(", re.M)
+#: A Python assertion: an `assert` statement or a `pytest.raises` block.
+_A_PYTHON_ASSERTION = re.compile(r"^[ \t]*assert\b|\bpytest\.raises\s*\(", re.M)
+
+
 def _the_tests_of(text: str) -> tuple[str, dict[str, str]]:
-    """A suite file as its text before the first test, and {title: the test's text} for each test after."""
+    """A suite file as its text before the first test, and {title: the test's text} for each test after.
+
+    A JavaScript test by its `test(` call and title; a Python one by its `def test_...` name. Measured on the held-out
+    family: its suite was Python, nothing here matched, the whole file read as text before the first test, and a
+    repair that changed only its own tests was reviewed whole as though it had changed everything.
+    """
     starts = [m.start() for m in _A_TEST_CALL.finditer(text)]
+    titles = None
+    if not starts:
+        found = list(_A_PYTHON_TEST.finditer(text))
+        starts, titles = [m.start() for m in found], [m.group(1) for m in found]
     if not starts:
         return text, {}
     tests: dict[str, str] = {}
     for at, start in enumerate(starts):
         block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
+        if titles is not None:
+            tests[titles[at]] = block
+            continue
         titled = _A_TEST_TITLE.match(block)
         tests[titled.group(1) if titled else f"#{at}"] = block
     return text[:starts[0]], tests
+
+
+def _assertions_in(block: str) -> int:
+    """How many checks a test's text makes: `expect(` calls, or Python's `assert` lines and `pytest.raises`."""
+    return block.count("expect(") + len(_A_PYTHON_ASSERTION.findall(block))
 
 
 def only_the_repaired_tests_changed(repo_root: str | Path) -> bool:
@@ -405,7 +428,7 @@ def only_the_repaired_tests_changed(repo_root: str | Path) -> bool:
                     continue
                 if not any(title == test or title in test or test in title for test in under_repair):
                     return False
-                had, has = before[title].count("expect("), block.count("expect(")
+                had, has = _assertions_in(before[title]), _assertions_in(block)
                 if has < 1 or has < had * LEAST_ASSERTIONS_KEPT:
                     return False
                 changed_any = True

@@ -54,6 +54,60 @@ class SuiteDispute(BaseModel):
     )
 
 
+class DisputeRuling(BaseModel):
+    """One failing test, ruled on against a quoted standard (plan item 19, behind `STRUCTURED_DISPUTE_VERDICT`)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    test: str = Field(..., description="The failing test's name exactly as given.")
+    the_test_is_wrong: bool = Field(
+        ...,
+        description=(
+            "True only when no product doing what the standard below says could pass the test as written; "
+            "false when a right product would pass it and this product fails it."
+        ),
+    )
+    the_test_asserts: str = Field(..., description="What the test checks, in one sentence, from its code.")
+    the_standard_says: str = Field(
+        ...,
+        description=(
+            "The sentence of the criterion, the brief or the specification the test is judged against, quoted "
+            "word for word."
+        ),
+    )
+
+
+class SuiteDisputeWithRulings(SuiteDispute):
+    """The answer with one ruling per failing test, so the harness reads the verdict, not the wording."""
+
+    rulings: list[DisputeRuling] = Field(
+        default_factory=list,
+        description=(
+            "One ruling for each failing test shown. The harness reopens a test only when its ruling says the "
+            "test is wrong and quotes the standard; `cannot_pass` is read only when there are no rulings."
+        ),
+    )
+
+
+class _StructuredDisputeVerdict:
+    """`STRUCTURED_DISPUTE_VERDICT` as the switch registry reads one: off in code and in compose until measured."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("The QA lead's dispute answer carries one ruling per failing test - wrong or right, what it asserts, "
+                   "the standard's sentence quoted - and the harness reopens tests by the ruling rather than reading "
+                   "its prose (plan item 19). Off until measured against the prose reading.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("STRUCTURED_DISPUTE_VERDICT", _StructuredDisputeVerdict.ON_BY_DEFAULT)
+
+
+structured_verdict_switch = _StructuredDisputeVerdict()
+
+
 _SYSTEM_PROMPT = (
     "You are the QA lead. The acceptance suite you approved is locked: it is the definition "
     "of done, and only QA may change it. A sprint's attempt has failed, and some locked tests "
@@ -102,7 +156,7 @@ def create_suite_dispute_agent(
         name="suite_dispute",
         stage="acceptance_dispute",
         system_prompt=_SYSTEM_PROMPT,
-        response_format=SuiteDispute,
+        response_format=SuiteDisputeWithRulings if structured_verdict_switch.enabled() else SuiteDispute,
         model=model,
         checkpointer=checkpointer,
         repo_root=repo_root,
@@ -174,6 +228,28 @@ def judged_by_the_code(why: str) -> bool:
     return any(_THE_PRODUCT_DOES.search(clause) or _A_PRODUCT_PREDICATE.search(clause) for clause in clauses)
 
 
+def _tests_the_rulings_name(rulings: Sequence[Any], failing_names: Sequence[str]) -> list[str]:
+    """The repair feedback for each failing test a ruling calls wrong, with what it asserts and the standard quoted.
+
+    Read by the field, not the wording: tonight's prose classifier filed "its own steps never set up" as a reason about
+    the product (LF.405) and needed four patches. A ruling with no quoted standard reopens nothing.
+    """
+    named = []
+    for ruling in rulings:
+        test = " ".join(str(getattr(ruling, "test", "") or "").split())
+        quoted = " ".join(str(getattr(ruling, "the_standard_says", "") or "").split())
+        asserts = " ".join(str(getattr(ruling, "the_test_asserts", "") or "").split())
+        if not getattr(ruling, "the_test_is_wrong", False) or len(quoted.split()) < 3 or not asserts:
+            continue
+        name = next((n for n in failing_names if n == test or _TAGS.sub("", n).strip() == _TAGS.sub("", test).strip()), None)
+        if name and not any(line.startswith(f"`{name}`") for line in named):
+            named.append(
+                f"`{name}` cannot pass for any product that does what its criterion says: it checks that {asserts}, "
+                f"and the standard says \"{quoted}\". Fix the test so that it checks what the standard says."
+            )
+    return named
+
+
 def tests_it_names(answer: Any, failing_names: Sequence[str]) -> list[str]:
     """The suite's repair feedback for each failing test the answer names.
 
@@ -183,6 +259,9 @@ def tests_it_names(answer: Any, failing_names: Sequence[str]) -> list[str]:
     and none of them reopened while only the exact name counted. Only tests
     that are failing can be named, so a loose match names nothing else.
     """
+    rulings = list(getattr(answer, "rulings", None) or []) if structured_verdict_switch.enabled() else []
+    if rulings:
+        return _tests_the_rulings_name(rulings, failing_names)
     lines = [" ".join(str(line).split()) for line in getattr(answer, "cannot_pass", None) or []]
     named = []
     # A bare tag stands for a test only when no other failing test carries it: two tests of one criterion named as

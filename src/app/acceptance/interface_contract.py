@@ -51,6 +51,11 @@ _HTTP_SEVERAL = re.compile(
     _CRITERION + r"\s+((?:GET|POST|PUT|PATCH|DELETE)(?:\s*/\s*(?:GET|POST|PUT|PATCH|DELETE))*)\s+(/\S*)"
     r"((?:\s+(?!->)\S+)*?)\s*->\s*(\d{3}(?:\s*(?:or|/|,)\s*\d{3})*)\s*$"
 )
+#: An HTTP line with no criterion before it: `GET /health -> 200`.
+_HTTP_WITHOUT_ITS_CRITERION = re.compile(
+    r"((?:GET|POST|PUT|PATCH|DELETE)(?:\s*/\s*(?:GET|POST|PUT|PATCH|DELETE))*)\s+(/\S*)"
+    r"((?:\s+(?!->)\S+)*?)\s*->\s*(\d{3}(?:\s*(?:or|/|,)\s*\d{3})*)\s*$"
+)
 _PAGE = re.compile(_CRITERION + r"\s+page\s+(/\S*)\s+(?:[\w-]+\s+)*?([a-z]+)\s+\"([^\"]+)\"\s*$")
 _COMMAND = re.compile(_CRITERION + r"\s+command\s+(.+?)\s*->\s*exit\s+(\d+)\s*$")
 
@@ -159,6 +164,13 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
             statuses = tuple(int(code) for code in re.findall(r"\d{3}", match[4]))
             checks.append(Check(match[1], "http", line, method=match[2], path=match[3], status=statuses[0],
                                 statuses=statuses))
+        elif match := _HTTP_WITHOUT_ITS_CRITERION.match(line):
+            # Measured on the held-out family: `GET /health -> 200`, with no criterion before it, was set aside as
+            # following no form and never probed. Checked all the same; it charges no criterion.
+            statuses = tuple(int(code) for code in re.findall(r"\d{3}", match[4]))
+            for method in dict.fromkeys(m.strip() for m in match[1].split("/")):
+                checks.append(Check("", "http", line, method=method, path=match[2], status=statuses[0],
+                                    statuses=statuses, note=match[3].strip()))
         elif match := _HTTP_SEVERAL.match(line):
             statuses = tuple(int(code) for code in re.findall(r"\d{3}", match[5]))
             for method in dict.fromkeys(m.strip() for m in match[2].split("/")):
@@ -210,7 +222,7 @@ def playwright_checks(checks: list[Check]) -> str:
     """A Playwright spec with one test per HTTP or page check."""
     tests = []
     for number, check in enumerate(checks, start=1):
-        title = _js(f"[{check.criterion}] contract {number}: {check.line}")
+        title = _js(f"{f'[{check.criterion}] ' if check.criterion else ''}contract {number}: {check.line}")
         if check.kind == "http":
             tests.append(
                 f"test({title}, async ({{ request }}) => {{\n"

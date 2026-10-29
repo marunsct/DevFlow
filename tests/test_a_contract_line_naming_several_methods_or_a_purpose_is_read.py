@@ -126,3 +126,12 @@ def test_a_bodiless_write_refused_for_its_body_is_unchecked_not_failed(tmp_path,
     failed = [g for g in gaps if "does not keep its interface contract" in g]
     assert len(failed) == 1 and "contract 2" in failed[0]  # a GET has no body to refuse
     assert any("AC-11 PUT /notes/999 -> 404 (the probe sends a bare request" in g for g in gaps)
+
+
+def test_a_line_with_no_criterion_is_checked_and_charges_none():
+    """Measured on the held-out family: `GET /health -> 200` was set aside as following no form and never probed."""
+    checks, unreadable = ic.parse(["GET /health -> 200", "AC-1 POST /signup -> 201"])
+    assert unreadable == []
+    assert [(c.criterion, c.method, c.path, c.statuses) for c in checks][0] == ("", "GET", "/health", (200,))
+    spec = ic.playwright_checks(ic.checkable(checks))
+    assert '"contract 1: GET /health -> 200"' in spec and "[] contract" not in spec

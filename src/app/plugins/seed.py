@@ -103,8 +103,15 @@ SEED_INSTRUCTIONS: dict[str, str] = {
     "fastapi": (
         "You are working with FastAPI.\n"
         "- Type Hints: Strictly use Pydantic models and Python type hints for request/response validation.\n"
-        "- Async Flow: Use `async def` for async I/O operations (like database calls). For synchronous blocking tasks, use standard `def` so they run in a threadpool.\n"
-        "- Dependency Injection: Use FastAPI's `Depends` for reusable logic like authentication and database sessions."
+        "- Async Flow: Use `async def` for async I/O operations (like database calls). For synchronous blocking work, use standard `def` so it runs in a threadpool.\n"
+        "- Dependency Injection: Use FastAPI's `Depends` for reusable logic like authentication and database sessions.\n"
+        "- Teardown runs after the reply: since FastAPI 0.118 the code after `yield` in a dependency runs once the\n"
+        "  response has been sent, so a commit placed there can land after the client's next request has read the\n"
+        "  database - a sign-up answered 201 whose account the next sign-in cannot find. Commit in the route before it\n"
+        "  returns, or declare the dependency `Depends(get_db, scope=\"function\")` so it ends before the response.\n"
+        "  `TestClient` waits for the teardown, so unit tests pass while the running service fails.\n"
+        "- A header the route checks itself is declared optional (`Header(None)`); a required `Header()` answers a\n"
+        "  request without it 422, not the 401 a missing credential calls for."
     ),
     "java": (
         "You are working in a Java environment.\n"

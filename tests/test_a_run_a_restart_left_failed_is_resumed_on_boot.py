@@ -35,7 +35,8 @@ def test_only_a_recent_run_recovery_failed_for_a_stopped_worker_is_picked():
 def test_the_marker_is_the_one_recovery_writes():
     from app.server import manage
 
-    assert f'"{STOPPED_WORKER_MARKER} - the host or "' in inspect.getsource(manage.recover_orphaned_runs)
+    assert f'"{STOPPED_WORKER_MARKER} - the host or "' in inspect.getsource(manage._the_words_recovery_writes)
+    assert "_the_words_recovery_writes(oom_killed)" in inspect.getsource(manage.recover_orphaned_runs)
 
 
 def test_the_startup_sweep_resumes_them():

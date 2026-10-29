@@ -71,6 +71,27 @@ def forget_calls_from_before(started: float) -> int:
     return removed
 
 
+def lift_a_hold_from_before(started: float) -> bool:
+    """Remove the hold when it was set before `started`: the deploy that set it is over.
+
+    A deploy sets the hold, restarts the worker and lifts it. Found in review:
+    the deploy runs under `set -e`, so a failed `compose up` or an interrupted
+    deploy exits with the hold still set, and from then on every model call
+    waits its whole `MOST_SECONDS_HELD` for a deploy that no longer exists. A
+    worker that starts after the hold was set is the restart that hold was
+    waiting for. Called by a worker as it starts, with its own start time;
+    returns whether a hold was removed.
+    """
+    hold = gate_directory() / "hold"
+    try:
+        if hold.stat().st_mtime < started:
+            hold.unlink()
+            return True
+    except OSError:
+        return False
+    return False
+
+
 def _wait_while_held(sleep=time.sleep, clock=time.monotonic) -> None:
     if not held():
         return

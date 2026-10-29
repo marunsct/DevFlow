@@ -42,6 +42,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.analysis.walk import files_under
+from app.tools.bounded_output import HeadAndTail, read_into
 from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE
 from typing import Any, Dict, Iterable, Sequence
 
@@ -1021,6 +1022,24 @@ def _a_fresh_data_directory(workspace: str, category: str) -> Dict[str, str]:
         return {}
 
 
+def _remove_the_fresh_data_directories(fresh: Dict[str, str]) -> None:
+    """Delete the data directories `_a_fresh_data_directory` made for a command that has ended. Never raises.
+
+    Found in review: one was made for every test command and none was ever
+    removed, so a run's `test-results/` gathered a directory per test run -
+    each holding whatever the product's tests wrote, which on the run that
+    motivated them was a data file of 205 MB. Only a directory
+    named the way that function names them is removed.
+    """
+    for directory in (fresh or {}).values():
+        try:
+            path = Path(directory)
+            if path.name.startswith("unit-data-") and path.parent.name == "test-results":
+                shutil.rmtree(path, ignore_errors=True)
+        except (OSError, TypeError, ValueError):
+            continue
+
+
 def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict[str, str]:
     """A minimal environment for a directly-executed command."""
     environment = {
@@ -1145,6 +1164,15 @@ class _TreeOverBudget(Exception):
 #: How often a running command's process tree is measured.
 _TREE_POLL_SECONDS = 0.5
 
+#: The most resident memory the last command's process tree held at any of
+#: those measurements, in bytes; None when it ran too briefly to be measured or
+#: did not run here. Written onto the command's ledger entry: found in review,
+#: the watch measured every command's tree twice a second and kept nothing, so
+#: when the worker was killed for memory no record named the command that grew.
+_MEMORY_PEAK_OF_THE_COMMAND: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "memory_peak_of_the_command", default=None
+)
+
 #: The least a command's tree is ever allowed, whatever the container has free.
 _LEAST_TREE_BUDGET_BYTES = 512 * 1024**2
 
@@ -1256,25 +1284,27 @@ def _run_and_watch_the_tree(
     # Measured live: a product's test setup opened a database thread at
     # import; pytest printed "7 errors in 0.26s" and then never exited, and
     # every run of it waited out the timeout - 300 s, then 60 s, then 60 s.
-    chunks: dict[str, list[str]] = {"stdout": [], "stderr": []}
+    # Kept to a head and a tail (`bounded_output`): read whole, a product that
+    # printed without end grew this process past every limit the command had.
+    chunks = {"stdout": HeadAndTail(), "stderr": HeadAndTail()}
     last_output = [time.monotonic()]
 
-    def read(name: str, stream: Any) -> None:
-        for line in iter(stream.readline, ""):
-            chunks[name].append(line)
-            last_output[0] = time.monotonic()
-        stream.close()
+    def heard() -> None:
+        last_output[0] = time.monotonic()
 
     readers = [
-        threading.Thread(target=read, args=(name, stream), daemon=True)
+        threading.Thread(target=read_into, args=(stream, chunks[name]), kwargs={"on_read": heard}, daemon=True)
         for name, stream in (("stdout", process.stdout), ("stderr", process.stderr))
     ]
     for reader in readers:
         reader.start()
+    # The most the tree held at any measurement, for the ledger (`_MEMORY_PEAK_OF_THE_COMMAND`).
+    peak = [0]
 
     def watch() -> None:
         while not finished.wait(_TREE_POLL_SECONDS):
             used = _tree_memory_bytes(process.pid)
+            peak[0] = max(peak[0], used)
             if used > budget:
                 over.append(used)
                 _kill_the_tree(process.pid)
@@ -1282,7 +1312,7 @@ def _run_and_watch_the_tree(
             if (
                 ends_at_its_summary
                 and time.monotonic() - last_output[0] >= SETTLED_AFTER_THE_SUMMARY_SECONDS
-                and _the_run_has_summed_up("".join(chunks["stdout"]) or "".join(chunks["stderr"]))
+                and _the_run_has_summed_up(chunks["stdout"].text() or chunks["stderr"].text())
             ):
                 lingered.append(True)
                 _kill_the_tree(process.pid)
@@ -1298,16 +1328,17 @@ def _run_and_watch_the_tree(
         for reader in readers:
             reader.join(timeout=5)
         raise subprocess.TimeoutExpired(
-            argv, timeout, output="".join(chunks["stdout"]), stderr="".join(chunks["stderr"])
+            argv, timeout, output=chunks["stdout"].text(), stderr=chunks["stderr"].text()
         ) from None
     finally:
         finished.set()
         watcher.join(timeout=2)
+        _MEMORY_PEAK_OF_THE_COMMAND.set(peak[0] or None)
         # Whatever the command left behind in its group goes with it.
         _kill_the_tree(process.pid)
     for reader in readers:
         reader.join(timeout=5)
-    stdout, stderr = "".join(chunks["stdout"]), "".join(chunks["stderr"])
+    stdout, stderr = chunks["stdout"].text(), chunks["stderr"].text()
     if over:
         raise _TreeOverBudget(over[0], budget, stdout, stderr)
     if lingered:
@@ -3570,6 +3601,7 @@ def _record_execution(
     working_directory: str | None = None,
     category: str = "default",
     duration_seconds: float | None = None,
+    memory_peak_bytes: int | None = None,
 ) -> None:
     """Append one command's outcome to the run's ledger. Never raises.
 
@@ -3612,6 +3644,11 @@ def _record_execution(
             ),
             **_the_counts_a_test_run_reported(result),
         }
+        if memory_peak_bytes:
+            # The most the command's process tree held while it ran
+            # (`_MEMORY_PEAK_OF_THE_COMMAND`), so a worker killed for memory
+            # has a record naming the command that grew.
+            entry["memory_peak_mb"] = round(memory_peak_bytes / 1024**2, 1)
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry) + "\n")
     except OSError:
@@ -4809,11 +4846,13 @@ class SandboxExecutor:
             "sandbox exec (in-container) role=%s category=%s argv=%s",
             role_name, category, argv,
         )
+        # This one command's data directory, removed when it ends (`_remove_the_fresh_data_directories`).
+        fresh_data = _a_fresh_data_directory(workspace, category)
         try:
             result = _run_and_watch_the_tree(
                 [executable, *argv[1:]],
                 cwd=run_in or workspace,
-                env=_child_environment(workspace, {**_a_fresh_data_directory(workspace, category), **(extra_env or {})}),
+                env=_child_environment(workspace, {**fresh_data, **(extra_env or {})}),
                 timeout=timeout,
                 data_bytes=_process_memory(workspace, argv),
                 ends_at_its_summary=_runs_tests(argv),
@@ -4842,6 +4881,8 @@ class SandboxExecutor:
             }
         except OSError as exc:
             return {"error": f"Could not run '{argv[0]}': {exc}"}
+        finally:
+            _remove_the_fresh_data_directories(fresh_data)
 
         finished = {
             "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout", workspace), workspace),
@@ -5044,6 +5085,8 @@ class SandboxExecutor:
             }
         else:
             began = time.time()
+            # A peak left from an earlier command on this context is not this one's.
+            _MEMORY_PEAK_OF_THE_COMMAND.set(None)
             outcome = cls._run(
                 command, repo_root, role_name, category, extra_env, working_directory
             )
@@ -5095,6 +5138,7 @@ class SandboxExecutor:
         _record_execution(
             repo_root, role_name, command, outcome, working_directory, category,
             duration_seconds=time.monotonic() - started,
+            memory_peak_bytes=None if already_timed_out else _MEMORY_PEAK_OF_THE_COMMAND.get(),
         )
         return outcome
 

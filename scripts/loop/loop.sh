@@ -434,6 +434,12 @@ deploy)
   # in flight to return, then restart (app.models.call_gate). GATE_WAIT caps the
   # wait in seconds; a call still running then is restarted with its stage.
   gate=/app/data/loop/gate
+  # Lifted however this deploy ends: under `set -e` a failed `compose up`, or
+  # an interrupted wait, left the hold set, and every model call then waited
+  # its full 20 minutes (`call_gate.MOST_SECONDS_HELD`) on a deploy that was
+  # gone. A worker that is not up to lift it lifts it as it starts
+  # (`tasks._lift_a_hold_a_previous_deploy_left`).
+  trap 'docker compose exec -T worker sh -c "rm -f $gate/hold" >/dev/null 2>&1 || true' EXIT
   docker compose exec -T worker sh -c "mkdir -p $gate/inflight && touch $gate/hold"
   waited=0
   while :; do

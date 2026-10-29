@@ -102,3 +102,27 @@ def test_a_status_only_a_particular_request_draws_is_unchecked_not_failed(tmp_pa
     failed = [g for g in gaps if "does not keep its interface contract" in g]
     assert len(failed) == 1 and "contract 2" in failed[0]
     assert any("AC-18 POST /notes -> 413 (the probe sends a bare request" in g for g in gaps)
+
+
+def test_a_bodiless_write_refused_for_its_body_is_unchecked_not_failed(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.stacks import contract
+
+    monkeypatch.setattr(contract, "the_pack", lambda root: (SimpleNamespace(files={"playwright.config.js": ""}, probe_runner="playwright"), {"project": "app"}))
+    (tmp_path / "app").mkdir()
+    ic.record_at_lock(tmp_path, ["AC-11 PUT /notes/999 -> 404", "AC-3 GET /notes/999 -> 404"])
+
+    def runner(argv, category, where):
+        (tmp_path / where / "test-results").mkdir(exist_ok=True)
+        (tmp_path / where / ic.REPORT_FILE).write_text(
+            '<testsuites><testsuite name="c" tests="2">'
+            '<testcase name="[AC-11] contract 1: x"><failure message="x">Expected: 404\nReceived: 400</failure></testcase>'
+            '<testcase name="[AC-3] contract 2: x"><failure message="x">Expected: 404\nReceived: 400</failure></testcase>'
+            "</testsuite></testsuites>")
+        return {"returncode": "1"}
+
+    gaps = ic.what_the_contract_checks_find(tmp_path, runner=runner)
+    failed = [g for g in gaps if "does not keep its interface contract" in g]
+    assert len(failed) == 1 and "contract 2" in failed[0]  # a GET has no body to refuse
+    assert any("AC-11 PUT /notes/999 -> 404 (the probe sends a bare request" in g for g in gaps)

@@ -392,6 +392,21 @@ def _only_what_a_bare_request_cannot_draw(check: Check) -> bool:
     return bool(_allowed(check)) and set(_allowed(check)) <= _DRAWN_BY_A_PARTICULAR_REQUEST
 
 
+#: What a product rightly answers a write that has no body, before it looks anything up.
+_A_REFUSED_BODY = frozenset({400, 422})
+
+
+def _a_bodiless_write_refused_first(check: Check, test: Any) -> bool:
+    """Whether the probe's bodiless write was refused for its body before the record was looked up.
+
+    Measured on one run: `AC-11 PUT /notes/999 -> 404` was failed at release for the 400 a product that checks the
+    body first gives the probe's empty request; either order keeps the contract.
+    """
+    received = _RECEIVED.search(str(getattr(test, "message", "") or ""))
+    return (check.method in ("POST", "PUT", "PATCH") and received is not None
+            and int(received.group(1)) in _A_REFUSED_BODY and not set(_allowed(check)) & _A_REFUSED_BODY)
+
+
 def _the_check_of(test: Any, web: list[Check]) -> Check | None:
     """The check a test of the probe is, by `contract N:` in its title; None when it names none."""
     number = _CHECK_NUMBER.search(str(getattr(test, "name", "") or ""))
@@ -485,7 +500,8 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
         # A line that says what it is about ("(duplicate) -> 409", "with an invalid title -> 400") is about a request
         # the probe does not send: its bare request proves only that the server does not fail on it.
         about_another_request = [t for t in failed if (check := _the_check_of(t, web)) is not None
-                                 and (check.note or _only_what_a_bare_request_cannot_draw(check))
+                                 and (check.note or _only_what_a_bare_request_cannot_draw(check)
+                                      or _a_bodiless_write_refused_first(check, t))
                                  and not _a_server_error(t)]
         failed = [t for t in failed if t not in about_another_request]
         unchecked += list(dict.fromkeys(

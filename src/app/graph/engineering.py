@@ -833,8 +833,9 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str, contest
     if broken:
         kept = _its_tests_without_its_product_change(root, base, before, broken, stage_name)
         if kept is not None:
+            # Committed first, and the measurement saved with that commit (see the end of this function).
+            kept.commit = ci.commit(root, f"Fix, its tests only: {description[:50]}") or kept.commit
             ci.save(root, kept)
-            ci.commit(root, f"Fix, its tests only: {description[:50]}")
             return []
     elif not after.passing() - (before.passing() if before is not None else set()):
         # Nothing passed before, so nothing could break, and the fix made
@@ -849,10 +850,21 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str, contest
     gained_now = after.passing() - (before.passing() if before is not None else set())
     from app.graph import net_gain
 
-    if broken and net_gain.keeps(lost, gained_now, product_runs=not after.problem and not broke_the_install):
+    # Weighed against the tests that genuinely broke, not every test that no longer passes: `lost` counts the unit
+    # tests a fix replaced on purpose, which `_broken_tests` forgives. Found in a code review: a fix that broke one
+    # criterion and renamed four unit tests on purpose (every unit test passing after it) was weighed as five broken,
+    # and had to make 15 tests pass to stay instead of 4. What is not a test's name (the install, the build) is not
+    # weighed. The renamed tests' new names are not a gain either, or a fix that only renamed them would buy its
+    # broken criterion back with them.
+    broken_tests = [item for item in broken if item.startswith(("unit: ", "acceptance: "))]
+    weighed_gain = gained_now
+    if any(item.startswith("unit: ") and item not in broken for item in lost):
+        known_before = {f"unit: {name}" for name in (before.unit if before is not None else {})}
+        weighed_gain = {item for item in gained_now if not item.startswith("unit: ") or item in known_before}
+    if broken and net_gain.keeps(broken_tests, weighed_gain, product_runs=not after.problem and not broke_the_install):
         logger.warning(
             "Kept %s: it made %d test(s) pass and broke %d unit test(s), which the next round raises: %s",
-            stage_name, len(gained_now), len(lost), "; ".join(lost[:3]),
+            stage_name, len(weighed_gain), len(broken_tests), "; ".join(broken_tests[:3]),
         )
         broken = []
     if broken and contested and broken == [contested] and gained_now and not after.problem:
@@ -872,8 +884,11 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str, contest
             stage_name, len(broken), len(gained),
         )
         return broken
+    # Committed first, and the measurement saved with the commit it measured. Found in a code review: the snapshot
+    # was saved with the commit before the fix's own, so the next fix's `before_a_fix` read "the workspace moved
+    # since it was measured" and ran the unit tests and the acceptance suite again on the product just measured.
+    after.commit = ci.commit(root, f"Fix: {description[:60]}") or after.commit
     ci.save(root, after)
-    ci.commit(root, f"Fix: {description[:60]}")
     return []
 
 

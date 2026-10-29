@@ -1264,26 +1264,90 @@ def _noted_as_reverted(cycle: Any, indices: list[int], broke: list[str], *, in_a
     those against one locked test call for a dispute. A batch reverted whole is
     noted otherwise: which of its fixes broke the test is not known, and each is
     fixed alone next.
+
+    The note replaces the one before it, and counts the defect's reverts and the
+    locked tests they broke (`_the_reverts_noted`). Found in a code review: each
+    revert appended the same ~400-character note, three reverts left about 4,200
+    characters of notes ahead of the runner's output, and the rewrite's failure
+    text was cut at test 23 of 79.
     """
-    unit_guidance = (
-        "\nIf the behaviour this sprint delivers is different from what was built before, the "
-        "test is out of date, not the product: change what it asserts to the behaviour "
-        "this sprint delivers, keep the test's name (a test that disappears is counted "
-        "as broken), and say in your answer that the test was out of date."
-        if any(item.startswith("unit:") for item in broke)
-        else ""
-    )
+    # On one line each: the note is found, replaced and read line by line.
+    named = "; ".join(str(item).replace("\n", " ") for item in broke[:5])
+    unit_guidance = _A_UNIT_TEST_MAY_BE_OUT_OF_DATE if any(item.startswith("unit:") for item in broke) else ""
     note = (
         "A batch of fixes including this one was reverted, because together they broke what "
-        f"passed before them: {'; '.join(broke[:5])}. It is fixed on its own next.{unit_guidance}"
+        f"passed before them: {named}. It is fixed on its own next."
         if in_a_batch
-        else f"A fix was tried and reverted, because it broke what passed before it: {'; '.join(broke[:5])}.{unit_guidance}"
+        else f"A fix was tried and reverted, because it broke what passed before it: {named}."
     )
+
+    def noted(item: Any) -> str:
+        reverts, broken = _the_reverts_noted(str(item.actual_behavior or ""))
+        if not in_a_batch:
+            broken.update(name.strip() for name in named.split("; ") if name.strip().startswith("acceptance:"))
+        tally = ""
+        if reverts >= 1:
+            tally = f"\n{_REVERTS_SO_FAR} {reverts + 1}." + (
+                f" {_THE_TESTS_THEY_BROKE} " + "; ".join(f"{name} ({count})" for name, count in broken.most_common()) + "."
+                if broken else "")
+        return (f"{_without_the_revert_note(str(item.actual_behavior or ''))}\n{note}{tally}{unit_guidance}"
+                f"{_the_unit_tests_are_out_of_date(item, broke)}")
+
     return cycle.model_copy(update={"defects": [
-        item.model_copy(update={"actual_behavior": f"{item.actual_behavior}\n{note}{_the_unit_tests_are_out_of_date(item, broke)}"})
-        if position in indices else item
+        item.model_copy(update={"actual_behavior": noted(item)}) if position in indices else item
         for position, item in enumerate(cycle.defects)
     ]})
+
+
+#: What a reverted fix of a defect whose broken tests include unit tests is told.
+_A_UNIT_TEST_MAY_BE_OUT_OF_DATE = (
+    "\nIf the behaviour this sprint delivers is different from what was built before, the "
+    "test is out of date, not the product: change what it asserts to the behaviour "
+    "this sprint delivers, keep the test's name (a test that disappears is counted "
+    "as broken), and say in your answer that the test was out of date."
+)
+#: How the line that counts a defect's reverted fixes begins, and how it names the locked tests they broke.
+_REVERTS_SO_FAR = "Fixes of this defect reverted so far:"
+_THE_TESTS_THEY_BROKE = "The locked acceptance tests they broke, each with how many of them broke it:"
+_A_REVERT_TALLY = re.compile(
+    rf"^{re.escape(_REVERTS_SO_FAR)} (\d+)\.(?: {re.escape(_THE_TESTS_THEY_BROKE)} (.+)\.)?$", re.M)
+#: The first line of a revert note, alone or in a batch, and the line that counts the reverts.
+_A_REVERT_NOTE_LINE = re.compile(
+    rf"\n?^(?:A fix was tried and reverted, because|A batch of fixes including this one was reverted, because"
+    rf"|{re.escape(_REVERTS_SO_FAR)})[^\n]*", re.M)
+
+
+def _without_the_revert_note(actual_behavior: str) -> str:
+    """`actual_behavior` with the revert note a fix left on it taken out, whatever came after it kept."""
+    text = _A_REVERT_NOTE_LINE.sub("", actual_behavior)
+    for guidance in (_A_UNIT_TEST_MAY_BE_OUT_OF_DATE, UNIT_TESTS_AGAINST_THE_SUITE):
+        text = text.replace(guidance, "")
+    return text.rstrip("\n")
+
+
+def _the_reverts_noted(actual_behavior: str) -> tuple[int, Any]:
+    """How many fixes of the defect were reverted, and how many of them broke each locked acceptance test.
+
+    Read from the tally line a second revert writes; a note without one (a single revert, or notes appended before
+    the note was replaced) is counted note by note.
+    """
+    from collections import Counter
+
+    broken: Counter[str] = Counter()
+    tally = _A_REVERT_TALLY.search(actual_behavior)
+    if tally:
+        for entry in (tally.group(2) or "").split("; "):
+            name, _, count = entry.strip().rpartition(" (")
+            if name and count.rstrip(")").isdigit():
+                broken[name] += int(count.rstrip(")"))
+        return int(tally.group(1)), broken
+    for match in _REVERTED_FOR.finditer(actual_behavior):
+        for name in match.group(1).split("; "):
+            if name.strip().startswith("acceptance:"):
+                broken[name.strip()] += 1
+    reverts = len(_REVERTED_FOR.findall(actual_behavior)) + actual_behavior.count(
+        "A batch of fixes including this one was reverted")
+    return reverts, broken
 
 
 #: What a unit-test defect is told when its fix broke the locked acceptance suite. Measured on one run: the unit tests
@@ -1326,9 +1390,7 @@ def _a_revert_escalates_this_fix(cycle: Any, defect_index: int) -> bool:
         notes = str(getattr(defect, "actual_behavior", "") or "")
     except (AttributeError, IndexError, TypeError):
         return False
-    reverts = len(_REVERTED_FOR.findall(notes)) + notes.count(
-        "A batch of fixes including this one was reverted"
-    )
+    reverts, _ = _the_reverts_noted(notes)
     return reverts == 1
 
 
@@ -3526,41 +3588,34 @@ def _what_a_claimed_unloadable_package_does(repo_root: str, blockers: list[str])
         return ""
 
 
-#: Where the harness keeps its last unit run with the product's fingerprint (MEASURE_ONCE).
-_UNIT_RUN_FILE = ".harness/unit-result.json"
-
-
 def _the_unit_run_kept(repo_root: str, command: list[Any]) -> tuple[bool, str] | None:
-    """The last unit run's (passed, output) when the product and the command are as they were then; else None."""
-    try:
-        from app.acceptance import measured_once
-        from app.acceptance.unstable import fingerprint
+    """The last unit run's (passed, output) when the product and the command are as they were then; else None.
 
-        if not measured_once.enabled():
-            return None
-        saved = json.loads((Path(repo_root) / _UNIT_RUN_FILE).read_text(encoding="utf-8"))
-        if saved.get("command") != [str(part) for part in command] or saved.get("fingerprint") != fingerprint(repo_root):
-            return None
-        logger.info("The product is as the unit tests last measured it; that run stands")
-        return bool(saved.get("passed")), str(saved.get("output") or "")
-    except Exception:  # noqa: BLE001 - when in doubt, run them
+    The record (`ci.UNIT_RUN_FILE`, MEASURE_ONCE) is one, shared with every CI snapshot.
+    """
+    from app import ci
+
+    saved = ci.the_unit_run_kept(repo_root, command)
+    if saved is None:
         return None
+    logger.info("The product is as the unit tests last measured it; that run stands")
+    return bool(saved.get("passed")), str(saved.get("output") or "")
 
 
 def _keep_the_unit_run(repo_root: str, command: list[Any], passed: bool, output: str) -> None:
-    """Keep this unit run with the product's fingerprint, for `_the_unit_run_kept`. Never raises."""
-    try:
-        from app.acceptance import measured_once
-        from app.acceptance.unstable import fingerprint
+    """Keep this unit run with the product's fingerprint, for `_the_unit_run_kept` and CI's snapshots. Never raises.
 
-        if not measured_once.enabled():
-            return
-        target = Path(repo_root) / _UNIT_RUN_FILE
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps({"command": [str(part) for part in command], "fingerprint": fingerprint(repo_root),
-                                      "passed": passed, "output": output[-20_000:]}), encoding="utf-8")
-    except Exception:  # noqa: BLE001 - the next run measures again
-        pass
+    Each test's outcome in the pack's report goes with it, so the next snapshot of the same product reads it
+    instead of running the unit tests again.
+    """
+    from app import ci
+
+    try:
+        outcomes = ci.unit_outcomes_in_the_pack_s_report(repo_root)
+    except Exception:  # noqa: BLE001 - kept without outcomes, a snapshot runs them again
+        outcomes = None
+    unit, found = outcomes if outcomes is not None else (None, False)
+    ci.keep_the_unit_run(repo_root, command, passed, output, unit, found)
 
 
 def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
@@ -3634,16 +3689,10 @@ def _the_unit_reports(repo_root: str, record: dict[str, Any], command: list[Any]
 
 def _what_the_unit_reports_say(reports: list[Path]) -> str:
     """The failing tests in the unit reports, each with its message; "" when none are found."""
+    from app import ci
     from app.acceptance import junit
 
-    failed = [test for report in reports for test in junit.read(report).tests if test.outcome == "failed"]
-    if not failed:
-        return ""
-    return "Failing tests, from the runner's report:\n" + "\n".join(
-        f"- {test.within + ' › ' if test.within else ''}{test.name}"
-        f"{' (' + test.file + ')' if test.file else ''}: {test.message[:600]}"
-        for test in failed[:12]
-    ) + (f"\n... and {len(failed) - 12} more" if len(failed) > 12 else "")
+    return ci.what_the_failing_unit_tests_say([test for report in reports for test in junit.read(report).tests])
 
 
 def _the_reply_was_cut_off_before_it_began(message: Any) -> bool:
@@ -6572,8 +6621,15 @@ def _closed_if_an_earlier_fix_resolved_it(
 
         defect = cycle.defects[defect_index]
         root = state["repository"].root_path
-        resolved = acceptance_nodes.passing_since_reported(state, list(defect.failing_criteria or []))
-        proof, why = ("", "") if resolved else _resolved_by_a_measurement(state, defect)
+        from app.acceptance import unstable
+
+        # A stored measurement closes a defect only while the product is as the suite measured it. Found in a code
+        # review: `ci.revert_to` puts the tree back, but the suite's saved result is git-ignored and survives it, so a
+        # reverted fix's green run closed another defect without a fixer and the next round raised it again. A
+        # product that changed since goes to the re-measure below, which reads the product as it is.
+        stale = acceptance_suite.is_locked(root) and not unstable.unchanged_since_the_suite_measured(root)
+        resolved = [] if stale else acceptance_nodes.passing_since_reported(state, list(defect.failing_criteria or []))
+        proof, why = ("", "") if resolved or stale else _resolved_by_a_measurement(state, defect)
         if proof:
             logger.warning(
                 "Defect '%s' is already fixed: %s; closed without a fixer", defect.description[:80], why,
@@ -6611,8 +6667,6 @@ def _closed_if_an_earlier_fix_resolved_it(
                 # Taken before the probe: a product keeping its store in a
                 # committed file is rewritten by the probe itself, and read
                 # after it the product had always "changed".
-                from app.acceptance import unstable
-
                 unchanged = unstable.unchanged_since_the_suite_measured(root)
                 if _the_defect_s_tests_pass(Path(root), defect):
                     # Passing alone on the very product the suite measured it
@@ -8229,10 +8283,7 @@ def _a_contested_test_past_repair(state: Any, cycle: Any) -> str:
 
         counts: Counter[str] = Counter()
         for defect in getattr(cycle, "defects", None) or []:
-            for match in _REVERTED_FOR.finditer(str(getattr(defect, "actual_behavior", "") or "")):
-                for name in match.group(1).split("; "):
-                    if name.strip().startswith("acceptance:"):
-                        counts[name.strip()] += 1
+            counts.update(_the_reverts_noted(str(getattr(defect, "actual_behavior", "") or ""))[1])
         name = next((n for n, c in counts.most_common() if c >= REVERTS_BEFORE_A_TEST_IS_CONTESTED), "")
         if not name or may_repair(state, [f"`{_the_test_named(name)}`"]):
             return ""
@@ -8256,10 +8307,7 @@ def _a_locked_test_two_fixes_broke(cycle: Any) -> str:
 
     counts: Counter[str] = Counter()
     for defect in getattr(cycle, "defects", None) or []:
-        for match in _REVERTED_FOR.finditer(str(getattr(defect, "actual_behavior", "") or "")):
-            for name in match.group(1).split("; "):
-                if name.strip().startswith("acceptance:"):
-                    counts[name.strip()] += 1
+        counts.update(_the_reverts_noted(str(getattr(defect, "actual_behavior", "") or ""))[1])
     return next((name for name, count in counts.most_common() if count >= 2), "")
 
 

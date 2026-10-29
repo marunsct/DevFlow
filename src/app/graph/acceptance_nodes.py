@@ -1506,7 +1506,10 @@ def tests_that_fail_alone(repo_root: Any, names: list[str]) -> tuple[list[str], 
 
 #: What QA is held to when it repairs a locked suite.
 REPAIR_RULE = (
-    "Change only the tests named above, and only as far as their own code is wrong. "
+    "Change the tests named above, and only as far as their own code is wrong. "
+    "A test not named above that has the very same fault - the same wrong step, written the same "
+    "way - is repaired the same way in this pass: a locked test that cannot pass is sent back "
+    "once for its fault, not once for each test that has it. "
     "Every other test, and what each test checks, stays exactly as it is: the suite is "
     "being repaired, not rewritten."
 )

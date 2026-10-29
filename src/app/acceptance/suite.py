@@ -355,6 +355,84 @@ def tests_a_repair_would_drop(repo_root: str | Path, relative_path: str, content
     )
 
 
+#: How few of a repaired test's assertions may remain, as a share of what it had: a repair may drop the wrong one.
+LEAST_ASSERTIONS_KEPT = 0.5
+
+
+def _the_tests_of(text: str) -> tuple[str, dict[str, str]]:
+    """A suite file as its text before the first test, and {title: the test's text} for each test after."""
+    starts = [m.start() for m in _A_TEST_CALL.finditer(text)]
+    if not starts:
+        return text, {}
+    tests: dict[str, str] = {}
+    for at, start in enumerate(starts):
+        block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
+        titled = _A_TEST_TITLE.match(block)
+        tests[titled.group(1) if titled else f"#{at}"] = block
+    return text[:starts[0]], tests
+
+
+def only_the_repaired_tests_changed(repo_root: str | Path) -> bool:
+    """Whether a reopened suite differs from its last lock only in the tests sent for repair, each still a check.
+
+    Measured on one run: a repair sent for one test fixed it in a minute; the full review that followed raised four
+    new findings about other tests, and locking again took fourteen minutes. What the review approved at the lock is
+    unchanged, so a repair that changed only its own tests - same files, same text before the tests, the same tests
+    by title (so with their criterion tags), each changed one under repair and keeping at least half its assertions - is judged
+    by the harness's checks alone. Never raises.
+    """
+    try:
+        state = _state(repo_root)
+        under_repair = [str(name) for name in state.get("repairing") or []]
+        if "lock" in state or not under_repair:
+            return False
+        root = Path(repo_root)
+        locked = _the_files_of(root / SNAPSHOT_DIR)
+        now = {path.relative_to(root).as_posix(): path.read_text(encoding="utf-8", errors="replace")
+               for path in suite_files(repo_root)}
+        if not locked or set(locked) != set(now):
+            return False
+        changed_any = False
+        for name, text in now.items():
+            if text == locked[name]:
+                continue
+            before_head, before = _the_tests_of(locked[name])
+            after_head, after = _the_tests_of(text)
+            if before_head != after_head or set(before) != set(after):
+                return False
+            for title, block in after.items():
+                if block == before[title]:
+                    continue
+                if not any(title == test or title in test or test in title for test in under_repair):
+                    return False
+                had, has = before[title].count("expect("), block.count("expect(")
+                if has < 1 or has < had * LEAST_ASSERTIONS_KEPT:
+                    return False
+                changed_any = True
+        return changed_any
+    except Exception:  # noqa: BLE001 - then the review reads it whole, as before
+        return False
+
+
+class _TargetedSuiteRepair:
+    """`TARGETED_SUITE_REPAIR` as the switch registry reads one: off in code, the compose file turns it on."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("A reopened suite whose repair changed only the tests sent for repair - each still tagged and still "
+                   "asserting - is locked again on the harness's checks, without a second full review. Measured on one "
+                   "run, that review raised four new findings and re-locking took fourteen minutes.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("TARGETED_SUITE_REPAIR", _TargetedSuiteRepair.ON_BY_DEFAULT)
+
+
+targeted_repair_switch = _TargetedSuiteRepair()
+
+
 def _the_files_of(directory: Path) -> dict[str, str]:
     """{path relative to `directory`: text} for every file under it; {} if there is none."""
     if not directory.is_dir():

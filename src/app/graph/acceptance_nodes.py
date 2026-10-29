@@ -580,7 +580,11 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
 
     findings: list[str] = []
     update: dict[str, Any] = {}
-    if not problems:
+    # Plan item 10: a repair that changed only the tests sent for it is judged by the checks above, not reviewed again.
+    targeted = not problems and suite.targeted_repair_switch.enabled() and suite.only_the_repaired_tests_changed(root)
+    if targeted:
+        logger.info("The reopened suite changed only the tests sent for repair; locked again on the harness's checks")
+    if not problems and not targeted:
         already_passing = [test.name for test in result.report.tests if test.outcome == "passed"]
         deferred = suite.deferred(root)
         deferred_text = (

@@ -43,3 +43,14 @@ def test_a_missing_argument_and_an_unexpected_keyword_get_it_too(tmp_path):
     for text in ("TypeError: f() missing 1 required positional argument: 'conn'",
                  "TypeError: f() got an unexpected keyword argument 'conn'"):
         assert KNOWN_CAUSE in with_known_causes(tmp_path, [_defect(text)])[0].actual_behavior
+
+
+def test_a_generator_used_as_a_context_manager_is_given_its_cause(tmp_path):
+    """Measured on a held-out run: unit tests used the product's database helper in a `with` block while the product
+    defines it as a plain generator; three fixes in a row changed the helper, broke the rest and were reverted."""
+    contract.write(tmp_path, pack_named("python-http-api"), "items", "Items")
+    for name in ("python-http-api", "python-flask-api", "python-library", "python-cli"):
+        assert "context manager protocol" in pack_named(name).known_errors
+    found = with_known_causes(tmp_path, [_defect("TypeError: 'generator' object does not support the context manager protocol")])
+    assert KNOWN_CAUSE in found[0].actual_behavior and "contextlib.contextmanager" in found[0].actual_behavior
+    assert not BANNED.search(found[0].actual_behavior)

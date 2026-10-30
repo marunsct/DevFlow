@@ -134,3 +134,13 @@ PYTHON_KNOWN_ERRORS = {
     )
     for phrase in ("positional argument", "unexpected keyword argument")
 }
+#: Measured on a held-out run: unit tests used the product's database helper in a `with` block while the product
+#: defines it as a plain generator it hands to a framework as a dependency; each fix changed the helper to suit some
+#: tests, broke the rest and was reverted.
+PYTHON_KNOWN_ERRORS["context manager protocol"] = (
+    "the unit tests use a function in a `with` block, but the product defines it as a plain generator (it hands it to "
+    "a framework as a dependency, or iterates it). Read how the product's own code uses the function and keep that "
+    "definition: change the TESTS - call the generator with `next(...)` and close it, or wrap it with "
+    "`contextlib.contextmanager` inside the test module - in every test of the file in one rewrite. Changing the "
+    "product's function to suit some tests breaks its other callers."
+)

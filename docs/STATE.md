@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | **run-abb23c25** (**notes-api-hono**, Fast; Qwen3.6; bundles on; measured arms on; harness 278a4af with LF.448-457) started 20:46 JST 2026-10-30 |
+| Run | **run-abb23c25** (**notes-api-hono**, Fast; Qwen3.6; bundles on; measured arms on; mixed_versions: 278a4af -> dfd680d (resumed 21:43 JST, Phase 2 off) -> 019a5d3 (resumed 21:53 JST, LF.470)) started 20:46 JST 2026-10-30 |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

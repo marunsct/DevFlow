@@ -74,6 +74,8 @@ SWITCHES: dict[str, str] = {
     "KEPT_FIX_CANDIDATES": "app.graph.kept_fix_candidates",
     "CO_DEFECT_FAILURES_IN_REWRITES": "app.graph.co_defect_failures",
     "REPEATED_REWRITE_PROMPT_STOP": "app.graph.repeated_rewrite_prompts",
+    "STABLE_STAGE_PREFIX": "app.agents.stable_prefix:stable_stage_prefix_switch",
+    "NAMED_TEST_REWRITE": "app.graph.rewritten_tests:named_test_rewrite_switch",
     "CONTRACT_SERVER_ERRORS_AT_A_ROUND": "app.acceptance.interface_contract:server_errors_at_a_round_switch",
     "LAST_TRY_ON_DEFERRED": "app.graph.last_try_on_deferred",
     "START_PROBE": "app.acceptance.start_probe",

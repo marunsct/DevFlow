@@ -89,6 +89,8 @@ EXPERIMENTS = (
     # The defect fix loop (deep-review plan items 9, 11, 15).
     "AGENT_LOOP_FIX_LIMITS", "SURRENDER_TO_REWRITE", "KEPT_FIX_CANDIDATES", "CO_DEFECT_FAILURES_IN_REWRITES",
     "REPEATED_REWRITE_PROMPT_STOP",
+    # Prefix stability and the second half of targeted QA repair (plan items 14 and 10).
+    "STABLE_STAGE_PREFIX", "NAMED_TEST_REWRITE",
 )
 #: The experiments deployed on, each with the measurement that turned it on.
 EXPERIMENTS_ON = {

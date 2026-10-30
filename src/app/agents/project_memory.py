@@ -372,6 +372,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
     except Exception:  # noqa: BLE001 - every file is due
         later = {}
     held_back: list[str] = []
+    from app.agents.stable_prefix import document_limit
+
+    shorter_documents = document_limit(files)
     for path in _ranked(files, focus, unserved):
         text = files[path]
         if _RECORDS.match(path):
@@ -384,10 +387,12 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
             held_back.append(f"{path} ({', '.join(later[path])})")
             continue
         block = f"=== {path} ===\n{text.rstrip()}\n"
-        if len(text) > LARGEST_FILE_CHARACTERS and path.endswith(".md"):
+        # A small product's documents are held as a digest sooner (`STABLE_STAGE_PREFIX`, off until measured).
+        largest = (shorter_documents or LARGEST_FILE_CHARACTERS) if path.startswith("docs/") else LARGEST_FILE_CHARACTERS
+        if len(text) > largest and path.endswith(".md"):
             # Too large to hold whole: its outline and the sections this
             # stage's request points at, so it is not read window by window.
-            digest = digest_of(text, focus, min(LARGEST_FILE_CHARACTERS, budget_characters - used))
+            digest = digest_of(text, focus, min(largest, budget_characters - used))
             if digest:
                 block = f"=== {path} (outline and the sections this request points at; read others by line) ===\n{digest}\n"
                 # Chosen by the request's words, so after what every request shares (plan PX.3).

@@ -1977,7 +1977,14 @@ def _a_tester_changing_the_product(root: Path, target: Path, content: str = "") 
     work order listed, over the version another stage had just written.
 
     Tests, test configuration, documents and package manifests stay theirs.
+
+    A fix stage held to tests only (`TESTS_ONLY_WRITES`) is refused product code the same way.
     """
+    from app.tools import tests_only_writes
+
+    held = tests_only_writes.refusal(root, target)
+    if held is not None:
+        return held
     try:
         from app.observability.transcript import _stage_from_config
 

@@ -336,6 +336,7 @@ PRODUCT_INTAKE_REVIEW = "product_intake"
 
 from app.agents import interface_clashes  # noqa: E402 - beside its siblings
 from app.acceptance import mutation_guided  # noqa: E402 - beside its siblings
+from app.graph import defect_fix_modes  # noqa: E402 - beside its siblings
 from app.graph.acceptance_nodes import ACCEPTANCE_REVIEW  # noqa: E402 - beside its siblings
 from app.graph.delivery import RECORDED_AS_RISKS, RELEASE_REVIEW  # noqa: E402 - beside its siblings
 from app.graph.escalation import ESCALATION_REVIEW  # noqa: E402 - beside its siblings
@@ -3399,7 +3400,15 @@ def _a_mutation_finding_settled(state: Any, cycle: Any, defect_index: int, stage
 
     defect = cycle.defects[defect_index]
     where = {"round_": state.get("test_round", 0), "index": defect_index, "sprint": state.get("current_sprint_index", 0)}
-    checked = mutation_guided.settled(state["repository"].root_path, defect)
+    root = state["repository"].root_path
+    # Tests that fail on the product as it is, or notice nothing, are put back first (`MUTATION_TEST_RETENTION`).
+    from app.acceptance import mutation_equivalents, mutation_retention
+    from app.observability.transcript import _run_id_from_config
+
+    checked, put_back = mutation_retention.judged(
+        root, _run_id_from_config(), stage_name, lambda: mutation_guided.settled(root, defect))
+    if put_back:
+        defect_ledger.note("retention", stage_name, defect=defect, detail=put_back, **where)
     if checked is True:
         detail = "the unit tests fail with the change and pass without it, measured by the harness"
         defect_ledger.note("fixed", stage_name, defect=defect, detail=detail, **where)
@@ -3411,11 +3420,12 @@ def _a_mutation_finding_settled(state: Any, cycle: Any, defect_index: int, stage
     why = mutation_guided.equivalent_because(fix_result)
     if why and not fix_result.changed_files:
         defect_ledger.note("closed", stage_name, defect=defect, detail="judged equivalent: " + why, **where)
+        mutation_equivalents.remember(root, defect, why)
         return accept_risk(cycle, defect_index, reason=mutation_guided.EQUIVALENT + why)
     measured = (
         "the unit tests still pass with the change" if checked is False
         else "the change could not be made again where it was, or the unit tests did not run"
-    )
+    ) + (f" ({put_back})" if put_back else "")
     tries = failed_fix_tries(cycle, defect_index) + 1
     if tries >= mutation_guided.MOST_TRIES:
         defect_ledger.note("closed", stage_name, defect=defect, detail=f"a completion gap after {tries} tries: {measured}", **where)
@@ -11045,6 +11055,8 @@ def build_workflow_graph(
             what_settles_it=mutation_guided.what_settles_it(defect),
         )
         request["messages"][-1]["content"] += _what_a_fix_stage_must_leave_alone(state, defect)
+        # What this attempt may write: test files only, for a first fix of a failing unit test beside a green suite.
+        request["messages"][-1]["content"] += defect_fix_modes.briefing(state, config, defect_index)
         co_defects = _bundle_co_defects(cycle, defect_index)
         request["messages"][-1]["content"] += _the_specification_for_the_fix(state, defect, co_defects)
         if co_defects:
@@ -11124,7 +11136,8 @@ def build_workflow_graph(
         root = Path(state["repository"].root_path)
         def may_write(path: str) -> bool:
             with just_asking():
-                return _the_harness_s_own_or_the_locked_suite(root, root / path) is None
+                return (_the_harness_s_own_or_the_locked_suite(root, root / path) is None
+                        and defect_fix_modes.may_write(state, config, defect, root, path))
 
         last_failure = _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY))
         # The other open defects, whose failures that point at a file go into its rewrite (behind `CO_DEFECT_FAILURES_IN_REWRITES`).
@@ -11224,6 +11237,8 @@ def build_workflow_graph(
             if state.get("pending_inner_thread_id")
             else engineering.before_a_fix(state["repository"].root_path, stage_name)
         )
+        # The mode this fix runs in: what it may write, and what is kept of it (`app.graph.defect_fix_modes`).
+        defect_fix_modes.begin(state, config, cycle, defect_index, stage_name)
         # Fast delivery: the harness gathers what failed and the files it points
         # at, and the model rewrites each file in one call. See
         # `app.graph.rewritten_fixes`; a defect it cannot place goes to the agent loop.
@@ -11247,11 +11262,15 @@ def build_workflow_graph(
             )
             request, co_defects = _the_fix_request(state, config, cycle, defect_index)
             # Each write followed by the defect's own tests (plan AY step 3, off until measured).
+            from app.acceptance import mutant_check_in_stage
             from app.graph import verify_after_write
 
             root = Path(state["repository"].root_path)
             with verify_after_write.watching(
-                config["configurable"].get(APP_RUN_ID_KEY), stage_name, lambda: _the_defect_s_tests_pass(root, defect),
+                config["configurable"].get(APP_RUN_ID_KEY), stage_name,
+                # A mutation finding's write is answered by its own change (`MUTANT_CHECK_IN_THE_FIX_STAGE`).
+                mutant_check_in_stage.check_for(root, defect, lambda: _the_defect_s_tests_pass(root, defect)),
+                **mutant_check_in_stage.how_for(defect),
             ):
                 update = _run_gated_agent(
                     state,
@@ -11273,6 +11292,7 @@ def build_workflow_graph(
 
             fix_result = after_a_surrender(fix_result, lambda: _fixed_by_rewriting(
                 state, config, defect, fix_model, failed_fix_tries(cycle, defect_index), after_a_surrender=True))
+        defect_fix_modes.end(config, stage_name)
         broke = engineering.after_a_fix(
             state["repository"].root_path, fix_base, stage_name, defect.description,
             contested=_a_contested_test_past_repair(state, cycle),

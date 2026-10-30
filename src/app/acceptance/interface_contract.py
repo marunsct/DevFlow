@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 #: specification wrote "AC-1 AC-2 AC-3 POST /auth/register -> 201".
 _CRITERION = r"((?:AC|CR)-\d+)(?:[\s,]+(?:AC|CR)-\d+)*"
 #: One or more statuses: `-> 200`, `-> 200 or 404`, `-> 200 or 400/422 or 404`.
-_HTTP = re.compile(_CRITERION + r"\s+(GET|POST|PUT|PATCH|DELETE)\s+(/\S*)\s*->\s*(\d{3}(?:\s*(?:or|/|,)\s*\d{3})*)\s*$")
+_HTTP = re.compile(_CRITERION + r"\s+(GET|POST|PUT|PATCH|DELETE)\s+(/\S*)\s*->\s*(\d{3}(?:\s*(?:or|/|,|\|)\s*\d{3})*)\s*$")
 #: A page control: the role and its name last, with any words naming where on
 #: the page it sits between the path and the role - one specification wrote 26
 #: of its page lines as `page /dashboard form textbox "Title"`, and every one
@@ -49,12 +49,12 @@ _HTTP = re.compile(_CRITERION + r"\s+(GET|POST|PUT|PATCH|DELETE)\s+(/\S*)\s*->\s
 #: written so, none was read, and none was checked at release.
 _HTTP_SEVERAL = re.compile(
     _CRITERION + r"\s+((?:GET|POST|PUT|PATCH|DELETE)(?:\s*/\s*(?:GET|POST|PUT|PATCH|DELETE))*)\s+(/\S*)"
-    r"((?:\s+(?!->)\S+)*?)\s*->\s*(\d{3}(?:\s*(?:or|/|,)\s*\d{3})*)\s*$"
+    r"((?:\s+(?!->)\S+)*?)\s*->\s*(\d{3}(?:\s*(?:or|/|,|\|)\s*\d{3})*)\s*$"
 )
 #: An HTTP line with no criterion before it: `GET /health -> 200`.
 _HTTP_WITHOUT_ITS_CRITERION = re.compile(
     r"((?:GET|POST|PUT|PATCH|DELETE)(?:\s*/\s*(?:GET|POST|PUT|PATCH|DELETE))*)\s+(/\S*)"
-    r"((?:\s+(?!->)\S+)*?)\s*->\s*(\d{3}(?:\s*(?:or|/|,)\s*\d{3})*)\s*$"
+    r"((?:\s+(?!->)\S+)*?)\s*->\s*(\d{3}(?:\s*(?:or|/|,|\|)\s*\d{3})*)\s*$"
 )
 _PAGE = re.compile(_CRITERION + r"\s+page\s+(/\S*)\s+(?:[\w-]+\s+)*?([a-z]+)\s+\"([^\"]+)\"\s*$")
 _COMMAND = re.compile(_CRITERION + r"\s+command\s+(.+?)\s*->\s*exit\s+(\d+)\s*$")
@@ -63,7 +63,7 @@ _COMMAND = re.compile(_CRITERION + r"\s+command\s+(.+?)\s*->\s*exit\s+(\d+)\s*$"
 _ROLE_OF_THE_ELEMENT = {"textarea": "textbox", "select": "combobox"}
 
 #: A parenthesised note after the arrow with a status before it: "-> 201 (with Note object) or 400".
-_A_NOTE_AMONG_THE_STATUSES = re.compile(r"(->\s*\d{3}(?:\s*(?:or|/|,)\s*\d{3})*)\s*\([^()]*\)")
+_A_NOTE_AMONG_THE_STATUSES = re.compile(r"(->\s*\d{3}(?:\s*(?:or|/|,|\|)\s*\d{3})*)\s*\([^()]*\)")
 #: A parenthesised note at the end of a line: "-> 200 (updates the field)".
 _A_TRAILING_NOTE = re.compile(r"\s+\([^()]*\)\s*$")
 

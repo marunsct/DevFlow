@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | **run-d2e68f5b** (**notes-api-hono**, Fast; bundles on; measured arms on; new build model; mixed_versions: e5b73df -> 43e9eb7, rewound to QA's repair 14:50 JST to take LF.450-451) started 11:50 JST 2026-10-30 |
+| Run | **run-d2e68f5b** (**notes-api-hono**, Fast; bundles on; measured arms on; new build model; mixed_versions: e5b73df -> 43e9eb7 -> ef777d0, rewound to QA's repair 14:50 and 15:19 JST to take LF.450-452) started 11:50 JST 2026-10-30 |
 | Model | **qwen3.8-flash-next-coder-iq1_m** (owner; a 1-bit quant) at :9090 (Strata, via `reached_from_here`), context 131,072; seen in use from run-d2e68f5b (30 Oct 2026, 11:50 JST); the owner changed it from Qwen3.6-35B-A3B at :8888 (in use 28-29 Oct), so runs from d2e68f5b compare with the Qwen3.6 runs above only with that caveat. `loop.sh ready` prints its diagnosis (qwen3 family, hermes tool parser, edits 100%). |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

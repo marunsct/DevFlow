@@ -53,3 +53,14 @@ def test_a_node_test_pack_s_unit_globals_error_is_given_its_cause(tmp_path):
     jest = tmp_path / "jest"
     contract.write(jest, pack_named("node-hono-api"), "notes", "Notes")
     assert KNOWN_CAUSE not in with_known_causes(jest, [_defect("describe is not defined")])[0].actual_behavior
+
+
+def test_a_test_importing_one_directory_too_far_up_is_given_its_cause(tmp_path):
+    """Measured on a held-out run: every unit test file imported the product with `../../src/...` from `test/`;
+    the fixers read ERR_MODULE_NOT_FOUND as a missing file, edited the manifest and the product, and the tests shipped
+    failing."""
+    contract.write(tmp_path, pack_named("node-hono-native-api"), "notes", "Notes")
+    text = "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/work/src/db.ts' imported from /work/notes-api/test/db.test.ts"
+    found = with_known_causes(tmp_path, [_defect(text)])
+    assert KNOWN_CAUSE in found[0].actual_behavior and "`../src/`, not `../../src/`" in found[0].actual_behavior
+    assert not BANNED.search(found[0].actual_behavior)

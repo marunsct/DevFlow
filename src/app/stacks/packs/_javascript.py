@@ -1327,11 +1327,22 @@ TEST_BUGS = (
 #: defined" on the pack's `node:test` runner, and both fixers rewrote the manifest and a Vitest config - the test
 #: command is the pack's and was put back - so neither fix could work and the tests shipped failing.
 NODE_TEST_KNOWN_ERRORS = {
-    phrase: (
-        "the unit tests run on Node's own `node:test`, which has no global `describe`, `it`, `test` or `expect`: "
-        "import them in each test file - `import { describe, it } from 'node:test'` and "
-        "`import assert from 'node:assert/strict'` - and assert with `assert`. The test command is the pack's and "
-        "is put back, so changing the manifest or adding a Vitest or Jest configuration cannot fix this."
-    )
-    for phrase in ("describe is not defined", "it is not defined", "expect is not defined", "vi is not defined")
+    **{
+        phrase: (
+            "the unit tests run on Node's own `node:test`, which has no global `describe`, `it`, `test` or `expect`: "
+            "import them in each test file - `import { describe, it } from 'node:test'` and "
+            "`import assert from 'node:assert/strict'` - and assert with `assert`. The test command is the pack's and "
+            "is put back, so changing the manifest or adding a Vitest or Jest configuration cannot fix this."
+        )
+        for phrase in ("describe is not defined", "it is not defined", "expect is not defined", "vi is not defined")
+    },
+    # Measured on a held-out run: every unit test file imported the product with `../../src/...` from `test/`, one
+    # directory too far up, so Node looked outside the project; the fixers read the error as a missing file, edited
+    # the manifest and the product, and the tests shipped failing.
+    "err_module_not_found": (
+        "a relative import in a unit test climbs one directory too far, or too few, so Node looks outside the file's "
+        "real place: count the directories from the test file to the file it imports (a test in `test/` reaches "
+        "`src/` with `../src/`, not `../../src/`), and correct that import in every test file in one rewrite of each. "
+        "The product's files and the manifest are in the right place; do not move or edit them for this."
+    ),
 }

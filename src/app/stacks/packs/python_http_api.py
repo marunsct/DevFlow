@@ -163,6 +163,7 @@ reads, and look for its own records rather than counting all of them.
 """ + _python.NAMING
 
 PACK = StackPack(
+    known_errors=_python.PYTHON_KNOWN_ERRORS,
     name="python-http-api",
     title="HTTP service in Python on FastAPI",
     kind="http_api",

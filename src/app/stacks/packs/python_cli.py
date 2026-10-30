@@ -113,6 +113,7 @@ nothing carries between tests. To prove something persists, run the program twic
 """ + _python.NAMING
 
 PACK = StackPack(
+    known_errors=_python.PYTHON_KNOWN_ERRORS,
     name="python-cli",
     title="Command-line program in Python",
     kind="cli",

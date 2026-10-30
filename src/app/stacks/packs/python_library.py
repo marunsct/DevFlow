@@ -48,6 +48,7 @@ criteria name (`with pytest.raises(ValueError): ...`).
 """ + _python.NAMING
 
 PACK = StackPack(
+    known_errors=_python.PYTHON_KNOWN_ERRORS,
     name="python-library",
     title="Library in Python",
     kind="library",

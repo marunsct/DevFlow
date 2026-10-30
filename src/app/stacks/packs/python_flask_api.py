@@ -75,6 +75,7 @@ CMD ["sh", "-c", "exec gunicorn {{package}}.wsgi:app --bind \\"$HOST:$PORT\\""]
 """ % {"python": _python.PYTHON_VERSION}
 
 PACK = StackPack(
+    known_errors=_python.PYTHON_KNOWN_ERRORS,
     name="python-flask-api",
     title="HTTP service in Python on Flask",
     kind="http_api",

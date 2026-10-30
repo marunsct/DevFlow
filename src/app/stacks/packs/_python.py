@@ -117,3 +117,20 @@ TEST_BUGS = (
     # small-model run: five locked tests carried it, none could pass, and the sprint spent two hours on them.
     r"TypeError: unhashable type: '(?:dict|list|set)'",
 )
+
+
+#: Errors a Python run is known to raise, by a phrase of the message, and their cause (`app.stacks.known_errors`).
+#: Measured on three held-out runs: the unit tests and the code they test disagreed about a function's parameters
+#: (some tests passed a connection first, others by keyword; the product's own caller passed neither), written by
+#: different work orders. Each fix changed the function to suit some tests, broke the rest and was reverted, and the
+#: sprint was planned again until the run failed.
+PYTHON_KNOWN_ERRORS = {
+    phrase: (
+        "a call and the function it calls disagree on the function's parameters - here the calls are in the unit "
+        "tests and the function is in the product, written by different work orders. Read how the product's own code "
+        "calls the function, call it that way in every test of the file in one rewrite of the file, and change the "
+        "function only when the product's own callers need it. Changing the function to suit some tests breaks the "
+        "rest."
+    )
+    for phrase in ("positional argument", "unexpected keyword argument")
+}

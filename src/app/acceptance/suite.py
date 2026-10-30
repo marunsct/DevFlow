@@ -3050,6 +3050,63 @@ def tests_that_assert_a_kept_file_s_text(repo_root: str | Path, result: Acceptan
     return problems[:6]
 
 
+#: A call that signs a user in with a literal username: `_signin(base_url, "ana", "pw")`, `logIn(request, 'ana', 'pw')`.
+_A_SIGN_IN_AS = re.compile(
+    r"""\b\w*(?:sign_?in|log_?in|authenticate|obtain_?token|get_?token)\w*\s*\(\s*(?:[A-Za-z_][\w.]*\s*,\s*)?(['"`])([^'"`\n]+)\1""",
+    re.I,
+)
+#: Anything that creates a user.
+_CREATES_A_USER = re.compile(r"sign_?up|register|create_?(?:user|account)|/users\b|/accounts\b", re.I)
+#: A block that expects a refusal: signing in as someone unknown is the point of it.
+_EXPECTS_A_REFUSAL = re.compile(r"\b40[0134]\b|\b422\b|toBeGreaterThanOrEqual\(\s*400|>=\s*400")
+
+
+def tests_that_sign_in_as_nobody(repo_root: str | Path) -> list[str]:
+    """Tests that sign in as a user the suite never creates: refused on every product that checks credentials.
+
+    Measured on two runs of the held-out family: QA wrote tests that signed in as `ac3user` through a helper and
+    never signed that user up, here or in any fixture. Every product answered 401, the test round raised the tests
+    as product defects, and a fix round and a dispute were spent before QA was sent back; in the second run seven
+    tests had the fault. Found by its shape: a test that signs in with a literal username, mentions no sign-up or
+    registration anywhere, expects no refusal, and whose username appears nowhere else in the suite (so no fixture
+    seeds it).
+    """
+    root = Path(repo_root)
+    texts: dict[Path, str] = {}
+    for path in suite_files(repo_root):
+        if path.suffix.lower() not in (".py", ".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+            continue
+        try:
+            texts[path] = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+    everything = "\n".join(texts.values())
+    problems: list[str] = []
+    for path, text in texts.items():
+        python = path.suffix.lower() == ".py"
+        starts = [m.start() for m in (_A_PYTHON_TEST if python else _A_TEST_CALL).finditer(text)]
+        for at, start in enumerate(starts):
+            block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
+            if _CREATES_A_USER.search(block) or _EXPECTS_A_REFUSAL.search(block):
+                continue
+            for match in _A_SIGN_IN_AS.finditer(block):
+                name = match.group(2)
+                if name.startswith("/") or not name.strip():
+                    continue
+                signing_in = sum(1 for m in _A_SIGN_IN_AS.finditer(everything) if m.group(2) == name)
+                if everything.count(match.group(1) + name + match.group(1)) > signing_in:
+                    continue  # the name is used somewhere that is not a sign-in: a fixture or a call may create it
+                line = text.count("\n", 0, start + match.start()) + 1
+                problems.append(
+                    f"`{path.relative_to(root).as_posix()}` line {line}: the test signs in as `{name}`, a user nothing "
+                    "in the suite creates. Every test starts from an empty product, so the sign-in is refused on every "
+                    "product that checks credentials. Create the user first, through the product as a person would, "
+                    "and sign in as that user."
+                )
+                break
+    return problems[:6]
+
+
 def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     """Whether a ledger entry is a run of the locked acceptance suite.
 
@@ -3131,6 +3188,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *tests_whose_success_status_the_contract_does_not_give(repo_root),
         *tests_that_assert_a_kept_file_s_text(repo_root, result),
         *tests_that_restart_on_data_they_never_wrote(repo_root),
+        *tests_that_sign_in_as_nobody(repo_root),
         *tests_that_never_open_the_page(repo_root),
         *tests_that_access_storage_before_opening_the_page(repo_root),
         *tests_that_expect_what_they_never_gave(repo_root),

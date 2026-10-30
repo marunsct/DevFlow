@@ -28,6 +28,7 @@ CHECKS = (
     "tests_that_restart_on_data_they_never_wrote", "tests_that_filter_for_what_they_never_made",
     "tests_with_module_system_mismatch", "tests_with_unawaited_async_helpers", "tests_that_assert_an_unstated_order",
     "tests_that_expect_what_they_never_gave", "tests_that_never_open_the_page", "locators_that_do_not_exist",
+    "tests_that_sign_in_as_nobody",
 )
 
 

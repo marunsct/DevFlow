@@ -101,6 +101,8 @@ exclude_lines = [
 [tool.pytest.ini_options]
 addopts = "--cov=src/app --cov-fail-under=80 --cov-report=term-missing --cov-report=xml"
 testpaths = ["tests"]
+# The stored locked suites are data replayed by a test, not tests to run: two are Python suites that need a running service.
+norecursedirs = ["tests/fixtures/locked_suites"]
 asyncio_mode = "auto"
 
 [dependency-groups]

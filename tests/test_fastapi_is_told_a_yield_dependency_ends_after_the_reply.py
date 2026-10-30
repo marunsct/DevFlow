@@ -33,3 +33,11 @@ def test_a_missing_header_is_answered_401_not_422():
 
 def test_the_rule_names_no_product_words():
     assert not BANNED.search(SEED_INSTRUCTIONS["fastapi"])
+
+
+def test_pydantic_version_two_is_named_with_the_version_one_forms_that_fail_silently():
+    """Measured on a held-out run: a request model defined Pydantic 1's `__get_validators__` on Pydantic 2, so its
+    validators never ran; 25 unit tests got no `ValidationError` and every request answered 422."""
+    text = SEED_INSTRUCTIONS["fastapi"]
+    assert "Pydantic is version 2" in text and "@field_validator" in text
+    assert "`__get_validators__`" in text and "`@validator`" in text and "`.dict()`" in text

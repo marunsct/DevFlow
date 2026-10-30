@@ -111,7 +111,11 @@ SEED_INSTRUCTIONS: dict[str, str] = {
         "  returns, or declare the dependency `Depends(get_db, scope=\"function\")` so it ends before the response.\n"
         "  `TestClient` waits for the teardown, so unit tests pass while the running service fails.\n"
         "- A header the route checks itself is declared optional (`Header(None)`); a required `Header()` answers a\n"
-        "  request without it 422, not the 401 a missing credential calls for."
+        "  request without it 422, not the 401 a missing credential calls for.\n"
+        "- Pydantic is version 2: constrain with `Field(min_length=..., max_length=...)` and check with\n"
+        "  `@field_validator` / `@model_validator`. Version 1's `__get_validators__`, `@validator`, `class Config` and\n"
+        "  `.dict()` are ignored or deprecated, so a model written with them accepts what it should refuse (and the\n"
+        "  unit tests that expect `ValidationError` get none)."
     ),
     "java": (
         "You are working in a Java environment.\n"

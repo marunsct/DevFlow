@@ -2573,7 +2573,8 @@ def reads_of_what_the_test_does_not_have(repo_root: str | Path) -> list[str]:
              "never has it and compares with its own fallback. The address, port included, is the test's `baseURL` "
              "argument."),
         ):
-            lines = sorted({text.count("\n", 0, m.start()) + 1 for m in pattern.finditer(text)})
+            lines = sorted({text.count("\n", 0, m.start()) + 1 for m in pattern.finditer(text)
+                            if not _within_a_comment(text, m.start())})
             if lines:
                 corrected = (_the_lines_corrected(text, lines, lambda line: _THE_FIXTURE_S_BASEURL.sub("baseURL", line))
                              if pattern is _THE_FIXTURE_S_BASEURL else "")
@@ -2584,7 +2585,8 @@ def reads_of_what_the_test_does_not_have(repo_root: str | Path) -> list[str]:
         variable = str(getattr((contract.the_pack(repo_root) or (None,))[0], "data_dir_env", "") or "")
         if variable:
             reads = re.compile(rf"\bprocess\s*\.\s*env\s*(?:\.\s*{re.escape(variable)}\b|\[\s*['\"]{re.escape(variable)}['\"]\s*\])")
-            lines = sorted({text.count("\n", 0, m.start()) + 1 for m in reads.finditer(text)})
+            lines = sorted({text.count("\n", 0, m.start()) + 1 for m in reads.finditer(text)
+                            if not _within_a_comment(text, m.start())})
             if lines:
                 problems.append(
                     f"`{shown}` line(s) {', '.join(map(str, lines[:8]))}: the test reads `process.env.{variable}`. The "

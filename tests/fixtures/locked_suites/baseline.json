@@ -39,11 +39,7 @@
  },
  "suite-12": {},
  "suite-13": {},
- "suite-14": {
-  "reads_of_what_the_test_does_not_have": [
-   "`notes/acceptance/ac15-port.spec.js` line(s) 5: the test reads `process.env.PORT` in the test. The suite gives `PORT` only to the server it starts, so the test never has it and compares with its own f"
-  ]
- },
+ "suite-14": {},
  "suite-15": {},
  "suite-16": {
   "reads_of_what_the_test_does_not_have": [

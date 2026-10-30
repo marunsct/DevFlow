@@ -50,12 +50,19 @@ def enabled() -> bool:
 
 
 @contextmanager
-def watching(run_id: str | None, stage: str, check: Callable[[], bool | None]) -> Iterator[None]:
-    """While inside, a write in `stage` of `run_id` runs `check`. Nothing when off."""
+def watching(
+    run_id: str | None, stage: str, check: Callable[[], bool | None], *,
+    says: tuple[str, str] | None = None, most: int | None = None,
+) -> Iterator[None]:
+    """While inside, a write in `stage` of `run_id` runs `check`. Nothing when off.
+
+    `says` is the line appended when the check passes and when it does not, for a check that is not the defect's
+    tests (a deliberate change the new tests must notice); `most` is the checks the stage gets, for one that costs more.
+    """
     key = (str(run_id or ""), stage)
     if enabled():
         with _lock:
-            _watched[key] = [check, 0]
+            _watched[key] = [check, 0, says or (PASSED, FAILING), MOST_CHECKS if most is None else most]
     try:
         yield
     finally:
@@ -63,13 +70,13 @@ def watching(run_id: str | None, stage: str, check: Callable[[], bool | None]) -
             _watched.pop(key, None)
 
 
-def _the_check(run_id: str | None, stage: str) -> Callable[[], bool | None] | None:
+def _the_check(run_id: str | None, stage: str) -> tuple[Callable[[], bool | None], tuple[str, str]] | None:
     with _lock:
         entry = _watched.get((str(run_id or ""), stage))
-        if entry is None or entry[1] >= MOST_CHECKS:
+        if entry is None or entry[1] >= entry[3]:
             return None
         entry[1] += 1
-        return entry[0]
+        return entry[0], entry[2]
 
 
 def after_a_write(tool: str, result: Any, run_id: str | None, stage: str) -> Any:
@@ -80,9 +87,10 @@ def after_a_write(tool: str, result: Any, run_id: str | None, stage: str) -> Any
     # error in the content; nothing changed, so nothing is worth measuring.
     if _A_WRITE_THAT_DID_NOT_HAPPEN.match(result.content):
         return result
-    check = _the_check(run_id, stage)
-    if check is None:
+    found = _the_check(run_id, stage)
+    if found is None:
         return result
+    check, says = found
     try:
         outcome = check()
     except Exception:  # noqa: BLE001 - the write stands as it was
@@ -90,7 +98,7 @@ def after_a_write(tool: str, result: Any, run_id: str | None, stage: str) -> Any
         return result
     if outcome is None:
         return result
-    result.content = result.content.rstrip() + "\n" + (PASSED if outcome else FAILING)
+    result.content = result.content.rstrip() + "\n" + (says[0] if outcome else says[1])
     return result
 
 

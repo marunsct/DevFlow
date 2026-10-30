@@ -84,7 +84,10 @@ BUNDLES: dict[str, tuple[str, ...]] = {
 
 #: Features being measured, each its own switch (owner, 2026-10-29): bundled, they could not be measured apart. Off
 #: until a measurement says on; on as a measured arm once one has, watched until it moves to a bundle or the base.
-EXPERIMENTS = ("OBSERVATION_FOLDING", "BATCH_ACCEPTANCE_AUTHOR", "TARGETED_SUITE_REPAIR", "STRUCTURED_DISPUTE_VERDICT")
+EXPERIMENTS = (
+    "OBSERVATION_FOLDING", "BATCH_ACCEPTANCE_AUTHOR", "TARGETED_SUITE_REPAIR", "STRUCTURED_DISPUTE_VERDICT",
+    "TESTS_ONLY_WRITES", "MUTANT_CHECK_IN_THE_FIX_STAGE", "MUTATION_TEST_RETENTION", "EQUIVALENT_MUTANTS_REMEMBERED",
+)
 #: The experiments deployed on, each with the measurement that turned it on.
 EXPERIMENTS_ON = {
     # 54 re-locks over 60 runs: 35 touched only the one or two tests sent for repair, so the full review after them

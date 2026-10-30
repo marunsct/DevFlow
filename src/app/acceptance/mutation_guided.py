@@ -159,6 +159,7 @@ def probe(
         files = _the_files_to_change(root, project, set(found[0].kept_files), changed)
         if not files:
             return []
+        from app.acceptance import mutation_equivalents
         run_unit = run_unit or (lambda: _run_the_unit_tests(root))
         run_suite = run_suite if run_suite is not None else _the_locked_suite(root)
         before = _passing(run_unit())
@@ -168,7 +169,10 @@ def probe(
             logger.info("Mutation-guided tests: no unit test passes now; nothing probed")
             return []
         held = run_suite() if run_suite is not None else set()
-        chosen = mutation.spread(mutation.sites(files, project), count or changes_per_sprint())
+        # Without the changes already judged equivalent, so the few a sprint tries are changes worth asking about
+        # (`EQUIVALENT_MUTANTS_REMEMBERED`).
+        candidates = mutation_equivalents.without_the_known(root, project, mutation.sites(files, project))
+        chosen = mutation.spread(candidates, count or changes_per_sprint())
     except Exception:  # noqa: BLE001 - a probe that cannot run finds nothing
         logger.debug("Could not probe what the tests notice", exc_info=True)
         return []
@@ -348,10 +352,15 @@ def settled(
 
 def equivalent_because(fix_result: Any) -> str:
     """The fixer's reason the change behaves the same as the original; "" when it gave none."""
+    from app.acceptance import mutation_equivalents
+
+    # The usual spellings of the verdict, not only the one prefix the request names (`EQUIVALENT_MUTANTS_REMEMBERED`).
+    normalised = mutation_equivalents.enabled()
     for said in [*(getattr(fix_result, "decisions", None) or []), *(getattr(fix_result, "blockers", None) or [])]:
         found = _SAYS_EQUIVALENT.match(str(said or ""))
-        if found and len(found["why"].split()) >= _A_REASON:
-            return " ".join(found["why"].split())[:400]
+        why = found["why"] if found else (mutation_equivalents.says_equivalent(said) if normalised else "")
+        if why and len(why.split()) >= _A_REASON:
+            return " ".join(why.split())[:400]
     return ""
 
 

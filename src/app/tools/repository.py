@@ -7155,6 +7155,24 @@ def _a_stage_is_running() -> bool:
         return False
 
 
+#: The rounds of one QA author: `acceptance_author_0`, `_1`, `_2`, ... write one suite between them.
+_ROUNDS_OF_ONE_AUTHOR = re.compile(r"^(acceptance_author)_\d+$")
+
+
+def _the_same_author(created_by: str, running: str) -> bool:
+    """Whether two stage names are one stage, or two rounds of the one QA author writing one suite.
+
+    Measured on a held-out run: QA left two probe specs in its first round, and in the next rounds - stages of the
+    same name but for the round number - was told they were "a test that acceptance_author_1 wrote" and refused
+    every delete and move. The suite was locked with them, then reopened for one of them, and QA spent thirty
+    calls trying to edit or delete a scratch file it had written itself.
+    """
+    if created_by == running:
+        return True
+    first, second = _ROUNDS_OF_ONE_AUTHOR.match(created_by or ""), _ROUNDS_OF_ONE_AUTHOR.match(running or "")
+    return bool(first and second and first.group(1) == second.group(1))
+
+
 def _this_stage_created(root: Path, shown: str) -> bool:
     """Whether the stage running now created this file, so may delete it outright.
 
@@ -7174,7 +7192,7 @@ def _this_stage_created(root: Path, shown: str) -> bool:
         running = _stage_from_config("")
     except Exception:  # noqa: BLE001 - unknown is not this stage
         return False
-    return bool(created_by and running and created_by == running)
+    return bool(created_by and running and _the_same_author(created_by, running))
 
 
 def _another_stage_s_test(root: Path, shown: str) -> str:
@@ -7214,7 +7232,7 @@ def _another_stage_s_test(root: Path, shown: str) -> str:
             return ""
     except Exception:  # noqa: BLE001 - a guard that cannot decide lets the call through
         return ""
-    if not created_by or not running or created_by == running:
+    if not created_by or not running or _the_same_author(created_by, running):
         return ""
     return created_by
 

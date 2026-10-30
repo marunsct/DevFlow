@@ -86,6 +86,9 @@ export function createApp(): Hono {
 #: Promise, every request answered 500, and no fix, guide or note brought the model to undo it in four sprint
 #: attempts (hidden 0/9). The pack's own start file awaits the factory, which serves either form. Two later runs
 #: wrote it as the default export; the start file takes `createApp` or the default, whichever the module has.
+#: Measured on a held-out run: the design had `createApp(dataDir: string)`, the start file called it with nothing,
+#: and the service crashed at start (`path.join(undefined, ...)`), so the locked suite ran no test. The start file
+#: also hands the data directory over, which a factory that takes none ignores.
 MAIN = """import { serve } from '@hono/node-server';
 import type { Hono } from 'hono';
 import * as entry from './app.ts';
@@ -93,10 +96,10 @@ import * as entry from './app.ts';
 const port = Number(process.env.PORT || 3000);
 const hostname = process.env.HOST || '127.0.0.1';
 // The named `createApp`, or the module's default export, awaited: a factory written either way, or returning a
-// Promise, is served all the same.
+// Promise, is served all the same. It is handed `DATA_DIR`, which a factory that takes no argument ignores.
 const exported = entry as unknown as Record<string, unknown>;
-const factory = (exported.createApp ?? exported.default) as () => Hono | Promise<Hono>;
-const app = await factory();
+const factory = (exported.createApp ?? exported.default) as (dataDir?: string) => Hono | Promise<Hono>;
+const app = await factory(process.env.DATA_DIR);
 
 serve({ fetch: app.fetch, port, hostname }, () => {
   console.log(`Listening on http://${hostname}:${port}`);

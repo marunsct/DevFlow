@@ -33,7 +33,7 @@ def test_every_service_pack_guide_reaches_the_builders_whole():
 def test_the_native_pack_s_start_file_serves_a_factory_that_returns_a_promise():
     pack = pack_named("node-hono-native-api")
     main = pack.files["src/main.ts"]
-    assert "const app = await factory();" in main and "fetch: app.fetch" in main
+    assert "const app = await factory(process.env.DATA_DIR);" in main and "fetch: app.fetch" in main
     assert "createApp().fetch" not in main
     assert "await (await createApp()).request('/health')" in pack.smoke_files["test/scaffold-smoke.test.ts"]
 

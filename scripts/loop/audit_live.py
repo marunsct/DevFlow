@@ -119,6 +119,13 @@ if resumes:
 print(f"redundant reads: {redundant} of {reads} reads "
       f"({100 * redundant / max(1, reads):.0f}%)   [healthy: 8-19%; before the digest: 20-49%]")
 print("stage order: " + " -> ".join(order[-14:]))
+try:
+    from app.observability import cache_report
+
+    for cache_line in cache_report.lines(records)[:2]:
+        print(cache_line)
+except Exception:  # the cache lines are an addition; the audit does not depend on them
+    pass
 
 print("\nper stage (worst failure count first):")
 print(f"  {'stage':<26}{'calls':>6}{'failed':>8}{'rate':>7}")

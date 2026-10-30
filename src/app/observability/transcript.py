@@ -297,6 +297,8 @@ def _last_lines(content: str, limit: int) -> str:
 #: how many leading characters of that message it put there. The provider never
 #: sends it (only `name` is read from there), so the prompt is unchanged.
 MEMORY_CHARS = "project_memory_chars"
+#: How the note naming what changed since the memory was taken begins (`project_memory.changes_since`).
+MEMORY_UPDATE_NOTE = "[Project memory update]"
 
 #: A request's own section header, `--- Title ---`, and a memory file's, `=== path ===`.
 _A_SECTION = re.compile(r"^(?:-{3}|={3}) .+ (?:-{3}|={3})[^\n]*$", re.M)
@@ -388,6 +390,11 @@ def prompt_blocks(messages: list[dict[str, Any]], kwargs: dict[str, Any] | None 
         stripped = text.lstrip()
         if stripped.startswith("The workspace as it stands"):
             kind = "workspace"
+        elif stripped.startswith(MEMORY_UPDATE_NOTE):
+            # The note at the end of a call naming what a write changed since the memory was taken: the volatile
+            # tail, not the memory. Counted as the memory, it made the opening look changed after every write and
+            # `opening_changed` named breaks the prefix never had.
+            kind = "notes"
         elif stripped.startswith("[Project memory"):
             kind = "project_memory"
         elif not answered:

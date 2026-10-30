@@ -93,6 +93,8 @@ status)
   "${DB[@]}" "select status, left(coalesce(error,''),300), updated_at from runs where run_id='$run'"
   echo "live runs:"
   "${DB[@]}" "select run_id, status, updated_at from runs where status in ('running','queued','pending')"
+  # The prompt-cache share and where the prefix broke, so a stage that re-prefills its context shows at every check.
+  in_worker cache_status.py "$run" 2>/dev/null || true
   ;;
 
 start)

@@ -90,12 +90,14 @@ def reason(previous: dict[str, Any], current: dict[str, Any], cache_read: int | 
     return "stable"
 
 
-def breaks(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
-    """Counts of each reason and the uncached input tokens behind each, over a run's calls."""
+def classified(records: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+    """Each answered model call in order: its stage, why it missed the prefix, and its input tokens cached or not.
+
+    `cache_read` is None when the server reported none (no `input_token_details`): a server that does not say what
+    it cached has no share, which is not a share of 0%.
+    """
     asked: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
     last: dict[str, dict[str, Any]] = {}
-    counts: collections.Counter = collections.Counter()
-    uncached: collections.Counter = collections.Counter()
     for record in records:
         stage, kind = str(record.get("stage") or ""), record.get("kind")
         if kind == "model_request":
@@ -113,9 +115,19 @@ def breaks(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
             else:
                 why = reason(last[stage], request, read)
             last[stage] = request
-            counts[why] += 1
-            uncached[why] += max(0, _int(usage.get("input_tokens")) - int(read or 0))
+            taken = _int(usage.get("input_tokens"))
+            yield {"stage": stage, "why": why, "input_tokens": taken, "cache_read": read,
+                   "uncached": max(0, taken - int(read or 0))}
+
+
+def breaks(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """Counts of each reason and the uncached input tokens behind each, over a run's calls."""
+    counts: collections.Counter = collections.Counter()
+    uncached: collections.Counter = collections.Counter()
+    for call in classified(records):
+        counts[call["why"]] += 1
+        uncached[call["why"]] += call["uncached"]
     return {"calls_by_reason": dict(counts), "uncached_tokens_by_reason": dict(uncached)}
 
 
-__all__ = ["OPENING_BLOCKS", "REASONS", "breaks", "reason"]
+__all__ = ["OPENING_BLOCKS", "REASONS", "breaks", "classified", "reason"]

@@ -621,6 +621,8 @@ def effective_environment(
     if snapshot is None and base is None and not ignore_run:
         snapshot = _the_run_s_model()
     withheld: set[str] = set()
+    inherited = ""
+    keeps_the_default_key = False
     if snapshot:
         was_default = _endpoint_of(environment)
         was_judge = _normal(judgement_endpoint(environment))
@@ -638,15 +640,19 @@ def effective_environment(
             variable = _KEY_VARIABLE.get(_endpoint_of(environment)[0], "OPENAI_API_KEY")
             withheld.add(variable)
             environment.pop(variable, None)
-            # The judgement model, still where it was, had been using the default model's key; it keeps it.
-            if judging and not foreign_judge and inherited and not environment.get("JUDGEMENT_API_KEY"):
-                environment["JUDGEMENT_API_KEY"] = inherited
+            keeps_the_default_key = judging and not foreign_judge
         if foreign_judge:
             withheld.add("JUDGEMENT_API_KEY")
             environment.pop("JUDGEMENT_API_KEY", None)
+    held_by_secret = ""
     for key, value in secrets().items():
-        if value and SETTABLE_SECRETS[key] not in withheld:
+        if value and SETTABLE_SECRETS[key] in withheld:
+            held_by_secret = held_by_secret or (value if SETTABLE_SECRETS[key] != "JUDGEMENT_API_KEY" else "")
+        elif value:
             environment[SETTABLE_SECRETS[key]] = value
+    # The judgement model, still where it was, had been using the default model's key; it keeps it.
+    if keeps_the_default_key and not environment.get("JUDGEMENT_API_KEY") and (inherited or held_by_secret):
+        environment["JUDGEMENT_API_KEY"] = held_by_secret or inherited
     keys = endpoint_keys()
     if keys:
         provider = str(environment.get("LLM_PROVIDER") or "local").strip().lower()

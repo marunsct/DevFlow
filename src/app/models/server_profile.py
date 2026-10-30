@@ -107,7 +107,7 @@ _TRIED = False
 
 def record() -> ServerProfile | None:
     """Read the build model's server profile and keep it for this process. Never raises."""
-    global _RECORDED, _TRIED, _READ_AT
+    global _RECORDED, _TRIED, _READ_AT, _DESTINATION
     import time
 
     _TRIED = True
@@ -116,6 +116,7 @@ def record() -> ServerProfile | None:
         from app.models import _runtime_settings
 
         settings = _runtime_settings()
+        _DESTINATION = (settings.openai_base_url or "", settings.model_name or "")
         if (settings.llm_provider or "") in {"anthropic", "gemini"}:
             _RECORDED = None
             return None
@@ -155,6 +156,29 @@ def what_changed(before: ServerProfile, after: ServerProfile) -> list[str]:
     return changes
 
 
+#: (address, model) the profile in `_RECORDED` was read for; None before the first read.
+_DESTINATION: tuple[str, str] | None = None
+
+
+def _the_run_moved(run_id: str) -> bool:
+    """Whether the run now talks to a different (address, model) than the profile was read for. Never raises."""
+    global _DESTINATION
+    if not run_id or _RECORDED is None:
+        return False
+    try:
+        from app.models.model_pin import destination
+
+        found = destination("default", run_id)
+    except Exception:  # noqa: BLE001
+        return False
+    if found is None:
+        return False
+    here = (found.base_url, found.model)
+    moved = _DESTINATION is not None and here != _DESTINATION
+    _DESTINATION = here
+    return moved
+
+
 def check_again(run_id: str = "", *, clock: Any = None, reader: Any = None) -> str:
     """Ask the server about itself again during a run, at most every `HEALTH_CHECK_SECONDS`; never raises.
 
@@ -170,7 +194,10 @@ def check_again(run_id: str = "", *, clock: Any = None, reader: Any = None) -> s
     import time
 
     now = (clock or time.monotonic)()
-    if not _TRIED or _RECORDED is None or now - _LAST_CHECK < HEALTH_CHECK_SECONDS:
+    # A run moved to another model server (its model pin was toggled, or the settings changed under it) is not
+    # waited for: the facts recorded are the old server's, so it asks the new one now.
+    moved = _the_run_moved(run_id)
+    if not _TRIED or _RECORDED is None or (now - _LAST_CHECK < HEALTH_CHECK_SECONDS and not moved):
         return ""
     _LAST_CHECK = now
     try:
@@ -239,7 +266,8 @@ def asked() -> bool:
 
 
 def forget() -> None:
-    global _RECORDED, _TRIED, _LAST_CHECK, _UNREACHABLE, _READ_AT
+    global _RECORDED, _TRIED, _LAST_CHECK, _UNREACHABLE, _READ_AT, _DESTINATION
+    _DESTINATION = None
     _RECORDED = None
     _READ_AT = 0.0
     _TRIED = False

@@ -4551,9 +4551,11 @@ def _run_gated_agent(
         # instead of a loop: without it the resume path re-enters the very
         # conversation that failed, replays it, and fails identically - which is
         # exactly what happened on one run until this existed.
+        from app.graph.agent_loop_fix_limits import ends_for_good
+
         restarted = (
             None
-            if out_of_room
+            if out_of_room or ends_for_good(stage_name, result)
             else _restart_on_a_fresh_conversation(
                 state, stage_name, inner_thread_id, "produced no structured response",
                 _repository_root(state),
@@ -11095,7 +11097,10 @@ def build_workflow_graph(
             )
         return request, co_defects
 
-    def _fixed_by_rewriting(state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0) -> Any:
+    def _fixed_by_rewriting(
+        state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0,
+        after_a_surrender: bool = False,
+    ) -> Any:
         """A fast-delivery fix by rewriting the defect's files, or None for the agent loop.
 
         After a failed fix, and with a judgement model of its own, several
@@ -11122,6 +11127,10 @@ def build_workflow_graph(
                 return _the_harness_s_own_or_the_locked_suite(root, root / path) is None
 
         last_failure = _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY))
+        # The other open defects, whose failures that point at a file go into its rewrite (behind `CO_DEFECT_FAILURES_IN_REWRITES`).
+        from app.graph.co_defect_failures import open_besides
+
+        co_defects = open_besides(state.get("remediation"), defect)
         # Carried from the candidates path into the rewrite that follows it,
         # so a retry that already asked where the defect lives - same defect,
         # same failure - does not ask again. None when candidates were never
@@ -11131,7 +11140,7 @@ def build_workflow_graph(
         # A judgement model of its own, or with the fix cycle on the fix's own
         # model (plan AY step 2); None asks for no candidates.
         candidate_model = the_candidate_model(judgement_model, model, fix_model)
-        if failed_tries >= 1 and candidate_model is not None:
+        if failed_tries >= 1 and candidate_model is not None and not after_a_surrender:
             try:
                 from app.graph.localisation import localised
 
@@ -11144,7 +11153,7 @@ def build_workflow_graph(
                     defect, root, candidate_model, lambda: _the_defect_s_tests_pass(root, defect),
                     specification=state.get("technical_specification"),
                     stack=getattr(state.get("stack_selection"), "technology_stack", None),
-                    last_failure=last_failure, may_write=may_write, files=located,
+                    last_failure=last_failure, may_write=may_write, files=located, co_defects=co_defects,
                 )
                 if kept is not None:
                     return kept
@@ -11153,14 +11162,14 @@ def build_workflow_graph(
         # Candidates are in every delivery mode: they are kept only when the
         # defect's tests pass. A single rewrite in place of the agent loop is
         # fast delivery's.
-        if not _fast_delivery():
+        if not _fast_delivery() and not after_a_surrender:
             return None
         try:
             return fix_by_rewriting(
                 defect, root, fix_model or model or building_model,
                 specification=state.get("technical_specification"),
                 stack=getattr(state.get("stack_selection"), "technology_stack", None),
-                last_failure=last_failure, may_write=may_write, files=located,
+                last_failure=last_failure, may_write=may_write, files=located, co_defects=co_defects,
                 diagnose=lambda files: _diagnostics_in_files_touched(
                     state, {"messages": []}, SimpleNamespace(changed_files=files),
                 ),
@@ -11218,8 +11227,14 @@ def build_workflow_graph(
         # Fast delivery: the harness gathers what failed and the files it points
         # at, and the model rewrites each file in one call. See
         # `app.graph.rewritten_fixes`; a defect it cannot place goes to the agent loop.
-        rewritten = None if state.get("pending_inner_thread_id") else _fixed_by_rewriting(
-            state, config, defect, fix_model, failed_fix_tries(cycle, defect_index),
+        # A reverted fix whose own tests passed is measured a second time first (behind `KEPT_FIX_CANDIDATES`).
+        from app.graph import kept_fix_candidates
+
+        repo = Path(state["repository"].root_path)
+        rewritten = None if state.get("pending_inner_thread_id") else (
+            kept_fix_candidates.replayed(repo, defect, stage_name) or _fixed_by_rewriting(
+                state, config, defect, fix_model, failed_fix_tries(cycle, defect_index),
+            )
         )
         if rewritten is not None:
             update: dict[str, Any] = {}
@@ -11253,9 +11268,16 @@ def build_workflow_graph(
                 return update  # paused waiting for approval on this fix
 
             fix_result = update.pop("__fix_result__")
+            # An answer that changed no file goes to the harness's rewrite once (behind `SURRENDER_TO_REWRITE`).
+            from app.graph.surrender_to_rewrite import after_a_surrender
+
+            fix_result = after_a_surrender(fix_result, lambda: _fixed_by_rewriting(
+                state, config, defect, fix_model, failed_fix_tries(cycle, defect_index), after_a_surrender=True))
         broke = engineering.after_a_fix(
             state["repository"].root_path, fix_base, stage_name, defect.description,
             contested=_a_contested_test_past_repair(state, cycle),
+            on_revert=lambda lost: kept_fix_candidates.keep(
+                repo, fix_base, defect, stage_name, lambda: _the_defect_s_tests_pass(repo, defect), lost),
         )
         from app.observability import defect_ledger
 

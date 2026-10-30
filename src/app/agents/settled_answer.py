@@ -2263,6 +2263,12 @@ def build_settled_answer_middleware(
                         notice = _the_same_call_running_notice(*repeated) if repeated is not None else ""
                     if notice:
                         notices.append(notice)
+                    # What the model has already done, when it sends the same action again (behind `AGENT_LOOP_FIX_LIMITS`).
+                    from app.graph import agent_loop_fix_limits
+
+                    again = agent_loop_fix_limits.repeat_notice(messages, _the_graph_stage(stage_name))
+                    if again:
+                        notices.append(again)
                     if notices:
                         correction = "\n\n".join([correction, *notices] if correction else notices)
                 if not correction:

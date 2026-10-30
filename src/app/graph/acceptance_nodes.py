@@ -1561,8 +1561,27 @@ def _due_criteria_with_no_test(root: str, due: list[str]) -> list[str]:
 SPRINT_REPLAN = "sprint_replan"
 
 
+def _rewritten_in_one_call_each(state: Any, broken: list[str], model: Any) -> bool:
+    """Whether the named tests were rewritten in place, one gathered call each (plan item 10 part 2, `NAMED_TEST_REWRITE`)."""
+    from app.graph import rewritten_tests
+
+    if not rewritten_tests.enabled():
+        return False
+    try:
+        from app.acceptance.api_reference import api_reference
+
+        done = rewritten_tests.repair(
+            _root(state), broken, model, which_test=_which_test,
+            reference=api_reference(state.get("technical_specification")), reason=str(state.get("dispute_reason") or ""),
+        )
+    except Exception:  # noqa: BLE001 - QA's agent loop repairs, as before
+        logger.warning("Could not rewrite the named tests in place", exc_info=True)
+        return False
+    return done is not None
+
+
 def reopen_the_suite_for(
-    state: Any, broken: list[str], return_to: str = "test_and_triage", *, reclassifying: bool = False
+    state: Any, broken: list[str], return_to: str = "test_and_triage", *, reclassifying: bool = False, model: Any = None
 ) -> dict[str, Any] | None:
     """Send tests that can never pass back to QA, then back to `return_to`; None when spent.
 
@@ -1600,13 +1619,16 @@ def reopen_the_suite_for(
         if reclassifying
         else {}
     )
+    # Rewritten where they stand, then straight to the review: QA's author loop is for what cannot be placed.
+    rewritten = _rewritten_in_one_call_each(state, broken, model)
     return _handing_on(
         **update,
         **reclassified,
-        stage="acceptance_author",
+        stage="acceptance_review" if rewritten else "acceptance_author",
         acceptance_return_to=return_to,
-        acceptance_round=0,
-        acceptance_feedback=[*broken, REPAIR_RULE],
+        acceptance_round=1 if rewritten else 0,
+        acceptance_feedback=[] if rewritten else [*broken, REPAIR_RULE],
+        **({"revision_comments": []} if rewritten else {}),
         suite_repairs=repairs + 1,
         suite_repaired_tests=sorted({*(state.get("suite_repaired_tests") or []), *map(_which_test, broken)}),
     )

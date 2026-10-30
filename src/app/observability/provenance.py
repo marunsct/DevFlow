@@ -70,6 +70,7 @@ SWITCHES: dict[str, str] = {
     "TARGETED_SUITE_REPAIR": "app.acceptance.suite:targeted_repair_switch",
     "STRUCTURED_DISPUTE_VERDICT": "app.agents.suite_dispute:structured_verdict_switch",
     "STABLE_STAGE_PREFIX": "app.agents.stable_prefix:stable_stage_prefix_switch",
+    "NAMED_TEST_REWRITE": "app.graph.rewritten_tests:named_test_rewrite_switch",
     "CONTRACT_SERVER_ERRORS_AT_A_ROUND": "app.acceptance.interface_contract:server_errors_at_a_round_switch",
     "LAST_TRY_ON_DEFERRED": "app.graph.last_try_on_deferred",
     "START_PROBE": "app.acceptance.start_probe",

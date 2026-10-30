@@ -10478,7 +10478,7 @@ def build_workflow_graph(
             acceptance_text, cannot_pass = acceptance_nodes.acceptance_for_round(state)
             # A locked test that cannot pass whatever is built is not a
             # product defect: no fix can close it. Repaired by QA first.
-            reopened = acceptance_nodes.reopen_the_suite_for(state, cannot_pass)
+            reopened = acceptance_nodes.reopen_the_suite_for(state, cannot_pass, model=judgement_model)
             if reopened is not None:
                 return reopened
             # And once the suite may not be repaired again, the round is told,
@@ -11688,7 +11688,7 @@ def build_workflow_graph(
         if to_repair:
             logger.warning("The QA lead / harness identifies %d locked test(s)/missing criteria cannot pass; reopening the suite", len(to_repair))
             reopened = reopen_the_suite_for(
-                state, to_repair, return_to=returns_to or SPRINT_REPLAN, reclassifying=True,
+                state, to_repair, return_to=returns_to or SPRINT_REPLAN, reclassifying=True, model=judgement_model,
             )
             if reopened is not None:
                 return _handing_on(**{**update, **reopened, "disputed_sprints": disputed, "dispute_returns_to": None, "dispute_reason": None})

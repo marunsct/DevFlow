@@ -293,18 +293,12 @@ def test_a_pin_that_cannot_be_read_leaves_the_request_where_it_was_built(two_ser
 def test_a_destination_of_another_kind_is_not_rewritten(two_servers, monkeypatch):
     """A hosted API is never the target of a client built for a self-hosted server: the request stays where it was."""
     a, b, store = two_servers
-    store.pinned = True
-    store.last = {"LLM_PROVIDER": "local", "OPENAI_BASE_URL": "https://api.example.com/v1", "OPENAI_MODEL": "hosted"}
     with model_pin.as_the_run(RUN):
         client = _chat()
-    # built for the pinned hosted address; now the settings-built client for A is asked under that pin
-    assert client is not None
-    store.pinned = False
-    with model_pin.as_the_run(RUN):
-        a_client = _chat()
-        store.pinned, store.last = True, dict(store.last)
-        assert a_client.invoke("hi").content == "from model-a"
-    assert b.seen == []
+        store.pinned = True
+        store.last = {"LLM_PROVIDER": "local", "OPENAI_BASE_URL": "https://api.example.com/v1", "OPENAI_MODEL": "hosted"}
+        assert client.invoke("hi").content == "from model-a"
+    assert [s["model"] for s in a.seen] == ["model-a"] and b.seen == []
 
 
 def test_the_transport_returns_the_identical_request_when_nothing_differs():

@@ -266,6 +266,8 @@ class _Target:
     destination: Destination
     address_changes: bool
     model_changes: bool
+    #: The run is pinned: its requests carry the destination's own credential even where the address is the same.
+    pinned: bool = False
 
 
 class _Rerouter:
@@ -282,7 +284,8 @@ class _Rerouter:
         run = current_run_id()
         if not run:
             return None
-        note_ran_on(run, run_state(run))
+        state = note_ran_on(run, run_state(run))
+        pinned = bool(state is not None and state.pinned)
         dest = destination(self.role, run)
         if dest is None or not dest.base_url:
             return None
@@ -293,7 +296,9 @@ class _Rerouter:
         address_changes = _normal(dest.base_url) != _normal(self.built_base)
         model_changes = (not self.address_only) and bool(dest.model) and dest.model != self.built_model
         if not address_changes and not model_changes:
-            return None
+            # A pinned run's client was built for its model, but with whatever key stood in for it (a local server
+            # takes a placeholder): the request carries the destination's own key or none (`rewritten`).
+            return _Target(dest, False, False, True) if pinned else None
         if address_changes:
             from app.models.endpoints import is_self_hosted
 
@@ -301,7 +306,7 @@ class _Rerouter:
                 _warn_once(run, "kind", "This run's model is a hosted API where its client was built for a "
                            "self-hosted server (or the reverse); its requests go where they were built for")
                 return None
-        return _Target(dest, address_changes, model_changes)
+        return _Target(dest, address_changes, model_changes, pinned)
 
     def served_by(self) -> tuple[str, str]:
         """(address, model) this call's requests go to: what the client was built for unless rerouted."""
@@ -341,10 +346,15 @@ class _Rerouter:
             headers.pop("host", None)
             for name, value in naming.items():
                 headers[name] = value
+        if target.address_changes or target.pinned:
             # The destination's own credential, or none: one server's key never goes to another.
-            headers.pop("authorization", None)
-            if target.destination.key:
-                headers["Authorization"] = f"Bearer {target.destination.key}"
+            wanted = f"Bearer {target.destination.key}" if target.destination.key else None
+            if headers.get("authorization") != wanted:
+                headers.pop("authorization", None)
+                if wanted:
+                    headers["Authorization"] = wanted
+            elif not target.address_changes and not target.model_changes:
+                return None
         if target.model_changes:
             try:
                 payload = json.loads(body)

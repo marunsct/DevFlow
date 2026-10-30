@@ -9,7 +9,7 @@ week are in `docs/archive/`.
 | | |
 |---|---|
 | Run | **run-d2e68f5b** (**notes-api-hono**, Fast; bundles on; measured arms on; harness e5b73df, with LF.448 and LF.449) started 11:50 JST 2026-10-30 |
-| Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner, 17:10 JST 2026-10-28) at :8888, 2 slots, context 184,320; owner's sampling: Qwen 'thinking, precise coding' (temp 0.6, top_p 0.95, top_k 20, min_p 0, repeat 1.0, presence 0). This server **reports cached tokens** (`cached_token_share` is real from here; LM Studio's gpt-oss did not). Diagnosed 17:24 JST: tools 3/3 everywhere, edits 100/100, structured answers forced, reasoning switch honoured, salvage supported; deep: no loop (no reply ceiling), weak at heeding a refusal (0/3) and answering as a call when offered (1/3); kept guide: stop when the checks pass. gpt-oss-20b keeps its 12k ceiling in its own record. |
+| Model | **qwen3.8-flash-next-coder-iq1_m** (owner; a 1-bit quant) at :9090 (Strata, via `reached_from_here`), context 131,072; seen in use from run-d2e68f5b (30 Oct 2026, 11:50 JST); the owner changed it from Qwen3.6-35B-A3B at :8888 (in use 28-29 Oct), so runs from d2e68f5b compare with the Qwen3.6 runs above only with that caveat. `loop.sh ready` prints its diagnosis (qwen3 family, hermes tool parser, edits 100%). |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
 ## Last runs

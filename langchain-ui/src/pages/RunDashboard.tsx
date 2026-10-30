@@ -16,6 +16,7 @@ import {
   submitApproval,
   cancelRun,
   pauseRun,
+  setModelPin,
   resumeRun,
   getRewindPoints,
   rewindRun,
@@ -411,6 +412,17 @@ export const RunDashboard: React.FC = () => {
     }
   };
 
+  /** Keep this run on its model, or let it follow the model settings; takes effect on the next request. */
+  const handleModelPin = async (pinned: boolean) => {
+    if (!runId) return;
+    try {
+      await setModelPin(runId, pinned);
+      await fetchState();
+    } catch (err: any) {
+      notify("Failed to change the model setting: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
   const handleResume = async () => {
     if (!runId) return;
     try {
@@ -597,6 +609,33 @@ export const RunDashboard: React.FC = () => {
               title="Stop at the next step and keep the run to resume later">
               <Pause className="h-3.5 w-3.5" /> Pause
             </button>
+          )}
+          {!isTerminal && run.status !== 'created' && (
+            <label
+              className={`${actionButton} cursor-pointer select-none ${
+                run.model_pinned
+                  ? 'text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5'
+                  : 'text-text-secondary border-border hover:border-border-strong hover:bg-overlay'
+              }`}
+              title={
+                run.model_pinned
+                  ? 'This run stays on the model it last ran on, whatever the model settings become. Turn off to follow the current settings from the next request.'
+                  : 'This run follows the current model settings. Turn on to keep it on the model it last ran on.'
+              }>
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label="Keep this run on its model"
+                checked={!!run.model_pinned}
+                onChange={(e) => handleModelPin(e.target.checked)}
+              />
+              Keep this run on its model
+              {run.model_last?.model && (
+                <span className="text-text-muted">
+                  ({run.model_last.model}{run.model_last.endpoint ? ` @ ${run.model_last.endpoint}` : ''})
+                </span>
+              )}
+            </label>
           )}
           {RESUMABLE.includes(run.status) && !run.error?.startsWith('Interrupted:') && (
             <button onClick={handleResume}

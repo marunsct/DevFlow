@@ -231,6 +231,21 @@ export const pauseRun = async (runId: string): Promise<{ message: string }> => {
   return response.data;
 };
 
+/**
+ * Keep a run on the model it last ran on (`pinned: true`), or let it follow the current model settings again.
+ * Works mid-run: a request already sent finishes where it was sent, every new one goes to the run's model.
+ * `base_url` and `model` (when pinning) pin it to that endpoint instead, without touching the settings; neither
+ * carries a credential.
+ */
+export const setModelPin = async (
+  runId: string,
+  pinned: boolean,
+  target?: { base_url?: string; model?: string },
+): Promise<{ model_pinned: boolean; model_last: { model: string; endpoint: string } | null }> => {
+  const response = await api.post(`/runs/${runId}/model-pin`, { pinned, ...(pinned ? target : {}) });
+  return response.data;
+};
+
 /** A point in a run's history: the moment before one of its stages started. */
 export interface RewindPoint {
   checkpoint_id: string;

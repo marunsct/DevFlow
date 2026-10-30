@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | **run-c82c85d9** (**tasks-api, held-out, sixth run**; Qwen3.6; bundles on; measured arms on; Phase 2 experiments OFF; mixed_versions: 48c9250 -> 14129b8 (resumed 23:35 JST, LF.472)) started 22:30 JST 2026-10-30 |
+| Run | **two Qwen runs at once (owner 23:40 JST 10-30; Qwen has 2 slots, one idle per run)**: **run-c82c85d9** (tasks-api, sixth; mixed_versions 48c9250 -> 14129b8, LF.472) started 22:30 and **run-21519414** (notes-api-hono, Fast) started 23:40 on 14129b8; same configuration (Phase 2 experiments OFF), so they are two samples; the loop pointer `current_run.txt` holds the newer, so pass run ids to `loop.sh status/audit/defects/score`. Per-run switch overrides (A/B at the same time) being built in a worktree. |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

@@ -560,6 +560,8 @@ def build_plugin_instructions_middleware(repo_root: str, role: str = "") -> Any:
     """Append the stack's framework instructions to every call's system prompt."""
     from langchain.agents.middleware import AgentMiddleware
 
+    held: dict[str, Any] = {}
+
     class PluginInstructionsMiddleware(AgentMiddleware):
         """Append framework-specific plugin instructions to the system prompt."""
 
@@ -611,6 +613,13 @@ def build_plugin_instructions_middleware(repo_root: str, role: str = "") -> Any:
                 again = ""
             if again:
                 tail = f"{tail}\n\n{again}".strip()
+            # The system prompt as this stage's first call read it; a later call's additions go to the tail
+            # (`STABLE_STAGE_PREFIX`, off until measured).
+            from app.agents.stable_prefix import held_instructions
+
+            instructions, later = held_instructions(instructions, held)
+            if later:
+                tail = f"{later}\n\n{tail}".strip()
             if not instructions and not tail:
                 return handler(request)
 

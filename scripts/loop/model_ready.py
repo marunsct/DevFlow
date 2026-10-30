@@ -12,8 +12,15 @@ settings without saying so, and a run on a model that is not served stalls
 with nothing in the log.
 """
 import json
+import sys
 import urllib.error
 import urllib.request
+
+#: `loop.sh ready deep`: also send a request of about 13,000 tokens. Measured after the owner reloaded a model: the
+#: small request below answered while every real call (tens of thousands of tokens) returned HTTP 500/502, so the
+#: check said ALL READY and two runs failed at their first stage. Not the default: it queues behind a live run.
+DEEP = "deep" in sys.argv[1:]
+DEEP_WORDS = 12000
 
 from app.config import load_settings
 from app.models import _runtime_settings
@@ -43,13 +50,15 @@ def check(label, s):
         return False, f"NOTREADY {head} ({type(error).__name__}: {str(error)[:80]})"
     if s.model_name in served:
         answered = answers(reached, naming, key, s.model_name)
+        if not answered and DEEP:
+            answered = answers(reached, naming, key, s.model_name, words=DEEP_WORDS)
         if answered:
             return False, f"NOTREADY {head} (listed, but it does not answer a request: {answered})"
         return True, f"READY {head} ({len(served)} models listed){server_facts(reached, naming, key)}"
     return False, f"NOTREADY {head} (served there: {served[:20]})"
 
 
-def answers(reached, naming, key, model_name):
+def answers(reached, naming, key, model_name, words=0):
     """"" when the model answers one small request; else what the server said instead.
 
     Listed is not served: a server that lists every model it has on disk
@@ -57,7 +66,9 @@ def answers(reached, naming, key, model_name):
     started, and it failed at its first stage while the new model's automatic
     diagnosis kept the refusals as the model's own.
     """
-    body = json.dumps({"model": model_name, "messages": [{"role": "user", "content": "Reply with: ready"}],
+    text = ("Reply with: ready" if not words
+            else ("The quick brown fox jumps over the lazy dog. " * (words // 9 + 1))[: words * 6] + "\nReply with: ready")
+    body = json.dumps({"model": model_name, "messages": [{"role": "user", "content": text}],
                        "max_tokens": 16, "stream": False}).encode()
     request = urllib.request.Request(
         reached + "/chat/completions", data=body, method="POST",

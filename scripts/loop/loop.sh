@@ -360,7 +360,7 @@ checks)
   case " $* " in *" --write "*) (cd "$ROOT" && docker compose cp data/bench worker:/app/data/ >/dev/null) ;; esac
   in_worker check_precision.py "$@"
   ;;
-ready)  in_worker model_ready.py ;;
+ready)  shift; in_worker model_ready.py "$@" ;;
 fitness) shift; in_worker model_fitness.py "$@" ;;
 reasoning-probe) shift; in_worker reasoning_probe.py "${@:-plan}" ;;
 diagnose) shift; in_worker model_diagnose.py "$@" ;;

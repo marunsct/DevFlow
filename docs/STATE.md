@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | **none; held** - run-b1a03b0f (18:25) and run-7712a9a8 (18:27 JST 10-30) both failed at the first stage on HTTP 502 from the Qwen3.6 server at :8888; probe 18:40: a 245-token request answers, a ~4,500-token one gets HTTP 500, so the backend fails on longer prompts after the owner's reload. `loop.sh ready` passes (its probe is tiny). Start nothing until a ~5k-token request answers. |
+| Run | **run-817b3ce3** (**tasks-api, held-out, fifth run**, Qwen3.6 reloaded by the owner; bundles on; measured arms on; harness 5650e12 with LF.448-453) started 18:43 JST 2026-10-30. Earlier starts run-b1a03b0f and run-7712a9a8 failed on HTTP 500/502 while the server could not take long prompts; fixed by the owner 18:43; `loop.sh ready deep` (LF.454) now checks a ~13k-token request. |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from langchain_core.runnables import RunnableConfig
 
@@ -808,11 +808,15 @@ def what_the_fix_did_to_the_install(root: str, base: str) -> str:
         return ""
 
 
-def after_a_fix(root: str, base: str, stage_name: str, description: str, contested: str = "") -> list[str]:
+def after_a_fix(
+    root: str, base: str, stage_name: str, description: str, contested: str = "",
+    on_revert: Callable[[list[str]], Any] | None = None,
+) -> list[str]:
     """Measure the fix. A fix that broke what passed before it is reverted; returns what it broke.
 
     `contested`: a passing locked test past judging (`workflow._a_contested_test_past_repair`); a fix whose only
-    casualty is that test, and that made others pass, is kept.
+    casualty is that test, and that made others pass, is kept. `on_revert` is called with what the fix broke while
+    the fix is still in the workspace, just before it is reverted (`kept_fix_candidates.keep`); its failure reverts nothing differently.
     """
     if not base or not ci_applies(root):
         return []
@@ -873,6 +877,11 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str, contest
         logger.warning("Kept %s: it made %d test(s) pass and broke only the contested %s", stage_name,
                        len(gained_now), contested)
         broken = []
+    if broken and on_revert is not None:
+        try:
+            on_revert(broken)
+        except Exception:  # noqa: BLE001 - the fix is reverted as before
+            logger.warning("Could not look at %s before it was reverted", stage_name, exc_info=True)
     if broken and ci.revert_to(root, base):
         # What the reverted fix had gained as well, so whether a whole fix
         # should go for one broken test can be measured: the snapshot after a

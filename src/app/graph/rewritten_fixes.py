@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from app.observability.direct_calls import config_for_this_run, mapped_in_this_context
 
@@ -306,8 +306,8 @@ def _the_files(
 
 
 def fix_request(root: Path, path: str, defect: Any, failure: str, specification: Any,
-                stack: Any, others: list[str], diagnostics: list[str]) -> str:
-    """What one file's rewrite is asked."""
+                stack: Any, others: list[str], diagnostics: list[str], co_failures: str = "") -> str:
+    """What one file's rewrite is asked. `co_failures`: the other open defects that point at this file (`co_defect_failures`)."""
     from app.agents.shared_facts import the_facts_section
     from app.agents.specialists import specification_for_the_work_order
     from app.graph.drafting import _neighbours, _stack_line
@@ -345,6 +345,7 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
         + (f"\nActual: {actual}" if actual else ""),
         earlier_attempts(defect).strip(),
         f"--- What failed ---\n{failure}" if failure.strip() else "",
+        co_failures,
         ("--- The compiler still reports, in the files just written ---\n" + "\n".join(diagnostics)) if diagnostics else "",
         ("--- Edits from the last pass that were not made, and why ---\n" + "\n".join(unapplied)) if unapplied else "",
         detail.strip(),
@@ -395,9 +396,11 @@ def fix_by_rewriting(
     last_failure: Any = None, may_write: Callable[[str], bool] | None = None,
     write: Callable[[str, str, str], Any] | None = None,
     diagnose: Callable[[list[str]], list[str]] | None = None,
-    files: list[str] | None = None,
+    files: list[str] | None = None, co_defects: Sequence[Any] = (),
 ) -> Any | None:
     """The fix stage's output for a defect fixed by rewriting its files, or None for the agent loop.
+
+    `co_defects`: the other open defects, whose failures that point at a file go into its rewrite (`co_defect_failures`).
 
     `files`, when given, is used as the files to rewrite and no localisation
     call is made: a retry that already asked `fix_by_candidates` where the
@@ -425,6 +428,9 @@ def fix_by_rewriting(
         files = localised(defect, failure, root, model, files, may_write or (lambda _: True))
     if not files:
         return None
+    from app.graph import co_defect_failures, repeated_rewrite_prompts
+
+    co_failures = co_defect_failures.failures_by_file(co_defects, root, may_write or (lambda _: True))
     changed: list[str] = []
     diagnostics: list[str] = []
     for _pass in range(MOST_PASSES):
@@ -445,10 +451,19 @@ def fix_by_rewriting(
                         return None
                     break
                 current = (root / path).read_text(encoding="utf-8", errors="replace")
+                asked = fix_request(root, path, defect, failure, specification, stack,
+                                    [f for f in files if f != path], diagnostics, co_failures.get(path, ""))
+                if repeated_rewrite_prompts.exhausted(root, asked):
+                    logger.info("Rewrite of %s not sent: the same request has failed %d times", path,
+                                repeated_rewrite_prompts.MOST_IDENTICAL)
+                    if not changed:
+                        return None
+                    continue
+                # Counted as failed when sent: a rewrite that holds closes its defect and is not asked again.
+                repeated_rewrite_prompts.failed(root, asked)
                 reply = active_model.invoke([
                     SystemMessage(content=_system_for(current)),
-                    HumanMessage(content=fix_request(root, path, defect, failure, specification, stack,
-                                                     [f for f in files if f != path], diagnostics)),
+                    HumanMessage(content=asked),
                 ], **config_for_this_run("defect_fix"))
                 try:
                     content = _the_reply_s_file(path, current, reply)
@@ -500,7 +515,7 @@ def fix_by_candidates(
     defect: Any, repo_root: str | Path, model: Any, check: Callable[[], bool | None], *,
     specification: Any = None, stack: Any = None, last_failure: Any = None,
     may_write: Callable[[str], bool] | None = None, write: Callable[[str, str, str], Any] | None = None,
-    candidates: int = CANDIDATES, files: list[str] | None = None,
+    candidates: int = CANDIDATES, files: list[str] | None = None, co_defects: Sequence[Any] = (),
 ) -> Any | None:
     """A defect fixed by several candidate rewrites asked for at once, the first its tests pass kept; or None.
 
@@ -547,6 +562,11 @@ def fix_by_candidates(
     if not files:
         return None
     originals = {path: (root / path).read_text(encoding="utf-8", errors="replace") for path in files}
+    from app.graph import co_defect_failures, repeated_rewrite_prompts
+
+    co_failures = co_defect_failures.failures_by_file(co_defects, root, may_write or (lambda _: True))
+    #: Every request sent, so each is counted once as failed when no candidate passes (`repeated_rewrite_prompts`).
+    sent: list[str] = []
 
     def one(path_and_index: tuple[str, int]) -> tuple[int, str, str]:
         path, index = path_and_index
@@ -561,10 +581,14 @@ def fix_by_candidates(
                     active_model = None
             if active_model is None or not hasattr(active_model, "invoke"):
                 return index, path, ""
+            asked = fix_request(root, path, defect, failure, specification, stack,
+                                [f for f in files if f != path], [], co_failures.get(path, ""))
+            if repeated_rewrite_prompts.exhausted(root, asked):
+                return index, path, ""
+            sent.append(asked)
             reply = active_model.invoke([
                 SystemMessage(content=_system_for(originals[path])),
-                HumanMessage(content=fix_request(root, path, defect, failure, specification, stack,
-                                                 [f for f in files if f != path], [])),
+                HumanMessage(content=asked),
             ], **config_for_this_run("defect_fix"))
             # A long file's anchored edits that cannot be made leave this
             # candidate without the file, like a reply that failed.
@@ -606,5 +630,7 @@ def fix_by_candidates(
                            if passed else f"Candidate {number} of {candidates}; no test of its own to check it."],
             )
         put_back()
+    for asked in sent:
+        repeated_rewrite_prompts.failed(root, asked)
     logger.info("No candidate fix of %d passed its tests; the agent loop takes the defect", candidates)
     return None

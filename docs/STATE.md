@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | **run-c82c85d9** (tasks-api, sixth; mixed_versions 48c9250 -> 14129b8, LF.472) RUNNING on :8888 (resumed 00:13 JST 10-31); **run-21519414** (notes-api-hono, started 23:40) PAUSED since 00:00 JST, kept for the second Qwen at :1234 (no key; model `qwen3.6-35b-a3b-mtp`) once the per-run model pin is deployed (agent building it; per-run switch overrides built but unfinished). Both failed 23:53 JST when the model on :8888 was reloaded and were resumed in place. Phase 2 experiments OFF; harness 14129b8. |
+| Run | **run-c82c85d9** (tasks-api, sixth; mixed_versions 48c9250 -> 14129b8, LF.472) RUNNING on :8888 (resumed 00:13 JST 10-31; redeployed 00:20 JST on 0606716 with LF.473); **run-21519414** (notes-api-hono, started 23:40) PAUSED since 00:00 JST, kept for the second Qwen at :1234 (no key; model `qwen3.6-35b-a3b-mtp`) once the per-run model pin is deployed (agent building it; per-run switch overrides built but unfinished). Both failed 23:53 JST when the model on :8888 was reloaded and were resumed in place. Phase 2 experiments OFF; harness 14129b8. |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

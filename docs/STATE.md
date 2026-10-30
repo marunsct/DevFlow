@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | **run-817b3ce3** (**tasks-api, held-out, fifth run**, Qwen3.6; bundles on; measured arms on; mixed_versions: 5650e12 -> 264c2c5, rewound to QA's repair 19:45 JST to take LF.455-456) started 18:43 JST 2026-10-30. Earlier starts run-b1a03b0f and run-7712a9a8 failed on HTTP 500/502 (server could not take long prompts); `loop.sh ready deep` (LF.454) now checks a ~13k-token request. |
+| Run | **run-817b3ce3** (**tasks-api, held-out, fifth run**, Qwen3.6; bundles on; measured arms on; mixed_versions: 5650e12 -> 264c2c5 (rewound 19:45 JST, LF.455-456) -> 278a4af (resumed 20:18 JST, LF.457)) started 18:43 JST 2026-10-30. Earlier starts run-b1a03b0f and run-7712a9a8 failed on HTTP 500/502 (server could not take long prompts); `loop.sh ready deep` (LF.454) now checks a ~13k-token request. |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

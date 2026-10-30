@@ -981,7 +981,7 @@ class WorkflowRunner:
                 "to MODEL_PRICES_JSON, or unset MAX_RUN_COST_USD to run without a ceiling."
             )
 
-    def _require_a_reachable_model(self) -> None:
+    def _require_a_reachable_model(self, run_id: str | None = None, snapshot: dict[str, str] | None = None) -> None:
         """Refuse to start when nothing is serving the configured endpoint.
 
         A model server that is not there and one that is merely slow produce
@@ -1002,7 +1002,12 @@ class WorkflowRunner:
         from app.server.runtime_settings import effective_environment
 
         try:
-            settings = load_settings(dict(effective_environment()))
+            # The model the run will use: its own when it is pinned (a resume), the one it is being started on
+            # (`snapshot`), else the settings'.
+            from app.models.model_pin import as_the_run
+
+            with as_the_run(run_id):
+                settings = load_settings(dict(effective_environment(model=snapshot)))
         except Exception:  # noqa: BLE001 - never block on reading settings
             logger.warning("Could not read settings for the endpoint probe", exc_info=True)
             return
@@ -1044,19 +1049,31 @@ class WorkflowRunner:
         delivery_mode: str | None = None,
         use_frontier_model: bool | None = None,
         approval_timeout_minutes: int | None = None,
+        pin_model: bool = False,
+        pin_base_url: str | None = None,
+        pin_model_name: str | None = None,
     ) -> None:
         """Persist start settings and dispatch the run to a worker.
 
         The status transition is atomic: two concurrent starts cannot both win,
         because only one UPDATE can match ``status = 'created'``.
+
+        The run's model is fixed at its first snapshot here (`app.models.model_pin`): what the settings name
+        now, or, with `pin_model`, that with `pin_base_url` / `pin_model_name` in place of the settings' own,
+        kept for the run whatever the settings become.
         """
         record = self.run_store.load(run_id)
         if record is None:
             raise ValueError(f"Run {run_id} is not registered")
 
+        from app.models import model_pin
+        from app.server.runtime_settings import global_model_snapshot
+
+        snapshot = model_pin.snapshot_for(global_model_snapshot(), pin_base_url, pin_model_name) if pin_model else None
+
         await self._require_command_execution()
         self._require_a_ceiling_that_can_hold()
-        self._require_a_reachable_model()
+        self._require_a_reachable_model(snapshot=snapshot)
 
         record.repo_root = str(repository.root_path)
         record.review_policy = review_policy or {}
@@ -1079,6 +1096,10 @@ class WorkflowRunner:
         record.model_overrides = _public_model_overrides(model_overrides)
         record.updated_at = datetime.now(timezone.utc).isoformat()
         self._persist(record)
+        # After the row is saved (`save` does not write these columns): the model the run starts on.
+        self.run_store.set_model_pin(
+            run_id, bool(pin_model), last=snapshot if pin_model else global_model_snapshot()
+        )
 
         if not self.run_store.compare_and_set_status(
             run_id, "created", "running", updated_at=record.updated_at
@@ -1115,7 +1136,7 @@ class WorkflowRunner:
 
         await self._require_command_execution()
         self._require_a_ceiling_that_can_hold()
-        self._require_a_reachable_model()
+        self._require_a_reachable_model(run_id)
 
         now = datetime.now(timezone.utc).isoformat()
         # A run parked at its spending ceiling, paused by its owner or cancelled

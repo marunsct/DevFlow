@@ -88,6 +88,11 @@ _MIGRATIONS = (
     # suite was locked with, an unproven setup (Initiative J.4). A completed
     # run with a non-empty list is never plain "completed" on any surface.
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS completion_gaps TEXT NOT NULL DEFAULT '[]'",
+    # The run's own model (`app.models.model_pin`): whether it is kept on the model it last ran on, and that model
+    # (a JSON snapshot of the non-secret model settings - never a key). Owned by `set_model_pin` / `set_model_last`,
+    # not by `save`.
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS model_pinned BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS model_last TEXT",
     "CREATE INDEX IF NOT EXISTS runs_tenant_created_idx ON runs (tenant_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS runs_owner_idx ON runs (owner)",
 )
@@ -388,6 +393,67 @@ class RunStore:
             with conn.cursor() as cur:
                 cur.execute("UPDATE runs SET task_id = %s WHERE run_id = %s", (task_id, run_id))
             conn.commit()
+
+    def model_state(self, run_id: str) -> tuple[bool, dict[str, str]] | None:
+        """(pinned, the model the run last ran on) for the run; None when there is no such run.
+
+        Read by the worker on every model request (through a short cache), written by the API, so it has
+        its own statement and is not part of the record `save` writes.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT model_pinned, model_last FROM runs WHERE run_id = %s", (run_id,))
+                row = cur.fetchone()
+        if not row:
+            return None
+        try:
+            last = json.loads(row[1]) if row[1] else {}
+        except (TypeError, ValueError):
+            last = {}
+        return bool(row[0]), {str(k): str(v) for k, v in last.items()} if isinstance(last, dict) else {}
+
+    def set_model_pin(
+        self, run_id: str, pinned: bool, *, last: dict[str, str] | None = None, if_unknown: dict[str, str] | None = None
+    ) -> bool:
+        """Pin the run to its model, or let it follow the settings again; True when the run exists.
+
+        `last` replaces the model the run last ran on (an explicit endpoint to pin to). `if_unknown` fills it
+        only when the run has none recorded (a run that began before this existed). Never touched otherwise: a
+        pin keeps "the model where it was last run".
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE runs SET model_pinned = %s, "
+                    "model_last = CASE WHEN %s::text IS NOT NULL THEN %s::text "
+                    "WHEN COALESCE(model_last, '') = '' THEN %s::text ELSE model_last END WHERE run_id = %s",
+                    (
+                        bool(pinned),
+                        json.dumps(last) if last else None,
+                        json.dumps(last) if last else None,
+                        json.dumps(if_unknown) if if_unknown else None,
+                        run_id,
+                    ),
+                )
+                changed = cur.rowcount
+            conn.commit()
+        return changed == 1
+
+    def set_model_last(self, run_id: str, snapshot: dict[str, str]) -> bool:
+        """Record the model an unpinned run is running on; False (and nothing written) while the run is pinned.
+
+        The condition is in the statement, so a pin set between the worker reading the flag and writing here
+        cannot be overwritten by it.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE runs SET model_last = %s WHERE run_id = %s AND model_pinned = FALSE",
+                    (json.dumps(snapshot), run_id),
+                )
+                changed = cur.rowcount
+            conn.commit()
+        return changed == 1
 
     def delete(self, run_id: str) -> None:
         with self.get_connection() as conn:

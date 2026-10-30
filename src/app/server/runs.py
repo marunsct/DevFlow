@@ -47,6 +47,8 @@ from app.server.models import (
     CreateRunResponse,
     ReviewDecisionRequest,
     ReviewPayload,
+    ModelPinRequest,
+    ModelSummary,
     RewindRequest,
     RunListResponse,
     RunStatusResponse,
@@ -119,6 +121,25 @@ def _require_run(runner: WorkflowRunner, run_id: str, user: UserInDB) -> RunReco
     if user.role != "admin" and record.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
     return record
+
+
+def _the_pin_target(pinned: bool, base_url: str | None, model: str | None) -> tuple[str | None, str | None]:
+    """(address, model name) to pin a run to, validated; (None, None) for the model it is on. HTTP 422 when refused.
+
+    An address must be http or https with no credentials in it, and a model name must not be empty: nothing
+    secret is accepted here, the endpoint's key is resolved server-side.
+    """
+    from app.models import model_pin
+
+    if (base_url is not None or model is not None) and not pinned:
+        raise HTTPException(status_code=422, detail="An address or a model name can only be given when pinning.")
+    try:
+        return (
+            model_pin.clean_base_url(base_url) if base_url is not None else None,
+            model_pin.clean_model_name(model) if model is not None else None,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
 
 
 def _a_completed_run_s_workspace(runner: WorkflowRunner, run_id: str, user: UserInDB) -> Path | None:
@@ -349,6 +370,10 @@ def create_runs_router(
 
         body = body or StartRunRequest()
 
+        # A run pinned to an endpoint of its own is refused before anything is prepared if that is not an address
+        # or a model name worth pinning to.
+        pin_base_url, pin_model_name = _the_pin_target(body.pin_model, body.pin_base_url, body.pin_model_name)
+
         # Asked for the frontier model, it must be there and answering before
         # anything is prepared (owner, 2026-10-19): otherwise the run's
         # specification and reviews would quietly run on the local model, or it
@@ -429,6 +454,9 @@ def create_runs_router(
                 delivery_mode=body.delivery_mode,
                 use_frontier_model=body.use_frontier_model,
                 approval_timeout_minutes=body.approval_timeout_minutes,
+                pin_model=body.pin_model,
+                pin_base_url=pin_base_url,
+                pin_model_name=pin_model_name,
             )
         except RunConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc))
@@ -511,6 +539,45 @@ def create_runs_router(
             raise HTTPException(status_code=409, detail=str(exc))
         record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.pause", subject=run_id)
         return {"message": f"Run {run_id} is pausing."}
+
+    @runs.post("/{run_id}/model-pin")
+    async def pin_run_model(
+        run_id: str, payload: ModelPinRequest, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, Any]:
+        """Keep the run on the model it last ran on, or let it follow the current model settings again.
+
+        Works at any time, mid-run included: a request already sent finishes where it was sent, and every new
+        one asks which model the run is on. With `base_url` and/or `model` the run is pinned to that endpoint
+        instead (the global settings are not touched); no credential is accepted or stored.
+        """
+        from app.models import model_pin
+        from app.server.runtime_settings import global_model_snapshot
+
+        _require_run(runner, run_id, user)
+        base_url, model_name = _the_pin_target(payload.pinned, payload.base_url, payload.model)
+        store = runner.run_store
+        explicit = None
+        if base_url or model_name:
+            # The settings as they are now, with just these two replaced: the provider stays, no key is stored.
+            explicit = model_pin.snapshot_for(global_model_snapshot(), base_url, model_name)
+        # A run with no recorded model (it began before the pin existed) is pinned to what the settings name now.
+        changed = await asyncio.to_thread(
+            lambda: store.set_model_pin(
+                run_id, payload.pinned, last=explicit, if_unknown=global_model_snapshot() if payload.pinned else None
+            )
+        )
+        if not changed:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
+        model_pin.forget(run_id)
+        record_audit(
+            actor=user.username, tenant_id=user.tenant_id, action="run.model_pin", subject=run_id,
+            detail={"pinned": payload.pinned, "base_url": base_url, "model": model_name},
+        )
+        state = await asyncio.to_thread(store.model_state, run_id)
+        return {
+            "model_pinned": bool(state and state[0]),
+            "model_last": model_pin.summary_of(state[1] if state else None),
+        }
 
     @runs.post("/{run_id}/clone", status_code=201, response_model=CreateRunResponse)
     async def clone_run(
@@ -2052,6 +2119,7 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         non_deliverable=_what_the_marker_says(record),
         delivery_mode=str(getattr(record, "delivery_mode", "") or ""),
         use_frontier_model=not bool(getattr(record, "local_only", False)),
+        **_the_model_pin(record.run_id, runner),
         cost=_cost_summary(record.run_id),
         # The ceilings the worker holds the run to: the API reads the same environment.
         max_run_tokens=_max_run_tokens() or None,
@@ -2059,6 +2127,20 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         # Its size, so the page can say what a run of this size takes here.
         **_how_many_criteria_hold(record),
     )
+
+
+def _the_model_pin(run_id: str, runner: Any) -> dict[str, Any]:
+    """`model_pinned` and `model_last` for a status response: whether the run is kept on its model, and which."""
+    try:
+        from app.models.model_pin import summary_of
+
+        state = runner.run_store.model_state(run_id)
+        if not state:
+            return {}
+        summary = summary_of(state[1])
+        return {"model_pinned": bool(state[0]), "model_last": ModelSummary(**summary) if summary else None}
+    except Exception:  # noqa: BLE001 - a status response is never failed by the pin
+        return {}
 
 
 def _when_the_gate_approves_itself(record: Any) -> Any:

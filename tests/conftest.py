@@ -178,7 +178,7 @@ def no_model_server_needed(request, monkeypatch):
     if request.node.get_closest_marker("real_endpoint_probe") is None:
         from app.server.runner import WorkflowRunner
 
-        monkeypatch.setattr(WorkflowRunner, "_require_a_reachable_model", lambda self: None)
+        monkeypatch.setattr(WorkflowRunner, "_require_a_reachable_model", lambda self, *args, **kwargs: None)
     yield
 
 

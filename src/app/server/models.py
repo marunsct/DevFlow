@@ -15,6 +15,30 @@ class RewindRequest(BaseModel):
     checkpoint_id: str = Field(min_length=1, max_length=200, description="The checkpoint before the stage.")
 
 
+class ModelPinRequest(BaseModel):
+    """Pin a run to the model it last ran on, or let it follow the current model settings again.
+
+    With `base_url` and/or `model` (pinning only) the run is pinned to that endpoint and model instead,
+    without touching the global settings. Neither carries a credential: the endpoint's key is resolved
+    server-side, per endpoint.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    pinned: bool = Field(description="True keeps the run on its model; false follows the current settings.")
+    base_url: str | None = Field(
+        default=None, max_length=300, description="Pin to this OpenAI-compatible address (http or https, no credentials in it).",
+    )
+    model: str | None = Field(default=None, max_length=200, description="Pin to this model name.")
+
+
+class ModelSummary(BaseModel):
+    """A run's model as the status shows it: the name and where it is served, never a credential."""
+    model_config = ConfigDict(extra="forbid")
+
+    model: str = Field(default="", description="The model name.")
+    endpoint: str = Field(default="", description="host:port the model is served from.")
+
+
 class CreateRunResponse(BaseModel):
     """Response returned when a new run is created."""
     model_config = ConfigDict(extra="forbid")
@@ -138,6 +162,20 @@ class StartRunRequest(BaseModel):
             "Minutes a gate that asks a person (an approval or a review) waits before it is approved "
             "automatically. Omit to wait for the person however long it takes."
         ),
+    )
+    pin_model: bool = Field(
+        default=False,
+        description=(
+            "Keep this run on the model it starts on, whatever the model settings become. "
+            "False (the default) follows the current settings on every request."
+        ),
+    )
+    pin_base_url: str | None = Field(
+        default=None, max_length=300,
+        description="With pin_model: pin to this OpenAI-compatible address instead of the settings' (no credentials in it).",
+    )
+    pin_model_name: str | None = Field(
+        default=None, max_length=200, description="With pin_model: pin to this model name instead of the settings'.",
     )
     auto_approve: bool | None = Field(
         default=None,
@@ -473,6 +511,14 @@ class RunStatusResponse(BaseModel):
     )
     use_frontier_model: bool = Field(
         default=True, description="Whether this run uses the frontier model; False is the build model only.",
+    )
+    model_pinned: bool = Field(
+        default=False,
+        description="Whether the run is kept on the model it last ran on (true) or follows the current model settings (false).",
+    )
+    model_last: ModelSummary | None = Field(
+        default=None,
+        description="The model the run last ran on: its name and host:port only, never a credential.",
     )
     auto_approve: bool = Field(
         default=False,

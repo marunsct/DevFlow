@@ -46,7 +46,8 @@ def test_a_hold_left_behind_does_not_stop_calls_for_good(tmp_path, monkeypatch):
 
 
 def test_every_call_of_the_model_class_goes_through_the_gate():
-    assert "a_model_call(str(self.openai_api_base" in inspect.getsource(CompatibleChatOpenAI._generate)
+    # The server it marks is the one the request goes to (the run's model pin may send it elsewhere).
+    assert "a_model_call(self._served_by()[0])" in inspect.getsource(CompatibleChatOpenAI._generate)
 
 
 def test_the_deploy_holds_waits_and_lifts():

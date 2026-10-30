@@ -160,6 +160,16 @@ export interface LocalModelSettingsPayload {
   thinking_mode?: "default" | "on" | "off";
 }
 
+/** Pin a run to the model it last ran on, or let it follow the current model settings again. With `base_url` and/or `model` (pinning only) the run is pinned to that endpoint and model instead, without touching the global settings. Neither carries a credential: the endpoint's key is resolved server-side, per endpoint. */
+export interface ModelPinRequest {
+  /** Pin to this OpenAI-compatible address (http or https, no credentials in it). */
+  base_url?: string | null;
+  /** Pin to this model name. */
+  model?: string | null;
+  /** True keeps the run on its model; false follows the current settings. */
+  pinned: boolean;
+}
+
 /** A model configuration saved earlier, ready to fill the form again. Never a credential: those stay write-only. Each endpoint keeps the key last saved for it (`runtime_settings.endpoint_keys`), so picking a profile picks its key too. */
 export interface ModelProfile {
   escalate_after_attempts: number | null;
@@ -181,6 +191,14 @@ export interface ModelProfile {
   thinking_mode: string | null;
   updated_at: string | null;
   updated_by: string | null;
+}
+
+/** A run's model as the status shows it: the name and where it is served, never a credential. */
+export interface ModelSummary {
+  /** host:port the model is served from. */
+  endpoint: string;
+  /** The model name. */
+  model: string;
 }
 
 /** A rating as kept: who gave it and when. */
@@ -376,6 +394,10 @@ export interface RunStatusResponse {
   max_run_cost_usd: number | null;
   /** The deployment's bound on the tokens a run uses (`MAX_RUN_TOKENS`), or null when none is set. */
   max_run_tokens: number | null;
+  /** The model the run last ran on: its name and host:port only, never a credential. */
+  model_last: ModelSummary | null;
+  /** Whether the run is kept on the model it last ran on (true) or follows the current model settings (false). */
+  model_pinned: boolean;
   /** What the workspace's NON-DELIVERABLE marker says, or '' when the workspace is marked deliverable. A terminal state other than a clean release writes it into the workspace root (Initiative J.6). */
   non_deliverable: string;
   /** Remediation information if applicable. */
@@ -628,6 +650,12 @@ export interface StartRunRequest {
   model_name?: string | null;
   /** Override the OpenAI-compatible base URL. */
   openai_base_url?: string | null;
+  /** With pin_model: pin to this OpenAI-compatible address instead of the settings' (no credentials in it). */
+  pin_base_url?: string | null;
+  /** Keep this run on the model it starts on, whatever the model settings become. False (the default) follows the current settings on every request. */
+  pin_model?: boolean;
+  /** With pin_model: pin to this model name instead of the settings'. */
+  pin_model_name?: string | null;
   /** Which optional human review gates to enable. */
   review_policy?: Record<string, boolean> | null;
   /** Identity recorded on review decisions. */

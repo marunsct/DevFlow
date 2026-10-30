@@ -545,15 +545,114 @@ def judgement_endpoint(environment: Mapping[str, str]) -> tuple[str, str]:
     return provider, base
 
 
-def effective_environment(base: Mapping[str, str] | None = None) -> dict[str, str]:
-    """The environment with stored overrides layered on top, each endpoint with its own key."""
+#: The environment variables that say which model a run talks to - never a credential. A run's `model_last` is a
+#: snapshot of exactly these, so that a pinned run can keep working on a model the settings page has since left.
+#: The key each endpoint needs is not here: it is resolved server-side, per endpoint, when the run asks.
+MODEL_KEYS: tuple[str, ...] = (
+    "LLM_PROVIDER",
+    "OPENAI_BASE_URL",
+    "OPENAI_MODEL",
+    "MODEL_CONTEXT_WINDOW",
+    "MODEL_MAX_OUTPUT_TOKENS",
+    "JUDGEMENT_PROVIDER",
+    "JUDGEMENT_BASE_URL",
+    "JUDGEMENT_MODEL",
+    "JUDGEMENT_CONTEXT_WINDOW",
+    "JUDGEMENT_MAX_OUTPUT_TOKENS",
+)
+
+
+def _the_run_s_model() -> Mapping[str, str] | None:
+    """The model snapshot of the run this call belongs to when that run is pinned, else None. Never raises."""
+    try:
+        from app.models.model_pin import pinned_snapshot
+
+        return pinned_snapshot()
+    except Exception:  # noqa: BLE001 - an unreadable pin is the global view, which is what every run had before
+        return None
+
+
+def _endpoint_of(environment: Mapping[str, str]) -> tuple[str, str]:
+    return (
+        str(environment.get("LLM_PROVIDER") or "local").strip().lower(),
+        str(environment.get("OPENAI_BASE_URL") or "").strip().lower().rstrip("/"),
+    )
+
+
+def _normal(endpoint: tuple[str, str]) -> tuple[str, str]:
+    return str(endpoint[0] or "").strip().lower(), str(endpoint[1] or "").strip().lower().rstrip("/")
+
+
+def global_model_snapshot() -> dict[str, str]:
+    """The model the settings name now - the non-secret model keys of the global view, "" where unset.
+
+    Reads the stored overrides and the process environment only (no credential, no per-endpoint key), so it is
+    cheap enough to ask on every model request.
+    """
+    environment = dict(os.environ)
+    for key, value in overrides().items():
+        if value:
+            environment[SETTABLE_KEYS[key]] = value
+    return {key: str(environment.get(key) or "").strip() for key in MODEL_KEYS}
+
+
+def effective_environment(
+    base: Mapping[str, str] | None = None,
+    *,
+    ignore_run: bool = False,
+    model: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """The environment with stored overrides layered on top, each endpoint with its own key.
+
+    Inside a run whose model is pinned (`app.models.model_pin`), the run's own model - the snapshot it last ran
+    with - is laid over the model keys after the stored overrides, so the context budget, the reply ceiling and
+    every client built for the run follow that model whatever the settings page says now. Credentials come
+    after it and never from it: a model that is not the one the settings name gets its own endpoint's key or
+    none, never the key of the endpoint the settings name.
+
+    `ignore_run` gives the global view (what the settings page shows) and `model` the view of a given snapshot.
+    A caller that passes `base` gets exactly that environment layered with the overrides, as before.
+    """
     environment = dict(base if base is not None else os.environ)
     for key, value in overrides().items():
         if value:
             environment[SETTABLE_KEYS[key]] = value
+    snapshot = model
+    if snapshot is None and base is None and not ignore_run:
+        snapshot = _the_run_s_model()
+    withheld: set[str] = set()
+    inherited = ""
+    keeps_the_default_key = False
+    if snapshot:
+        was_default = _endpoint_of(environment)
+        was_judge = _normal(judgement_endpoint(environment))
+        inherited = str(environment.get(_KEY_VARIABLE.get(was_default[0], "OPENAI_API_KEY")) or "")
+        for key in MODEL_KEYS:
+            if key in snapshot:
+                value = str(snapshot.get(key) or "")
+                if value:
+                    environment[key] = value
+                else:
+                    environment.pop(key, None)
+        judging = bool(str(environment.get("JUDGEMENT_MODEL") or "").strip())
+        foreign_judge = judging and _normal(judgement_endpoint(environment)) != was_judge
+        if _endpoint_of(environment) != was_default:
+            variable = _KEY_VARIABLE.get(_endpoint_of(environment)[0], "OPENAI_API_KEY")
+            withheld.add(variable)
+            environment.pop(variable, None)
+            keeps_the_default_key = judging and not foreign_judge
+        if foreign_judge:
+            withheld.add("JUDGEMENT_API_KEY")
+            environment.pop("JUDGEMENT_API_KEY", None)
+    held_by_secret = ""
     for key, value in secrets().items():
-        if value:
+        if value and SETTABLE_SECRETS[key] in withheld:
+            held_by_secret = held_by_secret or (value if SETTABLE_SECRETS[key] != "JUDGEMENT_API_KEY" else "")
+        elif value:
             environment[SETTABLE_SECRETS[key]] = value
+    # The judgement model, still where it was, had been using the default model's key; it keeps it.
+    if keeps_the_default_key and not environment.get("JUDGEMENT_API_KEY") and (inherited or held_by_secret):
+        environment["JUDGEMENT_API_KEY"] = held_by_secret or inherited
     keys = endpoint_keys()
     if keys:
         provider = str(environment.get("LLM_PROVIDER") or "local").strip().lower()
@@ -584,7 +683,9 @@ __all__ = [
     "SECRETS_TABLE_SQL",
     "SETTABLE_KEYS",
     "SETTABLE_SECRETS",
+    "MODEL_KEYS",
     "SETTINGS_TABLE_SQL",
+    "global_model_snapshot",
     "clear",
     "clear_secrets",
     "effective_environment",

@@ -605,6 +605,48 @@
     "title": "LocalModelSettingsPayload",
     "type": "object"
    },
+   "ModelPinRequest": {
+    "additionalProperties": false,
+    "description": "Pin a run to the model it last ran on, or let it follow the current model settings again.\n\nWith `base_url` and/or `model` (pinning only) the run is pinned to that endpoint and model instead,\nwithout touching the global settings. Neither carries a credential: the endpoint's key is resolved\nserver-side, per endpoint.",
+    "properties": {
+     "base_url": {
+      "anyOf": [
+       {
+        "maxLength": 300,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Pin to this OpenAI-compatible address (http or https, no credentials in it).",
+      "title": "Base Url"
+     },
+     "model": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Pin to this model name.",
+      "title": "Model"
+     },
+     "pinned": {
+      "description": "True keeps the run on its model; false follows the current settings.",
+      "title": "Pinned",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "pinned"
+    ],
+    "title": "ModelPinRequest",
+    "type": "object"
+   },
    "ModelProfile": {
     "description": "A model configuration saved earlier, ready to fill the form again.\n\nNever a credential: those stay write-only. Each endpoint keeps the key last\nsaved for it (`runtime_settings.endpoint_keys`), so picking a profile picks\nits key too.",
     "properties": {
@@ -803,6 +845,26 @@
      "label"
     ],
     "title": "ModelProfile",
+    "type": "object"
+   },
+   "ModelSummary": {
+    "additionalProperties": false,
+    "description": "A run's model as the status shows it: the name and where it is served, never a credential.",
+    "properties": {
+     "endpoint": {
+      "default": "",
+      "description": "host:port the model is served from.",
+      "title": "Endpoint",
+      "type": "string"
+     },
+     "model": {
+      "default": "",
+      "description": "The model name.",
+      "title": "Model",
+      "type": "string"
+     }
+    },
+    "title": "ModelSummary",
     "type": "object"
    },
    "OwnerRating": {
@@ -1578,6 +1640,23 @@
       ],
       "description": "The deployment's bound on the tokens a run uses (`MAX_RUN_TOKENS`), or null when none is set.",
       "title": "Max Run Tokens"
+     },
+     "model_last": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ModelSummary"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The model the run last ran on: its name and host:port only, never a credential."
+     },
+     "model_pinned": {
+      "default": false,
+      "description": "Whether the run is kept on the model it last ran on (true) or follows the current model settings (false).",
+      "title": "Model Pinned",
+      "type": "boolean"
      },
      "non_deliverable": {
       "default": "",
@@ -2646,6 +2725,38 @@
       ],
       "description": "Override the OpenAI-compatible base URL.",
       "title": "Openai Base Url"
+     },
+     "pin_base_url": {
+      "anyOf": [
+       {
+        "maxLength": 300,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "With pin_model: pin to this OpenAI-compatible address instead of the settings' (no credentials in it).",
+      "title": "Pin Base Url"
+     },
+     "pin_model": {
+      "default": false,
+      "description": "Keep this run on the model it starts on, whatever the model settings become. False (the default) follows the current settings on every request.",
+      "title": "Pin Model",
+      "type": "boolean"
+     },
+     "pin_model_name": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "With pin_model: pin to this model name instead of the settings'.",
+      "title": "Pin Model Name"
      },
      "review_policy": {
       "anyOf": [
@@ -5141,6 +5252,66 @@
      }
     ],
     "summary": "Get Logs",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/model-pin": {
+   "post": {
+    "description": "Keep the run on the model it last ran on, or let it follow the current model settings again.\n\nWorks at any time, mid-run included: a request already sent finishes where it was sent, and every new\none asks which model the run is on. With `base_url` and/or `model` the run is pinned to that endpoint\ninstead (the global settings are not touched); no credential is accepted or stored.",
+    "operationId": "pin_run_model_api_runs__run_id__model_pin_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ModelPinRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Pin Run Model Api Runs  Run Id  Model Pin Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Pin Run Model",
     "tags": [
      "runs"
     ]

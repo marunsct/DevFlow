@@ -5,6 +5,7 @@
 #   scripts/loop/loop.sh status [run]        state of the run (default: current) + anything else running
 #   scripts/loop/loop.sh start [brief]       create and start a run (default tests/brief_low.md)
 #   scripts/loop/loop.sh cancel [run-id]     cancel a run (default: the current one); needs LOOP_USER/LOOP_PASSWORD
+#   scripts/loop/loop.sh pin on|off [run-id] keep a run on its model / let it follow the settings (PIN_URL, PIN_MODEL_NAME pin it to an endpoint); PIN_MODEL=1 on start/bench pins at the start
 #   scripts/loop/loop.sh wait [minutes] [run] block until the run (default: current) ends or N minutes pass (default 18),
 #                                            then print status, key log lines and the audit
 #   scripts/loop/loop.sh audit [run-id]      failure / redundancy audit of a run (audit_live.py)
@@ -130,7 +131,7 @@ start)
   # already started) said "started" before; it names the refusal now, and the
   # run it created is not left behind as the current one.
   answer=$(curl -s -w '\n%{http_code}' -X POST "$API/api/runs/$run/start" -H "Authorization: Bearer $token" \
-       -H "Content-Type: application/json" -d "{\"auto_approve\": true${DELIVERY:+, \"delivery_mode\": \"$DELIVERY\"}${FRONTIER:+, \"use_frontier_model\": $FRONTIER}$source}")
+       -H "Content-Type: application/json" -d "{\"auto_approve\": true${DELIVERY:+, \"delivery_mode\": \"$DELIVERY\"}${FRONTIER:+, \"use_frontier_model\": $FRONTIER}${PIN_MODEL:+, \"pin_model\": true}${PIN_MODEL:+${PIN_URL:+, \"pin_base_url\": \"$PIN_URL\"}}${PIN_MODEL:+${PIN_MODEL_NAME:+, \"pin_model_name\": \"$PIN_MODEL_NAME\"}}$source}")
   code=$(echo "$answer" | tail -n 1)
   echo "$answer" | sed '$d'
   if [ "$code" != "202" ]; then
@@ -219,6 +220,30 @@ cancel)
   curl -s -X POST "$API/api/runs/$run/cancel" -H "Authorization: Bearer $token"
   echo
   echo "cancel requested for $run at $(jst +%H:%M) JST: $("${DB[@]}" "select status from runs where run_id='$run'")"
+  ;;
+
+pin)
+  # Keep a run on the model it last ran on (on), or let it follow the model settings again (off); mid-run too.
+  #   loop.sh pin on|off [run-id]
+  #   PIN_URL=http://host.docker.internal:1234/v1 PIN_MODEL_NAME=qwen3.6-35b-a3b-mtp loop.sh pin on [run-id]
+  # pins the run to that endpoint instead, without touching the global settings. No key is sent: the
+  # endpoint's key is resolved server-side. PIN_MODEL=1 does the same at `start` / `bench`.
+  case "${2:-}" in
+    on) pinned=true ;;
+    off) pinned=false ;;
+    *) echo "usage: loop.sh pin on|off [run-id]" >&2; exit 2 ;;
+  esac
+  run="${3:-$(current)}"
+  : "${LOOP_USER:?set LOOP_USER to the loop operator account}"
+  : "${LOOP_PASSWORD:?set LOOP_PASSWORD for that account}"
+  token=$(curl -s -X POST "$API/api/auth/token" --data-urlencode "username=$LOOP_USER" \
+            --data-urlencode "password=$LOOP_PASSWORD" |
+          "$PY" -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  curl -s -X POST "$API/api/runs/$run/model-pin" -H "Authorization: Bearer $token" \
+       -H "Content-Type: application/json" \
+       -d "{\"pinned\": $pinned${PIN_URL:+, \"base_url\": \"$PIN_URL\"}${PIN_MODEL_NAME:+, \"model\": \"$PIN_MODEL_NAME\"}}"
+  echo
+  echo "model pin $2 for $run at $(jst +%H:%M) JST"
   ;;
 
 rewind)

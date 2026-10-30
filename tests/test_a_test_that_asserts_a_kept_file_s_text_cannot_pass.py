@@ -71,3 +71,59 @@ def test_a_passing_read_of_the_kept_file_is_left_when_the_suite_s_result_is_know
         SimpleNamespace(name="[AC-15] start.sh exists and contains expected commands", outcome="failed")]))
     assert len(suite.tests_that_assert_a_kept_file_s_text(root, failing)) == 1
     assert "tests_that_assert_a_kept_file_s_text(repo_root, result)" in inspect.getsource(suite.tests_that_cannot_pass)
+
+
+PYTHON_WRONG = '''import httpx
+from pathlib import Path
+
+
+def test_ac17_start_sh_exists_and_starts_service(base_url):
+    start_sh = Path(__file__).resolve().parent.parent / "start.sh"
+    content = start_sh.read_text(encoding="utf-8")
+    assert "DATA_DIR" in content or "data" in content.lower()
+    assert httpx.get(f"{base_url}/health").status_code == 200
+
+
+def test_ac1_signup(base_url):
+    assert httpx.post(f"{base_url}/signup", json={"username": "a", "password": "b"}).status_code == 201
+'''
+PYTHON_RIGHT = '''import httpx
+
+
+def test_ac6_data_survives_a_restart(base_url, service):
+    httpx.post(f"{base_url}/signup", json={"username": "a", "password": "b"})
+    service.restart()
+    assert httpx.post(f"{base_url}/signup", json={"username": "a", "password": "b"}).status_code == 409
+'''
+
+
+def _python_suite(tmp_path, text):
+    contract.write(tmp_path, pack_named("python-http-api"), "items", "Items")
+    folder = tmp_path / "items" / "acceptance"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "test_api.py").write_text(text)
+    return tmp_path
+
+
+def test_a_python_test_that_reads_the_kept_start_file_and_asserts_its_text_is_found(tmp_path):
+    """Measured on a held-out run: a Python suite's test asserted that `start.sh` contained `DATA_DIR`; the check
+    knew only JavaScript suites, so the test stayed locked and the last sprint was planned again three times."""
+    [found] = suite.tests_that_assert_a_kept_file_s_text(_python_suite(tmp_path, PYTHON_WRONG))
+    assert "`start.sh`" in found and "cannot pass on any product" in found and "line 5" in found
+    assert not BANNED.search(found)
+
+
+def test_a_python_test_that_only_uses_the_service_is_left(tmp_path):
+    assert suite.tests_that_assert_a_kept_file_s_text(_python_suite(tmp_path, PYTHON_RIGHT)) == []
+
+
+def test_a_passing_python_read_is_left_when_the_result_is_known(tmp_path):
+    from types import SimpleNamespace
+
+    root = _python_suite(tmp_path, PYTHON_WRONG)
+    passing = SimpleNamespace(ran=True, report=SimpleNamespace(tests=[
+        SimpleNamespace(name="test_ac17_start_sh_exists_and_starts_service", outcome="passed")]))
+    failing = SimpleNamespace(ran=True, report=SimpleNamespace(tests=[
+        SimpleNamespace(name="test_ac17_start_sh_exists_and_starts_service", outcome="failed")]))
+    assert suite.tests_that_assert_a_kept_file_s_text(root, passing) == []
+    assert len(suite.tests_that_assert_a_kept_file_s_text(root, failing)) == 1

@@ -2961,6 +2961,19 @@ _A_FILE_READ = re.compile(r"""\b(?:readFile(?:Sync)?|existsSync|statSync|open)\s
 _A_TEST_TITLE = re.compile(r"""test\s*\(\s*['"`]([^'"`]*)['"`]""")
 
 
+#: A Python test's read of a file's text: `read_text(`, `.read(` or `open(`.
+_A_PYTHON_READ = re.compile(r"\.read_text\s*\(|\.read\s*\(|\bopen\s*\(")
+#: A quoted file name in a Python test.
+_A_QUOTED_NAME = re.compile(r"""['"]([^'"\n]+)['"]""")
+
+
+def _a_python_read_of(block: str, kept: set[str]) -> str | None:
+    """The kept file a Python test reads the text of, else None: its name quoted, and a read of some file's text."""
+    if not _A_PYTHON_READ.search(block):
+        return None
+    return next((m.group(1) for m in _A_QUOTED_NAME.finditer(block) if Path(m.group(1)).name in kept), None)
+
+
 def tests_that_assert_a_kept_file_s_text(repo_root: str | Path, result: AcceptanceResult | None = None) -> list[str]:
     """Tests that read a file the harness keeps and assert what it contains: its text is not the product's to change.
 
@@ -2980,26 +2993,32 @@ def tests_that_assert_a_kept_file_s_text(repo_root: str | Path, result: Acceptan
     root = Path(repo_root)
     problems: list[str] = []
     for path in suite_files(repo_root):
-        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+        python = path.suffix.lower() == ".py"
+        if not python and path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        starts = [m.start() for m in _A_TEST_CALL.finditer(text)]
+        starts = [m.start() for m in (_A_PYTHON_TEST if python else _A_TEST_CALL).finditer(text)]
         for at, start in enumerate(starts):
             block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
-            if "expect(" not in block:
+            if "assert" not in block if python else "expect(" not in block:
                 continue
             if failing is not None:
-                titled = _A_TEST_TITLE.match(block)
-                title = titled.group(1).strip() if titled else ""
+                if python:
+                    titled = _A_PYTHON_TEST.match(block)
+                    title = titled.group(1) if titled else ""
+                else:
+                    titled = _A_TEST_TITLE.match(block)
+                    title = titled.group(1).strip() if titled else ""
                 if not title or not any(title in name for name in failing):
                     continue
-            read = next((m for m in _A_FILE_READ.finditer(block) if Path(m.group(1)).name in kept), None)
+            read = (_a_python_read_of(block, kept) if python
+                    else next((m.group(1) for m in _A_FILE_READ.finditer(block) if Path(m.group(1)).name in kept), None))
             if read is None:
                 continue
-            name = Path(read.group(1)).name
+            name = Path(read).name
             line = text.count("\n", 0, start) + 1
             problems.append(
                 f"`{path.relative_to(root).as_posix()}` line {line}: the test reads `{name}` and asserts what it "

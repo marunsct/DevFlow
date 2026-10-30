@@ -165,6 +165,24 @@ def defer(repo_root: str | Path, reasons: dict[str, str]) -> None:
     save_criteria(repo_root, current, merged)
 
 
+def undefer_what_a_test_now_carries(repo_root: str | Path) -> list[str]:
+    """Take off the deferred list the criteria some test's title now carries; the ids taken off. Never raises.
+
+    QA defers a criterion when no test names it. Measured on a held-out run: QA deferred AC-14 and AC-15 in its first
+    round, wrote two tests titled `[AC-14][AC-15]` in a later one, and the deferral stayed - the suite locked with a
+    note saying the reason no longer held, and the release listed both as shipped unproven. Called as the suite is
+    locked, so a deferral the harness makes later, for a criterion whose test fails, is not touched.
+    """
+    try:
+        carried = coverage(repo_root)
+        stale = sorted(cid for cid in deferred(repo_root) if carried.get(cid))
+        if stale:
+            undefer(repo_root, stale)
+        return stale
+    except Exception:  # noqa: BLE001 - a deferral that stays is what it was
+        return []
+
+
 def undefer(repo_root: str | Path, ids: list[str]) -> None:
     """Take criteria off the deferred list: a later measurement proved them (`last_try_on_deferred`)."""
     state = _state(repo_root)

@@ -640,6 +640,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
                 logger.info("QA lead sent the acceptance suite back: %d finding(s)", len(findings))
                 return _handing_on(**update, stage="acceptance_author", acceptance_feedback=findings)
 
+    if suite.undefer_what_a_test_now_carries(root):
+        logger.info("Deferred criteria a test now carries are no longer deferred")
     suite.lock(root)
     from app.acceptance.interface_contract import record_at_lock
 

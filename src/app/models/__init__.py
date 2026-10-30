@@ -556,6 +556,18 @@ class CompatibleChatOpenAI(ChatOpenAI):
     output alike.
     """
 
+    def _served_by(self) -> tuple[str, str]:
+        """(address, model) the next request goes to: where this client was built for, unless its run's model pin
+        sends it elsewhere (`app.models.model_pin`). Memos of what a server refused or how fast it is are kept
+        under it, so one server's habits are never applied to another."""
+        built = (str(self.openai_api_base or ""), str(self.model_name or ""))
+        try:
+            from app.models.model_pin import served_by
+
+            return served_by(self, built)
+        except Exception:  # noqa: BLE001
+            return built
+
     def _get_request_payload(self, input_, *, stop=None, **kwargs):  # type: ignore[override]
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
         for message in payload.get("messages", []):
@@ -587,7 +599,7 @@ class CompatibleChatOpenAI(ChatOpenAI):
             try:
                 from app.models.model_guidance import ceiling_for
 
-                chosen = ceiling_for((str(self.openai_api_base or ""), str(self.model_name or "")))
+                chosen = ceiling_for(self._served_by())
                 if chosen:
                     payload["max_tokens"] = chosen
             except Exception:  # noqa: BLE001
@@ -597,10 +609,10 @@ class CompatibleChatOpenAI(ChatOpenAI):
             payload["timeout"] = deadline
         # Before the downgrade below: `required` is the form this engine enforces; `auto` made its parser reject the
         # model's output (measured, 0-1 of 3 replies answered) and `required` never did.
-        if (str(self.openai_api_base or ""), str(self.model_name or "")) in _NAMED_CHOICE_BECOMES_REQUIRED:
+        if self._served_by() in _NAMED_CHOICE_BECOMES_REQUIRED:
             if isinstance(payload.get("tool_choice"), dict):
                 payload["tool_choice"] = "required"
-        if (str(self.openai_api_base or ""), str(self.model_name or "")) in _NO_FORCED_TOOL_WHILE_THINKING:
+        if self._served_by() in _NO_FORCED_TOOL_WHILE_THINKING:
             if payload.get("tool_choice") not in (None, "auto", "none"):
                 payload["tool_choice"] = "auto"
         # The sampling the owner turned on for the serving model on the
@@ -609,7 +621,7 @@ class CompatibleChatOpenAI(ChatOpenAI):
         try:
             from app.models.capabilities import with_the_owner_s_sampling
 
-            with_the_owner_s_sampling(payload, str(self.model_name or ""))
+            with_the_owner_s_sampling(payload, self._served_by()[1])
         except Exception:  # noqa: BLE001 - the request as it was
             pass
         return payload
@@ -630,13 +642,13 @@ class CompatibleChatOpenAI(ChatOpenAI):
         _stop_if_this_run_was_stopped()
 
         # A deploy waits for this call to return (`app.models.call_gate`).
-        with a_model_call(str(self.openai_api_base or "")):
+        with a_model_call(self._served_by()[0]):
             return self._generate_once(messages, stop=stop, run_manager=run_manager, **kwargs)
 
     def _generate_once(self, messages, stop=None, run_manager=None, **kwargs):
         from app.models.tool_arguments import decode_structured_arguments
 
-        server = (str(self.openai_api_base or ""), str(self.model_name or ""))
+        server = self._served_by()
         try:
             result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
         except Exception as error:  # noqa: BLE001 - re-raised unless this is the refusal
@@ -687,7 +699,7 @@ class CompatibleChatOpenAI(ChatOpenAI):
         if self.max_retries:
             return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
         ceiling = self.max_tokens if isinstance(self.max_tokens, int) else None
-        server = (str(self.openai_api_base or ""), str(self.model_name or ""))
+        server = self._served_by()
         cap = fix_stage_reply_cap(ceiling) or plan_review_reply_cap(ceiling)
         quick_failures = 0
         while True:
@@ -841,8 +853,22 @@ def _runtime_settings() -> Settings:
         return load_settings()
 
 
+def _the_pin_clients(built_base: str, built_model: str, role: str, address_only: bool) -> dict[str, Any]:
+    """The http clients that let a run's model pin reroute this client's requests; none when they cannot be built."""
+    if not built_base:
+        return {}
+    try:
+        from app.models.model_pin import clients_for
+
+        return clients_for(built_base, built_model, role=role, address_only=address_only)
+    except Exception:  # noqa: BLE001 - without them the client is the one it always was
+        logger.warning("Could not install the model pin's transport", exc_info=True)
+        return {}
+
+
 def build_default_chat_model(
     settings: Settings | None = None, environment: Mapping[str, str] | None = None,
+    *, role: str = "default", address_only: bool = False,
 ) -> BaseChatModel:
     """Construct the chat model role agents use, from validated settings.
 
@@ -926,6 +952,9 @@ def build_default_chat_model(
             timeout=_request_timeout(),
             max_tokens=reply_ceiling if reply_ceiling and reply_ceiling > 0 else None,
             default_headers=naming or None,
+            # Each request asks which model its run is on now and goes there when that is not the model this client
+            # was built for (`app.models.model_pin`); outside a run, or on the same model, it is sent as it was.
+            **_the_pin_clients(reached, resolved_settings.model_name, role, address_only),
             **thinking.openai_arguments(local=speaks_llama_cpp),
         )
         # If it's a local model that fails, fallback to Anthropic if available

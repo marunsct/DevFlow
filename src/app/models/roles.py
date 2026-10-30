@@ -200,7 +200,7 @@ def build_judgement_model(default_model: Any, environment: Mapping[str, str] | N
         from app.config import load_settings
         from app.models import build_default_chat_model
 
-        model = build_default_chat_model(load_settings(built), environment=built)
+        model = build_default_chat_model(load_settings(built), environment=built, role="judgement")
     except Exception as error:  # noqa: BLE001 - a broken second model must not stop the run
         logger.warning(
             "The judgement model %r could not be built; every stage uses the default model",

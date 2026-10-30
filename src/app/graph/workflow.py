@@ -8716,8 +8716,7 @@ def build_workflow_graph(
                 base_env[mapping[k]] = v
                 
         settings = load_settings(base_env)
-        # The run chose this provider and model; where it is served from is the model pin's to say.
-        model = build_default_chat_model(settings, address_only=True)
+        model = build_default_chat_model(settings)
 
     # The model for judgement: the architect, QA, the reviews, the test rounds
     # and the fixes. The default model unless one is configured - see

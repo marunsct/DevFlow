@@ -868,7 +868,6 @@ def _the_pin_clients(built_base: str, built_model: str, role: str, address_only:
 
 def build_default_chat_model(
     settings: Settings | None = None, environment: Mapping[str, str] | None = None,
-    *, role: str = "default", address_only: bool = False,
 ) -> BaseChatModel:
     """Construct the chat model role agents use, from validated settings.
 
@@ -954,7 +953,14 @@ def build_default_chat_model(
             default_headers=naming or None,
             # Each request asks which model its run is on now and goes there when that is not the model this client
             # was built for (`app.models.model_pin`); outside a run, or on the same model, it is sent as it was.
-            **_the_pin_clients(reached, resolved_settings.model_name, role, address_only),
+            **_the_pin_clients(
+                reached, resolved_settings.model_name,
+                # The judgement model is the one built from an environment of its own (`app.models.roles`); a
+                # caller that hands in the settings has chosen the provider and model itself (a run's own
+                # override), and only the address it is served from is the model pin's to say.
+                "judgement" if environment is not None else "default",
+                settings is not None and environment is None,
+            ),
             **thinking.openai_arguments(local=speaks_llama_cpp),
         )
         # If it's a local model that fails, fallback to Anthropic if available

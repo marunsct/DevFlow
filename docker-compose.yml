@@ -69,6 +69,7 @@ x-app-env: &app-env
   SPEC_DRY_RUN: ${SPEC_DRY_RUN:-off}
   ORDER_PROBE: ${ORDER_PROBE:-off}
   IDS_READ_WITHOUT_A_CREATE: ${IDS_READ_WITHOUT_A_CREATE:-off}
+  QA_SAYS_THE_PRODUCT_IS_AT_FAULT: ${QA_SAYS_THE_PRODUCT_IS_AT_FAULT:-off}
   MUTATION_GUIDED_TESTS_CHANGES: ${MUTATION_GUIDED_TESTS_CHANGES:-6}
   # Switches set on the admin page (/admin) beat the values above, in every process (`app.switches`).
   SWITCH_OVERRIDES_FROM_SETTINGS: ${SWITCH_OVERRIDES_FROM_SETTINGS:-on}

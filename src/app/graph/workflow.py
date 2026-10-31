@@ -2990,11 +2990,12 @@ def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: 
             return test_result
         if any(str(d.description or "").startswith(interface_contract.SERVER_FAILED) for d in test_result.defects):
             return test_result
-        errors = interface_contract.server_errors(root)
-        if not errors:
+        errors = interface_contract.server_errors(root) or []
+        bad_body = interface_contract.bad_body_errors(root) or []
+        if not errors and not bad_body:
             return test_result
-        logger.warning("A green round's contract checks made the server fail on %d line(s)", len(errors))
-        return _with_a_server_error_defect(state, test_result, milestone, errors)
+        logger.warning("A green round's contract checks made the server fail on %d line(s)", len(errors) + len(bad_body))
+        return _with_a_server_error_defect(state, test_result, milestone, errors, bad_body)
     except Exception:  # noqa: BLE001 - the round as measured stands
         logger.debug("Could not add the contract's server errors to the round", exc_info=True)
         return test_result
@@ -3019,22 +3020,29 @@ def _with_the_lock_s_server_errors(state: Any, test_result: Any, milestone: Any)
         return test_result
 
 
-def _with_a_server_error_defect(state: Any, test_result: Any, milestone: Any, errors: list[Any]) -> Any:
-    """`test_result` with one defect for `errors`, each a contract check and the 5xx it got."""
+def _with_a_server_error_defect(state: Any, test_result: Any, milestone: Any, errors: list[Any],
+                                bad_body: list[Any] | None = None) -> Any:
+    """`test_result` with one defect for `errors`, each a contract check and the 5xx it got, and for `bad_body`, the same for a body nothing can parse."""
     from app.acceptance import interface_contract
     from app.agents.specialists import ReportedDefect
     from app.graph import acceptance_nodes
 
     root = state["repository"].root_path
+    unparsable = list(bad_body or [])
     defect = ReportedDefect(
-        description=interface_contract.server_error_description(errors),
+        description=interface_contract.server_error_description(errors, unparsable),
         severity="major",
-        reproduction_steps="; ".join(
-            f"send `{check.method} {check.path}` with no body to the running service" for check, _ in errors[:6]),
-        expected_behavior="; ".join(
-            f"`{check.method} {check.path}` answers {' or '.join(map(str, check.statuses or (check.status,)))}"
-            for check, _ in errors[:6]),
-        actual_behavior="; ".join(f"`{check.method} {check.path}` answered {status}" for check, status in errors[:6]),
+        reproduction_steps="; ".join([
+            *(f"send `{check.method} {check.path}` with no body to the running service" for check, _ in errors[:6]),
+            *(f"send `{check.method} {check.path}` the JSON content type and the body "
+              f"`{interface_contract.A_BODY_NOTHING_CAN_PARSE}`" for check, _ in unparsable[:6]),
+        ]),
+        expected_behavior="; ".join([
+            *(f"`{check.method} {check.path}` answers {' or '.join(map(str, check.statuses or (check.status,)))}"
+              for check, _ in errors[:6]),
+            *(f"`{check.method} {check.path}` refuses a body it cannot parse with a status under 500" for check, _ in unparsable[:6]),
+        ]),
+        actual_behavior="; ".join(f"`{check.method} {check.path}` answered {status}" for check, status in [*errors[:6], *unparsable[:6]]),
         affected_files=sorted({f for f, _ in acceptance_nodes.where_errors_become_5xx(root)}),
         owner=_the_unit_tests_fail(milestone, "").owner,
     )
@@ -9586,6 +9594,9 @@ def build_workflow_graph(
             ),
             built_ahead=built_ahead_asked_about,
         )
+        from app.agents.specification_rulings import with_the_rulings
+
+        request = with_the_rulings(request, root_path)
         try:
             update = _run_gated_agent(
                 state,
@@ -9838,6 +9849,9 @@ def build_workflow_graph(
         due_brief = acceptance_nodes.criteria_brief(state)
         if due_brief:
             request["messages"][-1]["content"] += due_brief
+        from app.agents.specification_rulings import with_the_rulings
+
+        request = with_the_rulings(request, state["repository"].root_path)
         # A release held back hands on with no milestone plan, so the lead
         # plans afresh - and the planning request never read the comments:
         # a release held for a missing README or a credential in the code

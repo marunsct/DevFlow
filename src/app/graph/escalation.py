@@ -138,8 +138,9 @@ def _after_the_specification(state: Any) -> str:
 
 
 def _build_from_the_latest_specification(
-    state: Any, update: dict[str, Any], error: str, *, decided_by: str, next_stage: str
+    state: Any, update: dict[str, Any], error: str, *, decided_by: str, next_stage: str, model: Any = None
 ) -> dict[str, Any]:
+    from app.agents import specification_rulings
     from app.decisions import record_decision
     from app.graph.workflow import _handing_on
 
@@ -158,7 +159,13 @@ def _build_from_the_latest_specification(
         )[:1500],
         decided_by=decided_by,
     )
-    known = [*(state.get("known_issues") or []), *(f"Design review left open: {f}"[:600] for f in findings)]
+    # A contradiction settled now is no longer open; the other findings stay the risks they were.
+    settled = {r["finding"]: r["decision"] for r in specification_rulings.settle(state, update, model, findings)}
+    known = [
+        *(state.get("known_issues") or []),
+        *((f"Design review left open: {f}" if n not in settled else f"Design review finding settled by {settled[n]}: {f}")[:600]
+          for n, f in enumerate(findings, start=1)),
+    ]
     return _handing_on(**update, stage=next_stage, escalation=None, known_issues=known)
 
 
@@ -177,7 +184,8 @@ def escalation(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             _record_document(state, "docs/reviews/escalation.md", _design_page(error, _design_findings(state)))
             return _handing_on(**update, stage="user_review_escalation")
         return _build_from_the_latest_specification(
-            state, update, error, decided_by="auto", next_stage=_after_the_specification(state)
+            state, update, error, decided_by="auto", next_stage=_after_the_specification(state),
+            model=getattr(ctx, "judgement_model", None),
         )
 
     if count > MAX_ESCALATIONS:
@@ -289,7 +297,9 @@ def accept(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     if _kind(state) == DESIGN:
         # They have just read the specification's open points; asking them to
         # review the same specification again would be the same question twice.
-        return _build_from_the_latest_specification(state, {}, error, decided_by="user", next_stage="scaffold")
+        return _build_from_the_latest_specification(
+            state, {}, error, decided_by="user", next_stage="scaffold", model=getattr(ctx, "judgement_model", None)
+        )
     return _defer_and_continue(state, {}, _failing(state), error, decided_by="user")
 
 
@@ -302,6 +312,9 @@ def retry(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         # A fresh round of reviews: the architect revises with the guidance
         # (its request carries `revision_comments`), and a review that still
         # does not converge comes back here, bounded by MAX_ESCALATIONS.
+        from app.agents import specification_rulings
+
+        specification_rulings.forget(_root(state))
         return _handing_on(
             stage="principal_architect",
             escalation=None,

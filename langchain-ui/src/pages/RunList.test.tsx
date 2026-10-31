@@ -91,3 +91,24 @@ describe('the runs table', () => {
     expect(screen.queryByLabelText('Delete run-new-going')).toBeNull();
   });
 });
+
+describe('the run name and the model switch on every row', () => {
+  it('shows the name a run was given above its stage, and a switch on each run that is not finished', async () => {
+    // by id: the list sorts the shared fixture array in place, so its order is not what it was written in
+    const going = runs.find((r) => r.run_id === 'run-new-going')!;
+    const done = runs.find((r) => r.run_id === 'run-old-done')!;
+    const named = [
+      { ...going, run_name: 'tasks-api on 8888', model_pinned: true, model_last: { model: 'model-a', endpoint: '127.0.0.1:8888' } },
+      { ...done, run_name: null, model_pinned: false, model_last: null },
+    ];
+    vi.mocked(listRuns).mockResolvedValue({ runs: named as never, total: named.length });
+    show();
+
+    expect(await screen.findByText('tasks-api on 8888')).toBeTruthy();
+    const switches = screen.getAllByRole('switch', { name: 'Keep this run on its model' });
+    // the finished run has none; the running one has one, on, and says so
+    expect(switches).toHaveLength(1);
+    expect(switches[0].getAttribute('aria-checked')).toBe('true');
+    expect(within(switches[0]).getByText('Pinned')).toBeTruthy();
+  });
+});

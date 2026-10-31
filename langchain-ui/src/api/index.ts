@@ -231,6 +231,12 @@ export const pauseRun = async (runId: string): Promise<{ message: string }> => {
   return response.data;
 };
 
+/** Give a run a name to tell it from the others in the list; an empty name clears it. */
+export const setRunName = async (runId: string, name: string): Promise<{ run_id: string; run_name: string | null }> => {
+  const response = await api.post(`/runs/${runId}/name`, { name });
+  return response.data;
+};
+
 /**
  * Keep a run on the model it last ran on (`pinned: true`), or let it follow the current model settings again.
  * Works mid-run: a request already sent finishes where it was sent, every new one goes to the run's model.

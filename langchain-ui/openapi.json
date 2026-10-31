@@ -1411,6 +1411,23 @@
     "title": "RunListResponse",
     "type": "object"
    },
+   "RunNameRequest": {
+    "additionalProperties": false,
+    "description": "Give a run a name, or clear it (an empty name).",
+    "properties": {
+     "name": {
+      "description": "The name to show for the run; empty clears it.",
+      "maxLength": 80,
+      "title": "Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "RunNameRequest",
+    "type": "object"
+   },
    "RunStage": {
     "additionalProperties": false,
     "description": "Information about a specific stage in the run.",
@@ -1688,6 +1705,18 @@
       "title": "Run Id",
       "type": "string"
      },
+     "run_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The name the person gave the run, or null.",
+      "title": "Run Name"
+     },
      "stage_meaning": {
       "anyOf": [
        {
@@ -1849,10 +1878,39 @@
       "description": "Whether the run was started not to use the frontier model.",
       "title": "Local Only"
      },
+     "model_last": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ModelSummary"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The model the run last ran on: name and host:port only."
+     },
+     "model_pinned": {
+      "default": false,
+      "description": "Whether the run is kept on the model it last ran on.",
+      "title": "Model Pinned",
+      "type": "boolean"
+     },
      "run_id": {
       "description": "Unique identifier for the run.",
       "title": "Run Id",
       "type": "string"
+     },
+     "run_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The name the person gave the run, or null.",
+      "title": "Run Name"
      },
      "status": {
       "description": "Current overarching status of the run.",
@@ -2713,6 +2771,19 @@
       ],
       "description": "Override the model for this run.",
       "title": "Model Name"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "maxLength": 80,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "A name for the run, shown in its header and in the runs list; can be changed later.",
+      "title": "Name"
      },
      "openai_base_url": {
       "anyOf": [
@@ -5312,6 +5383,66 @@
      }
     ],
     "summary": "Pin Run Model",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/name": {
+   "post": {
+    "description": "Give the run a name to tell it from the others in the list, or clear it with an empty name.",
+    "operationId": "name_run_api_runs__run_id__name_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RunNameRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Name Run Api Runs  Run Id  Name Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Name Run",
     "tags": [
      "runs"
     ]

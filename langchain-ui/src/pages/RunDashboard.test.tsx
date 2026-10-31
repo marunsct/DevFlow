@@ -10,7 +10,7 @@ const { run } = vi.hoisted(() => ({ run: {
   remediation: null, error: null, auto_approve: false, completion_gaps: [], gate_deadline: null,
   approval_timeout_minutes: null, non_deliverable: '', delivery_mode: 'fast', use_frontier_model: false,
   max_run_tokens: null, max_run_cost_usd: null, cost: null,
-  model_pinned: false, model_last: { model: 'model-a', endpoint: '127.0.0.1:8888' },
+  run_name: null, model_pinned: false, model_last: { model: 'model-a', endpoint: '127.0.0.1:8888' },
 } }));
 
 const { known } = vi.hoisted(() => ({ known: {} as Record<string, ReturnType<typeof vi.fn>> }));
@@ -118,7 +118,7 @@ describe('the run page', () => {
     renderPage();
     await screen.findByText('Fixing problem 4 (test round 2)');
     const toggle = await screen.findByRole('switch', { name: 'Keep this run on its model' });
-    expect((toggle as HTMLInputElement).checked).toBe(false);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
     expect(screen.getByText('(model-a @ 127.0.0.1:8888)')).toBeTruthy();
 
     toggle.click();

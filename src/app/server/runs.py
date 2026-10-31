@@ -49,6 +49,7 @@ from app.server.models import (
     ReviewPayload,
     ModelPinRequest,
     ModelSummary,
+    RunNameRequest,
     RewindRequest,
     RunListResponse,
     RunStatusResponse,
@@ -461,6 +462,9 @@ def create_runs_router(
         except RunConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc))
 
+        if body.name and " ".join(body.name.split()):
+            await asyncio.to_thread(lambda: runner.run_store.set_run_name(run_id, " ".join(body.name.split())[:80]))
+
         record_audit(
             actor=user.username, tenant_id=user.tenant_id, action="run.start", subject=run_id,
             # `seeded.provenance` is built by the seeding module and carries a
@@ -539,6 +543,21 @@ def create_runs_router(
             raise HTTPException(status_code=409, detail=str(exc))
         record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.pause", subject=run_id)
         return {"message": f"Run {run_id} is pausing."}
+
+    @runs.post("/{run_id}/name")
+    async def name_run(
+        run_id: str, payload: RunNameRequest, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, Any]:
+        """Give the run a name to tell it from the others in the list, or clear it with an empty name."""
+        _require_run(runner, run_id, user)
+        name = " ".join(payload.name.split())[:80]
+        changed = await asyncio.to_thread(lambda: runner.run_store.set_run_name(run_id, name or None))
+        if not changed:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
+        record_audit(
+            actor=user.username, tenant_id=user.tenant_id, action="run.name", subject=run_id, detail={"name": name},
+        )
+        return {"run_id": run_id, "run_name": name or None}
 
     @runs.post("/{run_id}/model-pin")
     async def pin_run_model(
@@ -633,6 +652,8 @@ def create_runs_router(
         """List runs in the caller's tenant, newest first."""
         tenant = None if user.role == "admin" else user.tenant_id
         records = runner.run_store.list_all(tenant_id=tenant, limit=limit, offset=offset)
+        pins = _the_model_pins([r.run_id for r in records], runner)
+        names = runner.run_store.run_names([r.run_id for r in records])
         return RunListResponse(
             runs=[
                 RunSummary(
@@ -646,6 +667,8 @@ def create_runs_router(
                     local_only=getattr(r, "local_only", None),
                     completion_gaps=len(getattr(r, "completion_gaps", None) or []),
                     gate_deadline=_when_the_gate_approves_itself(r),
+                    **pins.get(r.run_id, {}),
+                    run_name=names.get(r.run_id),
                     **_how_many_criteria_hold(r),
                 )
                 for r in records
@@ -2120,6 +2143,7 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         delivery_mode=str(getattr(record, "delivery_mode", "") or ""),
         use_frontier_model=not bool(getattr(record, "local_only", False)),
         **_the_model_pin(record.run_id, runner),
+        **_the_run_name(record.run_id, runner),
         cost=_cost_summary(record.run_id),
         # The ceilings the worker holds the run to: the API reads the same environment.
         max_run_tokens=_max_run_tokens() or None,
@@ -2127,6 +2151,29 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         # Its size, so the page can say what a run of this size takes here.
         **_how_many_criteria_hold(record),
     )
+
+
+def _the_run_name(run_id: str, runner: Any) -> dict[str, Any]:
+    """`run_name` for a status response, or nothing: a status is never failed by the name."""
+    try:
+        name = runner.run_store.run_names([run_id]).get(run_id)
+        return {"run_name": name} if name else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _the_model_pins(run_ids: list[str], runner: Any) -> dict[str, dict[str, Any]]:
+    """`_the_model_pin` for a page of runs, from one statement: {run_id: the fields a summary carries}."""
+    try:
+        from app.models.model_pin import summary_of
+
+        out: dict[str, dict[str, Any]] = {}
+        for run_id, (pinned, last) in runner.run_store.model_states(run_ids).items():
+            summary = summary_of(last)
+            out[run_id] = {"model_pinned": bool(pinned), "model_last": ModelSummary(**summary) if summary else None}
+        return out
+    except Exception:  # noqa: BLE001 - a list is never failed by the pin
+        return {}
 
 
 def _the_model_pin(run_id: str, runner: Any) -> dict[str, Any]:

@@ -5,7 +5,7 @@
 #   scripts/loop/loop.sh status [run]        state of the run (default: current) + anything else running
 #   scripts/loop/loop.sh start [brief]       create and start a run (default tests/brief_low.md)
 #   scripts/loop/loop.sh cancel [run-id]     cancel a run (default: the current one); needs LOOP_USER/LOOP_PASSWORD
-#   scripts/loop/loop.sh pin on|off [run-id] keep a run on its model / let it follow the settings (PIN_URL, PIN_MODEL_NAME pin it to an endpoint); PIN_MODEL=1 on start/bench pins at the start
+#   scripts/loop/loop.sh pin on|off [run-id] keep a run on its model / let it follow the settings (PIN_URL, PIN_MODEL_NAME pin it to an endpoint); PIN_MODEL=1 on start/bench pins at the start; RUN_NAME="..." on start/bench names the run
 #   scripts/loop/loop.sh wait [minutes] [run] block until the run (default: current) ends or N minutes pass (default 18),
 #                                            then print status, key log lines and the audit
 #   scripts/loop/loop.sh audit [run-id]      failure / redundancy audit of a run (audit_live.py)
@@ -131,7 +131,7 @@ start)
   # already started) said "started" before; it names the refusal now, and the
   # run it created is not left behind as the current one.
   answer=$(curl -s -w '\n%{http_code}' -X POST "$API/api/runs/$run/start" -H "Authorization: Bearer $token" \
-       -H "Content-Type: application/json" -d "{\"auto_approve\": true${DELIVERY:+, \"delivery_mode\": \"$DELIVERY\"}${FRONTIER:+, \"use_frontier_model\": $FRONTIER}${PIN_MODEL:+, \"pin_model\": true}${PIN_MODEL:+${PIN_URL:+, \"pin_base_url\": \"$PIN_URL\"}}${PIN_MODEL:+${PIN_MODEL_NAME:+, \"pin_model_name\": \"$PIN_MODEL_NAME\"}}$source}")
+       -H "Content-Type: application/json" -d "{\"auto_approve\": true${DELIVERY:+, \"delivery_mode\": \"$DELIVERY\"}${FRONTIER:+, \"use_frontier_model\": $FRONTIER}${RUN_NAME:+, \"name\": \"$RUN_NAME\"}${PIN_MODEL:+, \"pin_model\": true}${PIN_MODEL:+${PIN_URL:+, \"pin_base_url\": \"$PIN_URL\"}}${PIN_MODEL:+${PIN_MODEL_NAME:+, \"pin_model_name\": \"$PIN_MODEL_NAME\"}}$source}")
   code=$(echo "$answer" | tail -n 1)
   echo "$answer" | sed '$d'
   if [ "$code" != "202" ]; then

@@ -16,7 +16,6 @@ import {
   submitApproval,
   cancelRun,
   pauseRun,
-  setModelPin,
   resumeRun,
   getRewindPoints,
   rewindRun,
@@ -32,6 +31,8 @@ import { LogViewer } from '../components/LogViewer';
 import { LatestChange } from '../components/LatestChange';
 import { AuditTable } from '../components/AuditTable';
 import { ModelPressure } from '../components/ModelPressure';
+import { ModelPinSwitch } from '../components/ModelPinSwitch';
+import { RunNameField } from '../components/RunNameField';
 import { Timeline } from '../components/Timeline';
 import { Tabs } from '../ui';
 import { ChangesPanel } from '../components/ChangesPanel';
@@ -413,16 +414,6 @@ export const RunDashboard: React.FC = () => {
   };
 
   /** Keep this run on its model, or let it follow the model settings; takes effect on the next request. */
-  const handleModelPin = async (pinned: boolean) => {
-    if (!runId) return;
-    try {
-      await setModelPin(runId, pinned);
-      await fetchState();
-    } catch (err: any) {
-      notify("Failed to change the model setting: " + (err.response?.data?.detail || err.message));
-    }
-  };
-
   const handleResume = async () => {
     if (!runId) return;
     try {
@@ -611,31 +602,13 @@ export const RunDashboard: React.FC = () => {
             </button>
           )}
           {!isTerminal && run.status !== 'created' && (
-            <label
-              className={`${actionButton} cursor-pointer select-none ${
-                run.model_pinned
-                  ? 'text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5'
-                  : 'text-text-secondary border-border hover:border-border-strong hover:bg-overlay'
-              }`}
-              title={
-                run.model_pinned
-                  ? 'This run stays on the model it last ran on, whatever the model settings become. Turn off to follow the current settings from the next request.'
-                  : 'This run follows the current model settings. Turn on to keep it on the model it last ran on.'
-              }>
-              <input
-                type="checkbox"
-                role="switch"
-                aria-label="Keep this run on its model"
-                checked={!!run.model_pinned}
-                onChange={(e) => handleModelPin(e.target.checked)}
-              />
-              Keep this run on its model
-              {run.model_last?.model && (
-                <span className="text-text-muted">
-                  ({run.model_last.model}{run.model_last.endpoint ? ` @ ${run.model_last.endpoint}` : ''})
-                </span>
-              )}
-            </label>
+            <ModelPinSwitch
+              runId={run.run_id}
+              pinned={!!run.model_pinned}
+              model={run.model_last?.model}
+              endpoint={run.model_last?.endpoint}
+              onChanged={() => { void fetchState(); }}
+            />
           )}
           {RESUMABLE.includes(run.status) && !run.error?.startsWith('Interrupted:') && (
             <button onClick={handleResume}
@@ -705,6 +678,7 @@ export const RunDashboard: React.FC = () => {
                 <StatusIcon className={`h-4 w-4 ${config.text}`} />
               </span>
               <div className="min-w-0">
+                <RunNameField runId={run.run_id} name={run.run_name} onChanged={() => { void fetchState(); }} />
                 <h1 className="text-base sm:text-lg font-semibold text-text-primary leading-tight truncate">
                   {stageCopy.title}
                 </h1>

@@ -342,6 +342,12 @@ export interface RunListResponse {
   total: number;
 }
 
+/** Give a run a name, or clear it (an empty name). */
+export interface RunNameRequest {
+  /** The name to show for the run; empty clears it. */
+  name: string;
+}
+
 /** Information about a specific stage in the run. */
 export interface RunStage {
   /** Approvals this stage passed through - progress, not repetition. */
@@ -406,6 +412,8 @@ export interface RunStatusResponse {
   reviews: ReviewInfo[];
   /** Unique identifier for the run. */
   run_id: string;
+  /** The name the person gave the run, or null. */
+  run_name: string | null;
   /** Meaning of the current stage. */
   stage_meaning: string | null;
   /** Stage history, when available. */
@@ -440,8 +448,14 @@ export interface RunSummary {
   gate_deadline: string | null;
   /** Whether the run was started not to use the frontier model. */
   local_only: boolean | null;
+  /** The model the run last ran on: name and host:port only. */
+  model_last: ModelSummary | null;
+  /** Whether the run is kept on the model it last ran on. */
+  model_pinned: boolean;
   /** Unique identifier for the run. */
   run_id: string;
+  /** The name the person gave the run, or null. */
+  run_name: string | null;
   /** Current overarching status of the run. */
   status: string;
   /** When the run last moved. */
@@ -648,6 +662,8 @@ export interface StartRunRequest {
   llm_provider?: string | null;
   /** Override the model for this run. */
   model_name?: string | null;
+  /** A name for the run, shown in its header and in the runs list; can be changed later. */
+  name?: string | null;
   /** Override the OpenAI-compatible base URL. */
   openai_base_url?: string | null;
   /** With pin_model: pin to this OpenAI-compatible address instead of the settings' (no credentials in it). */

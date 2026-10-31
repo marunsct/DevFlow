@@ -8,6 +8,7 @@ import { statusView } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { markRunsSeen } from '../lib/useNeedsYou';
 import { OutcomesPanel } from '../components/OutcomesPanel';
+import { ModelPinSwitch } from '../components/ModelPinSwitch';
 import { useNow, usePageVisible } from '../lib/usePageVisible';
 import { useFeedback } from '../components/Feedback';
 import { Button } from '../ui';
@@ -231,7 +232,12 @@ export const RunList: React.FC = () => {
                     <tr key={run.run_id} className={`border-b border-border last:border-0 hover:bg-overlay ${view.needsYou ? 'bg-accent-soft' : ''}`}>
                       <td className="px-4 py-3 align-top"><StatusBadge status={run.status} /></td>
                       <td className="px-4 py-3 align-top min-w-0">
-                        <Link to={`/runs/${run.run_id}`} className="font-medium text-text-primary hover:underline">{label}</Link>
+                        {run.run_name && (
+                          <Link to={`/runs/${run.run_id}`} className="block font-semibold text-text-primary hover:underline truncate max-w-[16rem]" title={run.run_name}>
+                            {run.run_name}
+                          </Link>
+                        )}
+                        <Link to={`/runs/${run.run_id}`} className={run.run_name ? 'text-xs text-text-secondary hover:underline' : 'font-medium text-text-primary hover:underline'}>{label}</Link>
                         <div className="text-xs text-text-muted font-mono truncate max-w-[16rem]" title={run.run_id}>
                           {run.run_id} · {new Date(run.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </div>
@@ -251,6 +257,18 @@ export const RunList: React.FC = () => {
                         {run.completion_gaps ? <span className="text-warning">{run.completion_gaps}</span> : <span className="text-text-muted">0</span>}
                       </td>
                       <td className="px-4 py-2 align-top whitespace-nowrap text-right">
+                        {!view.terminal && run.status !== 'created' && (
+                          <span className="mr-2 align-middle">
+                            <ModelPinSwitch
+                              compact
+                              runId={run.run_id}
+                              pinned={!!run.model_pinned}
+                              model={run.model_last?.model}
+                              endpoint={run.model_last?.endpoint}
+                              onChanged={() => fetchRuns()}
+                            />
+                          </span>
+                        )}
                         {run.status === 'running' && (
                           <button type="button" onClick={() => handlePause(run.run_id)} className={button} aria-label={`Pause ${run.run_id}`} title="Pause run">
                             <Pause className="h-4 w-4" aria-hidden="true" />

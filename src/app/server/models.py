@@ -163,6 +163,10 @@ class StartRunRequest(BaseModel):
             "automatically. Omit to wait for the person however long it takes."
         ),
     )
+    name: str | None = Field(
+        default=None, max_length=80,
+        description="A name for the run, shown in its header and in the runs list; can be changed later.",
+    )
     pin_model: bool = Field(
         default=False,
         description=(
@@ -512,6 +516,7 @@ class RunStatusResponse(BaseModel):
     use_frontier_model: bool = Field(
         default=True, description="Whether this run uses the frontier model; False is the build model only.",
     )
+    run_name: str | None = Field(default=None, description="The name the person gave the run, or null.")
     model_pinned: bool = Field(
         default=False,
         description="Whether the run is kept on the model it last ran on (true) or follows the current model settings (false).",
@@ -737,6 +742,13 @@ class WizardModel(BaseModel):
     )
 
 
+class RunNameRequest(BaseModel):
+    """Give a run a name, or clear it (an empty name)."""
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(max_length=80, description="The name to show for the run; empty clears it.")
+
+
 class RunSummary(BaseModel):
     """A brief summary of a run."""
     model_config = ConfigDict(extra="forbid")
@@ -756,6 +768,9 @@ class RunSummary(BaseModel):
         default=None,
         description="When a waiting gate approves itself, or null when nothing waits or it waits for the person.",
     )
+    run_name: str | None = Field(default=None, description="The name the person gave the run, or null.")
+    model_pinned: bool = Field(default=False, description="Whether the run is kept on the model it last ran on.")
+    model_last: ModelSummary | None = Field(default=None, description="The model the run last ran on: name and host:port only.")
 
 
 class ServerHealth(BaseModel):

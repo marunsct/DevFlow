@@ -31,6 +31,12 @@ os.environ.setdefault("WORKFLOW_WORK_ORDER_READINESS", "off")
 # auth refuses to load without a key - whether it did depended on which worker
 # collected which file first.
 os.environ.setdefault("ENV", "development")
+# No test reaches a real model. `load_settings` reads `.env` without overriding, so without this the suite took its
+# model server from the operator's file: a run's startup path diagnoses the model, and when the file named a server
+# that needs no key the tests sent it real requests, beside the live runs, and took minutes. Port 9 refuses at once;
+# a test wanting an address sets its own.
+os.environ["OPENAI_BASE_URL"] = "http://127.0.0.1:9/v1"
+os.environ["JUDGEMENT_BASE_URL"] = ""
 
 
 @pytest.fixture(autouse=True)

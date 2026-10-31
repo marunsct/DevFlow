@@ -93,6 +93,9 @@ _MIGRATIONS = (
     # not by `save`.
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS model_pinned BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS model_last TEXT",
+    # A name the person gives a run to tell it from the others in the list (never written by `save`: owned by
+    # `set_run_name`, so a worker persisting its record cannot undo a rename).
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS run_name TEXT",
     "CREATE INDEX IF NOT EXISTS runs_tenant_created_idx ON runs (tenant_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS runs_owner_idx ON runs (owner)",
 )
@@ -411,6 +414,60 @@ class RunStore:
         except (TypeError, ValueError):
             last = {}
         return bool(row[0]), {str(k): str(v) for k, v in last.items()} if isinstance(last, dict) else {}
+
+    def model_states(self, run_ids: list[str]) -> dict[str, tuple[bool, dict[str, str]]]:
+        """`model_state` for several runs with one statement: {run_id: (pinned, the model it last ran on)}.
+
+        The runs list shows each run's pin beside its other controls; asking one run at a time made a page of 50
+        runs 50 statements. A run with no row is left out. Never raises: the list is not failed by the pin.
+        """
+        if not run_ids:
+            return {}
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT run_id, model_pinned, model_last FROM runs WHERE run_id = ANY(%s)", (list(run_ids),)
+                    )
+                    rows = cur.fetchall()
+        except Exception:  # noqa: BLE001
+            return {}
+        found: dict[str, tuple[bool, dict[str, str]]] = {}
+        for run_id, pinned, raw in rows:
+            try:
+                last = json.loads(raw) if raw else {}
+            except (TypeError, ValueError):
+                last = {}
+            found[str(run_id)] = (bool(pinned), {str(k): str(v) for k, v in last.items()} if isinstance(last, dict) else {})
+        return found
+
+    def run_names(self, run_ids: list[str]) -> dict[str, str]:
+        """{run_id: name} for the runs asked for that have one, with one statement. Never raises."""
+        if not run_ids:
+            return {}
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT run_id, run_name FROM runs WHERE run_id = ANY(%s) AND COALESCE(run_name, '') <> ''",
+                        (list(run_ids),),
+                    )
+                    return {str(run_id): str(name) for run_id, name in cur.fetchall()}
+        except Exception:  # noqa: BLE001 - a list is never failed by a name
+            return {}
+
+    def set_run_name(self, run_id: str, name: str | None) -> bool:
+        """Give the run a name (None or empty clears it); True when the run exists.
+
+        Its own statement, kept out of `save` and its ON CONFLICT update, like the pin: a worker saving its
+        in-memory record must not undo what the person typed.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE runs SET run_name = %s WHERE run_id = %s", ((name or None), run_id))
+                changed = cur.rowcount
+            conn.commit()
+        return changed == 1
 
     def set_model_pin(
         self, run_id: str, pinned: bool, *, last: dict[str, str] | None = None, if_unknown: dict[str, str] | None = None

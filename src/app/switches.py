@@ -98,6 +98,8 @@ EXPERIMENTS = (
     "CONTRACT_PROBE_WITH_A_RECORD", "NAMING_FINDING_BEFORE_DEFERRAL",
     # The suite as an executable oracle, and its order and ids (plan items 18 and 20).
     "SPEC_DRY_RUN", "ORDER_PROBE", "IDS_READ_WITHOUT_A_CREATE",
+    # A QA repair that ends early when it finds no fault in the test: a model's claim decides it.
+    "QA_SAYS_THE_PRODUCT_IS_AT_FAULT",
 )
 #: The experiments deployed on, each with the measurement that turned it on.
 EXPERIMENTS_ON = {

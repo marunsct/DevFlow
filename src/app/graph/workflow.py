@@ -5780,6 +5780,21 @@ def _names_a_cause(defect: Any) -> bool:
     )
 
 
+def _with_a_stopped_service_s_report(item: Any, others: list[Any]) -> str:
+    """The lead defect's `actual_behavior`, with what a merged defect says a service wrote as it stopped by itself.
+
+    A merge keeps only the lead's: the report that names the cause would go with the defect merged away.
+    """
+    from app.acceptance import suite as acceptance_suite
+
+    actual = str(getattr(item, "actual_behavior", "") or "")
+    for other in others:
+        stopped = acceptance_suite.what_a_stopped_service_wrote(str(getattr(other, "actual_behavior", "") or ""))
+        if stopped and stopped not in actual:
+            actual = f"{actual}\n{stopped}".strip()
+    return actual
+
+
 def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
     """`reported` with the defects that describe one problem merged into one, in order.
 
@@ -5862,6 +5877,7 @@ def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
         ))
         merged.append(item.model_copy(update={
             "expected_behavior": " ".join(e for e in expected if e)[:2000],
+            "actual_behavior": _with_a_stopped_service_s_report(item, others),
             "description": f"{item.description}{SAME_PROBLEM_ELSEWHERE}{also}",
             "affected_files": files,
             "severity": severity,
@@ -6043,6 +6059,7 @@ def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
             for other in others
         )
         merged.append(item.model_copy(update={
+            "actual_behavior": _with_a_stopped_service_s_report(item, others),
             "description": (
                 f"{item.description}\n\n{len(others)} other criteria meet the same first failure "
                 f"({layer}); one cause is behind them, so one repair answers all of them:\n{also}"

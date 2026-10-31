@@ -834,7 +834,24 @@ def what_the_server_logged(output: str) -> str:
             kept.append(text)
         if len(kept) >= MOST_SERVER_LINES:
             break
-    return "\n".join(kept)[:1_500]
+    return "\n".join(part for part in ("\n".join(kept)[:1_500], what_a_stopped_service_wrote(output)) if part)
+
+
+#: The most of a stopped service's report a defect carries: its own 2,000 characters of output and the line before them.
+STOPPED_SERVICE_CHARS = 2_200
+
+
+def what_a_stopped_service_wrote(output: str) -> str:
+    """The restart helper's last report of a service that stopped by itself under a test, with what it wrote; "".
+
+    Measured on one run: a test saw only a closed connection and the report sat in the suite's output, which no fixer is
+    shown, while the service's own fatal error named the cause.
+    """
+    from app.stacks.packs._service import SERVICE_STOPPED_BY_ITSELF  # noqa: PLC0415 - a pack's text, read here alone
+
+    text = str(output or "")
+    at = text.rfind(SERVICE_STOPPED_BY_ITSELF)
+    return text[at:at + STOPPED_SERVICE_CHARS].strip() if at >= 0 else ""
 
 
 def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = True) -> AcceptanceResult:

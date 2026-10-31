@@ -443,6 +443,9 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         if "__acceptance_author__" not in update:
             return update
         blockers = getattr(update.pop("__acceptance_author__"), "blockers", None) or []
+    from app.graph import product_at_fault
+
+    blockers = product_at_fault.take_claims(root, blockers)
     reasons = acceptance_requests.not_automatable(blockers)
     # A criterion the suite has a test for is automatable: that test is how.
     # Deferring it takes it out of the release gate. One run's QA, repairing a
@@ -504,6 +507,14 @@ def _scenarios(root: str) -> str:
         lines.extend(f"- {name}" for name in covered.get(change_id, []))
         lines.append("")
     return "\n".join(lines)
+
+
+def _the_specification_on_disk(root: str) -> str:
+    """The recorded specification's text, or ""."""
+    try:
+        return (Path(root) / "docs" / "technical_specification.md").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
 
 
 def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]:
@@ -592,8 +603,20 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     targeted = not problems and suite.targeted_repair_switch.enabled() and suite.only_the_repaired_tests_changed(root)
     if targeted:
         logger.info("The reopened suite changed only the tests sent for repair; locked again on the harness's checks")
+    from app.acceptance.api_reference import api_reference
+    from app.graph import product_at_fault
+
+    specification = state.get("technical_specification")
+    no_fault_found = product_at_fault.evidence(root, result, problems, [
+        getattr(state.get("document"), "text", "") or "",
+        *(getattr(specification, "interface_contract", None) or ()),
+        *(criterion.text for criterion in suite.criteria(root)),
+        api_reference(specification),
+        _the_specification_on_disk(root),
+    ]) if product_at_fault.enabled() else []
+    targeted = targeted or bool(no_fault_found)
     if not problems and not targeted:
-        already_passing = [test.name for test in result.report.tests if test.outcome == "passed"]
+        already_passing =[test.name for test in result.report.tests if test.outcome == "passed"]
         deferred = suite.deferred(root)
         deferred_text = (
             "--- Criteria QA says no automated test can check ---\n"
@@ -617,8 +640,6 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         # The facts the work is built and judged under (plan CM.1).
         request = with_the_facts(request, state["repository"].root_path)
         # What the tests are judged against, whole (see `app.acceptance.api_reference`).
-        from app.acceptance.api_reference import api_reference
-
         request["messages"][-1]["content"] += "\n" + api_reference(state.get("technical_specification"))
         update = _run_gated_agent(
             state, config,
@@ -651,6 +672,16 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     if suite.undefer_what_a_test_now_carries(root):
         logger.info("Deferred criteria a test now carries are no longer deferred")
     suite.lock(root)
+    update.update(product_at_fault.settled(root, no_fault_found))
+    if no_fault_found:
+        logger.warning("QA found no fault in the test(s) sent for repair, and the harness's checks agree; locked, nothing charged")
+        _decide(
+            state, update, point="acceptance_tests",
+            question="QA found no fault in the tests a dispute sent back: is the failure the product's?",
+            options=["the tests stay locked and the product is fixed", "QA repairs the tests"],
+            decision="the tests stay locked and the product is fixed",
+            rationale="; ".join(no_fault_found),
+        )
     from app.acceptance.interface_contract import probe_at_the_lock, record_at_lock
 
     record_at_lock(root, getattr(state.get("technical_specification"), "interface_contract", None) or (),
@@ -1343,6 +1374,14 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
         ))
     # From the whole run, kept as it ran: the saved output is its tail, and an early error was cut (LF.355).
     logged = str(saved.get("server_log") or "") or what_the_server_logged(str(saved.get("output") or ""))
+    # A defect the round wrote itself about a failing criterion takes the place of the one below, so it carries this too.
+    stopped = suite.what_a_stopped_service_wrote(logged)
+    if stopped:
+        ids = {entry.get("id") for entry in failing}
+        for item in reported:
+            actual = str(getattr(item, "actual_behavior", "") or "")
+            if stopped not in actual and ids & set(tags_in(str(getattr(item, "description", "") or ""))):
+                item.actual_behavior = f"{actual}\n{stopped}".strip()
     for entry in failing:
         if entry.get("id") in mentioned:
             continue
@@ -1528,7 +1567,9 @@ def tests_whose_service_stayed_up(repo_root: Any, lines: list[str]) -> tuple[lis
     """
     from app.stacks.packs._service import SERVICE_STOPPED_BY_ITSELF  # noqa: PLC0415 - a pack's text, read here alone
 
-    output = str((suite.last_result(repo_root) or {}).get("output") or "")
+    saved = suite.last_result(repo_root) or {}
+    # The saved output is the run's tail; the report kept from the whole run is with what the server logged.
+    output = f"{saved.get('output') or ''}\n{saved.get('server_log') or ''}"
     if SERVICE_STOPPED_BY_ITSELF not in output:
         return list(lines), []
     texts = []
@@ -1664,13 +1705,18 @@ def reopen_the_suite_for(
     )
     # Rewritten where they stand, then straight to the review: QA's author loop is for what cannot be placed.
     rewritten = _rewritten_in_one_call_each(state, broken, model)
+    # Only a dispute's repair may answer that the test is right: a harness check measured the fault of any other.
+    from app.graph import product_at_fault
+
+    no_fault_rule = product_at_fault.offered(
+        state, _root(state), [_which_test(item) for item in broken]) if reclassifying and not rewritten else []
     return _handing_on(
         **update,
         **reclassified,
         stage="acceptance_review" if rewritten else "acceptance_author",
         acceptance_return_to=return_to,
         acceptance_round=1 if rewritten else 0,
-        acceptance_feedback=[] if rewritten else [*broken, REPAIR_RULE],
+        acceptance_feedback=[] if rewritten else [*broken, REPAIR_RULE, *no_fault_rule],
         **({"revision_comments": []} if rewritten else {}),
         suite_repairs=repairs + 1,
         suite_repaired_tests=sorted({*(state.get("suite_repaired_tests") or []), *map(_which_test, broken)}),

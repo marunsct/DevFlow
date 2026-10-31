@@ -90,6 +90,7 @@ SWITCHES: dict[str, str] = {
     "CONTRACT_NON_NUMERIC_IDS": "app.acceptance.interface_contract:named_ids_switch",
     "CONTRACT_PROBE_WITH_A_RECORD": "app.acceptance.interface_contract:record_first_switch",
     "NAMING_FINDING_BEFORE_DEFERRAL": "app.graph.acceptance_nodes:naming_finding_switch",
+    "QA_SAYS_THE_PRODUCT_IS_AT_FAULT": "app.graph.product_at_fault",
     "LAST_TRY_ON_DEFERRED": "app.graph.last_try_on_deferred",
     "START_PROBE": "app.acceptance.start_probe",
     "EXTENSIONS_BEFORE_A_RUN": "app.stacks.imports_before_a_run",

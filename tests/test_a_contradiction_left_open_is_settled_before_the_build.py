@@ -236,7 +236,6 @@ def test_a_person_s_approval_asks_for_no_ruling_and_their_retry_clears_the_rulin
 
     _decide(tmp_path, model)
     assert SAYS_JSON in the_facts_section(tmp_path)
-    model.asked.clear()
     assert escalation.retry(_stuck(tmp_path), {}, context)["stage"] == "principal_architect"
     assert the_facts_section(tmp_path) == ""
     _decide(tmp_path, model)

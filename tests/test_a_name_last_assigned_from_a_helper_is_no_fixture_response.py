@@ -1,6 +1,6 @@
 """A response name last assigned from a helper is not read as the `request` fixture's response
 
-Measured on two runs: a helper held `const res = await request.post(...)` and returned `{ status, body: await res.json() }`.
+Measured on one run: a helper held `const res = await request.post(...)` and returned `{ status, body: await res.json() }`.
 A test's own `const res = await createNote(...)` kept the kind of the helper's `res`, so the right `res.body.title` was
 called a fixture response read as `.body.<field>`, with a correction that would have called `.json()` on a plain object.
 """

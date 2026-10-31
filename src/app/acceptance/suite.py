@@ -2287,7 +2287,7 @@ def _the_kind_assigned(text: str, name: str, at: int) -> str:
 
     Measured on one run: one spec named a fixture response `getResp` in one test and a `fetch` response `getResp`
     in another, and a file-wide reading of the name sent QA to repair the right one. The last assignment of any kind
-    counts: measured on two runs, a test's `const res = await createNote(...)` kept the kind of the `res` inside that
+    counts: measured on one run, a test's `const res = await createNote(...)` kept the kind of the `res` inside that
     helper, and its right `res.body.title` was called a fixture response.
     """
     last = None

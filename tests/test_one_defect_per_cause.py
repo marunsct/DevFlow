@@ -113,3 +113,18 @@ def test_a_pack_contract_finding_leads_the_unit_test_symptom_it_is_merged_with()
 
     assert len(merged) == 1
     assert merged[0].description.startswith("notes-api/src/app.ts no longer exports `createApp`")
+
+
+def test_a_folder_named_in_a_path_is_not_what_a_defect_is_about():
+    # Measured on one run: "notes" in a criterion's `/notes/{id}` matched the project folder `notes-api` in the unit
+    # run's paths. The criterion lost its own defect and shipped deferred after six fixes aimed at another file.
+    unit = _d("The unit tests fail. It says: TypeError at notes-api/test/store.test.ts:12 and file:///w/notes-api/src/a.ts:3")
+    criterion = _d("[AC-11] GET /notes/{id} answers 404 for an id that does not exist. Expected: 404, Received: 500")
+    assert not _the_same_cause(unit, criterion)
+    assert not _the_same_cause(criterion, unit)
+
+
+def test_a_check_s_rule_named_on_its_own_is_still_matched():
+    rule = _d("Page check: color-contrast fails on the home page")
+    prose = _d("The contrast of the heading is too low on the home page")
+    assert _the_same_cause(rule, prose)

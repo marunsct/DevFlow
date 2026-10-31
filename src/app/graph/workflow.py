@@ -5695,8 +5695,13 @@ _A_LABEL = re.compile(r"^[A-Z][\w ]{0,30}\([^()\n]*(?:\([^()\n]*\)[^()\n]*)*\):\
 def _names_in(text: str) -> set[str]:
     """The names a defect's text gives, lower-cased: what it is about."""
     names: set[str] = set()
-    for match in _A_NAME.finditer(_A_LABEL.sub("", text or "", count=1)):
+    unlabelled = _A_LABEL.sub("", text or "", count=1)
+    for match in _A_NAME.finditer(unlabelled):
         name = next(group for group in match.groups() if group).strip().lower()
+        # A folder in a path says where a runner was, not what is wrong: measured on one run, the project folder in a
+        # unit run's paths merged a criterion's own failure into that defect.
+        if unlabelled[match.end():match.end() + 1] == "/" or unlabelled[max(0, match.start() - 1):match.start()] == "/":
+            continue
         if _A_FILE_NAME.match(name) and not name.startswith(("#", ".")):
             continue
         names.add(name)

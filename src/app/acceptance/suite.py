@@ -2632,6 +2632,9 @@ _ASSERTS_JSON_CONTENT = re.compile(r"content-type['\"`]?\s*\]?[\s\S]{0,160}?(?:a
 #: A DELETE request: the fixture's call, or a table entry a loop sends.
 _A_DELETE_CALL = re.compile(r"\.delete\s*\(")
 _A_DELETE_ENTRY = re.compile(r"method\s*:\s*['\"`]delete['\"`]", re.I)
+#: The answer whose headers a test reads, and a name given a DELETE's answer.
+_HEADERS_READ_OF = re.compile(r"\b([A-Za-z_$][\w$]*)\s*\.\s*headers\s*\(")
+_A_DELETE_S_ANSWER = re.compile(r"\b([A-Za-z_$][\w$]*)\s*=\s*await\s+[\w$.]+\.delete\s*\(")
 #: Where a test is declared.
 _A_TEST_CALL = re.compile(r"\btest\s*\(")
 
@@ -2680,8 +2683,14 @@ def tests_that_want_json_from_a_204(repo_root: str | Path, contract_lines: Seque
             if not _ASSERTS_JSON_CONTENT.search(block):
                 continue
             looped = _inside_a_loop_over_a_delete(text, start)
-            if _A_DELETE_CALL.search(block) or _A_DELETE_ENTRY.search(block) or looped:
+            if looped or _A_DELETE_ENTRY.search(block):
                 lines.append(text.count("\n", 0, start) + 1)
+            elif _A_DELETE_CALL.search(block):
+                # Measured on one run: a lifecycle test read the list's content type and later sent a DELETE. When
+                # the test names the answers it reads, only a DELETE's own answer counts.
+                read = set(_HEADERS_READ_OF.findall(block))
+                if not read or read & set(_A_DELETE_S_ANSWER.findall(block)):
+                    lines.append(text.count("\n", 0, start) + 1)
         if lines:
             problems.append(
                 f"`{path.relative_to(root).as_posix()}` line(s) {', '.join(map(str, lines[:8]))}: a test asserts a JSON "

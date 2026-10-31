@@ -95,3 +95,24 @@ test('[AC-7] create answers json', async ({ request }) => {
 def test_a_loop_in_the_previous_test_does_not_count(tmp_path):
     """Deep review, acceptance A6: the loop detection reached a `for (` in the previous test and flagged a right check."""
     assert suite.tests_that_want_json_from_a_204(_suite(tmp_path, AFTER_A_LOOP), CONTRACT) == []
+
+
+#: Measured on one run: a lifecycle test read the list's content type and later sent a DELETE. The right check was
+#: called wrong, and a locked suite was reopened for it.
+ANOTHER_ANSWER = """test('[AC-16] lifecycle', async ({ request }) => {
+  const listRes = await request.get('/notes');
+  expect(listRes.headers()['content-type']).toContain('application/json');
+  const delRes = await request.delete('/notes/1');
+  expect(delRes.status()).toBe(204);
+});
+"""
+
+
+def test_the_content_type_of_another_answer_in_a_test_that_also_deletes_is_right(tmp_path):
+    _suite(tmp_path, ANOTHER_ANSWER)
+    assert suite.tests_that_want_json_from_a_204(tmp_path, CONTRACT) == []
+
+
+def test_the_delete_s_own_content_type_beside_another_answer_s_is_still_found(tmp_path):
+    _suite(tmp_path, ANOTHER_ANSWER.replace("expect(delRes.status()).toBe(204);", "expect(delRes.headers()['content-type']).toContain('json');"))
+    assert suite.tests_that_want_json_from_a_204(tmp_path, CONTRACT)

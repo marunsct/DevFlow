@@ -2286,13 +2286,15 @@ def _the_kind_assigned(text: str, name: str, at: int) -> str:
     """"request" or "fetch": what the last assignment of `name` before position `at` called; "" when none.
 
     Measured on one run: one spec named a fixture response `getResp` in one test and a `fetch` response `getResp`
-    in another, and a file-wide reading of the name sent QA to repair the right one.
+    in another, and a file-wide reading of the name sent QA to repair the right one. The last assignment of any kind
+    counts: measured on two runs, a test's `const res = await createNote(...)` kept the kind of the `res` inside that
+    helper, and its right `res.body.title` was called a fixture response.
     """
-    kind = ""
-    for match in _A_RESPONSE_ASSIGNED.finditer(text, 0, at):
-        if match.group(1) == name:
-            kind = match.group(2) or match.group(3) or ""
-    return kind
+    last = None
+    for last in re.finditer(rf"(?<![.\w$]){re.escape(name)}\s*=(?![=>])", text[:at]):
+        pass
+    response = _A_RESPONSE_ASSIGNED.match(text, last.start()) if last else None
+    return (response.group(2) or response.group(3) or "") if response else ""
 
 
 #: Corrected lines quoted with a finding, at most.

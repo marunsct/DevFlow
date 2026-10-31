@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 ON_BY_DEFAULT = False
 RUNNER = Path(__file__).with_name("spec_dry_run.cjs")
 #: The whole dry run's limit: a spec that spins past it keeps what was written before it.
-LIMIT_SECONDS = 60
+LIMIT_SECONDS = 30
+MOST_HEAP_MEGABYTES = 256
 MOST_FINDINGS = 6
 _JAVASCRIPT = frozenset({".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"})
 _RUNNER_IMPORT = ("@playwright/test", "playwright/test")
@@ -89,7 +90,9 @@ def run(directory: str | Path, *, limit_seconds: int = LIMIT_SECONDS) -> dict:
             report = Path(temporary).resolve() / "report.json"
             try:
                 subprocess.run(  # noqa: S603 - our runner over a copy, with stand-ins for the network and child processes
-                    [node, str(RUNNER), str(copy), str(report), *[p.relative_to(base).as_posix() for p in specs]],
+                    # A loop on a stand-in's always-truthy answer allocates until stopped: bounded in memory as in time.
+                    [node, f"--max-old-space-size={MOST_HEAP_MEGABYTES}", str(RUNNER), str(copy), str(report),
+                     *[p.relative_to(base).as_posix() for p in specs]],
                     cwd=copy, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     timeout=limit_seconds, check=False,
                 )

@@ -103,6 +103,14 @@ EXPERIMENTS_ON = {
     # Tonight's prose reading of the dispute was wrong twice (LF.405, LF.411); on 2026-10-29 as the A/B arm, owner
     # agreeing; its disputes are compared with the prose reading's.
     "STRUCTURED_DISPUTE_VERDICT": "prose reading wrong in 2 disputes tonight; A/B against it",
+    # The defect fix loop, measured as one group (owner's backlog rule, 2026-10-31): the last held-out run spent five
+    # hours in one sprint on 8+ reverted fixes and the same defect re-dispatched; the off baseline is the two runs
+    # before it (both at full hidden scores). Ablate one switch at a time only if the group does not help.
+    "AGENT_LOOP_FIX_LIMITS": "fix-loop group arm: one sprint spent 8+ reverts and five hours",
+    "SURRENDER_TO_REWRITE": "fix-loop group arm",
+    "KEPT_FIX_CANDIDATES": "fix-loop group arm",
+    "CO_DEFECT_FAILURES_IN_REWRITES": "fix-loop group arm",
+    "REPEATED_REWRITE_PROMPT_STOP": "fix-loop group arm",
 }
 
 _BUNDLE_OF = {member: bundle for bundle, members in BUNDLES.items() for member in members}

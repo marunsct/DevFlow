@@ -93,6 +93,9 @@ EXPERIMENTS = (
     "STABLE_STAGE_PREFIX", "NAMED_TEST_REWRITE",
     # Tests-only writes beside a green suite and mutation findings (plan items 12 and 13).
     "TESTS_ONLY_WRITES", "MUTANT_CHECK_IN_THE_FIX_STAGE", "MUTATION_TEST_RETENTION", "EQUIVALENT_MUTANTS_REMEMBERED",
+    # The interface contract at the review, the lock and the release, and naming before deferral (plan items 16, 17).
+    "CONTRACT_LINE_COVERAGE", "CONTRACT_PROBE_AT_LOCK", "CONTRACT_UNREAD_LINES_AT_REVIEW", "CONTRACT_NON_NUMERIC_IDS",
+    "CONTRACT_PROBE_WITH_A_RECORD", "NAMING_FINDING_BEFORE_DEFERRAL",
     # The suite as an executable oracle, and its order and ids (plan items 18 and 20).
     "SPEC_DRY_RUN", "ORDER_PROBE", "IDS_READ_WITHOUT_A_CREATE",
 )

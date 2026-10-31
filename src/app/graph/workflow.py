@@ -501,6 +501,7 @@ class WorkflowGraphState(TypedDict, total=False):
     # against a specification. See `_a_success_measure_the_specification_drops`.
     specification_coverage_checked: bool
     specification_deferrals_checked: bool
+    specification_contract_lines_checked: bool
     specification_kept_files_checked: bool
     specification_repair_count: int
     layout_repair_count: int
@@ -2984,24 +2985,52 @@ def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: 
         errors = interface_contract.server_errors(root)
         if not errors:
             return test_result
-        description = interface_contract.server_error_description(errors)
         logger.warning("A green round's contract checks made the server fail on %d line(s)", len(errors))
-        defect = ReportedDefect(
-            description=description,
-            severity="major",
-            reproduction_steps="; ".join(
-                f"send `{check.method} {check.path}` with no body to the running service" for check, _ in errors[:6]),
-            expected_behavior="; ".join(
-                f"`{check.method} {check.path}` answers {' or '.join(map(str, check.statuses or (check.status,)))}"
-                for check, _ in errors[:6]),
-            actual_behavior="; ".join(f"`{check.method} {check.path}` answered {status}" for check, status in errors[:6]),
-            affected_files=sorted({f for f, _ in acceptance_nodes.where_errors_become_5xx(root)}),
-            owner=_the_unit_tests_fail(milestone, "").owner,
-        )
-        return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
+        return _with_a_server_error_defect(state, test_result, milestone, errors)
     except Exception:  # noqa: BLE001 - the round as measured stands
         logger.debug("Could not add the contract's server errors to the round", exc_info=True)
         return test_result
+
+
+def _with_the_lock_s_server_errors(state: Any, test_result: Any, milestone: Any) -> Any:
+    """`test_result` with a defect for what the contract's checks at the lock found, red suite or green. Never raises.
+
+    Settled like the green round's: by the same checks, run again.
+    """
+    try:
+        from app.acceptance import interface_contract
+
+        errors = interface_contract.errors_found_at_the_lock(state["repository"].root_path)
+        if not errors or any(
+            str(d.description or "").startswith(interface_contract.SERVER_FAILED) for d in test_result.defects
+        ):
+            return test_result
+        return _with_a_server_error_defect(state, test_result, milestone, errors)
+    except Exception:  # noqa: BLE001 - the round as measured stands
+        logger.debug("Could not add the lock's server errors to the round", exc_info=True)
+        return test_result
+
+
+def _with_a_server_error_defect(state: Any, test_result: Any, milestone: Any, errors: list[Any]) -> Any:
+    """`test_result` with one defect for `errors`, each a contract check and the 5xx it got."""
+    from app.acceptance import interface_contract
+    from app.agents.specialists import ReportedDefect
+    from app.graph import acceptance_nodes
+
+    root = state["repository"].root_path
+    defect = ReportedDefect(
+        description=interface_contract.server_error_description(errors),
+        severity="major",
+        reproduction_steps="; ".join(
+            f"send `{check.method} {check.path}` with no body to the running service" for check, _ in errors[:6]),
+        expected_behavior="; ".join(
+            f"`{check.method} {check.path}` answers {' or '.join(map(str, check.statuses or (check.status,)))}"
+            for check, _ in errors[:6]),
+        actual_behavior="; ".join(f"`{check.method} {check.path}` answered {status}" for check, status in errors[:6]),
+        affected_files=sorted({f for f, _ in acceptance_nodes.where_errors_become_5xx(root)}),
+        owner=_the_unit_tests_fail(milestone, "").owner,
+    )
+    return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
 
 
 def _the_served_app_is_the_scaffold_s_stub(relative: str, owner: str) -> Any:
@@ -5013,6 +5042,35 @@ def _a_success_measure_the_specification_drops(state: Any, spec_text: str) -> An
             "Add each missing capability to the specification the way the others "
             "are specified - its data flow, the functions or endpoints that carry "
             "it, the UI that exposes it, and an acceptance criterion that verifies it."
+        ),
+    )
+
+
+def _contract_lines_nothing_can_read(state: Any) -> Any:
+    """A major finding for the interface contract's lines that follow none of its forms, behind the switch.
+
+    Measured on one run: 32 of 58 lines at the lock read as nothing, and the release was the first to say so, when no
+    one could still rewrite them. Raised by the workflow, like `_a_brief_feature_the_specification_defers`: once per
+    run, and never on the revision that would exhaust `MAX_ARCHITECTURE_REVISIONS`.
+    """
+    from app.acceptance import interface_contract
+
+    if (not interface_contract.unread_at_review_switch.enabled() or state.get("specification_contract_lines_checked")
+            or state.get("architecture_revision_count", 0) + 1 >= MAX_ARCHITECTURE_REVISIONS):
+        return None
+    lines = getattr(state.get("technical_specification"), "interface_contract", None) or ()
+    text = interface_contract.unread_lines_finding(lines)
+    if not text:
+        return None
+    from app.agents.architecture_reviewer import ArchitectureReviewFinding
+
+    return ArchitectureReviewFinding(
+        severity="major",
+        description=text,
+        evidence="Read by the workflow with the same reader the suite's lock and the release use.",
+        required_remediation=(
+            "Rewrite each in one of the three forms: `AC-3 GET /api/notes -> 200`, `AC-1 page /login textbox \"Email\"`, "
+            "`AC-5 command notes add milk -> exit 0`. What a line is for goes before its arrow or in the other sections."
         ),
     )
 
@@ -9384,6 +9442,13 @@ def build_workflow_graph(
             )
             update["architecture_review"] = review
             update["specification_deferrals_checked"] = True
+        unread_finding = _contract_lines_nothing_can_read(state)
+        if unread_finding is not None:
+            review = review.model_copy(
+                update={"findings": [*review.findings, unread_finding], "status": "changes_required"}
+            )
+            update["architecture_review"] = review
+            update["specification_contract_lines_checked"] = True
         kept_finding = _behaviour_the_specification_gives_kept_files(state, spec_text)
         if kept_finding is not None:
             review = review.model_copy(
@@ -10653,6 +10718,7 @@ def build_workflow_graph(
             from app.acceptance import order_probe
 
             order_probe.at_a_green_round(state["repository"].root_path)
+        test_result = _with_the_lock_s_server_errors(state, test_result, milestone)
         # CI's regressions and the code review's findings for this batch, once.
         reported: list[ReportedDefect] = _each_defect_once(
             [*raised_by("test round", test_result.defects), *(state.get("review_defects") or [])]

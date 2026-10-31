@@ -14,6 +14,7 @@
 #   scripts/loop/loop.sh deploy [commit]     rebuild app and worker from a commit (default HEAD), at a stage boundary
 #   scripts/loop/loop.sh deploy-app          rebuild and restart the app container only (API, UI); the worker and live runs untouched
 #   scripts/loop/loop.sh effects [run]          what each fix and switch did in a run (fired, saved, cost)
+#   scripts/loop/loop.sh effects gate [N]       each switch on: runs on, runs fired, KPI movement against its off arm, candidates to park after N runs (default 3); report only
 #   scripts/loop/loop.sh lessons [distil <run>] the lessons awaiting the owner, or propose a run's (LESSON_DISTILLER)
 #   scripts/loop/loop.sh patterns [since]     across every run: where replies run out, fix outcome by bundle size, failures that recur
 #   scripts/loop/loop.sh timing [run-id..]   where the wall-clock time went: model vs tools, phases, reasoning share (run_timing.py)
@@ -358,7 +359,14 @@ kpi)
     rm -f "data/kpi/$run.json.tmp"; echo "kpi: the worker could not read $run's transcript; nothing was changed" >&2; exit 1
   fi
   ;;
-effects) in_worker effects.py "${2:-$(current)}" ;;
+effects)
+  if [ "${2:-}" = gate ]; then
+    # Reads the ledger and the plan on the host; reports only, and never changes a switch.
+    "$PY" "$HERE/switch_gate.py" data/kpi/ledger.csv "${3:-3}" docs/improvement-plan.md
+  else
+    in_worker effects.py "${2:-$(current)}"
+  fi
+  ;;
 product) in_worker product_audit.py "${2:-$(current)}" ;;
 corpus)
   # The reader corpus (plan RC): `corpus harvest [run]` keeps a run's reader inputs

@@ -76,6 +76,7 @@ where = ["src"]
 # of the package needs them beside the code. See `app.doc_templates`.
 [tool.setuptools.package-data]
 "app.doc_templates" = ["templates/*.md.j2"]
+"app.acceptance" = ["*.cjs"]
 
 [tool.coverage.run]
 branch = true

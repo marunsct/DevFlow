@@ -96,6 +96,8 @@ EXPERIMENTS = (
     # The interface contract at the review, the lock and the release, and naming before deferral (plan items 16, 17).
     "CONTRACT_LINE_COVERAGE", "CONTRACT_PROBE_AT_LOCK", "CONTRACT_UNREAD_LINES_AT_REVIEW", "CONTRACT_NON_NUMERIC_IDS",
     "CONTRACT_PROBE_WITH_A_RECORD", "NAMING_FINDING_BEFORE_DEFERRAL",
+    # The suite as an executable oracle, and its order and ids (plan items 18 and 20).
+    "SPEC_DRY_RUN", "ORDER_PROBE", "IDS_READ_WITHOUT_A_CREATE",
 )
 #: The experiments deployed on, each with the measurement that turned it on.
 EXPERIMENTS_ON = {

@@ -42,7 +42,7 @@ _AN_ERROR_LOCATION = re.compile(r"([\w./@-]+\.[A-Za-z0-9]{1,8})(?:\((\d+),\d+\)|
 #: default". Measured on one run: every failing test said what the README
 #: lacked, the stack traces pointed at the entry point, and the rewrite fixed
 #: the entry point - the same failure twice.
-_A_FILE_NAMED = re.compile(r"(?<![\w/.@-])((?:[\w@-]+/)*[\w@-]+\.[A-Za-z][A-Za-z0-9]{0,7})(?![\w/-])")
+_A_FILE_NAMED = re.compile(r"(?<![\w/.@-])((?:[\w@-]+/)*[\w@-]+(?:\.[A-Za-z][A-Za-z0-9]{0,7})+)(?![\w/-])")
 
 
 #: A line that warns and does not fail: `FooWarning:`, `warning:`, `(node:12) Warning:`.
@@ -158,9 +158,16 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
     def files(mentioned: list[str]) -> list[str]:
         return _the_files(root, named, mentioned, judged_by_the_suite, tests_from_the_text, may_write)
 
-    found = files(mentioned_in(own))
+    # The defect's own words name files too, the words other checks merged into it not. Measured on one run: a failing
+    # unit run named its test file only in the description, a cross-file finding merged into the defect brought the
+    # manifest as its one affected file, and six fixes in a row rewrote the manifest and nothing else.
+    from app.graph.engineering import SAME_PROBLEM_ELSEWHERE
+
+    described = str(getattr(defect, "description", "") or "").partition(SAME_PROBLEM_ELSEWHERE)[0]
+    own_words = mentioned_in(described.replace(str(root).rstrip("/") + "/", ""))
+    found = files(own_words + mentioned_in(own))
     if last and len(found) == len(files([])):
-        found = files(mentioned_in(own) + mentioned_in(last))
+        found = files(own_words + mentioned_in(own) + mentioned_in(last))
     owing = [name for name in _modules_missing_an_export(own, root) if may_write(name)]
     if owing:
         # The module that should export it is the file to write; the test that imports it is left as it is.

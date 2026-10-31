@@ -11780,6 +11780,12 @@ def build_workflow_graph(
                     "Disputed test(s) %s pass when run alone; they stay locked",
                     ", ".join(passed_alone),
                 )
+        named, service_stopped = acceptance_nodes.tests_whose_service_stayed_up(root, named)
+        if service_stopped:
+            logger.warning(
+                "Disputed test(s) %s saw their service stop by itself; they stay locked",
+                ", ".join(service_stopped),
+            )
         # And the cap: this run may reclassify this many locked tests, period.
         # Past it the tests stay as they are and the run carries them to its
         # release rather than rewriting what it is checked against.

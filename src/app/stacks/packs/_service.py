@@ -53,6 +53,7 @@ records rather than counting all of them.
 #: it again on the same data. It runs the project's `start.sh` (which the pack writes and keeps) on a free port and the
 #: data folder the test names. Measured over five runs: QA marked every persistence criterion "cannot be verified, the
 #: server runs once per suite" and shipped it deferred; one product lost its notes on a restart and the hidden test caught it.
+SERVICE_STOPPED_BY_ITSELF = "the service this test started stopped by itself"
 SERVICE_HELPER = """'use strict';
 // Kept by the harness. Starts the project's own start script on a free port and a data folder of the test's choosing, so a
 // test can stop the service and start it again on the same data.
@@ -104,11 +105,20 @@ async function waitUntilUp(baseURL, child, timeoutMs) {
 async function startService({ dataDir, timeoutMs = 60000 } = {}) {
   const directory = dataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'service-data-'));
   const port = await freePort();
+  // Kept, so that a service that stops by itself can say why: a test sees only a connection that closed.
+  const outputFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'service-output-')), 'output.log');
+  const output = fs.openSync(outputFile, 'a');
   const child = spawn('sh', ['start.sh'], {
     cwd: PROJECT,
     env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: directory, HARNESS_SERVICE_OF: PROJECT },
-    stdio: 'ignore',
+    stdio: ['ignore', output, output],
     detached: true,
+  });
+  fs.closeSync(output);
+  let stopping = false;
+  child.once('exit', (code, signal) => {
+    if (stopping) return;
+    console.error('""" + SERVICE_STOPPED_BY_ITSELF + """ (code ' + code + ', signal ' + signal + '). What it wrote: ' + fs.readFileSync(outputFile, 'utf8').slice(-2000));
   });
   // The test process may end without waiting for the service; its exit handler then stops it.
   child.unref();
@@ -117,6 +127,7 @@ async function startService({ dataDir, timeoutMs = 60000 } = {}) {
   try {
     await waitUntilUp(baseURL, child, timeoutMs);
   } catch (error) {
+    stopping = true;
     try { process.kill(-child.pid, 'SIGKILL'); } catch (ignored) { /* already gone */ }
     throw error;
   }
@@ -124,6 +135,7 @@ async function startService({ dataDir, timeoutMs = 60000 } = {}) {
     baseURL,
     dataDir: directory,
     async stop() {
+      stopping = true;
       if (child.exitCode !== null) return;
       const exited = new Promise((resolve) => child.once('exit', resolve));
       try { process.kill(-child.pid, 'SIGTERM'); } catch (ignored) { /* already gone */ }

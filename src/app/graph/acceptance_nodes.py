@@ -1519,6 +1519,36 @@ def tests_that_fail_alone(repo_root: Any, names: list[str]) -> tuple[list[str], 
     return still, passed
 
 
+def tests_whose_service_stayed_up(repo_root: Any, lines: list[str]) -> tuple[list[str], list[str]]:
+    """(the dispute's lines to act on, the tests that stay locked because the service they started stopped by itself).
+
+    Measured on one run: the product exited on its first write under the restart test, the test saw only "fetch
+    failed", and the dispute called it impossible. QA may not change the product, so the suite went back to QA for
+    nothing. Only a test in a file that starts its own service can be the one the helper reported.
+    """
+    from app.stacks.packs._service import SERVICE_STOPPED_BY_ITSELF  # noqa: PLC0415 - a pack's text, read here alone
+
+    output = str((suite.last_result(repo_root) or {}).get("output") or "")
+    if SERVICE_STOPPED_BY_ITSELF not in output:
+        return list(lines), []
+    texts = []
+    for path in suite.suite_files(repo_root):
+        try:
+            texts.append(path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    starting_its_own = [text for text in texts if "startService" in text]
+    kept: list[str] = []
+    locked: list[str] = []
+    for line in lines:
+        title = line.split("`")[1] if line.count("`") >= 2 else ""
+        if title and any(title in text for text in starting_its_own):
+            locked.append(title)
+        else:
+            kept.append(line)
+    return kept, locked
+
+
 #: What QA is held to when it repairs a locked suite.
 REPAIR_RULE = (
     "Change the tests named above, and only as far as their own code is wrong. "

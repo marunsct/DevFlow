@@ -46,8 +46,10 @@ def main(run: str) -> int:
         except ValueError:
             continue
     from app.observability.run_kpis import per_accepted_criterion
+    from app.observability.switch_firing import fired
 
-    print(json.dumps({"run": run, **per_accepted_criterion(kpis(records), accepted_criteria(run)), **owner_rating(run)}))
+    print(json.dumps({"run": run, **per_accepted_criterion(kpis(records), accepted_criteria(run)), **owner_rating(run),
+                      "switches_fired": " ".join(fired(records)) or "none"}))
     return 0
 
 

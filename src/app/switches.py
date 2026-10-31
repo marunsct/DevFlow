@@ -93,6 +93,8 @@ EXPERIMENTS = (
     "STABLE_STAGE_PREFIX", "NAMED_TEST_REWRITE",
     # Tests-only writes beside a green suite and mutation findings (plan items 12 and 13).
     "TESTS_ONLY_WRITES", "MUTANT_CHECK_IN_THE_FIX_STAGE", "MUTATION_TEST_RETENTION", "EQUIVALENT_MUTANTS_REMEMBERED",
+    # The suite as an executable oracle, and its order and ids (plan items 18 and 20).
+    "SPEC_DRY_RUN", "ORDER_PROBE", "IDS_READ_WITHOUT_A_CREATE",
 )
 #: The experiments deployed on, each with the measurement that turned it on.
 EXPERIMENTS_ON = {

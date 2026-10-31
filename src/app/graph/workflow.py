@@ -10650,6 +10650,9 @@ def build_workflow_graph(
         # tests kept every round from being clean and the checks were never asked before release.
         if not failing_due and int(saved_run.get("failed") or 0) == 0:
             test_result = _with_the_contract_s_server_errors(state, test_result, milestone)
+            from app.acceptance import order_probe
+
+            order_probe.at_a_green_round(state["repository"].root_path)
         # CI's regressions and the code review's findings for this batch, once.
         reported: list[ReportedDefect] = _each_defect_once(
             [*raised_by("test round", test_result.defects), *(state.get("review_defects") or [])]

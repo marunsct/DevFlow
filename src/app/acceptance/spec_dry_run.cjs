@@ -163,12 +163,13 @@ function matchers(actual, extra) {
       if (name === 'then') return undefined;
       if (name === 'not' || name === 'resolves' || name === 'rejects') return chain;
       if (typeof name !== 'string' || !(MATCHERS.has(name) || extra.has(name))) return undefined;
-      return async (...args) => {
+      // Thrown as it is called, as a real assertion on a value is: one written without `await` still stops its test.
+      return () => {
         if (typeof actual === 'function' && responseMethods.has(actual) && COMPARES.has(name)) {
           throw new OwnFault(`${name}(...) compares the response's method itself, not what calling it returns: write it with ()`);
         }
-        if (name === 'toPass' && typeof actual === 'function' && !actual[STUB]) await actual();
-        return args.length ? undefined : undefined;
+        if (name === 'toPass' && typeof actual === 'function' && !actual[STUB]) return Promise.resolve().then(actual);
+        return Promise.resolve();
       };
     },
   });

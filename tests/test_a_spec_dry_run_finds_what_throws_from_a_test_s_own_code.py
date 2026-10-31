@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from app.acceptance import spec_dry_run, suite
-from app.acceptance.junit import JUnitReport  # noqa: F401 - the suite's result type needs it importable
 from app.stacks import contract, pack_named
 
 CORPUS = Path(__file__).parent / "fixtures" / "locked_suites"

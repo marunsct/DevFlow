@@ -416,14 +416,17 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
     )
     def request_for(group: list, note: str = "") -> dict:
-        return acceptance_requests.build_author_request(
+        from app.agents.specification_rulings import with_the_rulings
+
+        # The suite is written to the same answer the product is drafted to; the rest of the facts stay as they were here.
+        return with_the_rulings(acceptance_requests.build_author_request(
             root, group, _stack(state), feedback=feedback, change_requests=suite.change_requests(root),
             brief=getattr(state.get("document"), "text", "") or "",
             testability=_the_testability_advice(state),
             interface_contract=getattr(state.get("technical_specification"), "interface_contract", None) or (),
             specification=state.get("technical_specification"),
             batch_note=note,
-        )
+        ), root)
 
     # Only a first writing, in the whole, is split: a repair is small and made against a built product.
     batches = acceptance_batches.plan(criteria) if round_ == 0 and not feedback else [criteria]
@@ -1653,10 +1656,12 @@ def _rewritten_in_one_call_each(state: Any, broken: list[str], model: Any) -> bo
         return False
     try:
         from app.acceptance.api_reference import api_reference
+        from app.agents.specification_rulings import the_rulings_section
 
         done = rewritten_tests.repair(
             _root(state), broken, model, which_test=_which_test,
-            reference=api_reference(state.get("technical_specification")), reason=str(state.get("dispute_reason") or ""),
+            reference=api_reference(state.get("technical_specification")) + the_rulings_section(_root(state)),
+            reason=str(state.get("dispute_reason") or ""),
         )
     except Exception:  # noqa: BLE001 - QA's agent loop repairs, as before
         logger.warning("Could not rewrite the named tests in place", exc_info=True)

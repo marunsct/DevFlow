@@ -102,6 +102,10 @@ EXPERIMENTS = (
     "QA_SAYS_THE_PRODUCT_IS_AT_FAULT",
     # A fix kept over the unit tests it broke, for one locked test made to pass: a one-for-one judgement, one run's evidence.
     "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE",
+    # A contradiction the design review leaves open settled before the suite and the drafts take sides.
+    "SETTLE_SPEC_CONTRADICTIONS",
+    # The contract's write lines asked with a body nothing can parse: a 5xx is a defect, any other answer the product's choice.
+    "CONTRACT_PROBE_WITH_A_BAD_BODY",
 )
 #: The experiments deployed on, each with the measurement that turned it on.
 EXPERIMENTS_ON = {

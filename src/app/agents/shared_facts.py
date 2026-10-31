@@ -127,12 +127,14 @@ def facts_from_the_workspace(root: str | Path | None, *, built: bool = True) -> 
 
 def the_facts_section(root: str | Path | None, *, built: bool = True) -> str:
     """The block a builder or judge request ends with; "" when there are no facts yet or it is off."""
-    if not enabled():
-        return ""
-    facts = facts_from_the_workspace(root, built=built)
+    from app.agents.specification_rulings import the_rulings_section
+
+    # The rulings follow their own switch: a decision taken for the run binds whichever facts are on.
+    rulings = the_rulings_section(root)
+    facts = facts_from_the_workspace(root, built=built) if enabled() else []
     if not facts:
-        return ""
-    return f"\n\n{HEADING}\n" + "\n".join(facts) + "\n"
+        return rulings
+    return f"\n\n{HEADING}\n" + "\n".join(facts) + "\n" + rulings
 
 
 def with_the_facts(request: dict[str, Any], root: str | Path | None, *, built: bool = True) -> dict[str, Any]:

@@ -336,6 +336,83 @@ def playwright_checks(checks: list[Check]) -> str:
     return "import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests)
 
 
+#: What the bad-body probe sends with a JSON content type: JSON that stops halfway, so no parser can read it.
+A_BODY_NOTHING_CAN_PARSE = '{"unparsable": '
+#: Why a bad-body test was skipped when no record was needed: the sign-in refused it, whatever its body.
+SIGN_IN_ANSWERED_FIRST = "sign-in answered first, so the product never read the body"
+#: How a server-error defect's text says a call was asked with a bad body; `still_raised` reads it back.
+SENT_WITH_A_BAD_BODY = "sent with a JSON body that cannot be parsed"
+
+
+def bad_body_checks(checks: list[Check], bodies: list[Any]) -> tuple[list[Check], list[str]]:
+    """(what the bad-body probe asks, the lines it cannot ask and why), one each per `POST`/`PUT`/`PATCH` call of the contract.
+
+    A write on a route with one parameter must reach a real record, or a 404 answers before the body is read: the record
+    is made through the contract's write line on the path before the parameter, as `with_a_record_made_first` does, and
+    any status the line allows. No such write, or more than one parameter, and the line stays unchecked.
+    """
+    from dataclasses import replace as _with
+
+    made_by = {c.path.rstrip("/") for c in checks if c.kind == "http" and c.method == "POST" and _a_write_that_needs_a_body(c)
+               and not _A_TEMPLATE.search(c.path)}
+    asked: list[Check] = []
+    unchecked: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for check in checks:
+        if check.kind != "http" or check.method not in ("POST", "PUT", "PATCH") or (check.method, check.path) in seen:
+            continue
+        seen.add((check.method, check.path))
+        if not _A_TEMPLATE.search(check.path):
+            asked.append(check)
+            continue
+        before = _A_PARAMETER_NAMED.split(check.path, maxsplit=1)[0].rstrip("/")
+        if len(_A_PARAMETER_NAMED.findall(check.path)) == 1 and before in made_by:
+            asked.append(_with(check, made_through=before, bodies=json.dumps(bodies)))
+        else:
+            unchecked.append(f"{check.line} (a route with a parameter, and no write line of the contract makes its record)")
+    return asked, unchecked
+
+
+def _a_bad_body_test(title: str, check: Check) -> str:
+    """The test sending `check`'s call a body nothing can parse; any answer under 500 passes, the refusal being the product's to choose."""
+    target = _js(check.path)
+    made = ""
+    if check.made_through:
+        found = _A_PARAMETER_NAMED.search(check.path)
+        name = (found.group(1) or found.group(2)) if found else "id"
+        target = f"{_js(check.path[:found.start()])} + encodeURIComponent(id) + {_js(check.path[found.end():])}"
+        made = (
+            f"  const bodies = {check.bodies or '[]'};\n"
+            "  let made;\n"
+            "  for (const data of [...bodies, {}]) {\n"
+            f"    made = await request.fetch({_js(check.made_through)}, {{ method: 'POST', data, failOnStatusCode: false }});\n"
+            "    if (made.ok()) break;\n"
+            "  }\n"
+            f"  test.skip(!made.ok(), {_js(MADE_NO_RECORD)});\n"
+            "  const record = await made.json().catch(() => ({}));\n"
+            f"  const id = record[{_js(name)}] ?? record.id ?? record.data?.id;\n"
+            f"  test.skip(id === undefined, {_js(MADE_NO_RECORD)});\n"
+        )
+    return (
+        f"test({title}, async ({{ request }}) => {{\n{made}"
+        f"  const answer = await request.fetch({target}, {{ method: {_js(check.method)}, "
+        "headers: { 'content-type': 'application/json' }, "
+        f"data: {_js(A_BODY_NOTHING_CAN_PARSE)}, failOnStatusCode: false }});\n"
+        f"  test.skip([401, 403].includes(answer.status()), {_js(SIGN_IN_ANSWERED_FIRST)});\n"
+        "  expect(answer.status()).toBeLessThan(500);\n"
+        "});\n"
+    )
+
+
+def playwright_bad_body_checks(checks: list[Check]) -> str:
+    """A Playwright spec with one bad-body test per check; numbered as `playwright_checks` numbers its own."""
+    tests = [
+        _a_bad_body_test(_js(f"{f'[{c.criterion}] ' if c.criterion else ''}contract {number}: {c.line}"), c)
+        for number, c in enumerate(checks, start=1)
+    ]
+    return "import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests)
+
+
 def playwright_config(suite_config: str) -> str:
     """A configuration that is the suite's own, pointed at the compiled checks and their own report."""
     return (
@@ -357,6 +434,7 @@ def playwright_config(suite_config: str) -> str:
 PROBE_RUNNERS: dict[str, dict[str, Any]] = {
     "playwright": {
         "checks": playwright_checks,
+        "bad_body_checks": playwright_bad_body_checks,
         "config": playwright_config,
         "command": ("npx", "playwright", "test", "--config", CONFIG_FILE),
         "base_config": "playwright.config.js",
@@ -429,12 +507,13 @@ def _run_each_command(checks: list[Check], project: str, runner: Any, failed: li
             failed.append(f"[{check.criterion}] {check.line} - it exited {code}")
 
 
-def _the_probe_s_report(project: Path, project_name: str, probe: dict[str, Any], web: list[Check], run: Any) -> Any:
+def _the_probe_s_report(project: Path, project_name: str, probe: dict[str, Any], web: list[Check], run: Any,
+                        compiled_by: str = "checks") -> Any:
     """The runner's report of `web` checked against the product, the probe's own files removed after."""
     from app.acceptance import junit
 
     (project / CHECK_DIR).mkdir(parents=True, exist_ok=True)
-    (project / CHECK_DIR / "contract.spec.js").write_text(probe["checks"](web), encoding="utf-8")
+    (project / CHECK_DIR / "contract.spec.js").write_text(probe[compiled_by](web), encoding="utf-8")
     (project / CONFIG_FILE).write_text(probe["config"](probe["base_config"]), encoding="utf-8")
     report_file = project / REPORT_FILE
     junit.clear(report_file)
@@ -489,6 +568,77 @@ def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Ch
         return None
 
 
+def bad_body_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Check, int]] | None:
+    """Each write call of the locked contract that answers a 5xx to a JSON body nothing can parse, with that status.
+
+    None when off or when the checks cannot run. What could not be asked is kept for the release to name. Measured on
+    one product: a write route answered 500 to unparsable JSON, the locked suite did not ask, and a hidden quality test
+    found it. Any answer under 500 passes.
+    """
+    if not bad_body_switch.enabled():
+        return None
+    try:
+        from app.acceptance import suite
+        from app.stacks import contract
+
+        root = Path(repo_root)
+        state = suite._state(root)  # noqa: SLF001 - one state file for the suite and its contract
+        asked, unchecked = bad_body_checks(the_locked_contract(root)[:MOST_CHECKS],
+                                           list(state.get("interface_contract_bodies") or []))
+        found = contract.the_pack(root)
+        probe = PROBE_RUNNERS.get(found[0].probe_runner) if found else None
+        if probe is None:
+            unchecked += [f"{c.line} (no runner on this stack probes it)" for c in asked]
+            asked = []
+        errors: list[tuple[Check, int]] | None = []
+        if asked:
+            project_name = str((found[1] or {}).get("project") or "")
+            run = runner or suite._sandbox_runner(root)  # noqa: SLF001 - the suite's own runner
+            report = _the_probe_s_report(root / project_name, project_name, probe, asked, run, "bad_body_checks")
+            if report is None or not report.found:
+                errors = None
+                unchecked += [f"{c.line} (the probe's runner wrote no report)" for c in asked]
+            else:
+                for test in report.tests:
+                    check, status = _the_check_of(test, asked), _a_server_error(test)
+                    if check is None:
+                        continue
+                    outcome = getattr(test, "outcome", "")
+                    if outcome == "skipped":
+                        unchecked.append(f"{check.line} ({MADE_NO_RECORD}, or {SIGN_IN_ANSWERED_FIRST})" if check.made_through
+                                         else f"{check.line} ({SIGN_IN_ANSWERED_FIRST})")
+                    elif outcome == "failed" and status:
+                        errors.append((check, status))
+                    elif outcome == "failed":
+                        unchecked.append(f"{check.line} (the probe got no status back)")
+        else:
+            errors = None
+        state = suite._state(root)  # noqa: SLF001 - read again: the runner's suite calls may have saved it
+        state["interface_contract_bad_body_unchecked"] = list(dict.fromkeys(unchecked))
+        suite._save_state(root, state)  # noqa: SLF001
+        return errors
+    except Exception:  # noqa: BLE001 - a check that cannot run says nothing
+        logger.debug("Could not probe the contract with a bad body", exc_info=True)
+        return None
+
+
+def what_the_bad_body_probe_did_not_ask(repo_root: str | Path) -> list[str]:
+    """A completion gap naming the write lines the last bad-body probe could not ask; [] when none or it is off. Never raises."""
+    try:
+        from app.acceptance import suite
+
+        if not bad_body_switch.enabled():
+            return []
+        lines = [str(line) for line in suite._state(repo_root).get("interface_contract_bad_body_unchecked") or []]  # noqa: SLF001
+        if not lines:
+            return []
+        return [(f"{len(lines)} write line(s) of the interface contract were not asked with an unparsable body: "
+                 + "; ".join(lines[:5]) + ("; ..." if len(lines) > 5 else ""))[:800]]
+    except Exception:  # noqa: BLE001 - the release says nothing it cannot measure
+        logger.debug("Could not read what the bad-body probe left unasked", exc_info=True)
+        return []
+
+
 #: Statuses only a particular request draws: a conflict with what is stored, a body too large, a body of the wrong
 #: type, too many requests. Measured on one run: `AC-18 POST /notes -> 413` was failed at release for the 400 the
 #: product rightly gave the probe's empty body. 401 and 403 are not here: a bare request is what draws them.
@@ -531,13 +681,16 @@ def _the_call(check: Check) -> str:
     return f"{check.method} {check.path}"
 
 
-def server_error_description(errors: list[tuple[Check, int]]) -> str:
-    """The defect's description for `errors`: each call, the status it gave and what the contract gives."""
-    each = "; ".join(
-        f"`{_the_call(check)}` sent with no body answered {status} where the contract gives "
-        f"{' or '.join(map(str, _allowed(check)))}"
-        for check, status in errors[:6]
-    )
+def server_error_description(errors: list[tuple[Check, int]], bad_body: list[tuple[Check, int]] | None = None) -> str:
+    """The defect's description for `errors`: each call, the status it gave and what the contract gives; and for each of
+    `bad_body`, the call that failed on a body it could not parse."""
+    each = "; ".join([
+        *(f"`{_the_call(check)}` sent with no body answered {status} where the contract gives "
+          f"{' or '.join(map(str, _allowed(check)))}"
+          for check, status in errors[:6]),
+        *(f"`{_the_call(check)}` {SENT_WITH_A_BAD_BODY} answered {status} where a refusal under 500 was due"
+          for check, status in (bad_body or [])[:6]),
+    ])
     return (
         f"{SERVER_FAILED} {each}. A request the product cannot use - no body, a body that is not JSON, a record "
         "that does not exist - is answered with the status the contract gives for it, never by the server failing."
@@ -549,10 +702,21 @@ def still_raised(repo_root: str | Path, description: str, *, runner: Any = None)
     text = str(description or "")
     if not text.startswith(SERVER_FAILED):
         return None
-    errors = server_errors(repo_root, runner=runner)
-    if errors is None:
-        return None
-    return any(f"`{_the_call(check)}`" in text for check, _ in errors)
+    # A call may be named for either request; each kind is settled by asking the same request again.
+    answers: list[bool] = []
+    if "sent with no body" in text:
+        errors = server_errors(repo_root, runner=runner)
+        if errors is not None:
+            answers.append(any(f"`{_the_call(check)}` sent with no body" in text for check, _ in errors))
+    if SENT_WITH_A_BAD_BODY in text:
+        if not bad_body_switch.enabled():
+            # Switched off in mid-run: nothing can settle it, and an open defect would never close.
+            answers.append(False)
+        else:
+            errors = bad_body_errors(repo_root, runner=runner)
+            if errors is not None:
+                answers.append(any(f"`{_the_call(check)}` {SENT_WITH_A_BAD_BODY}" in text for check, _ in errors))
+    return any(answers) if answers else None
 
 
 def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) -> list[str]:
@@ -602,7 +766,7 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
     except Exception:  # noqa: BLE001 - the release says nothing it cannot measure
         logger.debug("Could not run the interface contract's checks", exc_info=True)
         return []
-    gaps: list[str] = []
+    gaps: list[str] = what_the_bad_body_probe_did_not_ask(repo_root)
     if report is not None and not report.found:
         gaps.append("The interface contract's checks could not run at release: their runner wrote no report.")
     elif report is not None:
@@ -688,6 +852,11 @@ probe_at_lock_switch = _Experiment(
 unread_at_review_switch = _Experiment(
     "CONTRACT_UNREAD_LINES_AT_REVIEW",
     "The architect's review is given the contract lines the harness cannot read, instead of the release reporting them.",
+)
+bad_body_switch = _Experiment(
+    "CONTRACT_PROBE_WITH_A_BAD_BODY",
+    "When a test round finds the locked suite green, each POST, PUT and PATCH line of the contract is sent a JSON body "
+    "nothing can parse; a 5xx is raised as a defect, and any other answer passes.",
 )
 
 

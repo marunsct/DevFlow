@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | **run-ec3e81ab** (tasks-api, fix-loop group ON, pinned to :8888; mixed_versions, on ced22c2 from 10-31 ~15:00 JST). **ONE run at a time** (owner 10-31: the PC restarts under load; :1234 down; the owner tests parallel runs on a cloud API themselves). One build agent at a time, `SUITE_WORKERS=4`. The global setting still names :1234, so `loop.sh ready` says NOT READY until it names a served model: pinned runs resume, new runs wait. run-dfcaf697 (:1234) 8/9, FALSE ACCEPTANCE, its fix rounds rewrote only the manifest (LF.478). |
+| Run | **two runs, two servers again (owner 11-01 03:00 JST)**: run-ec3e81ab (tasks-api, :8888, resumed after the model outage) and a new notes-api-hono on :1234 (`current_run.txt`), fix-loop group ON. One build agent at a time, `SUITE_WORKERS=4` (the PC restarted under load on 10-31). Always give `PIN_URL`/`PIN_MODEL_NAME`; the global setting names :1234. run-dfcaf697 (:1234) 8/9 was a FALSE ACCEPTANCE (LF.478). |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

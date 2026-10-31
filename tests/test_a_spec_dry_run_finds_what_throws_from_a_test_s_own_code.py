@@ -1,6 +1,7 @@
 """Behind `SPEC_DRY_RUN`, a spec run with stand-ins reports what throws from its own code, and nothing on suites that passed (plan item 18)."""
 from __future__ import annotations
 
+import os
 import re
 import shutil
 from pathlib import Path
@@ -72,8 +73,13 @@ def test_a_file_that_does_not_import_the_runner_is_not_run(tmp_path):
     assert spec_dry_run.run(tmp_path) == {}
 
 
+@pytest.mark.skipif(not os.environ.get("REPLAY_STORED_SUITES"), reason="asked for by name: it runs model-written code on this machine")
 def test_the_stored_suites_that_passed_their_hidden_tests_give_no_finding():
-    """Replay: 438 tests of 29 suites run, no finding. A finding here would be a false "cannot pass"."""
+    """Replay: 438 tests of 29 suites run, no finding. A finding here would be a false "cannot pass".
+
+    Not part of the full suite: the code runs with stand-ins and limits but a real file system, on the host. Run it in
+    a sandbox, with `REPLAY_STORED_SUITES=1`, before `SPEC_DRY_RUN` is turned on.
+    """
     tests = 0
     for kept in sorted(p for p in CORPUS.iterdir() if p.is_dir()):
         result = spec_dry_run.run(kept / "acceptance", limit_seconds=20)

@@ -852,8 +852,17 @@ def after_a_fix(
         if certain:
             broken = ["it wrote code the language service is sure fails when it runs: " + "; ".join(certain[:3])]
     gained_now = after.passing() - (before.passing() if before is not None else set())
-    from app.graph import net_gain
+    from app.graph import net_gain, unit_tests_disagree
 
+    # The locked suite is the definition of done: a fix that made a locked test pass and broke only unit tests stays,
+    # and each one is raised naming the locked test it disagrees with (behind its switch).
+    product_runs = not after.problem and not broke_the_install
+    locked_gained = unit_tests_disagree.locked_tests_gained(broken, before, after, product_runs=product_runs)
+    if locked_gained:
+        logger.warning("Kept %s: it made the locked %s pass and broke only %d unit test(s), each raised as a defect",
+                       stage_name, "; ".join(locked_gained[:3]), len(broken))
+        unit_tests_disagree.note(root, broken, locked_gained, [name for name in broken if _gone(after, name)])
+        broken = []
     # Weighed against the tests that genuinely broke, not every test that no longer passes: `lost` counts the unit
     # tests a fix replaced on purpose, which `_broken_tests` forgives. Found in a code review: a fix that broke one
     # criterion and renamed four unit tests on purpose (every unit test passing after it) was weighed as five broken,
@@ -865,7 +874,7 @@ def after_a_fix(
     if any(item.startswith("unit: ") and item not in broken for item in lost):
         known_before = {f"unit: {name}" for name in (before.unit if before is not None else {})}
         weighed_gain = {item for item in gained_now if not item.startswith("unit: ") or item in known_before}
-    if broken and net_gain.keeps(broken_tests, weighed_gain, product_runs=not after.problem and not broke_the_install):
+    if broken and net_gain.keeps(broken_tests, weighed_gain, product_runs=product_runs):
         logger.warning(
             "Kept %s: it made %d test(s) pass and broke %d unit test(s), which the next round raises: %s",
             stage_name, len(weighed_gain), len(broken_tests), "; ".join(broken_tests[:3]),

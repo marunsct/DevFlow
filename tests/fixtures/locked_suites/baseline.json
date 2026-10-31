@@ -65,8 +65,18 @@
  "suite-24": {},
  "suite-25": {},
  "suite-26": {},
- "suite-27": {},
+ "suite-27": {
+  "tests_that_assert_a_kept_file_s_text": [
+   "`notes/acceptance/missing_ids.spec.js` line 59: the test reads `start.sh` and asserts what it contains. The harness keeps that file and puts it back before every run, so its text is not the product's "
+  ]
+ },
  "suite-28": {},
  "suite-29": {},
- "suite-30": {}
+ "suite-30": {},
+ "suite-31": {},
+ "suite-32": {
+  "tests_that_assert_a_kept_file_s_text": [
+   "`notes/acceptance/test_api.py` line 581: the test reads `start.sh` and asserts what it contains. The harness keeps that file and puts it back before every run, so its text is not the product's to chan"
+  ]
+ }
 }

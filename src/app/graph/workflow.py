@@ -1370,6 +1370,14 @@ def _the_unit_tests_are_out_of_date(defect: Any, broke: list[str]) -> str:
     return UNIT_TESTS_AGAINST_THE_SUITE if any(item.startswith("acceptance:") for item in broke) else ""
 
 
+def _the_unit_tests_a_kept_fix_broke(state: Any) -> dict[str, Any]:
+    """The update raising what `unit_tests_disagree` kept a fix over, for the next round; {} when nothing was."""
+    from app.graph import unit_tests_disagree
+
+    raised = unit_tests_disagree.raised(state)
+    return {"review_defects": [*(state.get("review_defects") or []), *raised]} if raised else {}
+
+
 def _a_revert_escalates_this_fix(cycle: Any, defect_index: int) -> bool:
     """Whether this defect's next fix attempt goes to the judgement model because one was reverted.
 
@@ -11442,6 +11450,7 @@ def build_workflow_graph(
                 defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name, started),
             )
         update.update(settled)
+        update.update(_the_unit_tests_a_kept_fix_broke(state))
         if blames and _a_dispute_may_be_held_now(state):
             # The fix stage left its defect open and says a locked test is
             # what cannot pass - in its blockers, or among its decisions beside
@@ -11677,6 +11686,7 @@ def build_workflow_graph(
             update["specialist_outputs"] = settled["specialist_outputs"]
             blamed = blamed or blames
         update.update(remediation=settled_cycle, fix_batch=[], fix_base_commit="", fix_batch_started="", fixes_tried=tried)
+        update.update(_the_unit_tests_a_kept_fix_broke(state))
         if blamed and _a_dispute_may_be_held_now(state):
             logger.warning("A fix in the batch blames the locked suite; the QA lead judges its failing tests")
             return _handing_on(**update, stage="acceptance_dispute", dispute_returns_to="test_and_triage")

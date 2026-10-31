@@ -3010,25 +3010,146 @@ def tests_that_restart_on_data_they_never_wrote(repo_root: str | Path) -> list[s
     return problems[:6]
 
 
-#: A read of a file from disk in a test: the path it names.
-_A_FILE_READ = re.compile(r"""\b(?:readFile(?:Sync)?|existsSync|statSync|open)\s*\(\s*(?:path\.\w+\([^)]*?)?['"`]([^'"`]+)['"`]""")
-
-
 #: A test's title, from its declaration.
 _A_TEST_TITLE = re.compile(r"""test\s*\(\s*['"`]([^'"`]*)['"`]""")
 
 
-#: A Python test's read of a file's text: `read_text(`, `.read(` or `open(`.
-_A_PYTHON_READ = re.compile(r"\.read_text\s*\(|\.read\s*\(|\bopen\s*\(")
-#: A quoted file name in a Python test.
-_A_QUOTED_NAME = re.compile(r"""['"]([^'"\n]+)['"]""")
+#: A test's declaration, not a regular expression's `.test(`: that would cut a test in two where it reads the file.
+_A_TEST_DECLARED = re.compile(r"(?<![.\w$])(?:test|it)(?:\.(?:only|fixme|fail|slow))?\s*\(")
+_A_DECLARED_TITLE = re.compile(r"""(?:test|it)(?:\.\w+)?\s*\(\s*['"`]([^'"`]*)['"`]""")
+#: A comment's whole line: what it reads is not read.
+_A_COMMENT_LINE = re.compile(r"^[ \t]*(?://|#).*$", re.M)
+#: What reads a file's text. Not `existsSync`, `statSync` or `accessSync`: that a kept file is there, or may be run, is
+#: true on every product.
+_A_TEXT_READ = re.compile(r"\b(?:readFile(?:Sync)?|createReadStream)\s*\(")
+_A_PYTHON_OPEN = re.compile(r"(?<![.\w])open\s*\(")
+_A_PYTHON_READ_ON = re.compile(r"\.(?:read_text|read_bytes|open)\s*\(")
+_A_JS_ASSERTION = re.compile(r"\b(?:expect(?:\.soft)?|assert(?:\.\w+)?)\s*\(")
+_A_PYTHON_ASSERTION_LINE = re.compile(r"^[ \t]*assert\b", re.M)
+_AN_ASSIGNMENT = re.compile(r"(?:^|(?<=[\s;{(]))(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*)(?:[ \t]*:[ \t]*[\w<>\[\]| ]+?)?[ \t]*=(?![=>])", re.M)
+_A_WITH_AS = re.compile(r"^[ \t]*with\s+(.+?)\s+as\s+(\w+)\s*:", re.M)
+#: In a path's expression: a string, or a name that is not called or looked into (`path.join`, `process.env`).
+_A_PATH_PIECE = re.compile(
+    r"""(['"`])((?:\\.|(?!\1).)*)\1|(?<![\w.$])([A-Za-z_$][\w$]*)(?![\w$]*\s*[.(\['"`])""", re.S)
+_A_NAME_IN_A_STRING = re.compile(r"\$?\{([A-Za-z_$][\w$]*)\}")
+#: The longest expression followed; a quote a regular expression left open must not swallow the file.
+_MOST_EXPRESSION = 2000
 
 
-def _a_python_read_of(block: str, kept: set[str]) -> str | None:
-    """The kept file a Python test reads the text of, else None: its name quoted, and a read of some file's text."""
-    if not _A_PYTHON_READ.search(block):
-        return None
-    return next((m.group(1) for m in _A_QUOTED_NAME.finditer(block) if Path(m.group(1)).name in kept), None)
+def _expression_at(text: str, at: int, stops: str) -> str:
+    """`text` from `at` to the first of `stops` outside brackets and strings, or the bracket that closes around it."""
+    while at < len(text) and text[at] in " \t\n":
+        at += 1
+    depth, quote, here, end = 0, "", at, min(len(text), at + _MOST_EXPRESSION)
+    while here < end:
+        character = text[here]
+        if quote:
+            if character == "\\":
+                here += 1
+            elif character == quote:
+                quote = ""
+        elif character in "'\"`":
+            quote = character
+        elif character in "([{":
+            depth += 1
+        elif character in ")]}":
+            if not depth:
+                break
+            depth -= 1
+        elif not depth and character in stops:
+            break
+        here += 1
+    return text[at:here]
+
+
+def _assignments(text: str) -> dict[str, str]:
+    """{name: the expression last assigned to it} in `text`, a `with ... as name` among them."""
+    found = {m.group(1): _expression_at(text, m.end(), ";\n") for m in _AN_ASSIGNMENT.finditer(text)}
+    found.update({m.group(2): m.group(1) for m in _A_WITH_AS.finditer(text)})
+    return found
+
+
+def _path_parts(expression: str, defined: dict[str, str], seen: tuple[str, ...] = ()) -> list[str]:
+    """The folders and file `expression` names, following each name it uses to what was assigned to it."""
+    parts: list[str] = []
+
+    def named(name: str) -> None:
+        if name in defined and name not in seen:
+            parts.extend(_path_parts(defined[name], defined, (*seen, name)))
+
+    for match in _A_PATH_PIECE.finditer(expression):
+        if match.group(3) is not None:
+            named(match.group(3))
+            continue
+        for at, piece in enumerate(_A_NAME_IN_A_STRING.split(match.group(2))):
+            if at % 2:
+                named(piece)
+            else:
+                parts.extend(part for part in re.split(r"[\\/]", piece) if part not in ("", ".", ".."))
+    return parts
+
+
+def _the_kept_file_named(parts: list[str], kept: frozenset[str]) -> str | None:
+    """The kept file a path names, by its whole tail: `fixtures/start.sh` is not the kept `start.sh`."""
+    for path in kept:
+        mine = path.split("/")
+        if parts and (mine[-len(parts):] == parts or (len(mine) > 1 and parts[-len(mine):] == mine)):
+            return mine[-1]
+    return None
+
+
+def _the_kept_file_read(text: str, defined: dict[str, str], kept: frozenset[str], python: bool) -> str | None:
+    """The kept file whose text `text` reads, else None."""
+    arguments = [_expression_at(text, m.end(), ",;") for m in (_A_PYTHON_OPEN if python else _A_TEXT_READ).finditer(text)]
+    if python:
+        for match in _A_PYTHON_READ_ON.finditer(text):
+            start = match.start()
+            while start:
+                character = text[start - 1]
+                if character in ")]":
+                    closing, opening, depth = character, "(" if character == ")" else "[", 0
+                    while start:
+                        start -= 1
+                        depth += (text[start] == closing) - (text[start] == opening)
+                        if not depth:
+                            break
+                elif character.isalnum() or character in "_.":
+                    start -= 1
+                else:
+                    break
+            arguments.append(text[start:match.start()])
+    return next((name for name in (_the_kept_file_named(_path_parts(a, defined), kept) for a in arguments) if name), None)
+
+
+def _a_kept_file_s_text_asserted(block: str, before_the_tests: str, kept: frozenset[str], python: bool) -> str | None:
+    """The kept file whose text the test `block` asserts on, directly or through the variables holding it; else None."""
+    defined = {**_assignments(before_the_tests), **_assignments(block)}
+    holding: dict[str, str] = {}
+    for name, expression in defined.items():
+        read = _the_kept_file_read(expression, defined, kept, python)
+        if read:
+            holding[name] = read
+    for _ in defined:  # what is made from the text holds it too: `script.split("\n")`, `f.read()`
+        more = {
+            name: next(holding[held] for held in holding if re.search(rf"(?<![\w$.]){re.escape(held)}\b", expression))
+            for name, expression in defined.items()
+            if name not in holding and any(re.search(rf"(?<![\w$.]){re.escape(held)}\b", expression) for held in holding)
+        }
+        if not more:
+            break
+        holding.update(more)
+    asserted = (
+        [_expression_at(block, m.end(), "\n") for m in _A_PYTHON_ASSERTION_LINE.finditer(block)] if python
+        else [_expression_at(block, m.end(), "") for m in _A_JS_ASSERTION.finditer(block)]
+    )
+    for assertion in asserted:
+        direct = _the_kept_file_read(assertion, defined, kept, python)
+        if direct:
+            return direct
+        for name, read in holding.items():
+            if re.search(rf"(?<![\w$.]){re.escape(name)}\b", assertion):
+                return read
+    return None
 
 
 def tests_that_assert_a_kept_file_s_text(repo_root: str | Path, result: AcceptanceResult | None = None) -> list[str]:
@@ -3040,7 +3161,7 @@ def tests_that_assert_a_kept_file_s_text(repo_root: str | Path, result: Acceptan
     started through the kept file - it answers on `PORT`, keeps its data under `DATA_DIR` - which the suite's own
     server already shows.
     """
-    kept = {Path(path).name for path in contract.kept_paths(repo_root)}
+    kept = contract.kept_paths(repo_root)
     if not kept:
         return []
     # Only a test that fails: one that passes against the kept file proves nothing, but costs nothing either, and
@@ -3057,32 +3178,26 @@ def tests_that_assert_a_kept_file_s_text(repo_root: str | Path, result: Acceptan
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        starts = [m.start() for m in (_A_PYTHON_TEST if python else _A_TEST_CALL).finditer(text)]
+        text = _A_COMMENT_LINE.sub("", text)
+        starts = [m.start() for m in (_A_PYTHON_TEST if python else _A_TEST_DECLARED).finditer(text)]
+        before_the_tests = text[:starts[0]] if starts else ""
         for at, start in enumerate(starts):
             block = text[start:starts[at + 1] if at + 1 < len(starts) else len(text)]
-            if "assert" not in block if python else "expect(" not in block:
-                continue
             if failing is not None:
-                if python:
-                    titled = _A_PYTHON_TEST.match(block)
-                    title = titled.group(1) if titled else ""
-                else:
-                    titled = _A_TEST_TITLE.match(block)
-                    title = titled.group(1).strip() if titled else ""
+                titled = (_A_PYTHON_TEST if python else _A_DECLARED_TITLE).match(block)
+                title = titled.group(1).strip() if titled else ""
                 if not title or not any(title in name for name in failing):
                     continue
-            read = (_a_python_read_of(block, kept) if python
-                    else next((m.group(1) for m in _A_FILE_READ.finditer(block) if Path(m.group(1)).name in kept), None))
-            if read is None:
+            name = _a_kept_file_s_text_asserted(block, before_the_tests, kept, python)
+            if name is None:
                 continue
-            name = Path(read).name
             line = text.count("\n", 0, start) + 1
             problems.append(
                 f"`{path.relative_to(root).as_posix()}` line {line}: the test reads `{name}` and asserts what it "
                 f"contains. The harness keeps that file and puts it back before every run, so its text is not the "
-                "product's to change and the test cannot pass on any product. Prove the criterion by what the service "
-                "does when started through it - it answers on the suite's address and keeps its data under `DATA_DIR` "
-                "- through `request`, not by reading the file."
+                "product's to change and the test cannot pass on any product. Test what the file does instead, by "
+                "reaching the running service - it answers on the suite's address and keeps its data under `DATA_DIR` "
+                "- not by reading the file. That the file exists, may be run or starts the service can stay."
             )
     return problems[:6]
 

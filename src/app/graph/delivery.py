@@ -211,6 +211,12 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     failing: list[Any] = []
     summary = "There is no acceptance suite; the milestone reviews were the gate."
     if suite.is_locked(root):
+        # A criterion deferred only because no test's name carries its id goes back to QA, before anything measures it.
+        from app.graph.acceptance_nodes import naming_back_to_qa
+
+        back_to_qa = naming_back_to_qa(state)
+        if back_to_qa is not None:
+            return back_to_qa
         # One last try at each deferred criterion with a locked test, before the suite decides (deep review F3).
         from app.graph import last_try_on_deferred
 

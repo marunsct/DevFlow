@@ -552,6 +552,14 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     problems.extend(
         suite.controls_never_found_by_name(root, getattr(state.get("document"), "text", "") or "")
     )
+    # Plan item 16: at a first writing only; a repair is told to change nothing but the tests it was sent for.
+    from app.acceptance import contract_coverage
+
+    if contract_coverage.enabled() and not state.get("acceptance_return_to"):
+        missing_lines = contract_coverage.lines_with_no_test(
+            root, getattr(state.get("technical_specification"), "interface_contract", None) or ())
+        if missing_lines:
+            problems.append(contract_coverage.finding(missing_lines))
     if not result.ran:
         if rounds < MAX_ACCEPTANCE_ROUNDS + 2:
             logger.warning("Acceptance suite could not run (exit %s); sent back to QA", result.exit_code)
@@ -643,12 +651,17 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     if suite.undefer_what_a_test_now_carries(root):
         logger.info("Deferred criteria a test now carries are no longer deferred")
     suite.lock(root)
-    from app.acceptance.interface_contract import record_at_lock
+    from app.acceptance.interface_contract import probe_at_the_lock, record_at_lock
 
-    record_at_lock(root, getattr(state.get("technical_specification"), "interface_contract", None) or ())
+    record_at_lock(root, getattr(state.get("technical_specification"), "interface_contract", None) or (),
+                   specification=state.get("technical_specification"))
+    contract_coverage.record_at_lock(root)
     from app.graph.engineering import suite_locked
 
     suite_locked(root)
+    # After the lock is complete: the checks start the product, and their files are their own.
+    if errors_at_lock := probe_at_the_lock(root):
+        logger.warning("The contract's checks at the lock made the server fail on %d line(s)", len(errors_at_lock))
     open_problems = [*problems, *findings]
     _record_document(state, "docs/acceptance_tests.md", _scenarios(root))
     tests = len(result.report.tests)
@@ -1685,6 +1698,77 @@ def beyond_repair_note(broken: list[str], criteria: list[str]) -> str:
         "stage can close them: a defect that names only these criteria is set aside.\n"
         + "\n".join(f"- {item}" for item in broken)
     )
+
+
+#: `suite.repairing`'s mark for a repair that adds criterion ids to names: the tests it renames cannot be listed first.
+NAMING_REPAIR = suite.NAMING_REPAIR
+
+
+class _NamingFindingSwitch:
+    """`NAMING_FINDING_BEFORE_DEFERRAL` as the switch registry reads one: off until measured."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("At release, a criterion the harness deferred and no test's name carries goes back to QA once as a "
+                   "naming finding, instead of shipping deferred.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("NAMING_FINDING_BEFORE_DEFERRAL", _NamingFindingSwitch.ON_BY_DEFAULT)
+
+
+naming_finding_switch = _NamingFindingSwitch()
+
+
+def _naming_findings(root: str) -> dict[str, str]:
+    """{criterion: what QA is told} for each deferred criterion the harness set aside and no test's name carries, not sent yet.
+
+    A reason QA gave stays: its lead judged that reason at the review. These are the harness's own deferrals of a
+    criterion it measured as untested, where what is missing may be only an id in a name.
+    """
+    state = suite._state(root)  # noqa: SLF001 - the suite's own record
+    sent = set(state.get("naming_findings_sent") or [])
+    carried = suite.coverage(root)
+    texts = {c.id: c.text for c in suite.criteria(root)}
+    return {
+        cid: (f"{cid} (\"{texts.get(cid, '')}\") would ship deferred because no test's name carries `{cid}`. Where a "
+              f"test already checks what it says, add `{cid}` to that test's name and change nothing else; where none "
+              "does, write one.")
+        for cid, why in suite.deferred(root).items()
+        if not carried.get(cid) and cid not in sent and str(why).startswith(suite.DEFERRED_BY_THE_HARNESS)
+    }
+
+
+def naming_back_to_qa(state: Any) -> dict[str, Any] | None:
+    """Back to QA with each criterion deferred only for want of a test carrying its id, once each, then to the release; None when none.
+
+    Measured on recent runs: a criterion went out as "ships deferred, unproven" while the suite's tests were right and
+    only its id was missing from a name. No repair budget is charged: nothing is judged, and each is sent once. Behind
+    `NAMING_FINDING_BEFORE_DEFERRAL`. Never raises.
+    """
+    if not naming_finding_switch.enabled():
+        return None
+    try:
+        from app.graph.workflow import _handing_on
+
+        root = _root(state)
+        found = _naming_findings(root)
+        if not found:
+            return None
+        record = suite._state(root)  # noqa: SLF001 - the suite's own record
+        record["naming_findings_sent"] = sorted({*(record.get("naming_findings_sent") or []), *found})
+        suite._save_state(root, record)  # noqa: SLF001
+        suite.repairing(root, [NAMING_REPAIR])
+        logger.warning("Deferred only for want of an id in a test's name: %s; back to QA", ", ".join(sorted(found)))
+        return _handing_on(
+            stage="acceptance_author", acceptance_return_to="release", acceptance_round=0,
+            acceptance_feedback=[*found.values(), REPAIR_RULE],
+        )
+    except Exception:  # noqa: BLE001 - the release goes on as it would have
+        logger.debug("Could not send the naming findings back to QA", exc_info=True)
+        return None
 
 
 # --- decision records ------------------------------------------------------------

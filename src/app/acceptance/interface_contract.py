@@ -56,6 +56,10 @@ _HTTP_WITHOUT_ITS_CRITERION = re.compile(
     r"((?:GET|POST|PUT|PATCH|DELETE)(?:\s*/\s*(?:GET|POST|PUT|PATCH|DELETE))*)\s+(/\S*)"
     r"((?:\s+(?!->)\S+)*?)\s*->\s*(\d{3}(?:\s*(?:or|/|,|\|)\s*\d{3})*)\s*$"
 )
+#: Ids before a route that are no criterion's: `AC-health GET /health -> 200`.
+_IDS_THAT_ARE_NOT_NUMBERS = re.compile(
+    r"^(?:(?:AC|CR)-[A-Za-z][\w-]*[\s,]+)+(?=(?:GET|POST|PUT|PATCH|DELETE)\b)"
+)
 _PAGE = re.compile(_CRITERION + r"\s+page\s+(/\S*)\s+(?:[\w-]+\s+)*?([a-z]+)\s+\"([^\"]+)\"\s*$")
 _COMMAND = re.compile(_CRITERION + r"\s+command\s+(.+?)\s*->\s*exit\s+(\d+)\s*$")
 
@@ -113,6 +117,86 @@ def checkable(checks: list["Check"]) -> list["Check"]:
     return kept
 
 
+#: A route's parameter, for reading its name.
+_A_PARAMETER_NAMED = re.compile(r"\{([^}]*)\}|:([A-Za-z_]\w*)")
+
+
+def with_a_record_made_first(checks: list["Check"], bodies: list[Any]) -> list["Check"]:
+    """The route lines with one parameter that allow only a success, each set to make its record through the contract's write line.
+
+    Measured on recent runs: `AC-3 GET /notes/{id} -> 200` is never probed at release, because no record called
+    `999999999` exists and the line allows no 404. The record comes from the contract's own `POST` on the path before
+    the parameter, with the specification's example bodies tried in turn; a line with no such write stays unchecked.
+    """
+    from dataclasses import replace as _with
+
+    writes = {c.path.rstrip("/") for c in checks if c.kind == "http" and c.method == "POST" and _a_write_that_needs_a_body(c)
+              and not _A_TEMPLATE.search(c.path)}
+    made: list[Check] = []
+    for check in checks:
+        if check.kind != "http" or check.note or _a_refusal_is_allowed(check) or len(_A_PARAMETER_NAMED.findall(check.path)) != 1:
+            continue
+        before = _A_PARAMETER_NAMED.split(check.path, maxsplit=1)[0].rstrip("/")
+        if before in writes:
+            made.append(_with(check, made_through=before, bodies=json.dumps(bodies)))
+    return made
+
+
+def _a_made_record_test(title: str, check: "Check") -> str:
+    """The test of `check` on a record made through its write line; skipped, and so unchecked, when none could be made."""
+    found = _A_PARAMETER_NAMED.search(check.path)
+    name = (found.group(1) or found.group(2)) if found else "id"
+    before, after = check.path[:found.start()], check.path[found.end():]
+    sent = ", data: bodies[0] ?? {}" if check.method in ("PUT", "PATCH") else ""
+    return (
+        f"test({title}, async ({{ request }}) => {{\n"
+        f"  const bodies = {check.bodies or '[]'};\n"
+        "  let made;\n"
+        "  for (const data of [...bodies, {}]) {\n"
+        f"    made = await request.fetch({_js(check.made_through)}, {{ method: 'POST', data, failOnStatusCode: false }});\n"
+        "    if (made.ok()) break;\n"
+        "  }\n"
+        f"  test.skip(!made.ok(), {_js(MADE_NO_RECORD)});\n"
+        "  const record = await made.json().catch(() => ({}));\n"
+        f"  const id = record[{_js(name)}] ?? record.id ?? record.data?.id;\n"
+        f"  test.skip(id === undefined, {_js(MADE_NO_RECORD)});\n"
+        f"  const answer = await request.fetch({_js(before)} + encodeURIComponent(id) + {_js(after)}, "
+        f"{{ method: {_js(check.method)}{sent}, failOnStatusCode: false }});\n"
+        f"  expect({_js(list(_allowed(check)))}).toContain(answer.status());\n"
+        "});\n"
+    )
+
+
+#: Why a test of a line on a made record was skipped.
+MADE_NO_RECORD = "the contract's write line made no record to probe with"
+
+
+def example_bodies(specification: Any) -> list[dict[str, Any]]:
+    """The literal JSON examples the specification's request and data shapes give, those about a request first; [] if none."""
+    decoder = json.JSONDecoder()
+    about_a_request: list[dict[str, Any]] = []
+    others: list[dict[str, Any]] = []
+    for field in ("data_contracts", "api_and_event_contracts"):
+        for entry in getattr(specification, field, None) or ():
+            text, at = str(entry), 0
+            while (at := text.find("{", at)) >= 0:
+                try:
+                    value, length = decoder.raw_decode(text[at:])
+                except ValueError:
+                    at += 1
+                    continue
+                at += length
+                if isinstance(value, dict) and value:
+                    kept = about_a_request if re.search(r"request|body|input|create", text, re.I) else others
+                    if value not in kept:
+                        kept.append(value)
+    return [*about_a_request, *others][:MOST_EXAMPLE_BODIES]
+
+
+#: Tried in turn for one record: each refused try is one more request at a check that takes seconds.
+MOST_EXAMPLE_BODIES = 4
+
+
 def _a_write_that_needs_a_body(check: "Check") -> bool:
     """A `POST`/`PUT`/`PATCH` line that says it succeeds: the probe sends a bare request, which a product that checks
     its input rightly refuses. Measured on one run: `AC-1 POST /notes -> 201` was failed at release for the 422 the
@@ -138,6 +222,10 @@ class Check:
     exit_code: int = 0
     #: What the line says it is for, between its path and its arrow ("for non-existent", "with invalid title").
     note: str = ""
+    #: The write line's path a record is made through before this check; "" for a check on no record.
+    made_through: str = ""
+    #: The bodies that write is tried with, as JSON.
+    bodies: str = ""
 
 
 def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
@@ -160,6 +248,10 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
         # four of six lines were written so and none was checked at release.
         while (between := _A_NOTE_AMONG_THE_STATUSES.sub(r"\1", line)) != line:
             line = between
+        # Measured on recent runs: `AC-health GET /health -> 200` followed no form, for an id that is no number. It
+        # names no criterion of this product, so it is read like a line with none.
+        if named_ids_switch.enabled():
+            line = _IDS_THAT_ARE_NOT_NUMBERS.sub("", line)
         if match := _HTTP.match(line):
             statuses = tuple(int(code) for code in re.findall(r"\d{3}", match[4]))
             checks.append(Check(match[1], "http", line, method=match[2], path=match[3], status=statuses[0],
@@ -186,13 +278,14 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
     return checks, unreadable
 
 
-def record_at_lock(repo_root: str | Path, lines: list[str] | tuple[str, ...]) -> list[Check]:
-    """Keep the contract beside the locked suite; what was kept."""
+def record_at_lock(repo_root: str | Path, lines: list[str] | tuple[str, ...], *, specification: Any = None) -> list[Check]:
+    """Keep the contract beside the locked suite, with the example bodies its write lines can make a record from; what was kept."""
     from app.acceptance import suite
 
     checks, unreadable = parse(lines)
     state = suite._state(repo_root)  # noqa: SLF001 - one state file for the suite and its contract
     state["interface_contract"] = [asdict(check) for check in checks]
+    state["interface_contract_bodies"] = example_bodies(specification)
     # Kept too, so the release names them rather than losing them at the lock.
     state["interface_contract_unreadable"] = list(unreadable)
     suite._save_state(repo_root, state)  # noqa: SLF001
@@ -223,7 +316,9 @@ def playwright_checks(checks: list[Check]) -> str:
     tests = []
     for number, check in enumerate(checks, start=1):
         title = _js(f"{f'[{check.criterion}] ' if check.criterion else ''}contract {number}: {check.line}")
-        if check.kind == "http":
+        if check.made_through:
+            tests.append(_a_made_record_test(title, check))
+        elif check.kind == "http":
             tests.append(
                 f"test({title}, async ({{ request }}) => {{\n"
                 f"  const answer = await request.fetch({_js(check.path)}, {{ method: {_js(check.method)}, failOnStatusCode: false }});\n"
@@ -487,6 +582,9 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
         run = runner or suite._sandbox_runner(root)  # noqa: SLF001 - the suite's own runner
         probe = PROBE_RUNNERS.get(found[0].probe_runner) if found else None
         web = checkable(locked)
+        if record_first_switch.enabled():
+            state = suite._state(root)  # noqa: SLF001 - one state file for the suite and its contract
+            web += with_a_record_made_first(locked, list(state.get("interface_contract_bodies") or []))
         settled = {c.line for c in web}
         templated = [c for c in locked if c.kind in ("http", "page") and _A_TEMPLATE.search(c.path) and c.line not in settled]
         writes = [c for c in locked if _a_write_that_needs_a_body(c) and c not in templated and c.line not in settled]
@@ -516,6 +614,10 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
                                       or _a_bodiless_write_refused_first(check, t))
                                  and not _a_server_error(t)]
         failed = [t for t in failed if t not in about_another_request]
+        unchecked += list(dict.fromkeys(
+            f"{c.line} ({MADE_NO_RECORD})"
+            for t in report.tests if getattr(t, "outcome", "") == "skipped"
+            and (c := _the_check_of(t, web)) is not None and c.made_through))
         unchecked += list(dict.fromkeys(
             f"{c.line} (the probe sends a bare request; the line is about {c.note or 'a request it does not send'})"
             for c in (_the_check_of(t, web) for t in about_another_request) if c is not None))
@@ -553,3 +655,89 @@ class _ServerErrorsAtARound:
 
 
 server_errors_at_a_round_switch = _ServerErrorsAtARound()
+
+
+class _Experiment:
+    """One of plan item 17's switches, as the switch registry reads one: off until measured."""
+
+    ON_BY_DEFAULT = False
+
+    def __init__(self, name: str, explanation: str) -> None:
+        self.name, self.explanation = name, explanation
+
+    def enabled(self) -> bool:
+        from app.switches import is_on
+
+        return is_on(self.name, self.ON_BY_DEFAULT)
+
+
+named_ids_switch = _Experiment(
+    "CONTRACT_NON_NUMERIC_IDS",
+    "A contract line whose id is no number (`AC-health GET /health -> 200`) is read and checked, charging no criterion.",
+)
+record_first_switch = _Experiment(
+    "CONTRACT_PROBE_WITH_A_RECORD",
+    "At release, a route line with a parameter that allows only a success is probed on a record made through the "
+    "contract's own write line, instead of being left unchecked.",
+)
+probe_at_lock_switch = _Experiment(
+    "CONTRACT_PROBE_AT_LOCK",
+    "When the suite is locked and a product exists, the contract's checks run; a 5xx is raised as a defect in the next "
+    "test round, green or not.",
+)
+unread_at_review_switch = _Experiment(
+    "CONTRACT_UNREAD_LINES_AT_REVIEW",
+    "The architect's review is given the contract lines the harness cannot read, instead of the release reporting them.",
+)
+
+
+def probe_at_the_lock(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Check, int]]:
+    """Run the contract's checks as the suite is locked, where a product exists, and keep any 5xx for the next round; what was found.
+
+    Measured on one run: a bare POST and PUT answered 500, and the round's probe asks only when the suite is green, so
+    a product that a re-locked suite found red kept its crash until the suite was green. The scaffold's stub is no
+    product: at a first lock, nothing has been built for a request to reach. Never raises.
+    """
+    try:
+        from app.acceptance import suite
+        from app.stacks.scaffold import entrypoint_is_still_the_stub
+
+        if not probe_at_lock_switch.enabled() or entrypoint_is_still_the_stub(repo_root):
+            return []
+        errors = server_errors(repo_root, runner=runner) or []
+        state = suite._state(repo_root)  # noqa: SLF001 - one state file for the suite and its contract
+        state["interface_contract_errors_at_lock"] = [[asdict(check), status] for check, status in errors]
+        suite._save_state(repo_root, state)  # noqa: SLF001
+        return errors
+    except Exception:  # noqa: BLE001 - a check that cannot run says nothing
+        logger.debug("Could not probe the contract at the lock", exc_info=True)
+        return []
+
+
+def errors_found_at_the_lock(repo_root: str | Path) -> list[tuple[Check, int]]:
+    """What `probe_at_the_lock` kept, taken: the next round raises it once, and the checks settle it. Never raises."""
+    try:
+        from app.acceptance import suite
+
+        state = suite._state(repo_root)  # noqa: SLF001 - one state file for the suite and its contract
+        kept = state.pop("interface_contract_errors_at_lock", None)
+        if kept is None:
+            return []
+        suite._save_state(repo_root, state)  # noqa: SLF001
+        return [(Check(**{**item, "statuses": tuple(item.get("statuses") or ())}), int(status)) for item, status in kept]
+    except Exception:  # noqa: BLE001 - nothing kept is nothing to raise
+        logger.debug("Could not read what the lock's probe found", exc_info=True)
+        return []
+
+
+def unread_lines_finding(lines: list[str] | tuple[str, ...]) -> str:
+    """What the architect's review is told about contract lines that follow none of the forms; "" when all are read."""
+    unread = parse(lines)[1]
+    if not unread:
+        return ""
+    return (
+        f"{len(unread)} line(s) of the interface contract follow none of its forms, so nothing can check them: "
+        + "; ".join(f"`{line}`" for line in unread[:8])
+        + (f"; and {len(unread) - 8} more" if len(unread) > 8 else "")
+        + "."
+    )

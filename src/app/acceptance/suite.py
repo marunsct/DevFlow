@@ -331,6 +331,12 @@ def lock(repo_root: str | Path) -> dict[str, str]:
     return checksums
 
 
+#: The mark in `repairing` for a repair that adds criterion ids to the names of tests it could not list first.
+NAMING_REPAIR = "(criterion ids added to test names)"
+#: How the deferrals the harness makes begin (`escalation`, `defer_what_is_beyond_repair`), as against a reason QA gave.
+DEFERRED_BY_THE_HARNESS = ("could not be made to pass", "its locked test cannot pass")
+
+
 def repairing(repo_root: str | Path, tests: list[str]) -> None:
     """Record the tests a reopened suite is being repaired for, until it is locked again."""
     state = _state(repo_root)
@@ -367,6 +373,9 @@ def tests_a_repair_would_drop(repo_root: str | Path, relative_path: str, content
     # refused for removing tests wrote them back as empty `test.skip(...)`, and was then refused removing those.
     before = _declared_in(locked_text) - _skipped_in(locked_text)
     under_repair = set(state.get("repairing") or [])
+    # A repair that adds an id to a name drops the old name: only one that leaves fewer tests is dropping any.
+    if NAMING_REPAIR in under_repair and len(_declared_in(content) - _skipped_in(content)) >= len(before):
+        return []
     return sorted(
         name for name in before - (_declared_in(content) - _skipped_in(content))
         if not any(name == test or name in test or test in name for test in under_repair)

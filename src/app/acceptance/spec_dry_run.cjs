@@ -87,7 +87,8 @@ globalThis.fetch = async () => ({
 // --- child processes and time: nothing starts, nothing waits -------------------------------------------------------
 function fakeChild() {
   const child = new EventEmitter();
-  Object.assign(child, { pid: 1, exitCode: null, signalCode: null, killed: false, connected: false,
+  // Above any pid the kernel gives (at most 2^22), should a signal ever reach the system with it.
+  Object.assign(child, { pid: 2 ** 30, exitCode: null, signalCode: null, killed: false, connected: false,
     stdout: new EventEmitter(), stderr: new EventEmitter(), stdin: new EventEmitter() });
   child.stdout.setEncoding = child.stderr.setEncoding = () => {};
   child.stdin.write = child.stdin.end = () => true;
@@ -104,6 +105,12 @@ childProcess.spawnSync = () => ({ status: 0, signal: null, stdout: '', stderr: '
 childProcess.execSync = childProcess.execFileSync = () => '';
 const realSetTimeout = globalThis.setTimeout;
 globalThis.setTimeout = (fn, ms, ...rest) => realSetTimeout(fn, Math.min(Number(ms) || 0, 1), ...rest);
+// A spec stops the service it started by signalling its process group: `process.kill(-child.pid, 'SIGTERM')`. Nothing it
+// names here is real, so no signal leaves this process. With a stand-in pid of 1 that call was kill(-1): it signalled
+// every process of the user and took the machine's session down twice.
+process.kill = () => true;
+process._kill = () => 0;
+const reallyExit = process.exit.bind(process);
 process.exit = () => { throw new Error('process.exit called'); };
 process.on('unhandledRejection', () => {});
 process.on('uncaughtException', () => {});
@@ -366,5 +373,5 @@ for (const extension of ['.ts', '.mts', '.cts']) Module._extensions[extension] =
     saveReport();
   }
   saveReport();
-  process.kill(process.pid, 'SIGKILL');
+  reallyExit(0);
 })();

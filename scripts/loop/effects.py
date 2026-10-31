@@ -102,6 +102,12 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     return lines
 
 
+def order_probe_line(probed: dict) -> str:
+    """What the order probe recorded (`ORDER_PROBE`), to read beside the unstable disputes the signals above count."""
+    return (f"  {len(probed.get('unstable') or []):>4}  tests failing only when their file runs alone "
+            f"({probed.get('files_run', 0)} files probed, {probed.get('files_without_a_report', 0)} without a report)")
+
+
 def main(run: str) -> None:
     paths = sorted(glob.glob(f"/app/data/transcripts/{run}*.jsonl"))
     if not paths:
@@ -118,6 +124,8 @@ def main(run: str) -> None:
         decisions = Path(log).read_text(encoding="utf-8", errors="replace")
     print(f"effects of the changes in {run} ({len(records)} records)")
     print("\n".join(effects(records, decisions)))
+    for probed in glob.glob(f"/app/data/workspaces/*/workspace-{run}*/.harness/order_probe.json"):
+        print(order_probe_line(json.loads(Path(probed).read_text(encoding="utf-8"))))
 
 
 if __name__ == "__main__":

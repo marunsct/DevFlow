@@ -3171,7 +3171,11 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
     passes too much never charges the product for anything, so they stay with
     the review.
     """
+    from app.acceptance import ids_read_without_a_create, spec_dry_run
+
     return [
+        *spec_dry_run.findings(repo_root),
+        *ids_read_without_a_create.findings(repo_root),
         *tests_that_broke_themselves(repo_root, result),
         *tests_that_need_what_they_never_made(repo_root, result),
         *assertions_that_do_not_exist(repo_root),

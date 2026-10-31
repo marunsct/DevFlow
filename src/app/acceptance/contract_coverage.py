@@ -72,7 +72,7 @@ def _the_lines(repo_root: str | Path) -> list[list[str]]:
 def _a_call_through_a_name(method: str, text: str) -> bool:
     """Whether the suite calls this method with no literal path (`request.put(url)`), or by a table (`request[method](path)`)."""
     verb = method.lower()
-    if re.search(rf"(?i){verb}\w*\s*\(\s*(?:\w+\s*,\s*)?[A-Za-z_$]", text):
+    if re.search(rf"(?i){verb}\w*\s*\(\s*(?:\w+\s*,\s*)?(?:[A-Za-z_$]|[`'\"f]+\$?\{{)", text):
         return True
     dispatched = re.search(r"\[\s*\w*(?:method|verb)\w*\s*\]|\.(?:fetch|request)\s*\(", text, re.I)
     return bool(dispatched and re.search(rf"(?i)['\"`]{verb}['\"`]", text))

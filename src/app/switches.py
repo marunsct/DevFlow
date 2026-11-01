@@ -124,6 +124,10 @@ EXPERIMENTS_ON = {
     "KEPT_FIX_CANDIDATES": "fix-loop group arm",
     "CO_DEFECT_FAILURES_IN_REWRITES": "fix-loop group arm",
     "REPEATED_REWRITE_PROMPT_STOP": "fix-loop group arm",
+    # A contradiction in the specification, measured as one group: three of the last four runs carried blocking ones
+    # into the build, and one of them spent hours on the standoff it became. The baseline is the runs before this arm.
+    "SETTLE_SPEC_CONTRADICTIONS": "contradiction group arm: one standoff cost six reverted fixes",
+    "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE": "contradiction group arm",
 }
 
 _BUNDLE_OF = {member: bundle for bundle, members in BUNDLES.items() for member in members}

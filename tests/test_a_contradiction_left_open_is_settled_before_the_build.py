@@ -262,10 +262,10 @@ def test_the_words_of_the_rule_are_plain(tmp_path, on):
     assert not BANNED.search(said)
 
 
-def test_the_switch_is_registered_and_off(monkeypatch):
+def test_the_switch_is_off_in_the_code_and_on_as_a_measured_arm(monkeypatch):
     name = "SETTLE_SPEC_CONTRADICTIONS"
     monkeypatch.delenv(name, raising=False)
-    assert name in switches.EXPERIMENTS and name not in switches.EXPERIMENTS_ON
+    assert name in switches.EXPERIMENTS and name in switches.EXPERIMENTS_ON
     assert provenance.switch(provenance.SWITCHES[name]).enabled() is False
     compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
-    assert f"{name}: ${{{name}:-off}}" in compose
+    assert f"{name}: ${{{name}:-on}}" in compose

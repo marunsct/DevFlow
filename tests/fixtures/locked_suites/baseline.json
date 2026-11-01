@@ -1,5 +1,8 @@
 {
  "suite-01": {
+  "tests_that_count_a_list_other_tests_write_to": [
+   "`notes/acceptance/ac13.spec.js` line 14: `[AC-13] validation error on create` expects exactly 0 from the whole list at `/notes`, and other tests in the suite write to `/notes` as well. They all share "
+  ],
   "tests_that_restart_on_data_they_never_wrote": [
    "`notes/acceptance/ac17.spec.js` line 8: the test starts `svc1` on a fresh data folder and never sends it anything (`svc1.baseURL` is not used), then starts a service on `svc1.dataDir` and reads from i"
   ]
@@ -19,6 +22,9 @@
  "suite-05": {
   "requests_with_a_fetch_body": [
    "`notes/acceptance/ac18.spec.js` line(s) 17: a request body is passed as `body:` in fetch-style options, which Playwright's `request` fixture does not read - the service receives no body and answers 40"
+  ],
+  "tests_that_count_a_list_other_tests_write_to": [
+   "`notes/acceptance/ac13.spec.js` line 13: `[AC-13] POST /notes without title returns 400 and nothing stored` expects exactly 0 from the whole list at `/notes`, and other tests in the suite write to `/n"
   ]
  },
  "suite-06": {},
@@ -62,7 +68,11 @@
  },
  "suite-22": {},
  "suite-23": {},
- "suite-24": {},
+ "suite-24": {
+  "tests_that_count_a_list_other_tests_write_to": [
+   "`notes/acceptance/getAll.spec.js` line 27: `[AC-9] GET /notes returns array of all notes` expects exactly 2 from the whole list at `/notes`, and other tests in the suite write to `/notes` as well. The"
+  ]
+ },
  "suite-25": {},
  "suite-26": {},
  "suite-27": {

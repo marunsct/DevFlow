@@ -29,6 +29,7 @@ CHECKS = (
     "tests_with_module_system_mismatch", "tests_with_unawaited_async_helpers", "tests_that_assert_an_unstated_order",
     "tests_that_expect_what_they_never_gave", "tests_that_never_open_the_page", "locators_that_do_not_exist",
     "tests_that_sign_in_as_nobody", "tests_that_assert_a_kept_file_s_text",
+    "tests_that_count_a_list_other_tests_write_to",
 )
 
 

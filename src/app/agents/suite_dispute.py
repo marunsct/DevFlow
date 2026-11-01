@@ -230,18 +230,23 @@ def judged_by_the_code(why: str) -> bool:
     return any(_THE_PRODUCT_DOES.search(clause) or _A_PRODUCT_PREDICATE.search(clause) for clause in clauses)
 
 
-def _tests_the_rulings_name(rulings: Sequence[Any], failing_names: Sequence[str]) -> list[str]:
+def _tests_the_rulings_name(rulings: Sequence[Any], failing_names: Sequence[str], standard: str = "") -> list[str]:
     """The repair feedback for each failing test a ruling calls wrong, with what it asserts and the standard quoted.
 
     Read by the field, not the wording: tonight's prose classifier filed "its own steps never set up" as a reason about
     the product (LF.405) and needed four patches. A ruling with no quoted standard reopens nothing.
     """
     named = []
+    the_standard = " ".join(standard.split()).casefold()
     for ruling in rulings:
         test = " ".join(str(getattr(ruling, "test", "") or "").split())
         quoted = " ".join(str(getattr(ruling, "the_standard_says", "") or "").split())
         asserts = " ".join(str(getattr(ruling, "the_test_asserts", "") or "").split())
         if not getattr(ruling, "the_test_is_wrong", False) or len(quoted.split()) < 3 or not asserts:
+            continue
+        # Measured on one run: the "standard" quoted was a sentence of the instructions this very call was given.
+        if the_standard and quoted.casefold() not in the_standard:
+            logger.warning("A ruling on `%s` quotes what the standard does not say; the test stays locked: %s", test, quoted[:200])
             continue
         name = next((n for n in failing_names if n == test or _TAGS.sub("", n).strip() == _TAGS.sub("", test).strip()), None)
         if name and not any(line.startswith(f"`{name}`") for line in named):
@@ -252,7 +257,7 @@ def _tests_the_rulings_name(rulings: Sequence[Any], failing_names: Sequence[str]
     return named
 
 
-def tests_it_names(answer: Any, failing_names: Sequence[str]) -> list[str]:
+def tests_it_names(answer: Any, failing_names: Sequence[str], standard: str = "") -> list[str]:
     """The suite's repair feedback for each failing test the answer names.
 
     By its name, or by its title without the criterion tags, in any case: one
@@ -263,7 +268,7 @@ def tests_it_names(answer: Any, failing_names: Sequence[str]) -> list[str]:
     """
     rulings = list(getattr(answer, "rulings", None) or []) if structured_verdict_switch.enabled() else []
     if rulings:
-        return _tests_the_rulings_name(rulings, failing_names)
+        return _tests_the_rulings_name(rulings, failing_names, standard)
     lines = [" ".join(str(line).split()) for line in getattr(answer, "cannot_pass", None) or []]
     named = []
     # A bare tag stands for a test only when no other failing test carries it: two tests of one criterion named as

@@ -61,3 +61,28 @@ def test_an_answer_without_rulings_does_not_satisfy_the_schema():
     right = DisputeRuling(test=FAILING[1], the_test_is_wrong=False, the_test_asserts="the title changes",
                           the_standard_says="AC-4 Update a note's title and body")
     assert SuiteDisputeWithRulings(rulings=[right]).rulings == [right]
+
+
+def _ruling(quote):
+    return DisputeRuling(test=FAILING[0], the_test_is_wrong=True, the_test_asserts="it asserts a thing", the_standard_says=quote)
+
+
+def test_a_quote_that_is_not_in_the_standard_reopens_nothing(monkeypatch):
+    # Measured on one run: the ruling's "standard" was a sentence of the harness's own instructions to it.
+    monkeypatch.setenv("STRUCTURED_DISPUTE_VERDICT", "on")
+    answer = _answer(_ruling("A line with no reason is not counted."))
+    assert suite_dispute.tests_it_names(answer, FAILING, standard="AC-4 Update a note's title and body.") == []
+
+
+def test_a_quote_from_the_standard_reopens_the_test_whatever_its_case_and_spacing(monkeypatch):
+    monkeypatch.setenv("STRUCTURED_DISPUTE_VERDICT", "on")
+    answer = _answer(_ruling("update a note's  title and body"))
+    assert len(suite_dispute.tests_it_names(answer, FAILING, standard="AC-4 Update a note's\ntitle and body.")) == 1
+
+
+def test_the_node_gives_the_standard_to_the_reading_of_the_dispute():
+    from app.graph import workflow
+
+    node = inspect.getsource(workflow)
+    node = node[node.index("def acceptance_dispute_node"):]
+    assert "tests_it_names(update.pop(\"__suite_dispute__\"), [name for name, _, _ in failing], standard=" in node

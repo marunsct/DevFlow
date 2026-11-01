@@ -11808,7 +11808,14 @@ def build_workflow_graph(
         )
         if _hand_back(update, "__suite_dispute__"):
             return update
-        named = tests_it_names(update.pop("__suite_dispute__"), [name for name, _, _ in failing])
+        from app.agents.specification_rulings import _the_specification
+
+        standard = "\n".join((
+            getattr(state.get("document"), "text", "") or "",
+            _the_specification(state.get("technical_specification"), root),
+            *(criterion for _, criterion, _ in failing),
+        ))
+        named = tests_it_names(update.pop("__suite_dispute__"), [name for name, _, _ in failing], standard=standard)
         # The executable leg before a reclassification (Initiative J.2): each
         # named test is run alone against the delivered surface in the
         # project's own runner. One that passes alone is not unpassable - the

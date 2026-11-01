@@ -251,6 +251,18 @@ def _in_this_project(path: Any, project_root: Path) -> str | None:
     return _inside(path)
 
 
+#: What a declaration's `unit_dir` says for tests that sit beside the code: as a pack declares it.
+BESIDE_THE_CODE = "."
+
+
+def _the_project_itself(path: Any, project_root: Path) -> bool:
+    """Whether `path` names the project's own folder: `.`, `./`, or its name, however written."""
+    if not isinstance(path, str):
+        return False
+    cleaned = path.strip().replace("\\", "/").rstrip("/").removeprefix("./")
+    return cleaned in {".", project_root.name}
+
+
 def read_declaration(project_root: Path, fallback_kind: str = "") -> tuple[Declaration | None, str]:
     """The declaration, or (None, what is wrong with it)."""
     where = project_root / DECLARATION_FILE
@@ -282,6 +294,8 @@ _NOT_THE_PROJECT_S_TESTS = frozenset({
 
 def _within(name: str, directory: str) -> bool:
     folder = directory.strip("/")
+    if folder == BESIDE_THE_CODE:
+        return True
     return bool(folder) and (name == folder or name.startswith(folder + "/"))
 
 
@@ -312,7 +326,9 @@ def _tests_the_runners_never_collect(
         subdirectories[:] = [d for d in subdirectories if d not in _NOT_THE_PROJECT_S_TESTS and not d.startswith(".")]
         for file_name in files:
             relative = (Path(directory) / file_name).relative_to(project_root).as_posix()
-            if _within(relative, unit_dir) or _within(relative, acceptance_dir):
+            # Unit tests beside the code: only what the unit pattern names is the unit runner's.
+            collected = unit_dir != BESIDE_THE_CODE or fnmatch(file_name, unit_pattern)
+            if (collected and _within(relative, unit_dir)) or _within(relative, acceptance_dir):
                 continue
             if any(p and fnmatch(file_name, p) for p in (unit_pattern, acceptance_pattern)):
                 stray.append(relative)
@@ -342,7 +358,17 @@ def _declared(text: str, project_root: Path, fallback_kind: str, *, files_writte
         key: _in_this_project(data.get(key), project_root)
         for key in ("unit_report", "unit_dir", "acceptance_report", "acceptance_dir")
     }
-    problems += [f"`{key}` must be a path inside the project" for key, path in paths.items() if path is None]
+    # Tests beside the code are how packs declare them too. Measured on one run: `.` and the project's own name were
+    # refused seven times as not "inside the project", and the setup was left to the agents.
+    if _the_project_itself(data.get("unit_dir"), project_root):
+        paths["unit_dir"] = BESIDE_THE_CODE
+    for key, path in paths.items():
+        if path is not None:
+            continue
+        if key == "acceptance_dir" and _the_project_itself(data.get(key), project_root):
+            problems.append("`acceptance_dir` names the project itself: acceptance tests need a folder of their own in it, such as `acceptance`")
+        else:
+            problems.append(f"`{key}` must be a path inside the project")
     patterns = {key: str(data.get(key) or "").strip() for key in ("unit_pattern", "acceptance_pattern")}
     problems += [f"`{key}` must name a file pattern" for key, value in patterns.items() if not value or "/" in value]
     # A pattern is not a file the harness can keep - and `src/**/*.ts` would

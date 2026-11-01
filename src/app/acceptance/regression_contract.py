@@ -36,7 +36,10 @@ def mark_seeded(workspace: str | Path, provenance: dict) -> None:
     try:
         path = Path(workspace) / SEEDED_FILE
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"provenance": provenance}), encoding="utf-8")
+        # The top-level names too, read before anything else writes there: what
+        # is the seed's to move into the pinned directory (`stacks.seeded_product`).
+        entries = sorted(entry.name for entry in Path(workspace).iterdir() if entry.name not in {".git", ".harness"})
+        path.write_text(json.dumps({"provenance": provenance, "entries": entries}), encoding="utf-8")
     except OSError:
         logger.debug("Could not record the seed", exc_info=True)
 

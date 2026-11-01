@@ -6024,13 +6024,20 @@ def pin_the_directory_the_product_names(root: str | Path, product_name: str) -> 
 
     So the name is fixed once, at intake, the way every one of them was
     deriving it: lowercase, words joined by hyphens. Only for a workspace with
-    no project directory yet - an uploaded codebase already says where its code
-    lives - and never over an existing pin. A name with no letters or digits
-    in the Latin alphabet pins nothing, and the plan's own name is used later
-    as before.
+    no project directory yet - a codebase seeded in a project folder already
+    says where its code lives - and never over an existing pin. A name with no
+    letters or digits in the Latin alphabet pins nothing, and the plan's own
+    name is used later as before.
+
+    A product seeded at the workspace root has no such folder, so it is moved
+    into the directory pinned here (`app.stacks.seeded_product`). An existing
+    pin is checked too: a visit cut short finishes the move on the next one.
     """
+    from app.stacks.seeded_product import move_the_seeded_product_in
+
     base = Path(root)
     if pinned_project_directory(base) is not None:
+        move_the_seeded_product_in(base)
         return None
     try:
         if any(entry.is_dir() and _is_project_directory(entry.name) for entry in base.iterdir()):
@@ -6041,6 +6048,7 @@ def pin_the_directory_the_product_names(root: str | Path, product_name: str) -> 
     if not name or name in _SUBDIRECTORY_NAMES or not _is_project_directory(name):
         return None
     _pin_project_directory(base, name)
+    move_the_seeded_product_in(base)
     return name
 
 

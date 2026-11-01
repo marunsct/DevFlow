@@ -67,9 +67,40 @@ def enabled() -> bool:
     return os.environ.get("CUSTOM_STACK_SETUP", "true").strip().lower() not in {"0", "false", "no", "off"}
 
 
+#: What a seeded product with no manifest is known to run by. Not stylesheets or headers, which run nothing.
+_RUNNABLE_SUFFIXES = frozenset({
+    ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".rb", ".go", ".rs", ".java", ".kt", ".scala", ".swift",
+    ".php", ".c", ".cc", ".cpp", ".cs", ".ex", ".exs", ".lua", ".pl", ".sh", ".html", ".htm",
+})
+
+
+def _holds_runnable_code(project_root: Path) -> bool:
+    from app.analysis.walk import files_under
+    from app.tools.repository import IGNORED_DIRECTORIES
+
+    return any(
+        path.suffix.lower() in _RUNNABLE_SUFFIXES
+        for path in files_under(project_root, IGNORED_DIRECTORIES, skip_hidden=True)
+    )
+
+
 def already_set_up(project_root: Path) -> bool:
-    """Whether the project already has a manifest: a seeded codebase is built on as it is."""
-    return any((project_root / name).exists() for name in _MANIFESTS) or any(project_root.glob("*.csproj"))
+    """Whether the project is built on as it is: it has a manifest, or it is a seeded product with code.
+
+    A product runs without a manifest (a standard-library service and its
+    launcher), and the setup stage would spend its calls on a project that
+    already works. Only for a seed: the same files in a run that started empty
+    are a setup stage's unfinished work. The setup's test commands are then not
+    recorded, so the acceptance suite declares its own (`suite.DECLARED_COMMAND_FILE`)
+    and installs are the agents', as for a seed with a manifest.
+    """
+    from app.acceptance.regression_contract import seeded
+
+    return (
+        any((project_root / name).exists() for name in _MANIFESTS)
+        or any(project_root.glob("*.csproj"))
+        or (seeded(project_root.parent) and _holds_runnable_code(project_root))
+    )
 
 
 def _stack_line(stack: Any) -> str:

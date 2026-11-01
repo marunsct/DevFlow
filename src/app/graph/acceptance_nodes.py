@@ -186,6 +186,23 @@ def scaffold(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]
     pack = pack_named(state.get("stack_pack"))
     update: dict[str, Any] = {}
     already_done = bool((state.get("scaffold_result") or {}).get("ok"))
+    seeded_project = None if already_done else _the_seeded_project_built_on_as_it_is(state, root)
+    if seeded_project:
+        # Not a pack around it either: a pack's kept files are put back over the
+        # product's own, and its scaffold refuses a project with a manifest,
+        # which stops the run as an unproven setup.
+        update = {
+            "stack_pack": None,
+            "scaffold_result": {"ok": True, "pack": None, "project": seeded_project, "problem": ""},
+        }
+        _decide(
+            state, update, point="scaffold", question="How is the project set up?",
+            options=["built on as it is", "a new setup"], decision="built on as it is",
+            rationale=f"`{seeded_project}/` holds the seeded product, with its code. The acceptance suite declares "
+            "its own command, and no unit command is recorded for the unit gate.",
+        )
+        logger.info("%s/ holds the seeded product; it is built on as it is", seeded_project)
+        return _handing_on(**update, stage="acceptance_author")
     if pack is not None and not already_done:
         from app.stacks.scaffold import scaffold as scaffold_pack
         from app.tools.repository import pin_the_directory_the_product_names, pinned_project_directory
@@ -258,6 +275,21 @@ def scaffold(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]
         if set_up is not None:
             return set_up
     return _handing_on(**update, stage="acceptance_author")
+
+
+def _the_seeded_project_built_on_as_it_is(state: Any, root: str) -> str | None:
+    """The pinned project, when it is a seeded product no setup has started on; None otherwise."""
+    from app.acceptance.regression_contract import seeded
+    from app.graph.workflow import _the_stage_that_paused
+    from app.stacks import contract, custom_setup
+    from app.tools.repository import pinned_project_directory
+
+    project = pinned_project_directory(Path(root))
+    if not project or not seeded(root) or state.get("scaffold_result") or contract.read(root) is not None:
+        return None
+    if str(_the_stage_that_paused(state) or "").startswith("stack_setup_"):
+        return None
+    return project if custom_setup.already_set_up(Path(root) / project) else None
 
 
 def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any] | None:

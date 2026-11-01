@@ -124,12 +124,12 @@ def test_a_repair_a_harness_check_sent_does_not(root, monkeypatch, tmp_path):
     assert product_at_fault.RULE not in _reopen(monkeypatch, tmp_path, reclassifying=False)["acceptance_feedback"]
 
 
-def test_the_switch_ships_off_and_is_registered():
+def test_the_switch_is_a_measured_arm_and_registered():
     assert "QA_SAYS_THE_PRODUCT_IS_AT_FAULT" in switches.EXPERIMENTS
-    assert "QA_SAYS_THE_PRODUCT_IS_AT_FAULT" not in switches.EXPERIMENTS_ON
+    assert "QA_SAYS_THE_PRODUCT_IS_AT_FAULT" in switches.EXPERIMENTS_ON
     assert provenance.SWITCHES["QA_SAYS_THE_PRODUCT_IS_AT_FAULT"] == "app.graph.product_at_fault"
     compose = (Path(__file__).parent.parent / "docker-compose.yml").read_text(encoding="utf-8")
-    assert "QA_SAYS_THE_PRODUCT_IS_AT_FAULT: ${QA_SAYS_THE_PRODUCT_IS_AT_FAULT:-off}" in compose
+    assert "QA_SAYS_THE_PRODUCT_IS_AT_FAULT: ${QA_SAYS_THE_PRODUCT_IS_AT_FAULT:-on}" in compose
     assert product_at_fault.ON_BY_DEFAULT is False
 
 

@@ -128,6 +128,9 @@ EXPERIMENTS_ON = {
     # into the build, and one of them spent hours on the standoff it became. The baseline is the runs before this arm.
     "SETTLE_SPEC_CONTRADICTIONS": "contradiction group arm: one standoff cost six reverted fixes",
     "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE": "contradiction group arm",
+    # QA sent a fair test: two runs spent most of an hour each in a repair that could not touch the product at fault,
+    # and the fixer then found the cause within minutes. Baseline: the runs before this arm.
+    "QA_SAYS_THE_PRODUCT_IS_AT_FAULT": "two runs spent about an hour each repairing a fair test",
 }
 
 _BUNDLE_OF = {member: bundle for bundle, members in BUNDLES.items() for member in members}

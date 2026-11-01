@@ -135,6 +135,10 @@ EXPERIMENTS_ON = {
     # QA sent a fair test: two runs spent most of an hour each in a repair that could not touch the product at fault,
     # and the fixer then found the cause within minutes. Baseline: the runs before this arm.
     "QA_SAYS_THE_PRODUCT_IS_AT_FAULT": "two runs spent about an hour each repairing a fair test",
+    # Two products released with hidden tests lost: one to a rule the specification added beyond the brief, one to an
+    # action and a view tested apart. Armed for the rechecks of those families; the baseline is the sweep's scores.
+    "BRIEF_OVER_SPEC_ADDITIONS": "recheck arm: a specification's own rule lost 2 hidden tests",
+    "TESTS_OF_ACTIONS_WITHIN_A_VIEW": "recheck arm: an action within a view lost 1 hidden test",
 }
 
 _BUNDLE_OF = {member: bundle for bundle, members in BUNDLES.items() for member in members}

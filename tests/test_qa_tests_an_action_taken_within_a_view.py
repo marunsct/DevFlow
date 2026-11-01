@@ -63,12 +63,12 @@ def test_the_rule_names_no_stack_product_or_control():
         assert not BANNED.search(said)
 
 
-def test_the_switch_is_registered_and_off(monkeypatch):
+def test_the_switch_is_registered_and_armed_by_the_deployment(monkeypatch):
     monkeypatch.delenv(NAME, raising=False)
-    assert NAME in switches.EXPERIMENTS and NAME not in switches.EXPERIMENTS_ON
+    assert NAME in switches.EXPERIMENTS and NAME in switches.EXPERIMENTS_ON
     assert provenance.switch(provenance.SWITCHES[NAME]).enabled() is False
     compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
-    assert f"{NAME}: ${{{NAME}:-off}}" in compose
+    assert f"{NAME}: ${{{NAME}:-on}}" in compose
 
 
 def test_a_run_says_whether_the_switch_acted(monkeypatch, project):

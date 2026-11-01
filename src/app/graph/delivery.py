@@ -407,6 +407,8 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
                 + "\n".join(f"- {gap}" for gap in gaps)
                 if gaps else ""
             )
+            # Notes, not gaps: what a text check suspected of a locked test that passes.
+            + ("\nNoted, not a gap:\n" + "\n".join(f"- {note[:400]}" for note in notes) if (notes := suite.notes_kept(root)) else "")
         ),
     )
     goal = str(getattr(state.get("product_intake"), "product_name", "") or "the product")

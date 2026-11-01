@@ -3565,11 +3565,18 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
     """
     from app.acceptance import ids_read_without_a_create, spec_dry_run
 
-    return [
+    # These have measured what they say: the spec was run with the product stood in for, or a failure of this run is
+    # part of the finding. `findings_that_reopen` leaves them alone.
+    measured = [
         *spec_dry_run.findings(repo_root),
-        *ids_read_without_a_create.findings(repo_root),
         *tests_that_broke_themselves(repo_root, result),
         *tests_that_need_what_they_never_made(repo_root, result),
+        *tests_that_assert_a_kept_file_s_text(repo_root, result),
+        *tests_that_count_a_list_other_tests_write_to(repo_root, result),
+    ]
+    # These read a test's text, and text is a guess at what it does.
+    read_from_text = [
+        *ids_read_without_a_create.findings(repo_root),
         *assertions_that_do_not_exist(repo_root),
         *locators_that_do_not_exist(repo_root),
         *locators_by_a_name_the_role_never_has(repo_root),
@@ -3582,9 +3589,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *tests_that_want_json_from_a_204(repo_root),
         *tests_that_filter_for_what_they_never_made(repo_root),
         *tests_whose_success_status_the_contract_does_not_give(repo_root),
-        *tests_that_assert_a_kept_file_s_text(repo_root, result),
         *tests_that_restart_on_data_they_never_wrote(repo_root),
-        *tests_that_count_a_list_other_tests_write_to(repo_root, result),
         *tests_that_sign_in_as_nobody(repo_root),
         *tests_that_never_open_the_page(repo_root),
         *tests_that_access_storage_before_opening_the_page(repo_root),
@@ -3594,3 +3599,108 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *tests_with_module_system_mismatch(repo_root),
         *tests_with_unawaited_async_helpers(repo_root),
     ]
+    return _CannotPass([*measured, *read_from_text], read_from_text)
+
+
+class _CannotPass(list):
+    """The one list every caller reads, knowing which of its findings were only read from a test's text."""
+
+    def __init__(self, found: Sequence[str], read_from_text: Sequence[str]) -> None:
+        super().__init__(found)
+        self.read_from_text = list(read_from_text)
+
+
+#: A line a finding points at: `line 12`, `line(s) 12, 14`.
+_LINES_NAMED = re.compile(r"\bline(?:\(s\))?\s+(\d+(?:,\s*\d+)*)")
+#: Where a generated title's fixed part ends: `${...}`.
+_A_TITLE_S_VARIABLE = "${"
+#: Where a kept note is written; the harness's own folder, read at release.
+NOTES_FILE = f"{contract.HARNESS_DIR}/suite-notes.json"
+#: How a note opens.
+NOT_ACTED_ON = "Read in a locked test's text and not acted on, because the test named does not fail in the last measurement"
+
+
+def _the_tests_at(repo_root: str | Path, finding: str) -> list[str]:
+    """The titles of the tests a finding points at, by the file and lines it names, or by its own `name`; [] for none."""
+    root = Path(repo_root)
+    quoted = re.findall(r"`([^`]+)`", str(finding))
+    if not quoted:
+        return []
+    path = root / quoted[0] if (root / quoted[0]).is_file() else None
+    if path is None:
+        # A file named from elsewhere than the workspace, or not a file at all: then it is the test's own title.
+        files = [item for item in suite_files(repo_root) if item.as_posix().endswith("/" + quoted[0].removeprefix("./"))]
+        if not files:
+            return [] if re.search(r"\.\w{1,5}$", quoted[0]) else [quoted[0].strip()]
+        path = files[0]
+    text = path.read_text(encoding="utf-8", errors="replace")
+    python = path.suffix.lower() == ".py"
+    starts = [(match.start(), match.group(1 if python else 2).strip())
+              for match in (_A_PYTHON_TEST if python else _A_TEST_STARTS).finditer(text)]
+    lengths = [text.count("\n", 0, at) + 1 for at, _ in starts]
+    titles: list[str] = []
+    for group in _LINES_NAMED.findall(str(finding)):
+        for line in (int(number) for number in group.split(",")):
+            before = [index for index, first in enumerate(lengths) if first <= line]
+            if before and starts[before[-1]][1] not in titles:
+                titles.append(starts[before[-1]][1])
+    return titles
+
+
+def _fails(title: str, failing: Sequence[str]) -> bool:
+    fixed = title.split(_A_TITLE_S_VARIABLE, 1)[0].strip()
+    return bool(fixed) and any(fixed in name for name in failing)
+
+
+def findings_that_reopen(repo_root: str | Path, result: Any, found: Sequence[str]) -> list[str]:
+    """Of `found`, those that may send a suite already locked back to QA; the others are kept as notes. Never raises.
+
+    Before a first lock, everything goes to QA as it always did: nothing has measured the tests yet. After it, a
+    finding read from a test's text reopens the suite only when the test it names fails in the last measurement. A
+    locked test that passes on the product is the answer to what its text was suspected of: text patterns raised five
+    false findings in two days, each reopening a right suite for 10 to 60 minutes. A finding that names no test, and
+    one a check measured, are not judged here and act as before. So does everything when the suite gave no results at
+    all (a broken test file can be why); but a product that did not start has measured nothing about any test, and a
+    finding waits for a measurement that has.
+    """
+    try:
+        reading = getattr(found, "read_from_text", None)
+        if reading is None or not is_locked(repo_root):
+            return list(found)
+        report = getattr(result, "report", None)
+        tests = list(getattr(report, "tests", None) or ())
+        nothing_measured = str(getattr(result, "problem", "") or "").startswith(PRODUCT_DID_NOT_START)
+        if not tests and not nothing_measured:
+            return list(found)
+        failing = [] if nothing_measured else [str(t.name) for t in tests if t.outcome == "failed"]
+        kept: list[str] = []
+        notes: list[str] = []
+        for finding in found:
+            titles = _the_tests_at(repo_root, finding) if finding in reading else []
+            if not titles or any(_fails(title, failing) for title in titles):
+                kept.append(finding)
+            else:
+                notes.append(f"{NOT_ACTED_ON}: {finding}")
+        if notes:
+            logger.warning("%d finding(s) read in the locked tests' text left as notes: the tests they name do not fail", len(notes))
+            _keep_notes(repo_root, notes)
+        return kept
+    except Exception:  # noqa: BLE001 - as before: every finding acts
+        logger.debug("Could not weigh the findings against the measurement", exc_info=True)
+        return list(found)
+
+
+def _keep_notes(repo_root: str | Path, notes: Sequence[str]) -> None:
+    path = Path(repo_root) / NOTES_FILE
+    merged = list(dict.fromkeys([*notes_kept(repo_root), *notes]))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(merged), encoding="utf-8")
+
+
+def notes_kept(repo_root: str | Path) -> list[str]:
+    """The findings `findings_that_reopen` left as notes in this run; never a release gap."""
+    try:
+        data = json.loads((Path(repo_root) / NOTES_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [str(item) for item in data] if isinstance(data, list) else []

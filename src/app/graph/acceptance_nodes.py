@@ -577,7 +577,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
                 "running product instead. This is about the tests, not the product: nothing of the "
                 "product is missing for this reason."
             )
-    problems.extend(suite.tests_that_cannot_pass(root, result))
+    # A suite under repair has been locked before: the same rule as at a round, or a false finding found here locks it
+    # with a problem "still open", which is a release gap.
+    problems.extend(suite.findings_that_reopen(root, result, suite.tests_that_cannot_pass(root, result)))
     # Against the specification's contract, before it is recorded at the lock (the rounds read the locked one).
     problems.extend(suite.tests_that_want_json_from_a_204(
         root, getattr(state.get("technical_specification"), "interface_contract", None) or ()))
@@ -1650,7 +1652,7 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
         return "", []
     root = _root(state)
     broken = [
-        *suite.tests_that_cannot_pass(root, result),
+        *suite.findings_that_reopen(root, result, suite.tests_that_cannot_pass(root, result)),
         *suite.tests_left_behind_by_their_own_change(root, result),
         *suite.vacuous_green(root, result),
         *_due_criteria_with_no_test(root, due),

@@ -293,3 +293,27 @@ def test_the_call_is_told_what_the_setup_decides_and_to_quote_the_specification(
     assert "what the setup decides is not open" in asked.lower()
     assert "not from the findings" in asked
     assert not BANNED.search(specification_rulings.the_request(["F"], "S", "B", ["L"]))
+
+
+def test_a_quote_with_the_section_named_before_it_is_a_quote(tmp_path, on):
+    # Measured on one run: a real contradiction, both statements real, each with its section's name or a "..." before
+    # it, and the ruling was rejected for not being word for word.
+    from app.agents import specification_rulings
+
+    text = "Startup: If JSON is malformed, an error is thrown. Notes: If JSON is malformed on startup, the service answers 500."
+    answer = specification_rulings.Rulings(rulings=[specification_rulings.Ruling(
+        finding=1, first_statement="Startup Flow: ... If JSON is malformed, an error is thrown.",
+        second_statement="Reliability and observability: If JSON is malformed on startup, the service answers 500.",
+        stands="first", why="The brief says so.")])
+    kept = specification_rulings.verified(answer, text, ["F"])
+    assert len(kept) == 1
+    assert kept[0].first_statement == "If JSON is malformed, an error is thrown."
+
+
+def test_a_label_does_not_let_an_invented_quote_through(tmp_path, on):
+    from app.agents import specification_rulings
+
+    answer = specification_rulings.Rulings(rulings=[specification_rulings.Ruling(
+        finding=1, first_statement="Startup: If JSON is malformed, an error is thrown.",
+        second_statement="Startup: this sentence appears nowhere at all.", stands="first", why="The brief says so.")])
+    assert specification_rulings.verified(answer, "If JSON is malformed, an error is thrown.", ["F"]) == []

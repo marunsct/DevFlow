@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -126,13 +127,31 @@ def the_request(findings: list[str], specification: str, brief: str, setup: Sequ
     )
 
 
+#: What a model puts before a statement it quotes: its section's name, then a "...".
+_A_LABEL_BEFORE_A_QUOTE = re.compile(r"^(?:[^:.]{1,60}:\s*)?(?:\.\.\.|…)?\s*")
+
+
+def _as_quoted(statement: str, text: str) -> str:
+    """`statement` in plain form, without the section's name or "..." before or after it when only that keeps it out of `text`.
+
+    Measured on one run: a real contradiction, both statements real, each with its section's name before it, and the
+    ruling was rejected. What is left must still be in the specification word for word.
+    """
+    plain = _plain(statement)
+    if plain in text:
+        return plain
+    bare = _A_LABEL_BEFORE_A_QUOTE.sub("", plain, count=1).removesuffix("...").removesuffix("…").strip()
+    return bare if bare in text else plain
+
+
 def verified(answer: Rulings, specification: str, findings: list[str]) -> list[Ruling]:
     """The rulings whose both quotes are in the specification word for word and that settle an open finding, at most `MOST_RULINGS`."""
     text = _plain(specification)
     kept: list[Ruling] = []
     seen: set[frozenset[str]] = set()
     for ruling in answer.rulings[:MOST_RULINGS]:
-        first, second = _plain(ruling.first_statement), _plain(ruling.second_statement)
+        first, second = _as_quoted(ruling.first_statement, text), _as_quoted(ruling.second_statement, text)
+        ruling = ruling.model_copy(update={"first_statement": first, "second_statement": second})
         problem = (
             "it names no open finding" if not 1 <= ruling.finding <= len(findings)
             else "it does not say which statement stands" if ruling.stands.strip().lower() not in ("first", "second")

@@ -269,3 +269,11 @@ def test_the_switch_is_off_in_the_code_and_on_as_a_measured_arm(monkeypatch):
     assert provenance.switch(provenance.SWITCHES[name]).enabled() is False
     compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
     assert f"{name}: ${{{name}:-on}}" in compose
+
+
+def test_a_run_with_no_judgement_model_named_settles_on_the_deployment_s_own(tmp_path, on, monkeypatch):
+    # Measured on two runs: with none named the stage is handed None, and the ruling was skipped without a word.
+    model = Model(_reply())
+    monkeypatch.setattr("app.models.build_default_chat_model", lambda *a, **k: model)
+    update = escalation.escalation(_stuck(tmp_path), {}, SimpleNamespace(judgement_model=None))
+    assert len(model.asked) == 1 and len(_rulings_recorded(update)) == 1

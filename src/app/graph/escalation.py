@@ -172,6 +172,7 @@ def _build_from_the_latest_specification(
 def escalation(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     """Decide how stuck work goes on, or ask the person who decides."""
     from app.decisions import record_decision
+    from app.graph.workflow import _a_model_to_revise_with
     from app.graph.workflow import _handing_on, _record_document
 
     error = str((state.get("escalation") or {}).get("error") or "")
@@ -185,7 +186,7 @@ def escalation(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             return _handing_on(**update, stage="user_review_escalation")
         return _build_from_the_latest_specification(
             state, update, error, decided_by="auto", next_stage=_after_the_specification(state),
-            model=getattr(ctx, "judgement_model", None),
+            model=_a_model_to_revise_with(getattr(ctx, "judgement_model", None)),
         )
 
     if count > MAX_ESCALATIONS:

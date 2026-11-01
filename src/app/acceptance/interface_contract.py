@@ -657,11 +657,12 @@ def _a_bodiless_write_refused_first(check: Check, test: Any) -> bool:
     """Whether the probe's bodiless write was refused for its body before the record was looked up.
 
     Measured on one run: `AC-11 PUT /notes/999 -> 404` was failed at release for the 400 a product that checks the
-    body first gives the probe's empty request; either order keeps the contract.
+    body first gives the probe's empty request; either order keeps the contract. Nor does it matter which refusal:
+    `AC-7 POST /notes -> 400` was failed for the 422 given to a body that was not there, on a brief allowing either.
     """
     received = _RECEIVED.search(str(getattr(test, "message", "") or ""))
     return (check.method in ("POST", "PUT", "PATCH") and received is not None
-            and int(received.group(1)) in _A_REFUSED_BODY and not set(_allowed(check)) & _A_REFUSED_BODY)
+            and int(received.group(1)) in _A_REFUSED_BODY)
 
 
 def _the_check_of(test: Any, web: list[Check]) -> Check | None:

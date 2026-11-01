@@ -135,3 +135,26 @@ def test_a_line_with_no_criterion_is_checked_and_charges_none():
     assert [(c.criterion, c.method, c.path, c.statuses) for c in checks][0] == ("", "GET", "/health", (200,))
     spec = ic.playwright_checks(ic.checkable(checks))
     assert '"contract 1: GET /health -> 200"' in spec and "[] contract" not in spec
+
+
+def test_a_bare_write_refused_with_the_other_refusal_is_unchecked_not_failed(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.stacks import contract
+
+    monkeypatch.setattr(contract, "the_pack", lambda root: (SimpleNamespace(files={"playwright.config.js": ""}, probe_runner="playwright"), {"project": "app"}))
+    (tmp_path / "app").mkdir()
+    ic.record_at_lock(tmp_path, ["AC-7 POST /notes -> 400"])
+
+    def runner(argv, category, where):
+        (tmp_path / where / "test-results").mkdir(exist_ok=True)
+        (tmp_path / where / ic.REPORT_FILE).write_text(
+            '<testsuites><testsuite name="c" tests="1">'
+            '<testcase name="[AC-7] contract 1: x"><failure message="x">Expected: 400\nReceived: 422</failure></testcase>'
+            "</testsuite></testsuites>")
+        return {"returncode": "1"}
+
+    # Measured on one run: the probe's bodiless request drew 422 where the line said 400; the brief allows either.
+    gaps = ic.what_the_contract_checks_find(tmp_path, runner=runner)
+    assert not [g for g in gaps if "does not keep its interface contract" in g]
+    assert any("AC-7 POST /notes -> 400 (the probe sends a bare request" in g for g in gaps)

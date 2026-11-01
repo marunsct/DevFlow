@@ -28,18 +28,23 @@ logger = logging.getLogger(__name__)
 
 #: The marker file, in the workspace root.
 MARKER = "NON-DELIVERABLE.json"
+#: What a deliverable product's reader should know, in the same place.
+NOTES = "DELIVERY-NOTES.json"
 
 
 def mark(
-    root: Any, *, status: str, reason: str = "", stage: str = "", gaps: list[str] | None = None
+    root: Any, *, status: str, reason: str = "", stage: str = "", gaps: list[str] | None = None,
+    notes: list[str] | None = None,
 ) -> None:
     """Write the non-deliverable marker. Never raises.
 
     A marker that cannot be written must not fail the terminal write it rides
     - that would lose the run's real error, which matters more than the sign
-    on the door.
+    on the door. `completion_gaps` holds what makes it non-deliverable; `notes`
+    what a reader should know beside that (`app.completion_verdict`).
     """
     try:
+        _forget(root, NOTES)
         path = Path(str(root)) / MARKER
         path.write_text(
             json.dumps(
@@ -49,6 +54,7 @@ def mark(
                     "reason": str(reason or ""),
                     "stage": str(stage or ""),
                     "completion_gaps": [str(gap) for gap in gaps or []],
+                    "notes": [str(note) for note in notes or []],
                     "at": datetime.now(timezone.utc).isoformat(),
                 },
                 indent=2,
@@ -60,12 +66,31 @@ def mark(
         logger.warning("Could not write the non-deliverable marker", exc_info=True)
 
 
-def clear(root: Any) -> None:
-    """Remove the marker: a clean release leaves nothing to say. Never raises."""
+def _forget(root: Any, name: str) -> None:
+    path = Path(str(root)) / name
+    if path.is_file():
+        path.unlink()
+
+
+def clear(root: Any, *, status: str = "completed", notes: list[str] | None = None) -> None:
+    """Remove the marker: the product is deliverable. What a reader should still know goes in `NOTES`. Never raises."""
     try:
-        path = Path(str(root)) / MARKER
-        if path.is_file():
-            path.unlink()
+        _forget(root, MARKER)
+        _forget(root, NOTES)
+        if notes:
+            (Path(str(root)) / NOTES).write_text(
+                json.dumps(
+                    {
+                        "deliverable": True,
+                        "status": str(status),
+                        "notes": [str(note) for note in notes],
+                        "at": datetime.now(timezone.utc).isoformat(),
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
     except Exception:  # noqa: BLE001
         logger.warning("Could not clear the non-deliverable marker", exc_info=True)
 
@@ -85,4 +110,4 @@ def read(root: Any) -> dict[str, Any] | None:
         return None
 
 
-__all__ = ["MARKER", "clear", "mark", "read"]
+__all__ = ["MARKER", "NOTES", "clear", "mark", "read"]

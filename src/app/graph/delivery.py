@@ -21,6 +21,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from app.acceptance import suite
+from app import completion_verdict
 from app.graph import release_with_failing_unit_tests
 from app.stacks import contract
 
@@ -145,7 +146,7 @@ def evidence(state: Any, sprint_number: int, goal: str, heading: str = "") -> st
         lines += [f"- {item}" for item in open_items]
         lines += [f"- {cid} deferred: {why}" for cid, why in deferred.items()]
         lines.append("")
-    gaps = [str(gap) for gap in state.get("completion_gaps") or []]
+    gaps, notes = completion_verdict.split(state.get("completion_gaps"))
     if gaps:
         # The release page must carry what the release knew it did not prove,
         # beside the counts it measured - a record that says "verified" over a
@@ -153,10 +154,18 @@ def evidence(state: Any, sprint_number: int, goal: str, heading: str = "") -> st
         # Initiative J.5: every record cites the verdict it actually got.
         lines += [
             "## Completion gaps", "",
-            "What this release knows it did not prove - a completed run with these is not plain \"completed\":",
+            "What means this product may not work - a completed run with these is not deliverable:",
             "",
         ]
         lines += [f"- {gap}" for gap in gaps]
+        lines.append("")
+    if notes:
+        lines += [
+            "## Notes for the reader", "",
+            "What this release did not prove or set aside, with nothing measured against the product:",
+            "",
+        ]
+        lines += [f"- {note}" for note in notes]
         lines.append("")
     return "\n".join(lines)
 
@@ -356,7 +365,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # and review findings fast delivery recorded as risks instead of fixing.
     # They reached the record of each sprint and never the run's verdict, so a
     # run that carried them read as plain "completed" (Initiative AE).
-    gaps.extend(f"An escalation left this open: {issue}" for issue in state.get("known_issues") or [])
+    # A finding a decision settled is not open, and is stated as settled.
+    settled, left_open = _settled_and_open([str(issue) for issue in state.get("known_issues") or []])
+    gaps.extend(settled)
+    gaps.extend(f"An escalation left this open: {issue}" for issue in left_open)
     gaps.extend(_findings_recorded_as_risks(state))
     gaps.extend(_reviews_that_were_not_independent(config["configurable"].get(APP_RUN_ID_KEY)))
     gaps.extend(_code_no_review_read(config["configurable"].get(APP_RUN_ID_KEY)))
@@ -393,6 +405,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.acceptance import screenshot_rubric
 
     screenshot_rubric.score(root, getattr(ctx, "judgement_model", None), config["configurable"].get(APP_RUN_ID_KEY))
+    may_not_work, to_know = completion_verdict.split(gaps)
     record_decision(
         state, update, point="release",
         question="Is the product ready to release?",
@@ -402,11 +415,8 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             "Every acceptance criterion passes"
             + (f", except those deferred: {', '.join(sorted(deferred))}" if deferred else "")
             + ".\n" + (f"{packaged}\n" if packaged else "") + summary
-            + (
-                "\nShips with gaps a plain 'completed' would hide:\n"
-                + "\n".join(f"- {gap}" for gap in gaps)
-                if gaps else ""
-            )
+            + ("\nShips with gaps that mean it may not work:\n" + "\n".join(f"- {gap}" for gap in may_not_work) if may_not_work else "")
+            + ("\nShips with notes for the reader:\n" + "\n".join(f"- {note}" for note in to_know) if to_know else "")
             # Notes, not gaps: what a text check suspected of a locked test that passes.
             + ("\nNoted, not a gap:\n" + "\n".join(f"- {note[:400]}" for note in notes) if (notes := suite.notes_kept(root)) else "")
         ),
@@ -474,6 +484,12 @@ def change_request_brief(root: str) -> list[str]:
 RECORDED_AS_RISKS = "record the findings as risks and go on"
 
 
+def _settled_and_open(issues: list[str]) -> tuple[list[str], list[str]]:
+    """The set-aside issues a decision settled, and the rest."""
+    settled = [issue for issue in issues if issue.startswith(completion_verdict.SETTLED_DESIGN_FINDING)]
+    return settled, [issue for issue in issues if issue not in settled]
+
+
 def _findings_recorded_as_risks(state: Any) -> list[str]:
     """One gap per milestone review whose findings were recorded as risks, not fixed."""
     gaps = []
@@ -482,6 +498,8 @@ def _findings_recorded_as_risks(state: Any) -> list[str]:
             continue
         rationale = str(record.get("rationale") or "")
         findings = rationale.split("\n", 1)[1] if "\n" in rationale else rationale
+        # The gap is cut below, and the verdict reads its severity: the worst findings go first.
+        findings = "\n".join(sorted(findings.splitlines(), key=lambda line: "[blocking]" not in line.lower()))
         gaps.append(
             f"A milestone review's findings were recorded as risks, not fixed ({record.get('id')}): "
             + " ".join(findings.split())[:400]

@@ -175,7 +175,9 @@ def _the_setup(environment: str) -> str:
         + environment.strip()
         + "\nWhat this setup requires is not a departure from the brief: a specification that does what it "
         "says here meets the brief's constraints in this environment. Do not raise a finding against it, "
-        "and do not ask for a change that would undo it.\n\n"
+        "and do not ask for a change that would undo it. Where the specification disagrees with it about a file the "
+        "harness keeps, the runners, the start or the entry, the setup decides, and every later stage is told so: that "
+        "is at most a minor finding whose remediation gives the setup's value, never a choice between the two.\n\n"
     )
 
 

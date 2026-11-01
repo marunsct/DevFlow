@@ -99,6 +99,10 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     lines.append(f"  {salvaged['continuation']:>4}  RS.1 replies cut off part way through their text, continued")
     if defects:
         lines.append("  defects: " + ", ".join(f"{event} {n}" for event, n in sorted(defects.items())))
+    # Beside what fired: a switch that was on, had its chance and did nothing (`CHANCES`).
+    from app.observability.switch_firing import chance_lines
+
+    lines.extend(chance_lines(records, decisions))
     return lines
 
 

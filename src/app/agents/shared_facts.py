@@ -94,6 +94,41 @@ def layout_facts(pack: Any, project: str, package: str | None) -> list[str]:
     return lines
 
 
+def what_the_setup_decides(pack: Any, project: str, package: str | None) -> list[str]:
+    """What the pack has settled that a specification might otherwise choose, one line each, for the stages designing it.
+
+    Measured on several runs: the review ended on blocking findings about the harness's own files after six revisions
+    each - a kept start file given signal handlers, a file plan's other unit runner, a tool added to run the language.
+    Every builder has the pack's guide, so this goes only to the stages that write and judge the specification.
+    """
+    prefix = f"{project}/" if project else ""
+
+    def command(argv: Any) -> str:
+        return pack.filled(" ".join(argv), project, "", package)
+
+    lines = []
+    runners = str((getattr(pack, "stack", None) or {}).get("testing_framework") or "")
+    if runners:
+        lines.append(f"- The tests' runners are the setup's: {runners}. `{command(pack.unit_test)}` runs the unit tests "
+                     f"and `{command(pack.acceptance_test)}` the acceptance tests. Every section that mentions testing "
+                     "names these, and no other runner.")
+    start = str((getattr(pack, "kept_scripts", None) or {}).get("start") or "")
+    if start or "start.sh" in (getattr(pack, "files", None) or {}):
+        how = f"`{start}`" if start else f"`{prefix}start.sh`"
+        lines.append(f"- The product is started by {how} and in no other way: no other way of running it, and no "
+                     "dependency or tool for one.")
+    for path, names in (getattr(pack, "required_exports", None) or {}).items():
+        listed = ", ".join(f"`{name}`" for name in names)
+        called = (" and call it with no arguments, so it needs none and reads its settings from the environment"
+                  if getattr(pack, "required_exports_called_bare", False) else "")
+        lines.append(f"- `{prefix}{path}` is the product's entry and exports {listed} under that name, as a named "
+                     f"export: the setup's own files import it so{called}.")
+    if pack.kept_files:
+        lines.append("- The specification names the files the harness writes and keeps as given. It may say what they "
+                     "provide, and gives no step, signature or behaviour inside them.")
+    return lines
+
+
 def facts_from_the_workspace(root: str | Path | None, *, built: bool = True) -> list[str]:
     """The layout, a served stub and the code the product does not run, as measured now; [] before a pack is set up. Never raises.
 

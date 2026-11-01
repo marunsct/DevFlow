@@ -4825,9 +4825,9 @@ def _the_scaffold_s_facts(state: Any) -> list[str]:
         package = python_package_name(project) if project and pack.language == "python" else None
         # The same lines every builder and judge reads once the scaffold is
         # set up (plan CM.1): one function, so the two cannot drift.
-        from app.agents.shared_facts import layout_facts
+        from app.agents.shared_facts import layout_facts, what_the_setup_decides
 
-        return layout_facts(pack, project, package)
+        return [*layout_facts(pack, project, package), *what_the_setup_decides(pack, project, package)]
     except Exception:  # noqa: BLE001 - the architect plans as before
         logger.debug("Could not describe the scaffold's layout", exc_info=True)
         return []
@@ -9246,9 +9246,9 @@ def build_workflow_graph(
         if naming:
             request["messages"][-1]["content"] += "\n\n" + naming
         # The layout the scaffold will set up, before the file plan is written:
-        # cheaper than the repair after it, which on one run never ran.
-        if not required_changes:
-            request["messages"][-1]["content"] += _the_scaffold_s_layout(state)
+        # cheaper than the repair after it, which on one run never ran. A revision is
+        # told too: measured, sent back over the harness's files, it had nothing to answer from.
+        request["messages"][-1]["content"] += _the_scaffold_s_layout(state)
         # The reading done first, by the harness and the build model, and
         # handed over: the architect's reasoning goes on the specification,
         # not on which page to read next. See `app.agents.research_brief`.
@@ -9275,7 +9275,7 @@ def build_workflow_graph(
                 for title, key in (("Product intake", "product_intake"), ("Stack", "stack_selection"),
                                    ("Specialists' advice", "specialist_advice"))
                 if state.get(key)
-            )
+            ) + _the_scaffold_s_layout(state)  # These calls write the sections that name the runner, the start and the files.
 
         update = None
         # Fast delivery revises in place: only the sections the review's
@@ -9316,13 +9316,7 @@ def build_workflow_graph(
             from app.graph.specification_parts import with_the_parts_written
 
             update["technical_specification"] = with_the_parts_written(
-                update["technical_specification"], judgement_model,
-                "\n\n".join(
-                    f"--- {title} ---\n{_as_text(state.get(key))[:20_000]}"
-                    for title, key in (("Product intake", "product_intake"), ("Stack", "stack_selection"),
-                                       ("Specialists' advice", "specialist_advice"))
-                    if state.get(key)
-                ),
+                update["technical_specification"], judgement_model, parts_context(),
             )
         if not _hand_back(update, "technical_specification"):
             # Consumed: the revision request above already delivered them, so

@@ -112,7 +112,7 @@ async def test_the_marker_keeps_its_fields_and_carries_the_notes_beside_them(run
 
     marker = terminal_state.read(tmp_path)
     assert {"deliverable", "status", "reason", "stage", "completion_gaps", "at"} <= set(marker)
-    assert marker["notes"] == [NOTES[0], NOTES[1]]
+    assert marker.get("notes") == [NOTES[0], NOTES[1]]
     assert "1 gap(s)" in marker["reason"]
     assert not (tmp_path / "DELIVERY-NOTES.json").exists()
 
@@ -123,7 +123,7 @@ async def test_a_failed_run_is_non_deliverable_with_notes_alone(runner, tmp_path
     marker = terminal_state.read(tmp_path)
     assert marker["status"] == "failed"
     assert marker["reason"] == "it stopped"
-    assert marker["notes"] == [NOTES[0]]
+    assert marker.get("notes") == [NOTES[0]]
 
 
 async def test_a_clean_release_leaves_neither_file_from_an_earlier_ending(runner, tmp_path) -> None:
@@ -198,6 +198,7 @@ def test_the_evidence_page_and_the_decision_say_which_is_which(tmp_path, monkeyp
 def test_the_acceptance_document_keeps_a_note_apart_from_a_gap() -> None:
     page = acceptance_test_document({"completion_gaps": [BLOCKING[1], NOTES[0]]})
 
+    assert "## Notes for the reader" in page
     gaps_part, notes_part = page.split("## Notes for the reader")
     assert BLOCKING[1][:40] in gaps_part
     assert NOTES[0][:40] in notes_part

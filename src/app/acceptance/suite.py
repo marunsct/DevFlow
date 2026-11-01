@@ -920,6 +920,11 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
     result.accessibility = _read_accessibility(runtime_file)
     _with_the_pages_they_failed_on(repo_root, project, result)
     _with_the_errors_the_service_logged(repo_root, project, result)
+    # A measurement the run keeps, not a probe's run on a product broken on purpose.
+    if save:
+        from app.acceptance import start_output
+
+        start_output.add_to(repo_root, result)
     return _judged(repo_root, result, save)
 
 

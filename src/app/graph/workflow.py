@@ -5820,13 +5820,14 @@ def _with_a_stopped_service_s_report(item: Any, others: list[Any]) -> str:
 
     A merge keeps only the lead's: the report that names the cause would go with the defect merged away.
     """
-    from app.acceptance import suite as acceptance_suite
+    from app.acceptance import start_output, suite as acceptance_suite
 
     actual = str(getattr(item, "actual_behavior", "") or "")
     for other in others:
-        stopped = acceptance_suite.what_a_stopped_service_wrote(str(getattr(other, "actual_behavior", "") or ""))
-        if stopped and stopped not in actual:
-            actual = f"{actual}\n{stopped}".strip()
+        said = str(getattr(other, "actual_behavior", "") or "")
+        for report in (acceptance_suite.what_a_stopped_service_wrote(said), start_output.in_text(said)):
+            if report and report not in actual:
+                actual = f"{actual}\n{report}".strip()
     return actual
 
 

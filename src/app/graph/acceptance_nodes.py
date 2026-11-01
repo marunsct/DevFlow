@@ -23,7 +23,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from app.acceptance import requests as acceptance_requests
-from app.acceptance import suite
+from app.acceptance import start_output, suite
 from app.acceptance.criteria import number
 from app.graph import acceptance_batches
 from app.agents.shared_facts import with_the_facts
@@ -1373,7 +1373,9 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             severity="blocking",
             reproduction_steps=f"Run `{command}` in the project directory: the product fails before any test runs.",
             expected_behavior="The product builds and starts, and the acceptance suite's tests run against it.",
-            actual_behavior=never_started[:1500] + _what_the_start_shows(_root(state)) + compiler_errors.the_errors(_root(state)),
+            actual_behavior=(never_started[:1500] + _what_the_start_shows(_root(state))
+                             + (f"\n\n{wrote}" if (wrote := start_output.in_text(str(saved.get("server_log") or ""))) else "")
+                             + compiler_errors.the_errors(_root(state))),
             affected_files=[],
             owner=_owner_for(state, never_started),
         ))
@@ -1407,13 +1409,14 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     # From the whole run, kept as it ran: the saved output is its tail, and an early error was cut (LF.355).
     logged = str(saved.get("server_log") or "") or what_the_server_logged(str(saved.get("output") or ""))
     # A defect the round wrote itself about a failing criterion takes the place of the one below, so it carries this too.
-    stopped = suite.what_a_stopped_service_wrote(logged)
-    if stopped:
-        ids = {entry.get("id") for entry in failing}
+    ids = {entry.get("id") for entry in failing}
+    for said_of_it in (suite.what_a_stopped_service_wrote(logged), start_output.in_text(logged)):
+        if not said_of_it:
+            continue
         for item in reported:
             actual = str(getattr(item, "actual_behavior", "") or "")
-            if stopped not in actual and ids & set(tags_in(str(getattr(item, "description", "") or ""))):
-                item.actual_behavior = f"{actual}\n{stopped}".strip()
+            if said_of_it not in actual and ids & set(tags_in(str(getattr(item, "description", "") or ""))):
+                item.actual_behavior = f"{actual}\n{said_of_it}".strip()
     for entry in failing:
         if entry.get("id") in mentioned:
             continue

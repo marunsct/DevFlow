@@ -6,6 +6,8 @@ Runs INSIDE the worker, with the harness's own resolved settings and keys:
 
 or `scripts/loop/loop.sh ready`. Prints one line per model - the default one,
 and the judgement model when one is configured: READY ..., or NOTREADY ... .
+With `pin_url=...` and/or `pin_model=...` (what `start`/`bench` pass for PIN_URL
+and PIN_MODEL_NAME), the model checked is that one, with its endpoint's own key.
 The last line is ALL READY only when every configured model is. Never prints a
 key. Run it before every `bench`/`start`: the owner changes the model and the
 settings without saying so, and a run on a model that is not served stalls
@@ -53,9 +55,36 @@ def check(label, s):
         if not answered and DEEP:
             answered = answers(reached, naming, key, s.model_name, words=DEEP_WORDS)
         if answered:
+            busy = live_runs_on(base) if is_a_timeout(answered) else []
+            if busy:
+                # Still not ready, and `start` still refuses: a second run would wait its turn behind these and the
+                # timing of both would mean nothing. Said apart, because the cure is another server or a later
+                # start, not a look at the model.
+                return False, (f"NOTREADY {head} (BUSY: it lists the model, and a small request timed out while "
+                               f"{', '.join(busy[:4])} of ours use this server)")
             return False, f"NOTREADY {head} (listed, but it does not answer a request: {answered})"
         return True, f"READY {head} ({len(served)} models listed){server_facts(reached, naming, key)}"
     return False, f"NOTREADY {head} (served there: {served[:20]})"
+
+
+def is_a_timeout(said):
+    """Whether what `answers` said is a request that ran out of time, rather than a refusal."""
+    return "timeout" in str(said).lower() or "timed out" in str(said).lower()
+
+
+def live_runs_on(base):
+    """The live runs of ours whose model is at `base`; [] when none, or when the run store cannot say. Never raises."""
+    try:
+        from app.server.run_store import RunStore
+
+        store = RunStore.shared()
+        live = [r.run_id for r in store.list_all(limit=100) if str(r.status) in ("running", "queued", "pending")]
+        states = store.model_states(live)
+        wanted = str(base or "").rstrip("/").lower()
+        return [run for run in live
+                if str(states.get(run, (False, {}))[1].get("OPENAI_BASE_URL") or "").rstrip("/").lower() == wanted]
+    except Exception:  # noqa: BLE001 - then it reads as a server that does not answer, as before
+        return []
 
 
 def answers(reached, naming, key, model_name, words=0):
@@ -115,12 +144,31 @@ def server_facts(reached, naming, key):
     return f" [server: {', '.join(said)}]" if said else ""
 
 
-results = [check("default", _runtime_settings())]
+def the_pin_asked_for(argv):
+    """The model snapshot a run started with `pin_url=...` / `pin_model=...` will use, as `start` builds it; None for no pin."""
+    said = dict(arg.split("=", 1) for arg in argv if arg.startswith(("pin_url=", "pin_model=")))
+    if not any(said.values()):
+        return None
+    from app.models.model_pin import snapshot_for
+    from app.server.runtime_settings import global_model_snapshot
+
+    return snapshot_for(global_model_snapshot(), said.get("pin_url") or None, said.get("pin_model") or None)
+
+
+# The server the run will use, not the one the settings name: a busy server held back a run pinned to another, which
+# sat idle for 15 minutes. Laid over the settings the way a pinned run's is, so each endpoint gets its own key or none.
+PINNED = the_pin_asked_for(sys.argv[1:])
+if PINNED is None:
+    results = [check("default", _runtime_settings())]
+else:
+    from app.server.runtime_settings import effective_environment as _environment
+
+    results = [check("pinned", load_settings(dict(_environment(model=PINNED))))]
 try:
     from app.models.roles import judgement_environment
     from app.server.runtime_settings import effective_environment
 
-    judging = judgement_environment(effective_environment())
+    judging = judgement_environment(effective_environment() if PINNED is None else effective_environment(model=PINNED))
 except Exception:  # noqa: BLE001 - an image without roles has no second model
     judging = None
 if judging is not None:
@@ -144,8 +192,9 @@ try:
     from app.models.registry import describe
 
     # Named as the worker names the model (the server's file), or its measurements read "unmeasured".
-    server_profile.record()
-    print("MODEL " + describe(served_as(str(_runtime_settings().model_name or ""))))
+    if PINNED is None:
+        server_profile.record()
+    print("MODEL " + describe(served_as(str((PINNED or {}).get("OPENAI_MODEL") or _runtime_settings().model_name or ""))))
 except ImportError:  # an image from before the registry
     pass
 print("ALL READY" if all(ok for ok, _ in results) else "NOT ALL READY")

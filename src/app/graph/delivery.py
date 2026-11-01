@@ -236,13 +236,21 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             # budget. See `suite.vacuous_green`.
             summary = "\n".join(vacuous) + "\n" + summary
             failing = [*vacuous, *failing]
+    # The project's production build: a suite on a development server never goes through it. Ahead of the unit tests,
+    # so a product that does not build is never released under their allowance below.
+    from app.stacks import production_build
+
+    build_output = "" if failing else production_build.failure(root)
     # The project's own unit tests too: they ship with the product and the CI
     # pipeline written below runs them first. Measured on one run: released
     # with every criterion passing or deferred while `npm test` failed on a
     # test a fix stage had written for a deferred criterion.
-    unit_failing = [] if failing else _unit_tests_failing(root)
+    unit_failing = [] if failing or build_output else _unit_tests_failing(root)
     project_unit_failures = list(unit_failing)
-    if unit_failing:
+    if build_output:
+        failing = unit_failing = [production_build.THE_PRODUCT_DOES_NOT_BUILD]
+        summary = f"{production_build.THE_PRODUCT_DOES_NOT_BUILD} {production_build.reproduce(root)}\n{build_output}"
+    elif unit_failing:
         failing = unit_failing
         summary = (
             "The project's own unit tests do not all pass: "
@@ -399,6 +407,8 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
                 + "\n".join(f"- {gap}" for gap in gaps)
                 if gaps else ""
             )
+            # Notes, not gaps: what a text check suspected of a locked test that passes.
+            + ("\nNoted, not a gap:\n" + "\n".join(f"- {note[:400]}" for note in notes) if (notes := suite.notes_kept(root)) else "")
         ),
     )
     goal = str(getattr(state.get("product_intake"), "product_name", "") or "the product")

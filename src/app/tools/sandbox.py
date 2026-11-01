@@ -652,7 +652,9 @@ def _max_output_size() -> int:
 
 MAX_OUTPUT_SIZE = _max_output_size()
 
-TIMEOUTS = {"install": 300, "build": 180, "test": 300, "default": 120, "probe": 60}
+#: `start` is the harness's own short start of the product, to read what it writes (`acceptance.start_output`): a
+#: service never exits by itself, so this limit is what ends it.
+TIMEOUTS = {"install": 300, "build": 180, "test": 300, "default": 120, "probe": 60, "start": 20}
 
 #: How much longer than the JavaScript baseline each toolchain needs.
 #:
@@ -5156,7 +5158,12 @@ class SandboxExecutor:
             return {"error": "Command execution is disabled (ALLOW_COMMAND_EXECUTION is not enabled)."}
 
         try:
-            argv = validate_command(command, role_name, repo_root)
+            # The refusals of a server command are there to save an agent the wait; the harness's own short start
+            # wants exactly that command and has its own limit. No agent reaches this: only the harness's flag does.
+            argv = (
+                [str(part) for part in command] if category == "start" and running_for_the_harness()
+                else validate_command(command, role_name, repo_root)
+            )
         except CommandNotAllowed as exc:
             return {"error": str(exc)}
 

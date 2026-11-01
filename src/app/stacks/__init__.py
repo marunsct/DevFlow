@@ -106,6 +106,10 @@ class StackPack:
     #: The command that type-checks the project without writing anything, run in the project directory; () when
     #: there is none. Read when the product does not start (`compiler_errors`).
     typecheck: tuple[str, ...] = ()
+    #: The command that makes what would be shipped, run in the project directory, when the acceptance suite does not
+    #: go through it (a suite on a development server); () when the suite's own start already proves it, or nothing
+    #: is built. Run at each test round where the product changed and at release (`production_build`).
+    production_build: tuple[str, ...] = ()
     #: The environment variable the product keeps its data under, when it has one: a test run gets a fresh directory
     #: in it. Measured on one run: unit tests posting megabyte bodies to the product's default data directory on
     #: every round grew its data file to 205 MB, the service parsed all of it per request, and the worker container

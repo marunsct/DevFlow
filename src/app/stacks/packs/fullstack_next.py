@@ -268,5 +268,6 @@ PACK = StackPack(
     code_runs_in="both",
     ci_setup=js.CI_SETUP,
     ci_prepare=js.CI_BROWSERS,
+    production_build=("npm", "run", "build"),
     release_files={"Dockerfile": DOCKERFILE, ".dockerignore": js.DOCKERIGNORE + ".next/\n"},
 )

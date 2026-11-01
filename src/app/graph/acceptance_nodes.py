@@ -23,7 +23,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from app.acceptance import requests as acceptance_requests
-from app.acceptance import suite
+from app.acceptance import start_output, suite
 from app.acceptance.criteria import number
 from app.graph import acceptance_batches
 from app.agents.shared_facts import with_the_facts
@@ -98,6 +98,33 @@ def _the_install_that_failed(saved: dict[str, Any], state: Any) -> list[Any]:
         actual_behavior=failed[-1][:1500],
         affected_files=manifests,
         owner=_owner_for(state, failed[-1]),
+    )]
+
+
+def _the_build_that_fails(state: Any, reported: list[Any]) -> list[Any]:
+    """A defect for the project's production build failing, with what the compiler said; [] when it builds. Never raises.
+
+    As severe as a product that does not start: what would be shipped does not exist, whatever a suite running on a
+    development server measured. `production_build` runs it only when the product changed.
+    """
+    from app.agents.specialists import ReportedDefect
+    from app.stacks import production_build
+
+    root = _root(state)
+    said = production_build.failure(root)
+    if not said or any(
+        str(getattr(item, "description", "") or "").startswith(production_build.THE_PRODUCT_DOES_NOT_BUILD)
+        for item in reported
+    ):
+        return []
+    return [ReportedDefect(
+        description=production_build.THE_PRODUCT_DOES_NOT_BUILD,
+        severity="blocking",
+        reproduction_steps=production_build.reproduce(root),
+        expected_behavior="The production build finishes with no error, so that what it makes can be shipped.",
+        actual_behavior=said,
+        affected_files=production_build.files_named(root, said),
+        owner=_owner_for(state, said),
     )]
 
 
@@ -550,7 +577,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
                 "running product instead. This is about the tests, not the product: nothing of the "
                 "product is missing for this reason."
             )
-    problems.extend(suite.tests_that_cannot_pass(root, result))
+    # A suite under repair has been locked before: the same rule as at a round, or a false finding found here locks it
+    # with a problem "still open", which is a release gap.
+    problems.extend(suite.findings_that_reopen(root, result, suite.tests_that_cannot_pass(root, result)))
     # Against the specification's contract, before it is recorded at the lock (the rounds read the locked one).
     problems.extend(suite.tests_that_want_json_from_a_204(
         root, getattr(state.get("technical_specification"), "interface_contract", None) or ()))
@@ -1309,6 +1338,8 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
         defect for defect in _the_install_that_failed(suite.last_result(_root(state)) or {}, state)
         if not any("do not install" in str(getattr(item, "description", "") or "") for item in reported)
     ]
+    # Whether or not anything fails, too: a suite on a development server never goes through the build.
+    installs = [*installs, *_the_build_that_fails(state, reported)]
     if not failing:
         return installs
     from app.acceptance.junit import tags_in
@@ -1344,7 +1375,9 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             severity="blocking",
             reproduction_steps=f"Run `{command}` in the project directory: the product fails before any test runs.",
             expected_behavior="The product builds and starts, and the acceptance suite's tests run against it.",
-            actual_behavior=never_started[:1500] + _what_the_start_shows(_root(state)) + compiler_errors.the_errors(_root(state)),
+            actual_behavior=(never_started[:1500] + _what_the_start_shows(_root(state))
+                             + (f"\n\n{wrote}" if (wrote := start_output.in_text(str(saved.get("server_log") or ""))) else "")
+                             + compiler_errors.the_errors(_root(state))),
             affected_files=[],
             owner=_owner_for(state, never_started),
         ))
@@ -1378,13 +1411,14 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     # From the whole run, kept as it ran: the saved output is its tail, and an early error was cut (LF.355).
     logged = str(saved.get("server_log") or "") or what_the_server_logged(str(saved.get("output") or ""))
     # A defect the round wrote itself about a failing criterion takes the place of the one below, so it carries this too.
-    stopped = suite.what_a_stopped_service_wrote(logged)
-    if stopped:
-        ids = {entry.get("id") for entry in failing}
+    ids = {entry.get("id") for entry in failing}
+    for said_of_it in (suite.what_a_stopped_service_wrote(logged), start_output.in_text(logged)):
+        if not said_of_it:
+            continue
         for item in reported:
             actual = str(getattr(item, "actual_behavior", "") or "")
-            if stopped not in actual and ids & set(tags_in(str(getattr(item, "description", "") or ""))):
-                item.actual_behavior = f"{actual}\n{stopped}".strip()
+            if said_of_it not in actual and ids & set(tags_in(str(getattr(item, "description", "") or ""))):
+                item.actual_behavior = f"{actual}\n{said_of_it}".strip()
     for entry in failing:
         if entry.get("id") in mentioned:
             continue
@@ -1618,7 +1652,7 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
         return "", []
     root = _root(state)
     broken = [
-        *suite.tests_that_cannot_pass(root, result),
+        *suite.findings_that_reopen(root, result, suite.tests_that_cannot_pass(root, result)),
         *suite.tests_left_behind_by_their_own_change(root, result),
         *suite.vacuous_green(root, result),
         *_due_criteria_with_no_test(root, due),

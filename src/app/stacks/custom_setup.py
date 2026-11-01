@@ -466,6 +466,7 @@ def pack_from(record: dict[str, Any]) -> StackPack | None:
             acceptance_guide=str(setup.get("acceptance_guide") or "")
             or f"An acceptance test meets the product the way its user does: {_MEETS.get(kind, '')}.",
             stack=stack,
+            production_build=tuple(setup.get("build") or ()),
         )
     except (KeyError, TypeError):
         logger.debug("Unreadable proven setup in the contract", exc_info=True)
@@ -556,6 +557,7 @@ def prove(
             if getattr(stack, key, "")
         },
         "install": [list(argv) for argv in declared.install],
+        "build": list(declared.build),
         "unit_test": list(declared.unit_test),
         "acceptance_test": list(declared.acceptance_test),
         "unit_report": declared.unit_report,

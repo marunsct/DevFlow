@@ -3010,6 +3010,230 @@ def tests_that_restart_on_data_they_never_wrote(repo_root: str | Path) -> list[s
     return problems[:6]
 
 
+#: A path on the suite's own server, in quotes: `'/notes'`, `` `${baseURL}/notes` ``. A query, an interpolated piece or
+#: another service's address is not one, so `/notes?tag=mine` and `${svc.baseURL}/notes` are left alone.
+_THE_SUITE_S_PATH = r"""['"`](?:\$\{\s*(?:baseURL|baseUrl|BASE_URL|BASE|base)\s*\})?(/[\w./-]*)['"`]"""
+_A_WRITE_TO_A_PATH = re.compile(
+    r"\.(?:post|put|patch)\s*\(\s*" + _THE_SUITE_S_PATH
+    + r"|\bfetch\s*\(\s*" + _THE_SUITE_S_PATH + r"""\s*,[^;]{0,200}?method\s*:\s*['"`](?:post|put|patch)['"`]""",
+    re.I,
+)
+#: A read of a path. What follows the path is kept: options may narrow the list.
+_A_READ_OF_A_PATH = r"(?:\.get|\bfetch)\s*\(\s*" + _THE_SUITE_S_PATH + r"\s*(\)|,[^;]{0,200}?\))"
+_A_RESPONSE_READ = re.compile(r"\b([A-Za-z_$][\w$]*)\s*=\s*await\s+[\w$.]*?" + _A_READ_OF_A_PATH)
+_READ_DIRECTLY = re.compile(r"await\s*\(\s*await\s+[\w$.]*?" + _A_READ_OF_A_PATH + r"\s*\)\s*\.\s*json\s*\(\s*\)")
+#: A count or an empty list asserted exactly. `.not`, a computed number and `toBeGreaterThanOrEqual` do not match.
+_AN_EXACT_COUNT = re.compile(
+    r"expect\s*\(\s*(?P<read>\(?\s*await[^;\n]*?|[A-Za-z_$][\w$]*(?:\s*\.\s*length)?)\s*\)\s*\.\s*"
+    r"(?P<how>(?:toBe|toEqual|toStrictEqual|toHaveLength)\s*\(\s*(?P<count>\d+)\s*\)|(?:toEqual|toStrictEqual)\s*\(\s*\[\s*\]\s*\))"
+)
+#: A list scoped to someone: the count is that someone's, and no other test's writes reach it.
+_SCOPED_TO_SOMEONE = re.compile(
+    r"authorization|bearer|cookie|\btoken\b|storageState|extraHTTPHeaders|newContext|sign_?-?in|log_?-?in|sign_?-?up|register",
+    re.I,
+)
+_NARROWING_OPTIONS = re.compile(r"\b(?:params|headers)\s*:")
+_A_CLEARING_CALL = r"\b\w*(?:clear|clean|reset|wipe|empty|purge|truncate|removeall|deleteall)\w*\s*\("
+_DELETES_IN_A_LOOP = (r"(?:\bfor\s*\(|\.forEach\s*\(|\.map\s*\()[\s\S]{0,300}?"
+                      r"""(?:\.delete\s*\(|method\s*:\s*['"`]delete['"`])""")
+_A_HOOK = re.compile(r"\b(?:beforeEach|beforeAll|afterEach|afterAll)\s*\(")
+_A_NAMED_HELPER = re.compile(
+    r"(?:\bfunction\s+([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{|"
+    r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*(\{)?)"
+)
+#: How far a hook's own text is read for what it does.
+_MOST_OF_A_HOOK = 800
+#: The failure a shared list gives: more came back than the test expected, or an empty list that was not.
+_EXPECTED_A_COUNT = re.compile(r"Expected(?: length)?:\s*(\d+)\s*\n\s*Received(?: length)?:\s*(\d+)")
+_AN_ANSI_COLOUR = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _the_helpers_in(text: str) -> dict[str, str]:
+    """{name: its body} of each function a file defines by name, a body with no braces ending with its line."""
+    helpers: dict[str, str] = {}
+    for found in _A_NAMED_HELPER.finditer(text):
+        name = found.group(1) or found.group(2)
+        braced = found.group(1) is not None or found.group(3) is not None
+        end = _the_brace_that_closes(text, found.end()) if braced else text.find("\n", found.end())
+        helpers[name] = helpers.get(name, "") + text[found.end():end if end > found.end() else len(text)]
+    return helpers
+
+
+def _without_helper_bodies(text: str) -> str:
+    """The text with each helper's body blanked, keeping every position: a helper writes only when it is called."""
+    kept = list(text)
+    for found in _A_NAMED_HELPER.finditer(text):
+        if found.group(1) is None and found.group(3) is None:
+            continue
+        end = _the_brace_that_closes(text, found.end())
+        if end > found.end():
+            kept[found.end():end] = " " * (end - found.end())
+    return "".join(kept)
+
+
+def _paths_written_in(text: str) -> set[str]:
+    return {(m.group(1) or m.group(2)).rstrip("/") or "/" for m in _A_WRITE_TO_A_PATH.finditer(text)}
+
+
+def _the_list_read_by(block: str, read: str, at: int) -> str | None:
+    """The route whose whole list `read` is at `at`, or None when it is anything else: filtered, narrowed, reassigned."""
+    direct = _READ_DIRECTLY.search(read)
+    if direct:
+        return None if _NARROWING_OPTIONS.search(direct.group(2)) else direct.group(1).rstrip("/") or "/"
+    held = re.fullmatch(r"\(?\s*await\s+([A-Za-z_$][\w$]*)\s*\.\s*json\s*\(\s*\)\s*\)?", read.strip())
+    if held:
+        response = held.group(1)
+    else:
+        assignments = list(re.finditer(rf"(?<![.\w$]){re.escape(read)}\s*=(?![=>])", block[:at]))
+        if not assignments:
+            return None
+        rest = block[assignments[-1].end():at]
+        statement = rest.split(";", 1)[0].split("\n", 1)[0].strip()
+        bound = re.fullmatch(r"\(?\s*await\s+([A-Za-z_$][\w$]*)\s*\.\s*json\s*\(\s*\)\s*\)?", statement)
+        if bound:
+            response = bound.group(1)
+        else:
+            whole = _READ_DIRECTLY.fullmatch(statement)
+            if not whole or _NARROWING_OPTIONS.search(whole.group(2)):
+                return None
+            return whole.group(1).rstrip("/") or "/"
+    reads = list(re.finditer(rf"(?<![.\w$]){re.escape(response)}\s*=(?![=>])", block[:at]))
+    if not reads:
+        return None
+    made = _A_RESPONSE_READ.match(block, reads[-1].start())
+    if made is None or _NARROWING_OPTIONS.search(made.group(3)):
+        return None
+    return made.group(2).rstrip("/") or "/"
+
+
+def _more_came_back(message: str, count: str | None) -> bool:
+    """Whether a failure's message shows the shared list's fault: more records than expected, not fewer."""
+    plain = _AN_ANSI_COLOUR.sub("", message)
+    if count is None:
+        return bool(re.search(r"^\s*-\s*Array \[\]\s*$", plain, re.M) and re.search(r"^\s*\+\s*Array \[", plain, re.M))
+    return any(int(wanted) == int(count) and int(got) > int(wanted) for wanted, got in _EXPECTED_A_COUNT.findall(plain))
+
+
+def tests_that_count_a_list_other_tests_write_to(repo_root: str | Path, result: AcceptanceResult | None = None) -> list[str]:
+    """Tests that assert an exact length or an empty list on a route other tests of the suite also write to.
+
+    Measured on one run: a test expected `/notes` to hold exactly 2 and received 8, because the suite shares one
+    service and its data among all its tests. No fixer could satisfy it, and the run spent six fix stages before any
+    dispute. Left alone: a list filtered first, a count compared with an earlier count, a test or a file on a service
+    of its own, a test that empties the list first, a list scoped to a signed-in user, a route nothing else writes to.
+
+    The kept packs give every service and full-stack suite one server for the whole run, one worker in file order, and
+    no fresh store per test, so this holds for those kinds only; a suite with no pack is not assumed to share anything.
+
+    Once results are known, a passing test is never named: an earlier test may have cleaned up after itself, so the
+    count is fragile but works, and reopening a working suite costs more than the risk. Once the product answers (the
+    suite is locked, or anything passed), a failing test is named only if its own message shows more came back than
+    expected: fewer, or a failure before the count, is the product's to answer for. Before that, nothing is known and
+    the shape alone is named, while it costs the writer one round.
+    """
+    from app.acceptance.requests import _A_SHARED_SERVICE  # noqa: PLC0415 - requests imports this module
+
+    found = contract.the_pack(repo_root)
+    if found is None or getattr(found[0], "kind", "") not in _A_SHARED_SERVICE:
+        return []
+    root = Path(repo_root)
+    texts: dict[Path, str] = {}
+    for path in suite_files(repo_root):
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+            continue
+        try:
+            texts[path] = _A_COMMENT_LINE.sub("", path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    helpers: dict[str, str] = {}
+    for text in texts.values():
+        for name, body in _the_helpers_in(text).items():
+            helpers[name] = helpers.get(name, "") + "\n" + body
+
+    def calls(block: str) -> set[str]:
+        return {name for name in helpers if re.search(rf"(?<![.\w$]){re.escape(name)}\s*\(", block)}
+
+    written_by_helper = {name: _paths_written_in(_without_helper_bodies(body)) for name, body in helpers.items()}
+    for _ in range(3):  # A helper that calls a helper.
+        for name, body in helpers.items():
+            for called in calls(body) - {name}:
+                written_by_helper[name] |= written_by_helper[called]
+    clearing = [name for name, body in helpers.items() if re.search(_DELETES_IN_A_LOOP, body, re.I)]
+
+    def clears(block: str) -> bool:
+        return bool(re.search(_A_CLEARING_CALL, block, re.I) or re.search(_DELETES_IN_A_LOOP, block, re.I)
+                    or any(re.search(rf"(?<![.\w$]){re.escape(name)}\s*\(", block) for name in clearing))
+
+    # A test's blocks by file, and which of them write to which route, leaving out files on a server of their own.
+    blocks: dict[Path, list[tuple[int, str]]] = {}
+    writers: dict[str, set[tuple[Path, int]]] = {}
+    for path, text in texts.items():
+        starts = [m.start() for m in _A_TEST_DECLARED.finditer(text)]
+        if not starts:
+            continue
+        hooks = "\n".join(text[m.start():m.start() + _MOST_OF_A_HOOK] for m in _A_HOOK.finditer(text))
+        if "startService(" in text[:starts[0]].replace(" ", "") or re.search(r"\bstartService\s*\(", hooks):
+            continue
+        blocks[path] = [(start, text[start:starts[at + 1] if at + 1 < len(starts) else len(text)])
+                        for at, start in enumerate(starts)]
+        for start, block in blocks[path]:
+            paths = _paths_written_in(_without_helper_bodies(block))
+            for name in calls(block):
+                paths |= written_by_helper[name]
+            for route in paths:
+                writers.setdefault(route, set()).add((path, start))
+
+    known = result is not None and result.ran and bool(result.report.tests)
+    failing = {t.name: t.message for t in result.report.tests if t.outcome == "failed"} if known else {}
+    needs_proof = known and (is_locked(repo_root) or any(t.outcome == "passed" for t in result.report.tests))
+
+    problems: list[str] = []
+    for path, tests in blocks.items():
+        text = texts[path]
+        if _SCOPED_TO_SOMEONE.search(text):
+            continue
+        hooks = "\n".join(text[m.start():m.start() + _MOST_OF_A_HOOK] for m in _A_HOOK.finditer(text))
+        if clears(hooks):
+            continue
+        for start, block in tests:
+            if re.search(r"\bstartService\s*\(", block):
+                continue
+            titled = _A_DECLARED_TITLE.match(block)
+            title = titled.group(1).strip() if titled else ""
+            for count in _AN_EXACT_COUNT.finditer(block):
+                # `expect(list.length).toBe(2)` reads the list `.length` hangs from; `expect(list).toHaveLength(2)` and
+                # `expect(list).toEqual([])` read the list itself. `expect(note.id).toBe(2)` is neither.
+                read = count.group("read").strip()
+                of_a_length = re.fullmatch(r"(.+?)\s*\.\s*length", read, re.S)
+                of_the_list = count.group("how").startswith("toHaveLength") or count.group("count") is None
+                if of_the_list == bool(of_a_length):
+                    continue
+                route = _the_list_read_by(block, of_a_length.group(1).strip() if of_a_length else read, count.start())
+                if route is None or clears(block[:count.start()]):
+                    continue
+                others = writers.get(route, set()) - {(path, start)}
+                if not others:
+                    continue
+                if known:
+                    messages = [m for name, m in failing.items() if title and title in name]
+                    if not messages:
+                        continue
+                    if needs_proof and not any(_more_came_back(m, count.group("count")) for m in messages):
+                        continue
+                line = text.count("\n", 0, start + count.start()) + 1
+                wanted = "an empty list" if count.group("count") is None else f"exactly {count.group('count')}"
+                problems.append(
+                    f"`{path.relative_to(root).as_posix()}` line {line}: `{title}` expects {wanted} from the whole "
+                    f"list at `{route}`, and other tests in the suite write to `{route}` as well. They all share one "
+                    "service and its data for the whole run, so that count depends on what ran before it and no "
+                    "product can be made to answer it. Keep only the records this test made - give them a value of "
+                    "its own and `.filter` on it - and count those, or compare with a count it read first "
+                    "(`before.length + 1`), or use `toBeGreaterThanOrEqual`."
+                )
+                break
+    return problems[:6]
+
+
 #: A test's title, from its declaration.
 _A_TEST_TITLE = re.compile(r"""test\s*\(\s*['"`]([^'"`]*)['"`]""")
 
@@ -3344,6 +3568,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *tests_whose_success_status_the_contract_does_not_give(repo_root),
         *tests_that_assert_a_kept_file_s_text(repo_root, result),
         *tests_that_restart_on_data_they_never_wrote(repo_root),
+        *tests_that_count_a_list_other_tests_write_to(repo_root, result),
         *tests_that_sign_in_as_nobody(repo_root),
         *tests_that_never_open_the_page(repo_root),
         *tests_that_access_storage_before_opening_the_page(repo_root),

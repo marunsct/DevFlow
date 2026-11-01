@@ -103,8 +103,13 @@ start)
   brief="${2:-tests/brief_low.md}"
   # Never a run on a model that does not answer: the readiness check is part
   # of starting, so a pipeline around `ready` cannot swallow its verdict.
-  if ! in_worker model_ready.py | grep -q "ALL READY"; then
-    in_worker model_ready.py | grep -v "^READY" >&2 || true
+  # A run given a server or a model is pinned to it, and it is that server that must answer, with its own key.
+  if [ -n "${PIN_URL:-}${PIN_MODEL_NAME:-}" ]; then PIN_MODEL="${PIN_MODEL:-1}"; fi
+  target=()
+  [ -z "${PIN_URL:-}" ] || target+=("pin_url=$PIN_URL")
+  [ -z "${PIN_MODEL_NAME:-}" ] || target+=("pin_model=$PIN_MODEL_NAME")
+  if ! in_worker model_ready.py "${target[@]+"${target[@]}"}" | grep -qx "ALL READY"; then
+    in_worker model_ready.py "${target[@]+"${target[@]}"}" | grep -v "^READY" >&2 || true
     echo "not starting: the models are not all ready" >&2
     exit 1
   fi

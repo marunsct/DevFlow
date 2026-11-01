@@ -116,3 +116,29 @@ def test_the_content_type_of_another_answer_in_a_test_that_also_deletes_is_right
 def test_the_delete_s_own_content_type_beside_another_answer_s_is_still_found(tmp_path):
     _suite(tmp_path, ANOTHER_ANSWER.replace("expect(delRes.status()).toBe(204);", "expect(delRes.headers()['content-type']).toContain('json');"))
     assert suite.tests_that_want_json_from_a_204(tmp_path, CONTRACT)
+
+
+#: Measured on one run: a delete of a note that does not exist, asserted to answer 404, with the JSON content type read
+#: on that 404 - the very check the finding tells QA to make instead. It was called a JSON check on a 204 and the
+#: suite was reopened for it.
+THE_404_ANSWER = """test('[AC-5] delete of a missing note answers 404 as json', async ({ request }) => {
+  const resp = await request.delete('/notes/99999');
+  expect(resp.status()).toBe(404);
+  expect(resp.headers()['content-type']).toContain('application/json');
+});
+"""
+
+
+def test_the_content_type_of_a_delete_asserted_to_answer_404_is_right(tmp_path):
+    _suite(tmp_path, THE_404_ANSWER)
+    assert suite.tests_that_want_json_from_a_204(tmp_path, CONTRACT) == []
+
+
+def test_a_delete_asserted_to_answer_204_with_a_content_type_is_still_found(tmp_path):
+    _suite(tmp_path, THE_404_ANSWER.replace("toBe(404)", "toBe(204)"))
+    assert suite.tests_that_want_json_from_a_204(tmp_path, CONTRACT)
+
+
+def test_a_delete_with_no_status_asserted_is_still_found(tmp_path):
+    _suite(tmp_path, THE_404_ANSWER.replace("  expect(resp.status()).toBe(404);\n", ""))
+    assert suite.tests_that_want_json_from_a_204(tmp_path, CONTRACT)

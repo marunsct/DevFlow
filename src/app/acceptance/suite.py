@@ -2669,6 +2669,13 @@ def _inside_a_loop_over_a_delete(text: str, start: int) -> bool:
     return between.count("{") > between.count("}") and bool(_A_DELETE_ENTRY.search(text[:header]))
 
 
+def _asserted_to_answer_with_an_error(block: str, name: str) -> bool:
+    """Whether the test asserts the answer `name` has a 4xx or 5xx status, and no success one."""
+    codes = [int(code) for code in re.findall(
+        rf"\b{re.escape(name)}\s*\.\s*status\s*\(\s*\)\s*\)\s*\.\s*(?:toBe|toEqual)\s*\(\s*(\d{{3}})\s*\)", block)]
+    return bool(codes) and all(code >= 400 for code in codes)
+
+
 def tests_that_want_json_from_a_204(repo_root: str | Path, contract_lines: Sequence[str] = ()) -> list[str]:
     """Tests asserting a JSON content type on a DELETE the interface contract answers with 204 only (no body).
 
@@ -2706,7 +2713,11 @@ def tests_that_want_json_from_a_204(repo_root: str | Path, contract_lines: Seque
                 # Measured on one run: a lifecycle test read the list's content type and later sent a DELETE. When
                 # the test names the answers it reads, only a DELETE's own answer counts.
                 read = set(_HEADERS_READ_OF.findall(block))
-                if not read or read & set(_A_DELETE_S_ANSWER.findall(block)):
+                # And a delete asserted to answer with an error is not the 204: measured on one run, a delete of a
+                # missing note answering 404 as JSON was called a JSON check on a 204.
+                the_204 = {name for name in read & set(_A_DELETE_S_ANSWER.findall(block))
+                           if not _asserted_to_answer_with_an_error(block, name)}
+                if not read or the_204:
                     lines.append(text.count("\n", 0, start) + 1)
         if lines:
             problems.append(

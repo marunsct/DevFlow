@@ -160,7 +160,7 @@ To prove data survives a restart, take the `service` fixture and call
 `service.restart()` between the write and the read. The service keeps its data
 for the whole session, so a test must not assume it starts empty: create what it
 reads, and look for its own records rather than counting all of them.
-""" + _python.NAMING
+""" + _python.NAMING + _python.SHARED_HELPERS
 
 PACK = StackPack(
     known_errors=_python.PYTHON_KNOWN_ERRORS,

@@ -128,9 +128,13 @@ _SYSTEM_PROMPT = (
 
 
 def build_dispute_request(
-    failing: Sequence[tuple[str, str, str]], test_code: str, brief: str
+    failing: Sequence[tuple[str, str, str]], test_code: str, brief: str, measured: Sequence[str] = ()
 ) -> dict[str, list[dict[str, str]]]:
-    """The QA lead's input: (test name, criterion, failure) for each, the suite's code, the brief."""
+    """The QA lead's input: (test name, criterion, failure) for each, the suite's code, the brief, and what was measured.
+
+    `measured`: `suite.the_suite_failed_in_its_own_words`. Measured on one run: a dispute ruled on what 46 tests assert,
+    found each fair, and none of them had ever reached the product.
+    """
     shown = "\n\n".join(
         f"### {name}\nCriterion: {criterion}\nHow it failed:\n{message[:FAILURE_CHARS]}"
         for name, criterion, message in list(failing)[:MOST_TESTS]
@@ -138,7 +142,13 @@ def build_dispute_request(
     content = (
         "The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         f"--- The locked tests that failed through every round of the attempt ---\n{shown}\n\n"
-        f"--- The suite's code ---\n{test_code}\n\n"
+        + (
+            "--- What the harness measured about these failures ---\n" + "\n".join(measured) + "\n"
+            "A fair assertion that never ran proves nothing: rule on whether these tests can pass as the suite stands, "
+            "not only on what they assert.\n\n"
+            if measured else ""
+        )
+        + f"--- The suite's code ---\n{test_code}\n\n"
         + (f"--- The brief ---\n{brief.strip()[:4000]}\n\n" if brief.strip() else "")
         + "Name each test above that no product doing what its criterion says could pass, "
         "and why. Leave out every one the product fails because it is wrong."

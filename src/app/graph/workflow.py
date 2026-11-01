@@ -11819,7 +11819,8 @@ def build_workflow_graph(
             agent=agent,
             # The facts the work is built and judged under (plan CM.1).
             initial_request=with_the_facts(_with_the_api(_with_the_reason(
-                build_dispute_request(failing, code, getattr(state.get("document"), "text", "") or ""),
+                build_dispute_request(failing, code, getattr(state.get("document"), "text", "") or "",
+                                      measured=acceptance_suite.the_suite_s_own_words_when_last_measured(root)),
                 str(state.get("dispute_reason") or ""),
             ), state), state["repository"].root_path),
             output_key="__suite_dispute__",

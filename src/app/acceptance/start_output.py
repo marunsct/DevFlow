@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 #: How what it wrote opens, in `server_log` and in a defect; what finds it there again.
 START_MARK = "The harness started the product itself, with its own start command"
+#: What the paragraph says of a product that ran on until the limit ended it.
+STILL_RUNNING = "it was still running after"
 #: How much of what it wrote is kept: the end of it, where a fatal error is.
 MOST_OUTPUT = 2_000
 #: The sandbox's category for this command: its time limit is `sandbox.TIMEOUTS["start"]`.
@@ -139,7 +141,7 @@ def what_it_wrote(repo_root: str | Path) -> str:
         except ValueError:
             return ""  # refused, or never started: it says nothing of the product
         wrote = "\n".join(str(outcome.get(k) or "").strip() for k in ("stdout", "stderr") if str(outcome.get(k) or "").strip())
-        how = (f"it was still running after {timeout_for(CATEGORY, repo_root)} seconds, when it was ended" if code == _TIMED_OUT
+        how = (f"{STILL_RUNNING} {timeout_for(CATEGORY, repo_root)} seconds, when it was ended" if code == _TIMED_OUT
                else f"it stopped by itself with exit code {code}")
         return f"{START_MARK} (`{' '.join(argv)}`): {how}. It wrote:\n{wrote[-MOST_OUTPUT:] or '(nothing)'}"
     except Exception:  # noqa: BLE001 - the defect goes out as it was
@@ -177,13 +179,16 @@ def add_to(repo_root: str | Path, result: Any) -> None:
     """Add what the start wrote to `result.server_log`, for a locked suite that could not reach the product. Never raises.
 
     Not before the lock: nothing is built yet, and QA's rounds have no fixer to tell. Once per version of the product:
-    the same product wrote the same thing a moment ago.
+    the same product wrote the same thing a moment ago. One message of the suite's own is asked about too, and also while
+    a locked suite is being repaired (the product exists then): the finding it may become needs what the start did.
     """
     try:
         from app.acceptance import suite
         from app.acceptance.unstable import unchanged_since_the_suite_measured
 
-        if not suite.is_locked(repo_root) or not the_suite_could_not_reach_it(result):
+        locked = suite.is_locked(repo_root)
+        its_own = (locked or suite.is_being_repaired(repo_root)) and suite.a_message_of_the_suite_s_own(repo_root, result)
+        if not its_own and not (locked and the_suite_could_not_reach_it(result)):
             return
         kept = in_text(str((suite.last_result(repo_root) or {}).get("server_log") or ""))
         wrote = kept if kept and unchanged_since_the_suite_measured(repo_root) else what_it_wrote(repo_root)
@@ -193,4 +198,4 @@ def add_to(repo_root: str | Path, result: Any) -> None:
         logger.debug("Could not add what the start wrote", exc_info=True)
 
 
-__all__ = ["START_MARK", "add_to", "command_for", "in_text", "the_suite_could_not_reach_it", "what_it_wrote"]
+__all__ = ["START_MARK", "STILL_RUNNING", "add_to", "command_for", "in_text", "the_suite_could_not_reach_it", "what_it_wrote"]

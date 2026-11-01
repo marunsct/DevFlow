@@ -549,6 +549,12 @@ def is_locked(repo_root: str | Path) -> bool:
     return "lock" in _state(repo_root)
 
 
+def is_being_repaired(repo_root: str | Path) -> bool:
+    """Whether a suite locked before is open for repair: a product has been measured against it."""
+    state = _state(repo_root)
+    return "lock" not in state and bool(state.get("repairing"))
+
+
 def is_protected(repo_root: str | Path, relative_path: str) -> bool:
     """Whether a workspace-relative path is inside the locked suite."""
     if not is_locked(repo_root):
@@ -3551,6 +3557,173 @@ def change_requests(repo_root: str | Path) -> dict[str, str]:
     return dict(_state(repo_root).get("change_requests") or {})
 
 
+#: The fewest failing tests that make one identical message a measurement of the suite rather than a coincidence.
+FEWEST_IDENTICAL_FAILURES = 5
+#: A message shorter than this says too little to be found in a file and mean anything.
+_FEWEST_WORDS_IN_THE_MESSAGE = 3
+#: Larger files in the product are not read for the message.
+_MOST_PRODUCT_FILE_BYTES = 512_000
+#: What a run leaves in the project rather than what the product is made of: a report quotes every failure.
+_LEFT_BY_A_RUN = frozenset({".xml", ".log", ".html"})
+#: A failure's own line, as runners print it: `RuntimeError: ...`, `Error: ...`, with a place or a marker before it.
+_AN_ERROR_LINE = re.compile(r"^(?:E\s+)?(?:[^\s:]+:\d+(?::\d+)?:?\s+)?(?P<kind>[\w.$]*(?:Error|Exception)\w*)(?: \[\w+\])?:\s*(?P<said>.+)$")
+#: A message about what the product did or did not do: its reply, its connection, its time, or something that failed.
+#: A setup helper's message about the product is the product's fault in the suite's words. What is left says of the
+#: suite's own state that something was never set.
+_SPEAKS_OF_THE_PRODUCT = re.compile(
+    r"\b(?:answer\w*|respon[ds]\w*|repl(?:y|ies|ied)|status|unreachable|reach\w*|time[sd]?[ -]?out|in time|within|wait\w*|"
+    r"ready|connect\w*|refused|reset|unavailable|health\w*|fail\w*|could not|cannot|can't|unable|crash\w*|exit\w*|died|"
+    r"stopped|errors?|invalid|rejected|denied|unauthori[sz]ed|forbidden)\b", re.I)
+#: A line that raises, in the languages' own words; an assertion's message is the test checking, and is not here.
+_RAISES = re.compile(r"\b(?:raise|throw|panic!?|bail!?|\w*Fatal\w*)\b|\w*(?:Error|Exception)\s*\(")
+_AN_ASSERTION = re.compile(r"\b(?:assert\w*|expect\w*|\w*\.fail|fail)\s*\(|\bassert\b")
+#: Reading what the product answered, on or just above the line that raises.
+_READS_A_REPLY = re.compile(r"\b(?:status\w*|response|resp|res|reply|answer|fetch\w*|urlopen|ok|json)\b", re.I)
+_ONLY_COMMENTARY = re.compile(r"""^\s*(?:#|//|/\*|\*|["'`])""")
+
+
+def _what_it_says(message: str) -> str:
+    """The words a failure says, without its kind or what the harness added; "" for an assertion's."""
+    said = str(message or "").split(_PAGE_MARK, 1)[0].split(_SERVICE_ERRORS_MARK, 1)[0]
+    lines = [line.strip() for line in said.splitlines() if line.strip()]
+    for line in lines:
+        found = _AN_ERROR_LINE.match(line)
+        if found:
+            return "" if found.group("kind").lower().startswith("assert") else found.group("said").strip()
+    return lines[0] if lines else ""
+
+
+def _the_suite_file_that_raises(repo_root: str | Path, said: str) -> str:
+    """The suite's file that raises exactly `said`, a whole literal, before reading any reply; "" when none does."""
+    root = Path(repo_root)
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace").replace("\\'", "'").replace('\\"', '"')
+        except OSError:
+            continue
+        lines = text.splitlines()
+        for at, line in enumerate(lines):
+            start = line.find(said)
+            if start < 1 or line[start - 1] not in "'\"`" or line[start + len(said):start + len(said) + 1] not in ("'", '"', "`"):
+                continue
+            kept = [item for item in lines[max(0, at - 3):at] if item.strip() and not _ONLY_COMMENTARY.match(item)]
+            raising = _RAISES.search(line) or (kept and _RAISES.search(kept[-1]))
+            near = " ".join([*kept[-2:], line.replace(said, "")])
+            if raising and not _AN_ASSERTION.search(near) and not _READS_A_REPLY.search(near):
+                return path.relative_to(root).as_posix()
+    return ""
+
+
+def _the_product_says(repo_root: str | Path, said: str) -> bool:
+    """Whether `said` is written in the project outside its suite and what a run leaves there."""
+    where = location(repo_root)
+    project = Path(repo_root) / (where[0] if where else "")
+    the_suite = {path.resolve() for path in suite_files(repo_root)}
+    report = _the_report(repo_root)
+    for relative in _the_product_s_files(project):
+        path = project / relative
+        if (path.resolve() in the_suite or path == report or path.suffix.lower() in _LEFT_BY_A_RUN
+                or set(Path(relative).parts) & _NOT_THE_SUITE):
+            continue
+        try:
+            if path.stat().st_size <= _MOST_PRODUCT_FILE_BYTES and said in path.read_text(encoding="utf-8", errors="replace"):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _one_message_of_the_suite_s_own(repo_root: str | Path, messages: Sequence[str], passed: int, problem: str) -> tuple[str, str]:
+    """(the one message, the suite's file raising it) when no test passed and all failed with it; ("", "") otherwise."""
+    if passed or problem or len(messages) < FEWEST_IDENTICAL_FAILURES:
+        return "", ""
+    if any(_SERVICE_ERRORS_MARK in message for message in messages):
+        return "", ""  # the product was reached: it logged an error while a test ran
+    said = {_what_it_says(message) for message in messages}
+    only = next(iter(said)) if len(said) == 1 else ""
+    if (len(only.split()) < _FEWEST_WORDS_IN_THE_MESSAGE or _NEVER_STARTED.search(only) or _THE_SERVICE_WAS_GONE.search(only)
+            or _SPEAKS_OF_THE_PRODUCT.search(only)):
+        return "", ""
+    helper = _the_suite_file_that_raises(repo_root, only)
+    if not helper or _the_product_says(repo_root, only):
+        return "", ""
+    return only, helper
+
+
+def a_message_of_the_suite_s_own(repo_root: str | Path, result: Any) -> bool:
+    """Whether this run has the shape `the_suite_failed_in_its_own_words` needs the start's evidence for. Never raises."""
+    try:
+        tests = list(getattr(getattr(result, "report", None), "tests", None) or ())
+        return bool(_one_message_of_the_suite_s_own(
+            repo_root, [str(t.message or "") for t in tests if t.outcome == "failed"],
+            sum(t.outcome == "passed" for t in tests), str(getattr(result, "problem", "") or ""))[0])
+    except Exception:  # noqa: BLE001 - no finding, as before
+        logger.debug("Could not read the failures for a message of the suite's own", exc_info=True)
+        return False
+
+
+def _the_finding(repo_root: str | Path, messages: Sequence[str], passed: int, problem: str, server_log: str, runtime: Sequence[Any]) -> list[str]:
+    """The one finding of `the_suite_failed_in_its_own_words`, from what either form of a measurement holds."""
+    from app.acceptance import start_output
+
+    said, helper = _one_message_of_the_suite_s_own(repo_root, messages, passed, problem)
+    if not said or runtime:
+        return []
+    # The product's own start ran on, and it logged no error of its own during the suite: a product that cannot start,
+    # or that answered with errors, is the product's, however the suite words it.
+    started = start_output.in_text(server_log)
+    if start_output.STILL_RUNNING not in started or str(server_log).replace(started, "").strip():
+        return []
+    return [
+        f"`{helper}` raises the one message all {len(messages)} failing tests failed with: \"{said}\". No test passed, "
+        "those words are written in the suite's own files and nowhere in the product, and the product kept running when "
+        "the harness started it with its own start command. So no test reached the product, and what the tests assert "
+        "has not been tried. Look at how the suite's helpers are loaded and shared between its files: a test may be "
+        "reading a separate copy of a helper, or state its setup never gave it. Fix that without changing what any test "
+        "asserts."
+    ]
+
+
+def the_suite_failed_in_its_own_words(repo_root: str | Path, result: Any) -> list[str]:
+    """The finding when every failing test failed in one message of the suite's own and none reached the product; [].
+
+    Measured on one run: all 46 locked tests failed with one sentence raised by a helper of the suite, from a second
+    copy of its module with empty state. The review locked it, a dispute judged only what the tests assert, and fixers
+    who may not edit the suite spent over 45 minutes. All of these must hold, so that a product at fault stays the
+    product's: enough failures, no pass, one message that is a whole literal raised (not asserted) in the suite before
+    any reply is read, absent from the product, not speaking of an answer, a connection, a wait or a failure; no error
+    logged by the service; and the harness's own start of the product (`start_output`) still running at its limit.
+
+    Not before a first lock: nothing is built, and a right suite's own setup says the same of a product that is not
+    there. Never raises.
+    """
+    try:
+        tests = list(getattr(getattr(result, "report", None), "tests", None) or ())
+        return _the_finding(
+            repo_root, [str(t.message or "") for t in tests if t.outcome == "failed"],
+            sum(t.outcome == "passed" for t in tests), str(getattr(result, "problem", "") or ""),
+            str(getattr(result, "server_log", "") or ""), list(getattr(result, "runtime_problems", None) or ()))
+    except Exception:  # noqa: BLE001 - no finding, as before
+        logger.debug("Could not weigh the suite's own message", exc_info=True)
+        return []
+
+
+def the_suite_s_own_words_when_last_measured(repo_root: str | Path) -> list[str]:
+    """`the_suite_failed_in_its_own_words` for the saved measurement, for those who hold no result. Never raises."""
+    try:
+        saved = last_result(repo_root) or {}
+        tests = {str(test.get("name")): test
+                 for key in ("criteria", "change_requests") for criterion in (saved.get(key) or {}).values()
+                 for test in criterion.get("tests") or []}
+        return _the_finding(
+            repo_root, [str(test.get("message") or "") for test in tests.values() if test.get("outcome") == "failed"],
+            int(saved.get("passed") or 0), str(saved.get("problem") or ""), str(saved.get("server_log") or ""),
+            list(saved.get("runtime_problems") or ()))
+    except Exception:  # noqa: BLE001 - no finding, as before
+        logger.debug("Could not read the saved measurement for the suite's own message", exc_info=True)
+        return []
+
+
 def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Locked tests no product can pass, by every check that says so; one list for every caller.
 
@@ -3573,6 +3746,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *tests_that_need_what_they_never_made(repo_root, result),
         *tests_that_assert_a_kept_file_s_text(repo_root, result),
         *tests_that_count_a_list_other_tests_write_to(repo_root, result),
+        *the_suite_failed_in_its_own_words(repo_root, result),
     ]
     # These read a test's text, and text is a guess at what it does.
     read_from_text = [

@@ -97,6 +97,14 @@ NAMING = """Name each test after the criterion it proves: `test_ac3_<what_it_che
 AC-3 (a test that proves two writes both: `test_ac3_ac4_<...>`). A test with no
 criterion id in its name proves nothing the harness can count."""
 
+#: Measured on one run: tests imported a helper from `conftest` in a folder with `__init__.py`; the second copy of the
+#: module had empty state, and no test of 46 reached the product.
+SHARED_HELPERS = """
+
+Share a helper through a fixture in `conftest.py`, or from a module of its own: a test
+never imports `conftest` by name, because pytest has loaded that file under another
+name and the import makes a second copy with empty state."""
+
 
 #: A pytest failure raised by the test's own code: a name it never defined, a
 #: fixture that does not exist, a file that does not parse. An ImportError or

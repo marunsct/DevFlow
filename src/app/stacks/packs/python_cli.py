@@ -110,7 +110,7 @@ and HOME, and the test's own while it uses `run_cli`), so a file the test writes
 by a relative name (`Path("input.txt").write_text(...)`) is the file the program
 finds as `input.txt`, files the program writes there are the test's to read, and
 nothing carries between tests. To prove something persists, run the program twice.
-""" + _python.NAMING
+""" + _python.NAMING + _python.SHARED_HELPERS
 
 PACK = StackPack(
     known_errors=_python.PYTHON_KNOWN_ERRORS,

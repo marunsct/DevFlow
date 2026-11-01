@@ -45,7 +45,7 @@ functions that use the library only the way a caller would: through
 `import {{package}}` and the names in its `__all__`, never internal modules. Check
 return values exactly, and check that invalid input raises the error the
 criteria name (`with pytest.raises(ValueError): ...`).
-""" + _python.NAMING
+""" + _python.NAMING + _python.SHARED_HELPERS
 
 PACK = StackPack(
     known_errors=_python.PYTHON_KNOWN_ERRORS,

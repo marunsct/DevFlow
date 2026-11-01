@@ -91,6 +91,7 @@ SWITCHES: dict[str, str] = {
     "CONTRACT_PROBE_WITH_A_RECORD": "app.acceptance.interface_contract:record_first_switch",
     "CONTRACT_PROBE_WITH_A_BAD_BODY": "app.acceptance.interface_contract:bad_body_switch",
     "SETTLE_SPEC_CONTRADICTIONS": "app.agents.specification_rulings",
+    "BRIEF_OVER_SPEC_ADDITIONS": "app.agents.brief_over_spec",
     "NAMING_FINDING_BEFORE_DEFERRAL": "app.graph.acceptance_nodes:naming_finding_switch",
     "QA_SAYS_THE_PRODUCT_IS_AT_FAULT": "app.graph.product_at_fault",
     "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE": "app.graph.unit_tests_disagree",

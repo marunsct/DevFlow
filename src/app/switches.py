@@ -106,6 +106,8 @@ EXPERIMENTS = (
     "SETTLE_SPEC_CONTRADICTIONS",
     # The contract's write lines asked with a body nothing can parse: a 5xx is a defect, any other answer the product's choice.
     "CONTRACT_PROBE_WITH_A_BAD_BODY",
+    # A rule the specification adds beyond the brief, put to the design review and to QA: prompt rules, unproved until measured.
+    "BRIEF_OVER_SPEC_ADDITIONS",
 )
 #: The experiments deployed on, each with the measurement that turned it on.
 EXPERIMENTS_ON = {

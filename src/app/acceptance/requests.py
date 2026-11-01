@@ -8,6 +8,7 @@ from typing import Any, Sequence
 from app.acceptance import suite
 from app.acceptance.api_reference import api_reference
 from app.acceptance.criteria import Criterion
+from app.agents import brief_over_spec
 from app.stacks import contract
 
 #: How much of the brief QA is handed. Briefs are short; this is a ceiling.
@@ -239,7 +240,8 @@ def build_author_request(
         "error or a message, the test checks that it is an error - the status, the shape - and not the "
         "words the specification happened to choose. A product built to the brief fails a test that "
         "asserts wording nobody required, and the suite is locked with that failing.\n"
-        "- Each test runs alone, against a product that holds no data: nothing another test "
+        + brief_over_spec.qa_rule()
+        + "- Each test runs alone, against a product that holds no data: nothing another test "
         "created is there. A test that acts on something - an item, a record, an entry - "
         "creates it first, through the product as a user would; otherwise it can pass only "
         "on a product that ships with that data.\n"

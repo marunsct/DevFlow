@@ -147,6 +147,7 @@ def build_architecture_review_request(
     `app.agents.brief_constraints`.
     """
     from app.agents.brief_constraints import constraints_note
+    from app.agents.brief_over_spec import review_section
     from app.agents.text_budget import excerpt, specification_budget
 
     specification = excerpt(
@@ -161,6 +162,7 @@ def build_architecture_review_request(
         + f"--- Technical specification and ADRs under review (/docs/technical_specification.md) ---\n{specification}\n"
         + "\n" + _the_sections_it_can_have()
         + _what_the_brief_requires_that_this_defers(document_text, technical_specification_text)
+        + review_section(document_text)
         + _what_you_asked_for_last_time(earlier or [], revision)
     )
     return {"messages": [{"role": "user", "content": brief}]}

@@ -26,6 +26,7 @@ SIGNALS: dict[str, str] = {
     "SPEC_DRY_RUN": "the dry run of the suite",
     "IDS_READ_WITHOUT_A_CREATE": "an id the test never created",
     "SETTLE_SPEC_CONTRADICTIONS": "The design review of this specification ended with these findings open",
+    "BRIEF_OVER_SPEC_ADDITIONS": "What the specification adds beyond the brief",
 }
 
 

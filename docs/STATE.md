@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | **Launch cycle (owner 11-01 19:35 JST), plan on the status board:** sweep every family on frozen image bb8bd08, worst first; run-92f8ee23 (fullstack-bookmarks, :8888) and run-17983a18 (wordstats-cli, :1234) from 19:38 JST. Always give `PIN_URL`/`PIN_MODEL_NAME`; one build agent, `SUITE_WORKERS=4`. Status board: https://claude.ai/artifact/U4ymXvZUnXBuV59Gahkk2D (update at every deploy and finished run). |
+| Run | run-55de5eb7 textkit-lib (:8888) and notes-api (:1234) live on image 15586e6; tasks-api-change 0/15 (seed left at root, LF.520 next). Board: https://claude.ai/artifact/U4ymXvZUnXBuV59Gahkk2D |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

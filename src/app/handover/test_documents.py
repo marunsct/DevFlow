@@ -65,9 +65,13 @@ def acceptance_test_document(facts: dict[str, Any]) -> str:
     if failing:
         lines += ["", "## What failed", ""]
         lines += [f"- {c.get('id')} `{_cell(t.get('name'), 80)}`: {_cell(t.get('message'), 400)}" for c, t in failing[:30]]
-    gaps = facts.get("completion_gaps") or []
+    from app.completion_verdict import split
+
+    gaps, notes = split(facts.get("completion_gaps"))
     if gaps:
         lines += ["", "## Shipped with these gaps", ""] + [f"- {_cell(g, 400)}" for g in gaps]
+    if notes:
+        lines += ["", "## Notes for the reader", ""] + [f"- {_cell(n, 400)}" for n in notes]
     return "\n".join(lines) + "\n"
 
 

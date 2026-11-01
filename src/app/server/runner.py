@@ -1620,17 +1620,23 @@ class WorkflowRunner:
                 # machine-readable marker in its root, and a clean release
                 # clears whatever an earlier attempt left there.
                 if record.repo_root:
+                    from app import completion_verdict
                     from app.graph import terminal_state
 
-                    if stage == "complete" and not record.completion_gaps:
-                        terminal_state.clear(record.repo_root)
+                    blocking, notes = completion_verdict.split(record.completion_gaps)
+                    if stage == "complete" and not blocking:
+                        terminal_state.clear(record.repo_root, status=record.status, notes=notes)
                     else:
                         terminal_state.mark(
                             record.repo_root,
                             status=record.status,
-                            reason=str(record.error or "completed with gaps it did not prove"),
+                            reason=str(
+                                record.error
+                                or f"completed with {len(blocking)} gap(s) that mean the product may not work"
+                            ),
                             stage=str(state.get("stage") or stage),
-                            gaps=record.completion_gaps,
+                            gaps=blocking,
+                            notes=notes,
                         )
                 self._persist(record)
                 await asyncio.to_thread(self._archive_artifacts, record)

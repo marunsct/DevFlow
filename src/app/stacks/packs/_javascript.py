@@ -927,6 +927,17 @@ def storage_before_page_open(text: str) -> list[tuple[int, str, str]]:
             elif not g_match:
                 helpers_touching_storage[name] = (line, s_match.group(1), name, False)
 
+    # A helper of the file that opens the page opens it for the test that calls it: measured on one run, a test's
+    # `await goToApp(page)` was not counted, and a right test was sent back for an hour of repair.
+    openers = []
+    for match in _A_HELPER.finditer(preamble):
+        name = match.group(1) or match.group(2)
+        following = _A_HELPER.search(preamble, match.end())
+        body = preamble[match.start():following.start() if following else first_test]
+        if name and _GOTO.search(body) and name not in helpers_touching_storage:
+            openers.append(re.escape(name))
+    opens_the_page = re.compile(rf"\b(?:goto|{'|'.join(openers)})\s*\(") if openers else _GOTO
+
     problems: list[tuple[int, str, str]] = []
     for name, (line, storage_name, ctx, has_late_goto) in helpers_touching_storage.items():
         if has_late_goto:
@@ -949,7 +960,7 @@ def storage_before_page_open(text: str) -> list[tuple[int, str, str]]:
         if not before_each_has_goto:
             s_match = _STORAGE_USAGE.search(body)
             if s_match:
-                g_match = _GOTO.search(body[:s_match.start()])
+                g_match = opens_the_page.search(body[:s_match.start()])
                 if not g_match:
                     line = text.count("\n", 0, begin + s_match.start()) + 1
                     problems.append((line, s_match.group(1), f"test `{title}`"))
@@ -957,7 +968,7 @@ def storage_before_page_open(text: str) -> list[tuple[int, str, str]]:
                 if not has_late_goto:
                     h_call = re.search(rf"\b{re.escape(h_name)}\s*\(", body)
                     if h_call:
-                        g_match = _GOTO.search(body[:h_call.start()])
+                        g_match = opens_the_page.search(body[:h_call.start()])
                         if not g_match:
                             line = text.count("\n", 0, begin + h_call.start()) + 1
                             problems.append((line, s_name, f"test `{title}` calling `{h_name}`"))

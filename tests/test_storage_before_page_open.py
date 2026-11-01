@@ -175,3 +175,37 @@ def test_no_banned_words_in_new_rules_and_messages() -> None:
             f"Banned word '{word}' found in error message"
         )
 
+
+
+def test_a_test_opening_the_page_through_its_helper_is_not_caught() -> None:
+    # Measured on one run: `await goToApp(page)` opened the page and the test read storage after it; the suite was
+    # reopened twice for it, about an hour of repair on a right test.
+    code = """import { test, expect } from '@playwright/test';
+
+async function goToApp(page) {
+  await page.goto('/');
+}
+
+test('[AC-4] Delete removes it from storage', async ({ page }) => {
+  await goToApp(page);
+  const raw = await page.evaluate(() => localStorage.getItem('k'));
+  expect(raw).toBeNull();
+});
+"""
+    assert js.storage_before_page_open(code) == []
+
+
+def test_storage_read_before_the_helper_opens_the_page_is_still_caught() -> None:
+    code = """import { test, expect } from '@playwright/test';
+
+async function goToApp(page) {
+  await page.goto('/');
+}
+
+test('[AC-4] Reads too early', async ({ page }) => {
+  const raw = await page.evaluate(() => localStorage.getItem('k'));
+  await goToApp(page);
+  expect(raw).toBeNull();
+});
+"""
+    assert len(js.storage_before_page_open(code)) == 1

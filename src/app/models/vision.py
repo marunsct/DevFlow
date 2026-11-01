@@ -51,7 +51,12 @@ def _measured(model_name: str) -> bool | None:
         from app.models.capabilities import value
         from app.models.model_guidance import served_now
 
-        for name in dict.fromkeys(n for n in (served_now(), model_name) if n):
+        from app.models.model_pin import pinned_snapshot
+
+        # The served name is the global server's: measured on one run, a run pinned to another server was sent an
+        # image on that server's word, and the model it was pinned to refused it on every retry.
+        names = (model_name,) if pinned_snapshot() else (served_now(), model_name)
+        for name in dict.fromkeys(n for n in names if n):
             found = value(name, "reads_images")
             if isinstance(found, bool):
                 return found

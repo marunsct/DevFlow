@@ -3205,7 +3205,7 @@ def _the_suite_already_guards_it(state: Any, measured: str, defect: Any) -> bool
     from app.stacks.production_build import THE_PRODUCT_DOES_NOT_BUILD
 
     # A failing build has the build for its regression test: it runs at every round where the product changed.
-    is_a_failing_test = description.startswith((UNIT_TESTS_FAIL, SERVER_FAILED, THE_PRODUCT_DOES_NOT_BUILD)) or any(
+    is_a_failing_test = description.startswith((UNIT_TESTS_FAIL, SERVER_FAILED)) or description.startswith(THE_PRODUCT_DOES_NOT_BUILD) or any(
         t.startswith(("AC-", "CR-")) for t in tags_in(description)
     )
     if not is_a_failing_test:

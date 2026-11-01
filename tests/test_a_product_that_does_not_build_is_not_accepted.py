@@ -202,6 +202,14 @@ def test_the_defect_is_settled_by_the_build_itself(project, monkeypatch):
     assert workflow._the_defect_s_tests_pass(project, _defect()) is True
 
 
+def test_a_fix_of_the_build_needs_no_other_regression_test(project, monkeypatch):
+    monkeypatch.setattr(production_build, "failure", lambda _root, _runner=None: "")
+    state = {"repository": SimpleNamespace(root_path=str(project))}
+    assert workflow._the_suite_already_guards_it(state, "the fix", _defect()) is True
+    monkeypatch.setattr(production_build, "failure", lambda _root, _runner=None: COMPILER)
+    assert workflow._the_suite_already_guards_it(state, "the fix", _defect()) is False
+
+
 def _release(root, attempts=0):
     return delivery.release(
         {"repository": SimpleNamespace(root_path=str(root)), "release_attempts": attempts},

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Sequence
 
-from app.acceptance import suite
+from app.acceptance import actions_within_a_view, suite
 from app.acceptance.api_reference import api_reference
 from app.acceptance.criteria import Criterion
 from app.agents import brief_over_spec
@@ -253,7 +253,8 @@ def build_author_request(
         "state while that view is shown and checks the record leaves it - or joins it - at "
         "once, not only after the view is chosen again. A product that updates a view only "
         "when it is re-chosen passes every check made on a fresh view and fails its user.\n"
-        f"- Write only inside `{project}/{acceptance_dir}/`. Product code is not yours.\n"
+        + actions_within_a_view.author_rule()
+        + f"- Write only inside `{project}/{acceptance_dir}/`. Product code is not yours.\n"
         "- Never start a product that keeps running - a service, or the server a page is served "
         "from - yourself, in a test or by a command: the suite's own setup starts it before the "
         "tests and stops it after. A test that runs its start script or its server waits for a "

@@ -108,6 +108,8 @@ EXPERIMENTS = (
     "CONTRACT_PROBE_WITH_A_BAD_BODY",
     # A rule the specification adds beyond the brief, put to the design review and to QA: prompt rules, unproved until measured.
     "BRIEF_OVER_SPEC_ADDITIONS",
+    # An action tested while a view that depends on its result is on: a prompt rule, unproved until measured.
+    "TESTS_OF_ACTIONS_WITHIN_A_VIEW",
 )
 #: The experiments deployed on, each with the measurement that turned it on.
 EXPERIMENTS_ON = {

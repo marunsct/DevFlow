@@ -118,6 +118,8 @@ def build_acceptance_review_request(
         if already_passing
         else ""
     )
+    from app.acceptance import actions_within_a_view
+
     content = (
         "The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         + (f"--- The brief, as the customer wrote it ---\n{brief.strip()[:12_000]}\n\n" if brief.strip() else "")
@@ -136,6 +138,7 @@ def build_acceptance_review_request(
         f"{passing}"
         "Review the suite. For each criterion, would its tests fail if the product did "
         "not meet it?"
+        + actions_within_a_view.review_rule()
     )
     return {"messages": [{"role": "user", "content": content}]}
 

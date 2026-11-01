@@ -96,13 +96,13 @@ def test_a_previous_review_with_no_findings_still_states_the_budget() -> None:
     assert "revision 3 of 3" in text
 
 
-def test_the_request_carries_it_to_the_reviewer() -> None:
+def test_the_request_carries_it_to_the_reviewer(tmp_path) -> None:
     request = build_milestone_review_request(
         "wire up edit",
         ["ui.js"],
         "node --test: 12 passing",
         "no defects",
-        ".",
+        str(tmp_path),
         previous_review=_review(THE_INIT_FINDING),
         revisions_used=2,
         revisions_allowed=3,
@@ -114,9 +114,9 @@ def test_the_request_carries_it_to_the_reviewer() -> None:
     assert "revision 3 of 3" in content
 
 
-def test_a_request_without_a_previous_review_is_unchanged() -> None:
+def test_a_request_without_a_previous_review_is_unchanged(tmp_path) -> None:
     request = build_milestone_review_request(
-        "wire up edit", ["ui.js"], "12 passing", "no defects", "."
+        "wire up edit", ["ui.js"], "12 passing", "no defects", str(tmp_path)
     )
 
     assert "What you found on this milestone last time" not in request["messages"][0]["content"]

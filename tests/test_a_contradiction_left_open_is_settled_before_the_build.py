@@ -277,3 +277,19 @@ def test_a_run_with_no_judgement_model_named_settles_on_the_deployment_s_own(tmp
     monkeypatch.setattr("app.models.build_default_chat_model", lambda *a, **k: model)
     update = escalation.escalation(_stuck(tmp_path), {}, SimpleNamespace(judgement_model=None))
     assert len(model.asked) == 1 and len(_rulings_recorded(update)) == 1
+
+
+def test_the_call_is_told_what_the_setup_decides_and_to_quote_the_specification(tmp_path, on, monkeypatch):
+    # Measured on one run: the review called the setup's own start command impossible, and with no word of the setup
+    # the call ruled for another tool, quoting the finding. Only the word-for-word check stopped it.
+    from app.agents import specification_rulings
+    from app.graph import workflow
+
+    monkeypatch.setattr(workflow, "_the_scaffold_s_facts", lambda state: ["The service starts with `the kept command`."])
+    model = Model(_reply())
+    _decide(tmp_path, model)
+    asked = model.asked[0]
+    assert "The service starts with `the kept command`." in asked
+    assert "what the setup decides is not open" in asked.lower()
+    assert "not from the findings" in asked
+    assert not BANNED.search(specification_rulings.the_request(["F"], "S", "B", ["L"]))

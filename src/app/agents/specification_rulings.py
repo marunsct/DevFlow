@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -97,16 +98,26 @@ def _the_specification(specification: Any, root: str | Path) -> str:
     return text[:_MOST_SPECIFICATION_CHARS]
 
 
-def the_request(findings: list[str], specification: str, brief: str) -> str:
+def the_request(findings: list[str], specification: str, brief: str, setup: Sequence[str] = ()) -> str:
     """What the one call is asked."""
     numbered = "\n".join(f"{n}. {finding[:_MOST_FINDING_CHARS]}" for n, finding in enumerate(findings, start=1))
+    # Measured on one run: the review called the setup's own start command impossible, and the call, told nothing of
+    # the setup, ruled for another tool. Only its quotes, taken from the finding, stopped the ruling.
+    the_setup = (
+        "--- What the setup decides (the harness's; what the setup decides is not open) ---\n"
+        + "\n".join(setup)
+        + "\nNo ruling goes against these lines: a statement that disagrees with them does not stand, whatever a "
+        "finding says of them.\n\n"
+    ) if setup else ""
     return (
         f"The design review of this specification ended with these findings open:\n{numbered}\n\n"
         f"--- The brief the specification was written from ---\n{brief[:_MOST_BRIEF_CHARS]}\n\n"
+        f"{the_setup}"
         f"--- The specification ---\n{specification}\n\n"
         "Some open findings may say that two parts of the specification contradict each other: following one makes "
         "following the other impossible. Settle only those; say nothing of any other finding. For each one, copy the "
-        "two conflicting statements exactly as the specification writes them, each a short single statement, and say "
+        "two conflicting statements exactly as the specification writes them, from the specification and not from the "
+        "findings, each a short single statement, and say "
         "which stands: the one the brief's own words support, and where the brief does not decide it, the one that "
         f"allows more. At most {MOST_RULINGS} rulings.\n"
         "Answer with one JSON object and nothing else: {\"rulings\": [{\"finding\": <the finding's number>, "
@@ -182,7 +193,9 @@ def settle(state: Any, update: dict[str, Any], model: Any, findings: list[str]) 
         # Written before the call, so a restart in the middle of it cannot make it a second call.
         _save(root, [])
         brief = str(getattr(state.get("document"), "text", "") or "")
-        answer = _the_call(model, the_request(findings, specification, brief))
+        from app.graph.workflow import _the_scaffold_s_facts
+
+        answer = _the_call(model, the_request(findings, specification, brief, _the_scaffold_s_facts(state)))
         kept: list[dict[str, Any]] = []
         for ruling in verified(answer, specification, findings) if answer is not None else []:
             first_stands = ruling.stands.strip().lower() == "first"

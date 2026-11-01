@@ -8984,6 +8984,10 @@ def build_workflow_graph(
         pin_the_directory_the_product_names(
             state["repository"].root_path, getattr(update["product_intake"], "product_name", "")
         )
+        # A product seeded at the root has just moved there: a reader of the decisions sees it.
+        from app.stacks.seeded_product import record_the_move
+
+        record_the_move(state, update)
         
         # After product manager finishes, optionally route to review
         next_stage = "user_review_product_intake" if _review_enabled(state, PRODUCT_INTAKE_REVIEW) else "tools_models"

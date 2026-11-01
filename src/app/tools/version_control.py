@@ -198,6 +198,18 @@ def commit_milestone(
     return commit
 
 
+def move_keeping_history(repo_root: str | Path, name: str, directory: str) -> None:
+    """Move the top-level `name` into `directory`: by `git mv` when git tracks it, a plain rename otherwise."""
+    root = Path(repo_root)
+    if is_repository(root):
+        tracked = _git(root, "ls-files", "--", name)
+        if tracked is not None and tracked.returncode == 0 and tracked.stdout.strip():
+            done = _git(root, "mv", "--", name, f"{directory}/{name}")
+            if done is not None and done.returncode == 0:
+                return
+    (root / name).rename(root / directory / name)
+
+
 def commit_all(repo_root: str | Path, message: str) -> str | None:
     """Commit everything in the workspace with `message`; the short hash, or None.
 

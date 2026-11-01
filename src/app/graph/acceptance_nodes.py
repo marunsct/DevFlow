@@ -101,6 +101,33 @@ def _the_install_that_failed(saved: dict[str, Any], state: Any) -> list[Any]:
     )]
 
 
+def _the_build_that_fails(state: Any, reported: list[Any]) -> list[Any]:
+    """A defect for the project's production build failing, with what the compiler said; [] when it builds. Never raises.
+
+    As severe as a product that does not start: what would be shipped does not exist, whatever a suite running on a
+    development server measured. `production_build` runs it only when the product changed.
+    """
+    from app.agents.specialists import ReportedDefect
+    from app.stacks import production_build
+
+    root = _root(state)
+    said = production_build.failure(root)
+    if not said or any(
+        str(getattr(item, "description", "") or "").startswith(production_build.THE_PRODUCT_DOES_NOT_BUILD)
+        for item in reported
+    ):
+        return []
+    return [ReportedDefect(
+        description=production_build.THE_PRODUCT_DOES_NOT_BUILD,
+        severity="blocking",
+        reproduction_steps=production_build.reproduce(root),
+        expected_behavior="The production build finishes with no error, so that what it makes can be shipped.",
+        actual_behavior=said,
+        affected_files=production_build.files_named(root, said),
+        owner=_owner_for(state, said),
+    )]
+
+
 def _what_the_language_service_finds(state: Any) -> list[Any]:
     """The language service's certain findings in what this sprint changed, as the gate raises them; [] when none.
 
@@ -1309,6 +1336,8 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
         defect for defect in _the_install_that_failed(suite.last_result(_root(state)) or {}, state)
         if not any("do not install" in str(getattr(item, "description", "") or "") for item in reported)
     ]
+    # Whether or not anything fails, too: a suite on a development server never goes through the build.
+    installs = [*installs, *_the_build_that_fails(state, reported)]
     if not failing:
         return installs
     from app.acceptance.junit import tags_in

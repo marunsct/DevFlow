@@ -314,6 +314,7 @@ PACK = StackPack(
     code_runs_in="browser",
     ci_setup=js.CI_SETUP,
     ci_prepare=js.CI_BROWSERS,
+    production_build=("npm", "run", "build"),
     # Measured in the candidate image through the sandbox: `ng test` stopped
     # at "Failed to reserve virtual memory for CodeRange" under a 1 and a 1.5
     # GB data limit and ran out of heap at 2 GB; `ng serve`, started by the

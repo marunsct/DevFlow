@@ -3150,6 +3150,12 @@ def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
         raised = interface_contract.still_raised(root, str(getattr(defect, "description", "") or ""))
         if raised is not None:
             return not raised
+        # A failing build by the build itself: no test answers for it.
+        from app.stacks import production_build
+
+        raised = production_build.still_raised(root, str(getattr(defect, "description", "") or ""))
+        if raised is not None:
+            return not raised
         if str(getattr(defect, "description", "") or "").startswith(THE_PRODUCT_DOES_NOT_START):
             # The suite starts the product its own way; unit tests that pass say
             # nothing about whether it does. Closing this on them left the same
@@ -3196,8 +3202,10 @@ def _the_suite_already_guards_it(state: Any, measured: str, defect: Any) -> bool
     # A server error at the contract's checks has those checks for its regression test: they run at every green
     # round and at release (`_with_the_contract_s_server_errors`).
     from app.acceptance.interface_contract import SERVER_FAILED
+    from app.stacks.production_build import THE_PRODUCT_DOES_NOT_BUILD
 
-    is_a_failing_test = description.startswith((UNIT_TESTS_FAIL, SERVER_FAILED)) or any(
+    # A failing build has the build for its regression test: it runs at every round where the product changed.
+    is_a_failing_test = description.startswith((UNIT_TESTS_FAIL, SERVER_FAILED, THE_PRODUCT_DOES_NOT_BUILD)) or any(
         t.startswith(("AC-", "CR-")) for t in tags_in(description)
     )
     if not is_a_failing_test:
@@ -3258,6 +3266,12 @@ def _the_defect_s_tests_in(root: str, label: str, defect: Any) -> bool | None:
         from app.acceptance import interface_contract
 
         raised = interface_contract.still_raised(root, str(getattr(defect, "description", "") or ""))
+        if raised is not None:
+            return not raised
+        # And a failing build: by the build (it runs only if the product changed since it last did).
+        from app.stacks import production_build
+
+        raised = production_build.still_raised(root, str(getattr(defect, "description", "") or ""))
         if raised is not None:
             return not raised
         snapshot = ci.load(root, "latest")

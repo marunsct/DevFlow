@@ -1394,3 +1394,5 @@ measurement in the findings log** - do not delete those.
 2026-11-02 22:37 JST run-da433831 textkit-lib 0/8, own suite 22/23; run-9bc85e07 fullstack-bookmarks 8/8, 22/23. LF.544 checks a library the way its user imports it. Clean RC count starts on that deploy.
 
 2026-11-02 23:58 JST LF.545: a green suite whose product its user cannot run now raises a blocking defect (LF.537/544 only recorded it). LF.546: root-relative page references looked for up to the project. Deployed into the live fullstack-py run; the clean count restarts.
+
+2026-11-03 00:22 JST run-eb5cffb8 fullstack-py hidden 0/8: start.sh works only from a folder named bookmarks. LF.547 starts the product from a copy named product. Deployed into notes-api and fullstack-py clean runs; count restarts.

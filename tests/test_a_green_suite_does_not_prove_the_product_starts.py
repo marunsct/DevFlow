@@ -154,3 +154,27 @@ def test_a_green_suite_with_a_product_that_starts_raises_nothing(tmp_path, monke
     monkeypatch.setattr(suite, "last_result", lambda root: {"ran": True, "problem": ""})
 
     assert nodes.failing_due_defects({}, []) == []
+
+
+def test_the_product_is_started_from_a_copy_under_another_name_as_it_is_delivered(tmp_path):
+    # Measured on one run: start.sh imported the app through the project folder's name, the harness started it from
+    # that folder and passed it, and the benchmark's copy under another name could not import it: 0 of 8.
+    project = _a_locked_suite(tmp_path)
+    (project / "start.sh").write_text("exit 0\n")
+    (project / "app.py").write_text("x = 1\n")
+    seen = {}
+
+    def execute(repo_root, argv, where, env):
+        seen["where"] = where
+        copy = Path(repo_root) / where
+        seen["copy"] = (copy / "start.sh").is_file() and (copy / "app.py").is_file()
+        seen["same_inode"] = (copy / "app.py").stat().st_ino == (project / "app.py").stat().st_ino
+        return {"returncode": "124"}
+
+    with mock.patch.object(start_output, "_execute", side_effect=execute):
+        wrote = start_output.what_it_wrote(tmp_path)
+
+    assert start_output.STILL_RUNNING in wrote
+    assert Path(seen["where"]).name != "app" and seen["copy"], seen
+    assert seen["same_inode"], "a hard-linked copy, so a large project costs no space or time"
+    assert not (tmp_path / ".harness" / "as-delivered").exists(), "the copy is removed after the start"

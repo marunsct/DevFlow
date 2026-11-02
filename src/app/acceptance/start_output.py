@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import tempfile
@@ -122,6 +123,31 @@ def _execute(repo_root: str | Path, argv: list[str], project: str, env: dict[str
     )
 
 
+#: Where the product is copied to be started as it is delivered: a folder under another name, inside the workspace.
+AS_DELIVERED = ".harness/as-delivered"
+
+
+def _as_delivered(repo_root: Path, project: str) -> str:
+    """A copy of the project under the name `product`, hard-linked, for the start to run from; its path from the root.
+
+    Measured on one run: a start script imported the application through the project folder's own name. Started
+    from that folder it ran; the benchmark's copy under another name, which is what a customer unpacks, could not
+    import it, and no hidden test ran. A hard link per file makes the copy cheap; `DATA_DIR` points elsewhere.
+    """
+    base = repo_root / AS_DELIVERED
+    shutil.rmtree(base, ignore_errors=True)
+    copy = base / "product"
+
+    def link(source: str, target: str) -> None:
+        try:
+            os.link(source, target)
+        except OSError:
+            shutil.copy2(source, target)
+
+    shutil.copytree(repo_root / project, copy, symlinks=True, copy_function=link)
+    return copy.relative_to(repo_root).as_posix()
+
+
 def what_it_wrote(repo_root: str | Path) -> str:
     """A paragraph for `server_log`: how the project's own start command ended and what it wrote; "" when none could run. Never raises."""
     data = ""
@@ -133,7 +159,11 @@ def what_it_wrote(repo_root: str | Path) -> str:
         from app.tools.sandbox import _a_free_port, timeout_for
 
         data = tempfile.mkdtemp(prefix="start-output-")
-        outcome = _execute(repo_root, argv, project, {
+        try:
+            where = _as_delivered(Path(repo_root), project)
+        except OSError:
+            where = project  # a copy that cannot be made: started where it is, as before
+        outcome = _execute(repo_root, argv, where, {
             "PORT": str(_a_free_port()), "HOST": "127.0.0.1", _data_variable(repo_root): data,
         }) or {}
         try:
@@ -150,6 +180,7 @@ def what_it_wrote(repo_root: str | Path) -> str:
     finally:
         if data:
             shutil.rmtree(data, ignore_errors=True)
+        shutil.rmtree(Path(repo_root) / AS_DELIVERED, ignore_errors=True)
 
 
 def how_it_is_used_fails(repo_root: str | Path) -> str:

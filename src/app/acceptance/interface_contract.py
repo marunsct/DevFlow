@@ -526,7 +526,9 @@ def _the_probe_s_report(project: Path, project_name: str, probe: dict[str, Any],
 
 
 #: What a failed status check reports it was given: `Received: 500`.
-_RECEIVED = re.compile(r"Received:\s*(?:\x1b\[[0-9;]*m)*\s*(\d{3})")
+#: The status a failed probe received: `Received: 415`, or with `toContain` `Expected value: 415` against the array
+#: of allowed statuses, which is how Playwright words the probe's own `expect([200, 404]).toContain(status)`.
+_RECEIVED = re.compile(r"(?:Received|Expected value):\s*(\d{3})\b")
 #: Which check a test of the probe is: `contract 4:` in its title.
 _CHECK_NUMBER = re.compile(r"\bcontract (\d+):")
 #: How a defect raised for a server error at the contract's checks begins; `still_raised` reads it back.
@@ -650,7 +652,9 @@ def _only_what_a_bare_request_cannot_draw(check: Check) -> bool:
 
 
 #: What a product rightly answers a write that has no body, before it looks anything up.
-_A_REFUSED_BODY = frozenset({400, 422})
+#: 415 too: a product that checks the content type before the body refuses the probe's bare request with it. Measured
+#: on one run: `AC-4 PUT /notes/:id -> 200 | 404` was failed at release for a 415, at full hidden marks.
+_A_REFUSED_BODY = frozenset({400, 415, 422})
 
 
 def _a_bodiless_write_refused_first(check: Check, test: Any) -> bool:

@@ -1400,3 +1400,5 @@ measurement in the findings log** - do not delete those.
 2026-11-03 05:10 JST OPEN: resume of run-8ac1d382 crashes 54 times with AttributeError 'CompatibleChatOpenAI' object has no attribute 'count' at deepagents/_models.py resolve_model via acceptance_nodes.py:363 -> specialists.py:1412 -> role_agent.py:755: isinstance(model, BaseChatModel) is False for the model object on the resume path only (a fresh object passes). The worker had stopped (warm shutdown) at 01:20 and again at 01:33 JST; not by the loop. Needs a reproduction before a fix. Fresh clean run run-b7ab7422 started instead.
 
 2026-11-03 05:20 JST The 05:11 entry's cause: the model router returns primary.with_fallbacks() once a second model is configured; every agent since the 01:33 worker restart failed. LF.548 deployed.
+
+2026-11-03 06:45 JST notes-api-hono clean 1 of 3: 9/9, 72 min, mutation 11/12, mixed_versions False. Read non-deliverable for the PUT probe's 415; LF.549 built and pushed, to deploy at the next count restart (it costs no score).

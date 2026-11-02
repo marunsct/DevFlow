@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | Clean RC on LF.548 from about 05:22 JST 11-03 (every run since 01:33 had failed at its first stage: fallback chain given to the agent library); fresh fullstack-bookmarks-py started; no counted run yet |
+| Run | Clean RC on be1fc06: notes-api-hono 1 of 3 at 9/9 (72 min, read non-deliverable on a PUT contract probe); live fullstack-bookmarks-py 1c, tasks-api 1 |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

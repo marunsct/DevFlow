@@ -18,6 +18,8 @@ configuration, and any future safety fix would need to be applied in every copy.
 from __future__ import annotations
 
 import logging
+
+from langchain_core.language_models import BaseChatModel
 from pathlib import Path
 from typing import Any
 
@@ -604,6 +606,22 @@ def the_answer_tool(response_format: Any) -> Any:
     return strategy
 
 
+def a_chat_model(model: Any) -> Any:
+    """The chat model an agent is built on: a chain with fallbacks hands over its primary.
+
+    Measured live: with a second model configured, the default model became a `RunnableWithFallbacks`; the agent
+    library reads anything that is not a chat model as a model name, and every new run failed at its first stage.
+    The fallback still serves direct calls; an agent binds its tools to one model.
+    """
+    if isinstance(model, BaseChatModel):
+        return model
+    inner = getattr(model, "runnable", None)
+    if isinstance(inner, BaseChatModel):
+        logger.warning("The agent is built on the primary model alone; its fallbacks serve direct calls only")
+        return inner
+    return model
+
+
 def create_role_agent(
     *,
     name: str,
@@ -753,7 +771,7 @@ def create_role_agent(
 
     _disable_the_general_purpose_subagent()
     agent = create_deep_agent(
-        model=selected_model,
+        model=a_chat_model(selected_model),
         tools=tools,
         system_prompt=full_system_prompt,
         response_format=the_answer_tool(response_format),

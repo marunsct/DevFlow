@@ -1398,3 +1398,5 @@ measurement in the findings log** - do not delete those.
 2026-11-03 00:22 JST run-eb5cffb8 fullstack-py hidden 0/8: start.sh works only from a folder named bookmarks. LF.547 starts the product from a copy named product. Deployed into notes-api and fullstack-py clean runs; count restarts.
 
 2026-11-03 05:10 JST OPEN: resume of run-8ac1d382 crashes 54 times with AttributeError 'CompatibleChatOpenAI' object has no attribute 'count' at deepagents/_models.py resolve_model via acceptance_nodes.py:363 -> specialists.py:1412 -> role_agent.py:755: isinstance(model, BaseChatModel) is False for the model object on the resume path only (a fresh object passes). The worker had stopped (warm shutdown) at 01:20 and again at 01:33 JST; not by the loop. Needs a reproduction before a fix. Fresh clean run run-b7ab7422 started instead.
+
+2026-11-03 05:20 JST The 05:11 entry's cause: the model router returns primary.with_fallbacks() once a second model is configured; every agent since the 01:33 worker restart failed. LF.548 deployed.

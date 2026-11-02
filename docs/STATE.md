@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | run-304c1913 (fullstack-bookmarks-py recheck) live; run-fd0630c7 notes-api-hono sentinel 9/9 at 12:02 JST 11-02 (87 active min, mutation 8 of 12); then freeze and start the RC |
+| Run | run-304c1913 (fullstack-bookmarks-py recheck) failed 12:18 JST at the suite lock, LF.532 deployed, rewound; run-fd0630c7 notes-api-hono 9/9; then freeze and start the RC |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

@@ -18,6 +18,7 @@ import json
 import logging
 import re
 import shutil
+import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -860,6 +861,33 @@ def what_a_stopped_service_wrote(output: str) -> str:
     return text[at:at + STOPPED_SERVICE_CHARS].strip() if at >= 0 else ""
 
 
+#: Folders whose XML is no suite's report.
+_NOT_THE_SUITE_S = frozenset({"node_modules", ".venv", "venv", ".git", "__pycache__", "site-packages"})
+
+
+def _no_report(project_dir: Path, report_path: str, started: float) -> str:
+    """Why a run left no report: where it was looked for and the JUnit files this run did write."""
+    written: list[str] = []
+    if project_dir.is_dir():
+        for found in sorted(project_dir.rglob("*.xml")):
+            try:
+                relative = found.relative_to(project_dir)
+                if _NOT_THE_SUITE_S & set(relative.parts) or found.stat().st_mtime < started:
+                    continue
+                if junit.read(found).tests:
+                    written.append(f"`{relative.as_posix()}`")
+            except OSError:
+                continue
+    problem = f"the runner wrote no report at `{report_path}`, relative to the project, which is where `report` says it is"
+    if written:
+        problem += f". This run did write {', '.join(written[:5])}"
+    return (
+        problem + ". A runner that empties its output folder deletes a report another runner left there: give each "
+        "runner its own folder, and have the one command leave one report with every test at the path `report` names; "
+        "its output is below"
+    )
+
+
 def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = True) -> AcceptanceResult:
     """Run the suite the way the harness always does, and read what it proved."""
     repairs = restore(repo_root)
@@ -887,6 +915,7 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
     runtime_file = _runtime_report(repo_root, project)
     if runtime_file is not None:
         runtime_file.unlink(missing_ok=True)
+    started = time.time() - 1
     outcome = (runner or _sandbox_runner(repo_root))(argv, "test", project)
     try:
         code = int(str(outcome.get("returncode", "1")).strip() or 1)
@@ -902,7 +931,7 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         output=output[-OUTPUT_TAIL_CHARS:],
         server_log=what_the_server_logged(output),
         repairs=repairs,
-        problem="" if report.found else "the runner wrote no report; its output is below",
+        problem="" if report.found else _no_report(Path(repo_root) / project, report_path, started),
     )
     if not report.tests:
         # No test ran because the product never started: the suite is not at

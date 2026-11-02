@@ -19,6 +19,7 @@ import logging
 import re
 import shutil
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -736,6 +737,9 @@ def _command(repo_root: str | Path) -> tuple[list[str], str, str] | None:
         declared = json.loads((suite_dir / DECLARED_COMMAND_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    runs = _the_runs(declared)
+    if runs:
+        return runs[0][0], runs[0][1], where[0]
     argv = declared.get("command") if isinstance(declared, dict) else None
     report = declared.get("report") if isinstance(declared, dict) else None
     if not (isinstance(argv, list) and argv and all(isinstance(a, str) for a in argv) and isinstance(report, str)):
@@ -745,20 +749,43 @@ def _command(repo_root: str | Path) -> tuple[list[str], str, str] | None:
 
 #: The shape a suite's own declaration of how it runs must have.
 _THE_DECLARED_SHAPE = '{"command": ["<executable>", "<argument>", ...], "report": "<file>"}'
+_SEVERAL_RUNNERS = (
+    'when the suite needs several runners, list each with its own report under `runs`: {"runs": [{"command": [...], '
+    '"report": "<file>"}, ...]}; each runs in turn and the harness reads each report as it finishes'
+)
+
+
+def _the_runs(declared: Any) -> list[tuple[list[str], str]]:
+    """The (argv, report) of each runner a `run.json` lists under `runs`; [] when it lists none or any is unusable."""
+    listed = declared.get("runs") if isinstance(declared, dict) else None
+    if not isinstance(listed, list):
+        return []
+    runs: list[tuple[list[str], str]] = []
+    for item in listed:
+        argv = item.get("command") if isinstance(item, dict) else None
+        report = item.get("report") if isinstance(item, dict) else None
+        if not (isinstance(argv, list) and argv and all(isinstance(a, str) for a in argv)):
+            return []
+        if not isinstance(report, str) or not report.strip() or report.rstrip().endswith("/"):
+            return []
+        runs.append((argv, report))
+    return runs
 
 
 def _what_the_declaration_gets_wrong(declared: Any) -> str:
     """What makes a parsed `run.json` unusable, naming the shape; "" when nothing does."""
     if not isinstance(declared, dict):
         return f"must be one JSON object, {_THE_DECLARED_SHAPE}"
+    if "runs" in declared:
+        return "" if _the_runs(declared) else (
+            "`runs` must list at least one runner, each with a `command` as a list of strings and a `report` file: "
+            + _SEVERAL_RUNNERS)
     wrong: list[str] = []
     argv = declared.get("command")
     if not (isinstance(argv, list) and argv and all(isinstance(a, str) for a in argv)):
         wrong.append(
             "`command` must be one command as a list of strings"
-            + (" - not a `commands` list: when the suite needs several runners, one script runs "
-               "them all and writes one report, and `command` runs that script"
-               if "commands" in declared else "")
+            + (f" - not a `commands` list: {_SEVERAL_RUNNERS}" if "commands" in declared else "")
         )
     report = declared.get("report")
     if not isinstance(report, str) or not report.strip() or report.rstrip().endswith("/"):
@@ -882,10 +909,55 @@ def _no_report(project_dir: Path, report_path: str, started: float) -> str:
     if written:
         problem += f". This run did write {', '.join(written[:5])}"
     return (
-        problem + ". A runner that empties its output folder deletes a report another runner left there: give each "
-        "runner its own folder, and have the one command leave one report with every test at the path `report` names; "
+        problem + f". A runner that empties its output folder deletes a report another runner left there: {_SEVERAL_RUNNERS}; "
         "its output is below"
     )
+
+
+def _declared_runs(repo_root: str | Path) -> list[tuple[list[str], str]]:
+    """The runners this suite's `run.json` lists, when it lists more than one and no pack decides; else []."""
+    suite_dir = directory(repo_root)
+    if suite_dir is None or contract.the_pack(repo_root) is not None:
+        return []
+    try:
+        runs = _the_runs(json.loads((suite_dir / DECLARED_COMMAND_FILE).read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return []
+    return runs if len(runs) > 1 else []
+
+
+def _run_each(
+    runs: list[tuple[list[str], str]], run_one: Runner, project: str, project_dir: Path,
+) -> tuple[dict[str, Any], str]:
+    """Run each runner, reading its report as it finishes: a later runner may empty the folder it sits in.
+
+    Every test goes into the first runner's report, which is what the rest of the harness reads. Returns the combined
+    outcome and the report no run wrote, or "" when each wrote its own.
+    """
+    code, said, suites, missing = 0, [], [], ""
+    for argv, report_path in runs:
+        report_file = project_dir / report_path
+        junit.clear(report_file)
+        outcome = run_one(argv, "test", project)
+        try:
+            code = max(code, int(str(outcome.get("returncode", "1")).strip() or 1))
+        except ValueError:
+            code = max(code, 1)
+        said.extend(str(outcome.get(k)) for k in ("error", "stdout", "stderr") if outcome.get(k))
+        try:
+            root = ET.fromstring(report_file.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, ET.ParseError):
+            missing = missing or report_path
+            continue
+        suites.extend(list(root) if root.tag == "testsuites" else [root])
+    first = project_dir / runs[0][1]
+    junit.clear(first)
+    if not missing:
+        whole = ET.Element("testsuites")
+        whole.extend(suites)
+        first.parent.mkdir(parents=True, exist_ok=True)
+        first.write_bytes(ET.tostring(whole, encoding="utf-8"))
+    return {"returncode": str(code), "stdout": "\n".join(said)}, missing
 
 
 def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = True) -> AcceptanceResult:
@@ -904,11 +976,13 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         return _judged(repo_root, result, save)
     argv, report_path, project = command
     report_file = Path(repo_root) / project / report_path
+    several = _declared_runs(repo_root)
+    shown = " && ".join(" ".join(each) for each, _ in several) or " ".join(argv)
     if not repairs:
         # Nothing was put back or installed, and the product is as it was when last measured: that run stands (MEASURE_ONCE).
         from app.acceptance.measured_once import saved_run_if_unchanged
 
-        kept = saved_run_if_unchanged(repo_root, " ".join(argv), report_file)
+        kept = saved_run_if_unchanged(repo_root, shown, report_file)
         if kept is not None:
             return _judged(repo_root, kept, save)
     junit.clear(report_file)
@@ -916,7 +990,12 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
     if runtime_file is not None:
         runtime_file.unlink(missing_ok=True)
     started = time.time() - 1
-    outcome = (runner or _sandbox_runner(repo_root))(argv, "test", project)
+    run_one = runner or _sandbox_runner(repo_root)
+    if several:
+        outcome, unwritten = _run_each(several, run_one, project, Path(repo_root) / project)
+        report_path = unwritten or report_path
+    else:
+        outcome = run_one(argv, "test", project)
     try:
         code = int(str(outcome.get("returncode", "1")).strip() or 1)
     except ValueError:
@@ -926,7 +1005,7 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
     result = AcceptanceResult(
         ran=report.found,
         exit_code=code,
-        command=" ".join(argv),
+        command=shown,
         report=report,
         output=output[-OUTPUT_TAIL_CHARS:],
         server_log=what_the_server_logged(output),

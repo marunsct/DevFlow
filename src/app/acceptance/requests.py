@@ -63,7 +63,9 @@ def _how_to_write_them(repo_root: str | Path, project: str, acceptance_dir: str,
         f"`{project}/{acceptance_dir}/{suite.DECLARED_COMMAND_FILE}` saying how they run: "
         '{"command": ["<executable>", "<argument>", ...], "report": "<path>"} - the command '
         f"is run in `{project}/`, and must write a JUnit XML report at `report` (a path "
-        f"relative to `{project}/`). Test the product the way its user meets it: a page "
+        f"relative to `{project}/`). When the suite needs several runners, list each with its own report instead: "
+        '{"runs": [{"command": [...], "report": "<path>"}, ...]} - no script of your own to combine them; each runs in '
+        "turn and the harness reads each report as it finishes. Test the product the way its user meets it: a page "
         "through a browser, a service over HTTP, a program as a process, a library through "
         "its public functions. Each test's name carries the id of the criterion it proves, "
         "`[AC-3]` in a title or `ac3` in an identifier."

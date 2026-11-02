@@ -63,6 +63,41 @@ def test_the_measured_shape_goes_back_to_qa_naming_no_product_fault(tmp_path):
     assert not junit.tags_in(found[0])
 
 
+def test_it_names_the_line_raising_the_words_and_the_lines_bringing_the_helper_in(tmp_path):
+    root = _make(tmp_path)
+    finding = _own(root, _result([f"RuntimeError: {SAID}"] * 6))[0]
+    assert "`notes/acceptance/conftest.py` at line 7 raises" in finding
+    assert "`notes/acceptance/test_x.py:1: from conftest import _request`" in finding
+    assert not BANNED.search(finding.replace(SAID, ""))
+
+
+def test_the_lines_are_found_in_any_language_s_words_and_not_inside_a_longer_name(tmp_path):
+    root = _make(tmp_path, helper=HELPER)
+    acceptance = root / "notes" / "acceptance"
+    (acceptance / "test_y.js").write_text(
+        "const { request } = require('./conftest');\n"
+        "import { other } from './conftest-two';\n"
+        "// conftest is named in a comment\n"
+    )
+    lines = suite._the_lines_that_bring_in(root, "notes/acceptance/conftest.py")
+    assert "notes/acceptance/test_y.js:1: const { request } = require('./conftest');" in lines
+    assert not any("conftest-two" in line or "in a comment" in line for line in lines)
+
+
+def test_when_nothing_names_the_helper_the_finding_says_so(tmp_path):
+    root = _make(tmp_path)
+    (root / "notes" / "acceptance" / "test_x.py").write_text("def test_ac1_x():\n    assert _request('GET', '/x').status == 200\n")
+    finding = _own(root, _result([f"RuntimeError: {SAID}"] * 6))[0]
+    assert "No other file of the suite names `conftest.py`." in finding
+
+
+def test_many_lines_are_counted_not_all_quoted(tmp_path):
+    root = _make(tmp_path)
+    (root / "notes" / "acceptance" / "test_x.py").write_text("from conftest import a\n" * 11)
+    finding = _own(root, _result([f"RuntimeError: {SAID}"] * 6))[0]
+    assert "; and 3 more." in finding and "test_x.py:9:" not in finding
+
+
 def test_a_runner_s_header_before_the_error_does_not_hide_it(tmp_path):
     root = _make(tmp_path)
     messages = [f"acceptance/x.spec.js:{i}:5 › [AC-{i}] x\n\nError: {SAID}\n    at helper (x.js:3:9)" for i in range(6)]

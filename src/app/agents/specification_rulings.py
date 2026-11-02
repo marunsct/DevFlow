@@ -144,6 +144,19 @@ def _as_quoted(statement: str, text: str) -> str:
     return bare if bare in text else plain
 
 
+def _in_the_specification(quote: str, text: str, specification: str) -> bool:
+    """Whether a quote is the specification's, word for word or by the sentence matcher the suite dispute uses.
+
+    Measured on one run: a right ruling quoted a function's signature without the specification's backticks, the
+    word-for-word check rejected it, and the contradiction stayed open; the same fault was fixed for the dispute (LF.543).
+    """
+    if quote in text:
+        return True
+    from app.agents.suite_dispute import _the_standard_holds
+
+    return _the_standard_holds(quote, specification)
+
+
 def verified(answer: Rulings, specification: str, findings: list[str]) -> list[Ruling]:
     """The rulings whose both quotes are in the specification word for word and that settle an open finding, at most `MOST_RULINGS`."""
     text = _plain(specification)
@@ -159,7 +172,8 @@ def verified(answer: Rulings, specification: str, findings: list[str]) -> list[R
             else "a quote is too short or too long to be one statement"
             if not all(_LEAST_QUOTE_CHARS <= len(q) <= _MOST_QUOTE_CHARS for q in (first, second))
             else "one quote is inside the other" if first in second or second in first
-            else "a quote is not in the specification word for word" if first not in text or second not in text
+            else "a quote is not in the specification word for word"
+            if not (_in_the_specification(first, text, specification) and _in_the_specification(second, text, specification))
             else "it repeats a ruling" if frozenset((first, second)) in seen
             else ""
         )

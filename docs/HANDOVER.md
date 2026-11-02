@@ -460,7 +460,7 @@ run-8b0c94df to end. Worth knowing:
 - The interface has tests: `cd langchain-ui && npm test` (Vitest, in the suite too).
 - `loop.sh reasoning-probe run` measures whether the server shortens replies when
   asked to think less; it needs the model server free.
-- Lessons: `lessons.py list|approve|reject`, or Settings -> Lessons.
+- Lessons: `lessons.py list|approve|reject`, or Settings -> Lessons. `loop.sh lessons evidence` reads every transcript into the lessons on record and names any no transcript backs.
 
 ### 2.000 Fast delivery (2026-10-14, `e55dd6f`)
 

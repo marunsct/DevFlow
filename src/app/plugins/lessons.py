@@ -31,6 +31,9 @@ MOST_LESSONS_PER_CALL = 5
 #: A rule's limits: two lines, and short enough to read at a glance.
 MOST_RULE_LINES = 2
 MOST_RULE_CHARS = 300
+#: What a lesson keeps of the runs that showed it: all their ids, and this many of their records at this length.
+MOST_EVIDENCE_QUOTES = 5
+MOST_EVIDENCE_CHARS = 240
 
 #: Words no rule in a prompt may use (the repository's rule for every prompt rule).
 _BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
@@ -109,9 +112,21 @@ def _checked_rule(rule: str) -> str:
     return text
 
 
+def _note_evidence(lesson: dict[str, Any], run_id: str, evidence: str) -> None:
+    """Count this run as showing the lesson, each run once, and keep what it recorded."""
+    runs = list(lesson.get("evidence_in") or [])
+    if not run_id or run_id in runs:
+        return
+    lesson["evidence_in"] = [*runs, run_id]
+    lesson["evidence_runs"] = len(lesson["evidence_in"])
+    quotes = list(lesson.get("evidence") or [])
+    if evidence and len(quotes) < MOST_EVIDENCE_QUOTES:
+        lesson["evidence"] = [*quotes, f"{run_id}: {' '.join(evidence.split())[:MOST_EVIDENCE_CHARS]}"]
+
+
 def propose(
     stack: str, trigger: str, rule: str, evidence_runs: int, *,
-    role: str = "all", source: str = "harness", path: Path | None = None,
+    role: str = "all", source: str = "harness", run_id: str = "", evidence: str = "", path: Path | None = None,
 ) -> dict[str, Any]:
     """Record a proposed lesson, or refresh the one already proposed for this stack and failure."""
     stack = str(stack or "").strip().lower()
@@ -128,6 +143,7 @@ def propose(
                 lesson["evidence_runs"] = max(int(lesson.get("evidence_runs") or 0), int(evidence_runs))
                 if lesson.get("status") == "proposed":
                     lesson["rule"] = text
+                _note_evidence(lesson, run_id, evidence)
                 _save(lessons, path)
                 return lesson
         number = 1 + max((int(str(item.get("id", "L-0")).split("-")[-1]) for item in lessons), default=0)
@@ -136,9 +152,21 @@ def propose(
             "evidence_runs": int(evidence_runs), "source": source, "status": "proposed",
             "proposed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
+        _note_evidence(lesson, run_id, evidence)
         lessons.append(lesson)
         _save(lessons, path)
         return lesson
+
+
+def add_evidence(stack: str, trigger: str, *, run_id: str, evidence: str = "", path: Path | None = None) -> None:
+    """Add a run's record to the lessons on record for this stack and failure; proposes nothing."""
+    with _LOCK:
+        lessons = load(path)
+        matching = [item for item in lessons if item.get("stack") == stack and item.get("trigger") == trigger]
+        for lesson in matching:
+            _note_evidence(lesson, run_id, evidence)
+        if matching:
+            _save(lessons, path)
 
 
 def decide(lesson_id: str, approved: bool, *, by: str = "owner", path: Path | None = None) -> dict[str, Any]:

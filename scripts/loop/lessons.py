@@ -7,14 +7,17 @@ Runs INSIDE the worker, where the transcripts and the lessons store live:
 
 or `loop.sh lessons [distil <run>]`. Distilling does nothing unless
 `LESSON_DISTILLER` is on; listing always shows the proposals awaiting the owner.
+`evidence` reads every transcript into the lessons on record and names those no
+transcript backs.
 """
 from __future__ import annotations
 
 import glob
 import sys
+from pathlib import Path
 
 from app.plugins import lessons
-from app.plugins.lesson_distiller import distil
+from app.plugins.lesson_distiller import check_the_evidence, distil
 
 
 def main(argv: list[str]) -> int:
@@ -27,6 +30,17 @@ def main(argv: list[str]) -> int:
             return 1
         done = distil(transcripts[0], roots[0])
         print(f"{len(done)} lesson(s) proposed or refreshed" if done else "nothing proposed (or LESSON_DISTILLER is off)")
+        return 0
+    if len(argv) > 1 and argv[1] == "evidence":
+        pairs = []
+        for transcript in sorted(glob.glob("/app/data/transcripts/*.jsonl")):
+            roots = glob.glob(f"/app/data/workspaces/*/workspace-{Path(transcript).stem}")
+            if roots:
+                pairs.append((transcript, roots[0]))
+        without = check_the_evidence(pairs)
+        for lesson in lessons.load():
+            print(f"  {lesson['id']} {lesson['status']} [{lesson['stack']}] {lesson['evidence_runs']} run(s): {lesson['trigger']}")
+        print(f"{len(pairs)} run(s) read; no evidence for: {', '.join(item['id'] for item in without) or 'none'}")
         return 0
     waiting = [lesson for lesson in lessons.load() if lesson.get("status") == "proposed"]
     print(f"{len(waiting)} lesson(s) awaiting the owner")

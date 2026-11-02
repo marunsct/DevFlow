@@ -13,6 +13,7 @@ interface Lesson {
   trigger: string;
   rule: string;
   evidence_runs: number;
+  evidence?: string[];
   source: string;
   status: 'proposed' | 'approved' | 'rejected';
 }
@@ -59,6 +60,9 @@ export const LessonsPanel: React.FC = () => {
               </div>
               <p className="mt-1 text-sm text-text-primary">{lesson.rule}</p>
               <p className="mt-0.5 text-xs text-text-muted break-words">Answers: {lesson.trigger}</p>
+              {(lesson.evidence ?? []).map((quote) => (
+                <p key={quote} className="mt-0.5 text-xs text-text-muted break-words">Recorded: {quote}</p>
+              ))}
               {lesson.status === 'proposed' && (
                 <div className="mt-2 flex gap-2">
                   <button type="button" onClick={() => decide(lesson, 'approve')} className="px-3 py-1 rounded-lg bg-primary text-primary-foreground text-sm font-medium">

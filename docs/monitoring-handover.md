@@ -1370,3 +1370,5 @@ was per-run Chromium copies and 0.9 GB `node_modules`. Both were cleared and
 the image-level browser cache means the Chromium half will not come back.
 Transcripts are about 500 MB and are **the evidence base for every
 measurement in the findings log** - do not delete those.
+
+2026-11-02 11:50 JST LF.531: lessons L-4, 6, 7, 10, 13, 15, 17, 21 rejected on the owner's word (false claim about reverts; backup data/lessons.json.bak-20261102). Lessons now quote their records and count distinct runs.

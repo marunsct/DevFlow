@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | notes-api-hono 9/9, fullstack-bookmarks-py 8/8 at 15:44 JST 11-02; LF.531-536 deployed; release candidate starting: each family 3 times on a frozen version |
+| Run | Release candidate on 7ba6752 from 15:53 JST 11-02: wordstats-cli run 1 8/8; live RC 1 fullstack-bookmarks-py, RC 1 web-todo |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

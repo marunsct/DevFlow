@@ -476,8 +476,9 @@ class RunStatusResponse(BaseModel):
         default="",
         description=(
             "What the workspace's NON-DELIVERABLE marker says, or '' when the "
-            "workspace is marked deliverable. A terminal state other than a "
-            "clean release writes it into the workspace root (Initiative J.6)."
+            "workspace is marked deliverable. A run that failed, or that completed "
+            "with a gap meaning the product may not work (`blocking_gaps`), writes "
+            "it into the workspace root (Initiative J.6); notes alone do not."
         ),
     )
     gate_deadline: datetime | None = Field(
@@ -497,7 +498,14 @@ class RunStatusResponse(BaseModel):
             "problems the suite was locked with, an unproven setup (Initiative "
             "J.4). Empty on a completed run that proved everything it claims; "
             "a completed run with gaps here is never plain 'completed' on any "
-            "surface that shows it."
+            "surface that shows it. Those not in `blocking_gaps` are notes."
+        ),
+    )
+    blocking_gaps: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The `completion_gaps` that mean the product may not work; the rest are "
+            "notes for a reader, and every later measurement went on to pass."
         ),
     )
     delivery_mode: str = Field(
@@ -761,7 +769,8 @@ class RunSummary(BaseModel):
     updated_at: datetime | None = Field(default=None, description="When the run last moved.")
     delivery_mode: str | None = Field(default=None, description="fast or thorough.")
     local_only: bool | None = Field(default=None, description="Whether the run was started not to use the frontier model.")
-    completion_gaps: int = Field(default=0, description="How many things the release knew it did not prove.")
+    completion_gaps: int = Field(default=0, description="How many things the release knew it did not prove, notes included.")
+    blocking_gaps: int = Field(default=0, description="How many of `completion_gaps` mean the product may not work.")
     criteria_proven: int | None = Field(default=None, description="Acceptance criteria passing in the last measurement, or null before one.")
     criteria_total: int | None = Field(default=None, description="Acceptance criteria of the run, or null before the suite is written.")
     gate_deadline: datetime | None = Field(

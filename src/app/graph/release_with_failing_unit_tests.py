@@ -9,8 +9,12 @@ sprint round again, each round ended in an escalation, and the escalation budget
 The unit tests do ship with the product, so a failure is not hidden: it becomes a gap in the run's record
 (`completion_gaps`), named with the tests, like a deferred criterion. It is released this way only when
 the only thing failing is the project's own unit tests - never when a criterion fails, the suite does not run, or
-the handoff is not ready - and when the harness has already given those tests its chances: the sprint was accepted
-at an escalation with them open, or the release has already held the product back as often as it may.
+the handoff is not ready - and when the harness has already given those tests its chances: a sprint was accepted
+at an escalation with those same tests open, or the release has already held the product back as often as it may.
+
+An issue set aside for another reason is not that acceptance: measured on one stored release, 14 failing unit tests
+shipped on the first attempt because `known_issues` held something, and `known_issues` also holds design findings,
+settled ones included, and the note that the sprint plan is the harness's.
 """
 from __future__ import annotations
 
@@ -24,6 +28,11 @@ ON_BY_DEFAULT = False
 
 def enabled() -> bool:
     return is_on("RELEASE_WITH_FAILING_UNIT_TESTS", ON_BY_DEFAULT)
+
+
+def accepted_at_an_escalation(unit_failures: Sequence[str], accepted: Sequence[str] | None) -> bool:
+    """Whether an escalation accepted a sprint with every one of these tests open."""
+    return bool(unit_failures) and set(unit_failures) <= set(accepted or [])
 
 
 def may_ship(

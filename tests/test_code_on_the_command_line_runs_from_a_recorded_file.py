@@ -124,3 +124,52 @@ def test_the_description_names_every_language_it_rewrites(workspace):
     for named in ("`python -c`", "`node -e`", "`ruby -e`", "`php -r`"):
         assert named in description
     assert "{code_flags}" not in description
+
+
+def _released(monkeypatch, root):
+    """Up to the release's decision, with a suite that passes: the release has decided and nothing else is needed."""
+    from types import SimpleNamespace
+
+    from app.graph import delivery
+
+    monkeypatch.setattr(delivery.suite, "is_locked", lambda _: True)
+    monkeypatch.setattr(delivery.suite, "run", lambda _: SimpleNamespace(failing=lambda: [], summary=lambda: "1 passed", ran=True))
+    monkeypatch.setattr(delivery.suite, "vacuous_green", lambda _, __: [])
+    monkeypatch.setattr(delivery.suite, "deferred", lambda _: {})
+    monkeypatch.setattr(delivery, "_unit_tests_failing", lambda _: [])
+    monkeypatch.setattr(delivery, "_root", lambda _: str(root))
+
+    class _Decided(Exception):
+        pass
+
+    def _decided(*_, **__):
+        raise _Decided
+
+    monkeypatch.setattr("app.decisions.record_decision", _decided)
+    with pytest.raises(_Decided):
+        delivery.release({"release_attempts": 0}, {"configurable": {}}, SimpleNamespace(judgement_model=None))
+
+
+def test_the_release_removes_them_from_the_workspace_s_root_and_the_project(workspace, monkeypatch):
+    """The root is outside the sweep, a project file may have no record of a stage, and the name may be quoted."""
+    project = next(path for path in workspace.iterdir() if path.is_dir() and not path.name.startswith("."))
+    at_the_root = workspace / "tmp-inline-5af57a06.py"
+    unrecorded = project / "tmp-inline-08b16036.cjs"
+    for path in (at_the_root, unrecorded):
+        path.write_text("print(1)\n")
+    (project / "NOTES.md").write_text("see tmp-inline-08b16036.cjs\n")
+
+    _released(monkeypatch, workspace)
+
+    assert not at_the_root.exists() and not unrecorded.exists()
+
+
+def test_the_release_leaves_a_stage_s_own_file_of_a_like_name(workspace, monkeypatch):
+    project = next(path for path in workspace.iterdir() if path.is_dir() and not path.name.startswith("."))
+    kept = [project / "tmp-inline-notes.py", workspace / "tmp-inline-5af57a06.py.md"]
+    for path in kept:
+        path.write_text("kept\n")
+
+    _released(monkeypatch, workspace)
+
+    assert all(path.exists() for path in kept)

@@ -9,6 +9,9 @@ The stage is a graph stage as the points name it (`principal_architect`,
 `acceptance_author`, `technical_lead`, `test_and_triage`, ...). With a time,
 the last entry of that stage at or before it - the moment before a bug; without
 one, its latest entry. Exits 1, listing the points, when none matches.
+
+    rewind_point.py --list                     prints the points
+    rewind_point.py --check <stage> [time]     prints nothing and exits 0 when there is one, as above when not
 """
 from __future__ import annotations
 
@@ -23,18 +26,32 @@ def the_point(points: list[dict], stage: str, before: str = "") -> dict | None:
     return matching[-1] if matching else None
 
 
+def _print_points(points: list[dict], out) -> None:
+    for p in points:
+        print(f"  {p.get('at', '')[:19]}  {p.get('stage')}  (sprint {p.get('sprint')})", file=out)
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print(__doc__, file=sys.stderr)
         return 2
-    stage, before = argv[1], argv[2] if len(argv) > 2 else ""
     points = (json.load(sys.stdin) or {}).get("points") or []
+    if argv[1] == "--list":
+        _print_points(points, sys.stdout)
+        return 0
+    check = argv[1] == "--check"
+    words = argv[2:] if check else argv[1:]
+    if not words:
+        print(__doc__, file=sys.stderr)
+        return 2
+    stage, before = words[0], words[1] if len(words) > 1 else ""
     point = the_point(points, stage, before)
     if point is None:
         print(f"no rewind point for {stage!r}{' at or before ' + before if before else ''}; the run's points:", file=sys.stderr)
-        for p in points:
-            print(f"  {p.get('at', '')[:19]}  {p.get('stage')}  (sprint {p.get('sprint')})", file=sys.stderr)
+        _print_points(points, sys.stderr)
         return 1
+    if check:
+        return 0
     print(f"rewinding to {point.get('stage')} entered at {str(point.get('at', ''))[:19]} UTC "
           f"(sprint {point.get('sprint')})", file=sys.stderr)
     print(point["checkpoint_id"])

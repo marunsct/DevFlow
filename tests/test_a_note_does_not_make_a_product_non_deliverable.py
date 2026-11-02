@@ -210,3 +210,25 @@ def test_what_this_adds_for_the_reader_uses_none_of_the_banned_words(tmp_path, m
     page = (tmp_path / "docs" / "reviews" / "release-evidence.md").read_text(encoding="utf-8")
     for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
         assert not re.search(rf"\b{re.escape(word)}\b", page, re.IGNORECASE), word
+
+
+def test_the_surfaces_of_a_run_say_which_gaps_block():
+    from app.server import outcomes
+
+    blocking = "AC-2 ships deferred, unproven by the suite: no automated check"
+    record = SimpleNamespace(
+        run_id="run-g", status="completed", delivery_mode="fast", local_only=False, completion_gaps=[blocking, NOTES[0]],
+        created_at="2026-10-15T00:00:00+00:00", updated_at="2026-10-15T05:00:00+00:00",
+    )
+    row = outcomes.outcomes([record])[0]
+    assert row["completion_gaps"] == [blocking, NOTES[0]] and row["blocking_gaps"] == [blocking]
+
+
+def test_the_field_descriptions_say_a_note_alone_marks_nothing():
+    from app.server.models import RunStatusResponse, RunSummary
+
+    fields = RunStatusResponse.model_fields
+    assert "notes alone do not" in fields["non_deliverable"].description
+    assert "A terminal state other than" not in fields["non_deliverable"].description
+    assert "blocking_gaps" in fields and "blocking_gaps" in RunSummary.model_fields
+

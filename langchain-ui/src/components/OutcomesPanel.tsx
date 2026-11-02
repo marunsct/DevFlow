@@ -48,8 +48,12 @@ export const OutcomesPanel: React.FC = () => {
                 </td>
                 <td className="py-2 pr-4">
                   {row.completion_gaps && row.completion_gaps.length > 0 ? (
-                    <span className="text-warning" title={row.completion_gaps.join('\n')}>
-                      {row.status} · {row.completion_gaps.length} gap{row.completion_gaps.length === 1 ? '' : 's'}
+                    <span className={row.blocking_gaps?.length ? 'text-warning' : undefined} title={row.completion_gaps.join('\n')}>
+                      {row.status}
+                      {row.blocking_gaps?.length ? ` · ${row.blocking_gaps.length} gap${row.blocking_gaps.length === 1 ? '' : 's'}` : ''}
+                      {row.completion_gaps.length > (row.blocking_gaps?.length ?? 0)
+                        ? ` · ${row.completion_gaps.length - (row.blocking_gaps?.length ?? 0)} note${row.completion_gaps.length - (row.blocking_gaps?.length ?? 0) === 1 ? '' : 's'}`
+                        : ''}
                     </span>
                   ) : (
                     row.status

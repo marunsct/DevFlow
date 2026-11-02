@@ -254,7 +254,12 @@ export const RunList: React.FC = () => {
                         {run.criteria_total ? `${run.criteria_proven ?? 0} of ${run.criteria_total}` : '-'}
                       </td>
                       <td className="px-4 py-3 align-top hidden lg:table-cell text-right tabular-nums">
-                        {run.completion_gaps ? <span className="text-warning">{run.completion_gaps}</span> : <span className="text-text-muted">0</span>}
+                        {run.blocking_gaps ? <span className="text-warning">{run.blocking_gaps}</span> : <span className="text-text-muted">0</span>}
+                        {(run.completion_gaps ?? 0) > (run.blocking_gaps ?? 0) && (
+                          <span className="block text-xs text-text-muted">
+                            {(run.completion_gaps ?? 0) - (run.blocking_gaps ?? 0)} note{(run.completion_gaps ?? 0) - (run.blocking_gaps ?? 0) === 1 ? '' : 's'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-2 align-top whitespace-nowrap text-right">
                         {!view.terminal && run.status !== 'created' && (

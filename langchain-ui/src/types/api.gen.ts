@@ -378,7 +378,9 @@ export interface RunStatusResponse {
   artifacts: ArtifactInfo[];
   /** Whether the run answers its own approval gates (unattended). The UI needs this to know whether a gate is waiting on a person or will clear itself, and the wizard uses it to label a paused stage. */
   auto_approve: boolean;
-  /** What this release knew it did not prove: deferred criteria, problems the suite was locked with, an unproven setup (Initiative J.4). Empty on a completed run that proved everything it claims; a completed run with gaps here is never plain 'completed' on any surface that shows it. */
+  /** The `completion_gaps` that mean the product may not work; the rest are notes for a reader, and every later measurement went on to pass. */
+  blocking_gaps: string[];
+  /** What this release knew it did not prove: deferred criteria, problems the suite was locked with, an unproven setup (Initiative J.4). Empty on a completed run that proved everything it claims; a completed run with gaps here is never plain 'completed' on any surface that shows it. Those not in `blocking_gaps` are notes. */
   completion_gaps: string[];
   /** What this run has spent on model calls so far, when the worker holding its total is this process. Absent rather than zero when it is not: a run whose accounting lives in another worker has an unknown cost, and reporting $0.00 for it would be the fabricated measurement this field was added to remove. */
   cost: RunCostSummary | null;
@@ -404,7 +406,7 @@ export interface RunStatusResponse {
   model_last: ModelSummary | null;
   /** Whether the run is kept on the model it last ran on (true) or follows the current model settings (false). */
   model_pinned: boolean;
-  /** What the workspace's NON-DELIVERABLE marker says, or '' when the workspace is marked deliverable. A terminal state other than a clean release writes it into the workspace root (Initiative J.6). */
+  /** What the workspace's NON-DELIVERABLE marker says, or '' when the workspace is marked deliverable. A run that failed, or that completed with a gap meaning the product may not work (`blocking_gaps`), writes it into the workspace root (Initiative J.6); notes alone do not. */
   non_deliverable: string;
   /** Remediation information if applicable. */
   remediation: RemediationInfo | null;
@@ -430,7 +432,9 @@ export interface RunStatusResponse {
 
 /** A brief summary of a run. */
 export interface RunSummary {
-  /** How many things the release knew it did not prove. */
+  /** How many of `completion_gaps` mean the product may not work. */
+  blocking_gaps: number;
+  /** How many things the release knew it did not prove, notes included. */
   completion_gaps: number;
   /** Timestamp when the run was created. */
   created_at: string;

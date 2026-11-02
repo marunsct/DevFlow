@@ -1542,8 +1542,16 @@
       "title": "Auto Approve",
       "type": "boolean"
      },
+     "blocking_gaps": {
+      "description": "The `completion_gaps` that mean the product may not work; the rest are notes for a reader, and every later measurement went on to pass.",
+      "items": {
+       "type": "string"
+      },
+      "title": "Blocking Gaps",
+      "type": "array"
+     },
      "completion_gaps": {
-      "description": "What this release knew it did not prove: deferred criteria, problems the suite was locked with, an unproven setup (Initiative J.4). Empty on a completed run that proved everything it claims; a completed run with gaps here is never plain 'completed' on any surface that shows it.",
+      "description": "What this release knew it did not prove: deferred criteria, problems the suite was locked with, an unproven setup (Initiative J.4). Empty on a completed run that proved everything it claims; a completed run with gaps here is never plain 'completed' on any surface that shows it. Those not in `blocking_gaps` are notes.",
       "items": {
        "type": "string"
       },
@@ -1677,7 +1685,7 @@
      },
      "non_deliverable": {
       "default": "",
-      "description": "What the workspace's NON-DELIVERABLE marker says, or '' when the workspace is marked deliverable. A terminal state other than a clean release writes it into the workspace root (Initiative J.6).",
+      "description": "What the workspace's NON-DELIVERABLE marker says, or '' when the workspace is marked deliverable. A run that failed, or that completed with a gap meaning the product may not work (`blocking_gaps`), writes it into the workspace root (Initiative J.6); notes alone do not.",
       "title": "Non Deliverable",
       "type": "string"
      },
@@ -1785,9 +1793,15 @@
     "additionalProperties": false,
     "description": "A brief summary of a run.",
     "properties": {
+     "blocking_gaps": {
+      "default": 0,
+      "description": "How many of `completion_gaps` mean the product may not work.",
+      "title": "Blocking Gaps",
+      "type": "integer"
+     },
      "completion_gaps": {
       "default": 0,
-      "description": "How many things the release knew it did not prove.",
+      "description": "How many things the release knew it did not prove, notes included.",
       "title": "Completion Gaps",
       "type": "integer"
      },

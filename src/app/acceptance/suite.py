@@ -3593,8 +3593,8 @@ def _what_it_says(message: str) -> str:
     return lines[0] if lines else ""
 
 
-def _the_suite_file_that_raises(repo_root: str | Path, said: str) -> str:
-    """The suite's file that raises exactly `said`, a whole literal, before reading any reply; "" when none does."""
+def _the_suite_file_that_raises(repo_root: str | Path, said: str) -> tuple[str, int] | None:
+    """The suite's file and line raising exactly `said`, a whole literal, before reading any reply; None when none does."""
     root = Path(repo_root)
     for path in suite_files(repo_root):
         try:
@@ -3610,8 +3610,44 @@ def _the_suite_file_that_raises(repo_root: str | Path, said: str) -> str:
             raising = _RAISES.search(line) or (kept and _RAISES.search(kept[-1]))
             near = " ".join([*kept[-2:], line.replace(said, "")])
             if raising and not _AN_ASSERTION.search(near) and not _READS_A_REPLY.search(near):
-                return path.relative_to(root).as_posix()
-    return ""
+                return path.relative_to(root).as_posix(), at + 1
+    return None
+
+
+#: How many lines bringing in a helper a finding quotes; the rest are counted.
+_MOST_LINES_BRINGING_IN_A_HELPER = 8
+
+
+def _the_lines_that_bring_in(repo_root: str | Path, helper: str) -> list[str]:
+    """Each line of the suite's other files naming the helper's file, as `path:line: text`. Never raises.
+
+    By the file's name, in whatever words a language brings a file in with, so nothing here knows a language. The
+    name alone over-reads a line that merely mentions it, which a reader can see in the line quoted.
+    """
+    root = Path(repo_root)
+    names_it = re.compile(rf"(?<![\w-]){re.escape(Path(helper).stem)}(?![\w-])")
+    found: list[str] = []
+    for path in suite_files(repo_root):
+        relative = path.relative_to(root).as_posix()
+        if relative == helper:
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        found += [f"{relative}:{at}: {line.strip()[:120]}" for at, line in enumerate(lines, start=1)
+                  if names_it.search(line) and not _ONLY_COMMENTARY.match(line)]
+    return found
+
+
+def _how_the_helper_is_brought_in(repo_root: str | Path, helper: str) -> str:
+    """The sentence quoting the lines that bring the helper in, or saying that none does."""
+    lines = _the_lines_that_bring_in(repo_root, helper)
+    if not lines:
+        return f" No other file of the suite names `{Path(helper).name}`."
+    shown = "; ".join(f"`{line}`" for line in lines[:_MOST_LINES_BRINGING_IN_A_HELPER])
+    more = len(lines) - _MOST_LINES_BRINGING_IN_A_HELPER
+    return f" The suite's other files name it at: {shown}" + (f"; and {more} more." if more > 0 else ".")
 
 
 def _the_product_says(repo_root: str | Path, said: str) -> bool:
@@ -3666,16 +3702,18 @@ def _the_finding(repo_root: str | Path, messages: Sequence[str], passed: int, pr
     """The one finding of `the_suite_failed_in_its_own_words`, from what either form of a measurement holds."""
     from app.acceptance import start_output
 
-    said, helper = _one_message_of_the_suite_s_own(repo_root, messages, passed, problem)
+    said, raised_at = _one_message_of_the_suite_s_own(repo_root, messages, passed, problem)
     if not said or runtime:
         return []
+    helper, line = raised_at
     # The product's own start ran on, and it logged no error of its own during the suite: a product that cannot start,
     # or that answered with errors, is the product's, however the suite words it.
     started = start_output.in_text(server_log)
     if start_output.STILL_RUNNING not in started or str(server_log).replace(started, "").strip():
         return []
     return [
-        f"`{helper}` raises the one message all {len(messages)} failing tests failed with: \"{said}\". No test passed, "
+        f"`{helper}` at line {line} raises the one message all {len(messages)} failing tests failed with: \"{said}\". "
+        f"{_how_the_helper_is_brought_in(repo_root, helper).strip()} No test passed, "
         "those words are written in the suite's own files and nowhere in the product, and the product kept running when "
         "the harness started it with its own start command. So no test reached the product, and what the tests assert "
         "has not been tried. Look at how the suite's helpers are loaded and shared between its files: a test may be "

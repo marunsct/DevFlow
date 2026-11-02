@@ -488,6 +488,8 @@ def endpoint_keys() -> dict[str, str]:
     and switching to the cloud API kept sending the preview API's key - every
     call refused with 401. Each endpoint now keeps its own.
     """
+    from cryptography.fernet import InvalidToken
+
     try:
         from app.server.auth import get_db_connection
 

@@ -666,6 +666,7 @@ def create_runs_router(
                     delivery_mode=getattr(r, "delivery_mode", None),
                     local_only=getattr(r, "local_only", None),
                     completion_gaps=len(getattr(r, "completion_gaps", None) or []),
+                    blocking_gaps=len(_blocking_gaps(r)),
                     gate_deadline=_when_the_gate_approves_itself(r),
                     **pins.get(r.run_id, {}),
                     run_name=names.get(r.run_id),
@@ -1117,6 +1118,7 @@ def create_runs_router(
             "pages": pages,
             # What the release knew it did not prove, and how well the stack's own checks cover it.
             "completion_gaps": [str(gap) for gap in (getattr(record, "completion_gaps", None) or [])],
+            "blocking_gaps": _blocking_gaps(record),
             "support_tier": _support_tier_of(root),
             # Each criterion's first passing test, after which step and when (plan BG.9).
             "first_passed": first_passes(root),
@@ -2137,6 +2139,7 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         error=record.error,
         auto_approve=bool(record.auto_approve),
         completion_gaps=[str(gap) for gap in (getattr(record, "completion_gaps", None) or [])],
+        blocking_gaps=_blocking_gaps(record),
         gate_deadline=_when_the_gate_approves_itself(record),
         approval_timeout_minutes=getattr(record, "approval_timeout_minutes", None),
         non_deliverable=_what_the_marker_says(record),
@@ -2210,6 +2213,13 @@ def _when_the_gate_approves_itself(record: Any) -> Any:
     if since.tzinfo is None:
         since = since.replace(tzinfo=timezone.utc)
     return since + timedelta(minutes=int(minutes))
+
+
+def _blocking_gaps(record: Any) -> list[str]:
+    """The run's gaps that mean the product may not work; the rest are notes. See `completion_verdict`."""
+    from app import completion_verdict
+
+    return completion_verdict.split(getattr(record, "completion_gaps", None))[0]
 
 
 def _what_the_marker_says(record: Any) -> str:

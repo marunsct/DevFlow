@@ -252,7 +252,7 @@ def _defer_and_continue(
     # read "96 tests, 85 passed" when CI had just measured 110 of 115.
     from app.graph import engineering
 
-    engineering.accepted_state(root)
+    open_unit_tests = engineering.accepted_state(root)
     record_decision(
         state, update, point="escalation",
         question="The sprint could not be finished: how does the run go on?",
@@ -271,6 +271,12 @@ def _defer_and_continue(
         stage=_where_next(state),
         escalation=None,
         known_issues=known,
+        # What the release may ship failing. Only a sprint accepted as it stands accepted them: deferring a criterion
+        # decides about that criterion, and a design finding in `known_issues` says nothing about any test.
+        unit_failures_accepted_at_an_escalation=sorted({
+            *(state.get("unit_failures_accepted_at_an_escalation") or []),
+            *([] if to_defer else open_unit_tests or []),
+        }),
     )
 
 

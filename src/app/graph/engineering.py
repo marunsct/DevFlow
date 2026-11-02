@@ -910,14 +910,17 @@ def after_a_fix(
     return []
 
 
-def accepted_state(root: str) -> None:
-    """Measure the workspace as the sprint is accepted: the next sprint's baseline."""
+def accepted_state(root: str) -> list[str]:
+    """Measure the workspace as the sprint is accepted, the next sprint's baseline; the unit tests it holds open."""
     if not ci_applies(root):
-        return
+        return []
     try:
-        ci.save(root, ci.take(root, "accepted"), accepted=True)
+        measured = ci.take(root, "accepted")
+        ci.save(root, measured, accepted=True)
     except Exception:  # noqa: BLE001 - a missing baseline only means fewer regressions found
         logger.warning("Could not measure the accepted state", exc_info=True)
+        return []
+    return sorted(name for name, outcome in measured.unit.items() if outcome != "passed")
 
 
 def suite_locked(root: str) -> None:

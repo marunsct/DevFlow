@@ -109,6 +109,8 @@ export interface RunOutcome {
   status: string;
   /** What the release knew it did not prove (Initiative J.4). */
   completion_gaps?: string[];
+  /** Those that mean the product may not work; the rest are notes. */
+  blocking_gaps?: string[];
   delivery_mode: string;
   use_frontier_model: boolean;
   started_at: string | null;

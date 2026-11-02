@@ -43,7 +43,7 @@ from pathlib import Path
 
 from app.analysis.walk import files_under
 from app.tools.bounded_output import HeadAndTail, read_into
-from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE
+from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE, pinned_project_directory
 from typing import Any, Dict, Iterable, Sequence
 
 logger = logging.getLogger(__name__)
@@ -349,7 +349,26 @@ _WITHOUT_AN_INSTALL = {
     "python": ("Python's own `unittest` and the standard library need no install, and logic written as "
                "functions that take their inputs as arguments can be tested without the service running. "
                "A test suite is a different matter: a line in `requirements-dev.txt` is not shipped and "
-               "breaks no constraint in the brief."),
+               "breaks no constraint in the brief, and `pytest` itself may be installed into a `.venv` "
+               "of the project."),
+}
+
+#: The test tools of a manager with no test scope of its own, per manager. The flag that says "not shipped" does not
+#: exist for these (`_is_a_test_only_install`), so the package's name is all that says it. Measured on one run on a
+#: brief with no dependencies and no pack: `pip install pytest` was refused about seven times, in every spelling, and
+#: QA wrote its own wrapper to find a runner. Names of tools only: a library the product could import is still refused.
+_TEST_TOOLS_OF_A_MANAGER_WITH_NO_TEST_SCOPE = {
+    manager: re.compile(r"pytest(-[a-z0-9_.-]+)?|coverage|hypothesis") for manager in ("pip", "pip3")
+}
+
+#: Where such a test tool goes, per manager: the command that makes a place every later command can find it.
+_WHERE_A_TEST_TOOL_GOES = {
+    manager: (
+        "`{packages}` is a test tool and ships to nobody, so the brief's rule on dependencies does not reach it. Do not "
+        "install it with this `pip`, though: it is not the `pip` of the `python3` the commands here run, so nothing "
+        "would find what it installs. In the project's folder run `python3 -m venv .venv`, then "
+        "`.venv/bin/pip install {packages}` as category \"install\", then run the tests with `.venv/bin/pytest`."
+    ) for manager in ("pip", "pip3")
 }
 
 
@@ -357,6 +376,27 @@ def _the_ecosystem_of(command: Sequence[str]) -> str:
     """`python` for a pip install, `node` otherwise."""
     names = {Path(str(part)).name for part in command}
     return "python" if names & {"pip", "pip3", "python", "python3", "uv", "poetry"} else "node"
+
+
+def _only_test_tools(command: Sequence[str], packages: Sequence[str]) -> bool:
+    """Whether every package named is a test tool of a manager that has no test scope to say so."""
+    tools = _TEST_TOOLS_OF_A_MANAGER_WITH_NO_TEST_SCOPE.get(_manager_of(command) or "")
+    return tools is not None and bool(packages) and all(
+        tools.fullmatch(re.split(r"[=<>!~\[;@ ]", str(package), maxsplit=1)[0].lower()) for package in packages
+    )
+
+
+def _a_test_tool_install_nothing_would_find(command: Sequence[str], packages: Sequence[str], repo_root: str) -> str:
+    """How to install this test tool so it can be run, when this command would put it out of reach; else "".
+
+    A `pip` named by a path into the workspace is the workspace's own, and a project's virtualenv is at the front
+    of every command's PATH (`_child_environment`), so a bare one is that virtualenv's when there is one.
+    """
+    program = str(command[0])
+    if (os.sep in program and not os.path.isabs(program)) or _the_project_virtualenv(repo_root):
+        return ""
+    words = _WHERE_A_TEST_TOOL_GOES.get(_manager_of(command) or "")
+    return words.format(packages=" ".join(str(package) for package in packages)) if words else ""
 
 
 def _refuse_an_install_the_brief_rules_out(
@@ -398,6 +438,8 @@ def _refuse_an_install_the_brief_rules_out(
         # Recording it as a risk or refusing it is the constraint applied to
         # the wrong thing.
         return ""
+    if _only_test_tools(command, packages):
+        return _a_test_tool_install_nothing_would_find(command, packages, repo_root)
     constraint = _the_brief_forbids_installing_anything(repo_root)
     if not constraint:
         return ""
@@ -979,7 +1021,9 @@ def _the_project_virtualenv(workspace: str) -> str | None:
     Found through the project contract, so it is the same directory the
     pack's own commands use - `.venv/bin/python` in a Python pack's install,
     unit and serve argv - and never a guess about where a virtualenv might
-    be (Initiative K.5). None when there is no contract, no project, no
+    be (Initiative K.5). A project with no contract (a seeded product built on
+    as it is) has only its pinned directory to say where it is, which holds a
+    virtualenv only if a stage made one. None when there is no project, no
     virtualenv or no interpreter in it: a command then keeps the PATH it
     had, and nothing is claimed that is not there.
     """
@@ -987,7 +1031,7 @@ def _the_project_virtualenv(workspace: str) -> str | None:
         from app.stacks import contract
 
         record = contract.read(workspace)
-        project = str((record or {}).get("project") or "")
+        project = str((record or {}).get("project") or "") or pinned_project_directory(Path(workspace))
         if not project:
             return None
         candidate = Path(workspace) / project / ".venv" / "bin"

@@ -11,6 +11,7 @@ export const aRun = (run_id: string, status: string, extra: Partial<RunSummary> 
   delivery_mode: 'fast',
   local_only: true,
   completion_gaps: 0,
+  blocking_gaps: 0,
   criteria_proven: null,
   criteria_total: null,
   gate_deadline: null,

@@ -115,7 +115,7 @@ def suite_files(repo_root: str | Path) -> list[Path]:
     return sorted(
         path for path in files_under(root, _NOT_THE_SUITE)
         if path.is_file() and not (set(path.relative_to(root).parts) & _NOT_THE_SUITE)
-        and path != report
+        and path != report and not (path.suffix == ".xml" and junit.read(path).tests)
     )
 
 
@@ -1039,7 +1039,29 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         from app.acceptance import start_output
 
         start_output.add_to(repo_root, result)
+        _the_product_s_own_start(repo_root, result)
     return _judged(repo_root, result, save)
+
+
+def _the_product_s_own_start(repo_root: str | Path, result: AcceptanceResult) -> None:
+    """A green locked suite whose product's own start command fails is a product that did not start.
+
+    A suite's runner may start the product its own way. Measured on one run: `start.sh` passed the server an option it
+    does not have, the suite passed 33 of 33, and no test of the benchmark's hidden suite could run.
+    """
+    from app.acceptance import start_output
+
+    report = result.report
+    if result.problem or not report.tests or report.failed or not is_locked(repo_root):
+        return
+    wrote = start_output.what_it_wrote(repo_root)
+    stopped = re.search(r"it stopped by itself with exit code (\d+)", wrote)
+    if stopped and int(stopped.group(1)) != 0:
+        result.problem = (
+            f"{PRODUCT_DID_NOT_START} through its own start command, though the suite's way of starting it passed: "
+            f"{wrote}"
+        )
+        result.server_log = "\n".join(part for part in (str(result.server_log or ""), wrote) if part)
 
 
 #: How much of the page a failing test met is kept with it, and for how many

@@ -7171,7 +7171,8 @@ def _a_stage_is_running() -> bool:
 
 
 #: The rounds of one QA author: `acceptance_author_0`, `_1`, `_2`, ... write one suite between them.
-_ROUNDS_OF_ONE_AUTHOR = re.compile(r"^(acceptance_author)_\d+$")
+#: The setup stage too: its attempts after a setup left to the agents are one author, not two.
+_ROUNDS_OF_ONE_AUTHOR = re.compile(r"^((?:acceptance_author|stack_setup))_\d+$")
 
 
 def _the_same_author(created_by: str, running: str) -> bool:

@@ -42,3 +42,12 @@ def test_rounds_of_other_stages_are_not_one_author() -> None:
     assert _the_same_author("acceptance_author_0", "acceptance_author_3") is True
     assert _the_same_author("specialist_testing_1", "specialist_testing_2") is False
     assert _the_same_author("acceptance_author_1", "acceptance_review_1") is False
+
+
+def test_a_later_attempt_of_the_setup_stage_owns_the_earlier_attempt_s_test():
+    # Measured on one run: setup's first attempt wrote an end-to-end test in the wrong folder, the setup was left to
+    # the agents, and the second attempt was refused four times when it asked to delete that test as another stage's.
+    from app.tools.repository import _the_same_author
+
+    assert _the_same_author("stack_setup_0", "stack_setup_1")
+    assert not _the_same_author("specialist_backend_0", "specialist_backend_1"), "two work orders are two authors"

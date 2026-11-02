@@ -1392,3 +1392,5 @@ measurement in the findings log** - do not delete those.
 2026-11-02 22:14 JST textkit-lib: dispute ruled two tests wrong, the quote check refused the rulings. LF.543 and LF.542 deployed together; no clean RC run had finished.
 
 2026-11-02 22:37 JST run-da433831 textkit-lib 0/8, own suite 22/23; run-9bc85e07 fullstack-bookmarks 8/8, 22/23. LF.544 checks a library the way its user imports it. Clean RC count starts on that deploy.
+
+2026-11-02 23:58 JST LF.545: a green suite whose product its user cannot run now raises a blocking defect (LF.537/544 only recorded it). LF.546: root-relative page references looked for up to the project. Deployed into the live fullstack-py run; the clean count restarts.

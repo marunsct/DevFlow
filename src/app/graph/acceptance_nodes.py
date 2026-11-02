@@ -1357,6 +1357,30 @@ def where_errors_become_5xx(root: str | Path | None, most: int = 8) -> list[tupl
         return []
 
 
+def _the_start_that_fails(state: Any, reported: list[Any], command: str) -> list[Any]:
+    """A defect for a product a green suite reached and its user cannot; [] otherwise.
+
+    Measured on one run: the suite's own way of starting it passed 38 of 38, its start script could not run, the result
+    said so, and with nothing failing no defect was raised.
+    """
+    from app.agents.specialists import ReportedDefect
+
+    said = str((suite.last_result(_root(state)) or {}).get("problem") or "")
+    if not said.startswith(suite.PRODUCT_DID_NOT_START) or any(
+        str(getattr(item, "description", "") or "") == THE_PRODUCT_DOES_NOT_START for item in reported
+    ):
+        return []
+    return [ReportedDefect(
+        description=THE_PRODUCT_DOES_NOT_START,
+        severity="blocking",
+        reproduction_steps=f"The suite passes through `{command}`; use the product its user's way, as the failure says.",
+        expected_behavior="The product works the way its user runs it, not only the way the suite reaches it.",
+        actual_behavior=said[:1500],
+        affected_files=[],
+        owner=_owner_for(state, said),
+    )]
+
+
 def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     """A defect for each due criterion that fails and that the round did not report.
 
@@ -1376,7 +1400,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     # Whether or not anything fails, too: a suite on a development server never goes through the build.
     installs = [*installs, *_the_build_that_fails(state, reported)]
     if not failing:
-        return installs
+        return [*installs, *_the_start_that_fails(state, reported, command)]
     from app.acceptance.junit import tags_in
     from app.agents.specialists import ReportedDefect
 

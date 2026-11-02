@@ -121,3 +121,36 @@ def test_a_library_that_imports_is_left_alone_and_one_that_cannot_be_asked_says_
 
     for outcome in ({"returncode": "0"}, {"error": "refused"}):
         assert _judged(tmp_path, outcome)[0].problem == ""
+
+
+def test_a_green_suite_whose_product_does_not_start_reaches_a_fixer(tmp_path, monkeypatch):
+    # Measured on one run: the finding above was recorded, nothing failed, so the round raised no defect, and the
+    # sprint went on with a start script no user could run.
+    from app.agents import specialists  # noqa: F401 - the defect's module
+    from app.graph import acceptance_nodes as nodes
+
+    problem = f"{suite.PRODUCT_DID_NOT_START} through its own start command, though the suite's way of starting it passed: No module"
+    monkeypatch.setattr(nodes, "_failing_due", lambda state: ([], "run"))
+    monkeypatch.setattr(nodes, "_root", lambda state: str(tmp_path))
+    monkeypatch.setattr(nodes, "_owner_for", lambda state, said: "backend")
+    monkeypatch.setattr(nodes, "_the_install_that_failed", lambda saved, state: [])
+    monkeypatch.setattr(nodes, "_the_build_that_fails", lambda state, reported: [])
+    monkeypatch.setattr(suite, "last_result", lambda root: {"ran": True, "problem": problem})
+
+    found = nodes.failing_due_defects({}, [])
+
+    assert [d.description for d in found] == [nodes.THE_PRODUCT_DOES_NOT_START]
+    assert "No module" in found[0].actual_behavior and found[0].severity == "blocking"
+    assert nodes.failing_due_defects({}, found) == [], "one already reported is not raised twice"
+
+
+def test_a_green_suite_with_a_product_that_starts_raises_nothing(tmp_path, monkeypatch):
+    from app.graph import acceptance_nodes as nodes
+
+    monkeypatch.setattr(nodes, "_failing_due", lambda state: ([], "run"))
+    monkeypatch.setattr(nodes, "_root", lambda state: str(tmp_path))
+    monkeypatch.setattr(nodes, "_the_install_that_failed", lambda saved, state: [])
+    monkeypatch.setattr(nodes, "_the_build_that_fails", lambda state, reported: [])
+    monkeypatch.setattr(suite, "last_result", lambda root: {"ran": True, "problem": ""})
+
+    assert nodes.failing_due_defects({}, []) == []

@@ -2429,6 +2429,15 @@ def _broken_local_references(files: list[Path], root: Path) -> list[str]:
             # product tripped this on its first file. The two sibling checks
             # above already strip it; this one did not.
             referenced = path.parent / target.lstrip("/")
+            # Where a service serves it from is not known here, so any folder up to the project may be its root:
+            # measured, `static/index.html` loading `/static/app.js` was looked for in `static/static/` alone.
+            if target.startswith("/") and not referenced.exists():
+                for folder in path.parent.parents:
+                    if (folder / target.lstrip("/")).exists():
+                        referenced = folder / target.lstrip("/")
+                        break
+                    if folder == root:
+                        break
             if not referenced.exists():
                 problems.append(
                     f"{path.relative_to(root)} references `{target}`, which does "

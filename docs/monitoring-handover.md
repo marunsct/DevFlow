@@ -1378,3 +1378,5 @@ measurement in the findings log** - do not delete those.
 2026-11-02 12:43 JST run-304c1913 failed the same way after LF.532. LF.533: `run.json` takes `runs`; rewound again to its third suite round.
 
 2026-11-02 13:28 JST run-304c1913 scored 3/8 with its own suite 27/27: plain containers and a placeholder, found by CSS. LF.534 gives no-pack browser suites the page checks; rewound to its third suite round.
+
+2026-11-02 14:45 JST run-304c1913: suite 25/2, both failures a label lookup without exact. LF.535 sends such a test back to QA; deployed into the run (paused, resumed).

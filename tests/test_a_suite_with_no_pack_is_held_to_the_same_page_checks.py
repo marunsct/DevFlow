@@ -71,3 +71,44 @@ def test_a_brief_that_says_no_kind_asks_nothing(tmp_path):
     _a_suite(tmp_path, BY_CLASS)
 
     assert suite.records_never_found_as_the_brief_shows_them(tmp_path, "Show the bookmarks.") == []
+
+
+def _result(message: str):
+    from types import SimpleNamespace
+
+    from app.acceptance.junit import Report, TestResult
+
+    failed = TestResult(name="[AC-7] form", outcome="failed", message=message)
+    return SimpleNamespace(report=Report(tests=[failed], found=True), output="", problem="", ran=True)
+
+
+def test_a_label_lookup_that_also_matches_a_longer_name_is_the_suite_s_to_fix(tmp_path):
+    (tmp_path / ".harness").mkdir()
+    (tmp_path / ".harness" / "acceptance.json").write_text(json.dumps({"criteria": [
+        {"id": "AC-7", "text": 'A text field labelled "Tag" and a text field labelled "Filter by tag"'}]}))
+    message = "Error: strict mode violation: getByLabel('Tag') resolved to 2 elements:"
+
+    found = suite.tests_whose_label_also_matches_a_longer_name(tmp_path, _result(message))
+
+    assert len(found) == 1 and '"Tag"' in found[0] and '"Filter by tag"' in found[0] and "exact" in found[0]
+    assert "[AC-7] form" in found[0] and not BANNED.search(found[0])
+    assert any("[AC-7] form" in p for p in suite.tests_that_cannot_pass(tmp_path, _result(message)))
+
+
+def test_two_controls_with_one_name_are_the_product_s_fault_not_the_suite_s(tmp_path):
+    (tmp_path / ".harness").mkdir()
+    (tmp_path / ".harness" / "acceptance.json").write_text(json.dumps({"criteria": [
+        {"id": "AC-7", "text": 'A text field labelled "Tag" and a text field labelled "Title"'}]}))
+    message = "Error: strict mode violation: getByLabel('Tag') resolved to 2 elements:"
+
+    assert suite.tests_whose_label_also_matches_a_longer_name(tmp_path, _result(message)) == []
+
+
+def test_at_the_lock_a_lookup_that_could_match_a_longer_name_is_named(tmp_path):
+    brief = 'A text field labelled "Tag". A text field labelled "Filter by tag".'
+    _a_suite(tmp_path, PLAYWRIGHT + "page.getByLabel('Tag');\npage.getByLabel('Filter by tag');\n")
+    assert any('"Tag"' in p and "exact" in p for p in suite.controls_never_found_by_name(tmp_path, brief))
+
+    root = tmp_path / "exact"
+    _a_suite(root, PLAYWRIGHT + "page.getByLabel('Tag', { exact: true });\npage.getByLabel('Filter by tag');\n")
+    assert suite.controls_never_found_by_name(root, brief) == []

@@ -1990,6 +1990,10 @@ def _page_checks(repo_root: str | Path) -> Any:
     return None
 
 
+#: A label lookup a failure names as matching several controls.
+_NOT_EXACT_LABEL = re.compile(r"""getByLabel\(['"`]([^'"`]+)['"`]\) resolved to \d+ elements""")
+
+
 #: How a brief says a record is shown, the role that means, and how a test finds it so.
 _KINDS_OF_RECORD = (
     (re.compile(r"\b(?:items? of a list|list items?)\b", re.I), "an item of a list", "listitem",
@@ -2336,9 +2340,21 @@ def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list
             for template in pack.finds_by_name
         )
     ]
+    loose = [
+        name for name in names
+        if name not in missing and _longer_names(name, names)
+        and re.search(r"""\bgetByLabel\s*\(\s*['"`]""" + re.escape(name) + r"""['"`]\s*\)""", suite_text)
+    ]
+    problems = [
+        f'A test asks for the label "{name}" without `exact: true`, which also matches '
+        + ", ".join(f'"{other}"' for other in _longer_names(name, names))
+        + ", so no product the brief describes can pass it. Find it with `{ exact: true }`."
+        for name in loose
+    ]
     if not missing:
-        return []
+        return problems
     return [
+        *problems,
         "The brief names these controls and no test finds any of them by that name: "
         + ", ".join(f'"{name}"' for name in missing)
         + ". A test that finds a control another way passes whatever the product calls it - "
@@ -3921,6 +3937,40 @@ def the_suite_s_own_words_when_last_measured(repo_root: str | Path) -> list[str]
         return []
 
 
+def _longer_names(name: str, names: Sequence[str]) -> list[str]:
+    """The other names that hold `name`: a label lookup that is not exact matches those too."""
+    return [other for other in names if other != name and name.lower() in other.lower()]
+
+
+def tests_whose_label_also_matches_a_longer_name(repo_root: str | Path, result: Any) -> list[str]:
+    """Failed tests whose label lookup matched two controls because one criterion's name holds another's. Never raises.
+
+    Measured on one run: a test asked for the label "Tag" and the page rightly also had "Filter by tag". A lookup that
+    is not exact matches both and refuses, so no right page could pass, and a fixer spent its budget on the page.
+    """
+    try:
+        from app.analysis.interface_checks import controls_the_brief_names
+
+        criteria = json.loads((Path(repo_root) / ".harness" / "acceptance.json").read_text(encoding="utf-8"))["criteria"]
+        names = controls_the_brief_names("\n".join(str(c.get("text") or "") for c in criteria))
+        problems = []
+        for test in getattr(getattr(result, "report", None), "tests", None) or ():
+            if test.outcome != "failed":
+                continue
+            for name in _NOT_EXACT_LABEL.findall(str(test.message or "")):
+                longer = _longer_names(name, names)
+                if longer:
+                    problems.append(
+                        f"`{test.name}` asks for the label \"{name}\" without `exact: true`, which also matches "
+                        + ", ".join(f'"{other}"' for other in longer)
+                        + ", so no product the brief describes can pass it. Find it with `{ exact: true }`. "
+                        "This is about the test, not the product."
+                    )
+        return list(dict.fromkeys(problems))[:6]
+    except Exception:  # noqa: BLE001 - no criteria, nothing to say
+        return []
+
+
 def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Locked tests no product can pass, by every check that says so; one list for every caller.
 
@@ -3944,6 +3994,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *tests_that_assert_a_kept_file_s_text(repo_root, result),
         *tests_that_count_a_list_other_tests_write_to(repo_root, result),
         *the_suite_failed_in_its_own_words(repo_root, result),
+        *tests_whose_label_also_matches_a_longer_name(repo_root, result),
     ]
     # These read a test's text, and text is a guess at what it does.
     read_from_text = [

@@ -1380,3 +1380,5 @@ measurement in the findings log** - do not delete those.
 2026-11-02 13:28 JST run-304c1913 scored 3/8 with its own suite 27/27: plain containers and a placeholder, found by CSS. LF.534 gives no-pack browser suites the page checks; rewound to its third suite round.
 
 2026-11-02 14:45 JST run-304c1913: suite 25/2, both failures a label lookup without exact. LF.535 sends such a test back to QA; deployed into the run (paused, resumed).
+
+2026-11-02 15:44 JST run-304c1913 fullstack-bookmarks-py 8/8 (up from 3/8 today), 142 active min, mutation 4 of 12; read non-deliverable for a test id taken as a file, fixed by LF.536.

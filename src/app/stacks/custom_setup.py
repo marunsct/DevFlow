@@ -406,7 +406,12 @@ def _declared(text: str, project_root: Path, fallback_kind: str, *, files_writte
     # keep the product's own code from every stage after this one.
     kept = [_in_this_project(name, project_root) for name in data.get("kept_files") or []
             if not (isinstance(name, str) and any(mark in name for mark in "*?["))]
-    smoke = [_in_this_project(name, project_root) for name in data.get("smoke_files") or []]
+    # A test's id (`test_main.py::test_save`) names the file it is in: measured, one read as a missing file and marked
+    # a product at full hidden marks non-deliverable.
+    smoke = [
+        _in_this_project(name.split("::")[0] if isinstance(name, str) else name, project_root)
+        for name in data.get("smoke_files") or []
+    ]
     if any(name is None for name in kept):
         problems.append("every `kept_files` entry must be a path inside the project")
     if len(smoke) < 2 or any(name is None for name in smoke):

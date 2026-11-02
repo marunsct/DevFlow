@@ -49,3 +49,23 @@ def test_a_sound_declaration_is_written_before_the_files_it_names(tmp_path):
     _write(tmp_path, DECLARED)
 
     assert json.loads((tmp_path / "notes-api" / "stack-setup.json").read_text())["unit_dir"] == "tests/unit"
+
+
+def test_a_test_s_id_names_the_file_it_is_in(tmp_path):
+    from app.stacks.custom_setup import read_declaration
+
+    project = tmp_path / "app"
+    (project / "tests" / "unit").mkdir(parents=True)
+    (project / "tests" / "unit" / "test_main.py").write_text("def test_a(): pass\n")
+    (project / "acceptance").mkdir()
+    (project / "acceptance" / "test_api.py").write_text("def test_b(): pass\n")
+    declared = {**DECLARED, "acceptance_dir": "acceptance", "kept_files": [],
+                "unit_pattern": "test_*.py", "acceptance_pattern": "test_*.py",
+                "smoke_files": ["tests/unit/test_main.py::test_a", "acceptance/test_api.py::test_b"]}
+    (project / "stack-setup.json").write_text(json.dumps(declared))
+
+    found, problem = read_declaration(project)
+
+    assert "do not exist" not in problem, problem
+    assert found is not None, problem
+    assert found.smoke_files == ("tests/unit/test_main.py", "acceptance/test_api.py")

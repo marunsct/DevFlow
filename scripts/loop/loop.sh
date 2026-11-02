@@ -260,14 +260,40 @@ rewind)
   # the rewind, and the rewound stage runs on the new code:
   #   loop.sh rewind --pause-only; BOUNDARY_WAIT=0 loop.sh deploy; loop.sh rewind <stage>
   #   loop.sh rewind <graph stage> [run-id] [at or before, e.g. 2026-10-19T22:20]
+  #   loop.sh rewind --list [run-id]   the run's points; touches no run (--help and -h too)
+  # Nothing is touched until the stage is known to be a point of the run: an
+  # unknown stage or flag used to pause the run before it was refused.
+  usage="usage: loop.sh rewind <graph stage>|--pause-only|--list [run-id] [at-or-before]"
+  stage="${2:-}"
+  case "$stage" in
+    "") echo "$usage" >&2; exit 2 ;;
+    --help|-h)
+      echo "$usage"
+      if [ -z "${LOOP_USER:-}" ] || [ -z "${LOOP_PASSWORD:-}" ]; then
+        echo "set LOOP_USER and LOOP_PASSWORD to list the run's points"; exit 0
+      fi
+      stage=--list ;;
+    --list|--pause-only) ;;
+    -*) echo "unknown flag $stage: no run was touched. $usage" >&2; exit 2 ;;
+  esac
   : "${LOOP_USER:?set LOOP_USER to the loop operator account}"
   : "${LOOP_PASSWORD:?set LOOP_PASSWORD for that account}"
-  stage="${2:?usage: loop.sh rewind <graph stage>|--pause-only [run-id] [at-or-before]}"
   run="${3:-$(current)}"
   token=$(curl -s -X POST "$API/api/auth/token" --data-urlencode "username=$LOOP_USER" \
             --data-urlencode "password=$LOOP_PASSWORD" |
           "$PY" -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
   status() { "${DB[@]}" "select status from runs where run_id='$run'" | tr -d '[:space:]'; }
+  # Timeouts on both calls (plan OP.4): listing the points of a long run took
+  # minutes, and a call with none waited on a server that had stopped answering.
+  points() { curl -s -m "${REWIND_TIMEOUT:-600}" "$API/api/runs/$run/rewind-points" -H "Authorization: Bearer $token"; }
+  if [ "$stage" = "--list" ]; then
+    points | "$PY" "$HERE/rewind_point.py" --list
+    exit 0
+  fi
+  if [ "$stage" != "--pause-only" ]; then
+    points | "$PY" "$HERE/rewind_point.py" --check "$stage" "${4:-}" || {
+      echo "not rewound and not paused: $stage is not a point of $run, as listed above" >&2; exit 1; }
+  fi
   if [ "$(status)" = "running" ] || [ "$(status)" = "queued" ]; then
     curl -s -X POST "$API/api/runs/$run/pause" -H "Authorization: Bearer $token" >/dev/null
     waited=0
@@ -275,10 +301,8 @@ rewind)
     echo "paused $run after ${waited}s ($(jst +%H:%M) JST): $(status)"
   fi
   [ "$stage" = "--pause-only" ] && exit 0
-  # Timeouts on both calls (plan OP.4): listing the points of a long run took
-  # minutes, and a call with none waited on a server that had stopped answering.
-  checkpoint=$(curl -s -m "${REWIND_TIMEOUT:-600}" "$API/api/runs/$run/rewind-points" -H "Authorization: Bearer $token" |
-               "$PY" "$HERE/rewind_point.py" "$stage" "${4:-}") || exit 1
+  # Read again: the run may have entered the stage once more on its way to the pause.
+  checkpoint=$(points | "$PY" "$HERE/rewind_point.py" "$stage" "${4:-}") || exit 1
   answer=$(curl -s -m "${REWIND_TIMEOUT:-600}" -w '\n%{http_code}' -X POST "$API/api/runs/$run/rewind" -H "Authorization: Bearer $token" \
        -H "Content-Type: application/json" -d "{\"checkpoint_id\": \"$checkpoint\"}")
   code=$(echo "$answer" | tail -n 1)

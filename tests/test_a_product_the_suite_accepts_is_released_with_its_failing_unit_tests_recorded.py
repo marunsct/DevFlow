@@ -55,8 +55,8 @@ def test_the_gap_names_the_tests_so_no_record_reads_as_a_plain_success():
     assert "and 2 more" in ship.gap([f"t{n}" for n in range(8)])
 
 
-def test_the_release_gate_uses_it(monkeypatch, tmp_path):
-    """The release gate, with a locked suite that passes and unit tests that fail after an accepted escalation, releases."""
+def _the_release_gate(monkeypatch, tmp_path, state):
+    """What the release gate decides, with a locked suite that passes and these unit tests failing."""
     from types import SimpleNamespace
 
     from app.graph import delivery
@@ -80,9 +80,66 @@ def test_the_release_gate_uses_it(monkeypatch, tmp_path):
         raise _Stop
 
     monkeypatch.setattr("app.decisions.record_decision", _record)
-    state = {"known_issues": ["the sprint was accepted with its unit tests open"], "release_attempts": 0}
     with pytest.raises(_Stop):
         delivery.release(state, {"configurable": {}}, SimpleNamespace(judgement_model=None))
+    return recorded
 
+
+def test_the_release_gate_uses_it(monkeypatch, tmp_path):
+    recorded = _the_release_gate(monkeypatch, tmp_path, {
+        "known_issues": ["the sprint was accepted with its unit tests open"],
+        "unit_failures_accepted_at_an_escalation": list(FAILS), "release_attempts": 0,
+    })
     assert recorded["decision"] == "release"
     assert "still fail and ship failing" in recorded["rationale"]
+
+
+@pytest.mark.parametrize("issue", [
+    "Design review finding settled by D-3: the export has no auth",
+    "Design review left open: the export has no auth",
+    "The sprint plan is the harness's own: no answer",
+])
+def test_an_issue_set_aside_about_something_else_accepts_no_failing_test(monkeypatch, tmp_path, issue):
+    recorded = _the_release_gate(monkeypatch, tmp_path, {"known_issues": [issue], "release_attempts": 0})
+    assert recorded["decision"] == "fix the failing criteria first"
+
+
+def test_a_test_that_began_to_fail_after_the_acceptance_was_not_accepted(monkeypatch, tmp_path):
+    recorded = _the_release_gate(monkeypatch, tmp_path, {
+        "known_issues": ["the sprint could not be finished"],
+        "unit_failures_accepted_at_an_escalation": FAILS[:1], "release_attempts": 0,
+    })
+    assert recorded["decision"] == "fix the failing criteria first"
+
+
+def test_those_it_held_back_as_often_as_it_may_still_ship(monkeypatch, tmp_path):
+    recorded = _the_release_gate(monkeypatch, tmp_path, {
+        "known_issues": ["Design review left open: x"], "release_attempts": 2,
+    })
+    assert recorded["decision"] == "release"
+
+
+def _escalated(monkeypatch, tmp_path, *, failing, open_tests):
+    from app.graph import engineering, escalation
+
+    monkeypatch.setattr(escalation.suite, "defer", lambda root, ids: None)
+    monkeypatch.setattr(escalation, "_root", lambda state: str(tmp_path))
+    monkeypatch.setattr(engineering, "accepted_state", lambda root: list(open_tests))
+    state = {"unit_failures_accepted_at_an_escalation": ["earlier"], "decisions": []}
+    return escalation._defer_and_continue(state, {}, failing, "the sprint could not be finished", decided_by="auto")
+
+
+def test_a_sprint_accepted_as_it_stands_accepts_the_tests_open_then(monkeypatch, tmp_path):
+    update = _escalated(monkeypatch, tmp_path, failing=[], open_tests=FAILS)
+    assert update["unit_failures_accepted_at_an_escalation"] == sorted(["earlier", *FAILS])
+
+
+def test_deferring_a_criterion_accepts_no_failing_test(monkeypatch, tmp_path):
+    update = _escalated(monkeypatch, tmp_path, failing=[{"id": "AC-1"}], open_tests=FAILS)
+    assert update["unit_failures_accepted_at_an_escalation"] == ["earlier"]
+
+
+def test_the_field_survives_the_graph_s_state():
+    from app.graph.workflow import WorkflowGraphState
+
+    assert "unit_failures_accepted_at_an_escalation" in WorkflowGraphState.__annotations__

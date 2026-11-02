@@ -644,6 +644,7 @@ class WorkflowGraphState(TypedDict, total=False):
     escalation: dict[str, Any] | None
     escalation_count: int
     known_issues: list[str]
+    unit_failures_accepted_at_an_escalation: list[str]
     # Plan QM.2, off until measured: the sprint attempts whose sources were
     # probed with deliberate changes ("<sprint index>:<re-plan count>"), and
     # the findings no unit test was made to notice, for the release's gaps.

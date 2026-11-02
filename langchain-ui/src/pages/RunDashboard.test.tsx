@@ -60,11 +60,14 @@ beforeEach(() => {
   vi.stubGlobal('WebSocket', FakeSocket);
   for (const fn of Object.values(known)) if (typeof fn === 'function' && 'mockClear' in fn) fn.mockClear();
 });
-afterEach(() => vi.unstubAllGlobals());
+const theRunAsItStarts = { ...run };
+afterEach(() => {
+  vi.unstubAllGlobals();
+  Object.assign(run, theRunAsItStarts);
+});
 
 describe('the run page', () => {
   it('says what may mean the product does not work apart from the notes', async () => {
-    const before = { ...run };
     Object.assign(run, { status: 'completed', current_stage: 'complete', completion_gaps: ['AC-2 ships deferred', 'Code the product does not run: x'], blocking_gaps: ['AC-2 ships deferred'] });
     render(
       <MemoryRouter initialEntries={['/runs/run-1']}>
@@ -76,12 +79,9 @@ describe('the run page', () => {
     expect(await screen.findByText('Completed with 1 gap that may mean it does not work')).toBeTruthy();
     expect(screen.getByText('1 note on what it did not prove')).toBeTruthy();
     expect(screen.queryByText(/gaps? it did not prove/)).toBeNull();
-    for (const key of Object.keys(run)) delete (run as Record<string, unknown>)[key];
-    Object.assign(run, before);
   });
 
   it('calls a run with only notes neither gapped nor proved everything', async () => {
-    const before = { ...run };
     Object.assign(run, { status: 'completed', current_stage: 'complete', completion_gaps: ['Code the product does not run: x'], blocking_gaps: [] });
     render(
       <MemoryRouter initialEntries={['/runs/run-1']}>
@@ -92,8 +92,6 @@ describe('the run page', () => {
     );
     expect(await screen.findByText('1 note on what it did not prove')).toBeTruthy();
     expect(screen.queryByText(/may mean it does not work/)).toBeNull();
-    for (const key of Object.keys(run)) delete (run as Record<string, unknown>)[key];
-    Object.assign(run, before);
   });
 
   it('pages the log history while the stream is down, and not once the stream carries it', async () => {

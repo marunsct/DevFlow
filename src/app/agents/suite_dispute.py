@@ -246,15 +246,30 @@ def _plainly(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
-def _the_standard_holds(quoted: str, standard: str) -> bool:
-    """Whether every sentence of a quote is in the standard, marks aside.
+#: The run of a quoted sentence's words the standard must hold in order, or all of them when it has fewer.
+WORDS_IN_A_ROW = 8
 
-    Measured on one run: a right ruling joined two sentences of the specification and left out its backticks, a match
-    of the whole string refused it, and fixers went after a product doing what the standard says. A sentence the
-    standard does not hold still refuses the quote: one run's "standard" was a sentence of the instructions.
+
+def _the_standard_holds(quoted: str, standard: str) -> bool:
+    """Whether every sentence of a quote has a long run of its words in the standard, marks aside.
+
+    Measured on one run: right rulings joined sentences of the specification, left out its backticks and put a
+    function's signature before a sentence of it, a match of the whole string refused each, and fixers went after a
+    product doing what the standard says. A sentence the standard does not hold still refuses the quote: one run's
+    "standard" was a sentence of the instructions.
     """
-    the_standard = _plainly(standard)
-    return all(sentence in the_standard for sentence in re.split(r"(?<=[.;])\s+", _plainly(quoted)) if sentence)
+    the_standard = f" {_plainly(standard)} "
+    for sentence in re.split(r"(?<=[.;])\s+", _plainly(quoted)):
+        words = sentence.split()
+        if not words:
+            continue
+        needed = min(WORDS_IN_A_ROW, len(words))
+        if not any(
+            f" {' '.join(words[at:at + needed])}".rstrip(".;") in the_standard
+            for at in range(len(words) - needed + 1)
+        ):
+            return False
+    return True
 
 
 def _tests_the_rulings_name(rulings: Sequence[Any], failing_names: Sequence[str], standard: str = "") -> list[str]:

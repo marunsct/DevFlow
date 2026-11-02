@@ -114,3 +114,18 @@ def test_a_quote_of_several_sentences_without_the_marks_still_counts():
 def test_a_quote_with_any_sentence_the_standard_does_not_hold_is_refused():
     made_up = "Otherwise returns the first characters of text. The result must never be shorter than ten characters."
     assert suite_dispute._tests_the_rulings_name([_ruling_quoting(made_up)], FAILING, standard=STANDARD) == []
+
+
+def test_a_true_sentence_with_a_signature_put_before_it_still_counts():
+    # Measured on the same run: the next ruling put the function's signature before the specification's own sentence.
+    quoted = (
+        "textkit.truncate(text, limit, suffix='...') returns the original text if its length is at most limit. "
+        "Otherwise returns the first (limit - len(suffix)) characters of text followed by suffix, producing exactly "
+        "limit characters total."
+    )
+    assert suite_dispute._tests_the_rulings_name([_ruling_quoting(quoted)], FAILING, standard=STANDARD)
+
+
+def test_a_sentence_sharing_only_a_few_words_with_the_standard_is_refused():
+    quoted = "Returns the first characters unless the caller asks for a shorter result of any length at all."
+    assert suite_dispute._tests_the_rulings_name([_ruling_quoting(quoted)], FAILING, standard=STANDARD) == []

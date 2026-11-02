@@ -1971,6 +1971,57 @@ def assertions_that_do_not_exist(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+def _page_checks(repo_root: str | Path) -> Any:
+    """The pack whose page checks apply: this run's, or for a run with none a browser pack when its suite is one.
+
+    Only a JavaScript browser suite takes a pack's patterns: they are written in that runner's calls.
+    """
+    found = contract.the_pack(repo_root)
+    if found is not None:
+        return found[0]
+    for path in suite_files(repo_root):
+        try:
+            if "@playwright/test" in path.read_text(encoding="utf-8", errors="replace"):
+                from app.stacks import pack_named
+
+                return pack_named("browser-javascript")
+        except OSError:
+            continue
+    return None
+
+
+#: How a brief says a record is shown, the role that means, and how a test finds it so.
+_KINDS_OF_RECORD = (
+    (re.compile(r"\b(?:items? of a list|list items?)\b", re.I), "an item of a list", "listitem",
+     re.compile(r"""\b(?:getByRole|get_by_role)\s*\(\s*['"`]listitem['"`]|\blocator\s*\(\s*['"`][^'"`]*\bli\b""")),
+    (re.compile(r"\b(?:rows? of a table|table rows?)\b", re.I), "a row of a table", "row",
+     re.compile(r"""\b(?:getByRole|get_by_role)\s*\(\s*['"`]row['"`]|\blocator\s*\(\s*['"`][^'"`]*\btr\b""")),
+)
+
+
+def records_never_found_as_the_brief_shows_them(repo_root: str | Path, brief_text: str) -> list[str]:
+    """Each kind of thing the brief shows records as - an item of a list, a row of a table - that no page test asks for.
+
+    Measured on one run: the brief said each record is an item of a list, the product drew plain containers, and the
+    suite, finding them by a class, passed while 5 of 8 hidden tests failed. Only a suite that drives a browser.
+    """
+    texts = []
+    for path in suite_files(repo_root):
+        try:
+            texts.append(path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    suite_text = "\n".join(texts)
+    if "playwright" not in suite_text.lower():
+        return []
+    return [
+        f"The brief shows records as {kind} and no test finds them so. A test that finds them another way, such as by a class, passes whatever the "
+        f"product draws. Find each record by its role, `{role}`, in a test that reads it."
+        for said, kind, role, asked in _KINDS_OF_RECORD
+        if said.search(brief_text or "") and not asked.search(suite_text)
+    ]
+
+
 def locators_nobody_sees(repo_root: str | Path) -> list[str]:
     """Where the suite finds a control by something no person sees, by the pack's patterns.
 
@@ -1986,10 +2037,10 @@ def locators_nobody_sees(repo_root: str | Path) -> list[str]:
     line 16 of a file and then for line 21 of the same file, and spent the
     rounds it had on a fault it could have fixed in one.
     """
-    found = contract.the_pack(repo_root)
-    if found is None or not found[0].locators_nobody_sees:
+    pack = _page_checks(repo_root)
+    if pack is None or not pack.locators_nobody_sees:
         return []
-    patterns = [re.compile(pattern) for pattern in found[0].locators_nobody_sees]
+    patterns = [re.compile(pattern) for pattern in pack.locators_nobody_sees]
     root = Path(repo_root)
     problems = []
     for path in suite_files(repo_root):
@@ -2263,8 +2314,8 @@ def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list
     """
     from app.analysis.interface_checks import controls_the_brief_names
 
-    found = contract.the_pack(repo_root)
-    if found is None or not found[0].finds_by_name:
+    pack = _page_checks(repo_root)
+    if pack is None or not pack.finds_by_name:
         return []
     names = controls_the_brief_names(brief_text)
     if not names:
@@ -2282,7 +2333,7 @@ def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list
         name for name in names
         if not any(
             re.search(template.replace("{name}", re.escape(name)), suite_text)
-            for template in found[0].finds_by_name
+            for template in pack.finds_by_name
         )
     ]
     if not missing:

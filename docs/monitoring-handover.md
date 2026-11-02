@@ -1376,3 +1376,5 @@ measurement in the findings log** - do not delete those.
 2026-11-02 12:18 JST run-304c1913 failed at the suite's 5th round: its second runner emptied the folder holding the first runner's report. LF.532 sharpens the finding; the run is rewound, not restarted.
 
 2026-11-02 12:43 JST run-304c1913 failed the same way after LF.532. LF.533: `run.json` takes `runs`; rewound again to its third suite round.
+
+2026-11-02 13:28 JST run-304c1913 scored 3/8 with its own suite 27/27: plain containers and a placeholder, found by CSS. LF.534 gives no-pack browser suites the page checks; rewound to its third suite round.

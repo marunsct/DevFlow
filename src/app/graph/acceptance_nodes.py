@@ -627,6 +627,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     problems.extend(
         suite.controls_never_found_by_name(root, getattr(state.get("document"), "text", "") or "")
     )
+    problems.extend(
+        suite.records_never_found_as_the_brief_shows_them(root, getattr(state.get("document"), "text", "") or "")
+    )
     # Plan item 16: at a first writing only; a repair is told to change nothing but the tests it was sent for.
     from app.acceptance import contract_coverage
 

@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from app import completion_verdict
+
 FINISHED = ("completed", "failed", "cancelled")
 #: Completed runs a forecast needs before it says anything. Two made a
 #: "typical" thorough run of 1.5 h out of one small benchmark and one small
@@ -79,6 +81,7 @@ def outcomes(records: Iterable[Any]) -> list[dict[str, Any]]:
             # dashboard shows a completed run's gaps beside its score, so a
             # 1/10 that reads "completed" can be seen for what it shipped.
             "completion_gaps": [str(gap) for gap in (getattr(record, "completion_gaps", None) or [])],
+            "blocking_gaps": completion_verdict.split(getattr(record, "completion_gaps", None))[0],
             "delivery_mode": getattr(record, "delivery_mode", "") or "",
             "use_frontier_model": not bool(getattr(record, "local_only", False)),
             "started_at": started.isoformat() if started else None,

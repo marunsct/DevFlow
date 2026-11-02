@@ -7,7 +7,7 @@ import { FeedbackProvider } from '../components/Feedback';
 import { listRuns } from '../api';
 
 const runs = [
-  { run_id: 'run-old-done', status: 'completed', current_stage: 'complete', created_at: '2026-10-17T01:00:00Z', updated_at: '2026-10-17T03:00:00Z', document_names: ['notes.md'], delivery_mode: 'fast', local_only: true, completion_gaps: 1, criteria_proven: 9, criteria_total: 10 },
+  { run_id: 'run-old-done', status: 'completed', current_stage: 'complete', created_at: '2026-10-17T01:00:00Z', updated_at: '2026-10-17T03:00:00Z', document_names: ['notes.md'], delivery_mode: 'fast', local_only: true, completion_gaps: 3, blocking_gaps: 1, criteria_proven: 9, criteria_total: 10 },
   { run_id: 'run-new-going', status: 'running', current_stage: 'defect_fix_2_3', created_at: '2026-10-18T01:00:00Z', document_names: ['tasks.md'], delivery_mode: 'fast', local_only: true, completion_gaps: 0, criteria_proven: 3, criteria_total: 13 },
   { run_id: 'run-waiting', status: 'waiting_for_approval', current_stage: 'approval_pause_scaffold', created_at: '2026-10-16T01:00:00Z', document_names: [], delivery_mode: 'thorough', local_only: false, completion_gaps: 0 },
 ];
@@ -64,6 +64,11 @@ describe('the runs table', () => {
     expect(screen.getByText('9 of 10')).toBeTruthy();
     expect(screen.getByText('3 of 13')).toBeTruthy();
     expect(screen.getAllByText('-').length).toBeGreaterThan(0);
+    // Notes are counted apart from the gaps that mean the product may not work.
+    const done = screen.getAllByRole('row').find((row) => row.textContent?.includes('9 of 10'))!;
+    expect(within(done).getByText('2 notes')).toBeTruthy();
+    expect(within(done).getByText('1')).toBeTruthy();
+    expect(within(done).queryByText('3')).toBeNull();
   });
 
   it('filters to the runs that need the owner, from the address', async () => {

@@ -1404,3 +1404,5 @@ measurement in the findings log** - do not delete those.
 2026-11-03 06:45 JST notes-api-hono clean 1 of 3: 9/9, 72 min, mutation 11/12, mixed_versions False. Read non-deliverable for the PUT probe's 415; LF.549 built and pushed, to deploy at the next count restart (it costs no score).
 
 2026-11-03 07:10 JST LF.550 built and pushed (specification-ruling quote check generalised from LF.543); deploy with LF.549 at the next count restart.
+
+2026-11-03 07:48 JST LF.549-551 deployed (fullstack-py's setup was in LF.551's refusal loop at 2.5 h); fullstack-py rewound to stack_setup, tasks-api paused/resumed (mixed). Clean count restarts; notes-api-hono's 9/9 on be1fc06 is evidence.

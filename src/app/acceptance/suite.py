@@ -1032,6 +1032,7 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
     result.phone_overflow = _read_phone_overflow(runtime_file)
     result.overlaps, result.small_targets = _read_layout_findings(runtime_file)
     result.accessibility = _read_accessibility(runtime_file)
+    _with_what_may_hide_it(result)
     _with_the_pages_they_failed_on(repo_root, project, result)
     _with_the_errors_the_service_logged(repo_root, project, result)
     # A measurement the run keeps, not a probe's run on a product broken on purpose.
@@ -1113,6 +1114,27 @@ def _with_the_pages_they_failed_on(repo_root: str | Path, project: str, result: 
             ))
         tests.append(test)
     result.report = replace(result.report, tests=tests)
+
+
+#: A browser's word that it found the element and it cannot be seen.
+_FOUND_BUT_HIDDEN = re.compile(r"Received:\s*hidden|unexpected value \"hidden\"")
+_WHAT_MAY_HIDE_IT = (
+    "\nThe element is on the page with its text, and the browser cannot see it. When its own style hides nothing, a "
+    "parent is the cause: an element with no width or height counts as hidden, and a parent in a flexible layout can "
+    "shrink to nothing. Measure the width of each parent in turn, from the element up, before changing its text or style."
+)
+
+
+def _with_what_may_hide_it(result: AcceptanceResult) -> None:
+    """Add to each failure of an element found and hidden where to look: measured, fixers read its own style for hours."""
+    report = result.report
+    if not any(test.outcome == "failed" and _FOUND_BUT_HIDDEN.search(test.message or "") for test in report.tests):
+        return
+    result.report = replace(report, tests=[
+        replace(test, message=f"{test.message}{_WHAT_MAY_HIDE_IT}")
+        if test.outcome == "failed" and _FOUND_BUT_HIDDEN.search(test.message or "") else test
+        for test in report.tests
+    ])
 
 
 #: Where a pack's acceptance setup writes what the service printed while the suite ran.

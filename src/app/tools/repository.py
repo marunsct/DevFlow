@@ -7428,6 +7428,33 @@ def clear_the_throwaways_left_behind(repo_root: str | Path) -> list[str]:
     return removed
 
 
+#: The name `agent_toolkit` saves code from a command line under; the hash makes it the harness's, not a stage's.
+_A_COMMAND_LINE_S_CODE = re.compile(r"tmp-inline-[0-9a-f]{8}\.\w+")
+
+
+def clear_the_code_of_command_lines(repo_root: str | Path) -> list[str]:
+    """Delete every file the harness saved a command line's code to, across the workspace. Returns them. Never raises.
+
+    For a run going out, when no command is left to run from one. `clear_the_throwaways_left_behind` weighs a stage's
+    scripts between rounds, so it looks only in the pinned project and only at what the project memory recorded. These
+    were written by the harness and do not need weighing: measured on the stored workspaces, more than a dozen sat at the
+    workspace's root, which that sweep never reads, and one released project folder held 7. The code stays in the
+    transcript, in the call that ran it; the run's records name the file and nothing reads it.
+    """
+    removed: list[str] = []
+    try:
+        root = _normalize_repo_root(repo_root)
+        from app.analysis.walk import files_under
+
+        for path in files_under(root, {*IGNORED_DIRECTORIES, ".agent-home", ".harness", "node_modules"}):
+            if _A_COMMAND_LINE_S_CODE.fullmatch(path.name):
+                path.unlink(missing_ok=True)
+                removed.append(path.relative_to(root).as_posix())
+    except Exception:  # noqa: BLE001 - tidying must never fail the stage after it
+        return removed
+    return removed
+
+
 def _tests_no_suite_runs(root: Path, project: Path, files: list[Path]) -> list[Path]:
     """Test-named files outside every directory the project's suites run, in a pack-built project.
 

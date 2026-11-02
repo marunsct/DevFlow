@@ -323,6 +323,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             )
         return _escalate_to_a_human(state, error=text, release_attempts=attempts)
 
+    # The run is going out: ahead of the checks below, so none of them counts one of these against the product.
+    from app.tools.repository import clear_the_code_of_command_lines
+
+    clear_the_code_of_command_lines(root)
     deferred = suite.deferred(root)
     # What this release knows it did not prove, so no record of the run can
     # read as a plain success: the gaps ride the run record

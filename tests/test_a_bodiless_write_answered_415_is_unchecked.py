@@ -25,3 +25,9 @@ def test_a_read_answered_415_is_not():
     test = SimpleNamespace(name="[AC-2] contract 1", message="Expected value: 415\nReceived array: [200]")
 
     assert not ic._a_bodiless_write_refused_first(_check("GET"), test)
+
+
+def test_a_coloured_received_status_is_still_read():
+    test = SimpleNamespace(name="[AC-4] contract 3", message="Received: \x1b[31m422\x1b[39m")
+
+    assert ic._a_bodiless_write_refused_first(_check(), test)

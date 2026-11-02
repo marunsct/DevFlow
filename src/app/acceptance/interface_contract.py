@@ -528,7 +528,7 @@ def _the_probe_s_report(project: Path, project_name: str, probe: dict[str, Any],
 #: What a failed status check reports it was given: `Received: 500`.
 #: The status a failed probe received: `Received: 415`, or with `toContain` `Expected value: 415` against the array
 #: of allowed statuses, which is how Playwright words the probe's own `expect([200, 404]).toContain(status)`.
-_RECEIVED = re.compile(r"(?:Received|Expected value):\s*(\d{3})\b")
+_RECEIVED = re.compile(r"(?:Received|Expected value):\s*(?:\x1b\[[0-9;]*m)*\s*(\d{3})\b")
 #: Which check a test of the probe is: `contract 4:` in its title.
 _CHECK_NUMBER = re.compile(r"\bcontract (\d+):")
 #: How a defect raised for a server error at the contract's checks begins; `still_raised` reads it back.

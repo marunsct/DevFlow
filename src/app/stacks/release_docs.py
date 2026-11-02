@@ -7,8 +7,10 @@ what it serves. With the switch on, the release is held back - like a failing
 criterion, at most until its attempts run out, then recorded as a gap - when:
 
 - the project has no README;
-- the README names no way to run it: none of the pack's own commands, no
-  `start.sh`, no entrypoint, and no command block when no pack covers it;
+- the README names no way to run it: none of the pack's own commands or, with
+  no pack, of the commands the project and its suite declare, no `start.sh`, no
+  entrypoint, and when no pack covers it no block with a command of its own (one
+  showing only a request or an answer says nothing of how to run the product);
 - for a product whose locked interface contract has HTTP routes, a route that
   no README or document of the project names, method and path on one line.
 
@@ -35,7 +37,10 @@ README_NAMES = ("README.md", "README.rst", "README.txt", "README")
 _THE_HARNESS_S_DOCS = ("decision_log", "product_intake", "reviews", "sprint", "release-evidence")
 _A_PARAMETER = re.compile(r"\{[^}/]*\}|:[A-Za-z_]\w*|<[^>/]*>")
 _A_TRAILING_SLASH = re.compile(r"(?<=[\w}])/(?=[\s`|),.;:]|$)")
-_A_COMMAND_BLOCK = re.compile(r"```|^(?: {4}|\t|\$ )\S", re.M)
+_A_FENCED_BLOCK = re.compile(r"^```[^\n]*\n(.*?)^```", re.M | re.S)
+_AN_INDENTED_LINE = re.compile(r"^(?: {4}|\t|\$ )(\S.*)$", re.M)
+#: A line of a block that shows a request or its answer, or says nothing: it runs no product.
+_NOT_A_WAY_TO_RUN = re.compile(r"(?:\$\s+)?(?:(?:curl|wget|https?|HTTP/)\b|(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s|[#{}\[\]\"'<]|//)")
 
 
 def enabled() -> bool:
@@ -51,17 +56,33 @@ def _the_readme(root: Path, project: str) -> Path | None:
 
 
 def _the_pinned_project(root: Path) -> str:
-    """The project directory the run pinned at intake, for a run no pack scaffolded; "" when none.
+    """The project directory the suite and the run's pin name, for a run no pack scaffolded; "" when none.
 
     Without it a README in the project directory was looked for at the
     workspace root only, and the release was held back for one it had.
     """
     try:
-        from app.tools.repository import pinned_project_directory
+        from app.acceptance import suite
 
-        return str(pinned_project_directory(root) or "")
+        where = suite.location(root)
+        return where[0] if where else ""
     except Exception:  # noqa: BLE001
         return ""
+
+
+def _what_a_project_with_no_pack_declares(root: Path) -> tuple[list[str], list[str], list[str]]:
+    """(install, start, test) commands the harness itself knows of a project no pack covers. Only reads.
+
+    The start command is the one the harness starts the product with, the test
+    command the one the suite declares and the release has just run.
+    """
+    from app.acceptance import start_output, suite
+    from app.stacks import contract
+
+    install = [shlex.join(str(a) for a in argv) for argv in (contract.read(root) or {}).get("install") or []]
+    started = start_output.command_for(root)
+    declared = suite._command(root)  # noqa: SLF001 - the suite's own reading of its declaration
+    return install, [shlex.join(started[0])] if started else [], [shlex.join(declared[0])] if declared else []
 
 
 def _ways_to_run(root: Path, project: str, pack: object | None) -> list[str]:
@@ -72,6 +93,14 @@ def _ways_to_run(root: Path, project: str, pack: object | None) -> list[str]:
         ways += [Path(e).name for e in (getattr(pack, "entrypoints", ()) or ()) if e]
         if getattr(pack, "entrypoint", ""):
             ways.append(Path(pack.entrypoint).name)
+    else:
+        from app.acceptance.interface_contract import the_locked_contract
+
+        install, start, test = _what_a_project_with_no_pack_declares(root)
+        ways += start
+        # A service nobody can say how to start is not told how to run by the command of its tests.
+        if start or not any(c.kind == "http" for c in the_locked_contract(root)):
+            ways += [*install, *test]
     return [w for w in dict.fromkeys(ways) if w.strip()]
 
 
@@ -89,6 +118,15 @@ def _the_product_s_documents(root: Path, project: str) -> str:
                 except OSError:
                     continue
     return "\n".join(texts)
+
+
+def _a_block_runs_something(text: str, root: Path) -> bool:
+    """Whether a block of the README holds a line that could start the product: not a request, an answer, or the install and test commands the harness wrote."""
+    install, _, test = _what_a_project_with_no_pack_declares(root)
+    lines = [line for block in _A_FENCED_BLOCK.findall(text) for line in block.splitlines()]
+    lines += _AN_INDENTED_LINE.findall(_A_FENCED_BLOCK.sub("", text))
+    return any(line.strip() and not _NOT_A_WAY_TO_RUN.match(line.strip()) and line.strip() not in {*install, *test}
+               for line in lines)
 
 
 def _shape(path: str) -> str:
@@ -128,9 +166,11 @@ def what_the_handoff_lacks(repo_root: str | Path) -> list[str]:
         lacks = []
         text = readme.read_text(encoding="utf-8", errors="replace")
         ways = _ways_to_run(root, project, pack)
-        if not any(way in text for way in ways) and not (pack is None and _A_COMMAND_BLOCK.search(text)):
+        if not any(way in text for way in ways) and not (pack is None and _a_block_runs_something(text, root)):
+            # With no pack `start.sh` is only what a README may name: not offered as the product's when it has none.
+            shown = [w for w in ways if pack is not None or w != "start.sh" or (root / project / w).is_file()]
             lacks.append(f"`{readme.relative_to(root).as_posix()}` says nowhere how to run the product: name the "
-                         "commands that install, start and test it" + (f" (here: {', '.join(ways[:4])})" if ways else "") + ".")
+                         "commands that install, start and test it" + (f" (here: {', '.join(shown[:4])})" if shown else "") + ".")
         routes = list(dict.fromkeys((c.method, c.path) for c in the_locked_contract(root) if c.kind == "http"))
         missing = _routes_not_named(_the_product_s_documents(root, project), routes)
         if missing:
@@ -160,7 +200,10 @@ def complete_the_handoff(repo_root: str | Path) -> list[str]:
     test: the product had no README, so with this check on every release
     would have gone back to the lead for one. Written from those facts, it
     costs no model call; what it cannot know is still asked for. Off with
-    the switch; never raises.
+    the switch; never raises. With no pack the facts are the project's own
+    start command and the suite's declared one, measured on a run that spent two
+    rounds of the sprint on a one-line README; with none of them known, no README
+    is begun and the lack stays. Only ever appends.
     """
     if not enabled():
         return []
@@ -171,9 +214,11 @@ def complete_the_handoff(repo_root: str | Path) -> list[str]:
         root = Path(repo_root)
         found = contract.the_pack(root)
         pack, record = found if found else (None, contract.read(root) or {})
-        if pack is None:
-            return []
         project = str((record or {}).get("project") or "") or _the_pinned_project(root)
+        if pack is None:
+            install, start, test = _what_a_project_with_no_pack_declares(root)
+            if not (install or start or test) and _the_readme(root, project) is None:
+                return []
         readme = _the_readme(root, project) or (root / project / "README.md" if project else root / "README.md")
         text = readme.read_text(encoding="utf-8", errors="replace") if readme.is_file() else (
             f"# {(record or {}).get('title') or project or root.name}\n")
@@ -181,10 +226,14 @@ def complete_the_handoff(repo_root: str | Path) -> list[str]:
         ways = _ways_to_run(root, project, pack)
         if not any(way in text for way in ways):
             base = root / project if project else root
-            commands = [shlex.join(argv) for argv in getattr(pack, "install", ()) or ()]
-            commands += ["sh start.sh"] if (base / "start.sh").is_file() else _the_pack_s_start(pack)
-            commands += [shlex.join(getattr(pack, name, ()) or ()) for name in ("unit_test", "acceptance_test")]
-            commands = [c for c in dict.fromkeys(commands) if c.strip()]
+            if pack is None:
+                commands = [*install, *start, *test]
+            else:
+                commands = [shlex.join(argv) for argv in getattr(pack, "install", ()) or ()]
+                commands += ["sh start.sh"] if (base / "start.sh").is_file() else _the_pack_s_start(pack)
+                commands += [shlex.join(getattr(pack, name, ()) or ()) for name in ("unit_test", "acceptance_test")]
+            # A command the README already has is not added again, on a later attempt included.
+            commands = [c for c in dict.fromkeys(commands) if c.strip() and c not in text]
             if commands:
                 # A README at the workspace root runs the project's commands from the project.
                 where = (f"From `{project}/`:" if project and readme.parent != root / project else "From this directory:")

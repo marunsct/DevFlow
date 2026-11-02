@@ -197,6 +197,13 @@ def _unit_tests_failing(root: str) -> list[str]:
         return []
 
 
+#: What a release that is held back records. The handoff's own, for when no criterion fails: a README or a
+#: credential is what stands in the way, and the record said a criterion was failing.
+_FIX_THE_CRITERIA = "fix the failing criteria first"
+_FIX_THE_HANDOFF = "fix the handoff first"
+_RELEASE_OPTIONS = ["release", _FIX_THE_CRITERIA, _FIX_THE_HANDOFF]
+
+
 def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     """Every criterion that is not deferred must pass before the run completes."""
     from app.decisions import record_decision
@@ -277,6 +284,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     if not failing:
         release_docs.complete_the_handoff(root)
     undocumented = [] if failing else [*release_docs.what_the_handoff_lacks(root), *release_audits.secrets_found(root)]
+    held_for_the_handoff = bool(undocumented) and int(state.get("release_attempts") or 0) < MAX_RELEASE_ATTEMPTS
     if undocumented and int(state.get("release_attempts") or 0) < MAX_RELEASE_ATTEMPTS:
         failing = undocumented
         summary = "The handoff is not ready for someone who did not write the product: " + " ".join(undocumented)
@@ -301,12 +309,13 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             "The product is not ready to release. " + summary
         )
         if attempts <= MAX_RELEASE_ATTEMPTS:
-            logger.warning("Release held back: acceptance criteria failing; the last sprint goes again")
+            logger.warning("Release held back: %s; the last sprint goes again",
+                           "the handoff is not ready" if held_for_the_handoff else "acceptance criteria failing")
             record_decision(
                 state, update, point="release",
                 question="Is the product ready to release?",
-                options=["release", "fix the failing criteria first"],
-                decision="fix the failing criteria first",
+                options=_RELEASE_OPTIONS,
+                decision=_FIX_THE_HANDOFF if held_for_the_handoff else _FIX_THE_CRITERIA,
                 rationale=summary,
             )
             return _handing_on(
@@ -415,7 +424,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     record_decision(
         state, update, point="release",
         question="Is the product ready to release?",
-        options=["release", "fix the failing criteria first"],
+        options=_RELEASE_OPTIONS,
         decision="release",
         rationale=(
             "Every acceptance criterion passes"

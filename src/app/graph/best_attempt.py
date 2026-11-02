@@ -206,6 +206,11 @@ def files_the_best_attempt_already_has(root: str | Path, paths: list[str], *, re
         for path in paths:
             if not (root / path).is_file():
                 continue
+            # What the scaffold wrote is no attempt's work. Measured on one run: the page stayed the scaffold's empty
+            # one, a re-plan's work order to build it was recorded as done, and the page's tests failed for an hour.
+            last = ci._git(root, "log", "-1", "--format=%s", "--", path)
+            if last is not None and str(last.stdout or "").startswith("Scaffold:"):
+                continue
             if as_good_now:
                 kept.add(path)
                 continue

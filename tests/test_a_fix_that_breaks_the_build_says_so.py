@@ -32,3 +32,21 @@ def test_the_cause_comes_first_in_what_the_fix_broke(tmp_path, monkeypatch):
 
 def test_a_snapshot_from_before_the_field_still_loads():
     assert ci.Snapshot(label="old").problem == ""
+
+
+def test_a_product_that_did_not_start_before_the_fix_is_not_said_to_have_stopped(tmp_path, monkeypatch):
+    # Measured on one run: the product was not starting before either of two fixes, and each was reported as "no longer
+    # builds or starts", which sent the next fixer after a cause the fix had not made.
+    problem = "The product did not start for the acceptance suite: timed out"
+    before = _snap("before", {"unit test": "passed"}, problem=problem)
+    after = _snap("after", {}, problem=problem)
+    monkeypatch.setattr(engineering, "ci_applies", lambda root: True)
+    monkeypatch.setattr(ci, "load", lambda root, which="latest": before)
+    monkeypatch.setattr(ci, "take", lambda root, label, **k: after)
+    monkeypatch.setattr(ci, "revert_to", lambda root, base: True)
+
+    broke = engineering.after_a_fix(str(tmp_path), "abc123", "defect_fix_1_0", "a fix")
+
+    assert not broke[0].startswith("the product no longer builds or starts")
+    assert broke[0].startswith("the product did not start before this fix either")
+

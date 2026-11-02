@@ -833,7 +833,11 @@ def after_a_fix(
         # Measured live: one rewrite of the served page broke its build twice,
         # reverted each time as "broke 3 test(s)", the same rewrite again next round.
         cause = " ".join(after.problem.split())[:400]
-        broken = [f"the product no longer builds or starts after it ({cause})", *broken]
+        # Only a product that started before the fix stopped because of it: measured, two fixes were blamed for a start
+        # that had already failed, and the next fixer went after a cause they had not made.
+        said = ("the product did not start before this fix either" if before is not None and before.problem
+                else "the product no longer builds or starts after it")
+        broken = [f"{said} ({cause})", *broken]
     if broken:
         kept = _its_tests_without_its_product_change(root, base, before, broken, stage_name)
         if kept is not None:

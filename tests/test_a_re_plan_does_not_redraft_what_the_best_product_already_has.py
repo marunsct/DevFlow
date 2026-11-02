@@ -104,3 +104,20 @@ def test_from_the_second_re_plan_a_weak_best_keeps_its_files_too(product):
 
     assert best_attempt.files_the_best_attempt_already_has(product, ["src/app.ts"], replans=1) == set()
     assert best_attempt.files_the_best_attempt_already_has(product, ["src/app.ts", "src/new.ts"], replans=2) == {"src/app.ts"}
+
+
+def test_a_file_still_as_the_scaffold_wrote_it_is_not_the_best_attempt_s_work(product):
+    # Measured on one run: the page stayed the scaffold's empty one, a re-plan's work order to build it was recorded
+    # as done with nothing written, and every test of the page failed for another hour.
+    (product / suite.RESULT_FILE).write_text(json.dumps({"ran": True, "passed": 15, "failed": 4}))
+    (product / "page.html").write_text("<main></main>\n")
+    _git(product, "add", "-A")
+    _git(product, "commit", "-qm", "Scaffold: a browser app")
+    kept = best_attempt.files_the_best_attempt_already_has(product, ["page.html", "src/app.ts"], replans=1)
+
+    assert "page.html" not in kept and "src/app.ts" in kept
+
+    (product / "page.html").write_text("<main><form></form></main>\n")
+    _git(product, "add", "-A")
+    _git(product, "commit", "-qm", "Work orders: the page")
+    assert "page.html" in best_attempt.files_the_best_attempt_already_has(product, ["page.html"], replans=1)

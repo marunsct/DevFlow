@@ -2569,7 +2569,9 @@ def _a_fix_recorded_from_its_writes(stage_name: str, result: Mapping[str, Any]) 
     breaks a passing test is reverted, one whose own tests still fail stays
     open (Initiative AO).
     """
-    if not str(stage_name or "").startswith("defect_fix_"):
+    # A build stage too: measured on one run, a builder wrote the product, ran out of calls twice and was started over
+    # each time, about 30 minutes; the test round after it measures what was written, as for a fix.
+    if not str(stage_name or "").startswith(("defect_fix_", "specialist_")):
         return None
     written = _files_the_conversation_wrote(result)
     if not written:

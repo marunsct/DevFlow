@@ -1055,6 +1055,10 @@ def _the_product_s_own_start(repo_root: str | Path, result: AcceptanceResult) ->
     report = result.report
     if result.problem or not report.tests or report.failed or not is_locked(repo_root):
         return
+    unusable = start_output.how_it_is_used_fails(repo_root)
+    if unusable:
+        result.problem = f"{PRODUCT_DID_NOT_START}: {unusable}"
+        return
     wrote = start_output.what_it_wrote(repo_root)
     stopped = re.search(r"it stopped by itself with exit code (\d+)", wrote)
     if stopped and int(stopped.group(1)) != 0:

@@ -152,6 +152,36 @@ def what_it_wrote(repo_root: str | Path) -> str:
             shutil.rmtree(data, ignore_errors=True)
 
 
+def how_it_is_used_fails(repo_root: str | Path) -> str:
+    """What the pack's way of using a product with nothing to start said, when it failed; "" otherwise. Never raises."""
+    try:
+        from app.acceptance import suite
+        from app.stacks import contract
+
+        found = contract.the_pack(repo_root)
+        where = suite.location(repo_root)
+        if found is None or where is None or not found[0].how_it_is_used:
+            return ""
+        package = str(found[1].get("package") or "")
+        argv = [part.replace("{{package}}", package) for part in found[0].how_it_is_used]
+        outcome = _execute(repo_root, argv, where[0], {}) or {}
+        try:
+            code = int(str(outcome.get("returncode")).strip())
+        except ValueError:
+            return ""  # refused, or never run: it says nothing of the product
+        if code in (0, _TIMED_OUT):
+            return ""
+        wrote = "\n".join(str(outcome.get(k) or "").strip() for k in ("stdout", "stderr") if str(outcome.get(k) or "").strip())
+        return (
+            f"`import {package}` from the project folder, as its user would, finds no code there (exit code {code}), "
+            f"though the suite's way of reaching it passed. The package's files belong in `{package}/` inside the "
+            f"project, not at the project's top. {wrote[-MOST_OUTPUT:]}"
+        ).strip()
+    except Exception:  # noqa: BLE001 - the run stands without it
+        logger.debug("Could not use the product as its user would", exc_info=True)
+        return ""
+
+
 def in_text(text: str) -> str:
     """The paragraph `what_it_wrote` made, from a `server_log` or a defect's text; "" when it is not there."""
     said = str(text or "")
@@ -198,4 +228,4 @@ def add_to(repo_root: str | Path, result: Any) -> None:
         logger.debug("Could not add what the start wrote", exc_info=True)
 
 
-__all__ = ["START_MARK", "STILL_RUNNING", "add_to", "command_for", "in_text", "the_suite_could_not_reach_it", "what_it_wrote"]
+__all__ = ["START_MARK", "STILL_RUNNING", "add_to", "command_for", "how_it_is_used_fails", "in_text", "the_suite_could_not_reach_it", "what_it_wrote"]

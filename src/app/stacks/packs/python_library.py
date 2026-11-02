@@ -53,6 +53,9 @@ PACK = StackPack(
     title="Library in Python",
     kind="library",
     language="python",
+    # A folder with no code in it imports as an empty namespace, so finding the module is not enough.
+    how_it_is_used=("python", "-c", "import importlib, sys; "
+                    "sys.exit(0 if getattr(importlib.import_module('{{package}}'), '__file__', None) else 3)"),
     frameworks=(),
     files={
         "pyproject.toml": PYPROJECT,

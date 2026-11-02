@@ -1390,3 +1390,5 @@ measurement in the findings log** - do not delete those.
 2026-11-02 21:34 JST run-4e57c399 web-todo-react hidden 10/10 with its task list measured collapsed to 34 px: hidden suites using toContainText cannot see an invisible element; owner decides whether to tighten them. LF.542 built, not deployed.
 
 2026-11-02 22:14 JST textkit-lib: dispute ruled two tests wrong, the quote check refused the rulings. LF.543 and LF.542 deployed together; no clean RC run had finished.
+
+2026-11-02 22:37 JST run-da433831 textkit-lib 0/8, own suite 22/23; run-9bc85e07 fullstack-bookmarks 8/8, 22/23. LF.544 checks a library the way its user imports it. Clean RC count starts on that deploy.

@@ -173,6 +173,9 @@ class StackPack:
     #: Patterns, with `{name}` for a regex-escaped name, of a test finding a
     #: control by that name. Every control the brief names must be found so.
     finds_by_name: tuple[str, ...] = ()
+    #: How a user reaches the product when it has nothing to start, run from the project with `{{package}}` filled in:
+    #: it exits 0 when what they asked for is there. A suite's runner can reach what they cannot.
+    how_it_is_used: tuple[str, ...] = ()
     #: A suite file's text -> (line, locator, text) where a test finds something
     #: by a text and asserts that it does not show that text.
     contradicting_locators: Callable[[str], Sequence[tuple[int, str, str]]] | None = None

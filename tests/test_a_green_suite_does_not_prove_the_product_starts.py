@@ -80,3 +80,44 @@ def test_every_runner_s_report_is_not_part_of_the_suite(tmp_path):
     (project / "acceptance" / "e2e" / "stray.xml").write_text(GREEN)
 
     assert [p.name for p in suite.suite_files(tmp_path)] == ["a.spec.js", "run.json"]
+
+
+def _a_library(root: Path) -> Path:
+    project = _a_locked_suite(root)
+    (project / "start.sh").unlink()
+    (root / ".harness").mkdir(exist_ok=True)
+    (root / ".harness" / "stack-pack.json").write_text(json.dumps({"pack": "python-library", "project": "app", "package": "app"}))
+    return project
+
+
+def _green_result():
+    from app.acceptance import junit
+
+    return suite.AcceptanceResult(ran=True, report=junit.parse(GREEN))
+
+
+def _judged(root, outcome):
+    result = _green_result()
+    with mock.patch.object(start_output, "_execute", return_value=outcome) as ran, \
+            mock.patch.object(suite, "is_locked", return_value=True):
+        suite._the_product_s_own_start(root, result)
+    return result, ran
+
+
+def test_a_library_its_user_cannot_import_is_a_product_that_does_not_work(tmp_path):
+    # Measured on one run: the code moved to the project's top, the package folder was left empty, the test runner's
+    # path made the suite pass 22 of 23, and all 8 hidden tests found nothing in the import.
+    _a_library(tmp_path)
+
+    result, ran = _judged(tmp_path, {"returncode": "3", "stderr": ""})
+
+    assert result.problem.startswith(suite.PRODUCT_DID_NOT_START) and "import" in result.problem
+    assert ran.call_args.args[1][:2] == ["python", "-c"] and "'app'" in ran.call_args.args[1][2]
+    assert not BANNED.search(result.problem)
+
+
+def test_a_library_that_imports_is_left_alone_and_one_that_cannot_be_asked_says_nothing(tmp_path):
+    _a_library(tmp_path)
+
+    for outcome in ({"returncode": "0"}, {"error": "refused"}):
+        assert _judged(tmp_path, outcome)[0].problem == ""

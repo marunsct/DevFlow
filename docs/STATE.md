@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | Clean RC on 17daf7f (LF.547) from 00:25 JST 11-03: no counted run yet; notes-api run-4f5041bf 9/9 (mixed); fullstack-bookmarks-py run-8ac1d382 resumed 05:05 after its worker stopped at 01:20; deep review doc in progress |
+| Run | Clean RC on 17daf7f (LF.547) from 00:25 JST 11-03: no counted run yet; live RC clean fullstack-bookmarks-py 1b run-b7ab7422 (05:10); run-8ac1d382 failed: its worker stopped at 01:20 and resume crashes (deepagents resolve_model given a model object it does not recognise); deep review doc delivered |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

@@ -240,6 +240,23 @@ def judged_by_the_code(why: str) -> bool:
     return any(_THE_PRODUCT_DOES.search(clause) or _A_PRODUCT_PREDICATE.search(clause) for clause in clauses)
 
 
+def _plainly(text: str) -> str:
+    """Text as a reader sees it, for comparing a quote: no markdown marks, one kind of quote mark, single spaces."""
+    text = re.sub(r"[`*]", "", str(text or "")).replace('"', "'").replace("\u2014", " ").replace("\u2013", " ")
+    return " ".join(text.split()).casefold()
+
+
+def _the_standard_holds(quoted: str, standard: str) -> bool:
+    """Whether every sentence of a quote is in the standard, marks aside.
+
+    Measured on one run: a right ruling joined two sentences of the specification and left out its backticks, a match
+    of the whole string refused it, and fixers went after a product doing what the standard says. A sentence the
+    standard does not hold still refuses the quote: one run's "standard" was a sentence of the instructions.
+    """
+    the_standard = _plainly(standard)
+    return all(sentence in the_standard for sentence in re.split(r"(?<=[.;])\s+", _plainly(quoted)) if sentence)
+
+
 def _tests_the_rulings_name(rulings: Sequence[Any], failing_names: Sequence[str], standard: str = "") -> list[str]:
     """The repair feedback for each failing test a ruling calls wrong, with what it asserts and the standard quoted.
 
@@ -247,7 +264,6 @@ def _tests_the_rulings_name(rulings: Sequence[Any], failing_names: Sequence[str]
     the product (LF.405) and needed four patches. A ruling with no quoted standard reopens nothing.
     """
     named = []
-    the_standard = " ".join(standard.split()).casefold()
     for ruling in rulings:
         test = " ".join(str(getattr(ruling, "test", "") or "").split())
         quoted = " ".join(str(getattr(ruling, "the_standard_says", "") or "").split())
@@ -255,7 +271,7 @@ def _tests_the_rulings_name(rulings: Sequence[Any], failing_names: Sequence[str]
         if not getattr(ruling, "the_test_is_wrong", False) or len(quoted.split()) < 3 or not asserts:
             continue
         # Measured on one run: the "standard" quoted was a sentence of the instructions this very call was given.
-        if the_standard and quoted.casefold() not in the_standard:
+        if standard.strip() and not _the_standard_holds(quoted, standard):
             logger.warning("A ruling on `%s` quotes what the standard does not say; the test stays locked: %s", test, quoted[:200])
             continue
         name = next((n for n in failing_names if n == test or _TAGS.sub("", n).strip() == _TAGS.sub("", test).strip()), None)

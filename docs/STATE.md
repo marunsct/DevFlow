@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | RC on 7e98d7b from 20:10 JST 11-02, no clean count yet: mixed-version web-todo-react 10/10 (labelled non-deliverable); live RC 1 fullstack-bookmarks (mixed), RC clean 1 textkit-lib |
+| Run | RC on LF.542-543 from about 22:20 JST 11-02, no clean count yet; live textkit-lib and fullstack-bookmarks are mixed-version; web-todo-react 10/10 with a list collapsed on screen, owner to decide on visibility in hidden tests |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

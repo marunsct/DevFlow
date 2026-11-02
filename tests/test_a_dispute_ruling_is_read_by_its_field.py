@@ -86,3 +86,31 @@ def test_the_node_gives_the_standard_to_the_reading_of_the_dispute():
     node = inspect.getsource(workflow)
     node = node[node.index("def acceptance_dispute_node"):]
     assert "tests_it_names(update.pop(\"__suite_dispute__\"), [name for name, _, _ in failing], standard=" in node
+
+
+STANDARD = (
+    "`textkit.truncate(text, limit, suffix='...')` takes a string `text`, an integer `limit`, and an optional string "
+    "`suffix` (default '...'). Returns the original text if its length is at most limit. Otherwise returns the first "
+    "(limit - len(suffix)) characters of text followed by suffix, producing exactly limit characters total."
+)
+
+
+def _ruling_quoting(quoted):
+    return DisputeRuling(test=FAILING[0], the_test_is_wrong=True, the_test_asserts="it asks for six characters",
+                         the_standard_says=quoted)
+
+
+def test_a_quote_of_several_sentences_without_the_marks_still_counts():
+    # Measured on one run: a right ruling joined two sentences of the specification and left out its backticks, the
+    # whole-string match refused it, and fixers went after a product doing what the standard says.
+    quoted = (
+        "textkit.truncate(text, limit, suffix='...') takes a string text, an integer limit, and an optional string "
+        "suffix (default '...'). Otherwise returns the first (limit - len(suffix)) characters of text followed by "
+        "suffix, producing exactly limit characters total."
+    )
+    assert suite_dispute._tests_the_rulings_name([_ruling_quoting(quoted)], FAILING, standard=STANDARD)
+
+
+def test_a_quote_with_any_sentence_the_standard_does_not_hold_is_refused():
+    made_up = "Otherwise returns the first characters of text. The result must never be shorter than ten characters."
+    assert suite_dispute._tests_the_rulings_name([_ruling_quoting(made_up)], FAILING, standard=STANDARD) == []

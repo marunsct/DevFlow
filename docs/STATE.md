@@ -8,7 +8,7 @@ week are in `docs/archive/`.
 ## Live now
 | | |
 |---|---|
-| Run | LF.556 deployed 11:58 JST 11-03 (a pytest suite counting a shared list was not caught; notes-api 2a lost 30+ min to it): clean count restarted an 8th time; live, both mixed: web-todo 1b (:1234), notes-api 2a run-9747df55 (:8888). Anthropic needs the owner to enter a workspace id or a workspace-scoped key |
+| Run | LF.556 deployed 11:59 JST 11-03; clean count 0 on 8dfe9e3. notes-api 2a run-9747df55 (mixed) completed 12:30 JST, hidden 9/9, mutation 0.625. Live: web-todo 1b run-37d4fe76 (:1234, mixed), fullstack-bookmarks-py recheck 2a run-c54c3d41 (:8888, started 12:48 JST, counts). Anthropic needs the owner to enter a workspace id or a workspace-scoped key |
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |

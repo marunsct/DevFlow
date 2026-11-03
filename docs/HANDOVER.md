@@ -1041,3 +1041,5 @@ not a fix.
 **Keys (LF.553, 2026-11-03):** a key saved in Settings reaches only the endpoint it was saved for; an endpoint with no saved key gets none, unless the deployment environment supplies one. Anthropic: a key not scoped to a workspace needs the workspace id field in Settings → Models.
 
 **Gate for a pinned run (2026-11-03):** pass the pin to the gate: `loop.sh ready pin_url=<url> pin_model=<name>`; a bare `ready` checks the default model, and a busy one blocked a run pinned to the other server for an hour.
+
+**Workspace retention (2026-11-03):** the run workspaces live on the Docker VM disk (`/app/data/workspaces/default`, 503 GB). A finished run's workspace is deleted once it is two days old - never a live, paused or owner's run; scores (`data/bench`), transcripts and run records are kept. 98 removed on 11-03 (about 14 GB).

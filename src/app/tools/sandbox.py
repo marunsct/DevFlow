@@ -1849,6 +1849,12 @@ ASSIGNMENT_ADVICE = (
 #: commands can simply be run.
 _INSTEAD_OF: dict[str, str] = {
     "rm": "To remove a file, use the `delete_artifact` tool, which records what it removed.",
+    # Measured on one run: a setup declared `.venv/bin/pip install`, which the testing role cannot run, while the
+    # refusal named `pip install <tool>` as the way to install; the stage spent its budget on it.
+    "pip": "This role runs pip through Python: `python -m pip install ...`, or the project environment's own "
+           "`.venv/bin/python -m pip install ...`.",
+    "pip3": "This role runs pip through Python: `python3 -m pip install ...`, or the project environment's own "
+            "`.venv/bin/python -m pip install ...`.",
     "rmdir": "To remove a file, use the `delete_artifact` tool, which records what it removed.",
     "mv": "To move or rename a file, use the `move_artifact` tool.",
     "cp": "To copy a file, read it with `read_file` and write the copy with `write_artifact`.",

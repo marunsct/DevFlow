@@ -487,6 +487,13 @@ def snapshot_for(base: Mapping[str, str], base_url: str | None = None, model: st
                 and snapshot.get("JUDGEMENT_PROVIDER", "") in ("", snapshot.get("LLM_PROVIDER", ""))):
             snapshot["JUDGEMENT_BASE_URL"] = snapshot.get("OPENAI_BASE_URL", "")
         snapshot["OPENAI_BASE_URL"] = base_url
+        # A run pinned to a server of the person's own is served by it, whatever hosted provider the settings name:
+        # the provider stayed, and a run pinned to a local server while the settings named a hosted API was about to
+        # send every call to the hosted API, under its key, asking for the local model's name.
+        from app.models.endpoints import is_self_hosted
+
+        if snapshot.get("LLM_PROVIDER", "") in _NOT_REROUTED and is_self_hosted(base_url):
+            snapshot["LLM_PROVIDER"] = "local"
     if model:
         snapshot["OPENAI_MODEL"] = model
     return snapshot

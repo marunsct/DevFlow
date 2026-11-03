@@ -1427,6 +1427,76 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
     return broken
 
 
+#: A test's own setup calling something with arguments it does not take, in each runtime's words.
+_A_CALL_IT_DOES_NOT_TAKE = re.compile(
+    r"(?P<callee>[A-Za-z_$][\w$.]*)\(\) (?:got an unexpected keyword argument|takes \d+ positional|"
+    r"missing \d+ required positional)|(?P<js>[A-Za-z_$][\w$.]*) is not a (?:function|constructor)")
+#: How many tests sharing one setup failure make it the setup's, not one test's.
+SHARED_SETUP_FAILURES = 2
+
+
+def tests_broken_by_their_own_setup(repo_root: str | Path, result: AcceptanceResult | None) -> list[str]:
+    """Tests that fail in a setup they share, calling something the product does not define with arguments it rejects.
+
+    Measured on one run: 18 tests failed at setup with `Client.__init__() got an unexpected keyword argument 'app'` -
+    a test library's call the installed version no longer takes. No product change could reach them, and six fix
+    stages went at the product for about 45 minutes before a dispute sent the suite back. A call to something the
+    product defines (its own app factory) is the product's to answer for, and is left alone.
+    """
+    if result is None or not result.ran:
+        return []
+    from app.acceptance import start_output
+
+    groups: dict[str, list[str]] = {}
+    for test in result.report.tests:
+        message = str(test.message or "")
+        if test.outcome != "failed" or not start_output._AT_SETUP.search(message):
+            continue
+        found = _A_CALL_IT_DOES_NOT_TAKE.search(message)
+        if found:
+            groups.setdefault(found.group(0), []).append(str(test.name))
+    if not groups:
+        return []
+    sources = _the_product_s_own_sources(repo_root)
+    problems = []
+    for said, names in groups.items():
+        if len(names) < SHARED_SETUP_FAILURES:
+            continue
+        found = _A_CALL_IT_DOES_NOT_TAKE.search(said)
+        callee = (found.group("callee") or found.group("js") or "").split(".")
+        name = next((part for part in callee if part and part not in ("__init__", "prototype")), "")
+        if not name or re.search(rf"(?:\bclass|\bdef|\bfunction|\bconst|\blet|\bvar)\s+{re.escape(name)}\b", sources):
+            continue
+        problems.append(
+            f"{len(names)} tests fail in the setup they share, before any of them reaches the product: `{said}`. "
+            f"`{name}` is not part of the product - it is a library the suite calls - so no change to the product "
+            f"can make these pass. Fix the shared setup so it calls `{name}` the way the installed version takes: "
+            + ", ".join(f"`{n}`" for n in names[:4]) + (" and more" if len(names) > 4 else "") + "."
+        )
+    return problems[:3]
+
+
+def _the_product_s_own_sources(repo_root: str | Path) -> str:
+    """The text of the product's own source files, the suite and installed packages left out."""
+    where = location(repo_root)
+    project = Path(repo_root) / where[0] if where else None
+    if project is None or not project.is_dir():
+        return ""
+    suite_dir = directory(repo_root)
+    texts = []
+    for path in project.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in _PAGE_SOURCES:
+            continue
+        relative = path.relative_to(project)
+        if _NOT_THE_PAGE_S & set(relative.parts) or (suite_dir is not None and suite_dir in path.parents):
+            continue
+        try:
+            texts.append(path.read_text(encoding="utf-8", errors="replace")[:200_000])
+        except OSError:
+            continue
+    return "\n".join(texts)
+
+
 def tests_left_behind_by_their_own_change(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Failed tests that looked for a change through a locator found by the text it replaced.
 
@@ -4275,6 +4345,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
     measured = [
         *spec_dry_run.findings(repo_root),
         *tests_that_broke_themselves(repo_root, result),
+        *tests_broken_by_their_own_setup(repo_root, result),
         *tests_that_need_what_they_never_made(repo_root, result),
         *tests_that_assert_a_kept_file_s_text(repo_root, result),
         *tests_that_count_a_list_other_tests_write_to(repo_root, result),

@@ -1406,3 +1406,5 @@ measurement in the findings log** - do not delete those.
 2026-11-03 07:10 JST LF.550 built and pushed (specification-ruling quote check generalised from LF.543); deploy with LF.549 at the next count restart.
 
 2026-11-03 07:48 JST LF.549-551 deployed (fullstack-py's setup was in LF.551's refusal loop at 2.5 h); fullstack-py rewound to stack_setup, tasks-api paused/resumed (mixed). Clean count restarts; notes-api-hono's 9/9 on be1fc06 is evidence.
+
+2026-11-03 09:10 JST tasks-api run-8ac0e9c0: hidden 10/10, 130 active min, mutation 6/12, non-deliverable (3 unit tests fail on 422 vs 401, the contradiction whose ruling was rejected before LF.550). RC clean notes-api-hono 1b started 09:05.

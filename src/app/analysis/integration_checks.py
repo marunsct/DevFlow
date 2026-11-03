@@ -3551,7 +3551,7 @@ def _manifest_defects(files: list[Path], root: Path, stack: Any) -> list[str]:
                 "runs `npm test` here gets a failure that says nothing about the "
                 "product."
             )
-        elif not test_script:
+        elif not test_script and not _in_the_acceptance_suite(root, path):
             # A suite nobody can reach by the obvious command. Measured on
             # one run: 153 passing tests in `app.test.mjs`, a manifest with
             # no `scripts` at all, and `npm test` answering "missing script:
@@ -6892,6 +6892,21 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
 _CLIENT_LOGIC_SUFFIXES = frozenset({".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"})
 
 
+def _in_the_acceptance_suite(root: Path, path: Path) -> bool:
+    """Whether `path` is in the locked acceptance suite's folder, which `run.json` runs and no fixer may change.
+
+    Measured on one run: the suite's own `package.json` had no `test` script, and a blocking defect no fixer could
+    close asked for one.
+    """
+    try:
+        from app.acceptance import suite
+
+        folder = suite.directory(root)
+    except Exception:  # noqa: BLE001 - unknown: checked as before
+        return False
+    return folder is not None and (path.parent == folder or folder in path.parents)
+
+
 def _missing_playwright_for_ui(files: list[Path], root: Path, stack: Any) -> list[str]:
     """A UI with behaviour and no browser test, or [].
 
@@ -6970,11 +6985,18 @@ def _missing_playwright_for_ui(files: list[Path], root: Path, stack: Any) -> lis
     # unit tests of its state module - this check was satisfied by the
     # manifest line alone, and the review accepted a page nothing had opened.
     drives_the_page = re.compile(r"""(?:from\s*|require\(\s*|import\(\s*)["']@?playwright(?:/test)?["']""")
+    # Playwright's other bindings open the page as well. Measured on one run: every page test was Python
+    # (`from playwright.sync_api import Page`), and this raised a blocking defect asking for a JavaScript one.
+    drives_it_in_another_language = re.compile(
+        r"^\s*(?:from\s+playwright[\w.]*\s+import|import\s+playwright\b|import\s+com\.microsoft\.playwright"
+        r"|using\s+Microsoft\.Playwright)", re.M)
     specs = [
         path for path in files
         if is_test(str(path.relative_to(root)))
-        and path.suffix.lower() in _CLIENT_LOGIC_SUFFIXES
-        and drives_the_page.search(_read(path))
+        and (
+            (path.suffix.lower() in _CLIENT_LOGIC_SUFFIXES and drives_the_page.search(_read(path)))
+            or drives_it_in_another_language.search(_read(path))
+        )
     ]
     if not specs:
         return [

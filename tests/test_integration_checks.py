@@ -1805,3 +1805,23 @@ def test_a_setup_file_given_with_an_equals_sign_is_followed() -> None:
 
     assert _explicitly_imported_in_command("node --test --import=./tests/setup.mjs tests/") == ["./tests/setup.mjs"]
     assert _explicitly_imported_in_command("node --test --require=./setup.cjs") == ["./setup.cjs"]
+
+
+def test_the_acceptance_suite_s_own_manifest_is_not_asked_for_a_test_script(tmp_path):
+    """Measured on one run: the locked suite's `package.json` had no `test` script, and a blocking defect no fixer
+    could close asked for one. The suite runs through its `run.json`."""
+    import json as _json
+
+    from app.analysis.integration_checks import summarise_integration
+
+    project = tmp_path / "app"
+    suite_dir = project / "acceptance"
+    suite_dir.mkdir(parents=True)
+    (tmp_path / ".project-directory").write_text("app\n", encoding="utf-8")
+    (suite_dir / "run.json").write_text(_json.dumps({"command": ["run"], "report": "r.xml"}), encoding="utf-8")
+    (suite_dir / "package.json").write_text('{"devDependencies": {"@playwright/test": "1"}}\n', encoding="utf-8")
+    (suite_dir / "ui.spec.js").write_text("import { test } from '@playwright/test';\n", encoding="utf-8")
+    (project / "index.html").write_text('<!doctype html><script src="app.js"></script>', encoding="utf-8")
+    (project / "app.js").write_text("export const a = 1;\n", encoding="utf-8")
+
+    assert "acceptance/package.json declares no `test` script" not in summarise_integration(str(tmp_path))

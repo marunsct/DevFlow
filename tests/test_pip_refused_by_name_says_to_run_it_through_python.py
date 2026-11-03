@@ -12,7 +12,7 @@ BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I
 
 @pytest.mark.parametrize("program", [".venv/bin/pip", "pip", "pip3"])
 def test_the_refusal_names_python_dash_m_pip(tmp_path, program):
-    role = "testing_specialist"
+    role = "database_specialist"
     if "pip" in allowed_executables(role, tmp_path) or "python" not in allowed_executables(role, tmp_path):
         pytest.skip("this role's allowlist no longer refuses pip while allowing python")
     with pytest.raises(CommandNotAllowed) as caught:
@@ -20,3 +20,7 @@ def test_the_refusal_names_python_dash_m_pip(tmp_path, program):
     said = str(caught.value)
     assert "-m pip install" in said
     assert not BANNED.search(said)
+
+
+def test_the_role_that_proves_a_setup_may_run_the_project_s_own_pip(tmp_path):
+    assert validate_command([".venv/bin/pip", "install", "-r", "requirements.txt"], "testing_specialist", tmp_path)

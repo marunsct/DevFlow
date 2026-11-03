@@ -533,6 +533,10 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
         # by accident, and `npx` can execute any package at all, so withholding
         # `node` bought no safety and cost a turn.
         "node",
+        # `python -m pip install` was already permitted, so a bare `pip` adds nothing it could not do. Measured on one
+        # run: the setup declared `.venv/bin/pip install`, the harness proves a setup and reinstalls as this role, and
+        # both setup attempts ended unproven on that refusal.
+        "pip", "pip3",
     }),
     # Writes prose, and checks it against the code it documents.
     "documentation_specialist": frozenset({"python3", "node", "npx"}),

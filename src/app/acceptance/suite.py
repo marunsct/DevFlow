@@ -3482,6 +3482,139 @@ def tests_that_count_a_list_other_tests_write_to(repo_root: str | Path, result: 
     return problems[:6]
 
 
+#: A Python function, test or helper, at any indent; its body runs to the next one at the same indent or less.
+_A_PYTHON_DEF = re.compile(r"^([ \t]*)(?:async[ \t]+)?def[ \t]+(\w+)[ \t]*\(", re.M)
+#: A request that writes to a path: `client.post("/notes"`, `httpx.post(f"{base}/notes"`, `requests.put(BASE + "/notes"`.
+_A_PYTHON_WRITE = re.compile(
+    r"\.(?:post|put|patch)\(\s*(?:[\w.]+\s*\+\s*)?f?[\"'](?:\{[^}\"']*\})?(/[^\"'?{}]*)")
+#: A request that reads one, assigned: `resp = client.get("/notes")`.
+_A_PYTHON_READ = re.compile(
+    r"\b(\w+)\s*=\s*[\w.]+\.get\(\s*(?:[\w.]+\s*\+\s*)?f?[\"'](?:\{[^}\"']*\})?(/[^\"'?{}]*)[\"']\s*\)")
+#: `assert len(notes) == 2`, `assert len(resp.json()) == 2`, `assert notes == []`.
+_A_PYTHON_EXACT_COUNT = re.compile(
+    r"^[ \t]*assert[ \t]+(?:len\((?P<read>[\w.]+(?:\(\))?)\)[ \t]*==[ \t]*(?P<count>\d+)"
+    r"|(?P<empty>[\w.]+(?:\(\))?)[ \t]*==[ \t]*\[\])[ \t]*$", re.M)
+#: pytest's own words for a failed comparison: `assert 3 == 2`.
+_PYTHON_COMPARED = re.compile(r"\bassert (\d+) == (\d+)\b")
+
+
+def _python_defs(text: str) -> dict[str, str]:
+    """Each function's name and its whole text, its decorators' lines included."""
+    found: dict[str, str] = {}
+    marks = list(_A_PYTHON_DEF.finditer(text))
+    for at, mark in enumerate(marks):
+        indent = len(mark.group(1).expandtabs())
+        end = len(text)
+        for later in marks[at + 1:]:
+            if len(later.group(1).expandtabs()) <= indent:
+                end = text.rfind("\n", 0, later.start()) + 1 or later.start()
+                break
+        begin = mark.start()
+        while True:
+            above = text.rfind("\n", 0, max(begin - 1, 0))
+            line = text[above + 1:begin].strip() if begin else ""
+            if not line.startswith("@"):
+                break
+            begin = above + 1
+        found[mark.group(2)] = text[begin:end]
+    return found
+
+
+def _python_route_counted(block: str, read: str, at: int) -> str | None:
+    """The route a counted list was read from, when the test reads it straight from one; None otherwise."""
+    name = read.removesuffix(".json()").removesuffix("()")
+    response = name
+    if not read.endswith(".json()"):
+        bound = list(re.finditer(rf"\b{re.escape(name)}\s*=\s*(\w+)\.json\(\)\s*$", block[:at], re.M))
+        if not bound:
+            return None
+        response = bound[-1].group(1)
+    reads = [m for m in _A_PYTHON_READ.finditer(block[:at]) if m.group(1) == response]
+    return reads[-1].group(2).rstrip("/") or "/" if reads else None
+
+
+def python_tests_that_count_a_list_other_tests_write_to(
+    repo_root: str | Path, result: AcceptanceResult | None = None
+) -> list[str]:
+    """`tests_that_count_a_list_other_tests_write_to` for a suite written in Python, with the same rules.
+
+    Measured on one run: a pytest suite created one note in one test, two in the next, and asserted the list held
+    exactly 2; it held 3, and two fix stages over half an hour went at a product that was right. The check read only
+    JavaScript suites.
+    """
+    from app.acceptance.requests import _A_SHARED_SERVICE  # noqa: PLC0415 - requests imports this module
+
+    found = contract.the_pack(repo_root)
+    if found is None or getattr(found[0], "kind", "") not in _A_SHARED_SERVICE:
+        return []
+    root = Path(repo_root)
+    files: dict[Path, dict[str, str]] = {}
+    for path in suite_files(repo_root):
+        if path.suffix.lower() != ".py":
+            continue
+        try:
+            text = re.sub(r"^[ \t]*#.*$", "", path.read_text(encoding="utf-8", errors="replace"), flags=re.M)
+        except OSError:
+            continue
+        files[path] = _python_defs(text)
+    helpers = {name: body for defs in files.values() for name, body in defs.items() if not name.startswith("test")}
+
+    def writes(block: str, seen: frozenset[str] = frozenset()) -> set[str]:
+        routes = {m.group(1).rstrip("/") or "/" for m in _A_PYTHON_WRITE.finditer(block)}
+        for name, body in helpers.items():
+            if name not in seen and re.search(rf"(?<![.\w]){re.escape(name)}\s*\(", block):
+                routes |= writes(body, seen | {name})
+        return routes
+
+    def clears(block: str) -> bool:
+        return bool(re.search(_A_CLEARING_CALL, block, re.I))
+
+    tests = {(path, name): body for path, defs in files.items() for name, body in defs.items() if name.startswith("test")}
+    writers: dict[str, set[tuple[Path, str]]] = {}
+    for key, body in tests.items():
+        for route in writes(body):
+            writers.setdefault(route, set()).add(key)
+
+    known = result is not None and result.ran and bool(result.report.tests)
+    failing = {t.name: t.message for t in result.report.tests if t.outcome == "failed"} if known else {}
+    needs_proof = known and (is_locked(repo_root) or any(t.outcome == "passed" for t in result.report.tests))
+
+    problems: list[str] = []
+    for (path, name), body in tests.items():
+        fixtures = "\n".join(b for b in files[path].values() if "fixture" in b.split("def", 1)[0])
+        if _SCOPED_TO_SOMEONE.search(body) or clears(fixtures):
+            continue
+        for count in _A_PYTHON_EXACT_COUNT.finditer(body):
+            read = count.group("read") or count.group("empty")
+            route = _python_route_counted(body, read, count.start())
+            if route is None or clears(body[:count.start()]):
+                continue
+            if not writers.get(route, set()) - {(path, name)}:
+                continue
+            if known:
+                messages = [m for test, m in failing.items() if test == name or test.endswith(("." + name, "::" + name))]
+                if not messages:
+                    continue
+                wanted_count = count.group("count")
+                if needs_proof and not any(
+                    wanted_count is not None and int(wanted) == int(wanted_count) and int(got) > int(wanted)
+                    for m in messages for got, wanted in _PYTHON_COMPARED.findall(m)
+                ):
+                    continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            line = text.count("\n", 0, max(text.find(count.group(0).strip()), 0)) + 1
+            wanted = "an empty list" if count.group("count") is None else f"exactly {count.group('count')}"
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line}: `{name}` expects {wanted} from the whole list at "
+                f"`{route}`, and other tests in the suite write to `{route}` as well. They all share one service and "
+                "its data for the whole run, so that count depends on what ran before it and no product can be made to "
+                "answer it. Keep only the records this test made - give them a value of its own and filter on it - "
+                "and count those, or compare with a count it read first (`len(before) + 1`), or assert `>=`."
+            )
+            break
+    return problems[:6]
+
+
 #: A test's title, from its declaration.
 _A_TEST_TITLE = re.compile(r"""test\s*\(\s*['"`]([^'"`]*)['"`]""")
 
@@ -4044,6 +4177,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *tests_that_need_what_they_never_made(repo_root, result),
         *tests_that_assert_a_kept_file_s_text(repo_root, result),
         *tests_that_count_a_list_other_tests_write_to(repo_root, result),
+        *python_tests_that_count_a_list_other_tests_write_to(repo_root, result),
         *the_suite_failed_in_its_own_words(repo_root, result),
         *tests_whose_label_also_matches_a_longer_name(repo_root, result),
     ]

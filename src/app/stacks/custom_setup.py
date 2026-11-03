@@ -811,6 +811,10 @@ def _chosen_by(model: Any, stack: Any) -> Path | None:
         return None
 
 
+#: The library entry each project was last given by `replay`, so a replay that does not prove can be set aside.
+_REPLAYED: dict[str, Path] = {}
+
+
 def replay(project_root: Path, stack: Any, model: Any = None) -> list[str]:
     """Write a setup proven in an earlier run for this stack into `project_root`; the paths written, or [].
 
@@ -838,7 +842,28 @@ def replay(project_root: Path, stack: Any, model: Any = None) -> list[str]:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
         written.append(relative)
+    if written:
+        _REPLAYED[str(project_root)] = entry
     return written
+
+
+def set_aside_what_did_not_prove(project_root: Path) -> str:
+    """Move the library entry replayed into `project_root` to the library's `failed/` folder; its name, or "".
+
+    A proven setup that no longer proves is replayed again on every run of its stack. Measured on one night: the same
+    entry, whose install ran a bare `pip` with no project environment, failed its proof on three runs in a row and cost
+    each 15 to 25 minutes before the setup stage was asked. Kept, not deleted: what it was stays readable.
+    """
+    entry = _REPLAYED.pop(str(project_root), None)
+    if entry is None or not entry.is_file():
+        return ""
+    try:
+        failed = entry.parent / "failed"
+        failed.mkdir(parents=True, exist_ok=True)
+        entry.replace(failed / entry.name)
+        return entry.name
+    except OSError:
+        return ""
 
 
 def leave_to_the_agents(project_root: Path) -> None:
@@ -849,5 +874,5 @@ def leave_to_the_agents(project_root: Path) -> None:
 __all__ = [
     "ATTEMPTS", "DECLARATION_FILE", "PROVEN_SETUP", "already_set_up", "leave_to_the_agents",
     "build_setup_request", "enabled", "library_key", "pack_from", "problems_with", "prove", "read_declaration",
-    "remember", "replay", "canonical_key", "canonical_key_of",
+    "remember", "replay", "canonical_key", "canonical_key_of", "set_aside_what_did_not_prove",
 ]

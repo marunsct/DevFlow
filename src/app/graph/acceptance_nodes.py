@@ -357,6 +357,9 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
                 logger.info("Replayed a setup proven in an earlier run on this stack in %s/", project)
                 return _handing_on(**update, stage="acceptance_author")
             logger.warning("A setup proven in an earlier run did not prove here; asking the setup stage: %s", proven.problem)
+            set_aside = custom_setup.set_aside_what_did_not_prove(project_root)
+            if set_aside:
+                logger.warning("Set aside the proven setup %s: it did not prove, so it is not replayed again", set_aside)
             for relative in replayed:
                 (project_root / relative).unlink(missing_ok=True)
 

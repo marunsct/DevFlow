@@ -1081,6 +1081,9 @@ def sprint_already_done(state: Any) -> str:
     due = [c for c in (criteria_due(state) or []) if c not in excused]
     if not due:
         return ""
+    # A page that does not draw records the way the brief shows them has work left, whatever the suite says.
+    if suite.records_the_page_never_makes(root, getattr(state.get("document"), "text", "") or ""):
+        return ""
     result = suite.run(root)
     if not result.ran or result.runtime_problems:
         return ""
@@ -1381,6 +1384,31 @@ def _the_start_that_fails(state: Any, reported: list[Any], command: str) -> list
     )]
 
 
+#: The start of a defect for records the page never draws as the brief shows them.
+RECORDS_NOT_AS_THE_BRIEF_SHOWS = "The page does not draw records the way the brief shows them"
+
+
+def _records_the_page_never_makes(state: Any, reported: list[Any]) -> list[Any]:
+    """A defect for each kind of record the brief shows that the page never makes; [] otherwise. See `suite`."""
+    from app.agents.specialists import ReportedDefect
+
+    found = suite.records_the_page_never_makes(_root(state), getattr(state.get("document"), "text", "") or "")
+    if not found or any(
+        str(getattr(item, "description", "") or "").startswith(RECORDS_NOT_AS_THE_BRIEF_SHOWS) for item in reported
+    ):
+        return []
+    said = " ".join(found)
+    return [ReportedDefect(
+        description=f"{RECORDS_NOT_AS_THE_BRIEF_SHOWS}: {said}"[:600],
+        severity="blocking",
+        reproduction_steps="Read the page's markup, scripts and templates for the element each record is drawn as.",
+        expected_behavior="Each record is drawn as the brief shows it, so it is found by its role.",
+        actual_behavior=said[:1500],
+        affected_files=[],
+        owner=_owner_for(state, said),
+    )]
+
+
 def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     """A defect for each due criterion that fails and that the round did not report.
 
@@ -1400,7 +1428,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     # Whether or not anything fails, too: a suite on a development server never goes through the build.
     installs = [*installs, *_the_build_that_fails(state, reported)]
     if not failing:
-        return [*installs, *_the_start_that_fails(state, reported, command)]
+        return [*installs, *_the_start_that_fails(state, reported, command), *_records_the_page_never_makes(state, reported)]
     from app.acceptance.junit import tags_in
     from app.agents.specialists import ReportedDefect
 
@@ -1440,7 +1468,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             affected_files=[],
             owner=_owner_for(state, never_started),
         ))
-        return defects + installs + _what_the_language_service_finds(state)
+        return defects + installs + _what_the_language_service_finds(state) + _records_the_page_never_makes(state, reported)
     if never_started.startswith(suite.PRODUCT_CRASHED):
         # One defect for the one cause, first: the criteria it took down are its symptoms, each failing only on a
         # connection to a service that was gone. A criterion with any other failure keeps its own defect.

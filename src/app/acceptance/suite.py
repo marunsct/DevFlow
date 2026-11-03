@@ -2096,6 +2096,63 @@ def records_never_found_as_the_brief_shows_them(repo_root: str | Path, brief_tex
     ]
 
 
+#: What makes each kind of record in a page's sources, in markup, a script or a template: `<li>`, `createElement('li')`,
+#: `role="listitem"`; `<tr>`, `insertRow(`, `role="row"`.
+_MADE_BY = {
+    "listitem": re.compile(r"""<li\b|['"`]li['"`]|role\s*=\s*['"]listitem['"]""", re.I),
+    "row": re.compile(r"""<tr\b|['"`]tr['"`]|\binsertRow\s*\(|role\s*=\s*['"]row['"]""", re.I),
+}
+#: Sources a page is made from.
+_PAGE_SOURCES = frozenset({".html", ".htm", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte", ".py",
+                           ".jinja", ".j2", ".erb", ".ejs", ".hbs", ".php", ".rb", ".go", ".cs", ".java"})
+#: Folders whose files are no part of the page.
+_NOT_THE_PAGE_S = frozenset({"node_modules", ".venv", "venv", ".git", "__pycache__", "site-packages", "test-results",
+                             "dist", "build", "coverage", ".harness", "playwright-report"})
+
+
+def records_the_page_never_makes(repo_root: str | Path, brief_text: str) -> list[str]:
+    """Each kind of record the brief shows - an item of a list, a row of a table - that nothing in the page's sources makes.
+
+    Measured on one run: the brief said each record is an item of a list, the page drew plain containers, the suite
+    found them by a class, and the finding that said so was still open when the suite was locked at its round cap. The
+    suite passed 25 of 25 and 5 of 8 hidden tests failed. This reads the product, not the tests, so a lenient suite
+    cannot hide it. Only for a product with a page.
+    """
+    kinds = [(kind, role) for said, kind, role, _ in _KINDS_OF_RECORD if said.search(brief_text or "")]
+    where = location(repo_root)
+    project = Path(repo_root) / where[0] if where else None
+    if not kinds or project is None or not project.is_dir():
+        return []
+    suite_dir = directory(repo_root)
+    texts: list[str] = []
+    has_a_page = False
+    for path in project.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in _PAGE_SOURCES:
+            continue
+        relative = path.relative_to(project)
+        if _NOT_THE_PAGE_S & set(relative.parts) or (suite_dir is not None and suite_dir in path.parents):
+            continue
+        if any(part in {"tests", "test", "e2e", "e2e-tests", "__tests__", "spec"} for part in relative.parts[:-1]):
+            continue
+        if re.match(r"(?:test_|.*[._-](?:test|spec)\.)", path.name, re.I):
+            continue
+        has_a_page = has_a_page or path.suffix.lower() in {".html", ".htm", ".vue", ".svelte", ".jsx", ".tsx"}
+        try:
+            texts.append(path.read_text(encoding="utf-8", errors="replace")[:400_000])
+        except OSError:
+            continue
+    if not has_a_page:
+        return []
+    sources = "\n".join(texts)
+    return [
+        f"The brief shows each record as {kind}, and nothing in the page's sources makes one: no element, script or "
+        f"template creates the `{role}` the brief describes. Draw each record as {kind}, so a person, a screen reader "
+        "and a test find it by its role."
+        for kind, role in kinds
+        if not _MADE_BY[role].search(sources)
+    ]
+
+
 def locators_nobody_sees(repo_root: str | Path) -> list[str]:
     """Where the suite finds a control by something no person sees, by the pack's patterns.
 

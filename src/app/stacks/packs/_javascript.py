@@ -958,7 +958,10 @@ def storage_before_page_open(text: str) -> list[tuple[int, str, str]]:
         title = title_match.group(2) if title_match else "a test"
 
         if not before_each_has_goto:
-            s_match = _STORAGE_USAGE.search(body)
+            # From after the title: a title that names the storage it checks is not a use of it. Measured on one
+            # run: "[AC-9] ... updates localStorage completed flag" was called a test that can never pass, the
+            # suite's repair made it worse, the criterion was deferred, and its hidden test failed.
+            s_match = _STORAGE_USAGE.search(body, title_match.end() if title_match else 0)
             if s_match:
                 g_match = opens_the_page.search(body[:s_match.start()])
                 if not g_match:

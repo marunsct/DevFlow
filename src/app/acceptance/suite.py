@@ -2025,7 +2025,10 @@ def _page_checks(repo_root: str | Path) -> Any:
     Only a JavaScript browser suite takes a pack's patterns: they are written in that runner's calls.
     """
     found = contract.the_pack(repo_root)
-    if found is not None:
+    # A pack with its own page patterns decides; one without any - a setup derived from a proven replay, or a pack
+    # for a stack with no page - borrows the browser pack's when the suite drives a browser. Measured on one run: a
+    # replayed setup's derived pack kept every page check silent, and a hidden test by label timed out.
+    if found is not None and (found[0].finds_by_name or found[0].locators_nobody_sees):
         return found[0]
     for path in suite_files(repo_root):
         try:

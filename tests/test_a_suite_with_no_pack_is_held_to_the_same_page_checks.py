@@ -112,3 +112,19 @@ def test_at_the_lock_a_lookup_that_could_match_a_longer_name_is_named(tmp_path):
     root = tmp_path / "exact"
     _a_suite(root, PLAYWRIGHT + "page.getByLabel('Tag', { exact: true });\npage.getByLabel('Filter by tag');\n")
     assert suite.controls_never_found_by_name(root, brief) == []
+
+
+def test_a_pack_with_no_page_patterns_borrows_the_browser_pack_s(tmp_path, monkeypatch):
+    # Measured on one run: a replayed proven setup gave the run a derived pack with no page patterns, every page check
+    # stayed silent, the suite found the filter field by its placeholder, and the hidden test by label timed out.
+    from types import SimpleNamespace
+
+    from app.acceptance import suite as s
+    from app.stacks import contract
+
+    _a_suite(tmp_path, BY_CLASS)
+    derived = SimpleNamespace(name="proven-setup", finds_by_name=(), locators_nobody_sees=(), locators_that_pick_one=())
+    monkeypatch.setattr(contract, "the_pack", lambda root: (derived, {"pack": "proven-setup"}))
+
+    assert any('"Filter by tag"' in p for p in s.controls_never_found_by_name(tmp_path, BRIEF))
+    assert s.locators_nobody_sees(tmp_path)

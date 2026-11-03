@@ -10,6 +10,7 @@ from app.acceptance.api_reference import api_reference
 from app.acceptance.criteria import Criterion
 from app.agents import brief_over_spec
 from app.stacks import contract
+from app.plugins.seed import JUNIT_REPORTS
 
 #: How much of the brief QA is handed. Briefs are short; this is a ceiling.
 BRIEF_CHARS = 12_000
@@ -68,7 +69,10 @@ def _how_to_write_them(repo_root: str | Path, project: str, acceptance_dir: str,
         "turn and the harness reads each report as it finishes. Test the product the way its user meets it: a page "
         "through a browser, a service over HTTP, a program as a process, a library through "
         "its public functions. Each test's name carries the id of the criterion it proves, "
-        "`[AC-3]` in a title or `ac3` in an identifier."
+        "`[AC-3]` in a title or `ac3` in an identifier.\n"
+        # Measured on one run: a browser runner was asked for its report in a form it does not read, and five rounds
+        # failed on a report that was never written; the writers had never been told how each runner writes one.
+        f"How each runner writes that report:\n{JUNIT_REPORTS}"
     )
 
 

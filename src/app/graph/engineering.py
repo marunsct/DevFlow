@@ -838,6 +838,10 @@ def after_a_fix(
         said = ("the product did not start before this fix either" if before is not None and before.problem
                 else "the product no longer builds or starts after it")
         broken = [f"{said} ({cause})", *broken]
+    elif after.problem.startswith(suite.PRODUCT_DID_NOT_START) and before is not None and not before.problem:
+        # Every test still passes the suite's way, and the user's way no longer starts: a regression all the same.
+        broken = ["the product no longer starts the way its user starts it after this fix ("
+                  + " ".join(after.problem.split())[:400] + ")"]
     if broken:
         kept = _its_tests_without_its_product_change(root, base, before, broken, stage_name)
         if kept is not None:

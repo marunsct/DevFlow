@@ -48,6 +48,9 @@ def _passed_now(root: Path) -> int | None:
     result = suite.last_result(root) or {}
     if not result.get("ran"):
         return None
+    # A product its user cannot start is never the best, however many tests its suite's own way of starting it passes.
+    if str(result.get("problem") or "").startswith(suite.PRODUCT_DID_NOT_START):
+        return None
     return int(result.get("passed") or 0)
 
 

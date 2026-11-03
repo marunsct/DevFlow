@@ -252,6 +252,11 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             # budget. See `suite.vacuous_green`.
             summary = "\n".join(vacuous) + "\n" + summary
             failing = [*vacuous, *failing]
+        not_starting = str(getattr(result, "problem", "") or "")
+        if not_starting.startswith(suite.PRODUCT_DID_NOT_START):
+            # The suite passed its own way and the product does not start its user's way: not releasable.
+            summary = not_starting[:600] + "\n" + summary
+            failing = [not_starting[:300], *failing]
     # The project's production build: a suite on a development server never goes through it. Ahead of the unit tests,
     # so a product that does not build is never released under their allowance below.
     from app.stacks import production_build

@@ -294,8 +294,22 @@ def take(
         acceptance=tests,
         unit_ran=unit_ran,
         acceptance_ran=bool(acceptance is not None and acceptance.ran),
-        problem=str(acceptance.problem or "")[:1500] if acceptance is not None and not acceptance.report.tests else "",
+        problem=_unusable(acceptance),
     )
+
+
+def _unusable(acceptance: Any) -> str:
+    """Why the product cannot be used: no test ran, or the suite passed and the product does not start its user's way.
+
+    The second was dropped because tests had run. Measured in a deep review: settlement then closed a start defect on
+    any snapshot, and a fix that broke the start while the suite stayed green was kept.
+    """
+    if acceptance is None:
+        return ""
+    problem = str(acceptance.problem or "")
+    if not acceptance.report.tests or problem.startswith(suite.PRODUCT_DID_NOT_START):
+        return problem[:1500]
+    return ""
 
 
 def save(root: str | Path, snapshot: Snapshot, *, accepted: bool = False) -> None:

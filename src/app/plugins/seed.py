@@ -248,6 +248,21 @@ _BROWSER_PAGE_SETUP = """Setting up a page's tests:
   exist, and Node reports that as `spawn /bin/sh ENOENT` - naming the shell,
   which is present - so the suite looks unrunnable when one line is wrong."""
 
+#: How each runner writes its JUnit report: told at setup, and again to a suite whose runner ran and wrote none.
+JUNIT_REPORTS = """- A JUNIT XML REPORT COMES FROM THE RUNNER'S OWN REPORTER - never write a
+  reporter class of your own: a hand-written one wrote no file under a newer
+  runner, the setup could not be proven, and the project was left unproven.
+  Vitest has one built in and there is no separate package for it: in the
+  `test` section of its configuration, `reporters: ['default', 'junit']` and
+  `outputFile: { junit: '<path>' }`. Jest's is the `jest-junit` package, named
+  in `reporters: ['default', 'jest-junit']`. Node's own runner takes it as flags:
+  `node --test --test-reporter=junit --test-reporter-destination=<path>`.
+  Playwright: `reporter: [['junit', { outputFile: '<path>' }]]`. A package
+  lookup that says a reporter package does not exist is the sign you are
+  looking for something the runner already has.
+- pytest: `--junitxml=<path>`. Playwright as flags: `PLAYWRIGHT_JUNIT_OUTPUT_NAME=<path>` with `--reporter=junit`;
+  `--reporter=junit:<path>` is not a form it reads, and a second `--reporter` replaces the first."""
+
 #: How JavaScript and TypeScript modules are tested, and where their test-only
 #: packages go. Moved here from `TESTABILITY_RULE` and `TESTING_DEPENDENCY_RULE`.
 _JAVASCRIPT_TESTING = """Testing JavaScript and TypeScript:
@@ -293,17 +308,7 @@ _JAVASCRIPT_TESTING = """Testing JavaScript and TypeScript:
   the PATH of a command the harness runs, so a declared `["vitest", "run"]` is
   "not installed" even though it is. Declare `["npx", "vitest", "run"]`, or
   `["npm", "test"]` / `["npm", "run", "<script>"]`.
-- A JUNIT XML REPORT COMES FROM THE RUNNER'S OWN REPORTER - never write a
-  reporter class of your own: a hand-written one wrote no file under a newer
-  runner, the setup could not be proven, and the project was left unproven.
-  Vitest has one built in and there is no separate package for it: in the
-  `test` section of its configuration, `reporters: ['default', 'junit']` and
-  `outputFile: { junit: '<path>' }`. Jest's is the `jest-junit` package, named
-  in `reporters: ['default', 'jest-junit']`. Node's own runner takes it as flags:
-  `node --test --test-reporter=junit --test-reporter-destination=<path>`.
-  Playwright: `reporter: [['junit', { outputFile: '<path>' }]]`. A package
-  lookup that says a reporter package does not exist is the sign you are
-  looking for something the runner already has."""
+""" + JUNIT_REPORTS
 
 #: How JavaScript tests are written, whoever set the runner up.
 _JAVASCRIPT_TEST_WRITING = """Writing JavaScript tests:

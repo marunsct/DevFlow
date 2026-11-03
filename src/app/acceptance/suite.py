@@ -892,8 +892,16 @@ def what_a_stopped_service_wrote(output: str) -> str:
 _NOT_THE_SUITE_S = frozenset({"node_modules", ".venv", "venv", ".git", "__pycache__", "site-packages"})
 
 
-def _no_report(project_dir: Path, report_path: str, started: float) -> str:
-    """Why a run left no report: where it was looked for and the JUnit files this run did write."""
+#: A runner's own count of what it ran: `5 failed`, `2 passed`, `12 tests`.
+_TESTS_COUNTED = re.compile(r"\b\d+\s+(?:passed|failed|tests?)\b", re.I)
+
+
+def _no_report(project_dir: Path, report_path: str, started: float, command: str = "", output: str = "") -> str:
+    """Why a run left no report: where it was looked for and the JUnit files this run did write.
+
+    Measured on one run: the browser runner ran every test and printed its counts, but its command asked for the report
+    in a form the runner does not read; five rounds were told only where the report was missing, and the run failed.
+    """
     written: list[str] = []
     if project_dir.is_dir():
         for found in sorted(project_dir.rglob("*.xml")):
@@ -908,6 +916,13 @@ def _no_report(project_dir: Path, report_path: str, started: float) -> str:
     problem = f"the runner wrote no report at `{report_path}`, relative to the project, which is where `report` says it is"
     if written:
         problem += f". This run did write {', '.join(written[:5])}"
+    if command and _TESTS_COUNTED.search(_AN_ANSI_COLOUR.sub("", output or "")):
+        from app.plugins.seed import JUNIT_REPORTS  # noqa: PLC0415 - the runners' own forms are the seed's to know
+
+        problem += (
+            f". `{command}` ran its tests - its output counts them - and still wrote nothing there, so the fault is how "
+            f"that command asks for its report, not the tests. {JUNIT_REPORTS}"
+        )
     return (
         problem + f". A runner that empties its output folder deletes a report another runner left there: {_SEVERAL_RUNNERS}; "
         "its output is below"
@@ -991,9 +1006,11 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         runtime_file.unlink(missing_ok=True)
     started = time.time() - 1
     run_one = runner or _sandbox_runner(repo_root)
+    unwritten_by = " ".join(argv)
     if several:
         outcome, unwritten = _run_each(several, run_one, project, Path(repo_root) / project)
         report_path = unwritten or report_path
+        unwritten_by = next((" ".join(each) for each, report in several if report == unwritten), unwritten_by)
     else:
         outcome = run_one(argv, "test", project)
     try:
@@ -1010,7 +1027,9 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         output=output[-OUTPUT_TAIL_CHARS:],
         server_log=what_the_server_logged(output),
         repairs=repairs,
-        problem="" if report.found else _no_report(Path(repo_root) / project, report_path, started),
+        problem="" if report.found else _no_report(
+            Path(repo_root) / project, report_path, started, unwritten_by, output
+        ),
     )
     if not report.tests:
         # No test ran because the product never started: the suite is not at

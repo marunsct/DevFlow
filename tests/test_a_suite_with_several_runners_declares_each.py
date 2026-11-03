@@ -114,3 +114,34 @@ def test_a_commands_list_and_a_missing_report_point_at_runs(tmp_path):
 def test_the_author_is_told_it_can_list_several():
     text = Path(requests.__file__).read_text()
     assert '"runs"' in text
+
+
+def test_a_runner_that_ran_its_tests_and_wrote_no_report_is_named_with_how_runners_write_one(tmp_path):
+    project = _a_suite(tmp_path, TWO)
+
+    def runner(argv, category, where):
+        (project / "out").mkdir(exist_ok=True)
+        if argv[0] == "api":
+            (project / "out" / "api.xml").write_text(_junit("[AC-1] api"))
+            return {"returncode": "0", "stdout": "1 passed"}
+        return {"returncode": "1", "stdout": "  5 failed\n  2 passed (53.6s)"}
+
+    result = suite.run(tmp_path, runner=runner, save=False)
+
+    assert "`out/page.xml`" in result.problem and "`page` ran its tests" in result.problem
+    assert "outputFile" in result.problem and "--junitxml" in result.problem
+    assert not BANNED.search(result.problem.split("ran its tests")[1].split("A JUNIT")[0])
+
+
+def test_a_runner_that_printed_no_count_is_told_only_where_the_report_was_missing(tmp_path):
+    project = _a_suite(tmp_path, TWO)
+
+    def runner(argv, category, where):
+        (project / "out").mkdir(exist_ok=True)
+        if argv[0] == "api":
+            (project / "out" / "api.xml").write_text(_junit("[AC-1] api"))
+        return {"returncode": "1", "stdout": "Error: cannot find module"}
+
+    result = suite.run(tmp_path, runner=runner, save=False)
+
+    assert "`out/page.xml`" in result.problem and "ran its tests" not in result.problem

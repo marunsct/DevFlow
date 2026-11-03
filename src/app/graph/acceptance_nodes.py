@@ -1745,6 +1745,8 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
     broken = [
         *suite.findings_that_reopen(root, result, suite.tests_that_cannot_pass(root, result)),
         *suite.tests_left_behind_by_their_own_change(root, result),
+        *suite.tests_finding_a_per_record_control_on_the_whole_page(
+            root, result, getattr(state.get("document"), "text", "") or ""),
         *suite.vacuous_green(root, result),
         *_due_criteria_with_no_test(root, due),
     ]

@@ -1497,6 +1497,41 @@ def _the_product_s_own_sources(repo_root: str | Path) -> str:
     return "\n".join(texts)
 
 
+#: A page runner refusing a locator that matched several elements, and the name it was asked for, in its own words.
+_MATCHED_SEVERAL = re.compile(
+    r"""strict mode violation:.{0,120}?name\s*[=:]\s*['"]([^'"]{1,60})['"].{0,60}?resolved to (\d+) elements""",
+    re.I | re.S)
+
+
+def tests_finding_a_per_record_control_on_the_whole_page(
+    repo_root: str | Path, result: AcceptanceResult | None, brief_text: str
+) -> list[str]:
+    """Failed tests that looked for a control every record has across the whole page, so the runner found several.
+
+    Measured on one run: the brief gave each bookmark a "Delete" control, three tests asked the whole page for it, the
+    runner refused with "resolved to 4 elements", and fixers went at a product that drew one per bookmark as it should.
+    A control the brief gives the page once is the product's to answer for when it is drawn twice, and is left alone.
+    """
+    if result is None or not getattr(result, "ran", False):
+        return []
+    problems = []
+    for test in getattr(getattr(result, "report", None), "tests", None) or ():
+        if test.outcome != "failed":
+            continue
+        found = _MATCHED_SEVERAL.search(str(test.message or ""))
+        if not found or not found.group(1):
+            continue
+        name = found.group(1)
+        if not re.search(rf"\beach\b[^.\n]*\"{re.escape(name)}\"", brief_text or "", re.I):
+            continue
+        problems.append(
+            f"`{test.name}` looks for \"{name}\" across the whole page, and the brief gives one to each record, so it "
+            f"found {found.group(2)} and the runner refused. No product can pass it. Find the record first, then the "
+            f"\"{name}\" inside it."
+        )
+    return problems[:6]
+
+
 def tests_left_behind_by_their_own_change(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Failed tests that looked for a change through a locator found by the text it replaced.
 

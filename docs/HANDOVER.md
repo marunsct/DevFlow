@@ -1045,3 +1045,5 @@ not a fix.
 **Workspace retention (2026-11-03):** the run workspaces live on the Docker VM disk (`/app/data/workspaces/default`, 503 GB). A finished run's workspace is deleted once it is two days old - never a live, paused or owner's run; scores (`data/bench`), transcripts and run records are kept. 98 removed on 11-03 (about 14 GB).
 
 **Pause time (owner 2026-11-03):** a run's time excludes time paused. The database trigger `runs_pause_clock` on `runs` keeps `paused_since` and `paused_seconds` for every pause however made; `GET /api/runs/{id}` gives `paused_seconds`, and the page shows "Took/Running for" less it. A UI or API-only change can ship without touching the worker: build `app` from a clean checkout and `up -d --no-deps app`.
+
+**Worker slots (2026-11-03):** the worker runs `CELERY_CONCURRENCY` (default 2) jobs; a third run queues while a model server sits idle. Grow a live worker without a restart: `docker exec langchain-worker-1 sh -c 'celery -A app.server.tasks control pool_grow 1 -d celery@$HOSTNAME'`. It reverts at the next worker restart; to keep three, set `CELERY_CONCURRENCY=3` in the deployment environment.

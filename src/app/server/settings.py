@@ -562,6 +562,9 @@ class LocalModelSettingsPayload(BaseModel):
     thinking_mode: Literal["default", "on", "off"] = Field(default="default")
     thinking_effort: Literal["low", "medium", "high"] = Field(default="medium")
     anthropic_workspace_id: str | None = Field(default=None, max_length=128, pattern=r"^[A-Za-z0-9_-]*$")
+    # The parallel/linear toggle sits beside these on the page; a save that left it out reloaded the stored mode
+    # over the person's choice. None leaves it as it is.
+    execution_mode: Literal["linear", "parallel"] | None = Field(default=None)
     api_key: str | None = Field(default=None, max_length=512, repr=False)
 
     @field_validator("api_key")
@@ -588,6 +591,9 @@ class FrontierModelSettingsPayload(BaseModel):
     plan_on_judgement_model: bool = Field(default=True)
     no_model: bool = Field(default=False, description="Explicitly select no frontier model (local only).")
     anthropic_workspace_id: str | None = Field(default=None, max_length=128, pattern=r"^[A-Za-z0-9_-]*$")
+    # The parallel/linear toggle sits beside these on the page; a save that left it out reloaded the stored mode
+    # over the person's choice. None leaves it as it is.
+    execution_mode: Literal["linear", "parallel"] | None = Field(default=None)
 
     @field_validator("judgement_api_key")
     @classmethod
@@ -622,6 +628,8 @@ async def update_local_model_settings(
     )
     if payload.anthropic_workspace_id is not None:
         runtime_settings.save({"anthropic_workspace_id": payload.anthropic_workspace_id}, actor=user.username)
+    if payload.execution_mode is not None:
+        runtime_settings.save({"execution_mode": payload.execution_mode}, actor=user.username)
     if payload.api_key is not None:
         provider = (payload.llm_provider or "local").strip().lower()
         runtime_settings.save_endpoint_key(provider, payload.openai_base_url, payload.api_key, actor=user.username)
@@ -658,6 +666,8 @@ async def update_frontier_model_settings(
 ) -> SettingsView:
     """Save only the frontier judgement model settings, or select No Model to turn it off."""
     _check_read_only()
+    if payload.execution_mode is not None:
+        runtime_settings.save({"execution_mode": payload.execution_mode}, actor=user.username)
     if payload.no_model or not payload.judgement_model_name.strip():
         runtime_settings.save(
             {

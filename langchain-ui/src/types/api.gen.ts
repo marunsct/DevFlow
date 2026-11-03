@@ -130,6 +130,7 @@ export interface EventPage {
 export interface FrontierModelSettingsPayload {
   anthropic_workspace_id?: string | null;
   escalate_after_attempts?: number;
+  execution_mode?: "linear" | "parallel" | null;
   judgement_api_key?: string | null;
   judgement_base_url?: string;
   judgement_context_window?: number;
@@ -153,6 +154,7 @@ export interface HTTPValidationError {
 export interface LocalModelSettingsPayload {
   anthropic_workspace_id?: string | null;
   api_key?: string | null;
+  execution_mode?: "linear" | "parallel" | null;
   llm_provider?: string;
   model_context_window?: number;
   model_max_output_tokens?: number;

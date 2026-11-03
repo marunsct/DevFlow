@@ -272,6 +272,7 @@ export const Settings: React.FC = () => {
         thinking_mode: oneOf(settings.thinking_mode, THINKING_MODES, 'default'),
         thinking_effort: oneOf(settings.thinking_effort, THINKING_EFFORTS, 'medium'),
         anthropic_workspace_id: settings.anthropic_workspace_id ?? '',
+        execution_mode: oneOf(settings.execution_mode, EXECUTION_MODES, 'linear'),
         ...(credentials[buildKeyField] !== '' ? { api_key: credentials[buildKeyField] } : {}),
       };
       const res = await saveLocalModelSettings(payload);
@@ -305,6 +306,7 @@ export const Settings: React.FC = () => {
         plan_on_judgement_model: settings.plan_on_judgement_model ?? true,
         no_model: isNoModel,
         anthropic_workspace_id: settings.anthropic_workspace_id ?? '',
+        execution_mode: oneOf(settings.execution_mode, EXECUTION_MODES, 'linear'),
         ...(credentials.judgement_api_key !== '' ? { judgement_api_key: credentials.judgement_api_key } : {}),
       };
       const res = await saveFrontierModelSettings(payload);

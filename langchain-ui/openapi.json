@@ -464,6 +464,21 @@
       "title": "Escalate After Attempts",
       "type": "integer"
      },
+     "execution_mode": {
+      "anyOf": [
+       {
+        "enum": [
+         "linear",
+         "parallel"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Execution Mode"
+     },
      "judgement_api_key": {
       "anyOf": [
        {
@@ -577,6 +592,21 @@
        }
       ],
       "title": "Api Key"
+     },
+     "execution_mode": {
+      "anyOf": [
+       {
+        "enum": [
+         "linear",
+         "parallel"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Execution Mode"
      },
      "llm_provider": {
       "default": "local",

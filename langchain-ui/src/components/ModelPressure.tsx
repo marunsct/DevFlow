@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Gauge } from 'lucide-react';
 import { getUsage } from '../api';
-import type { CallUsage } from '../types';
+import type { CallUsage, StageUsage } from '../types';
 import { Progress } from '../ui';
 import { pressure, tokens } from '../lib/runSummary';
 import { usePageVisible } from '../lib/usePageVisible';
@@ -26,9 +26,14 @@ const Sparkline: React.FC<{ values: number[]; label: string }> = ({ values, labe
 export const ModelPressure: React.FC<{ runId: string; live: boolean; slotContext: number | null | undefined }> = ({ runId, live, slotContext }) => {
   const visible = usePageVisible();
   const [calls, setCalls] = useState<CallUsage[]>([]);
+  const [stages, setStages] = useState<StageUsage[]>([]);
   useEffect(() => {
     let alive = true;
-    const read = () => getUsage(runId).then((usage) => alive && setCalls(usage.recent_calls ?? [])).catch(() => undefined);
+    const read = () => getUsage(runId).then((usage) => {
+      if (!alive) return;
+      setCalls(usage.recent_calls ?? []);
+      setStages(usage.stages ?? []);
+    }).catch(() => undefined);
     void read();
     if (!live || !visible) return () => { alive = false; };
     const timer = setInterval(read, 60_000);
@@ -38,7 +43,7 @@ export const ModelPressure: React.FC<{ runId: string; live: boolean; slotContext
     };
   }, [runId, live, visible]);
 
-  const found = pressure(calls, slotContext);
+  const found = pressure(calls, slotContext, Date.now(), stages);
   if (!found) return null;
   const share = found.slotContext ? found.lastInput / found.slotContext : null;
   const pace = found.pace.length ? found.pace[found.pace.length - 1] : null;
@@ -52,7 +57,9 @@ export const ModelPressure: React.FC<{ runId: string; live: boolean; slotContext
       </p>
       {share !== null && <Progress label="Context the last call used" value={found.lastInput} max={found.slotContext!} />}
       <p className="text-xs text-text-secondary tabular-nums">
-        Busy {Math.round(found.busy * 100)}% of the last 10 min{pace !== null ? ` · ${pace.toFixed(1)} tokens/s last reply` : ''}
+        Busy {Math.round(found.busy * 100)}% of the last 10 min
+        {pace !== null ? ` · ${pace.toFixed(1)} tokens/s last reply` : ''}
+        {found.overall !== null ? ` · ${found.overall.toFixed(1)} tokens/s overall` : ''}
       </p>
       <Sparkline values={found.pace} label="Output tokens per second over the last hour" />
     </section>

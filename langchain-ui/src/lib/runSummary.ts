@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { getOutcomes, type RunForecast } from '../api';
-import type { CallUsage, RemediationInfo, RunCostSummary } from '../types';
+import type { CallUsage, RemediationInfo, RunCostSummary, StageUsage } from '../types';
 
 /** "950", "12.4 k", "1.2 M". */
 export function tokens(count: number): string {
@@ -144,10 +144,17 @@ export interface Pressure {
   busy: number;
   /** Output tokens per second of each recent call, oldest first. */
   pace: number[];
+  /** Output tokens per second over the whole run, every stage's replies together; null before any reply was timed. */
+  overall: number | null;
 }
 
 /** How close the run's calls come to the slot's context, how busy the model is, and its pace (plan BG.15). */
-export function pressure(calls: CallUsage[], slotContext: number | null | undefined, now = Date.now()): Pressure | null {
+export function pressure(
+  calls: CallUsage[],
+  slotContext: number | null | undefined,
+  now = Date.now(),
+  stages: Pick<StageUsage, 'output_tokens' | 'model_seconds'>[] = [],
+): Pressure | null {
   if (calls.length === 0) return null;
   const last = calls[calls.length - 1];
   const window = 10 * 60 * 1000;
@@ -159,5 +166,13 @@ export function pressure(calls: CallUsage[], slotContext: number | null | undefi
     slotContext: slotContext ?? null,
     busy: Math.min(1, busySeconds / (window / 1000)),
     pace: calls.filter((call) => call.seconds > 0).map((call) => call.output_tokens / call.seconds),
+    overall: overallPace(stages),
   };
+}
+
+/** Every reply's tokens over every second waited for them: the run's own pace, not one reply's. */
+function overallPace(stages: Pick<StageUsage, 'output_tokens' | 'model_seconds'>[]): number | null {
+  const seconds = stages.reduce((sum, stage) => sum + (stage.model_seconds || 0), 0);
+  if (seconds <= 0) return null;
+  return stages.reduce((sum, stage) => sum + (stage.output_tokens || 0), 0) / seconds;
 }

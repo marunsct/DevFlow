@@ -1860,6 +1860,30 @@ def the_product_did_not_start(output: str, root: str | Path | None = None) -> st
     return f"{PRODUCT_DID_NOT_START}: no test could reach it. Its output:\n{excerpt}{hint}"
 
 
+#: A runner's own words for what it could not find or load.
+_THE_RUNNER_COULD_NOT = re.compile(
+    r"^.*(?:not found|no such file|cannot find|could not find|does not exist|\bERROR:|\bError:).*$", re.I | re.M)
+
+
+def _where_the_runner_looked(repo_root: str | Path, result: AcceptanceResult) -> str:
+    """The folder each command runs in, where the suite's files are, and what the runner said it could not find.
+
+    Measured on one run: two commands named `test_api.py` while it sat in the suite's folder, pytest said "file or
+    directory not found", and two rounds were told only that zero tests ran.
+    """
+    where = location(repo_root)
+    said = list(dict.fromkeys(
+        " ".join(line.split())[:200] for line in _THE_RUNNER_COULD_NOT.findall(_AN_ANSI_COLOUR.sub("", result.output or ""))
+    ))[:3]
+    text = ""
+    if where:
+        text += (f" Each command runs in `{where[0]}/`, so every path in it is relative to that folder; the suite's "
+                 f"files are in `{where[0]}/{where[1]}/`, which a command names as `{where[1]}/<file>`.")
+    if said:
+        text += " The runner said: " + " | ".join(f"`{line}`" for line in said)
+    return text
+
+
 def vacuous_green(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Reasons this result proves nothing even though the runner complained of nothing.
 
@@ -1884,6 +1908,7 @@ def vacuous_green(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
             "that switches the suite off, a report written empty - exits without complaint. "
             "Zero tests is not a green suite: find what the runner stopped collecting and "
             "make it run the tests that are written."
+            + _where_the_runner_looked(repo_root, result)
         ]
     if criteria(repo_root) and not any(junit.tags_in(test.name) for test in result.report.tests):
         return [

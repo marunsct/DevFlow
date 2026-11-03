@@ -1043,3 +1043,5 @@ not a fix.
 **Gate for a pinned run (2026-11-03):** pass the pin to the gate: `loop.sh ready pin_url=<url> pin_model=<name>`; a bare `ready` checks the default model, and a busy one blocked a run pinned to the other server for an hour.
 
 **Workspace retention (2026-11-03):** the run workspaces live on the Docker VM disk (`/app/data/workspaces/default`, 503 GB). A finished run's workspace is deleted once it is two days old - never a live, paused or owner's run; scores (`data/bench`), transcripts and run records are kept. 98 removed on 11-03 (about 14 GB).
+
+**Pause time (owner 2026-11-03):** a run's time excludes time paused. The database trigger `runs_pause_clock` on `runs` keeps `paused_since` and `paused_seconds` for every pause however made; `GET /api/runs/{id}` gives `paused_seconds`, and the page shows "Took/Running for" less it. A UI or API-only change can ship without touching the worker: build `app` from a clean checkout and `up -d --no-deps app`.

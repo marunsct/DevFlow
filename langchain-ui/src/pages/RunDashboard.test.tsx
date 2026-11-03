@@ -81,6 +81,14 @@ describe('the run page', () => {
     expect(screen.queryByText(/gaps? it did not prove/)).toBeNull();
   });
 
+  it('leaves the time the run spent paused out of the time it took, and says how much', async () => {
+    // Created 00:00, ended 01:00, paused for 25 minutes of that hour.
+    Object.assign(run, { status: 'completed', current_stage: 'complete', paused_seconds: 1500 });
+    renderPage();
+    expect(await screen.findByText('35m 0s')).toBeTruthy();
+    expect(screen.getByText('25m 0s paused, not counted')).toBeTruthy();
+  });
+
   it('calls a run with only notes neither gapped nor proved everything', async () => {
     Object.assign(run, { status: 'completed', current_stage: 'complete', completion_gaps: ['Code the product does not run: x'], blocking_gaps: [] });
     render(

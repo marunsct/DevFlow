@@ -525,6 +525,9 @@ class RunStatusResponse(BaseModel):
         default=True, description="Whether this run uses the frontier model; False is the build model only.",
     )
     run_name: str | None = Field(default=None, description="The name the person gave the run, or null.")
+    paused_seconds: float = Field(
+        default=0.0, description="Seconds the run has spent paused, the pause going on now included; not the run's time.",
+    )
     model_pinned: bool = Field(
         default=False,
         description="Whether the run is kept on the model it last ran on (true) or follows the current model settings (false).",

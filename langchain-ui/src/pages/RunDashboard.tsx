@@ -561,15 +561,18 @@ export const RunDashboard: React.FC = () => {
   // How long the run has been going, or took. The dashboard could say which
   // node was current but never how long any of it had taken, which is the first
   // thing anyone watching a long build wants to know.
+  // Time paused is not the run's time (owner, 2026-11-03): left out, and said how much was.
   const startedAt = new Date(run.created_at).getTime();
   const endedAt = isTerminal ? new Date(run.updated_at).getTime() : now;
-  const totalSeconds = Math.max(0, Math.round((endedAt - startedAt) / 1000));
-  const elapsed =
-    totalSeconds < 60
-      ? `${totalSeconds}s`
-      : totalSeconds < 3600
-        ? `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`
-        : `${Math.floor(totalSeconds / 3600)}h ${Math.floor((totalSeconds % 3600) / 60)}m`;
+  const pausedSeconds = Math.max(0, Math.round(run.paused_seconds ?? 0));
+  const totalSeconds = Math.max(0, Math.round((endedAt - startedAt) / 1000) - pausedSeconds);
+  const asTime = (seconds: number) =>
+    seconds < 60
+      ? `${seconds}s`
+      : seconds < 3600
+        ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+        : `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+  const elapsed = asTime(totalSeconds);
 
   const stageCopy = describeStage(run.current_stage);
   // Panels that read the run's state again when it moves to another stage or status.
@@ -759,6 +762,9 @@ export const RunDashboard: React.FC = () => {
               </dt>
               <dd className="mt-1 text-[13px] text-text-primary tabular-nums">
                 {elapsed}
+                {pausedSeconds >= 60 && (
+                  <span className="block text-xs text-text-muted">{asTime(pausedSeconds)} paused, not counted</span>
+                )}
                 {!isTerminal && typical && <span className="block max-w-56 text-xs text-text-muted">{typical}</span>}
               </dd>
             </div>

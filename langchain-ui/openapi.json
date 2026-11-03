@@ -1715,6 +1715,12 @@
       "title": "Non Deliverable",
       "type": "string"
      },
+     "paused_seconds": {
+      "default": 0.0,
+      "description": "Seconds the run has spent paused, the pause going on now included; not the run's time.",
+      "title": "Paused Seconds",
+      "type": "number"
+     },
      "remediation": {
       "anyOf": [
        {

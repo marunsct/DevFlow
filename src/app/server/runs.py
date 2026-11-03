@@ -2147,6 +2147,7 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         use_frontier_model=not bool(getattr(record, "local_only", False)),
         **_the_model_pin(record.run_id, runner),
         **_the_run_name(record.run_id, runner),
+        **_the_time_paused(record.run_id, runner),
         cost=_cost_summary(record.run_id),
         # The ceilings the worker holds the run to: the API reads the same environment.
         max_run_tokens=_max_run_tokens() or None,
@@ -2154,6 +2155,15 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         # Its size, so the page can say what a run of this size takes here.
         **_how_many_criteria_hold(record),
     )
+
+
+def _the_time_paused(run_id: str, runner: Any) -> dict[str, Any]:
+    """`paused_seconds` for a status response, or nothing. Never raises."""
+    try:
+        seconds = runner.run_store.paused_seconds([run_id]).get(run_id)
+        return {"paused_seconds": round(seconds, 1)} if seconds else {}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def _the_run_name(run_id: str, runner: Any) -> dict[str, Any]:

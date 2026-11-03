@@ -410,6 +410,8 @@ export interface RunStatusResponse {
   model_pinned: boolean;
   /** What the workspace's NON-DELIVERABLE marker says, or '' when the workspace is marked deliverable. A run that failed, or that completed with a gap meaning the product may not work (`blocking_gaps`), writes it into the workspace root (Initiative J.6); notes alone do not. */
   non_deliverable: string;
+  /** Seconds the run has spent paused, the pause going on now included; not the run's time. */
+  paused_seconds: number;
   /** Remediation information if applicable. */
   remediation: RemediationInfo | null;
   /** Reviews associated with the run. */

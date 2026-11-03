@@ -96,6 +96,25 @@ _MIGRATIONS = (
     # A name the person gives a run to tell it from the others in the list (never written by `save`: owned by
     # `set_run_name`, so a worker persisting its record cannot undo a rename).
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS run_name TEXT",
+    # How long the run has been paused in all, and since when it is paused now: kept by the database itself, so every
+    # way a run is paused (the page, the loop, a worker at a stage boundary) is counted and no process can forget it.
+    # A run's time on the page is its time less these (owner, 2026-11-03: pause time is not the run's time).
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS paused_since TIMESTAMPTZ",
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS paused_seconds DOUBLE PRECISION NOT NULL DEFAULT 0",
+    """CREATE OR REPLACE FUNCTION runs_pause_clock() RETURNS trigger AS $clock$
+    BEGIN
+        IF NEW.status = 'paused' AND OLD.status IS DISTINCT FROM 'paused' THEN
+            NEW.paused_since := now();
+        ELSIF NEW.status IS DISTINCT FROM 'paused' AND OLD.status = 'paused' THEN
+            NEW.paused_seconds := COALESCE(OLD.paused_seconds, 0)
+                + GREATEST(EXTRACT(EPOCH FROM now() - COALESCE(OLD.paused_since, now())), 0);
+            NEW.paused_since := NULL;
+        END IF;
+        RETURN NEW;
+    END
+    $clock$ LANGUAGE plpgsql""",
+    "DROP TRIGGER IF EXISTS runs_pause_clock ON runs",
+    "CREATE TRIGGER runs_pause_clock BEFORE UPDATE ON runs FOR EACH ROW EXECUTE FUNCTION runs_pause_clock()",
     "CREATE INDEX IF NOT EXISTS runs_tenant_created_idx ON runs (tenant_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS runs_owner_idx ON runs (owner)",
 )
@@ -454,6 +473,22 @@ class RunStore:
                     )
                     return {str(run_id): str(name) for run_id, name in cur.fetchall()}
         except Exception:  # noqa: BLE001 - a list is never failed by a name
+            return {}
+
+    def paused_seconds(self, run_ids: list[str]) -> dict[str, float]:
+        """{run_id: seconds paused in all, the pause going on now included} for the runs asked for. Never raises."""
+        if not run_ids:
+            return {}
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT run_id, paused_seconds + COALESCE(EXTRACT(EPOCH FROM now() - paused_since), 0) "
+                        "FROM runs WHERE run_id = ANY(%s)",
+                        (list(run_ids),),
+                    )
+                    return {str(run_id): max(float(seconds or 0), 0.0) for run_id, seconds in cur.fetchall()}
+        except Exception:  # noqa: BLE001 - a run's time is never failed by its pauses
             return {}
 
     def set_run_name(self, run_id: str, name: str | None) -> bool:

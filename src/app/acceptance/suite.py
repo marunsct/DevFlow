@@ -2529,6 +2529,82 @@ def tests_that_assert_an_unstated_order(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+#: A sentence of the brief about narrowing what a view shows.
+_A_FILTERING_SENTENCE = re.compile(r"[^.\n]*\bfilter[^.\n]*", re.I)
+#: A state-changing step on the page: ticking, unticking, typing and confirming, or a further press.
+_A_CHANGING_STEP = re.compile(r"\.(?:check|uncheck|setChecked|press|click|fill|dblclick)\s*\(")
+_AN_ASSERTION = re.compile(r"\bexpect(?:\.soft)?\s*\(")
+
+
+def views_never_acted_within(repo_root: str | Path, brief_text: str) -> list[str]:
+    """The narrowing views the brief names that no browser test acts within, as one problem.
+
+    Measured on two runs: the brief named filters "All", "Active" and "Completed"; the suite tested each filter and the
+    action that changes an item's state, but never the action while a narrowing filter was on. The product left a
+    completed item in the Active view and a hidden test of exactly that failed both times. A prompt rule asking for the
+    test was on and did not make the writers write it, so the locked suite is checked. Choosing another filter is not
+    an action within the view.
+    """
+    quoted: list[str] = []
+    for sentence in _A_FILTERING_SENTENCE.findall(brief_text or ""):
+        quoted += re.findall(r'"([^"\n]{1,40})"', sentence)
+    every = list(dict.fromkeys(quoted))
+    narrowing = [n for n in every if n.strip().lower() not in ("all", "show all")]
+    if not narrowing:
+        return []
+    texts = []
+    for path in suite_files(repo_root):
+        try:
+            texts.append(path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    suite_text = "\n".join(texts)
+    if "playwright" not in suite_text.lower():
+        return []
+
+    def a_filter(names: list[str]) -> str:
+        alternatives = "|".join(re.escape(n) for n in names)
+        return (r"""(?:getByRole\s*\(\s*['"]button['"]\s*,\s*\{\s*name\s*:\s*(?:['"`]|/\^?)(?:""" + alternatives
+                + r""")|getByText\s*\(\s*['"`](?:""" + alternatives + r""")['"`])""")
+
+    any_filter, a_narrowing_one = re.compile(a_filter(every)), re.compile(a_filter(narrowing))
+    starts = [m.start() for m in _A_TEST_DECLARED.finditer(suite_text)]
+    for begin, end in zip(starts, starts[1:] + [len(suite_text)]):
+        body = suite_text[begin:end]
+        # A filter's locator kept in a name and clicked later is clicked all the same.
+        held = {m.group(1): bool(a_narrowing_one.match(body, m.end()))
+                for m in re.finditer(r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?page\.", body)
+                if any_filter.match(body, m.end())}
+        filter_clicks: list[tuple[int, int, bool]] = []
+        for m in re.finditer(r"\.click\s*\(", body):
+            before = body[max(0, m.start() - 160):m.start()]
+            direct = list(any_filter.finditer(before))
+            name = re.search(r"([A-Za-z_$][\w$]*)\s*$", before)
+            # `getByRole('button', { name: 'Active' }).click()`: the locator and its click in one statement.
+            if direct and ";" not in before[direct[-1].end():] and before.rstrip().endswith(")"):
+                filter_clicks.append((m.start(), m.end(), bool(a_narrowing_one.match(before, direct[-1].start()))))
+                continue
+            if name and name.group(1) in held:
+                filter_clicks.append((m.start(), m.end(), held[name.group(1)]))
+        is_a_filter_click = {start for start, _, _ in filter_clicks}
+        for start, stop, narrows in filter_clicks:
+            if not narrows:
+                continue
+            for step in _A_CHANGING_STEP.finditer(body, stop):
+                if step.start() in is_a_filter_click:
+                    break  # another view was chosen first
+                if _AN_ASSERTION.search(body, step.end()):
+                    return []
+                break
+    shown = ", ".join(f'"{n}"' for n in narrowing[:4])
+    return [
+        f"The brief narrows what the page shows ({shown}), and no test takes an action while such a view is on. A "
+        "test of each view and a test of the action apart pass a product that leaves the wrong thing showing when the "
+        "two meet. Add a test that chooses a narrowing view, changes an item in it, and checks what that view shows "
+        "afterward."
+    ]
+
+
 def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list[str]:
     """Each control the brief names that no test finds by that name, as one problem.
 

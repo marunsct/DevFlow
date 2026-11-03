@@ -28,3 +28,26 @@ def test_a_pin_that_names_no_server_or_a_hosted_one_keeps_the_provider():
 
 def test_a_local_provider_stays_local():
     assert snapshot_for({"LLM_PROVIDER": "local"}, LOCAL, None)["LLM_PROVIDER"] == "local"
+
+
+def test_a_pin_to_another_server_takes_that_server_s_saved_limits_not_the_settings_model_s(monkeypatch):
+    from app.models import model_pin
+
+    saved = [{"openai_base_url": LOCAL, "model_name": "local-model", "model_context_window": 182000,
+              "model_max_output_tokens": 35000}]
+    monkeypatch.setattr("app.server.model_profiles.list_profiles", lambda target=None: saved)
+    hosted = {"LLM_PROVIDER": "anthropic", "OPENAI_BASE_URL": "", "OPENAI_MODEL": "a-hosted-model",
+              "MODEL_CONTEXT_WINDOW": "662144", "MODEL_MAX_OUTPUT_TOKENS": "50000"}
+    pinned = model_pin.snapshot_for(hosted, LOCAL, "local-model")
+    assert (pinned["MODEL_CONTEXT_WINDOW"], pinned["MODEL_MAX_OUTPUT_TOKENS"]) == ("182000", "35000")
+
+    unknown = model_pin.snapshot_for(hosted, LOCAL, "a-model-never-saved")
+    assert "MODEL_CONTEXT_WINDOW" not in unknown and "MODEL_MAX_OUTPUT_TOKENS" not in unknown
+
+
+def test_a_pin_to_the_settings_own_model_keeps_its_limits(monkeypatch):
+    from app.models import model_pin
+
+    monkeypatch.setattr("app.server.model_profiles.list_profiles", lambda target=None: [])
+    same = {"LLM_PROVIDER": "local", "OPENAI_BASE_URL": LOCAL, "OPENAI_MODEL": "m", "MODEL_CONTEXT_WINDOW": "182000"}
+    assert model_pin.snapshot_for(same, LOCAL, "m")["MODEL_CONTEXT_WINDOW"] == "182000"

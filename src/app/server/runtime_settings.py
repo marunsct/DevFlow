@@ -147,6 +147,17 @@ visible across every worker almost immediately.
 _cache: dict[str, str] = {}
 _cache_expires_at = 0.0
 _cache_lock = threading.Lock()
+#: The process that filled the caches. A forked worker process inherits them; what its parent read hours before is not
+#: a setting. Measured on one run: a fresh process's first read failed, it fell back to an inherited cache that named a
+#: hosted model the settings had long since left, and the run's first stage called that hosted API.
+_cache_owner = os.getpid()
+
+
+def _forget_what_another_process_read() -> None:
+    global _cache_owner
+    if _cache_owner != os.getpid():
+        reset_cache()
+        _cache_owner = os.getpid()
 
 
 def _read_overrides_from_db() -> dict[str, str]:
@@ -170,6 +181,7 @@ def overrides(*, refresh: bool = False) -> dict[str, str]:
     """
     global _cache, _cache_expires_at
 
+    _forget_what_another_process_read()
     now = time.monotonic()
     if not refresh and now < _cache_expires_at:
         return dict(_cache)
@@ -312,6 +324,7 @@ def secrets(*, refresh: bool = False) -> dict[str, str]:
     """Stored credentials, cached briefly per process. Never raises."""
     global _secret_cache, _secret_cache_expires_at
 
+    _forget_what_another_process_read()
     now = time.monotonic()
     if not refresh and now < _secret_cache_expires_at:
         return dict(_secret_cache)
@@ -424,6 +437,7 @@ def switch_overrides(*, refresh: bool = False) -> dict[str, bool]:
     """The switches set on the admin page, cached for `CACHE_TTL_SECONDS` per process. Never raises."""
     global _switch_cache, _switch_cache_expires_at
 
+    _forget_what_another_process_read()
     now = time.monotonic()
     if not refresh and now < _switch_cache_expires_at:
         return dict(_switch_cache)

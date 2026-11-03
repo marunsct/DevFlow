@@ -496,7 +496,36 @@ def snapshot_for(base: Mapping[str, str], base_url: str | None = None, model: st
             snapshot["LLM_PROVIDER"] = "local"
     if model:
         snapshot["OPENAI_MODEL"] = model
+    if (base_url and base_url != base.get("OPENAI_BASE_URL")) or (model and model != base.get("OPENAI_MODEL")):
+        # Another server or model has its own window and reply ceiling, never the settings' model's. Measured: a run
+        # pinned to a server of 182K was budgeted for the 662K of the hosted model the settings named.
+        saved = _its_saved_limits(snapshot.get("OPENAI_BASE_URL", ""), snapshot.get("OPENAI_MODEL", ""))
+        for key in ("MODEL_CONTEXT_WINDOW", "MODEL_MAX_OUTPUT_TOKENS"):
+            if saved.get(key):
+                snapshot[key] = saved[key]
+            else:
+                snapshot.pop(key, None)  # the server's own reported size, or the defaults, decide
     return snapshot
+
+
+def _its_saved_limits(base_url: str, model: str) -> dict[str, str]:
+    """The window and reply ceiling saved for this server and model on the settings page; {} when none. Never raises."""
+    try:
+        from app.server.model_profiles import list_profiles
+
+        for profile in list_profiles("build"):
+            values = profile.get("values") or profile
+            if (str(values.get("openai_base_url") or "").rstrip("/") == base_url.rstrip("/")
+                    and str(values.get("model_name") or "") == model):
+                return {
+                    key: str(values.get(field)) for key, field in (
+                        ("MODEL_CONTEXT_WINDOW", "model_context_window"),
+                        ("MODEL_MAX_OUTPUT_TOKENS", "model_max_output_tokens"),
+                    ) if values.get(field)
+                }
+    except Exception:  # noqa: BLE001 - no profile to read is no profile
+        pass
+    return {}
 
 
 def summary_of(last: Mapping[str, str] | None) -> dict[str, str] | None:

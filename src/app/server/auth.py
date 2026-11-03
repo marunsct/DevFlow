@@ -92,6 +92,9 @@ def _db_url() -> str:
 
 
 _db_pool: Optional[pool.ThreadedConnectionPool] = None
+#: The process that made the pool. A worker process forked from another inherits its pool and the open
+#: connections in it, which belong to the parent; using one failed with "server closed the connection".
+_db_pool_owner: int | None = None
 _pool_lock = threading.Lock()
 
 
@@ -102,11 +105,13 @@ def init_db_pool() -> None:
     authenticate anyone, so starting up and failing every request is strictly
     worse than refusing to start.
     """
-    global _db_pool
+    global _db_pool, _db_pool_owner
     with _pool_lock:
-        if _db_pool is not None:
+        if _db_pool is not None and _db_pool_owner == os.getpid():
             return
+        # Another process's pool is left as it is, never closed from here: closing would end the parent's sessions.
         _db_pool = pool.ThreadedConnectionPool(1, 20, _db_url())
+        _db_pool_owner = os.getpid()
         logger.info("Auth database pool initialised")
 
 
@@ -126,7 +131,7 @@ def reset_db_pool() -> None:
 def get_db_connection():
     """Borrow a connection, always returning it and never leaking a bad one."""
     global _db_pool
-    if _db_pool is None:
+    if _db_pool is None or _db_pool_owner != os.getpid():
         init_db_pool()
     conn = _db_pool.getconn()
     try:

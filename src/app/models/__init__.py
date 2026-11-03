@@ -435,6 +435,17 @@ _NO_FORCED_TOOL_WHILE_THINKING: set[tuple[str, str]] = _refusals_remembered()
 _NAMED_CHOICE_BECOMES_REQUIRED: set[tuple[str, str]] = set()
 
 
+def anthropic_client_arguments(base_url: str, workspace_id: str) -> dict:
+    """The address and workspace an Anthropic client is given, when the settings name them."""
+    from app.models.endpoints import anthropic_address
+
+    address = anthropic_address(base_url)
+    return {
+        **({"anthropic_api_url": address} if address else {}),
+        **({"default_headers": {"anthropic-workspace-id": workspace_id}} if workspace_id else {}),
+    }
+
+
 def takes_only_string_tool_choices(error: Exception) -> bool:
     """Whether `error` is a server refusing a named tool choice because it takes only strings, `required` among them."""
     status = getattr(error, "status_code", None)
@@ -912,7 +923,8 @@ def build_default_chat_model(
             max_retries=3,
             timeout=_request_timeout(),
             max_tokens=reply_ceiling if reply_ceiling and reply_ceiling > 0 else None,
-            **thinking.anthropic_arguments(),
+            **thinking.anthropic_arguments(resolved_settings.model_name),
+            **anthropic_client_arguments(resolved_settings.openai_base_url, resolved_settings.anthropic_workspace_id),
         )
         if resolved_settings.openai_api_key:
             fallback = CompatibleChatOpenAI(
@@ -968,6 +980,7 @@ def build_default_chat_model(
              fallback = ChatAnthropic(
                 api_key=resolved_settings.anthropic_api_key,
                 model=_fallback_model("ANTHROPIC_FALLBACK_MODEL", "claude-haiku-4-5-20251001"),
+                **anthropic_client_arguments("", resolved_settings.anthropic_workspace_id),
                 max_retries=3,
             timeout=_request_timeout(),
                 max_tokens=reply_ceiling if reply_ceiling and reply_ceiling > 0 else None,

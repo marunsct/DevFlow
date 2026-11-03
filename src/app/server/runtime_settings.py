@@ -121,6 +121,8 @@ SETTABLE_KEYS: dict[str, str] = {
     # architect, QA, the reviews, the test rounds and the fixes. Empty means
     # every stage uses the model above. See `app.models.roles`.
     "judgement_provider": "JUDGEMENT_PROVIDER",
+    # The workspace a key that is not scoped to one must name, on every Anthropic request. Not a credential.
+    "anthropic_workspace_id": "ANTHROPIC_WORKSPACE_ID",
     "judgement_base_url": "JUDGEMENT_BASE_URL",
     "judgement_model_name": "JUDGEMENT_MODEL",
     "judgement_context_window": "JUDGEMENT_CONTEXT_WINDOW",
@@ -659,6 +661,13 @@ def effective_environment(
     if keys:
         provider = str(environment.get("LLM_PROVIDER") or "local").strip().lower()
         own = keys.get(endpoint_id(provider, str(environment.get("OPENAI_BASE_URL") or "")))
+        # A key saved for one endpoint goes to that endpoint alone. Each save also writes the provider's shared
+        # secret, so an endpoint with no key of its own was sent whichever key was saved last, and a key saved
+        # for a hosted provider switched on a paid fallback for runs on a local model.
+        saved_for_an_endpoint = set(keys.values())
+        for variable in {*_KEY_VARIABLE.values(), "OPENAI_API_KEY", "JUDGEMENT_API_KEY"}:
+            if environment.get(variable) in saved_for_an_endpoint:
+                environment.pop(variable, None)
         if own:
             environment[_KEY_VARIABLE.get(provider, "OPENAI_API_KEY")] = own
         if str(environment.get("JUDGEMENT_MODEL") or "").strip():

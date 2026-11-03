@@ -128,6 +128,7 @@ export interface EventPage {
 
 /** Save the frontier judgement model configuration specifically, or select No Model. */
 export interface FrontierModelSettingsPayload {
+  anthropic_workspace_id?: string | null;
   escalate_after_attempts?: number;
   judgement_api_key?: string | null;
   judgement_base_url?: string;
@@ -150,6 +151,7 @@ export interface HTTPValidationError {
 
 /** Save the local build model configuration specifically. */
 export interface LocalModelSettingsPayload {
+  anthropic_workspace_id?: string | null;
   api_key?: string | null;
   llm_provider?: string;
   model_context_window?: number;
@@ -531,6 +533,7 @@ export interface SettingsUpdate {
 export interface SettingsView {
   anthropic_api_key_configured: boolean;
   anthropic_api_key_hint: string | null;
+  anthropic_workspace_id: string;
   delivery_mode: string;
   derived_budgets: Record<string, number>;
   endpoint_key_saved: boolean;

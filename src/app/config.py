@@ -47,6 +47,7 @@ class Settings:
     # Whether the model can be shown images: "yes", "no", or "auto" - decided by
     # the provider and the model's name. See `app.models.vision`.
     model_reads_images: str = "auto"
+    anthropic_workspace_id: str = ""  # The workspace an Anthropic key not scoped to one must name.
 
 
 def _read_bool(environment: Mapping[str, str], name: str, default: bool) -> bool:
@@ -104,6 +105,7 @@ def load_settings(environment: Mapping[str, str] | None = None) -> Settings:
         openai_base_url=_read_str(values, "OPENAI_BASE_URL", default_address(llm_provider)),
         openai_api_key=_openai_api_key(values, llm_provider),
         anthropic_api_key=values.get("ANTHROPIC_API_KEY") or None,
+        anthropic_workspace_id=str(values.get("ANTHROPIC_WORKSPACE_ID") or "").strip(),
         # GEMINI_API_KEY is accepted as an alias: docker-compose and
         # .env.example both set that name, so reading only GOOGLE_API_KEY
         # meant the Gemini provider never received a key at all.

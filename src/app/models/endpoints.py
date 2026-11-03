@@ -141,9 +141,18 @@ PROVIDER_ADDRESSES = {
 }
 
 
+def anthropic_address(base_url: str) -> str:
+    """The hosted address an Anthropic client is pointed at, without the `/v1` its SDK adds, or "" for its own.
+
+    A self-hosted address is a leftover of the local model, whose server this deployment's environment names.
+    """
+    address = str(base_url or "").strip().rstrip("/").removesuffix("/v1")
+    return "" if not address or is_self_hosted(address) else address
+
+
 def default_address(provider: str) -> str:
     """The address a provider is reached at when none is configured, or ""."""
     return PROVIDER_ADDRESSES.get(str(provider or "").strip().lower(), "")
 
 
-__all__ = ["PROVIDER_ADDRESSES", "default_address", "is_self_hosted"]
+__all__ = ["PROVIDER_ADDRESSES", "anthropic_address", "default_address", "is_self_hosted"]

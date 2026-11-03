@@ -444,6 +444,19 @@
    "FrontierModelSettingsPayload": {
     "description": "Save the frontier judgement model configuration specifically, or select No Model.",
     "properties": {
+     "anthropic_workspace_id": {
+      "anyOf": [
+       {
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9_-]*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Anthropic Workspace Id"
+     },
      "escalate_after_attempts": {
       "default": 2,
       "maximum": 10.0,
@@ -540,6 +553,19 @@
    "LocalModelSettingsPayload": {
     "description": "Save the local build model configuration specifically.",
     "properties": {
+     "anthropic_workspace_id": {
+      "anyOf": [
+       {
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9_-]*$",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Anthropic Workspace Id"
+     },
      "api_key": {
       "anyOf": [
        {
@@ -2254,6 +2280,11 @@
        }
       ],
       "title": "Anthropic Api Key Hint"
+     },
+     "anthropic_workspace_id": {
+      "default": "",
+      "title": "Anthropic Workspace Id",
+      "type": "string"
      },
      "delivery_mode": {
       "default": "thorough",

@@ -29,6 +29,7 @@ import { readRunDefaults, saveRunDefaults } from '../lib/runDefaults';
 export const Home: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [workspaceLabel, setWorkspaceLabel] = useState<string>('');
+  const [runName, setRunName] = useState<string>('');
   const [allowSubdirectories, setAllowSubdirectories] = useState<boolean>(true);
   // Unattended is the whole point of the choice: nothing pauses for a human,
   // so the run only comes back when it finishes or fails. Supervised keeps the
@@ -204,6 +205,7 @@ export const Home: React.FC = () => {
       const payload: any = {
         // The person starting the run reviews it.
         reviewer: reviewer || undefined,
+        name: runName.trim() || undefined,
         workspace_label: workspaceLabel || undefined,
         allow_subdirectories: allowSubdirectories,
         auto_approve: unattended || autoApprove,
@@ -422,6 +424,23 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
               </div>
 
               {/* Workspace label */}
+              <div>
+                <label htmlFor="run-name" className="flex items-center gap-2 text-sm font-semibold text-text-primary mb-2">
+                  Run name <span className="font-normal text-text-muted">(optional)</span>
+                </label>
+                <input
+                  id="run-name"
+                  type="text"
+                  maxLength={80}
+                  value={runName}
+                  onChange={(e) => setRunName(e.target.value)}
+                  placeholder="e.g., checkout rewrite, second try"
+                  className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all text-sm"
+                />
+                <p className="text-xs text-text-muted mt-1.5">
+                  Tells this run from the others in the list. You can change it later.
+                </p>
+              </div>
               <div>
                 <label htmlFor="workspace-label" className="flex items-center gap-2 text-sm font-semibold text-text-primary mb-2">
                   <FolderOpen className="h-4 w-4 text-primary" />

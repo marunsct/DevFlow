@@ -29,6 +29,7 @@ const oneOf = <T extends string>(value: string | null | undefined, allowed: read
 
 interface ProviderForm {
   llm_provider: string;
+  anthropic_workspace_id?: string;
   openai_base_url: string;
   model_name: string;
   model_context_window: number;
@@ -270,6 +271,7 @@ export const Settings: React.FC = () => {
         model_max_output_tokens: settings.model_max_output_tokens ?? 0,
         thinking_mode: oneOf(settings.thinking_mode, THINKING_MODES, 'default'),
         thinking_effort: oneOf(settings.thinking_effort, THINKING_EFFORTS, 'medium'),
+        anthropic_workspace_id: settings.anthropic_workspace_id ?? '',
         ...(credentials[buildKeyField] !== '' ? { api_key: credentials[buildKeyField] } : {}),
       };
       const res = await saveLocalModelSettings(payload);
@@ -302,6 +304,7 @@ export const Settings: React.FC = () => {
         escalate_after_attempts: settings.escalate_after_attempts ?? 2,
         plan_on_judgement_model: settings.plan_on_judgement_model ?? true,
         no_model: isNoModel,
+        anthropic_workspace_id: settings.anthropic_workspace_id ?? '',
         ...(credentials.judgement_api_key !== '' ? { judgement_api_key: credentials.judgement_api_key } : {}),
       };
       const res = await saveFrontierModelSettings(payload);
@@ -660,6 +663,18 @@ export const Settings: React.FC = () => {
                               ? 'This endpoint has a key saved.'
                               : 'No key is saved for this endpoint yet.'}
                           </p>
+                          {buildProvider === 'anthropic' && (
+                            <div className="mb-2">
+                              <label className="block text-xs text-text-secondary mb-1">Anthropic workspace id (for a key not scoped to a workspace)</label>
+                              <input aria-label="Anthropic workspace id"
+                                type="text"
+                                value={settings.anthropic_workspace_id ?? ''}
+                                onChange={(e) => setSettings({ ...settings, anthropic_workspace_id: e.target.value.trim() })}
+                                className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                placeholder="empty when the key belongs to one workspace"
+                              />
+                            </div>
+                          )}
                           <CredentialInput
                             label={buildKeyLabel}
                             configured={buildKeyConfigured}
@@ -768,6 +783,18 @@ export const Settings: React.FC = () => {
                                 <option value="gemini">Google Gemini</option>
                               </select>
                             </div>
+                            {(settings.judgement_provider || buildProvider) === 'anthropic' && (
+                              <div>
+                                <label className="block text-xs text-text-secondary mb-1">Anthropic workspace id (for a key not scoped to a workspace)</label>
+                                <input aria-label="Frontier Anthropic workspace id"
+                                  type="text"
+                                  value={settings.anthropic_workspace_id ?? ''}
+                                  onChange={(e) => setSettings({ ...settings, anthropic_workspace_id: e.target.value.trim() })}
+                                  className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                  placeholder="empty when the key belongs to one workspace"
+                                />
+                              </div>
+                            )}
                             <div>
                               <label className="block text-xs text-text-secondary mb-1">Base URL</label>
                               <input aria-label="Base URL"

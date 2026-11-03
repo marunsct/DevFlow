@@ -1410,3 +1410,4 @@ measurement in the findings log** - do not delete those.
 2026-11-03 09:10 JST tasks-api run-8ac0e9c0: hidden 10/10, 130 active min, mutation 6/12, non-deliverable (3 unit tests fail on 422 vs 401, the contradiction whose ruling was rejected before LF.550). RC clean notes-api-hono 1b started 09:05.
 
 2026-11-03 09:45 JST fullstack-py run-7570da3a hidden 7/8 at a green suite: the derived proven-setup pack silenced LF.534's checks. LF.552 deployed; clean count restarts.
+2026-11-03 11:00 JST LF.553-555 (owner request): keys sent only to the endpoint they were saved for, so a saved Anthropic key no longer gives local runs a paid fallback; Anthropic workspace id, address, adaptive thinking; run name on Home. Anthropic not yet proven by a call: the saved key is not scoped to a workspace.

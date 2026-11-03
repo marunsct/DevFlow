@@ -97,6 +97,7 @@ class SettingsView(BaseModel):
     #: key of their own saved (`runtime_settings.endpoint_keys`).
     endpoint_key_saved: bool = False
     judgement_endpoint_key_saved: bool = False
+    anthropic_workspace_id: str = ""
 
 
 class SettingsUpdate(BaseModel):
@@ -323,6 +324,7 @@ def _judgement_view() -> dict[str, Any]:
         "judgement_max_output_tokens": reply,
         "judgement_api_key_hint": _mask(key),
         "judgement_api_key_configured": bool(key),
+        "anthropic_workspace_id": str(environment.get("ANTHROPIC_WORKSPACE_ID") or ""),
         "escalate_after_attempts": escalate_after(environment),
         "plan_on_judgement_model": plans_on_the_judgement_model(environment),
         **_endpoints_with_keys(environment),
@@ -559,6 +561,7 @@ class LocalModelSettingsPayload(BaseModel):
     model_max_output_tokens: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
     thinking_mode: Literal["default", "on", "off"] = Field(default="default")
     thinking_effort: Literal["low", "medium", "high"] = Field(default="medium")
+    anthropic_workspace_id: str | None = Field(default=None, max_length=128, pattern=r"^[A-Za-z0-9_-]*$")
     api_key: str | None = Field(default=None, max_length=512, repr=False)
 
     @field_validator("api_key")
@@ -584,6 +587,7 @@ class FrontierModelSettingsPayload(BaseModel):
     escalate_after_attempts: int = Field(default=2, ge=1, le=10)
     plan_on_judgement_model: bool = Field(default=True)
     no_model: bool = Field(default=False, description="Explicitly select no frontier model (local only).")
+    anthropic_workspace_id: str | None = Field(default=None, max_length=128, pattern=r"^[A-Za-z0-9_-]*$")
 
     @field_validator("judgement_api_key")
     @classmethod
@@ -616,6 +620,8 @@ async def update_local_model_settings(
         },
         actor=user.username,
     )
+    if payload.anthropic_workspace_id is not None:
+        runtime_settings.save({"anthropic_workspace_id": payload.anthropic_workspace_id}, actor=user.username)
     if payload.api_key is not None:
         provider = (payload.llm_provider or "local").strip().lower()
         runtime_settings.save_endpoint_key(provider, payload.openai_base_url, payload.api_key, actor=user.username)
@@ -688,6 +694,8 @@ async def update_frontier_model_settings(
         },
         actor=user.username,
     )
+    if payload.anthropic_workspace_id is not None:
+        runtime_settings.save({"anthropic_workspace_id": payload.anthropic_workspace_id}, actor=user.username)
     if payload.judgement_api_key is not None:
         effective = runtime_settings.effective_environment()
         runtime_settings.save_endpoint_key(

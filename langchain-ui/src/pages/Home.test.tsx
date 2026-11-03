@@ -41,6 +41,15 @@ describe('starting a build', () => {
     expect(sent.map((file) => file.name)).toEqual(['brief.md']);
   });
 
+  it('starts the run under the name typed for it', async () => {
+    show();
+    await userEvent.type(screen.getByLabelText(/Or write the brief here/), '## Features\n- Add a note');
+    await userEvent.type(screen.getByLabelText(/Run name/), 'second try');
+    await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
+    await waitFor(() => expect(mocks.startRun).toHaveBeenCalled());
+    expect(JSON.stringify(mocks.startRun.mock.calls.at(-1))).toContain('"name":"second try"');
+  });
+
   it('deletes the run it created when the run cannot start', async () => {
     mocks.startRun.mockRejectedValueOnce(new Error('the worker is down'));
     show();

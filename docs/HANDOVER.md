@@ -1037,3 +1037,5 @@ The decisions below that these settle are marked; the rest stand.
 In parallel mode with auto-approve, gated calls pause and drain one per
 superstep. Fixing that would be a redesign of the runner's auto-approve loop,
 not a fix.
+
+**Keys (LF.553, 2026-11-03):** a key saved in Settings reaches only the endpoint it was saved for; an endpoint with no saved key gets none, unless the deployment environment supplies one. Anthropic: a key not scoped to a workspace needs the workspace id field in Settings → Models.

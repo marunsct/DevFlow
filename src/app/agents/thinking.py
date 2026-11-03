@@ -27,6 +27,7 @@ rejects, and one that consumes the whole ceiling leaves nothing to answer with.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -102,6 +103,10 @@ def thinking_budget_tokens(effort: str | None, max_output_tokens: int) -> int:
     return max(MIN_THINKING_TOKENS, min(wanted, ceiling - MIN_ANSWER_TOKENS))
 
 
+#: Anthropic models that still take a thinking budget: everything before 4.6.
+_TAKES_A_THINKING_BUDGET = re.compile(r"claude-(?:\d|(?:opus|sonnet|haiku)-4(?:$|-\d{8}$|-[0-5](?:$|-)))")
+
+
 @dataclass(frozen=True)
 class ThinkingPolicy:
     """The thinking configuration for one model, ready to hand to a client."""
@@ -152,8 +157,11 @@ class ThinkingPolicy:
             arguments["extra_body"] = {"chat_template_kwargs": {"enable_thinking": True}}
         return arguments
 
-    def anthropic_arguments(self) -> dict:
+    def anthropic_arguments(self, model: str = "") -> dict:
         """Client keyword arguments for Anthropic."""
+        # Models from 4.6 on decide their own thinking, and the current ones refuse a budget with a 400.
+        if self.enabled and model and not _TAKES_A_THINKING_BUDGET.search(model):
+            return {"thinking": {"type": "adaptive"}}
         # No budget is no budget: a zero one is a request the provider refuses.
         if not self.enabled or self.budget_tokens <= 0:
             return {}

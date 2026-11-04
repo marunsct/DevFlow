@@ -42,12 +42,17 @@ const SOURCE_WORDS: Record<SwitchEntry['source'], string> = {
 const isEntries = (data: unknown): data is SwitchEntry[] =>
   Array.isArray(data) && data.every((item) => item && typeof item === 'object' && 'name' in item && 'on' in item);
 
+type Only = 'all' | 'on' | 'off' | 'set';
+const ONLY: Array<[Only, string]> = [['all', 'All'], ['on', 'On'], ['off', 'Off'], ['set', 'Set here']];
+const BUNDLE_PREFIX = 'PREMIUM_';
+
 export const Admin: React.FC = () => {
   const [entries, setEntries] = useState<SwitchEntry[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [only, setOnly] = useState<Only>('all');
   const { notify } = useFeedback();
 
   const load = useCallback(async () => {
@@ -85,9 +90,15 @@ export const Admin: React.FC = () => {
   const shown = useMemo(() => {
     const words = query.trim().toLowerCase();
     if (!entries) return [];
-    if (!words) return entries;
-    return entries.filter((entry) => `${entry.name} ${entry.summary} ${entry.details}`.toLowerCase().includes(words));
-  }, [entries, query]);
+    return entries
+      .filter((entry) => only === 'all' || (only === 'on' ? entry.on : only === 'off' ? !entry.on : entry.setting !== null))
+      .filter((entry) => !words || `${entry.name} ${entry.summary} ${entry.details}`.toLowerCase().includes(words));
+  }, [entries, query, only]);
+  // The bundles a deployment is sold as come first; every other switch after them.
+  const groups: Array<[string, SwitchEntry[]]> = [
+    ['Bundles', shown.filter((entry) => entry.name.startsWith(BUNDLE_PREFIX))],
+    ['Individual switches', shown.filter((entry) => !entry.name.startsWith(BUNDLE_PREFIX))],
+  ];
 
   const counts = useMemo(() => {
     const all = entries ?? [];
@@ -121,56 +132,71 @@ export const Admin: React.FC = () => {
           {!isAdmin && entries && (
             <p className="text-sm text-text-muted">Only an administrator can change a switch; this view is read-only.</p>
           )}
-          <label className="block text-sm">
-            <span className="text-text-secondary">Find a switch</span>
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Name or what it does"
-              className="mt-1 w-full rounded-lg border border-border bg-transparent px-3 py-2 text-text-primary"
-            />
-          </label>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="block flex-1 text-sm">
+              <span className="text-text-secondary">Find a switch</span>
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Name or what it does"
+                className="mt-1 w-full rounded-lg border border-border bg-transparent px-3 py-2 text-text-primary"
+              />
+            </label>
+            <div role="group" aria-label="Show" className="flex gap-1 rounded-lg border border-border p-1 text-sm">
+              {ONLY.map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={only === id}
+                  onClick={() => setOnly(id)}
+                  className={`rounded-md px-3 py-1 ${only === id ? 'bg-accent-soft font-medium text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {failed && <p role="alert" className="text-sm text-danger">The switches could not be loaded.</p>}
           {!entries && !failed && <p role="status" className="text-sm text-text-muted">Loading…</p>}
-          {entries && shown.length === 0 && <p className="text-sm text-text-muted">No switch matches “{query}”.</p>}
+          {entries && shown.length === 0 && <p className="text-sm text-text-muted">No switch matches{query ? ` “${query}”` : ' this filter'}.</p>}
 
-          <ul className="space-y-3">
-            {shown.map((entry) => (
-              <li key={entry.name} className="rounded-lg border border-border p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="font-mono font-medium text-text-primary">{entry.name}</span>
-                    <Badge tone={entry.on ? 'ok' : 'neutral'}>{entry.on ? 'On' : 'Off'}</Badge>
-                    <span className="text-xs text-text-muted">{SOURCE_WORDS[entry.source]}</span>
-                  </div>
-                  <label className="text-xs text-text-secondary flex items-center gap-2">
-                    Value
+          {groups.filter(([, items]) => items.length > 0).map(([title, items]) => (
+            <div key={title}>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-muted">{title} <span className="font-normal">({items.length})</span></h3>
+              <ul className="divide-y divide-border rounded-lg border border-border">
+                {items.map((entry) => (
+                  <li key={entry.name} className="grid grid-cols-1 gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="font-mono font-medium text-text-primary">{entry.name}</span>
+                        <Badge tone={entry.on ? 'ok' : 'neutral'}>{entry.on ? 'On' : 'Off'}</Badge>
+                        <span className="text-xs text-text-muted">{SOURCE_WORDS[entry.source]}</span>
+                      </div>
+                      <p className="mt-0.5 text-sm text-text-secondary">{entry.summary}</p>
+                      <details className="mt-0.5">
+                        <summary className="text-xs text-text-muted cursor-pointer">Why it exists and how it works</summary>
+                        {entry.details && <p className="mt-1 text-sm text-text-secondary whitespace-pre-wrap">{entry.details}</p>}
+                        <p className="mt-1 text-xs text-text-muted font-mono">{entry.module}</p>
+                      </details>
+                    </div>
                     <select
                       aria-label={`${entry.name} value`}
                       value={choiceOf(entry.setting)}
                       disabled={!isAdmin || busy === entry.name}
                       onChange={(e) => choose(entry, e.target.value as Choice)}
-                      className="rounded border border-border bg-transparent px-2 py-1 text-text-primary disabled:opacity-60"
+                      className="rounded border border-border bg-transparent px-2 py-1 text-xs text-text-primary disabled:opacity-60"
                     >
                       <option value="docker">{dockerWords(entry)}</option>
                       <option value="on">On</option>
                       <option value="off">Off</option>
                     </select>
-                  </label>
-                </div>
-                <p className="mt-2 text-sm text-text-primary">{entry.summary}</p>
-                {entry.details && (
-                  <details className="mt-1">
-                    <summary className="text-xs text-text-secondary cursor-pointer">Why it exists and how it works</summary>
-                    <p className="mt-1 text-sm text-text-secondary whitespace-pre-wrap">{entry.details}</p>
-                  </details>
-                )}
-                <p className="mt-1 text-xs text-text-muted font-mono">{entry.module}</p>
-              </li>
-            ))}
-          </ul>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
       </section>
     </div>

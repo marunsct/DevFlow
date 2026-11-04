@@ -74,4 +74,17 @@ describe('the admin page', () => {
     expect(screen.queryByText('START_PROBE')).toBeNull();
     expect(screen.getByText('STALL_RULE')).toBeTruthy();
   });
+
+  it('shows only the switches that are off, and the bundles apart from the rest', async () => {
+    serve([entry(), entry({ name: 'MEASURE_ONCE', on: false, source: 'default' }), entry({ name: 'PREMIUM_DEEP_VERIFICATION' })]);
+    renderPage();
+    await screen.findByText('START_PROBE');
+    expect(screen.getByText('Bundles')).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Off' }));
+
+    expect(screen.getByText('MEASURE_ONCE')).toBeTruthy();
+    expect(screen.queryByText('START_PROBE')).toBeNull();
+    expect(screen.queryByText('PREMIUM_DEEP_VERIFICATION')).toBeNull();
+  });
 });

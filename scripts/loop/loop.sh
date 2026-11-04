@@ -75,11 +75,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HERE="$ROOT/scripts/loop"
 STATE="$ROOT/data/loop"
 API="${LOOP_API:-http://localhost:8000}"
-DB=(docker exec langchain-db-1 psql -U postgres -d langchain -tAc)
 PY="$ROOT/.venv/bin/python"
 [ -x "$PY" ] || PY=python3
 mkdir -p "$STATE"
 cd "$ROOT"
+# By compose service: a recreate cut short by a restart leaves `<id>_langchain-worker-1` behind.
+WORKER_C=$(docker compose ps -q worker 2>/dev/null | head -1 || true); WORKER_C=${WORKER_C:-langchain-worker-1}
+DB_C=$(docker compose ps -q db 2>/dev/null | head -1 || true); DB_C=${DB_C:-langchain-db-1}
+DB=(docker exec "$DB_C" psql -U postgres -d langchain -tAc)
 
 current() { cat "$STATE/current_run.txt" 2>/dev/null || { echo "no current run: use 'start'" >&2; exit 1; }; }
 in_worker() { local script=$1; shift; docker compose exec -T worker python - "$@" < "$HERE/$script"; }
@@ -172,8 +175,8 @@ score)
   project=$(docker compose exec -T worker cat "$ws/.project-directory" 2>/dev/null | tr -d '\r\n')
   [ -n "$project" ] || { echo "$run has no project directory yet" >&2; exit 1; }
   docker compose exec -T -u root worker sh -c "rm -rf /tmp/bench-src/$name && mkdir -p /tmp/bench-src"
-  docker cp "benchmarks/$name" "langchain-worker-1:/tmp/bench-src/$name" >/dev/null
-  docker cp scripts/bench/score.py langchain-worker-1:/tmp/bench-src/score.py >/dev/null
+  docker cp "benchmarks/$name" "$WORKER_C:/tmp/bench-src/$name" >/dev/null
+  docker cp scripts/bench/score.py $WORKER_C:/tmp/bench-src/score.py >/dev/null
   docker compose exec -T -u root worker chown -R appuser:appuser /tmp/bench-src
   status=$("${DB[@]}" "select status from runs where run_id='$run'" | tr -d '[:space:]')
   # What the release knew it did not prove rides the export (Initiative J.4).
@@ -192,7 +195,7 @@ score)
   model_last=$("${DB[@]}" "select coalesce(model_last,'') from runs where run_id='$run'" 2>/dev/null | head -1)
   docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json" "$status" "$gaps" "$own" "$model_last"
   mkdir -p data/bench
-  docker cp "langchain-worker-1:/tmp/bench-$run.json" "data/bench/$run.json" >/dev/null && echo "result: data/bench/$run.json"
+  docker cp "$WORKER_C:/tmp/bench-$run.json" "data/bench/$run.json" >/dev/null && echo "result: data/bench/$run.json"
   # The score alone - no test names - for the outcome dashboard (app.server.outcomes).
   "$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({k:d.get(k) for k in ("benchmark","passed","total","score","quality_passed","quality_total","completion_gaps","brief_mismatch","model","endpoint")}))' "data/bench/$run.json" \
     | docker compose exec -T worker sh -c "mkdir -p /app/data/outcomes && cat > /app/data/outcomes/$run.json" || true
@@ -209,10 +212,10 @@ score)
 mutate)
   # How strong is the run's own locked suite? See scripts/bench/mutate.py.
   run="${2:-$(current)}"; count="${3:-12}"
-  docker cp scripts/bench/mutate.py langchain-worker-1:/tmp/mutate.py >/dev/null
+  docker cp scripts/bench/mutate.py $WORKER_C:/tmp/mutate.py >/dev/null
   docker compose exec -T worker python /tmp/mutate.py "/app/data/workspaces/default/workspace-$run" "/tmp/mutate-$run.json" "$count"
   mkdir -p data/bench/mutation
-  docker cp "langchain-worker-1:/tmp/mutate-$run.json" "data/bench/mutation/$run.json" >/dev/null && echo "result: data/bench/mutation/$run.json"
+  docker cp "$WORKER_C:/tmp/mutate-$run.json" "data/bench/mutation/$run.json" >/dev/null && echo "result: data/bench/mutation/$run.json"
   ;;
 
 bench-report)
@@ -409,14 +412,14 @@ corpus)
   case "${2:-list}" in
   harvest)
     in_worker corpus.py "${3:-$(current)}"
-    mkdir -p data/corpus && docker cp langchain-worker-1:/app/data/corpus/. data/corpus/ >/dev/null 2>&1 || true
+    mkdir -p data/corpus && docker cp $WORKER_C:/app/data/corpus/. data/corpus/ >/dev/null 2>&1 || true
     ;;
   # Accepted here and copied into the worker: `harvest` copies the worker's corpus over this one after every
   # scored run, and an acceptance made only here was undone by the next score, failing the suite again.
   accept) DATA_DIR=data PYTHONPATH="$ROOT/src" "$PY" -c 'from app.observability.reader_corpus import replay; print(replay(accept=True))'
           # `docker cp` keeps the host's owner, and the worker's own user then cannot write a sample again: measured
           # on the next scored run, the harvest failed with "Permission denied" on every file the accept had copied.
-          { docker cp data/corpus/. langchain-worker-1:/app/data/corpus/ >/dev/null 2>&1 \
+          { docker cp data/corpus/. $WORKER_C:/app/data/corpus/ >/dev/null 2>&1 \
             && docker compose exec -T -u root worker sh -c 'chown -R "$(stat -c %u:%g /app/data)" /app/data/corpus' >/dev/null 2>&1; } \
             || echo "corpus: the accepted results were not copied into the worker; the next harvest will undo them" >&2 ;;
   *) DATA_DIR=data PYTHONPATH="$ROOT/src" "$PY" -c 'from app.observability.reader_corpus import sizes, replay; print(sizes()); print("changed:", replay())' ;;
@@ -554,11 +557,11 @@ backup)
     dump=$(ls -1d data/backups/*/ 2>/dev/null | sort | tail -1)
     [ -n "$dump" ] && [ -f "$dump/langchain.dump" ] || { echo "no backup to check" >&2; exit 1; }
     scratch="restore_check_$(date +%s)"
-    docker exec langchain-db-1 psql -U postgres -qc "create database $scratch" >/dev/null
-    docker exec -i langchain-db-1 pg_restore -U postgres --no-owner -d "$scratch" < "$dump/langchain.dump" >/dev/null 2>&1
-    restored=$(docker exec langchain-db-1 psql -U postgres -d "$scratch" -tAc "select count(*) from runs" 2>/dev/null | tr -d '[:space:]')
+    docker exec "$DB_C" psql -U postgres -qc "create database $scratch" >/dev/null
+    docker exec -i "$DB_C" pg_restore -U postgres --no-owner -d "$scratch" < "$dump/langchain.dump" >/dev/null 2>&1
+    restored=$(docker exec "$DB_C" psql -U postgres -d "$scratch" -tAc "select count(*) from runs" 2>/dev/null | tr -d '[:space:]')
     live=$("${DB[@]}" "select count(*) from runs" | tr -d '[:space:]')
-    docker exec langchain-db-1 psql -U postgres -qc "drop database $scratch" >/dev/null
+    docker exec "$DB_C" psql -U postgres -qc "drop database $scratch" >/dev/null
     echo "restore check of $dump: ${restored:-0} run(s) restored, ${live:-?} in the live database"
     [ "${restored:-0}" -gt 0 ] || exit 1
     exit 0
@@ -566,8 +569,8 @@ backup)
   dir="data/backups/$(date +%F)"
   mkdir -p "$dir"
   # Custom format, compressed: the checkpoint tables dumped as plain SQL came to 15 GB.
-  docker exec langchain-db-1 pg_dump -U postgres -d langchain --no-owner -Fc > "$dir/langchain.dump.tmp" && mv "$dir/langchain.dump.tmp" "$dir/langchain.dump"
-  docker cp langchain-worker-1:/app/data/lessons.json "$dir/lessons.json" >/dev/null 2>&1 || true
+  docker exec "$DB_C" pg_dump -U postgres -d langchain --no-owner -Fc > "$dir/langchain.dump.tmp" && mv "$dir/langchain.dump.tmp" "$dir/langchain.dump"
+  docker cp $WORKER_C:/app/data/lessons.json "$dir/lessons.json" >/dev/null 2>&1 || true
   # Three days kept.
   ls -1d data/backups/*/ 2>/dev/null | sort | head -n -3 | xargs -r rm -rf
   echo "backup -> $dir ($(du -sh "$dir" | cut -f1))"
@@ -578,8 +581,8 @@ restore)
   # then point DATABASE_URL at it, or rename it over the live one by hand.
   src="${2:?usage: loop.sh restore <backup-dir> <new-database>}"; target="${3:?name a new database to restore into}"
   [ "$target" != "langchain" ] || { echo "not over the live database; name a new one" >&2; exit 1; }
-  docker exec langchain-db-1 psql -U postgres -qc "create database $target" && \
-    docker exec -i langchain-db-1 pg_restore -U postgres --no-owner -d "$target" < "$src/langchain.dump" >/dev/null && \
+  docker exec "$DB_C" psql -U postgres -qc "create database $target" && \
+    docker exec -i "$DB_C" pg_restore -U postgres --no-owner -d "$target" < "$src/langchain.dump" >/dev/null && \
     echo "restored $src into database $target"
   ;;
 nightly)

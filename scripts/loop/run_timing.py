@@ -97,6 +97,8 @@ def analyse(prefix):
         fam = family(st)
         if k == "model_request":
             open_req[st].append(ts(r["at"]))
+        elif k == "model_error" and open_req.get(st):
+            open_req[st].pop(0)  # no reply: the next one is timed from its own request
         elif k == "model_response" and open_req.get(st):
             a, b = open_req[st].pop(0), ts(r["at"])
             model_iv.append((a, b))

@@ -211,6 +211,8 @@ def kpis(records: list[dict]) -> dict:
                 row["lost_replies"] += 1
         elif kind == "model_error":
             count["model_errors"] += 1
+            if opened.get(stage):
+                opened[stage].pop(0)  # no reply: the next one is timed from its own request
         elif kind == "resumed":
             count["resumes"] += 1
         elif kind == "steering_applied":

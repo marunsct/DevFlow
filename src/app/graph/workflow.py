@@ -2995,12 +2995,46 @@ def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: 
             return test_result
         errors = interface_contract.server_errors(root) or []
         bad_body = interface_contract.bad_body_errors(root) or []
-        if not errors and not bad_body:
-            return test_result
-        logger.warning("A green round's contract checks made the server fail on %d line(s)", len(errors) + len(bad_body))
-        return _with_a_server_error_defect(state, test_result, milestone, errors, bad_body)
+        if errors or bad_body:
+            logger.warning("A green round's contract checks made the server fail on %d line(s)", len(errors) + len(bad_body))
+            test_result = _with_a_server_error_defect(state, test_result, milestone, errors, bad_body)
+        return _with_an_emptied_field_defect(state, test_result, milestone)
     except Exception:  # noqa: BLE001 - the round as measured stands
         logger.debug("Could not add the contract's server errors to the round", exc_info=True)
+        return test_result
+
+
+def _with_an_emptied_field_defect(state: Any, test_result: Any, milestone: Any) -> Any:
+    """`test_result` with one defect for each write that accepted a field the criteria refuse empty. Never raises.
+
+    Measured on one run: the suite tried an empty title on create only, the product accepted it on update, and the run
+    shipped as passing while a hidden test failed.
+    """
+    try:
+        from app.acceptance import interface_contract
+        from app.agents.specialists import ReportedDefect
+        from app.graph import acceptance_nodes
+
+        root = state["repository"].root_path
+        if any(str(d.description or "").startswith(interface_contract.EMPTIED_FIELD_ACCEPTED) for d in test_result.defects):
+            return test_result
+        accepted = interface_contract.emptied_field_errors(root) or []
+        if not accepted:
+            return test_result
+        logger.warning("A green round's emptied-field probe: %d write(s) accepted an empty field", len(accepted))
+        defect = ReportedDefect(
+            description=interface_contract.emptied_field_description(accepted),
+            severity="major",
+            reproduction_steps="; ".join(
+                f"send `{c.method} {c.path}` a valid body with `{c.emptied}` set to an empty string" for c, _ in accepted[:6]),
+            expected_behavior="; ".join(f"`{c.method} {c.path}` refuses it with a 4xx and stores nothing" for c, _ in accepted[:6]),
+            actual_behavior="; ".join(f"`{c.method} {c.path}` answered {status}" for c, status in accepted[:6]),
+            affected_files=sorted({f for f, _ in acceptance_nodes.where_errors_become_5xx(root)}),
+            owner=_the_unit_tests_fail(milestone, "").owner,
+        )
+        return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
+    except Exception:  # noqa: BLE001 - the round as measured stands
+        logger.debug("Could not add the emptied-field defect to the round", exc_info=True)
         return test_result
 
 

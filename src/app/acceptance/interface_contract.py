@@ -226,6 +226,8 @@ class Check:
     made_through: str = ""
     #: The bodies that write is tried with, as JSON.
     bodies: str = ""
+    #: The field the emptied-field probe sends empty; "" for every other check.
+    emptied: str = ""
 
 
 def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
@@ -413,6 +415,72 @@ def playwright_bad_body_checks(checks: list[Check]) -> str:
     return "import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests)
 
 
+#: A rule refusing a field when it is empty, as briefs and criteria say it: "A title that is missing or empty is
+#: refused", "An empty or missing `name` is rejected", "The email must not be empty".
+_REFUSED_WHEN_EMPTY = (
+    re.compile(r"\b(?:a|an|the)\s+`?(\w+)`?\s+(?:field\s+)?(?:that|which)\s+is\s+(?:missing\s+or\s+)?(?:empty|blank)"
+               r"\b[^.]*\b(?:refused|rejected)", re.I),
+    re.compile(r"\b(?:an?\s+)?(?:empty|blank)\s+(?:or\s+missing\s+)?`?(\w+)`?\s+(?:is|are)\s+(?:refused|rejected)", re.I),
+    re.compile(r"\b(?:the\s+)?`?(\w+)`?\s+(?:must|may)\s+not\s+be\s+(?:empty|blank)", re.I),
+)
+
+
+def fields_refused_when_empty(texts: Any) -> list[str]:
+    """The fields the specification's rules refuse when empty, in the order first named."""
+    found: list[str] = []
+    for text in texts or ():
+        for rule in _REFUSED_WHEN_EMPTY:
+            for match in rule.finditer(str(text)):
+                name = match.group(1)
+                if name.lower() not in {"it", "that", "this", "one", "request", "value"} and name not in found:
+                    found.append(name)
+    return found
+
+
+def emptied_field_checks(checks: list[Check], bodies: list[Any], fields: list[str]) -> tuple[list[Check], list[str]]:
+    """(what the emptied-field probe asks, the lines it cannot ask): each write of the contract, once per field the
+    specification refuses empty that the example body carries.
+
+    A rule stated once holds for every write: measured on one run, the suite asked it of create only and the product
+    accepted an update that emptied the title. The writes are the bad-body probe's, a record made first where needed.
+    """
+    from dataclasses import replace as _with
+
+    carried = [f for f in fields if any(isinstance(b, dict) and f in b for b in bodies)]
+    if not carried:
+        return [], []
+    writes, unchecked = bad_body_checks(checks, bodies)
+    asked = [_with(check, emptied=field, bodies=json.dumps(bodies)) for check in writes for field in carried]
+    return asked, unchecked
+
+
+def _an_emptied_field_test(title: str, check: Check, bodies: list[Any]) -> str:
+    """The test sending `check`'s call the example body with `check.emptied` set to "": it must be refused."""
+    example = next(b for b in bodies if isinstance(b, dict) and check.emptied in b)
+    sent = {**example, check.emptied: ""}
+    plain = _with_the_bad_body(check)
+    marker = f"data: {_js(A_BODY_NOTHING_CAN_PARSE)}, "
+    assert marker in plain
+    return plain.replace(marker, f"data: {json.dumps(sent)}, ").replace(
+        "  expect(answer.status()).toBeLessThan(500);\n",
+        "  expect(answer.status()).toBeGreaterThanOrEqual(400);\n  expect(answer.status()).toBeLessThan(500);\n",
+    )
+
+
+def _with_the_bad_body(check: Check) -> str:
+    return _a_bad_body_test("__TITLE__", check)
+
+
+def playwright_emptied_field_checks(checks: list[Check], bodies: list[Any] | None = None) -> str:
+    """A Playwright spec with one emptied-field test per check; numbered as `playwright_checks` numbers its own."""
+    tests = []
+    for number, c in enumerate(checks, start=1):
+        given = bodies if bodies is not None else json.loads(c.bodies or "[]")
+        title = _js(f"{f'[{c.criterion}] ' if c.criterion else ''}contract {number}: {c.line} with an empty {c.emptied}")
+        tests.append(_an_emptied_field_test("__TITLE__", c, given).replace("__TITLE__", title, 1))
+    return "import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests)
+
+
 def playwright_config(suite_config: str) -> str:
     """A configuration that is the suite's own, pointed at the compiled checks and their own report."""
     return (
@@ -435,6 +503,7 @@ PROBE_RUNNERS: dict[str, dict[str, Any]] = {
     "playwright": {
         "checks": playwright_checks,
         "bad_body_checks": playwright_bad_body_checks,
+        "emptied_field_checks": playwright_emptied_field_checks,
         "config": playwright_config,
         "command": ("npx", "playwright", "test", "--config", CONFIG_FILE),
         "base_config": "playwright.config.js",
@@ -622,6 +691,59 @@ def bad_body_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing
         logger.debug("Could not probe the contract with a bad body", exc_info=True)
         return None
+
+
+#: What a failed refusal check reports it was given: `Received: 200`.
+_RECEIVED_ANY = re.compile(r"Received:\s*(?:\x1b\[[0-9;]*m)*\s*(\d{3})\b")
+
+
+def emptied_field_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Check, int]] | None:
+    """Each write call of the locked contract that accepts a field the criteria refuse empty, with the status it gave.
+
+    None when the checks cannot run. Measured on one run: a missing or empty title was refused on create only, the
+    product accepted an update that emptied it, and a hidden test failed while the locked suite passed. Any 4xx passes.
+    """
+    try:
+        from app.acceptance import suite
+        from app.stacks import contract
+
+        root = Path(repo_root)
+        fields = fields_refused_when_empty([c.text for c in suite.criteria(root)])
+        state = suite._state(root)  # noqa: SLF001 - one state file for the suite and its contract
+        bodies = list(state.get("interface_contract_bodies") or [])
+        asked, _ = emptied_field_checks(the_locked_contract(root)[:MOST_CHECKS], bodies, fields)
+        found = contract.the_pack(root)
+        probe = PROBE_RUNNERS.get(found[0].probe_runner) if found else None
+        if not asked or probe is None or "emptied_field_checks" not in probe:
+            return None
+        project_name = str((found[1] or {}).get("project") or "")
+        run = runner or suite._sandbox_runner(root)  # noqa: SLF001 - the suite's own runner
+        report = _the_probe_s_report(root / project_name, project_name, probe, asked, run, "emptied_field_checks")
+        if report is None or not report.found:
+            return None
+        accepted: list[tuple[Check, int]] = []
+        for test in report.tests:
+            check = _the_check_of(test, asked)
+            received = _RECEIVED_ANY.search(str(getattr(test, "message", "") or ""))
+            if check is not None and getattr(test, "outcome", "") == "failed" and received \
+                    and 200 <= int(received.group(1)) < 300:
+                accepted.append((check, int(received.group(1))))
+        return accepted
+    except Exception:  # noqa: BLE001 - a check that cannot run says nothing
+        logger.debug("Could not probe the contract with an emptied field", exc_info=True)
+        return None
+
+
+def emptied_field_description(accepted: list[tuple[Check, int]]) -> str:
+    """The defect's description for writes that accepted a field the criteria refuse empty."""
+    calls = "; ".join(f"`{c.method} {c.path}` with an empty `{c.emptied}` answered {status}" for c, status in accepted[:6])
+    criteria = ", ".join(sorted({c.criterion for c, _ in accepted if c.criterion}))
+    return (f"{EMPTIED_FIELD_ACCEPTED} {calls}. The criteria refuse that field empty on every write"
+            f"{f' ({criteria})' if criteria else ''}, not only where the suite tried it.")
+
+
+#: How the emptied-field defect's text starts; the round reads it to raise it once.
+EMPTIED_FIELD_ACCEPTED = "A write accepts a field the specification refuses empty:"
 
 
 def what_the_bad_body_probe_did_not_ask(repo_root: str | Path) -> list[str]:

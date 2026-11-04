@@ -30,7 +30,7 @@ describe('starting a build', () => {
     const start = screen.getByRole('button', { name: /Start Workflow Run/ }) as HTMLButtonElement;
     expect(start.disabled).toBe(true);
 
-    await userEvent.type(screen.getByLabelText(/Or write the brief here/), '## Features\n- Add a note\n- Delete a note');
+    await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a note\n- Delete a note');
     expect(start.disabled).toBe(false);
     expect(await screen.findByText('Add a note', {}, { timeout: 3000 })).toBeTruthy();
     expect(screen.getAllByText('not yet')).toHaveLength(2);
@@ -43,7 +43,7 @@ describe('starting a build', () => {
 
   it('starts the run under the name typed for it', async () => {
     show();
-    await userEvent.type(screen.getByLabelText(/Or write the brief here/), '## Features\n- Add a note');
+    await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a note');
     await userEvent.type(screen.getByLabelText(/Run name/), 'second try');
     await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
     await waitFor(() => expect(mocks.startRun).toHaveBeenCalled());
@@ -53,7 +53,7 @@ describe('starting a build', () => {
   it('deletes the run it created when the run cannot start', async () => {
     mocks.startRun.mockRejectedValueOnce(new Error('the worker is down'));
     show();
-    await userEvent.type(screen.getByLabelText(/Or write the brief here/), 'A brief');
+    await userEvent.type(screen.getByLabelText(/Write the brief/), 'A brief');
     await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
 
     await waitFor(() => expect(mocks.deleteRun).toHaveBeenCalledWith('run-new'));
@@ -72,7 +72,7 @@ describe('the frontier model', () => {
     show();
     expect(await screen.findByText(/could not be reached\./)).toBeTruthy();
 
-    await userEvent.type(screen.getByLabelText(/Or write the brief here/), 'A brief');
+    await userEvent.type(screen.getByLabelText(/Write the brief/), 'A brief');
     await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
 
     expect(mocks.createRun).not.toHaveBeenCalled();
@@ -90,3 +90,28 @@ describe('the frontier model', () => {
     expect(await screen.findByText(/No frontier model is configured\./)).toBeTruthy();
   });
 });
+
+describe('your involvement', () => {
+  const sent = () => (mocks.startRun.mock.calls.at(-1) as unknown as [string, Record<string, any>])[1];
+
+  it('hands-off skips every review and approves every action', async () => {
+    show();
+    await userEvent.type(screen.getByLabelText(/Write the brief/), 'A brief');
+    await userEvent.click(screen.getByRole('radio', { name: /Hands-off/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
+    await waitFor(() => expect(mocks.startRun).toHaveBeenCalled());
+    expect(sent().auto_approve).toBe(true);
+    expect(Object.values(sent().review_policy).every((on) => on === false)).toBe(true);
+  });
+
+  it('approving every step asks before each action and keeps the reviews', async () => {
+    show();
+    await userEvent.type(screen.getByLabelText(/Write the brief/), 'A brief');
+    await userEvent.click(screen.getByRole('radio', { name: /Approve every step/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
+    await waitFor(() => expect(mocks.startRun).toHaveBeenCalled());
+    expect(sent().auto_approve).toBe(false);
+    expect(sent().review_policy.release).toBe(true);
+  });
+});
+

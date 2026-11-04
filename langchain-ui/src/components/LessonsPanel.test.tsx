@@ -35,4 +35,17 @@ describe('the lessons panel', () => {
 
     expect(await screen.findByText(/No lessons yet/)).toBeTruthy();
   });
+
+  it('opens on what waits for a decision and shows the others on request', async () => {
+    get.mockResolvedValue({ data: { lessons } });
+    render(<FeedbackProvider><LessonsPanel /></FeedbackProvider>);
+
+    expect(await screen.findByText('Put the code in a file, then run it.')).toBeTruthy();
+    expect(screen.queryByText('Read once.')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: /In use/ }));
+
+    expect(screen.getByText('Read once.')).toBeTruthy();
+    expect(screen.queryByText('Put the code in a file, then run it.')).toBeNull();
+  });
 });

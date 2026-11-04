@@ -40,6 +40,7 @@
 #                                            what a stage was told, the calls it made, and its answer (asked.py)
 #   scripts/loop/loop.sh failures [run-id] [--full]
 #                                            each failing acceptance test: criterion, error, the page (failures.py)
+#   scripts/loop/loop.sh deep-audit [run...] every invariant a run must hold, worst first (deep_audit.py); no ids: the last day
 #   scripts/loop/loop.sh ready               is the model the settings name served where they name it?
 #                                            last line ALL READY, or start nothing (model_ready.py)
 #   scripts/loop/loop.sh resumed             after a deploy while a run was live: wait up to 10 minutes
@@ -343,6 +344,7 @@ wait)
   ;;
 
 audit)  in_worker audit_live.py "${2:-$(current)}" ;;
+deep-audit) shift; in_worker deep_audit.py "$@" ;;
 defects) in_worker defects.py "${2:-$(current)}" ;;
 asked)
   shift

@@ -38,6 +38,8 @@ SNAPSHOT_DIR = f"{contract.HARNESS_DIR}/acceptance-snapshot"
 #: changed: one run's repair rewrote nine tests and no record said how.
 LOCKS_DIR = f"{contract.HARNESS_DIR}/acceptance-locks"
 RESULT_FILE = f"{contract.HARNESS_DIR}/acceptance-result.json"
+#: Every saved measurement, one line each: when, what product (its fingerprint), and how it fared.
+HISTORY_FILE = f"{contract.HARNESS_DIR}/acceptance-history.jsonl"
 
 #: The file a QA stage writes, for a stack no pack covers, to say how its
 #: suite runs: {"command": [...], "report": "path/to/junit.xml"}.
@@ -1397,9 +1399,62 @@ def _judged(repo_root: str | Path, result: AcceptanceResult, save: bool) -> Acce
 
             saved["fingerprint"] = fingerprint(repo_root)
             path.write_text(json.dumps(saved, indent=2) + "\n", encoding="utf-8")
+            _keep_in_the_history(repo_root, result, saved["fingerprint"])
         except OSError:
             logger.debug("Could not save the acceptance result", exc_info=True)
     return result
+
+
+def _keep_in_the_history(repo_root: str | Path, result: AcceptanceResult, product: str) -> None:
+    """Add this measurement to the history; warn when the same product measured worse than it did before.
+
+    Measured on one run: the suite passed 17 of 17, ten minutes later 3 of 17 with not a line of the product changed
+    - a compiled copy of a change already undone was running - and only the latest result was kept, so nothing showed
+    the fall. The same product cannot honestly measure worse: the place it runs in changed.
+    """
+    import datetime
+
+    passed = sum(1 for test in result.report.tests if test.outcome == "passed")
+    entry = {
+        "at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "product": product, "ran": bool(result.ran), "tests": len(result.report.tests), "passed": passed,
+    }
+    path = Path(repo_root) / HISTORY_FILE
+    earlier = [] if not path.is_file() else [
+        line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
+    for line in reversed(earlier):
+        try:
+            before = json.loads(line)
+        except ValueError:
+            continue
+        if before.get("product") == product and before.get("ran") and result.ran:
+            if passed < int(before.get("passed") or 0):
+                logger.warning(
+                    "The same product measured worse than it did at %s: %d of %d passing, now %d of %d. Nothing in the"
+                    " product changed, so what it runs on did - a stale cache, a leftover change or process.",
+                    before.get("at"), before.get("passed"), before.get("tests"), passed, entry["tests"],
+                )
+                entry["worse_than_the_same_product_at"] = before.get("at")
+            break
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry) + "\n")
+
+
+def same_product_measured_worse(repo_root: str | Path) -> list[dict[str, Any]]:
+    """The history's measurements that fared worse than the same product had; [] when none."""
+    path = Path(repo_root) / HISTORY_FILE
+    found = []
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if entry.get("worse_than_the_same_product_at"):
+                found.append(entry)
+    return found
 
 
 def _source_bugs_by_suffix() -> dict[str, tuple[str, ...]]:

@@ -187,7 +187,7 @@ def _the_quality_set(bench: Path, work: Path, runner: str, env: dict, notes: lis
 
 def score(
     product: Path, bench: Path, out: Path, status: str = "", completion_gaps: list[str] | None = None,
-    own_brief: str = "",
+    own_brief: str = "", model_last: str = "",
 ) -> dict:
     spec = json.loads((bench / "bench.json").read_text())
     kind, runner = spec["kind"], spec["runner"]
@@ -272,8 +272,32 @@ def score(
     # dashboard and `report.py` read the export without walking `harness`.
     result["completion_gaps"] = result["harness"]["completion_gaps"]
     result.update(visible_and_hidden(result))
+    result.update(the_model(model_last))
     out.write_text(json.dumps(result, indent=2))
     return result
+
+
+def the_model(model_last: str) -> dict:
+    """{"model": name, "endpoint": host:port} the run last ran on, from its record's `model_last`; {} when unknown.
+
+    A score with no model beside it could not be compared across models (owner, 2026-11-04: store the model a run ran
+    on). The record holds the model's non-secret settings only; nothing else is read from it.
+    """
+    try:
+        last = json.loads(model_last or "{}")
+    except ValueError:
+        return {}
+    if not isinstance(last, dict) or not last.get("OPENAI_MODEL"):
+        return {}
+    from urllib.parse import urlparse
+
+    base = str(last.get("OPENAI_BASE_URL") or "")
+    try:
+        parsed = urlparse(base)
+        where = f"{parsed.hostname}:{parsed.port}" if parsed.hostname and parsed.port else (parsed.hostname or "")
+    except ValueError:
+        where = ""
+    return {"model": str(last["OPENAI_MODEL"]), "endpoint": where, "provider": str(last.get("LLM_PROVIDER") or "")}
 
 
 def visible_and_hidden(result: dict) -> dict:
@@ -301,6 +325,7 @@ if __name__ == "__main__":
             gaps = []
     result = score(
         product, bench, out, sys.argv[4] if len(sys.argv) > 4 else "", gaps, sys.argv[6] if len(sys.argv) > 6 else "",
+        model_last=sys.argv[7] if len(sys.argv) > 7 else "",
     )
     if result["unscored"]:
         print(f"{result['benchmark']}: UNSCORED - the hidden tests produced no report; see the notes below")

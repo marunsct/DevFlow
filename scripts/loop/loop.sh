@@ -187,11 +187,13 @@ score)
     # Normalised text and a similarity, not a byte comparison (Initiative AN).
     own=$(docker compose exec -T worker cat "$doc" | "$PY" "$ROOT/scripts/bench/brief_match.py" - "benchmarks/$name/brief.md" 2>/dev/null | tr ' ' ':')
   fi
-  docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json" "$status" "$gaps" "$own"
+  # The model the run ran on, from its record (non-secret settings only), so a score names its model.
+  model_last=$("${DB[@]}" "select coalesce(model_last,'') from runs where run_id='$run'" 2>/dev/null | head -1)
+  docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json" "$status" "$gaps" "$own" "$model_last"
   mkdir -p data/bench
   docker cp "langchain-worker-1:/tmp/bench-$run.json" "data/bench/$run.json" >/dev/null && echo "result: data/bench/$run.json"
   # The score alone - no test names - for the outcome dashboard (app.server.outcomes).
-  "$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({k:d.get(k) for k in ("benchmark","passed","total","score","quality_passed","quality_total","completion_gaps","brief_mismatch")}))' "data/bench/$run.json" \
+  "$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({k:d.get(k) for k in ("benchmark","passed","total","score","quality_passed","quality_total","completion_gaps","brief_mismatch","model","endpoint")}))' "data/bench/$run.json" \
     | docker compose exec -T worker sh -c "mkdir -p /app/data/outcomes && cat > /app/data/outcomes/$run.json" || true
   # The hidden tests and the copy they ran against leave the worker at once:
   # it is the container the harness's agents work in.

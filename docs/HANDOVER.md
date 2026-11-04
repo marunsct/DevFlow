@@ -1047,3 +1047,5 @@ not a fix.
 **Pause time (owner 2026-11-03):** a run's time excludes time paused. The database trigger `runs_pause_clock` on `runs` keeps `paused_since` and `paused_seconds` for every pause however made; `GET /api/runs/{id}` gives `paused_seconds`, and the page shows "Took/Running for" less it. A UI or API-only change can ship without touching the worker: build `app` from a clean checkout and `up -d --no-deps app`.
 
 **Worker slots (2026-11-03):** the worker runs `CELERY_CONCURRENCY` (default 2) jobs; a third run queues while a model server sits idle. Grow a live worker without a restart: `docker exec langchain-worker-1 sh -c 'celery -A app.server.tasks control pool_grow 1 -d celery@$HOSTNAME'`. It reverts at the next worker restart; to keep three, set `CELERY_CONCURRENCY=3` in the deployment environment.
+
+**A score names its model (owner 2026-11-04):** `loop.sh score` passes the run's `model_last` to `score.py`, which writes `model`, `endpoint` and `provider` into `data/bench/<run>.json` (and model and endpoint into the outcome record). 67 earlier scores were filled in from their run records; 145 older ones have no model on record.

@@ -1448,3 +1448,4 @@ measurement in the findings log** - do not delete those.
 2026-11-04 16:22 JST owner: test on :1234 as well. RC4 notes-api 1 run-cf0ddc97 started on :1234 (qwen3.6-35b-a3b-mtp).
 2026-11-04 16:45 JST RC4 web-todo 1: ~60 min of filter fixes on a test that cannot pass (hasText: '^B$' as a string). LF.578 built (pattern-as-text locators go back to the suite); suite 15636 passed, 3 S3; deploying into both runs (web-todo 1 -> mixed_versions).
 2026-11-04 17:30 JST RC4 notes-api 1 run-cf0ddc97 completed 17:24, hidden 8/9 FALSE ACCEPTANCE (PUT with empty title accepted; suite covered POST only; same gap named in earlier lock notes). 44 unit tests shipped failing, mutation 0.083; fixer added an unrequested DELETE /notes. RC4 web-todo 1 re-planning after the real Active-filter fault. Next on :1234: RC5 tasks-api 1.
+2026-11-04 18:00 JST RC4 web-todo 1 run-a135c8cf completed 17:55, hidden 10/10 (mixed). RC5 fullstack-bookmarks-py 1 started on :8888.

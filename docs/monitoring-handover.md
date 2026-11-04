@@ -1451,3 +1451,4 @@ measurement in the findings log** - do not delete those.
 2026-11-04 18:00 JST RC4 web-todo 1 run-a135c8cf completed 17:55, hidden 10/10 (mixed). RC5 fullstack-bookmarks-py 1 started on :8888.
 2026-11-04 18:17 JST RC5 tasks-api 1 run-d1e03017 completed 18:15, hidden 10/10 (48 min, counted on 0751b4f). RC5 notes-api-hono 1 started on :1234.
 2026-11-04 18:47 JST LF.579 built (emptied-field probe at a green round; corpus accepted for Check.emptied); suite 15643 passed, 3 S3; deploying into RC5 fullstack-bookmarks-py 1 and notes-api-hono 1 (both now mixed).
+2026-11-04 19:28 JST RC5 notes-api-hono 1 run-3b50fd2f completed 19:20, hidden 9/9 (mixed). RC6 notes-api 1 started on :1234 (first run fully on a0473c4).

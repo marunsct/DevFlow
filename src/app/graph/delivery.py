@@ -136,7 +136,7 @@ def evidence(state: Any, sprint_number: int, goal: str, heading: str = "") -> st
         ]
         lines.append("")
     open_items = [
-        *(state.get("acceptance_open_problems") or []),
+        *suite.open_problems_still_true(root, state.get("acceptance_open_problems") or []),
         *(f"{cid}: {text}" for cid, text in suite.change_requests(root).items()
           if (saved.get("change_requests") or {}).get(cid, {}).get("status") != "passed"),
     ]
@@ -362,7 +362,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         )
     gaps.extend(
         f"The suite was locked with this still open: {problem}"
-        for problem in state.get("acceptance_open_problems") or []
+        for problem in suite.open_problems_still_true(root, state.get("acceptance_open_problems") or [])
     )
     gaps.extend(
         f"The plan was dispatched with this noted against it: {problem}"

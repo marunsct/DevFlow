@@ -4288,6 +4288,33 @@ def last_result(repo_root: str | Path) -> dict[str, Any]:
         return {}
 
 
+
+_SAYS_IT_FAILS = re.compile(r"\b(fails?|failing|failed|does not pass|cannot pass)\b", re.IGNORECASE)
+
+
+def open_problems_still_true(repo_root: str | Path, problems: list[str]) -> list[str]:
+    """The lock's open problems less those the latest measurement contradicts.
+
+    A note that a named test fails is no longer true once that test passes: shipping it reads as a broken
+    product when the suite ran green. A note naming any test still failing, or about a test's strength
+    rather than its outcome, is kept.
+    """
+    outcomes: dict[str, str] = {}
+    for criterion in (last_result(repo_root).get("criteria") or {}).values():
+        for test in (criterion or {}).get("tests") or []:
+            name = str((test or {}).get("name") or "").strip()
+            if len(name) >= 12:
+                outcomes[name] = str(test.get("outcome") or "")
+    kept = []
+    for problem in problems:
+        text = str(problem)
+        named = [name for name in outcomes if name in text]
+        if (named and _SAYS_IT_FAILS.search(text)
+                and all(outcomes[name] == "passed" for name in named)):
+            continue
+        kept.append(problem)
+    return kept
+
 # --- change requests ----------------------------------------------------------
 
 def add_change_request(repo_root: str | Path, text: str) -> str:

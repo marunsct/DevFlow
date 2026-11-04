@@ -220,9 +220,24 @@ def _journal_before_changing(root: Path, project: Path, site: dict) -> bytes:
 
 
 def _restore_and_close_the_journal(root: Path, path: Path, original: bytes) -> None:
+    import os
     import shutil
+    import time
 
+    try:
+        changed_at = path.stat().st_mtime
+    except OSError:
+        changed_at = 0.0
     path.write_bytes(original)
+    # Put back with a time past both the change and now. A cache that trusts a file's size and time to the second -
+    # Python's compiled bytecode is one - took a change of the same size, undone within the same second, for the
+    # original: measured on one run, the product ran a change already undone and failed 14 of 17 tests whose code
+    # was clean.
+    later = max(changed_at, time.time()) + 2
+    try:
+        os.utime(path, (later, later))
+    except OSError:
+        pass
     (root / JOURNAL).unlink(missing_ok=True)
     shutil.rmtree(root / BACKUP, ignore_errors=True)
 

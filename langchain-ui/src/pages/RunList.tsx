@@ -317,7 +317,7 @@ export const RunList: React.FC = () => {
       )}
 
       {/* After the list: what the owner came for is the run that needs them. */}
-      <OutcomesPanel />
+      <OutcomesPanel runIds={runs.map((run) => run.run_id)} />
     </div>
   );
 };

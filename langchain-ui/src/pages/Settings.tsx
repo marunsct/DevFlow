@@ -388,7 +388,7 @@ export const Settings: React.FC = () => {
                     <p className="text-sm text-text-muted">Loading settings...</p>
                   ) : (
                     <form onSubmit={handleSave} className="space-y-6">
-                      <SettingsSection id="build" title="Build model" text="Writes the code and the fixes. Pick a saved model or set one up and save it for later.">
+                      <SettingsSection id="build" title="Build model" text="Writes the code and the fixes. Pick a saved model, or set one up here and keep it with Save Local Model below.">
                         <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
                           <div className="flex items-center justify-between mb-1">
                             <label
@@ -397,15 +397,7 @@ export const Settings: React.FC = () => {
                             >
                               Saved Local (Build) Models
                             </label>
-                            <button
-                              type="button"
-                              onClick={handleSaveLocal}
-                              disabled={savingLocal}
-                              className="flex items-center gap-1.5 px-3 py-1 bg-accent-soft hover:bg-primary/30 text-primary border border-primary/40 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-                            >
-                              <Save className="h-3.5 w-3.5" />
-                              {savingLocal ? 'Saving Local...' : 'Save Local Model'}
-                            </button>
+
                           </div>
                           <div className="flex items-center gap-2 mt-2">
                             <select
@@ -436,7 +428,7 @@ export const Settings: React.FC = () => {
                           </div>
                           <p className="mt-1.5 text-xs text-text-muted leading-relaxed">
                             Saved configurations for your local build model (LM Studio / Ollama / local endpoints).
-                            Click &ldquo;Save Local Model&rdquo; to persist current build model settings separately.
+                            &ldquo;Save Local Model&rdquo; in the bar at the bottom keeps the settings of this section as one.
                           </p>
                         </div>
                         <div>
@@ -504,8 +496,10 @@ export const Settings: React.FC = () => {
                             onChange={(value) => setCredentials((current) => ({ ...current, [buildKeyField]: value }))}
                           />
                         </div>
-                      </SettingsSection>
-                      <SettingsSection id="behaviour" title="Behaviour" text="How much the model is given and asked for, whether it thinks first, and whether stages run one at a time.">
+                      <div id="behaviour" className="scroll-mt-20 border-t border-border/50 pt-4">
+                        <h3 className="text-sm font-semibold text-text-primary">Behaviour</h3>
+                        <p className="mt-0.5 text-xs text-text-muted">How much the model is given and asked for, whether it thinks first, and whether stages run one at a time.</p>
+                      </div>
                         <div>
                           <label className="block text-sm font-medium text-text-secondary mb-1">
                             Context window
@@ -900,6 +894,17 @@ export const Settings: React.FC = () => {
                       </SettingsSection>
                       <div className="sticky bottom-0 z-20 -mx-1 flex items-center justify-between gap-3 rounded-xl border border-border bg-surface/95 px-4 py-3 backdrop-blur">
                         <span className="text-sm text-primary">{message || 'Changes apply to the next model call of every run once saved.'}</span>
+                        <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveLocal}
+                          disabled={savingLocal}
+                          title="Keep the build model and behaviour above as a saved local model"
+                          className="flex items-center gap-1.5 px-3 py-2 bg-accent-soft hover:bg-primary/30 text-primary border border-primary/40 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                        >
+                          <Save className="h-4 w-4" />
+                          {savingLocal ? 'Saving Local...' : 'Save Local Model'}
+                        </button>
                         <button
                           type="submit"
                           disabled={saving}
@@ -908,6 +913,7 @@ export const Settings: React.FC = () => {
                           <Save className="h-4 w-4" />
                           {saving ? 'Saving...' : 'Save Settings'}
                         </button>
+                        </div>
                       </div>
                     </form>
                   )}

@@ -94,7 +94,7 @@ export const cloneRun = async (
 
 
 /** How many runs one page of the list holds. */
-export const RUNS_PER_PAGE = 50;
+export const RUNS_PER_PAGE = 10;
 
 /** One page of runs, newest first; page 1 unless asked. */
 export const listRuns = async (page = 1): Promise<RunListResponse> => {

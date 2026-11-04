@@ -598,6 +598,14 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     suite.correct_reads_of_the_fixture_s_baseurl(root)
     problems = suite.gaps(root)
     result = suite.run(root)
+    worse = suite.a_repair_that_made_it_worse(root, result)
+    if worse:
+        # The suite as it was locked comes back before anything else reads this one; the writers are told what the
+        # repair lost, so it is never locked in place of the better suite.
+        put_back = suite.put_back_the_suite_before_the_repair(root)
+        logger.warning("A repair left the suite worse; put back %d file(s) as locked", len(put_back))
+        result = suite.run(root)
+        problems = [worse, *problems]
     if not result.ran:
         problems.append(
             f"The suite does not run: {result.problem}.\n{result.output[-1500:]}".strip()

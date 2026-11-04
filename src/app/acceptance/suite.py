@@ -329,6 +329,7 @@ def lock(repo_root: str | Path) -> dict[str, str]:
     state["lock"] = checksums
     state["lock_version"] = _keep_this_version(root, snapshot, before)
     state.pop("repairing", None)
+    state.pop("before_repair", None)
     _save_state(repo_root, state)
     return checksums
 
@@ -343,7 +344,58 @@ def repairing(repo_root: str | Path, tests: list[str]) -> None:
     """Record the tests a reopened suite is being repaired for, until it is locked again."""
     state = _state(repo_root)
     state["repairing"] = sorted({*state.get("repairing", []), *(str(t) for t in tests if str(t).strip())})
+    if "before_repair" not in state:
+        # What the locked suite measured before anything was changed, for `a_repair_that_made_it_worse`.
+        last = last_result(repo_root)
+        if last.get("ran"):
+            passed, failed = int(last.get("passed") or 0), int(last.get("failed") or 0)
+            state["before_repair"] = {"tests": passed + failed, "passed": passed}
     _save_state(repo_root, state)
+
+
+def a_repair_that_made_it_worse(repo_root: str | Path, result: AcceptanceResult) -> str:
+    """What a repair of a locked suite lost, measured against the suite before it; "" when it lost nothing.
+
+    Measured on two runs: a repair sent for a few tests went from one open problem to three, and another dropped
+    twenty browser tests from the run; one ended with a criterion deferred and its hidden test failed. A repair may
+    change the tests it was sent for; it may not leave the suite running or passing less than it did.
+    """
+    before = _state(repo_root).get("before_repair") or {}
+    if not before or not is_being_repaired(repo_root) or not result.ran:
+        return ""
+    tests = len(result.report.tests)
+    passed = sum(1 for test in result.report.tests if test.outcome == "passed")
+    if tests >= int(before.get("tests") or 0) and passed >= int(before.get("passed") or 0):
+        return ""
+    return (
+        f"The repair left the suite worse than it was: it now runs {tests} test(s) and {passed} pass, where before the "
+        f"repair it ran {before.get('tests')} and {before.get('passed')} passed. The suite as it was locked has been "
+        "put back. Change only the tests named for repair, and keep every other test running as it was."
+    )
+
+
+def put_back_the_suite_before_the_repair(repo_root: str | Path) -> list[str]:
+    """Put back every file of the suite as it was last locked, and remove what was added since. One line per file."""
+    root = Path(repo_root)
+    snapshot = root / SNAPSHOT_DIR
+    if not snapshot.is_dir():
+        return []
+    kept = {path.relative_to(snapshot).as_posix() for path in snapshot.rglob("*") if path.is_file()}
+    repairs = []
+    for relative in sorted(kept):
+        target = root / relative
+        source = snapshot / relative
+        if target.is_file() and _digest(target) == _digest(source):
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        repairs.append(f"{relative} is back as it was locked.")
+    for path in suite_files(repo_root):
+        relative = path.relative_to(root).as_posix()
+        if relative not in kept:
+            path.unlink(missing_ok=True)
+            repairs.append(f"{relative} was added by the repair and has been removed.")
+    return repairs
 
 
 def _declared_in(text: str) -> set[str]:

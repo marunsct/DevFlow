@@ -54,7 +54,7 @@ def _runs(asked):
 
     store = RunStore.shared()
     if asked:
-        return [r for r in (store.get(run_id) for run_id in asked) if r is not None]
+        return [r for r in (store.load(run_id) for run_id in asked) if r is not None]
     since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)
     return [r for r in store.list_all(limit=200) if (_at(r.updated_at) or since) >= since]
 

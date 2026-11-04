@@ -197,6 +197,9 @@ class StackPack:
     #: A suite file's text -> lines that pass a locator an option it ignores, so
     #: it matches more than the test means.
     locators_with_an_ignored_option: Callable[[str], Sequence[int]] | None = None
+    #: A suite file's text -> lines that give a locator a pattern as plain text
+    #: (`hasText: '^B$'`), which it matches as those characters.
+    locators_matching_a_pattern_as_text: Callable[[str], Sequence[int]] | None = None
     #: A suite file's text -> (line, title, value) of each test that looks on
     #: the page for a value it made at run time and never gave the product.
     expects_what_it_never_gave: Callable[[str], Sequence[tuple[int, str, str]]] | None = None

@@ -1446,3 +1446,4 @@ measurement in the findings log** - do not delete those.
 2026-11-04 14:01 JST RC4 notes-api-hono 1 run-6b01808f started on ee48b84 (:8888). Audit cron recreated.
 2026-11-04 15:09 JST RC4 notes-api-hono 1 run-6b01808f completed 15:01, hidden 9/9 (60 min, mutation 0.667; first RC4 count). RC4 web-todo 1 run-a135c8cf started 15:09 (:8888).
 2026-11-04 16:22 JST owner: test on :1234 as well. RC4 notes-api 1 run-cf0ddc97 started on :1234 (qwen3.6-35b-a3b-mtp).
+2026-11-04 16:45 JST RC4 web-todo 1: ~60 min of filter fixes on a test that cannot pass (hasText: '^B$' as a string). LF.578 built (pattern-as-text locators go back to the suite); suite 15636 passed, 3 S3; deploying into both runs (web-todo 1 -> mixed_versions).

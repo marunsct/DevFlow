@@ -2874,6 +2874,33 @@ def locators_with_invalid_name_option(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+def locators_matching_a_pattern_as_text(repo_root: str | Path) -> list[str]:
+    """Where the suite gives a locator a pattern as plain text. See the pack's `locators_matching_a_pattern_as_text`."""
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].locators_matching_a_pattern_as_text is None:
+        return []
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        hits = list(found[0].locators_matching_a_pattern_as_text(text))
+        if not hits:
+            continue
+        lines = text.splitlines()
+        snippet = lines[hits[0] - 1].strip()[:160] if 0 < hits[0] <= len(lines) else ""
+        where = ", ".join(str(line) for line in hits[:8]) + (" ..." if len(hits) > 8 else "")
+        problems.append(
+            f"`{path.relative_to(root).as_posix()}` line(s) {where} (`{snippet}`) give a locator `^` or `$` inside a "
+            "string. A string is matched as text, so it looks for those characters and finds nothing: a test acting "
+            "on it can never pass, and one expecting it hidden passes whatever the page shows. Write the pattern as "
+            "a regular expression (`/^B$/`), or give the plain text."
+        )
+    return problems[:6]
+
+
 #: A key of a `fetch`-style options object, which Playwright's `request` fixture does not read.
 _BODY_KEY = re.compile(r"\bbody\s*:")
 _FETCH_STYLE_SIBLING = re.compile(r"\b(?:method|headers)\s*:")
@@ -4605,6 +4632,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *locators_that_do_not_exist(repo_root),
         *locators_by_a_name_the_role_never_has(repo_root),
         *locators_with_invalid_name_option(repo_root),
+        *locators_matching_a_pattern_as_text(repo_root),
         *requests_with_a_fetch_body(repo_root),
         *responses_read_without_the_call(repo_root),
         *contexts_made_from_the_fixture(repo_root),

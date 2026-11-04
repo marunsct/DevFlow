@@ -1131,6 +1131,23 @@ def locators_with_a_name_option(text: str) -> list[int]:
     return sorted({code.count("\n", 0, m.start()) + 1 for m in _A_LOCATOR_WITH_A_NAME.finditer(code)})
 
 
+#: Text a page locator matches, given as a string that starts with `^` or ends with `$`: a pattern written as text.
+_A_PATTERN_AS_TEXT = re.compile(
+    r"""(?:\bhas(?:Not)?Text\s*:\s*|\bgetByText\s*\(\s*)(['"`])(\^[^'"`\n]*|[^'"`\n]*\$)\1"""
+)
+
+
+def locators_matching_a_pattern_as_text(text: str) -> list[int]:
+    """Lines where a locator is given `'^B$'` as text: Playwright matches a string as text, so it looks for `^B$`.
+
+    Only a regular expression literal (`/^B$/`) is a pattern. Measured on one run: a filtering test waited for a
+    control inside an item no page shows, fixers spent an hour on a product that filtered, and the same locator's
+    `not.toBeVisible()` passed whatever the page drew.
+    """
+    code = code_only(text)
+    return sorted({code.count("\n", 0, m.start()) + 1 for m in _A_PATTERN_AS_TEXT.finditer(code)})
+
+
 #: Something only the test can know: the clock, a random number, a fresh id.
 _MADE_AT_RUN_TIME = re.compile(
     r"\bDate\s*\.\s*now\s*\(|\bMath\s*\.\s*random\s*\(|\brandomUUID\s*\(|\bperformance\s*\.\s*now\s*\(|"

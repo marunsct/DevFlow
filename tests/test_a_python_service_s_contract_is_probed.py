@@ -136,3 +136,95 @@ def test_the_playwright_probe_asks_the_plain_body_first():
     source = ic.playwright_emptied_field_checks([check], [{"title": "Milk", "body": "two"}])
     assert ic.NOT_THIS_WRITE_S_BODY in source
     assert source.index("const plain") < source.index("const answer")
+
+
+SIGNED_CONFTEST = textwrap.dedent('''
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    import pytest
+
+    USERS, ITEMS = {}, {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def _answer(self, status, body=None):
+            data = json.dumps(body).encode() if body is not None else b""
+            self.send_response(status)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_POST(self):
+            raw = self.rfile.read(int(self.headers.get("content-length") or 0))
+            body = json.loads(raw)
+            if self.path == "/signup":
+                USERS[body["username"]] = body["password"]
+                return self._answer(201, {"username": body["username"]})
+            if self.path == "/signin":
+                if USERS.get(body.get("username")) != body.get("password"):
+                    return self._answer(401)
+                return self._answer(200, {"token": "t-" + body["username"]})
+            if self.headers.get("Authorization", "")[:9] != "Bearer t-":
+                return self._answer(401)
+            item = {"id": len(ITEMS) + 1, "title": body.get("title", ""), "done": False}
+            ITEMS[item["id"]] = item  # an empty title is accepted: the defect
+            self._answer(201, item)
+
+    @pytest.fixture(scope="session")
+    def base_url():
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        yield f"http://127.0.0.1:{server.server_address[1]}"
+        server.shutdown()
+''')
+
+
+def test_a_write_behind_sign_in_is_reached_with_a_token(tmp_path):
+    """Measured on one run: behind sign-in, the emptied-field probe of `POST /items` was answered 401 before the body
+    was read, so the write the probe exists for was never asked."""
+    bodies = [{"username": "ann", "password": "secret-1"}, {"title": "Milk"}]
+    contract = [
+        ic.Check(criterion="AC-1", kind="http", line="POST /signup -> 201", method="POST", path="/signup",
+                 status=201, statuses=(201,)),
+        ic.Check(criterion="AC-2", kind="http", line="POST /signin -> 200", method="POST", path="/signin",
+                 status=200, statuses=(200,)),
+        ic.Check(criterion="AC-3", kind="http", line="POST /items -> 201", method="POST", path="/items",
+                 status=201, statuses=(201,), emptied="title"),
+    ]
+    (tmp_path / "acceptance").mkdir()
+    (tmp_path / "acceptance" / "conftest.py").write_text(SIGNED_CONFTEST)
+    # As `emptied_field_checks` asks them: every write, once per field an example body carries.
+    asked = [replace(c, emptied="title") for c in contract]
+    (tmp_path / ic.PYTEST_PROBE_FILE).write_text(ic.pytest_emptied_field_checks(asked, bodies))
+    subprocess.run([sys.executable, "-m", "pytest", ic.PYTEST_PROBE_FILE, "-q", "-p", "no:cacheprovider",
+                    f"--junitxml={ic.REPORT_FILE}"], cwd=tmp_path, capture_output=True, timeout=120)
+    report = junit.read(tmp_path / ic.REPORT_FILE)
+    outcomes = {ic._the_check_of(t, asked).path: t.outcome for t in report.tests}
+    assert outcomes["/items"] == "failed"  # reached with a token, and the empty title it accepted is found
+
+
+def test_the_plan_reads_the_contract_s_own_sign_in():
+    contract = [ic.Check(criterion="AC-1", kind="http", line="POST /api/auth/register -> 201", method="POST",
+                         path="/api/auth/register"),
+                ic.Check(criterion="AC-2", kind="http", line="POST /api/auth/login -> 200", method="POST",
+                         path="/api/auth/login")]
+    plan = ic.sign_in_plan(contract, [{"title": "x"}, {"email": "a@b.c", "password": "p"}])
+    assert plan == {"signup": "/api/auth/register", "signin": "/api/auth/login",
+                    "body": {"email": "a@b.c", "password": "p"}}
+    assert ic.sign_in_plan(contract[:1], [{"password": "p"}]) is None
+
+
+def test_the_playwright_body_probe_signs_in_too():
+    contract = [ic.Check(criterion="AC-2", kind="http", line="POST /signin -> 200", method="POST", path="/signin",
+                         status=200, statuses=(200,)),
+                replace(CREATE, emptied="title")]
+    source = ic.playwright_emptied_field_checks(contract[1:], [{"username": "a", "password": "p"}, {"title": "x"}])
+    assert "signedIn" not in source  # no sign-in line among the checks it was given
+    source = ic.playwright_emptied_field_checks([replace(contract[0], emptied="username"), contract[1]],
+                                               [{"username": "a", "password": "p"}, {"title": "x"}])
+    assert "...(await signedIn(request))" in source

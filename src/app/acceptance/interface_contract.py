@@ -415,7 +415,7 @@ def playwright_bad_body_checks(checks: list[Check]) -> str:
         _a_bad_body_test(_js(f"{f'[{c.criterion}] ' if c.criterion else ''}contract {number}: {c.line}"), c)
         for number, c in enumerate(checks, start=1)
     ]
-    return "import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests)
+    return _with_sign_in_js("import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests), sign_in_plan(checks))
 
 
 #: A rule refusing a field when it is empty, as briefs and criteria say it: "A title that is missing or empty is
@@ -486,7 +486,8 @@ def playwright_emptied_field_checks(checks: list[Check], bodies: list[Any] | Non
         given = bodies if bodies is not None else json.loads(c.bodies or "[]")
         title = _js(f"{f'[{c.criterion}] ' if c.criterion else ''}contract {number}: {c.line} with an empty {c.emptied}")
         tests.append(_an_emptied_field_test("__TITLE__", c, given).replace("__TITLE__", title, 1))
-    return "import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests)
+    return _with_sign_in_js("import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests),
+                            sign_in_plan(checks, bodies))
 
 
 def playwright_config(suite_config: str) -> str:
@@ -504,6 +505,77 @@ def playwright_config(suite_config: str) -> str:
     )
 
 
+#: A write that signs in, and one that makes an account, by their paths.
+_SIGNS_IN = re.compile(r"sign[-_]?in|log[-_]?in|sessions?\b|tokens?\b", re.I)
+_SIGNS_UP = re.compile(r"sign[-_]?up|register", re.I)
+#: A body carrying a secret is a body for signing in.
+_SECRETS = ("password", "passcode", "secret")
+#: Where a token is found in a sign-in's answer.
+_TOKEN_KEYS = ("token", "access_token", "accessToken", "jwt", "id_token")
+
+
+def sign_in_plan(checks: list[Check], bodies: list[Any] | None = None) -> dict[str, Any] | None:
+    """How a body probe signs in first: the contract's own sign-up and sign-in writes and an example body with a secret.
+
+    None when the contract has no sign-in write or no such body. Measured on one run: on an API behind sign-in, the
+    emptied-field probe of `POST /items` was answered 401 before the body was read and `PATCH /items/{id}` made no
+    record - the writes the probe exists for were never asked. Only the body probes sign in: a bare line of the
+    contract ("-> 401") is about the call without one.
+    """
+    writes = [c for c in checks if c.kind == "http" and c.method == "POST"]
+    signin = next((c.path for c in writes if _SIGNS_IN.search(c.path)), "")
+    if not signin:
+        return None
+    signup = next((c.path for c in writes if _SIGNS_UP.search(c.path)), "")
+    given: list[Any] = list(bodies or [])
+    for check in checks:
+        try:
+            given += json.loads(check.bodies or "[]")
+        except ValueError:
+            pass
+    body = next((b for b in given if isinstance(b, dict) and any(k in b for k in _SECRETS)), None)
+    return {"signup": signup, "signin": signin, "body": body} if body is not None else None
+
+
+_SIGN_IN_JS = """
+const SIGN_IN = %s;
+let token;
+async function signedIn(request) {
+  if (!SIGN_IN) return {};
+  if (token === undefined) {
+    token = null;
+    const suffix = Math.random().toString(36).slice(2, 10);
+    const body = { ...SIGN_IN.body };
+    for (const key of ['username', 'email', 'name', 'login', 'user']) {
+      if (typeof body[key] === 'string') body[key] = body[key].includes('@') ? `probe${suffix}@example.com` : `probe${suffix}`;
+    }
+    if (SIGN_IN.signup) await request.fetch(SIGN_IN.signup, { method: 'POST', data: body, failOnStatusCode: false });
+    const answer = await request.fetch(SIGN_IN.signin, { method: 'POST', data: body, failOnStatusCode: false });
+    const found = await answer.json().catch(() => ({}));
+    for (const key of %s) {
+      const value = found?.[key] ?? found?.data?.[key];
+      if (typeof value === 'string') { token = value; break; }
+    }
+  }
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
+"""
+
+
+def _with_sign_in_js(source: str, plan: dict[str, Any] | None) -> str:
+    """A Playwright body probe whose calls carry a signed-in token when the contract has a sign-in; unchanged otherwise."""
+    if plan is None:
+        return source
+    head = "import { test, expect } from '@playwright/test';\n"
+    return source.replace(head, head + _SIGN_IN_JS % (json.dumps(plan), json.dumps(list(_TOKEN_KEYS))), 1).replace(
+        "headers: { 'content-type': 'application/json' }",
+        "headers: { 'content-type': 'application/json', ...(await signedIn(request)) }",
+    ).replace(
+        "{ method: 'POST', data, failOnStatusCode: false }",
+        "{ method: 'POST', data, headers: await signedIn(request), failOnStatusCode: false }",
+    )
+
+
 #: Where the pytest probe's compiled checks are written: inside the suite's folder, so its kept `conftest.py` starts the
 #: service and gives `base_url`, exactly as for the suite. Removed after the run.
 PYTEST_PROBE_FILE = "acceptance/test_zz_harness_contract_probe.py"
@@ -515,14 +587,45 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 import pytest
 
 CASES = json.loads(%r)
+SIGN_IN = json.loads(%r)
+TOKEN_KEYS = json.loads(%r)
+_TOKEN = {}
 
 
-def _call(base_url, method, path, body):
-    data, headers = None, {}
+def _signed_in(base_url):
+    if not SIGN_IN:
+        return {}
+    if "value" not in _TOKEN:
+        _TOKEN["value"] = None
+        suffix = uuid.uuid4().hex[:8]
+        body = dict(SIGN_IN["body"])
+        for key in ("username", "email", "name", "login", "user"):
+            if isinstance(body.get(key), str):
+                body[key] = f"probe{suffix}@example.com" if "@" in body[key] else f"probe{suffix}"
+        if SIGN_IN["signup"]:
+            _call(base_url, "POST", SIGN_IN["signup"], body)
+        _, raw = _call(base_url, "POST", SIGN_IN["signin"], body)
+        try:
+            found = json.loads(raw or b"{}")
+        except ValueError:
+            found = {}
+        for key in TOKEN_KEYS:
+            value = found.get(key) if isinstance(found, dict) else None
+            if value is None and isinstance(found, dict) and isinstance(found.get("data"), dict):
+                value = found["data"].get(key)
+            if isinstance(value, str):
+                _TOKEN["value"] = value
+                break
+    return {"Authorization": "Bearer " + _TOKEN["value"]} if _TOKEN["value"] else {}
+
+
+def _call(base_url, method, path, body, extra=None):
+    data, headers = None, dict(extra or {})
     if body is not None:
         data = (body if isinstance(body, str) else json.dumps(body)).encode()
         headers["content-type"] = "application/json"
@@ -534,9 +637,9 @@ def _call(base_url, method, path, body):
         return answer.code, answer.read()
 
 
-def _a_record(base_url, case):
+def _a_record(base_url, case, extra):
     for data in [*case["bodies"], {}]:
-        status, raw = _call(base_url, "POST", case["made_through"], data)
+        status, raw = _call(base_url, "POST", case["made_through"], data, extra)
         if 200 <= status < 300:
             try:
                 record = json.loads(raw or b"{}")
@@ -556,18 +659,19 @@ def test_contract(case, base_url):
     if case["rule"] == "page":
         pytest.skip(%r)
     path = case["path"]
+    extra = _signed_in(base_url) if case["rule"] != "allowed" else {}
     if case["made_through"]:
-        found = _a_record(base_url, case)
+        found = _a_record(base_url, case, extra)
         if found is None:
             pytest.skip(%r)
         path = case["before"] + urllib.parse.quote(str(found), safe="") + case["after"]
     if case["rule"] == "refused":
-        plain, _ = _call(base_url, case["method"], path, case["example"])
+        plain, _ = _call(base_url, case["method"], path, case["example"], extra)
         if plain in (401, 403):
             pytest.skip(%r)
         if plain >= 400:
             pytest.skip(%r)
-    status, _ = _call(base_url, case["method"], path, case["send"])
+    status, _ = _call(base_url, case["method"], path, case["send"], extra)
     if case["rule"] == "allowed":
         assert status in case["allowed"], f"Received: {status}"
         return
@@ -594,8 +698,8 @@ def _pytest_case(number: int, check: Check, title_tail: str = "", rule: str = "a
     }
 
 
-def _pytest_module(cases: list[dict]) -> str:
-    return _PYTEST_PROBE % (json.dumps(cases), NO_BROWSER, MADE_NO_RECORD, SIGN_IN_ANSWERED_FIRST,
+def _pytest_module(cases: list[dict], plan: dict[str, Any] | None = None) -> str:
+    return _PYTEST_PROBE % (json.dumps(cases), json.dumps(plan), json.dumps(list(_TOKEN_KEYS)), NO_BROWSER, MADE_NO_RECORD, SIGN_IN_ANSWERED_FIRST,
                             NOT_THIS_WRITE_S_BODY, SIGN_IN_ANSWERED_FIRST)
 
 
@@ -607,7 +711,7 @@ def pytest_checks(checks: list[Check]) -> str:
 def pytest_bad_body_checks(checks: list[Check]) -> str:
     """A pytest module sending each check's call a body nothing can parse; any answer under 500 passes."""
     return _pytest_module([_pytest_case(n, c, rule="under_500", send=A_BODY_NOTHING_CAN_PARSE)
-                           for n, c in enumerate(checks, start=1)])
+                           for n, c in enumerate(checks, start=1)], sign_in_plan(checks))
 
 
 def pytest_emptied_field_checks(checks: list[Check], bodies: list[Any] | None = None) -> str:
@@ -619,7 +723,7 @@ def pytest_emptied_field_checks(checks: list[Check], bodies: list[Any] | None = 
         case = _pytest_case(number, check, f" with an empty {check.emptied}", rule="refused",
                             send={**example, check.emptied: ""})
         cases.append({**case, "example": example})
-    return _pytest_module(cases)
+    return _pytest_module(cases, sign_in_plan(checks, bodies))
 
 
 #: The probe runners a pack can declare (`StackPack.probe_runner`): what compiles

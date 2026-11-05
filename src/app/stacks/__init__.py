@@ -610,7 +610,31 @@ def _pack_that_fits(stack: Any, text: str = "", rationale: str = "") -> StackPac
         and _framework_fits(pack, stack)
         and (not pack.frontend_frameworks or _frontend_fits(pack, stack) or not _names_a_frontend(stack))
     ]
-    return named[0] if len(named) == 1 else None
+    if len(named) == 1:
+        return named[0]
+    # A page left unstated that nothing anywhere builds with a component framework is plain HTML and JavaScript:
+    # the selector writes it as an empty field. Measured on one run: "no stack pack fits" for exactly that stack.
+    said = f"{rationale} {text}"
+    if not named and not _states_its_page(stack) and _a_plain_page_in(said) and not _a_framework_in(said):
+        plain = [
+            pack for pack in ALL_PACKS
+            if pack.kind == kind and pack.language in languages and _framework_fits(pack, stack)
+            and "HTML and JavaScript" in str((pack.stack or {}).get("frontend_framework", ""))
+        ]
+        if len(plain) == 1:
+            return plain[0]
+    return None
+
+
+def _a_plain_page_in(words: str) -> bool:
+    """Whether some writing says the page is plain HTML and JavaScript."""
+    return bool(re.search(r"\bhtml\b[^.\n]{0,40}\b(?:javascript|js)\b|\b(?:vanilla|plain)\s+(?:javascript|js|html)\b", words, re.I))
+
+
+def _a_framework_in(words: str) -> bool:
+    """Whether some writing names a component framework a page could be built with."""
+    words = re.sub(rf"(?<![a-z])({'|'.join(_COMPONENT_FRAMEWORKS)})\.?js(?![a-z])", r"\1", words.lower())
+    return any(re.search(rf"(?<![a-z]){word}(?![a-z])", words) for word in _COMPONENT_FRAMEWORKS)
 
 
 def _names_a_frontend(stack: Any) -> bool:

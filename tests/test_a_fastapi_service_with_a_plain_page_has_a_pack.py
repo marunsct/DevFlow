@@ -41,4 +41,19 @@ def test_the_pack_holds_a_page_its_unit_tests_and_a_service():
 
 
 def test_a_page_left_unstated_is_not_taken_for_plain():
-    assert choose_pack(_stack("not stated"), BRIEF) is not fullstack_frameworks.PAGE_FASTAPI
+    """Nothing says how the page is built: no guess."""
+    silent = "A bookmarks service with a page. `GET /api/bookmarks` answers 200 with an array of bookmarks."
+    assert choose_pack(_stack("not stated"), silent) is not fullstack_frameworks.PAGE_FASTAPI
+
+
+def test_an_empty_page_field_that_nothing_frames_is_plain():
+    # As the selector wrote it on the run after the pack was deployed.
+    stack = SimpleNamespace(language="Python", framework="FastAPI", frontend_framework="",
+                            database="JSON file on disk (under DATA_DIR)", product_kind="fullstack",
+                            testing_framework="pytest for the service, Playwright for browser testing of the page")
+    assert choose_pack(stack, BRIEF, rationale="FastAPI serves the JSON interface and the page.") is fullstack_frameworks.PAGE_FASTAPI
+
+
+def test_an_empty_page_field_with_react_in_the_rationale_is_not_plain():
+    stack = _stack("")
+    assert choose_pack(stack, BRIEF, rationale="React was chosen over Vue for the page.") is not fullstack_frameworks.PAGE_FASTAPI

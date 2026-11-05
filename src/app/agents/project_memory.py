@@ -92,7 +92,12 @@ _FILES: dict[tuple[str, str], tuple[int, int, str]] = {}
 def _ignored(parts: tuple[str, ...]) -> bool:
     from app.tools.repository import IGNORED_DIRECTORIES
 
-    return any(part in IGNORED_DIRECTORIES or part in (".harness", ".agent-home", "test-results") for part in parts)
+    return any(part in IGNORED_DIRECTORIES or part in (".harness", ".agent-home", "test-results")
+               or part.endswith((".egg-info", ".dist-info")) for part in parts)
+
+
+#: Code the harness saved from a command line (`agent_toolkit`): it stays in the transcript, in the call that ran it.
+_A_COMMAND_LINE_S_CODE = re.compile(r"^tmp-inline-[0-9a-f]{8}\.\w+$")
 
 
 def _candidates(root: Path) -> list[str]:
@@ -101,7 +106,7 @@ def _candidates(root: Path) -> list[str]:
         relative_folder = Path(folder).relative_to(root)
         directories[:] = [d for d in directories if not _ignored((*relative_folder.parts, d))]
         for name in files:
-            if name in _SKIPPED_NAMES or name.startswith(".project-") or not (
+            if name in _SKIPPED_NAMES or name.startswith(".project-") or _A_COMMAND_LINE_S_CODE.match(name) or not (
                 name.endswith(_TEXT_SUFFIXES) or name.endswith(_BUILD_SUFFIXES) or name in _BUILD_NAMES
             ):
                 continue

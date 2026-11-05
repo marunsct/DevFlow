@@ -217,9 +217,9 @@ def _stack_line(stack: Any) -> str:
     return ", ".join(part for part in parts if part) or "as the specification says"
 
 
-def _neighbours(root: Path, path: str, task: Any, detail: str) -> str:
-    """The files this one works with, as they are on disk: the work order's own and any its entries name."""
-    named = [*(getattr(task, "files", None) or []), *_A_PATH.findall(detail)]
+def _neighbours(root: Path, path: str, task: Any, detail: str, code_under_test: Collection[str] = ()) -> str:
+    """The files this one works with, as they are on disk: the code a test tests first, then the work order's own and any its entries name."""
+    named = [*code_under_test, *(getattr(task, "files", None) or []), *_A_PATH.findall(detail)]
     shown, used = [], 0
     for other in dict.fromkeys(named):
         other = other.strip().lstrip("./")
@@ -284,8 +284,12 @@ def _the_builder_s_facts(root: Path, path: str) -> str:
 
 
 def draft_request(root: Path, path: str, task: Any, specification: Any, stack: Any,
-                  diagnostics: list[str] | None = None) -> str:
-    """What one file's draft is asked; `diagnostics` are what the compiler reported on its last draft."""
+                  diagnostics: list[str] | None = None, code_under_test: Collection[str] = ()) -> str:
+    """What one file's draft is asked; `diagnostics` are what the compiler reported on its last draft.
+
+    `code_under_test` are the product files a unit test tests, already written: shown first, so the test uses
+    their real names, signatures, messages and storage set-up instead of guessing them from the specification.
+    """
     from app.agents.shared_facts import the_facts_section
     from app.agents.specialists import specification_for_the_work_order
 
@@ -300,10 +304,14 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         except (OSError, UnicodeDecodeError):
             now = ""
     criteria = "\n".join(f"- {c}" for c in getattr(task, "acceptance_criteria", None) or [])
-    neighbours = _neighbours(root, path, task, detail)
+    neighbours = _neighbours(root, path, task, detail, code_under_test)
     return "\n\n".join(part for part in (
         f"Write the file `{path}` of this product, exactly as its specification says. "
         f"The stack: {_stack_line(stack)}.",
+        ("The code this test tests is already written and shown below. Call it by its real names and "
+         "signatures, expect its real messages, and set up its data the way it stores it: where the code and "
+         "the specification differ, test what the specification asks with the code's own names.")
+        if code_under_test else "",
         detail.strip(),
         f"--- The work order it belongs to ---\n{getattr(task, 'task_description', '')}"
         + (f"\nDone when:\n{criteria}" if criteria else ""),
@@ -323,7 +331,7 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
 
 
 def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any, stack: Any,
-               diagnostics: list[str] | None = None) -> str:
+               diagnostics: list[str] | None = None, code_under_test: Collection[str] = ()) -> str:
     from langchain_core.messages import HumanMessage, SystemMessage
 
     from app.observability.direct_calls import config_for_this_run
@@ -331,7 +339,7 @@ def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any,
     reply = model.invoke([
         SystemMessage(content="You write source files for a software product from its specification. "
                               "You reply with one file's complete content in one fenced code block."),
-        HumanMessage(content=draft_request(root, path, task, specification, stack, diagnostics)),
+        HumanMessage(content=draft_request(root, path, task, specification, stack, diagnostics, code_under_test)),
     ], **config_for_this_run("drafting"))
     return the_content_in(getattr(reply, "content", "") if not isinstance(reply, str) else reply)
 
@@ -475,10 +483,10 @@ def draft_work_orders(
     if not jobs and not never_written and not kept:
         return {}
 
-    def run(job: tuple[int, str, Any]) -> tuple[int, str, bool]:
+    def run(job: tuple[int, str, Any], code_under_test: Collection[str] = ()) -> tuple[int, str, bool]:
         index, path, task = job
         try:
-            content = _draft_one(model, root, path, task, specification, stack)
+            content = _draft_one(model, root, path, task, specification, stack, None, code_under_test)
             if not content.strip():
                 return index, path, False
             try:
@@ -490,7 +498,7 @@ def draft_work_orders(
                 # on one line, and its whole work order went to the agent loop.
                 if not any(said in str(refused) for said in CONTENT_REFUSALS):
                     raise
-                content = _draft_one(model, root, path, task, specification, stack, [str(refused)])
+                content = _draft_one(model, root, path, task, specification, stack, [str(refused)], code_under_test)
                 write(repo_root, path, content)
             return index, path, True
         except Exception as error:  # noqa: BLE001 - the agent loop takes this work order
@@ -499,8 +507,23 @@ def draft_work_orders(
 
     from app.observability.direct_calls import mapped_in_this_context
 
+    # The product first, its unit tests after: drafted in one batch, a test was written before the code it tests
+    # and guessed its signatures, messages and storage - measured over 18 runs, 25 of 31 fixes of failing unit
+    # tests were left open. Each test is shown the product files drafted here, those it names first.
+    code_jobs = [job for job in jobs if classify_file(job[1]) != "test"]
+    test_jobs = [job for job in jobs if classify_file(job[1]) == "test"]
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        results = mapped_in_this_context(pool, run, jobs)
+        results = mapped_in_this_context(pool, run, code_jobs)
+    drafted_code = [path for _, path, ok in results if ok]
+
+    def the_code_it_tests(path: str, task: Any) -> list[str]:
+        words = set(re.findall(r"[a-z0-9]+", f"{path} {getattr(task, 'task_description', '')}".lower())) - {"test", "tests", "spec"}
+        named = [code for code in drafted_code if PurePosixPath(code).stem.lower() in words]
+        return [*named, *(code for code in drafted_code if code not in named)]
+
+    if test_jobs:
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+            results += mapped_in_this_context(pool, lambda job: run(job, the_code_it_tests(job[1], job[2])), test_jobs)
     if diagnose is not None:
         _repaired_where_the_compiler_says(results, jobs, diagnose, model, root, repo_root, specification, stack, write)
     drafted: dict[int, Any] = {}

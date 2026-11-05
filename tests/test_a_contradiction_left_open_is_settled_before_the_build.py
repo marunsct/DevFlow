@@ -263,12 +263,14 @@ def test_the_words_of_the_rule_are_plain(tmp_path, on):
 
 
 def test_the_switch_is_off_in_the_code_and_on_as_a_measured_arm(monkeypatch):
+    # Owner, 2026-11-05: a change that affects quality is always on, with no switch.
+    from app import switches as registry
+
     name = "SETTLE_SPEC_CONTRADICTIONS"
-    monkeypatch.delenv(name, raising=False)
-    assert name in switches.EXPERIMENTS and name in switches.EXPERIMENTS_ON
-    assert provenance.switch(provenance.SWITCHES[name]).enabled() is False
+    assert name in registry.BUILT_IN and name not in registry.EXPERIMENTS
     compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
-    assert f"{name}: ${{{name}:-on}}" in compose
+    assert f"{name}: " not in compose
+
 
 
 def test_a_run_with_no_judgement_model_named_settles_on_the_deployment_s_own(tmp_path, on, monkeypatch):

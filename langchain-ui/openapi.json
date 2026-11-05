@@ -3026,6 +3026,11 @@
       ],
       "title": "Docker"
      },
+     "group": {
+      "default": "",
+      "title": "Group",
+      "type": "string"
+     },
      "module": {
       "title": "Module",
       "type": "string"

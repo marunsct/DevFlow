@@ -105,6 +105,9 @@ def entries() -> list[dict[str, Any]]:
         entry.update(summary=summary, details=details, default=default, docker=environment, setting=setting,
                      on=on, source=source)
         listed.append(entry)
+    # What each is for: the bundles, the measured batch, or the group of improvements that leave quality alone.
+    for entry in listed:
+        entry["group"] = switches.group_of(entry["name"])
     return listed
 
 

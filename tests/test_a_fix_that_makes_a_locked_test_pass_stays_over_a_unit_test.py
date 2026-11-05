@@ -143,9 +143,12 @@ def test_the_next_round_takes_what_was_raised_as_a_review_defect():
 
 
 def test_the_switch_ships_off_and_is_listed():
-    from app.graph import unit_tests_disagree
-    from app.observability.provenance import SWITCHES
-    from app.switches import EXPERIMENTS
+    # Owner, 2026-11-05: a change that affects quality is always on, with no switch.
+    from pathlib import Path
 
-    assert unit_tests_disagree.ON_BY_DEFAULT is False
-    assert "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE" in EXPERIMENTS and "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE" in SWITCHES
+    from app import switches as registry
+
+    assert "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE" in registry.BUILT_IN
+    assert "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE" not in registry.EXPERIMENTS
+    compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
+    assert "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE: " not in compose

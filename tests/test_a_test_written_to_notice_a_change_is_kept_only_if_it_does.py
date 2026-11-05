@@ -173,5 +173,5 @@ def test_the_finding_s_settlement_asks_the_retention_rule_first():
 def test_the_switch_is_an_experiment_that_ships_off():
     from app import switches
 
-    assert "MUTATION_TEST_RETENTION" in switches.EXPERIMENTS and "MUTATION_TEST_RETENTION" not in switches.EXPERIMENTS_ON
+    assert "MUTATION_TEST_RETENTION" in switches.EXPERIMENTS and "MUTATION_TEST_RETENTION" in switches.GROUPS["Being measured"] and "MUTATION_TEST_RETENTION" in switches.EXPERIMENTS_ON
     assert mutation_retention.ON_BY_DEFAULT is False

@@ -64,11 +64,13 @@ def test_the_rule_names_no_stack_product_or_control():
 
 
 def test_the_switch_is_registered_and_armed_by_the_deployment(monkeypatch):
-    monkeypatch.delenv(NAME, raising=False)
-    assert NAME in switches.EXPERIMENTS and NAME in switches.EXPERIMENTS_ON
-    assert provenance.switch(provenance.SWITCHES[NAME]).enabled() is False
+    # Owner, 2026-11-05: a change that affects quality is always on, with no switch.
+    from app import switches as registry
+
+    assert NAME in registry.BUILT_IN and NAME not in registry.EXPERIMENTS
     compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
-    assert f"{NAME}: ${{{NAME}:-on}}" in compose
+    assert f"{NAME}: " not in compose
+
 
 
 def test_a_run_says_whether_the_switch_acted(monkeypatch, project):

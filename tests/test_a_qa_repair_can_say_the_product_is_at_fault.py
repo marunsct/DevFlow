@@ -125,12 +125,13 @@ def test_a_repair_a_harness_check_sent_does_not(root, monkeypatch, tmp_path):
 
 
 def test_the_switch_is_a_measured_arm_and_registered():
-    assert "QA_SAYS_THE_PRODUCT_IS_AT_FAULT" in switches.EXPERIMENTS
-    assert "QA_SAYS_THE_PRODUCT_IS_AT_FAULT" in switches.EXPERIMENTS_ON
-    assert provenance.SWITCHES["QA_SAYS_THE_PRODUCT_IS_AT_FAULT"] == "app.graph.product_at_fault"
-    compose = (Path(__file__).parent.parent / "docker-compose.yml").read_text(encoding="utf-8")
-    assert "QA_SAYS_THE_PRODUCT_IS_AT_FAULT: ${QA_SAYS_THE_PRODUCT_IS_AT_FAULT:-on}" in compose
-    assert product_at_fault.ON_BY_DEFAULT is False
+    # Owner, 2026-11-05: a change that affects quality is always on, with no switch.
+    from app import switches as registry
+
+    assert "QA_SAYS_THE_PRODUCT_IS_AT_FAULT" in registry.BUILT_IN and "QA_SAYS_THE_PRODUCT_IS_AT_FAULT" not in registry.EXPERIMENTS
+    compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
+    assert f"{"QA_SAYS_THE_PRODUCT_IS_AT_FAULT"}: " not in compose
+
 
 
 def test_the_rule_bans_the_words():

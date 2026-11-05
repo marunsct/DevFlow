@@ -22,6 +22,8 @@ export interface SwitchEntry {
   setting: boolean | null;
   on: boolean;
   source: 'setting' | 'docker' | 'default';
+  /** What it is for: "Bundles", "Being measured", or an improvement group. */
+  group?: string;
 }
 
 type Choice = 'docker' | 'on' | 'off';
@@ -44,7 +46,6 @@ const isEntries = (data: unknown): data is SwitchEntry[] =>
 
 type Only = 'all' | 'on' | 'off' | 'set';
 const ONLY: Array<[Only, string]> = [['all', 'All'], ['on', 'On'], ['off', 'Off'], ['set', 'Set here']];
-const BUNDLE_PREFIX = 'PREMIUM_';
 
 export const Admin: React.FC = () => {
   const [entries, setEntries] = useState<SwitchEntry[] | null>(null);
@@ -94,11 +95,13 @@ export const Admin: React.FC = () => {
       .filter((entry) => only === 'all' || (only === 'on' ? entry.on : only === 'off' ? !entry.on : entry.setting !== null))
       .filter((entry) => !words || `${entry.name} ${entry.summary} ${entry.details}`.toLowerCase().includes(words));
   }, [entries, query, only]);
-  // The bundles a deployment is sold as come first; every other switch after them.
-  const groups: Array<[string, SwitchEntry[]]> = [
-    ['Bundles', shown.filter((entry) => entry.name.startsWith(BUNDLE_PREFIX))],
-    ['Individual switches', shown.filter((entry) => !entry.name.startsWith(BUNDLE_PREFIX))],
-  ];
+  // Each switch under what it is for, in the order the server lists the groups: the bundles first.
+  const groups: Array<[string, SwitchEntry[]]> = [];
+  for (const entry of shown) {
+    const title = entry.group || 'Other';
+    const found = groups.find(([name]) => name === title);
+    if (found) found[1].push(entry); else groups.push([title, [entry]]);
+  }
 
   const counts = useMemo(() => {
     const all = entries ?? [];

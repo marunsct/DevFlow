@@ -24,14 +24,14 @@ def stored(monkeypatch):
 
 def test_a_stored_setting_beats_docker_which_beats_the_code_default(monkeypatch, stored):
     monkeypatch.setenv("SWITCH_OVERRIDES_FROM_SETTINGS", "on")
-    monkeypatch.setenv("TARGETED_SUITE_REPAIR", "on")
-    assert switches.is_on("TARGETED_SUITE_REPAIR", False) is True
-    stored["TARGETED_SUITE_REPAIR"] = False
-    assert switches.is_on("TARGETED_SUITE_REPAIR", False) is False
-    monkeypatch.delenv("TARGETED_SUITE_REPAIR")
+    monkeypatch.setenv("OBSERVATION_FOLDING", "on")
+    assert switches.is_on("OBSERVATION_FOLDING", False) is True
+    stored["OBSERVATION_FOLDING"] = False
+    assert switches.is_on("OBSERVATION_FOLDING", False) is False
+    monkeypatch.delenv("OBSERVATION_FOLDING")
     stored.clear()
-    assert switches.is_on("TARGETED_SUITE_REPAIR", False) is False
-    assert switches.is_on("TARGETED_SUITE_REPAIR", True) is True
+    assert switches.is_on("OBSERVATION_FOLDING", False) is False
+    assert switches.is_on("OBSERVATION_FOLDING", True) is True
 
 
 def test_a_bundle_s_stored_setting_turns_its_features_off(monkeypatch, stored):
@@ -45,15 +45,15 @@ def test_a_bundle_s_stored_setting_turns_its_features_off(monkeypatch, stored):
 
 def test_outside_the_services_the_stored_settings_are_not_read(monkeypatch, stored):
     monkeypatch.delenv("SWITCH_OVERRIDES_FROM_SETTINGS", raising=False)
-    monkeypatch.setenv("TARGETED_SUITE_REPAIR", "on")
-    stored["TARGETED_SUITE_REPAIR"] = False
-    assert switches.is_on("TARGETED_SUITE_REPAIR", False) is True
+    monkeypatch.setenv("OBSERVATION_FOLDING", "on")
+    stored["OBSERVATION_FOLDING"] = False
+    assert switches.is_on("OBSERVATION_FOLDING", False) is True
 
 
 def test_the_bundles_and_experiments_are_listed_with_what_they_do_and_where_their_value_comes_from(monkeypatch, stored):
     monkeypatch.setenv("PREMIUM_MODEL_TUNING", "off")
     monkeypatch.delenv("PREMIUM_CHANGE_REQUESTS", raising=False)
-    stored["TARGETED_SUITE_REPAIR"] = True
+    stored["OBSERVATION_FOLDING"] = True
 
     listed = {entry["name"]: entry for entry in switch_catalogue.entries()}
 
@@ -64,8 +64,8 @@ def test_the_bundles_and_experiments_are_listed_with_what_they_do_and_where_thei
     assert (listed["PREMIUM_MODEL_TUNING"]["docker"], listed["PREMIUM_MODEL_TUNING"]["on"],
             listed["PREMIUM_MODEL_TUNING"]["source"]) == (False, False, "docker")
     assert (listed["PREMIUM_CHANGE_REQUESTS"]["docker"], listed["PREMIUM_CHANGE_REQUESTS"]["source"]) == (None, "default")
-    assert (listed["TARGETED_SUITE_REPAIR"]["setting"], listed["TARGETED_SUITE_REPAIR"]["on"],
-            listed["TARGETED_SUITE_REPAIR"]["source"]) == (True, True, "setting")
+    assert (listed["OBSERVATION_FOLDING"]["setting"], listed["OBSERVATION_FOLDING"]["on"],
+            listed["OBSERVATION_FOLDING"]["source"]) == (True, True, "setting")
     assert "- GUIDE_HEED_REFUSALS: " + __import__("app.models.guidance", fromlist=["BY_ID"]).BY_ID[
         "heed_refusals"].title in listed["PREMIUM_MODEL_TUNING"]["details"]
 

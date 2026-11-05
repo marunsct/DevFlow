@@ -129,5 +129,5 @@ def test_the_finding_s_words_keep_to_the_rule(tmp_path, monkeypatch):
 def test_it_is_an_experiment_that_ships_off():
     from app import switches
 
-    assert "SPEC_DRY_RUN" in switches.EXPERIMENTS and "SPEC_DRY_RUN" not in switches.EXPERIMENTS_ON
+    assert "SPEC_DRY_RUN" in switches.EXPERIMENTS and "SPEC_DRY_RUN" in switches.GROUPS["Being measured"] and "SPEC_DRY_RUN" in switches.EXPERIMENTS_ON
     assert spec_dry_run.ON_BY_DEFAULT is False

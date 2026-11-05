@@ -125,6 +125,6 @@ def test_the_count_at_the_lock_is_kept_on_or_off(tmp_path, monkeypatch):
 
 def test_the_switch_is_registered_and_off(monkeypatch):
     monkeypatch.delenv("CONTRACT_LINE_COVERAGE", raising=False)
-    assert "CONTRACT_LINE_COVERAGE" in switches.EXPERIMENTS and "CONTRACT_LINE_COVERAGE" not in switches.EXPERIMENTS_ON
+    assert "CONTRACT_LINE_COVERAGE" in switches.EXPERIMENTS and "CONTRACT_LINE_COVERAGE" in switches.GROUPS["Being measured"] and "CONTRACT_LINE_COVERAGE" in switches.EXPERIMENTS_ON
     assert "CONTRACT_LINE_COVERAGE" in provenance.SWITCHES
     assert cc.enabled() is False

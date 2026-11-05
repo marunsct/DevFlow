@@ -76,10 +76,11 @@ describe('the admin page', () => {
   });
 
   it('shows only the switches that are off, and the bundles apart from the rest', async () => {
-    serve([entry(), entry({ name: 'MEASURE_ONCE', on: false, source: 'default' }), entry({ name: 'PREMIUM_DEEP_VERIFICATION' })]);
+    serve([entry({ group: 'Being measured' }), entry({ name: 'MEASURE_ONCE', on: false, source: 'default', group: 'Efficiency' }), entry({ name: 'PREMIUM_DEEP_VERIFICATION', group: 'Bundles' })]);
     renderPage();
     await screen.findByText('START_PROBE');
     expect(screen.getByText('Bundles')).toBeTruthy();
+    expect(screen.getByText('Being measured')).toBeTruthy();
 
     await userEvent.click(screen.getByRole('button', { name: 'Off' }));
 

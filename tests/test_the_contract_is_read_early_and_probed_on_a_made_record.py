@@ -194,6 +194,6 @@ def test_the_review_node_asks_it():
 def test_the_switches_are_registered_and_off(monkeypatch):
     for name in NEW:
         monkeypatch.delenv(name, raising=False)
-        assert name in switches.EXPERIMENTS and name not in switches.EXPERIMENTS_ON
+        assert name in switches.GROUPS["Being measured"] and name in switches.EXPERIMENTS_ON
         assert name in provenance.SWITCHES
         assert provenance.switch(provenance.SWITCHES[name]).enabled() is False

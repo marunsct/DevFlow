@@ -216,7 +216,7 @@ def test_a_probe_that_cannot_run_raises_nothing(project, monkeypatch):
 def test_the_switch_is_registered_and_off(monkeypatch):
     name = "CONTRACT_PROBE_WITH_A_BAD_BODY"
     monkeypatch.delenv(name, raising=False)
-    assert name in switches.EXPERIMENTS and name not in switches.EXPERIMENTS_ON
+    assert name in switches.GROUPS["Being measured"] and name in switches.EXPERIMENTS_ON
     assert provenance.switch(provenance.SWITCHES[name]).enabled() is False
     compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
-    assert f"{name}: ${{{name}:-off}}" in compose
+    assert f"{name}: ${{{name}:-on}}" in compose

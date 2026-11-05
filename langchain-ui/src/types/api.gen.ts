@@ -707,6 +707,7 @@ export interface SwitchEntry {
   default: boolean;
   details: string;
   docker: boolean | null;
+  group: string;
   module: string;
   name: string;
   on: boolean;

@@ -882,6 +882,8 @@ class SwitchEntry(BaseModel):
     on: bool
     #: Which of the three decided `on`: "setting", "docker" or "default".
     source: Literal["setting", "docker", "default"]
+    #: What it is for: "Bundles", "Being measured", or an improvement group ("Context and cost", "Efficiency").
+    group: str = ""
 
 
 class SwitchSetting(BaseModel):

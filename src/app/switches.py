@@ -53,6 +53,20 @@ BUILT_IN = frozenset({
     "START_DEFECT_NAMES_COMPILER_ERRORS", "SETTLE_WHEN_ACCEPTANCE_IS_GREEN", "STALL_RULE", "MEASURE_ONCE",
     "KEEP_THE_BEST_ON_A_REPLAN", "FIRST_REREAD_ANSWERED", "FIX_STAGE_CALL_CAP", "CONTRACT_SERVER_ERRORS_AT_A_ROUND",
     "LAST_TRY_ON_DEFERRED", "START_PROBE", "EXTENSIONS_BEFORE_A_RUN", "REFUSALS_FOLDED",
+    # Measured and kept: they change what a run proves or how it repairs, so they are quality, not options (owner,
+    # 2026-11-05: bug fixes and changes that affect quality are always on, with no switch).
+    "TARGETED_SUITE_REPAIR",
+    "STRUCTURED_DISPUTE_VERDICT",
+    "AGENT_LOOP_FIX_LIMITS",
+    "SURRENDER_TO_REWRITE",
+    "KEPT_FIX_CANDIDATES",
+    "CO_DEFECT_FAILURES_IN_REWRITES",
+    "REPEATED_REWRITE_PROMPT_STOP",
+    "QA_SAYS_THE_PRODUCT_IS_AT_FAULT",
+    "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE",
+    "SETTLE_SPEC_CONTRADICTIONS",
+    "BRIEF_OVER_SPEC_ADDITIONS",
+    "TESTS_OF_ACTIONS_WITHIN_A_VIEW",
 })
 
 #: The premium features, one switch a bundle over the base product (owner, 2026-10-29: a free base version, these
@@ -82,64 +96,33 @@ BUNDLES: dict[str, tuple[str, ...]] = {
     "PREMIUM_CHANGE_REQUESTS": ("CHANGE_REQUEST_RUNS",),
 }
 
-#: Features being measured, each its own switch (owner, 2026-10-29): bundled, they could not be measured apart. Off
-#: until a measurement says on; on as a measured arm once one has, watched until it moves to a bundle or the base.
-EXPERIMENTS = (
-    "OBSERVATION_FOLDING", "BATCH_ACCEPTANCE_AUTHOR", "TARGETED_SUITE_REPAIR", "STRUCTURED_DISPUTE_VERDICT",
-    # The defect fix loop (deep-review plan items 9, 11, 15).
-    "AGENT_LOOP_FIX_LIMITS", "SURRENDER_TO_REWRITE", "KEPT_FIX_CANDIDATES", "CO_DEFECT_FAILURES_IN_REWRITES",
-    "REPEATED_REWRITE_PROMPT_STOP",
-    # Prefix stability and the second half of targeted QA repair (plan items 14 and 10).
-    "STABLE_STAGE_PREFIX", "NAMED_TEST_REWRITE",
-    # Tests-only writes beside a green suite and mutation findings (plan items 12 and 13).
-    "TESTS_ONLY_WRITES", "MUTANT_CHECK_IN_THE_FIX_STAGE", "MUTATION_TEST_RETENTION", "EQUIVALENT_MUTANTS_REMEMBERED",
-    # The interface contract at the review, the lock and the release, and naming before deferral (plan items 16, 17).
-    "CONTRACT_LINE_COVERAGE", "CONTRACT_PROBE_AT_LOCK", "CONTRACT_UNREAD_LINES_AT_REVIEW", "CONTRACT_NON_NUMERIC_IDS",
-    "CONTRACT_PROBE_WITH_A_RECORD", "NAMING_FINDING_BEFORE_DEFERRAL",
-    # The suite as an executable oracle, and its order and ids (plan items 18 and 20).
-    "SPEC_DRY_RUN", "ORDER_PROBE", "IDS_READ_WITHOUT_A_CREATE",
-    # A QA repair that ends early when it finds no fault in the test: a model's claim decides it.
-    "QA_SAYS_THE_PRODUCT_IS_AT_FAULT",
-    # A fix kept over the unit tests it broke, for one locked test made to pass: a one-for-one judgement, one run's evidence.
-    "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE",
-    # A contradiction the design review leaves open settled before the suite and the drafts take sides.
-    "SETTLE_SPEC_CONTRADICTIONS",
-    # The contract's write lines asked with a body nothing can parse: a 5xx is a defect, any other answer the product's choice.
-    "CONTRACT_PROBE_WITH_A_BAD_BODY",
-    # A rule the specification adds beyond the brief, put to the design review and to QA: prompt rules, unproved until measured.
-    "BRIEF_OVER_SPEC_ADDITIONS",
-    # An action tested while a view that depends on its result is on: a prompt rule, unproved until measured.
-    "TESTS_OF_ACTIONS_WITHIN_A_VIEW",
-)
-#: The experiments deployed on, each with the measurement that turned it on.
-EXPERIMENTS_ON = {
-    # 54 re-locks over 60 runs: 35 touched only the one or two tests sent for repair, so the full review after them
-    # changed nothing; the 19 that touched more all ended at full hidden scores. On 2026-10-29, owner agreeing; the
-    # mutation score is watched for a weaker suite.
-    "TARGETED_SUITE_REPAIR": "re-locks that changed only the repaired tests: 35 of 54",
-    # Tonight's prose reading of the dispute was wrong twice (LF.405, LF.411); on 2026-10-29 as the A/B arm, owner
-    # agreeing; its disputes are compared with the prose reading's.
-    "STRUCTURED_DISPUTE_VERDICT": "prose reading wrong in 2 disputes tonight; A/B against it",
-    # The defect fix loop, measured as one group (owner's backlog rule, 2026-10-31): the last held-out run spent five
-    # hours in one sprint on 8+ reverted fixes and the same defect re-dispatched; the off baseline is the two runs
-    # before it (both at full hidden scores). Ablate one switch at a time only if the group does not help.
-    "AGENT_LOOP_FIX_LIMITS": "fix-loop group arm: one sprint spent 8+ reverts and five hours",
-    "SURRENDER_TO_REWRITE": "fix-loop group arm",
-    "KEPT_FIX_CANDIDATES": "fix-loop group arm",
-    "CO_DEFECT_FAILURES_IN_REWRITES": "fix-loop group arm",
-    "REPEATED_REWRITE_PROMPT_STOP": "fix-loop group arm",
-    # A contradiction in the specification, measured as one group: three of the last four runs carried blocking ones
-    # into the build, and one of them spent hours on the standoff it became. The baseline is the runs before this arm.
-    "SETTLE_SPEC_CONTRADICTIONS": "contradiction group arm: one standoff cost six reverted fixes",
-    "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE": "contradiction group arm",
-    # QA sent a fair test: two runs spent most of an hour each in a repair that could not touch the product at fault,
-    # and the fixer then found the cause within minutes. Baseline: the runs before this arm.
-    "QA_SAYS_THE_PRODUCT_IS_AT_FAULT": "two runs spent about an hour each repairing a fair test",
-    # Two products released with hidden tests lost: one to a rule the specification added beyond the brief, one to an
-    # action and a view tested apart. Armed for the rechecks of those families; the baseline is the sweep's scores.
-    "BRIEF_OVER_SPEC_ADDITIONS": "recheck arm: a specification's own rule lost 2 hidden tests",
-    "TESTS_OF_ACTIONS_WITHIN_A_VIEW": "recheck arm: an action within a view lost 1 hidden test",
+#: The switches an operator may set beside the bundles, each in a group that says what it is for (owner, 2026-11-05:
+#: only improvements that do not affect quality have a switch, and switches are grouped). "Being measured" holds
+#: verification checks built and tested but never measured in a run: on together as one measured batch from release
+#: candidate 7; each that holds moves to `BUILT_IN`, each that hurts is reworked or removed - none keeps its switch.
+GROUPS: dict[str, tuple[str, ...]] = {
+    "Being measured": (
+        "NAMED_TEST_REWRITE", "TESTS_ONLY_WRITES", "MUTATION_TEST_RETENTION", "CONTRACT_LINE_COVERAGE",
+        "CONTRACT_PROBE_AT_LOCK", "CONTRACT_UNREAD_LINES_AT_REVIEW", "CONTRACT_NON_NUMERIC_IDS",
+        "CONTRACT_PROBE_WITH_A_RECORD", "CONTRACT_PROBE_WITH_A_BAD_BODY", "NAMING_FINDING_BEFORE_DEFERRAL",
+        "SPEC_DRY_RUN", "ORDER_PROBE", "IDS_READ_WITHOUT_A_CREATE",
+    ),
+    # How much of a long conversation a model is sent: cost and cache, not what the run proves.
+    "Context and cost": ("OBSERVATION_FOLDING", "STABLE_STAGE_PREFIX", "BATCH_ACCEPTANCE_AUTHOR"),
+    # Fewer calls on mutation findings: time, not what the run proves.
+    "Efficiency": ("EQUIVALENT_MUTANTS_REMEMBERED", "MUTANT_CHECK_IN_THE_FIX_STAGE"),
 }
+#: Every grouped switch, in the admin page's order.
+EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)
+#: The grouped switches deployed on, each with why.
+EXPERIMENTS_ON = {name: "measured batch from release candidate 7 (owner, 2026-11-05)" for name in GROUPS["Being measured"]}
+_GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}
+
+
+def group_of(name: str) -> str:
+    """What a switch is for: "Bundles" for a premium bundle, else its group's name; "" for none."""
+    return "Bundles" if name in BUNDLES else _GROUP_OF.get(name, "")
+
 
 _BUNDLE_OF = {member: bundle for bundle, members in BUNDLES.items() for member in members}
 
@@ -178,4 +161,4 @@ def is_on(name: str, default: bool) -> bool:
     return default
 
 
-__all__ = ["BUILT_IN", "BUNDLES", "EXPERIMENTS", "EXPERIMENTS_ON", "bundle_of", "from_the_environment", "is_on", "operated", "stored"]
+__all__ = ["BUILT_IN", "BUNDLES", "EXPERIMENTS", "EXPERIMENTS_ON", "GROUPS", "bundle_of", "group_of", "from_the_environment", "is_on", "operated", "stored"]

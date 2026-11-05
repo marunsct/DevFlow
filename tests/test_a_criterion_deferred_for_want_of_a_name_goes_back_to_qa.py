@@ -84,6 +84,6 @@ def test_the_prefixes_are_the_ones_the_harness_writes():
 
 def test_the_switch_is_registered_and_off(monkeypatch):
     monkeypatch.delenv("NAMING_FINDING_BEFORE_DEFERRAL", raising=False)
-    assert "NAMING_FINDING_BEFORE_DEFERRAL" in switches.EXPERIMENTS and "NAMING_FINDING_BEFORE_DEFERRAL" not in switches.EXPERIMENTS_ON
+    assert "NAMING_FINDING_BEFORE_DEFERRAL" in switches.EXPERIMENTS and "NAMING_FINDING_BEFORE_DEFERRAL" in switches.GROUPS["Being measured"] and "NAMING_FINDING_BEFORE_DEFERRAL" in switches.EXPERIMENTS_ON
     assert "NAMING_FINDING_BEFORE_DEFERRAL" in provenance.SWITCHES
     assert provenance.switch(provenance.SWITCHES["NAMING_FINDING_BEFORE_DEFERRAL"]).enabled() is False

@@ -71,6 +71,18 @@ def _sections_as_json(specification: Any, names: Any) -> dict[str, Any]:
     return {name: dumped.get(name, getattr(specification, name, None)) for name in names}
 
 
+#: The sections that give the acceptance criteria their ids; a part writing neither cannot see them.
+_CRITERIA_SECTIONS = frozenset({"acceptance_criteria", "interface_contract"})
+#: Said to every other part. Measured on one run: `implementation_order` cited AC ids while another part wrote the
+#: criteria at the same time, every step pointed at the wrong one, and the design review sent it all back.
+CITE_NO_CRITERION = (
+    "The acceptance criteria and the interface contract are being written at the same time as these sections, "
+    "so the ids they add are not known here: cite an AC-n id only where the material above already gives it. "
+    "Otherwise name the behaviour itself - "
+    "the endpoint, file, function or rule - and the criteria will point at it."
+)
+
+
 def part_request(specification: Any, names: tuple[str, ...], context: str) -> str:
     """What one part's call is asked."""
     core = _sections_as_json(specification, CORE)
@@ -81,6 +93,7 @@ def part_request(specification: Any, names: tuple[str, ...], context: str) -> st
         context.strip(),
         "--- The specification's core ---\n" + json.dumps(core, indent=1, default=str),
         "--- The sections to write ---\n" + _described(type(specification), names),
+        "" if _CRITERIA_SECTIONS & set(names) else CITE_NO_CRITERION,
         "Reply with one JSON object and nothing else. Its keys are exactly: " + ", ".join(names)
         + ". Each value is a list of strings, one entry per item, each entry complete on its own.",
     ) if part)

@@ -26,3 +26,9 @@ def test_named_runs_are_read_from_the_store(monkeypatch):
     monkeypatch.setitem(sys.modules, "app.server.run_store", fake)
 
     assert deep_audit._runs(["run-a", "run-missing"]) == [record]
+
+
+def test_a_probe_under_way_is_not_a_change_left_behind():
+    assert deep_audit.mutation_left_behind("running", written_at=1000, now=1060) is False
+    assert deep_audit.mutation_left_behind("running", written_at=1000, now=1000 + 11 * 60) is True
+    assert deep_audit.mutation_left_behind("completed", written_at=1000, now=1060) is True

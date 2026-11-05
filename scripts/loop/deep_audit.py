@@ -59,6 +59,20 @@ def _runs(asked):
     return [r for r in store.list_all(limit=200) if (_at(r.updated_at) or since) >= since]
 
 
+#: A deliberate change still in flight this long, in a live run, was left behind: a probe puts its change back in
+#: seconds to a few minutes.
+MUTATION_IN_FLIGHT_SECONDS = 10 * 60
+
+
+def mutation_left_behind(status, written_at, now=None):
+    """Whether a deliberate change's journal is one left behind, not a probe under way in a live run."""
+    import time
+
+    if status not in ("running", "queued"):
+        return True
+    return ((now or time.time()) - written_at) > MUTATION_IN_FLIGHT_SECONDS
+
+
 def _project(workspace):
     try:
         return workspace / (workspace / ".project-directory").read_text().strip()
@@ -137,7 +151,8 @@ def audit(record):
                                  f"better at {entry['worse_than_the_same_product_at']}"))
         except Exception:  # noqa: BLE001
             pass
-        if (workspace / ".harness" / "mutation-in-flight.json").exists():
+        journal = workspace / ".harness" / "mutation-in-flight.json"
+        if journal.exists() and mutation_left_behind(record.status, journal.stat().st_mtime):
             findings.append((0, "mutation-left", "a deliberate change's journal is still in the workspace"))
     if project and project.is_dir():
         for path in _stale_caches(project):

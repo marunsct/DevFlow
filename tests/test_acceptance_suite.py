@@ -540,3 +540,15 @@ def test_a_test_whose_own_source_keeps_a_promise_is_sent_back(project) -> None:
 
     assert [b.split("`")[1] for b in broken] == ["[AC-3] assigns to another user"]
     assert "await it" in broken[0]
+
+
+def test_the_author_is_told_the_skeleton_is_not_the_product_to_finish(project) -> None:
+    """Measured across runs: suite writers read the stack's starting skeleton as a half-built product and wrote its
+    models, storage and manifest "so the tests can pass" - 48 such refused writes in one run, 19 in another."""
+    import re
+
+    text = requests.build_author_request(project, suite.criteria(project))["messages"][0]["content"]
+    rule = text[text.index("RUN and FAIL now"):]
+    rule = rule[:rule.index("\n- ")]
+    assert "starting skeleton" in rule and "after this suite is locked" in rule
+    assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", rule, re.I)

@@ -1456,3 +1456,4 @@ measurement in the findings log** - do not delete those.
 2026-11-04 20:05 JST RC5 fullstack-bookmarks-py 1 run-ef91b0a4 completed, hidden 8/8 (mixed). Owner: no new runs on :8888. UI deploy-app 9a5ff0a0 (Settings build+behaviour merged with both saves in the bar; Runs 10 per page with page outcomes; Admin filters/grouping).
 2026-11-04 20:46 JST RC6 notes-api 1 run-1a17cf7f completed 20:40, hidden 9/9 (counted, a0473c4). RC6 notes-api-hono 1 started on :1234.
 2026-11-05 09:45 JST host restarted ~09:37 (worker still a0473c4). Owner: resume testing on both ports. RC6 notes-api-hono 1 run-37f78b1b resumed (:1234; paused since 11-04 21:36); RC6 tasks-api 1 run-ce9eafa3 started (:8888). Audit cron recreated.
+2026-11-05 09:58 JST RC6 notes-api-hono 1 run-37f78b1b completed 09:52, hidden 9/9 (counted). RC6 web-todo 1 run-a9aefc9d started on :1234. RC6 2/2 full.

@@ -1114,7 +1114,7 @@ def _observed_output(observed: dict[str, str] | None) -> str:
     if not observed or not observed.get("output"):
         return ""
     return (
-        "--- What the last failing command actually printed ---\n"
+        f"--- {observed.get('title') or 'What the last failing command actually printed'} ---\n"
         f"$ {observed.get('command', '')}\n"
         f"{observed['output']}\n\n"
         "The description above is another specialist's reading of a failure and "

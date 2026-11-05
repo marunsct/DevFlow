@@ -2112,6 +2112,17 @@ def _what_the_ledger_confirms(repo_root: str, verification: Any) -> str:
         return ""
 
 
+def _what_the_criteria_s_tests_printed(repo_root: str, defect: Any) -> dict[str, str] | None:
+    """The failing tests of the criteria a defect names, with their output; None for any other defect. Never raises."""
+    try:
+        from app.acceptance import suite as _the_suite
+        from app.acceptance.junit import tags_in
+
+        return _the_suite.what_the_criteria_s_tests_printed(repo_root, tags_in(str(getattr(defect, "description", "") or "")))
+    except Exception:  # noqa: BLE001 - a brief is better without it than absent
+        return None
+
+
 def _what_the_last_failure_printed(run_id: str | None) -> dict[str, str] | None:
     """The last failing command's own output, or None. Never raises.
 
@@ -11241,7 +11252,9 @@ def build_workflow_graph(
             getattr(state.get("stack_selection"), "technology_stack", None),
             # What the failing command actually printed, alongside the prose
             # description of it. See `build_defect_fix_request`.
-            _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
+            # A failing criterion's own tests first: the last failing command may be another criterion's.
+            _what_the_criteria_s_tests_printed(state["repository"].root_path, defect)
+            or _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
             caught_by=getattr(defect, "caught_by", ""),
             # Only for a defect that is not itself a failing criterion - nor a
             # mutation finding, whose product is not wrong (plan QM.2).

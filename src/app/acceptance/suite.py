@@ -4400,6 +4400,28 @@ def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     )
 
 
+def what_the_criteria_s_tests_printed(repo_root: str | Path, tags: Any) -> dict[str, str] | None:
+    """The failing tests of the criteria `tags` names, with what each printed, from the suite's last run; else None.
+
+    For a fixer of a failing criterion. Measured on one run: the fixer of "[AC-5] Delete a note" was shown, as the
+    machine's own output to believe, a run of two other criteria's tests that a different stage had made.
+    """
+    wanted = [t for t in tags or () if str(t).startswith(("AC-", "CR-"))]
+    if not wanted:
+        return None
+    found = last_result(repo_root)
+    failing = []
+    for tag in wanted:
+        entry = (found.get("criteria") or {}).get(tag) or (found.get("change_requests") or {}).get(tag) or {}
+        failing += [t for t in entry.get("tests") or [] if t.get("outcome") == "failed"]
+    if not failing:
+        return None
+    names = list(dict.fromkeys(str(t.get("name") or "") for t in failing))
+    output = "\n\n".join(f"{t.get('name')}:\n{t.get('message') or '(no message)'}" for t in failing)
+    return {"command": "the acceptance suite's last run: " + ", ".join(names), "output": output,
+            "title": "What its failing tests printed"}
+
+
 def last_result(repo_root: str | Path) -> dict[str, Any]:
     try:
         return json.loads((Path(repo_root) / RESULT_FILE).read_text(encoding="utf-8"))

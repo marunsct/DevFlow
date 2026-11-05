@@ -1221,6 +1221,12 @@ _A_TRACEBACK = "Traceback (most recent call last):"
 _A_SERVER_ERROR = re.compile(r"\b50\d\b|Internal Server Error", re.I)
 _AN_EXCEPTION_LINE = re.compile(r"^[A-Za-z_][\w.]*(?:Error|Exception|Exit|Warning)\b.*$")
 _SERVICE_ERRORS_MARK = "\nThe service logged this while the suite ran:\n"
+UNLOGGED_SERVER_ERROR = (
+    "- nothing: the service logged no error for this server error. Something in the product answers it without "
+    "logging what failed - a catch-all error handler, or a `try` that turns any exception into a 500. Make it log "
+    "the exception with its traceback (or let it propagate) first: the next run of the suite then shows the cause "
+    "here.\n"
+)
 
 
 def the_errors_a_service_logged(repo_root: str | Path, project: str) -> list[str]:
@@ -1251,9 +1257,14 @@ def _with_the_errors_the_service_logged(repo_root: str | Path, project: str, res
     """Add what the service logged to each failing test that met a server error. Never raises."""
     try:
         errors = the_errors_a_service_logged(repo_root, project)
-        if not errors:
+        if errors:
+            added = "".join(f"- {error[:400]}\n" for error in errors)
+        elif (Path(repo_root) / project / SERVICE_LOG).is_file():
+            # A log was kept and holds no error: the product answered the 500 without logging what failed. Measured
+            # on one run: a catch-all error handler returned a bare 500, and fixes went at sign-in blind for an hour.
+            added = UNLOGGED_SERVER_ERROR
+        else:
             return
-        added = "".join(f"- {error[:400]}\n" for error in errors)
         tests = [
             replace(test, message=f"{test.message}{_SERVICE_ERRORS_MARK}{added}")
             if test.outcome == "failed" and _A_SERVER_ERROR.search(test.message or "")

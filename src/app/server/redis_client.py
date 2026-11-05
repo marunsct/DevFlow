@@ -34,7 +34,10 @@ def get_redis_client() -> redis.Redis:
     global _sync_pool
     if _sync_pool is None:
         _sync_pool = redis.ConnectionPool.from_url(
-            redis_url(), decode_responses=True, health_check_interval=30
+            redis_url(), decode_responses=True, health_check_interval=30,
+            # No call from worker code may wait forever: an unanswered read hung the orphan sweep for a whole worker
+            # lifetime. Nothing here blocks on purpose (the event stream's listener uses the async client).
+            socket_timeout=30, socket_connect_timeout=10,
         )
     return redis.Redis(connection_pool=_sync_pool)
 

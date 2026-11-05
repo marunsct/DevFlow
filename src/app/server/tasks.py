@@ -205,6 +205,25 @@ def _recover_runs_their_worker_abandoned(**_kwargs) -> None:
 #: Measured on one run: the pool process was OOM-killed mid-stage and the row sat `running` for 14 minutes, until a
 #: deploy's restart swept; nothing had looked at running rows between restarts.
 _RECURRING_SWEEP_SECONDS = 90
+#: How long one sweep pass may take before the loop leaves it and goes on. Measured: the sweep thread sat in a socket
+#: read from the worker's start, and no sweep ran again until the next restart. A pass that hangs is left on its own
+#: daemon thread; the next pass runs on a new one.
+_SWEEP_PASS_DEADLINE_SECONDS = 120
+#: The start-time sweep waits for the broker (up to 30 s) and sweeps twice a minute apart: well inside this.
+_START_SWEEP_DEADLINE_SECONDS = 300
+
+
+def _within(work: Callable[[], object], seconds: float, what: str) -> bool:
+    """Run `work` on its own daemon thread and wait at most `seconds`. True when it finished. Never raises."""
+    import threading
+
+    done = threading.Thread(target=work, name="orphan-sweep-pass", daemon=True)
+    done.start()
+    done.join(seconds)
+    if done.is_alive():
+        logger.warning("%s did not finish in %s s; left behind, the next pass runs on its own", what, seconds)
+        return False
+    return True
 _RECURRING_LOCK_KEY = "harness:recover-orphans:recurring"
 
 
@@ -226,22 +245,25 @@ def _keep_sweeping(*, sleep: Callable[[float], None] | None = None, stop: Callab
     if _RECURRING_SWEEP_SECONDS <= 0:
         return
     pause = sleep or time.sleep
-    while not stop():
-        pause(_RECURRING_SWEEP_SECONDS)
+    def one_pass() -> None:
         try:
             from app.server.redis_client import get_redis_client
 
             client = get_redis_client()
             if not client.set(_RECURRING_LOCK_KEY, "1", nx=True, ex=max(10, _RECURRING_SWEEP_SECONDS - 10)):
-                continue
+                return
             recover_orphaned_runs(dry_run=False, emit=_a_quiet_emit, grace_seconds=RECENTLY_TOUCHED_SECONDS)
         except Exception:  # noqa: BLE001 - a sweep must never take a worker down
             logger.warning("The recurring orphan sweep failed; looking again later", exc_info=True)
 
+    while not stop():
+        pause(_RECURRING_SWEEP_SECONDS)
+        _within(one_pass, _SWEEP_PASS_DEADLINE_SECONDS, "a recurring orphan sweep")
+
 
 def _sweep_and_keep_sweeping() -> None:
-    """The start-time sweep, then the recurring one, on the same daemon thread."""
-    _sweep_for_abandoned_runs()
+    """The start-time sweep, then the recurring one, on the same daemon thread; neither waits on a pass that hangs."""
+    _within(_sweep_for_abandoned_runs, _START_SWEEP_DEADLINE_SECONDS, "the start-time orphan sweep")
     _keep_sweeping()
 
 

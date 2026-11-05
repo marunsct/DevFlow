@@ -54,4 +54,5 @@ def test_the_start_time_sweep_thread_keeps_sweeping():
 
     source = inspect.getsource(tasks)
     assert 'target=_sweep_and_keep_sweeping, name="orphan-sweep"' in source
-    assert "_sweep_for_abandoned_runs()\n    _keep_sweeping()" in inspect.getsource(tasks._sweep_and_keep_sweeping)
+    body = inspect.getsource(tasks._sweep_and_keep_sweeping)
+    assert "_sweep_for_abandoned_runs" in body and "_keep_sweeping()" in body

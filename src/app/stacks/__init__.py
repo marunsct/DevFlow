@@ -200,6 +200,8 @@ class StackPack:
     #: A suite file's text -> lines that give a locator a pattern as plain text
     #: (`hasText: '^B$'`), which it matches as those characters.
     locators_matching_a_pattern_as_text: Callable[[str], Sequence[int]] | None = None
+    #: A suite file's text and the controls every record has -> lines asking the whole page for one of them.
+    whole_page_lookups: Callable[[str, list[str]], Sequence[int]] | None = None
     #: A suite file's text -> (line, title, value) of each test that looks on
     #: the page for a value it made at run time and never gave the product.
     expects_what_it_never_gave: Callable[[str], Sequence[tuple[int, str, str]]] | None = None

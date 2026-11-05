@@ -1137,6 +1137,20 @@ _A_PATTERN_AS_TEXT = re.compile(
 )
 
 
+def whole_page_lookups(text: str, per_record: list[str]) -> list[int]:
+    """Lines that ask the whole page (`page.getBy...`) for a control named in `per_record`, which every record has.
+
+    The page has one per record, so the lookup matches several and the runner refuses it - but only once the product
+    draws more than one record (measured: a whole fix round went by first). Find the record, then the control in it.
+    """
+    if not per_record:
+        return []
+    names = "|".join(re.escape(name) for name in per_record)
+    lookup = re.compile(rf"""(?<![\w.])page\s*\.\s*getBy(?:Role|Text|Label)\s*\([^)]*?['"`](?:{names})['"`]""")
+    code = code_only(text)
+    return sorted({code.count("\n", 0, m.start()) + 1 for m in lookup.finditer(code)})
+
+
 def locators_matching_a_pattern_as_text(text: str) -> list[int]:
     """Lines where a locator is given `'^B$'` as text: Playwright matches a string as text, so it looks for `^B$`.
 

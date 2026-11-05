@@ -154,6 +154,7 @@ PACK = StackPack(
     unawaited_helpers=js.unawaited_helpers,
     locators_with_an_ignored_option=js.locators_with_a_name_option,
     locators_matching_a_pattern_as_text=js.locators_matching_a_pattern_as_text,
+    whole_page_lookups=js.whole_page_lookups,
     code_runs_in="node",
     ci_setup=js.CI_SETUP,
     # The `request` fixture needs no browser.

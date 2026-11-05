@@ -2885,6 +2885,40 @@ def locators_with_invalid_name_option(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+#: A sentence of a criterion that gives each record a named control: `Each has a button named "Delete"`.
+_EACH_HAS = re.compile(r"\beach\b[^.\n]*", re.I)
+
+
+def whole_page_lookups_of_a_per_record_control(repo_root: str | Path) -> list[str]:
+    """Tests asking the whole page for a control every record has. See the pack's `whole_page_lookups`."""
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].whole_page_lookups is None:
+        return []
+    per_record = sorted({name for c in criteria(repo_root) for sentence in _EACH_HAS.findall(str(c.text))
+                         for name in re.findall(r'"([^"]+)"', sentence)})
+    if not per_record:
+        return []
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        hits = list(found[0].whole_page_lookups(text, per_record))
+        if not hits:
+            continue
+        lines = text.splitlines()
+        named = next((n for n in per_record if n in lines[hits[0] - 1]), per_record[0]) if 0 < hits[0] <= len(lines) else per_record[0]
+        where = ", ".join(str(line) for line in hits[:8]) + (" ..." if len(hits) > 8 else "")
+        problems.append(
+            f"`{path.relative_to(root).as_posix()}` line(s) {where} ask the whole page for \"{named}\", and the brief gives "
+            "one to each record: once the page holds more than one, the lookup matches several and the runner refuses "
+            f"it. Find the record first, then the \"{named}\" inside it."
+        )
+    return problems[:6]
+
+
 def locators_matching_a_pattern_as_text(repo_root: str | Path) -> list[str]:
     """Where the suite gives a locator a pattern as plain text. See the pack's `locators_matching_a_pattern_as_text`."""
     found = contract.the_pack(repo_root)
@@ -4688,6 +4722,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *locators_by_a_name_the_role_never_has(repo_root),
         *locators_with_invalid_name_option(repo_root),
         *locators_matching_a_pattern_as_text(repo_root),
+        *whole_page_lookups_of_a_per_record_control(repo_root),
         *requests_with_a_fetch_body(repo_root),
         *responses_read_without_the_call(repo_root),
         *contexts_made_from_the_fixture(repo_root),

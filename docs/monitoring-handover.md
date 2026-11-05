@@ -1467,3 +1467,4 @@ measurement in the findings log** - do not delete those.
 2026-11-05 14:34 JST LF.586 deployed (f412ca9): plain page as an empty field gets the plain-page pack. RC10 fullstack run fc0441d0 cancelled (stack decided before the fix). RC11 counts from f412ca9; RC11 fullstack-bookmarks-py 1 run-ead6c2c2 on :1234.
 2026-11-05 15:47 JST RC9 tasks-api 1 run-f0e47299 10/10 (mixed). RC11 fullstack-bookmarks-py 1 on the new pack: suite locked 15:12 in ~22 min. RC11 tasks-api 1 run-926a1029 started on :8888.
 2026-11-05 17:08 JST LF.587 deployed (6fbcc21): whole-table counts go back to the suite (tasks-api 1 test_ac21, 19 == 0). Measured and dropped: a 20-min fix-stage budget (long fix stages fix at 42%, like short ones). RC12 counts from 6fbcc21.
+2026-11-05 17:47 JST RC11 tasks-api 1 run-926a1029 10/10 (mixed; LF.583 + LF.587 fired). RC12 web-todo 1 run-032cdb9f started on :8888.

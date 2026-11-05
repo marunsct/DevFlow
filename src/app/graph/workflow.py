@@ -6048,6 +6048,38 @@ def _the_failure_as_met(item: Any) -> str:
     return _A_NUMBER.sub("#", " | ".join(lines) + "\n" + page) if lines else ""
 
 
+_A_CRITERION_DEFECT = re.compile(r"^\[((?:AC|CR)-\d+)\] (.*)$", re.S)
+
+
+def _one_defect_per_failing_tests(reported: list[Any], result: dict[str, Any]) -> list[Any]:
+    """`reported` with defects for criteria whose failing tests are exactly the same set merged, in order.
+
+    The same failing tests decide every criterion they carry, so one fixer settles them all. Measured on one run:
+    two criteria carried by one failing test had two fixers, about 40 and 45 minutes, both left open.
+    """
+    criteria = (result or {}).get("criteria") or {}
+    if len(reported) < 2 or not criteria:
+        return list(reported)
+    first_with: dict[frozenset[str], Any] = {}
+    merged: list[Any] = []
+    for item in reported:
+        found = _A_CRITERION_DEFECT.match(str(getattr(item, "description", "") or ""))
+        failing = frozenset(
+            str(t.get("name")) for t in ((criteria.get(found.group(1)) or {}).get("tests") or [])
+            if t.get("outcome") == "failed"
+        ) if found else frozenset()
+        lead = first_with.get(failing) if failing else None
+        if lead is None:
+            if failing:
+                first_with[failing] = item
+            merged.append(item)
+            continue
+        lead_found = _A_CRITERION_DEFECT.match(lead.description)
+        lead.description = f"[{lead_found.group(1)}][{found.group(1)}] {lead_found.group(2)}" if lead_found else lead.description
+        lead.expected_behavior = f"{getattr(lead, 'expected_behavior', '')}; {getattr(item, 'expected_behavior', '')}".strip("; ")
+    return merged
+
+
 def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
     """`reported` with the defects that fail at one layer behind one cause merged, in order.
 
@@ -10918,6 +10950,10 @@ def build_workflow_graph(
         # failure share no words to bundle by, only the layer they fail at.
         # See `_one_defect_per_root_error` (Initiative L.1).
         reported = _one_defect_per_root_error(reported)
+        # One set of failing tests, one fixer: the criteria they carry are settled together.
+        from app.acceptance import suite as _the_suite
+
+        reported = _one_defect_per_failing_tests(reported, _the_suite.last_result(state["repository"].root_path) or {})
         if not reported:
             unreported = _a_suite_failure_the_round_did_not_report(
                 state["repository"].root_path, f"test_round_{test_round}",

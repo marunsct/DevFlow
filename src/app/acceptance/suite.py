@@ -3960,6 +3960,49 @@ def _python_route_counted(block: str, read: str, at: int) -> str | None:
     return reads[-1].group(2).rstrip("/") or "/" if reads else None
 
 
+#: A count of every row of a table, with no condition naming the records a test made.
+_A_WHOLE_TABLE_COUNT = re.compile(r"select\s+count\s*\(\s*\*\s*\)\s+from\s+[`\"\[]?(\w+)[`\"\]]?(?![^'\"\n]*\bwhere\b)", re.I)
+#: What a failed equality of counts reports: `assert 19 == 0`.
+_A_COUNT_TOO_HIGH = re.compile(r"assert\s+(\d+)\s*==\s*(\d+)")
+
+
+def tests_that_count_every_row_of_a_shared_table(repo_root: str | Path, result: AcceptanceResult | None) -> list[str]:
+    """Failed Python tests that counted every row of a table and found more than they expected.
+
+    Every test shares one service and its data, so a whole-table count holds what the tests before it made. Measured
+    on one run: `SELECT COUNT(*) FROM accounts` expected 0 after a refused signup and found 19 - four fix rounds and a
+    re-planned sprint went at a product that was right. Only a test that failed with a count above the one it
+    expected is named.
+    """
+    if result is None or not getattr(result, "ran", False):
+        return []
+    failing = {t.name: str(t.message or "") for t in result.report.tests if t.outcome == "failed"}
+    if not failing:
+        return []
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        if path.suffix.lower() != ".py":
+            continue
+        try:
+            text = re.sub(r"^[ \t]*#.*$", "", path.read_text(encoding="utf-8", errors="replace"), flags=re.M)
+        except OSError:
+            continue
+        for name, body in _python_defs(text).items():
+            message = next((m for test, m in failing.items() if test == name or test.endswith(f"::{name}") or test.endswith(f".{name}")), None)
+            counted = _A_WHOLE_TABLE_COUNT.search(body)
+            high = _A_COUNT_TOO_HIGH.search(message or "")
+            if message is None or not counted or not high or int(high.group(1)) <= int(high.group(2)):
+                continue
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}`: `{name}` counts every row of `{counted.group(1)}` and expects "
+                f"{high.group(2)}, but the suite's other tests write to the same store and it found {high.group(1)} - no "
+                "product can make that count come out. Count only the records this test made (a value of its own in a "
+                "`WHERE`), or compare with a count it read first."
+            )
+    return problems[:6]
+
+
 def python_tests_that_count_a_list_other_tests_write_to(
     repo_root: str | Path, result: AcceptanceResult | None = None
 ) -> list[str]:
@@ -4633,6 +4676,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *tests_that_assert_a_kept_file_s_text(repo_root, result),
         *tests_that_count_a_list_other_tests_write_to(repo_root, result),
         *python_tests_that_count_a_list_other_tests_write_to(repo_root, result),
+        *tests_that_count_every_row_of_a_shared_table(repo_root, result),
         *the_suite_failed_in_its_own_words(repo_root, result),
         *tests_whose_label_also_matches_a_longer_name(repo_root, result),
     ]

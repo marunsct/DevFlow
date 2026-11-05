@@ -917,11 +917,13 @@ export const RunDashboard: React.FC = () => {
             row's height, or the work area and the rail stretch with it. */}
         <div className="relative min-h-0 lg:col-span-2 xl:col-span-1">
           <div className="space-y-4 xl:absolute xl:inset-0 xl:overflow-y-auto">
-            {/* Acceptance criteria, screenshots and the decision log, then the
-                sprints - refreshed as the run moves between stages. */}
+            {/* The sprints first, one short row each (owner, 2026-11-05: below
+                every criterion they were out of sight), then the acceptance
+                criteria, screenshots and the decision log - refreshed as the
+                run moves between stages. */}
+            <SprintSummaryPanel runId={runId!} refreshKey={stageKey} />
             <DeliveryPanel runId={runId!} refreshKey={stageKey} onOpenChange={selectChange} />
             {run?.status === 'completed' && <OwnerRating runId={runId!} />}
-            <SprintSummaryPanel runId={runId!} refreshKey={stageKey} />
           </div>
         </div>
       </div>

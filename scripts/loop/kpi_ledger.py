@@ -163,6 +163,10 @@ def with_the_scores(row: dict, bench: Path = Path("data/bench")) -> dict:
     try:
         scored = json.loads((bench / f"{run}.json").read_text())
         row["hidden_score"] = scored.get("score")
+        if scored.get("benchmark"):
+            # The family the run was scored against. The brief last started is the other port's run
+            # whenever two runs are live, and filed a run under the wrong family.
+            row["benchmark"] = scored["benchmark"]
         if scored.get("quality_total"):
             row["quality_score"] = round(scored["quality_passed"] / scored["quality_total"], 3)
     except (OSError, ValueError, TypeError, ZeroDivisionError):
@@ -177,7 +181,7 @@ def with_the_scores(row: dict, bench: Path = Path("data/bench")) -> dict:
 
 def main(path: str, ledger: str = "data/kpi/ledger.csv", benchmark: str = "") -> int:
     row = with_the_scores(json.loads(Path(path).read_text()))
-    if benchmark:
+    if benchmark and not row.get("benchmark"):
         row["benchmark"] = benchmark
     earlier = append(Path(ledger), row)
     flagged = regressions(earlier, row)

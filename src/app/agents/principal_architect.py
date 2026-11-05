@@ -542,6 +542,14 @@ def build_architecture_revision_request(
     return {"messages": [{"role": "user", "content": brief}]}
 
 
+#: Most first reviews sent the specification back for contradicting itself, mostly over limits the brief never set
+#: (measured: 19 of 31 blocking or major findings over 14 runs).
+ONE_SOURCE_FOR_LIMITS = """- Add no limit the brief does not state: no maximum length, size cap, count, rate or
+  format it leaves open. Where the product cannot work without one, state it once,
+  in `domain_model`, and in every other section name that section instead of
+  repeating the value - a value written twice ends up written two ways."""
+
+
 _SYSTEM_PROMPT = f"""You are the Principal Architect for this workflow.
 
 Your role is to turn an approved product intake and an approved tools-and-models
@@ -576,6 +584,7 @@ Responsibilities:
   directories, and the names of the test runners' configuration files are
   stated once and agree everywhere: a builder copies both the configuration
   and the files, and where the two disagree the build fails.
+{ONE_SOURCE_FOR_LIMITS}
 
 {SCOPE_DISCIPLINE}
 

@@ -210,7 +210,9 @@ def kpis(records: list[dict]) -> dict:
                 extra["output_lost"] += output
                 row["lost_replies"] += 1
         elif kind == "model_error":
-            count["model_errors"] += 1
+            # A request a pause cut short is the operator's doing, not the model's (measured: 14 of one run's 15).
+            if not str(r.get("error") or "").startswith("RunCancelled"):
+                count["model_errors"] += 1
             if opened.get(stage):
                 opened[stage].pop(0)  # no reply: the next one is timed from its own request
         elif kind == "resumed":

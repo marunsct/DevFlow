@@ -316,17 +316,18 @@ def _js(text: str) -> str:
     return json.dumps(text)
 
 
-def playwright_checks(checks: list[Check]) -> str:
-    """A Playwright spec with one test per HTTP or page check."""
+def playwright_checks(checks: list[Check], bodies: list[Any] | None = None) -> str:
+    """A Playwright spec with one test per HTTP or page check; signed in as `pytest_checks` says."""
     tests = []
     for number, check in enumerate(checks, start=1):
         title = _js(f"{f'[{check.criterion}] ' if check.criterion else ''}contract {number}: {check.line}")
         if check.made_through:
             tests.append(_a_made_record_test(title, check))
         elif check.kind == "http":
+            signed = "" if any(code in (401, 403) for code in _allowed(check)) else "headers: await signedIn(request), "
             tests.append(
                 f"test({title}, async ({{ request }}) => {{\n"
-                f"  const answer = await request.fetch({_js(check.path)}, {{ method: {_js(check.method)}, failOnStatusCode: false }});\n"
+                f"  const answer = await request.fetch({_js(check.path)}, {{ method: {_js(check.method)}, {signed}failOnStatusCode: false }});\n"
                 + (f"  expect(answer.status()).toBe({_allowed(check)[0]});\n" if len(_allowed(check)) == 1
                    else f"  expect({_js(list(_allowed(check)))}).toContain(answer.status());\n")
                 + "});\n"
@@ -338,7 +339,11 @@ def playwright_checks(checks: list[Check]) -> str:
                 f"  await expect(page.getByRole({_js(check.role)}, {{ name: {_js(check.name)}, exact: true }})).toBeVisible();\n"
                 "});\n"
             )
-    return "import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests)
+    plan = sign_in_plan(checks, bodies)
+    source = "import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests)
+    if plan is None:
+        return source.replace("headers: await signedIn(request), ", "")
+    return _with_sign_in_js(source, plan)
 
 
 #: What the bad-body probe sends with a JSON content type: JSON that stops halfway, so no parser can read it.
@@ -659,7 +664,8 @@ def test_contract(case, base_url):
     if case["rule"] == "page":
         pytest.skip(%r)
     path = case["path"]
-    extra = _signed_in(base_url) if case["rule"] != "allowed" else {}
+    unsigned = case["rule"] == "allowed" and any(code in (401, 403) for code in case["allowed"])
+    extra = {} if unsigned else _signed_in(base_url)
     if case["made_through"]:
         found = _a_record(base_url, case, extra)
         if found is None:
@@ -703,9 +709,14 @@ def _pytest_module(cases: list[dict], plan: dict[str, Any] | None = None) -> str
                             NOT_THIS_WRITE_S_BODY, SIGN_IN_ANSWERED_FIRST)
 
 
-def pytest_checks(checks: list[Check]) -> str:
-    """A pytest module with one case per HTTP or page check, numbered as `playwright_checks` numbers its own."""
-    return _pytest_module([_pytest_case(n, c) for n, c in enumerate(checks, start=1)])
+def pytest_checks(checks: list[Check], bodies: list[Any] | None = None) -> str:
+    """A pytest module with one case per HTTP or page check, numbered as `playwright_checks` numbers its own.
+
+    A line is asked signed in when the contract has a sign-in, unless the statuses it allows are a sign-in refusal:
+    measured on one run, `GET /items -> 200` behind sign-in was asked unsigned, answered 401, and was reported at
+    release as a contract the product does not keep.
+    """
+    return _pytest_module([_pytest_case(n, c) for n, c in enumerate(checks, start=1)], sign_in_plan(checks, bodies))
 
 
 def pytest_bad_body_checks(checks: list[Check]) -> str:
@@ -817,7 +828,7 @@ def _run_each_command(checks: list[Check], project: str, runner: Any, failed: li
 
 
 def _the_probe_s_report(project: Path, project_name: str, probe: dict[str, Any], web: list[Check], run: Any,
-                        compiled_by: str = "checks") -> Any:
+                        compiled_by: str = "checks", bodies: list[Any] | None = None) -> Any:
     """The runner's report of `web` checked against the product, the probe's own files removed after."""
     from app.acceptance import junit
 
@@ -825,11 +836,11 @@ def _the_probe_s_report(project: Path, project_name: str, probe: dict[str, Any],
         # A runner whose checks sit in the suite's own folder and need no configuration of their own.
         target = project / probe["file"]
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(probe[compiled_by](web), encoding="utf-8")
+        target.write_text((probe[compiled_by](web, bodies) if compiled_by == "checks" else probe[compiled_by](web)), encoding="utf-8")
     else:
         target = None
         (project / CHECK_DIR).mkdir(parents=True, exist_ok=True)
-        (project / CHECK_DIR / "contract.spec.js").write_text(probe[compiled_by](web), encoding="utf-8")
+        (project / CHECK_DIR / "contract.spec.js").write_text((probe[compiled_by](web, bodies) if compiled_by == "checks" else probe[compiled_by](web)), encoding="utf-8")
         (project / CONFIG_FILE).write_text(probe["config"](probe["base_config"]), encoding="utf-8")
     report_file = project / REPORT_FILE
     junit.clear(report_file)
@@ -875,7 +886,8 @@ def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Ch
             return None
         project_name = str((found[1] or {}).get("project") or "")
         run = runner or suite._sandbox_runner(root)  # noqa: SLF001 - the suite's own runner
-        report = _the_probe_s_report(root / project_name, project_name, probe, web, run)
+        report = _the_probe_s_report(root / project_name, project_name, probe, web, run,
+                                     bodies=list(suite._state(root).get("interface_contract_bodies") or []))  # noqa: SLF001
         if report is None or not report.found:
             return None
         errors: list[tuple[Check, int]] = []
@@ -1137,7 +1149,10 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
         if probe is None:
             unchecked += [f"{c.line} (no runner on this stack probes a {c.kind} line)" for c in web]
             web = []
-        report = _the_probe_s_report(project, project_name, probe, web, run) if web else None
+        report = _the_probe_s_report(
+            project, project_name, probe, web, run,
+            bodies=list(suite._state(Path(repo_root)).get("interface_contract_bodies") or []),  # noqa: SLF001
+        ) if web else None
         failures, not_run = _the_commands_kept([c for c in locked if c.kind == "command"], root, project_name, run)
         unchecked += not_run
     except Exception:  # noqa: BLE001 - the release says nothing it cannot measure

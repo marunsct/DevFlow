@@ -159,6 +159,11 @@ SIGNED_CONFTEST = textwrap.dedent('''
             self.end_headers()
             self.wfile.write(data)
 
+        def do_GET(self):
+            if self.headers.get("Authorization", "")[:9] != "Bearer t-":
+                return self._answer(401)
+            self._answer(200, list(ITEMS.values()))
+
         def do_POST(self):
             raw = self.rfile.read(int(self.headers.get("content-length") or 0))
             body = json.loads(raw)
@@ -228,3 +233,40 @@ def test_the_playwright_body_probe_signs_in_too():
     source = ic.playwright_emptied_field_checks([replace(contract[0], emptied="username"), contract[1]],
                                                [{"username": "a", "password": "p"}, {"title": "x"}])
     assert "...(await signedIn(request))" in source
+
+
+def test_a_bare_line_behind_sign_in_is_asked_signed_in_unless_it_is_the_refusal(tmp_path):
+    """Measured on one run: `GET /items -> 200` behind sign-in was asked unsigned, answered 401, and was reported at
+    release as a contract the product does not keep - three such false lines."""
+    bodies = [{"username": "ann", "password": "secret-1"}, {"title": "Milk"}]
+    contract = [
+        ic.Check(criterion="AC-1", kind="http", line="POST /signup -> 201", method="POST", path="/signup",
+                 status=201, statuses=(201,)),
+        ic.Check(criterion="AC-2", kind="http", line="POST /signin -> 200", method="POST", path="/signin",
+                 status=200, statuses=(200,)),
+        ic.Check(criterion="AC-3", kind="http", line="GET /items -> 200", method="GET", path="/items",
+                 status=200, statuses=(200,)),
+        ic.Check(criterion="AC-4", kind="http", line="GET /items -> 401", method="GET", path="/items",
+                 status=401, statuses=(401,)),
+    ]
+    (tmp_path / "acceptance").mkdir()
+    (tmp_path / "acceptance" / "conftest.py").write_text(SIGNED_CONFTEST)
+    (tmp_path / ic.PYTEST_PROBE_FILE).write_text(ic.pytest_checks(contract[2:] + contract[:2], bodies))
+    subprocess.run([sys.executable, "-m", "pytest", ic.PYTEST_PROBE_FILE, "-q", "-p", "no:cacheprovider",
+                    f"--junitxml={ic.REPORT_FILE}"], cwd=tmp_path, capture_output=True, timeout=120)
+    asked = contract[2:] + contract[:2]
+    outcomes = {ic._the_check_of(t, asked).line: t.outcome for t in junit.read(tmp_path / ic.REPORT_FILE).tests}
+    assert outcomes["GET /items -> 200"] == "passed" and outcomes["GET /items -> 401"] == "passed"
+
+
+def test_the_playwright_bare_line_signs_in_only_when_the_line_is_not_the_refusal():
+    contract = [ic.Check(criterion="AC-2", kind="http", line="POST /signin -> 200", method="POST", path="/signin",
+                         status=200, statuses=(200,)),
+                ic.Check(criterion="AC-3", kind="http", line="GET /items -> 200", method="GET", path="/items",
+                         status=200, statuses=(200,)),
+                ic.Check(criterion="AC-4", kind="http", line="GET /items -> 401", method="GET", path="/items",
+                         status=401, statuses=(401,))]
+    source = ic.playwright_checks(contract, [{"username": "a", "password": "p"}])
+    signed = [line for line in source.splitlines() if "request.fetch(" in line and "/items" in line]
+    assert "signedIn" in signed[0] and "signedIn" not in signed[1]
+    assert "signedIn" not in ic.playwright_checks(contract[1:], [])

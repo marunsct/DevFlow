@@ -334,7 +334,7 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
     if project_memory.enabled():
         # The whole project as it is now, the files the failure names first,
         # rather than only the files this one imports. See `app.agents.project_memory`.
-        neighbours, held = project_memory.render(root, MEMORY_CHARACTERS, focus=f"{path}\n{failure}")
+        neighbours, held = project_memory.render(root, MEMORY_CHARACTERS, focus=f"{path}\n{failure}", for_a_fixer=True)
     else:
         neighbours, held = _neighbours(root, path, SimpleNamespace(files=others), detail), {}
     # What happened to the attempts before this one: a rewrite asked again

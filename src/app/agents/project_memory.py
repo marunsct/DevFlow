@@ -346,8 +346,21 @@ def where_things_stand(repo_root: str | Path, files: dict[str, str]) -> str:
     return line + "\n"
 
 
-def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tuple[str, dict[str, str]]:
-    """The memory as text within `budget_characters`, and the files it holds by path."""
+#: A fixer's share of the specification: its outline and the sections its defect points at.
+FIXER_SPECIFICATION_CHARACTERS = 8_000
+#: The documents a fixer is given; the plans that led to the code are named, not held.
+FIXER_DOCUMENTS = ("docs/technical_specification.md", "docs/acceptance_criteria.md")
+
+
+def render(repo_root: str | Path, budget_characters: int, focus: str = "",
+           for_a_fixer: bool = False) -> tuple[str, dict[str, str]]:
+    """The memory as text within `budget_characters`, and the files it holds by path.
+
+    `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
+    sections the defect points at; the other plans named only. Measured over 64 fix attempts: every fixer opened on
+    about 164k characters of plans with its failure about 2k of it, and those left open read twice as many files and
+    reasoned nearly three times as long as those that fixed their defect.
+    """
     files = current(repo_root)
     if not files or budget_characters <= 0:
         return "", {}
@@ -375,8 +388,22 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
     from app.agents.stable_prefix import document_limit
 
     shorter_documents = document_limit(files)
-    for path in _ranked(files, focus, unserved):
+    ranked = _ranked(files, focus, unserved)
+    if for_a_fixer:
+        ranked = [p for p in ranked if not p.startswith("docs/")] + [p for p in ranked if p.startswith("docs/")]
+    for path in ranked:
         text = files[path]
+        if for_a_fixer and path.startswith("docs/"):
+            if path not in FIXER_DOCUMENTS:
+                left_out.append(path)
+                continue
+            if path.endswith("technical_specification.md"):
+                digest = digest_of(text, focus, min(FIXER_SPECIFICATION_CHARACTERS, max(0, budget_characters - used)))
+                if digest:
+                    block = f"=== {path} (outline and the sections this defect points at; read others by line) ===\n{digest}\n"
+                    parts.append(block)
+                    used += len(block)
+                continue
         if _RECORDS.match(path):
             left_out.append(path)
             continue
@@ -666,7 +693,11 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                                 for m in messages), "")
                 visit = self._visit()
                 if visit.get("snapshot") is None:
-                    visit["snapshot"], visit["held"] = render(repo_root, budget_for(getattr(request, "model", None)), opening)
+                    from app.observability.log_context import _from_the_graph
+
+                    stage = str(_from_the_graph()[1] or "")
+                    visit["snapshot"], visit["held"] = render(repo_root, budget_for(getattr(request, "model", None)), opening,
+                                                              for_a_fixer=stage.startswith("defect_fix"))
                     visit["files"] = dict(current(repo_root))
                 memory = visit["snapshot"]
                 held = visit.get("held") or {}

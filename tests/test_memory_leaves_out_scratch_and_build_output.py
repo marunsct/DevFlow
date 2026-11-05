@@ -25,3 +25,13 @@ def test_scratch_and_packaging_output_are_not_held(tmp_path):
 def test_a_file_a_stage_named_tmp_is_still_held(tmp_path):
     (tmp_path / "tmp-notes.py").write_text("x = 1\n")
     assert "tmp-notes.py" in project_memory.current(tmp_path)
+
+
+def test_the_harness_s_bookkeeping_files_are_not_held(tmp_path):
+    """Measured on one run: a fixer's memory opened on `.work-order-files.json` - which stage wrote which file -
+    before any of the product's code."""
+    (tmp_path / ".work-order-files.json").write_text('{"app/main.py": "specialist_backend_0"}\n')
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "main.py").write_text("x = 1\n")
+    held = project_memory.current(tmp_path)
+    assert ".work-order-files.json" not in held and "app/main.py" in held

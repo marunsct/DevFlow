@@ -45,3 +45,16 @@ def test_an_error_in_the_test_s_own_code_is_still_found(tmp_path):
 
 def test_an_error_the_harness_appended_from_the_page_is_not_the_test_s(tmp_path):
     assert suite.tests_that_broke_themselves(_root(tmp_path, "browser-javascript"), _result(PRODUCT_ON_PAGE)) == []
+
+
+#: Measured on one run: nine locked tests failed reading the product's "Internal Server Error" as JSON; read as the
+#: tests' own code, the suite went back to its writers for about 40 minutes instead of the product to its fixers.
+NOT_JSON = ("SyntaxError: Unexpected token 'I', \"Internal S\"... is not valid JSON\n"
+            "    at notes.spec.js:20:31\n")
+NOT_JSON_PAGE = "SyntaxError: Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON\n"
+
+
+def test_a_product_answering_something_that_is_not_json_is_the_product_s(tmp_path):
+    root = _root(tmp_path, "fullstack-page-fastapi")
+    assert suite.tests_that_broke_themselves(root, _result(NOT_JSON)) == []
+    assert suite.tests_that_broke_themselves(root, _result(NOT_JSON_PAGE)) == []

@@ -1497,6 +1497,10 @@ def _the_tests_sources(repo_root: str | Path) -> dict[str, tuple[str, str]]:
 
 #: A matcher given no value: the product answered without what the test reads, which is the product's to fix.
 _A_MATCHER_MET_NOTHING = re.compile(r"Matcher error:[\s\S]{0,200}?Received(?: has value)?:\s*(?:undefined|null)\b")
+#: The product answered something that is not JSON where JSON was read - its error page, a plain-text status. The
+#: runner quotes the start of what it was given. Measured on one run: nine tests read an "Internal Server Error" as
+#: JSON, and the suite went back to its writers for about 40 minutes instead of the product to its fixers.
+_THE_PRODUCT_ANSWERED_NOT_JSON = re.compile(r"Unexpected token [^\n]{0,8}, \"[^\n]{0,40}\"\.{3} is not valid JSON")
 
 
 def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
@@ -1533,7 +1537,7 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
         # never gave - `expect(received).toMatch(expected)` ... `Received has value: undefined` - is the product's
         # too: measured on one run, a missing `Location` header reopened the suite twice as "the test's own code".
         said = message.split(_PAGE_MARK, 1)[0].split(_SERVICE_ERRORS_MARK, 1)[0]
-        if _A_MATCHER_MET_NOTHING.search(said):
+        if _A_MATCHER_MET_NOTHING.search(said) or _THE_PRODUCT_ANSWERED_NOT_JSON.search(said):
             continue
         if any(pattern.search(said) for pattern in patterns):
             first = next((line.strip() for line in said.splitlines() if line.strip()), "")

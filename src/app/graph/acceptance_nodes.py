@@ -35,6 +35,31 @@ logger = logging.getLogger(__name__)
 #: pass after the first is handed what the last review found.
 MAX_ACCEPTANCE_ROUNDS = 3
 
+#: A review finding that a test asserts too little to prove its criterion: a status alone, or a result never checked.
+_TOO_WEAK = re.compile(
+    r"\bonly (?:asserts?|checks?|verif(?:y|ies))\b|\b(?:does not|doesn't|never) (?:assert|check|verif(?:y|ies))\b"
+    r"|\bwould pass even if\b",
+    re.I,
+)
+#: Said with the findings sent back for strengthening: the rest of the suite is not rewritten.
+STRENGTHEN_ONLY = (
+    "Strengthen only the tests named below: keep each test and add the assertions it lacks - what the product "
+    "returns and what it stores, not only the status - so it cannot pass on a product that gets this wrong. "
+    "Change no other test."
+)
+
+
+def too_weak_to_lock(findings: list[str], *, rounds: int, limit: int) -> list[str]:
+    """The findings that a test is too weak, sent back once more at the review's round limit; [] otherwise.
+
+    Over 21 release-candidate runs 13 of 30 problems the suite locked with said a test only checked a status, and
+    such a gap shipped a false acceptance. Once: at the limit itself, never after it.
+    """
+    if rounds != limit:
+        return []
+    return [finding for finding in findings if _TOO_WEAK.search(str(finding))]
+
+
 #: Review point: the acceptance suite, before it is locked.
 ACCEPTANCE_REVIEW = "acceptance_tests"
 
@@ -744,9 +769,13 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
 
             # Fast delivery sends a suite back once; what is still open after
             # that is locked in as an open problem, as after the full count.
-            if rounds < (2 if delivery.fast() else MAX_ACCEPTANCE_ROUNDS):
+            limit = 2 if delivery.fast() else MAX_ACCEPTANCE_ROUNDS
+            if rounds < limit:
                 logger.info("QA lead sent the acceptance suite back: %d finding(s)", len(findings))
                 return _handing_on(**update, stage="acceptance_author", acceptance_feedback=findings)
+            if weak := too_weak_to_lock(findings, rounds=rounds, limit=limit):
+                logger.info("At the review's limit, %d test(s) too weak to lock go back once to be strengthened", len(weak))
+                return _handing_on(**update, stage="acceptance_author", acceptance_feedback=[STRENGTHEN_ONLY, *weak])
 
     if suite.undefer_what_a_test_now_carries(root):
         logger.info("Deferred criteria a test now carries are no longer deferred")

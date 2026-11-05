@@ -212,7 +212,7 @@ def test_the_qa_lead_s_findings_go_back_until_the_last_round(tmp_path, gated, mo
     monkeypatch.setattr(suite, "run", lambda root: _ran(
         passed_names=["[AC-1] adds"], failed_names=["[AC-2] deletes", "[AC-3] persists"]
     ))
-    finding = "AC-1: passes before anything is built; it only checks the heading"
+    finding = "AC-1: the test name repeats AC-2's wording, so the two read alike"
     gated.answers["acceptance_review"] = [SimpleNamespace(approved=False, findings=[finding])] * 2
 
     first = nodes.acceptance_review(_state(tmp_path, acceptance_round=1), CONFIG, CTX)

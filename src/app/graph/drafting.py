@@ -26,6 +26,21 @@ from typing import Any, Callable, Collection
 
 logger = logging.getLogger(__name__)
 
+#: The longest reply one file's draft may take, in tokens; the agent loop builds a file that needs more.
+MOST_DRAFT_TOKENS = 16_000
+#: Said to a draft asked again because its first came back mostly the same lines over again.
+DRAFT_REPEATS = (
+    "Your last draft of this file repeats the same lines over and over. Write each behaviour once: one test or "
+    "one function per thing the specification asks, not one for every variant you can name."
+)
+
+
+def repeats_itself(content: str) -> bool:
+    """Whether a draft is mostly the same lines over again: a reply caught in a loop, not a file."""
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    return len(lines) >= 300 and len(set(lines)) < len(lines) / 8
+
+
 #: The most of the files it works with that one draft is shown.
 MOST_NEIGHBOUR_CHARACTERS = 24_000
 #: The most of one neighbour.
@@ -336,12 +351,24 @@ def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any,
 
     from app.observability.direct_calls import config_for_this_run
 
-    reply = model.invoke([
-        SystemMessage(content="You write source files for a software product from its specification. "
-                              "You reply with one file's complete content in one fenced code block."),
-        HumanMessage(content=draft_request(root, path, task, specification, stack, diagnostics, code_under_test)),
-    ], **config_for_this_run("drafting"))
-    return the_content_in(getattr(reply, "content", "") if not isinstance(reply, str) else reply)
+    try:
+        # One file's own limit: a draft caught repeating itself ran to the model's whole reply limit (measured,
+        # about 25 minutes for one test file).
+        bounded = model.bind(max_tokens=MOST_DRAFT_TOKENS)
+    except Exception:  # noqa: BLE001 - a model that takes no limit is asked as it is
+        bounded = model
+    request = draft_request(root, path, task, specification, stack, diagnostics, code_under_test)
+    for attempt in range(2):
+        reply = bounded.invoke([
+            SystemMessage(content="You write source files for a software product from its specification. "
+                                  "You reply with one file's complete content in one fenced code block."),
+            HumanMessage(content=request),
+        ], **config_for_this_run("drafting"))
+        content = the_content_in(getattr(reply, "content", "") if not isinstance(reply, str) else reply)
+        if not repeats_itself(content):
+            return content
+        request += "\n\n" + DRAFT_REPEATS
+    return ""
 
 
 Write = Callable[[str, str, str], Any]

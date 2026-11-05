@@ -1461,3 +1461,4 @@ measurement in the findings log** - do not delete those.
 2026-11-05 10:57 JST LF.581 deployed (d9cc3e8): a 500 the service never logged is named to the fixer (tasks-api 1 sign-in hidden by a catch-all handler). RC7 counts from d9cc3e8.
 2026-11-05 11:17 JST RC6 web-todo 1 run-a9aefc9d completed 11:08, hidden 10/10 (mixed). RC7 notes-api 1 run-259ad0f3 started on :1234 (d9cc3e8).
 2026-11-05 11:56 JST RC6 tasks-api 1 run-ce9eafa3 10/10 (mixed). LF.582 deployed 11:55 (543519f): switch regroup per owner; 13 checks on as a measured batch. RC8 counts from 543519f; RC8 fullstack-bookmarks-py 1 started on :8888.
+2026-11-05 13:35 JST LF.583 (a test too weak to lock goes back once at the review limit) and LF.584 (drafts capped at 16k tokens; a looping draft is drafted again) built from the per-role audit; suite 15664 passed, 3 S3. Deploying into RC8 fullstack-bookmarks-py 1 and notes-api 1.

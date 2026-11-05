@@ -240,6 +240,50 @@ it, expect } from 'vitest'`) and Vue Test Utils (`mount`) in a simulated DOM."""
 )
 
 
+PLAIN = Frontend(
+    entry="src/main.js",
+    name="page",
+    # No component framework: the pack a stack fits when it names none (`_frontend_fits`).
+    words=(),
+    label="HTML and JavaScript",
+    dependencies={},
+    dev_dependencies={},
+    vite_plugin_import="",
+    vite_plugin_call="",
+    files={
+        "index.html": INDEX % {"root": "app", "main": "main.js"},
+        "src/main.js": """import './styles.css';
+
+// Draws the page into `root`; the unit tests call it on a node of their own.
+export function render(root) {
+  root.innerHTML = '<main><h1>{{title}}</h1></main>';
+}
+
+const root = document.getElementById('app');
+if (root) render(root);
+""",
+        "src/styles.css": STYLES,
+    },
+    unit_glob="*.test.js",
+    smoke_unit=("tests/client/scaffold-smoke.test.js", """import { describe, expect, it } from 'vitest';
+import { render } from '../../src/main.js';
+
+describe('the page', () => {
+  it('renders its heading', () => {
+    const root = document.createElement('div');
+    render(root);
+    expect(root.querySelector('h1')).not.toBeNull();
+  });
+});
+"""),
+    guide="""The interface is a page in plain HTML and JavaScript, with no component framework:
+`index.html` loads `src/main.js`, which draws the page and calls the service's `/api/`
+routes with `fetch`. Keep it in JavaScript modules under `src/`. Its unit tests go in
+`tests/client/`, named `<name>.test.js`, using Vitest (`import { describe, it, expect }
+from 'vitest'`) in a simulated DOM.""",
+)
+
+
 # --- the services ---------------------------------------------------------------
 
 EXPRESS_APP = """import express from 'express';
@@ -558,7 +602,7 @@ export default defineConfig({
   },
   test: {
     projects: [
-      { extends: true, test: { name: 'page', environment: 'jsdom', include: ['tests/client/**/*.test.{ts,tsx}'] } },%(service_project)s
+      { extends: true, test: { name: 'page', environment: 'jsdom', include: ['tests/client/**/*.test.{ts,tsx,js}'] } },%(service_project)s
     ],
   },
 });

@@ -8,7 +8,7 @@ from app.stacks.packs.browser_react import PACK as BROWSER_REACT
 from app.stacks.packs.browser_svelte import PACK as BROWSER_SVELTE
 from app.stacks.packs.browser_vue import PACK as BROWSER_VUE
 from app.stacks.packs.csharp_aspnet_api import PACK as CSHARP_ASPNET_API
-from app.stacks.packs.fullstack_frameworks import REACT_EXPRESS, REACT_FASTAPI, VUE_EXPRESS, VUE_FASTAPI
+from app.stacks.packs.fullstack_frameworks import PAGE_FASTAPI, REACT_EXPRESS, REACT_FASTAPI, VUE_EXPRESS, VUE_FASTAPI
 from app.stacks.packs.fullstack_django import PACK as FULLSTACK_DJANGO
 from app.stacks.packs.fullstack_next import PACK as FULLSTACK_NEXT
 from app.stacks.packs.fullstack_node import PACK as FULLSTACK_NODE
@@ -46,6 +46,7 @@ ALL_PACKS = (
     VUE_EXPRESS,
     REACT_FASTAPI,
     VUE_FASTAPI,
+    PAGE_FASTAPI,
     FULLSTACK_NEXT,
     FULLSTACK_DJANGO,
     FULLSTACK_NODE,

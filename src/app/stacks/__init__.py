@@ -646,8 +646,20 @@ def _frontend_fits(pack: StackPack, stack: Any) -> bool:
         if re.search(rf"(?<![a-z]){re.escape(framework)}(?![a-z])", frontend.replace(".js", ""))
     )
     if not pack.frontend_frameworks:
+        # A full-stack pack in plain HTML and JavaScript fits a stack that says what its page is built with and names
+        # no framework; one that leaves its page unstated is not taken for plain (its rationale may name the pack).
+        if "HTML and JavaScript" in str((pack.stack or {}).get("frontend_framework", "")) and not _states_its_page(stack):
+            return False
         return not named
     return bool(named) and any(word in pack.frontend_frameworks for word in named)
+
+
+_UNSTATED = re.compile(r"^\s*(?:|not stated|unstated|none|n/?a|unknown|tbd|-)\s*$", re.I)
+
+
+def _states_its_page(stack: Any) -> bool:
+    """Whether the stack says what its page is built with (plain HTML and JavaScript counts)."""
+    return not _UNSTATED.match(str(getattr(stack, "frontend_framework", "") or ""))
 
 
 #: What a run on a stack can promise, by whether a pack fits it. Stated in the

@@ -189,3 +189,16 @@ def test_a_revision_by_the_architect_itself_is_told_it(state):
     assert len(requests) == 1
     assert "Kept by the harness" in requests[0]
     _what_the_setup_decides(requests[0])
+
+
+def test_the_module_system_the_setup_s_manifest_declares_is_named():
+    """Measured on one run: the first design review blocked a specification for not saying how Node loads ES modules,
+    while the setup's own `package.json` already declared `"type": "module"`."""
+    from app.agents.shared_facts import what_the_setup_decides
+    from app.stacks import pack_named
+
+    lines = what_the_setup_decides(pack_named("browser-javascript"), "todo", None)
+    said = next(line for line in lines if "package.json" in line and "module" in line)
+    assert '"type": "module"' in said and "ES modules" in said
+    assert not [line for line in what_the_setup_decides(pack_named("python-http-api"), "notes", "notes")
+                if '"type"' in line]

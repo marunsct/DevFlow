@@ -126,6 +126,20 @@ def what_the_setup_decides(pack: Any, project: str, package: str | None) -> list
     if pack.kept_files:
         lines.append("- The specification names the files the harness writes and keeps as given. It may say what they "
                      "provide, and gives no step, signature or behaviour inside them.")
+    # The module system the setup's manifest already declares. Measured on one run: the first design review blocked
+    # a specification for not saying how Node loads ES modules, while the setup's `package.json` declared it.
+    try:
+        import json as _json
+
+        manifest = _json.loads(pack.filled(str((getattr(pack, "files", None) or {}).get("package.json") or "{}"),
+                                           project, "", package))
+    except (ValueError, TypeError):
+        manifest = {}
+    kind = manifest.get("type") if isinstance(manifest, dict) else None
+    if kind in ("module", "commonjs"):
+        lines.append(f'- `{prefix}package.json` is the setup\'s and already declares `"type": "{kind}"`: its `.js` files are '
+                     + ("ES modules (`import` / `export`)" if kind == "module" else "CommonJS modules (`require`)")
+                     + ". The specification needs no other module setting.")
     return lines
 
 

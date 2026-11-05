@@ -1459,3 +1459,4 @@ measurement in the findings log** - do not delete those.
 2026-11-05 09:58 JST RC6 notes-api-hono 1 run-37f78b1b completed 09:52, hidden 9/9 (counted). RC6 web-todo 1 run-a9aefc9d started on :1234. RC6 2/2 full.
 2026-11-05 10:50 JST LF.580 (owner): unit tests drafted after the code they test, shown it. Root cause found by the per-role audit (25/31 unit-test fixes left open, 7 runs shipped failing unit tests). Suite 15647 passed, 3 S3. Deploying into RC6 tasks-api 1 and web-todo 1 (both mixed); the clean count restarts as RC7. Owner rule: bug fixes and quality changes always on; only non-quality improvements behind switches, grouped.
 2026-11-05 10:57 JST LF.581 deployed (d9cc3e8): a 500 the service never logged is named to the fixer (tasks-api 1 sign-in hidden by a catch-all handler). RC7 counts from d9cc3e8.
+2026-11-05 11:17 JST RC6 web-todo 1 run-a9aefc9d completed 11:08, hidden 10/10 (mixed). RC7 notes-api 1 run-259ad0f3 started on :1234 (d9cc3e8).

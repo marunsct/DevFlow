@@ -496,6 +496,116 @@ def playwright_config(suite_config: str) -> str:
     )
 
 
+#: Where the pytest probe's compiled checks are written: inside the suite's folder, so its kept `conftest.py` starts the
+#: service and gives `base_url`, exactly as for the suite. Removed after the run.
+PYTEST_PROBE_FILE = "acceptance/test_zz_harness_contract_probe.py"
+#: Why a page line is skipped by the pytest probe: it has no browser.
+NO_BROWSER = "a page line: this probe sends HTTP requests only"
+
+_PYTEST_PROBE = '''"""Written by the harness for one interface-contract check, then removed."""
+import json
+import urllib.error
+import urllib.parse
+import urllib.request
+
+import pytest
+
+CASES = json.loads(%r)
+
+
+def _call(base_url, method, path, body):
+    data, headers = None, {}
+    if body is not None:
+        data = (body if isinstance(body, str) else json.dumps(body)).encode()
+        headers["content-type"] = "application/json"
+    request = urllib.request.Request(base_url.rstrip("/") + path, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as answer:
+            return answer.status, answer.read()
+    except urllib.error.HTTPError as answer:
+        return answer.code, answer.read()
+
+
+def _a_record(base_url, case):
+    for data in [*case["bodies"], {}]:
+        status, raw = _call(base_url, "POST", case["made_through"], data)
+        if 200 <= status < 300:
+            try:
+                record = json.loads(raw or b"{}")
+            except ValueError:
+                return None
+            if not isinstance(record, dict):
+                return None
+            found = record.get(case["parameter"], record.get("id"))
+            if found is None and isinstance(record.get("data"), dict):
+                found = record["data"].get("id")
+            return found
+    return None
+
+
+@pytest.mark.parametrize("case", CASES, ids=[case["id"] for case in CASES])
+def test_contract(case, base_url):
+    if case["rule"] == "page":
+        pytest.skip(%r)
+    path = case["path"]
+    if case["made_through"]:
+        found = _a_record(base_url, case)
+        if found is None:
+            pytest.skip(%r)
+        path = case["before"] + urllib.parse.quote(str(found), safe="") + case["after"]
+    status, _ = _call(base_url, case["method"], path, case["send"])
+    if case["rule"] == "allowed":
+        assert status in case["allowed"], f"Received: {status}"
+        return
+    if status in (401, 403):
+        pytest.skip(%r)
+    assert status < 500, f"Received: {status}"
+    if case["rule"] == "refused":
+        assert status >= 400, f"Received: {status}"
+'''
+
+
+def _pytest_case(number: int, check: Check, title_tail: str = "", rule: str = "allowed", send: Any = None) -> dict:
+    found = _A_PARAMETER_NAMED.search(check.path) if check.made_through else None
+    bodies = json.loads(check.bodies or "[]") if check.bodies else []
+    if rule == "allowed" and check.made_through and check.method in ("PUT", "PATCH"):
+        send = (bodies or [{}])[0]
+    return {
+        "id": f"{f'[{check.criterion}] ' if check.criterion else ''}contract {number}: {check.line}{title_tail}",
+        "rule": "page" if check.kind == "page" else rule,
+        "method": check.method, "path": check.path, "allowed": list(_allowed(check)), "send": send,
+        "made_through": check.made_through if found else "", "bodies": bodies,
+        "parameter": (found.group(1) or found.group(2)) if found else "id",
+        "before": check.path[:found.start()] if found else "", "after": check.path[found.end():] if found else "",
+    }
+
+
+def _pytest_module(cases: list[dict]) -> str:
+    return _PYTEST_PROBE % (json.dumps(cases), NO_BROWSER, MADE_NO_RECORD, SIGN_IN_ANSWERED_FIRST)
+
+
+def pytest_checks(checks: list[Check]) -> str:
+    """A pytest module with one case per HTTP or page check, numbered as `playwright_checks` numbers its own."""
+    return _pytest_module([_pytest_case(n, c) for n, c in enumerate(checks, start=1)])
+
+
+def pytest_bad_body_checks(checks: list[Check]) -> str:
+    """A pytest module sending each check's call a body nothing can parse; any answer under 500 passes."""
+    return _pytest_module([_pytest_case(n, c, rule="under_500", send=A_BODY_NOTHING_CAN_PARSE)
+                           for n, c in enumerate(checks, start=1)])
+
+
+def pytest_emptied_field_checks(checks: list[Check], bodies: list[Any] | None = None) -> str:
+    """A pytest module sending each check's call its example body with `emptied` set to ""; it must be refused."""
+    cases = []
+    for number, check in enumerate(checks, start=1):
+        given = bodies if bodies is not None else json.loads(check.bodies or "[]")
+        example = next(b for b in given if isinstance(b, dict) and check.emptied in b)
+        cases.append(_pytest_case(number, check, f" with an empty {check.emptied}", rule="refused",
+                                  send={**example, check.emptied: ""}))
+    return _pytest_module(cases)
+
+
 #: The probe runners a pack can declare (`StackPack.probe_runner`): what compiles
 #: the contract's lines into checks, and the command that runs them. Everything
 #: specific to one tool is here and in its two functions above.
@@ -507,6 +617,16 @@ PROBE_RUNNERS: dict[str, dict[str, Any]] = {
         "config": playwright_config,
         "command": ("npx", "playwright", "test", "--config", CONFIG_FILE),
         "base_config": "playwright.config.js",
+    },
+    # A suite run by pytest with the kept conftest's `base_url` (the Python service packs): the checks go in the
+    # suite's own folder and its setup starts the service.
+    "pytest": {
+        "checks": pytest_checks,
+        "bad_body_checks": pytest_bad_body_checks,
+        "emptied_field_checks": pytest_emptied_field_checks,
+        "file": PYTEST_PROBE_FILE,
+        "command": (".venv/bin/python", "-m", "pytest", PYTEST_PROBE_FILE, "-q", "-p", "no:cacheprovider",
+                    f"--junitxml={REPORT_FILE}"),
     },
 }
 
@@ -581,17 +701,27 @@ def _the_probe_s_report(project: Path, project_name: str, probe: dict[str, Any],
     """The runner's report of `web` checked against the product, the probe's own files removed after."""
     from app.acceptance import junit
 
-    (project / CHECK_DIR).mkdir(parents=True, exist_ok=True)
-    (project / CHECK_DIR / "contract.spec.js").write_text(probe[compiled_by](web), encoding="utf-8")
-    (project / CONFIG_FILE).write_text(probe["config"](probe["base_config"]), encoding="utf-8")
+    if probe.get("file"):
+        # A runner whose checks sit in the suite's own folder and need no configuration of their own.
+        target = project / probe["file"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(probe[compiled_by](web), encoding="utf-8")
+    else:
+        target = None
+        (project / CHECK_DIR).mkdir(parents=True, exist_ok=True)
+        (project / CHECK_DIR / "contract.spec.js").write_text(probe[compiled_by](web), encoding="utf-8")
+        (project / CONFIG_FILE).write_text(probe["config"](probe["base_config"]), encoding="utf-8")
     report_file = project / REPORT_FILE
     junit.clear(report_file)
     try:
         run(list(probe["command"]), "test", project_name)
         return junit.read(report_file)
     finally:
-        shutil.rmtree(project / CHECK_DIR, ignore_errors=True)
-        (project / CONFIG_FILE).unlink(missing_ok=True)
+        if target is not None:
+            target.unlink(missing_ok=True)
+        else:
+            shutil.rmtree(project / CHECK_DIR, ignore_errors=True)
+            (project / CONFIG_FILE).unlink(missing_ok=True)
 
 
 #: What a failed status check reports it was given: `Received: 500`.

@@ -278,7 +278,13 @@ class StackPack:
         module, so a new kind of pack declares its runner here and the checks
         stay free of any one tool (Initiative AO.10, AU).
         """
-        return "playwright" if "playwright.config.js" in self.files else ""
+        if "playwright.config.js" in self.files:
+            return "playwright"
+        # A suite run by pytest whose kept conftest starts the service and gives its address (the Python service
+        # packs): measured, these were the only HTTP services whose contract was never probed.
+        if "base_url" in str(self.files.get("acceptance/conftest.py") or ""):
+            return "pytest"
+        return ""
 
     @property
     def coverage(self) -> tuple[str, ...]:

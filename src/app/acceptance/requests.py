@@ -260,6 +260,10 @@ def build_author_request(
         "once, not only after the view is chosen again. A product that updates a view only "
         "when it is re-chosen passes every check made on a fresh view and fails its user.\n"
         + actions_within_a_view.author_rule()
+        + "- Where the user adds records through a page, one test adds two, one after the other, "
+        "from the same page without reloading it, and checks both are shown. A page that works "
+        "only once - a control left disabled, or a form left in its first state, after the first "
+        "save - passes every test that adds one record and fails its user at the second.\n"
         + f"- Write only inside `{project}/{acceptance_dir}/`. Product code is not yours.\n"
         "- Never start a product that keeps running - a service, or the server a page is served "
         "from - yourself, in a test or by a command: the suite's own setup starts it before the "

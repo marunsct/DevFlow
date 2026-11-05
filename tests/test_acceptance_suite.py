@@ -552,3 +552,16 @@ def test_the_author_is_told_the_skeleton_is_not_the_product_to_finish(project) -
     rule = rule[:rule.index("\n- ")]
     assert "starting skeleton" in rule and "after this suite is locked" in rule
     assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", rule, re.I)
+
+
+def test_the_author_adds_two_records_in_a_row_from_one_page(project) -> None:
+    """Measured on one run: the page left its save control disabled after the first save, so a second bookmark
+    could never be saved; every locked test saved one record per page, the suite passed, and two hidden tests that
+    save twice from one page timed out (a false acceptance)."""
+    import re
+
+    text = requests.build_author_request(project, suite.criteria(project))["messages"][0]["content"]
+    start = text.index("adds records through")
+    rule = text[text.rindex("\n- ", 0, start):text.index("\n- ", start)]
+    assert "one after the other" in rule and "without reloading" in rule
+    assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", rule, re.I)

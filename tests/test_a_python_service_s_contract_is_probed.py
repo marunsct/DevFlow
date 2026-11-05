@@ -45,6 +45,8 @@ CONFTEST = textwrap.dedent('''
             self._answer(200, list(NOTES.values()))
 
         def do_POST(self):
+            if self.path != "/notes":
+                return self._answer(422, {"detail": "username"})
             try:
                 body = self._body()
             except ValueError:
@@ -118,3 +120,19 @@ def test_the_python_service_packs_declare_the_pytest_probe():
     assert pack_named("python-flask-api").probe_runner == "pytest"
     assert pack_named("python-cli").probe_runner == ""
     assert ic.PROBE_RUNNERS["pytest"]["file"] == ic.PYTEST_PROBE_FILE
+
+
+def test_a_write_that_never_takes_the_field_is_skipped_not_passed(tmp_path):
+    """Measured on one run: the emptied `title` was sent to `/signup`, which takes no title; refused for that, the
+    check passed and proved nothing."""
+    signup = ic.Check(criterion="AC-3", kind="http", line="POST /signup -> 201", method="POST", path="/signup",
+                      status=201, statuses=(201,), emptied="title", bodies='[{"username": "a"}, ' + BODY + ']')
+    report = _run(tmp_path, ic.pytest_emptied_field_checks([signup]))
+    assert [t.outcome for t in report.tests] == ["skipped"]
+
+
+def test_the_playwright_probe_asks_the_plain_body_first():
+    check = replace(UPDATE, emptied="title")
+    source = ic.playwright_emptied_field_checks([check], [{"title": "Milk", "body": "two"}])
+    assert ic.NOT_THIS_WRITE_S_BODY in source
+    assert source.index("const plain") < source.index("const answer")

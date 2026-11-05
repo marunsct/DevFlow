@@ -167,6 +167,9 @@ def _a_made_record_test(title: str, check: "Check") -> str:
     )
 
 
+#: Why an emptied-field test was skipped: the write refused its example body whole, so that body is not one it takes.
+#: Measured on one run: an emptied `title` was sent to `/signup`, which takes no title, and passed for it.
+NOT_THIS_WRITE_S_BODY = "the write refused the example body as it is, so it does not take that body"
 #: Why a test of a line on a made record was skipped.
 MADE_NO_RECORD = "the contract's write line made no record to probe with"
 
@@ -461,7 +464,12 @@ def _an_emptied_field_test(title: str, check: Check, bodies: list[Any]) -> str:
     plain = _with_the_bad_body(check)
     marker = f"data: {_js(A_BODY_NOTHING_CAN_PARSE)}, "
     assert marker in plain
-    return plain.replace(marker, f"data: {json.dumps(sent)}, ").replace(
+    asked = plain.replace(marker, f"data: {json.dumps(sent)}, ")
+    line = next(l for l in asked.splitlines(keepends=True) if l.startswith("  const answer = await request.fetch("))
+    first = (line.replace("const answer", "const plain", 1).replace(f"data: {json.dumps(sent)}, ", f"data: {json.dumps(example)}, ")
+             + f"  test.skip([401, 403].includes(plain.status()), {_js(SIGN_IN_ANSWERED_FIRST)});\n"
+             + f"  test.skip(plain.status() >= 400, {_js(NOT_THIS_WRITE_S_BODY)});\n")
+    return asked.replace(line, first + line, 1).replace(
         "  expect(answer.status()).toBeLessThan(500);\n",
         "  expect(answer.status()).toBeGreaterThanOrEqual(400);\n  expect(answer.status()).toBeLessThan(500);\n",
     )
@@ -553,6 +561,12 @@ def test_contract(case, base_url):
         if found is None:
             pytest.skip(%r)
         path = case["before"] + urllib.parse.quote(str(found), safe="") + case["after"]
+    if case["rule"] == "refused":
+        plain, _ = _call(base_url, case["method"], path, case["example"])
+        if plain in (401, 403):
+            pytest.skip(%r)
+        if plain >= 400:
+            pytest.skip(%r)
     status, _ = _call(base_url, case["method"], path, case["send"])
     if case["rule"] == "allowed":
         assert status in case["allowed"], f"Received: {status}"
@@ -581,7 +595,8 @@ def _pytest_case(number: int, check: Check, title_tail: str = "", rule: str = "a
 
 
 def _pytest_module(cases: list[dict]) -> str:
-    return _PYTEST_PROBE % (json.dumps(cases), NO_BROWSER, MADE_NO_RECORD, SIGN_IN_ANSWERED_FIRST)
+    return _PYTEST_PROBE % (json.dumps(cases), NO_BROWSER, MADE_NO_RECORD, SIGN_IN_ANSWERED_FIRST,
+                            NOT_THIS_WRITE_S_BODY, SIGN_IN_ANSWERED_FIRST)
 
 
 def pytest_checks(checks: list[Check]) -> str:
@@ -601,8 +616,9 @@ def pytest_emptied_field_checks(checks: list[Check], bodies: list[Any] | None = 
     for number, check in enumerate(checks, start=1):
         given = bodies if bodies is not None else json.loads(check.bodies or "[]")
         example = next(b for b in given if isinstance(b, dict) and check.emptied in b)
-        cases.append(_pytest_case(number, check, f" with an empty {check.emptied}", rule="refused",
-                                  send={**example, check.emptied: ""}))
+        case = _pytest_case(number, check, f" with an empty {check.emptied}", rule="refused",
+                            send={**example, check.emptied: ""})
+        cases.append({**case, "example": example})
     return _pytest_module(cases)
 
 

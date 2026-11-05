@@ -87,14 +87,50 @@ def read(base_url: str, api_key: str = "") -> ServerProfile | None:
 
         reached, naming = reached_from_here(base_url.rstrip("/"))
         root = reached[:-3] if reached.endswith("/v1") else reached
-        request = urllib.request.Request(
-            root + "/props", headers={**({"Authorization": f"Bearer {api_key}"} if api_key else {}), **naming}
-        )
-        with urllib.request.urlopen(request, timeout=PROPS_TIMEOUT_SECONDS) as reply:
-            props = json.load(reply)
-    except Exception:  # noqa: BLE001 - a server without /props says nothing
+        headers = {**({"Authorization": f"Bearer {api_key}"} if api_key else {}), **naming}
+    except Exception:  # noqa: BLE001
         return None
-    return from_props(props) if isinstance(props, dict) else None
+    if root not in _WITHOUT_PROPS:
+        props = _get_json(root + "/props", headers)
+        if isinstance(props, dict) and any(key in props for key in _PROPS_KEYS):
+            return from_props(props)
+        # No `/props`, or an answer without one (LM Studio says 200 with an error body, and logs an ERROR each time).
+        _WITHOUT_PROPS.add(root)
+    return _from_lm_studio(_get_json(root + "/api/v0/models", headers))
+
+
+#: Fields a llama.cpp `/props` body has; an answer with none of them is not one.
+_PROPS_KEYS = ("total_slots", "default_generation_settings", "model_path")
+#: Servers that answered without a `/props`, by root: not asked for it again in this process.
+_WITHOUT_PROPS: set[str] = set()
+
+
+def _get_json(url: str, headers: dict[str, str]) -> Any:
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=PROPS_TIMEOUT_SECONDS) as reply:
+            return json.load(reply)
+    except Exception:  # noqa: BLE001 - a server without the endpoint says nothing
+        return None
+
+
+def _from_lm_studio(models: Any) -> ServerProfile | None:
+    """The profile from LM Studio's `/api/v0/models`: the one loaded model's context and quantisation; else None.
+
+    It names the context the model was loaded with, not a share per request, so `slots` stays unknown; the context
+    budget takes the smaller of this and the configured window, so it can only tighten the budget.
+    """
+    entries = models.get("data") if isinstance(models, dict) else None
+    loaded = [m for m in entries or [] if isinstance(m, dict) and m.get("state") == "loaded"]
+    if len(loaded) != 1:
+        return None
+    model = loaded[0]
+    context = model.get("loaded_context_length")
+    quantisation = str(model.get("quantization") or "")
+    return ServerProfile(
+        slot_context=context if isinstance(context, int) and context > 0 else None,
+        quantisation=quantisation.upper() if _QUANT.fullmatch(quantisation) else "",
+        model=str(model.get("id") or ""),
+    )
 
 
 _RECORDED: ServerProfile | None = None

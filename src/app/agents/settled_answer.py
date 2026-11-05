@@ -2418,6 +2418,9 @@ def build_settled_answer_middleware(
             """
             call = getattr(request, "tool_call", None) or {}
             name = str(call.get("name") or "")
+            scratch = a_harness_scratch_delete(call)
+            if scratch is not None:
+                return scratch
             if name and name in self._withheld_now():
                 from langchain_core.messages import ToolMessage
 
@@ -2701,3 +2704,27 @@ __all__ = [
     "was_stopped_by_the_budget",
     "was_stopped_for_no_progress",
 ]
+
+
+#: The name the harness saves a command line's code under (`agent_toolkit`).
+_HARNESS_SCRATCH = re.compile(r"(?:^|/)tmp-inline-[0-9a-f]{8}\.\w+$")
+
+
+def a_harness_scratch_delete(call: dict) -> Any:
+    """The answer to a delete of a file the harness saved command-line code to, or None for any other call.
+
+    Nothing to delete: the harness removes these itself. Answered as done rather than refused - measured over 30
+    runs, stages tried 67 times, and a refusal while deleting was withheld was sent again and again.
+    """
+    if str(call.get("name") or "") != "delete_artifact":
+        return None
+    path = str((call.get("args") or {}).get("relative_path") or "")
+    if not _HARNESS_SCRATCH.search(path):
+        return None
+    from langchain_core.messages import ToolMessage
+
+    return ToolMessage(
+        content=f"`{path}` is the harness's own copy of a command's code: it removes it itself, so there is nothing "
+                "to delete. Go on with the work.",
+        tool_call_id=str(call.get("id") or ""), name="delete_artifact", status="success",
+    )

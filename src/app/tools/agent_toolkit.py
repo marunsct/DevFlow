@@ -742,10 +742,15 @@ def _code_on_the_command_line_as_a_file(
         project_memory.record(root, recorded, _stage_from_config(author or "run_terminal_command"))
     except Exception:  # noqa: BLE001 - bookkeeping must never fail the command
         pass
-    return rewritten, (
-        f"Ran the code you passed on the command line from `{recorded}`, saved there so what ran can be "
-        "read afterwards; a `tmp-` file is removed before the next test round and at release."
-    )
+    return rewritten, f"Ran the code you passed on the command line from `{recorded}`. " + SAVED_CODE_NOTE
+
+
+#: Said with every command whose code was saved to a file. Measured over 30 runs: stages tried to delete these files
+#: 67 times, many while deleting was withheld, each refusal sent again.
+SAVED_CODE_NOTE = (
+    "It was saved there so what ran can be read afterwards; the harness removes the file itself before the next "
+    "test round and at release - do not delete it."
+)
 
 
 #: Shell operators a `cd` may be followed by before its command.

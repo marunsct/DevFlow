@@ -1470,3 +1470,4 @@ measurement in the findings log** - do not delete those.
 2026-11-05 17:47 JST RC11 tasks-api 1 run-926a1029 10/10 (mixed; LF.583 + LF.587 fired). RC12 web-todo 1 run-032cdb9f started on :8888.
 2026-11-05 18:41 JST owner: deploy fixes at once, learning runs until none pending, then freeze. Deployed 39d39ea (LF.588-590). RC12 web-todo 1 run-032cdb9f 10/10. L notes-api 1 run-2d7ee2d3 started on :8888.
 2026-11-05 19:05 JST LF.591 deployed (6b53601): fixer memory leads with the code, plans named only (fixer deep dive). LF.590 first sign: no blocking first-review findings in L notes-api 1.
+2026-11-06 08:55 JST worker pool churn (77 SIGKILLs from 08:50): a grown third pool process could not come up; shrunk to 2. The routine `pool_grow 1` after a deploy is dropped - it is for a third queued run only (HANDOVER worker slots); check the SIGKILL count after each deploy.

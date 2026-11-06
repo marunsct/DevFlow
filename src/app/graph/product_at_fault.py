@@ -51,7 +51,7 @@ LEAST_STANDARD_WORDS = 3
 LEAST_FAILURE_CHARS = 8
 
 _OPENED = "product_at_fault_opened"
-_CLAIMS = "product_at_fault_claims"
+_CLAIMS = "product_at_fault_claims"  # = suite.PRODUCT_AT_FAULT_CLAIMS, which tests_left_unrepaired reads
 _UPHELD = "product_at_fault_upheld"
 _QUOTE_OPEN = "[\"“'`]"
 _QUOTE_CLOSE = "[\"”'`]"

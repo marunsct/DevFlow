@@ -665,6 +665,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     # A suite under repair has been locked before: the same rule as at a round, or a false finding found here locks it
     # with a problem "still open", which is a release gap.
     cannot = suite.findings_that_reopen(root, result, suite.tests_that_cannot_pass(root, result))
+    # A repair that left a test it was sent for exactly as it was goes back with the cannot-pass findings (and once
+    # at the review's limit, `cannot_pass_to_lock`).
+    cannot = [*cannot, *suite.tests_left_unrepaired(root)]
     problems.extend(cannot)
     # Against the specification's contract, before it is recorded at the lock (the rounds read the locked one).
     problems.extend(suite.tests_that_want_json_from_a_204(
@@ -1897,7 +1900,7 @@ def reopen_the_suite_for(
     try:
         from app.acceptance import suite as _suite
 
-        _suite.repairing(state["repository"].root_path, [_which_test(item) for item in broken])
+        _suite.repairing(state["repository"].root_path, [name for item in broken for name in _which_tests(state, item)])
     except Exception:  # noqa: BLE001 - the repair goes on without its guard
         logger.debug("Could not record the tests under repair", exc_info=True)
     reclassified = (

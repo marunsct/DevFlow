@@ -332,6 +332,7 @@ def lock(repo_root: str | Path) -> dict[str, str]:
     state["lock_version"] = _keep_this_version(root, snapshot, before)
     state.pop("repairing", None)
     state.pop("before_repair", None)
+    state.pop("repair_bodies", None)
     _save_state(repo_root, state)
     return checksums
 
@@ -342,10 +343,64 @@ NAMING_REPAIR = "(criterion ids added to test names)"
 DEFERRED_BY_THE_HARNESS = ("could not be made to pass", "its locked test cannot pass")
 
 
+#: Where QA's "the product is at fault" claims are kept in the suite's state (`graph.product_at_fault._CLAIMS`).
+PRODUCT_AT_FAULT_CLAIMS = "product_at_fault_claims"
+#: A Python test function and its body, to the next top-level definition.
+_A_PYTHON_TEST_BODY = re.compile(r"^(?:async\s+)?def\s+(test_\w+)\s*\(.*?(?=^(?:async\s+)?def\s|^class\s|\Z)", re.M | re.S)
+
+
+def _test_bodies(repo_root: str | Path) -> dict[str, str]:
+    """Each acceptance test's own code by its name: the spec's title, or a Python test function's name."""
+    found = {name: body for name, (body, _) in _the_tests_sources(repo_root).items()}
+    for path in suite_files(repo_root):
+        if path.suffix.lower() != ".py":
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for match in _A_PYTHON_TEST_BODY.finditer(text):
+            found.setdefault(match.group(1), match.group(0))
+    return found
+
+
+def tests_left_unrepaired(repo_root: str | Path) -> list[str]:
+    """The tests a repair was sent for whose code it has not changed, as one problem; [] when none or no repair is open.
+
+    Measured on one run: a repair sent for three tests a dispute ruled wrong changed one file and left two of the
+    three as they were; locked again, the ruled-wrong test failed the rest of the run and a right product was escalated.
+    """
+    state = _state(repo_root)
+    sent = state.get("repair_bodies") or {}
+    if not sent:
+        return []
+    # A test QA examined and says is right - the product is at fault (`graph.product_at_fault`) - is left unchanged
+    # on purpose, and is judged by that claim, not here.
+    vouched = " ".join(str(claim) for claim in state.get(PRODUCT_AT_FAULT_CLAIMS) or ())
+    now = _test_bodies(repo_root)
+    left = [name for name, body in sent.items()
+            if name in now and now[name].strip() == str(body).strip() and name not in vouched]
+    if not left:
+        return []
+    return [
+        "This repair was sent for " + ", ".join(f"`{name}`" for name in left) + " and has not changed "
+        + ("it" if len(left) == 1 else "them") + ": each is exactly as it was locked. Repair each as its finding says - "
+        "the fault named is in that test's own code."
+    ]
+
+
 def repairing(repo_root: str | Path, tests: list[str]) -> None:
     """Record the tests a reopened suite is being repaired for, until it is locked again."""
     state = _state(repo_root)
     state["repairing"] = sorted({*state.get("repairing", []), *(str(t) for t in tests if str(t).strip())})
+    # Each named test's code as the repair began, so the lock can tell one it never changed (`tests_left_unrepaired`).
+    bodies = _test_bodies(repo_root)
+    kept = dict(state.get("repair_bodies") or {})
+    for name in tests:
+        if str(name) in bodies and str(name) not in kept:
+            kept[str(name)] = bodies[str(name)]
+    if kept:
+        state["repair_bodies"] = kept
     if "before_repair" not in state:
         # What the locked suite measured before anything was changed, for `a_repair_that_made_it_worse`.
         last = last_result(repo_root)

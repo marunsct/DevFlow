@@ -1168,6 +1168,10 @@ _MADE_AT_RUN_TIME = re.compile(
     r"\bnew\s+Date\s*\(\s*\)\s*\.\s*(?:getTime|valueOf|toISOString)\s*\("
 )
 _A_BINDING = re.compile(r"\b(?:const|let|var)\s+(\w+)\s*=\s*([^;\n]+)")
+#: A binding whose own making sends what it makes to the product - a request, a field filled - and so gives it.
+#: Measured on one run: `const bm = await (await request.post('/api/x', { data: { title: `x-${Date.now()}` } })).json()`
+#: read back as `bm.title` sent a locked suite to its writers four times.
+_GIVEN_IN_ITS_MAKING = re.compile(r"\brequest\s*\.\s*(?:post|put|patch|fetch)\s*\(|\bfetch\s*\(|\.\s*(?:fill|type|pressSequentially)\s*\(")
 #: What stands just before a value a test looks for, not one it gives:
 #: `hasText: v`, `getByRole('row', { name: v`, `getByText(v`, `toHaveText(v`,
 #: `text=${v`. A `name:` anywhere else may be a request body's - given.
@@ -1207,7 +1211,7 @@ def expects_what_it_never_gave(text: str) -> list[tuple[int, str, str]]:
         title = re.match(r"""test\s*\(\s*(['"`])(.*?)\1""", body)
         for binding in _A_BINDING.finditer(body):
             value, made = binding.group(1), binding.group(2)
-            if not made_by.search(made):
+            if not made_by.search(made) or _GIVEN_IN_ITS_MAKING.search(made):
                 continue
             uses = [use for use in re.finditer(rf"\b{re.escape(value)}\b", body) if use.start() >= binding.end()]
             looked = [use for use in uses if _LOOKED_FOR.search(body[max(0, use.start() - 120):use.start()])]

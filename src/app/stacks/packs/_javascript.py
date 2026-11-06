@@ -1133,7 +1133,10 @@ def locators_with_a_name_option(text: str) -> list[int]:
 
 #: Text a page locator matches, given as a string that starts with `^` or ends with `$`: a pattern written as text.
 _A_PATTERN_AS_TEXT = re.compile(
-    r"""(?:\bhas(?:Not)?Text\s*:\s*|\bgetByText\s*\(\s*)(['"`])(\^[^'"`\n]*|[^'"`\n]*\$)\1"""
+    r"""(?:\bhas(?:Not)?Text\s*:\s*|\bgetByText\s*\(\s*)(['"`])(\^[^'"`\n]*|[^'"`\n]*\$|"""
+    # Backslashes meant for a regular expression, in a string: `'Lifecycle task \\(edited\\)'`. Measured on one
+    # run: Playwright looked for the backslashes, and the test failed every round until a dispute named it.
+    r"""[^'"`\n]*\\\\[()\[\]{}.*+?|dDsSwW][^'"`\n]*)\1"""
 )
 
 

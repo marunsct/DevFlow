@@ -29,3 +29,13 @@ def test_a_value_sent_in_its_own_making_is_given():
 
 def test_a_value_never_given_is_still_found():
     assert [value for _, _, value in js.expects_what_it_never_gave(NEVER_GIVEN)] == ["title"]
+
+
+def test_a_text_locator_with_regex_escapes_is_a_pattern_given_as_text():
+    """Measured on one run: `filter({ hasText: 'Lifecycle task \\\\(edited\\\\)' })` - backslashes meant for a regular
+    expression, in a string, so Playwright looked for the backslashes - failed every round until a dispute named it."""
+    spec = ("test('[AC-13] lifecycle', async ({ page }) => {\n"
+            "  await expect(page.getByRole('listitem').filter({ hasText: 'Lifecycle task \\\\(edited\\\\)' })).toBeVisible();\n"
+            "  await expect(page.getByText('Saved (2)')).toBeVisible();\n"
+            "});\n")
+    assert js.locators_matching_a_pattern_as_text(spec) == [2]

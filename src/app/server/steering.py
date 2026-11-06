@@ -25,6 +25,27 @@ MOST_NOTES_PER_CALL = 5
 SCOPES = ("run", "next_stage")
 
 
+import contextlib
+import fcntl
+import threading
+
+#: One writer at a time, across the API's and the worker's processes and threads: the API adds notes while stages mark
+#: them read, and an unlocked read-change-write could drop a note.
+_IN_THIS_PROCESS = threading.Lock()
+
+
+@contextlib.contextmanager
+def _locked(repo_root: str | Path):
+    path = Path(repo_root) / (STEERING_FILE + ".lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _IN_THIS_PROCESS, open(path, "a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
 def _all(repo_root: str | Path) -> list[dict[str, Any]]:
     try:
         data = json.loads((Path(repo_root) / STEERING_FILE).read_text(encoding="utf-8"))
@@ -53,6 +74,11 @@ def add(repo_root: str | Path, text: str, by: str, scope: str = "run") -> dict[s
         raise ValueError("A note needs some text.")
     if scope not in SCOPES:
         raise ValueError(f"A note's scope is one of {', '.join(SCOPES)}.")
+    with _locked(repo_root):
+        return _add_locked(repo_root, cleaned, by, scope)
+
+
+def _add_locked(repo_root: str | Path, cleaned: str, by: str, scope: str) -> dict[str, Any]:
     kept = _all(repo_root)
     note = {
         "id": f"N-{1 + max((int(str(n.get('id', 'N-0')).split('-')[-1]) for n in kept), default=0)}",
@@ -72,6 +98,13 @@ def _applied(repo_root: str | Path, stage: str, run_id: str | None) -> list[dict
     The first time a note reaches a call, a `steering_applied` record goes in
     the run's transcript - the owner's proof it was read (Initiative AS).
     """
+    if not _all(repo_root):
+        return []
+    with _locked(repo_root):
+        return _applied_locked(repo_root, stage, run_id)
+
+
+def _applied_locked(repo_root: str | Path, stage: str, run_id: str | None) -> list[dict[str, Any]]:
     kept = _all(repo_root)
     live: list[dict[str, Any]] = []
     changed = False

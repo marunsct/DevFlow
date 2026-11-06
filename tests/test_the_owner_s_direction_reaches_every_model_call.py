@@ -57,3 +57,26 @@ def test_the_shared_chat_model_applies_it():
     from app.models import CompatibleChatOpenAI
 
     assert "with_the_direction(" in inspect.getsource(CompatibleChatOpenAI._generate)
+
+
+def test_notes_sent_at_once_are_all_kept(tmp_path):
+    """The API adds a note while worker threads mark notes read; both rewrote the file unlocked, so one could
+    silently drop the other's note - the more so with a live chat sending many."""
+    import threading
+
+    def send(n):
+        steering.add(tmp_path, f"note {n}", "owner")
+
+    def read():
+        for _ in range(20):
+            steering.as_instructions(tmp_path, "drafting", "run-1")
+
+    threads = [threading.Thread(target=send, args=(n,)) for n in range(30)] + [threading.Thread(target=read) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    kept = steering.notes(tmp_path)
+    assert sorted(n["text"] for n in kept) == sorted(f"note {n}" for n in range(30))
+    assert len({n["id"] for n in kept}) == 30

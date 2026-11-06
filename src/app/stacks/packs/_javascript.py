@@ -612,6 +612,18 @@ PLAYWRIGHT_LOCATORS_RULE = (
     "never access localStorage or sessionStorage before goto, which causes a browser SecurityError."
 )
 
+#: Measured over three runs: suites compared a promise where its value was meant - `expect(page.getByText(..))
+#: .toBeVisible()` unawaited (dozens in one suite), `String(res.headerValue('content-type'))` read as `"[object
+#: Promise]"` - and each one went to a fixer as a product fault no product change could close.
+AWAIT_EVERY_VALUE = (
+    "Await every Playwright call that gives back a value or waits for the page: `await expect(locator)...`, "
+    "`await response.json()`, `await response.text()`, `await response.headerValue('content-type')`, "
+    "`await locator.textContent()`, `await locator.inputValue()`, `await locator.count()`. Unawaited, the test "
+    "holds a promise in place of the value - `String()` of it is \"[object Promise]\" - and fails, or passes, "
+    "whatever the product does. `response.status()`, `response.ok()` and `response.headers()` give their value at "
+    "once and take no await."
+)
+
 FIND_CONTROLS = """Find each control by the name a person sees, exactly as the brief gives
 it: a field the brief says is labelled "Email" is
 `page.getByLabel('Email', { exact: true })`, a button named "Send" is
@@ -631,7 +643,7 @@ on what the page shows after it. Act on a locator - `page.getByLabel(...).fill(.
 never `page.fill(selector, ...)` or `page.click(selector)` - and never take
 `.first()` of a control found by its name: both act on whichever match comes
 first, so a page that shows the same control twice still passes, where a
-locator refuses more than one. """ + PLAYWRIGHT_LOCATORS_RULE + """ A locator found by its text keeps that filter:
+locator refuses more than one. """ + PLAYWRIGHT_LOCATORS_RULE + " " + AWAIT_EVERY_VALUE + """ A locator found by its text keeps that filter:
 once the test changes the text, find the item again by its new text. A list
 item takes no name from its text: find one by
 `page.getByRole('listitem').filter({ hasText: '...' })`, never by

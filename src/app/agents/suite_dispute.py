@@ -274,6 +274,15 @@ def _a_run_held(words: list[str], the_standard: str) -> bool:
     )
 
 
+#: A criterion's label - `AC-15`, `[AC-15]` - names the sentence; it is not one of the standard's words. Measured on one
+#: run: "AC-15: Filter functionality works correctly." was refused where the standard held the criterion unlabelled.
+_A_LABEL = re.compile(r"\[?(?<![\w-])[a-z]{1,6}-\d+(?![\w-])\]?")
+
+
+def _without_labels(plain: str) -> str:
+    return " ".join(_A_LABEL.sub(" ", plain).split())
+
+
 def _the_standard_holds(quoted: str, standard: str) -> bool:
     """Whether most of a quote - by its words - is sentences with a long run of words in the standard, marks aside.
 
@@ -282,18 +291,19 @@ def _the_standard_holds(quoted: str, standard: str) -> bool:
     product doing what the standard says. A sentence the standard does not hold still refuses the quote: one run's
     "standard" was a sentence of the instructions.
     """
-    the_standard = " " + " ".join(word.strip("'") for word in _plainly(standard).split()) + " "
+    the_standard = " " + " ".join(word.strip("'") for word in _without_labels(_plainly(standard)).split()) + " "
     # A quote, a dash, then the judge's reason: the reason is not offered as the standard. Measured on one run: a
     # criterion quoted verbatim, then a longer "- the test creates two but asserts three", was refused twice and the
     # run re-planned a right product. The quoted half must be the standard's own words, at least four of them.
-    lead, dash, _ = _plainly(_with_dashes_kept(quoted)).partition(" - ")
+    quoted = _without_labels(_plainly(_with_dashes_kept(quoted)))
+    lead, dash, _ = quoted.partition(" - ")
     lead_words = [word.strip("'") for word in lead.split() if word.strip("'")]
     if dash and len(lead_words) >= LEAST_QUOTED_WORDS and _a_run_held(lead_words, the_standard):
         return True
     held = total = 0
     # A quoted passage and a gloss after a dash are parts of their own: `"when it is empty, all are shown" - meaning
     # every bookmark` was one 12-word sentence needing 8 words in a row, though its quoted half was verbatim.
-    parts = re.split(r"(?<=[.;])\s+|\s+-\s+|'\s+|\s+'", _plainly(_with_dashes_kept(quoted)))
+    parts = re.split(r"(?<=[.;])\s+|\s+-\s+|'\s+|\s+'", quoted)
     for sentence in parts:
         words = [word.strip("'") for word in sentence.split() if word.strip("'")]
         if not words:

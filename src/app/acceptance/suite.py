@@ -3957,8 +3957,8 @@ def page_tests_that_count_a_shared_list(repo_root: str | Path, result: Acceptanc
     Measured on three full-stack runs: a test expected `getByRole('listitem')` to hold exactly 2 while every test adds
     records to the one service the suite starts; another narrowed the list by the tag "A" that five tests gave their
     records and expected exactly 2. `tests_that_count_a_list_other_tests_write_to` reads API routes only, so both were
-    locked and charged to the product. Same rules as that check: before results, the shape; once locked, a failing
-    test only when its own message shows more came back than it expected; a passing test never.
+    locked and charged to the product. Until the lock, the shape; once locked, a failing test only when its own message
+    shows more came back than it expected; a passing test never.
     """
     from app.acceptance.requests import _A_SHARED_SERVICE  # noqa: PLC0415 - requests imports this module
 
@@ -3967,7 +3967,9 @@ def page_tests_that_count_a_shared_list(repo_root: str | Path, result: Acceptanc
         return []
     known = result is not None and result.ran and bool(result.report.tests)
     failing = {t.name: t.message for t in result.report.tests if t.outcome == "failed"} if known else {}
-    needs_proof = known and (is_locked(repo_root) or any(t.outcome == "passed" for t in result.report.tests))
+    # Unlike the API check, the shape is enough until the lock: at the lock the starting page passes some tests while
+    # every count meets an empty list, so proof that more came back cannot exist yet (measured: locked again).
+    needs_proof = known and is_locked(repo_root)
     root = Path(repo_root)
     problems: list[str] = []
     for path in suite_files(repo_root):

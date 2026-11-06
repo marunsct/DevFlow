@@ -112,3 +112,14 @@ def test_a_list_narrowed_by_typing_a_value_of_its_own_is_not_named_until_the_fil
 def test_a_file_whose_hook_empties_the_list_may_count(tmp_path):
     spec = "test.beforeEach(async ({ request }) => { await resetStore(request); });\n" + WHOLE
     assert suite.page_tests_that_count_a_shared_list(_root(tmp_path, spec)) == []
+
+
+def test_at_the_lock_the_shape_is_enough_though_other_tests_pass(tmp_path, monkeypatch):
+    """Measured on the run it was built for: at the lock the starting page passed some tests and the counts met an
+    empty list (`Received: 0`); waiting for more to come back named nothing, and the suite was locked again."""
+    root = _root(tmp_path, WHOLE)
+    monkeypatch.setattr(suite, "is_locked", lambda _root: False)
+    result = SimpleNamespace(ran=True, report=SimpleNamespace(found=True, tests=[
+        SimpleNamespace(name="[AC-9] lists both", outcome="failed", message="Expected: 2\nReceived: 0\n"),
+        SimpleNamespace(name="[AC-1] saves", outcome="passed", message="")]))
+    assert len(suite.page_tests_that_count_a_shared_list(root, result)) == 1

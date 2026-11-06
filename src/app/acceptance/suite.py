@@ -2622,6 +2622,32 @@ def tests_that_access_storage_before_opening_the_page(repo_root: str | Path) -> 
     return problems[:6]
 
 
+def page_assertions_without_await(repo_root: str | Path) -> list[str]:
+    """Each suite file with Playwright page assertions written without `await`, as one problem per file.
+
+    A page assertion waits and returns a promise. Measured on one run: dozens unawaited in one suite - each passes a
+    product that fails it, or fails detached at a line the test never reached - and two fixers chased that failure.
+    """
+    from app.stacks.packs import _javascript
+
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        lines = _javascript.unawaited_page_assertions(text)
+        if lines:
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line(s) {', '.join(map(str, lines[:12]))} assert on the page "
+                "without `await`. A page assertion waits for the page and returns a promise: unawaited, the test does "
+                "not wait for it, so it passes a product that fails it or fails at a line it never reached. Put "
+                "`await` before each `expect(...)` of the page."
+            )
+    return problems[:6]
+
+
 def tests_that_expect_what_they_never_gave(repo_root: str | Path) -> list[str]:
     """Tests that look for a value they made and never gave the product. See the pack's `expects_what_it_never_gave`."""
     found = contract.the_pack(repo_root)
@@ -4759,6 +4785,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *locators_with_invalid_name_option(repo_root),
         *locators_matching_a_pattern_as_text(repo_root),
         *whole_page_lookups_of_a_per_record_control(repo_root),
+        *page_assertions_without_await(repo_root),
         *requests_with_a_fetch_body(repo_root),
         *responses_read_without_the_call(repo_root),
         *contexts_made_from_the_fixture(repo_root),

@@ -1348,6 +1348,31 @@ harness can count."""
 #: run: `const id = (await request.get(...)).json().then((r) => r.id)` stores a
 #: Promise, the request was sent with `assignee_id: {}`, the service rightly
 #: answered 422, and fixers bent the product to coerce it for an hour.
+#: Playwright's page assertions: they wait for the page and return a promise, so each needs `await`.
+_PAGE_MATCHERS = (
+    "toBeVisible|toBeHidden|toHaveText|toContainText|toHaveCount|toBeChecked|toHaveValue|toHaveValues|"
+    "toHaveAttribute|toBeEnabled|toBeDisabled|toBeEditable|toHaveURL|toHaveTitle|toBeAttached|toBeEmpty|"
+    "toBeFocused|toHaveClass|toHaveId|toHaveCSS|toHaveJSProperty|toHaveScreenshot|toBeInViewport|toHaveAccessibleName"
+)
+_AN_UNAWAITED_PAGE_ASSERTION = re.compile(
+    r"^[ \t]*expect\s*\((?:(?!\n[ \t]*(?:await|const|let|var|expect)\b)[\s\S]){0,400}?\)\s*\.\s*(?:not\s*\.\s*)?(?:"
+    + _PAGE_MATCHERS + r")\s*\(",
+    re.M,
+)
+
+
+def unawaited_page_assertions(text: str) -> list[int]:
+    """The lines where a Playwright page assertion is a statement of its own without `await`.
+
+    Unawaited, the test does not wait for it: it passes a product that fails it, or fails detached at a line it
+    never reached. Measured on one run: dozens in one suite, and two fixers chased the detached failure.
+    """
+    if "@playwright/test" not in text:
+        return []
+    code = code_only(text)
+    return [code.count("\n", 0, m.start()) + 1 for m in _AN_UNAWAITED_PAGE_ASSERTION.finditer(code)]
+
+
 TEST_SOURCE_BUGS = (
     r"\b(?:const|let|var)\s+\w+\s*=\s*\(\s*await\b[^;]*?\)\s*\.json\(\)\s*\.then\(",
 )

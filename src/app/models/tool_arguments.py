@@ -617,6 +617,30 @@ def _the_one_its_arguments_fit(args: Any, parameters: dict[str, Any]) -> str | N
     return fitting[0] if len(fitting) == 1 else None
 
 
+def _the_answer_in_the_text(message: Any, name: str, schema: dict[str, Any]) -> dict[str, Any]:
+    """The answer's fields from the reply's text, when an answer tool was called empty; {} otherwise.
+
+    Only a stage's answer tool, named after its schema's class: a work tool called empty is the model's mistake to
+    see, not something to fill. Measured on one run: the architect's whole core specification came back as JSON in
+    the text beside `TechnicalSpecificationOutput({})`, and the empty call was taken - every core section empty.
+    """
+    if not name or name == name.lower():
+        return {}
+    text = getattr(message, "content", "")
+    if isinstance(text, list):
+        text = "".join(str(part.get("text", "")) if isinstance(part, dict) else str(part) for part in text)
+    text = str(text or "")
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return {}
+    found = _parsed_leniently(text[start:end + 1])
+    fields = set((schema or {}).get("properties") or {})
+    if not isinstance(found, dict) or not fields:
+        return {}
+    taken = {key: value for key, value in found.items() if key in fields}
+    return taken if taken and len(taken) * 2 >= len(found) else {}
+
+
 def decode_structured_arguments(result: Any, tools: Any) -> Any:
     """Each tool call in a chat result, its arguments decoded where its tool's schema wants structure."""
     parameters = _parameters_by_tool(tools)
@@ -636,6 +660,12 @@ def decode_structured_arguments(result: Any, tools: Any) -> Any:
                 logger.info("A call to `%s`, which is not offered, taken as `%s`", call.get("name"), offered)
                 call["name"] = offered
             schema = parameters.get(str(call.get("name") or ""))
+            if schema is not None and not call.get("args"):
+                written = _the_answer_in_the_text(message, str(call.get("name") or ""), schema)
+                if written:
+                    logger.warning("`%s` was called with no arguments and its %d field(s) in the reply's text; "
+                                   "answered from the text", call.get("name"), len(written))
+                    call["args"] = written
             if schema is not None:
                 call["args"] = with_the_written_parameters_apart(call.get("args"), schema)
                 if isinstance(call["args"], dict) and CUT_OFF in call["args"]:

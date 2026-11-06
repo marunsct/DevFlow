@@ -23,7 +23,9 @@ CEILINGS = {
     "scrum_master": 6_000,
     # + the rule that a test never starts a running product itself (LF.159): one
     # such test hung a whole acceptance suite and its writer for 40 minutes.
-    "acceptance_reviewer": 4_600,
+    # + the rule that a test never reads a kept file's text (LF.647): two full-stack runs in a row reopened their
+    # locked suite after the build for a test asserting the kept start script's lines.
+    "acceptance_reviewer": 4_800,
 }
 OTHERWISE = 4_200
 

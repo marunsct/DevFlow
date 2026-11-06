@@ -97,3 +97,12 @@ def test_the_dispute_judge_reads_tests_by_the_rule_their_writer_was_given():
     prompt = " ".join(suite_dispute._SYSTEM_PROMPT.split())
     assert "the criterion, the brief and the specification decide" not in prompt
     assert " ".join(QA_RULE.split()).lstrip("- ") in prompt
+
+
+def test_the_suite_writer_and_reviewer_are_told_not_to_read_a_kept_file_s_text():
+    """Measured on two full-stack runs in a row: a locked test read the kept `start.sh` and asserted what it holds;
+    found only once it failed after the build, each cost a suite reopen and a repair."""
+    for text in (requests.TESTS_ASSUME_ONLY_WHAT_THEY_MADE, acceptance_reviewer.TESTS_ASSUME_ONLY_WHAT_THEY_MADE):
+        assert "never reads the text of a file the harness keeps" in text
+        assert "the running product" in text
+        assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", text, re.I)

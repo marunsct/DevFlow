@@ -48,7 +48,11 @@ TESTS_ASSUME_ONLY_WHAT_THEY_MADE = (
     "- Each test assumes nothing it did not make: what it acts on or reads, it creates first, through the "
     "product as a user would, under names no other test uses. Other tests' records may be there too - on a "
     "service the suite starts once they are - so a test looks for its own records and never counts them all. "
-    "A test that acts on something it never created can pass only on a product that ships with that data.\n"
+    "A test that acts on something it never created can pass only on a product that ships with that data. "
+    # Measured on two full-stack runs in a row: a test read the kept start script and asserted its lines; found only
+    # after the build, each cost a suite reopen and a repair.
+    "And a test never reads the text of a file the harness keeps - its start script, its configuration: that "
+    "text is not the product's to change. What such a file must do, the test shows on the running product.\n"
 )
 #: The kinds of product whose suite runs against one long-lived service.
 _A_SHARED_SERVICE = frozenset({"http_api", "fullstack"})

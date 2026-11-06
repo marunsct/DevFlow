@@ -2325,12 +2325,15 @@ def build_settled_answer_middleware(
                         without_reads = _without_the_read_tools_in(kept)
                         if without_reads is not None:
                             kept, narrowed = without_reads, True
+                            # Said once per stage: it is withheld on every later call too, and one stage logged it
+                            # five times in a minute.
+                            if not the_read_tool_is_withheld():
+                                logger.warning(
+                                    "Stage %s has been refused %d redundant reads and pointed to the "
+                                    "project memory for %d; withholding the read tool for the rest of it",
+                                    stage_name or "?", reading_nothing_new, _pointed_reads(messages),
+                                )
                             _remember_the_read_tool_is_withheld()
-                            logger.warning(
-                                "Stage %s has been refused %d redundant reads and pointed to the "
-                                "project memory for %d; withholding the read tool for the rest of it",
-                                stage_name or "?", reading_nothing_new, _pointed_reads(messages),
-                            )
                     if repeated is not None:
                         without_it = _without_that_tool_in(kept, repeated[0])
                         if without_it is not None:

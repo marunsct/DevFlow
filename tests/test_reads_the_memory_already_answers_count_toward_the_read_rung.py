@@ -77,3 +77,16 @@ def test_the_log_names_the_count_that_took_it_away(caplog) -> None:
         _call(_cycles(POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL))
     said = [r.getMessage() for r in caplog.records if "withholding the read tool" in r.getMessage()]
     assert said and f"pointed to the project memory for {POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL}" in said[0]
+
+
+def test_the_withholding_is_said_once_per_stage(caplog) -> None:
+    """Measured on one run: withheld on every later call, it was logged five times in one minute."""
+    import logging
+
+    from app.agents.stage_memory import remembering
+
+    with caplog.at_level(logging.WARNING, logger="app.agents.settled_answer"), remembering("thread-x:testing:once"):
+        for _ in range(3):
+            _call(_cycles(POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL))
+    said = [r for r in caplog.records if "withholding the read tool" in r.getMessage()]
+    assert len(said) == 1

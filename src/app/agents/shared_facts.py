@@ -56,6 +56,13 @@ def layout_facts(pack: Any, project: str, package: str | None) -> list[str]:
         lines.append("- What the product serves, and the acceptance suite runs through: "
                      + ", ".join(f"`{prefix}{path}`" for path in served)
                      + ". Plan the product in these files, or in modules they import.")
+    modules = [path[:-3].replace("/", ".") for path in served if path.endswith(".py") and "/" in path]
+    if modules and project:
+        # Measured on two full-stack runs whose project directory and package share a name: one wrote a second
+        # `main.py` at the project's root, the other's tests imported `bookmarks.bookmarks.main`.
+        lines.append(f"- The service is imported as `{modules[0]}`, from inside `{prefix}`: the project directory is "
+                     f"where it runs from, not part of the name - `{project.replace('-', '_')}.{modules[0]}` "
+                     "resolves to nothing.")
     lines.append(f"- Unit tests: `{pack.unit_pattern}` in `{prefix}{pack.unit_dir}/`; acceptance tests: "
                  f"`{pack.acceptance_pattern}` in `{prefix}{pack.acceptance_dir}/`.")
     if getattr(pack, "data_store", ""):

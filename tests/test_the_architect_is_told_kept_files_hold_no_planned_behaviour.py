@@ -58,3 +58,17 @@ def test_the_route_the_suite_waits_on_is_named():
 def test_a_suite_that_waits_on_the_page_itself_names_no_route():
     lines = layout_facts(pack_named("browser-javascript"), "todo", None)
     assert not [line for line in lines if "waits until" in line]
+
+
+def test_a_python_service_s_import_name_is_given():
+    """Measured on two full-stack runs whose project directory and package share a name: one wrote a second `main.py`
+    at the project's root, the other's tests imported `bookmarks.bookmarks.main`, which nothing resolves."""
+    lines = layout_facts(pack_named("fullstack-page-fastapi"), "bookmarks", "bookmarks")
+    said = [line for line in lines if "import" in line and "`bookmarks.main`" in line]
+    assert said and "`bookmarks.bookmarks.main`" in said[0]
+    assert not BANNED.search(said[0])
+
+
+def test_a_javascript_service_gets_no_import_name():
+    lines = layout_facts(pack_named("node-hono-native-api"), "notes-api", None)
+    assert not [line for line in lines if "is imported as" in line]

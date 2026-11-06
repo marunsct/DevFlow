@@ -57,3 +57,21 @@ def test_an_empty_page_field_that_nothing_frames_is_plain():
 def test_an_empty_page_field_with_react_in_the_rationale_is_not_plain():
     stack = _stack("")
     assert choose_pack(stack, BRIEF, rationale="React was chosen over Vue for the page.") is not fullstack_frameworks.PAGE_FASTAPI
+
+
+#: As the selector wrote it on a later run: the field "not stated", and a rationale ruling every framework out by name.
+RULED_OUT = ("**Frontend framework: empty (plain HTML + JavaScript)** - The brief requires \"plain HTML and JavaScript "
+             "served by the same service at /\" with no mention of a frontend framework or build step. No React, Vue, "
+             "Svelte, Angular, or Vite is needed for this straightforward form-and-list UI.")
+
+
+def test_frameworks_named_only_to_be_ruled_out_leave_the_page_plain():
+    stack = SimpleNamespace(language="Python", framework="FastAPI", frontend_framework="not stated",
+                            database="JSON file on disk (under DATA_DIR)", product_kind="fullstack",
+                            testing_framework="pytest + httpx for API tests, Playwright for frontend E2E tests")
+    assert choose_pack(stack, BRIEF, rationale=RULED_OUT) is fullstack_frameworks.PAGE_FASTAPI
+
+
+def test_a_framework_chosen_beside_one_ruled_out_is_still_a_framework():
+    rationale = "No Angular is needed; React was chosen for the page."
+    assert choose_pack(_stack(""), BRIEF, rationale=rationale) is not fullstack_frameworks.PAGE_FASTAPI

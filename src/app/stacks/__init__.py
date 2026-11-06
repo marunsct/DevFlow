@@ -639,8 +639,17 @@ def _a_plain_page_in(words: str) -> bool:
     return bool(re.search(r"\bhtml\b[^.\n]{0,40}\b(?:javascript|js)\b|\b(?:vanilla|plain)\s+(?:javascript|js|html)\b", words, re.I))
 
 
+#: A phrase ruling something out, to the end of its clause: "No React, Vue, Svelte, Angular, or Vite is needed".
+_RULED_OUT = re.compile(r"\b(?:no|not|without|never|nor|neither|instead of|rather than)\b[^.;:\n]*", re.I)
+
+
 def _a_framework_in(words: str) -> bool:
-    """Whether some writing names a component framework a page could be built with."""
+    """Whether some writing names a component framework a page could be built with, other than to rule it out.
+
+    Measured on one run: a rationale saying "No React, Vue, Svelte, Angular, or Vite is needed" for a plain page was
+    read as naming five frameworks, no pack fitted, and the agents set the stack up by hand.
+    """
+    words = _RULED_OUT.sub(" ", words)
     words = re.sub(rf"(?<![a-z])({'|'.join(_COMPONENT_FRAMEWORKS)})\.?js(?![a-z])", r"\1", words.lower())
     return any(re.search(rf"(?<![a-z]){word}(?![a-z])", words) for word in _COMPONENT_FRAMEWORKS)
 

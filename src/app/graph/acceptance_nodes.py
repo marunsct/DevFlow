@@ -49,6 +49,23 @@ STRENGTHEN_ONLY = (
 )
 
 
+#: Said with the tests sent back at the limit because no product could pass them.
+REPAIR_ONLY = (
+    "Repair only the tests named below, each only as far as its own code is wrong, so that it can pass once the "
+    "product works. Change no other test and nothing any test checks."
+)
+
+
+def cannot_pass_to_lock(cannot: list[str], *, rounds: int, limit: int) -> list[str]:
+    """The harness's findings that a test can never pass, sent back once at the review's round limit; [] otherwise.
+
+    A test no product can pass is a definition of done nobody meets: measured on one run, a suite locked at the limit
+    with whole-page lookups of a per-record control and went back to its writers after a build and a test round.
+    Once: at the limit itself, never after it.
+    """
+    return [REPAIR_ONLY, *cannot] if cannot and rounds == limit else []
+
+
 def too_weak_to_lock(findings: list[str], *, rounds: int, limit: int) -> list[str]:
     """The findings that a test is too weak, sent back once more at the review's round limit; [] otherwise.
 
@@ -647,7 +664,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             )
     # A suite under repair has been locked before: the same rule as at a round, or a false finding found here locks it
     # with a problem "still open", which is a release gap.
-    problems.extend(suite.findings_that_reopen(root, result, suite.tests_that_cannot_pass(root, result)))
+    cannot = suite.findings_that_reopen(root, result, suite.tests_that_cannot_pass(root, result))
+    problems.extend(cannot)
     # Against the specification's contract, before it is recorded at the lock (the rounds read the locked one).
     problems.extend(suite.tests_that_want_json_from_a_204(
         root, getattr(state.get("technical_specification"), "interface_contract", None) or ()))
@@ -700,6 +718,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     if problems and rounds < MAX_ACCEPTANCE_ROUNDS:
         logger.info("Acceptance suite sent back to QA: %d problem(s)", len(problems))
         return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
+    if repair := cannot_pass_to_lock(cannot, rounds=rounds, limit=MAX_ACCEPTANCE_ROUNDS):
+        logger.info("At the review's limit, %d test(s) no product could pass go back once to be repaired", len(cannot))
+        return _handing_on(stage="acceptance_author", acceptance_feedback=repair)
 
     findings: list[str] = []
     update: dict[str, Any] = {}

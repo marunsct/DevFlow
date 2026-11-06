@@ -55,6 +55,22 @@ def _title(task: Any) -> str:
     return str(getattr(task, "title", "") or getattr(task, "task_description", "") or "")[:80]
 
 
+def owner_of_the_file(state: Any, relative: str) -> str:
+    """Who fixes a finding in `relative`: the testing role for a test file, else as `_owner_of` chooses.
+
+    Measured on one run: a unit test naming a function the module does not have was given to the first builder in
+    the plan, and two backend fixers in a row left it "still reported".
+    """
+    try:
+        from app.analysis.file_kinds import is_test
+
+        if is_test(str(relative or "")) and any(str(t.specialist_role) == "testing" for t in _tasks(state)):
+            return "testing"
+    except Exception:  # noqa: BLE001 - chosen as before
+        pass
+    return _owner_of(state, "")
+
+
 def _owner_of(state: Any, work_order: str) -> str:
     tasks = _tasks(state)
     for task in tasks:
@@ -338,7 +354,7 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
                 # defect - measured: two modules and nine routers, sixteen
                 # findings, one rewrite of four files.
                 affected_files=[module] if module and len(importers) > 1 else [relative],
-                owner=_owner_of(state, ""),
+                owner=owner_of_the_file(state, relative),
             ))
     defects.extend(_what_the_compiler_says(state, root, since, pinned or ""))
     # The bundled manifest-drift defect rides after the cap: it is one defect

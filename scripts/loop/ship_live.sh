@@ -41,6 +41,8 @@ for run in "${paused[@]}"; do
 done
 
 sleep 45
+# The deploy recreates the worker: the container found before it is gone (measured on its first use).
+WORKER_C=$(docker compose ps -q worker 2>/dev/null | head -1 || true); WORKER_C=${WORKER_C:-langchain-worker-1}
 for attempt in 1 2 3; do
   kills=$(docker logs --since 20s "$WORKER_C" 2>&1 | grep -c SIGKILL || true)
   [ "$kills" = 0 ] && break

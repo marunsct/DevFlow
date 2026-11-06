@@ -31,3 +31,10 @@ def test_no_login_means_no_call(tmp_path):
 
 def test_it_never_grows_the_pool():
     assert "pool_grow" not in SCRIPT.read_text().replace("`pool_grow`", "")
+
+
+def test_the_worker_is_found_again_after_the_deploy():
+    """Measured on its first use: the deploy recreated the worker and every check after it asked the old container."""
+    text = SCRIPT.read_text()
+    deploy = text.index('"$L" deploy')
+    assert "WORKER_C=$(docker compose ps -q worker" in text[deploy:]

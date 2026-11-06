@@ -65,3 +65,21 @@ def test_the_lead_s_quote_uses_the_document_s_own_headings():
     from app.agents import technical_lead
 
     assert ("api_and_event_contracts", "API and event contracts") in technical_lead._CONTRACT_SECTIONS
+
+
+def test_a_planning_stage_is_not_given_the_harness_s_kept_files(tmp_path):
+    """Measured on one run: the technical lead's memory held the harness's `test-setup.mjs` (44k characters) and
+    `playwright.setup.mjs` (8k) - files no work order may change."""
+    root = _project(tmp_path)
+    (root / "notes_api" / "test-setup.mjs").write_text("// harness\n" + "setup(); " * 3000)
+    text, held = project_memory.render(root, 400_000, focus="Plan the sprint.",
+                                       kept_out=("notes_api/test-setup.mjs",))
+    assert "notes_api/test-setup.mjs" not in held and "setup(); setup();" not in text
+    assert "notes_api/test-setup.mjs" in text  # named as the harness's
+    assert "notes_api/storage.py" in held
+
+
+def test_the_planning_stages_are_named():
+    assert project_memory.planning_stage("technical_lead") and project_memory.planning_stage("scrum_master")
+    assert not project_memory.planning_stage("specialist_backend_0")
+    assert not project_memory.planning_stage("acceptance_author_0")

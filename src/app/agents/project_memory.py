@@ -389,8 +389,30 @@ def _without_the_quoted_sections(document: str, request: str) -> tuple[str, list
     return "".join(kept), dropped
 
 
+#: The stages that plan the work and write no file: the harness's kept files are named to them, not held.
+_PLANNING_STAGES = ("technical_lead", "scrum_master")
+
+
+def planning_stage(stage: str) -> bool:
+    return str(stage or "").startswith(_PLANNING_STAGES)
+
+
+def kept_by_the_harness(repo_root: str | Path) -> tuple[str, ...]:
+    """The workspace paths of the files the harness writes and keeps for this run's pack; () when none. Never raises."""
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(repo_root)
+        if found is None:
+            return ()
+        project = str((found[1] or {}).get("project") or "")
+        return tuple(f"{project}/{name}" if project else name for name in found[0].kept_files)
+    except Exception:  # noqa: BLE001 - held as before
+        return ()
+
+
 def render(repo_root: str | Path, budget_characters: int, focus: str = "",
-           for_a_fixer: bool = False) -> tuple[str, dict[str, str]]:
+           for_a_fixer: bool = False, kept_out: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
@@ -408,6 +430,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     canonical = canonical_order()
     after_the_rest: list[str] = []
     left_out: list[str] = []
+    kept_named: list[str] = []
     used = 0
     try:
         from app.stacks.scaffold import folders_nothing_serves
@@ -443,6 +466,10 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
                 continue
         if _RECORDS.match(path):
             left_out.append(path)
+            continue
+        if path in kept_out:
+            # Measured on one run: the technical lead's memory held the harness's 44k `test-setup.mjs`.
+            kept_named.append(path)
             continue
         if path in later:
             # A later sprint's tests, handed over whole, read as this sprint's
@@ -488,6 +515,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     more = len(left_out) - len(named)
     tail = ("\nNot included here (read when needed): " + ", ".join(named)
             + (f", and {more:,} more (list a folder or search to find them)" if more else "") + "\n") if left_out else ""
+    if kept_named:
+        tail += ("\nNot included because the harness writes and keeps them, and no work order changes them: "
+                 + ", ".join(kept_named) + "\n")
     if held_back:
         tail += ("\nNot included because every test in them is for a criterion a later sprint builds: "
                  + ", ".join(held_back) + "\n")
@@ -738,7 +768,8 @@ def build_project_memory_middleware(repo_root: str) -> Any:
 
                     stage = str(_from_the_graph()[1] or "")
                     visit["snapshot"], visit["held"] = render(repo_root, budget_for(getattr(request, "model", None)), opening,
-                                                              for_a_fixer=stage.startswith("defect_fix"))
+                                                              for_a_fixer=stage.startswith("defect_fix"),
+                                                              kept_out=kept_by_the_harness(repo_root) if planning_stage(stage) else ())
                     visit["files"] = dict(current(repo_root))
                 memory = visit["snapshot"]
                 held = visit.get("held") or {}

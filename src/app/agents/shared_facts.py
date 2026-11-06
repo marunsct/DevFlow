@@ -18,6 +18,7 @@ or transcript (CM.5).
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +77,9 @@ def layout_facts(pack: Any, project: str, package: str | None) -> list[str]:
     if kept:
         lines.append("- Kept by the harness, not the product's to write: "
                      + ", ".join(f"`{prefix}{path}`" for path in kept[:8]) + ".")
+    for path in _kept_code_to_show(pack, kept):
+        code = _code_lines(pack.filled(str(pack.files[path]), project, "", package))
+        lines.append(f"- What `{prefix}{path}` does now, in full (comments left out):\n```\n" + "\n".join(code) + "\n```")
     scripts = sorted((getattr(pack, "kept_scripts", None) or {}))
     if scripts:
         # Measured on two runs: told nothing of them, both fixers of a failing unit run rewrote `package.json`'s test
@@ -92,6 +96,30 @@ def layout_facts(pack: Any, project: str, package: str | None) -> list[str]:
         lines.append("- Those files do what they do now and nothing more: put whatever else the product must do - "
                      "at start, at shutdown, with its settings or its data directory - in the product's own files.")
     return lines
+
+
+#: A kept file of code is shown whole when it is this short, so the design stages read what it does and leaves undone.
+#: Measured on four runs: told only that a start file was kept, the specification gave it behaviour it does not have
+#: - creating the data directory, checking the port, handling signals - and the review blocked on it.
+KEPT_CODE_LINES = 20
+_CODE_SUFFIXES = (".ts", ".mts", ".js", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".kt", ".cs", ".rb", ".php")
+_NOT_PRODUCT_CODE = re.compile(r"config|setup|conftest|test|spec|/acceptance/|^acceptance/", re.I)
+_A_COMMENT = re.compile(r"^\s*(?://|#|/\*|\*)")
+
+
+def _code_lines(text: str) -> list[str]:
+    return [line.rstrip() for line in str(text).splitlines() if line.strip() and not _A_COMMENT.match(line)]
+
+
+def _kept_code_to_show(pack: Any, kept: list[str]) -> list[str]:
+    """The kept files that run the product - its start file, its server - short enough to show whole, at most two."""
+    files = getattr(pack, "files", None) or {}
+    chosen = []
+    for path in kept:
+        if (path.endswith(_CODE_SUFFIXES) and not _NOT_PRODUCT_CODE.search(path) and path in files
+                and len(_code_lines(str(files[path]))) <= KEPT_CODE_LINES):
+            chosen.append(path)
+    return chosen[:2]
 
 
 def what_the_setup_decides(pack: Any, project: str, package: str | None) -> list[str]:

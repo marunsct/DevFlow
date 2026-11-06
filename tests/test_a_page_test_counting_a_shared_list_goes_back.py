@@ -123,3 +123,23 @@ def test_at_the_lock_the_shape_is_enough_though_other_tests_pass(tmp_path, monke
         SimpleNamespace(name="[AC-9] lists both", outcome="failed", message="Expected: 2\nReceived: 0\n"),
         SimpleNamespace(name="[AC-1] saves", outcome="passed", message="")]))
     assert len(suite.page_tests_that_count_a_shared_list(root, result)) == 1
+
+
+#: As a later run's suite wrote it: narrowed by a value of its own held in a name, directly and on a bound locator.
+BY_A_NAME = """test('[AC-4] filters', async ({ page }) => {
+  const workTag = `work-${Date.now()}`;
+  const allWorkItems = page.getByRole('listitem').filter({ hasText: workTag });
+  await expect(allWorkItems).toHaveCount(2);
+  const filteredItems = page.getByRole('listitem');
+  await expect(filteredItems.filter({ hasText: workTag })).toHaveCount(2);
+});
+test('[AC-1] saves', async ({ page }) => {
+  await page.getByLabel('Title', { exact: true }).fill('Other');
+});
+"""
+
+
+def test_a_list_narrowed_by_a_value_held_in_a_name_is_not_named(tmp_path):
+    """Measured on the run after it shipped: six such counts were sent back at the review's limit, the writer could
+    not see what to change, and the suite was locked with a false finding spent."""
+    assert suite.page_tests_that_count_a_shared_list(_root(tmp_path, BY_A_NAME)) == []

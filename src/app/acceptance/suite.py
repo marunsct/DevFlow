@@ -3995,14 +3995,22 @@ def page_tests_that_count_a_shared_list(repo_root: str | Path, result: Acceptanc
                 if int(count.group("count")) < 1:
                     continue
                 read = count.group("read").strip()
-                items = _A_LIST_ITEMS.search(bound.get(read, read))
+                # A bound locator, narrowed further where it is read: `filteredItems.filter({ hasText: tag })`.
+                named = re.match(r"(\w+)([\s\S]*)", read)
+                expression = bound[named.group(1)] + named.group(2) if named and named.group(1) in bound else read
+                items = _A_LIST_ITEMS.search(expression)
                 if items is None:
+                    continue
+                narrowing = expression[items.start():]
+                # Narrowed by a value held in a name or made at run time, not a quoted one: the test's own, as far as
+                # its text shows. Measured on one run: six counts narrowed by a unique tag in a name were sent back.
+                if ".filter(" in narrowing and not _HAS_TEXT.search(narrowing):
                     continue
                 before = block[:count.start()]
                 # A test that empties the list first knows what it holds, as the API check allows.
                 if re.search(_A_CLEARING_CALL, before, re.I) or re.search(_DELETES_IN_A_LOOP, before, re.I):
                     continue
-                values = [m.group(2) for m in _HAS_TEXT.finditer(items.group("narrowed"))]
+                values = [m.group(2) for m in _HAS_TEXT.finditer(narrowing)]
                 # A list narrowed by typing into the page's filter: the value last typed there, if any is left.
                 typed = [m.group(2) for m in _A_FILTER_TYPED.finditer(before)]
                 if typed and typed[-1].strip():

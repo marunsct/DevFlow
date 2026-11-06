@@ -658,6 +658,8 @@ working (the tool-approval check can fail transiently), schedule a retry about
 
 ### 0.5 Things that bite
 
+- `ship-live` waits while a run is in `principal_architect` (a pause there loses the revision's parallel rewrites);
+  `SHIP_NOW=1` skips the wait for a fix the live run needs at once (LF.646).
 - Rewind to a stage's **original** entry time, never to a point an earlier rewind created. Measured 11-06/07 on L
   web-todo 3: a second rewind to the point the first rewind wrote (same stage, a later time in `rewind --list`)
   resumed past that stage without its model call. Rewinding again to the first entry's time replayed it properly.

@@ -4,7 +4,7 @@
 # Measured on 2026-11-05/06: three operator slips in one night - a deploy sent with the pause skipped (the login was
 # not loaded, so both runs sat orphaned ~18 min), a doubled `pool_grow`, and a routine `pool_grow` that made Celery
 # fork and kill a pool process every 4 s. This does the steps in order and checks each:
-#   1. the operator login is loaded, or nothing is touched;
+#   1. the operator login is loaded, or nothing is touched; no run is in the architect's stage (SHIP_NOW=1 skips);
 #   2. every running run is paused (and the deploy refused if one did not pause);
 #   3. `loop.sh deploy` with BOUNDARY_WAIT=0;
 #   4. each run paused here is resumed;
@@ -22,6 +22,20 @@ if [ -z "${LOOP_USER:-}" ] || [ -z "${LOOP_PASSWORD:-}" ]; then
 fi
 
 runs=$("$L" status 2>/dev/null | sed -n 's/^\(run-[0-9a-f-]\{36\}\)|running.*/\1/p' | sort -u)
+
+# Not while the architect revises: its section rewrites run side by side and a pause loses them all. Measured on one
+# run: ten rewrites failed at the pause, the revision started over and wrote one part, and the review found four of
+# its findings again. SHIP_NOW=1 deploys at once (a fix the live run needs now).
+if [ "${SHIP_NOW:-0}" != 1 ]; then
+  for run in $runs; do
+    waited=0
+    while stage=$("$L" audit "$run" 2>/dev/null | sed -n 's/^now in: \([^ ]*\).*/\1/p' | head -1) \
+          && [ "$stage" = principal_architect ] && [ "$waited" -lt "${SHIP_WAIT_SECONDS:-900}" ]; do
+      [ "$waited" = 0 ] && echo "ship-live: $run is in the architect's stage; waiting for it to finish (SHIP_NOW=1 skips)"
+      sleep 20; waited=$((waited + 20))
+    done
+  done
+fi
 paused=()
 for run in $runs; do
   if timeout 900 "$L" rewind --pause-only "$run" | tail -1 | grep -q "paused"; then

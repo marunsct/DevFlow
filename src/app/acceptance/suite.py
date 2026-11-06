@@ -1550,6 +1550,9 @@ def _the_tests_sources(repo_root: str | Path) -> dict[str, tuple[str, str]]:
     return found
 
 
+#: A matcher handed a promise turned to text: the test compared the promise, not its value, and no product changes
+#: that. Measured on one run: `String(res?.headerValue('content-type'))` failed two right tests against `text/html`.
+_A_PROMISE_RECEIVED = re.compile(r"Received(?: string| value)?:\s*\"\[object Promise\]\"")
 #: A matcher given no value: the product answered without what the test reads, which is the product's to fix.
 _A_MATCHER_MET_NOTHING = re.compile(r"Matcher error:[\s\S]{0,200}?Received(?: has value)?:\s*(?:undefined|null)\b")
 #: The product answered something that is not JSON where JSON was read - its error page, a plain-text status. The
@@ -1592,6 +1595,13 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
         # never gave - `expect(received).toMatch(expected)` ... `Received has value: undefined` - is the product's
         # too: measured on one run, a missing `Location` header reopened the suite twice as "the test's own code".
         said = message.split(_PAGE_MARK, 1)[0].split(_SERVICE_ERRORS_MARK, 1)[0]
+        if _A_PROMISE_RECEIVED.search(said):
+            broken.append(
+                f"`{test.name}` cannot pass whatever is built: its matcher received `[object Promise]` - the test "
+                "turned a call that returns a promise into text before awaiting it. Await the call and compare its "
+                "value. Fix the test so that it can pass once the product works."
+            )
+            continue
         if _A_MATCHER_MET_NOTHING.search(said) or _THE_PRODUCT_ANSWERED_NOT_JSON.search(said):
             continue
         if any(pattern.search(said) for pattern in patterns):

@@ -84,3 +84,16 @@ def test_the_testability_rule_does_not_send_a_test_writer_into_another_s_file():
     rule = flat[i:i + 400]
     assert "another role" in rule and "defect" in rule
     assert not _re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", rule, _re.I)
+
+
+def test_the_dispute_judge_reads_tests_by_the_rule_their_writer_was_given():
+    """The suite's writer is told a test asserting what the brief does not say is a choice, even where the
+    specification says it; the judge of a dispute was told "the criterion, the brief and the specification decide",
+    so it could keep a test its writer was told to leave out (measured on one run: four fixes reverted chasing a test
+    asking more than the brief)."""
+    from app.agents import suite_dispute
+    from app.agents.brief_over_spec import QA_RULE
+
+    prompt = " ".join(suite_dispute._SYSTEM_PROMPT.split())
+    assert "the criterion, the brief and the specification decide" not in prompt
+    assert " ".join(QA_RULE.split()).lstrip("- ") in prompt

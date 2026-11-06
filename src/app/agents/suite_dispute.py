@@ -110,6 +110,8 @@ class _StructuredDisputeVerdict:
 structured_verdict_switch = _StructuredDisputeVerdict()
 
 
+from app.agents.brief_over_spec import QA_RULE  # the rule the suite's writer was given
+
 _SYSTEM_PROMPT = (
     "You are the QA lead. The acceptance suite you approved is locked: it is the definition "
     "of done, and only QA may change it. A sprint's attempt has failed, and some locked tests "
@@ -121,8 +123,10 @@ _SYSTEM_PROMPT = (
     "criterion and the brief do not. A test the product fails because the product is wrong is "
     "not named: that is the product's to fix. The product's code is not the standard: what "
     "it renders, returns or lacks says nothing about whether a test is right, so never open "
-    "the product's files to decide what a test may expect - the criterion, the brief and the "
-    "specification decide. An empty answer is a good answer. You write no code and no files."
+    "the product's files to decide what a test may expect - the criterion and the brief decide, "
+    "and the specification only what the brief leaves open. "
+    + QA_RULE.lstrip("- ").strip() + " "
+    "An empty answer is a good answer. You write no code and no files."
     "\n\n" + STRUCTURED_RESPONSE_RULE
 )
 

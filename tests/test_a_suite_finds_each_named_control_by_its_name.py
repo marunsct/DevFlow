@@ -402,3 +402,37 @@ class TestATestThatLooksForAValueItNeverGave:
         assert review.count("suite.tests_that_cannot_pass(root, result)") == 2, (
             "checked when the suite is reviewed and on every round"
         )
+
+
+class TestARoleLookupOfANamedControlIsExact:
+    """Measured on one run: every test found the brief's "Delete" by `getByRole('button', { name: 'Delete' })`, which
+    also matches a control named "Delete Gone"; the product labelled each "Delete <title>", the suite passed, and the
+    hidden test finding exactly "Delete" timed out - a false acceptance."""
+
+    def test_a_named_role_lookup_without_exact_is_sent_back(self, tmp_path: Path) -> None:
+        acceptance = _scaffolded(tmp_path)
+        (acceptance / "notes.spec.js").write_text(
+            "test('[AC-1] keep', async ({ page }) => {\n"
+            "  await page.getByLabel('Name', { exact: true }).fill('a');\n"
+            "  await page.getByLabel('Body', { exact: true }).fill('b');\n"
+            "  await page.getByRole('button', { name: 'Keep' }).click();\n"
+            "  await page.getByLabel('Pinned', { exact: true }).check();\n"
+            "  await page.getByRole('button', { name: 'Everything', exact: true }).click();\n"
+            "  await page.getByRole('button', { name: 'Pinned only', exact: true }).click();\n"
+            "});\n")
+        found = suite.controls_never_found_by_name(tmp_path, BRIEF)
+        assert len(found) == 1 and '"Keep"' in found[0] and "exact: true" in found[0]
+        assert not any(word in found[0].lower().split() for word in BANNED)
+
+    def test_exact_role_lookups_are_left_alone(self, tmp_path: Path) -> None:
+        acceptance = _scaffolded(tmp_path)
+        (acceptance / "notes.spec.js").write_text(
+            "test('[AC-1] keep', async ({ page }) => {\n"
+            "  await page.getByLabel('Name', { exact: true }).fill('a');\n"
+            "  await page.getByLabel('Body', { exact: true }).fill('b');\n"
+            "  await page.getByRole('button', { name: 'Keep', exact: true }).click();\n"
+            "  await page.getByLabel('Pinned', { exact: true }).check();\n"
+            "  await page.getByRole('button', { exact: true, name: 'Everything' }).click();\n"
+            "  await page.getByRole('button', { name: 'Pinned only', exact: true }).click();\n"
+            "});\n")
+        assert suite.controls_never_found_by_name(tmp_path, BRIEF) == []

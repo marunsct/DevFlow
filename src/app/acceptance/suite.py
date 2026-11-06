@@ -2897,6 +2897,21 @@ def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list
         + ", so no product the brief describes can pass it. Find it with `{ exact: true }`."
         for name in loose
     ]
+    # A role lookup by a name the brief gives, without `exact: true`, matches any control whose name contains it.
+    # Measured on one run: `getByRole('button', { name: 'Delete' })` passed a product naming each "Delete <title>",
+    # and the hidden test finding exactly "Delete" timed out - a false acceptance.
+    by_part = [
+        name for name in names
+        if name not in missing and re.search(
+            r"""\bgetByRole\s*\(\s*['"`]\w+['"`]\s*,\s*\{(?![^{}]*\bexact\s*:\s*true)[^{}]*\bname\s*:\s*['"`]"""
+            + re.escape(name) + r"""['"`][^{}]*\}""", suite_text)
+    ]
+    problems += [
+        f'A test finds "{name}" by its role and that name without `exact: true`, which matches any control whose name '
+        f'only contains "{name}" - one named "{name} and more" passes it, so a product that names it otherwise does '
+        f'too. Find it with `{{ name: \'{name}\', exact: true }}`.'
+        for name in by_part
+    ]
     if not missing:
         return problems
     return [

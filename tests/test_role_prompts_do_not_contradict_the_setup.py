@@ -38,3 +38,13 @@ def test_a_test_round_and_the_testing_rule_agree_on_installs(tmp_path):
 
     text = specialists.build_test_run_request("ship notes", ["notes/app.py"], str(tmp_path))["messages"][0]["content"]
     assert "test-only scope" in text and "not a new framework" in text
+
+
+def test_the_interface_role_s_test_ban_leaves_a_fix_its_regression_test():
+    """A fix of a defect no test catches yet is told "You MUST also add or update a regression test", and the UI/UX
+    role's prompt said "Do not write or change test files" without exception - one agent, both rules."""
+    from app.agents.specialists import _ROLE_DESCRIPTIONS
+
+    text = _ROLE_DESCRIPTIONS["ui_ux"]
+    assert "Do not write or change test files: the Testing specialist owns them." not in text
+    assert "in a work order" in text.lower() and "regression test" in text

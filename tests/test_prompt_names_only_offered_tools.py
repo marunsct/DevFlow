@@ -144,13 +144,13 @@ def test_the_interface_specialist_may_run_the_tests_that_check_its_work(rendered
     prompt, _ = rendered["specialist_ui_ux"]
     assert "Prove your work by running it" in prompt
     assert not re.search(r"do not (write, )?run(,| or)? .*tests|do not run test", prompt, re.IGNORECASE)
-    assert "Do not write or change test files" in prompt
+    assert "do not write or change test files" in prompt
 
 
 def test_the_new_rule_avoids_the_banned_words() -> None:
     from app.agents.specialists import _ROLE_DESCRIPTIONS
 
     text = _ROLE_DESCRIPTIONS["ui_ux"]
-    rule = text[text.index("Do not write or change test files") : text.index("Return your structured")]
+    rule = text[text.index("In a work order, do not write or change test files") : text.index("Return your structured")]
     banned = {"task", "tasks", "to-do", "todo", "button", "click", "checkbox"}
     assert not {w for w in re.findall(r"[\w-]+", rule.lower())} & banned

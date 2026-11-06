@@ -59,6 +59,12 @@ def saved_run_if_unchanged(repo_root: str | Path, command: str, report_file: Pat
             problem=str(saved.get("problem") or ""),
             runtime_problems=list(saved.get("runtime_problems") or []),
             shows=str(saved.get("shows") or ""),
+            # What the page check measured, kept with the rest. Measured on one run: dropped here, a 10px overflow at
+            # a phone's width read 0, its defect closed as "no longer found", and the release shipped it.
+            phone_overflow=int(saved.get("phone_overflow") or 0),
+            overlaps=list(saved.get("overlaps") or []),
+            small_targets=list(saved.get("small_targets") or []),
+            accessibility=list(saved.get("accessibility") or []),
         )
     except Exception:  # noqa: BLE001 - when in doubt, measure
         logger.debug("Could not reuse the last measurement", exc_info=True)

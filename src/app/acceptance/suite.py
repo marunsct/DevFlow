@@ -2743,6 +2743,16 @@ def views_never_acted_within(repo_root: str | Path, brief_text: str) -> list[str
                 continue
             if name and name.group(1) in held:
                 filter_clicks.append((m.start(), m.end(), held[name.group(1)]))
+        # A view narrowed by typing into a field the brief names: `getByLabel('Filter by tag').fill('work')`. Measured on
+        # one run: the check knew only views chosen by pressing a control and called a right suite incomplete.
+        for m in re.finditer(r"\.fill\s*\(\s*([^)]*)\)", body):
+            before = body[max(0, m.start() - 200):m.start()]
+            statement = before[before.rfind(";") + 1:]
+            named = [n for n in every if re.search(r"""['"`]""" + re.escape(n) + r"""['"`]""", statement)]
+            if named:
+                cleared = bool(re.fullmatch(r"""\s*(?:''|""|``)\s*""", m.group(1)))
+                filter_clicks.append((m.start(), m.end(), not cleared and any(n in narrowing for n in named)))
+        filter_clicks.sort()
         is_a_filter_click = {start for start, _, _ in filter_clicks}
         for start, stop, narrows in filter_clicks:
             if not narrows:

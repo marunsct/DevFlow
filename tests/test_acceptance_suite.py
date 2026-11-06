@@ -564,4 +564,7 @@ def test_the_author_adds_two_records_in_a_row_from_one_page(project) -> None:
     start = text.index("adds records through")
     rule = text[text.rindex("\n- ", 0, start):text.index("\n- ", start)]
     assert "one after the other" in rule and "without reloading" in rule
+    # Measured on the next run: the test typed the second record while the first save was still on its way, the
+    # page cleared the form when that save finished and wiped what was typed, and a right product failed for hours.
+    assert "waits until the first is shown" in rule
     assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", rule, re.I)

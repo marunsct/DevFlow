@@ -1647,6 +1647,20 @@ def _which_test(item: str) -> str:
     return (found.group(1) if found else str(item)).strip()[:300]
 
 
+def _which_tests(state: Any, item: str) -> list[str]:
+    """The tests a finding is about: the titles at the file and lines it names, else its first quoted name.
+
+    Measured on one run: a file-level finding was known by its file, so an earlier false finding for the same file
+    made a real one "already sent", and its criteria - read from tags the finding's text does not carry - were
+    never deferred; fixers were sent a test fault.
+    """
+    try:
+        titles = suite._the_tests_at(_root(state), item)  # noqa: SLF001 - the suite's own reading of a finding
+    except Exception:  # noqa: BLE001 - known by its first name, as before
+        titles = []
+    return titles or [_which_test(item)]
+
+
 def may_repair(state: Any, broken: list[str]) -> bool:
     """Whether the suite may be reopened for `broken`: within the budget, or a test never sent before.
 
@@ -1659,7 +1673,7 @@ def may_repair(state: Any, broken: list[str]) -> bool:
     if repairs < MAX_SUITE_REPAIRS:
         return True
     sent = set(state.get("suite_repaired_tests") or [])
-    fresh = {_which_test(item) for item in broken} - sent
+    fresh = {name for item in broken for name in _which_tests(state, item)} - sent
     return bool(fresh) and repairs < MAX_SUITE_REPAIRS_IN_ALL
 
 #: The most locked tests one run's disputes may reclassify when the suite is
@@ -1909,7 +1923,8 @@ def reopen_the_suite_for(
         acceptance_feedback=[] if rewritten else [*broken, REPAIR_RULE, *no_fault_rule],
         **({"revision_comments": []} if rewritten else {}),
         suite_repairs=repairs + 1,
-        suite_repaired_tests=sorted({*(state.get("suite_repaired_tests") or []), *map(_which_test, broken)}),
+        suite_repaired_tests=sorted({*(state.get("suite_repaired_tests") or []),
+                                     *(name for item in broken for name in _which_tests(state, item))}),
     )
 
 
@@ -1926,7 +1941,8 @@ def beyond_repair(state: Any, broken: list[str]) -> list[str]:
 
     if not broken or may_repair(state, broken):
         return []
-    return sorted({tag for item in broken for tag in tags_in(item) if tag.startswith("AC-")})
+    named = [item for item in broken] + [title for item in broken for title in _which_tests(state, item)]
+    return sorted({tag for item in named for tag in tags_in(item) if tag.startswith("AC-")})
 
 
 def defer_what_is_beyond_repair(state: Any, criteria: list[str], broken: list[str]) -> None:

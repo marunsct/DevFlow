@@ -24,6 +24,33 @@ MOST_NOTES_PER_CALL = 5
 #: How long a note applies: for the rest of the run, or for the one stage that is working when it is first applied.
 SCOPES = ("run", "next_stage")
 
+#: Who a note is for. "all" by default; a group of stages, or one builder role. Owner review 2026-11-06: a note meant
+#: for the page reached the suite's writer, the reviewers and the architect, inviting work the brief never asked for.
+AUDIENCES = ("all", "design", "planning", "build", "tests", "review",
+             "ui_ux", "backend", "database", "security_reliability", "testing", "documentation", "devops")
+#: Builder roles, as their stages name them (`specialist_<role>_<n>`).
+_ROLES = ("ui_ux", "backend", "database", "security_reliability", "testing", "documentation", "devops")
+
+
+def audience_of(stage: str) -> set[str]:
+    """The audiences a call in `stage` belongs to; always "all"."""
+    name = str(stage or "")
+    found = {"all"}
+    if name.startswith(("principal_architect", "architecture_review", "research_brief", "consult_", "escalation",
+                        "ask_specification", "stack_selector", "product_manager")):
+        found.add("design")
+    if name.startswith(("technical_lead", "scrum_master")):
+        found.add("planning")
+    if name.startswith(("acceptance_author", "acceptance_review", "acceptance_dispute", "specialist_testing")):
+        found |= {"tests", "testing"}
+    if name.startswith(("specialist_", "drafting", "defect_fix", "stack_setup")) and not name.startswith("specialist_testing"):
+        found.add("build")
+    if name.startswith("specialist_"):
+        found |= {role for role in _ROLES if name.startswith(f"specialist_{role}")}
+    if name.startswith(("milestone_review", "advice_review", "security_review", "code_review", "release")):
+        found.add("review")
+    return found
+
 
 import contextlib
 import fcntl
@@ -67,18 +94,22 @@ def notes(repo_root: str | Path) -> list[dict[str, Any]]:
     return _all(repo_root)
 
 
-def add(repo_root: str | Path, text: str, by: str, scope: str = "run") -> dict[str, Any]:
-    """Keep one note for the run's next model calls."""
+def add(repo_root: str | Path, text: str, by: str, scope: str = "run", audience: Any = None) -> dict[str, Any]:
+    """Keep one note for the run's next model calls of its audience (`AUDIENCES`; everyone by default)."""
     cleaned = str(text or "").strip()
     if not cleaned:
         raise ValueError("A note needs some text.")
     if scope not in SCOPES:
         raise ValueError(f"A note's scope is one of {', '.join(SCOPES)}.")
+    wanted = [str(a) for a in (audience or ["all"])]
+    unknown = [a for a in wanted if a not in AUDIENCES]
+    if unknown:
+        raise ValueError(f"A note's audience is one or more of {', '.join(AUDIENCES)}; not {', '.join(unknown)}.")
     with _locked(repo_root):
-        return _add_locked(repo_root, cleaned, by, scope)
+        return _add_locked(repo_root, cleaned, by, scope, wanted)
 
 
-def _add_locked(repo_root: str | Path, cleaned: str, by: str, scope: str) -> dict[str, Any]:
+def _add_locked(repo_root: str | Path, cleaned: str, by: str, scope: str, audience: list[str]) -> dict[str, Any]:
     kept = _all(repo_root)
     note = {
         "id": f"N-{1 + max((int(str(n.get('id', 'N-0')).split('-')[-1]) for n in kept), default=0)}",
@@ -86,6 +117,7 @@ def _add_locked(repo_root: str | Path, cleaned: str, by: str, scope: str) -> dic
         "by": str(by or "owner"),
         "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "scope": scope,
+        "audience": audience,
     }
     _save(repo_root, kept + [note])
     return note
@@ -108,7 +140,10 @@ def _applied_locked(repo_root: str | Path, stage: str, run_id: str | None) -> li
     kept = _all(repo_root)
     live: list[dict[str, Any]] = []
     changed = False
+    mine = audience_of(stage)
     for note in kept:
+        if not mine & set(note.get("audience") or ["all"]):
+            continue
         first = note.get("applied_stage")
         if first and note.get("scope") == "next_stage" and first != stage:
             continue

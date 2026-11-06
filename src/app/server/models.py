@@ -438,6 +438,11 @@ class SteeringNote(BaseModel):
     scope: Literal["run", "next_stage"] = Field(
         default="run", description="For the rest of the run, or for the one stage that is working when it is first read."
     )
+    audience: list[Literal["all", "design", "planning", "build", "tests", "review", "ui_ux", "backend", "database",
+                           "security_reliability", "testing", "documentation", "devops"]] = Field(
+        default_factory=lambda: ["all"],
+        description="Who the note is for: everyone, a group of stages (design, planning, build, tests, review) or one role.",
+    )
 
 
 class RunStatusResponse(BaseModel):

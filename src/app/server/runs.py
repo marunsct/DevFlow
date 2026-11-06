@@ -1184,7 +1184,7 @@ def create_runs_router(
             # resumed, and the owner reads "sent" as "followed" (Initiative AS).
             raise HTTPException(status_code=409, detail="This run is paused. Resume it first, then send the direction.")
         try:
-            return {"run_id": run_id, "note": add(record.repo_root, body.text, user.username, body.scope)}
+            return {"run_id": run_id, "note": add(record.repo_root, body.text, user.username, body.scope, body.audience)}
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 

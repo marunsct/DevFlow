@@ -2980,6 +2980,29 @@
    "SteeringNote": {
     "description": "The owner's direction to a running run, carried by its next model calls.",
     "properties": {
+     "audience": {
+      "description": "Who the note is for: everyone, a group of stages (design, planning, build, tests, review) or one role.",
+      "items": {
+       "enum": [
+        "all",
+        "design",
+        "planning",
+        "build",
+        "tests",
+        "review",
+        "ui_ux",
+        "backend",
+        "database",
+        "security_reliability",
+        "testing",
+        "documentation",
+        "devops"
+       ],
+       "type": "string"
+      },
+      "title": "Audience",
+      "type": "array"
+     },
      "scope": {
       "default": "run",
       "description": "For the rest of the run, or for the one stage that is working when it is first read.",

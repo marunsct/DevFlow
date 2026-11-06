@@ -80,3 +80,27 @@ def test_notes_sent_at_once_are_all_kept(tmp_path):
     kept = steering.notes(tmp_path)
     assert sorted(n["text"] for n in kept) == sorted(f"note {n}" for n in range(30))
     assert len({n["id"] for n in kept}) == 30
+
+
+def test_a_note_for_one_audience_reaches_only_its_stages(tmp_path):
+    """A note meant for the page ("make it dark-themed") reached every call - the suite's writer, the reviewers, the
+    architect - inviting tests and findings the brief never asked for (owner review 2026-11-06)."""
+    steering.add(tmp_path, "Use a dark colour scheme.", "owner", audience=["ui_ux"])
+    steering.add(tmp_path, "Keep each function under 40 lines.", "owner", audience=["build"])
+    steering.add(tmp_path, "Ship by tonight.", "owner")
+
+    def seen(stage):
+        return steering.as_instructions(tmp_path, stage, "run-1")
+
+    assert "dark colour" in seen("specialist_ui_ux_1") and "40 lines" in seen("specialist_ui_ux_1")
+    assert "dark colour" not in seen("specialist_backend_0") and "40 lines" in seen("specialist_backend_0")
+    assert "dark colour" not in seen("acceptance_author_0") and "40 lines" not in seen("acceptance_author_0")
+    assert "Ship by tonight." in seen("acceptance_author_0") and "Ship by tonight." in seen("principal_architect")
+    assert "40 lines" in seen("drafting") and "40 lines" in seen("defect_fix_1_0")
+
+
+def test_an_unknown_audience_is_refused():
+    import pytest
+
+    with pytest.raises(ValueError):
+        steering.add("/nonexistent", "x", "owner", audience=["everyone-ish"])

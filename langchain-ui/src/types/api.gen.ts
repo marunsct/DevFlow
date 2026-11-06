@@ -697,6 +697,8 @@ export interface StartRunRequest {
 
 /** The owner's direction to a running run, carried by its next model calls. */
 export interface SteeringNote {
+  /** Who the note is for: everyone, a group of stages (design, planning, build, tests, review) or one role. */
+  audience?: ("all" | "design" | "planning" | "build" | "tests" | "review" | "ui_ux" | "backend" | "database" | "security_reliability" | "testing" | "documentation" | "devops")[];
   /** For the rest of the run, or for the one stage that is working when it is first read. */
   scope?: "run" | "next_stage";
   text: string;

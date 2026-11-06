@@ -517,7 +517,7 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
 
     agent = create_specialist_agent(
         "testing", model=ctx.model if delivery.fast() else ctx.judgement_model, checkpointer=ctx.checkpointer,
-        repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
+        repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories, writing_the_suite=True,
     )
     def request_for(group: list, note: str = "") -> dict:
         from app.agents.specification_rulings import with_the_rulings

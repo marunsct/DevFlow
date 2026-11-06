@@ -142,5 +142,8 @@ def test_the_specialist_prompt_carries_the_mandate() -> None:
 
     module = inspect.getsource(specialists)
 
-    assert "{TESTABILITY_RULE}" in module
+    from app.agents.testability import TESTABILITY_RULE
+
+    # Every builder's system prompt carries the rule (the suite writer's does not: its request owns no product code).
+    assert TESTABILITY_RULE in specialists._system_prompt("backend")
     assert "describe_stack(stack" in module

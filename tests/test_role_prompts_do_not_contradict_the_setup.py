@@ -48,3 +48,25 @@ def test_the_interface_role_s_test_ban_leaves_a_fix_its_regression_test():
     text = _ROLE_DESCRIPTIONS["ui_ux"]
     assert "Do not write or change test files: the Testing specialist owns them." not in text
     assert "in a work order" in text.lower() and "regression test" in text
+
+
+def test_the_suite_writer_s_system_prompt_agrees_with_its_request():
+    """The suite writer is the testing specialist, whose system prompt said to start the product, to report every
+    failure as a defect and to change the function, not the test - while its request says never to start the
+    product, that every test fails now and that product code is not its own."""
+    from app.agents.specialists import _system_prompt
+    from app.agents.testability import TESTABILITY_RULE
+
+    writing = _system_prompt("testing", writing_the_suite=True)
+    assert "build it, start it, or test it" not in writing
+    assert "Report every failure as a structured defect" not in " ".join(writing.split())
+    assert TESTABILITY_RULE not in writing
+    assert "never start the product" in writing.lower()
+    normal = _system_prompt("testing")
+    assert TESTABILITY_RULE in normal and "start it, or test it" in normal
+
+
+def test_no_role_is_told_it_runs_shell_commands():
+    from app.agents.specialists import _system_prompt
+
+    assert "execute shell commands" not in _system_prompt("backend")

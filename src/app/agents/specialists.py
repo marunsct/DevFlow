@@ -1303,10 +1303,37 @@ _VALIDATION_NOTE = (
 )
 
 
-def _system_prompt(role: SpecialistRole) -> str:
-    """Build the full system prompt for one specialist role."""
+#: The testing role's sentence about reporting failures, which a suite writer must not follow: every test fails before
+#: anything is built, and that is right.
+_REPORT_EVERY_FAILURE = ("Report every failure as a structured defect in the `defects` field, naming the specialist role "
+                         "that must fix it, so the workflow can track and route it.")
+#: What a suite writer proves, in place of building, starting or testing its own work.
+_PROVE_THE_SUITE = (
+    "- Prove the suite by running it with its own command, and record that command in\n"
+    "  `verification` with its exit code. The suite's setup starts the product; never start the product\n"
+    "  yourself. Before the product is built every test fails, and that is right: it is no defect.\n"
+)
+_PROVE_THE_WORK = (
+    "- Prove your work by running it. Write the code, then use `run_terminal_command`\n"
+    "  to build it, start it, or test it, and record every command you ran in\n"
+    "  `verification` with its exit code. A task reported complete with an empty\n"
+    "  `verification` list is a task nobody checked.\n"
+)
+
+
+def _system_prompt(role: SpecialistRole, writing_the_suite: bool = False) -> str:
+    """Build the full system prompt for one specialist role.
+
+    `writing_the_suite`: the testing role writing the acceptance suite. Its request says never start the product, that
+    every test fails now and that product code is not its own; the role's system prompt said to start the product,
+    report every failure as a defect and change the function, not the test. Those three are left out for it.
+    """
     role_description = _ROLE_DESCRIPTIONS[role]
+    if writing_the_suite:
+        role_description = " ".join(role_description.split()).replace(_REPORT_EVERY_FAILURE, "").rstrip()
     validation = _VALIDATION_NOTE if role == "testing" else ""
+    prove = _PROVE_THE_SUITE if writing_the_suite else _PROVE_THE_WORK
+    testability = "" if writing_the_suite else TESTABILITY_RULE
     return f"""{role_description}
 
 Responsibilities:
@@ -1314,11 +1341,7 @@ Responsibilities:
   expand scope on your own initiative.
 - Report every changed file, notable decision, added or updated test, added or
   updated documentation, risk, and blocker.
-- Prove your work by running it. Write the code, then use `run_terminal_command`
-  to build it, start it, or test it, and record every command you ran in
-  `verification` with its exit code. A task reported complete with an empty
-  `verification` list is a task nobody checked.
-{validation}- If a command's output was truncated, call `read_command_output` with the
+{prove}{validation}- If a command's output was truncated, call `read_command_output` with the
   reference in the truncation pointer to see the part that was cut. The real
   error is usually there.
 - If you cannot verify something (a test, a security property), say so as a
@@ -1333,7 +1356,7 @@ Beginner documentation requirement:
   your `documentation` field or inline comments you propose.
 
 Constraints:
-- You may use the `run_terminal_command` tool to execute shell commands, build code, install dependencies, and perform end-to-end development.
+- You may use the `run_terminal_command` tool to run programs: build code, install dependencies, and perform end-to-end development.
 - There is no shell, so `cd`, `&&`, `|` and `$(...)` do not work and `cd` is not
   a program you can run. To act on a subdirectory, pass `working_directory` -
   for a project directory named `myapp`, run `["<program>", "<args>"]` with
@@ -1344,7 +1367,7 @@ Constraints:
   project that disagrees with the real one.
 - Keep the output structured and concise.
 
-{TESTABILITY_RULE}
+{testability}
 
 {TESTING_DEPENDENCY_RULE}
 
@@ -1361,6 +1384,7 @@ def create_specialist_agent(
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | Path | None = None,
         allow_subdirectories: bool = True,
+    writing_the_suite: bool = False,
 ) -> Any:
     """Create one specialist role worker.
 
@@ -1415,7 +1439,7 @@ def create_specialist_agent(
     return create_role_agent(
         name=f"specialist_{role}",
         stage=_STAGE,
-        system_prompt=_system_prompt(role),
+        system_prompt=_system_prompt(role, writing_the_suite=writing_the_suite),
         response_format=AGENT_ANSWER,
         model=model,
         checkpointer=checkpointer,

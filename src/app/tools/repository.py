@@ -6835,7 +6835,10 @@ def write_approved_artifact(
         # with ENOENT, and the fix stage wrote a second copy of the page there
         # and a test asserting the copy exists.
         pinned_inside = pinned_project_directory(artifact_root)
-        if pinned_inside and pinned_inside == relative_parts[0]:
+        # Unless that inner directory is real: a package named like its project (`bookmarks/bookmarks/`, made by the
+        # setup). Measured on two full-stack runs: its modules were refused and the builder sent to the project root.
+        real_inner = (Path(artifact_root) / relative_parts[0] / relative_parts[1]).is_dir()
+        if pinned_inside and pinned_inside == relative_parts[0] and not real_inner:
             real = "/".join(relative_parts[1:])
             raise RepositoryToolError(
                 f"Refusing to write '{relative_path}': that is the project directory "

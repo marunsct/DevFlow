@@ -26,3 +26,12 @@ def test_the_part_writing_the_criteria_is_not():
 
 def test_the_rule_avoids_the_banned_words():
     assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", parts.CITE_NO_CRITERION, re.I)
+
+
+def test_every_part_is_given_the_one_source_for_limits():
+    """The architect's rule "state a needed limit once, in `domain_model`" was in its own prompt only, while in fast
+    delivery `domain_model` and the sections citing limits are written by part writers that never saw it."""
+    from app.agents.principal_architect import ONE_SOURCE_FOR_LIMITS
+
+    for names in parts.PARTS:
+        assert ONE_SOURCE_FOR_LIMITS.strip() in parts.part_request(_spec(), names, "")

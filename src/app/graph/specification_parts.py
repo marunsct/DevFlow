@@ -83,6 +83,12 @@ CITE_NO_CRITERION = (
 )
 
 
+def _one_source_for_limits() -> str:
+    from app.agents.principal_architect import ONE_SOURCE_FOR_LIMITS
+
+    return ONE_SOURCE_FOR_LIMITS.strip()
+
+
 def part_request(specification: Any, names: tuple[str, ...], context: str) -> str:
     """What one part's call is asked."""
     core = _sections_as_json(specification, CORE)
@@ -94,6 +100,8 @@ def part_request(specification: Any, names: tuple[str, ...], context: str) -> st
         "--- The specification's core ---\n" + json.dumps(core, indent=1, default=str),
         "--- The sections to write ---\n" + _described(type(specification), names),
         "" if _CRITERIA_SECTIONS & set(names) else CITE_NO_CRITERION,
+        # The architect's own rule for limits: the part writers write `domain_model` and the sections that cite it.
+        _one_source_for_limits(),
         "Reply with one JSON object and nothing else. Its keys are exactly: " + ", ".join(names)
         + ". Each value is a list of strings, one entry per item, each entry complete on its own.",
     ) if part)

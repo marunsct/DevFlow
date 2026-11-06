@@ -261,6 +261,19 @@ def _with_dashes_kept(text: str) -> str:
     return re.sub(r"\s*[\u2014\u2013]\s*", " - ", str(text or ""))
 
 
+#: The fewest words a quote before a dash must have to stand on its own as the standard quoted.
+LEAST_QUOTED_WORDS = 4
+
+
+def _a_run_held(words: list[str], the_standard: str) -> bool:
+    """Whether `WORDS_IN_A_ROW` of `words` in order (all of them when fewer) are in the plain standard."""
+    needed = min(WORDS_IN_A_ROW, len(words))
+    return any(
+        f" {' '.join(words[at:at + needed])}".rstrip(".;") in the_standard
+        for at in range(len(words) - needed + 1)
+    )
+
+
 def _the_standard_holds(quoted: str, standard: str) -> bool:
     """Whether most of a quote - by its words - is sentences with a long run of words in the standard, marks aside.
 
@@ -270,6 +283,13 @@ def _the_standard_holds(quoted: str, standard: str) -> bool:
     "standard" was a sentence of the instructions.
     """
     the_standard = " " + " ".join(word.strip("'") for word in _plainly(standard).split()) + " "
+    # A quote, a dash, then the judge's reason: the reason is not offered as the standard. Measured on one run: a
+    # criterion quoted verbatim, then a longer "- the test creates two but asserts three", was refused twice and the
+    # run re-planned a right product. The quoted half must be the standard's own words, at least four of them.
+    lead, dash, _ = _plainly(_with_dashes_kept(quoted)).partition(" - ")
+    lead_words = [word.strip("'") for word in lead.split() if word.strip("'")]
+    if dash and len(lead_words) >= LEAST_QUOTED_WORDS and _a_run_held(lead_words, the_standard):
+        return True
     held = total = 0
     # A quoted passage and a gloss after a dash are parts of their own: `"when it is empty, all are shown" - meaning
     # every bookmark` was one 12-word sentence needing 8 words in a row, though its quoted half was verbatim.
@@ -279,11 +299,7 @@ def _the_standard_holds(quoted: str, standard: str) -> bool:
         if not words:
             continue
         total += len(words)
-        needed = min(WORDS_IN_A_ROW, len(words))
-        if any(
-            f" {' '.join(words[at:at + needed])}".rstrip(".;") in the_standard
-            for at in range(len(words) - needed + 1)
-        ):
+        if _a_run_held(words, the_standard):
             held += len(words)
     # Most of the quote must be the standard's own sentences; a line of the judge's own beside them does not refuse
     # it. Measured on one run: three right rulings in a row, each with one summary line, were refused.

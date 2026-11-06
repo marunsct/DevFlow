@@ -80,6 +80,19 @@ Each module's `ON_BY_DEFAULT` turns its items on for the before/after runs.
 ## The last three runs
 See **Last runs** above (notes-api-hono, hidden tests by `loop.sh score`).
 No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh product`).
+## Sweep (owner 11-06 09:30: review every angle unasked; one item per cycle between checks)
+
+| Angle | State |
+|---|---|
+| Operator steps | done 09:40: `loop.sh ship-live` (login, pause all, deploy, resume, churn check; never grows the pool) |
+| Technical lead (9% of model time, 91% reasoning) | next |
+| Prompts per role: conflicting or stale rules | queued |
+| Idle stacks: one pack verified per cycle (`verify_packs.py`) | queued |
+| Code changed 11-05/06 (LF.591-609) read for new bugs | queued |
+| Measure: LF.580/591 and the 13 measured checks settled from `loop.sh impact` | after each finished run |
+| Output tokens x1.44 after LF.583/584 | queued |
+| Harness security and UI | queued |
+
 ## Next actions
 **The plan (owner 2026-10-28 ~14:30 JST: deepest review + research + one recommendation plan):** Claude Doc "Harness Deep Review and Recommendation Plan", https://claude.ai/artifact/QLdzmEBUmvBwaX8WYee385 - 24 items in 4 phases (1 demonstrated bugs; 2 the two cost centres: agent-loop fixers 26%/34% and QA re-authoring 25%/37% of time/tokens, cache share 0.0; 3 the hidden score's ceiling: contract coverage, executable suite oracle, evidence-grounded dispute; 4 the improvement loop measures itself, then B22b). Work it in order between audits, one item per LF row; the B/F list below stays as the index of names.
 **Plan status 2026-10-30 21:45 JST:** Phase 2 is built and deployed (dfd680d), all new behaviour OFF: 9 (AGENT_LOOP_FIX_LIMITS, SURRENDER_TO_REWRITE), 10 part 2 (NAMED_TEST_REWRITE), 11 (KEPT_FIX_CANDIDATES; break repair not built), 12 (TESTS_ONLY_WRITES), 13 b/c/d (MUTANT_CHECK_IN_THE_FIX_STAGE, MUTATION_TEST_RETENTION, EQUIVALENT_MUTANTS_REMEMBERED; 13a already covered by the 16-call cap), 14 (cache report in `loop.sh status` ON; STABLE_STAGE_PREFIX off), 15 (CO_DEFECT_FAILURES_IN_REWRITES, REPEATED_REWRITE_PROMPT_STOP); rows LF.458-469. Done earlier: 1, 2, 4, 5, 6, 7, 8, 21; partly: 3, 17 (at a round), 19, 20, 23. Not started: 16, 18, 22, 24. Dates: Phase 3 rest (16, 17 at lock, 18, 20) by 11-04, 22 by 11-05, 24 last by 11-08; measure each switch on 2-3 runs from 11-01, all measured about 11-09. Update 11-01 03:20 JST: 16, 17, 18, 20, 22 deployed, off (LF.479-489), none measured; live LF.490-498 (false suite findings; a dying service reaches the fixer; a folder name no longer merges defects); contradiction group ON as a measured arm from 11-01 09:50 JST (LF.497, LF.499; baseline the fix-loop runs); off: LF.494, LF.500. Owner's login sessions ending 10-31 11:11 and 14:51 were our dry run's `kill(-1)` (LF.480, fixed before merge); the 10-31 09:46 hard reset is unexplained, `restart_watch.sh` records.

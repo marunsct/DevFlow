@@ -17,6 +17,7 @@
 #   scripts/loop/loop.sh effects gate [N]       each switch on: runs on, runs fired, KPI movement against its off arm, candidates to park after N runs (default 3); report only
 #   scripts/loop/loop.sh lessons [distil <run>] the lessons awaiting the owner, or propose a run's (LESSON_DISTILLER)
 #   scripts/loop/loop.sh patterns [since]     across every run: where replies run out, fix outcome by bundle size, failures that recur
+#   scripts/loop/loop.sh ship-live           deploy into the live runs in one checked step: login, pause all, deploy, resume, churn check (ship_live.sh)
 #   scripts/loop/loop.sh impact [N]          whether the runs after each of the last N changes got worse, each against its own family (impact.py)
 #   scripts/loop/loop.sh timing [run-id..]   where the wall-clock time went: model vs tools, phases, reasoning share (run_timing.py)
 #   scripts/loop/loop.sh kpi [run-id]        the run's KPIs as JSON (data/kpi/<run>.json), a row of data/kpi/ledger.csv,
@@ -378,6 +379,7 @@ documents)
   rm -rf "$copy"
   ;;
 lessons) shift; in_worker lessons.py "${@:-list}" ;;
+ship-live) "$HERE/ship_live.sh" ;;
 impact) shift; "$PY" "$HERE/impact.py" data/kpi/ledger.csv "${1:-12}" ;;
 timing) shift; in_worker run_timing.py "${@:-$(current)}" ;;
 kpi)

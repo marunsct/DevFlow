@@ -44,3 +44,17 @@ def test_configuration_and_test_runners_are_not_shown():
     shown = " ".join(line for line in lines if " does now" in line)
     assert "serve-acceptance.mjs" in shown
     assert "playwright.config.js" not in shown and "unit-tests.mjs" not in shown and "vite.config.ts" not in shown
+
+
+def test_the_route_the_suite_waits_on_is_named():
+    """Measured on two full-stack runs: the builders rewrote the service without the setup's `/api/health`, the suite
+    waited on it, and the first test round found "the product does not start" - a fixer put the route back."""
+    lines = layout_facts(pack_named("fullstack-page-fastapi"), "bookmarks", "bookmarks")
+    said = [line for line in lines if "waits until" in line]
+    assert said and "`GET /api/health`" in said[0] and "keep" in said[0]
+    assert not BANNED.search(said[0])
+
+
+def test_a_suite_that_waits_on_the_page_itself_names_no_route():
+    lines = layout_facts(pack_named("browser-javascript"), "todo", None)
+    assert not [line for line in lines if "waits until" in line]

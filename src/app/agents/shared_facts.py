@@ -77,6 +77,12 @@ def layout_facts(pack: Any, project: str, package: str | None) -> list[str]:
     if kept:
         lines.append("- Kept by the harness, not the product's to write: "
                      + ", ".join(f"`{prefix}{path}`" for path in kept[:8]) + ".")
+    ready = _the_route_the_suite_waits_on(pack)
+    if ready:
+        # Measured on two full-stack runs: the builders rewrote the service without the setup's own readiness route,
+        # the suite waited on it, and the first test round found "the product does not start".
+        lines.append(f"- The acceptance suite starts the product and waits until `GET {ready}` answers before any test "
+                     "runs: keep that route answering 200 - the setup's own code has it - whatever else is rewritten.")
     for path in _kept_code_to_show(pack, kept):
         code = _code_lines(pack.filled(str(pack.files[path]), project, "", package))
         lines.append(f"- What `{prefix}{path}` does now, in full (comments left out):\n```\n" + "\n".join(code) + "\n```")
@@ -105,6 +111,18 @@ KEPT_CODE_LINES = 20
 _CODE_SUFFIXES = (".ts", ".mts", ".js", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".kt", ".cs", ".rb", ".php")
 _NOT_PRODUCT_CODE = re.compile(r"config|setup|conftest|test|spec|/acceptance/|^acceptance/", re.I)
 _A_COMMENT = re.compile(r"^\s*(?://|#|/\*|\*)")
+
+
+_THE_READY_URL = re.compile(r"url:\s*`https?://[^`/]*\$\{port\}(/[^`\s]+)`")
+
+
+def _the_route_the_suite_waits_on(pack: Any) -> str:
+    """The path the kept test configuration waits on before the suite runs, when it is not the page itself."""
+    for path in getattr(pack, "kept_files", ()) or ():
+        found = _THE_READY_URL.search(str((getattr(pack, "files", None) or {}).get(path) or ""))
+        if found and found.group(1) != "/":
+            return found.group(1)
+    return ""
 
 
 def _code_lines(text: str) -> list[str]:

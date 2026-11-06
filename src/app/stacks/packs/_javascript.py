@@ -677,6 +677,9 @@ LOCATORS_NOBODY_SEES = (
     r"\bgetByTestId\s*\(",
     r"""\blocator\s*\(\s*(['"`])(?![a-z_-]+=)(?!\s*(?:meta|link|script|style|head|html|title)\b)"""
     r"""(?:(?!\1).)*?(?:\[\s*[\w-]+\s*[~|^$*]?=|[.#][A-Za-z_-])""",
+    # A control found by its tag alone - any link, any field - is found without the name a person reads. Measured on
+    # one run: `listItem.locator('a')` passed a page that linked the URL where the brief linked the title.
+    r"""\blocator\s*\(\s*(['"`])\s*(?:a|button|input|select|textarea)(?:\[[\w-]+\])?\s*\1\s*\)""",
 )
 
 #: Locator methods from other libraries (such as Testing Library) that do not

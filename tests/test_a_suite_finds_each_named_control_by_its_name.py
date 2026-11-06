@@ -436,3 +436,40 @@ class TestARoleLookupOfANamedControlIsExact:
             "  await page.getByRole('button', { name: 'Pinned only', exact: true }).click();\n"
             "});\n")
         assert suite.controls_never_found_by_name(tmp_path, BRIEF) == []
+
+
+class TestAControlFoundByItsTagAlone:
+    """Measured on one run: the brief showed each record's title as a link to its URL; the page linked the URL and
+    showed the title as plain text, and the locked suite passed with `listItem.locator('a')` - any link at all - while
+    the benchmark's hidden test, finding the link by the title, failed. Six of 79 stored suites found a link so."""
+
+    @pytest.mark.parametrize("line", [
+        "const link = listItem.locator('a');",
+        "await expect(item.locator(\"a\")).toHaveAttribute('href', 'https://x.test');",
+        "await page.locator('button').click();",
+        "await page.locator(`input`).fill('x');",
+        "await row.locator('a[href]').click();",
+    ])
+    def test_is_named(self, tmp_path, line) -> None:
+        acceptance = _scaffolded(tmp_path)
+        (acceptance / "notes.spec.js").write_text(
+            f"test('[AC-1] keeps', async ({{ page }}) => {{\n  {line}\n}});\n"
+        )
+
+        [problem] = suite.locators_nobody_sees(tmp_path)
+
+        assert "line(s) 2" in problem
+
+    @pytest.mark.parametrize("line", [
+        "await expect(item.getByRole('link', { name: 'Docs', exact: true })).toHaveAttribute('href', 'x');",
+        "await page.locator('li', { hasText: 'x' }).count();",
+        "await page.locator('body').press('Enter');",
+        "await page.locator('a, b').count();",
+    ])
+    def test_a_lookup_by_name_or_of_no_control_is_not(self, tmp_path, line) -> None:
+        acceptance = _scaffolded(tmp_path)
+        (acceptance / "notes.spec.js").write_text(
+            f"test('[AC-1] keeps', async ({{ page }}) => {{\n  {line}\n}});\n"
+        )
+
+        assert suite.locators_nobody_sees(tmp_path) == []

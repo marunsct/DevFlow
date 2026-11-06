@@ -39,3 +39,17 @@ def test_the_brief_names_it_as_the_criterion_s_tests(tmp_path):
     brief = specialists.build_defect_fix_request("[AC-5] Delete a note", "run it", "Delete a note", "KeyError",
                                                  [], True, str(tmp_path), observed=seen)["messages"][0]["content"]
     assert "--- What its failing tests printed ---" in brief and "last failing command" not in brief
+
+
+def test_what_the_page_reported_when_it_loaded_is_part_of_the_evidence(tmp_path, monkeypatch):
+    """Measured on one run: the page's own script never loaded ("Failed to load module script ... MIME type of
+    text/css") - recorded by the page check - and six fixers of the failing page tests, never shown it, each guessed."""
+    _with_a_result(tmp_path)
+    (tmp_path / "app" / "test-results").mkdir(parents=True)
+    (tmp_path / "app" / "test-results" / "page-load.json").write_text(json.dumps({"problems": [
+        "console error: Failed to load module script: the server responded with a MIME type of \"text/css\"."]}))
+    monkeypatch.setattr(suite, "_the_project_dir", lambda root: tmp_path / "app")
+
+    seen = suite.what_the_criteria_s_tests_printed(tmp_path, ("AC-5",))
+
+    assert "Failed to load module script" in seen["output"] and "page" in seen["output"]

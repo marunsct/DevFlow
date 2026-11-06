@@ -4491,6 +4491,25 @@ def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     )
 
 
+def _the_project_dir(repo_root: str | Path) -> Path | None:
+    found = location(repo_root)
+    return (Path(repo_root) / found[0]) if found and found[0] else None
+
+
+def page_load_problems(repo_root: str | Path) -> list[str]:
+    """What the page itself reported when the page check loaded it - console errors, uncaught errors; [] for none."""
+    try:
+        from app.stacks.packs._javascript import PAGE_LOAD_REPORT
+
+        project = _the_project_dir(repo_root)
+        if project is None:
+            return []
+        data = json.loads((project / PAGE_LOAD_REPORT).read_text(encoding="utf-8"))
+        return [str(item) for item in (data.get("problems") or []) if str(item).strip()][:8]
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
 def what_the_criteria_s_tests_printed(repo_root: str | Path, tags: Any) -> dict[str, str] | None:
     """The failing tests of the criteria `tags` names, with what each printed, from the suite's last run; else None.
 
@@ -4509,6 +4528,12 @@ def what_the_criteria_s_tests_printed(repo_root: str | Path, tags: Any) -> dict[
         return None
     names = list(dict.fromkeys(str(t.get("name") or "") for t in failing))
     output = "\n\n".join(f"{t.get('name')}:\n{t.get('message') or '(no message)'}" for t in failing)
+    # What the page said when it loaded. Measured on one run: its own script never loaded ("Failed to load module
+    # script ... MIME type of text/css"), the page check recorded it, and six fixers of the failing page tests,
+    # never shown it, each guessed at why a link was not visible.
+    reported = page_load_problems(repo_root)
+    if reported:
+        output += "\n\nWhen the page itself loaded, it reported:\n" + "\n".join(f"- {item}" for item in reported)
     return {"command": "the acceptance suite's last run: " + ", ".join(names), "output": output,
             "title": "What its failing tests printed"}
 

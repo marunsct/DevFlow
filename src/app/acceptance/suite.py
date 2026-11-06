@@ -3943,6 +3943,88 @@ def _more_came_back(message: str, count: str | None) -> bool:
     return any(int(wanted) == int(count) and int(got) > int(wanted) for wanted, got in _EXPECTED_A_COUNT.findall(plain))
 
 
+#: A page's list counted exactly: `expect(page.getByRole('listitem')...).toHaveCount(2)`, or through a name bound to it.
+_A_LIST_ITEMS = re.compile(r"""getByRole\(\s*['"]listitem['"]\s*\)(?P<narrowed>(?:\s*\.\s*filter\(\s*\{[^}]*\}\s*\))*)""")
+_A_PAGE_COUNT = re.compile(r"""expect\(\s*(?P<read>[^;]*?)\s*\)\s*\.\s*toHaveCount\(\s*(?P<count>\d+)\s*\)""", re.S)
+_HAS_TEXT = re.compile(r"""hasText:\s*(['"])((?:(?!\1).)+)\1""")
+_A_FILTER_TYPED = re.compile(
+    r"""getBy(?:Label|Role|Placeholder)\([^)]*(?:filter|search)[^)]*\)\s*\.\s*fill\(\s*(['"`])((?:(?!\1).)*)\1""", re.I)
+
+
+def page_tests_that_count_a_shared_list(repo_root: str | Path, result: AcceptanceResult | None = None) -> list[str]:
+    """Page tests that count every item of a list, or the items a value other tests also give, on a shared service.
+
+    Measured on three full-stack runs: a test expected `getByRole('listitem')` to hold exactly 2 while every test adds
+    records to the one service the suite starts; another narrowed the list by the tag "A" that five tests gave their
+    records and expected exactly 2. `tests_that_count_a_list_other_tests_write_to` reads API routes only, so both were
+    locked and charged to the product. Same rules as that check: before results, the shape; once locked, a failing
+    test only when its own message shows more came back than it expected; a passing test never.
+    """
+    from app.acceptance.requests import _A_SHARED_SERVICE  # noqa: PLC0415 - requests imports this module
+
+    found = contract.the_pack(repo_root)
+    if found is None or getattr(found[0], "kind", "") != "fullstack" or "fullstack" not in _A_SHARED_SERVICE:
+        return []
+    known = result is not None and result.ran and bool(result.report.tests)
+    failing = {t.name: t.message for t in result.report.tests if t.outcome == "failed"} if known else {}
+    needs_proof = known and (is_locked(repo_root) or any(t.outcome == "passed" for t in result.report.tests))
+    root = Path(repo_root)
+    problems: list[str] = []
+    for path in suite_files(repo_root):
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"):
+            continue
+        try:
+            text = _A_COMMENT_LINE.sub("", path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+        hooks = "\n".join(text[m.start():m.start() + _MOST_OF_A_HOOK] for m in _A_HOOK.finditer(text))
+        if re.search(_A_CLEARING_CALL, hooks, re.I) or re.search(_DELETES_IN_A_LOOP, hooks, re.I):
+            continue
+        starts = [m.start() for m in _A_TEST_DECLARED.finditer(text)]
+        blocks = [(start, text[start:starts[at + 1] if at + 1 < len(starts) else len(text)])
+                  for at, start in enumerate(starts)]
+        for at, (start, block) in enumerate(blocks):
+            others = "\n".join(b for n, (_, b) in enumerate(blocks) if n != at)
+            bound = {m.group(1): m.group(2) for m in re.finditer(
+                r"""(?:const|let|var)\s+(\w+)\s*=\s*(page\s*\.\s*getByRole\(\s*['"]listitem['"]\s*\)[^;\n]*)""", block)}
+            titled = _A_DECLARED_TITLE.match(block)
+            title = titled.group(1).strip() if titled else ""
+            for count in _A_PAGE_COUNT.finditer(block):
+                if int(count.group("count")) < 1:
+                    continue
+                read = count.group("read").strip()
+                items = _A_LIST_ITEMS.search(bound.get(read, read))
+                if items is None:
+                    continue
+                before = block[:count.start()]
+                # A test that empties the list first knows what it holds, as the API check allows.
+                if re.search(_A_CLEARING_CALL, before, re.I) or re.search(_DELETES_IN_A_LOOP, before, re.I):
+                    continue
+                values = [m.group(2) for m in _HAS_TEXT.finditer(items.group("narrowed"))]
+                # A list narrowed by typing into the page's filter: the value last typed there, if any is left.
+                typed = [m.group(2) for m in _A_FILTER_TYPED.finditer(before)]
+                if typed and typed[-1].strip():
+                    values.append(typed[-1])
+                shared = [v for v in values if re.search(rf"""(['"`]){re.escape(v)}\1""", others)]
+                if values and not shared:
+                    continue
+                if known:
+                    messages = [m for name, m in failing.items() if title and title in name]
+                    if not messages or (needs_proof and not any(_more_came_back(m, count.group("count")) for m in messages)):
+                        continue
+                line = text.count("\n", 0, start + count.start()) + 1
+                what = (f"the list's items narrowed by '{shared[0]}', a value other tests give their records too"
+                        if shared else "every item of the page's list")
+                problems.append(
+                    f"`{path.relative_to(root).as_posix()}` line {line}: `{title}` counts {what} "
+                    f"(`toHaveCount({count.group('count')})`), but the suite starts one service for all its tests, so "
+                    "other tests' records are in that list as well and the count holds on no product once they run. "
+                    "Count only this test's own records: give them a title or value no other test uses, and narrow "
+                    "the list by it."
+                )
+    return problems[:6]
+
+
 def tests_that_count_a_list_other_tests_write_to(repo_root: str | Path, result: AcceptanceResult | None = None) -> list[str]:
     """Tests that assert an exact length or an empty list on a route other tests of the suite also write to.
 
@@ -4876,6 +4958,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *tests_that_need_what_they_never_made(repo_root, result),
         *tests_that_assert_a_kept_file_s_text(repo_root, result),
         *tests_that_count_a_list_other_tests_write_to(repo_root, result),
+        *page_tests_that_count_a_shared_list(repo_root, result),
         *python_tests_that_count_a_list_other_tests_write_to(repo_root, result),
         *tests_that_count_every_row_of_a_shared_table(repo_root, result),
         *the_suite_failed_in_its_own_words(repo_root, result),

@@ -360,6 +360,35 @@ FIXER_SPECIFICATION_CHARACTERS = 8_000
 FIXER_DOCUMENTS = ("docs/technical_specification.md", "docs/acceptance_criteria.md")
 
 
+#: How a request quotes sections of the specification (`technical_lead._the_contracts`), and each quoted section.
+_QUOTED_SPECIFICATION = re.compile(r"^--- From the approved technical specification\b[^\n]*---\n(.*?)(?=^--- |\Z)", re.M | re.S)
+_QUOTED_HEADING = re.compile(r"^([A-Z][\w ()/-]*):$", re.M)
+
+
+def _without_the_quoted_sections(document: str, request: str) -> tuple[str, list[str]]:
+    """`document` less the `## ` sections `request` quotes under the same heading, and their names.
+
+    Measured on three runs: the technical lead's request quoted the specification's contract sections (~31k
+    characters) while its memory held the whole specification again.
+    """
+    found = _QUOTED_SPECIFICATION.search(request or "")
+    if not found:
+        return document, []
+    quoted = {" ".join(h.lower().split()) for h in _QUOTED_HEADING.findall(found.group(1))}
+    kept: list[str] = []
+    dropped: list[str] = []
+    skipping = False
+    for line in document.splitlines(keepends=True):
+        if line.startswith("## "):
+            name = line[3:].strip()
+            skipping = " ".join(name.lower().split()) in quoted
+            if skipping:
+                dropped.append(name)
+        if not skipping:
+            kept.append(line)
+    return "".join(kept), dropped
+
+
 def render(repo_root: str | Path, budget_characters: int, focus: str = "",
            for_a_fixer: bool = False) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
@@ -421,6 +450,10 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
             # back and the memory now stands in for it.
             held_back.append(f"{path} ({', '.join(later[path])})")
             continue
+        if path.endswith("technical_specification.md"):
+            text, quoted = _without_the_quoted_sections(text, focus)
+            if quoted:
+                text += ("\n(Not repeated here because this request quotes them in full: " + ", ".join(quoted) + ".)\n")
         block = f"=== {path} ===\n{text.rstrip()}\n"
         # A small product's documents are held as a digest sooner (`STABLE_STAGE_PREFIX`, off until measured).
         largest = (shorter_documents or LARGEST_FILE_CHARACTERS) if path.startswith("docs/") else LARGEST_FILE_CHARACTERS

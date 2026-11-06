@@ -38,3 +38,30 @@ def test_other_stages_keep_the_documents(tmp_path):
     root = _project(tmp_path)
     text, held = project_memory.render(root, 200_000, focus="")
     assert "docs/sprint_plan.md" in held
+
+
+QUOTED = ("Plan the sprint.\n\n--- From the approved technical specification: the contracts your work orders copy from "
+          "(/docs/technical_specification.md has the rest) ---\nComponent boundaries:\n- app.py serves the API\n\n"
+          "API and event contracts:\n- POST /notes -> 201\n\n--- Next part ---\nmore\n")
+DOC = ("# Technical specification\n\n## Product Scope\nNotes.\n\n## Component Boundaries\n- app.py serves the API\n"
+       + ("x " * 3000) + "\n\n## API and Event Contracts\n- POST /notes -> 201\n" + ("y " * 3000)
+       + "\n\n## Data Contracts\nA note is {id, title}.\n\n## Open Questions\nNone.\n")
+
+
+def test_sections_the_request_quotes_are_not_held_twice(tmp_path):
+    """Measured on three runs: the technical lead's request quoted the specification's contract sections (~31k
+    characters) while its memory held the whole specification again."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "technical_specification.md").write_text(DOC)
+    text, _ = project_memory.render(tmp_path, 400_000, focus=QUOTED)
+    assert "## Component Boundaries" not in text and "x x x" not in text and "y y y" not in text
+    assert "## Data Contracts" in text and "## Open Questions" in text
+    assert "Component Boundaries" in text  # named as quoted in the request
+    whole, _ = project_memory.render(tmp_path, 400_000, focus="Plan the sprint.")
+    assert "x x x" in whole
+
+
+def test_the_lead_s_quote_uses_the_document_s_own_headings():
+    from app.agents import technical_lead
+
+    assert ("api_and_event_contracts", "API and event contracts") in technical_lead._CONTRACT_SECTIONS

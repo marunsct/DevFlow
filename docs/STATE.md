@@ -80,18 +80,8 @@ Each module's `ON_BY_DEFAULT` turns its items on for the before/after runs.
 ## The last three runs
 See **Last runs** above (notes-api-hono, hidden tests by `loop.sh score`).
 No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh product`).
-## Sweep (owner 11-06 09:30: review every angle unasked; one item per cycle between checks)
-
-| Angle | State |
-|---|---|
-| Operator steps | done 09:40: `loop.sh ship-live` (login, pause all, deploy, resume, churn check; never grows the pool) |
-| Technical lead (9% of model time, 91% reasoning) | measured 09:50: each planning call opens on 200-240k characters and reasons ~80k; the request quotes the specification's contract sections (~31k) while the memory holds the whole specification (53-111k) - the quote is a duplicate; the harness's kept test-setup files (44k `test-setup.mjs`) fill its memory. Next: cut the quoted block when the memory holds the whole specification (pointer by section), and leave kept setup files out of planning stages' memory |
-| Prompts per role: conflicting or stale rules | queued |
-| Idle stacks: one pack verified per cycle (`verify_packs.py`) | queued |
-| Code changed 11-05/06 (LF.591-609) read for new bugs | queued |
-| Measure: LF.580/591 and the 13 measured checks settled from `loop.sh impact` | after each finished run |
-| Output tokens x1.44 after LF.583/584 | queued |
-| Harness security and UI | queued |
+## Sweep (owner 11-06 09:30: every angle unasked; one item per cycle)
+Done: operator steps (`loop.sh ship-live`), technical lead (quoted specification sections not held twice, LF.610). Queued: kept setup files out of planning memory; prompts per role (conflicting/stale rules); one idle stack per cycle (`verify_packs.py`); LF.591-610 code re-read for bugs; measure LF.580/591 and the 13 measured checks from `loop.sh impact` after each finished run; output tokens x1.44 after LF.583/584; harness security and UI.
 
 ## Next actions
 **The plan (owner 2026-10-28 ~14:30 JST: deepest review + research + one recommendation plan):** Claude Doc "Harness Deep Review and Recommendation Plan", https://claude.ai/artifact/QLdzmEBUmvBwaX8WYee385 - 24 items in 4 phases (1 demonstrated bugs; 2 the two cost centres: agent-loop fixers 26%/34% and QA re-authoring 25%/37% of time/tokens, cache share 0.0; 3 the hidden score's ceiling: contract coverage, executable suite oracle, evidence-grounded dispute; 4 the improvement loop measures itself, then B22b). Work it in order between audits, one item per LF row; the B/F list below stays as the index of names.
@@ -99,12 +89,9 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
 **Backlog, worked between audits without waiting for the owner (owner 2026-10-27 23:30 JST).** Each item: own switch, test proven failing on old code, ship, deploy at a boundary, measure on the next runs, record the result here. Source: deep review 2026-10-26 (F1-F11, Harness Product Review doc) and the end-of-run reviews.
 - B1 **F3** [built LF.337, measuring] one last single-call rewrite aimed at each deferred criterion before release (4 of 5 false acceptances shipped a deferred criterion). Measure: deferred criteria at release, hidden score.
 - B2 **F7** [built LF.338, measuring] an edit anchor that matches once after whitespace normalisation is applied; several matches plus a line hint, applied there. Measure: edit refusals per run.
-- B3 **F9** [built LF.339] each fix attempt records a fingerprint and a 300-character summary of what its fixer was shown. Measure: the ledger can answer "what changed between tries".
 - B4 **F2** [mostly in place: rewrite-first, anchored replies, same-file bundles (cap 2, measured), closed-by-measurement; remaining - naming files for suite defects - only on measured need] defects localised to one file go to one fixer together; an anchored edit before a whole-file rewrite. Measure: fix stages and reverts per run.
-- B5 **F1c** [covered by the static fixture checks LF.289/300/302/328/329/333; revisit if a false-red round recurs] at lock, a harness probe of the contract (POST then GET); a suite failing every write while the probe succeeds is suspect and goes to QA before any fixer. Measure: false-red rounds.
 - B6 [held: measure LF.330/331/336 first] route handler of the wrong type (TS2769 on a route registration) refused at the write (three crash-at-start runs today).
 - B7 [built LF.340, measuring] release contract check reads "A or B" statuses and probes `/x/:id` routes after creating one.
-- B8 [built LF.343, measuring] a check that knows the exact fix hands QA the replacement line.
 - B9 [built LF.341, measuring] a fixer's "cannot import X" claim is checked by the harness (`import('X')`) and answered.
 - B10 F4 `reasoning_effort` per stage (arm); F5 plan role check; F6 skeleton tests from the specification; F8 API section once per stage; F10 memory/orphan check in `loop.sh ready`; F11 page-selector contract (browser family).
 - B11 [built LF.345] the release mutation score counts the unit tests too (or reports suite and unit apart): LF.334's proven unit tests are invisible in it.

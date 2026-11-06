@@ -524,7 +524,8 @@ def _truncate(text: str, max_chars: int | None = None) -> str:
 _CONTRACT_SECTIONS = (
     ("component_boundaries", "Component boundaries"),
     ("domain_model", "Domain model"),
-    ("api_and_event_contracts", "Contracts"),
+    # Named as the specification document names the section, so the project memory can leave out its own copy.
+    ("api_and_event_contracts", "API and event contracts"),
     ("data_flows", "Data flows"),
     # What the interface looks like and how it behaves, from the UI/UX advice.
     # A work order building the interface copies its part; without it the

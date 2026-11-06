@@ -36,3 +36,16 @@ def test_it_is_among_the_checks_that_reopen_a_suite():
     import inspect
 
     assert "page_assertions_without_await(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+
+
+def test_every_line_is_named_so_a_failing_test_s_line_reopens_the_suite(tmp_path, monkeypatch):
+    """Measured on its first round: the finding named only the first 12 lines, all in passing tests; after a lock a
+    finding reopens the suite only for a failing test it names, so the failing test's unawaited line - past the
+    first twelve - never sent the suite back."""
+    body = "".join(f"  expect(page.getByText('t{n}')).toBeVisible();\n" for n in range(20))
+    text = "import { test, expect } from '@playwright/test';\ntest('[AC-1] many', async ({ page }) => {\n" + body + "});\n"
+    path = tmp_path / "page.spec.js"
+    path.write_text(text)
+    monkeypatch.setattr(suite, "suite_files", lambda root: [path])
+    [found] = suite.page_assertions_without_await(tmp_path)
+    assert "22" in found.split("line(s)")[1].split("assert")[0]

@@ -2640,7 +2640,7 @@ def page_assertions_without_await(repo_root: str | Path) -> list[str]:
         lines = _javascript.unawaited_page_assertions(text)
         if lines:
             problems.append(
-                f"`{path.relative_to(root).as_posix()}` line(s) {', '.join(map(str, lines[:12]))} assert on the page "
+                f"`{path.relative_to(root).as_posix()}` line(s) {', '.join(map(str, lines[:200]))} assert on the page "
                 "without `await`. A page assertion waits for the page and returns a promise: unawaited, the test does "
                 "not wait for it, so it passes a product that fails it or fails at a line it never reached. Put "
                 "`await` before each `expect(...)` of the page."

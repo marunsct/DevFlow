@@ -21,7 +21,6 @@ from pathlib import Path
 KPIS = (
     ("hidden_score", False),
     ("fix_rate", False),
-    ("wall_minutes", True),
     ("active_minutes", True),
     ("defect_fix_stages", True),
     ("defects_left_open", True),
@@ -32,6 +31,9 @@ KPIS = (
     ("replies_lost_to_length", True),
 )
 WORSE_BY = 1.25
+#: Runs after a change before a KPI other than the hidden score may be called worse; one run is a watch. Measured:
+#: seven changes in a row were each "worse" from the one run after them, whose wall held a nine-hour pause.
+LEAST_RUNS_AFTER = 2
 BEFORE_RUNS = 12
 
 
@@ -79,10 +81,11 @@ def compare(rows, at, position):
             continue
         ratio = statistics.median(ratios)
         if kpi == "hidden_score":
-            worse = min(ratios) < 1.0
+            worse, watch = min(ratios) < 1.0, False
         else:
-            worse = ratio > WORSE_BY if worse_when_higher else ratio < 1 / WORSE_BY
-        report["kpis"][kpi] = {"ratio": round(ratio, 2), "runs": len(ratios), "worse": worse}
+            beyond = ratio > WORSE_BY if worse_when_higher else ratio < 1 / WORSE_BY
+            worse, watch = beyond and len(ratios) >= LEAST_RUNS_AFTER, beyond and len(ratios) < LEAST_RUNS_AFTER
+        report["kpis"][kpi] = {"ratio": round(ratio, 2), "runs": len(ratios), "worse": worse, "watch": watch}
     return report
 
 
@@ -110,7 +113,7 @@ def main(argv):
         name = item.group(0) if item else sha[:8]
         parts = []
         for kpi, seen in report["kpis"].items():
-            mark = " WORSE" if seen["worse"] else ""
+            mark = " WORSE" if seen["worse"] else (" watch" if seen.get("watch") else "")
             flagged += bool(seen["worse"])
             parts.append(f"{kpi} x{seen['ratio']}{mark}")
         print(f"{name:<18} {sha[:8]} runs before {report['before']:>2} after {report['after']:>2}: "

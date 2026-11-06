@@ -85,7 +85,7 @@ No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh 
 | Angle | State |
 |---|---|
 | Operator steps | done 09:40: `loop.sh ship-live` (login, pause all, deploy, resume, churn check; never grows the pool) |
-| Technical lead (9% of model time, 91% reasoning) | next |
+| Technical lead (9% of model time, 91% reasoning) | measured 09:50: each planning call opens on 200-240k characters and reasons ~80k; the request quotes the specification's contract sections (~31k) while the memory holds the whole specification (53-111k) - the quote is a duplicate; the harness's kept test-setup files (44k `test-setup.mjs`) fill its memory. Next: cut the quoted block when the memory holds the whole specification (pointer by section), and leave kept setup files out of planning stages' memory |
 | Prompts per role: conflicting or stale rules | queued |
 | Idle stacks: one pack verified per cycle (`verify_packs.py`) | queued |
 | Code changed 11-05/06 (LF.591-609) read for new bugs | queued |

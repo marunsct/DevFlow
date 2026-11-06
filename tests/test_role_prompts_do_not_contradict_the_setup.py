@@ -29,3 +29,12 @@ def test_read_only_roles_are_not_sent_to_a_write_tool():
 def test_the_scope_rule_does_not_deny_the_browser():
     text = inspect.getsource(scope_discipline)
     assert "no\n  browser" not in text and "no browser" not in text and '"no screenshot"' not in text
+
+
+def test_a_test_round_and_the_testing_rule_agree_on_installs(tmp_path):
+    """The test round said "Do not install a test framework or add a dependency ... report that as a blocker", while
+    the same agent's `TESTING_DEPENDENCY_RULE` says "install what the suite needs in the test-only scope"."""
+    from app.agents import specialists
+
+    text = specialists.build_test_run_request("ship notes", ["notes/app.py"], str(tmp_path))["messages"][0]["content"]
+    assert "test-only scope" in text and "not a new framework" in text

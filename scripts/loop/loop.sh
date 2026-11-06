@@ -170,8 +170,18 @@ bench)
 
 score)
   run="${2:-$(current)}"
+  # The benchmark is the one whose brief this run was started from, by content: the brief last started on the host
+  # belongs to whichever port started last (measured: a web-todo run scored against the full-stack hidden tests).
+  name="${3:-}"
+  if [ -z "$name" ]; then
+    first=$("${DB[@]}" "select document_paths from runs where run_id='$run'" 2>/dev/null \
+      | "$PY" -c 'import json,sys;p=json.loads(sys.stdin.read() or "[]");print(p[0] if len(p)==1 else "")' 2>/dev/null)
+    [ -n "$first" ] && name=$(docker compose exec -T worker cat "$first" 2>/dev/null \
+      | "$PY" "$ROOT/scripts/bench/brief_match.py" --benchmark-of "$ROOT/benchmarks" 2>/dev/null)
+  fi
   brief=$(cat "$STATE/current_brief.txt" 2>/dev/null || true)
-  name="${3:-$(echo "$brief" | sed -n 's#^benchmarks/\([^/]*\)/brief.md$#\1#p')}"
+  name="${name:-$(echo "$brief" | sed -n 's#^benchmarks/\([^/]*\)/brief.md$#\1#p')}"
+  echo "scoring $run against benchmarks/$name"
   [ -n "$name" ] && [ -d "benchmarks/$name/hidden" ] || { echo "say which benchmark: score <run> <name>" >&2; exit 2; }
   ws="/app/data/workspaces/default/workspace-$run"
   project=$(docker compose exec -T worker cat "$ws/.project-directory" 2>/dev/null | tr -d '\r\n')

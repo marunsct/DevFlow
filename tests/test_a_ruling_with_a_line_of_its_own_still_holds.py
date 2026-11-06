@@ -26,3 +26,18 @@ def test_a_quote_mostly_not_in_the_standard_is_refused():
 
 def test_a_sentence_of_the_instructions_alone_is_refused():
     assert not sd._the_standard_holds("Name a test only when it could not pass for any product that does it.", STANDARD)
+
+
+FILTER_STANDARD = '- A text field labelled "Filter by tag" shows only the bookmarks with exactly that tag; when it is empty, all are shown\n'
+
+
+def test_a_short_quote_with_a_gloss_after_a_dash_holds():
+    """Measured on one run: `"when it is empty, all are shown" - meaning every bookmark in the database` was refused:
+    one sentence of 12 words, needing 8 of them in a row in the standard, though its quoted half was verbatim."""
+    assert sd._the_standard_holds('"when it is empty, all are shown" — meaning every bookmark', FILTER_STANDARD)
+
+
+def test_a_gloss_longer_than_its_quote_is_refused():
+    assert not sd._the_standard_holds(
+        '"all are shown" — meaning every record ever stored by any user of any service anywhere in the world',
+        FILTER_STANDARD)

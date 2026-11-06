@@ -256,6 +256,11 @@ def _plainly(text: str) -> str:
 WORDS_IN_A_ROW = 8
 
 
+def _with_dashes_kept(text: str) -> str:
+    """`text` with a dash between words kept as " - ", which `_plainly` would otherwise make a space."""
+    return re.sub(r"\s*[\u2014\u2013]\s*", " - ", str(text or ""))
+
+
 def _the_standard_holds(quoted: str, standard: str) -> bool:
     """Whether most of a quote - by its words - is sentences with a long run of words in the standard, marks aside.
 
@@ -264,10 +269,13 @@ def _the_standard_holds(quoted: str, standard: str) -> bool:
     product doing what the standard says. A sentence the standard does not hold still refuses the quote: one run's
     "standard" was a sentence of the instructions.
     """
-    the_standard = f" {_plainly(standard)} "
+    the_standard = " " + " ".join(word.strip("'") for word in _plainly(standard).split()) + " "
     held = total = 0
-    for sentence in re.split(r"(?<=[.;])\s+", _plainly(quoted)):
-        words = sentence.split()
+    # A quoted passage and a gloss after a dash are parts of their own: `"when it is empty, all are shown" - meaning
+    # every bookmark` was one 12-word sentence needing 8 words in a row, though its quoted half was verbatim.
+    parts = re.split(r"(?<=[.;])\s+|\s+-\s+|'\s+|\s+'", _plainly(_with_dashes_kept(quoted)))
+    for sentence in parts:
+        words = [word.strip("'") for word in sentence.split() if word.strip("'")]
         if not words:
             continue
         total += len(words)

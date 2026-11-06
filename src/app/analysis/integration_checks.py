@@ -6056,6 +6056,34 @@ def _a_field_the_brief_asks_for_that_nothing_collects(
     ]
 
 
+#: The HTTP methods a service serves each action by. A route is named by its method and path, not by the action's word:
+#: measured on one run, `app.put('/notes/:id', ...)` served the brief's `PUT /notes/{id}` (every hidden test passed)
+#: and the last-sprint check, finding no "update" in the code, called the brief undelivered.
+_METHODS_OF_AN_ACTION = {
+    "add": ("post",), "create": ("post",),
+    "update": ("put", "patch"), "edit": ("put", "patch"), "modify": ("put", "patch"), "rename": ("put", "patch"),
+    "delete": ("delete",), "remove": ("delete",),
+}
+
+
+def _a_route_for(corpus: str, action: str) -> bool:
+    """Whether the code declares an HTTP route by a method that serves `action`, in any of the common forms."""
+    methods = _METHODS_OF_AN_ACTION.get(action)
+    if not methods:
+        return False
+    either = "|".join(methods)
+    pattern = (
+        rf"""(?i:[.@](?:{either}))\s*\(\s*[rf]?['"`]/"""            # app.put('/x'), @router.patch("/x")
+        rf"""|(?i:methods)\s*=\s*\[[^\]]*['"](?i:{either})['"]"""  # methods=["PUT"]
+        rf"""|['"](?i:{either})\s+/"""                              # "PUT /x"
+        rf"""|\b(?:{'|'.join(m.capitalize() for m in methods)})Mapping\b"""  # @PutMapping
+        rf"""|\[Http(?:{'|'.join(m.capitalize() for m in methods)})\b"""     # [HttpPut]
+        rf"""|\bMethod(?:{'|'.join(m.capitalize() for m in methods)})\b"""   # http.MethodPut
+        rf"""|\bRoute::(?:{either})\b"""                            # Route::put
+    )
+    return re.search(pattern, corpus) is not None
+
+
 def _a_required_action_nothing_implements(
     files: list[Path], root: Path, brief: str = ""
 ) -> list[str]:
@@ -6157,7 +6185,7 @@ def _a_required_action_nothing_implements(
         # inside `deleteTask` is `Array.prototype.filter`, and it was the only
         # thing standing between one run's three dead filter buttons and
         # this finding.
-        if _names_the_action(corpus, words):
+        if _names_the_action(corpus, words) or _a_route_for(corpus, action):
             continue
         alternatives = ", ".join(f"`{word}`" for word in words[1:])
         deferral = _where_the_run_deferred_it(root, action, words)

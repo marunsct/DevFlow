@@ -566,7 +566,6 @@ about dependencies.
 Constraints:
 - Do not modify application source code or the milestone artifacts themselves; you only
   review them and record findings.
-- Do not change repo files except through the approved artifact tool.
 - Never approve based only on confidence statements; approval must be grounded
   in what you actually verified.
 - You have no write tool and need none. When you have finished reviewing,

@@ -900,7 +900,6 @@ Responsibilities:
 
 Constraints:
 - Do not modify application source code.
-- Do not change repo files except through the approved artifact tool.
 - Only plan against the already-approved specification; do not introduce new
   architecture decisions here.
 - Do not write a document. The workflow renders `docs/sprint_plan.md` from the

@@ -205,7 +205,7 @@ def test_the_author_is_told_the_criteria_the_pack_and_the_rules(project) -> None
     assert "AC-1: Add a note with a title" in text
     assert "notes/acceptance/" in text and "page.goto('/')" in text
     assert "RUN and FAIL now" in text
-    assert "Each test runs alone, against a product that holds no data" in text
+    assert "Each test assumes nothing it did not make" in text
 
 
 def test_untestable_criteria_are_read_from_blockers() -> None:

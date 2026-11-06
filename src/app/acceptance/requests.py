@@ -41,6 +41,15 @@ SHARED_STORE = (
     "must not assume it starts empty: create what it reads under names no other test uses (a "
     "username of its own, say), and look for its own records rather than counting all of them."
 )
+#: Said to the suite's writer and its reviewer, true on every stack. It said each test ran alone against an empty
+#: product, beside `SHARED_STORE`, which says the opposite for a service the suite starts once; the
+#: reviewer had only the first, and a test counting a shared table read as right to both.
+TESTS_ASSUME_ONLY_WHAT_THEY_MADE = (
+    "- Each test assumes nothing it did not make: what it acts on or reads, it creates first, through the "
+    "product as a user would, under names no other test uses. Other tests' records may be there too - on a "
+    "service the suite starts once they are - so a test looks for its own records and never counts them all. "
+    "A test that acts on something it never created can pass only on a product that ships with that data.\n"
+)
 #: The kinds of product whose suite runs against one long-lived service.
 _A_SHARED_SERVICE = frozenset({"http_api", "fullstack"})
 
@@ -247,11 +256,8 @@ def build_author_request(
         "words the specification happened to choose. A product built to the brief fails a test that "
         "asserts wording nobody required, and the suite is locked with that failing.\n"
         + brief_over_spec.qa_rule()
-        + "- Each test runs alone, against a product that holds no data: nothing another test "
-        "created is there. A test that acts on something - an item, a record, an entry - "
-        "creates it first, through the product as a user would; otherwise it can pass only "
-        "on a product that ships with that data.\n"
-        "- A test that a product keeps its data checks every kind of change it offers - not only "
+        + TESTS_ASSUME_ONLY_WHAT_THEY_MADE
+        + "- A test that a product keeps its data checks every kind of change it offers - not only "
         "creating a record, but each way one can be changed or removed - survives a reload or a "
         "restart. A product that keeps only what was created passes a weaker test and loses its "
         "user's changes.\n"

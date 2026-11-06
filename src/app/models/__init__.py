@@ -651,6 +651,10 @@ class CompatibleChatOpenAI(ChatOpenAI):
         from app.models.call_gate import _stop_if_this_run_was_stopped, a_model_call
 
         _stop_if_this_run_was_stopped()
+        # The owner's direction, for a call no agent middleware gave it to (drafting, rewrites, parts...).
+        from app.server.steering import with_the_direction
+
+        messages = with_the_direction(messages)
 
         # A deploy waits for this call to return (`app.models.call_gate`).
         with a_model_call(self._served_by()[0]):

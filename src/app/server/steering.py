@@ -100,7 +100,62 @@ def as_instructions(repo_root: str | Path, stage: str = "", run_id: str | None =
     if not live:
         return ""
     return (
-        "\n\n=== THE OWNER'S DIRECTION FOR THIS RUN ===\n"
+        f"\n\n{DIRECTION_HEADER}\n"
         "The owner sent these while the run was going; they come before any other preference:\n"
         + "\n".join(f"- {note['text']}" for note in live)
     )
+
+
+#: How the direction block begins, so a call that already carries it is not given it twice.
+DIRECTION_HEADER = "=== THE OWNER'S DIRECTION FOR THIS RUN ==="
+#: Each run's workspace, read once per process.
+_WORKSPACES: dict[str, str] = {}
+
+
+def _this_call_s_run_and_stage() -> tuple[str | None, str | None]:
+    from app.observability.log_context import _TASK_RUN, _from_the_graph
+
+    run, stage = _from_the_graph()
+    return run or _TASK_RUN.get(), stage
+
+
+def _the_workspace_of(run_id: str) -> str | None:
+    if run_id not in _WORKSPACES:
+        from app.server.run_store import RunStore
+
+        record = RunStore.shared().load(run_id)
+        root = str(getattr(record, "repo_root", "") or "")
+        if not root:
+            return None
+        _WORKSPACES[run_id] = root
+    return _WORKSPACES[run_id]
+
+
+def with_the_direction(messages: list[Any]) -> list[Any]:
+    """`messages` with the run's direction in their system message, for a call no agent middleware gave it to. Never raises.
+
+    Measured on 2026-11-06: notes reached only the calls agents make, through their instruction middleware; drafting,
+    rewritten fixes, the specification's parts and eleven other direct calls never carried one, so a direction never
+    reached the code the product is written in. Called by the shared chat model for every call; a call that already
+    carries the block is left as it is.
+    """
+    try:
+        if any(DIRECTION_HEADER in str(getattr(m, "content", "") or "") for m in messages or ()):
+            return messages
+        run_id, stage = _this_call_s_run_and_stage()
+        if not run_id:
+            return messages
+        root = _the_workspace_of(str(run_id))
+        if not root or not _all(root):
+            return messages
+        direction = as_instructions(root, str(stage or ""), str(run_id)).strip()
+        if not direction:
+            return messages
+        from langchain_core.messages import SystemMessage
+
+        first = messages[0] if messages else None
+        if isinstance(first, SystemMessage) and isinstance(first.content, str):
+            return [SystemMessage(content=f"{first.content}\n\n{direction}"), *messages[1:]]
+        return [SystemMessage(content=direction), *messages]
+    except Exception:  # noqa: BLE001 - a direction that cannot be read never costs the call
+        return messages

@@ -666,6 +666,16 @@ def _json(entries: dict[str, str]) -> str:
     return json.dumps(dict(sorted(entries.items())), indent=2).replace("\n", "\n  ")
 
 
+#: A full-stack product's start script: the suite's server, so the two cannot drift.
+START_SH = """#!/bin/sh
+# Kept by the harness: starts the product - builds the page, then the service on 127.0.0.1 at PORT, data under DATA_DIR.
+cd "$(dirname "$0")" || exit 1
+export PORT="${PORT:-8000}" DATA_DIR="${DATA_DIR:-data}"
+mkdir -p "$DATA_DIR"
+exec node scripts/serve-acceptance.mjs
+"""
+
+
 def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
     """The pack for `frontend` served by `service`."""
     api_port = "8000" if service.language == "python" else "3000"
@@ -701,6 +711,10 @@ def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
         ".gitignore": js.GITIGNORE + "dist/\n" + (_python.GITIGNORE if service.language == "python" else ""),
         **frontend.files,
         **service.files,
+        # How a person starts the product, as briefs ask: the suite's own server - the page built, the service on
+        # PORT, its data under DATA_DIR. Measured on one run: with no start script in the pack, a builder wrote one
+        # calling a bare `uvicorn` outside the project's environment.
+        "start.sh": START_SH,
     }
     title = f"Browser app in {frontend.label} with its own HTTP service in {service.label}"
     return StackPack(
@@ -724,7 +738,7 @@ def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
         test_helpers=service.test_helpers,
         kept_files=(
             "playwright.config.js", "playwright.setup.mjs", "vite.config.ts", "scripts/serve-acceptance.mjs",
-            *service.kept,
+            "start.sh", *service.kept,
         ),
         kept_scripts={"test": service.unit_script, "test:acceptance": "playwright test", "start": start},
         smoke_files={

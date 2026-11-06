@@ -247,6 +247,8 @@ def judged_by_the_code(why: str) -> bool:
 def _plainly(text: str) -> str:
     """Text as a reader sees it, for comparing a quote: no markdown marks, one kind of quote mark, single spaces."""
     text = re.sub(r"[`*]", "", str(text or "")).replace('"', "'").replace("\u2014", " ").replace("\u2013", " ")
+    # "AC-3:" quoted for the criteria's "AC-3", a comma dropped: marks a reader does not weigh.
+    text = re.sub(r"[:,]", " ", text)
     return " ".join(text.split()).casefold()
 
 
@@ -255,7 +257,7 @@ WORDS_IN_A_ROW = 8
 
 
 def _the_standard_holds(quoted: str, standard: str) -> bool:
-    """Whether every sentence of a quote has a long run of its words in the standard, marks aside.
+    """Whether most of a quote - by its words - is sentences with a long run of words in the standard, marks aside.
 
     Measured on one run: right rulings joined sentences of the specification, left out its backticks and put a
     function's signature before a sentence of it, a match of the whole string refused each, and fixers went after a
@@ -263,17 +265,21 @@ def _the_standard_holds(quoted: str, standard: str) -> bool:
     "standard" was a sentence of the instructions.
     """
     the_standard = f" {_plainly(standard)} "
+    held = total = 0
     for sentence in re.split(r"(?<=[.;])\s+", _plainly(quoted)):
         words = sentence.split()
         if not words:
             continue
+        total += len(words)
         needed = min(WORDS_IN_A_ROW, len(words))
-        if not any(
+        if any(
             f" {' '.join(words[at:at + needed])}".rstrip(".;") in the_standard
             for at in range(len(words) - needed + 1)
         ):
-            return False
-    return True
+            held += len(words)
+    # Most of the quote must be the standard's own sentences; a line of the judge's own beside them does not refuse
+    # it. Measured on one run: three right rulings in a row, each with one summary line, were refused.
+    return bool(total) and held * 2 >= total
 
 
 def _tests_the_rulings_name(rulings: Sequence[Any], failing_names: Sequence[str], standard: str = "") -> list[str]:

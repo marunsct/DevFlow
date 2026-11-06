@@ -70,3 +70,17 @@ def test_no_role_is_told_it_runs_shell_commands():
     from app.agents.specialists import _system_prompt
 
     assert "execute shell commands" not in _system_prompt("backend")
+
+
+def test_the_testability_rule_does_not_send_a_test_writer_into_another_s_file():
+    """"IF A FUNCTION IS AWKWARD TO CALL, CHANGE THE FUNCTION" reached the testing specialist writing a work order's
+    unit tests, whose functions are other roles' files: 29 refused writes over 30 runs (15 in one)."""
+    import re as _re
+
+    from app.agents.testability import TESTABILITY_RULE
+
+    flat = " ".join(TESTABILITY_RULE.split())
+    i = flat.index("CHANGE THE FUNCTION, NOT THE TEST")
+    rule = flat[i:i + 400]
+    assert "another role" in rule and "defect" in rule
+    assert not _re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", rule, _re.I)

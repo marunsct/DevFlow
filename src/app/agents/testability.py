@@ -89,7 +89,9 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   read back the state it changed. The check: if its body were replaced by
   `return <its first argument>`, would any test fail?
 - IF A FUNCTION IS AWKWARD TO CALL, CHANGE THE FUNCTION, NOT THE TEST: take a
-  clock or an id source as an argument rather than re-implementing it.
+  clock or an id source as an argument rather than re-implementing it. A function
+  in a file another role owns is not yours to change: report it as a defect for
+  that role, and test what it does now.
 - Reach storage and databases through a small adapter passed in as an
   argument, so a test can hand it a plain object. No database server runs
   here, so code that talks to PostgreSQL directly is code no test can execute.

@@ -658,6 +658,10 @@ working (the tool-approval check can fail transiently), schedule a retry about
 
 ### 0.5 Things that bite
 
+- Rewind to a stage's **original** entry time, never to a point an earlier rewind created. Measured 11-06/07 on L
+  web-todo 3: a second rewind to the point the first rewind wrote (same stage, a later time in `rewind --list`)
+  resumed past that stage without its model call. Rewinding again to the first entry's time replayed it properly.
+  Cause not yet reproduced (sweep queue: rewind of a rewound point).
 - The owner's model server can stop (a crash, a restart, the host's network): `loop.sh ready` says NOTREADY with
   "Network is unreachable", the live run fails with a connection error and keeps its checkpoints. Start nothing.
   `loop.sh resume-when-ready <run>` (in the background) resumes the same run once ALL READY; a new run is not

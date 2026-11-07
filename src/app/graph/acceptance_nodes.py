@@ -670,30 +670,34 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             )
     # A suite under repair has been locked before: the same rule as at a round, or a false finding found here locks it
     # with a problem "still open", which is a release gap.
+    from app.acceptance import check_findings
+
     cannot = suite.findings_that_reopen(root, result, suite.tests_that_cannot_pass(root, result))
     # A repair that left a test it was sent for exactly as it was goes back with the cannot-pass findings (and once
     # at the review's limit, `cannot_pass_to_lock`).
     cannot = [*cannot, *suite.tests_left_unrepaired(root)]
-    problems.extend(cannot)
+    problems.extend(check_findings.noted(root, rounds, "tests_that_cannot_pass", cannot))
     # Against the specification's contract, before it is recorded at the lock (the rounds read the locked one).
-    problems.extend(suite.tests_that_want_json_from_a_204(
-        root, getattr(state.get("technical_specification"), "interface_contract", None) or ()))
-    problems.extend(suite.tests_whose_success_status_the_contract_does_not_give(
-        root, getattr(state.get("technical_specification"), "interface_contract", None) or ()))
+    problems.extend(check_findings.noted(root, rounds, "tests_that_want_json_from_a_204", suite.tests_that_want_json_from_a_204(
+        root, getattr(state.get("technical_specification"), "interface_contract", None) or ())))
+    problems.extend(check_findings.noted(root, rounds, "tests_whose_success_status_the_contract_does_not_give",
+                                         suite.tests_whose_success_status_the_contract_does_not_give(
+        root, getattr(state.get("technical_specification"), "interface_contract", None) or ())))
     vacuous = suite.vacuous_green(root, result)
-    problems.extend(vacuous)
+    problems.extend(check_findings.noted(root, rounds, "vacuous_green", vacuous))
     # Too lenient rather than impossible: a suite that passes a product it
     # should fail. The review sends these back; a test round has nothing to
     # charge for them.
-    problems.extend(suite.locators_nobody_sees(root))
-    problems.extend(suite.locators_that_pick_one(root))
-    problems.extend(
+    problems.extend(check_findings.noted(root, rounds, "locators_nobody_sees", suite.locators_nobody_sees(root)))
+    problems.extend(check_findings.noted(root, rounds, "locators_that_pick_one", suite.locators_that_pick_one(root)))
+    problems.extend(check_findings.noted(root, rounds, "controls_never_found_by_name",
         suite.controls_never_found_by_name(root, getattr(state.get("document"), "text", "") or "")
-    )
-    problems.extend(
+    ))
+    problems.extend(check_findings.noted(root, rounds, "records_never_found_as_the_brief_shows_them",
         suite.records_never_found_as_the_brief_shows_them(root, getattr(state.get("document"), "text", "") or "")
-    )
-    problems.extend(suite.views_never_acted_within(root, getattr(state.get("document"), "text", "") or ""))
+    ))
+    problems.extend(check_findings.noted(root, rounds, "views_never_acted_within",
+                                         suite.views_never_acted_within(root, getattr(state.get("document"), "text", "") or "")))
     # Plan item 16: at a first writing only; a repair is told to change nothing but the tests it was sent for.
     from app.acceptance import contract_coverage
 
@@ -701,7 +705,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         missing_lines = contract_coverage.lines_with_no_test(
             root, getattr(state.get("technical_specification"), "interface_contract", None) or ())
         if missing_lines:
-            problems.append(contract_coverage.finding(missing_lines))
+            problems.extend(check_findings.noted(root, rounds, "contract_lines_with_no_test", [contract_coverage.finding(missing_lines)]))
     if not result.ran:
         if rounds < MAX_ACCEPTANCE_ROUNDS + 2:
             logger.warning("Acceptance suite could not run (exit %s); sent back to QA", result.exit_code)

@@ -164,6 +164,20 @@ reads, and look for its own records rather than counting all of them.
 
 PACK = StackPack(
     known_errors=_python.PYTHON_KNOWN_ERRORS,
+    framework_files={
+        "requirements.txt": "the framework and the server that runs it, one requirement per line as pip reads them",
+        "{{package}}/main.py": (
+            "the service's application object, importable as `{{package}}.main`, with a route `GET /health` that "
+            'answers 200 with {"status": "ok"}'
+        ),
+        "start.sh": (
+            'starts the service from the project folder with `.venv/bin/python`: `cd "$(dirname "$0")" && exec '
+            '.venv/bin/python ...`, listening on "${HOST:-127.0.0.1}" and "${PORT:-8000}"'
+        ),
+        "tests/test_scaffold_smoke.py": (
+            "one unit test of the application that passes as written, through the framework's own test client"
+        ),
+    },
     name="python-http-api",
     title="HTTP service in Python on FastAPI",
     kind="http_api",

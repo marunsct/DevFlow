@@ -116,6 +116,8 @@ Progress: SF.0a facts part BUILT 2026-11-07 (`shared_facts.facts_from_the_worksp
 
 ### Phase SF.2 - generator-first setup (switch `GENERATOR_FIRST_SETUP`, measured)
 
+Progress 2026-11-07 (moved ahead of HR Phase 1: five point fixes in two hours - LF.657, 658, 659, 661, 662 - each followed by the next mechanical failure; falcon baseline 2 hidden 0/9). Built as a runner layer first: a pack names its `framework_files` (path -> what it must do); `custom_setup.runner_layer(kind, language)` finds the pack whose install, runners, report flags and kept test configuration a stack of that kind and language reuses. Step 1 BUILT (python-http-api names its four framework files; `tests/test_a_stack_no_pack_covers_gets_its_language_s_runner_layer.py`), inert. Next: write the layer and the declaration from the pack, narrow the setup request to the framework files, wire into the scaffold node, measure on the falcon baselines.
+
 - **SF.2a Generator table** in `seed.py` (stack knowledge belongs there): per ecosystem the official
   non-interactive create command with pinned flags, whether it emits a test, and which unit-runner layer to add.
   Covered: Node/TS (`npm create vite`), Python (none: the Python runtime layer's skeleton), Go (`go mod init`),

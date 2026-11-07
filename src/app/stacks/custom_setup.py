@@ -137,6 +137,21 @@ def what_the_specification_sets_up(specification: Any) -> str:
     return text
 
 
+def runner_layer(kind: str, language: str) -> StackPack | None:
+    """The pack whose runner layer a stack of `kind` and `language` no pack covers is set up on; None if none has one.
+
+    The first pack of that kind and language that names its framework files (SF.2): its install, test commands,
+    report paths and kept test configuration hold for any framework of its language; only those files differ.
+    """
+    from app.stacks.packs import ALL_PACKS
+
+    kind, language = str(kind or "").strip().lower(), str(language or "").strip().lower()
+    if not kind or not language:
+        return None
+    return next((pack for pack in ALL_PACKS
+                 if pack.kind == kind and pack.language == language and pack.framework_files), None)
+
+
 def build_setup_request(
     project: str, stack: Any, kind: str, problem: str = "", specification: Any = None,
 ) -> dict[str, Any]:

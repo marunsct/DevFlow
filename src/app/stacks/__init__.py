@@ -268,6 +268,10 @@ class StackPack:
     #: An error a product on this stack is known to raise, by a phrase of its message, and what causes it; added to a
     #: defect whose text carries the phrase (`app.stacks.known_errors`).
     known_errors: Mapping[str, str] = field(default_factory=dict)
+    #: The files that belong to this pack's framework, by path, with what each must do (SF.2). A stack of the same
+    #: kind and language that no pack covers is set up on the rest of this pack - its install, runners, report flags
+    #: and kept test configuration - and the agent writes only these files for its own framework.
+    framework_files: Mapping[str, str] = field(default_factory=dict)
 
 
     @property

@@ -50,6 +50,7 @@ def main(run: str) -> int:
 
     numbers = with_the_pauses(kpis(records), paused_seconds_of(run))
     numbers = with_model_errors_by_kind(numbers, records)
+    numbers = with_salvage_outcomes(numbers, records)
     print(json.dumps({"run": run, **per_accepted_criterion(numbers, accepted_criteria(run)), **owner_rating(run),
                       "switches_fired": " ".join(fired(records)) or "none"}))
     return 0
@@ -77,6 +78,33 @@ def with_the_pauses(numbers: dict, paused_seconds: float) -> dict:
     if isinstance(active, (int, float)):
         out["active_minutes"] = round(max(float(active) - paused, 0.0), 1)
     return out
+
+
+def with_salvage_outcomes(numbers: dict, records: list) -> dict:
+    """`numbers` with what followed each salvaged reply (HR2.C.4a): cut again, another call in the stage, or the
+    stage's end - the measure of whether a salvage was taken as the answer. Measured: 137 salvages in a day, 24% of
+    the technical lead's replies, and nothing said whether the stage used them."""
+    salvaged = cut_again = another_call = at_end = 0
+    for index, r in enumerate(records):
+        if r.get("kind") != "model_response" or not r.get("salvaged"):
+            continue
+        salvaged += 1
+        stage = r.get("stage")
+        following = next((later for later in records[index + 1:]
+                          if later.get("stage") == stage and later.get("kind") in ("model_request", "model_response")), None)
+        if following is None:
+            at_end += 1
+        elif following.get("kind") == "model_response" and following.get("salvaged"):
+            cut_again += 1
+        else:
+            later_reply = next((later for later in records[index + 1:]
+                                if later.get("stage") == stage and later.get("kind") == "model_response"), None)
+            if later_reply is not None and later_reply.get("salvaged"):
+                cut_again += 1
+            else:
+                another_call += 1
+    return {**numbers, "salvaged_replies": salvaged, "salvaged_then_cut_again": cut_again,
+            "salvaged_then_another_call": another_call, "salvaged_at_stage_end": at_end}
 
 
 #: Why a model call failed, by the words the error carries (HR2.R.4). Only a rejected request is the harness's.

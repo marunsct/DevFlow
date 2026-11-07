@@ -615,6 +615,8 @@ def execute_workflow_run(
             logger.error("Run %s not found; nothing to execute", run_id)
             return
 
+        from app.observability.transcript import record as note_in_transcript
+
         # What the build model's server gives each request, read once per
         # segment (a deploy or a model change between segments re-reads it).
         from app.models import server_profile
@@ -629,6 +631,9 @@ def execute_workflow_run(
             from app.models.reply_salvage import measure_if_new
 
             served = build_default_chat_model()
+            # Said in the transcript (HR2.OB.1): a new model's diagnosis makes dozens of calls before the first
+            # stage, and an audit reading only the transcript saw a run "stalled at 0%".
+            note_in_transcript(run_id, "", "model_diagnostic", event="start", steps="diagnose, salvage, deep, capabilities")
             diagnose_if_new(served)
             measure_if_new(served)
             from app.models.model_guidance import deep_if_new
@@ -642,8 +647,9 @@ def execute_workflow_run(
 
             if not capabilities.found_values(served_name(served)):
                 capabilities.fill(served, served_name(served), str(getattr(served, "model_name", "") or ""))
+            note_in_transcript(run_id, "", "model_diagnostic", event="end")
         except Exception:  # noqa: BLE001 - salvage is measured at the first reply that needs it instead
-            pass
+            note_in_transcript(run_id, "", "model_diagnostic", event="failed")
         # The reasoning tag from the server this run is served by, which may not be the default setting's - on its
         # own, so a failure in the steps above never skips it.
         try:

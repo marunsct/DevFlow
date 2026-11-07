@@ -1157,6 +1157,14 @@ class WorkflowRunner:
             )
         # The stop flag a pause or a cancel raised would stop it again at once.
         self.run_store.clear_stop(run_id)
+        # Said in the transcript (HR2.R.5): the audit's "resumed after its worker stopped" line and the `resumes`
+        # KPI read this record, and a resume had stopped writing it (73 resumes in a day, 0 records).
+        try:
+            from app.observability.transcript import record as note_in_transcript
+
+            note_in_transcript(run_id, "", "resumed", why=f"resumed from {resumable} (a pause, a rewind or a deploy)")
+        except Exception:  # noqa: BLE001 - a resume is never failed by its note
+            logger.debug("Could not note the resume of %s", run_id, exc_info=True)
         try:
             self._dispatch(run_id, resume=True, decision_payload=None)
         except Exception:

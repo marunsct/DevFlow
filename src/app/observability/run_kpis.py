@@ -122,12 +122,15 @@ def _calls_shown_lessons(records: list[dict]) -> int:
 
 def _the_prefix_breaks(records: list[dict]) -> dict:
     """Why calls missed the cached prefix, and the uncached input tokens behind each reason (plan PX.1)."""
-    from app.observability.prefix_breaks import REASONS, breaks
+    from app.observability.prefix_breaks import OPENING_BLOCKS, REASONS, breaks
 
     found = breaks(records)
     return {
         **{f"prefix_break_{why}": found["calls_by_reason"].get(why, 0) for why in REASONS},
         **{f"uncached_tokens_{why}": found["uncached_tokens_by_reason"].get(why, 0) for why in REASONS},
+        # Which opening block moved (HR2.C.3): the input to any change of the request layout.
+        **{f"uncached_tokens_opening_{block}": found.get("uncached_tokens_opening_by_block", {}).get(block, 0)
+           for block in OPENING_BLOCKS},
     }
 
 

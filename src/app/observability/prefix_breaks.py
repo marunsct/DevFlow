@@ -114,20 +114,35 @@ def classified(records: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
                 why = "first_of_a_conversation"
             else:
                 why = reason(last[stage], request, read)
+            block = opening_block(last[stage], request) if (why == "opening_changed" and stage in last) else ""
             last[stage] = request
             taken = _int(usage.get("input_tokens"))
-            yield {"stage": stage, "why": why, "input_tokens": taken, "cache_read": read,
+            yield {"stage": stage, "why": why, "block": block, "input_tokens": taken, "cache_read": read,
                    "uncached": max(0, taken - int(read or 0))}
+
+
+def opening_block(previous: dict[str, Any], current: dict[str, Any]) -> str:
+    """The first opening block whose size differs between two requests, or "" (HR2.C.3).
+
+    Measured: `opening_changed` was 12% of calls and 10.7M uncached tokens a day, with nothing saying whether the
+    memory, the specification or the request had moved.
+    """
+    before, now = _as(previous.get("blocks"), dict), _as(current.get("blocks"), dict)
+    return next((block for block in OPENING_BLOCKS if before.get(block) != now.get(block)), "")
 
 
 def breaks(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
     """Counts of each reason and the uncached input tokens behind each, over a run's calls."""
     counts: collections.Counter = collections.Counter()
     uncached: collections.Counter = collections.Counter()
+    by_block: collections.Counter = collections.Counter()
     for call in classified(records):
         counts[call["why"]] += 1
         uncached[call["why"]] += call["uncached"]
-    return {"calls_by_reason": dict(counts), "uncached_tokens_by_reason": dict(uncached)}
+        if call.get("block"):
+            by_block[call["block"]] += call["uncached"]
+    return {"calls_by_reason": dict(counts), "uncached_tokens_by_reason": dict(uncached),
+            "uncached_tokens_opening_by_block": dict(by_block)}
 
 
-__all__ = ["OPENING_BLOCKS", "REASONS", "breaks", "classified", "reason"]
+__all__ = ["OPENING_BLOCKS", "REASONS", "breaks", "classified", "opening_block", "reason"]

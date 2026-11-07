@@ -48,6 +48,8 @@ Superseded by HR2 (do not build as first written): SF.2b (parked on evidence), S
 works), Q3 (deprioritised), Q4's stub leg (dropped), F6 (wrong shape -> fix.4), WB.5 (not supported by the data),
 E4 (-> PR.9 generated edge sets).
 
+HR2 progress: bundle 1 - R.1 and R.4 built (LF.690, 11-08 00:4x; ledger rows since 11-05 recomputed).
+
 ## Harness review items behind a switch (first review's list; see HR2 above for the current order)
 
 From `docs/harness-review.md` Phase 2-3. Each gets its own switch, default off, and a row in the table above when built.

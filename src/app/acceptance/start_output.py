@@ -159,12 +159,17 @@ def what_it_wrote(repo_root: str | Path) -> str:
         from app.tools.sandbox import _a_free_port, timeout_for
 
         data = tempfile.mkdtemp(prefix="start-output-")
+        stranger = tempfile.mkdtemp(prefix="start-home-")
         try:
             where = _as_delivered(Path(repo_root), project)
         except OSError:
             where = project  # a copy that cannot be made: started where it is, as before
+        # As a stranger starts it: a fresh home and the plain PATH. The sandbox puts the project's virtualenv first on
+        # every command's PATH and keeps a bare install in the agent's home; measured, a `start.sh` running a bare
+        # `python3` started here and nowhere else - hidden 0 of 9 with a green suite.
         outcome = _execute(repo_root, argv, where, {
             "PORT": str(_a_free_port()), "HOST": "127.0.0.1", _data_variable(repo_root): data,
+            "HOME": stranger, "PATH": os.environ.get("PATH", ""),
         }) or {}
         try:
             code = int(str(outcome.get("returncode")).strip())
@@ -180,6 +185,7 @@ def what_it_wrote(repo_root: str | Path) -> str:
     finally:
         if data:
             shutil.rmtree(data, ignore_errors=True)
+        shutil.rmtree(locals().get("stranger") or "", ignore_errors=True)
         shutil.rmtree(Path(repo_root) / AS_DELIVERED, ignore_errors=True)
 
 

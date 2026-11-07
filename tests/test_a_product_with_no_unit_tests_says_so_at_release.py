@@ -62,3 +62,21 @@ def test_no_report_yet_with_a_unit_test_file_says_nothing(tmp_path, monkeypatch)
     (tmp_path / "app" / "tests" / "unit" / "db.test.ts").write_text("test('x', () => {})")
 
     assert delivery._no_unit_tests_ran(tmp_path) == ""
+
+
+def test_an_empty_report_another_run_left_is_measured_again_before_it_is_a_gap(tmp_path, monkeypatch):
+    """Measured on one run: a builder ran the unit command with `--collect-only`, the report read no test, and a
+    product with 41 passing unit tests shipped "ships no unit tests"."""
+    root = _workspace(tmp_path, monkeypatch, EMPTY)
+    monkeypatch.setattr(contract, "the_pack", lambda root: (SimpleNamespace(
+        unit_report="test-results/unit.xml", unit_dir="tests", unit_pattern="test_*.py"), {}))
+    (tmp_path / "app" / "tests").mkdir()
+    (tmp_path / "app" / "tests" / "test_items.py").write_text("def test_x(): pass\n")
+    from app.graph import workflow
+
+    def the_harness_s_own_run(repo_root):
+        (tmp_path / "app" / "test-results" / "unit.xml").write_text(ONE)
+        return True, ""
+
+    monkeypatch.setattr(workflow, "_run_unit_tests_procedurally", the_harness_s_own_run)
+    assert delivery._no_unit_tests_ran(root) == ""

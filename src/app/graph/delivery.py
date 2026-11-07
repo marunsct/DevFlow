@@ -636,6 +636,14 @@ def _no_unit_tests_ran(root: Any) -> str:
                 "The product ships no unit tests: its unit test directory holds no test file the "
                 "unit runner collects, so the command ran none."
             )
+        if not parsed.tests and _a_unit_test_file_exists(Path(root) / project, pack):
+            # The report is whatever wrote it last. Measured on one run: a builder ran the unit command with
+            # `--collect-only`, the report said no test ran, and a product with 41 passing unit tests shipped
+            # "ships no unit tests". Before saying so, the harness runs the command itself.
+            from app.graph.workflow import _run_unit_tests_procedurally
+
+            _run_unit_tests_procedurally(str(root))
+            parsed = junit.read(Path(root) / project / report)
     except Exception:  # noqa: BLE001 - the release says nothing it cannot measure
         return ""
     if parsed.tests:

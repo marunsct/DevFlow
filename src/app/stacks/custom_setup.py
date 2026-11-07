@@ -680,6 +680,34 @@ def _the_setup_s_own_code(project_root: Path, declared: Declaration) -> dict[str
     return found
 
 
+def _tests_beyond_the_smoke_tests(project_root: Path, parsed: Any, smoke_files: tuple[str, ...]) -> list[str]:
+    """The test files whose failing tests are not the setup's smoke tests, when every smoke test passed; [] else."""
+    def file_of(test: Any) -> str:
+        if test.file:
+            return str(test.file).replace("\\", "/").lstrip("./")
+        module = str(test.suite or "")
+        for smoke in smoke_files:
+            if module == smoke.rsplit(".", 1)[0].replace("/", ".") or module.startswith(
+                    smoke.rsplit(".", 1)[0].replace("/", ".") + "."):
+                return smoke
+        parts = module.split(".")
+        for cut in range(len(parts), 0, -1):
+            for suffix in _PROVEN_CODE_SUFFIXES:
+                candidate = "/".join(parts[:cut]) + suffix
+                if (project_root / candidate).is_file():
+                    return candidate
+        return ""
+
+    smoke = set(smoke_files)
+    mine = [t for t in parsed.tests if file_of(t) in smoke]
+    if not mine or any(t.outcome == "failed" for t in mine):
+        return []
+    others = sorted({file_of(t) for t in parsed.tests if t.outcome == "failed" and file_of(t) not in smoke})
+    if not others or "" in others:
+        return []
+    return others
+
+
 _A_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
 
@@ -824,6 +852,21 @@ def prove(
             parsed = junit.read(project_root / report)
             if code == 0 and parsed.found and parsed.passed >= 1 and not parsed.failed:
                 break
+            beyond = _tests_beyond_the_smoke_tests(project_root, parsed, declared.smoke_files)
+            if beyond:
+                # Measured on a setup stage: it wrote the product's acceptance tests beside its smoke test, the proof
+                # ran them all on a product not yet written, and two attempts were "not proven" on 15 and 10 tests
+                # that were never the setup's. The suite's writers write those, after the setup; these go, and the
+                # runners are asked again.
+                for relative in beyond:
+                    (project_root / relative).unlink(missing_ok=True)
+                result.steps.append({"command": "remove " + ", ".join(beyond), "exit_code": 0,
+                                     "output": "test files beyond the smoke tests: the suite's writers write those"})
+                junit.clear(project_root / report)
+                code = _step(result.steps, argv, run(list(argv), "test", project))
+                parsed = junit.read(project_root / report)
+                if code == 0 and parsed.found and parsed.passed >= 1 and not parsed.failed:
+                    break
         else:
             result.problem = (
                 f"The {label} smoke test did not pass through `{' '.join(argv)}` "

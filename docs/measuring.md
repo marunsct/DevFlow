@@ -33,13 +33,13 @@ From `docs/harness-review.md` Phase 2-3. Each gets its own switch, default off, 
 
 | Item | What it changes | Status |
 |---|---|---|
-| D1+D2 | deterministic cross-section consistency check; harness writes setup-owned sections | to build |
+| D1+D2 | deterministic cross-section consistency check; harness writes setup-owned sections | to build next (every falcon run and both tasks-api runs on 11-07 escalated at the second design review) |
 | D3 | one design review plus deterministic gates | to build |
 | P1+P7 | plan repair by delta; readiness rules in the schema | to build |
 | P2, P3, P6 | failure-made re-plans; edit format by model tier; two draft candidates | to build |
 | G3 | milestone send-back only with a failing test, check or probe behind it | built behind a switch: M7 |
 | G4, G5 | deterministic security scanner; one batched advice review | to build |
-| Q2-Q6, Q8 | isolation by fixture; Python dry run; stub validation; browser mutants; executable dispute verdicts; relational assertions | to build |
+| Q2-Q6, Q8 | isolation by fixture; Python dry run; stub validation; browser mutants; executable dispute verdicts; relational assertions | to build; Q5 (browser mutants) waits for M2's verdict on `MUTATION_GUIDED_TESTS`, which it would extend (11-07 22:3x) |
 | F1, F5, F6 | candidate selection; SBFL localisation; fresh second attempts | to build |
 | C2, C3, C4, C6 | constrained answers; masked tools; stable opening; repo map | to build |
 | SF.2b, SF.2c, SF.3 | harness-run generator (stacks that have one; Python has none, so M6 covers the falcon case); setup budget and rollback; patch on replay and promotion | to build |

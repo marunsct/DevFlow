@@ -33,7 +33,7 @@ def test_a_setup_on_a_layer_keeps_the_layer_pack_s_checks():
     pack = pack_from(_record({**SETUP, "layer": "python-http-api"}))
     assert pack.name == PROVEN_SETUP
     assert pack.test_bugs == layer.test_bugs and pack.known_errors == layer.known_errors
-    assert pack.release_files and pack.entrypoint == layer.entrypoint
+    assert pack.entrypoint == layer.entrypoint
     assert pack.stack["framework"] == "Falcon" and pack.frameworks == ()
     assert set(pack.files) == {"pytest.ini", "acceptance/conftest.py", "start.sh"}
 
@@ -48,3 +48,11 @@ def test_the_layer_s_declaration_names_its_pack(tmp_path):
     project.mkdir()
     write_runner_layer(project, pack_named("python-http-api"), "notes-api", "Notes")
     assert json.loads((project / "stack-setup.json").read_text())["layer"] == "python-http-api"
+
+
+def test_a_release_file_written_for_the_pack_s_own_framework_is_not_kept():
+    """Measured on the first layered run: the Python pack's Dockerfile runs `uvicorn <package>.main:app` - FastAPI's
+    server - and a Falcon product would have shipped a container that cannot start it."""
+    pack = pack_from(_record({**SETUP, "layer": "python-http-api"}))
+    assert "Dockerfile" not in pack.release_files
+    assert ".dockerignore" in pack.release_files

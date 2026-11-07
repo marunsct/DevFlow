@@ -677,6 +677,10 @@ def pack_from(record: dict[str, Any]) -> StackPack | None:
                 smoke_files={},
                 stack={**dict(base.stack), **stack},
                 framework_files={},
+                # A release file that names the pack's own framework (its server command) fits no other framework:
+                # measured, the Python pack's Dockerfile runs `uvicorn ...` for a Falcon product. Better none.
+                release_files={path: text for path, text in base.release_files.items()
+                               if not any(word in text.lower() for word in base.frameworks)},
             )
         return StackPack(
             name=PROVEN_SETUP,

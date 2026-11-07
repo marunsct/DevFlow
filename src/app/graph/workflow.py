@@ -9669,7 +9669,8 @@ def build_workflow_graph(
             update["architecture_revision_count"] = revision_count
             # Fast delivery revises once: blocking findings still open after
             # that are decided as risks, as they are after the full count.
-            if revision_count >= (2 if _fast_delivery() else MAX_ARCHITECTURE_REVISIONS):
+            limit = 2 if _fast_delivery() else MAX_ARCHITECTURE_REVISIONS
+            if revision_count >= limit:
                 # Decided, not stopped: see `app.graph.escalation`. The run used
                 # to fail here - one stored run after six revisions - although
                 # the acceptance suite, written from the brief, is what decides
@@ -9683,7 +9684,8 @@ def build_workflow_graph(
                     "findings": outstanding,
                     "error": (
                         f"The architecture reviewer still asked for changes to the specification "
-                        f"after {MAX_ARCHITECTURE_REVISIONS} revisions."
+                        # The count the run stopped at: fast delivery's two, not the full limit (review D8).
+                        f"after {revision_count} revision{'s' if revision_count != 1 else ''}."
                     ),
                 }
             else:

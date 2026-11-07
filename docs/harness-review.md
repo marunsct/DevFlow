@@ -208,3 +208,5 @@ unasked; re-check filed items weekly. And from finding 3: no mechanism counts as
 firing on live runs (`loop.sh effects`).
 
 Progress 2026-11-07 15:4x JST: F4 built in its measured form as LF.669 - fixers after a fix undone for a broken start are told the streak and the error raised (128 such reverts over 37 runs, 11 runs with 3+ in a row). Failure-evidence subsystem had five point fixes (LF.607, 664, 667, 667b, 668): its design review is the next item.
+
+Progress 2026-11-07 17:0x JST: D8 BUILT as LF.674 (the design escalation names the revisions it took - fast delivery's 2, not the full limit). G6 NOT BUILT, measured: of 256 scored runs, 49 shipped a deferred criterion - 41 full score, 8 partial (16%, against 24% for runs with no deferral); blocking release on a deferral would hold 41 good runs to catch 8, and under auto-approval the escalation accepts and ships the same product. Since LF.337's last try (10-27) only 3 deferring runs lost a hidden test, 2 of them on the deferred criterion itself (a missing record's 404, a tag filter): the lever is a last try that fixes, not a gate. Next: R6, measured first (which environment rules tool calls still break).

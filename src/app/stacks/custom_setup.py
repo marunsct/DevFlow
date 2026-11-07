@@ -152,8 +152,66 @@ def runner_layer(kind: str, language: str) -> StackPack | None:
                  if pack.kind == kind and pack.language == language and pack.framework_files), None)
 
 
+def write_runner_layer(project_root: Path, pack: StackPack, project: str, title: str) -> dict[str, str]:
+    """Write `pack`'s runner layer and the setup's declaration; return the framework files left to write, with their job.
+
+    The layer is every file and smoke test of the pack but its framework's own; the declaration is the pack's own
+    commands, report paths, test folders and kept files, so nothing the agent writes can get those wrong (SF.2).
+    """
+    from app.stacks import python_package_name
+
+    package = python_package_name(project)
+    framework = {pack.filled(path, project, title, package): pack.filled(what, project, title, package)
+                 for path, what in pack.framework_files.items()}
+    for template in (pack.files, pack.smoke_files):
+        for path, text in template.items():
+            where = pack.filled(path, project, title, package)
+            if where in framework:
+                continue
+            target = project_root / where
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(pack.filled(text, project, title, package), encoding="utf-8")
+    commands = pack.commands(project, package)
+    declaration = {
+        "kind": pack.kind,
+        "install": commands["install"],
+        "unit_test": commands["unit_test"],
+        "unit_report": pack.unit_report,
+        "unit_dir": pack.unit_dir,
+        "unit_pattern": pack.unit_pattern,
+        "acceptance_test": commands["acceptance_test"],
+        "acceptance_report": pack.acceptance_report,
+        "acceptance_dir": pack.acceptance_dir,
+        "acceptance_pattern": pack.acceptance_pattern,
+        "kept_files": [pack.filled(path, project, title, package) for path in pack.kept_files],
+        "smoke_files": [pack.filled(path, project, title, package) for path in pack.smoke_files],
+        "acceptance_guide": pack.filled(pack.acceptance_guide, project, title, package)[:MAX_GUIDE],
+    }
+    (project_root / DECLARATION_FILE).write_text(json.dumps(declaration, indent=2) + "\n", encoding="utf-8")
+    return framework
+
+
+def layered_setup(project_root: Path, stack: Any, kind: str, project: str, title: str, *, write: bool) -> dict[str, str] | None:
+    """The framework files left to the setup stage when a runner layer covers this stack; None when none does.
+
+    Written once, on the first attempt (`write`); a later attempt keeps what the first wrote and is asked for the
+    same files again.
+    """
+    layer = runner_layer(kind, str(getattr(stack, "language", "") or ""))
+    if layer is None:
+        return None
+    if write:
+        return write_runner_layer(project_root, layer, project, title)
+    from app.stacks import python_package_name
+
+    package = python_package_name(project)
+    return {layer.filled(path, project, title, package): layer.filled(what, project, title, package)
+            for path, what in layer.framework_files.items()}
+
+
 def build_setup_request(
     project: str, stack: Any, kind: str, problem: str = "", specification: Any = None,
+    layer_files: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """What the setup stage is asked to do.
 
@@ -177,6 +235,22 @@ def build_setup_request(
         "run both smoke tests again through the declared commands, and update the declaration.\n"
         if problem else ""
     )
+    if layer_files:
+        wanted = "\n".join(f"- `{project}/{path}`: {what}" for path, what in layer_files.items())
+        text = f"""--- Set up the project's framework: its runners are already set up ---
+No ready-made setup exists for this stack ({_stack_line(stack)}), so `{project}/` is set up on its language's
+runners: the install into the project's `.venv`, the unit and acceptance test runners with their reports, the
+acceptance suite's configuration, an acceptance smoke test, and `{project}/{DECLARATION_FILE}`.
+Leave those as they are: the harness proves the setup by running exactly the commands that file declares.
+
+Write only these files, for this stack's own framework, so both smoke tests pass:
+{wanted}
+
+Ask `look_up_package` for the framework's current version, and `read_docs` for how it serves a route. You may run the
+declared install and both smoke tests through the declared commands to check your files; then answer. Build nothing of
+the product beyond what the smoke tests need: the sprints build the rest.
+{planned}{again}"""
+        return {"messages": [{"role": "user", "content": text}]}
     text = f"""--- Set up the project so its tests already run ---
 No ready-made setup exists for this stack ({_stack_line(stack)}). Before anything of the
 product is built, set up `{project}/` so that a unit test and an acceptance test both run.

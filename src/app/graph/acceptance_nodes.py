@@ -405,6 +405,12 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
             for relative in replayed:
                 (project_root / relative).unlink(missing_ok=True)
 
+    # On its language's runner layer when a pack of its kind and language has one (SF.2): the harness writes the
+    # install, runners, reports, acceptance configuration and the declaration; the stage writes the framework's files.
+    layer_files = custom_setup.layered_setup(
+        project_root, stack, product_kind(stack, brief), project, title or project,
+        write=attempt == 0 and not resuming,
+    )
     agent = create_specialist_agent(
         "testing", model=ctx.model, checkpointer=ctx.checkpointer,
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
@@ -415,7 +421,7 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         agent=agent,
         initial_request=custom_setup.build_setup_request(
             project, stack, product_kind(stack, brief), str(previous.get("problem") or ""),
-            specification=state.get("technical_specification"),
+            specification=state.get("technical_specification"), layer_files=layer_files,
         ),
         output_key="__stack_setup__",
         next_stage="acceptance_author",

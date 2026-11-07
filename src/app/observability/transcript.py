@@ -603,9 +603,7 @@ def build_transcript_callback(run_id: str | None, stage: str) -> Any:
                             # How long the reply's reasoning was, for a server
                             # that reports no reasoning tokens.
                             reasoning_chars=(getattr(message, "response_metadata", None) or {}).get("reasoning_chars") or 0,
-                            finish_reason=(getattr(generation, "generation_info", None) or {}).get(
-                                "finish_reason"
-                            ),
+                            finish_reason=finish_reason_of(generation, message),
                             # How a reply cut off by the cap was salvaged, if it was
                             # (`app.models.reply_salvage`).
                             salvaged=(getattr(generation, "generation_info", None) or {}).get("harness_salvaged") or "",
@@ -617,6 +615,22 @@ def build_transcript_callback(run_id: str | None, stage: str) -> Any:
             record(run_id, stage, "model_error", error=f"{type(error).__name__}: {error}")
 
     return TranscriptCallback()
+
+
+#: A provider's `stop_reason` in the OpenAI words the harness reads (review C7): measured, all 857 replies recorded
+#: with no finish reason came from one provider that names it `stop_reason`, so its cut-off replies read as unknown.
+_STOP_REASONS = {"end_turn": "stop", "stop_sequence": "stop", "tool_use": "tool_calls", "max_tokens": "length"}
+
+
+def finish_reason_of(generation: Any, message: Any) -> str | None:
+    """Why a reply ended, in the OpenAI words, whichever field the provider used; None when it said nothing."""
+    info = getattr(generation, "generation_info", None) or {}
+    metadata = getattr(message, "response_metadata", None) or {}
+    said = info.get("finish_reason") or metadata.get("finish_reason")
+    if said:
+        return str(said)
+    stop = info.get("stop_reason") or metadata.get("stop_reason")
+    return _STOP_REASONS.get(str(stop), str(stop)) if stop else None
 
 
 def build_transcript_middleware(stage: str) -> Any:

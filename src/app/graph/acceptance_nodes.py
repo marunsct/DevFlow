@@ -673,11 +673,18 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     # with a problem "still open", which is a release gap.
     from app.acceptance import check_findings
 
-    cannot = suite.findings_that_reopen(root, result, suite.tests_that_cannot_pass(root, result))
+    cannot_pass = suite.tests_that_cannot_pass(root, result)
+    cannot = suite.findings_that_reopen(root, result, cannot_pass)
     # A repair that left a test it was sent for exactly as it was goes back with the cannot-pass findings (and once
     # at the review's limit, `cannot_pass_to_lock`).
     cannot = [*cannot, *suite.tests_left_unrepaired(root)]
-    problems.extend(check_findings.noted(root, rounds, "tests_that_cannot_pass", cannot))
+    # Each of the checks inside `tests_that_cannot_pass` recorded under its own name (HR2.Q.1); a finding none of
+    # them raised (a repair left unrepaired) under the bucket's.
+    named = getattr(cannot_pass, "checks", {}) or {}
+    for check in dict.fromkeys(named.get(str(f), "tests_that_cannot_pass") for f in cannot):
+        check_findings.noted(root, rounds, check, [f for f in cannot
+                                                  if named.get(str(f), "tests_that_cannot_pass") == check])
+    problems.extend(cannot)
     # Against the specification's contract, before it is recorded at the lock (the rounds read the locked one).
     problems.extend(check_findings.noted(root, rounds, "tests_that_want_json_from_a_204", suite.tests_that_want_json_from_a_204(
         root, getattr(state.get("technical_specification"), "interface_contract", None) or ())))
@@ -794,6 +801,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         update.pop("stage", None)
         if not review.approved and review.findings:
             findings = suite.findings_about_the_suite([str(item) for item in review.findings])
+            # The QA lead is the largest sender of send-backs (240 of 295 items left open at the lock): recorded
+            # beside the harness's own checks so its settle rate is measured too (HR2.Q.1).
+            check_findings.noted(root, rounds, "qa_lead", findings)
             if len(findings) < len(review.findings):
                 logger.info(
                     "QA lead's review: %d of %d finding(s) were about the product, not the tests; not sent back",

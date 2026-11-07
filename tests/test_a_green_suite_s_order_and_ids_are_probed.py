@@ -142,7 +142,7 @@ def test_a_literal_id_nothing_created_is_found_when_on(tmp_path, monkeypatch):
     assert len(found) == 1 and "an id the test never created" in found[0] and "line 3" in found[0]
     assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", found[0], re.I)
     source = Path(suite.__file__).read_text()
-    assert "*ids_read_without_a_create.findings(repo_root)" in source[source.index("def tests_that_cannot_pass"):]
+    assert "ids_read_without_a_create.findings(repo_root)" in source[source.index("def tests_that_cannot_pass"):]
 
 
 def test_a_test_that_creates_expects_a_refusal_or_has_a_hook_is_left_alone(tmp_path, monkeypatch):

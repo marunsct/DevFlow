@@ -5001,56 +5001,69 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
 
     # These have measured what they say: the spec was run with the product stood in for, or a failure of this run is
     # part of the finding. `findings_that_reopen` leaves them alone.
+    # Which check raised each finding, so the review records it under its own name (HR2.Q.1: 36 checks were one
+    # bucket in `.harness/check-findings.jsonl`).
+    checks: dict[str, str] = {}
     measured = [
-        *spec_dry_run.findings(repo_root),
-        *tests_that_broke_themselves(repo_root, result),
-        *tests_broken_by_their_own_setup(repo_root, result),
-        *tests_that_need_what_they_never_made(repo_root, result),
-        *tests_that_assert_a_kept_file_s_text(repo_root, result),
-        *tests_that_count_a_list_other_tests_write_to(repo_root, result),
-        *page_tests_that_count_a_shared_list(repo_root, result),
-        *python_tests_that_count_a_list_other_tests_write_to(repo_root, result),
-        *tests_that_count_every_row_of_a_shared_table(repo_root, result),
-        *the_suite_failed_in_its_own_words(repo_root, result),
-        *tests_whose_label_also_matches_a_longer_name(repo_root, result),
+        *_by(checks, "spec_dry_run", spec_dry_run.findings(repo_root)),
+        *_by(checks, "tests_that_broke_themselves", tests_that_broke_themselves(repo_root, result)),
+        *_by(checks, "tests_broken_by_their_own_setup", tests_broken_by_their_own_setup(repo_root, result)),
+        *_by(checks, "tests_that_need_what_they_never_made", tests_that_need_what_they_never_made(repo_root, result)),
+        *_by(checks, "tests_that_assert_a_kept_file_s_text", tests_that_assert_a_kept_file_s_text(repo_root, result)),
+        *_by(checks, "tests_that_count_a_list_other_tests_write_to", tests_that_count_a_list_other_tests_write_to(repo_root, result)),
+        *_by(checks, "page_tests_that_count_a_shared_list", page_tests_that_count_a_shared_list(repo_root, result)),
+        *_by(checks, "python_tests_that_count_a_list_other_tests_write_to", python_tests_that_count_a_list_other_tests_write_to(repo_root, result)),
+        *_by(checks, "tests_that_count_every_row_of_a_shared_table", tests_that_count_every_row_of_a_shared_table(repo_root, result)),
+        *_by(checks, "the_suite_failed_in_its_own_words", the_suite_failed_in_its_own_words(repo_root, result)),
+        *_by(checks, "tests_whose_label_also_matches_a_longer_name", tests_whose_label_also_matches_a_longer_name(repo_root, result)),
     ]
     # These read a test's text, and text is a guess at what it does.
     read_from_text = [
-        *ids_read_without_a_create.findings(repo_root),
-        *assertions_that_do_not_exist(repo_root),
-        *locators_that_do_not_exist(repo_root),
-        *locators_by_a_name_the_role_never_has(repo_root),
-        *locators_with_invalid_name_option(repo_root),
-        *locators_matching_a_pattern_as_text(repo_root),
-        *whole_page_lookups_of_a_per_record_control(repo_root),
-        *page_assertions_without_await(repo_root),
-        *requests_with_a_fetch_body(repo_root),
-        *responses_read_without_the_call(repo_root),
-        *contexts_made_from_the_fixture(repo_root),
-        *fetch_calls_written_like_the_fixture(repo_root),
-        *reads_of_what_the_test_does_not_have(repo_root),
-        *tests_that_want_json_from_a_204(repo_root),
-        *tests_that_filter_for_what_they_never_made(repo_root),
-        *tests_whose_success_status_the_contract_does_not_give(repo_root),
-        *tests_that_restart_on_data_they_never_wrote(repo_root),
-        *tests_that_sign_in_as_nobody(repo_root),
-        *tests_that_never_open_the_page(repo_root),
-        *tests_that_access_storage_before_opening_the_page(repo_root),
-        *tests_that_expect_what_they_never_gave(repo_root),
-        *tests_that_assert_an_unstated_order(repo_root),
-        *locators_that_contradict_their_assertions(repo_root),
-        *tests_with_module_system_mismatch(repo_root),
-        *tests_with_unawaited_async_helpers(repo_root),
+        *_by(checks, "ids_read_without_a_create", ids_read_without_a_create.findings(repo_root)),
+        *_by(checks, "assertions_that_do_not_exist", assertions_that_do_not_exist(repo_root)),
+        *_by(checks, "locators_that_do_not_exist", locators_that_do_not_exist(repo_root)),
+        *_by(checks, "locators_by_a_name_the_role_never_has", locators_by_a_name_the_role_never_has(repo_root)),
+        *_by(checks, "locators_with_invalid_name_option", locators_with_invalid_name_option(repo_root)),
+        *_by(checks, "locators_matching_a_pattern_as_text", locators_matching_a_pattern_as_text(repo_root)),
+        *_by(checks, "whole_page_lookups_of_a_per_record_control", whole_page_lookups_of_a_per_record_control(repo_root)),
+        *_by(checks, "page_assertions_without_await", page_assertions_without_await(repo_root)),
+        *_by(checks, "requests_with_a_fetch_body", requests_with_a_fetch_body(repo_root)),
+        *_by(checks, "responses_read_without_the_call", responses_read_without_the_call(repo_root)),
+        *_by(checks, "contexts_made_from_the_fixture", contexts_made_from_the_fixture(repo_root)),
+        *_by(checks, "fetch_calls_written_like_the_fixture", fetch_calls_written_like_the_fixture(repo_root)),
+        *_by(checks, "reads_of_what_the_test_does_not_have", reads_of_what_the_test_does_not_have(repo_root)),
+        *_by(checks, "tests_that_want_json_from_a_204", tests_that_want_json_from_a_204(repo_root)),
+        *_by(checks, "tests_that_filter_for_what_they_never_made", tests_that_filter_for_what_they_never_made(repo_root)),
+        *_by(checks, "tests_whose_success_status_the_contract_does_not_give", tests_whose_success_status_the_contract_does_not_give(repo_root)),
+        *_by(checks, "tests_that_restart_on_data_they_never_wrote", tests_that_restart_on_data_they_never_wrote(repo_root)),
+        *_by(checks, "tests_that_sign_in_as_nobody", tests_that_sign_in_as_nobody(repo_root)),
+        *_by(checks, "tests_that_never_open_the_page", tests_that_never_open_the_page(repo_root)),
+        *_by(checks, "tests_that_access_storage_before_opening_the_page", tests_that_access_storage_before_opening_the_page(repo_root)),
+        *_by(checks, "tests_that_expect_what_they_never_gave", tests_that_expect_what_they_never_gave(repo_root)),
+        *_by(checks, "tests_that_assert_an_unstated_order", tests_that_assert_an_unstated_order(repo_root)),
+        *_by(checks, "locators_that_contradict_their_assertions", locators_that_contradict_their_assertions(repo_root)),
+        *_by(checks, "tests_with_module_system_mismatch", tests_with_module_system_mismatch(repo_root)),
+        *_by(checks, "tests_with_unawaited_async_helpers", tests_with_unawaited_async_helpers(repo_root)),
     ]
-    return _CannotPass([*measured, *read_from_text], read_from_text)
+    return _CannotPass([*measured, *read_from_text], read_from_text, checks)
 
 
 class _CannotPass(list):
     """The one list every caller reads, knowing which of its findings were only read from a test's text."""
 
-    def __init__(self, found: Sequence[str], read_from_text: Sequence[str]) -> None:
+    def __init__(self, found: Sequence[str], read_from_text: Sequence[str], checks: dict | None = None) -> None:
         super().__init__(found)
         self.read_from_text = list(read_from_text)
+        #: Each finding's text -> the name of the check that raised it.
+        self.checks = dict(checks or {})
+
+
+def _by(checks: dict, name: str, findings: Sequence[str]) -> list[str]:
+    """`findings`, each remembered in `checks` as raised by `name`."""
+    found = list(findings or [])
+    for text in found:
+        checks.setdefault(str(text), name)
+    return found
 
 
 #: A line a finding points at: `line 12`, `line(s) 12, 14`.

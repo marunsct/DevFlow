@@ -107,7 +107,7 @@ def test_the_finding_reaches_the_cannot_pass_list_only_when_on(tmp_path, monkeyp
     found = spec_dry_run.findings(root)
     assert len(found) == 1 and "the dry run of the suite" in found[0] and "notes/acceptance/a.spec.js" in found[0]
     source = Path(suite.__file__).read_text()
-    assert "*spec_dry_run.findings(repo_root)" in source[source.index("def tests_that_cannot_pass"):]
+    assert "spec_dry_run.findings(repo_root)" in source[source.index("def tests_that_cannot_pass"):]
 
 
 def test_one_pack_can_be_set_apart_from_the_switch(tmp_path, monkeypatch):

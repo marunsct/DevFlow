@@ -105,6 +105,10 @@ def _text_of(element: ET.Element) -> str:
     """
     message = _SHORTENED.sub("", element.get("message") or "").strip()
     body = (element.text or "").strip()
+    # pytest's body repeats the message's lines: kept once, the limit goes to the traceback.
+    # (An attribute's line breaks are read as spaces, so the two are compared word by word.)
+    if message and body and " ".join(message.split()) in " ".join(body.split()):
+        message = ""
     text = "\n".join(part for part in (message, body) if part)
     if len(text) <= MAX_MESSAGE_CHARS:
         return text

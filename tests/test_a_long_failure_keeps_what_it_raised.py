@@ -31,4 +31,11 @@ def test_the_exception_at_the_end_of_a_long_traceback_is_kept():
 
 def test_a_short_failure_is_kept_whole():
     case = parse(_report("assert 1 == 2", "def test(): assert 1 == 2\nE   assert 1 == 2")).tests[0]
-    assert case.message == "assert 1 == 2\ndef test(): assert 1 == 2\nE   assert 1 == 2"
+    assert case.message == "def test(): assert 1 == 2\nE   assert 1 == 2"
+
+
+def test_a_message_the_body_repeats_is_kept_once():
+    """Measured live: every failure was printed twice - pytest's message, then a body that begins with it."""
+    body = "assert 404 == 200\n +  where 404 = <Response [404 Not Found]>.status_code\nclient = <httpx.Client>"
+    case = parse(_report("assert 404 == 200\n +  where 404 = <Response [404 Not Found]>.status_code", body)).tests[0]
+    assert case.message == body

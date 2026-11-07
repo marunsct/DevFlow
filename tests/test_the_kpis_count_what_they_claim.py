@@ -125,3 +125,17 @@ def test_the_ledger_is_written_beside_itself_and_moved_into_place(tmp_path):
     assert "temporary.replace(ledger)" in source
     assert not (tmp_path / "ledger.csv.tmp").exists()
     assert "stages" not in path.read_text().splitlines()[0]
+
+
+def test_a_long_model_call_is_the_model_working_not_an_orphan():
+    """Harness review R3, measured: every gap over ten minutes since the orphan sweep was fixed was one request
+    waiting 11-14 minutes for its own reply, and was counted as orphaned time."""
+    records = [
+        {"at": _at(0), "stage": "a", "kind": "model_request"},
+        {"at": _at(800), "stage": "a", "kind": "model_response", "usage": {"input_tokens": 5, "output_tokens": 1}},
+        {"at": _at(801), "stage": "a", "kind": "model_request"},
+        {"at": _at(802), "stage": "a", "kind": "model_response", "usage": {"input_tokens": 5, "output_tokens": 1}},
+    ]
+    got = kpi.kpis(records)
+    assert got["orphan_gap_minutes"] == 0.0
+    assert abs(got["active_minutes"] - 802 / 60) < 0.1

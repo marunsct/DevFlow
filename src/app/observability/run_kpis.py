@@ -265,7 +265,11 @@ def kpis(records: list[dict]) -> dict:
     wall = max((max(times) - min(times)) - discarded, 0.0) if times else 0.0
     model_busy = _busy(model_iv)
     ordered = sorted(times)
-    gaps = [b - a for a, b in zip(ordered, ordered[1:])]
+    # A silence inside one model call is the model working, not a run left without a worker (harness review R3,
+    # measured: every gap over ten minutes since the orphan sweep was fixed was one request waiting 11-14 minutes
+    # for its own reply, and was taken off the run's active time as "orphaned").
+    gaps = [b - a for a, b in zip(ordered, ordered[1:])
+            if not any(start <= a and b <= end for start, end in model_iv)]
     # A rewind's own gap is discarded time, already taken off the wall.
     orphan = max(sum(g for g in gaps if g > ORPHAN_GAP_SECONDS) - discarded, 0.0)
     effective_input = tokens["input"] - tokens["cached"]

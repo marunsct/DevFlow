@@ -84,21 +84,35 @@ def mutate(workspace: Path, out: Path, count: int = 12) -> dict:
             "turned_red": turned_red,
             "unit_tests_turned_red": unit_red,
         })
-    tried = len(result["mutants"])
-    caught = sum(m["caught"] for m in result["mutants"])
-    specific = sum(m["caught"] and not m["everything_failed"] for m in result["mutants"])
-    with_unit = sum(m["caught"] or bool(m["unit_tests_turned_red"]) for m in result["mutants"])
-    result.update({
-        "tried": tried,
-        "caught": caught,
-        "score": round(caught / tried, 3) if tried else None,
-        "caught_by_a_specific_test": specific,
-        "caught_with_unit_tests": with_unit,
-        "score_with_unit_tests": round(with_unit / tried, 3) if tried else None,
-    })
+    result.update(scored(result["mutants"]))
     out.write_text(json.dumps(result, indent=2))
     shutil.rmtree(copy, ignore_errors=True)
     return result
+
+
+def scored(mutants: list) -> dict:
+    """The mutation score with a change that broke the product outright left out as inconclusive (HR2.Q.6a).
+
+    Measured over 2,247 stored mutants: 334 (15%) turned every test red - the product no longer worked at all - and
+    counted as caught, which says nothing about whether any test holds the behaviour. `score_with_breaks` keeps the
+    old figure.
+    """
+    tried = len(mutants)
+    caught = sum(m["caught"] for m in mutants)
+    broke = sum(bool(m.get("everything_failed")) for m in mutants)
+    specific = sum(m["caught"] and not m.get("everything_failed") for m in mutants)
+    with_unit = sum(m["caught"] or bool(m.get("unit_tests_turned_red")) for m in mutants)
+    conclusive = tried - broke
+    return {
+        "tried": tried,
+        "caught": caught,
+        "inconclusive": broke,
+        "score": round(specific / conclusive, 3) if conclusive else None,
+        "score_with_breaks": round(caught / tried, 3) if tried else None,
+        "caught_by_a_specific_test": specific,
+        "caught_with_unit_tests": with_unit,
+        "score_with_unit_tests": round(with_unit / tried, 3) if tried else None,
+    }
 
 
 if __name__ == "__main__":

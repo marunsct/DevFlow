@@ -48,7 +48,7 @@ Superseded by HR2 (do not build as first written): SF.2b (parked on evidence), S
 works), Q3 (deprioritised), Q4's stub leg (dropped), F6 (wrong shape -> fix.4), WB.5 (not supported by the data),
 E4 (-> PR.9 generated edge sets).
 
-HR2 progress: bundle 1 - R.1, R.4 (LF.690; 45 ledger rows recomputed, 2,145 paused minutes taken out), O.1, E.5 (LF.691), C.3, C.4a, OB.1, R.5 (LF.692, deploys at the next boundary), fix.7 (LF.693), E.3, Q.10 (LF.694), Q.1 (LF.696) built 11-08 01:2x; left in bundle 1: Q.4, Q.9, G.1, fix.1, P.5, P.8, SS.4, OB.1, Q.6a, Q.11, G.3, PR.10.
+HR2 progress: bundle 1 - R.1, R.4 (LF.690; 45 ledger rows recomputed, 2,145 paused minutes taken out), O.1, E.5 (LF.691), C.3, C.4a, OB.1, R.5 (LF.692, deploys at the next boundary), fix.7 (LF.693), E.3, Q.10 (LF.694), Q.1 (LF.696), Q.6a (LF.697; mutation median 0.667 -> 0.583 honest) built 11-08 01:3x; left in bundle 1: Q.4, Q.9, G.1, fix.1, P.5, P.8, SS.4, Q.11, G.3, PR.10.
 
 ## Harness review items behind a switch (first review's list; see HR2 above for the current order)
 

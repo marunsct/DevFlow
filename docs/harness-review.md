@@ -170,6 +170,7 @@ small and large codebases. Bug fixes are always on; optional improvements sit be
 and are kept only with a measured no-loss result. Owner 11-07: build and hold deploys until agreed.
 
 **Phase 0 - measurement first (bug fixes; nothing else can be judged without them).**
+Progress: C1 BUILT 2026-11-07 (`run_kpis.cached_token_share` is None when no call reported a cache read; 112 ledger rows corrected, backup `data/kpi/ledger.csv.bak-c1-20261107`; `tests/test_an_unreported_cache_is_unknown_not_zero.py`).
 E1 + C1 ledger integrity; Q1 check-precision telemetry with guard reason codes; F8 stable defect ids; telemetry for
 the silent mechanisms (F1 candidate rounds, F2 surrender-to-rewrite, C7 finish reasons). Then E2 pass^k and
 intervals in `kpi_ledger report` and `impact.py`.

@@ -7507,6 +7507,32 @@ def _is_the_project_s_own_manifest(root: Path, target: Path) -> bool:
     return bool(pinned) and target.parent == root / pinned
 
 
+def _a_declared_smoke_test(root: Path, target: Path) -> str | None:
+    """Why `target` stays, when a setup declaration still names it as a smoke test; None otherwise.
+
+    Measured on a custom-stack baseline: the setup stage deleted its own smoke tests before ending, on both
+    attempts; the proof found the declared files missing and the setup was left to the agents. The harness removes
+    them itself once the setup is proven (`custom_setup.prove`), and deletes the declaration with them.
+    """
+    for folder in target.parents:
+        declaration = folder / "stack-setup.json"
+        if declaration.is_file():
+            try:
+                named = json.loads(declaration.read_text(encoding="utf-8")).get("smoke_files") or []
+                mine = target.relative_to(folder).as_posix()
+            except (OSError, ValueError, AttributeError):
+                return None
+            if any(str(name).split("::")[0].removeprefix("./") == mine for name in named if isinstance(name, str)):
+                return (
+                    f"'{target.relative_to(root).as_posix()}' is a smoke test `stack-setup.json` names: the harness "
+                    "runs it to prove the setup and removes it itself afterwards. Leave it in place."
+                )
+            return None
+        if folder == root:
+            return None
+    return None
+
+
 def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[str, str]:
     """Delete one file the agent created inside the workspace.
 
@@ -7557,6 +7583,9 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
             f"'{shown}' records which directory this project lives in and is not "
             "clutter. Leave it alone; every later stage reads it."
         )
+    smoke = _a_declared_smoke_test(root, target)
+    if smoke is not None:
+        raise RepositoryToolError(smoke)
     # A test is evidence, not clutter. Measured on one run: the test round
     # wrote four suites, ran them - 27 assertions passing against the real
     # application - and then deleted three of them as "temporary helper

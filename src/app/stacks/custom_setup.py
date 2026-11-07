@@ -182,7 +182,8 @@ that file alone: a setup that runs out of calls before writing it is started aga
 3. Write exactly one unit smoke test and one acceptance smoke test that pass on the project
    as generated, and run each through the command you will declare until it passes. Each
    declared command runs every test of its kind - its test directory, never the smoke test's
-   file or name - because the smoke tests are removed once the setup is proven.
+   file or name - because the harness removes the smoke tests itself after it has proven the
+   setup: leave them in place, the proof runs them.
 4. Bring `{project}/{DECLARATION_FILE}` up to date with what you ran, every path relative to `{project}/`:
    {{
      "kind": "{kind or 'one of ' + ', '.join(KINDS)}",

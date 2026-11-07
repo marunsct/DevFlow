@@ -242,7 +242,10 @@ def the_facts_section(root: str | Path | None, *, built: bool = True) -> str:
     from app.agents.specification_rulings import the_rulings_section
 
     # The rulings follow their own switch: a decision taken for the run binds whichever facts are on.
-    rulings = the_rulings_section(root)
+    from app.agents.start_breaks import the_section as the_start_breaks
+
+    # Both follow no switch: a decision taken for the run, and fixes undone for a start that broke, bind every stage.
+    rulings = the_rulings_section(root) + the_start_breaks(root)
     facts = facts_from_the_workspace(root, built=built) if enabled() else []
     if not facts:
         return rulings

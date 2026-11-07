@@ -929,6 +929,10 @@ def after_a_fix(
         except Exception:  # noqa: BLE001 - the fix is reverted as before
             logger.warning("Could not look at %s before it was reverted", stage_name, exc_info=True)
     if broken and ci.revert_to(root, base):
+        if after.problem and any(str(item).startswith("the product no longer builds or starts") for item in broken):
+            from app.agents import start_breaks
+
+            start_breaks.record(root, stage_name, the_start_and_end_of(after.problem))
         # What the reverted fix had gained as well, so whether a whole fix
         # should go for one broken test can be measured: the snapshot after a
         # reverted fix is not kept. Measured live: a fix that rewrote the served
@@ -944,6 +948,10 @@ def after_a_fix(
     # since it was measured" and ran the unit tests and the acceptance suite again on the product just measured.
     after.commit = ci.commit(root, f"Fix: {description[:60]}") or after.commit
     ci.save(root, after)
+    if not after.problem:
+        from app.agents import start_breaks
+
+        start_breaks.clear(root)
     return []
 
 

@@ -206,3 +206,5 @@ acceptances. Each is judged by Phase 0's measures, not by single runs.
 A standing rule (memory `step-back-on-a-subsystem`): after three point fixes in one subsystem, review its design
 unasked; re-check filed items weekly. And from finding 3: no mechanism counts as done until a measure shows it
 firing on live runs (`loop.sh effects`).
+
+Progress 2026-11-07 15:4x JST: F4 built in its measured form as LF.669 - fixers after a fix undone for a broken start are told the streak and the error raised (128 such reverts over 37 runs, 11 runs with 3+ in a row). Failure-evidence subsystem had five point fixes (LF.607, 664, 667, 667b, 668): its design review is the next item.

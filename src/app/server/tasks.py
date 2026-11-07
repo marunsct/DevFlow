@@ -686,7 +686,10 @@ def execute_workflow_run(
         from app import delivery
         from app.models.roles import on_the_build_model_only
 
-        with delivery.for_the_run(getattr(record, "delivery_mode", "")), \
+        from app.server.driving import driving
+
+        # Held while this task drives the run, so a rewind waits for the step in flight (harness review R1).
+        with driving(run_id), delivery.for_the_run(getattr(record, "delivery_mode", "")), \
                 on_the_build_model_only(bool(getattr(record, "local_only", False))):
             asyncio.run(runner._run_loop(record, document, repository, resume=resume))
     except _RETRYABLE as exc:

@@ -1216,6 +1216,14 @@ class WorkflowRunner:
             raise RunConflict(
                 f"Run {run_id} is {record.status}; pause it first, then rewind it."
             )
+        # "Paused" is honoured at the next stage boundary; the step in flight still finishes and writes its
+        # checkpoint. Measured: it wrote over a rewind nine seconds later, and the rewound stage never ran.
+        from app.server import driving
+
+        if not await asyncio.to_thread(driving.wait_until_free, run_id):
+            raise RunConflict(
+                f"Run {run_id} is still finishing the step it was on when it was paused; rewind it once that is done."
+            )
         graph = self._graph_for(record)
         done = await asyncio.to_thread(rewind_to, graph, record.thread_id, checkpoint_id, record.repo_root)
         # Where it went back to, in the transcript: what the abandoned branch

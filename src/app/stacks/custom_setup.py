@@ -22,10 +22,12 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 from typing import Any, Sequence
 
 from app.acceptance import junit
@@ -842,8 +844,13 @@ def prove(
     brief: str = "",
     title: str = "",
     run: Runner | None = None,
+    keep: bool = True,
 ) -> ScaffoldResult:
-    """Prove the declared setup the way a pack's scaffold is proven, and record it if it passes."""
+    """Prove the declared setup the way a pack's scaffold is proven, and record it if it passes.
+
+    `keep=False` proves it and stops there - no contract, commit or library entry is written: how the nightly check
+    replays each library entry on an empty project (scaffolding plan SF.0b).
+    """
     root = Path(repo_root)
     project_root = root / project
     result = ScaffoldResult(ok=False, pack=PROVEN_SETUP, project=project)
@@ -907,6 +914,9 @@ def prove(
             )
             return result
 
+    if not keep:
+        result.ok = True
+        return result
     kept = {name: (project_root / name).read_text(encoding="utf-8", errors="replace") for name in declared.kept_files}
     # What a later run on the same stack replays instead of asking an agent
     # (`replay`): the declaration and every file it names, as proven.
@@ -1241,6 +1251,43 @@ def set_aside_what_did_not_prove(project_root: Path) -> str:
         return entry.name
     except OSError:
         return ""
+
+
+def check_the_library(scratch: Path, run_for: Any = None) -> list[tuple[str, bool, str]]:
+    """Each library entry replayed on an empty project and proven; one that fails is set aside. (name, ok, problem).
+
+    The devcontainer `test.sh` pattern (scaffolding plan SF.0b): an entry that no longer proves - a toolchain or a
+    pinned version moved under it - is found at night, not by the next run that replays it and pays its proof first.
+    `run_for(project_root)` gives the runner for a project; the sandbox's by default.
+    """
+    results: list[tuple[str, bool, str]] = []
+    for entry in sorted(library_directory().glob("*.json")):
+        try:
+            record = json.loads(entry.read_text(encoding="utf-8"))
+            declaration = json.loads(record["declaration"])
+            files = dict(record.get("files") or {})
+        except (OSError, ValueError, KeyError, TypeError):
+            results.append((entry.name, False, "unreadable"))
+            continue
+        workspace = scratch / entry.stem[:60]
+        shutil.rmtree(workspace, ignore_errors=True)
+        project_root = workspace / "product"
+        project_root.mkdir(parents=True)
+        for name, text in {**files, DECLARATION_FILE: record["declaration"]}.items():
+            relative = _in_this_project(name, project_root)
+            if relative is not None and isinstance(text, str):
+                (project_root / relative).parent.mkdir(parents=True, exist_ok=True)
+                (project_root / relative).write_text(text, encoding="utf-8")
+        stack = SimpleNamespace(product_kind=str(declaration.get("kind") or ""))
+        run = run_for(workspace) if run_for else None
+        proved = prove(workspace, "product", stack, run=run, keep=False)
+        if not proved.ok:
+            failed = entry.parent / "failed"
+            failed.mkdir(parents=True, exist_ok=True)
+            entry.replace(failed / entry.name)
+        results.append((entry.name, proved.ok, proved.problem))
+        shutil.rmtree(workspace, ignore_errors=True)
+    return results
 
 
 def leave_to_the_agents(project_root: Path) -> None:

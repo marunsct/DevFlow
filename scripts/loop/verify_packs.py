@@ -38,3 +38,14 @@ for name in names:
         for step in result.steps:
             print(f"--- {step['command']} -> exit {step['exit_code']}\n{step['output'][-2500:]}", flush=True)
 print(f"{len(names) - len(failed)} of {len(names)} packs scaffolded; failed: {failed or 'none'}")
+
+# The proven-setup library too (scaffolding plan SF.0b): each entry replayed on an empty project and proven; one that
+# no longer proves is set aside here instead of costing the next run that replays it.
+if not sys.argv[1:]:
+    from app.stacks.custom_setup import check_the_library
+
+    checked = check_the_library(base / "library")
+    for entry, ok, problem in checked:
+        print(f"=== library {entry[:90]}: ok={ok} {problem[:300]}", flush=True)
+    print(f"{sum(1 for _, ok, _ in checked if ok)} of {len(checked)} library setups proved; "
+          f"set aside: {[e for e, ok, _ in checked if not ok] or 'none'}")

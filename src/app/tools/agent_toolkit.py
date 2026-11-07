@@ -787,6 +787,17 @@ def _a_cd_taken_as_the_working_directory(
             joined = alone
         elif base == alone or base.endswith("/" + alone):
             joined = base
+    program = rest[0]
+    if repo_root and base and "/" in program and not os.path.isabs(program) \
+            and not (Path(repo_root) / joined / program).exists():
+        # The folder the command's own program is in. Measured over 30 runs: 23 refusals of `.venv/bin/python` "not
+        # installed" came from `cd bookmarks && .venv/bin/python ...` with `bookmarks` as `working_directory`, run in
+        # `bookmarks/bookmarks` - a real folder, the product's package named like its project - where no `.venv` is.
+        alone = os.path.normpath(folder.strip("/"))
+        for candidate in (alone, base):
+            if (Path(repo_root) / candidate / program).exists():
+                joined = candidate
+                break
     moved = (
         f"Ran `{' '.join(rest)}` in `{joined}`: `cd` is not a program here, so the folder was taken as "
         f"`working_directory`, which is how to run a command elsewhere."

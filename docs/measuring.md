@@ -44,6 +44,9 @@ From `docs/harness-review.md` Phase 2-3. Each gets its own switch, default off, 
 | C2, C3, C4, C6 | constrained answers; masked tools; stable opening; repo map | to build |
 | SF.2b, SF.2c, SF.3 | harness-run generator (stacks that have one; Python has none, so M6 covers the falcon case); setup budget and rollback; patch on replay and promotion | to build |
 
+Candidates found by audits (efficiency: a switch and a measured no-loss result before any is kept):
+- M8 (low): a one-file rewrite is shown 60-70k characters of project memory (`rewritten_fixes.MEMORY_CHARACTERS`; 115 requests over 20 runs, median 64,610) - try the failure's files and their imports only (~20k), judged on the rewrites' fix rate; ~2 min of prefill a run.
+
 ## Review items that need no measurement (bug fixes, always on)
 
 Built: R1 (LF.660), F2 telemetry (LF.663), F3 (LF.664), C1, F4 measured form (LF.669), D8 (LF.674), R6 (LF.675), C7 (LF.677), Q1 recording and report (LF.678; `loop.sh suite-checks`), P4 in its measured form (LF.679: a finished work order owns no file), F8 (LF.680), E1 (LF.681: `impact.py` leaves out runs a change was deployed into), SF.0b (LF.684-685), SF.0c (`loop.sh stack-misses`: every stored custom-setup run that fits a pack now is listed - all old misses fixed; the 9 still unfitted are Falcon, no pack), SF.1.

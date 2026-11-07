@@ -44,9 +44,9 @@ From `docs/harness-review.md` Phase 2-3. Each gets its own switch, default off, 
 
 ## Review items that need no measurement (bug fixes, always on)
 
-Built: R1 (LF.660), F2 telemetry (LF.663), F3 (LF.664), C1, F4 measured form (LF.669), D8 (LF.674), R6 (LF.675), C7 (LF.677), Q1 recording and report (LF.678; `loop.sh suite-checks`), P4 in its measured form (LF.679: a finished work order owns no file), F8 (LF.680), E1 (LF.681: `impact.py` leaves out runs a change was deployed into), SF.1.
+Built: R1 (LF.660), F2 telemetry (LF.663), F3 (LF.664), C1, F4 measured form (LF.669), D8 (LF.674), R6 (LF.675), C7 (LF.677), Q1 recording and report (LF.678; `loop.sh suite-checks`), P4 in its measured form (LF.679: a finished work order owns no file), F8 (LF.680), E1 (LF.681: `impact.py` leaves out runs a change was deployed into), SF.0b parts 1-2 (LF.684), SF.1.
 R3 not needed now, measured: no real orphan since LF.595; the KPI that suggested one counted long model calls (fixed, LF.682).
 R2 not needed, measured over the last 30 runs: 178 deploy cancellations, every one a call refused before it was sent ("this stage's call is not made"); no call in flight was lost at a resume - the pause already drains at the call boundary.
 Not built on evidence: G1 (measured), G6 (measured), P5 (on merit). Covered: G2 (LF.648).
 To build, in order:
-SF.0b library hygiene, SF.0c misses report.
+SF.0b part 3 (nightly replay of each library entry), SF.0c misses report.

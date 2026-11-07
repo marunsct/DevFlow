@@ -968,7 +968,16 @@ def prove(
         commit_all(root, f"Scaffold: {pack.title}")
     except Exception:  # noqa: BLE001 - history is a convenience, not the setup
         logger.debug("Could not commit the proven setup", exc_info=True)
-    remember(stack, replayable)
+    # The setup's own short code its smoke tests import goes with the entry; anything more and the entry is not kept.
+    for name in _smoke_tests_import_the_product(project_root, declared, replayable["files"]):
+        if name in proven_code:
+            replayable["files"][name] = proven_code[name]
+    beyond = _smoke_tests_import_the_product(project_root, declared, replayable["files"])
+    if beyond:
+        logger.warning("The proven setup is not kept for later runs: its smoke tests import %s, the product's own "
+                       "code, which a later project does not have", ", ".join(beyond[:3]))
+    else:
+        remember(stack, replayable)
     result.ok = True
     return result
 
@@ -1068,6 +1077,37 @@ def _entry_for(stack: Any) -> Path | None:
     return max(matches, key=lambda path: path.stat().st_mtime, default=None)
 
 
+_IMPORTED = re.compile(r"^\s*(?:from\s+([A-Za-z_][\w.]*)\s+import|import\s+([A-Za-z_][\w.]*))|"
+                       r"(?:require\(|from\s+)['\"](\.{1,2}/[^'\"]+)['\"]", re.M)
+
+
+def _smoke_tests_import_the_product(project_root: Path, declared: Declaration, files: dict[str, str]) -> list[str]:
+    """The product modules a proven setup's smoke tests import - neither kept nor smoke files - or [] (SF.0b, SP.2a).
+
+    A smoke test that imports the product's own module passes in the run that wrote both, and fails in every later
+    run the entry is replayed into: the module is not there. Read for Python imports and relative JavaScript ones.
+    """
+    replayed = {Path(name).as_posix() for name in files}
+    found = []
+    for smoke in declared.smoke_files:
+        text = str(files.get(smoke) or "")
+        for python_name, _, relative in (m.groups() for m in _IMPORTED.finditer(text)):
+            name = python_name or _
+            if relative:
+                target = os.path.normpath((Path(smoke).parent / relative).as_posix()).replace("\\", "/")
+                candidates = [target + suffix for suffix in ("", ".js", ".ts", ".mjs", "/index.js", "/index.ts")]
+            elif name:
+                top = name.split(".")[0]
+                candidates = [f"{top}.py", f"{top}/__init__.py"] if (project_root / top).exists() or (
+                    project_root / f"{top}.py").exists() else []
+            else:
+                continue
+            existing = [c for c in candidates if (project_root / c).is_file()]
+            if existing and not any(c in replayed for c in candidates):
+                found.append(existing[0])
+    return sorted(set(found))
+
+
 def remember(stack: Any, replayable: dict[str, Any]) -> None:
     """Keep a proven setup for later runs on the same stack: under the stack's own wording, and findable by what it is."""
     try:
@@ -1161,7 +1201,20 @@ def replay(project_root: Path, stack: Any, model: Any = None) -> list[str]:
         written.append(relative)
     if written:
         _REPLAYED[str(project_root)] = entry
+        # Kept on disk too: a worker restarted between the replay and its proof (a deploy) forgot it, and an entry
+        # that no longer proves was never set aside (scaffolding plan SF.0b).
+        try:
+            marker = _replayed_marker(project_root)
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(str(entry), encoding="utf-8")
+        except OSError:
+            logger.debug("Could not keep which entry was replayed", exc_info=True)
     return written
+
+
+def _replayed_marker(project_root: Path) -> Path:
+    """Where the replayed entry's path is kept: the workspace's harness folder, above the project."""
+    return project_root.parent / ".harness" / f"replayed-setup-{project_root.name}"
 
 
 def set_aside_what_did_not_prove(project_root: Path) -> str:
@@ -1172,6 +1225,13 @@ def set_aside_what_did_not_prove(project_root: Path) -> str:
     each 15 to 25 minutes before the setup stage was asked. Kept, not deleted: what it was stays readable.
     """
     entry = _REPLAYED.pop(str(project_root), None)
+    marker = _replayed_marker(project_root)
+    if entry is None:
+        try:
+            entry = Path(marker.read_text(encoding="utf-8").strip())
+        except OSError:
+            entry = None
+    marker.unlink(missing_ok=True)
     if entry is None or not entry.is_file():
         return ""
     try:

@@ -16,7 +16,7 @@ from app.stacks.custom_setup import problems_with, read_declaration
 DECLARED = {
     "kind": "http_api",
     "install": [["pip", "install", "-e", "."]],
-    "unit_test": ["python3", "-m", "pytest", "test_unit.py", "--junitxml=report-unit.xml"],
+    "unit_test": ["python3", "-m", "pytest", "--junitxml=report-unit.xml"],
     "unit_report": "report-unit.xml",
     "unit_dir": ".",
     "unit_pattern": "test_unit*.py",

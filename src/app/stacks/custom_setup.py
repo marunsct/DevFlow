@@ -180,7 +180,9 @@ that file alone: a setup that runs out of calls before writing it is started aga
    acceptance runner needs is started by the runner's own configuration; never start one
    yourself.
 3. Write exactly one unit smoke test and one acceptance smoke test that pass on the project
-   as generated, and run each through the command you will declare until it passes.
+   as generated, and run each through the command you will declare until it passes. Each
+   declared command runs every test of its kind - its test directory, never the smoke test's
+   file or name - because the smoke tests are removed once the setup is proven.
 4. Bring `{project}/{DECLARATION_FILE}` up to date with what you ran, every path relative to `{project}/`:
    {{
      "kind": "{kind or 'one of ' + ', '.join(KINDS)}",
@@ -412,6 +414,20 @@ def _declared(text: str, project_root: Path, fallback_kind: str, *, files_writte
         _in_this_project(name.split("::")[0] if isinstance(name, str) else name, project_root)
         for name in data.get("smoke_files") or []
     ]
+    # A test command runs every test of its kind. Measured on the first custom-stack baseline: both commands named the
+    # smoke test (`tests/test_store.py::test_store_smoke`); the proof passed with only the smoke tests there, the
+    # contract kept the commands for every round, the smoke tests were removed - and no later test would have run.
+    smoke_names = {name for name in smoke if name}
+    for key, argv in commands.items():
+        for token in argv or ():
+            plain = str(token).split("::")[0].removeprefix("./")
+            if "::" in str(token) or plain in smoke_names:
+                problems.append(
+                    f"`{key}` runs only `{token}`: it must run every test of its kind - name its test directory (or "
+                    "let the runner find them) - since the smoke tests are removed once the setup is proven and the "
+                    "sprints' tests must run through this same command"
+                )
+                break
     if any(name is None for name in kept):
         problems.append("every `kept_files` entry must be a path inside the project")
     if len(smoke) < 2 or any(name is None for name in smoke):

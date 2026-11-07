@@ -81,6 +81,8 @@ score-affecting blindness first, time second.
 
 ### Phase SF.0 - bug fixes, always on (one bundle)
 
+Progress: SF.0a facts part BUILT 2026-11-07 (`shared_facts.facts_from_the_workspace` reads `contract.the_pack`; `tests/test_a_proven_setup_gets_the_facts_a_pack_gets.py`), committed, not deployed (held until the RC14 runs finish, owner 11-07).
+
 - **SF.0a One tier reading.** Every `pack_named(...)` reader (`shared_facts.py:214`, `scaffold.py:68/103/258`,
   `delivery.py:121`, `server/runs.py:162`, `acceptance_nodes.py:228`) reads `contract.the_pack` so a proven setup
   gets layout facts, stub and reachability checks, and a "proven setup" support tier. Design-time facts

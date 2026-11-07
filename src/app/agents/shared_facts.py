@@ -207,13 +207,15 @@ def facts_from_the_workspace(root: str | Path | None, *, built: bool = True) -> 
     if not root:
         return []
     try:
-        from app.stacks import contract, pack_named
+        from app.stacks import contract
         from app.stacks.scaffold import code_the_product_does_not_run, entrypoint_is_still_the_stub
 
-        record = contract.read(root) or {}
-        pack = pack_named(str(record.get("pack") or ""))
-        if pack is None:
+        # `contract.the_pack`, not `pack_named`: a stack no pack covers has a proven setup's pack, and its stages read
+        # the same layout facts a code pack's do (SF.0a; `pack_named` knows only the code packs).
+        found = contract.the_pack(root)
+        if found is None:
             return []
+        pack, record = found
         lines = layout_facts(pack, str(record.get("project") or ""), str(record.get("package") or "") or None)
         if not built:
             return lines

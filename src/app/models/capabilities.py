@@ -539,6 +539,37 @@ def look_up(names: list[str]) -> dict[str, dict]:
     return out
 
 
+def reasoning_tag_if_missing(name: str, base_url: str, key: str | None = None) -> bool:
+    """The reasoning tag of `name`, read from the server at `base_url` that serves it, when none is kept yet.
+
+    Two lookups (`/props`, `/tokenize`) and no model call; whether a tag is now kept. Never raises.
+
+    Measured: the tag was read only from the default model setting's server, so a run pinned to another server never
+    had one - the reply salvage could not keep the reasoning closed, a cut-off planning reply reasoned again in its
+    text (70,000 characters in one), and planning replies ran to 30-46k tokens past their 20k cap.
+    """
+    try:
+        if not name or not base_url or value(name, "think_tag_tokens"):
+            return bool(name and value(name, "think_tag_tokens"))
+        from app.models.endpoints import reached_from_here
+        from app.models.registry import merge_into_fitness
+
+        reached, naming = reached_from_here(str(base_url).rstrip("/"))
+        root = reached[:-3] if reached.endswith("/v1") else reached
+        headers = {**({"Authorization": f"Bearer {key}"} if key else {}), **naming}
+        with urllib.request.urlopen(urllib.request.Request(root + "/props", headers=headers),
+                                    timeout=LOOKUP_TIMEOUT_SECONDS) as reply:
+            template = str((json.load(reply) or {}).get("chat_template") or "")
+        tag = think_tag_tokens(root, headers, template)
+        if tag is None:
+            return False
+        merge_into_fitness(name, {FOUND_KEY: {**found_values(name), "think_tag_tokens": tag}})
+        return True
+    except Exception:  # noqa: BLE001 - a server without /props or /tokenize says nothing
+        logger.debug("Could not read the serving model's reasoning tag", exc_info=True)
+        return False
+
+
 def fill(model: Any, name: str, configured: str = "") -> dict[str, dict]:
     """Find every field not set by the owner, measured over looked-up over the server's; keep it. Never raises."""
     from app.models.diagnostics import the_model_answers
@@ -562,6 +593,6 @@ def fill(model: Any, name: str, configured: str = "") -> dict[str, dict]:
 
 
 __all__ = ["BY_KEY", "DRY_ALLOWED_LENGTH", "DRY_BASE", "DRY_MULTIPLIER", "DRY_PENALTY_LAST_N", "FIELDS", "Field",
-           "OWNER_ONLY", "REASONING_TAGS", "fill", "forget_sampling", "found_values", "from_the_server",
+           "OWNER_ONLY", "REASONING_TAGS", "fill", "reasoning_tag_if_missing", "forget_sampling", "found_values", "from_the_server",
            "from_what_was_measured", "look_up", "measure", "owner_values", "parsed_sampling", "resolved", "sampling_for",
            "set_owner_values", "think_ban", "think_tag_tokens", "value", "with_the_owner_s_sampling"]

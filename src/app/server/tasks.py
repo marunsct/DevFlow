@@ -642,6 +642,13 @@ def execute_workflow_run(
 
             if not capabilities.found_values(served_name(served)):
                 capabilities.fill(served, served_name(served), str(getattr(served, "model_name", "") or ""))
+            # The reasoning tag from the server this run is served by, which may not be the default setting's.
+            from app.models import model_pin
+
+            with model_pin.as_the_run(run_id):
+                where = model_pin.destination("default", run_id)
+                if where is not None:
+                    capabilities.reasoning_tag_if_missing(where.model or served_name(served), where.base_url, where.key)
         except Exception:  # noqa: BLE001 - salvage is measured at the first reply that needs it instead
             pass
         # What this segment runs on (plan MF.1): every deploy restarts the

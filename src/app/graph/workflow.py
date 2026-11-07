@@ -3187,6 +3187,31 @@ def _diagnosed_file_by_file(state: Any, saved_run: dict[str, Any], milestone: An
     )
 
 
+_NOT_A_PROBE_S = object()
+
+
+def _settled_by_its_own_probe(root: Path, defect: Any) -> Any:
+    """Whether a finding of the contract's own probes still holds, by asking that probe again; `_NOT_A_PROBE_S` else.
+
+    Measured on one run: the emptied-field probe found `PATCH` taking an empty title and cited the criterion that
+    refuses it; the re-measure at dispatch ran that criterion's acceptance file - which sends an empty title on create
+    only - saw it pass, and closed the finding without a fixer. The probe raised it again each round, three attempts
+    did not beat the best, and a product passing every locked test was escalated. None when the probe cannot run.
+    """
+    from app.acceptance import interface_contract
+
+    description = str(getattr(defect, "description", "") or "")
+    if description.startswith(interface_contract.EMPTIED_FIELD_ACCEPTED):
+        found = interface_contract.emptied_field_errors(root)
+        return None if found is None else not found
+    if description.startswith(interface_contract.SERVER_FAILED):
+        errors, bad_body = interface_contract.server_errors(root), interface_contract.bad_body_errors(root)
+        if errors is None and bad_body is None:
+            return None
+        return not (errors or []) and not (bad_body or [])
+    return _NOT_A_PROBE_S
+
+
 def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
     """Whether the acceptance files naming the defect's criteria now pass - or the unit tests, when it names none; None when neither can say."""
     try:
@@ -3197,6 +3222,9 @@ def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
 
         from app.graph.acceptance_nodes import THE_PRODUCT_DOES_NOT_START
 
+        settled = _settled_by_its_own_probe(root, defect)
+        if settled is not _NOT_A_PROBE_S:
+            return settled
         # What the suite's own run does first: the harness's files put back and a relative import given the
         # extension its runtime needs. Measured on a small-model run: a fixer wrote `./app.js` for `./app.ts`
         # (Node runs the `.ts` itself), the tests it was told "still fail" failed on that import alone, and it

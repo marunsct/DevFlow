@@ -398,6 +398,20 @@ def _the_reply_s_file(path: str, original: str, reply: Any) -> str:
     return the_content_in(text)
 
 
+def _note_the_reply(defect: Any, path: str, kind: str) -> None:
+    """The ledger's record of what a one-file rewrite replied for `path`: changed, unchanged, no block, edit not
+    applied (HR2.fix.1). Measured by reading message text over 123 runs: 42% of rewrite replies sent the file back
+    unchanged, and the path a defect took had to be rebuilt by hand. Never raises."""
+    try:
+        from app.observability import defect_ledger
+        from app.observability.transcript import _stage_from_config
+
+        defect_ledger.note("rewrite reply", str(_stage_from_config("defect_fix") or "defect_fix"), defect=defect,
+                           detail=f"{kind}: {path}")
+    except Exception:  # noqa: BLE001 - a ledger must never fail the fix it records
+        pass
+
+
 def _note_what_the_rewrite_was_shown(defect: Any, asked: Any) -> None:
     """The ledger's `shown` record for a one-file rewrite, as every agent fixer has one. Never raises.
 
@@ -493,9 +507,12 @@ def fix_by_rewriting(
                     # An anchored edit that matched nowhere or more than once:
                     # the file stays as it was and the next pass is told why.
                     diagnostics = [*diagnostics, f"- In `{path}`: {unapplied}"]
+                    _note_the_reply(defect, path, "edit not applied")
                     continue
                 if not content.strip():
+                    _note_the_reply(defect, path, "no block")
                     continue
+                _note_the_reply(defect, path, "changed" if content != current else "unchanged")
                 if content != current:
                     try:
                         write(str(root), path, content)

@@ -640,6 +640,60 @@ def _the_language(stack: Any) -> str:
     return min(_languages(stack), default="")
 
 
+#: The setup's own code shown to the builders: short files, at most two, so the request stays small.
+PROVEN_CODE_LINES = 30
+_PROVEN_CODE_SUFFIXES = (".ts", ".mts", ".js", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".kt", ".cs", ".rb", ".php",
+                         ".ex", ".exs")
+_NOT_WALKED = {"node_modules", "vendor", "target", "build", "dist", "__pycache__", "venv", "bin", "obj"}
+
+
+def _the_setup_s_own_code(project_root: Path, declared: Declaration) -> dict[str, str]:
+    """The product code the setup wrote and leaves in place - neither kept nor a smoke test nor a test - as proven.
+
+    Measured on a stack no pack covers: the specification, written before the setup, created the application with the
+    framework's other server interface; the builders followed it, and the product the setup had proven to start no
+    longer started. What the setup's own entry did is the one fact proven to run.
+    """
+    skipped = {*declared.kept_files, *declared.smoke_files}
+    tests = tuple(f"{folder.strip('/')}/" for folder in (declared.unit_dir, declared.acceptance_dir) if folder.strip("/"))
+    found: dict[str, str] = {}
+    try:
+        candidates = []
+        for folder, folders, files in os.walk(project_root):
+            depth = len(Path(folder).relative_to(project_root).parts)
+            folders[:] = sorted(name for name in folders
+                                if depth < 3 and not name.startswith(".") and name not in _NOT_WALKED)
+            candidates.extend(Path(folder) / name for name in files)
+        for path in sorted(candidates):
+            relative = path.relative_to(project_root).as_posix()
+            if (not relative.endswith(_PROVEN_CODE_SUFFIXES) or relative in skipped or relative.startswith(tests)
+                    or "test" in relative.rsplit("/", 1)[-1].lower() or relative.rsplit("/", 1)[-1].startswith(".")):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            code = [line for line in text.splitlines() if line.strip()]
+            if 0 < len(code) <= PROVEN_CODE_LINES:
+                found[relative] = text
+            if len(found) == 2:
+                break
+    except OSError:
+        logger.debug("Could not read the setup's own code", exc_info=True)
+    return found
+
+
+_A_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def _without_the_framework(text: str, frameworks: tuple[str, ...]) -> str:
+    """`text` with each sentence that names one of `frameworks` left out, its line breaks kept."""
+    words = [re.compile(rf"(?<![A-Za-z]){re.escape(name)}(?![A-Za-z])", re.I) for name in frameworks if name]
+    lines = []
+    for line in str(text or "").splitlines():
+        kept = [sentence for sentence in _A_SENTENCE_END.split(line) if not any(word.search(sentence) for word in words)]
+        if kept or not line.strip():
+            lines.append(" ".join(kept))
+    return "\n".join(lines).strip()
+
+
 def pack_from(record: dict[str, Any]) -> StackPack | None:
     """The pack a proven setup's contract describes, or None if it is not one."""
     setup = record.get("setup")
@@ -677,6 +731,14 @@ def pack_from(record: dict[str, Any]) -> StackPack | None:
                 smoke_files={},
                 stack={**dict(base.stack), **stack},
                 framework_files={},
+                proven_code=dict(setup.get("proven_code") or {}),
+                # The pack's guide is written for its own framework: measured, a Falcon product's builders were told
+                # to test routes through FastAPI's test client, and the setup's own guide was dropped. The setup's
+                # guide first, then the pack's with every sentence naming its framework left out.
+                guide="\n".join(part for part in (str(setup.get("guide") or "").strip(),
+                                                   _without_the_framework(base.guide, base.frameworks)) if part),
+                acceptance_guide=_without_the_framework(base.acceptance_guide, base.frameworks)
+                or str(setup.get("acceptance_guide") or ""),
                 # A release file that names the pack's own framework (its server command) fits no other framework:
                 # measured, the Python pack's Dockerfile runs `uvicorn ...` for a Falcon product. Better none.
                 release_files={path: text for path, text in base.release_files.items()
@@ -706,6 +768,7 @@ def pack_from(record: dict[str, Any]) -> StackPack | None:
             or f"An acceptance test meets the product the way its user does: {_MEETS.get(kind, '')}.",
             stack=stack,
             production_build=tuple(setup.get("build") or ()),
+            proven_code=dict(setup.get("proven_code") or {}),
         )
     except (KeyError, TypeError):
         logger.debug("Unreadable proven setup in the contract", exc_info=True)
@@ -780,6 +843,7 @@ def prove(
             for name in (*declared.kept_files, *declared.smoke_files)
         },
     }
+    proven_code = _the_setup_s_own_code(project_root, declared)
     for relative in declared.smoke_files:
         (project_root / relative).unlink(missing_ok=True)
     for report in (declared.unit_report, declared.acceptance_report):
@@ -810,6 +874,7 @@ def prove(
         "guide": declared.guide,
         "acceptance_guide": declared.acceptance_guide,
         "layer": declared.layer,
+        "proven_code": proven_code,
         # The acceptance smoke test that passed: the shape QA's tests copy
         # (`app.acceptance.requests`), kept though the file itself is removed.
         "acceptance_example": next(

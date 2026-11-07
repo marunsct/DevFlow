@@ -102,6 +102,14 @@ def layout_facts(pack: Any, project: str, package: str | None) -> list[str]:
                      + ("they are" if len(scripts) > 1 else "it is")
                      + ": a change to " + ("them" if len(scripts) > 1 else "it") + " is put back, so a fix goes in "
                      "the code or the tests, never there.")
+    for path, text in list((getattr(pack, "proven_code", None) or {}).items())[:2]:
+        # Measured on a stack no pack covers: the specification, written before the setup existed, created the
+        # application another way; the builders followed it and the product no longer started.
+        code = _code_lines(str(text))
+        lines.append(f"- What `{prefix}{path}` did when the setup was proven - it started and answered the smoke test "
+                     "(comments left out):\n```\n" + "\n".join(code) + "\n```\n  Build on it: keep how it creates "
+                     "the application and how the server loads it. Where the specification does those another way, "
+                     "this way is the one proven to start, and it stands.")
     if kept or started:
         # Measured on three runs: the specification put creating the data directory and checking the port in the
         # pack's `start.sh`, and signal handling in its kept start file; the reviews then sent the sprint back for

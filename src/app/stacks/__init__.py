@@ -272,6 +272,9 @@ class StackPack:
     #: kind and language that no pack covers is set up on the rest of this pack - its install, runners, report flags
     #: and kept test configuration - and the agent writes only these files for its own framework.
     framework_files: Mapping[str, str] = field(default_factory=dict)
+    #: A proven setup's own short product code as it was when it started and passed its smoke test - how it creates
+    #: the application and how the server loads it - shown to every builder; empty for a code pack.
+    proven_code: Mapping[str, str] = field(default_factory=dict)
 
 
     @property

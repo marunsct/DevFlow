@@ -56,3 +56,15 @@ def test_a_release_file_written_for_the_pack_s_own_framework_is_not_kept():
     pack = pack_from(_record({**SETUP, "layer": "python-http-api"}))
     assert "Dockerfile" not in pack.release_files
     assert ".dockerignore" in pack.release_files
+
+
+def test_the_builders_guide_names_no_framework_but_the_product_s():
+    """Measured on a Falcon product built on the Python pack's runners: its builders were told "a unit test calls
+    routes through `fastapi.testclient.TestClient(app)`", and the setup's own guide was dropped."""
+    layer = pack_named("python-http-api")
+    pack = pack_from(_record({**SETUP, "layer": "python-http-api",
+                              "guide": "Unit tests call the app through falcon.testing.TestClient."}))
+    assert "falcon.testing.TestClient" in pack.guide
+    for name in layer.frameworks:
+        assert name not in pack.guide.lower() and name not in pack.acceptance_guide.lower()
+    assert "DATA_DIR" in pack.guide and "base_url" in pack.acceptance_guide

@@ -261,6 +261,30 @@ def _argv(value: Any) -> tuple[str, ...] | None:
     return None
 
 
+def _inside_the_project(argv: tuple[str, ...] | None, project_root: Path) -> tuple[str, ...] | None:
+    """`argv` with a leading project folder dropped from each path: declared commands run inside the project.
+
+    Measured on a custom-stack baseline: `./notes-api/.venv/bin/pip install -e ./notes-api`, run inside `notes-api/`,
+    became `notes-api/notes-api/...` and the setup was left to the agents. A folder of that name that exists inside
+    the project - a package named like it - is left as written.
+    """
+    if not argv:
+        return argv
+    name = project_root.name
+    fixed = []
+    for token in argv:
+        plain = str(token)
+        for prefix in (f"./{name}/", f"{name}/"):
+            rest = plain[len(prefix):]
+            if plain.startswith(prefix) and not (project_root / name).is_dir():
+                plain = rest or "."
+                break
+        if plain in (f"./{name}", name) and not (project_root / name).is_dir():
+            plain = "."
+        fixed.append(plain)
+    return tuple(fixed)
+
+
 def _commands(value: Any) -> tuple[tuple[str, ...] | None, ...]:
     """`install` as commands: a list of commands, or one command, or each string one command."""
     if isinstance(value, str):
@@ -382,10 +406,10 @@ def _declared(text: str, project_root: Path, fallback_kind: str, *, files_writte
     if not isinstance(data, dict):
         return None, f"`{DECLARATION_FILE}` must hold one JSON object."
     problems: list[str] = []
-    install = _commands(data.get("install") or [])
+    install = tuple(_inside_the_project(argv, project_root) for argv in _commands(data.get("install") or []))
     if any(argv is None for argv in install):
         problems.append("`install` must be a list of commands, each a list of strings")
-    commands = {key: _argv(data.get(key)) for key in ("unit_test", "acceptance_test")}
+    commands = {key: _inside_the_project(_argv(data.get(key)), project_root) for key in ("unit_test", "acceptance_test")}
     problems += [f"`{key}` must be a command: a list of strings" for key, argv in commands.items() if argv is None]
     paths = {
         key: _in_this_project(data.get(key), project_root)

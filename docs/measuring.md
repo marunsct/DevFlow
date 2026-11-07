@@ -24,6 +24,7 @@ Arms run on the two ports in turn; each row's off arm is a run with only that ro
 | M3 | Context and cost | group `Context and cost` | see `loop.sh switches` | input tokens, cache share | - | - | not started |
 | M4 | Efficiency (mutation findings) | group `Efficiency` | see `loop.sh switches` | model calls on mutation defects | - | - | not started |
 | M6 | Setup scope: a layered setup stage writes only its framework files, declaration, smoke tests, manifests and test configuration | `SETUP_SCOPE_GUARD` (group `Setup scope`) | OFF (built 11-07 21:0x, LF.686) | setup lines written; hidden score on custom stacks; setup minutes | 0 | falcon 4-9 (all off) | needs on runs: 2 notes-api-falcon runs with it on, on one SHA |
+| M7 | Milestone send-back only with evidence: a blocking finding a failing test, criterion or underline shows (harness review G3) | `MILESTONE_EVIDENCE_GATE` (group `Review gates`) | OFF (built 11-07 21:1x, LF.687) | milestone send-backs, minutes per run; hidden score | 0 | every run so far (all off) | needs on runs: 2 per family on one SHA |
 | M5 | MEASURE_ONCE (reuse an unchanged product's measurement) | `MEASURE_ONCE` (built in) | ON | suite minutes | - | - | LF.676 fixed its skipped own-start check; built in, no arm |
 
 ## Harness review items behind a switch (to build, then measure)
@@ -36,7 +37,7 @@ From `docs/harness-review.md` Phase 2-3. Each gets its own switch, default off, 
 | D3 | one design review plus deterministic gates | to build |
 | P1+P7 | plan repair by delta; readiness rules in the schema | to build |
 | P2, P3, P6 | failure-made re-plans; edit format by model tier; two draft candidates | to build |
-| G3 | milestone send-back only with a failing test, check or probe behind it | to build |
+| G3 | milestone send-back only with a failing test, check or probe behind it | built behind a switch: M7 |
 | G4, G5 | deterministic security scanner; one batched advice review | to build |
 | Q2-Q6, Q8 | isolation by fixture; Python dry run; stub validation; browser mutants; executable dispute verdicts; relational assertions | to build |
 | F1, F5, F6 | candidate selection; SBFL localisation; fresh second attempts | to build |

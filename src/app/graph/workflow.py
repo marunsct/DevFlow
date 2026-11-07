@@ -5351,6 +5351,20 @@ def _a_pass_over_its_own_findings(
     return review.model_copy(update={"status": "changes_required"})
 
 
+def _milestone_findings_that_block(state: Any, review: Any) -> list[Any]:
+    """The milestone review's blocking findings; with `MILESTONE_EVIDENCE_GATE` on, only those a test or check shows."""
+    blocking = _findings_that_block(review, state["repository"].root_path)
+    from app.graph import milestone_evidence
+
+    if not blocking or not milestone_evidence.enabled():
+        return blocking
+    shown, unshown = milestone_evidence.shown_and_not(state, blocking)
+    if unshown:
+        logger.warning("Milestone review: %d blocking finding(s) no test, check or underline shows; advice, not a "
+                       "send-back (MILESTONE_EVIDENCE_GATE)", len(unshown))
+    return shown
+
+
 def _findings_that_block(review: Any, repo_root: str | None = None) -> list[Any]:
     """The findings in a review that justify another round of work.
 
@@ -12348,7 +12362,7 @@ def build_workflow_graph(
             )
         elif review.status == "changes_required" and (
             not review.findings
-            or _findings_that_block(review, state["repository"].root_path)
+            or _milestone_findings_that_block(state, review)
         ):
             # A `changes_required` carrying nothing above the gating severities
             # falls through to the accepted path below - the same hole that

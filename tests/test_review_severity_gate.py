@@ -122,7 +122,10 @@ def test_both_reviewers_route_on_it() -> None:
     # than blocking. Matched on the call rather than its exact arguments so
     # the next argument added here does not read as the routing being lost.
     assert "_findings_that_block(review" in source[architecture:architecture + 4000]
-    assert "_findings_that_block(review" in source[milestone:milestone + 12000]
+    # The milestone node routes through `_milestone_findings_that_block`, which adds the evidence gate (G3).
+    assert "_milestone_findings_that_block(state, review)" in source[milestone:milestone + 12000]
+    wrapper = source[source.index("def _milestone_findings_that_block"):][:600]
+    assert '_findings_that_block(review, state["repository"].root_path)' in wrapper
 
 
 def test_both_reviewers_are_given_the_workspace_to_judge_scope() -> None:
@@ -132,7 +135,7 @@ def test_both_reviewers_are_given_the_workspace_to_judge_scope() -> None:
     from app.graph import workflow
 
     source = inspect.getsource(workflow)
-    for node in ("def architecture_review_node", "def milestone_review_node"):
+    for node in ("def architecture_review_node", "def _milestone_findings_that_block"):
         start = source.index(node)
         window = source[start:start + 12000]
         call = window[window.index("_findings_that_block(review"):][:120]

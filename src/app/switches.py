@@ -113,6 +113,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Efficiency": ("EQUIVALENT_MUTANTS_REMEMBERED", "MUTANT_CHECK_IN_THE_FIX_STAGE"),
     # What a stack's setup stage may write (docs/measuring.md M6): measured off and on before it is kept.
     "Setup scope": ("SETUP_SCOPE_GUARD",),
+    # Which review findings may send a sprint back (docs/measuring.md M7).
+    "Review gates": ("MILESTONE_EVIDENCE_GATE",),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)

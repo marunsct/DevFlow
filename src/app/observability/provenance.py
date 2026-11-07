@@ -47,6 +47,7 @@ SWITCHES: dict[str, str] = {
     "MUTATION_GUIDED_TESTS": "app.acceptance.mutation_guided",
     "OBSERVATION_FOLDING": "app.agents.observation_folding",
     "SETUP_SCOPE_GUARD": "app.stacks.setup_scope",
+    "MILESTONE_EVIDENCE_GATE": "app.graph.milestone_evidence",
     "REPLY_SALVAGE": "app.models.reply_salvage",
     "MODEL_GUIDANCE": "app.models.model_guidance",
     "STRUCTURED_EXTRACTION": "app.agents.structured_extraction",

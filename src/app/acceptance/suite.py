@@ -1108,6 +1108,12 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
 
         kept = saved_run_if_unchanged(repo_root, shown, report_file)
         if kept is not None:
+            if save:
+                # The product's own start is asked of a reused measurement too. Measured on one run: the setup wrote
+                # the whole product, nothing changed after the lock, and every later measurement - the release's
+                # included - reused the one taken just before the lock, when this check does not run; `start.sh`
+                # ran a bare `python3` without the framework, and the product scored 0 of 9 with 33 of 33 locked.
+                _the_product_s_own_start(repo_root, kept)
             return _judged(repo_root, kept, save)
     junit.clear(report_file)
     runtime_file = _runtime_report(repo_root, project)

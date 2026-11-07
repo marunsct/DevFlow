@@ -16,6 +16,7 @@ measured. See `docs/architecture-decisions.md ADR-0005`.
 | `web-todo-react` | browser app | TypeScript, React | 10 (`web-todo`'s) | Playwright |
 | `notes-api-js` | HTTP service | JavaScript | 9 (`notes-api`'s) | pytest + httpx |
 | `notes-api-hono` | HTTP service | TypeScript, Hono (no pack) | 9 (`notes-api`'s) | pytest + httpx |
+| `notes-api-falcon` | HTTP service | Python, Falcon (no pack) | 9 (`notes-api`'s) | pytest + httpx |
 | `fullstack-bookmarks-py` | page + its own service | Python service, HTML/JS page | 8 (`fullstack-bookmarks`'s) | Playwright (page and API) |
 | `tasks-api` | HTTP service with accounts and per-user data | Python | 10 | pytest + httpx |
 | `tasks-api-change` | brownfield: a change to `tasks-api`'s product | Python | 15 (10 old, 5 new) | pytest + httpx |

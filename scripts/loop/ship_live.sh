@@ -48,7 +48,12 @@ for run in $runs; do
 done
 echo "ship-live: paused ${#paused[@]} run(s): ${paused[*]:-none}"
 
-BOUNDARY_WAIT=0 timeout 1500 "$L" deploy | grep -E "image matches|error|ERROR" || true
+deployed=$(BOUNDARY_WAIT=0 timeout 1500 "$L" deploy 2>&1 || true)
+echo "$deployed" | grep -E "image matches|error|ERROR" || true
+# A deploy that never replaced the containers (measured: Docker Desktop hung on a container create, the old worker
+# kept running) used to end "running" and exit 0. The runs are resumed either way; the exit says it did not land.
+landed=1
+echo "$deployed" | grep -q "image matches" || landed=0
 
 for run in "${paused[@]}"; do
   timeout 120 "$L" resume "$run" | tail -1 | cut -c1-120
@@ -69,4 +74,8 @@ missing=0
 for run in "${paused[@]}"; do
   if echo "$active" | grep -q "$run"; then echo "ship-live: $run running"; else echo "ship-live: $run NOT running a task" >&2; missing=1; fi
 done
+if [ "$landed" = 0 ]; then
+  echo "ship-live: THE DEPLOY DID NOT LAND - the containers were not replaced; the runs carry on on the old code" >&2
+  exit 2
+fi
 exit $missing

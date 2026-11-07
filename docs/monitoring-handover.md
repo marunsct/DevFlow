@@ -27,7 +27,7 @@ why the change answers it.
 
 ## 0. Start here: the loop as it runs now
 
-**Docker Desktop 502 on a container create (2026-11-07 20:4x JST):** `ship-live` left the new app `Created`, the old worker running and both runs paused, and `docker compose up -d` then hung. Recovery: `docker start langchain-app-1`, wait for healthy, `loop.sh resume <run>` for each paused run; replace the worker (`loop.sh deploy`) at the next boundary once `docker info` answers promptly.
+**Docker Desktop 502 on a container create (2026-11-07 20:4x JST):** `ship-live` left the new app `Created`, the old worker running and both runs paused, and `docker compose up -d` then hung. Recovery: `docker start langchain-app-1`, wait for healthy, `loop.sh resume <run>` for each paused run; replace the worker (`loop.sh deploy`) at the next boundary once `docker info` answers promptly. It recurred at 21:17 JST (create hung again; the old containers ran on): a Docker Desktop restart, which stops every container, is the owner's call. Since LF.688 `ship-live` exits 2 with THE DEPLOY DID NOT LAND when the containers were not replaced.
 
 **Measurements:** every change under measurement - switch, arm, runs, verdict - is in [measuring.md](measuring.md), the one copy (owner 2026-11-07). Each audit says which arm the live runs are in; a switch change updates that file in the same commit.
 

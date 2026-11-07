@@ -4655,6 +4655,40 @@ def what_the_criteria_s_tests_printed(repo_root: str | Path, tags: Any) -> dict[
             "title": "What its failing tests printed"}
 
 
+#: How a unit-test defect opens (`_raise_defects_from_report`): only those get the unit report's failures.
+_A_UNIT_TEST_DEFECT = re.compile(r"^\s*The unit tests fail\b", re.I)
+MOST_UNIT_FAILURES_SHOWN = 8
+
+
+def what_the_unit_tests_printed(repo_root: str | Path, description: str) -> dict[str, str] | None:
+    """For a unit-test defect: its failing tests and what each printed, from the last unit report; else None.
+
+    The tests the description names, or every failing one when it names none (at most eight). Measured on 2026-11-07:
+    521 of 625 fixer requests were shown "the last failing command" - perhaps another defect's - and LF.607 covered
+    acceptance criteria only. The JUnit report holds each failing test's message on every stack.
+    """
+    if not _A_UNIT_TEST_DEFECT.search(str(description or "")):
+        return None
+    try:
+        found = contract.the_pack(repo_root)
+        where = location(repo_root)
+        if found is None or where is None or not found[0].unit_report:
+            return None
+        from app.acceptance import junit
+
+        report = junit.read(Path(repo_root) / where[0] / found[0].unit_report)
+    except Exception:  # noqa: BLE001 - the fixer falls back to the last failing command
+        return None
+    failing = [t for t in report.tests if t.outcome == "failed"]
+    if not failing:
+        return None
+    named = [t for t in failing if str(t.name or "").split("::")[-1].split(".")[-1] in str(description)]
+    shown = (named or failing)[:MOST_UNIT_FAILURES_SHOWN]
+    output = "\n\n".join(f"{t.name}:\n{(t.message or '(no message)').strip()}" for t in shown)
+    return {"command": "the unit tests' last run: " + ", ".join(str(t.name) for t in shown), "output": output,
+            "title": "What its failing tests printed"}
+
+
 def last_result(repo_root: str | Path) -> dict[str, Any]:
     try:
         return json.loads((Path(repo_root) / RESULT_FILE).read_text(encoding="utf-8"))

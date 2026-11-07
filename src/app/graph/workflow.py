@@ -2123,6 +2123,16 @@ def _what_the_criteria_s_tests_printed(repo_root: str, defect: Any) -> dict[str,
         return None
 
 
+def _what_the_unit_tests_printed(repo_root: str, defect: Any) -> dict[str, str] | None:
+    """A unit-test defect's own failing tests and their output (HR F3); None for any other defect. Never raises."""
+    try:
+        from app.acceptance import suite as _the_suite
+
+        return _the_suite.what_the_unit_tests_printed(repo_root, str(getattr(defect, "description", "") or ""))
+    except Exception:  # noqa: BLE001 - the last failing command stands in, as before
+        return None
+
+
 def _what_the_last_failure_printed(run_id: str | None) -> dict[str, str] | None:
     """The last failing command's own output, or None. Never raises.
 
@@ -11254,6 +11264,7 @@ def build_workflow_graph(
             # description of it. See `build_defect_fix_request`.
             # A failing criterion's own tests first: the last failing command may be another criterion's.
             _what_the_criteria_s_tests_printed(state["repository"].root_path, defect)
+            or _what_the_unit_tests_printed(state["repository"].root_path, defect)
             or _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
             caught_by=getattr(defect, "caught_by", ""),
             # Only for a defect that is not itself a failing criterion - nor a
@@ -11357,7 +11368,12 @@ def build_workflow_graph(
                 return (_the_harness_s_own_or_the_locked_suite(root, root / path) is None
                         and defect_fix_modes.may_write(state, config, defect, root, path))
 
-        last_failure = _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY))
+        # The defect's own failing tests first, as the agent loop's request does (HR F3).
+        last_failure = (
+            _what_the_criteria_s_tests_printed(str(root), defect)
+            or _what_the_unit_tests_printed(str(root), defect)
+            or _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY))
+        )
         # The other open defects, whose failures that point at a file go into its rewrite (behind `CO_DEFECT_FAILURES_IN_REWRITES`).
         from app.graph.co_defect_failures import open_besides
 

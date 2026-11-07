@@ -20,6 +20,7 @@
 #   scripts/loop/loop.sh ship-live           deploy into the live runs in one checked step: login, pause all, deploy, resume, churn check (ship_live.sh)
 #   scripts/loop/loop.sh impact [N]          whether the runs after each of the last N changes got worse, each against its own family (impact.py)
 #   scripts/loop/loop.sh suite-checks       per suite check: findings settled or raised again (harness review Q1)
+#   scripts/loop/loop.sh stack-misses       runs that went to the custom setup: fixed misses and open ones (SF.0c)
 #   scripts/loop/loop.sh timing [run-id..]   where the wall-clock time went: model vs tools, phases, reasoning share (run_timing.py)
 #   scripts/loop/loop.sh kpi [run-id]        the run's KPIs as JSON (data/kpi/<run>.json), a row of data/kpi/ledger.csv,
 #                                            and any KPI past 1.5x its 5-run mean (kpi.py, kpi_ledger.py); score runs it too
@@ -393,6 +394,7 @@ lessons) shift; in_worker lessons.py "${@:-list}" ;;
 ship-live) "$HERE/ship_live.sh" ;;
 impact) shift; "$PY" "$HERE/impact.py" data/kpi/ledger.csv "${1:-12}" ;;
 suite-checks) shift; docker exec -i "$WORKER_C" python3 - /app/data/workspaces/default < "$HERE/suite_check_settling.py" ;;
+stack-misses) shift; docker cp "$HERE/stack_misses.py" "$WORKER_C:/tmp/stack_misses.py" >/dev/null && docker exec -w /app "$WORKER_C" python3 /tmp/stack_misses.py ;;
 timing) shift; in_worker run_timing.py "${@:-$(current)}" ;;
 kpi)
   run="${2:-$(current)}"

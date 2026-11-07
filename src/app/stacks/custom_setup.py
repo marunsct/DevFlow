@@ -137,6 +137,14 @@ def what_the_specification_sets_up(specification: Any) -> str:
     return text
 
 
+def _a_layer_named(name: Any) -> str:
+    """`name` when it is a pack that names its framework files, else "": an unknown layer is a hand-written setup."""
+    from app.stacks import pack_named
+
+    pack = pack_named(str(name or ""))
+    return pack.name if pack is not None and pack.framework_files else ""
+
+
 def runner_layer(kind: str, language: str) -> StackPack | None:
     """The pack whose runner layer a stack of `kind` and `language` no pack covers is set up on; None if none has one.
 
@@ -186,6 +194,8 @@ def write_runner_layer(project_root: Path, pack: StackPack, project: str, title:
         "kept_files": [pack.filled(path, project, title, package) for path in pack.kept_files],
         "smoke_files": [pack.filled(path, project, title, package) for path in pack.smoke_files],
         "acceptance_guide": pack.filled(pack.acceptance_guide, project, title, package)[:MAX_GUIDE],
+        # Which pack's runners this is: its proven pack keeps that pack's checks (SF.1).
+        "layer": pack.name,
     }
     (project_root / DECLARATION_FILE).write_text(json.dumps(declaration, indent=2) + "\n", encoding="utf-8")
     return framework
@@ -320,6 +330,8 @@ class Declaration:
     acceptance_guide: str
     #: The command that builds the project before it runs, when it has one.
     build: tuple[str, ...] = ()
+    #: The pack whose runner layer the setup was made on (SF.2); "" for a setup written by hand.
+    layer: str = ""
 
 
 def _inside(path: Any) -> str | None:
@@ -590,6 +602,7 @@ def _declared(text: str, project_root: Path, fallback_kind: str, *, files_writte
         guide=str(data.get("guide") or "")[:MAX_GUIDE],
         acceptance_guide=str(data.get("acceptance_guide") or "")[:MAX_GUIDE],
         build=build or (),
+        layer=_a_layer_named(data.get("layer")),
     ), ""
 
 
@@ -635,6 +648,36 @@ def pack_from(record: dict[str, Any]) -> StackPack | None:
     try:
         kind = str(setup["kind"])
         stack = dict(setup.get("stack") or {})
+        layer = _a_layer_named(setup.get("layer"))
+        if layer:
+            # Proven on a pack's runner layer: that pack, with this setup's commands, paths and kept files and none of
+            # its framework (SF.1). It keeps the pack's test-bug patterns, known errors, entrypoint and release files.
+            import dataclasses
+
+            from app.stacks import pack_named
+
+            base = pack_named(layer)
+            return dataclasses.replace(
+                base,
+                name=PROVEN_SETUP,
+                title=f"Proven setup for {setup.get('stack_line') or 'this stack'} on the {base.title} runners",
+                frameworks=(),
+                files=dict(setup.get("kept") or {}),
+                install=tuple(tuple(argv) for argv in setup.get("install") or []),
+                unit_test=tuple(setup["unit_test"]),
+                acceptance_test=tuple(setup["acceptance_test"]),
+                unit_report=str(setup["unit_report"]),
+                acceptance_report=str(setup["acceptance_report"]),
+                unit_dir=str(setup["unit_dir"]),
+                acceptance_dir=str(setup["acceptance_dir"]),
+                acceptance_pattern=str(setup["acceptance_pattern"]),
+                unit_pattern=str(setup["unit_pattern"]),
+                kept_files=tuple(dict(setup.get("kept") or {})),
+                kept_scripts=dict(setup.get("kept_scripts") or {}),
+                smoke_files={},
+                stack={**dict(base.stack), **stack},
+                framework_files={},
+            )
         return StackPack(
             name=PROVEN_SETUP,
             title=f"Proven setup for {setup.get('stack_line') or 'this stack'}",
@@ -762,6 +805,7 @@ def prove(
         "kept_scripts": _scripts_the_commands_run(project_root, [declared.unit_test, declared.acceptance_test]),
         "guide": declared.guide,
         "acceptance_guide": declared.acceptance_guide,
+        "layer": declared.layer,
         # The acceptance smoke test that passed: the shape QA's tests copy
         # (`app.acceptance.requests`), kept though the file itself is removed.
         "acceptance_example": next(

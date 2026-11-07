@@ -11323,7 +11323,7 @@ def build_workflow_graph(
 
     def _fixed_by_rewriting(
         state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0,
-        after_a_surrender: bool = False,
+        after_a_surrender: bool = False, why: dict[str, str] | None = None,
     ) -> Any:
         """A fast-delivery fix by rewriting the defect's files, or None for the agent loop.
 
@@ -11331,12 +11331,18 @@ def build_workflow_graph(
         candidates are asked of the judgement model at once and the first the
         defect's tests pass is kept (`rewritten_fixes.fix_by_candidates`).
         """
+        def declined(reason: str) -> None:
+            if why is not None:
+                why["why"] = reason
+
         if not _the_run_approves_its_own_writes(config["configurable"].get(APP_RUN_ID_KEY)):
+            declined("the run does not approve its own writes")
             return None
         if mutation_guided.is_a_finding(defect):
             # A rewrite rewrites the files a failure points at - here the
             # product's own source, which the finding must leave as it is. A
             # new unit test is the agent loop's (plan QM.2).
+            declined("a mutation finding: the product's source stays as it is")
             return None
         from types import SimpleNamespace
 
@@ -11389,6 +11395,8 @@ def build_workflow_graph(
         # fast delivery's.
         if not _fast_delivery() and not after_a_surrender:
             return None
+        # Read only when nothing is written: the rewrite found no file it may write, or wrote none.
+        declined("the rewrite found no file it may write, or wrote none")
         try:
             return fix_by_rewriting(
                 defect, root, fix_model or model or building_model,
@@ -11399,8 +11407,9 @@ def build_workflow_graph(
                     state, {"messages": []}, SimpleNamespace(changed_files=files),
                 ),
             )
-        except Exception:  # noqa: BLE001 - the agent loop takes the defect
+        except Exception as error:  # noqa: BLE001 - the agent loop takes the defect
             logger.warning("Fixing by rewriting failed; the agent loop takes the defect", exc_info=True)
+            declined(f"the rewrite raised {type(error).__name__}")
             return None
 
     def _fix_one(state: Any, config: RunnableConfig, defect_index: int) -> dict[str, Any]:
@@ -11502,8 +11511,18 @@ def build_workflow_graph(
             # An answer that changed no file goes to the harness's rewrite once (behind `SURRENDER_TO_REWRITE`).
             from app.graph.surrender_to_rewrite import after_a_surrender
 
-            fix_result = after_a_surrender(fix_result, lambda: _fixed_by_rewriting(
-                state, config, defect, fix_model, failed_fix_tries(cycle, defect_index), after_a_surrender=True))
+            from app.observability import defect_ledger as _surrender_ledger
+
+            why: dict[str, str] = {}
+            fix_result = after_a_surrender(fix_result,
+                lambda: _fixed_by_rewriting(state, config, defect, fix_model, failed_fix_tries(cycle, defect_index),
+                                            after_a_surrender=True, why=why),
+                note=lambda outcome: _surrender_ledger.note(
+                    "rewrite after surrender", stage_name, defect=defect, index=defect_index,
+                    round_=state.get("test_round", 0),
+                    detail=outcome + (f": {why['why']}" if outcome == "declined" and why.get("why") else ""),
+                ),
+            )
         defect_fix_modes.end(config, stage_name)
         broke = engineering.after_a_fix(
             state["repository"].root_path, fix_base, stage_name, defect.description,

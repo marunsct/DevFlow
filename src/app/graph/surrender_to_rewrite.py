@@ -33,17 +33,32 @@ def surrendered(output: Any) -> bool:
     return output is not None and not list(getattr(output, "changed_files", None) or [])
 
 
-def after_a_surrender(output: Any, rewrite: Callable[[], Any | None]) -> Any:
-    """`output`, or the rewrite's answer when `output` changed no file and the rewrite wrote one. Never raises."""
+def after_a_surrender(output: Any, rewrite: Callable[[], Any | None], note: Callable[[str], None] | None = None) -> Any:
+    """`output`, or the rewrite's answer when `output` changed no file and the rewrite wrote one. Never raises.
+
+    `note` is told what happened - "wrote <files>" or "declined" - so the mechanism is seen firing (harness review F2:
+    on for two days, eight surrendered stages left open, and nothing said whether the rewrite had run).
+    """
     if not enabled() or not surrendered(output):
         return output
+
+    def said(outcome: str) -> None:
+        if note is not None:
+            try:
+                note(outcome)
+            except Exception:  # noqa: BLE001 - the record never changes the fix
+                pass
+
     try:
         rewritten = rewrite()
     except Exception:  # noqa: BLE001 - the stage's own answer stands and the defect stays open
         logger.warning("The rewrite after a surrender failed to run", exc_info=True)
+        said("declined")
         return output
     if rewritten is None or surrendered(rewritten):
+        said("declined")
         return output
+    said("wrote " + ", ".join(rewritten.changed_files))
     logger.info("The agent loop changed nothing; the harness rewrote %s", ", ".join(rewritten.changed_files))
     return rewritten
 

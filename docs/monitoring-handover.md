@@ -27,6 +27,8 @@ why the change answers it.
 
 ## 0. Start here: the loop as it runs now
 
+**Measurements:** every change under measurement - switch, arm, runs, verdict - is in [measuring.md](measuring.md), the one copy (owner 2026-11-07). Each audit says which arm the live runs are in; a switch change updates that file in the same commit.
+
 ### 0.1 The standing instruction
 
 Run a continuous audit / fix / deploy loop on this harness, and do not stop:

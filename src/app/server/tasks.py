@@ -642,15 +642,19 @@ def execute_workflow_run(
 
             if not capabilities.found_values(served_name(served)):
                 capabilities.fill(served, served_name(served), str(getattr(served, "model_name", "") or ""))
-            # The reasoning tag from the server this run is served by, which may not be the default setting's.
-            from app.models import model_pin
+        except Exception:  # noqa: BLE001 - salvage is measured at the first reply that needs it instead
+            pass
+        # The reasoning tag from the server this run is served by, which may not be the default setting's - on its
+        # own, so a failure in the steps above never skips it.
+        try:
+            from app.models import capabilities, model_pin
 
             with model_pin.as_the_run(run_id):
                 where = model_pin.destination("default", run_id)
-                if where is not None:
-                    capabilities.reasoning_tag_if_missing(where.model or served_name(served), where.base_url, where.key)
-        except Exception:  # noqa: BLE001 - salvage is measured at the first reply that needs it instead
-            pass
+                if where is not None and where.model:
+                    capabilities.reasoning_tag_if_missing(where.model, where.base_url, where.key)
+        except Exception:  # noqa: BLE001 - the salvage works as before without it
+            logger.debug("Could not read the serving model's reasoning tag", exc_info=True)
         # What this segment runs on (plan MF.1): every deploy restarts the
         # worker, so a run on more than one harness version is seen as one.
         from app.observability.provenance import record_the_segment

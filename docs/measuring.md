@@ -27,7 +27,21 @@ Arms run on the two ports in turn; each row's off arm is a run with only that ro
 | M7 | Milestone send-back only with evidence: a blocking finding a failing test, criterion or underline shows (harness review G3) | `MILESTONE_EVIDENCE_GATE` (group `Review gates`) | OFF (built 11-07 21:1x, LF.687) | milestone send-backs, minutes per run; hidden score | 0 | every run so far (all off) | needs on runs: 2 per family on one SHA |
 | M5 | MEASURE_ONCE (reuse an unchanged product's measurement) | `MEASURE_ONCE` (built in) | ON | suite minutes | - | - | LF.676 fixed its skipped own-start check; built in, no arm |
 
-## Harness review items behind a switch (to build, then measure)
+## Second review (HR2, 11-08): switched items to build, in the merged order of docs/harness-review.md §10 bundle 8
+
+Each gets its own switch (default off), a row in the table above when built, and two runs per family on and off on
+one SHA. Order: `FIRST_TRY_CANDIDATES` (fix.2), `PLANNING_THINK_BOUND` (P.2), `DESIGN_REVIEW_IN_ONE_CALL` (D.3), M7's
+on arm (G.7), D1 lint + `DESIGN_SINGLE_REVIEW` (D.7+D.6), `SUITE_PASSES_TWICE` (Q.3), `ADVICE_ONE_CALL` (G.6), G.2
+security as spec conformance, `SPEC_SLICES_BY_STAGE` (D.5), `CONTRACT_LIST_PROBE` (Q.8), `STOP_WHEN_OWN_TESTS_PASS`
+(fix.8), `REVIEW_THE_SUITE_DELTA` (Q.7), `SURRENDER_AFTER_A_FAILED_WRITE` (fix.5), `MUTATION_SURVIVORS_TO_QA` (Q.6b),
+`PRODUCT_LINT` (PR.6), `SETUP_PROOF_FEEDBACK` (SS.7), G.5 scanner note, M6 arm, M8 arm, D.8, `EDIT_FORMAT_BY_SIZE`
+(P.9), Q5 browser mutants. Bug and quality items (bundles 1-7) need no row: they are always on.
+
+Superseded by HR2 (do not build as first written): SF.2b (parked on evidence), SF.3a (premature until replay
+works), Q3 (deprioritised), Q4's stub leg (dropped), F6 (wrong shape -> fix.4), WB.5 (not supported by the data),
+E4 (-> PR.9 generated edge sets).
+
+## Harness review items behind a switch (first review's list; see HR2 above for the current order)
 
 From `docs/harness-review.md` Phase 2-3. Each gets its own switch, default off, and a row in the table above when built.
 

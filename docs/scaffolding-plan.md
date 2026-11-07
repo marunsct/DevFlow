@@ -120,6 +120,8 @@ Progress 2026-11-07 (moved ahead of HR Phase 1: five point fixes in two hours - 
 
 Progress 2026-11-07 15:1x: LF.665 (a layered setup's guide named FastAPI to a Falcon product) and LF.666 (the setup's proven entry code is a fact every builder sees; falcon 5's specification overrode it) - SF.1 fixes found by falcon 5.
 
+Measured 2026-11-07 16:3x (falcon 6): the layered setup stage, asked for four framework files, wrote the whole product - `app.py` 239 lines, `db.py`, a 130-line `main.py`, 297 lines of acceptance tests and 172 of unit tests - before the design's builders ran (LF.672 and 673 are its symptoms). SF.2b's narrowing (the harness runs the generator; the agent is asked only for what is missing) is the fix of the class; until then, measure on falcon 6 and 7 whether the build builds on or fights that code.
+
 - **SF.2a Generator table** in `seed.py` (stack knowledge belongs there): per ecosystem the official
   non-interactive create command with pinned flags, whether it emits a test, and which unit-runner layer to add.
   Covered: Node/TS (`npm create vite`), Python (none: the Python runtime layer's skeleton), Go (`go mod init`),

@@ -644,6 +644,33 @@ def _the_language(stack: Any) -> str:
 PROVEN_CODE_LINES = 30
 _PROVEN_CODE_SUFFIXES = (".ts", ".mts", ".js", ".mjs", ".cjs", ".py", ".go", ".rs", ".java", ".kt", ".cs", ".rb", ".php",
                          ".ex", ".exs")
+MIN_PROVEN_CODE_LINES = 3
+#: The harness's own scratch files for a command's inline code (`tmp-inline-<hash>.py`): never the product's.
+_SCRATCH = "tmp-inline-"
+_A_COMMENT_LINE = re.compile(r"^\s*(#|//|/\*|\*|--)")
+
+
+def _code_of(text: str) -> list[str]:
+    """The lines of `text` that are code: not blank, not a comment, not part of a Python docstring."""
+    lines: list[str] = []
+    closing = ""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if closing:
+            if closing in stripped:
+                closing = ""
+            continue
+        if not stripped or _A_COMMENT_LINE.match(line):
+            continue
+        opener = next((q for q in ('"""', "\'\'\'") if stripped.startswith(q)), "")
+        if opener:
+            if stripped.count(opener) < 2:
+                closing = opener
+            continue
+        lines.append(stripped)
+    return lines
+
+
 _NOT_WALKED = {"node_modules", "vendor", "target", "build", "dist", "__pycache__", "venv", "bin", "obj"}
 
 
@@ -669,9 +696,13 @@ def _the_setup_s_own_code(project_root: Path, declared: Declaration) -> dict[str
             if (not relative.endswith(_PROVEN_CODE_SUFFIXES) or relative in skipped or relative.startswith(tests)
                     or "test" in relative.rsplit("/", 1)[-1].lower() or relative.rsplit("/", 1)[-1].startswith(".")):
                 continue
+            if relative.rsplit("/", 1)[-1].startswith(_SCRATCH):
+                continue
             text = path.read_text(encoding="utf-8", errors="replace")
-            code = [line for line in text.splitlines() if line.strip()]
-            if 0 < len(code) <= PROVEN_CODE_LINES:
+            code = _code_of(text)
+            # A file of a docstring or comments alone says nothing of how the application is made (measured: a
+            # package's one-line `__init__.py` and a harness scratch file were recorded, the entry was not).
+            if MIN_PROVEN_CODE_LINES <= len(code) <= PROVEN_CODE_LINES:
                 found[relative] = text
             if len(found) == 2:
                 break

@@ -45,3 +45,13 @@ def test_the_builders_are_shown_it_and_told_it_stands_over_the_specification():
     assert "proven to start" in text
     for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
         assert not re.search(rf"\b{re.escape(word)}\b", text, re.I)
+
+
+def test_scratch_files_and_files_of_a_docstring_alone_are_not_proven_code(tmp_path):
+    """Measured on a layered setup: its one-line `__init__.py` (a docstring) and the harness's `tmp-inline-` scratch
+    file were recorded as the setup's code; neither says how the application is made."""
+    (tmp_path / "notes_api").mkdir()
+    (tmp_path / "notes_api" / "__init__.py").write_text('"""Notes API."""\n')
+    (tmp_path / "notes_api" / "main.py").write_text(ENTRY)
+    (tmp_path / "tmp-inline-14001b48.py").write_text("import falcon; help(falcon.App)\nx = 1\ny = 2\n")
+    assert _the_setup_s_own_code(tmp_path, _declared()) == {"notes_api/main.py": ENTRY}

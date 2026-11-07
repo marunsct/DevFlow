@@ -28,6 +28,10 @@ KPIS = (
     ("output_tokens", True),
     ("tool_failure_rate", True),
     ("model_errors", True),
+    # The product's own quality beside the hidden score (HR2.E.5): the locked suite's mutation score and the
+    # family's quality set; both existed in the ledger and were in no comparison.
+    ("mutation_score", False),
+    ("quality_score", False),
     ("replies_lost_to_length", True),
 )
 WORSE_BY = 1.25

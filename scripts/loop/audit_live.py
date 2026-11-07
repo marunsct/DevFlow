@@ -69,6 +69,11 @@ signatures = collections.Counter()
 examples = {}
 reads = redundant = 0
 order, last_stage = [], ""
+# What the ten-minute audit could not see (HR2.O.1): salvaged and capped replies, pause cancellations, the
+# prefill:decode ratio of each stage and the memory block it carries.
+salvaged, capped, in_tokens, out_tokens, memory_chars = (collections.Counter(), collections.Counter(),
+                                                        collections.Counter(), collections.Counter(), {})
+cancelled = 0
 for rec in records:
     stage = rec.get("stage") or ""
     if stage:
@@ -89,6 +94,20 @@ for rec in records:
         per_stage[stage] += 1
         if rec.get("tool") in READS:
             reads += 1
+    elif kind == "model_response":
+        if rec.get("salvaged"):
+            salvaged[stage] += 1
+        if rec.get("finish_reason") == "length":
+            capped[stage] += 1
+        usage = rec.get("usage") or {}
+        in_tokens[stage] += int(usage.get("input_tokens") or 0)
+        out_tokens[stage] += int(usage.get("output_tokens") or 0)
+    elif kind == "model_request":
+        memory = (rec.get("blocks") or {}).get("project_memory")
+        if isinstance(memory, (int, float)):
+            memory_chars[stage] = int(memory)
+    elif kind == "model_error" and "RunCancelled" in str(rec.get("error") or ""):
+        cancelled += 1
     elif kind == "tool_result":
         answered.add(rec.get("call_id"))
         call = calls.get(rec.get("call_id")) or {}
@@ -122,6 +141,25 @@ _FEW = 10
 print(f"redundant reads: {redundant} of {reads} reads ({100 * redundant / max(1, reads):.0f}%)   "
       + (f"[fewer than {_FEW}: noise, not waste]" if redundant < _FEW
          else "[10 or more: look at which stage with `loop.sh reads`; healthy 8-19% of reads]"))
+if salvaged or capped:
+    by_stage = ", ".join(f"{st}: {n}" for st, n in salvaged.most_common(4))
+    print(f"salvaged replies: {sum(salvaged.values())} ({by_stage or 'none'}); replies cut at the cap: {sum(capped.values())}")
+paused_minutes = 0.0
+try:
+    from app.server.run_store import RunStore
+
+    run_id = next((r.get("run_id") for r in records if r.get("run_id")), "")
+    paused_minutes = round(RunStore().paused_seconds([run_id]).get(run_id, 0.0) / 60, 1) if run_id else 0.0
+except Exception:  # the pause line is an addition
+    pass
+if cancelled or paused_minutes:
+    print(f"pauses: {cancelled} call(s) cancelled by a pause; {paused_minutes} min paused (taken off active_minutes since LF.690)")
+if last_stage and out_tokens[last_stage]:
+    ratio = in_tokens[last_stage] / max(1, out_tokens[last_stage])
+    memory = memory_chars.get(last_stage, 0)
+    flag = "   <- prefill-heavy: the stage reads far more than it writes" if ratio > 60 or memory > 80_000 else ""
+    print(f"prefill:decode in {last_stage}: {ratio:.0f}:1 ({in_tokens[last_stage]:,} in / {out_tokens[last_stage]:,} out); "
+          f"memory block {memory // 1000}k chars{flag}")
 print("stage order: " + " -> ".join(order[-14:]))
 try:
     from app.observability import cache_report

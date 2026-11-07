@@ -48,7 +48,7 @@ Superseded by HR2 (do not build as first written): SF.2b (parked on evidence), S
 works), Q3 (deprioritised), Q4's stub leg (dropped), F6 (wrong shape -> fix.4), WB.5 (not supported by the data),
 E4 (-> PR.9 generated edge sets).
 
-HR2 progress: bundle 1 - R.1 and R.4 built (LF.690, 11-08 00:4x; ledger rows since 11-05 recomputed).
+HR2 progress: bundle 1 - R.1, R.4 (LF.690; 45 ledger rows recomputed, 2,145 paused minutes taken out), O.1, E.5 (LF.691) built 11-08 00:5x; left in bundle 1: R.5, C.4a, C.3, E.3, Q.1, Q.4, Q.9, Q.10, G.1, fix.1, fix.7, P.5, P.8, SS.4, OB.1, Q.6a, Q.11, G.3, PR.10.
 
 ## Harness review items behind a switch (first review's list; see HR2 above for the current order)
 

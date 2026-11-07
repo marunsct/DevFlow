@@ -116,8 +116,12 @@ print(f"duplicate executions (one call_id run twice): {extra}"
       + (f"   [+{restarted} re-run after a restart cut the first off - expected]" if restarted else ""))
 if resumes:
     print(f"resumed after its worker stopped (deploys, crashes), UTC: {', '.join(resumes)}")
-print(f"redundant reads: {redundant} of {reads} reads "
-      f"({100 * redundant / max(1, reads):.0f}%)   [healthy: 8-19%; before the digest: 20-49%]")
+# A rate over few reads says nothing: measured over an evening, 3 of 69 read as 39% and was chased twice, while the
+# one real case was 14 redundant reads by one stuck stage. Each redundant read is answered without its content.
+_FEW = 10
+print(f"redundant reads: {redundant} of {reads} reads ({100 * redundant / max(1, reads):.0f}%)   "
+      + (f"[fewer than {_FEW}: noise, not waste]" if redundant < _FEW
+         else "[10 or more: look at which stage with `loop.sh reads`; healthy 8-19% of reads]"))
 print("stage order: " + " -> ".join(order[-14:]))
 try:
     from app.observability import cache_report

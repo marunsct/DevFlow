@@ -141,7 +141,16 @@ def compare_arms(a: list[dict], b: list[dict], minimum: int = MINIMUM_RUNS_PER_A
     """Each numeric KPI's mean and spread (min-max) on two arms of runs; refused below `minimum` runs an arm."""
     if len(a) < minimum or len(b) < minimum:
         return [f"not compared: {len(a)} and {len(b)} run(s); each arm needs at least {minimum}"]
-    out = [f"{'kpi':<34} {'arm A (n=' + str(len(a)) + ')':>24} {'arm B (n=' + str(len(b)) + ')':>24}"]
+    # The counts first (HR2.E.3): with 34 of 40 runs at a hidden score of 1.0, a mean says "equal" where one arm lost
+    # a hidden test or falsely accepted a product.
+    def total(rows: list[dict], key: str) -> str:
+        values = _numbers(rows, key)
+        return f"{sum(values):g} in {len(values)} run(s)" if values else "not recorded"
+
+    out = [f"hidden tests lost: arm A {total(a, 'hidden_tests_failed')}, arm B {total(b, 'hidden_tests_failed')}",
+           f"false acceptances: arm A {total(a, 'false_acceptance')}, arm B {total(b, 'false_acceptance')}",
+           f"defects left open: arm A {total(a, 'defects_left_open')}, arm B {total(b, 'defects_left_open')}",
+           f"{'kpi':<34} {'arm A (n=' + str(len(a)) + ')':>24} {'arm B (n=' + str(len(b)) + ')':>24}"]
     for key in sorted({k for r in [*a, *b] for k in r}):
         x, y = _numbers(a, key), _numbers(b, key)
         if len(x) < minimum or len(y) < minimum:
@@ -167,6 +176,12 @@ def with_the_scores(row: dict, bench: Path = Path("data/bench")) -> dict:
             # The family the run was scored against. The brief last started is the other port's run
             # whenever two runs are live, and filed a run under the wrong family.
             row["benchmark"] = scored["benchmark"]
+        # Counts the hidden score hides at its ceiling (HR2.E.3): two runs an arm scoring 1.0 and 0.9 read "0.95";
+        # "one hidden test lost" is what the arm comparison needs.
+        if isinstance(scored.get("total"), int) and isinstance(scored.get("passed"), int):
+            row["hidden_tests_failed"] = scored["total"] - scored["passed"]
+        if "false_acceptance" in scored:
+            row["false_acceptance"] = 1 if scored.get("false_acceptance") else 0
         if scored.get("quality_total"):
             row["quality_score"] = round(scored["quality_passed"] / scored["quality_total"], 3)
     except (OSError, ValueError, TypeError, ZeroDivisionError):

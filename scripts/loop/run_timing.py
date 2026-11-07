@@ -51,6 +51,18 @@ PHASE = {
 }
 
 
+def paused_seconds_of(records):
+    """The run's recorded pauses from the run store, 0 when unreadable (HR2.Q.10). Measured: three of one day's five
+    longest "stages" read from wall clock were deploy gaps of 83, 73 and 44 minutes."""
+    try:
+        from app.server.run_store import RunStore
+
+        run_id = next((r.get("run_id") for r in records if r.get("run_id")), "")
+        return float(RunStore().paused_seconds([run_id]).get(run_id, 0.0)) if run_id else 0.0
+    except Exception:  # noqa: BLE001 - the report as it was
+        return 0.0
+
+
 def analyse(prefix):
     paths = glob.glob(f"/app/data/transcripts/{prefix}*.jsonl")
     if not paths:
@@ -141,7 +153,10 @@ def analyse(prefix):
     tot = collections.Counter()
     for c in per.values():
         tot.update(c)
-    print(f"\n===== {prefix}  wall {wall/60:.0f} min")
+    paused = paused_seconds_of(recs)
+    print(f"\n===== {prefix}  wall {wall/60:.0f} min"
+          + (f" (paused {paused/60:.0f} min for deploys and rewinds, inside 'neither' below; working {max(wall - paused, 0)/60:.0f} min)"
+             if paused >= 60 else ""))
     print(f"model busy {model_busy/60:.0f} min ({model_busy/wall:.0%}) | tools busy {tool_busy/60:.0f} min ({tool_busy/wall:.0%}) | neither {max(wall-any_busy,0)/60:.0f} min ({max(wall-any_busy,0)/wall:.0%})")
     print(f"model calls {tot['calls']} | output tokens {tot['out']:,} of which reasoning {tot['reasoning']:,} ({tot['reasoning']/max(tot['out'],1):.0%}) | input tokens {tot['in']:,} | spirals {spirals}")
     # The prefix the server already held: on a prefill-bound server the share

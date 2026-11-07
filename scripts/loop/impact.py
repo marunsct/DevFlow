@@ -58,12 +58,25 @@ def finished_on(row, position):
     return max(places) if places else None
 
 
+def started_on(row, position):
+    """The place in history of the first harness version a run ran on, or None when it is unknown."""
+    places = [position[c] for c in (row.get("harness_commits") or "").split() if c in position]
+    return min(places) if places else None
+
+
 def compare(rows, at, position):
-    """Each KPI's median ratio, after the change at place `at`, to its family's median before it."""
-    placed = [(finished_on(r, position), r) for r in rows]
-    before = [r for p, r in placed if p is not None and p < at][-BEFORE_RUNS:]
-    after = [r for p, r in placed if p is not None and p >= at]
-    report = {"before": len(before), "after": len(after), "kpis": {}}
+    """Each KPI's median ratio, after the change at place `at`, to its family's median before it.
+
+    A run counts after the change only if it started on it or later, and before it only if it finished before it:
+    a run the change was deployed into part-way is neither (harness review E1). Measured: a run was filed by the
+    last version it ran on, so a run that ran three hours on the old code and ten minutes on the new counted as
+    the change's - most of the ledger's rows are mixed.
+    """
+    placed = [(started_on(r, position), finished_on(r, position), r) for r in rows]
+    before = [r for _, last, r in placed if last is not None and last < at][-BEFORE_RUNS:]
+    after = [r for first, _, r in placed if first is not None and first >= at]
+    spanning = sum(1 for first, last, _ in placed if first is not None and last is not None and first < at <= last)
+    report = {"before": len(before), "after": len(after), "spanning": spanning, "kpis": {}}
     for kpi, worse_when_higher in KPIS:
         ratios = []
         for run in after:
@@ -116,7 +129,7 @@ def main(argv):
             mark = " WORSE" if seen["worse"] else (" watch" if seen.get("watch") else "")
             flagged += bool(seen["worse"])
             parts.append(f"{kpi} x{seen['ratio']}{mark}")
-        print(f"{name:<18} {sha[:8]} runs before {report['before']:>2} after {report['after']:>2}: "
+        print(f"{name:<18} {sha[:8]} runs before {report['before']:>2} after {report['after']:>2} spanning {report.get('spanning', 0):>2}: "
               + (", ".join(parts) or "no run after it yet"))
     print(f"impact: {flagged} KPI(s) worse after a change" if flagged else "impact: nothing worse after any change")
 

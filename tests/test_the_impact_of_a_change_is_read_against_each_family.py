@@ -56,3 +56,12 @@ def test_one_run_after_a_change_is_a_watch_not_a_regression():
 
 def test_wall_time_with_its_pauses_is_not_read():
     assert "wall_minutes" not in dict(impact.KPIS)
+
+
+def test_a_run_the_change_was_deployed_into_part_way_counts_for_neither_side():
+    """Harness review E1: a run was filed by the last version it ran on, so one that ran almost all its time on the
+    old code counted as the change's."""
+    rows = [_row("old", "small", 40, 2), _row("old new", "small", 40, 9, score="0.5"), _row("new", "small", 40, 2)]
+    report = impact.compare(rows, 1, POSITION)
+    assert report["after"] == 1 and report["spanning"] == 1
+    assert not report["kpis"]["hidden_score"]["worse"] and not report["kpis"]["test_rounds"]["worse"]

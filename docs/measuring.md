@@ -44,7 +44,7 @@ From `docs/harness-review.md` Phase 2-3. Each gets its own switch, default off, 
 
 ## Review items that need no measurement (bug fixes, always on)
 
-Built: R1 (LF.660), F2 telemetry (LF.663), F3 (LF.664), C1, F4 measured form (LF.669), D8 (LF.674), R6 (LF.675), C7 (LF.677), Q1 part 1 recording (LF.678), P4 in its measured form (LF.679: a finished work order owns no file), F8 (LF.680), SF.1.
+Built: R1 (LF.660), F2 telemetry (LF.663), F3 (LF.664), C1, F4 measured form (LF.669), D8 (LF.674), R6 (LF.675), C7 (LF.677), Q1 part 1 recording (LF.678), P4 in its measured form (LF.679: a finished work order owns no file), F8 (LF.680), E1 (LF.681: `impact.py` leaves out runs a change was deployed into), SF.1.
 Not built on evidence: G1 (measured), G6 (measured), P5 (on merit). Covered: G2 (LF.648).
-To build, in order: Q1 part 2 (per-check precision report), E1 ledger integrity,
+To build, in order: Q1 part 2 (per-check precision report),
 R3 heartbeat orphan detection, R2 drain deploys, SF.0b library hygiene, SF.0c misses report.

@@ -398,6 +398,20 @@ def _the_reply_s_file(path: str, original: str, reply: Any) -> str:
     return the_content_in(text)
 
 
+def _note_what_the_rewrite_was_shown(defect: Any, asked: Any) -> None:
+    """The ledger's `shown` record for a one-file rewrite, as every agent fixer has one. Never raises.
+
+    Measured on a live run: two rewrites ran and were measured with no `shown` record, so the ledger read as if no
+    fixer had run at all (harness review F8)."""
+    try:
+        from app.observability import defect_ledger
+        from app.observability.transcript import _stage_from_config
+
+        defect_ledger.shown(str(_stage_from_config("defect_fix") or "defect_fix"), defect, asked)
+    except Exception:  # noqa: BLE001 - a ledger must never fail the fix it records
+        pass
+
+
 def fix_by_rewriting(
     defect: Any, repo_root: str | Path, model: Any, *, specification: Any = None, stack: Any = None,
     last_failure: Any = None, may_write: Callable[[str], bool] | None = None,
@@ -468,6 +482,7 @@ def fix_by_rewriting(
                     continue
                 # Counted as failed when sent: a rewrite that holds closes its defect and is not asked again.
                 repeated_rewrite_prompts.failed(root, asked)
+                _note_what_the_rewrite_was_shown(defect, asked)
                 reply = active_model.invoke([
                     SystemMessage(content=_system_for(current)),
                     HumanMessage(content=asked),

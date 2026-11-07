@@ -9,7 +9,25 @@ puts it in one place - `scripts/loop/defects.py` reads it back.
 
 from __future__ import annotations
 
+import hashlib
+import re
 from typing import Any
+
+#: What changes between two rounds' copies of one defect: numbers, quoted values, paths' line numbers.
+_VARYING = re.compile(r"`[^`]*`|\"[^\"]*\"|'[^']*'|\d+")
+_A_CRITERION = re.compile(r"\b(?:AC|CR)-\d+\b")
+
+
+def defect_id(defect: Any) -> str:
+    """One defect's id across rounds (harness review F8): its source, owner, criteria and wording without the values
+    that change from round to round. Measured: the ledger keyed defects by round and index, so a defect raised again
+    in the next round was a new row, and no outcome KPI could follow one defect to its end."""
+    description = str(getattr(defect, "description", "") or "")
+    criteria = ",".join(sorted(set(_A_CRITERION.findall(description))))
+    wording = " ".join(_VARYING.sub("_", _A_CRITERION.sub("", description)).split()).lower()[:200]
+    key = "|".join((str(getattr(defect, "source", "") or ""), str(getattr(defect, "owner", "") or ""), criteria,
+                    wording))
+    return hashlib.sha1(key.encode("utf-8", errors="replace")).hexdigest()[:10]
 
 
 def note(event: str, stage: str, *, defect: Any = None, round_: int | None = None,
@@ -21,6 +39,7 @@ def note(event: str, stage: str, *, defect: Any = None, round_: int | None = Non
         record(
             _run_id_from_config(), stage, "defect",
             event=event,
+            defect_id=defect_id(defect) if defect is not None else "",
             sprint=sprint,
             round=round_,
             index=index,
@@ -41,8 +60,6 @@ def shown(stage: str, defect: Any, request: Any, *, round_: int | None = None, i
     given, so "why did the second try succeed" could not be answered from data.
     """
     try:
-        import hashlib
-
         text = request if isinstance(request, str) else "\n".join(
             str(part.get("text", "")) if isinstance(part, dict) else str(part) for part in (request or []))
         fingerprint = hashlib.sha1(text.encode("utf-8", errors="replace")).hexdigest()[:12]
@@ -54,4 +71,4 @@ def shown(stage: str, defect: Any, request: Any, *, round_: int | None = None, i
         pass
 
 
-__all__ = ["note", "shown"]
+__all__ = ["defect_id", "note", "shown"]

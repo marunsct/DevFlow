@@ -1995,6 +1995,21 @@ class _FixStageCallCap:
 fix_stage_call_cap = _FixStageCallCap()
 
 
+#: Files a stage is asked to produce as its result, written whatever has been withheld: withholding stops a stalling
+#: stage, it must not refuse the stage's own deliverable. Measured on one run: the setup stage wrote its declaration
+#: last, `write_artifact` was withheld by then, the write was refused and the setup was left to the agents.
+DELIVERABLE_FILES = ("stack-setup.json",)
+_WRITE_TOOLS = ("write_artifact", "edit_artifact")
+
+
+def _writes_the_stage_s_deliverable(call: Any) -> bool:
+    if str(call.get("name") or "") not in _WRITE_TOOLS:
+        return False
+    args = call.get("args") or {}
+    path = str(args.get("relative_path") or args.get("file_path") or args.get("path") or "")
+    return path.replace("\\", "/").rsplit("/", 1)[-1] in DELIVERABLE_FILES
+
+
 def build_settled_answer_middleware(
     schema: Any, stage_name: str = "", step_limit: int = 0
 ) -> Any:
@@ -2425,7 +2440,7 @@ def build_settled_answer_middleware(
             scratch = a_harness_scratch_delete(call)
             if scratch is not None:
                 return scratch
-            if name and name in self._withheld_now():
+            if name and name in self._withheld_now() and not _writes_the_stage_s_deliverable(call):
                 from langchain_core.messages import ToolMessage
 
                 # Opens as a refusal, so the guards that count refused and

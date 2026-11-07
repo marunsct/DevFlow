@@ -90,11 +90,27 @@ class Report:
         return sum(1 for test in self.tests if test.outcome == "skipped")
 
 
+#: pytest's own shortening of a long message attribute: its first lines, then this, the whole failure in the body.
+_SHORTENED = re.compile(r"\s*\[\+\d+ more lines?; full report in element text\]\s*$")
+#: Of a body past the limit, the share kept from its end - where a traceback names what was raised.
+_FROM_THE_END = 2 / 3
+
+
 def _text_of(element: ET.Element) -> str:
-    """A failure's message attribute and body, joined and trimmed."""
-    parts = [element.get("message") or "", element.text or ""]
-    text = "\n".join(part.strip() for part in parts if part and part.strip())
-    return text[:MAX_MESSAGE_CHARS]
+    """A failure's message attribute and body, joined and trimmed; past the limit its end is what is kept.
+
+    Measured on a run whose product stopped starting: the attribute was pytest's shortened head - the traceback's
+    first frames and "[+35 more lines; ...]" - and the body was cut from its start, so eleven fixers in a row saw
+    neither the exception the service raised nor its last lines, and each fix was reverted for the same unseen cause.
+    """
+    message = _SHORTENED.sub("", element.get("message") or "").strip()
+    body = (element.text or "").strip()
+    text = "\n".join(part for part in (message, body) if part)
+    if len(text) <= MAX_MESSAGE_CHARS:
+        return text
+    tail = int(MAX_MESSAGE_CHARS * _FROM_THE_END)
+    head = MAX_MESSAGE_CHARS - tail - 5
+    return text[:head].rstrip() + "\n...\n" + text[-tail:].lstrip()
 
 
 def parse(text: str) -> Report:

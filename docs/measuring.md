@@ -35,7 +35,14 @@ on arm (G.7), D1 lint + `DESIGN_SINGLE_REVIEW` (D.7+D.6), `SUITE_PASSES_TWICE` (
 security as spec conformance, `SPEC_SLICES_BY_STAGE` (D.5), `CONTRACT_LIST_PROBE` (Q.8), `STOP_WHEN_OWN_TESTS_PASS`
 (fix.8), `REVIEW_THE_SUITE_DELTA` (Q.7), `SURRENDER_AFTER_A_FAILED_WRITE` (fix.5), `MUTATION_SURVIVORS_TO_QA` (Q.6b),
 `PRODUCT_LINT` (PR.6), `SETUP_PROOF_FEEDBACK` (SS.7), G.5 scanner note, M6 arm, M8 arm, D.8, `EDIT_FORMAT_BY_SIZE`
-(P.9), Q5 browser mutants. Bug and quality items (bundles 1-7) need no row: they are always on.
+(P.9), Q5 browser mutants; from §12: `MEMORY_BY_NEED` (C.2, near the top with fix.2 and P.2), `CAPS_FROM_THE_DIAGNOSIS`
+(C.4b), C.5 schema-first, C.1 estimated cache, E.2 stage forks (tooling). Bug and quality items (bundles 1-7) need no row: they are always on.
+
+Measurement plan (HR2 §12, adopted): first HR2.E.1 (per-run switch overrides) and HR2.R.1 (pauses out of the time
+KPI), then one frozen SHA; each switch as a pair on both ports (on A / off B, then swapped: 4 runs = 2+2) on the
+shortest families that exercise it; stage forks (HR2.E.2) for the token/efficiency switches before any full run; M1
+as one group with one off arm on web-todo and tasks-api; M2 bundle by bundle, largest token share first. Budget ~20
+runs instead of 84. Until E.1 lands, no arm can be judged: since 11-05 no family has two clean runs on one SHA.
 
 Superseded by HR2 (do not build as first written): SF.2b (parked on evidence), SF.3a (premature until replay
 works), Q3 (deprioritised), Q4's stub leg (dropped), F6 (wrong shape -> fix.4), WB.5 (not supported by the data),

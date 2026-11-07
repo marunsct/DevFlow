@@ -409,3 +409,55 @@ switched item and its arm; nothing in bundle 8 is deployed on before its row exi
   this anyway" note in a transcript is one.
 - The product is scored as a customer would see it (`handoff_score`, the generated edge set) beside the hidden
   score, so quality that the hidden tests cannot see is measured, not assumed.
+
+## 12. Context, runtime, evaluation and the loop's own operations (`08`, landed 00:4x 11-08)
+
+A seventh finding, the one that gates everything in bundle 8: **the measurement cannot judge any switch today.**
+Since 11-05 the ledger has 39 rows on 87 distinct SHAs, 34 of them mixed; no family has two clean runs on any one
+SHA, so `compare_arms` (two runs an arm) refuses every pair and M1-M7 have no judgeable arm. Each off arm today
+needs a deploy that itself marks the live run mixed. Two more measurement faults: `active_minutes` never subtracts
+the recorded pauses (`runs.paused_seconds`: 150 min today, 2,152 min the week before, all inside the time KPI),
+and `model_errors` counts the owner's unloads and quota as the harness's errors. Also measured: :8888 serves
+78.5% of prompt tokens from cache and :1234 reports none (unmeasurable, now "unknown"); opening changes still cost
+10.7M uncached tokens a day (5%) while tool and system blocks cost nothing (the Appendix 9 order holds); reply
+salvage fired on 2.8% of replies today (4x the history; the technical lead 24% of its replies), the p90 reasoning of
+four review stages sits exactly at the 20k cap, and nothing records whether a salvaged answer was accepted; 41 of
+102 pause cancellations hit the architect although `ship-live` waits for it, and the images are built *after* the
+runs are paused; a resume no longer writes a `resumed` record, so the audit's resume line is blind; 0 unknown-tool
+calls and 5 evictions today, so C3 (tool masking) and PX.7/PX.8 stay parked; C2 is partly built already
+(`STRUCTURED_EXTRACTION`, on). The builder and tester stages carry a 95-105k-character memory block every request
+(prefill/decode 110:1 and 180:1).
+
+- HR2.R.1 B S - `active_minutes` subtracts the recorded pauses; `paused_minutes` its own column.
+- HR2.R.4 B S - `model_errors` by kind (server unavailable / owner action / request rejected / timeout); only rejected requests count as regressions.
+- HR2.R.5 B S - a resume writes its `resumed` record again (or the audit reads provenance segments).
+- HR2.C.4a B S - the next request after a salvage records accepted / re-asked / cut again; a `salvage_success_rate` KPI and an `effects` line.
+- HR2.C.3 B S - a prefix break names the opening block that moved (memory, specification, request) with its size delta.
+- HR2.E.3 B S - `compare_arms` compares counts (hidden tests failed, false acceptances, defects left open, mutation, paused-corrected minutes, tokens by stage) not a binary; pass^k moves to the RC report on a frozen SHA (E2 reshaped).
+- HR2.E.5 B S - `mutation_score` and `quality_score` (ledger columns that exist) into `impact.KPIS` and the RC rule.
+- HR2.O.1 B S - five audit lines: salvaged replies by stage, replies at the cap, pauses and paused minutes, prefill:decode with the memory block's size, cache share or "unknown".
+- HR2.E.1 B M - **per-run switch overrides** (`loop.sh bench --off SWITCH`; `switches.is_on` reads the run's record first): one frozen SHA serves both arms on both ports with no deploy between them - the precondition for every arm in bundle 8.
+- HR2.R.3 B S - build before the pause: `loop.sh deploy` splits into `build` and `swap`; `ship-live` builds, then pauses, swaps and resumes (a failing build touches no run).
+- HR2.R.2 B M - the pause lands at a stage boundary inside the runner (`pause_run(at="boundary")`, ceiling one stage); the 900 s architect wait goes.
+- HR2.E.4 B S - held-out families are marked and rotated: `bench` refuses one for a learning run; the first fix that cites its hidden test retires it (E3 reshaped).
+- HR2.O.2 H S - STATE.md's live and last-runs blocks generated from Postgres, `data/bench` and the ledger (its As-of line still reads 10-29).
+- HR2.O.3 H S - the nightly skips only when both ports are busy (it uses a scratch workspace and no model).
+- HR2.C.2 S M - `MEMORY_BY_NEED`: builder, tester, fix and setup stages carry the files their work order or defect names plus imports and the cited specification sections, the rest an index (M8 generalised; the largest token lever: 28.5M + 15.2M prompt tokens a day in two stage families).
+- HR2.C.4b S M - `CAPS_FROM_THE_DIAGNOSIS`: the per-stage reply cap is the served model's measured p90 for that stage family, floored, instead of two constants.
+- HR2.C.5 S S - the schema re-ask on the first call of an answer-only step where the server takes a schema (C2 reshaped).
+- HR2.C.1 S S - an estimated cache share from time-to-first-token on a server that reports none, labelled an estimate.
+- HR2.E.2 S M - `loop.sh fork <run> <stage> --off SWITCH`: a stage-level A/B from a stored checkpoint for the token and efficiency switches (minutes, not a run).
+
+**The measurement plan with the least run time** (from `08` §6.3, adopted into `docs/measuring.md`): on one frozen
+SHA with HR2.E.1, run each switch as a pair on both ports (on-port A / off-port B, then swapped: four runs give 2+2),
+on the shortest families that exercise it (wordstats-cli 34 min, textkit-lib 50 min for the context and efficiency
+switches and M7; notes-api/falcon ~62 min for M6 and M1; web-todo/fullstack only for M1's browser checks); judge
+M3, M4, M8 and HR2.C.2 on stage forks first and send only the survivors to full runs; M1's thirteen checks as one
+group with one off arm on the two families where they fire most; M2's bundles starting with the largest token share.
+Budget: about 20 runs (~22 h on two ports) instead of the 84 the two-per-family rule implies.
+
+**Bundle table, amended by §12.** Bundle 1 (telemetry) also carries R.1, R.4, R.5, C.4a, C.3, E.3, E.5, O.1. A new
+**bundle 1b, measurement enablers**, goes right after it: E.1 (per-run arms), R.3 (build before pause), R.2
+(boundary pause), E.4, O.2, O.3 - without E.1 nothing in bundle 8 can be measured; without R.1 the time KPI carries
+~7 minutes a run of invisible pause time. Bundle 8 gains C.2 (near the top, with fix.2 and P.2), C.4b, C.5, C.1 and
+the E.2 tooling.

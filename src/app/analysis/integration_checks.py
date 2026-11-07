@@ -2474,6 +2474,25 @@ _DECLARES_ESM = re.compile(r'"type"\s*:\s*"module"')
 MAX_CONTRADICTING_FILES = 8
 
 
+def _test_files_a_runner_loaded(package: Path) -> set[str]:
+    """The file names of tests the package's own JUnit reports show ran (passed or failed). Never raises."""
+    names: set[str] = set()
+    try:
+        from app.acceptance import junit
+
+        for report in package.glob("test-results/*.xml"):
+            for test in junit.read(report).tests:
+                if test.outcome not in ("passed", "failed"):
+                    continue
+                for said in (test.file, test.suite):
+                    said = str(said or "").replace("\\", "/")
+                    if said:
+                        names.add(said.rsplit("/", 1)[-1])
+    except Exception:  # noqa: BLE001 - no report says nothing about what loaded
+        return set()
+    return names
+
+
 def _files_that_contradict_the_declared_module_type(
     files: list[Path], root: Path
 ) -> list[str]:
@@ -2532,6 +2551,12 @@ def _files_that_contradict_the_declared_module_type(
                 _FEATURE_DETECTS_COMMONJS.search(body)
             ):
                 offenders.append(str(path.relative_to(root)))
+        # A file whose tests a runner's report shows ran was loaded: its runner transforms it, whatever the
+        # manifest says. Measured on one run: a locked Playwright spec using `require` under `"type": "module"`
+        # passed 10 of 10, this finding said "the suite cannot run", two fixers changed the manifest, broke the
+        # start both times, and the sprint was escalated.
+        loaded = _test_files_a_runner_loaded(package)
+        offenders = [f for f in offenders if Path(f).name not in loaded]
         if not offenders:
             continue
         shown = ", ".join(sorted(offenders)[:MAX_CONTRADICTING_FILES])

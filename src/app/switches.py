@@ -111,6 +111,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Context and cost": ("OBSERVATION_FOLDING", "STABLE_STAGE_PREFIX", "BATCH_ACCEPTANCE_AUTHOR"),
     # Fewer calls on mutation findings: time, not what the run proves.
     "Efficiency": ("EQUIVALENT_MUTANTS_REMEMBERED", "MUTANT_CHECK_IN_THE_FIX_STAGE"),
+    # What a stack's setup stage may write (docs/measuring.md M6): measured off and on before it is kept.
+    "Setup scope": ("SETUP_SCOPE_GUARD",),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)

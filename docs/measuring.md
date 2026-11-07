@@ -23,6 +23,7 @@ Arms run on the two ports in turn; each row's off arm is a run with only that ro
 | M2 | Premium bundles (model tuning, project intelligence, deep verification) | `PREMIUM_*` | ON since 10-22 (all-on baseline) | hidden score, model calls, tool failures | 79 | 5-6, early, other harness | `effects gate` calls 10 park candidates on 5-6 off runs: too thin - an off arm per bundle on today's SHA before any parking |
 | M3 | Context and cost | group `Context and cost` | see `loop.sh switches` | input tokens, cache share | - | - | not started |
 | M4 | Efficiency (mutation findings) | group `Efficiency` | see `loop.sh switches` | model calls on mutation defects | - | - | not started |
+| M6 | Setup scope: a layered setup stage writes only its framework files, declaration, smoke tests, manifests and test configuration | `SETUP_SCOPE_GUARD` (group `Setup scope`) | OFF (built 11-07 21:0x, LF.686) | setup lines written; hidden score on custom stacks; setup minutes | 0 | falcon 4-9 (all off) | needs on runs: 2 notes-api-falcon runs with it on, on one SHA |
 | M5 | MEASURE_ONCE (reuse an unchanged product's measurement) | `MEASURE_ONCE` (built in) | ON | suite minutes | - | - | LF.676 fixed its skipped own-start check; built in, no arm |
 
 ## Harness review items behind a switch (to build, then measure)
@@ -40,7 +41,7 @@ From `docs/harness-review.md` Phase 2-3. Each gets its own switch, default off, 
 | Q2-Q6, Q8 | isolation by fixture; Python dry run; stub validation; browser mutants; executable dispute verdicts; relational assertions | to build |
 | F1, F5, F6 | candidate selection; SBFL localisation; fresh second attempts | to build |
 | C2, C3, C4, C6 | constrained answers; masked tools; stable opening; repo map | to build |
-| SF.2b, SF.2c, SF.3 | harness-run generator; setup budget and rollback; patch on replay and promotion | to build |
+| SF.2b, SF.2c, SF.3 | harness-run generator (stacks that have one; Python has none, so M6 covers the falcon case); setup budget and rollback; patch on replay and promotion | to build |
 
 ## Review items that need no measurement (bug fixes, always on)
 

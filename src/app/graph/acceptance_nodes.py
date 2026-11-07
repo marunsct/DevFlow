@@ -411,6 +411,7 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         project_root, stack, product_kind(stack, brief), project, title or project,
         write=attempt == 0 and not resuming,
     )
+    custom_setup.record_the_setup_s_scope(Path(ctx.repo_root), project, layer_files)
     agent = create_specialist_agent(
         "testing", model=ctx.model, checkpointer=ctx.checkpointer,
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,

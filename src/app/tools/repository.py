@@ -2089,6 +2089,47 @@ def record_work_order_files(root: str | Path, owners: Mapping[str, str]) -> None
         logger.warning("Could not record the work orders' files", exc_info=True)
 
 
+#: The files a layered setup stage was asked to write, by the project they are in (`custom_setup.layered_setup`).
+SETUP_SCOPE_FILE = ".harness/setup-scope.json"
+_TEST_PARTS = frozenset({"test", "tests", "acceptance", "spec", "__tests__", "e2e"})
+_A_TEST_NAME = re.compile(r"(^test_|_test\.|\.test\.|\.spec\.)")
+
+
+def _beyond_the_setup_s_files(root: Path, target: Path) -> str | None:
+    """The refusal for a layered setup stage writing the product's own code, behind `SETUP_SCOPE_GUARD`; else None.
+
+    Measured on a stack no pack covers: asked for four framework files, the setup stage wrote the whole product -
+    a 239-line application, its storage, 297 lines of acceptance tests - before the specification's builders ran;
+    nothing changed after the lock and the product shipped a start that worked nowhere else (hidden 0 of 9).
+    Only a code file that is neither one the stage was asked for nor a test is refused; manifests, configuration and
+    the declaration stay open.
+    """
+    try:
+        from app.observability.transcript import _stage_from_config
+        from app.stacks import setup_scope
+
+        if not str(_stage_from_config("") or "").startswith("stack_setup") or not setup_scope.enabled():
+            return None
+        scope = json.loads((root / SETUP_SCOPE_FILE).read_text(encoding="utf-8"))
+        shown = target.relative_to(root).as_posix()
+    except (OSError, ValueError, TypeError):
+        return None
+    project = str(scope.get("project") or "").strip("/")
+    asked = {f"{project}/{path}" if project else str(path) for path in scope.get("files") or []}
+    parts = shown.split("/")
+    if (shown in asked or not shown.endswith(_CODE_SUFFIXES_OF_A_PRODUCT) or parts[-1] == "__init__.py"
+            or _TEST_PARTS & set(parts[:-1]) or _A_TEST_NAME.search(parts[-1])):
+        return None
+    listed = ", ".join(f"`{path}`" for path in sorted(asked)) or "its framework files"
+    return (f"'{shown}' is the product's code, not the setup's: this stage writes {listed}, its declaration, its "
+            "smoke tests and the project's manifests and test configuration. The builders write the product from "
+            "the specification after the setup is proven. Nothing was written.")
+
+
+_CODE_SUFFIXES_OF_A_PRODUCT = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".cs",
+                               ".rb", ".php", ".ex", ".exs", ".vue", ".svelte")
+
+
 def _another_work_order_s_file(root: Path, target: Path) -> str | None:
     """The refusal for a specialist writing a file another work order owns, or None.
 
@@ -2103,6 +2144,9 @@ def _another_work_order_s_file(root: Path, target: Path) -> str | None:
     lists, and only in the milestone whose plan recorded it. Files no work
     order lists stay open to whoever needs them.
     """
+    beyond = _beyond_the_setup_s_files(root, target)
+    if beyond is not None:
+        return beyond
     try:
         from app.observability.transcript import _stage_from_config
 

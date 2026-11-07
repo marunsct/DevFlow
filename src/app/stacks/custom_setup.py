@@ -203,6 +203,21 @@ def write_runner_layer(project_root: Path, pack: StackPack, project: str, title:
     return framework
 
 
+def record_the_setup_s_scope(root: Path, project: str, layer_files: dict[str, str] | None) -> None:
+    """The files a layered setup stage is asked for, kept for `SETUP_SCOPE_GUARD`; cleared when there is no layer."""
+    from app.tools.repository import SETUP_SCOPE_FILE
+
+    path = Path(root) / SETUP_SCOPE_FILE
+    try:
+        if not layer_files:
+            path.unlink(missing_ok=True)
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"project": project, "files": sorted(layer_files)}), encoding="utf-8")
+    except OSError:
+        logger.debug("Could not record the setup's scope", exc_info=True)
+
+
 def layered_setup(project_root: Path, stack: Any, kind: str, project: str, title: str, *, write: bool) -> dict[str, str] | None:
     """The framework files left to the setup stage when a runner layer covers this stack; None when none does.
 

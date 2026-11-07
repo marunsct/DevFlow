@@ -824,6 +824,19 @@ def what_the_fix_did_to_the_install(root: str, base: str) -> str:
         return ""
 
 
+def the_start_and_end_of(problem: str, limit: int = 600) -> str:
+    """A start or build failure in one line, its opening and its end kept: a traceback names what was raised last.
+
+    Measured on a run whose fixes kept stopping the service: the first 400 characters were the server's own frames,
+    so each revert named `add_route` and never the error the framework raised, and the next fixer repeated the change.
+    """
+    text = " ".join(str(problem or "").split())
+    if len(text) <= limit:
+        return text
+    head = limit // 4
+    return text[:head].rstrip() + " ... " + text[-(limit - head - 5):].lstrip()
+
+
 def after_a_fix(
     root: str, base: str, stage_name: str, description: str, contested: str = "",
     on_revert: Callable[[list[str]], Any] | None = None,
@@ -848,7 +861,7 @@ def after_a_fix(
         # the next fixer reads a list of tests and never the build error.
         # Measured live: one rewrite of the served page broke its build twice,
         # reverted each time as "broke 3 test(s)", the same rewrite again next round.
-        cause = " ".join(after.problem.split())[:400]
+        cause = the_start_and_end_of(after.problem)
         # Only a product that started before the fix stopped because of it: measured, two fixes were blamed for a start
         # that had already failed, and the next fixer went after a cause they had not made.
         said = ("the product did not start before this fix either" if before is not None and before.problem
@@ -857,7 +870,7 @@ def after_a_fix(
     elif after.problem.startswith(suite.PRODUCT_DID_NOT_START) and before is not None and not before.problem:
         # Every test still passes the suite's way, and the user's way no longer starts: a regression all the same.
         broken = ["the product no longer starts the way its user starts it after this fix ("
-                  + " ".join(after.problem.split())[:400] + ")"]
+                  + the_start_and_end_of(after.problem) + ")"]
     if broken:
         kept = _its_tests_without_its_product_change(root, base, before, broken, stage_name)
         if kept is not None:

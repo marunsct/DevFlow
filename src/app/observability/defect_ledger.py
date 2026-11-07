@@ -27,7 +27,7 @@ def note(event: str, stage: str, *, defect: Any = None, round_: int | None = Non
             source=str(getattr(defect, "source", "") or ""),
             owner=str(getattr(defect, "owner", "") or ""),
             description=" ".join(str(getattr(defect, "description", "") or "").split())[:300],
-            detail=" ".join(str(detail or "").split())[:500],
+            detail=" ".join(str(detail or "").split())[:900],
         )
     except Exception:  # noqa: BLE001 - a ledger must never fail the stage it records
         pass

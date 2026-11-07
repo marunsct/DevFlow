@@ -1161,7 +1161,7 @@ def the_round_s_measurement(root: Any) -> str:
     )
 
 
-def _record_the_owners(root: Any, tasks: list[Any]) -> None:
+def _record_the_owners(root: Any, tasks: list[Any], done: Any = ()) -> None:
     """Record which stage owns each file the dispatched work orders list; a file two list has none.
 
     From the work orders as dispatched, not as the lead planned them. Measured
@@ -1175,11 +1175,17 @@ def _record_the_owners(root: Any, tasks: list[Any]) -> None:
         return
     from app.tools.repository import record_work_order_files
 
+    finished = set(done or ())
     declared: dict[str, list[str]] = {}
     for index, task in enumerate(tasks or []):
         for path in getattr(task, "files", None) or []:
             declared.setdefault(str(path), []).append(_specialist_stage_name(task, index))
-    record_work_order_files(root, {path: stages[0] for path, stages in declared.items() if len(set(stages)) == 1})
+    # A work order already done - drafted whole by the harness, or finished by its stage - owns nothing any more
+    # (harness review P4). Measured over 40 runs: 42 of 64 ownership refusals named an owner that never ran as a
+    # stage, its files drafted in fast delivery, so a later stage needing a change there was refused with no one to
+    # ask; 12 more named an owner already finished.
+    record_work_order_files(root, {path: stages[0] for path, stages in declared.items()
+                                   if len(set(stages)) == 1 and stages[0] not in finished})
 
 
 def _specialist_stage_name(task: Any, index: int) -> str:
@@ -10426,14 +10432,17 @@ def build_workflow_graph(
             return missing
         drafted = _drafted_from_the_specification(state, config)
         if drafted is not None:
-            if "milestone_plan" in drafted:
-                # Split into parts: the owners are the parts'.
-                _record_the_owners(state["repository"].root_path, list(drafted["milestone_plan"].delegated_tasks))
+            if "milestone_plan" in drafted or drafted.get("specialist_outputs"):
+                # Split into parts: the owners are the parts'; and the orders drafted whole own nothing.
+                plan = drafted.get("milestone_plan") or state.get("milestone_plan")
+                _record_the_owners(state["repository"].root_path, list(getattr(plan, "delegated_tasks", None) or []),
+                                   done=(drafted.get("specialist_outputs") or {}))
             return drafted
         # On every dispatch, from the plan as it stands: a run resumed on a
         # plan whose table an earlier version recorded is put right here.
         _record_the_owners(
             state["repository"].root_path, list(getattr(state.get("milestone_plan"), "delegated_tasks", None) or []),
+            done=(state.get("specialist_outputs") or {}),
         )
             
         # `effective_settings`, not `load_settings`. `load_settings` is a pure

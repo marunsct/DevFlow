@@ -415,6 +415,38 @@ def _the_reply_s_file(path: str, original: str, reply: Any) -> str:
     return the_content_in(text)
 
 
+def _the_last_rewrite_changed_nothing(defect: Any, files: Sequence[str], records: Sequence[dict] | None = None) -> bool:
+    """Whether this defect's last rewrite was shown exactly `files` and sent every one back unchanged. Never raises.
+
+    Read from the ledger's `rewrite reply` records (HR2.fix.1): the last rewrite is the replies after this defect's
+    last `shown` record that a rewrite made.
+    """
+    try:
+        from app.observability.defect_ledger import defect_id
+
+        if records is None:
+            from app.observability.transcript import _run_id_from_config, read_transcript
+
+            run = _run_id_from_config()
+            if not run:
+                return False
+            records = read_transcript(run, kinds={"defect"})
+        mine = [r for r in records if r.get("defect_id") == defect_id(defect)
+                and r.get("event") in ("shown", "rewrite reply")]
+        replies: list[str] = []
+        for record in reversed(mine):
+            # The latest attempt only: an agent loop's `shown` after the rewrite means the loop came last.
+            if record.get("event") == "shown":
+                break
+            replies.append(str(record.get("detail") or ""))
+        if not replies:
+            return False
+        unchanged = {reply.split(": ", 1)[1] for reply in replies if reply.startswith("unchanged: ")}
+        return len(unchanged) == len(replies) and unchanged == set(files)
+    except Exception:  # noqa: BLE001 - then the rewrite is tried as before
+        return False
+
+
 def _note_the_reply(defect: Any, path: str, kind: str) -> None:
     """The ledger's record of what a one-file rewrite replied for `path`: changed, unchanged, no block, edit not
     applied (HR2.fix.1). Measured by reading message text over 123 runs: 42% of rewrite replies sent the file back
@@ -479,6 +511,19 @@ def fix_by_rewriting(
 
         files = localised(defect, failure, root, model, files, may_write or (lambda _: True))
     if not files:
+        return None
+    if _the_last_rewrite_changed_nothing(defect, files):
+        # Not the same rewrite again (HR2.fix.4): rewrite after rewrite fixed 16%, a rewrite then the agent loop 33%.
+        logger.info("The last whole-file rewrite of %s judged no change needed; this attempt goes to the agent loop",
+                    ", ".join(files))
+        try:
+            from app.observability import defect_ledger
+            from app.observability.transcript import _stage_from_config
+
+            defect_ledger.note("rewrite skipped", str(_stage_from_config("defect_fix") or "defect_fix"), defect=defect,
+                               detail="the last rewrite sent every file back unchanged: " + ", ".join(files))
+        except Exception:  # noqa: BLE001 - a ledger must never fail the fix it records
+            pass
         return None
     from app.graph import co_defect_failures, repeated_rewrite_prompts
 

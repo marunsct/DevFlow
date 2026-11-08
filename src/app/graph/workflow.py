@@ -12339,25 +12339,28 @@ def build_workflow_graph(
         if "__milestone_review__" not in update:
             return update
             
-        review: MilestoneReviewOutput = _a_pass_over_its_own_findings(
-            _findings_no_measure_holds(_findings_the_command_record_contradicts(
-                _findings_about_a_server_only_the_tests_start(_findings_about_the_harness_s_files_made_minor(
-                    _findings_the_dependency_check_contradicts(
-                        _security_graded_by_its_own_review(
-                            _findings_a_later_sprint_builds(update.pop("__milestone_review__"), state),
-                            state.get("security_review"),
-                        ),
-                        state,
-                    ),
-                    state["repository"].root_path,
-                ), state["repository"].root_path),
-                state["repository"].root_path,
-            ), state["repository"].root_path),
-            state["repository"].root_path,
-            "accepted",
-            "milestone_review",
-        )
-        review = _accepted_when_nothing_in_it_gates(review, state["repository"].root_path)
+        # Each filter in turn, and what it dropped or moved recorded under its name (harness review HR2.G.1): until
+        # now they only logged, and 6 of 21 send-backs over 40 runs were relabelled accepted with no record.
+        from app.acceptance.check_findings import filtered as _what_it_filtered
+
+        root = state["repository"].root_path
+        review_round = int(state.get("milestone_revision_count", 0) or 0) + 1
+
+        def _through(name: str, before: Any, after: Any) -> Any:
+            return _what_it_filtered(root, review_round, f"milestone:{name}", before, after)
+
+        review = update.pop("__milestone_review__")
+        review = _through("a_later_sprint_builds", review, _findings_a_later_sprint_builds(review, state))
+        review = _through("security_graded_by_its_own_review", review,
+                          _security_graded_by_its_own_review(review, state.get("security_review")))
+        review = _through("the_dependency_check_contradicts", review, _findings_the_dependency_check_contradicts(review, state))
+        review = _through("about_the_harness_s_files", review, _findings_about_the_harness_s_files_made_minor(review, root))
+        review = _through("a_server_only_the_tests_start", review, _findings_about_a_server_only_the_tests_start(review, root))
+        review = _through("the_command_record_contradicts", review, _findings_the_command_record_contradicts(review, root))
+        review = _through("no_measure_holds", review, _findings_no_measure_holds(review, root))
+        review = _through("a_pass_over_its_own_findings", review,
+                          _a_pass_over_its_own_findings(review, root, "accepted", "milestone_review"))
+        review = _through("nothing_in_it_gates", review, _accepted_when_nothing_in_it_gates(review, root))
         # This round's findings, in the state the sprint record below reads, so
         # a sprint that ends on this review records the review that ended it.
         from app.sprint.record import findings_of

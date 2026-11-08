@@ -43,10 +43,20 @@ def settle(rows: list[dict]) -> list[tuple[str, bool]]:
     return out
 
 
+filters: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+
+
 def report(workspaces: Path) -> dict[str, dict]:
     totals: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
     for workspace in sorted(workspaces.glob("workspace-run-*")):
-        rows = findings_of(workspace)
+        every = findings_of(workspace)
+        # A review filter's work (HR2.G.1) is counted apart: dropped, demoted, and verdicts relabelled.
+        for row in every:
+            if row.get("kind") == "filtered":
+                counts = filters[str(row.get("check"))]
+                counts["dropped" if row.get("severity_after") == "dropped" else "moved"] += 1
+                counts["relabelled" if row.get("verdict_before") != row.get("verdict_after") else "same verdict"] += 1
+        rows = [row for row in every if row.get("kind") != "filtered"]
         if not rows:
             continue
         for check, settled in settle(rows):
@@ -60,7 +70,7 @@ def report(workspaces: Path) -> dict[str, dict]:
 def main(argv: list[str]) -> int:
     where = Path(argv[1]) if len(argv) > 1 else Path("/app/data/workspaces/default")
     found = report(where)
-    if not found:
+    if not found and not filters:
         print("check precision: no run has recorded a check finding yet")
         return 0
     for check, counts in sorted(found.items(), key=lambda item: -item[1].get("findings", 0)):
@@ -69,6 +79,9 @@ def main(argv: list[str]) -> int:
                    else "too few to judge" if counts["findings"] < LEAST_FINDINGS else "holds")
         print(f"{check:<48} findings {counts['findings']:>4} runs {counts.get('runs', 0):>3} "
               f"settled {share:.2f}  {verdict}")
+    for check, counts in sorted(filters.items()):
+        print(f"{check:<48} filtered: {counts.get('dropped', 0)} dropped, {counts.get('moved', 0)} moved, "
+              f"{counts.get('relabelled', 0)} verdict line(s) relabelled")
     return 0
 
 

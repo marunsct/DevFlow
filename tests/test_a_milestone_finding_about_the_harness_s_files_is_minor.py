@@ -35,4 +35,5 @@ def test_a_finding_about_the_kept_start_file_is_made_minor_and_a_product_finding
 
 def test_the_milestone_review_applies_it():
     source = inspect.getsource(workflow)
-    assert "_findings_about_a_server_only_the_tests_start(_findings_about_the_harness_s_files_made_minor(" in source
+    applied = source.index("_findings_about_the_harness_s_files_made_minor(review, root)")
+    assert applied < source.index("_findings_about_a_server_only_the_tests_start(review, root)")

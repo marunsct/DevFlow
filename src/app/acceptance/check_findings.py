@@ -55,6 +55,54 @@ def noted(root: str | Path, review_round: int, check: str, findings: Sequence[An
     return found
 
 
+def _finding_text(finding: Any) -> str:
+    return " ".join(str(getattr(finding, "description", finding) or "").split())
+
+
+def filtered(root: str | Path, review_round: int, check: str, before: Any, after: Any) -> Any:
+    """`after` unchanged; each finding `check` dropped from `before` or moved to another severity recorded (HR2.G.1).
+
+    A review filter that relabels a verdict or a finding only logged it, so how often each was right was unmeasured
+    (6 of 21 send-backs over 40 runs were relabelled accepted). Each line has `kind: "filtered"`, the severity before
+    and after (`dropped` when the finding is gone), and the verdict before and after. Never raises.
+    """
+    if not root or before is None or after is None:
+        return after
+    try:
+        # A filter may say why in the finding's own words (a prefix before the description), so a finding is still
+        # there when a finding after the filter holds its whole text.
+        kept = [(_finding_text(f), str(getattr(f, "severity", ""))) for f in list(getattr(after, "findings", None) or [])]
+        rows = []
+        verdict = (str(getattr(before, "status", "")), str(getattr(after, "status", "")))
+        for finding in list(getattr(before, "findings", None) or []):
+            text, severity = _finding_text(finding), str(getattr(finding, "severity", ""))
+            now = next((sev for t, sev in kept if t == text), None) or next(
+                (sev for t, sev in kept if text and text in t), "dropped")
+            if now != severity:
+                rows.append((text, severity, now))
+        if not rows and verdict[0] == verdict[1]:
+            return after
+        path = Path(root) / FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as out:
+            for text, severity, now in rows or [("(the verdict only)", "", "")]:
+                out.write(json.dumps({
+                    "at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
+                    "round": int(review_round or 0),
+                    "kind": "filtered",
+                    "check": check,
+                    "fingerprint": _fingerprint(text),
+                    "severity_before": severity,
+                    "severity_after": now,
+                    "verdict_before": verdict[0],
+                    "verdict_after": verdict[1],
+                    "text": text[:600],
+                }) + "\n")
+    except Exception:  # noqa: BLE001 - the review goes on whether or not the filter's work is recorded
+        logger.debug("Could not record a review filter's work", exc_info=True)
+    return after
+
+
 def read(root: str | Path) -> list[dict[str, Any]]:
     """Every finding recorded in this workspace, oldest first; [] when none."""
     try:
@@ -70,4 +118,4 @@ def read(root: str | Path) -> list[dict[str, Any]]:
     return rows
 
 
-__all__ = ["FILE", "noted", "read"]
+__all__ = ["FILE", "filtered", "noted", "read"]

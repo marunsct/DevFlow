@@ -38,9 +38,9 @@ _NOTES = re.compile(
         r"No review read the product's code:",
         # About the documents the product was built from, not the product.
         r"The plan was dispatched with this noted against it:",
-        r"(An escalation left this open: )?" + re.escape(SETTLED_DESIGN_FINDING),
-        r"An escalation left this open: Design review left open:",
-        r"An escalation left this open: The sprint plan is ",
+        r"(An escalation left this open(?: \(DR-\d+\))?: )?" + re.escape(SETTLED_DESIGN_FINDING),
+        r"An escalation left this open(?: \(DR-\d+\))?: Design review left open:",
+        r"An escalation left this open(?: \(DR-\d+\))?: The sprint plan is ",
         # Worth knowing about what ships beside the product, or who judged it.
         r"Code the product does not run:",
         r"Ships \d+ dependenc(y|ies) under a strong-copyleft licence",

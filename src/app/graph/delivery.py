@@ -415,10 +415,12 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # A finding a decision settled is not open, and is stated as settled.
     settled, left_open = _settled_and_open([str(issue) for issue in state.get("known_issues") or []])
     gaps.extend(settled)
-    gaps.extend(f"An escalation left this open: {issue}" for issue in left_open)
+    # Linked to the decision that accepted them (HR2.G.8), so the release says who accepted what.
+    accepted_at = _accepted_at_an_escalation({**state, **update})
+    gaps.extend(f"An escalation left this open{f' ({accepted_at})' if accepted_at else ''}: {issue}" for issue in left_open)
     gaps.extend(_findings_recorded_as_risks(state))
     gaps.extend(_reviews_that_were_not_independent(config["configurable"].get(APP_RUN_ID_KEY)))
-    gaps.extend(_code_no_review_read(config["configurable"].get(APP_RUN_ID_KEY)))
+    gaps.extend(_code_no_review_read(config["configurable"].get(APP_RUN_ID_KEY), {**state, **update}))
     gaps.extend(_what_the_release_re_check_finds(state, root))
     gaps.extend(_code_the_product_does_not_run(root))
     # Plan item AF: whether the suite would notice the product breaking.
@@ -607,7 +609,15 @@ def _reviews_that_were_not_independent(run_id: str | None = None) -> list[str]:
 _CODE_REVIEWS = ("code_review", "milestone_review", "security_review")
 
 
-def _code_no_review_read(run_id: str | None) -> list[str]:
+def _accepted_at_an_escalation(state: Any) -> str:
+    """The id of the escalation decision that accepted a sprint as it stood or deferred its criteria; "" when none."""
+    for record in reversed(list((state or {}).get("decisions") or [])):
+        if str(record.get("point")) == "escalation" and "stop the run" not in str(record.get("decision") or ""):
+            return str(record.get("id") or "")
+    return ""
+
+
+def _code_no_review_read(run_id: str | None, state: Any = None) -> list[str]:
     """A gap when the run released code no review stage ever read; [] otherwise or when unknown.
 
     Measured on one run: the setup stage wrote the whole product, every sprint
@@ -625,6 +635,11 @@ def _code_no_review_read(run_id: str | None) -> list[str]:
         return []
     if not stages or any(stage.startswith(_CODE_REVIEWS) for stage in stages):
         return []
+    # A sprint accepted at an escalation skips the reviews by routing, not by a review failing (HR2.G.8: 8 of 40 runs).
+    decided = _accepted_at_an_escalation(state)
+    if decided:
+        return [f"No review read the product's code: the sprint was accepted at an escalation ({decided}), "
+                "so no code, milestone or security review ran."]
     return [
         "No review read the product's code: every sprint was accepted on its locked suite "
         "alone, so no code, milestone or security review ran."

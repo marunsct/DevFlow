@@ -4,7 +4,11 @@ appended: what is live, what is off, the last three runs, the next action. Every
 else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monitoring-handover.md`
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
-**As of:** 2026-10-29 13:20 JST. run-dba1ccf8 (notes-api-hono, fca7568b, not mixed) **completed, hidden 9/9**, 43.7 active min, 108 calls, locked 11/0, mutation 1.0; LF.443 (node:test unit globals). notes-api-hono: four runs in a row at 9/9 in 41-62 min. Experiments on as measured arms: TARGETED_SUITE_REPAIR (no repair to act on in 2 runs), STRUCTURED_DISPUTE_VERDICT (from now). 47 runs: 44x full hidden score. Now: the second held-out tasks-api run.
+<!-- state:generated -->
+**As of:** 11-08 11:48 JST (written by `loop.sh state`). Harness cf7b55b1 committed; e2fcc2ee deployed (not the same).
+**Live, and stopped in the last day:** run-ed4e910f failed at awaiting_approval:acceptance_author_2; run-885a8285 failed at awaiting_approval:acceptance_author_2
+**Last scored:** run-ffa696e6 fullstack-bookmarks-py 8/8 (completed, mixed, 204 active min; scored 11-08 01:15 JST); run-183af149 notes-api-hono 9/9 (completed, 34 active min; scored 11-08 01:05 JST); run-0c34fb58 web-todo 10/10 (completed, 174 active min; scored 11-08 00:26 JST).
+<!-- /state:generated -->
 ## Live now
 | | |
 |---|---|
@@ -12,10 +16,6 @@ week are in `docs/archive/`.
 | Model | **unsloth/Qwen3.6-35B-A3B-MTP-GGUF** (owner) at :8888, 2 slots, context 214,528 as started; back in use 30 Oct 18:24 JST after the owner ran qwen3.8-flash-next-coder-iq1_m (1-bit, :9090, ~11:50-17:30 JST). Runs on the 1-bit model: run-d2e68f5b (9/9, 285 min, tool failures 11.5%); run-c0e24d08 planning only, cancelled when the model changed. `loop.sh ready` prints the diagnosis. |
 | Owner's model settings | the owner's; never changed by the loop |
 | Mode | owner 2026-10-27: build, measure and optimise from the backlog unasked; owner reviews periodically |
-## Last runs
-- **run-abb23c25** (notes-api-hono, 278a4af -> dfd680d -> 019a5d3, mixed_versions): **completed 22:16 JST 10-30, hidden 9/9**, 89.4 active min, 159 calls, locked 13/0, mutation 0.667. QA clean (LF.450-453 held). Sprint 1 blocked by unit tests importing `../../src/` from `test/` (LF.470 fixed it); 4 contract lines unread for a pipe between statuses (LF.471); the DELETE handler kept the id fault GET/PUT had fixed. Backlog: list sibling handlers sharing a fixed fault; check relative imports of the first unit tests statically.
-- **run-817b3ce3** (tasks-api, held-out, 5650e12 -> 264c2c5 -> 278a4af, mixed_versions): **completed 20:43 JST 10-30, hidden 10/10, quality 7/7**, 116 active min, 296 calls, locked 22/0, mutation 0.25 (flagged). Fixes found in it: LF.454 (ready deep), LF.455 (tests signing in as nobody), LF.456 (ship.sh counts errors), LF.457 (signature mismatch hint). Sprint 1 spent 4 attempts on unit tests vs code disagreeing on a signature. Backlog: hand the testing work order the exact function signatures; mutant-distinguishing input for the mutation fixer.
-- **run-b115ca5c** (tasks-api, held-out, 3d9ecace, not mixed): **failed 15:30 JST 10-29 (replan limit), hidden 1/10**, visible 29/48 (best attempt 42). Cause: the product committed in a FastAPI `yield` dependency, which runs after the reply (FastAPI >=0.118), so every sign-in straight after sign-up got 401; unit tests via `TestClient` passed. Fixed as FastAPI seed guidance (LF.447). Open: a "same product, different suite results" timing hint (backlog B-timing).
 ## Built 2026-10-23 (deployed since): general model steering (MD.3)
 Owner: guidance general, not per model; weaker models steered more; each guide its own switch; a settings
 action to diagnose and save; keep growing the checks. Eight guides (`GUIDE_<ID>`, on in compose), eleven
@@ -78,7 +78,7 @@ whole suite with every switch on - the failures were the switches' intended beha
 | `SCREENSHOT_RUBRIC` | EV.2 page screenshots scored on a fixed checklist, KPI only | `app/acceptance/screenshot_rubric.py` |
 Each module's `ON_BY_DEFAULT` turns its items on for the before/after runs.
 ## The last three runs
-See **Last runs** above (notes-api-hono, hidden tests by `loop.sh score`).
+The last three scored runs are in the generated block at the top (`loop.sh state` writes it; LF.713).
 No hidden tests exist for `brief_medium`: its results are hand audits (`loop.sh product`).
 ## Sweep (owner 11-06 09:30: every angle unasked; one item per cycle)
 Done: operator steps (`loop.sh ship-live`), technical lead (quoted specification sections not held twice, LF.610). Done: kept setup files named, not held, for the planning stages (LF.612, deploys with the next fix). Prompts per role: reviewed 10:30 (10 findings); fixed LF.613 (shared-store contradiction, stale write tool, no-browser claim); queued from it (done: LF.614, LF.615, LF.617 suite writer's system prompt and 'shell commands'): `run_validation` described with `category`. Queued: one idle stack per cycle (`verify_packs.py`); LF.591-610 code re-read for bugs; measure LF.580/591 and the 13 measured checks from `loop.sh impact` after each finished run; output tokens x1.44 after LF.583/584; harness security and UI.

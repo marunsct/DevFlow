@@ -161,6 +161,21 @@ if last_stage and out_tokens[last_stage]:
     print(f"prefill:decode in {last_stage}: {ratio:.0f}:1 ({in_tokens[last_stage]:,} in / {out_tokens[last_stage]:,} out); "
           f"memory block {memory // 1000}k chars{flag}")
 print("stage order: " + " -> ".join(order[-14:]))
+
+
+def design_line(stages: list) -> str:
+    """The whole design phase in one line: the last 14 switches drop it once a run is past it (measured: a run's
+    escalation was reported as none because the stage order no longer reached back to it)."""
+    reviews = sum(1 for s in stages if s == "architecture_review")
+    if not reviews:
+        return ""
+    escalated = "escalation" in stages[:stages.index(next((s for s in stages if s.startswith("acceptance_author")), stages[-1]))] \
+        if any(s.startswith("acceptance_author") for s in stages) else "escalation" in stages
+    return f"design: {reviews} architecture review(s), " + ("escalated" if escalated else "no escalation")
+
+
+if design_line(order):
+    print(design_line(order))
 try:
     from app.observability import cache_report
 

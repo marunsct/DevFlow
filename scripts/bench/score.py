@@ -146,7 +146,9 @@ def _it_has_configuration(product: Path) -> bool:
     if spec.is_file():
         section = re.search(r"^## Configuration\s*$(.*?)(?=^## |\Z)", spec.read_text(encoding="utf-8", errors="replace"),
                             re.MULTILINE | re.DOTALL)
-        return bool(section and re.search(r"variable:", section.group(1), re.I))
+        # A variable by name (`variable: PORT`, `Environment Variable: DATA_DIR`), not "Environment Variable: None":
+        # a static page whose specification said it reads none was scored as failing to document its configuration.
+        return bool(section and re.search(r"(?i:variable):\s*`?[A-Z][A-Z0-9_]+\b", section.group(1)))
     return False
 
 

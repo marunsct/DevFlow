@@ -364,7 +364,9 @@ export default defineConfig({
   },
 });
 """ % {
-        "command": server_command, "ready": ready_path, "screenshot": screenshot,
+        # A shell's own `${HOST:-127.0.0.1}` is literal text in this template string; `${port}` stays JavaScript's.
+        "command": re.sub(r"\$\{(?=[A-Z_][A-Z0-9_]*[:}-])", r"\\${", server_command),
+        "ready": ready_path, "screenshot": screenshot,
         "server_timeout": f"{server_timeout_ms:_}",
         "global_setup": "\n  globalSetup: './playwright.setup.mjs'," if checks_the_page else "",
     }

@@ -31,3 +31,11 @@ def test_the_shell_starts_quote_the_host_they_bind() -> None:
     for name in ("ruby-sinatra-api", "ruby-rails-api", "php-slim-api", "php-laravel-api", "fullstack-django"):
         if starts.get(name):
             assert '"${HOST:-127.0.0.1}' in starts[name], name
+
+
+@pytest.mark.parametrize("pack", ALL_PACKS, ids=lambda p: p.name)
+def test_a_shell_variable_in_a_javascript_config_is_literal_text(pack) -> None:
+    """The start sits in a JavaScript template string: an unescaped `${HOST:-...}` is a syntax error there."""
+    for name, text in pack.render("app", "App").items():
+        if name.endswith((".js", ".ts", ".mjs", ".cjs")):
+            assert not re.search(r"(?<!\\)\$\{[A-Z_][A-Z0-9_]*[:}-]", text), f"{pack.name} {name}"

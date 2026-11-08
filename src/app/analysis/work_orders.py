@@ -587,6 +587,7 @@ def _files_the_sprint_names_and_nobody_is_given(
             name for name in named
             if name.lower() not in known and not _another_spelling_of(name.lower(), known)
             and not _data_the_product_writes(name, sprint_scope, repo_root)
+            and not _kept_by_the_harness(name, repo_root)
         )
     except Exception:  # noqa: BLE001 - the plan is still checked for everything else
         return []
@@ -596,6 +597,28 @@ def _files_the_sprint_names_and_nobody_is_given(
 _DATA_SUFFIXES = (".json", ".jsonl", ".ndjson", ".db", ".sqlite", ".sqlite3", ".csv")
 #: How near its data directory a file's name must be named to be the product's data, in characters.
 _NEAR = 160
+
+
+def _in_the_file_plan(name: str, repo_root: str | Path) -> bool:
+    """Whether the specification's File Plan section names `name`; True when there is no such section to read."""
+    spec = Path(repo_root) / "docs" / "technical_specification.md"
+    if not spec.is_file():
+        return True
+    section = re.search(r"^## File Plan\s*$(.*?)(?=^## |\Z)", spec.read_text(encoding="utf-8", errors="replace"),
+                        re.MULTILINE | re.DOTALL)
+    return section is None or bool(re.search(rf"(?<![\w.-]){re.escape(name)}(?![\w-])", section.group(1), re.I))
+
+
+def _kept_by_the_harness(name: str, repo_root: str | Path | None) -> bool:
+    """Whether `name` is a file the harness keeps for the project (its start script, its runners): no work order's."""
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(Path(repo_root)) if repo_root else None
+        kept = {PurePosixPath(str(path)).name.lower() for path in (getattr(found[0], "kept_files", ()) or ())} if found else set()
+        return name.lower() in kept
+    except Exception:  # noqa: BLE001 - then it is named as before
+        return False
 
 
 def _data_the_product_writes(name: str, sprint_scope: str, repo_root: str | Path | None) -> bool:
@@ -609,6 +632,10 @@ def _data_the_product_writes(name: str, sprint_scope: str, repo_root: str | Path
     try:
         if not name.lower().endswith(_DATA_SUFFIXES) or not repo_root:
             return False
+        # On any stack (HR2.P.6): a data file the specification's file plan does not list is one the product writes,
+        # not one to build - pack-less stacks were sent back for `notes.json` and `bookmarks.json`.
+        if not _in_the_file_plan(name, repo_root):
+            return True
         from app.stacks import contract
 
         found = contract.the_pack(Path(repo_root))

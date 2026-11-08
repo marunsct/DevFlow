@@ -2134,19 +2134,25 @@ def _what_the_unit_tests_printed(repo_root: str, defect: Any) -> dict[str, str] 
     try:
         from app.acceptance import suite as _the_suite
 
-        return _the_suite.what_the_unit_tests_printed(repo_root, str(getattr(defect, "description", "") or ""))
+        return _the_suite.what_the_unit_tests_printed(repo_root, str(getattr(defect, "description", "") or ""),
+                                                      str(getattr(defect, "caught_by", "") or ""))
     except Exception:  # noqa: BLE001 - the last failing command stands in, as before
         return None
 
 
-def _what_the_last_failure_printed(run_id: str | None) -> dict[str, str] | None:
+def _what_the_last_failure_printed(run_id: str | None, defect: Any = None) -> dict[str, str] | None:
     """The last failing command's own output, or None. Never raises.
 
     Imported here rather than at module scope: the transcript module is
     observability, and a defect fix must not fail because a record could not be
-    read.
+    read. Never for a mutation finding (HR2.fix.6): its product is not failing, and the last command was another
+    defect's - mutation fixers were shown it 78 times to their own evidence twice; the finding says what settles it.
     """
     try:
+        from app.acceptance import mutation_guided
+
+        if defect is not None and mutation_guided.is_a_finding(defect):
+            return None
         from app.observability.transcript import last_failing_command
 
         return last_failing_command(run_id)
@@ -11333,7 +11339,7 @@ def build_workflow_graph(
             # A failing criterion's own tests first: the last failing command may be another criterion's.
             _what_the_criteria_s_tests_printed(state["repository"].root_path, defect)
             or _what_the_unit_tests_printed(state["repository"].root_path, defect)
-            or _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
+            or _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY), defect),
             caught_by=getattr(defect, "caught_by", ""),
             # Only for a defect that is not itself a failing criterion - nor a
             # mutation finding, whose product is not wrong (plan QM.2).
@@ -11440,7 +11446,7 @@ def build_workflow_graph(
         last_failure = (
             _what_the_criteria_s_tests_printed(str(root), defect)
             or _what_the_unit_tests_printed(str(root), defect)
-            or _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY))
+            or _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY), defect)
         )
         # The other open defects, whose failures that point at a file go into its rewrite (behind `CO_DEFECT_FAILURES_IN_REWRITES`).
         from app.graph.co_defect_failures import open_besides

@@ -4648,6 +4648,12 @@ def what_the_criteria_s_tests_printed(repo_root: str | Path, tags: Any) -> dict[
         entry = (found.get("criteria") or {}).get(tag) or (found.get("change_requests") or {}).get(tag) or {}
         failing += [t for t in entry.get("tests") or [] if t.get("outcome") == "failed"]
     if not failing:
+        # No test of it failed because none ran (HR2.fix.6): the suite's own account - the product did not start, a
+        # file would not load - is what defines the defect, not another stage's last command.
+        problem = str(found.get("problem") or "").strip()
+        if problem:
+            return {"command": "the acceptance suite's last run", "output": problem[:6000],
+                    "title": "What the suite's last run printed"}
         return None
     names = list(dict.fromkeys(str(t.get("name") or "") for t in failing))
     output = "\n\n".join(f"{t.get('name')}:\n{t.get('message') or '(no message)'}" for t in failing)
@@ -4666,19 +4672,23 @@ _A_UNIT_TEST_DEFECT = re.compile(r"^\s*The unit tests fail\b", re.I)
 MOST_UNIT_FAILURES_SHOWN = 8
 
 
-def what_the_unit_tests_printed(repo_root: str | Path, description: str) -> dict[str, str] | None:
+def what_the_unit_tests_printed(repo_root: str | Path, description: str, caught_by: str = "") -> dict[str, str] | None:
     """For a unit-test defect: its failing tests and what each printed, from the last unit report; else None.
 
     The tests the description names, or every failing one when it names none (at most eight). Measured on 2026-11-07:
     521 of 625 fixer requests were shown "the last failing command" - perhaps another defect's - and LF.607 covered
     acceptance criteria only. The JUnit report holds each failing test's message on every stack.
     """
-    if not _A_UNIT_TEST_DEFECT.search(str(description or "")):
-        return None
     try:
         found = contract.the_pack(repo_root)
         where = location(repo_root)
         if found is None or where is None or not found[0].unit_report:
+            return None
+        # A defect the unit command caught, whatever its opening words (HR2.fix.6: test-round fixers were shown the
+        # last command 76 times to their own tests 9).
+        unit_command = " ".join(getattr(found[0], "unit_test", ()) or ())
+        caught_by_the_unit_command = bool(unit_command) and unit_command in str(caught_by or "")
+        if not _A_UNIT_TEST_DEFECT.search(str(description or "")) and not caught_by_the_unit_command:
             return None
         from app.acceptance import junit
 

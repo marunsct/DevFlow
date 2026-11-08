@@ -305,6 +305,45 @@ def remove_untouched_templates_nothing_loads(repo_root: str | Path) -> list[str]
         return []
 
 
+#: An entry file this short is the pack's own stub, which the release removes (LF.717), not a second copy of the code.
+_A_STUB_S_LINES = 20
+
+
+def _entries_the_page_does_not_load(root: Path, project: str, entrypoints: list[str], pack: Any) -> list[str]:
+    """A declared entry file of real size that the pack's own page does not load: the page runs other code.
+
+    Measured on a run (hidden 10/10): the page ran its whole program in an inline script, while the 410-line
+    `src/main.js` the pack declares was loaded by nothing - fixes were made in it, and all twelve changes the
+    mutation check made to it went unnoticed. The page is the one the pack writes (an `.html` file of its files).
+    """
+    files = getattr(pack, "files", {}) or {}
+    pages = [name for name in files if str(name).endswith(".html") and "{{" not in str(name)]
+    found: list[str] = []
+    for page in pages:
+        target = root / page
+        if not target.is_file():
+            continue
+        html = target.read_text(encoding="utf-8", errors="replace")
+        # The scripts the pack's own page loads: what this page must load. A declared entry another module imports
+        # (a framework's root component, imported by the page's script) is not the page's to load.
+        loaded_by_the_template = re.findall(r"<script[^>]*\bsrc=[\"']\.?/?([^\"']+)[\"']", str(files.get(page) or ""))
+        for entry in dict.fromkeys(loaded_by_the_template):
+            path = root / entry
+            if not entry.endswith((".js", ".mjs", ".ts", ".tsx", ".jsx")) or not path.is_file():
+                continue
+            if entry in html or Path(entry).name in html:
+                continue
+            lines = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+            if lines < _A_STUB_S_LINES:
+                continue
+            found.append(
+                f"`{project}/{page}` does not load `{project}/{entry}` ({lines} lines): the page runs other code, so "
+                f"changes to `{project}/{entry}` change nothing anyone sees. Have the page load it "
+                f"(`<script type=\"module\" src=\"{entry}\">`) and keep the program in that one file."
+            )
+    return found
+
+
 def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
     """Code beside the served app that the product never runs, and unit tests that only test it. Never raises.
 
@@ -323,8 +362,13 @@ def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
     try:
         project, entrypoints = _served_entrypoints(repo_root)
         root = Path(repo_root) / project
+        from app.stacks import contract as _contract
+
+        found_pack = _contract.the_pack(repo_root)
+        page_problems = _entries_the_page_does_not_load(root, project, entrypoints, found_pack[0]) \
+            if found_pack and root.is_dir() else []
         if not entrypoints or not root.is_dir():
-            return []
+            return page_problems
         from app.stacks import contract, pack_named
 
         found = contract.the_pack(repo_root)  # a proven custom setup's too (HR2.SS.6)
@@ -345,7 +389,9 @@ def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
                 f"(e.g. `{project}/{mirrored[0]}`), and nothing serves it: the product runs from "
                 f"`{project}/{entrypoint}`. Change the served copy; the other is never built or run."
             )
+        problems.extend(page_problems)
         problems.extend(_modules_nothing_imports(root, project, entrypoints, pack))
+
         for family in sorted({_family(e) for e in entrypoints} - {""}):
             tests = [f for f in files if _family(f) == family and _a_unit_test(Path(f).name, pack)]
             served_folders = {

@@ -28,6 +28,7 @@ harness's own "done" can be trusted. `report.py` totals them across runs.
 from __future__ import annotations
 
 import json
+import re
 import os
 import shutil
 import socket
@@ -115,6 +116,54 @@ def _junit(path: Path) -> list[dict]:
                 outcome = "skipped"
         tests.append({"name": case.get("name", ""), "outcome": outcome, "message": message})
     return tests
+
+
+#: Folders a handoff check never reads: installed dependencies and caches.
+_NOT_THE_PRODUCT_S = {"node_modules", ".venv", "venv", "__pycache__", ".git", "dist", "build", ".pytest_cache", "test-results"}
+#: Files a product should not ship with: a database its own runs wrote.
+_SHIPPED_DATA = re.compile(r"\.(db|sqlite|sqlite3)$", re.IGNORECASE)
+#: A comment that is the model thinking aloud, not a note for the code's reader.
+_DELIBERATION = re.compile(r"^\s*(#|//|\*)\s*(wait[,.]|actually[,]|hmm\b|let me\b|i think\b|on second thought)", re.IGNORECASE)
+_SOURCE = re.compile(r"\.(py|js|ts|jsx|tsx|mjs|cjs|go|rs|rb|java|kt|php|cs)$")
+
+
+def _files_of(product: Path):
+    for path in product.rglob("*"):
+        if path.is_file() and not (set(path.relative_to(product).parts) & _NOT_THE_PRODUCT_S):
+            yield path
+
+
+def handoff(product: Path) -> dict:
+    """Whether a stranger could take the product over, read from its files alone (harness review HR2.PR.10).
+
+    Nothing recorded whether a product was usable by someone else; a sweep found 41 runs with no README. Each check is
+    True, False or None (not applicable); the score is the share of applicable checks passed. Not measured here: a
+    start honouring its variables when run, a development server, lint and unit tests - those need the product run.
+    """
+    readme = next((p for p in (product / "README.md", product / "README", product / "readme.md",
+                                product.parent / "README.md") if p.is_file()), None)
+    text = readme.read_text(encoding="utf-8", errors="replace").lower() if readme else ""
+    start = product / "start.sh"
+    files = list(_files_of(product))
+    checks = {
+        "readme": readme is not None,
+        "readme_says_how_to_start": ("```" in text or "    " in text) and bool(re.search(r"\b(start|run)\b", text)) if readme else False,
+        "readme_says_how_to_test": bool(re.search(r"\btests?\b", text)) if readme else False,
+        "readme_names_its_configuration": bool(
+            re.search(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|\bPORT\b", readme.read_text(encoding="utf-8", errors="replace"))
+            or re.search(r"\bport\b|environment variable|configuration", text)) if readme else False,
+        "start_reads_its_port": ("PORT" in start.read_text(encoding="utf-8", errors="replace")) if start.is_file() else None,
+        "no_shipped_data": not any(_SHIPPED_DATA.search(p.name) for p in files),
+        "no_thinking_aloud_in_comments": not any(
+            _DELIBERATION.match(line)
+            for p in files if _SOURCE.search(p.name) and p.stat().st_size < 400_000
+            for line in p.read_text(encoding="utf-8", errors="replace").splitlines()
+        ),
+        "ci_file": any((root / ".github" / "workflows").is_dir() or (root / ".gitlab-ci.yml").is_file()
+                       for root in (product, product.parent)),
+    }
+    applicable = [v for v in checks.values() if v is not None]
+    return {"handoff": checks, "handoff_score": round(sum(applicable) / len(applicable), 3) if applicable else None}
 
 
 def harness_verdict(product: Path, status: str = "", completion_gaps: list[str] | None = None) -> dict:
@@ -257,6 +306,10 @@ def score(
         result["quality_total"] = len(quality)
         result["quality_tests"] = quality
     result["harness"] = harness_verdict(product, status, completion_gaps)
+    try:
+        result.update(handoff(product))
+    except OSError:
+        pass
     result.update(brief_pairing(own_brief))
     # No report means the tests never ran - a broken runner, not a broken
     # product. Scored 0 it read as a false acceptance and went into the KPI
@@ -333,6 +386,9 @@ if __name__ == "__main__":
         print(f"{result['benchmark']}: {result['passed']}/{result['total']} hidden tests pass (score {result['score']})")
     if "quality_total" in result:
         print(f"  quality: {result['quality_passed']}/{result['quality_total']} of the brief's edges held")
+    if result.get("handoff_score") is not None:
+        missing = [name for name, ok in result["handoff"].items() if ok is False]
+        print(f"  handoff: {result['handoff_score']}" + (f" (missing: {', '.join(missing)})" if missing else ""))
     if result["brief_mismatch"]:
         print("  BRIEF MISMATCH: the run was not started from this benchmark's brief; not a false acceptance")
     harness = result["harness"]

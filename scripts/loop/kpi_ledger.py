@@ -41,7 +41,7 @@ WORSE_WHEN_HIGHER = (*WORSE_WHEN_HIGHER, "lost_reply_output_share", "invalid_too
 
 
 #: Quality measures, each a share in [0, 1]: a drop of this much below the recent mean is a regression.
-WORSE_WHEN_LOWER = ("hidden_score", "quality_score", "mutation_score")
+WORSE_WHEN_LOWER = ("hidden_score", "quality_score", "mutation_score", "handoff_score")
 DROP = 0.15
 
 
@@ -182,6 +182,8 @@ def with_the_scores(row: dict, bench: Path = Path("data/bench")) -> dict:
             row["hidden_tests_failed"] = scored["total"] - scored["passed"]
         if "false_acceptance" in scored:
             row["false_acceptance"] = 1 if scored.get("false_acceptance") else 0
+        if scored.get("handoff_score") is not None:
+            row["handoff_score"] = scored["handoff_score"]
         if scored.get("quality_total"):
             row["quality_score"] = round(scored["quality_passed"] / scored["quality_total"], 3)
     except (OSError, ValueError, TypeError, ZeroDivisionError):

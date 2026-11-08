@@ -10204,6 +10204,18 @@ def build_workflow_graph(
         )
         if added_testing:
             logger.info("The plan had code and no testing work order; the harness added one")
+        # The harness's own repairs before the readiness check, not after it (HR2.P.1): 125 of 140 resends since 11-01
+        # were for what these then fixed anyway - the locked suite's file on a work order (50), a command the sandbox
+        # refuses (30). The check sees only what the harness cannot fix.
+        from app.analysis.planned_commands import with_refused_commands_noted
+        from app.analysis.work_orders import with_the_harness_s_files_left_out
+
+        update["milestone_plan"] = with_the_harness_s_files_left_out(
+            update["milestone_plan"], state["repository"].root_path
+        )
+        update["milestone_plan"] = with_refused_commands_noted(
+            update["milestone_plan"], state["repository"].root_path
+        )
         problems = readiness_problems(
             update["milestone_plan"],
             state["repository"].root_path,
@@ -10274,11 +10286,6 @@ def build_workflow_graph(
                     f"Not ready when dispatched: {problem}" for problem in problems
                 ]
             })
-        from app.analysis.work_orders import with_the_harness_s_files_left_out
-
-        update["milestone_plan"] = with_the_harness_s_files_left_out(
-            update["milestone_plan"], state["repository"].root_path
-        )
         update["work_order_problems"] = []
         update["unready_plan"] = ""
         update["best_unready_plan"] = ""
@@ -10294,14 +10301,7 @@ def build_workflow_graph(
             if key != _READINESS_RETRIES
         }
 
-        # Before it is written down or dispatched: a command the plan tells a
-        # specialist to run, which the sandbox will refuse, is noted on the task.
-        # See `app.analysis.planned_commands`.
-        from app.analysis.planned_commands import with_refused_commands_noted
-
-        update["milestone_plan"] = with_refused_commands_noted(
-            update["milestone_plan"], state["repository"].root_path
-        )
+        # A command the sandbox will refuse was noted on its work order before the readiness check (HR2.P.1).
         # And a command whose file another work order writes - see
         # `app.analysis.work_orders.with_borrowed_files_noted`.
         from app.analysis.work_orders import with_borrowed_files_noted

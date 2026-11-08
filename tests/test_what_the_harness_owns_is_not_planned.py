@@ -153,3 +153,28 @@ def test_the_harness_s_setup_is_not_counted_against_the_product_s_size(project) 
     names = {name for _, name in application}
     assert "notes/src/app.js" in names
     assert not [name for name in counted if contract.owned_by_the_harness(project, name)]
+
+
+def test_after_the_harness_s_own_repairs_its_files_raise_no_readiness_problem(project, monkeypatch) -> None:
+    """HR2.P.1: the repairs ran after the check, so 125 of 140 resends were for what they then fixed anyway."""
+    monkeypatch.setenv("WORKFLOW_WORK_ORDER_READINESS", "on")
+    plan = _plan(
+        _task("backend", "notes/src/app.js", "notes/scripts/serve.mjs"),
+        _task("testing", "notes/tests/app.test.js", "notes/acceptance/notes.spec.js"),
+    )
+    assert [p for p in readiness_problems(plan, project) if "the harness keeps" in p or "locked acceptance suite" in p]
+    repaired = with_the_harness_s_files_left_out(plan, project)
+    assert not [p for p in readiness_problems(repaired, project) if "the harness keeps" in p or "locked acceptance suite" in p]
+
+
+def test_the_planner_repairs_before_it_checks() -> None:
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+    check = source.index("        problems = readiness_problems(\n            update[\"milestone_plan\"],")
+    assert source.rindex("update[\"milestone_plan\"] = with_the_harness_s_files_left_out(", 0, check) > \
+        source.rindex("with_a_testing_work_order(", 0, check)
+    assert source.rindex("update[\"milestone_plan\"] = with_refused_commands_noted(", 0, check) > \
+        source.rindex("with_a_testing_work_order(", 0, check)

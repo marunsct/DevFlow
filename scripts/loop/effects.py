@@ -9,6 +9,7 @@ change the run has not given a chance to act yet.
 """
 from __future__ import annotations
 
+import collections
 import glob
 import json
 import re
@@ -112,6 +113,17 @@ def order_probe_line(probed: dict) -> str:
             f"({probed.get('files_run', 0)} files probed, {probed.get('files_without_a_report', 0)} without a report)")
 
 
+def contract_probe_lines(stored: dict) -> list[str]:
+    """One line per probe of the locked contract: lines considered, asked, probed, and the skip reasons counted (HR2.Q.9)."""
+    out = []
+    for kind, record in sorted(stored.items()):
+        reasons = collections.Counter(str(s.get("reason", "")) for s in record.get("skipped") or [])
+        why = "; ".join(f"{n} {reason}" for reason, n in reasons.most_common(4))
+        out.append(f"contract probe {kind}: {record.get('considered', 0)} lines, {record.get('asked', 0)} asked, "
+                   f"{record.get('probed', 0)} probed" + (f"; skipped: {why}" if why else ""))
+    return out
+
+
 def main(run: str) -> None:
     paths = sorted(glob.glob(f"/app/data/transcripts/{run}*.jsonl"))
     if not paths:
@@ -130,6 +142,8 @@ def main(run: str) -> None:
     print("\n".join(effects(records, decisions)))
     for probed in glob.glob(f"/app/data/workspaces/*/workspace-{run}*/.harness/order_probe.json"):
         print(order_probe_line(json.loads(Path(probed).read_text(encoding="utf-8"))))
+    for probed in glob.glob(f"/app/data/workspaces/*/workspace-{run}*/.harness/contract-probe.json"):
+        print("\n".join(contract_probe_lines(json.loads(Path(probed).read_text(encoding="utf-8")))))
 
 
 if __name__ == "__main__":

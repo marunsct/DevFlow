@@ -878,16 +878,30 @@ def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Ch
         from app.acceptance import suite
         from app.stacks import contract
 
+        from app.acceptance import probe_coverage
+
         root = Path(repo_root)
-        web = [c for c in checkable(the_locked_contract(root)[:MOST_CHECKS]) if c.kind == "http"]
+        lines = the_locked_contract(root)[:MOST_CHECKS]
+        web = [c for c in checkable(lines) if c.kind == "http"]
+        asked_lines = {c.line for c in web}
+        not_asked = [(c.line, probe_coverage.reason_a_line_is_not_probed(c)) for c in lines if c.line not in asked_lines]
         found = contract.the_pack(root)
         probe = PROBE_RUNNERS.get(found[0].probe_runner) if found else None
         if not web or probe is None:
+            if lines:
+                probe_coverage.write(root, "server_error", probe_coverage.coverage(
+                    considered=len(lines), asked=[],
+                    not_asked=not_asked + [(c.line, "no runner on this stack probes it") for c in web],
+                ))
             return None
         project_name = str((found[1] or {}).get("project") or "")
         run = runner or suite._sandbox_runner(root)  # noqa: SLF001 - the suite's own runner
         report = _the_probe_s_report(root / project_name, project_name, probe, web, run,
                                      bodies=list(suite._state(root).get("interface_contract_bodies") or []))  # noqa: SLF001
+        probe_coverage.write(root, "server_error", probe_coverage.coverage(
+            considered=len(lines), asked=web, report=report if report is not None and report.found else None,
+            not_asked=not_asked, check_of=lambda test: _the_check_of(test, web),
+        ))
         if report is None or not report.found:
             return None
         errors: list[tuple[Check, int]] = []
@@ -949,6 +963,16 @@ def bad_body_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[
         state = suite._state(root)  # noqa: SLF001 - read again: the runner's suite calls may have saved it
         state["interface_contract_bad_body_unchecked"] = list(dict.fromkeys(unchecked))
         suite._save_state(root, state)  # noqa: SLF001
+        from app.acceptance import probe_coverage
+
+        # The skipped and unasked lines are already in `unchecked`, each with its reason; the count probed is what
+        # was asked less those.
+        probe_coverage.write(root, "bad_body", {
+            "considered": len(the_locked_contract(root)[:MOST_CHECKS]),
+            "asked": len(asked),
+            "probed": max(0, len(asked) - sum(1 for u in unchecked if any(u.startswith(c.line) for c in asked))),
+            "skipped": [{"line": u.rsplit(" (", 1)[0], "reason": u.rsplit(" (", 1)[-1].rstrip(")")} for u in dict.fromkeys(unchecked)],
+        })
         return errors
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing
         logger.debug("Could not probe the contract with a bad body", exc_info=True)
@@ -973,14 +997,31 @@ def emptied_field_errors(repo_root: str | Path, *, runner: Any = None) -> list[t
         fields = fields_refused_when_empty([c.text for c in suite.criteria(root)])
         state = suite._state(root)  # noqa: SLF001 - one state file for the suite and its contract
         bodies = list(state.get("interface_contract_bodies") or [])
-        asked, _ = emptied_field_checks(the_locked_contract(root)[:MOST_CHECKS], bodies, fields)
+        from app.acceptance import probe_coverage
+
+        lines = the_locked_contract(root)[:MOST_CHECKS]
+        asked, unasked = emptied_field_checks(lines, bodies, fields)
+        not_asked = [(u.rsplit(" (", 1)[0], u.rsplit(" (", 1)[-1].rstrip(")")) for u in unasked]
+        if not fields:
+            not_asked.append(("(every write)", "no criterion refuses a field empty"))
+        elif not asked:
+            not_asked.append(("(every write)", "no example body carries a field the criteria refuse empty"))
         found = contract.the_pack(root)
         probe = PROBE_RUNNERS.get(found[0].probe_runner) if found else None
         if not asked or probe is None or "emptied_field_checks" not in probe:
+            if lines:
+                probe_coverage.write(root, "emptied_field", probe_coverage.coverage(
+                    considered=len(lines), asked=[],
+                    not_asked=not_asked + [(c.line, "no runner on this stack probes it") for c in asked],
+                ))
             return None
         project_name = str((found[1] or {}).get("project") or "")
         run = runner or suite._sandbox_runner(root)  # noqa: SLF001 - the suite's own runner
         report = _the_probe_s_report(root / project_name, project_name, probe, asked, run, "emptied_field_checks")
+        probe_coverage.write(root, "emptied_field", probe_coverage.coverage(
+            considered=len(lines), asked=asked, report=report if report is not None and report.found else None,
+            not_asked=not_asked, check_of=lambda test: _the_check_of(test, asked),
+        ))
         if report is None or not report.found:
             return None
         accepted: list[tuple[Check, int]] = []

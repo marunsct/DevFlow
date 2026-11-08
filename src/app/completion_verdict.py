@@ -44,6 +44,8 @@ _NOTES = re.compile(
         # Worth knowing about what ships beside the product, or who judged it.
         r"Code the product does not run:",
         r"The product serves through a development server:",
+        r"AC-\d+ was deferred during the run; its own locked tests pass at release:",
+        r"CR-\d+ was deferred during the run; its own locked tests pass at release:",
         r"Ships \d+ dependenc(y|ies) under a strong-copyleft licence",
         r"The judgement model .* could not be built ",
     ))

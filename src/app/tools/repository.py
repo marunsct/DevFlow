@@ -1752,11 +1752,14 @@ def _a_file_the_harness_keeps(root: Path, relative: str) -> str | None:
     except Exception:  # noqa: BLE001 - no contract, nothing kept
         return None
     project = str(record.get("project") or "")
-    command = " ".join(str(part) for part in record.get("acceptance_test") or [])
+    # Both runners: a kept file may configure the unit tests, and naming only the acceptance command sent a stage
+    # that wanted the unit run to skip a folder to a suite it was not running (eight refused edits in a row).
+    commands = [" ".join(str(part) for part in record.get(key) or []) for key in ("unit_test", "acceptance_test")]
+    named = " and ".join(f"`{c}`" for c in dict.fromkeys(c for c in commands if c)) or "the project's test commands"
     return (
-        f"'{relative}' is test configuration the harness set up and keeps: it starts the "
-        f"product for the acceptance suite and already works. It cannot be changed. Run "
-        f"`{command}` in `{project}/` as it is; if it fails, the cause is in the product."
+        f"'{relative}' is test configuration the harness set up and keeps, for the project's test runners, and it "
+        f"already works. It cannot be changed. Run {named} in `{project}/` as they are; a test that fails there is "
+        "fixed in the product, or in that test's own file - never by changing which tests the runner collects."
     )
 
 

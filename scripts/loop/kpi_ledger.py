@@ -121,11 +121,13 @@ def _numbers(rows: list[dict], key: str) -> list[float]:
     return values
 
 
-def the_arm(rows: list[dict], commit: str, benchmark: str = "") -> list[dict]:
+def the_arm(rows: list[dict], commit: str, benchmark: str = "", switch: str = "", state: bool | None = None) -> list[dict]:
     """The ledger's runs on exactly one harness commit, a mixed run left out (plans MF.1, MF.5).
 
     `commit` may be the short form the docs and the deploy use: the ledger
     keeps the full one, and an exact match found no run of either arm.
+    With `switch` and `state`, only the runs that had that switch on (True) or off (False): two arms on one
+    commit, each run's own switch settings deciding which (harness review HR2.E.1).
     """
     wanted = str(commit).strip().lower()
     return [
@@ -134,6 +136,7 @@ def the_arm(rows: list[dict], commit: str, benchmark: str = "") -> list[dict]:
         and wanted and commits[0].lower().startswith(wanted)
         and str(r.get("mixed_versions") or "False") != "True"
         and (not benchmark or str(r.get("benchmark") or "") == benchmark)
+        and (not switch or state is None or (switch in str(r.get("switches_on") or "").split()) == state)
     ]
 
 
@@ -213,6 +216,14 @@ if __name__ == "__main__" and len(sys.argv) > 1:
     if sys.argv[1] == "compare" and len(sys.argv) == 4:
         # python kpi_ledger.py compare data/kpi/<A>.json data/kpi/<B>.json
         print("\n".join(compare(*(json.loads(Path(f).read_text()) for f in sys.argv[2:4]))))
+        raise SystemExit(0)
+    if sys.argv[1] == "switch-arms" and len(sys.argv) >= 5:
+        # python kpi_ledger.py switch-arms data/kpi/ledger.csv <commit> <SWITCH> [benchmark]: on (A) against off (B)
+        with open(sys.argv[2], newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        kind = sys.argv[5] if len(sys.argv) > 5 else ""
+        print("\n".join(compare_arms(the_arm(rows, sys.argv[3], kind, sys.argv[4], True),
+                                     the_arm(rows, sys.argv[3], kind, sys.argv[4], False))))
         raise SystemExit(0)
     if sys.argv[1] == "arms" and len(sys.argv) >= 5:
         # python kpi_ledger.py arms data/kpi/ledger.csv <commit-a> <commit-b> [benchmark]

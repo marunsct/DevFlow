@@ -2948,6 +2948,21 @@
       ],
       "description": "Seed the workspace from an existing codebase. Omit for a greenfield run."
      },
+     "switches": {
+      "anyOf": [
+       {
+        "additionalProperties": {
+         "type": "boolean"
+        },
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "This run's own switch settings, {name: true|false}, beating the admin page and the environment for this run only: two runs on one harness version can then be a measurement's two arms.",
+      "title": "Switches"
+     },
      "use_frontier_model": {
       "anyOf": [
        {

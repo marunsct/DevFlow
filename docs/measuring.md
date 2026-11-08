@@ -12,6 +12,9 @@ Rules (owner 2026-11-05 and 2026-11-07):
 - Verdict: kept (moves to `BUILT_IN`, switch removed) when no hidden or quality score falls and its target KPI
   moves; parked (off, kept in code) when nothing moves; removed when it hurts.
 - Every audit reads this table and says which arm the live runs are in.
+- How to run an arm (LF.708, 11-08): on one deployed SHA, start the off arm with `SWITCHES_OFF="NAME" loop.sh bench <family>`
+  (or `SWITCHES_ON` for a switch that ships off) and the other arm without; compare with
+  `python3 scripts/loop/kpi_ledger.py switch-arms data/kpi/ledger.csv <sha> NAME <family>`. No deploy between the arms.
 
 ## Measurement schedule
 
@@ -42,7 +45,7 @@ Measurement plan (HR2 §12, adopted): first HR2.E.1 (per-run switch overrides) a
 KPI), then one frozen SHA; each switch as a pair on both ports (on A / off B, then swapped: 4 runs = 2+2) on the
 shortest families that exercise it; stage forks (HR2.E.2) for the token/efficiency switches before any full run; M1
 as one group with one off arm on web-todo and tasks-api; M2 bundle by bundle, largest token share first. Budget ~20
-runs instead of 84. Until E.1 lands, no arm can be judged: since 11-05 no family has two clean runs on one SHA.
+runs instead of 84. E.1 landed 11-08 (LF.708): arms now run on one SHA with per-run switch settings.
 
 Superseded by HR2 (do not build as first written): SF.2b (parked on evidence), SF.3a (premature until replay
 works), Q3 (deprioritised), Q4's stub leg (dropped), F6 (wrong shape -> fix.4), WB.5 (not supported by the data),

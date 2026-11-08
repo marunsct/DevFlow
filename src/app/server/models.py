@@ -167,6 +167,13 @@ class StartRunRequest(BaseModel):
         default=None, max_length=80,
         description="A name for the run, shown in its header and in the runs list; can be changed later.",
     )
+    switches: dict[str, bool] | None = Field(
+        default=None,
+        description=(
+            "This run's own switch settings, {name: true|false}, beating the admin page and the environment for "
+            "this run only: two runs on one harness version can then be a measurement's two arms."
+        ),
+    )
     pin_model: bool = Field(
         default=False,
         description=(

@@ -33,6 +33,47 @@ def stored(name: str) -> bool | None:
         return None
 
 
+#: How long a run's own switch settings are trusted before they are read again.
+RUN_OVERRIDES_TTL_SECONDS = 30.0
+_RUN_OVERRIDES: dict[str, tuple[float, dict[str, bool]]] = {}
+
+
+def for_the_run(name: str) -> bool | None:
+    """The current run's own setting for switch `name`, or None (harness review HR2.E.1).
+
+    Set when the run is started (`loop.sh bench --off NAME`), so two runs on one harness version can be the two arms
+    of a measurement with no deploy between them. Read from the run's record by the run this call belongs to - the
+    graph's config or the worker task, never the environment - so one run's setting cannot reach another's thread.
+    Only where stored settings are read (`SWITCH_OVERRIDES_FROM_SETTINGS`), like the admin page's.
+    """
+    if str(os.environ.get("SWITCH_OVERRIDES_FROM_SETTINGS") or "").strip().lower() not in _ON:
+        return None
+    try:
+        import time
+
+        from app.models.model_pin import current_run_id
+
+        run = current_run_id()
+        if not run:
+            return None
+        now = time.monotonic()
+        hit = _RUN_OVERRIDES.get(run)
+        if hit is None or now - hit[0] >= RUN_OVERRIDES_TTL_SECONDS:
+            from app.server.run_store import RunStore
+
+            try:
+                found = RunStore.shared().switch_overrides(run)
+            except Exception:  # noqa: BLE001 - the last known settings, else none
+                found = hit[1] if hit is not None else {}
+            # A run with none is read again soon: its settings are stored just after it is created, and its first
+            # stage must not keep an empty read for the whole TTL.
+            hit = (now if found else now - RUN_OVERRIDES_TTL_SECONDS + 2.0, found)
+            _RUN_OVERRIDES[run] = hit
+        return hit[1].get(name)
+    except Exception:  # noqa: BLE001 - the other settings decide when the run's cannot be read
+        return None
+
+
 def from_the_environment(name: str) -> bool | None:
     """The switch's environment variable as on (True) or off (False), or None when unset or not on/off."""
     value = str(os.environ.get(name) or "").strip().lower()
@@ -144,9 +185,12 @@ def operated() -> tuple[str, ...]:
 def is_on(name: str, default: bool) -> bool:
     """Whether switch `name` is on.
 
-    Its own admin setting or variable first (a test's hook, or a setting stored before the bundles); then a built-in
+    The run's own setting first (HR2.E.1), then its own admin setting or variable (a test's hook, or a setting stored before the bundles); then a built-in
     fix is on, and a bundled feature follows its bundle's setting or variable; else `default`.
     """
+    run = for_the_run(name)
+    if run is not None:
+        return run
     setting = stored(name)
     if setting is not None:
         return setting
@@ -157,7 +201,9 @@ def is_on(name: str, default: bool) -> bool:
         return True
     bundle = bundle_of(name)
     if bundle:
-        chosen = stored(bundle)
+        chosen = for_the_run(bundle)
+        if chosen is None:
+            chosen = stored(bundle)
         if chosen is None:
             chosen = from_the_environment(bundle)
         if chosen is not None:
@@ -165,4 +211,4 @@ def is_on(name: str, default: bool) -> bool:
     return default
 
 
-__all__ = ["BUILT_IN", "BUNDLES", "EXPERIMENTS", "EXPERIMENTS_ON", "GROUPS", "bundle_of", "group_of", "from_the_environment", "is_on", "operated", "stored"]
+__all__ = ["BUILT_IN", "BUNDLES", "EXPERIMENTS", "EXPERIMENTS_ON", "GROUPS", "bundle_of", "for_the_run", "group_of", "from_the_environment", "is_on", "operated", "stored"]

@@ -374,6 +374,14 @@ def create_runs_router(
         # A run pinned to an endpoint of its own is refused before anything is prepared if that is not an address
         # or a model name worth pinning to.
         pin_base_url, pin_model_name = _the_pin_target(body.pin_model, body.pin_base_url, body.pin_model_name)
+        if body.switches:
+            # Only switches the harness has, refused before the run starts: an unknown name is no arm.
+            from app.observability.provenance import SWITCHES as _KNOWN
+            from app.switches import operated as _operated
+
+            unknown = sorted(name for name in body.switches if name not in {*_KNOWN, *_operated()})
+            if unknown:
+                raise HTTPException(status_code=422, detail=f"Unknown switch(es): {', '.join(unknown)}")
 
         # Asked for the frontier model, it must be there and answering before
         # anything is prepared (owner, 2026-10-19): otherwise the run's
@@ -464,6 +472,8 @@ def create_runs_router(
 
         if body.name and " ".join(body.name.split()):
             await asyncio.to_thread(lambda: runner.run_store.set_run_name(run_id, " ".join(body.name.split())[:80]))
+        if body.switches:
+            await asyncio.to_thread(lambda: runner.run_store.set_switch_overrides(run_id, dict(body.switches)))
 
         record_audit(
             actor=user.username, tenant_id=user.tenant_id, action="run.start", subject=run_id,

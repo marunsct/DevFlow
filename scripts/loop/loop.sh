@@ -6,6 +6,7 @@
 #   scripts/loop/loop.sh start [brief]       create and start a run (default tests/brief_low.md)
 #   scripts/loop/loop.sh cancel [run-id]     cancel a run (default: the current one); needs LOOP_USER/LOOP_PASSWORD
 #   scripts/loop/loop.sh pin on|off [run-id] keep a run on its model / let it follow the settings (PIN_URL, PIN_MODEL_NAME pin it to an endpoint); PIN_MODEL=1 on start/bench pins at the start; RUN_NAME="..." on start/bench names the run
+#                                            SWITCHES_OFF="A B" / SWITCHES_ON="C" on start/bench set this run's own switches (an arm on one SHA, HR2.E.1)
 #   scripts/loop/loop.sh wait [minutes] [run] block until the run (default: current) ends or N minutes pass (default 18),
 #                                            then print status, key log lines and the audit
 #   scripts/loop/loop.sh audit [run-id]      failure / redundancy audit of a run (audit_live.py)
@@ -144,8 +145,14 @@ start)
   # A refused start (a frontier model asked for and not answering, a run
   # already started) said "started" before; it names the refusal now, and the
   # run it created is not left behind as the current one.
+  # The run's own switch settings (HR2.E.1): SWITCHES_OFF="A B" SWITCHES_ON="C" make this run one arm of a
+  # measurement on the harness as deployed, with no deploy between the arms.
+  switches=""
+  for name in ${SWITCHES_OFF:-}; do switches="$switches${switches:+, }\"$name\": false"; done
+  for name in ${SWITCHES_ON:-}; do switches="$switches${switches:+, }\"$name\": true"; done
+  [ -z "$switches" ] || switches=", \"switches\": {$switches}"
   answer=$(curl -s -w '\n%{http_code}' -X POST "$API/api/runs/$run/start" -H "Authorization: Bearer $token" \
-       -H "Content-Type: application/json" -d "{\"auto_approve\": true${DELIVERY:+, \"delivery_mode\": \"$DELIVERY\"}${FRONTIER:+, \"use_frontier_model\": $FRONTIER}${RUN_NAME:+, \"name\": \"$RUN_NAME\"}${PIN_MODEL:+, \"pin_model\": true}${PIN_MODEL:+${PIN_URL:+, \"pin_base_url\": \"$PIN_URL\"}}${PIN_MODEL:+${PIN_MODEL_NAME:+, \"pin_model_name\": \"$PIN_MODEL_NAME\"}}$source}")
+       -H "Content-Type: application/json" -d "{\"auto_approve\": true${DELIVERY:+, \"delivery_mode\": \"$DELIVERY\"}${FRONTIER:+, \"use_frontier_model\": $FRONTIER}${RUN_NAME:+, \"name\": \"$RUN_NAME\"}${PIN_MODEL:+, \"pin_model\": true}${PIN_MODEL:+${PIN_URL:+, \"pin_base_url\": \"$PIN_URL\"}}${PIN_MODEL:+${PIN_MODEL_NAME:+, \"pin_model_name\": \"$PIN_MODEL_NAME\"}}$switches$source}")
   code=$(echo "$answer" | tail -n 1)
   echo "$answer" | sed '$d'
   if [ "$code" != "202" ]; then

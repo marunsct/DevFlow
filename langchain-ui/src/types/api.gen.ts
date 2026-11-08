@@ -689,6 +689,8 @@ export interface StartRunRequest {
   reviewer?: string | null;
   /** Seed the workspace from an existing codebase. Omit for a greenfield run. */
   source?: WorkspaceSource | null;
+  /** This run's own switch settings, {name: true|false}, beating the admin page and the environment for this run only: two runs on one harness version can then be a measurement's two arms. */
+  switches?: Record<string, boolean> | null;
   /** Whether stages that need judgement (specification, reviews, escalated fixes) use the frontier model. False keeps every stage on the build model. Omit for the frontier model as configured. */
   use_frontier_model?: boolean | null;
   /** Optional human-readable label for this run's workspace directory. */

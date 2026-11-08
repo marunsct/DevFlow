@@ -169,7 +169,20 @@ def record_the_segment(run_id: str, record: Any = None, profile: Any = None) -> 
     try:
         from app.observability.transcript import record as transcript_record
 
-        transcript_record(run_id, "", "provenance", **the_segment(record, profile))
+        from app.models.model_pin import as_the_run
+
+        # The switches as this run sees them: its own settings first (HR2.E.1), so its KPI row names its arm.
+        with as_the_run(run_id):
+            segment = the_segment(record, profile)
+        try:
+            from app.server.run_store import RunStore
+
+            overrides = RunStore.shared().switch_overrides(run_id)
+            if overrides:
+                segment["switch_overrides"] = [f"{name}={'on' if on else 'off'}" for name, on in sorted(overrides.items())]
+        except Exception:  # noqa: BLE001 - the switches on are recorded either way
+            pass
+        transcript_record(run_id, "", "provenance", **segment)
     except Exception:  # noqa: BLE001 - a record must never cost the run
         logger.debug("Could not record the run's provenance", exc_info=True)
 

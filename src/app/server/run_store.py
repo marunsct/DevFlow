@@ -96,6 +96,10 @@ _MIGRATIONS = (
     # A name the person gives a run to tell it from the others in the list (never written by `save`: owned by
     # `set_run_name`, so a worker persisting its record cannot undo a rename).
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS run_name TEXT",
+    # The run's own switch settings, {name: true|false}, beating the admin page and the environment for this run
+    # only (harness review HR2.E.1: both arms of a measurement on one harness version). Owned by
+    # `set_switch_overrides` / `switch_overrides`, not by `save`.
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS switch_overrides TEXT NOT NULL DEFAULT '{}'",
     # How long the run has been paused in all, and since when it is paused now: kept by the database itself, so every
     # way a run is paused (the page, the loop, a worker at a stage boundary) is counted and no process can forget it.
     # A run's time on the page is its time less these (owner, 2026-11-03: pause time is not the run's time).
@@ -433,6 +437,28 @@ class RunStore:
         except (TypeError, ValueError):
             last = {}
         return bool(row[0]), {str(k): str(v) for k, v in last.items()} if isinstance(last, dict) else {}
+
+    def switch_overrides(self, run_id: str) -> dict[str, bool]:
+        """The run's own switch settings; {} when it has none or there is no such run."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT switch_overrides FROM runs WHERE run_id = %s", (run_id,))
+                row = cur.fetchone()
+        try:
+            found = json.loads(row[0]) if row and row[0] else {}
+        except (TypeError, ValueError):
+            found = {}
+        return {str(k): bool(v) for k, v in found.items()} if isinstance(found, dict) else {}
+
+    def set_switch_overrides(self, run_id: str, overrides: dict[str, bool]) -> bool:
+        """Set the run's own switch settings (replacing any); True when the run exists."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE runs SET switch_overrides = %s WHERE run_id = %s",
+                            (json.dumps({str(k): bool(v) for k, v in overrides.items()}), run_id))
+                changed = cur.rowcount
+            conn.commit()
+        return changed == 1
 
     def model_states(self, run_ids: list[str]) -> dict[str, tuple[bool, dict[str, str]]]:
         """`model_state` for several runs with one statement: {run_id: (pinned, the model it last ran on)}.

@@ -97,8 +97,10 @@ def _live_runs() -> list[tuple[str, str, str]]:
 
 
 def _deployed() -> str:
+    # The running worker container's, not the newest image's: a deploy that did not land left a new image beside the
+    # old container, and STATE named the new commit as deployed.
     try:
-        env = subprocess.run(["docker", "image", "inspect", "langchain-worker", "--format",
+        env = subprocess.run(["docker", "inspect", "langchain-worker-1", "--format",
                               "{{range .Config.Env}}{{println .}}{{end}}"], capture_output=True, text=True, timeout=30).stdout
         return next((line.split("=", 1)[1] for line in env.splitlines() if line.startswith("HARNESS_COMMIT=")), "")
     except (OSError, subprocess.SubprocessError):

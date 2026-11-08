@@ -55,3 +55,21 @@ def test_the_repository_s_state_has_the_block() -> None:
     text = (Path(__file__).resolve().parents[1] / "docs" / "STATE.md").read_text()
     blocks = _module()
     assert blocks.START in text and blocks.END in text
+
+
+def test_deployed_is_the_running_worker_s_commit_not_the_newest_image_s(monkeypatch) -> None:
+    # A deploy that did not land left a new image beside the old container; STATE named the new commit as deployed.
+    import subprocess
+    from types import SimpleNamespace
+
+    blocks = _module()
+    asked: list[list[str]] = []
+
+    def run(argv, **_kw):
+        asked.append(argv)
+        commit = "a" * 40 if argv[:3] == ["docker", "image", "inspect"] else "b" * 40
+        return SimpleNamespace(stdout=f"PATH=/bin\nHARNESS_COMMIT={commit}\n")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert blocks._deployed() == "b" * 40
+    assert asked[0][:3] == ["docker", "inspect", "langchain-worker-1"]

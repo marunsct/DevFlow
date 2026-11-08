@@ -63,6 +63,12 @@ def stage_usage(entries: Iterable[dict]) -> list[dict[str, Any]]:
     asked_at: dict[str, list[datetime]] = {}
     read_calls: dict[str, str] = {}
     for entry in entries:
+        if entry.get("kind") == "provenance":
+            # A new segment of the run (a start, a resume, a deploy): a request still open was the stopped process's
+            # and will never be answered. Measured (owner, 2026-11-08): one open when a host fault stopped the run was
+            # paired with the first reply 19 hours later, and the run's tokens a second fell from about 90 to 3.3.
+            asked_at.clear()
+            continue
         stage = str(entry.get("stage") or "")
         if not stage:
             continue

@@ -286,7 +286,8 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # criterion while attempts remain, then is a gap.
     from app.stacks import release_audits, release_docs
 
-    if not failing:
+    handed_off = not failing
+    if handed_off:
         release_docs.complete_the_handoff(root)
     undocumented = [] if failing else [*release_docs.what_the_handoff_lacks(root), *release_audits.secrets_found(root)]
     held_for_the_handoff = bool(undocumented) and int(state.get("release_attempts") or 0) < MAX_RELEASE_ATTEMPTS
@@ -335,9 +336,18 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
                 defect_cursor=0,
                 milestone_revision_count=0,
             )
+        # Held until its attempts ran out, the product is still what someone receives: it gets its handoff too
+        # (harness review HR2.PR.1 - 41 of 104 products went out with no README).
+        if not handed_off:
+            release_docs.complete_the_handoff(root)
         return _escalate_to_a_human(state, error=text, release_attempts=attempts)
 
     # The run is going out: ahead of the checks below, so none of them counts one of these against the product.
+    # Every product that ships gets its handoff, not only one with nothing failing (HR2.PR.1): one shipped with
+    # failing unit tests had none. What it still lacks is a gap, never a hold, at this point.
+    if not handed_off:
+        release_docs.complete_the_handoff(root)
+        undocumented = [*undocumented, *release_docs.what_the_handoff_lacks(root), *release_audits.secrets_found(root)]
     from app.tools.repository import clear_the_code_of_command_lines
 
     clear_the_code_of_command_lines(root)

@@ -191,6 +191,53 @@ def _the_pack_s_start(pack: Any) -> list[str]:
     return []
 
 
+def _the_running_and_testing_sections(where: str, commands: list[str], install: list[str], test: list[str]) -> str:
+    """Install and start in one section, the start on its own line said to keep running, and the tests apart.
+
+    One fence holding the start and then the tests could not run as written: the start never returns (HR2.PR.2).
+    """
+    installing = [c for c in commands if c in install]
+    testing = [c for c in commands if c in test and c not in installing]
+    starting = [c for c in commands if c not in installing and c not in testing]
+    out = ""
+    if installing or starting:
+        out += f"\n## Running it\n\n{where}\n\n"
+        if installing:
+            out += "```sh\n" + "\n".join(installing) + "\n```\n\n"
+        if starting:
+            out += ("Then start it; it stays running until you stop it (Ctrl-C):\n\n"
+                    "```sh\n" + "\n".join(starting) + "\n```\n")
+    if testing:
+        out += f"\n## Testing it\n\n{where} (in another terminal; the acceptance tests need it running):\n\n" \
+               "```sh\n" + "\n".join(testing) + "\n```\n"
+    return out
+
+
+#: A Configuration entry of the specification: `- variable: PORT; type: ...; default: 8000; description: ...`.
+_A_VARIABLE = re.compile(r"^\s*[-*]\s*variable:\s*`?([A-Za-z_][A-Za-z0-9_]*)`?\s*;(.*)$", re.IGNORECASE)
+
+
+def _the_configuration(root: Path) -> list[tuple[str, str, str]]:
+    """(name, default, what it sets) for each variable the specification's Configuration section lists."""
+    try:
+        text = (root / "docs" / "technical_specification.md").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    section = re.search(r"^## Configuration\s*$(.*?)(?=^## |\Z)", text, re.MULTILINE | re.DOTALL)
+    found: list[tuple[str, str, str]] = []
+    for line in (section.group(1) if section else "").splitlines():
+        match = _A_VARIABLE.match(line)
+        if not match:
+            continue
+        fields = {}
+        for part in match.group(2).split(";"):
+            key, _, value = part.partition(":")
+            fields[key.strip().lower()] = " ".join(value.split()).replace("|", "/")
+        default = re.sub(r"\s*\(.*?\)", "", fields.get("default", ""))[:60]
+        found.append((match.group(1), default, fields.get("description", "")[:160]))
+    return list(dict.fromkeys(found))
+
+
 def complete_the_handoff(repo_root: str | Path) -> list[str]:
     """Write what the harness itself knows into the README - how to run the product, the routes it serves; the files written.
 
@@ -237,9 +284,19 @@ def complete_the_handoff(repo_root: str | Path) -> list[str]:
             if commands:
                 # A README at the workspace root runs the project's commands from the project.
                 where = (f"From `{project}/`:" if project and readme.parent != root / project else "From this directory:")
-                added += (f"\n## Running it\n\n{where}\n\n```sh\n" + "\n".join(commands) + "\n```\n")
+                added += _the_running_and_testing_sections(where, commands, install if pack is None else [
+                    shlex.join(argv) for argv in getattr(pack, "install", ()) or ()],
+                    test if pack is None else [shlex.join(getattr(pack, name, ()) or ()) for name in ("unit_test", "acceptance_test")])
+        variables = [v for v in _the_configuration(root) if v[0] not in text]
+        if variables:
+            # What the product reads, from the specification's own Configuration (HR2.PR.2): 3 of 63 READMEs named
+            # `PORT` or `DATA_DIR`, though every specification listed them.
+            added += ("\n## Configuration\n\n| Variable | Default | What it sets |\n| --- | --- | --- |\n"
+                      + "\n".join(f"| `{name}` | {default or ''} | {meaning} |" for name, default, meaning in variables) + "\n")
         locked = [c for c in the_locked_contract(root) if c.kind == "http"]
-        missing = set(_routes_not_named(_the_product_s_documents(root, project) + "\n" + added, list(
+        # Named in the README itself: the specification under `docs/` naming the routes once kept the table out of
+        # the README a stranger reads (HR2.PR.2: 3 of 63 READMEs named a route).
+        missing = set(_routes_not_named(text + "\n" + added, list(
             dict.fromkeys((c.method, c.path) for c in locked))))
         rows = [f"| {c.method} | `{c.path}` | {c.status or ''} |" for c in locked if f"{c.method} {c.path}" in missing]
         if rows:

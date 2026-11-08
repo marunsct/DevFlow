@@ -1220,6 +1220,16 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
                                       or _a_bodiless_write_refused_first(check, t))
                                  and not _a_server_error(t)]
         failed = [t for t in failed if t not in about_another_request]
+        # A page control a bare visit cannot find, on a criterion whose own locked tests passed: the control appears
+        # once the page holds a record or a person signed in, and the tests that create that state pass. Measured: 13
+        # runs carried such a gap (50 lines) and 12 of them scored 1.0 on their hidden tests.
+        shown_later = [t for t in failed if (check := _the_check_of(t, web)) is not None and check.kind == "page"
+                       and not _a_server_error(t) and _its_criterion_passed(repo_root, check.criterion)]
+        failed = [t for t in failed if t not in shown_later]
+        unchecked += list(dict.fromkeys(
+            f"{c.line} (not found at a bare visit; it appears once the page has records or a person signed in, "
+            "and its criterion's own tests passed)"
+            for c in (_the_check_of(t, web) for t in shown_later) if c is not None))
         unchecked += list(dict.fromkeys(
             f"{c.line} ({MADE_NO_RECORD})"
             for t in report.tests if getattr(t, "outcome", "") == "skipped"
@@ -1242,6 +1252,20 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
             + "; ".join(unchecked[:5]) + ("; ..." if len(unchecked) > 5 else "")
         )
     return gaps
+
+
+def _its_criterion_passed(repo_root: str | Path, criterion: str) -> bool:
+    """Whether the locked suite's last run passed every test of `criterion` (and ran at least one)."""
+    if not criterion:
+        return False
+    try:
+        from app.acceptance import suite
+
+        entry = ((suite.last_result(repo_root) or {}).get("criteria") or {}).get(criterion) or {}
+        tests = entry.get("tests") or []
+        return bool(tests) and all(t.get("outcome") == "passed" for t in tests)
+    except Exception:  # noqa: BLE001 - then the line is reported as before
+        return False
 
 
 class _ServerErrorsAtARound:

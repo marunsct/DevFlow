@@ -734,6 +734,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         if rounds < MAX_ACCEPTANCE_ROUNDS + 2:
             logger.warning("Acceptance suite could not run (exit %s); sent back to QA", result.exit_code)
             return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
+        if (kept := _kept_as_locked_before(state, root, f"the repaired suite cannot run: {result.problem}")) is not None:
+            return kept
         logger.error("Acceptance suite failed to run after %d rounds: %s", rounds, result.problem)
         return _handing_on(
             stage="failed",
@@ -747,6 +749,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         if rounds < MAX_ACCEPTANCE_ROUNDS + 2:
             logger.warning("Acceptance suite proved nothing (%d reason(s)); sent back to QA", len(vacuous))
             return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
+        if (kept := _kept_as_locked_before(state, root, "the repaired suite proves nothing: " + "; ".join(vacuous)[:1200])) is not None:
+            return kept
         logger.error("Acceptance suite still proves nothing after %d rounds", rounds)
         return _handing_on(
             stage="failed",
@@ -1885,6 +1889,33 @@ def _due_criteria_with_no_test(root: str, due: list[str]) -> list[str]:
 #: Where a suite repaired for a failed attempt's dispute goes back to: the
 #: sprint's planning, with no change request to brief it on.
 SPRINT_REPLAN = "sprint_replan"
+
+
+def _kept_as_locked_before(state: dict, root: Path, why: str) -> dict | None:
+    """A repair that ran out of rounds keeps the suite as it was last locked and goes back where it came from; None
+    when the suite was never locked (a first writing still fails the run).
+
+    Measured on one run: a suite reopened after the build, for a locked test the product's own `conftest.py` skipped,
+    went five rounds and then failed the run - a product passing every hidden test, its suite 22 of 22, never released.
+    The suite it had been locked with is still a fair definition of done; what the repair could not settle is a gap.
+    """
+    from app.graph.workflow import _handing_on
+
+    return_to = state.get("acceptance_return_to")
+    if not return_to or not suite.is_being_repaired(root):
+        return None
+    put_back = suite.put_back_the_suite_before_the_repair(root)
+    suite.lock(root)
+    logger.warning("A repair ran out of rounds; the suite as last locked is kept (%d file(s) put back)", len(put_back))
+    result = suite.run(root)
+    return _handing_on(
+        stage="technical_lead" if return_to == SPRINT_REPLAN else return_to,
+        acceptance_return_to=None,
+        acceptance_feedback=[],
+        acceptance_open_problems=[f"The suite's repair ran out of rounds and the suite as last locked was kept; {why}"],
+        acceptance_result=result.as_dict(),
+        revision_comments=list(state.get("revision_comments") or []),
+    )
 
 
 def _rewritten_in_one_call_each(state: Any, broken: list[str], model: Any) -> bool:

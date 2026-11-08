@@ -170,6 +170,13 @@ start)
 bench)
   name="${2:?name a benchmark under benchmarks/}"
   [ -f "benchmarks/$name/brief.md" ] || { echo "no benchmark named $name" >&2; exit 2; }
+  # A held-out family (bench.json "held_out_since") is for Measure runs only (HR2.E.4): a static set is tuned to,
+  # and a learning run's fixes would be written after its hidden failures. MEASURE=1 runs it; the first fix that
+  # cites one of its hidden tests retires it to the learning set (remove the key and write the next held-out brief).
+  held=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1])).get('held_out_since') or '')" "benchmarks/$name/bench.json")
+  if [ -n "$held" ] && [ "${MEASURE:-0}" != 1 ]; then
+    echo "$name is held out since $held: Measure runs only (MEASURE=1 loop.sh bench $name)" >&2; exit 2
+  fi
   # A brownfield bench names its previous product in bench.json's "base"; the run starts from it.
   base=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1])).get('base') or '')" "benchmarks/$name/bench.json")
   if [ -n "$base" ]; then
@@ -642,9 +649,10 @@ restore)
 nightly)
   # The backup first, live run or not: it reads the database and touches nothing else.
   "$0" backup | tee -a "$STATE/nightly.log"
-  # Never beside a live run: scaffolding 27 packs competes for its memory and CPU.
+  # Not beside two live runs: scaffolding the packs competes for their memory and CPU. Beside one it runs - it uses a
+  # scratch workspace and no model - since skipping whenever any run was live skipped 15 of 18 nights (HR2.O.3).
   live=$("${DB[@]}" "select count(*) from runs where status in ('running','queued','pending')")
-  if [ "${live:-1}" != "0" ]; then echo "$(jst '+%F %H:%M JST') nightly skipped: a run is live" | tee -a "$STATE/nightly.log"; exit 0; fi
+  if [ "${live:-2}" -ge "${NIGHTLY_SKIP_AT:-2}" ]; then echo "$(jst '+%F %H:%M JST') nightly skipped: $live runs are live" | tee -a "$STATE/nightly.log"; exit 0; fi
   log="$STATE/nightly-$(date +%F).log"
   { echo "== $(jst)"; in_worker verify_packs.py; "$PY" "$HERE/pack_freshness.py"; } > "$log" 2>&1 || true
   echo "$(jst '+%F %H:%M JST') nightly: $(grep -E 'packs scaffolded' "$log" | tail -1); $(tail -1 "$log") -> $log" | tee -a "$STATE/nightly.log"

@@ -5,8 +5,8 @@
 # not loaded, so both runs sat orphaned ~18 min), a doubled `pool_grow`, and a routine `pool_grow` that made Celery
 # fork and kill a pool process every 4 s. This does the steps in order and checks each:
 #   0. the images are built (`loop.sh build`), or nothing is touched;
-#   1. the operator login is loaded, or nothing is touched; no run is in the architect's stage (SHIP_NOW=1 skips);
-#   2. every running run is paused (and the deploy refused if one did not pause);
+#   1. the operator login is loaded, or nothing is touched;
+#   2. every running run is paused at its next stage boundary (and the deploy refused if one did not pause);
 #   3. `loop.sh deploy` with BOUNDARY_WAIT=0;
 #   4. each run paused here is resumed;
 #   5. no pool churn (a SIGKILLed pool process is shrunk away), and each resumed run is running a task.
@@ -30,29 +30,28 @@ fi
 
 runs=$("$L" status 2>/dev/null | sed -n 's/^\(run-[0-9a-f-]\{36\}\)|running.*/\1/p' | sort -u)
 
-# Not while the architect revises: its section rewrites run side by side and a pause loses them all. Measured on one
-# run: ten rewrites failed at the pause, the revision started over and wrote one part, and the review found four of
-# its findings again. SHIP_NOW=1 deploys at once (a fix the live run needs now).
-if [ "${SHIP_NOW:-0}" != 1 ]; then
-  for run in $runs; do
-    waited=0
-    while stage=$("$L" audit "$run" 2>/dev/null | sed -n 's/^now in: \([^ ]*\).*/\1/p' | head -1) \
-          && [ "$stage" = principal_architect ] && [ "$waited" -lt "${SHIP_WAIT_SECONDS:-900}" ]; do
-      [ "$waited" = 0 ] && echo "ship-live: $run is in the architect's stage; waiting for it to finish (SHIP_NOW=1 skips)"
-      sleep 20; waited=$((waited + 20))
-    done
-  done
-fi
-paused=()
+# At a stage boundary (harness review HR2.R.2): the runner waits for the running stage - the architect's parallel
+# rewrites included - to end before it stops, up to PAUSE_CEILING seconds, then stops it as before. SHIP_NOW=1
+# stops the stages at once (a fix the live run needs now). This replaced a script loop that waited up to 900 s for
+# the architect only and then paused anyway.
+if [ "${SHIP_NOW:-0}" != 1 ]; then export PAUSE_AT=boundary PAUSE_CEILING="${PAUSE_CEILING:-${SHIP_WAIT_SECONDS:-600}}"; fi
+# Every run asked at once, so two runs wait for their boundaries side by side, not one after the other.
+outcomes=$(mktemp -d)
 for run in $runs; do
-  if timeout 900 "$L" rewind --pause-only "$run" | tail -1 | grep -q "paused"; then
-    paused+=("$run")
-  else
-    echo "ship-live: $run did not pause; deploy refused (resume what was paused: loop.sh resume <run>)" >&2
-    for done_run in "${paused[@]}"; do "$L" resume "$done_run" >/dev/null 2>&1 || true; done
-    exit 1
-  fi
+  ( timeout $(( ${PAUSE_CEILING:-0} + 900 )) "$L" rewind --pause-only "$run" | tail -1 > "$outcomes/$run" ) &
 done
+wait
+paused=()
+refused=()
+for run in $runs; do
+  if grep -q "paused" "$outcomes/$run" 2>/dev/null; then paused+=("$run"); else refused+=("$run"); fi
+done
+rm -rf "$outcomes"
+if [ "${#refused[@]}" -gt 0 ]; then
+  echo "ship-live: ${refused[*]} did not pause; deploy refused (resume what was paused: loop.sh resume <run>)" >&2
+  for done_run in "${paused[@]}"; do "$L" resume "$done_run" >/dev/null 2>&1 || true; done
+  exit 1
+fi
 echo "ship-live: paused ${#paused[@]} run(s): ${paused[*]:-none}"
 
 deployed=$(BOUNDARY_WAIT=0 timeout 1500 "$L" deploy 2>&1 || true)

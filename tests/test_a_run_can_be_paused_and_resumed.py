@@ -150,3 +150,43 @@ def test_the_api_offers_pause_and_refuses_a_run_that_is_not_running(client, tmp_
 
     assert response.status_code == 409
     assert "only a running run can be paused" in response.json()["detail"]
+
+
+# --- a pause at a stage boundary (harness review HR2.R.2) ---------------------------------
+
+async def test_a_boundary_pause_leaves_the_running_stage_to_end(runner, revoked):
+    import asyncio
+
+    _register(runner, status="running", task_id="task-7")
+
+    await runner.pause_run("run-1", at_boundary=True, ceiling_seconds=0.2)
+
+    assert runner.run_store.is_cancel_requested("run-1"), "the flag stops it at its next stage boundary"
+    assert revoked == [], "the stage is not stopped mid-way"
+    record = runner.run_store.load("run-1")
+    record.status = "paused"
+    runner.run_store.save(record)
+    await asyncio.sleep(0.4)
+    assert revoked == [], "a run that reached its boundary is not stopped after"
+
+
+async def test_a_stage_still_running_at_the_ceiling_is_stopped_as_before(runner, revoked):
+    import asyncio
+
+    _register(runner, status="running", task_id="task-7")
+
+    await runner.pause_run("run-1", at_boundary=True, ceiling_seconds=0.2)
+    await asyncio.sleep(0.5)
+
+    assert revoked == ["task-7"]
+
+
+def test_ship_live_pauses_at_the_boundary_and_asks_every_run_at_once():
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "ship_live.sh").read_text()
+    assert "export PAUSE_AT=boundary" in text
+    assert 'rewind --pause-only "$run" | tail -1 > "$outcomes/$run" ) &' in text
+    assert "principal_architect" not in text, "the architect-only wait loop is gone"
+    loop = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()
+    assert "pause${PAUSE_AT:+?at=$PAUSE_AT&ceiling=${PAUSE_CEILING:-600}}" in loop

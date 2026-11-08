@@ -5574,7 +5574,7 @@
   },
   "/api/runs/{run_id}/pause": {
    "post": {
-    "description": "Pause a running run at its next stage boundary; resume continues it.",
+    "description": "Pause a running run; resume continues it.\n\n`at=boundary` waits for the running stage to end, up to `ceiling` seconds, before stopping it (HR2.R.2);\nwithout it the stage is stopped now and runs again on resume.",
     "operationId": "pause_run_api_runs__run_id__pause_post",
     "parameters": [
      {
@@ -5584,6 +5584,32 @@
       "schema": {
        "title": "Run Id",
        "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "at",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "At"
+      }
+     },
+     {
+      "in": "query",
+      "name": "ceiling",
+      "required": false,
+      "schema": {
+       "default": 600,
+       "title": "Ceiling",
+       "type": "integer"
       }
      }
     ],

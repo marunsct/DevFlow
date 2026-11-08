@@ -543,12 +543,18 @@ def create_runs_router(
 
     @runs.post("/{run_id}/pause", status_code=202)
     async def pause_run(
-        run_id: str, user: UserInDB = Depends(require_operator)
+        run_id: str, at: str | None = None, ceiling: int = 600, user: UserInDB = Depends(require_operator)
     ) -> dict[str, str]:
-        """Pause a running run at its next stage boundary; resume continues it."""
+        """Pause a running run; resume continues it.
+
+        `at=boundary` waits for the running stage to end, up to `ceiling` seconds, before stopping it (HR2.R.2);
+        without it the stage is stopped now and runs again on resume.
+        """
         _require_run(runner, run_id, user)
+        if at not in (None, "", "boundary"):
+            raise HTTPException(status_code=422, detail="at is 'boundary' or absent")
         try:
-            await runner.pause_run(run_id)
+            await runner.pause_run(run_id, at_boundary=at == "boundary", ceiling_seconds=float(max(0, min(ceiling, 3600))))
         except RunConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc))
         record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.pause", subject=run_id)

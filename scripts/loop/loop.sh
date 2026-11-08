@@ -326,9 +326,11 @@ rewind)
       echo "not rewound and not paused: $stage is not a point of $run, as listed above" >&2; exit 1; }
   fi
   if [ "$(status)" = "running" ] || [ "$(status)" = "queued" ]; then
-    curl -s -X POST "$API/api/runs/$run/pause" -H "Authorization: Bearer $token" >/dev/null
+    # PAUSE_AT=boundary waits for the running stage to end, up to PAUSE_CEILING seconds (HR2.R.2; ship-live sets it).
+    curl -s -X POST "$API/api/runs/$run/pause${PAUSE_AT:+?at=$PAUSE_AT&ceiling=${PAUSE_CEILING:-600}}" -H "Authorization: Bearer $token" >/dev/null
     waited=0
-    while [ "$(status)" != "paused" ] && [ "$waited" -lt 600 ]; do sleep 5; waited=$((waited + 5)); done
+    most=$(( ${PAUSE_AT:+${PAUSE_CEILING:-600} + }600 ))
+    while [ "$(status)" != "paused" ] && [ "$waited" -lt "$most" ]; do sleep 5; waited=$((waited + 5)); done
     echo "paused $run after ${waited}s ($(jst +%H:%M) JST): $(status)"
   fi
   [ "$stage" = "--pause-only" ] && exit 0

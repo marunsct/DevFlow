@@ -51,7 +51,7 @@ Superseded by HR2 (do not build as first written): SF.2b (parked on evidence), S
 works), Q3 (deprioritised), Q4's stub leg (dropped), F6 (wrong shape -> fix.4), WB.5 (not supported by the data),
 E4 (-> PR.9 generated edge sets).
 
-HR2 progress: bundle 1 - R.1, R.4 (LF.690; 45 ledger rows recomputed, 2,145 paused minutes taken out), O.1, E.5 (LF.691), C.3, C.4a, OB.1, R.5 (LF.692, deploys at the next boundary), fix.7 (LF.693), E.3, Q.10 (LF.694), Q.1 (LF.696), Q.6a (LF.697; mutation median 0.667 -> 0.583 honest) fix.1 (LF.698) built 11-08 01:3x, Q.4 (LF.699, 11-08 09:5x), Q.9 (LF.700, 10:0x), G.1 (LF.701), P.5 (LF.702), P.8 (LF.703), SS.4 (LF.704; M6's KPI now in `effects`), Q.11 (LF.705, `loop.sh blind-spots`), G.3 (LF.706, `loop.sh gap-precision`), PR.10 (LF.707, `handoff_score`). Bundle 1 done 11-08 11:0x; next bundle 1b (E.1 first).
+HR2 progress: bundle 1 - R.1, R.4 (LF.690; 45 ledger rows recomputed, 2,145 paused minutes taken out), O.1, E.5 (LF.691), C.3, C.4a, OB.1, R.5 (LF.692, deploys at the next boundary), fix.7 (LF.693), E.3, Q.10 (LF.694), Q.1 (LF.696), Q.6a (LF.697; mutation median 0.667 -> 0.583 honest) fix.1 (LF.698) built 11-08 01:3x, Q.4 (LF.699, 11-08 09:5x), Q.9 (LF.700, 10:0x), G.1 (LF.701), P.5 (LF.702), P.8 (LF.703), SS.4 (LF.704; M6's KPI now in `effects`), Q.11 (LF.705, `loop.sh blind-spots`), G.3 (LF.706, `loop.sh gap-precision`), PR.10 (LF.707, `handoff_score`). Bundle 1 done 11-08 11:0x. Bundle 1b: E.1 (LF.708), R.3 (LF.709), R.2 (LF.710) built; left E.4, O.2, O.3.
 
 ## Harness review items behind a switch (first review's list; see HR2 above for the current order)
 

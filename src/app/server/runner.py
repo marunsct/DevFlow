@@ -1271,13 +1271,18 @@ class WorkflowRunner:
         await self.resume_run(run_id)
         return done
 
-    async def pause_run(self, run_id: str) -> None:
+    async def pause_run(self, run_id: str, *, at_boundary: bool = False, ceiling_seconds: float = 600.0) -> None:
         """Stop a running run at a stage boundary, keeping it to be resumed.
 
         The same two mechanisms as a cancel: the flag stops it cleanly at the
         next checkpoint, and the revoke stops a task mid-stage now - the stage
         it was in runs again on resume, as after a redeploy. Only the status
         recorded differs (`_finish_stopped`), and nothing is cleaned up.
+
+        `at_boundary` (harness review HR2.R.2): the flag alone, and the revoke only if the run is still running
+        `ceiling_seconds` later. A stage cut off mid-way starts again on resume - measured, 41 of 102 cancelled calls
+        in one day were in the architect's stage, whose parallel rewrites a cut loses - so a deploy waits for the
+        stage to end, up to the ceiling, and then stops it as before.
         """
         record = self.run_store.load(run_id)
         if record is None:
@@ -1287,13 +1292,10 @@ class WorkflowRunner:
             raise RunConflict(
                 f"Run {run_id} is {record.status}; only a running run can be paused."
             )
-        if record.task_id:
-            try:
-                from app.server.tasks import celery_app
-
-                celery_app.control.revoke(record.task_id, terminate=True, signal="SIGTERM")
-            except Exception:  # noqa: BLE001 - the flag still stops it at the next check
-                logger.warning("Could not revoke task %s for run %s", record.task_id, run_id, exc_info=True)
+        if record.task_id and at_boundary:
+            self._background(self._revoke_if_still_running(run_id, record.task_id, ceiling_seconds))
+        elif record.task_id:
+            self._revoke(run_id, record.task_id)
         await self.event_bus.publish(
             run_id,
             RunEvent(
@@ -1304,6 +1306,37 @@ class WorkflowRunner:
                 message="Run paused by user; resume it to continue from where it stopped.",
             ),
         )
+
+    def _revoke(self, run_id: str, task_id: str) -> None:
+        try:
+            from app.server.tasks import celery_app
+
+            celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+        except Exception:  # noqa: BLE001 - the flag still stops it at the next check
+            logger.warning("Could not revoke task %s for run %s", task_id, run_id, exc_info=True)
+
+    def _background(self, work: Any) -> None:
+        """Run `work` on this process's loop without awaiting it; the task is kept so it is not collected."""
+        task = asyncio.ensure_future(work)
+        pending = getattr(self, "_pending_revokes", None)
+        if pending is None:
+            pending = self._pending_revokes = set()
+        pending.add(task)
+        task.add_done_callback(pending.discard)
+
+    async def _revoke_if_still_running(self, run_id: str, task_id: str, ceiling_seconds: float) -> None:
+        """The ceiling of a boundary pause: the stage did not end in time, so it is stopped now, as a plain pause is."""
+        waited = 0.0
+        while waited < ceiling_seconds:
+            step = min(5.0, ceiling_seconds - waited)
+            await asyncio.sleep(step)
+            waited += step
+            record = self.run_store.load(run_id)
+            if record is None or record.status != "running":
+                return
+        logger.warning("Run %s did not reach a stage boundary within %.0fs of its pause; stopping its stage",
+                       run_id, ceiling_seconds)
+        self._revoke(run_id, task_id)
 
     async def submit_approval(self, run_id: str, decision: dict[str, Any]) -> None:
         # Defence in depth against a stale status row. An unattended run answers

@@ -56,3 +56,28 @@ def test_the_declared_data_folder_is_read_from_the_specification(tmp_path) -> No
 def test_the_release_does_it_on_the_way_out() -> None:
     source = inspect.getsource(delivery.release)
     assert source.index("remove_the_run_s_own_data") < source.index("deferred = suite.deferred(root)")
+
+
+def test_a_database_the_run_wrote_beside_the_code_does_not_ship(tmp_path) -> None:
+    """Measured (hidden 10/10): the product wrote `tasks.db` beside its code, not under its data folder, and it shipped."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "technical_specification.md").write_text("## File Plan\n- api/app/main.py: the service\n")
+    (tmp_path / "api" / "app").mkdir(parents=True)
+    (tmp_path / "api" / "app" / "main.py").write_text("x = 1\n")
+    (tmp_path / "api" / "tasks.db").write_text("")
+    assert release_audits.remove_the_run_s_own_data(tmp_path, "api", time.time() - 60) == ["api/tasks.db"]
+    assert (tmp_path / "api" / "app" / "main.py").exists()
+
+
+def test_a_database_the_file_plan_lists_stays(tmp_path) -> None:
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "technical_specification.md").write_text("## File Plan\n- api/seed.db: the records it ships with\n")
+    (tmp_path / "api").mkdir()
+    (tmp_path / "api" / "seed.db").write_text("")
+    assert release_audits.remove_the_run_s_own_data(tmp_path, "api", time.time() - 60) == []
+
+
+def test_the_release_clears_the_data_again_after_measuring_again() -> None:
+    source = inspect.getsource(delivery.release)
+    measured = source.index("_measured_again_if_it_changed(root)")
+    assert source.index("remove_the_run_s_own_data", measured) > measured

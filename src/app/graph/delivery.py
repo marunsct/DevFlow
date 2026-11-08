@@ -444,6 +444,14 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
 
     _clear_the_throwaways(root)
     gaps.extend(_measured_again_if_it_changed(root))
+    # The measure again starts the product, which may write its data again: cleared once more (HR2.PR.11).
+    try:
+        marker = Path(root) / PROJECT_MARKER
+        if marker.is_file():
+            release_audits.remove_the_run_s_own_data(root, marker.read_text(encoding="utf-8").strip(),
+                                                     marker.stat().st_mtime)
+    except OSError:
+        logger.debug("Could not clear the product's data after measuring again", exc_info=True)
     # Written before the gaps are stored: packaging that failed is a gap like
     # any other, not a line only the release decision carries (Initiative BK).
     release_outcome = release_files.write(root)

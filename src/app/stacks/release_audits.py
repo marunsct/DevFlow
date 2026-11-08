@@ -250,7 +250,38 @@ def remove_the_run_s_own_data(repo_root: str | Path, project: str, started: floa
             emptied.append(where.relative_to(root).as_posix())
         except OSError:
             logger.debug("Could not empty %s", where, exc_info=True)
+    emptied += _databases_the_run_wrote(root, base, started)
     return emptied
+
+
+#: A database file's suffixes; a product that ships one on purpose lists it in its specification's file plan.
+_DATABASES = (".db", ".sqlite", ".sqlite3")
+_NOT_THE_PRODUCT_S = {"node_modules", ".venv", "venv", "__pycache__", ".git"}
+
+
+def _databases_the_run_wrote(root: Path, base: Path, started: float) -> list[str]:
+    """Each database file anywhere in the project that this run wrote and the file plan does not list; removed.
+
+    Measured on a run (hidden 10/10): the product wrote `tasks.db` beside its code, not under its data folder - the
+    very fault its milestone review recorded as a risk - and it shipped. A database the specification plans stays.
+    """
+    from app.analysis.work_orders import _in_the_file_plan
+
+    removed: list[str] = []
+    for path in base.rglob("*"):
+        try:
+            if (not path.is_file() or path.suffix.lower() not in _DATABASES
+                    or set(path.relative_to(base).parts) & _NOT_THE_PRODUCT_S or path.stat().st_mtime < started):
+                continue
+            # Listed by name in the file plan: the product's own seed, kept. No file plan to read: kept too.
+            spec = root / "docs" / "technical_specification.md"
+            if not spec.is_file() or _in_the_file_plan(path.name, root):
+                continue
+            path.unlink()
+            removed.append(path.relative_to(root).as_posix())
+        except OSError:
+            logger.debug("Could not remove %s", path, exc_info=True)
+    return removed
 
 
 

@@ -17,7 +17,7 @@ import logging
 import re
 import shutil
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Sequence
 
 from app.acceptance import junit
@@ -233,6 +233,73 @@ def _modules_nothing_imports(root: Path, project: str, entrypoints: list[str], p
             "these modules where the product starts and remove what they repeat, or remove them."
         )
     return problems
+
+
+#: Source code only: a manifest, a page or a configuration file is loaded by the tools, not named by the code.
+_SOURCE_SUFFIXES = frozenset({".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".go", ".rs", ".rb", ".java", ".kt",
+                              ".php", ".cs", ".swift", ".dart", ".ex", ".exs"})
+#: Folders whose files never load a template: installed dependencies, caches, reports.
+_NOT_A_LOADER = ("node_modules", ".venv", "venv", "__pycache__", ".git", "dist", "build", "test-results", "coverage")
+
+
+def _the_ways_a_file_is_named(relative: str) -> list[str]:
+    """How another file would load `relative`: its path, its file name, its module path, a relative import."""
+    path = PurePosixPath(relative)
+    names = [relative, path.name]
+    if path.suffix == ".py":
+        module = ".".join(path.with_suffix("").parts)
+        names += [module, f"from .{path.stem} ", f"from . import {path.stem}", f"import {path.stem}"]
+        if path.stem == "__init__":
+            return []  # a package marker is loaded by its folder's name
+    else:
+        names += [f"./{path.stem}'", f'./{path.stem}"', f"./{path.name}"]
+    return names
+
+
+def remove_untouched_templates_nothing_loads(repo_root: str | Path) -> list[str]:
+    """Delete each pack source file still byte-equal to the pack's template that no other file names; the paths deleted.
+
+    Harness review HR2.PR.4: 16 products shipped the browser pack's unchanged `src/main.js` beside the `app.js` the page
+    loads, and one shipped a 150-line scaffold module nothing served. Only the harness's own file, unchanged, and only
+    when no other file of the project names it by path, file name or module; kept files (the start script and the
+    like) are never touched. Never raises.
+    """
+    try:
+        from app.analysis.file_kinds import classify_file
+        from app.stacks import contract
+
+        root = Path(repo_root)
+        found = contract.the_pack(root)
+        if not found:
+            return []
+        pack, record = found
+        project = str((record or {}).get("project") or "")
+        base = root / project if project else root
+        templates = pack.render(project, str((record or {}).get("title") or project))
+        others: dict[Path, str] = {}
+        for path in base.rglob("*"):
+            if path.is_file() and not (set(path.relative_to(base).parts) & set(_NOT_A_LOADER)) and path.stat().st_size < 400_000:
+                try:
+                    others[path] = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+        removed: list[str] = []
+        for relative, template in templates.items():
+            target = base / relative
+            if relative in getattr(pack, "kept_files", ()) or classify_file(relative) != "application" \
+                    or PurePosixPath(relative).suffix not in _SOURCE_SUFFIXES:
+                continue
+            if not target.is_file() or others.get(target) != template:
+                continue
+            names = _the_ways_a_file_is_named(relative)
+            if not names or any(name in text for path, text in others.items() if path != target for name in names):
+                continue
+            target.unlink()
+            removed.append(target.relative_to(root).as_posix())
+        return removed
+    except Exception:  # noqa: BLE001 - a template left behind is untidy, not wrong
+        logger.debug("Could not look for untouched templates", exc_info=True)
+        return []
 
 
 def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:

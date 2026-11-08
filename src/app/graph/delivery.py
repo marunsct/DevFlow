@@ -351,6 +351,12 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.tools.repository import PROJECT_MARKER, clear_the_code_of_command_lines
 
     clear_the_code_of_command_lines(root)
+    # The pack's own template, unchanged and loaded by nothing, does not ship beside the product (HR2.PR.4).
+    from app.stacks.scaffold import remove_untouched_templates_nothing_loads
+
+    left_out = remove_untouched_templates_nothing_loads(root)
+    if left_out:
+        logger.info("Left out of the release the pack's untouched templates nothing loads: %s", ", ".join(left_out))
     # The data the run's own tests wrote does not ship (HR2.PR.11): a declared data folder git ignores, every file in
     # it newer than the run's start (the project marker is written as the run begins).
     try:

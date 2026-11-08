@@ -144,7 +144,8 @@ def test_fast_delivery_keeps_the_specification_and_reviews_on_the_frontier_and_m
 
 
 def test_fast_delivery_sends_the_specification_and_the_suite_back_once():
-    assert "limit = 2 if _fast_delivery() else MAX_ARCHITECTURE_REVISIONS" in inspect.getsource(workflow)
+    assert "limit = _the_revision_limit()" in inspect.getsource(workflow)
+    assert "return 2 if _fast_delivery() else MAX_ARCHITECTURE_REVISIONS" in inspect.getsource(workflow._the_revision_limit)
     assert "limit = 2 if delivery.fast() else MAX_ACCEPTANCE_ROUNDS" in inspect.getsource(acceptance_nodes)
 
 

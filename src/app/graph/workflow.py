@@ -9437,12 +9437,17 @@ def build_workflow_graph(
         from app.tools.research import researched
 
         def parts_context() -> str:
-            return "\n\n".join(
-                f"--- {title} ---\n{_as_text(state.get(key))[:20_000]}"
-                for title, key in (("Product intake", "product_intake"), ("Stack", "stack_selection"),
-                                   ("Specialists' advice", "specialist_advice"))
-                if state.get(key)
-            ) + _the_scaffold_s_layout(state)  # These calls write the sections that name the runner, the start and the files.
+            # The advice numbered with its ids and the rule for answering it, as the architect's own request has it
+            # (HR2.D.1): as raw JSON it carried no ids, and 224 rounds over 120 runs were spent asking for them.
+            from app.agents.specialist_advice import advice_block
+
+            advice = advice_block(state.get("specialist_advice")) if state.get("specialist_advice") else ""
+            return "\n\n".join([
+                *(f"--- {title} ---\n{_as_text(state.get(key))[:20_000]}"
+                  for title, key in (("Product intake", "product_intake"), ("Stack", "stack_selection"))
+                  if state.get(key)),
+                *([advice[:20_000]] if advice else []),
+            ]) + _the_scaffold_s_layout(state)  # These calls write the sections that name the runner, the start and the files.
 
         update = None
         # Fast delivery revises in place: only the sections the review's

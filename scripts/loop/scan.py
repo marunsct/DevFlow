@@ -214,6 +214,55 @@ def provenance_line(wrote: dict[str, int], defects: dict[str, int]) -> str:
     return f"PRODUCT WRITTEN BY (writes/calls): {built}. DEFECTS RAISED {sum(defects.values())}: {raised}"
 
 
+#: How a read answered from the project memory begins its reply (`app.agents.project_memory.HELD_POINTER`).
+POINTER = "is in the project memory at the start of this conversation"
+
+
+def cap_and_pointer_lines(path: str) -> list[str]:
+    """Replies cut off at the output cap per stage with the minutes they took, and reads answered with a pointer (HR2.P.8).
+
+    `effects` counted only replies lost to the cap, so 5 capped-and-salvaged planning replies costing 14 minutes
+    read as 0. A capped reply is a model response that finished on `length`, salvaged or not; its minutes run from
+    the stage's request before it.
+    """
+    capped: dict[str, list[float]] = collections.defaultdict(list)
+    salvaged: collections.Counter = collections.Counter()
+    pointers: collections.Counter = collections.Counter()
+    asked: dict[str, datetime] = {}
+    try:
+        handle = open(path, errors="replace")
+    except OSError:
+        return []
+    with handle:
+        for line in handle:
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            kind, stage = record.get("kind"), str(record.get("stage") or "")
+            if kind == "model_request":
+                when = _when(record.get("at", ""))
+                if when:
+                    asked[stage] = when
+            elif kind == "model_response" and record.get("finish_reason") == "length":
+                start, end = asked.get(stage), _when(record.get("at", ""))
+                capped[stage].append((end - start).total_seconds() / 60 if start and end else 0.0)
+                if record.get("salvaged"):
+                    salvaged[stage] += 1
+            elif kind == "tool_result" and POINTER in str(record.get("content") or "")[:400]:
+                pointers[stage] += 1
+    out = []
+    if capped:
+        total = sum(sum(m) for m in capped.values())
+        out.append(f"capped replies: {sum(len(m) for m in capped.values())} ({total:.0f} min): " + "; ".join(
+            f"{stage} {len(m)} ({sum(m):.0f} min, {salvaged[stage]} salvaged)"
+            for stage, m in sorted(capped.items(), key=lambda item: -sum(item[1]))[:6]))
+    if pointers:
+        out.append(f"reads answered with a pointer: {sum(pointers.values())}: " + "; ".join(
+            f"{stage} {n}" for stage, n in pointers.most_common(6)))
+    return out
+
+
 def main(argv: list[str]) -> int:
     root = os.environ.get("DATA_DIR") or "/app/data"
     paths = sorted(glob.glob(os.path.join(root, "transcripts", "run-*.jsonl")), key=os.path.getmtime)
@@ -228,6 +277,7 @@ def main(argv: list[str]) -> int:
         lines.append(suggestion)
     if mine:
         lines.append(provenance_line(*provenance(mine)))
+        lines.extend(cap_and_pointer_lines(mine))
     print("\n".join(lines) if lines else "nothing is far out against the recent runs")
     return 0
 

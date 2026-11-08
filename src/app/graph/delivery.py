@@ -348,9 +348,20 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     if not handed_off:
         release_docs.complete_the_handoff(root)
         undocumented = [*undocumented, *release_docs.what_the_handoff_lacks(root), *release_audits.secrets_found(root)]
-    from app.tools.repository import clear_the_code_of_command_lines
+    from app.tools.repository import PROJECT_MARKER, clear_the_code_of_command_lines
 
     clear_the_code_of_command_lines(root)
+    # The data the run's own tests wrote does not ship (HR2.PR.11): a declared data folder git ignores, every file in
+    # it newer than the run's start (the project marker is written as the run begins).
+    try:
+        marker = Path(root) / PROJECT_MARKER
+        if marker.is_file():
+            emptied = release_audits.remove_the_run_s_own_data(
+                root, marker.read_text(encoding="utf-8").strip(), marker.stat().st_mtime)
+            if emptied:
+                logger.info("Left out of the release the data the run's own tests wrote: %s", ", ".join(emptied))
+    except OSError:
+        logger.debug("Could not check the product's data folders", exc_info=True)
     deferred = suite.deferred(root)
     # What this release knows it did not prove, so no record of the run can
     # read as a plain success: the gaps ride the run record

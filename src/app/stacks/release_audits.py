@@ -203,5 +203,56 @@ def licence_gaps(repo_root: str | Path) -> list[str]:
         return []
 
 
-__all__ = ["AUDIT_COMMANDS", "LISTING", "ON_BY_DEFAULT", "SECRET_SHAPES", "audit_command", "enabled",
+def _ignored(project: Path, root: Path, folder: str) -> bool:
+    """Whether a `.gitignore` of the project or the workspace names the folder."""
+    names = {folder.strip("/"), f"{folder.strip('/')}/", f"/{folder.strip('/')}", f"/{folder.strip('/')}/"}
+    for ignore in (project / ".gitignore", root / ".gitignore"):
+        try:
+            if names & {line.strip() for line in ignore.read_text(encoding="utf-8", errors="replace").splitlines()}:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def data_folders(repo_root: str | Path, project: str) -> list[str]:
+    """The data folders the product declares by default: a `*_DIR` variable's relative default, else `data`."""
+    from app.stacks.release_docs import _the_configuration
+
+    found = [default.strip().strip("`'\"").rstrip("/") for name, default, _ in _the_configuration(Path(repo_root))
+             if name.upper().endswith("DIR") and default.strip() and not default.strip().startswith(("/", "~", "$"))]
+    return [f for f in dict.fromkeys([*found, "data"]) if f and ".." not in f]
+
+
+def remove_the_run_s_own_data(repo_root: str | Path, project: str, started: float) -> list[str]:
+    """Empty each declared data folder whose every file this run wrote and that git ignores; the folders emptied.
+
+    Harness review HR2.PR.11: 20 products shipped `data/` (7 with a database) - one with twelve notes its suite wrote
+    - because `DATA_DIR` defaults to a folder the run's own tests filled. Only a folder git ignores, and only when every
+    file in it is newer than the run's start: seed data the product meant to ship, or anything older, keeps it all.
+    Never raises.
+    """
+    import shutil
+
+    root = Path(repo_root)
+    base = root / project if project else root
+    emptied: list[str] = []
+    for folder in data_folders(root, project):
+        where = base / folder
+        try:
+            if not where.is_dir() or not _ignored(base, root, folder):
+                continue
+            files = [p for p in where.rglob("*") if p.is_file()]
+            if not files or any(p.stat().st_mtime < started for p in files):
+                continue
+            for entry in where.iterdir():
+                shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
+            emptied.append(where.relative_to(root).as_posix())
+        except OSError:
+            logger.debug("Could not empty %s", where, exc_info=True)
+    return emptied
+
+
+
+__all__ = ["data_folders", "remove_the_run_s_own_data", "AUDIT_COMMANDS", "LISTING", "ON_BY_DEFAULT", "SECRET_SHAPES", "audit_command", "enabled",
            "licence_gaps", "licences", "secrets_found"]

@@ -133,18 +133,11 @@ def get_db_connection():
     global _db_pool
     if _db_pool is None or _db_pool_owner != os.getpid():
         init_db_pool()
-    conn = _db_pool.getconn()
-    try:
+    # A dead connection is replaced, and one that breaks is not kept (HR2.RT.1).
+    from app.server.db_pool import borrowed
+
+    with borrowed(_db_pool) as conn:
         yield conn
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        _db_pool.putconn(conn)
 
 
 def close_db_pool():

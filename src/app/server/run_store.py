@@ -232,18 +232,11 @@ class RunStore:
 
     @contextmanager
     def get_connection(self):
-        conn = self._pool.getconn()
-        try:
+        # A dead connection is replaced, and one that breaks is not kept (HR2.RT.1).
+        from app.server.db_pool import borrowed
+
+        with borrowed(self._pool) as conn:
             yield conn
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            self._pool.putconn(conn)
 
     # ------------------------------------------------------------------
     # Writes

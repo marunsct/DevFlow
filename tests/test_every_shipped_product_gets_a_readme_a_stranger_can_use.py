@@ -102,3 +102,36 @@ def test_without_a_configuration_section_the_start_script_s_variables_are_listed
     text = (project / "app" / "README.md").read_text()
     for row in ("| `PORT` | 8000 |", "| `DATA_DIR` | data |", "| `HOST` | 127.0.0.1 |"):
         assert row in text, text
+
+
+def test_a_command_line_tool_s_readme_says_how_it_is_used_and_needs_no_second_terminal(tmp_path) -> None:
+    """Measured on the first release with LF.715: a command-line tool's README said how to install and test it,
+    never how to use it, and told the reader its tests needed it running in another terminal."""
+    (tmp_path / ".project-directory").write_text("cli")
+    (tmp_path / "cli" / "acceptance").mkdir(parents=True)
+    (tmp_path / "cli" / "acceptance" / "run.json").write_text(
+        json.dumps({"command": THE_SUITE.split(), "report": "report.xml"}))
+    interface_contract.record_at_lock(tmp_path, ["AC-1 command python -m wordstats <file> -> exit 0",
+                                                 "AC-5 command python -m wordstats missing.txt -> exit 2"])
+    with mock.patch.dict(os.environ, ON):
+        release_docs.complete_the_handoff(tmp_path)
+    text = (tmp_path / "cli" / "README.md").read_text()
+    assert "## Using it" in text and "python -m wordstats <file>" in text and "python -m wordstats missing.txt" in text
+    assert "another terminal" not in text
+    assert not BANNED.search(text)
+
+
+def test_the_handoff_score_does_not_ask_a_product_with_no_settings_to_name_them(tmp_path) -> None:
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "bench" / "score.py"
+    spec = importlib.util.spec_from_file_location("bench_score_cli", path)
+    score = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(score)
+    product = tmp_path / "cli"
+    product.mkdir()
+    (product / "README.md").write_text("# Tool\n\n## Using it\n\n```sh\npython -m tool <file>\n```\n\nRun the tests with pytest.\n")
+    found = score.handoff(product)
+    assert found["handoff"]["readme_names_its_configuration"] is None
+    assert found["handoff"]["readme_says_how_to_start"] is True

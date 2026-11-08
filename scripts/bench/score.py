@@ -133,6 +133,19 @@ def _files_of(product: Path):
             yield path
 
 
+def _it_has_configuration(product: Path) -> bool:
+    """Whether the product reads any setting: its start script reads a variable, or the specification lists one."""
+    start = product / "start.sh"
+    if start.is_file() and re.search(r"\$\{?[A-Z][A-Z0-9_]*", start.read_text(encoding="utf-8", errors="replace")):
+        return True
+    spec = product.parent / "docs" / "technical_specification.md"
+    if spec.is_file():
+        section = re.search(r"^## Configuration\s*$(.*?)(?=^## |\Z)", spec.read_text(encoding="utf-8", errors="replace"),
+                            re.MULTILINE | re.DOTALL)
+        return bool(section and re.search(r"variable:", section.group(1), re.I))
+    return False
+
+
 def handoff(product: Path) -> dict:
     """Whether a stranger could take the product over, read from its files alone (harness review HR2.PR.10).
 
@@ -147,9 +160,9 @@ def handoff(product: Path) -> dict:
     files = list(_files_of(product))
     checks = {
         "readme": readme is not None,
-        "readme_says_how_to_start": ("```" in text or "    " in text) and bool(re.search(r"\b(start|run)\b", text)) if readme else False,
+        "readme_says_how_to_start": ("```" in text or "    " in text) and bool(re.search(r"\b(start|run|using it|usage|use)\b", text)) if readme else False,
         "readme_says_how_to_test": bool(re.search(r"\btests?\b", text)) if readme else False,
-        "readme_names_its_configuration": bool(
+        "readme_names_its_configuration": None if not _it_has_configuration(product) else bool(
             re.search(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|\bPORT\b", readme.read_text(encoding="utf-8", errors="replace"))
             or re.search(r"\bport\b|environment variable|configuration", text)) if readme else False,
         "start_reads_its_port": ("PORT" in start.read_text(encoding="utf-8", errors="replace")) if start.is_file() else None,

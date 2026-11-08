@@ -394,6 +394,7 @@ lessons) shift; in_worker lessons.py "${@:-list}" ;;
 ship-live) "$HERE/ship_live.sh" ;;
 impact) shift; "$PY" "$HERE/impact.py" data/kpi/ledger.csv "${1:-12}" ;;
 suite-checks) shift; docker exec -i "$WORKER_C" python3 - /app/data/workspaces/default < "$HERE/suite_check_settling.py" ;;
+disputes) shift; docker exec -i "$WORKER_C" python3 - /app/data/workspaces/default < "$HERE/disputes.py" | "$PY" "$HERE/disputes.py" --join "$ROOT/data/kpi/ledger.csv" ;;
 stack-misses) shift; docker cp "$HERE/stack_misses.py" "$WORKER_C:/tmp/stack_misses.py" >/dev/null && docker exec -w /app "$WORKER_C" python3 /tmp/stack_misses.py ;;
 timing) shift; in_worker run_timing.py "${@:-$(current)}" ;;
 kpi)

@@ -12009,7 +12009,12 @@ def build_workflow_graph(
             _the_specification(state.get("technical_specification"), root),
             *(criterion for _, criterion, _ in failing),
         ))
-        named = tests_it_names(update.pop("__suite_dispute__"), [name for name, _, _ in failing], standard=standard)
+        refused: list[tuple[str, str]] = []
+        named = tests_it_names(
+            update.pop("__suite_dispute__"), [name for name, _, _ in failing], standard=standard, refused=refused,
+        )
+        called_wrong = list(named)
+        passed_alone: list[str] = []
         # The executable leg before a reclassification (Initiative J.2): each
         # named test is run alone against the delivered surface in the
         # project's own runner. One that passes alone is not unpassable - the
@@ -12043,13 +12048,34 @@ def build_workflow_graph(
         ]
         to_repair = [*named, *missing]
         update.pop("stage", None)
+
+        def _the_outcome(reopened: bool) -> None:
+            # One decision per dispute with every way it ended (harness review HR2.Q.4): until now each was a warning.
+            from app.decisions import record_decision
+            from app.graph import dispute_outcomes
+
+            record = dispute_outcomes.outcome(
+                shown=[name for name, _, _ in failing], called_wrong=called_wrong, refused=refused,
+                passed_alone=passed_alone, service_stopped=service_stopped, past_the_cap=past_the_cap,
+                missing=missing, reopened=reopened,
+            )
+            dispute_outcomes.write(root, record, sprint=_this_attempt(state))
+            record_decision(
+                state, update, point="acceptance_dispute",
+                question="Can the locked tests the attempt still fails pass for a product that meets its criteria?",
+                decision=dispute_outcomes.summary(record),
+                rationale=json.dumps(record)[:4000],
+            )
+
         if to_repair:
             logger.warning("The QA lead / harness identifies %d locked test(s)/missing criteria cannot pass; reopening the suite", len(to_repair))
             reopened = reopen_the_suite_for(
                 state, to_repair, return_to=returns_to or SPRINT_REPLAN, reclassifying=True, model=judgement_model,
             )
             if reopened is not None:
+                _the_outcome(True)
                 return _handing_on(**{**update, **reopened, "disputed_sprints": disputed, "dispute_returns_to": None, "dispute_reason": None})
+        _the_outcome(False)
         return _handing_on(**update, stage=carry_on, disputed_sprints=disputed, dispute_returns_to=None, dispute_reason=None)
 
     def _advice_reviews_due(state: Any) -> list[str]:

@@ -85,7 +85,7 @@ def test_the_node_gives_the_standard_to_the_reading_of_the_dispute():
 
     node = inspect.getsource(workflow)
     node = node[node.index("def acceptance_dispute_node"):]
-    assert "tests_it_names(update.pop(\"__suite_dispute__\"), [name for name, _, _ in failing], standard=" in node
+    assert 'update.pop("__suite_dispute__"), [name for name, _, _ in failing], standard=standard' in node
 
 
 STANDARD = (

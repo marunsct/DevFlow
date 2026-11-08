@@ -106,6 +106,10 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
 - NEVER remove or disable product logic to satisfy a test tool. Fix the test
   environment or substitute the boundary instead, and make sure no working
   feature was dropped.
+- THE PRODUCT SHIPS EVERY ROUTE AND COMMAND IT HAS. Never add one that exists
+  only so tests can reset, seed or inspect its data: everyone who can reach the
+  product can call it. Keep tests apart with their own data - a unique name or
+  account for each test - or with setup the test itself does.
 """
 
 __all__ = ["TESTABILITY_RULE"]

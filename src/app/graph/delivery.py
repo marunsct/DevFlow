@@ -443,6 +443,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.graph.workflow import _clear_the_throwaways
 
     _clear_the_throwaways(root)
+    gaps.extend(_measured_again_if_it_changed(root))
     # Written before the gaps are stored: packaging that failed is a gap like
     # any other, not a line only the release decision carries (Initiative BK).
     release_outcome = release_files.write(root)
@@ -612,6 +613,40 @@ _CODE_REVIEWS = ("code_review", "milestone_review", "security_review")
 
 #: Source files a development-server check reads, by suffix: the languages `seed.DEVELOPMENT_SERVERS` covers.
 _SERVER_SOURCES = {".py": "python", ".php": "php", ".rb": "ruby", ".js": "javascript", ".mjs": "javascript", ".sh": ""}
+
+
+#: How a release gap opens when the product changed at release and the suite, run again, did not pass.
+CHANGED_AT_RELEASE = "The product changed at release, after the suite last measured it, and the suite run again"
+
+
+def _measured_again_if_it_changed(root: Any) -> list[str]:
+    """The suite run again when the release's own clean-ups changed the product after its last run; a gap if it fails.
+
+    Harness review HR2.G.9: the command lines, throwaways, untouched templates and the run's own data are cleared
+    after the release's suite run, so what shipped was never measured as it shipped (one product shipped 0 of 9 on a
+    measurement taken before such a change). Only when the suite recorded what it measured and that has changed;
+    the run is fresh, never the reused one. Never raises.
+    """
+    try:
+        from app.acceptance import suite
+        from app.acceptance.unstable import unchanged_since_the_suite_measured
+
+        if not suite.is_locked(root) or not (suite.last_result(root) or {}).get("fingerprint"):
+            return []
+        if unchanged_since_the_suite_measured(root):
+            return []
+        logger.info("The release's clean-ups changed the product after the suite measured it; running the suite again")
+        again = suite.run(root)
+        failed = [str(t.name) for t in getattr(getattr(again, "report", None), "tests", None) or []
+                  if getattr(t, "outcome", "") == "failed"]
+        if not getattr(again, "ran", False):
+            return [f"{CHANGED_AT_RELEASE} could not run: {str(getattr(again, 'problem', '') or 'no report')[:400]}"]
+        if failed:
+            return [f"{CHANGED_AT_RELEASE} failed {len(failed)} test(s): " + ", ".join(failed[:5])]
+        return []
+    except Exception:  # noqa: BLE001 - the release stands on the measurement it has
+        logger.debug("Could not measure the product again at release", exc_info=True)
+        return []
 
 
 def _a_development_server(root: Any) -> list[str]:

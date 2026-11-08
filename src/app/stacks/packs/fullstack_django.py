@@ -197,7 +197,7 @@ PACKAGE_JSON = """{
 }
 """ % {"playwright": js.PLAYWRIGHT, "axe": js.AXE_CORE}
 
-START = ".venv/bin/python manage.py migrate --noinput && exec .venv/bin/python manage.py runserver 127.0.0.1:$PORT --noreload"
+START = ".venv/bin/python manage.py migrate --noinput && exec .venv/bin/python manage.py runserver \"${HOST:-127.0.0.1}:$PORT\" --noreload"
 
 SMOKE_UNIT = '''def test_the_home_page_renders(client):
     assert client.get("/").status_code == 200

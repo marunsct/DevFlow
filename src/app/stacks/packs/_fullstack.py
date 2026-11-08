@@ -521,7 +521,7 @@ FASTAPI = Service(
         "{{package}}/main.py": FASTAPI_MAIN,
         "scripts/unit-tests.mjs": UNIT_TESTS % {"python": "'.venv/bin/python'"},
     },
-    start_argv="['.venv/bin/python', '-m', 'uvicorn', '{{package}}.main:app', '--host', '127.0.0.1', '--port', process.env.PORT]",
+    start_argv="['.venv/bin/python', '-m', 'uvicorn', '{{package}}.main:app', '--host', process.env.HOST || '127.0.0.1', '--port', process.env.PORT]",
     install=(
         *js.INSTALL,
         *_python.INSTALL,
@@ -668,7 +668,7 @@ def _json(entries: dict[str, str]) -> str:
 
 #: A full-stack product's start script: the suite's server, so the two cannot drift.
 START_SH = """#!/bin/sh
-# Kept by the harness: starts the product - builds the page, then the service on 127.0.0.1 at PORT, data under DATA_DIR.
+# Kept by the harness: starts the product - builds the page, then the service on HOST (127.0.0.1 unless set) at PORT, data under DATA_DIR.
 cd "$(dirname "$0")" || exit 1
 export PORT="${PORT:-8000}" DATA_DIR="${DATA_DIR:-data}"
 mkdir -p "$DATA_DIR"

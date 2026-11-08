@@ -176,7 +176,7 @@ Run them with `vendor/bin/phpunit`. Add a package with `composer require
 
 START = (
     "mkdir -p $DATA_DIR && export DB_DATABASE=$DATA_DIR/database.sqlite && touch $DB_DATABASE "
-    "&& php artisan migrate --force && exec php -S 127.0.0.1:$PORT -t public public/index.php"
+    "&& php artisan migrate --force && exec php -S \"${HOST:-127.0.0.1}:$PORT\" -t public public/index.php"
 )
 
 DOCKERFILE = """# {{title}}: build with `docker build -t {{project}} .`, run with

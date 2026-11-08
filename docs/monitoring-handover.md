@@ -664,6 +664,7 @@ working (the tool-approval check can fail transiently), schedule a retry about
 
 ### 0.5 Things that bite
 
+- `ship-live` builds the images first (`loop.sh build`, LF.709) and pauses runs only after the build succeeds; a failed build or a Docker that does not answer touches no run.
 - `ship-live` waits while a run is in `principal_architect` (a pause there loses the revision's parallel rewrites);
   `SHIP_NOW=1` skips the wait for a fix the live run needs at once (LF.646).
 - Rewind to a stage's **original** entry time, never to a point an earlier rewind created. Measured 11-06/07 on L

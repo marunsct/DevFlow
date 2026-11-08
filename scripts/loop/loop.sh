@@ -92,6 +92,8 @@ DB=(docker exec "$DB_C" psql -U postgres -d langchain -tAc)
 current() { cat "$STATE/current_run.txt" 2>/dev/null || { echo "no current run: use 'start'" >&2; exit 1; }; }
 in_worker() { local script=$1; shift; docker compose exec -T worker python - "$@" < "$HERE/$script"; }
 jst() { TZ=Asia/Tokyo date "$@"; }
+# The commit both service images were built from (their HARNESS_COMMIT), or "" when they differ or are missing.
+built_from() { local w a; w=$(docker image inspect langchain-worker --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^HARNESS_COMMIT=//p'); a=$(docker image inspect langchain-app --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^HARNESS_COMMIT=//p'); [ -n "$w" ] && [ "$w" = "$a" ] && echo "$w" || true; }
 
 # One group, parsed whole before it runs, that exits inside itself: bash reads a script as it
 # goes, so an edit to this file while a long command runs - a deploy, the suite - would otherwise be
@@ -507,17 +509,15 @@ deploy)
   flock -n 9 || { echo "another deploy is running (lock $STATE/deploy.lock); not starting a second" >&2; exit 1; }
   echo "live runs before deploy (they will be resumed by orphan recovery):"
   "${DB[@]}" "select run_id, status from runs where status in ('running','queued','pending')"
-  # Built from a clean checkout of HEAD, never the working tree: another
-  # session's uncommitted, unverified edits sat in the same tree, and a build
-  # of it shipped them into the live run.
-  head_tree=$(mktemp -d)/head
   # A named commit, else HEAD: a Measure pair runs on exactly its Fix batch while
   # later work goes on above it (plan MF.4).
   built=$(git -C "$ROOT" rev-parse "${2:-HEAD}^{commit}")
-  git -C "$ROOT" worktree add -q --detach "$head_tree" "$built"
-  docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
-    build --progress=plain --build-arg HARNESS_COMMIT="$built" app worker >/dev/null 2>&1
-  git -C "$ROOT" worktree remove --force "$head_tree"
+  # Built already (`loop.sh build`, which `ship-live` runs before it pauses anything - HR2.R.3), or built here.
+  if [ "$(built_from)" = "$built" ]; then
+    echo "images already built from ${built:0:7}"
+  else
+    "$0" build "$built" || { echo "the build failed; nothing was deployed" >&2; exit 1; }
+  fi
   # At a stage boundary: a resume restarts the running stage's conversation,
   # and one fix stage was restarted five times in an hour by deploys landing
   # mid-stage. Wait (up to BOUNDARY_WAIT seconds, default 1800; 0 skips) for
@@ -577,6 +577,28 @@ deploy)
   "${DB[@]}" "select run_id, status from runs where status in ('running','queued','pending')"
   ;;
 
+build)
+  # The images, built from a clean checkout of one commit (HEAD by default), with no run touched (harness review
+  # HR2.R.3): `ship-live` builds first and pauses only after, so a build's minutes and a build that fails (Docker
+  # Desktop hung on a create, 11-07) cost no run anything. Prints its seconds; exits 1 on a failed build.
+  exec 8>"$STATE/build.lock"
+  flock -n 8 || { echo "another build is running (lock $STATE/build.lock)" >&2; exit 1; }
+  timeout 20 docker info >/dev/null 2>&1 || { echo "Docker does not answer (docker info, 20 s); nothing was built" >&2; exit 1; }
+  built=$(git -C "$ROOT" rev-parse "${2:-HEAD}^{commit}")
+  # Built from a clean checkout, never the working tree: another session's uncommitted, unverified edits sat in the
+  # same tree, and a build of it shipped them into the live run.
+  head_tree=$(mktemp -d)/head
+  git -C "$ROOT" worktree add -q --detach "$head_tree" "$built"
+  started=$(date +%s)
+  ok=1
+  docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
+    build --progress=plain --build-arg HARNESS_COMMIT="$built" app worker > "$STATE/build.log" 2>&1 || ok=0
+  git -C "$ROOT" worktree remove --force "$head_tree"
+  if [ "$ok" = 0 ] || [ "$(built_from)" != "$built" ]; then
+    echo "build of ${built:0:7} FAILED after $(( $(date +%s) - started ))s; see $STATE/build.log" >&2; exit 1
+  fi
+  echo "built ${built:0:7} in $(( $(date +%s) - started ))s"
+  ;;
 freshness) "$PY" "$HERE/pack_freshness.py" ;;
 lessons) shift; in_worker lessons.py "${@:-3}" ;;
 backup)

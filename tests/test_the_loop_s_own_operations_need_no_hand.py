@@ -59,4 +59,7 @@ def test_a_deploy_can_build_a_named_commit_for_a_measure_pair():
     body = script[script.index("\ndeploy)\n"):script.index("\ndeploy-app)") if script.index("\ndeploy-app)") > script.index("\ndeploy)\n") else None]
 
     assert 'built=$(git -C "$ROOT" rev-parse "${2:-HEAD}^{commit}")' in body
-    assert 'worktree add -q --detach "$head_tree" "$built"' in body
+    # The named commit is built by `loop.sh build` (HR2.R.3), from its own clean checkout.
+    assert '"$0" build "$built"' in body
+    build = script[script.index("\nbuild)\n"):script.index("\nfreshness)")]
+    assert 'worktree add -q --detach "$head_tree" "$built"' in build

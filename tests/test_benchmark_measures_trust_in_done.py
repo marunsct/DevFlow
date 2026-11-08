@@ -148,9 +148,12 @@ def test_a_deploy_builds_what_was_committed_not_the_working_tree() -> None:
     """Concurrent sessions share one tree; a build of it ships their unverified edits."""
     loop = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()
     deploy = loop[loop.index("\ndeploy)"):loop.index("\n  ;;", loop.index("\ndeploy)"))]
-    assert 'worktree add -q --detach "$head_tree" "$built"' in deploy
-    assert '-f "$head_tree/docker-compose.yml"' in deploy
-    assert "docker compose build" not in deploy
+    # The images are built by `loop.sh build` (HR2.R.3), which the deploy calls for the commit it deploys.
+    build = loop[loop.index("\nbuild)"):loop.index("\n  ;;", loop.index("\nbuild)"))]
+    assert '"$0" build "$built"' in deploy
+    assert 'worktree add -q --detach "$head_tree" "$built"' in build
+    assert '-f "$head_tree/docker-compose.yml"' in build
+    assert "docker compose build" not in deploy and "docker compose build" not in build
     assert 'git -C "$ROOT" show "$built:src/app/$f"' in deploy
 
 

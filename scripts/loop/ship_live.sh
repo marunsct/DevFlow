@@ -4,6 +4,7 @@
 # Measured on 2026-11-05/06: three operator slips in one night - a deploy sent with the pause skipped (the login was
 # not loaded, so both runs sat orphaned ~18 min), a doubled `pool_grow`, and a routine `pool_grow` that made Celery
 # fork and kill a pool process every 4 s. This does the steps in order and checks each:
+#   0. the images are built (`loop.sh build`), or nothing is touched;
 #   1. the operator login is loaded, or nothing is touched; no run is in the architect's stage (SHIP_NOW=1 skips);
 #   2. every running run is paused (and the deploy refused if one did not pause);
 #   3. `loop.sh deploy` with BOUNDARY_WAIT=0;
@@ -19,6 +20,12 @@ eval "$(sed -n 65p docs/HANDOVER.md)"
 export LOOP_USER LOOP_PASSWORD
 if [ -z "${LOOP_USER:-}" ] || [ -z "${LOOP_PASSWORD:-}" ]; then
   echo "ship-live: the operator login is not loaded; nothing was touched" >&2; exit 1
+fi
+
+# Built before any run is paused (harness review HR2.R.3): the build's minutes were spent inside the pause, and a
+# build that fails or a Docker that hangs now stops here with no run touched.
+if ! "$L" build; then
+  echo "ship-live: the build failed; no run was paused" >&2; exit 1
 fi
 
 runs=$("$L" status 2>/dev/null | sed -n 's/^\(run-[0-9a-f-]\{36\}\)|running.*/\1/p' | sort -u)

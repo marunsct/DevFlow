@@ -43,6 +43,8 @@ class ScaffoldResult:
     project: str
     steps: list[dict[str, Any]] = field(default_factory=list)
     problem: str = ""
+    #: How far a custom setup's proof got: "", declaration, install, build, unit, acceptance, recorded (HR2.SS.4).
+    level: str = ""
 
 
 def entrypoint_is_still_the_stub(repo_root: str | Path) -> str | None:

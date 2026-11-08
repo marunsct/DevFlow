@@ -203,6 +203,25 @@ def write_runner_layer(project_root: Path, pack: StackPack, project: str, title:
     return framework
 
 
+def noted(result: Any, *, replayed: bool = False, set_aside: str = "") -> None:
+    """One `setup` transcript record for a proof: replayed or written, the level it reached, its problem (HR2.SS.4).
+
+    A replayed setup that failed left no decision, no transcript record and no log kept - three set-asides were
+    found only by the library's `failed/` folder. Never raises.
+    """
+    try:
+        from app.observability.log_context import _TASK_RUN, _from_the_graph
+        from app.observability.transcript import record
+
+        run, _ = _from_the_graph()
+        record(str(run or _TASK_RUN.get() or "") or None, "scaffold", "setup",
+               source="replayed" if replayed else "written", ok=bool(getattr(result, "ok", False)),
+               level=str(getattr(result, "level", "") or "none"), problem=str(getattr(result, "problem", "") or "")[:400],
+               set_aside=set_aside)
+    except Exception:  # noqa: BLE001 - a record must never cost the setup
+        logger.debug("Could not record the setup's proof", exc_info=True)
+
+
 def record_the_setup_s_scope(root: Path, project: str, layer_files: dict[str, str] | None) -> None:
     """The files a layered setup stage is asked for, kept for `SETUP_SCOPE_GUARD`; cleared when there is no layer."""
     from app.tools.repository import SETUP_SCOPE_FILE
@@ -873,6 +892,7 @@ def prove(
     if declared is None:
         result.problem = problem
         return result
+    result.level = "declaration"
     run = run or sandbox_runner(root)
 
     for argv in declared.install:
@@ -882,6 +902,7 @@ def prove(
         if code != 0:
             result.problem = f"`{' '.join(argv)}` failed in {project}/: {where_it_failed(result.steps[-1]['output'], 1200)}"
             return result
+    result.level = "install"
 
     # The build too: a smoke test can pass without compiling anything, and
     # the configuration the build reads is then kept unproven. One run's kept
@@ -894,6 +915,7 @@ def prove(
                 f"`{' '.join(declared.build)}` failed in {project}/: {where_it_failed(result.steps[-1]['output'], 1200)}"
             )
             return result
+        result.level = "build"
 
     for label, argv, report in (
         ("unit", declared.unit_test, declared.unit_report),
@@ -928,6 +950,7 @@ def prove(
                 f"{result.steps[-1]['output'][-1200:]}"
             )
             return result
+        result.level = label
 
     if not keep:
         result.ok = True
@@ -987,6 +1010,7 @@ def prove(
         result.problem = "The proven setup could not be recorded."
         return result
     contract.write(root, pack, project, title or project, extra={"setup": setup})
+    result.level = "recorded"
     try:
         from app.tools.version_control import commit_all
 
@@ -1313,5 +1337,5 @@ def leave_to_the_agents(project_root: Path) -> None:
 __all__ = [
     "ATTEMPTS", "DECLARATION_FILE", "PROVEN_SETUP", "already_set_up", "leave_to_the_agents",
     "build_setup_request", "enabled", "library_key", "pack_from", "problems_with", "prove", "read_declaration",
-    "remember", "replay", "canonical_key", "canonical_key_of", "set_aside_what_did_not_prove",
+    "noted", "remember", "replay", "canonical_key", "canonical_key_of", "set_aside_what_did_not_prove",
 ]

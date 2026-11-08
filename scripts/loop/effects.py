@@ -131,6 +131,31 @@ def draft_lines(records: list[dict]) -> list[str]:
             + (" (" + ", ".join(f"{n} {reason}" for reason, n in why.most_common(3)) + ")" if left else "")]
 
 
+def setup_lines(records: list[dict], scope: dict | None = None) -> list[str]:
+    """Each setup proof (replayed or written, level reached, set aside) and what a setup stage wrote beyond its files (HR2.SS.4)."""
+    out = []
+    for r in (r for r in records if r.get("kind") == "setup"):
+        out.append(f"setup {r.get('source')}: {'proven' if r.get('ok') in (True, 'True') else 'not proven'} "
+                   f"(reached {r.get('level') or 'none'})" + (f", set aside {r['set_aside']}" if r.get("set_aside") else "")
+                   + ("" if r.get("ok") in (True, "True") else f": {str(r.get('problem') or '')[:160]}"))
+    asked = set((scope or {}).get("files") or [])
+    project = str((scope or {}).get("project") or "")
+    if asked:
+        beyond: dict[str, int] = {}
+        for r in records:
+            if not str(r.get("stage", "")).startswith("stack_setup") or r.get("kind") != "tool_call" \
+                    or r.get("tool") != "write_artifact":
+                continue
+            args = r.get("args") or {}
+            path = str(args.get("relative_path") or "")
+            inside = path[len(project) + 1:] if project and path.startswith(project + "/") else path
+            if path and path not in asked and inside not in asked:
+                beyond[path] = len(str(args.get("content") or "").splitlines())
+        out.append(f"setup scope: {len(asked)} framework file(s) asked; {len(beyond)} other file(s) written "
+                   f"({sum(beyond.values())} lines; the declaration, smoke tests and manifests are among them)" + (": " + ", ".join(sorted(beyond)[:6]) if beyond else ""))
+    return out
+
+
 def contract_probe_lines(stored: dict) -> list[str]:
     """One line per probe of the locked contract: lines considered, asked, probed, and the skip reasons counted (HR2.Q.9)."""
     out = []
@@ -159,6 +184,14 @@ def main(run: str) -> None:
     print(f"effects of the changes in {run} ({len(records)} records)")
     print("\n".join(effects(records, decisions)))
     for line in draft_lines(records):
+        print(line)
+    scope = None
+    for found in glob.glob(f"/app/data/workspaces/*/workspace-{run}*/.harness/setup-scope.json"):
+        try:
+            scope = json.loads(Path(found).read_text(encoding="utf-8"))
+        except ValueError:
+            pass
+    for line in setup_lines(records, scope):
         print(line)
     for probed in glob.glob(f"/app/data/workspaces/*/workspace-{run}*/.harness/order_probe.json"):
         print(order_probe_line(json.loads(Path(probed).read_text(encoding="utf-8"))))

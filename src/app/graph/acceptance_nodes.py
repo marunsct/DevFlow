@@ -386,6 +386,7 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         if replayed:
             proven = custom_setup.prove(root, project, stack, brief=brief, title=title or project)
             if proven.ok:
+                custom_setup.noted(proven, replayed=True)
                 update = {
                     "stack_pack": custom_setup.PROVEN_SETUP,
                     "scaffold_result": {"ok": True, "pack": custom_setup.PROVEN_SETUP, "project": project, "problem": ""},
@@ -402,6 +403,17 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
             set_aside = custom_setup.set_aside_what_did_not_prove(project_root)
             if set_aside:
                 logger.warning("Set aside the proven setup %s: it did not prove, so it is not replayed again", set_aside)
+            custom_setup.noted(proven, replayed=True, set_aside=set_aside)
+            replay_failed: dict[str, Any] = {}
+            _decide(
+                state, replay_failed, point="scaffold", question="Does the setup proven in an earlier run hold here?",
+                options=["replay it", "ask the setup stage"], decision="ask the setup stage",
+                rationale=(f"The replayed setup{f' `{set_aside}`' if set_aside else ''} got as far as "
+                           f"{proven.level or 'nothing'} and failed: {proven.problem}"
+                           + (" It is set aside and not replayed again." if set_aside else "")),
+            )
+            if replay_failed.get("decisions"):
+                state = {**state, "decisions": replay_failed["decisions"]}
             for relative in replayed:
                 (project_root / relative).unlink(missing_ok=True)
 
@@ -427,6 +439,9 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         output_key="__stack_setup__",
         next_stage="acceptance_author",
     )
+    # A replay that failed is decided before the stage; its record goes with whatever the stage hands on.
+    if state.get("decisions") and "decisions" not in update:
+        update["decisions"] = list(state["decisions"])
     if "__stack_setup__" not in update:
         if update.get("stage") == "failed":
             return left_to_the_agents({}, str(update.get("error") or "the setup stage did not finish"))
@@ -434,6 +449,7 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
     update.pop("__stack_setup__")
     update.pop("stage", None)
     result = custom_setup.prove(root, project, stack, brief=brief, title=title or project)
+    custom_setup.noted(result)
     if result.ok:
         update["stack_pack"] = custom_setup.PROVEN_SETUP
         update["scaffold_result"] = {"ok": True, "pack": custom_setup.PROVEN_SETUP, "project": project, "problem": ""}

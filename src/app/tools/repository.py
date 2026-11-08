@@ -1947,8 +1947,9 @@ def _the_harness_s_own_or_the_locked_suite(root: Path, target: Path) -> str | No
         if where and not inside:
             return _outside_its_own_files() + (
                 f"'{relative}' is not part of the acceptance suite. QA writes only "
-                f"`{where}/`; the product is built by the stages that own it, after "
-                "this suite is locked."
+                f"`{where}/`; the product is built and fixed by the stages that own it. A test that fails "
+                "because the product is wrong is right as it is: leave it failing for them. Change a test "
+                "only where it checks something its criterion does not say."
             )
         return None
     if not protected:

@@ -80,7 +80,9 @@ def clashes(root: str | Path, outputs: dict[str, Any]) -> list[dict[str, str]]:
         return []
 
 
-_COMMENTS_AND_STRINGS = re.compile(r"#[^\n]*|//[^\n]*|/\*.*?\*/|\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`", re.S)
+#: Triple-quoted strings first: a docstring spans lines, and its words were read as code (one run's clash was held
+#: open twice for a removed name its test's module docstring still mentioned).
+_COMMENTS_AND_STRINGS = re.compile(r"\"\"\"[\s\S]*?\"\"\"|\'\'\'[\s\S]*?\'\'\'|#[^\n]*|//[^\n]*|/\*.*?\*/|\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`", re.S)
 
 
 def _code_only(text: str) -> str:

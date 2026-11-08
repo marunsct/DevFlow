@@ -373,6 +373,23 @@ def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any,
 
 Write = Callable[[str, str, str], Any]
 
+
+def _noted(path: str, attempt: str, outcome: str) -> None:
+    """One `draft` transcript record: the file, which pass (first, content-refusal, repair-n), and how it ended.
+
+    Harness review HR2.P.5: whether a draft's repair held and why a file went to the agent loop were log lines only,
+    so no change to drafting could be judged. Never raises.
+    """
+    try:
+        from app.observability.log_context import _TASK_RUN, _from_the_graph
+        from app.observability.transcript import record
+
+        run, _ = _from_the_graph()
+        record(str(run or _TASK_RUN.get() or "") or None, "drafting", "draft",
+               path=str(path), attempt=attempt, outcome=str(outcome)[:300])
+    except Exception:  # noqa: BLE001 - a record must never cost the draft
+        logger.debug("Could not record a draft", exc_info=True)
+
 #: Passes over drafted files the compiler still reports errors in.
 MOST_REPAIR_PASSES = 2
 
@@ -406,8 +423,12 @@ def _repaired_where_the_compiler_says(
                 content = _draft_one(model, root, path, tasks[path], specification, stack, mine)
                 if content.strip():
                     write(repo_root, path, content)
+                    _noted(path, f"repair-{_pass + 1}", "accepted")
+                else:
+                    _noted(path, f"repair-{_pass + 1}", "empty; the earlier draft stays")
             except Exception as error:  # noqa: BLE001 - the next stage meets what is there
                 logger.info("Repair of draft %s failed: %s", path, str(error)[:200])
+                _noted(path, f"repair-{_pass + 1}", f"refused; the earlier draft stays: {error}")
 
 
 #: Words of a refused write that name the content, not the path: drafted once more with them.
@@ -512,9 +533,11 @@ def draft_work_orders(
 
     def run(job: tuple[int, str, Any], code_under_test: Collection[str] = ()) -> tuple[int, str, bool]:
         index, path, task = job
+        attempt = "first"
         try:
             content = _draft_one(model, root, path, task, specification, stack, None, code_under_test)
             if not content.strip():
+                _noted(path, attempt, "left to the loop: the draft was empty")
                 return index, path, False
             try:
                 write(repo_root, path, content)
@@ -525,11 +548,15 @@ def draft_work_orders(
                 # on one line, and its whole work order went to the agent loop.
                 if not any(said in str(refused) for said in CONTENT_REFUSALS):
                     raise
+                _noted(path, attempt, f"refused for its content: {refused}")
+                attempt = "content-refusal"
                 content = _draft_one(model, root, path, task, specification, stack, [str(refused)], code_under_test)
                 write(repo_root, path, content)
+            _noted(path, attempt, "accepted")
             return index, path, True
         except Exception as error:  # noqa: BLE001 - the agent loop takes this work order
             logger.info("Draft of %s left to the agent loop: %s", path, str(error)[:200])
+            _noted(path, attempt, f"left to the loop: {error}")
             return index, path, False
 
     from app.observability.direct_calls import mapped_in_this_context
@@ -568,6 +595,8 @@ def draft_work_orders(
         absent = _promised_but_not_written(task, [*written, *left], root)
         if absent:
             logger.info("Work order %d is left to the agent loop: its files do not define %s", index, ", ".join(absent))
+            for path in written:
+                _noted(path, "promise check", f"left to the loop: the work order's files do not define {', '.join(absent)}")
             continue
         skipped = [str(p) for p in (getattr(task, "files", None) or []) if str(p) in never_written]
         drafted[index] = SpecialistOutput(

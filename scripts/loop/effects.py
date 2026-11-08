@@ -113,6 +113,24 @@ def order_probe_line(probed: dict) -> str:
             f"({probed.get('files_run', 0)} files probed, {probed.get('files_without_a_report', 0)} without a report)")
 
 
+def draft_lines(records: list[dict]) -> list[str]:
+    """How the run's drafted files ended (HR2.P.5): first-pass and content-refusal acceptances, repairs kept, left to the loop."""
+    drafts = [r for r in records if r.get("kind") == "draft"]
+    if not drafts:
+        return []
+    files = {str(r.get("path")) for r in drafts}
+    first = sum(1 for r in drafts if r.get("attempt") == "first" and r.get("outcome") == "accepted")
+    refusal = sum(1 for r in drafts if r.get("attempt") == "content-refusal" and r.get("outcome") == "accepted")
+    repairs = [r for r in drafts if str(r.get("attempt", "")).startswith("repair-")]
+    kept = sum(1 for r in repairs if r.get("outcome") == "accepted")
+    left = [str(r.get("outcome", ""))[len("left to the loop: "):] for r in drafts
+            if str(r.get("outcome", "")).startswith("left to the loop")]
+    why = collections.Counter(reason.split(":")[0][:60] for reason in left)
+    return [f"drafts: {len(files)} file(s), {first} accepted at the first pass, {refusal} after a content refusal; "
+            f"{len(repairs)} repair pass(es), {kept} kept; {len(left)} left to the loop"
+            + (" (" + ", ".join(f"{n} {reason}" for reason, n in why.most_common(3)) + ")" if left else "")]
+
+
 def contract_probe_lines(stored: dict) -> list[str]:
     """One line per probe of the locked contract: lines considered, asked, probed, and the skip reasons counted (HR2.Q.9)."""
     out = []
@@ -140,6 +158,8 @@ def main(run: str) -> None:
         decisions = Path(log).read_text(encoding="utf-8", errors="replace")
     print(f"effects of the changes in {run} ({len(records)} records)")
     print("\n".join(effects(records, decisions)))
+    for line in draft_lines(records):
+        print(line)
     for probed in glob.glob(f"/app/data/workspaces/*/workspace-{run}*/.harness/order_probe.json"):
         print(order_probe_line(json.loads(Path(probed).read_text(encoding="utf-8"))))
     for probed in glob.glob(f"/app/data/workspaces/*/workspace-{run}*/.harness/contract-probe.json"):

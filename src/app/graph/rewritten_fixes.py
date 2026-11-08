@@ -270,6 +270,18 @@ def _modules_missing_an_export(failure: str, root: Path) -> list[str]:
     return found
 
 
+#: Suffixes of a product's data, which a rewrite for a suite-judged criterion never takes from failure text alone.
+_DATA_A_FIX_LEAVES = (".txt", ".csv", ".jsonl", ".ndjson", ".db", ".sqlite", ".sqlite3", ".log")
+
+
+def _a_manifest(relative: str) -> bool:
+    """Whether the file declares the project's dependencies (`dependency_drift.MANIFESTS`): a fix may have to change it."""
+    from app.analysis.dependency_drift import MANIFESTS
+
+    name = Path(relative).name
+    return name in {m for names in MANIFESTS.values() for m in names}
+
+
 def _the_files(
     root: Path, named: list[str], mentioned: list[str], judged_by_the_suite: bool, tests_from_the_text: bool,
     may_write: Callable[[str], bool],
@@ -302,6 +314,11 @@ def _the_files(
         is_a_test = classify_file(relative) == "test"
         if (is_scratch(relative) or (judged_by_the_suite and is_a_test) or _the_project_ignores(root, relative)
                 or _a_test_report(root, relative, target)):
+            continue
+        # Nor data or a document, for a criterion the suite judges, unless the defect names it (HR2.fix.3): a rewrite
+        # was aimed at `input.txt`, the product's data, which no change fixes.
+        if judged_by_the_suite and name not in own and not _a_manifest(relative) and (
+                classify_file(relative) == "document" or relative.lower().endswith(_DATA_A_FIX_LEAVES)):
             continue
         if is_a_test and name not in own and not tests_from_the_text:
             continue

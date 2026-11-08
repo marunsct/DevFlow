@@ -802,6 +802,38 @@ def untested_is_no_reason(declined: Sequence[str]) -> str:
     )
 
 
+#: A work order that only runs or verifies, by how its description opens; one that writes anything is not.
+_ONLY_RUNS = re.compile(r"^\s*(?:re-?run|run|execute|verify|confirm|check)\b", re.I)
+#: Only the verbs that can only mean writing: "verify the database fix" is a run, so `fix` and `change` are not here.
+_WRITES = re.compile(r"\b(?:write|writes|add|adds|create|creates|implement|implements)\b", re.I)
+
+
+def with_run_only_testing_orders_left_to_the_test_round(plan: Any) -> tuple[Any, list[str]]:
+    """`plan` without its testing work orders that list no files: the round runs the tests; (plan, their labels).
+
+    Measured on a run: the lead's plan was sent back three times (six minutes and ~38k tokens a reply) for
+    \"Run unit tests to verify ...\" and \"Run the acceptance suite ...\" work orders - a testing order that writes
+    nothing can only run commands, and the harness's own test round runs both suites after every sprint. Each is
+    kept as a line of the plan's notes, so what the lead meant to verify is still said. Never raises.
+    """
+    try:
+        tasks = list(getattr(plan, "delegated_tasks", None) or [])
+        run_only = [t for t in tasks if _role(t) == _TESTING
+                    and not [f for f in getattr(t, "files", None) or [] if str(f).strip()]
+                    and _ONLY_RUNS.search(str(getattr(t, "task_description", "") or ""))
+                    and not _WRITES.search(str(getattr(t, "task_description", "") or ""))]
+        if not run_only or len(run_only) == len(tasks):
+            return plan, []
+        labels = [_label(tasks.index(t) + 1, t) for t in run_only]
+        notes = list(getattr(plan, "integration_notes", None) or []) + [
+            f"Verified by the harness's test round, not a work order: {str(getattr(t, 'task_description', '') or '')[:200]}"
+            for t in run_only]
+        return plan.model_copy(update={"delegated_tasks": [t for t in tasks if t not in run_only],
+                                       "integration_notes": notes}), labels
+    except Exception:  # noqa: BLE001 - the plan is checked as it was
+        return plan, []
+
+
 def readiness_problems(
     milestone: Any,
     repo_root: str | Path | None,
@@ -993,7 +1025,7 @@ _THE_TESTING_TASK_S_FILES = (
 )
 
 
-__all__ = [
+__all__ = ["with_run_only_testing_orders_left_to_the_test_round", 
     "brief_for",
     "contract_for_testing",
     "readiness_feedback",

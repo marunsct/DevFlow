@@ -10203,6 +10203,13 @@ def build_workflow_graph(
             )
             if given:
                 logger.info("Test files the sprint names and no work order listed, given to testing: %s", ", ".join(given))
+        # A testing order that writes nothing only runs the tests the round runs anyway (before a testing order is
+        # added to a plan with none, so a plan is never left without one).
+        from app.analysis.work_orders import with_run_only_testing_orders_left_to_the_test_round
+
+        update["milestone_plan"], run_only = with_run_only_testing_orders_left_to_the_test_round(update["milestone_plan"])
+        if run_only:
+            logger.info("Testing work orders that write no file left to the test round: %s", "; ".join(run_only))
         from app.analysis.work_orders import with_a_testing_work_order
 
         update["milestone_plan"], added_testing = with_a_testing_work_order(

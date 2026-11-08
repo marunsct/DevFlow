@@ -126,10 +126,18 @@ _SPECIFICATION_FOR_THE_SETUP = (
 MOST_SPECIFICATION_CHARACTERS = 12_000
 
 
-def what_the_specification_sets_up(specification: Any) -> str:
-    """The specification's files, testing, configuration and library calls, as the setup stage reads them."""
+#: On a runner layer the files and testing are the layer's; the setup stage reads only what the framework needs to know.
+_SPECIFICATION_FOR_A_LAYER = (("configuration", "Configuration"), ("library_usage", "Library calls"))
+
+
+def what_the_specification_sets_up(specification: Any, on_a_layer: bool = False) -> str:
+    """The specification's files, testing, configuration and library calls, as the setup stage reads them.
+
+    On a layer only its configuration and library calls (HR2.SS.2): the request ran to 89-99k characters for four
+    files, and one layered stage wrote the product from the file plan it was shown.
+    """
     blocks = []
-    for field, heading in _SPECIFICATION_FOR_THE_SETUP:
+    for field, heading in (_SPECIFICATION_FOR_A_LAYER if on_a_layer else _SPECIFICATION_FOR_THE_SETUP):
         entries = [str(entry).strip() for entry in getattr(specification, field, None) or [] if str(entry).strip()]
         if entries:
             blocks.append(f"{heading}:\n" + "\n".join(f"- {entry}" for entry in entries))
@@ -268,7 +276,7 @@ def build_setup_request(
     handed a layout that was not the project's.
     """
     meets = _MEETS.get(kind, "it exercises the product the way its user meets it")
-    planned = what_the_specification_sets_up(specification) if specification is not None else ""
+    planned = what_the_specification_sets_up(specification, on_a_layer=bool(layer_files)) if specification is not None else ""
     planned = (
         "\n--- What the specification already decided ---\n"
         "The product is built from this. Where it names a manifest, a runner configuration "

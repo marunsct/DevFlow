@@ -141,3 +141,33 @@ def test_the_proof_keeps_the_layer_s_framework_files_with_the_entry():
 
     assert "_the_layer_s_framework_files(declared, project)" in inspect.getsource(custom_setup.prove)
     assert "_the_layer_first(project_root, record[\"declaration\"])" in inspect.getsource(custom_setup.check_the_library)
+
+
+# --- the layered setup reads the setup, not the product (harness review HR2.SS.2) -----------------
+
+def test_a_layered_setup_request_names_none_of_the_file_plan():
+    import re
+    from types import SimpleNamespace
+
+    from app.stacks.custom_setup import build_setup_request
+
+    spec = SimpleNamespace(file_plan=["notes-api/notes_api/store.py: the note store"], testing=["pytest for each route"],
+                           configuration=["variable: PORT; default: 8000"], library_usage=["falcon.App(): the app"])
+    text = build_setup_request("notes-api", _falcon(), "http_api", specification=spec,
+                               layer_files={"notes_api/main.py": "the app"})["messages"][0]["content"]
+    assert "store.py" not in text and "pytest for each route" not in text
+    assert "variable: PORT" in text and "falcon.App()" in text
+    assert not re.search(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", text, re.I)
+    whole = build_setup_request("notes-api", _falcon(), "http_api", specification=spec)["messages"][0]["content"]
+    assert "store.py" in whole, "the hand-written setup keeps the whole block"
+
+
+def test_a_layered_setup_s_memory_leaves_the_specification_out(tmp_path):
+    from app.agents import project_memory
+    from app.tools.repository import SETUP_SCOPE_FILE
+
+    assert project_memory._kept_out_for("stack_setup_0", tmp_path) == ()
+    (tmp_path / SETUP_SCOPE_FILE).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / SETUP_SCOPE_FILE).write_text('{"project": "notes-api", "files": ["notes_api/main.py"]}')
+    assert project_memory._kept_out_for("stack_setup_0", tmp_path) == ("docs/technical_specification.md",)
+    assert project_memory._kept_out_for("defect_fix_1", tmp_path) == ()

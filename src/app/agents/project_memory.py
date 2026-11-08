@@ -393,6 +393,22 @@ def _without_the_quoted_sections(document: str, request: str) -> tuple[str, list
 _PLANNING_STAGES = ("technical_lead", "scrum_master")
 
 
+def _kept_out_for(stage: str, repo_root: str | Path) -> tuple[str, ...]:
+    """Files a stage's memory leaves out: the harness's own for a planning stage; the specification for a layered setup.
+
+    A setup on a runner layer writes a few framework files; the specification is the product's (HR2.SS.2: its memory
+    held the whole document, and one layered stage wrote the product from it).
+    """
+    if planning_stage(stage):
+        return kept_by_the_harness(repo_root)
+    if str(stage or "").startswith("stack_setup"):
+        from app.tools.repository import SETUP_SCOPE_FILE
+
+        if (Path(repo_root) / SETUP_SCOPE_FILE).is_file():
+            return ("docs/technical_specification.md",)
+    return ()
+
+
 def planning_stage(stage: str) -> bool:
     return str(stage or "").startswith(_PLANNING_STAGES)
 
@@ -769,7 +785,7 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     stage = str(_from_the_graph()[1] or "")
                     visit["snapshot"], visit["held"] = render(repo_root, budget_for(getattr(request, "model", None)), opening,
                                                               for_a_fixer=stage.startswith("defect_fix"),
-                                                              kept_out=kept_by_the_harness(repo_root) if planning_stage(stage) else ())
+                                                              kept_out=_kept_out_for(stage, repo_root))
                     visit["files"] = dict(current(repo_root))
                 memory = visit["snapshot"]
                 held = visit.get("held") or {}

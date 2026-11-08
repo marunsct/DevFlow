@@ -231,6 +231,8 @@ class Check:
     bodies: str = ""
     #: The field the emptied-field probe sends empty; "" for every other check.
     emptied: str = ""
+    #: With `emptied`: the value sent is only spaces, not "" (HR2.PR.8: 12 of 49 products took a title of "   ").
+    blank: bool = False
 
 
 def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
@@ -458,14 +460,19 @@ def emptied_field_checks(checks: list[Check], bodies: list[Any], fields: list[st
     if not carried:
         return [], []
     writes, unchecked = bad_body_checks(checks, bodies)
-    asked = [_with(check, emptied=field, bodies=json.dumps(bodies)) for check in writes for field in carried]
+    asked = [_with(check, emptied=field, bodies=json.dumps(bodies), blank=blank)
+             for check in writes for field in carried for blank in (False, True)]
     return asked, unchecked
+
+
+#: What an emptied field is sent as: "" or, for its blank twin, only spaces.
+_THE_EMPTIED_VALUE = {False: "", True: "   "}
 
 
 def _an_emptied_field_test(title: str, check: Check, bodies: list[Any]) -> str:
     """The test sending `check`'s call the example body with `check.emptied` set to "": it must be refused."""
     example = next(b for b in bodies if isinstance(b, dict) and check.emptied in b)
-    sent = {**example, check.emptied: ""}
+    sent = {**example, check.emptied: _THE_EMPTIED_VALUE[check.blank]}
     plain = _with_the_bad_body(check)
     marker = f"data: {_js(A_BODY_NOTHING_CAN_PARSE)}, "
     assert marker in plain
@@ -489,7 +496,8 @@ def playwright_emptied_field_checks(checks: list[Check], bodies: list[Any] | Non
     tests = []
     for number, c in enumerate(checks, start=1):
         given = bodies if bodies is not None else json.loads(c.bodies or "[]")
-        title = _js(f"{f'[{c.criterion}] ' if c.criterion else ''}contract {number}: {c.line} with an empty {c.emptied}")
+        title = _js(f"{f'[{c.criterion}] ' if c.criterion else ''}contract {number}: {c.line} with "
+                    f"{'a blank' if c.blank else 'an empty'} {c.emptied}")
         tests.append(_an_emptied_field_test("__TITLE__", c, given).replace("__TITLE__", title, 1))
     return _with_sign_in_js("import { test, expect } from '@playwright/test';\n\n" + "\n".join(tests),
                             sign_in_plan(checks, bodies))
@@ -731,8 +739,8 @@ def pytest_emptied_field_checks(checks: list[Check], bodies: list[Any] | None = 
     for number, check in enumerate(checks, start=1):
         given = bodies if bodies is not None else json.loads(check.bodies or "[]")
         example = next(b for b in given if isinstance(b, dict) and check.emptied in b)
-        case = _pytest_case(number, check, f" with an empty {check.emptied}", rule="refused",
-                            send={**example, check.emptied: ""})
+        case = _pytest_case(number, check, f" with {'a blank' if check.blank else 'an empty'} {check.emptied}",
+                            rule="refused", send={**example, check.emptied: _THE_EMPTIED_VALUE[check.blank]})
         cases.append({**case, "example": example})
     return _pytest_module(cases, sign_in_plan(checks, bodies))
 
@@ -1039,7 +1047,8 @@ def emptied_field_errors(repo_root: str | Path, *, runner: Any = None) -> list[t
 
 def emptied_field_description(accepted: list[tuple[Check, int]]) -> str:
     """The defect's description for writes that accepted a field the criteria refuse empty."""
-    calls = "; ".join(f"`{c.method} {c.path}` with an empty `{c.emptied}` answered {status}" for c, status in accepted[:6])
+    calls = "; ".join(f"`{c.method} {c.path}` with {'only spaces in' if c.blank else 'an empty'} `{c.emptied}` "
+                      f"answered {status}" for c, status in accepted[:6])
     criteria = ", ".join(sorted({c.criterion for c, _ in accepted if c.criterion}))
     return (f"{EMPTIED_FIELD_ACCEPTED} {calls}. The criteria refuse that field empty on every write"
             f"{f' ({criteria})' if criteria else ''}, not only where the suite tried it.")

@@ -28,7 +28,10 @@ def test_each_write_of_the_contract_is_asked_with_the_field_emptied():
 
     asked, unchecked = ic.emptied_field_checks(checks, bodies, ["title", "colour"])
 
-    assert [(c.method, c.path, c.emptied) for c in asked] == [("POST", "/notes", "title"), ("PUT", "/notes/{id}", "title")]
+    # Each write is asked twice: the field empty, and only spaces (HR2.PR.8).
+    assert [(c.method, c.path, c.emptied, c.blank) for c in asked] == [
+        ("POST", "/notes", "title", False), ("POST", "/notes", "title", True),
+        ("PUT", "/notes/{id}", "title", False), ("PUT", "/notes/{id}", "title", True)]
     assert unchecked == []
 
 
@@ -57,7 +60,7 @@ def test_a_write_that_answered_2xx_to_the_emptied_field_is_an_error(tmp_path, mo
     monkeypatch.setattr(contract, "the_pack", lambda root: (types.SimpleNamespace(probe_runner="playwright"), {"project": "notes-api"}))
     report = types.SimpleNamespace(found=True, tests=[
         types.SimpleNamespace(name="[AC-8] contract 1: AC-8 POST /notes -> 201 with an empty title", outcome="passed", message=""),
-        types.SimpleNamespace(name="[AC-11] contract 2: AC-11 PUT /notes/{id} -> 200 or 404 with an empty title",
+        types.SimpleNamespace(name="[AC-11] contract 3: AC-11 PUT /notes/{id} -> 200 or 404 with an empty title",
                               outcome="failed", message="Expected: >= 400\nReceived: 200"),
     ])
     monkeypatch.setattr(ic, "_the_probe_s_report", lambda *a, **k: report)
@@ -86,3 +89,33 @@ def test_the_green_round_raises_a_defect_for_it(monkeypatch):
 
     assert len(raised) == 1 and raised[0].description.startswith(ic.EMPTIED_FIELD_ACCEPTED)
     assert "`PUT /notes/{id}` with an empty `title` answered 200" in raised[0].description
+
+
+
+def test_a_title_of_only_spaces_is_probed_and_its_acceptance_is_a_defect(tmp_path, monkeypatch):
+    """HR2.PR.8: 12 of 49 quality runs answered 201 to a title of only spaces."""
+    import types
+
+    checks, _ = ic.parse(["AC-8 POST /notes -> 201"])
+    asked, _ = ic.emptied_field_checks(checks, [{"title": "G", "body": "m"}], ["title"])
+    spec = ic.playwright_emptied_field_checks(asked)
+    assert '"title": "   "' in spec and "with a blank title" in spec
+    assert "'title': '   '" in ic.pytest_emptied_field_checks(asked) or '"title": "   "' in ic.pytest_emptied_field_checks(asked)
+
+    monkeypatch.setattr(ic, "the_locked_contract", lambda root: checks)
+    from app.acceptance import suite
+    from app.acceptance.criteria import Criterion
+    from app.stacks import contract
+
+    monkeypatch.setattr(suite, "criteria", lambda root: [Criterion("AC-13", "A title that is missing or empty is refused with 400", "brief")])
+    monkeypatch.setattr(suite, "_state", lambda root: {"interface_contract_bodies": [{"title": "G", "body": "m"}]})
+    monkeypatch.setattr(contract, "the_pack", lambda root: (types.SimpleNamespace(probe_runner="playwright"), {"project": "n"}))
+    report = types.SimpleNamespace(found=True, tests=[
+        types.SimpleNamespace(name="[AC-8] contract 1: AC-8 POST /notes -> 201 with an empty title", outcome="passed", message=""),
+        types.SimpleNamespace(name="[AC-8] contract 2: AC-8 POST /notes -> 201 with a blank title",
+                              outcome="failed", message="Expected: >= 400\nReceived: 201"),
+    ])
+    monkeypatch.setattr(ic, "_the_probe_s_report", lambda *a, **k: report)
+    accepted = ic.emptied_field_errors(tmp_path, runner=object())
+    assert [(c.method, c.blank, status) for c, status in accepted] == [("POST", True, 201)]
+    assert "only spaces in `title`" in ic.emptied_field_description(accepted)

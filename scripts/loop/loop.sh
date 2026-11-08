@@ -609,8 +609,19 @@ build)
   ok=1
   # The lock is not handed down (8>&-): Docker's credential helper, hung on a locked key store, kept it and every
   # later build refused to start.
-  docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
+  # Asked of the registry anonymously first (the images are public): with the owner's credential store locked,
+  # Docker's credential helper hung every build for an hour. The owner's own configuration is the fall-back.
+  anon="$STATE/docker-anonymous"; home_config="${DOCKER_CONFIG:-$HOME/.docker}"
+  mkdir -p "$anon"; for part in contexts cli-plugins buildx; do [ -e "$home_config/$part" ] && ln -sfn "$home_config/$part" "$anon/$part"; done
+  context=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("currentContext") or "")' "$home_config/config.json" 2>/dev/null || true)
+  printf '{"currentContext": "%s"}\n' "${context:-default}" > "$anon/config.json"
+  DOCKER_CONFIG="$anon" docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
     build --progress=plain --build-arg HARNESS_COMMIT="$built" app worker > "$STATE/build.log" 2>&1 8>&- || ok=0
+  if [ "$ok" = 0 ]; then
+    ok=1
+    docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
+      build --progress=plain --build-arg HARNESS_COMMIT="$built" app worker >> "$STATE/build.log" 2>&1 8>&- || ok=0
+  fi
   git -C "$ROOT" worktree remove --force "$head_tree"
   if [ "$ok" = 0 ] || [ "$(built_from)" != "$built" ]; then
     echo "build of ${built:0:7} FAILED after $(( $(date +%s) - started ))s; see $STATE/build.log" >&2; exit 1

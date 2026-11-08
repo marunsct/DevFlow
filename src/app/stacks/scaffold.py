@@ -67,7 +67,9 @@ def entrypoint_is_still_the_stub(repo_root: str | Path) -> str | None:
     record = contract.read(repo_root)
     if not record or not record.get("scaffolded", True):
         return None
-    pack = pack_named(str(record.get("pack") or ""))
+    # By the contract, so a proven custom setup's pack is found too (HR2.SS.6), not only a named pack.
+    found = contract.the_pack(repo_root)
+    pack = found[0] if found else None
     if not pack:
         return None
     declared = [str(e) for e in (getattr(pack, "entrypoint", "") or "", *(getattr(pack, "entrypoints", ()) or ())) if e]
@@ -102,7 +104,8 @@ def _served_entrypoints(repo_root: str | Path) -> tuple[str, list[str]]:
     from app.stacks import contract, pack_named
 
     record = contract.read(repo_root) or {}
-    pack = pack_named(str(record.get("pack") or ""))
+    found = contract.the_pack(repo_root)  # a proven custom setup's too (HR2.SS.6)
+    pack = found[0] if found else None
     if not pack:
         return "", []
     project = str(record.get("project") or "")
@@ -324,7 +327,8 @@ def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
             return []
         from app.stacks import contract, pack_named
 
-        pack = pack_named(str((contract.read(repo_root) or {}).get("pack") or ""))
+        found = contract.the_pack(repo_root)  # a proven custom setup's too (HR2.SS.6)
+        pack = found[0] if found else None
         from app.acceptance import suite
         from app.analysis.walk import files_under
 

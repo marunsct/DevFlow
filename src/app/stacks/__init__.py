@@ -720,6 +720,12 @@ CUSTOM_STACK = "custom stack"
 
 def support_tier(pack: StackPack | None) -> str:
     """The support tier, with what it means, for a run on `pack` (None: no pack fits)."""
+    if pack is not None and pack.name == "proven-setup":
+        return (
+            "Support tier: proven setup - no pack fits, so a setup stage set the project up and the harness proved "
+            "its install and both smoke tests through the commands it declared; the harness's checks run on those "
+            "commands as on a pack's, and the release carries no packaged CI or container files."
+        )
     if pack is not None:
         return (
             f"Support tier: {PACK_SUPPORTED} - the {pack.name} pack's scaffold, install and "

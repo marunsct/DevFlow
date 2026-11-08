@@ -117,8 +117,8 @@ def evidence(state: Any, sprint_number: int, goal: str, heading: str = "") -> st
     try:
         from app.stacks import contract, pack_named, support_tier
 
-        record = contract.read(root) or {}
-        lines += [support_tier(pack_named(str(record.get("pack") or ""))), ""]
+        found = contract.the_pack(root)  # a proven custom setup's too (HR2.SS.6)
+        lines += [support_tier(found[0] if found else None), ""]
     except Exception:  # noqa: BLE001 - the page stands without it
         pass
     changed = _what_changed(root, _previous_sprint_tag(root, sprint_number))

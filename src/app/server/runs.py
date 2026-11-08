@@ -159,7 +159,8 @@ def _support_tier_of(root: Any) -> str:
         from app.stacks import contract, pack_named, support_tier
 
         record = contract.read(root) or {}
-        return support_tier(pack_named(str(record.get("pack") or ""))) if record.get("pack") else ""
+        found = contract.the_pack(root) if record.get("pack") else None  # a proven custom setup's too (HR2.SS.6)
+        return support_tier(found[0] if found else None) if record.get("pack") else ""
     except Exception:  # noqa: BLE001 - the evidence page works without it
         return ""
 

@@ -90,3 +90,15 @@ def test_the_routes_are_in_the_readme_though_the_specification_names_them(projec
         release_docs.complete_the_handoff(project)
     text = (project / "app" / "README.md").read_text()
     assert "## What it serves" in text and "| GET | `/items` | 200 |" in text and "| POST | `/items` | 201 |" in text
+
+
+def test_without_a_configuration_section_the_start_script_s_variables_are_listed(project) -> None:
+    """HR2.G.4: the settings a stranger can change, from what the start script reads, when the specification says none."""
+    (project / "docs" / "technical_specification.md").write_text("# Technical specification\n")
+    (project / "app" / "start.sh").write_text(
+        '#!/bin/sh\nexport PORT="${PORT:-8000}" DATA_DIR="${DATA_DIR:-data}"\nexec python3 server.py --host "${HOST:-127.0.0.1}"\n')
+    with mock.patch.dict(os.environ, ON):
+        release_docs.complete_the_handoff(project)
+    text = (project / "app" / "README.md").read_text()
+    for row in ("| `PORT` | 8000 |", "| `DATA_DIR` | data |", "| `HOST` | 127.0.0.1 |"):
+        assert row in text, text

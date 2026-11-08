@@ -238,6 +238,20 @@ def _the_configuration(root: Path) -> list[tuple[str, str, str]]:
     return list(dict.fromkeys(found))
 
 
+#: A shell default in a start script: `${PORT:-8000}`, `${DATA_DIR:-data}`.
+_A_SHELL_DEFAULT = re.compile(r"\$\{([A-Z][A-Z0-9_]*):-([^}]*)\}")
+
+
+def _what_the_start_script_reads(base: Path) -> list[tuple[str, str, str]]:
+    """(name, default, "") for each variable `start.sh` reads with a default; [] with no start script."""
+    try:
+        text = (base / "start.sh").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    return list(dict.fromkeys((name, default.strip().strip("\"'"), "read by `start.sh`")
+                              for name, default in _A_SHELL_DEFAULT.findall(text)))
+
+
 def complete_the_handoff(repo_root: str | Path) -> list[str]:
     """Write what the harness itself knows into the README - how to run the product, the routes it serves; the files written.
 
@@ -287,7 +301,9 @@ def complete_the_handoff(repo_root: str | Path) -> list[str]:
                 added += _the_running_and_testing_sections(where, commands, install if pack is None else [
                     shlex.join(argv) for argv in getattr(pack, "install", ()) or ()],
                     test if pack is None else [shlex.join(getattr(pack, name, ()) or ()) for name in ("unit_test", "acceptance_test")])
-        variables = [v for v in _the_configuration(root) if v[0] not in text]
+        # The specification's variables, else the ones the start script reads with their defaults (HR2.G.4).
+        declared = _the_configuration(root) or _what_the_start_script_reads(root / project if project else root)
+        variables = [v for v in declared if v[0] not in text]
         if variables:
             # What the product reads, from the specification's own Configuration (HR2.PR.2): 3 of 63 READMEs named
             # `PORT` or `DATA_DIR`, though every specification listed them.

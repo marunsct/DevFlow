@@ -5,9 +5,9 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 <!-- state:generated -->
-**As of:** 11-08 21:07 JST (written by `loop.sh state`). Harness 0125d897 committed; 2ffbfcc4 deployed (not the same).
-**Live, and stopped in the last day:** run-ed4e910f running at awaiting_approval:acceptance_author_2; run-885a8285 running at technical_lead
-**Last scored:** run-ffa696e6 fullstack-bookmarks-py 8/8 (completed, mixed, 204 active min; scored 11-08 01:15 JST); run-183af149 notes-api-hono 9/9 (completed, 34 active min; scored 11-08 01:05 JST); run-0c34fb58 web-todo 10/10 (completed, 174 active min; scored 11-08 00:26 JST).
+**As of:** 11-08 21:53 JST (written by `loop.sh state`). Harness 64373fba committed; 64373fba deployed.
+**Live, and stopped in the last day:** run-ed4e910f running at technical_lead
+**Last scored:** run-885a8285 wordstats-cli 8/8 (completed, mixed, 62 active min, handoff 0.714; scored 11-08 21:45 JST); run-ffa696e6 fullstack-bookmarks-py 8/8 (completed, mixed, 204 active min; scored 11-08 01:15 JST); run-183af149 notes-api-hono 9/9 (completed, 34 active min; scored 11-08 01:05 JST).
 <!-- /state:generated -->
 ## Live now
 | | |

@@ -270,6 +270,79 @@ def _what_the_start_script_reads(base: Path) -> list[tuple[str, str, str]]:
                               for name, default in _A_SHELL_DEFAULT.findall(text)))
 
 
+#: A comment that is the model reasoning to itself, not a note for the code's reader (the handoff score's own test).
+_THINKING_ALOUD = re.compile(r"^(?:wait[,.]|actually,|hmm\b|let me\b|let's assume\b|i think\b|on second thought)", re.I)
+#: Each language's whole-line comment, by file suffix: only these are ever removed.
+_LINE_COMMENT = {".py": "#", ".rb": "#", **{s: "//" for s in (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".go",
+                                                              ".rs", ".java", ".kt", ".cs", ".php")}}
+#: A comment a tool reads: never removed.
+_A_DIRECTIVE = re.compile(r"^(?:#!|#\s*-\*-|#\s*(?:type|noqa|pragma|pylint|fmt|mypy)\b|//\s*(?:go:|@ts-|eslint|prettier|#|nolint|\+build))")
+_NOT_SOURCE = {"node_modules", ".venv", "venv", "__pycache__", ".git", "dist", "build", "vendor", "target", ".harness"}
+
+
+def _python_comment_lines(text: str) -> set[int] | None:
+    """The 0-based lines whose first token is a comment, or None when the file does not tokenize."""
+    import io
+    import tokenize
+
+    lines = text.splitlines()
+    try:
+        return {tok.start[0] - 1 for tok in tokenize.generate_tokens(io.StringIO(text).readline)
+                if tok.type == tokenize.COMMENT and not lines[tok.start[0] - 1][:tok.start[1]].strip()}
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return None
+
+
+def remove_thinking_aloud(repo_root: str | Path) -> list[str]:
+    """Remove each run of whole-line comments in which the model reasoned to itself; the files changed. Never raises.
+
+    Two of eight scored products lost a handoff point to such a block in their unit tests ("Wait, pattern is ...
+    So it returns ...", "Actually, in SQLite ..."), and sending the release back for comments would spend a round
+    of the sprint. A comment changes nothing a program does, so the block is removed here, whole: the lines around
+    the matched one are the same reasoning. Only whole-line comments of the file's own language, never one a tool
+    reads, never in a file the harness owns (the locked suite, the kept setup); Python is tokenized first, so a
+    line inside a string is never taken for a comment.
+    """
+    changed: list[str] = []
+    try:
+        from app.stacks import contract
+
+        root = Path(repo_root)
+        for path in sorted(root.rglob("*")):
+            marker = _LINE_COMMENT.get(path.suffix.lower())
+            relative = path.relative_to(root)
+            if not marker or not path.is_file() or set(relative.parts) & _NOT_SOURCE or path.stat().st_size > 400_000:
+                continue
+            if contract.owned_by_the_harness(root, relative.as_posix()):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            lines = text.splitlines(keepends=True)
+            comments = (_python_comment_lines(text) if path.suffix.lower() == ".py"
+                        else {i for i, line in enumerate(lines) if line.lstrip().startswith(marker)})
+            if not comments:
+                continue
+            drop: set[int] = set()
+            i = 0
+            while i < len(lines):
+                if i not in comments:
+                    i += 1
+                    continue
+                indent = len(lines[i]) - len(lines[i].lstrip())
+                j = i
+                while j + 1 < len(lines) and j + 1 in comments and len(lines[j + 1]) - len(lines[j + 1].lstrip()) == indent:
+                    j += 1
+                run = range(i, j + 1)
+                if any(_THINKING_ALOUD.match(lines[k].lstrip()[len(marker):].strip()) for k in run):
+                    drop |= {k for k in run if not _A_DIRECTIVE.match(lines[k].lstrip())}
+                i = j + 1
+            if drop:
+                path.write_text("".join(line for k, line in enumerate(lines) if k not in drop), encoding="utf-8")
+                changed.append(relative.as_posix())
+    except Exception:  # noqa: BLE001 - a comment left in costs a handoff point, never the release
+        logger.debug("Could not clean comments that think aloud", exc_info=True)
+    return changed
+
+
 def complete_the_handoff(repo_root: str | Path) -> list[str]:
     """Write what the harness itself knows into the README - how to run the product, the routes it serves; the files written.
 
@@ -279,11 +352,12 @@ def complete_the_handoff(repo_root: str | Path) -> list[str]:
     test: the product had no README, so with this check on every release
     would have gone back to the lead for one. Written from those facts, it
     costs no model call; what it cannot know is still asked for. Off with
-    the switch; never raises. With no pack the facts are the project's own
+    the switch (comments that think aloud are removed first, always); never raises. With no pack the facts are the project's own
     start command and the suite's declared one, measured on a run that spent two
     rounds of the sprint on a one-line README; with none of them known, no README
     is begun and the lack stays. Only ever appends.
     """
+    remove_thinking_aloud(repo_root)
     if not enabled():
         return []
     try:

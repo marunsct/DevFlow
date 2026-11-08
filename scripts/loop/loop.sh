@@ -210,6 +210,8 @@ score)
   docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json" "$status" "$gaps" "$own" "$model_last"
   mkdir -p data/bench
   docker cp "$WORKER_C:/tmp/bench-$run.json" "data/bench/$run.json" >/dev/null && echo "result: data/bench/$run.json"
+  # What each of this run's gap kinds has meant before (HR2.G.3).
+  "$PY" "$HERE/gap_precision.py" data/bench "data/bench/$run.json" 2>/dev/null || true
   # The score alone - no test names - for the outcome dashboard (app.server.outcomes).
   "$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({k:d.get(k) for k in ("benchmark","passed","total","score","quality_passed","quality_total","completion_gaps","brief_mismatch","model","endpoint")}))' "data/bench/$run.json" \
     | docker compose exec -T worker sh -c "mkdir -p /app/data/outcomes && cat > /app/data/outcomes/$run.json" || true
@@ -394,6 +396,7 @@ lessons) shift; in_worker lessons.py "${@:-list}" ;;
 ship-live) "$HERE/ship_live.sh" ;;
 impact) shift; "$PY" "$HERE/impact.py" data/kpi/ledger.csv "${1:-12}" ;;
 suite-checks) shift; docker exec -i "$WORKER_C" python3 - /app/data/workspaces/default < "$HERE/suite_check_settling.py" ;;
+gap-precision) shift; "$PY" "$HERE/gap_precision.py" data/bench ;;
 blind-spots) shift; "$PY" "$HERE/blind_spots.py" "$@" ;;
 disputes) shift; docker exec -i "$WORKER_C" python3 - /app/data/workspaces/default < "$HERE/disputes.py" | "$PY" "$HERE/disputes.py" --join "$ROOT/data/kpi/ledger.csv" ;;
 stack-misses) shift; docker cp "$HERE/stack_misses.py" "$WORKER_C:/tmp/stack_misses.py" >/dev/null && docker exec -w /app "$WORKER_C" python3 /tmp/stack_misses.py ;;

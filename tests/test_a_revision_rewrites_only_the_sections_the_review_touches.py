@@ -185,3 +185,26 @@ def test_the_sections_the_review_names_are_rewritten_and_at_most_a_few_more():
     assert len(chosen) == 2 + specification_parts.MOST_UNNAMED_SECTIONS
     # A review that names no section keeps what the model chose.
     assert specification_parts._bounded_by_what_the_review_names(["testing"], "make it consistent", names) == ["testing"]
+
+
+# --- a repair the harness made names its own sections (harness review HR2.D.2) -------------
+
+REPAIR = ("The specification's testing names a check nobody here can carry out. Return only `testing` with those "
+          "checks corrected; unchanged sections are automatically preserved.")
+
+
+def test_a_harness_repair_with_its_sections_named_makes_no_naming_call():
+    model = _Model(["product_scope"], {"testing": ["node:test, every route"]})
+
+    revised = specification_parts.revised_in_place(PREVIOUS, REPAIR, model, "context")
+
+    assert revised.testing == ["node:test, every route"]
+    assert not any('{"sections"' in asked for asked in model.asked), "the repair named its section; nothing is asked"
+    assert len(model.asked) == 1
+
+
+def test_a_review_finding_beside_a_repair_is_still_asked_of_the_model():
+    assert specification_parts.sections_the_harness_named(PREVIOUS, REPAIR + "\n\n- AC-6: a store module is missing") == []
+    assert specification_parts.sections_the_harness_named(
+        PREVIOUS, "The file plan names none of them. Return only `file_plan`, `testing` and `decisions` with the paths corrected; x"
+    ) == ["file_plan", "testing", "decisions"]

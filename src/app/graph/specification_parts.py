@@ -14,6 +14,8 @@ empty sections, which sends them back to the architect as before.
 
 from __future__ import annotations
 
+import re
+
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -210,6 +212,30 @@ def _names(specification: Any) -> list[str]:
     return list(getattr(type(specification), "model_fields", {}) or {})
 
 
+#: How a repair the harness writes names what it wants back: "Return only `testing` ...".
+_RETURN_ONLY = re.compile(r"Return only (?:the missing fields: )?(.+?)(?:[.;]\s|[.;]$|$)", re.DOTALL)
+
+
+def sections_the_harness_named(specification: Any, required_changes: str) -> list[str]:
+    """The sections a harness-made repair names, when every part of `required_changes` is one; else [].
+
+    A review's own findings name no section this way, so a text with any part that is not a harness repair is asked
+    of the model as before, its named sections included.
+    """
+    names = _names(specification)
+    parts = [part for part in re.split(r"\n\s*\n", required_changes) if part.strip()]
+    chosen: list[str] = []
+    for part in parts:
+        found = _RETURN_ONLY.search(part)
+        if not found:
+            return []
+        named = [name for name in names if re.search(rf"\b{re.escape(name)}\b", found.group(1))]
+        if not named:
+            return []
+        chosen.extend(name for name in named if name not in chosen)
+    return chosen
+
+
 def sections_to_revise(specification: Any, required_changes: str, model: Any) -> list[str]:
     """The sections the required changes touch, asked of `model` once; [] if it cannot say."""
     from langchain_core.messages import HumanMessage
@@ -278,7 +304,10 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
 
     if model is None or not required_changes.strip():
         return None
-    chosen = sections_to_revise(specification, required_changes, model)
+    # A repair the harness made names its sections itself (HR2.D.2): 251 of 357 rounds were such repairs, each still
+    # asked of the model ("Name every section ..."), whose answer was then mostly bounded away.
+    chosen = sections_the_harness_named(specification, required_changes) or sections_to_revise(
+        specification, required_changes, model)
     if not chosen:
         # Not a reason to hand the whole document back to one reply. Measured
         # live on a medium brief: the architect's full rewrite was cut at the

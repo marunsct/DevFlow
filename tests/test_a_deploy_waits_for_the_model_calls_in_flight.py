@@ -53,7 +53,7 @@ def test_every_call_of_the_model_class_goes_through_the_gate():
 def test_the_deploy_holds_waits_and_lifts():
     script = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()
     deploy = script[script.index("\ndeploy)"):script.index("\nfreshness)")]
-    assert deploy.index("touch $gate/hold") < deploy.index("docker compose up -d app worker")
+    assert deploy.index("touch $gate/hold") < deploy.index("compose_up.sh\" app worker")
     assert "find $gate/inflight -type f -mmin -40" in deploy and "rm -f $gate/inflight/* $gate/hold" in deploy
 
 

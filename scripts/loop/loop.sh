@@ -569,7 +569,8 @@ deploy)
     sleep 5; waited=$((waited + 5))
   done
   [ "$waited" -gt 0 ] && echo "model calls finished after ${waited}s; deploying ($(jst '+%H:%M JST'))"
-  docker compose up -d app worker
+  # Never left hanging on a container at Created, and a service not on its new image is brought up again.
+  "$ROOT/scripts/loop/compose_up.sh" app worker 9>&-
   # The old processes are gone: their markers mean nothing now. Lift the hold.
   docker compose exec -T worker sh -c "rm -f $gate/inflight/* $gate/hold"
   sleep 10
@@ -603,8 +604,10 @@ build)
   git -C "$ROOT" worktree add -q --detach "$head_tree" "$built"
   started=$(date +%s)
   ok=1
+  # The lock is not handed down (8>&-): Docker's credential helper, hung on a locked key store, kept it and every
+  # later build refused to start.
   docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
-    build --progress=plain --build-arg HARNESS_COMMIT="$built" app worker > "$STATE/build.log" 2>&1 || ok=0
+    build --progress=plain --build-arg HARNESS_COMMIT="$built" app worker > "$STATE/build.log" 2>&1 8>&- || ok=0
   git -C "$ROOT" worktree remove --force "$head_tree"
   if [ "$ok" = 0 ] || [ "$(built_from)" != "$built" ]; then
     echo "build of ${built:0:7} FAILED after $(( $(date +%s) - started ))s; see $STATE/build.log" >&2; exit 1

@@ -171,3 +171,23 @@ def test_a_layered_setup_s_memory_leaves_the_specification_out(tmp_path):
     (tmp_path / SETUP_SCOPE_FILE).write_text('{"project": "notes-api", "files": ["notes_api/main.py"]}')
     assert project_memory._kept_out_for("stack_setup_0", tmp_path) == ("docs/technical_specification.md",)
     assert project_memory._kept_out_for("defect_fix_1", tmp_path) == ()
+
+
+def test_a_layered_entry_carries_the_layer_s_own_files_so_its_smoke_tests_import_nothing_missing(tmp_path):
+    """Measured on the first falcon run after LF.732: proven, then not kept - its smoke tests import
+    `notes_api/__init__.py`, the layer's own package marker, which the entry did not carry."""
+    from app.stacks import custom_setup
+    from app.stacks.custom_setup import read_declaration, write_runner_layer
+
+    project = tmp_path / "notes-api"
+    project.mkdir()
+    left = write_runner_layer(project, pack_named("python-http-api"), "notes-api", "Notes")
+    for name in left:
+        (project / name).parent.mkdir(parents=True, exist_ok=True)
+        (project / name).write_text("import falcon\napp = falcon.App()\n" if name.endswith("main.py") else "x = 1\n")
+    declared, problem = read_declaration(project)
+    assert problem == ""
+    kept = [*declared.kept_files, *declared.smoke_files, *custom_setup._the_layer_s_framework_files(declared, "notes-api")]
+    assert "notes_api/__init__.py" in kept
+    files = {n: (project / n).read_text() for n in kept if (project / n).is_file()}
+    assert custom_setup._smoke_tests_import_the_product(project, declared, files) == []

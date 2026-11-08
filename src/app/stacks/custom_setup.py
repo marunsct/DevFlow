@@ -1238,7 +1238,11 @@ def _the_layer_s_framework_files(declared: Any, project: str) -> list[str]:
     if layer is None:
         return []
     package = python_package_name(project)
-    return [layer.filled(path, project, project, package) for path in layer.framework_files]
+    # Every file the layer and the stage wrote, not the framework's alone: the layer's own package marker
+    # (`<package>/__init__.py`) is what its smoke tests import, and an entry without it was refused as importing
+    # the product's code (measured on the first falcon run after LF.732: proven, not kept).
+    return list(dict.fromkeys(layer.filled(path, project, project, package)
+                              for path in (*layer.framework_files, *layer.files, *layer.smoke_files)))
 
 
 def _the_layer_first(project_root: Path, declaration: str) -> list[str]:

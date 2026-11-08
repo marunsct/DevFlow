@@ -423,6 +423,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     gaps.extend(_code_no_review_read(config["configurable"].get(APP_RUN_ID_KEY), {**state, **update}))
     gaps.extend(_what_the_release_re_check_finds(state, root))
     gaps.extend(_code_the_product_does_not_run(root))
+    gaps.extend(_a_development_server(root))
     # Plan item AF: whether the suite would notice the product breaking.
     from app.acceptance.mutation import what_the_suite_does_not_notice
 
@@ -607,6 +608,46 @@ def _reviews_that_were_not_independent(run_id: str | None = None) -> list[str]:
 
 #: The stages that read the product's code and judge it.
 _CODE_REVIEWS = ("code_review", "milestone_review", "security_review")
+
+
+#: Source files a development-server check reads, by suffix: the languages `seed.DEVELOPMENT_SERVERS` covers.
+_SERVER_SOURCES = {".py": "python", ".php": "php", ".rb": "ruby", ".js": "javascript", ".mjs": "javascript", ".sh": ""}
+
+
+def _a_development_server(root: Any) -> list[str]:
+    """A note when a product no pack set up serves through a development server; [] otherwise. Never raises.
+
+    Harness review HR2.PR.12: both products of one custom stack served through a standard-library development server while their declared
+    dependencies named a production server. A pack's start is its own choice, and is not read.
+    """
+    try:
+        from app.plugins.seed import DEVELOPMENT_SERVERS
+        from app.stacks import contract
+        from app.stacks.custom_setup import PROVEN_SETUP
+
+        found = contract.the_pack(Path(root))
+        if found and getattr(found[0], "name", "") != PROVEN_SETUP:
+            return []
+        project = (Path(root) / ".project-directory").read_text(encoding="utf-8").strip() \
+            if (Path(root) / ".project-directory").is_file() else ""
+        base = Path(root) / project if project else Path(root)
+        every = tuple(marker for markers in DEVELOPMENT_SERVERS.values() for marker in markers)
+        for path in sorted(base.rglob("*")):
+            parts = set(path.relative_to(base).parts)
+            if not path.is_file() or path.suffix not in _SERVER_SOURCES or parts & {"node_modules", ".venv", "venv",
+                                                                                    "tests", "test", "acceptance"}:
+                continue
+            language = _SERVER_SOURCES[path.suffix]
+            markers = every if not language else DEVELOPMENT_SERVERS.get(language, ())
+            text = path.read_text(encoding="utf-8", errors="replace")
+            hit = next((m for m in markers if m in text), None)
+            if hit:
+                return [f"The product serves through a development server: `{hit.strip()}` in "
+                        f"`{path.relative_to(Path(root)).as_posix()}`. It is for trying code out, not for serving others; "
+                        "start it through a production server instead."]
+        return []
+    except Exception:  # noqa: BLE001 - the release says nothing it cannot read
+        return []
 
 
 def _accepted_at_an_escalation(state: Any) -> str:

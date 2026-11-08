@@ -43,6 +43,7 @@ _NOTES = re.compile(
         r"An escalation left this open(?: \(DR-\d+\))?: The sprint plan is ",
         # Worth knowing about what ships beside the product, or who judged it.
         r"Code the product does not run:",
+        r"The product serves through a development server:",
         r"Ships \d+ dependenc(y|ies) under a strong-copyleft licence",
         r"The judgement model .* could not be built ",
     ))

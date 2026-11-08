@@ -431,4 +431,14 @@ SEED_INSTRUCTIONS["playwright"] = (
 )
 
 
-__all__ = ["SEED_INSTRUCTIONS", "SETUP"]
+#: Development servers, per language: each is the framework's or the standard library's server for trying code out,
+#: not for serving a product (harness review HR2.PR.12 - both Falcon products served through `wsgiref`). A product no
+#: pack set up that serves through one ships with a note saying so; a pack that chose one on purpose is not read.
+DEVELOPMENT_SERVERS: dict[str, tuple[str, ...]] = {
+    "python": ("wsgiref.simple_server", "from wsgiref", "http.server", "SimpleHTTPServer", "manage.py runserver"),
+    "php": ("php -S ",),
+    "ruby": ("webrick", "WEBrick"),
+    "javascript": ("http-server ", "live-server "),
+}
+
+__all__ = ["DEVELOPMENT_SERVERS", "SEED_INSTRUCTIONS", "SETUP"]

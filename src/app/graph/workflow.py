@@ -5132,7 +5132,7 @@ def _a_success_measure_the_specification_drops(state: Any, spec_text: str) -> An
     """
     if state.get("specification_coverage_checked"):
         return None
-    if state.get("architecture_revision_count", 0) + 1 >= MAX_ARCHITECTURE_REVISIONS:
+    if state.get("architecture_revision_count", 0) + 1 >= _the_revision_limit():
         return None
     measures = [
         str(m) for m in (getattr(state.get("product_intake"), "success_measures", None) or []) if str(m).strip()
@@ -5178,7 +5178,7 @@ def _contract_lines_nothing_can_read(state: Any) -> Any:
     from app.acceptance import interface_contract
 
     if (not interface_contract.unread_at_review_switch.enabled() or state.get("specification_contract_lines_checked")
-            or state.get("architecture_revision_count", 0) + 1 >= MAX_ARCHITECTURE_REVISIONS):
+            or state.get("architecture_revision_count", 0) + 1 >= _the_revision_limit()):
         return None
     lines = getattr(state.get("technical_specification"), "interface_contract", None) or ()
     text = interface_contract.unread_lines_finding(lines)
@@ -5210,7 +5210,7 @@ def _a_brief_feature_the_specification_defers(state: Any, spec_text: str) -> Any
     """
     if state.get("specification_deferrals_checked"):
         return None
-    if state.get("architecture_revision_count", 0) + 1 >= MAX_ARCHITECTURE_REVISIONS:
+    if state.get("architecture_revision_count", 0) + 1 >= _the_revision_limit():
         return None
     brief = getattr(state.get("document"), "text", "") or ""
     from app.analysis.integration_checks import brief_features_the_text_defers
@@ -5274,7 +5274,7 @@ def _behaviour_the_specification_gives_kept_files(state: Any, spec_text: str) ->
     try:
         if state.get("specification_kept_files_checked"):
             return None
-        if state.get("architecture_revision_count", 0) + 1 >= MAX_ARCHITECTURE_REVISIONS:
+        if state.get("architecture_revision_count", 0) + 1 >= _the_revision_limit():
             return None
         from app.stacks import choose_pack
 
@@ -8912,6 +8912,16 @@ def _the_stack_pack_for(state: Any, update: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _the_revision_limit() -> int:
+    """How many design revisions this run has: two in fast delivery, else `MAX_ARCHITECTURE_REVISIONS`.
+
+    One helper for the escalation and every harness finding's guard (HR2.D.4): the guards compared with the full
+    limit while fast delivery escalated at two, so a harness finding first raised on the last revision passed its
+    guard and escalated unrevised.
+    """
+    return 2 if _fast_delivery() else MAX_ARCHITECTURE_REVISIONS
+
+
 def _fast_delivery() -> bool:
     """Whether this deployment delivers fast (`app.delivery`).
 
@@ -9689,7 +9699,7 @@ def build_workflow_graph(
             update["architecture_revision_count"] = revision_count
             # Fast delivery revises once: blocking findings still open after
             # that are decided as risks, as they are after the full count.
-            limit = 2 if _fast_delivery() else MAX_ARCHITECTURE_REVISIONS
+            limit = _the_revision_limit()
             if revision_count >= limit:
                 # Decided, not stopped: see `app.graph.escalation`. The run used
                 # to fail here - one stored run after six revisions - although

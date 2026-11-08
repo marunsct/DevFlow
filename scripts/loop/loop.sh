@@ -657,7 +657,9 @@ nightly)
   live=$("${DB[@]}" "select count(*) from runs where status in ('running','queued','pending')")
   if [ "${live:-2}" -ge "${NIGHTLY_SKIP_AT:-2}" ]; then echo "$(jst '+%F %H:%M JST') nightly skipped: $live runs are live" | tee -a "$STATE/nightly.log"; exit 0; fi
   log="$STATE/nightly-$(date +%F).log"
-  { echo "== $(jst)"; in_worker verify_packs.py; "$PY" "$HERE/pack_freshness.py"; } > "$log" 2>&1 || true
+  # In a throwaway container of the worker image (HR2.SS.5): exec'd into the live worker, a deploy that recreated it
+  # killed the check mid-way with no summary (11-08 09:4x).
+  { echo "== $(jst)"; docker compose run --rm -T --no-deps worker python - < "$HERE/verify_packs.py"; "$PY" "$HERE/pack_freshness.py"; } > "$log" 2>&1 || true
   echo "$(jst '+%F %H:%M JST') nightly: $(grep -E 'packs scaffolded' "$log" | tail -1); $(tail -1 "$log") -> $log" | tee -a "$STATE/nightly.log"
   ;;
 suite)

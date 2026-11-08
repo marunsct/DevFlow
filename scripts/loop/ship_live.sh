@@ -24,7 +24,8 @@ fi
 
 # Built before any run is paused (harness review HR2.R.3): the build's minutes were spent inside the pause, and a
 # build that fails or a Docker that hangs now stops here with no run touched.
-if ! "$L" build; then
+# SHIP_COMMIT names the commit to ship (default HEAD): one whose images are built already ships with no build.
+if ! "$L" build ${SHIP_COMMIT:-}; then
   echo "ship-live: the build failed; no run was paused" >&2; exit 1
 fi
 
@@ -54,7 +55,7 @@ if [ "${#refused[@]}" -gt 0 ]; then
 fi
 echo "ship-live: paused ${#paused[@]} run(s): ${paused[*]:-none}"
 
-deployed=$(BOUNDARY_WAIT=0 timeout 1500 "$L" deploy 2>&1 || true)
+deployed=$(BOUNDARY_WAIT=0 timeout 1500 "$L" deploy ${SHIP_COMMIT:-} 2>&1 || true)
 echo "$deployed" | grep -E "image matches|error|ERROR" || true
 # A deploy that never replaced the containers (measured: Docker Desktop hung on a container create, the old worker
 # kept running) used to end "running" and exit 0. The runs are resumed either way; the exit says it did not land.

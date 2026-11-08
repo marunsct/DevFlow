@@ -598,6 +598,9 @@ build)
   flock -n 8 || { echo "another build is running (lock $STATE/build.lock)" >&2; exit 1; }
   timeout 20 docker info >/dev/null 2>&1 || { echo "Docker does not answer (docker info, 20 s); nothing was built" >&2; exit 1; }
   built=$(git -C "$ROOT" rev-parse "${2:-HEAD}^{commit}")
+  # Built already: nothing to do, and no registry asked (a retry's build hung on Docker's credential helper for an
+  # image that was already there). REBUILD=1 builds anyway.
+  if [ "$(built_from)" = "$built" ] && [ "${REBUILD:-0}" != 1 ]; then echo "images already built from ${built:0:7}"; exit 0; fi
   # Built from a clean checkout, never the working tree: another session's uncommitted, unverified edits sat in the
   # same tree, and a build of it shipped them into the live run.
   head_tree=$(mktemp -d)/head

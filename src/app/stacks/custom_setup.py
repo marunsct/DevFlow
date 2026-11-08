@@ -962,7 +962,8 @@ def prove(
         "declaration": (project_root / DECLARATION_FILE).read_text(encoding="utf-8", errors="replace"),
         "files": {
             name: (project_root / name).read_text(encoding="utf-8", errors="replace")
-            for name in (*declared.kept_files, *declared.smoke_files)
+            for name in (*declared.kept_files, *declared.smoke_files, *_the_layer_s_framework_files(declared, project))
+            if (project_root / name).is_file()
         },
     }
     proven_code = _the_setup_s_own_code(project_root, declared)
@@ -1221,6 +1222,36 @@ def _chosen_by(model: Any, stack: Any) -> Path | None:
 _REPLAYED: dict[str, Path] = {}
 
 
+def _the_layer_s_framework_files(declared: Any, project: str) -> list[str]:
+    """The framework files a layered setup's stage wrote (its entry, its manifest): kept with the entry (HR2.SS.1)."""
+    from app.stacks import pack_named, python_package_name
+
+    layer = pack_named(str(getattr(declared, "layer", "") or "")) if getattr(declared, "layer", "") else None
+    if layer is None:
+        return []
+    package = python_package_name(project)
+    return [layer.filled(path, project, project, package) for path in layer.framework_files]
+
+
+def _the_layer_first(project_root: Path, declaration: str) -> list[str]:
+    """Write the runner layer an entry's declaration names, before the entry's own files; the paths written.
+
+    Harness review HR2.SS.1: a layered entry held its declaration, kept and smoke files only, so a replay lacked the
+    layer's manifests and runners and never proved - 0 replays in 106 workspaces.
+    """
+    from app.stacks import pack_named
+
+    try:
+        layer = pack_named(str(json.loads(declaration).get("layer") or ""))
+    except (ValueError, AttributeError):
+        return []
+    if layer is None or not layer.framework_files:
+        return []
+    before = {p for p in project_root.rglob("*") if p.is_file()}
+    write_runner_layer(project_root, layer, project_root.name, project_root.name)
+    return sorted(p.relative_to(project_root).as_posix() for p in project_root.rglob("*") if p.is_file() and p not in before)
+
+
 def replay(project_root: Path, stack: Any, model: Any = None) -> list[str]:
     """Write a setup proven in an earlier run for this stack into `project_root`; the paths written, or [].
 
@@ -1239,7 +1270,7 @@ def replay(project_root: Path, stack: Any, model: Any = None) -> list[str]:
     files = record.get("files") if isinstance(record, dict) else None
     if not isinstance(files, dict) or not isinstance(record.get("declaration"), str):
         return []
-    written: list[str] = []
+    written: list[str] = _the_layer_first(project_root, record["declaration"])
     for name, text in {**files, DECLARATION_FILE: record["declaration"]}.items():
         relative = _in_this_project(name, project_root)
         if relative is None or not isinstance(text, str):
@@ -1247,7 +1278,8 @@ def replay(project_root: Path, stack: Any, model: Any = None) -> list[str]:
         target = project_root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
-        written.append(relative)
+        if relative not in written:
+            written.append(relative)
     if written:
         _REPLAYED[str(project_root)] = entry
         # Kept on disk too: a worker restarted between the replay and its proof (a deploy) forgot it, and an entry
@@ -1312,6 +1344,7 @@ def check_the_library(scratch: Path, run_for: Any = None) -> list[tuple[str, boo
         shutil.rmtree(workspace, ignore_errors=True)
         project_root = workspace / "product"
         project_root.mkdir(parents=True)
+        _the_layer_first(project_root, record["declaration"])  # as a run's replay does (HR2.SS.1)
         for name, text in {**files, DECLARATION_FILE: record["declaration"]}.items():
             relative = _in_this_project(name, project_root)
             if relative is not None and isinstance(text, str):

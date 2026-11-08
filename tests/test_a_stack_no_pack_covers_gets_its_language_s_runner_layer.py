@@ -100,3 +100,44 @@ def test_the_request_on_a_layer_asks_only_for_the_framework_files():
     assert "Write exactly one unit smoke test" not in text
     body = text[text.index("--- Set up"):]
     assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", body, re.I)
+
+
+# --- a layered entry replays with its layer (harness review HR2.SS.1) ----------------------------
+
+def test_a_layered_entry_replays_with_its_layer_and_the_stage_s_framework_files(tmp_path, monkeypatch):
+    import json
+
+    from app.stacks import custom_setup
+    from app.stacks.custom_setup import read_declaration, remember, replay, write_runner_layer
+
+    monkeypatch.setenv("PROVEN_SETUP_LIBRARY", str(tmp_path / "library"))
+    proven = tmp_path / "first" / "notes-api"
+    proven.mkdir(parents=True)
+    left = write_runner_layer(proven, pack_named("python-http-api"), "notes-api", "Notes")
+    for name in left:
+        (proven / name).parent.mkdir(parents=True, exist_ok=True)
+        (proven / name).write_text(f"# {name}, as the setup stage wrote it\n")
+    declared, problem = read_declaration(proven)
+    assert problem == ""
+    kept = [*declared.kept_files, *declared.smoke_files, *custom_setup._the_layer_s_framework_files(declared, "notes-api")]
+    assert {"requirements.txt", "notes_api/main.py"} <= set(kept), "the stage's framework files go with the entry"
+    remember(_falcon(), {"declaration": (proven / "stack-setup.json").read_text(),
+                         "files": {n: (proven / n).read_text() for n in kept if (proven / n).is_file()}})
+
+    empty = tmp_path / "second" / "notes-api"
+    empty.mkdir(parents=True)
+    written = replay(empty, _falcon())
+
+    assert (empty / "pytest.ini").is_file() and (empty / "acceptance" / "conftest.py").is_file(), "the layer first"
+    assert (empty / "requirements.txt").read_text().startswith("# requirements.txt, as the setup stage wrote it")
+    assert (empty / "notes_api" / "main.py").is_file()
+    assert "pytest.ini" in written and json.loads((empty / "stack-setup.json").read_text())["layer"] == "python-http-api"
+
+
+def test_the_proof_keeps_the_layer_s_framework_files_with_the_entry():
+    import inspect
+
+    from app.stacks import custom_setup
+
+    assert "_the_layer_s_framework_files(declared, project)" in inspect.getsource(custom_setup.prove)
+    assert "_the_layer_first(project_root, record[\"declaration\"])" in inspect.getsource(custom_setup.check_the_library)

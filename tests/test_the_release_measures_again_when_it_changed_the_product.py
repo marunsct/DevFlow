@@ -15,7 +15,9 @@ from app.graph import delivery
 def _suite(monkeypatch, *, changed: bool, failed: list[str], ran: bool = True):
     runs = []
     monkeypatch.setattr("app.acceptance.suite.is_locked", lambda root: True)
-    monkeypatch.setattr("app.acceptance.suite.last_result", lambda root: {"fingerprint": "abc"})
+    monkeypatch.setattr("app.acceptance.suite.last_result", lambda root: {"fingerprint": "abc", "criteria": {
+        "AC-2": {"tests": [{"name": n, "outcome": "passed"} for n in failed]},
+        "AC-9": {"tests": [{"name": "[AC-9] failing all along", "outcome": "failed"}]}}})
     monkeypatch.setattr("app.acceptance.unstable.unchanged_since_the_suite_measured", lambda root: not changed)
     tests = [SimpleNamespace(name=n, outcome="failed") for n in failed] + [SimpleNamespace(name="ok", outcome="passed")]
 
@@ -49,3 +51,15 @@ def test_the_release_measures_again_after_its_clean_ups() -> None:
     source = inspect.getsource(delivery.release)
     assert source.index("_clear_the_throwaways(root)") < source.index("_measured_again_if_it_changed(root)") \
         < source.index("release_outcome = release_files.write(root)")
+
+
+
+def test_a_test_that_was_failing_before_the_clean_ups_is_not_blamed_on_them(monkeypatch, tmp_path) -> None:
+    """The first time this fired, the four tests it named were the deferred criteria's, failing all along."""
+    monkeypatch.setattr("app.acceptance.suite.is_locked", lambda root: True)
+    monkeypatch.setattr("app.acceptance.suite.last_result", lambda root: {"fingerprint": "abc", "criteria": {
+        "AC-9": {"tests": [{"name": "[AC-9] failing all along", "outcome": "failed"}]}}})
+    monkeypatch.setattr("app.acceptance.unstable.unchanged_since_the_suite_measured", lambda root: False)
+    monkeypatch.setattr("app.acceptance.suite.run", lambda root: SimpleNamespace(
+        ran=True, report=SimpleNamespace(tests=[SimpleNamespace(name="[AC-9] failing all along", outcome="failed")])))
+    assert delivery._measured_again_if_it_changed(tmp_path) == []

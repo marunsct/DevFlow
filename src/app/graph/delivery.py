@@ -650,10 +650,14 @@ def _measured_again_if_it_changed(root: Any) -> list[str]:
             return []
         if unchanged_since_the_suite_measured(root):
             return []
+        # What passed before the clean-ups: only a test that passed then and fails now was broken by them. Measured:
+        # the first time this fired, the four tests it named were the deferred criteria's, failing all along.
+        passed_before = {str(t.get("name")) for entry in ((suite.last_result(root) or {}).get("criteria") or {}).values()
+                         for t in entry.get("tests") or [] if t.get("outcome") == "passed"}
         logger.info("The release's clean-ups changed the product after the suite measured it; running the suite again")
         again = suite.run(root)
         failed = [str(t.name) for t in getattr(getattr(again, "report", None), "tests", None) or []
-                  if getattr(t, "outcome", "") == "failed"]
+                  if getattr(t, "outcome", "") == "failed" and str(t.name) in passed_before]
         if not getattr(again, "ran", False):
             return [f"{CHANGED_AT_RELEASE} could not run: {str(getattr(again, 'problem', '') or 'no report')[:400]}"]
         if failed:

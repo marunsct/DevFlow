@@ -62,6 +62,10 @@ _IDS_THAT_ARE_NOT_NUMBERS = re.compile(
 )
 _PAGE = re.compile(_CRITERION + r"\s+page\s+(/\S*)\s+(?:[\w-]+\s+)*?([a-z]+)\s+\"([^\"]+)\"\s*$")
 _COMMAND = re.compile(_CRITERION + r"\s+command\s+(.+?)\s*->\s*exit\s+(\d+)\s*$")
+#: A command line with what it prints before its exit code: `-> stdout 'hello-world' exit 0`, or in words,
+#: `-> prints JSON counts and exits 0`. The printed text is checked; words are kept as the line's note.
+_COMMAND_WITH_OUTPUT = re.compile(
+    _CRITERION + r"\s+command\s+(.+?)\s*->\s*(?:stdout\s+(['\"])(.*?)\3|(\w[^'\"]*?))\s+(?:and\s+)?exits?\s+(\d+)\s*$")
 
 #: A control named by its element where the contract asks for its ARIA role.
 _ROLE_OF_THE_ELEMENT = {"textarea": "textbox", "select": "combobox"}
@@ -268,6 +272,8 @@ class Check:
     name: str = ""
     command: str = ""
     exit_code: int = 0
+    #: What a command line says it prints; "" when it says nothing it prints.
+    stdout: str = ""
     #: What the line says it is for, between its path and its arrow ("for non-existent", "with invalid title").
     note: str = ""
     #: The write line's path a record is made through before this check; "" for a check on no record.
@@ -325,6 +331,9 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
             checks.append(Check(match[1], "page", line, path=match[2], role=role, name=match[4]))
         elif match := _COMMAND.match(line):
             checks.append(Check(match[1], "command", line, command=match[2], exit_code=int(match[3])))
+        elif match := _COMMAND_WITH_OUTPUT.match(line):
+            checks.append(Check(match[1], "command", line, command=match[2], exit_code=int(match[6]),
+                                stdout=match[4] or "", note=(match[5] or "").strip()))
         elif (lenient := _lenient_page(line)) is not None:
             checks.append(lenient)
         else:
@@ -860,6 +869,12 @@ def _the_commands_kept(checks: list[Check], root: Path, project: str, runner: An
     return failed, unchecked
 
 
+def _it_printed(output: str, expected: str) -> bool:
+    """Whether the output is the expected text, or holds it as one whole line."""
+    want = expected.strip()
+    return output.strip() == want or want in (line.strip() for line in output.splitlines())
+
+
 def _run_each_command(checks: list[Check], project: str, runner: Any, failed: list[str], unchecked: list[str]) -> None:
     import shlex
 
@@ -880,6 +895,9 @@ def _run_each_command(checks: list[Check], project: str, runner: Any, failed: li
             continue
         if code != check.exit_code:
             failed.append(f"[{check.criterion}] {check.line} - it exited {code}")
+        elif check.stdout and not _it_printed(str(outcome.get("stdout") or outcome.get("output") or ""), check.stdout):
+            printed = str(outcome.get("stdout") or outcome.get("output") or "").strip()
+            failed.append(f"[{check.criterion}] {check.line} - it printed {printed[:120]!r}")
 
 
 def _the_probe_s_report(project: Path, project_name: str, probe: dict[str, Any], web: list[Check], run: Any,

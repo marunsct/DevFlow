@@ -66,6 +66,51 @@ _COMMAND = re.compile(_CRITERION + r"\s+command\s+(.+?)\s*->\s*exit\s+(\d+)\s*$"
 #: A control named by its element where the contract asks for its ARIA role.
 _ROLE_OF_THE_ELEMENT = {"textarea": "textbox", "select": "combobox"}
 
+#: A page line in none of the forms, read by its quoted name and the role word before it (`_lenient_page`).
+_A_PAGE_LINE = re.compile(_CRITERION + r"\s+page\s+(?:(/\S*)\s+)?(.*?)\"([^\"]+)\"(.*)$")
+#: An element named by its label: `page / input[aria-label="Title"] required`.
+_A_LABELLED_ELEMENT = re.compile(_CRITERION + r"\s+page\s+(?:(/\S*)\s+)?(?:\S+\s+)*?([a-z][a-z0-9]*)\[aria-label=\"([^\"]+)\"\](.*)$")
+#: What may follow the name: attributes (`type="text"`, `required`), never another name or a selector.
+_ATTRIBUTES_ONLY = re.compile(r"^(?:\s+[\w-]+(?:=\"[^\"]*\")?)*\s*$")
+#: ARIA roles a page line may name, and the elements written for them.
+_ARIA_ROLES = frozenset({
+    "alert", "article", "banner", "button", "cell", "checkbox", "columnheader", "combobox", "dialog", "form", "grid",
+    "heading", "img", "link", "list", "listbox", "listitem", "main", "navigation", "option", "progressbar", "radio",
+    "region", "row", "rowheader", "search", "searchbox", "spinbutton", "status", "switch", "tab", "table", "tablist",
+    "tabpanel", "textbox"})
+_ELEMENT_ROLES = {"input": "textbox", "textarea": "textbox", "select": "combobox", "a": "link", "img": "img",
+                  "ul": "list", "ol": "list", "li": "listitem", "nav": "navigation", "h1": "heading", "h2": "heading",
+                  "h3": "heading", "h4": "heading", "h5": "heading", "h6": "heading", "tr": "row", "td": "cell",
+                  "th": "columnheader", "dropdown": "combobox", "field": "textbox"}
+
+
+def _lenient_page(line: str) -> Check | None:
+    """A page line written near the form, read when nothing else is unsure; None otherwise.
+
+    Measured over 274 scored runs: 87 carried page lines no check was compiled from, written with a file after the
+    path (`page / index.html textbox "Title"`), attributes after the name (`... input "Title" type="text"`) or the
+    element for its role. The quoted name and the word just before it are taken; the role must be one the page
+    check knows, so a selector (`a[href=...] text "x"`) or an unknown word is still left unread.
+    """
+    written = line
+    # A name in single quotes, where the line has no double ones: `button 'Add'`.
+    if '"' not in line:
+        line = re.sub(r"'([^']+)'", r'"\1"', line)
+    if (labelled := _A_LABELLED_ELEMENT.match(line)) and _ATTRIBUTES_ONLY.match(labelled[5]):
+        word, name, path = labelled[3].lower(), labelled[4], labelled[2]
+    elif (match := _A_PAGE_LINE.match(line)) and _ATTRIBUTES_ONLY.match(match[5]) and '"' not in match[3]:
+        words = match[3].split()
+        if not words or not re.fullmatch(r"[a-z][a-z0-9]*", words[-1].lower()):
+            return None
+        word, name, path = words[-1].lower(), match[4], match[2]
+    else:
+        return None
+    role = word if word in _ARIA_ROLES else _ELEMENT_ROLES.get(word)
+    if role is None:
+        return None
+    # No path written: the product's page, the one a file name such as `index.html` serves.
+    return Check(labelled[1] if labelled else match[1], "page", written, path=path or "/", role=role, name=name)
+
 #: A parenthesised note after the arrow with a status before it: "-> 201 (with Note object) or 400".
 _A_NOTE_AMONG_THE_STATUSES = re.compile(r"(->\s*\d{3}(?:\s*(?:or|/|,|\|)\s*\d{3})*)\s*\([^()]*\)")
 #: A parenthesised note at the end of a line: "-> 200 (updates the field)".
@@ -280,6 +325,8 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
             checks.append(Check(match[1], "page", line, path=match[2], role=role, name=match[4]))
         elif match := _COMMAND.match(line):
             checks.append(Check(match[1], "command", line, command=match[2], exit_code=int(match[3])))
+        elif (lenient := _lenient_page(line)) is not None:
+            checks.append(lenient)
         else:
             unreadable.append(line)
     return checks, unreadable

@@ -77,8 +77,12 @@ def service_dockerfile(server: str, port: int = 8000) -> str:
 
 
 UNIT_TEST = (".venv/bin/python", "-m", "pytest", "tests", "-q", "--junitxml=test-results/unit.xml")
+#: `--confcutdir=acceptance`: no `conftest.py` above the suite is loaded. Measured on one run: a root `conftest.py` a
+#: builder wrote skipped a locked acceptance test in `pytest_collection_modifyitems`, and the suite's writer, who may
+#: write only `acceptance/`, could not take it out. The kept `pytest.ini` puts the project on the import path itself.
 ACCEPTANCE_TEST = (
-    ".venv/bin/python", "-m", "pytest", "acceptance", "-q", "--junitxml=test-results/acceptance.xml",
+    ".venv/bin/python", "-m", "pytest", "acceptance", "-q", "--confcutdir=acceptance",
+    "--junitxml=test-results/acceptance.xml",
 )
 
 UNIT_GUIDE = """Unit tests go in `tests/`, named `test_<module>.py`, as plain pytest functions

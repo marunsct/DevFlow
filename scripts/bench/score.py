@@ -124,6 +124,10 @@ _NOT_THE_PRODUCT_S = {"node_modules", ".venv", "venv", "__pycache__", ".git", "d
 _SHIPPED_DATA = re.compile(r"\.(db|sqlite|sqlite3)$", re.IGNORECASE)
 #: A comment that is the model thinking aloud, not a note for the code's reader.
 _DELIBERATION = re.compile(r"^\s*(#|//|\*)\s*(wait[,.]|actually[,]|hmm\b|let me\b|i think\b|on second thought)", re.IGNORECASE)
+#: A program reading its port from the environment, in the common spellings of each language's own call.
+_READS_PORT = re.compile(r"""(?:process\.env\.PORT|process\.env\[["']PORT["']\]|environ(?:\.get)?\(\s*["']PORT|"""
+                         r"""environ\[["']PORT|getenv\(\s*["']PORT|Getenv\(\s*"PORT|ENV\[["']PORT|env\("PORT|"""
+                         r"""Deno\.env\.get\(\s*["']PORT)""")
 _SOURCE = re.compile(r"\.(py|js|ts|jsx|tsx|mjs|cjs|go|rs|rb|java|kt|php|cs)$")
 
 
@@ -165,7 +169,10 @@ def handoff(product: Path) -> dict:
         "readme_names_its_configuration": None if not _it_has_configuration(product) else bool(
             re.search(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|\bPORT\b", readme.read_text(encoding="utf-8", errors="replace"))
             or re.search(r"\bport\b|environment variable|configuration", text)) if readme else False,
-        "start_reads_its_port": ("PORT" in start.read_text(encoding="utf-8", errors="replace")) if start.is_file() else None,
+        # The start script, or the program it runs: one start runs `node src/main.ts`, which reads PORT itself.
+        "start_reads_its_port": ("PORT" in start.read_text(encoding="utf-8", errors="replace") or any(
+            _READS_PORT.search(p.read_text(encoding="utf-8", errors="replace"))
+            for p in files if _SOURCE.search(p.name) and p.stat().st_size < 400_000)) if start.is_file() else None,
         "no_shipped_data": not any(_SHIPPED_DATA.search(p.name) for p in files),
         "no_thinking_aloud_in_comments": not any(
             _DELIBERATION.match(line)

@@ -56,3 +56,14 @@ def test_the_ledger_takes_the_handoff_score(tmp_path) -> None:
     (tmp_path / "run-x.json").write_text(json.dumps({"score": 1.0, "handoff_score": 0.75}))
     assert module.with_the_scores({"run": "run-x"}, tmp_path)["handoff_score"] == 0.75
     assert "handoff_score" in module.WORSE_WHEN_LOWER
+
+
+def test_a_start_that_runs_a_program_reading_its_port_counts(tmp_path) -> None:
+    """One pack's start runs `node src/main.ts`, and the program reads PORT itself: that start does read its port."""
+    product = _a_product(tmp_path)
+    (product / "start.sh").write_text("#!/bin/sh\nexec node src/main.ts\n")
+    (product / "src" / "main.ts").write_text("const port = Number(process.env.PORT ?? 3000);\n")
+    assert _score().handoff(product)["handoff"]["start_reads_its_port"] is True
+    (product / "src" / "main.ts").write_text("const port = 3000;\n")
+    (product / "src" / "app.py").write_text("x = 1\n")
+    assert _score().handoff(product)["handoff"]["start_reads_its_port"] is False

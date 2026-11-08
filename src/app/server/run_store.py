@@ -105,11 +105,17 @@ _MIGRATIONS = (
     # A run's time on the page is its time less these (owner, 2026-11-03: pause time is not the run's time).
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS paused_since TIMESTAMPTZ",
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS paused_seconds DOUBLE PRECISION NOT NULL DEFAULT 0",
+    # Every stretch the run was not working counts, not only a pause (owner, 2026-11-08): stopped by a fault, a
+    # cancel, or waiting on a person. Measured: a host fault left two runs `failed` for 19 hours, then they were
+    # resumed, and the page counted those hours as the runs' time.
     """CREATE OR REPLACE FUNCTION runs_pause_clock() RETURNS trigger AS $clock$
+    DECLARE
+        stopped CONSTANT text[] := ARRAY['paused', 'failed', 'cancelled', 'waiting_for_approval',
+                                         'waiting_for_review', 'waiting_for_budget'];
     BEGIN
-        IF NEW.status = 'paused' AND OLD.status IS DISTINCT FROM 'paused' THEN
+        IF NEW.status = ANY(stopped) AND NOT (OLD.status = ANY(stopped)) THEN
             NEW.paused_since := now();
-        ELSIF NEW.status IS DISTINCT FROM 'paused' AND OLD.status = 'paused' THEN
+        ELSIF NOT (NEW.status = ANY(stopped)) AND OLD.status = ANY(stopped) THEN
             NEW.paused_seconds := COALESCE(OLD.paused_seconds, 0)
                 + GREATEST(EXTRACT(EPOCH FROM now() - COALESCE(OLD.paused_since, now())), 0);
             NEW.paused_since := NULL;
@@ -495,14 +501,18 @@ class RunStore:
             return {}
 
     def paused_seconds(self, run_ids: list[str]) -> dict[str, float]:
-        """{run_id: seconds paused in all, the pause going on now included} for the runs asked for. Never raises."""
+        """{run_id: seconds stopped in all (paused, failed, cancelled, waiting on a person), the stop going on now included
+        while the run can still go on} for the runs asked for. Never raises."""
         if not run_ids:
             return {}
         try:
             with self.get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT run_id, paused_seconds + COALESCE(EXTRACT(EPOCH FROM now() - paused_since), 0) "
+                        # The stretch going on now counts only while the run can still go on: a finished run's
+                        # time on the page ends where it ended, so its last stop is no part of it.
+                        "SELECT run_id, paused_seconds + CASE WHEN status IN ('completed', 'failed', 'cancelled') "
+                        "THEN 0 ELSE COALESCE(EXTRACT(EPOCH FROM now() - paused_since), 0) END "
                         "FROM runs WHERE run_id = ANY(%s)",
                         (list(run_ids),),
                     )

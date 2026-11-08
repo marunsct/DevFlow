@@ -561,7 +561,8 @@ export const RunDashboard: React.FC = () => {
   // How long the run has been going, or took. The dashboard could say which
   // node was current but never how long any of it had taken, which is the first
   // thing anyone watching a long build wants to know.
-  // Time paused is not the run's time (owner, 2026-11-03): left out, and said how much was.
+  // Time the run was not working is not its time (owner, 2026-11-03; 2026-11-08: stopped by a fault or waiting on a
+  // person too, not only paused): left out, and said how much was.
   const startedAt = new Date(run.created_at).getTime();
   const endedAt = isTerminal ? new Date(run.updated_at).getTime() : now;
   const pausedSeconds = Math.max(0, Math.round(run.paused_seconds ?? 0));
@@ -763,7 +764,7 @@ export const RunDashboard: React.FC = () => {
               <dd className="mt-1 text-[13px] text-text-primary tabular-nums">
                 {elapsed}
                 {pausedSeconds >= 60 && (
-                  <span className="block text-xs text-text-muted">{asTime(pausedSeconds)} paused, not counted</span>
+                  <span className="block text-xs text-text-muted">{asTime(pausedSeconds)} stopped or waiting, not counted</span>
                 )}
                 {!isTerminal && typical && <span className="block max-w-56 text-xs text-text-muted">{typical}</span>}
               </dd>

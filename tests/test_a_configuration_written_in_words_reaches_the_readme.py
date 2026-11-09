@@ -65,3 +65,15 @@ def test_a_specification_that_reads_no_setting_is_not_scored_against_the_readme(
     assert score._it_has_configuration(tmp_path / "app") is True
     spec.write_text("## Configuration\n- variable: `PORT`; type: int; default: 8000\n")
     assert score._it_has_configuration(tmp_path / "app") is True
+
+
+# Measured on one release: `- Environment Variable: PORT (default: 3000). Used by ...` - a full stop after the
+# bracket, the default inside it - matched nothing, and the README named no setting.
+def test_a_full_stop_after_the_variable_and_a_bracketed_default_are_read(tmp_path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "technical_specification.md").write_text(
+        "## Configuration\n"
+        "- Environment Variable: PORT (default: 3000). Used by scripts/serve.mjs to set the port the server listens on.\n"
+        "- File: index.html. Entry point.\n")
+    assert release_docs._the_configuration(tmp_path) == [
+        ("PORT", "3000", "Used by scripts/serve.mjs to set the port the server listens on")]

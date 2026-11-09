@@ -53,6 +53,11 @@ TESTS_ASSUME_ONLY_WHAT_THEY_MADE = (
     # after the build, each cost a suite reopen and a repair.
     "And a test never reads the text of a file the harness keeps - its start script, its configuration: that "
     "text is not the product's to change. What such a file must do, the test shows on the running product.\n"
+    # Measured on two runs in a row, both arms of a measurement: a locked test expected 24 characters for a string of
+    # 23 (or 25), counted by hand; each cost two fix rounds on a product that counted right.
+    "- A count or length of text the test writes itself - its characters, lines or bytes - is worked out in the test "
+    "from that text (its length, its lines), never written as a number: a number counted by hand is often one off, "
+    "and the test then fails a product that counts right.\n"
 )
 #: The kinds of product whose suite runs against one long-lived service.
 _A_SHARED_SERVICE = frozenset({"http_api", "fullstack"})

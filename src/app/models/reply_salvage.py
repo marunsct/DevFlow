@@ -306,6 +306,19 @@ def _cut_text(message: Any) -> bool:
         and not (getattr(message, "invalid_tool_calls", None) or ())
 
 
+def reasoning_left_open(text: str) -> str | None:
+    """The reasoning of a text that opens a reasoning tag it never closes; None for any other text."""
+    from app.models.capabilities import REASONING_TAGS
+
+    body = text.lstrip()
+    for tag in REASONING_TAGS:
+        if tag.startswith("<|"):
+            continue  # its closing form is the model's own; left to the paths that know it
+        if body.startswith(tag):
+            return None if "</" + tag[1:] in body else body[len(tag):].strip()
+    return None
+
+
 def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **kwargs: Any) -> Any:
     """`result`, or - when its reply hit the cap - the reply its own reasoning answers, or its text continued. Never raises."""
     reasoning = _the_last_reasoning()
@@ -317,6 +330,12 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
         lost, cut = _lost(message), _cut_text(message)
         if not (lost or cut):
             return result
+        # Text that is reasoning: a reply whose text opens a reasoning tag it never closes was cut while reasoning,
+        # not while answering. Measured on one run: a fix stage's reply, its thinking switched off, opened `<think>`
+        # in its text, reached the cap, and was continued twice more to 29,570 tokens - more reasoning, no answer.
+        unclosed = reasoning_left_open(str(message.content or "")) if cut else None
+        if unclosed is not None:
+            lost, cut, reasoning = True, False, unclosed
         if cut and repeating(str(message.content or "")):
             return result
         support = measure_if_new(model)

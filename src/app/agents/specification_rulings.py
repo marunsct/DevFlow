@@ -157,6 +157,27 @@ def _in_the_specification(quote: str, text: str, specification: str) -> bool:
     return _the_standard_holds(quote, specification)
 
 
+_PAIRS = {")": "(", "]": "[", "}": "{"}
+
+
+def _cut_through(quote: str) -> bool:
+    """Whether a quote opens or closes a bracket, a brace, a parenthesis, a double quote or a backtick it does not
+    also close or open: a fragment of a longer statement, not a statement.
+
+    Measured on one run: a ruling stood on `[{"word": w, "count": c}, ...]}` - one closing brace too many, cut from the
+    specification's `{"top": [...]}` - and the suite built to the fragment lost the hidden test of the JSON shape.
+    """
+    open_: list[str] = []
+    for character in quote:
+        if character in "([{":
+            open_.append(character)
+        elif character in _PAIRS:
+            if not open_ or open_[-1] != _PAIRS[character]:
+                return True
+            open_.pop()
+    return bool(open_) or quote.count('"') % 2 == 1 or quote.count("`") % 2 == 1
+
+
 def verified(answer: Rulings, specification: str, findings: list[str]) -> list[Ruling]:
     """The rulings whose both quotes are in the specification word for word and that settle an open finding, at most `MOST_RULINGS`."""
     text = _plain(specification)
@@ -172,6 +193,7 @@ def verified(answer: Rulings, specification: str, findings: list[str]) -> list[R
             else "a quote is too short or too long to be one statement"
             if not all(_LEAST_QUOTE_CHARS <= len(q) <= _MOST_QUOTE_CHARS for q in (first, second))
             else "one quote is inside the other" if first in second or second in first
+            else "a quote is cut from a longer statement" if _cut_through(first) or _cut_through(second)
             else "a quote is not in the specification word for word"
             if not (_in_the_specification(first, text, specification) and _in_the_specification(second, text, specification))
             else "it repeats a ruling" if frozenset((first, second)) in seen

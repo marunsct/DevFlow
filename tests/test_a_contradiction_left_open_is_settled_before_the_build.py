@@ -319,3 +319,19 @@ def test_a_label_does_not_let_an_invented_quote_through(tmp_path, on):
         finding=1, first_statement="Startup: If JSON is malformed, an error is thrown.",
         second_statement="Startup: this sentence appears nowhere at all.", stands="first", why="The brief says so.")])
     assert specification_rulings.verified(answer, "If JSON is malformed, an error is thrown.", ["F"]) == []
+
+
+# Measured on one run: a ruling stood on `[{"word": w, "count": c}, ...]}` - one closing brace too many, cut from the
+# specification's `{"top": [...]}` - and the suite built to the fragment lost the hidden test of the JSON shape.
+def test_a_ruling_on_a_quote_cut_from_a_longer_statement_is_rejected():
+    from app.agents.specification_rulings import Ruling, Rulings, verified
+
+    spec = ('Data shapes: the JSON output is {"top": [{"word": w, "count": c}, ...]} with the most common first.\n'
+            "Errors: a missing file prints `cannot read FILE` and exits 1.\n"
+            "The CLI prints the words one a line, as a list sorted by count.")
+    cut = Ruling(finding=1, first_statement='[{"word": w, "count": c}, ...]}',
+                 second_statement="as a list sorted by count", stands="first", why="only the top array matters")
+    whole = Ruling(finding=1, first_statement='the JSON output is {"top": [{"word": w, "count": c}, ...]}',
+                   second_statement="as a list sorted by count", stands="first", why="the brief gives the object")
+    assert verified(Rulings(rulings=[cut]), spec, ["[major] the output shape is given two ways"]) == []
+    assert verified(Rulings(rulings=[whole]), spec, ["[major] the output shape is given two ways"]) == [whole]

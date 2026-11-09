@@ -399,6 +399,20 @@ def _a_test_tool_install_nothing_would_find(command: Sequence[str], packages: Se
     return words.format(packages=" ".join(str(package) for package in packages)) if words else ""
 
 
+def _a_path_in_the_workspace(package: str, repo_root: str) -> bool:
+    """Whether an install's package is a directory or file of the workspace, named by its path."""
+    spec = package[5:] if package.startswith("file:") else package
+    if not spec or not package.startswith("file:") and re.match(r"^[A-Za-z][\w.-]*(?:\[|[=<>!~;@ ]|$)", spec) and not spec.endswith("/") and spec not in (".", ".."):
+        # A bare name is a package on the index, whatever directory shares it.
+        return False
+    try:
+        root = Path(repo_root).resolve()
+        target = (root / spec).resolve()
+        return target.exists() and (target == root or root in target.parents)
+    except (OSError, ValueError):
+        return False
+
+
 def _refuse_an_install_the_brief_rules_out(
     command: Sequence[str], repo_root: str
 ) -> str:
@@ -430,7 +444,9 @@ def _refuse_an_install_the_brief_rules_out(
     direction. The constraint was never aimed at the test suite; refusing its
     install made the product worse and the review wrong.
     """
-    packages = _a_package_this_command_would_add(command)
+    # The workspace's own project, installed by its path (`pip install -e .`), adds no dependency: measured on two
+    # runs in a row, a suite writer's `pip install -e . pytest` was refused under "no third-party dependencies".
+    packages = [p for p in _a_package_this_command_would_add(command) if not _a_path_in_the_workspace(str(p), repo_root)]
     if not packages:
         return ""
     if _is_a_test_only_install(command):

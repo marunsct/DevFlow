@@ -1531,6 +1531,9 @@ def _with_the_attempt(cycle: Any, index: int, stage: str, fix_result: Any, outco
         record = attempt_record(stage, fix_result, outcome)
         if calls is not None:
             record["calls"] = calls
+            from app.graph import defect_budget
+
+            defect_budget.record_calls(stage, defect, calls)
         attempts = [*(getattr(defect, "attempts", None) or []), record]
         return cycle.model_copy(update={"defects": [
             item.model_copy(update={"attempts": attempts}) if position == index else item

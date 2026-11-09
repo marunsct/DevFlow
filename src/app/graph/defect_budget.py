@@ -62,13 +62,49 @@ def calls_in(run_id: str | None, stage: str, since: str) -> int | None:
         return None
 
 
+#: The ledger event an attempt's model calls are recorded under, so the count follows the defect across re-plans.
+ATTEMPT_EVENT = "attempt calls"
+
+
+def record_calls(stage: str, defect: Any, calls: int) -> None:
+    """Note one attempt's model calls in the run's defect ledger, under the defect's id across rounds. Never raises."""
+    try:
+        from app.observability import defect_ledger
+
+        defect_ledger.note(ATTEMPT_EVENT, stage, defect=defect, detail=str(int(calls)))
+    except Exception:  # noqa: BLE001 - a count must never fail the stage it records
+        pass
+
+
+def _spent_in_the_run(ids: set[str]) -> int:
+    """The calls the ledger holds for defects `ids` over the whole run; 0 when unreadable."""
+    try:
+        from app.observability.transcript import _run_id_from_config, read_transcript
+
+        run_id = _run_id_from_config()
+        if not run_id or not ids:
+            return 0
+        return sum(int(str(r.get("detail") or "0").split()[0] or 0)
+                   for r in read_transcript(run_id, {"defect"})
+                   if r.get("event") == ATTEMPT_EVENT and r.get("defect_id") in ids)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 def spent(cycle: Any, index: int) -> int:
-    """The calls defect `index` and the defect it recurs from have cost, by their attempt records."""
+    """The calls defect `index` and the defect it recurs from have cost, by their attempt records - or over the whole
+    run, by the ledger, when that is more.
+
+    The attempt records live on the cycle, and a re-planned sprint starts a new one: measured over 30 runs, six
+    defects went past the cap this way (523 calls, 288 model minutes; 132 calls on one), and five were never fixed.
+    """
+    from app.observability.defect_ledger import defect_id
     from app.sprint import recurrence_chain
 
     defect = cycle.defects[index]
     chain = [defect, *recurrence_chain(defect, cycle.defects[:index])]
-    return sum(int((a or {}).get("calls") or 0) for d in chain for a in (getattr(d, "attempts", None) or []))
+    in_the_cycle = sum(int((a or {}).get("calls") or 0) for d in chain for a in (getattr(d, "attempts", None) or []))
+    return max(in_the_cycle, _spent_in_the_run({defect_id(d) for d in chain}))
 
 
 def spent_out(cycle: Any, index: int) -> str:
@@ -84,4 +120,5 @@ def spent_out(cycle: Any, index: int) -> str:
             + ("; ".join(did[-3:]) or "nothing recorded"))
 
 
-__all__ = ["MOST_CALLS", "ON_BY_DEFAULT", "calls_in", "enabled", "most_calls", "now", "spent", "spent_out"]
+__all__ = ["ATTEMPT_EVENT", "MOST_CALLS", "ON_BY_DEFAULT", "calls_in", "enabled", "most_calls", "now", "record_calls",
+           "spent", "spent_out"]

@@ -790,8 +790,10 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             + "\nJudge whether each reason holds; a criterion that can be tested must be.\n\n"
             if deferred else ""
         )
+        from app.agents.reviews_without_reasoning import the_review_model
+
         agent = create_acceptance_reviewer_agent(
-            model=ctx.judgement_model, checkpointer=ctx.checkpointer,
+            model=the_review_model(ctx.judgement_model), checkpointer=ctx.checkpointer,
             repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
         )
         request = build_acceptance_review_request(

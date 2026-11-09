@@ -4880,6 +4880,27 @@ class SandboxExecutor:
         return shutil.which(name, path=search)
 
     @staticmethod
+    def _the_same_path_in_a_project(program: str, workspace: str, run_in: str | None) -> str:
+        """The workspace-relative path of a relative program found in a project folder, not where the command runs.
+
+        Measured on one run: a fixer ran `./.venv/bin/python -m pytest` from the workspace root, the virtualenv was
+        the project's (`textkit/.venv`), and the refusal said to create one.
+        """
+        if "/" not in program or os.path.isabs(program):
+            return ""
+        relative = program[2:] if program.startswith("./") else program
+        try:
+            for child in sorted(p for p in Path(workspace).iterdir() if p.is_dir() and not p.name.startswith(".")):
+                if (run_in or "").strip("./") == child.name:
+                    continue
+                candidate = child / relative
+                if candidate.is_file() and os.access(candidate, os.X_OK):
+                    return f"{child.name}/{relative}"
+        except OSError:
+            return ""
+        return ""
+
+    @staticmethod
     def _a_project_binary_off_the_path(name: str, workspace: str, run_in: str | None) -> str:
         """The `node_modules/.bin/<name>` a command's bare name stands for, relative to its folder, or "".
 
@@ -4924,6 +4945,15 @@ class SandboxExecutor:
                         f"'{argv[0]}' is installed in the project (`{local}`) but is not on the PATH here, so it is "
                         f"not run by its bare name. Run it as `npx {argv[0]} ...`, or through an npm script "
                         f"(`npm test`, `npm run <script>`)."
+                    )
+                }
+            elsewhere = cls._the_same_path_in_a_project(argv[0], workspace, run_in)
+            if elsewhere:
+                return {
+                    "error": (
+                        f"There is no '{argv[0]}' where this command runs ({run_in or 'the workspace root'}); "
+                        f"the project's is `{elsewhere}`. Run it from the project: the same command with "
+                        f"`working_directory` set to `{elsewhere.split('/', 1)[0]}`. Nothing needs installing."
                     )
                 }
             return {

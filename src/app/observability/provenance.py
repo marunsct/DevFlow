@@ -82,6 +82,7 @@ SWITCHES: dict[str, str] = {
     "MUTANT_CHECK_IN_THE_FIX_STAGE": "app.acceptance.mutant_check_in_stage",
     "MUTATION_TEST_RETENTION": "app.acceptance.mutation_retention",
     "EQUIVALENT_MUTANTS_REMEMBERED": "app.acceptance.mutation_equivalents",
+    "REVIEWS_WITHOUT_REASONING": "app.agents.reviews_without_reasoning",
     "SPEC_DRY_RUN": "app.acceptance.spec_dry_run",
     "ORDER_PROBE": "app.acceptance.order_probe",
     "IDS_READ_WITHOUT_A_CREATE": "app.acceptance.ids_read_without_a_create",

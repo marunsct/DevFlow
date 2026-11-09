@@ -79,3 +79,23 @@ def test_output_described_not_given_is_unchecked_not_broken():
 def test_literal_text_that_differs_still_fails():
     failed, unchecked = _release(_one(LINE), "Hello-World\n")
     assert failed and unchecked == []
+
+
+# LF.773, measured on one release: `--top N <file>` ran with those words and was reported as a broken contract.
+def test_a_command_naming_a_placeholder_is_unchecked_not_run():
+    ran = []
+    failed, unchecked = [], []
+    for line in ("AC-8 command python -m wordstats --top N <file> -> exit 0",
+                 "AC-9 command python -m wordstats --json sample.txt ... -> exit 0"):
+        interface_contract._run_each_command(
+            [_one(line)], "proj", lambda argv, c, w: ran.append(argv) or {"returncode": 2}, failed, unchecked)
+    assert ran == [] and failed == []
+    assert len(unchecked) == 2 and all("names a placeholder" in u for u in unchecked)
+
+
+def test_a_command_with_real_values_still_runs():
+    ran = []
+    interface_contract._run_each_command(
+        [_one("AC-1 command python -m wordstats --top 3 sample.txt -> exit 0")], "proj",
+        lambda argv, c, w: ran.append(argv) or {"returncode": 0}, [], [])
+    assert ran == [["python", "-m", "wordstats", "--top", "3", "sample.txt"]]

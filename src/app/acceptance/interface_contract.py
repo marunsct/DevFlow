@@ -901,6 +901,12 @@ def _run_each_command(checks: list[Check], project: str, runner: Any, failed: li
     import shlex
 
     for check in checks:
+        # A command that names a placeholder (`<file>`, a bare `N`) cannot be run as written: measured on one release,
+        # `python -m wordstats --top N <file>` ran with those words, the product rightly exited 2, and the line was
+        # reported as a broken contract.
+        if _A_PLACEHOLDER.search(check.command) or re.search(r"(?<![\w-])[A-Z](?![\w-])", check.command):
+            unchecked.append(f"{check.line} (the command names a placeholder, not a value)")
+            continue
         try:
             argv = shlex.split(check.command)
         except ValueError:

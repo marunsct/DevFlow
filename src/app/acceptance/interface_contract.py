@@ -869,10 +869,32 @@ def _the_commands_kept(checks: list[Check], root: Path, project: str, runner: An
     return failed, unchecked
 
 
+#: A value the contract leaves open in what a command prints: `<n>`, `<word>`, `...`.
+_A_PLACEHOLDER = re.compile(r"<[^<>\n]{1,40}>|\.\.\.")
+
+
+#: Printed text a line describes rather than gives: a placeholder, an escaped quote, a value written as a letter
+#: (`"words": n`), or words about it (`same as AC-6`). Unmatched, such a line is unchecked, not broken.
+_A_DESCRIBED_OUTPUT = re.compile(r"<[^<>\n]{1,40}>|\.\.\.|\\\"|:\s*[a-z]\b|\bsame as\b|\bdepending on\b", re.I)
+
+
 def _it_printed(output: str, expected: str) -> bool:
-    """Whether the output is the expected text, or holds it as one whole line."""
-    want = expected.strip()
-    return output.strip() == want or want in (line.strip() for line in output.splitlines())
+    """Whether the output is the expected text, or holds it as one whole line; a placeholder stands for any value.
+
+    Measured on one release: `stdout "words: <n>\\nlines: <n>\\ncharacters: <n>"` was failed against a product
+    printing `words: 9` - a placeholder read as the letters it is written with. `\\n` written in the line is a line
+    break, and each placeholder matches any text on its line.
+    """
+    want = expected.strip().replace("\\n", "\n")
+    if not _A_PLACEHOLDER.search(want):
+        return output.strip() == want or want in (line.strip() for line in output.splitlines())
+    lines = []
+    for line in (line.strip() for line in want.splitlines()):
+        if line:
+            parts = re.split(f"({_A_PLACEHOLDER.pattern})", line)
+            lines.append(r"[ \t]*" + "".join(".+?" if _A_PLACEHOLDER.fullmatch(part) else re.escape(part)
+                                               for part in parts if part) + r"[ \t]*")
+    return re.search("\n".join(lines), output.strip(), re.M) is not None
 
 
 def _run_each_command(checks: list[Check], project: str, runner: Any, failed: list[str], unchecked: list[str]) -> None:
@@ -897,7 +919,10 @@ def _run_each_command(checks: list[Check], project: str, runner: Any, failed: li
             failed.append(f"[{check.criterion}] {check.line} - it exited {code}")
         elif check.stdout and not _it_printed(str(outcome.get("stdout") or outcome.get("output") or ""), check.stdout):
             printed = str(outcome.get("stdout") or outcome.get("output") or "").strip()
-            failed.append(f"[{check.criterion}] {check.line} - it printed {printed[:120]!r}")
+            if _A_DESCRIBED_OUTPUT.search(check.stdout):
+                unchecked.append(f"{check.line} (its printed text is described, not given)")
+            else:
+                failed.append(f"[{check.criterion}] {check.line} - it printed {printed[:120]!r}")
 
 
 def _the_probe_s_report(project: Path, project_name: str, probe: dict[str, Any], web: list[Check], run: Any,

@@ -59,3 +59,23 @@ def test_a_saved_contract_without_the_field_still_loads():
     item = asdict(_one("AC-1 command textkit --help -> exit 0"))
     item.pop("stdout")
     assert interface_contract.Check(**item).stdout == ""
+
+
+# Measured on one release (LF.769): `stdout "words: <n>\nlines: <n>\ncharacters: <n>"` was failed against a product
+# printing `words: 9`, and four more lines whose output was described, not given, were reported as broken contracts.
+def test_a_placeholder_stands_for_any_value():
+    printed = interface_contract._it_printed
+    assert printed("words: 9\nlines: 2\ncharacters: 40\n", r"words: <n>\nlines: <n>\ncharacters: <n>")
+    assert not printed("words: 9\nlines: 2\n", r"words: <n>\nlines: <n>\ncharacters: <n>")
+    assert printed("the 3\ncat 2\n", r"<word> <count>\n...")
+
+
+def test_output_described_not_given_is_unchecked_not_broken():
+    check = _one(r'AC-3 command wordstats sample.txt --json -> stdout "{\"words\": n, \"lines\": n}" exit 0')
+    failed, unchecked = _release(check, '{"words": 9, "lines": 2}\n')
+    assert failed == [] and unchecked and "described, not given" in unchecked[0]
+
+
+def test_literal_text_that_differs_still_fails():
+    failed, unchecked = _release(_one(LINE), "Hello-World\n")
+    assert failed and unchecked == []

@@ -236,7 +236,7 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | current run | `run-77c6650e-042a-4310-bf72-bb819a8f8fee` (low brief `benchmarks/web-todo/brief.md`, fast mode, 100% local model `unsloth/Qwen3.6-35B-A3B-MTP-GGUF`) COMPLETED and released at 00:52 JST 2026-10-18 (82m wall). Acceptance suite: 15/15 passed (100%), unit tests: 38/38 passed (100%), product size: 489 code lines (within 500-line limit). Hidden benchmark score: **10/10 (1.0)**! |
 | model | Two tiers set by the owner: build model `qwen3.8-flash-next-coder-iq1_m` (Strata on the owner's `localhost:9090`; reached as `host.docker.internal` with `Host: localhost:9090` - every client must go through `app.models.endpoints.reached_from_here`), frontier (judgement) `qwen3.8-flash` on `https://token-plan.maas.qwencloudapi.com/compatible-mode/v1` (it refuses a forced tool call while thinking - handled). Qwen cloud's free quota ran out on qwen3.8-max(-0902) on 2026-10-13; a quota refusal now parks a run as `waiting_for_budget`. Execution mode **parallel**, `HARNESS_MAX_PARALLEL=6`. |
 | Celery limits | soft 43,200 s (12 h), hard 43,500 s - in `tasks.py`, `docker-compose.yml` and `.env.example` (the handover had claimed this before it was done). |
-| suite | 9,840+ pass, 29 skip, 3 expected S3 fails (`tests/test_codebase_seeding_api.py`). |
+| suite | 16,590+ pass, 29 skip, **0 fail** (the 3 `test_codebase_seeding_api.py` "S3" failures were a test bug, fixed 2026-11-10). |
 
 ### 2.0000 Owner decisions of 2026-10-18 and what they built (`77289d6`..`c56d166`)
 

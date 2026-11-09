@@ -448,7 +448,7 @@ document. Each script's own header is the authority on its arguments.
 | `freshness` | pack pins a major version behind their registry (`pack_freshness.py`) |
 | `lessons` | recurring failed tool calls by language across transcripts (`lessons.py`) |
 | `nightly` | verify every pack in the worker, then the freshness report, into `data/loop/nightly-<date>.log`; skipped while a run is live |
-| `suite` | the full pytest suite (~2.5 min); only the three S3 tests in `tests/test_codebase_seeding_api.py` may fail |
+| `suite` | the full pytest suite (~2.5 min); it must be fully green (the old three "S3" failures were a test bug, fixed 2026-11-10) |
 | `deploy` | rebuild and restart app and worker |
 | `resumed` | after a mid-run deploy, wait for orphan recovery to resume (`await_resume.sh`) |
 

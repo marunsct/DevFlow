@@ -28,9 +28,9 @@ Rules that are never optional (details and reasons in the handover):
   - Each new prompt rule gets a test banning the whole words task, tasks,
     to-do, todo, button, click and checkbox.
 - **Every fix gets a test proven to fail on the old code.** Run the full suite
-  with `scripts/loop/loop.sh suite`; only the three S3 tests in
-  `tests/test_codebase_seeding_api.py` may fail. Do not edit `src/` while it
-  runs.
+  with `scripts/loop/loop.sh suite`; it must be fully green (the three
+  `tests/test_codebase_seeding_api.py` tests once excused as "needing S3" were
+  a test bug, fixed 2026-11-10). Do not edit `src/` while it runs.
 - **Measure/Fix (MF.4, owner 2026-10-21), from the run after gate run 3:** a
   Measure run is one frozen harness SHA with no deploys into it, two runs per
   family, scored by hidden tests only; a bug found is filed for the Fix batch,

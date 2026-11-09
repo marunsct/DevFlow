@@ -119,7 +119,9 @@ def test_a_codebase_cannot_be_swapped_after_the_run_starts(client, run_id):
 
 def _workspace_for(run_id: str) -> Path:
     root = Path(os.environ["WORKFLOW_WORKSPACE_ROOT"])
-    matches = list(root.glob(f"*{run_id}"))
+    # Workspaces sit under a tenant folder (`<tenant>/workspace-<run>`): the top level alone found none, and these
+    # three tests failed for months as "needing S3 credentials this host lacks".
+    matches = list(root.glob(f"*{run_id}")) or list(root.glob(f"*/*{run_id}"))
     assert matches, f"no workspace allocated for {run_id}"
     return matches[0]
 

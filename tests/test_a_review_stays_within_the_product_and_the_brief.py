@@ -466,3 +466,50 @@ class TestTheBriefSControlsKeepTheirNames:
         rule = f"{defect.description} {defect.expected_behavior} {defect.reproduction_steps}".lower()
         for word in BANNED:
             assert not re.search(rf"\b{word}\b", rule), word
+
+
+class TestADisabledControlDefectNamesWhereItIsDisabled:
+    """One run's disabled-on-load defect named the control but no file; three fixers in a row made the control
+    disabled for blank text too, broke the product's own empty-entry tests, were reverted, and it shipped disabled."""
+
+    BRIEF = 'A text field labelled "Title" and a button named "Add task".'
+
+    def _workspace(self, tmp_path):
+        product = tmp_path / "app"
+        (product / "tests").mkdir(parents=True)
+        (product / "index.html").write_text('<form>\n  <button type="submit" id="add" disabled>Add task</button>\n</form>\n')
+        (product / "main.js").write_text("const add = document.getElementById('add');\nadd.disabled = title.value.length === 0;\n"
+                                         "add.setAttribute('aria-disabled', 'false');\n")
+        (product / "tests" / "main.test.js").write_text("expect(add.disabled).toBe(true);\n")
+        (tmp_path / ".agent-home" / "cache").mkdir(parents=True)
+        (tmp_path / ".agent-home" / "cache" / "lib.js").write_text("x.disabled = true;\n")
+        return tmp_path
+
+    def test_the_lines_that_disable_are_found_in_the_product_only(self, tmp_path) -> None:
+        from app.analysis.interface_checks import where_controls_are_disabled
+
+        assert where_controls_are_disabled(self._workspace(tmp_path)) == [
+            'app/index.html:2: <button type="submit" id="add" disabled>Add task</button>',
+            "app/main.js:2: add.disabled = title.value.length === 0;",
+        ]
+
+    def test_the_defect_carries_them_and_their_files(self, tmp_path) -> None:
+        import json
+        from types import SimpleNamespace
+
+        from app.acceptance import suite
+        from app.graph import acceptance_nodes
+
+        root = self._workspace(tmp_path)
+        path = root / suite.RESULT_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"ran": True, "shows": '- button "Add task" [disabled]'}))
+        defects = acceptance_nodes.interface_defects(
+            {"repository": SimpleNamespace(root_path=str(root)), "document": SimpleNamespace(text=self.BRIEF)}
+        )
+        [defect] = [d for d in defects if "disabled" in d.description]
+        assert defect.affected_files == ["app/index.html", "app/main.js"]
+        assert "app/main.js:2: add.disabled" in defect.actual_behavior
+        for word in BANNED:
+            harness_words = defect.actual_behavior.split("as the page shows it.", 1)[1].split(": app/", 1)[0]
+            assert not re.search(rf"\b{word}\b", harness_words.lower()), word

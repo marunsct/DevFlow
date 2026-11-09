@@ -1316,6 +1316,7 @@ def interface_defects(state: Any) -> list[Any]:
     brief = str(getattr(state.get("document"), "text", "") or "")
     disabled = interface_checks.named_controls_disabled_on_load(brief, str(saved.get("shows") or ""))
     if disabled:
+        where = interface_checks.where_controls_are_disabled(root)
         named = ", ".join(f'"{name}"' for name in disabled)
         defects.append(ReportedDefect(
             description=(
@@ -1332,8 +1333,12 @@ def interface_defects(state: Any) -> list[Any]:
                 "required field left empty - is refused when it is tried, with a message saying "
                 "what is missing."
             ),
-            actual_behavior=f"{named} disabled on load, as the page shows it.",
-            affected_files=[],
+            actual_behavior=(
+                f"{named} disabled on load, as the page shows it."
+                + (" The lines that disable a control, each to change so the control stays usable and the "
+                   "action is refused with a message when it cannot go ahead: " + "; ".join(where) if where else "")
+            ),
+            affected_files=sorted({line.split(":", 1)[0] for line in where}),
             owner="ui_ux",
             regression_test_required=False,
         ))

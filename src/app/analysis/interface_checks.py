@@ -136,6 +136,44 @@ def named_controls_disabled_on_load(brief_text: str, shows: str) -> list[str]:
     return disabled
 
 
+#: The product's own page and script files, where a control is marked or set disabled.
+_PAGE_SOURCES = frozenset({".html", ".htm", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte"})
+_NOT_ITS_OWN = frozenset({"tests", "test", "__tests__", "acceptance", "e2e", "spec"})
+#: `disabled` as an attribute or property - `<button disabled>`, `.disabled = `, `disabled={...}`,
+#: `setAttribute('disabled'` - and not `aria-disabled` or a longer word.
+_DISABLES = re.compile(r"(?<![\w-])disabled(?![\w-])")
+
+
+def where_controls_are_disabled(repo_root: str | Path | None, most: int = 8) -> list[str]:
+    """`path:line: text` for each line of the product's page and script files that disables a control. Never raises.
+
+    Measured on one run: the disabled-on-load defect named the control but no file, and three fixers in a row
+    read it as "disable it in more cases" - each fix made the control disabled for blank text too, broke the
+    product's own empty-entry tests and was reverted, and the run shipped with the control disabled.
+    """
+    try:
+        base = Path(repo_root or "")
+        if not base.is_dir():
+            return []
+        found: list[str] = []
+        from app.analysis.walk import files_under
+
+        for path in sorted(files_under(base, _NOT_THE_PRODUCT, "*", skip_hidden=True)):
+            relative = path.relative_to(base)
+            if path.suffix.lower() not in _PAGE_SOURCES or any(part in _NOT_ITS_OWN for part in relative.parts):
+                continue
+            if re.search(r"\.(?:spec|test)\.[a-z]+$", path.name):
+                continue
+            for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+                if _DISABLES.search(line):
+                    found.append(f"{relative.as_posix()}:{number}: {line.strip()[:120]}")
+                    if len(found) >= most:
+                        return found
+        return found
+    except Exception:  # noqa: BLE001 - a hint that cannot be found says nothing
+        return []
+
+
 #: A control in the page check's accessibility tree: `- button "All (0)"`, its role and its name.
 _A_SHOWN_CONTROL = re.compile(r'^\s*-\s+([a-z]+)\s+"([^"\n]{1,120})"', re.M)
 
@@ -166,5 +204,6 @@ __all__ = [
     "controls_the_brief_names",
     "named_controls_disabled_on_load",
     "named_controls_renamed",
+    "where_controls_are_disabled",
     "nobody_styled_it",
 ]

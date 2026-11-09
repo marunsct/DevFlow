@@ -5,9 +5,9 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 <!-- state:generated -->
-**As of:** 11-09 16:27 JST (written by `loop.sh state`). Harness c88e6ec5 committed; c88e6ec5 deployed.
-**Live, and stopped in the last day:** run-6fbbf838 running at ?; run-023f2c45 running at acceptance_dispute; run-48ed3012 failed at ?; run-5814234a failed at failed
-**Last scored:** run-bbbf1e3d wordstats-cli 8/8 (completed, mixed, 61 active min, handoff 1.0; scored 11-09 16:25 JST); run-19fb2b9f wordstats-cli 8/8 (completed, mixed, 36 active min, handoff 1.0; scored 11-09 15:05 JST); run-aaf136ca wordstats-cli 7/8 (completed, FALSE ACCEPTANCE, mixed, 88 active min, handoff 1.0; scored 11-09 13:45 JST).
+**As of:** 11-09 17:37 JST (written by `loop.sh state`). Harness d0624413 committed; 1da0b008 deployed (not the same).
+**Live, and stopped in the last day:** run-ebde7fac running at product_manager; run-023f2c45 running at defect_fix_1_2; run-48ed3012 failed at ?; run-5814234a failed at failed
+**Last scored:** run-6fbbf838 notes-api-falcon 9/9 (completed, mixed, 59 active min, handoff 1.0; scored 11-09 17:35 JST); run-bbbf1e3d wordstats-cli 8/8 (completed, mixed, 61 active min, handoff 1.0; scored 11-09 16:25 JST); run-19fb2b9f wordstats-cli 8/8 (completed, mixed, 36 active min, handoff 1.0; scored 11-09 15:05 JST).
 <!-- /state:generated -->
 ## Live now
 | | |

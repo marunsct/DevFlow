@@ -83,6 +83,7 @@ SWITCHES: dict[str, str] = {
     "MUTATION_TEST_RETENTION": "app.acceptance.mutation_retention",
     "EQUIVALENT_MUTANTS_REMEMBERED": "app.acceptance.mutation_equivalents",
     "REVIEWS_WITHOUT_REASONING": "app.agents.reviews_without_reasoning",
+    "DISPUTE_QUOTES_THE_CRITERION": "app.agents.suite_dispute:criterion_quoted_switch",
     "SPEC_DRY_RUN": "app.acceptance.spec_dry_run",
     "ORDER_PROBE": "app.acceptance.order_probe",
     "IDS_READ_WITHOUT_A_CREATE": "app.acceptance.ids_read_without_a_create",

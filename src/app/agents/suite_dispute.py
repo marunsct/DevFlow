@@ -323,8 +323,34 @@ def _the_standard_holds(quoted: str, standard: str) -> bool:
     return bool(total) and held * 2 >= total
 
 
+class _CriterionQuoted:
+    """Whether a ruling whose quote is not the standard's own words is taken with its test's own criterion quoted.
+
+    Measured on two runs: five rulings rightly called a test wrong (24 characters for a 25-character string), each
+    quoting the criterion in its own words ("count_characters returns len(text)"); each was refused, and the runs
+    went on fixing products that counted right. The criterion each test is for is the harness's own text.
+    """
+
+    #: `DISPUTE_QUOTES_THE_CRITERION` set to on or off overrides this.
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("A dispute ruling that calls a test wrong in its own words, not the standard's, is taken with the "
+                   "failing test's own criterion quoted for the repair and the judge's wording labelled as the "
+                   "judge's; a ruling with no criterion of its own is still refused. Off until measured.")
+
+    def enabled(self) -> bool:
+        from app.switches import is_on
+
+        return is_on("DISPUTE_QUOTES_THE_CRITERION", self.ON_BY_DEFAULT)
+
+
+criterion_quoted_switch = _CriterionQuoted()
+CRITERION_QUOTED_ON_BY_DEFAULT = _CriterionQuoted.ON_BY_DEFAULT
+
+
 def _tests_the_rulings_name(
     rulings: Sequence[Any], failing_names: Sequence[str], standard: str = "", refused: list[tuple[str, str]] | None = None,
+    criteria_of: dict[str, str] | None = None,
 ) -> list[str]:
     """The repair feedback for each failing test a ruling calls wrong, with what it asserts and the standard quoted.
 
@@ -338,13 +364,24 @@ def _tests_the_rulings_name(
         asserts = " ".join(str(getattr(ruling, "the_test_asserts", "") or "").split())
         if not getattr(ruling, "the_test_is_wrong", False) or len(quoted.split()) < 3 or not asserts:
             continue
+        name = next((n for n in failing_names if n == test or _TAGS.sub("", n).strip() == _TAGS.sub("", test).strip()), None)
         # Measured on one run: the "standard" quoted was a sentence of the instructions this very call was given.
         if standard.strip() and not _the_standard_holds(quoted, standard):
+            own = " ".join(str((criteria_of or {}).get(name or "", "") or "").split())
+            if name and own and criterion_quoted_switch.enabled():
+                # The test's own criterion, as the harness holds it, is what the repair is held to; the judge's
+                # wording goes with it as the judge's.
+                if not any(line.startswith(f"`{name}`") for line in named):
+                    named.append(
+                        f"`{name}` cannot pass for any product that does what its criterion says: it checks that "
+                        f"{asserts}. Its criterion says \"{own}\" (the judge's reading: {quoted}). Fix the test so "
+                        "that it checks what the criterion says."
+                    )
+                continue
             logger.warning("A ruling on `%s` quotes what the standard does not say; the test stays locked: %s", test, quoted[:200])
             if refused is not None:
                 refused.append((test, "quotes what the standard does not say"))
             continue
-        name = next((n for n in failing_names if n == test or _TAGS.sub("", n).strip() == _TAGS.sub("", test).strip()), None)
         if name and not any(line.startswith(f"`{name}`") for line in named):
             named.append(
                 f"`{name}` cannot pass for any product that does what its criterion says: it checks that {asserts}, "
@@ -355,6 +392,7 @@ def _tests_the_rulings_name(
 
 def tests_it_names(
     answer: Any, failing_names: Sequence[str], standard: str = "", refused: list[tuple[str, str]] | None = None,
+    criteria_of: dict[str, str] | None = None,
 ) -> list[str]:
     """The suite's repair feedback for each failing test the answer names.
 
@@ -366,7 +404,7 @@ def tests_it_names(
     """
     rulings = list(getattr(answer, "rulings", None) or []) if structured_verdict_switch.enabled() else []
     if rulings:
-        return _tests_the_rulings_name(rulings, failing_names, standard, refused)
+        return _tests_the_rulings_name(rulings, failing_names, standard, refused, criteria_of)
     lines = [" ".join(str(line).split()) for line in getattr(answer, "cannot_pass", None) or []]
     named = []
     # A bare tag stands for a test only when no other failing test carries it: two tests of one criterion named as

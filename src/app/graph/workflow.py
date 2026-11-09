@@ -12040,6 +12040,7 @@ def build_workflow_graph(
         refused: list[tuple[str, str]] = []
         named = tests_it_names(
             update.pop("__suite_dispute__"), [name for name, _, _ in failing], standard=standard, refused=refused,
+            criteria_of={name: criterion for name, criterion, _ in failing},
         )
         called_wrong = list(named)
         passed_alone: list[str] = []

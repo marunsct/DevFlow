@@ -46,6 +46,7 @@ Written by `loop.sh measuring` from 246 scored runs in the ledger. On and off co
 | `EQUIVALENT_MUTANTS_REMEMBERED` | Efficiency | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `MUTANT_CHECK_IN_THE_FIX_STAGE` | Efficiency | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `REVIEWS_WITHOUT_REASONING` | Efficiency | off | 3 | no signal | 1 | not measured: needs 0 more on and 1 more off |
+| `DISPUTE_QUOTES_THE_CRITERION` | Review gates | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `MILESTONE_EVIDENCE_GATE` | Review gates | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `SETUP_SCOPE_GUARD` | Setup scope | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `CHANGE_REQUEST_RUNS` | bundle PREMIUM_CHANGE_REQUESTS | on | 237 | no signal | 1 | not measured: needs 0 more on and 1 more off |

@@ -1032,6 +1032,33 @@ _FIXED_ANSWER_NOW_NOTICE = (
 )
 
 
+#: Writes refused outside the stage's own files before only its answer is left: the refusal says from the third
+#: on that every further one will be refused, and a stage still writing elsewhere three refusals later is
+#: spending its calls on files it may not touch. Measured over 40 runs: 11 had a testing stage refused product
+#: code again and again after its own tests failed, up to 15 refusals, each a full model call; the stall rule
+#: never saw it, because a refused write is not "nothing new" and broke every streak.
+OUTSIDE_WRITES_BEFORE_THE_ANSWER = 6
+
+_REFUSED_OUTSIDE = re.compile(r"This stage has now been refused (\d+) writes outside its own files")
+
+_OUTSIDE_ANSWER_NOW_NOTICE = (
+    "Every write this stage made outside its own files was refused, and every further one will be. Your "
+    "tools are withheld: return your structured response now. Where the product's code is missing or does "
+    "not match what your work needs, say exactly what in your response, so the role that owns that code "
+    "changes it."
+)
+
+
+def _refused_outside_its_own_files(messages: list[Any]) -> int:
+    """How many writes outside its own files this stage has been refused, as its refusals counted them."""
+    counts = [
+        int(found.group(1))
+        for message in messages if getattr(message, "type", None) == "tool"
+        for found in [_REFUSED_OUTSIDE.search(str(getattr(message, "content", "") or ""))] if found
+    ]
+    return max(counts, default=0)
+
+
 def _nothing_left_but_the_answer(messages: list[Any], limit: int, schema: Any) -> bool:
     """True on the last calls of the budget with no answer written yet.
 
@@ -2194,13 +2221,23 @@ def build_settled_answer_middleware(
                     _without_the_looking_tools_in(list(getattr(request, "tools", None) or []))
                     if ignored or stalled else []
                 )
+                refused_outside = _refused_outside_its_own_files(messages) if schema is not None else 0
+                outside_too_often = refused_outside >= OUTSIDE_WRITES_BEFORE_THE_ANSWER
+                if outside_too_often:
+                    correction = (f"{correction}\n\n{_OUTSIDE_ANSWER_NOW_NOTICE}" if correction
+                                  else _OUTSIDE_ANSWER_NOW_NOTICE)
+                    logger.warning(
+                        "Stage %s was refused %d writes outside its own files; only its answer is left",
+                        stage_name or "?", refused_outside,
+                    )
                 fixed_already = schema is not None and _told_its_defect_is_fixed(messages)
                 if fixed_already:
                     correction = f"{correction}\n\n{_FIXED_ANSWER_NOW_NOTICE}" if correction else _FIXED_ANSWER_NOW_NOTICE
                     logger.warning("Stage %s was told its defect is fixed and carried on; only its answer is left", stage_name or "?")
                 answer_only = (spiralled and not spiral_quiet) or _nothing_left_but_the_answer(
                     messages, _the_step_limit(step_limit), schema
-                ) or (stalled and not writers) or (ignored and not writers) or stuck_on_a_failure or fixed_already
+                ) or (stalled and not writers) or (ignored and not writers) or stuck_on_a_failure or fixed_already \
+                    or outside_too_often
                 if ignored:
                     # Named as well: the model is told which call it kept
                     # sending, not only that its tools are gone.

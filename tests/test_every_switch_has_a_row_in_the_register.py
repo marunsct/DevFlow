@@ -25,8 +25,8 @@ def test_off_counts_only_after_the_switch_first_ran_and_a_verdict_needs_both_sid
     register = _module()
     runs = [_run([], score=0.0), _run(["A"], ["A"]), _run([], score=0.5), _run(["A"]), _run([], score=0.5)]
     row = register.rows({"A": ("Efficiency", False), "B": ("Efficiency", False)}, runs)
-    assert row[0] == "| `A` | Efficiency | off | 2 | 1 | 2 | measured: hidden 1.00 on / 0.50 off; minutes 30.00 / 30.00 |"
-    assert "| 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |" in row[1]
+    assert row[0] == "| `A` | Efficiency | off | 2 | no signal | 2 | measured: hidden 1.00 on / 0.50 off; minutes 30.00 / 30.00 |"
+    assert "| 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |" in row[1]
 
 
 def test_every_switch_of_the_code_has_a_row():
@@ -39,3 +39,10 @@ def test_every_switch_of_the_code_has_a_row():
 
 def test_loop_sh_writes_it():
     assert 'measuring) shift; "$PY" "$HERE/switch_register.py"' in (ROOT / "scripts" / "loop" / "loop.sh").read_text()
+
+
+def test_a_switch_with_a_signal_counts_its_firings(monkeypatch):
+    register = _module()
+    monkeypatch.setattr(register, "_signalled", lambda: {"A"})
+    runs = [_run(["A"], ["A"]), _run(["A"])]
+    assert register.rows({"A": ("Efficiency", True)}, runs)[0].startswith("| `A` | Efficiency | on | 2 | 1 | 0 |")

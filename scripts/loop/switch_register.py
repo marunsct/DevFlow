@@ -39,6 +39,17 @@ def _runs(ledger: Path, bench: Path) -> list[dict]:
     return out
 
 
+def _signalled() -> set[str]:
+    """The switches whose acting leaves a text of their own in a transcript; the rest cannot be counted as fired."""
+    try:
+        sys.path.insert(0, str(ROOT / "src"))
+        from app.observability.switch_firing import SIGNALS
+
+        return set(SIGNALS)
+    except Exception:  # noqa: BLE001 - every switch then reads as having no signal
+        return set()
+
+
 def _mean(values: list[float]) -> str:
     values = [v for v in values if v == v]
     return f"{sum(values) / len(values):.2f}" if values else "-"
@@ -53,7 +64,7 @@ def rows(switches: dict[str, tuple[str, bool]], runs: list[dict]) -> list[str]:
         first = next((i for i, r in enumerate(runs) if name in r["on"]), None)
         on = [r for r in runs if name in r["on"]]
         off = [] if first is None else [r for r in runs[first:] if name not in r["on"]]
-        fired = sum(name in r["fired"] for r in on)
+        fired = sum(name in r["fired"] for r in on) if name in _signalled() else "no signal"
         verdict = ("measured: hidden " + _mean([r["score"] for r in on]) + " on / " + _mean([r["score"] for r in off])
                    + " off; minutes " + _mean([r["minutes"] for r in on]) + " / " + _mean([r["minutes"] for r in off])
                    if len(on) >= LEAST_RUNS and len(off) >= LEAST_RUNS else

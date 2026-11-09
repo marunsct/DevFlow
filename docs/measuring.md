@@ -23,63 +23,63 @@ Written by `loop.sh measuring` from 242 scored runs in the ledger. On and off co
 
 | Switch | Group | Default | Runs on | Fired | Runs off | Verdict |
 | --- | --- | --- | --- | --- | --- | --- |
-| `CONTRACT_LINE_COVERAGE` | Being measured | on | 56 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `CONTRACT_NON_NUMERIC_IDS` | Being measured | on | 56 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `CONTRACT_PROBE_AT_LOCK` | Being measured | on | 56 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `CONTRACT_PROBE_WITH_A_BAD_BODY` | Being measured | on | 56 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `CONTRACT_PROBE_WITH_A_RECORD` | Being measured | on | 56 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `CONTRACT_UNREAD_LINES_AT_REVIEW` | Being measured | on | 56 | 0 | 0 | not measured: needs 0 more on and 2 more off |
+| `CONTRACT_LINE_COVERAGE` | Being measured | on | 56 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `CONTRACT_NON_NUMERIC_IDS` | Being measured | on | 56 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `CONTRACT_PROBE_AT_LOCK` | Being measured | on | 56 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `CONTRACT_PROBE_WITH_A_BAD_BODY` | Being measured | on | 56 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `CONTRACT_PROBE_WITH_A_RECORD` | Being measured | on | 56 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `CONTRACT_UNREAD_LINES_AT_REVIEW` | Being measured | on | 56 | no signal | 0 | not measured: needs 0 more on and 2 more off |
 | `IDS_READ_WITHOUT_A_CREATE` | Being measured | on | 56 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `MUTATION_TEST_RETENTION` | Being measured | on | 56 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `NAMED_TEST_REWRITE` | Being measured | on | 56 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `NAMING_FINDING_BEFORE_DEFERRAL` | Being measured | on | 56 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `ORDER_PROBE` | Being measured | on | 56 | 0 | 0 | not measured: needs 0 more on and 2 more off |
+| `MUTATION_TEST_RETENTION` | Being measured | on | 56 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `NAMED_TEST_REWRITE` | Being measured | on | 56 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `NAMING_FINDING_BEFORE_DEFERRAL` | Being measured | on | 56 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `ORDER_PROBE` | Being measured | on | 56 | no signal | 0 | not measured: needs 0 more on and 2 more off |
 | `SPEC_DRY_RUN` | Being measured | on | 56 | 2 | 0 | not measured: needs 0 more on and 2 more off |
-| `TESTS_ONLY_WRITES` | Being measured | on | 56 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `PREMIUM_CHANGE_REQUESTS` | Bundles | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
-| `PREMIUM_DEEP_VERIFICATION` | Bundles | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
-| `PREMIUM_MODEL_TUNING` | Bundles | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
-| `PREMIUM_PROJECT_INTELLIGENCE` | Bundles | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
-| `BATCH_ACCEPTANCE_AUTHOR` | Context and cost | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
-| `OBSERVATION_FOLDING` | Context and cost | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
-| `STABLE_STAGE_PREFIX` | Context and cost | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
-| `EQUIVALENT_MUTANTS_REMEMBERED` | Efficiency | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
+| `TESTS_ONLY_WRITES` | Being measured | on | 56 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `PREMIUM_CHANGE_REQUESTS` | Bundles | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
+| `PREMIUM_DEEP_VERIFICATION` | Bundles | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
+| `PREMIUM_MODEL_TUNING` | Bundles | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
+| `PREMIUM_PROJECT_INTELLIGENCE` | Bundles | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
+| `BATCH_ACCEPTANCE_AUTHOR` | Context and cost | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
+| `OBSERVATION_FOLDING` | Context and cost | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
+| `STABLE_STAGE_PREFIX` | Context and cost | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
+| `EQUIVALENT_MUTANTS_REMEMBERED` | Efficiency | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `MUTANT_CHECK_IN_THE_FIX_STAGE` | Efficiency | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
-| `REVIEWS_WITHOUT_REASONING` | Efficiency | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
-| `MILESTONE_EVIDENCE_GATE` | Review gates | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
-| `SETUP_SCOPE_GUARD` | Setup scope | off | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
-| `CHANGE_REQUEST_RUNS` | bundle PREMIUM_CHANGE_REQUESTS | on | 233 | 0 | 1 | not measured: needs 0 more on and 1 more off |
-| `ASK_SPECIFICATION` | bundle PREMIUM_DEEP_VERIFICATION | on | 232 | 0 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
+| `REVIEWS_WITHOUT_REASONING` | Efficiency | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
+| `MILESTONE_EVIDENCE_GATE` | Review gates | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
+| `SETUP_SCOPE_GUARD` | Setup scope | off | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
+| `CHANGE_REQUEST_RUNS` | bundle PREMIUM_CHANGE_REQUESTS | on | 233 | no signal | 1 | not measured: needs 0 more on and 1 more off |
+| `ASK_SPECIFICATION` | bundle PREMIUM_DEEP_VERIFICATION | on | 232 | no signal | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
 | `ASSUMPTIONS_GATE` | bundle PREMIUM_DEEP_VERIFICATION | on | 232 | 129 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
-| `MUTATION_GUIDED_TESTS` | bundle PREMIUM_DEEP_VERIFICATION | on | 226 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `REGRESSION_CONTRACT` | bundle PREMIUM_DEEP_VERIFICATION | on | 232 | 0 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
-| `RELEASE_AUDITS` | bundle PREMIUM_DEEP_VERIFICATION | on | 232 | 0 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
-| `RELEASE_DOCS_REQUIRED` | bundle PREMIUM_DEEP_VERIFICATION | on | 232 | 0 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
-| `SCREENSHOT_RUBRIC` | bundle PREMIUM_DEEP_VERIFICATION | on | 232 | 0 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
-| `FIX_STAGE_REPLY_CAP` | bundle PREMIUM_MODEL_TUNING | on | 151 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_ANSWER_IN_SCHEMA` | bundle PREMIUM_MODEL_TUNING | on | 225 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_EXACT_ARGUMENTS` | bundle PREMIUM_MODEL_TUNING | on | 225 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_HEED_REFUSALS` | bundle PREMIUM_MODEL_TUNING | on | 225 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_KEEP_TO_ROLE` | bundle PREMIUM_MODEL_TUNING | on | 225 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_NO_REPETITION` | bundle PREMIUM_MODEL_TUNING | on | 225 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_ONE_PROGRAM_A_COMMAND` | bundle PREMIUM_MODEL_TUNING | on | 225 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_PATHS_AS_GIVEN` | bundle PREMIUM_MODEL_TUNING | on | 225 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `GUIDE_STOP_WHEN_DONE` | bundle PREMIUM_MODEL_TUNING | on | 225 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `MODEL_GUIDANCE` | bundle PREMIUM_MODEL_TUNING | on | 225 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `PLAN_REVIEW_REPLY_CAP` | bundle PREMIUM_MODEL_TUNING | on | 144 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `SALVAGED_REPLIES_TURN_THINKING_OFF` | bundle PREMIUM_MODEL_TUNING | on | 144 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `STEERING_AT_THE_TAIL` | bundle PREMIUM_MODEL_TUNING | on | 232 | 0 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
-| `STRUCTURED_EXTRACTION` | bundle PREMIUM_MODEL_TUNING | on | 225 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `BUILDER_FACTS` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 188 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `CANONICAL_MEMORY` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | 0 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
-| `CODE_GRAPH_TOOL` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | 0 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
-| `DECISION_LEDGER` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | 0 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
+| `MUTATION_GUIDED_TESTS` | bundle PREMIUM_DEEP_VERIFICATION | on | 226 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `REGRESSION_CONTRACT` | bundle PREMIUM_DEEP_VERIFICATION | on | 232 | no signal | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
+| `RELEASE_AUDITS` | bundle PREMIUM_DEEP_VERIFICATION | on | 232 | no signal | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
+| `RELEASE_DOCS_REQUIRED` | bundle PREMIUM_DEEP_VERIFICATION | on | 232 | no signal | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
+| `SCREENSHOT_RUBRIC` | bundle PREMIUM_DEEP_VERIFICATION | on | 232 | no signal | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
+| `FIX_STAGE_REPLY_CAP` | bundle PREMIUM_MODEL_TUNING | on | 151 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_ANSWER_IN_SCHEMA` | bundle PREMIUM_MODEL_TUNING | on | 225 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_EXACT_ARGUMENTS` | bundle PREMIUM_MODEL_TUNING | on | 225 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_HEED_REFUSALS` | bundle PREMIUM_MODEL_TUNING | on | 225 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_KEEP_TO_ROLE` | bundle PREMIUM_MODEL_TUNING | on | 225 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_NO_REPETITION` | bundle PREMIUM_MODEL_TUNING | on | 225 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_ONE_PROGRAM_A_COMMAND` | bundle PREMIUM_MODEL_TUNING | on | 225 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_PATHS_AS_GIVEN` | bundle PREMIUM_MODEL_TUNING | on | 225 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `GUIDE_STOP_WHEN_DONE` | bundle PREMIUM_MODEL_TUNING | on | 225 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `MODEL_GUIDANCE` | bundle PREMIUM_MODEL_TUNING | on | 225 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `PLAN_REVIEW_REPLY_CAP` | bundle PREMIUM_MODEL_TUNING | on | 144 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `SALVAGED_REPLIES_TURN_THINKING_OFF` | bundle PREMIUM_MODEL_TUNING | on | 144 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `STEERING_AT_THE_TAIL` | bundle PREMIUM_MODEL_TUNING | on | 232 | no signal | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
+| `STRUCTURED_EXTRACTION` | bundle PREMIUM_MODEL_TUNING | on | 225 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `BUILDER_FACTS` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 188 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `CANONICAL_MEMORY` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | no signal | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
+| `CODE_GRAPH_TOOL` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | no signal | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
+| `DECISION_LEDGER` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | no signal | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
 | `LESSON_DISTILLER` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 233 | 94 | 1 | not measured: needs 0 more on and 1 more off |
-| `NAMING_STANDARD` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 208 | 0 | 0 | not measured: needs 0 more on and 2 more off |
-| `PROJECT_GRAPH_BUILDERS` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | 0 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
-| `PROJECT_GRAPH_FIXES` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | 0 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
+| `NAMING_STANDARD` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 208 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `PROJECT_GRAPH_BUILDERS` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | no signal | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
+| `PROJECT_GRAPH_FIXES` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | no signal | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
 | `SHARED_FACTS` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | 115 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
-| `STATE_AT_DISPATCH` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | 0 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
+| `STATE_AT_DISPATCH` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | no signal | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
 | `WHERE_THINGS_STAND` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 232 | 117 | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.12 / 206.75 |
 <!-- /switches:generated -->
 
@@ -97,6 +97,7 @@ Arms run on the two ports in turn; each row's off arm is a run with only that ro
 | M7 | Milestone send-back only with evidence: a blocking finding a failing test, criterion or underline shows (harness review G3) | `MILESTONE_EVIDENCE_GATE` (group `Review gates`) | OFF (built 11-07 21:1x, LF.687) | milestone send-backs, minutes per run; hidden score | 0 | every run so far (all off) | needs on runs: 2 per family on one SHA |
 | M9 | The acceptance review answers without reasoning first (68-74% of output tokens are reasoning; its own output was all reasoning) | `REVIEWS_WITHOUT_REASONING` (group `Efficiency`) | OFF (built 11-09 10:4x, LF.765) | acceptance-review model minutes; hidden score; false acceptances; suite strength (mutation score, review findings) | 0 valid | M9 on wordstats-cli 4 (run-4c98359a, c46bb201) VOID: the switch did not reach the model (judgement model None; LF.768) - its review reasoned 54-74k characters a reply | needs on/off pairs: 2 runs per port on one SHA (`SWITCHES_ON=REVIEWS_WITHOUT_REASONING` on one run of each pair) |
 | M5 | MEASURE_ONCE (reuse an unchanged product's measurement) | `MEASURE_ONCE` (built in) | ON | suite minutes | - | - | LF.676 fixed its skipped own-start check; built in, no arm |
+| M10 | A firing signal for every switch: 51 of 58 switches leave no text `switch_firing.SIGNALS` can read, so the gate cannot tell "never acted" from "acted and changed nothing" | `app.observability.switch_firing.SIGNALS` | 7 signalled | switches with a signal | - | - | to build: one signature each, on-by-default switches first |
 
 ## Second review (HR2, 11-08): switched items to build, in the merged order of docs/harness-review.md §10 bundle 8
 

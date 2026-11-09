@@ -73,7 +73,10 @@ def what_the_start_shows(repo_root: str | Path) -> str:
         data = tempfile.mkdtemp(prefix="start-probe-")
         os.rmdir(data)  # the suite hands the service a folder that does not exist yet
         log = tempfile.NamedTemporaryFile(prefix="start-probe-", suffix=".log", delete=False)
-        env = {**os.environ, "PORT": str(port), "HOST": "127.0.0.1", "DATA_DIR": data}
+        from app.tools.sandbox import product_environment
+
+        # The suite's own start, not the worker's: none of the worker's secrets reach the product.
+        env = product_environment(str(repo_root), {"PORT": str(port), "HOST": "127.0.0.1", "DATA_DIR": data})
         child = subprocess.Popen(  # noqa: S603 - the project's own start script, as the suite runs it
             ["sh", "start.sh"], cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
         )

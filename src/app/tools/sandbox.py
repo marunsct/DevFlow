@@ -1162,6 +1162,16 @@ def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict
     return environment
 
 
+def product_environment(workspace: str, extra_env: Dict[str, str] | None = None) -> Dict[str, str]:
+    """The environment for anything the harness runs that the product or its suites wrote, outside a sandbox command.
+
+    The start probe ran the product's `start.sh`, and the suite's dry run its spec files, with the worker's whole
+    environment - its database password, signing key and model credentials included - where every sandbox command
+    gets only `_child_environment`'s few names.
+    """
+    return _child_environment(workspace, extra_env)
+
+
 def _a_free_port() -> int:
     """A port nothing on this machine is listening on right now."""
     import socket

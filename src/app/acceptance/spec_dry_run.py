@@ -27,6 +27,7 @@ import tempfile
 from pathlib import Path
 
 from app.switches import is_on
+from app.tools.sandbox import product_environment
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,8 @@ def run(directory: str | Path, *, limit_seconds: int = LIMIT_SECONDS) -> dict:
                     [node, f"--max-old-space-size={MOST_HEAP_MEGABYTES}", str(RUNNER), str(copy), str(report),
                      *[p.relative_to(base).as_posix() for p in specs]],
                     cwd=copy, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    timeout=limit_seconds, check=False,
+                    # The spec files are the suite writer's code: none of the worker's secrets reach them.
+                    env=product_environment(temporary), timeout=limit_seconds, check=False,
                 )
             except subprocess.TimeoutExpired:
                 logger.info("The dry run of a suite stopped at its limit of %d s", limit_seconds)

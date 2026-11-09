@@ -281,6 +281,15 @@ def build_object_store() -> ObjectStore:
     """Build the configured store, falling back to the local filesystem."""
     if not object_storage_configured():
         return LocalObjectStore()
+    access_key = (os.environ.get("OBJECT_STORE_ACCESS_KEY") or "").strip()
+    if access_key and not (os.environ.get("OBJECT_STORE_SECRET_KEY") or "").strip():
+        # A key with an empty secret was the shipped default (`minioadmin` and a blank password): it either fails on
+        # every call, or reaches a store that takes a blank password. Said at start, not on the first upload.
+        raise ValueError(
+            "OBJECT_STORE_BUCKET is set and OBJECT_STORE_ACCESS_KEY has a value, but OBJECT_STORE_SECRET_KEY is "
+            "empty. Set the secret, clear both keys to use the default credential chain, or clear "
+            "OBJECT_STORE_BUCKET to keep files on the local filesystem."
+        )
 
     return S3ObjectStore(
         bucket=os.environ["OBJECT_STORE_BUCKET"].strip(),

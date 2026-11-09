@@ -840,6 +840,75 @@ async def fill_model_capabilities(user: UserInDB = Depends(require_admin)) -> di
     return {"status": "running", "message": "finding what the model can do"}
 
 
+@settings_router.get("/model/sampling")
+async def model_sampling(user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+    """The serving model's sampling for each mode of a call: what each mode is for, its values and their source."""
+    from app.models import sampling_modes
+    from app.models.steering_job import page_model
+
+    name = page_model()
+    return sampling_modes.view(name) if name else {"model": "", "settings": list(sampling_modes.SETTINGS), "modes": [],
+                                                   "choices": {"send": False, "thinking_calls": "thinking_precise"},
+                                                   "determined_at": ""}
+
+
+@settings_router.post("/model/sampling/determine")
+async def determine_model_sampling(user: UserInDB = Depends(require_admin)) -> dict[str, Any]:
+    """Derive every mode's sampling for the serving model from its model card and family, and keep it."""
+    import asyncio
+
+    from fastapi import HTTPException
+
+    from app.models import sampling_modes
+    from app.models.steering_job import page_model
+
+    name = page_model()
+    if not name:
+        raise HTTPException(status_code=409, detail="No model is serving.")
+    await asyncio.to_thread(sampling_modes.determine, name)
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_sampling_determine",
+                 detail={"model": name})
+    return sampling_modes.view(name)
+
+
+class SamplingUpdate(BaseModel):
+    #: One mode's values; null with a mode gives it back to what was determined.
+    mode: str | None = None
+    values: dict[str, Any] | None = None
+    #: The owner's choices.
+    send: bool | None = None
+    thinking_calls: str | None = None
+
+
+@settings_router.put("/model/sampling")
+async def set_model_sampling(payload: SamplingUpdate, user: UserInDB = Depends(require_admin)) -> dict[str, Any]:
+    """The owner's values for one mode, or whether to send sampling by mode and which mode a thinking call uses."""
+    from fastapi import HTTPException
+
+    from app.models import sampling_modes
+    from app.models.capabilities import forget_sampling
+    from app.models.steering_job import page_model
+
+    name = page_model()
+    if not name:
+        raise HTTPException(status_code=409, detail="No model is serving.")
+    try:
+        if payload.mode is not None:
+            sampling_modes.set_owner(name, payload.mode, payload.values)
+        if payload.send is not None or payload.thinking_calls is not None:
+            sampling_modes.set_choices(name, send=payload.send, thinking_calls=payload.thinking_calls)
+    except KeyError as unknown:
+        raise HTTPException(status_code=404, detail=f"No sampling mode or setting {unknown}.")
+    except (TypeError, ValueError) as wrong:
+        raise HTTPException(status_code=422, detail=str(wrong))
+    forget_sampling()
+    sampling_modes.forget()
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_sampling",
+                 detail={"model": name, "mode": payload.mode, "send": payload.send,
+                         "thinking_calls": payload.thinking_calls})
+    return sampling_modes.view(name)
+
+
 class GuideOverride(BaseModel):
     override: bool | None = None
 

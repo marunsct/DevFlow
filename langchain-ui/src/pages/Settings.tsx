@@ -6,6 +6,7 @@ import { useServerHealth } from '../lib/serverHealth';
 import { LessonsPanel } from '../components/LessonsPanel';
 import { ModelGuidancePanel } from '../components/ModelGuidancePanel';
 import { ModelCapabilitiesPanel } from '../components/ModelCapabilitiesPanel';
+import { ModelSamplingPanel } from '../components/ModelSamplingPanel';
 import { AppearanceSettings } from '../components/AppearanceSettings';
 import React, { useEffect, useState } from 'react';
 import { User, Shield, Info, Save, Trash2 } from 'lucide-react';
@@ -925,6 +926,10 @@ export const Settings: React.FC = () => {
                   <details id="capabilities" className="scroll-mt-20 glass-card rounded-2xl">
                     <summary className="cursor-pointer list-none px-6 py-4 font-semibold text-text-primary">Capabilities <span className="ml-2 text-xs font-normal text-text-muted">what the served model can do, and where each fact came from</span></summary>
                     <div className="px-2 pb-2"><ModelCapabilitiesPanel /></div>
+                  </details>
+                  <details id="sampling" className="scroll-mt-20 glass-card rounded-2xl">
+                    <summary className="cursor-pointer list-none px-6 py-4 font-semibold text-text-primary">Sampling by mode <span className="ml-2 text-xs font-normal text-text-muted">how the model picks each word, for calls with thinking on and off</span></summary>
+                    <div className="px-2 pb-2"><ModelSamplingPanel /></div>
                   </details>
                 </div>
               </div>

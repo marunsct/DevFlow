@@ -631,7 +631,11 @@ class CompatibleChatOpenAI(ChatOpenAI):
         # turned on - sampling is the owner's (ADR-0008).
         try:
             from app.models.capabilities import with_the_owner_s_sampling
+            from app.models.sampling_modes import with_the_mode_s_sampling
 
+            # The call's own mode first (thinking on or off), once the owner turned sampling by mode on; the one
+            # setting for every call fills in only what the mode leaves unset.
+            with_the_mode_s_sampling(payload, self._served_by()[1])
             with_the_owner_s_sampling(payload, self._served_by()[1])
         except Exception:  # noqa: BLE001 - the request as it was
             pass

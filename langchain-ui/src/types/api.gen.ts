@@ -480,6 +480,13 @@ export interface RunUsage {
   stages: StageUsage[];
 }
 
+export interface SamplingUpdate {
+  mode?: string | null;
+  send?: boolean | null;
+  thinking_calls?: string | null;
+  values?: Record<string, unknown> | null;
+}
+
 /** What the build model's server says of itself, read with one request for its status and never a model call (plan BG.5). */
 export interface ServerHealth {
   /** The server answered its status request (`/props`) when it was read. */

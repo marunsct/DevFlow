@@ -2039,6 +2039,57 @@
     "title": "RunUsage",
     "type": "object"
    },
+   "SamplingUpdate": {
+    "properties": {
+     "mode": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Mode"
+     },
+     "send": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Send"
+     },
+     "thinking_calls": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Thinking Calls"
+     },
+     "values": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Values"
+     }
+    },
+    "title": "SamplingUpdate",
+    "type": "object"
+   },
    "ServerHealth": {
     "additionalProperties": false,
     "description": "What the build model's server says of itself, read with one request for its status and never a model call (plan BG.5).",
@@ -6821,6 +6872,111 @@
      }
     ],
     "summary": "Fill Model Capabilities",
+    "tags": [
+     "settings"
+    ]
+   }
+  },
+  "/api/settings/model/sampling": {
+   "get": {
+    "description": "The serving model's sampling for each mode of a call: what each mode is for, its values and their source.",
+    "operationId": "model_sampling_api_settings_model_sampling_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Model Sampling Api Settings Model Sampling Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Model Sampling",
+    "tags": [
+     "settings"
+    ]
+   },
+   "put": {
+    "description": "The owner's values for one mode, or whether to send sampling by mode and which mode a thinking call uses.",
+    "operationId": "set_model_sampling_api_settings_model_sampling_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SamplingUpdate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Set Model Sampling Api Settings Model Sampling Put",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Set Model Sampling",
+    "tags": [
+     "settings"
+    ]
+   }
+  },
+  "/api/settings/model/sampling/determine": {
+   "post": {
+    "description": "Derive every mode's sampling for the serving model from its model card and family, and keep it.",
+    "operationId": "determine_model_sampling_api_settings_model_sampling_determine_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Determine Model Sampling Api Settings Model Sampling Determine Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Determine Model Sampling",
     "tags": [
      "settings"
     ]

@@ -17,7 +17,9 @@ CEILINGS = {
     "specialist": 13_400,
     # + the rule that the product ships every route, so none is added only for the tests (LF.757): a fixer added an
     # unauthenticated route that deletes every record, for a test's clean-up.
-    "principal_architect": 12_500,
+    # + the rule that a comparison rule also says how its values are shown (LF.780): two runs printed "The 3" where a
+    # brief compared words in lower case.
+    "principal_architect": 12_800,
     "technical_lead": 10_800,
     "stack_selector": 10_100,
     "senior_architect_reviewer": 9_500,

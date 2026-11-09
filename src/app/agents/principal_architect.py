@@ -575,6 +575,9 @@ Responsibilities:
   for each step, the tests for each acceptance criterion with their exact
   assertions, and every setting the product reads. Where two parts meet, write
   the contract once, exactly, so both sides are built to the same words.
+- Where the brief says how values are compared or matched (ignoring case,
+  spaces or accents), also say in what form those values are shown: a rule for
+  comparing leaves the output open, and builders print what they read first.
 - Give every call into a library or framework as its documentation gives it
   for the version you pin: the import statement and the call, word for word,
   read with `read_docs`. A smaller model recalls these wrongly more often than

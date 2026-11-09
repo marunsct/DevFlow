@@ -63,3 +63,26 @@ def test_the_sandbox_refuses_it_before_anything_runs(tmp_path):
         )
 
     assert "returncode" not in result and "Not installing" in str(result.get("error")), result
+
+
+# The harness's own services: product commands run in the worker, on the network that reaches them by one-word names
+# the registry check never saw, and lifting the list with `*` must not open them.
+def test_an_install_naming_a_harness_service_is_refused_even_with_the_list_lifted(tmp_path):
+    lifted = {"INSTALL_ALLOWED_HOSTS": "*"}
+    for command in (["pip", "install", "--index-url", "http://redis:6379/simple", "x"],
+                    ["npm", "install", "--registry", "http://searxng:8080"],
+                    ["pip", "install", "http://host.docker.internal:8888/x.whl"],
+                    ["npm", "install", "--registry=http://langchain-app-1:8000/"]):
+        for environment in ({}, lifted):
+            why = refusal(command, tmp_path, environment)
+            assert "a service of the harness itself" in why, (command, environment)
+    (tmp_path / "requirements.txt").write_text("--index-url http://app:8000/simple\nfastapi\n")
+    assert "app (in requirements.txt)" in refusal(["pip", "install", "-r", "requirements.txt"], tmp_path, lifted)
+
+
+def test_a_harness_host_the_operator_adds_is_refused_and_ordinary_installs_still_run(tmp_path):
+    assert "a service of the harness itself" in refusal(
+        ["npm", "install", "--registry", "http://cache:9000"], tmp_path, {"HARNESS_HOSTS_EXTRA": "cache"})
+    for command in (["npm", "install", "redis", "ioredis"], ["npm", "install", "-s", "redis"], ["pip", "install", "-s", "db"]):
+        assert refusal(command, tmp_path, {}) == "", ("a package named after a service", command)
+    assert refusal(["pip", "install", "--index-url", "http://mirror:3141/simple", "x"], tmp_path, {}) == ""

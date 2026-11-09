@@ -12,6 +12,10 @@ runs in - must be a registry on `ALLOWED_HOSTS` or a subdomain of one. A host th
 operator trusts is added with `INSTALL_ALLOWED_HOSTS` (comma-separated); `*` lifts
 the check. An install that names no host goes to its manager's default registry,
 which is on the list.
+
+The harness's own services are refused even with `*`: product commands run inside the worker, on the network that
+reaches the harness's queue, database and search by their service names (`redis`, `db`, ...), and those names have
+no dot, so the registry check never saw them.
 """
 
 from __future__ import annotations
@@ -35,6 +39,12 @@ ALLOWED_HOSTS = frozenset({
     # Source hosts packages are installed from
     "github.com", "githubusercontent.com", "gitlab.com", "bitbucket.org",
 })
+
+#: The harness's own hosts as the worker reaches them: its compose services, its containers and the machine it runs
+#: on (where the owner's model servers listen). No install fetches a package from them.
+HARNESS_HOSTS = frozenset({"db", "redis", "app", "worker", "searxng", "localhost", "127.0.0.1", "0.0.0.0",
+                           "host.docker.internal"})
+HARNESS_HOST_PREFIXES = ("langchain-", "devflow-")
 
 _URL = re.compile(r"(?:[a-z][a-z0-9+.-]*://)(?:[^@/\s\"']*@)?([A-Za-z0-9.-]+)", re.I)
 #: `git@host:owner/repo`, the scp-like form git and the managers accept.
@@ -64,22 +74,31 @@ def _allowed(host: str, allowed: frozenset[str]) -> bool:
     return any(host == name or host.endswith("." + name) for name in allowed)
 
 
-def hosts_in(text: str) -> list[str]:
-    """Every host a URL or an scp-like git address in `text` names, in order, once each."""
+def hosts_in(text: str, dotless: bool = False) -> list[str]:
+    """Every host a URL or an scp-like git address in `text` names, in order, once each; one-word hosts too when
+    `dotless` (a service name on the worker's network)."""
     found = [m.group(1) for m in _URL.finditer(text or "")] + [m.group(1) for m in _SCP.finditer(text or "")]
-    return list(dict.fromkeys(host.lower().rstrip(".") for host in found if "." in host))
+    return list(dict.fromkeys(host.lower().rstrip(".") for host in found if dotless or "." in host))
+
+
+def is_harness_host(host: str, environment: dict[str, str] | None = None) -> bool:
+    """Whether `host` is one of the harness's own services (`HARNESS_HOSTS`, `HARNESS_HOSTS_EXTRA`)."""
+    host = host.lower().rstrip(".")
+    extra = (environment if environment is not None else os.environ).get("HARNESS_HOSTS_EXTRA", "")
+    names = HARNESS_HOSTS | {name.strip().lower() for name in extra.split(",") if name.strip()}
+    return host in names or host.startswith(HARNESS_HOST_PREFIXES)
 
 
 def _hosts_on_the_command_line(command: Sequence[str]) -> list[str]:
     words = [str(word) for word in command]
     found: list[str] = []
     for index, word in enumerate(words):
-        found += hosts_in(word)
+        found += hosts_in(word, dotless=True)
         flag, _, value = word.partition("=")
         if flag in _HOST_FLAGS:
             value = value or (words[index + 1] if index + 1 < len(words) else "")
             # `--trusted-host name` names a bare host, not a URL.
-            found += hosts_in(value) or ([value.split(":")[0]] if "." in value and "/" not in value else [])
+            found += hosts_in(value, dotless=True) or ([value.split(":")[0]] if "." in value and "/" not in value else [])
     return list(dict.fromkeys(host.lower() for host in found))
 
 
@@ -102,15 +121,15 @@ def _hosts_in_the_files_read(directory: Path) -> list[tuple[str, str]]:
     for name in _CONFIG_FILES:
         path = directory / name
         if path.is_file():
-            found += [(host, name) for host in hosts_in(_read(path))]
+            found += [(host, name) for host in hosts_in(_read(path), dotless=True)]
     package = directory / "package.json"
     if package.is_file():
         for value in _dependency_values(_read(package)):
-            found += [(host, "package.json") for host in hosts_in(value)]
+            found += [(host, "package.json") for host in hosts_in(value, dotless=True)]
     for path in sorted(directory.glob("requirements*.txt")):
         for line in _read(path).splitlines():
             if not line.strip().startswith("#"):
-                found += [(host, path.name) for host in hosts_in(line)]
+                found += [(host, path.name) for host in hosts_in(line, dotless=True)]
     return list(dict.fromkeys(found))
 
 
@@ -123,14 +142,24 @@ def _read(path: Path) -> str:
 
 def refusal(command: Sequence[str], directory: str | Path | None,
             environment: dict[str, str] | None = None) -> str:
-    """Why this install may not run - a host it names is not a registry - or ""."""
-    allowed = allowed_hosts(environment)
-    if allowed is None:
-        return ""
+    """Why this install may not run - a host it names is the harness's own or not a registry - or ""."""
     named = [(host, "the command") for host in _hosts_on_the_command_line(command)]
     if directory is not None and Path(directory).is_dir():
         named += _hosts_in_the_files_read(Path(directory))
-    outside = [(host, where) for host, where in named if not _allowed(host, allowed)]
+    own = [(host, where) for host, where in named if is_harness_host(host, environment)]
+    if own:
+        listed = "; ".join(f"{host} (in {where})" for host, where in own[:5])
+        return (
+            f"Not installing: this install would fetch from {listed}, a service of the harness itself, not a "
+            "package registry. Install by name from the default registry, and keep the harness's hosts out of "
+            "the project's files."
+        )
+    allowed = allowed_hosts(environment)
+    if allowed is None:
+        return ""
+    # A one-word host other than the harness's is a name only this machine's network could resolve: left to the
+    # manager, as before.
+    outside = [(host, where) for host, where in named if "." in host and not _allowed(host, allowed)]
     if not outside:
         return ""
     listed = "; ".join(f"{host} (in {where})" for host, where in outside[:5])
@@ -143,4 +172,4 @@ def refusal(command: Sequence[str], directory: str | Path | None,
     )
 
 
-__all__ = ["ALLOWED_HOSTS", "allowed_hosts", "hosts_in", "refusal"]
+__all__ = ["ALLOWED_HOSTS", "HARNESS_HOSTS", "allowed_hosts", "hosts_in", "is_harness_host", "refusal"]

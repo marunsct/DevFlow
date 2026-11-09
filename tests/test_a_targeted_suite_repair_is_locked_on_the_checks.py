@@ -59,7 +59,7 @@ def test_nothing_under_repair_or_an_unchanged_suite_is_not_targeted(tmp_path):
 def test_the_review_skips_its_model_review_for_one(monkeypatch):
     source = inspect.getsource(acceptance_nodes.acceptance_review)
     assert "targeted = not problems and suite.targeted_repair_switch.enabled() and suite.only_the_repaired_tests_changed(root)" in source
-    assert "if not problems and not targeted:" in source
+    assert "if (not problems or unread_at_the_limit) and not targeted:" in source
 
 
 PY_HEAD = "import httpx\n\n\nclass TestItems:\n"

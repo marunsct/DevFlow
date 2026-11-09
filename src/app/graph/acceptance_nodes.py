@@ -647,6 +647,21 @@ def _the_specification_on_disk(root: str) -> str:
         return ""
 
 
+def _the_qa_lead_has_read_it(config: Any) -> bool:
+    """Whether a QA lead's review of the suite has run in this run, from its transcript; True when unknown."""
+    try:
+        from app.observability.transcript import read_transcript
+        from app.tracing import APP_RUN_ID_KEY
+
+        run_id = ((config or {}).get("configurable") or {}).get(APP_RUN_ID_KEY)
+        if not run_id:
+            return True
+        return any(str(r.get("stage") or "").startswith("acceptance_review_")
+                   for r in read_transcript(run_id, {"model_request"}))
+    except Exception:  # noqa: BLE001 - unknown is treated as read: the lock goes on as before
+        return True
+
+
 def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]:
     """Check the suite mechanically, have a QA lead judge it, then lock it."""
     from app.agents.acceptance_reviewer import (
@@ -781,7 +796,12 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         _the_specification_on_disk(root),
     ]) if product_at_fault.enabled() else []
     targeted = targeted or bool(no_fault_found)
-    if not problems and not targeted:
+    # At the limit with the harness's own problems still open, a suite the QA lead never read would be locked unread
+    # (per-role audit: 3 of 30 runs, one a false acceptance): it is read once, and what it finds is handled as below.
+    unread_at_the_limit = bool(problems) and rounds >= MAX_ACCEPTANCE_ROUNDS and not _the_qa_lead_has_read_it(config)
+    if unread_at_the_limit:
+        logger.info("At the limit with %d problem(s) open and no review yet: the QA lead reads the suite once", len(problems))
+    if (not problems or unread_at_the_limit) and not targeted:
         already_passing =[test.name for test in result.report.tests if test.outcome == "passed"]
         deferred = suite.deferred(root)
         deferred_text = (

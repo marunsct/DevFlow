@@ -434,3 +434,32 @@ def test_an_id_that_is_no_criterion_is_never_deferred(tmp_path, gated) -> None:
     nodes.acceptance_author(_state(tmp_path), CONFIG, CTX)
 
     assert suite.deferred(tmp_path) == {"AC-3": "needs a person to judge it"}
+
+
+# Per-role audit: at the round limit with the harness's own problems still open, the suite was locked without the QA
+# lead ever reading it (3 of 30 runs, one a false acceptance). It is read once; a lead that has read it is not asked again.
+def test_a_suite_never_reviewed_is_read_once_at_the_limit(tmp_path, gated, monkeypatch) -> None:
+    _authored(tmp_path, ALL_THREE.replace("[AC-3]", ""))
+    monkeypatch.setattr(suite, "run", lambda root: _ran(failed_names=["[AC-1] adds", "[AC-2] deletes"]))
+    finding = "AC-1: the test only checks a status and never what the product returns"
+    gated.answers["acceptance_review"] = [SimpleNamespace(approved=False, findings=[finding])]
+    config = {"configurable": {"thread_id": "t", "app_run_id": "run-x"}}
+    monkeypatch.setattr("app.observability.transcript.read_transcript",
+                        lambda run_id, kinds=None: [{"kind": "model_request", "stage": "acceptance_author_0"}])
+
+    last = nodes.acceptance_review(_state(tmp_path, acceptance_round=nodes.MAX_ACCEPTANCE_ROUNDS), config, CTX)
+
+    assert gated.asked == [f"acceptance_review_{nodes.MAX_ACCEPTANCE_ROUNDS}"]
+    assert finding in last.get("acceptance_open_problems", []) or finding in last.get("acceptance_feedback", [])
+
+
+def test_a_suite_the_lead_has_read_is_locked_at_the_limit_without_asking_again(tmp_path, gated, monkeypatch) -> None:
+    _authored(tmp_path, ALL_THREE.replace("[AC-3]", ""))
+    monkeypatch.setattr(suite, "run", lambda root: _ran(failed_names=["[AC-1] adds", "[AC-2] deletes"]))
+    config = {"configurable": {"thread_id": "t", "app_run_id": "run-x"}}
+    monkeypatch.setattr("app.observability.transcript.read_transcript",
+                        lambda run_id, kinds=None: [{"kind": "model_request", "stage": "acceptance_review_1"}])
+
+    last = nodes.acceptance_review(_state(tmp_path, acceptance_round=nodes.MAX_ACCEPTANCE_ROUNDS), config, CTX)
+
+    assert gated.asked == [] and last["stage"] == "scrum_master" and suite.is_locked(tmp_path)

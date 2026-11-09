@@ -2200,6 +2200,27 @@ def _a_command_line_in_one_string(argv: list[str], permitted: Sequence[str], rol
     return message
 
 
+_NOT_THE_WORKSPACE_S_CODE = {".venv", "venv", "node_modules", "site-packages", ".git", "__pycache__"}
+
+
+def _the_workspace_s_own_module(module: str, repo_root: str | Path | None) -> bool:
+    """Whether `python -m <module>` runs the product's own code: a package or module file in the workspace.
+
+    Running one of the workspace's own files is allowed (`-c` is refused with "put the code in a file inside the
+    workspace"), and `-m` on the product's own package is the same code. Measured on one release: every contract line
+    of a command-line tool was `python -m <its package> ...`, refused, so none was checked. Never a module found only
+    in an installed environment.
+    """
+    top = (module or "").split(".")[0]
+    if not top.isidentifier() or repo_root is None:
+        return False
+    root = Path(repo_root)
+    for base in (root, *(p for p in root.iterdir() if p.is_dir() and p.name not in _NOT_THE_WORKSPACE_S_CODE)) if root.is_dir() else ():
+        if (base / top / "__init__.py").is_file() or (base / top / "__main__.py").is_file() or (base / f"{top}.py").is_file():
+            return True
+    return False
+
+
 def validate_command(
     command: Sequence[str], role_name: str, repo_root: str | Path | None = None
 ) -> list[str]:
@@ -2267,7 +2288,7 @@ def validate_command(
             )
         if arg == "-m" and executable in {"python", "python3"}:
             module = argv[index + 1] if index + 1 < len(argv) else ""
-            if module not in _ALLOWED_PYTHON_MODULES:
+            if module not in _ALLOWED_PYTHON_MODULES and not _the_workspace_s_own_module(module, repo_root):
                 raise CommandNotAllowed(
                     f"'{executable} -m {module}' is not permitted: it can execute arbitrary code. "
                     f"Allowed modules: {', '.join(sorted(_ALLOWED_PYTHON_MODULES))}."

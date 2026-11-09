@@ -5,9 +5,9 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 <!-- state:generated -->
-**As of:** 11-09 20:07 JST (written by `loop.sh state`). Harness 53c06750 committed; 53c06750 deployed.
-**Live, and stopped in the last day:** run-b572702f running at product_manager; run-ebde7fac running at defect_fix_1_0; run-48ed3012 failed at ?; run-5814234a failed at failed
-**Last scored:** run-023f2c45 wordstats-cli 8/8 (completed, mixed, 358 active min, handoff 1.0; scored 11-09 20:05 JST); run-6fbbf838 notes-api-falcon 9/9 (completed, mixed, 59 active min, handoff 1.0; scored 11-09 17:35 JST); run-bbbf1e3d wordstats-cli 8/8 (completed, mixed, 61 active min, handoff 1.0; scored 11-09 16:25 JST).
+**As of:** 11-09 20:57 JST (written by `loop.sh state`). Harness 00237b71 committed; 53c06750 deployed (not the same).
+**Live, and stopped in the last day:** run-efaecb0f running at tools_models; run-5447eb12 running at consult_ui_ux; run-48ed3012 failed at ?; run-5814234a failed at failed
+**Last scored:** run-b572702f wordstats-cli 8/8 (completed, 39 active min, handoff 1.0; scored 11-09 20:56 JST); run-ebde7fac tasks-api 10/10 (completed, mixed, 172 active min, handoff 1.0; scored 11-09 20:46 JST); run-023f2c45 wordstats-cli 8/8 (completed, mixed, 358 active min, handoff 1.0; scored 11-09 20:05 JST).
 <!-- /state:generated -->
 ## Live now
 | | |

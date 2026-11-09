@@ -8597,7 +8597,7 @@ def _with_the_api(request: dict, state: Any) -> dict:
     try:
         from app.acceptance.api_reference import api_reference
 
-        reference = api_reference(state.get("technical_specification"))
+        reference = api_reference(state.get("technical_specification"), getattr(state.get("document"), "text", "") or "")
         if reference:
             request["messages"][-1]["content"] += "\n\n" + reference
     except Exception:  # noqa: BLE001 - the request stands without it

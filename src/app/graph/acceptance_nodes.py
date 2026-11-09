@@ -808,7 +808,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         # The facts the work is built and judged under (plan CM.1).
         request = with_the_facts(request, state["repository"].root_path)
         # What the tests are judged against, whole (see `app.acceptance.api_reference`).
-        request["messages"][-1]["content"] += "\n" + api_reference(state.get("technical_specification"))
+        request["messages"][-1]["content"] += "\n" + api_reference(
+            state.get("technical_specification"), getattr(state.get("document"), "text", "") or "")
         update = _run_gated_agent(
             state, config,
             stage_name=f"acceptance_review_{rounds}",
@@ -1962,7 +1963,8 @@ def _rewritten_in_one_call_each(state: Any, broken: list[str], model: Any) -> bo
 
         done = rewritten_tests.repair(
             _root(state), broken, model, which_test=_which_test,
-            reference=api_reference(state.get("technical_specification")) + the_rulings_section(_root(state)),
+            reference=api_reference(state.get("technical_specification"),
+                                    getattr(state.get("document"), "text", "") or "") + the_rulings_section(_root(state)),
             reason=str(state.get("dispute_reason") or ""),
         )
     except Exception:  # noqa: BLE001 - QA's agent loop repairs, as before

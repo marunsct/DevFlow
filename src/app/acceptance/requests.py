@@ -244,7 +244,7 @@ def build_author_request(
         + (f"--- The brief, as the customer wrote it ---\n{brief.strip()[:BRIEF_CHARS]}\n\n" if brief.strip() else "")
         + _the_names_the_brief_gives(brief)
         + _the_interface_contract(interface_contract)
-        + api_reference(specification)
+        + api_reference(specification, brief)
         + "--- What to build them against ---\n"
         "Where the brief states the interface - the labels on controls, endpoints, commands, "
         "names - the tests use exactly those words: they are what the customer will check. "

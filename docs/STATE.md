@@ -5,9 +5,9 @@ else is reference - `docs/HANDOVER.md` (rules, accounts, commands), `docs/monito
 (mechanics and the run log), `docs/improvement-plan.md` (the plan). Narratives older than a
 week are in `docs/archive/`.
 <!-- state:generated -->
-**As of:** 11-09 22:44 JST (written by `loop.sh state`). Harness 6d7c8842 committed; 6d7c8842 deployed.
-**Live, and stopped in the last day:** run-9bbbfb2f running at principal_architect; run-efaecb0f running at awaiting_approval:defect_fix_1_5; run-48ed3012 failed at ?; run-5814234a failed at failed
-**Last scored:** run-5447eb12 wordstats-cli 6/8 (completed, FALSE ACCEPTANCE, mixed, 93 active min, handoff 1.0; scored 11-09 22:35 JST); run-b572702f wordstats-cli 8/8 (completed, 39 active min, handoff 1.0; scored 11-09 20:56 JST); run-ebde7fac tasks-api 10/10 (completed, mixed, 172 active min, handoff 1.0; scored 11-09 20:46 JST).
+**As of:** 11-09 23:17 JST (written by `loop.sh state`). Harness 5c6dabf2 committed; 6d7c8842 deployed (not the same).
+**Live, and stopped in the last day:** run-051cda30 running at tools_models; run-efaecb0f running at defect_fix_1_7; run-48ed3012 failed at ?; run-5814234a failed at failed
+**Last scored:** run-9bbbfb2f wordstats-cli 8/8 (completed, mixed, 35 active min, handoff 1.0; scored 11-09 23:17 JST); run-5447eb12 wordstats-cli 6/8 (completed, FALSE ACCEPTANCE, mixed, 93 active min, handoff 1.0; scored 11-09 22:35 JST); run-b572702f wordstats-cli 8/8 (completed, 39 active min, handoff 1.0; scored 11-09 20:56 JST).
 <!-- /state:generated -->
 ## Live now
 | | |

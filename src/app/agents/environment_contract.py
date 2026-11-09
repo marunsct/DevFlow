@@ -26,6 +26,33 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _describe_the_network() -> str:
+    """What the network is, by where commands run (`sandbox.execution_mode`).
+
+    Both texts said "no network except during dependency installation", true only where each command gets its own
+    container. In this deployment commands run in the worker itself and share its network, so the line was false;
+    what holds in both is that a product and its tests must not depend on reaching anything.
+    """
+    from app.tools.sandbox import IN_CONTAINER_MODE, execution_mode
+
+    if execution_mode() == IN_CONTAINER_MODE:
+        return (
+            "- Commands share this machine's network, but nothing a product may depend on is reachable on it: a\n"
+            "  product and its tests reach no service and no address outside the workspace, and installs fetch\n"
+            "  only from the public package registries.\n"
+        )
+    return "- There is no network except during dependency installation.\n"
+
+
+#: Where a product's data and settings come from, the same for every stage: the suites start it with these alone.
+_STARTS_ALONE = (
+    "- A PRODUCT THAT STORES DATA RUNS ON AN EMBEDDED DATABASE by default: a file under `DATA_DIR`,\n"
+    "  with no server. A server the brief names is the production target, behind one connection setting.\n"
+    "- IT STARTS FROM `PORT` AND `DATA_DIR` ALONE: a secret it needs has a development default or is\n"
+    "  generated at its first start and kept under `DATA_DIR`; a setting required with no default stops it.\n"
+)
+
+
 def _describe_the_browser(runnable: list[str]) -> str:
     """What this environment can and cannot do with a browser, derived.
 
@@ -105,8 +132,8 @@ def describe_execution_environment() -> str:
         "The execution environment - what a specialist can actually run:\n"
         f"- Available commands: {', '.join(runnable)}.\n"
         + _describe_the_browser(runnable)
-        + "- There is no network except during dependency installation.\n"
-        "- NOTHING IS RUNNING except the command you start. There is no database\n"
+        + _describe_the_network()
+        + "- NOTHING IS RUNNING except the command you start. There is no database\n"
         "  server, no message broker, no cache and no application server waiting\n"
         "  to be connected to, and no way to start one that outlives a single\n"
         "  command. A brief may still *require* PostgreSQL, and you should still\n"
@@ -116,11 +143,8 @@ def describe_execution_environment() -> str:
         "  tested against plain objects. A stack whose tests need a running\n"
         "  server produces no evidence here, and every later stage is asked\n"
         "  'did this work?'.\n"
-        "- A PRODUCT THAT STORES DATA RUNS ON AN EMBEDDED DATABASE by default: a file under `DATA_DIR`,\n"
-        "  with no server. A server the brief names is the production target, behind one connection setting.\n"
-        "- IT STARTS FROM `PORT` AND `DATA_DIR` ALONE: a secret it needs has a development default or is\n"
-        "  generated at its first start and kept under `DATA_DIR`; a setting required with no default stops it.\n"
-        "- Container and deployment files can be WRITTEN but not BUILT. There is\n"
+        + _STARTS_ALONE
+        + "- Container and deployment files can be WRITTEN but not BUILT. There is\n"
         "  no `docker` on any role's allowlist, because the daemon socket is\n"
         "  root on the host. A Dockerfile or a compose file is delivered and\n"
         "  reviewed as text, and 'the image was not built' is not a defect in\n"
@@ -194,15 +218,16 @@ def the_environment_contract() -> str:
         "The execution environment, stated once for every stage - reference, not a request:\n"
         f"- Available commands: {', '.join(runnable)}.\n"
         + _describe_the_browser_for_a_stage(runnable)
-        + "- There is no network except during dependency installation.\n"
-        "- NOTHING IS RUNNING except the command you start. There is no database\n"
+        + _describe_the_network()
+        + "- NOTHING IS RUNNING except the command you start. There is no database\n"
         "  server, no message broker, no cache and no application server waiting\n"
         "  to be connected to, and no way to start one that outlives a single\n"
         "  command. Anything a design needs that this environment does not\n"
         "  provide must sit behind an adapter its tests can substitute, with\n"
         "  migrations written and reviewed rather than applied and the logic\n"
         "  that matters testable against plain objects.\n"
-        "- Container and deployment files can be WRITTEN but not BUILT: there is\n"
+        + _STARTS_ALONE
+        + "- Container and deployment files can be WRITTEN but not BUILT: there is\n"
         "  no `docker` on any role's allowlist. 'The image was not built' is a\n"
         "  property of this environment, not a defect in the work.\n"
         "- An install must land in the interpreter environment the product's own\n"

@@ -16,6 +16,7 @@ an unconditional MUST that outranked it, and the harness paid for all four:
   add a dependency" while its role prompt said to install Jest or PyTest.
 """
 
+import inspect
 import re
 
 import pytest
@@ -77,3 +78,18 @@ def test_every_role_still_demands_working_code_not_designs():
     for role in ("ui_ux", "database", "backend"):
         assert "MUST write" in _ROLE_DESCRIPTIONS[role]
     assert "Do NOT just 'design' or output snippets" in _ROLE_DESCRIPTIONS["ui_ux"]
+
+
+# The database role was told to run migrations against the server the stack names; no server runs here, and every
+# stage's environment text says a product's data lives in an embedded database under `DATA_DIR` by default.
+def test_the_database_role_agrees_with_the_environment_on_where_data_lives():
+    prompt = _ROLE_DESCRIPTIONS["database"]
+    assert "embedded database" in prompt and "`DATA_DIR`" in prompt and "no database server runs here" in prompt
+    for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
+        assert not re.search(rf"\b{re.escape(word)}\b", prompt, re.I), word
+
+
+def test_the_selector_is_not_told_a_browser_is_missing():
+    from app.agents import stack_selector
+
+    assert "A browser is not available" not in inspect.getsource(stack_selector)

@@ -95,3 +95,22 @@ def test_the_selector_keeps_its_own_fuller_text():
     assert describe_execution_environment is environment_contract.describe_execution_environment
     assert "Choose a testing approach" in EXECUTION_ENVIRONMENT
     assert "Choose a testing approach" not in environment_contract_text()
+
+
+# The network line by where commands run: both texts said "no network except during dependency installation", true
+# only where each command gets its own container; in the worker, commands share its network.
+def test_the_network_line_depends_on_where_commands_run(monkeypatch):
+    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "in-container")
+    shared = environment_contract.the_environment_contract()
+    assert "no network except during dependency installation" not in shared
+    assert "share this machine's network" in shared and "reach no service" in shared
+    assert "share this machine's network" in describe_execution_environment()
+    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "container")
+    assert "no network except during dependency installation" in environment_contract.the_environment_contract()
+
+
+def test_every_stage_is_told_a_product_starts_from_port_and_data_dir_alone():
+    text = environment_contract.the_environment_contract()
+    assert "STARTS FROM `PORT` AND `DATA_DIR` ALONE" in text and "EMBEDDED DATABASE" in text
+    for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
+        assert not re.search(rf"\b{re.escape(word)}\b", text, re.I), word

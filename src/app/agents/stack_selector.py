@@ -120,10 +120,9 @@ A constraint in the intake is a boundary, not a preference:
   later; every dependency here is one the builders must install and configure
   before they write any of the product. Put those in the specification's
   future-work section instead, where they cost nothing.
-- Prefer what the runtime already provides, but it must actually be present:
-  see the execution environment below. A browser is not available.
-- Prefer what the runtime already provides, and reach for a framework only when
-  the product's size or risk actually calls for one.
+- Prefer what the runtime already provides - it must actually be present: see
+  the execution environment below - and reach for a framework only when the
+  product's size or risk actually calls for one.
 
 {EXECUTION_ENVIRONMENT}
 

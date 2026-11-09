@@ -239,6 +239,85 @@ logger = logging.getLogger(__name__)
 
 #: The reply cap in force for the call this thread is making, if any.
 _REPLY_CAP = threading.local()
+#: The longest reply a defect-fix stage is asked for, behind `FIX_STAGE_REPLY_CAP`. Measured on one run: a fix stage's
+#: fourteen calls took thirteen minutes, eight of them in two replies of 28,448 and 23,446 tokens (mostly reasoning),
+#: while its other replies averaged under a thousand. A cut reply is answered by reply salvage from its kept reasoning;
+#: every other stage keeps the length it had (an architect's correct specification reply measured 22,810).
+FIX_STAGE_REPLY_TOKENS = 12_000
+
+
+def fix_stage_reply_cap(ceiling: int | None) -> int | None:
+    """`FIX_STAGE_REPLY_TOKENS` (or `ceiling` when smaller) for a `defect_fix_*` stage with the switch on; else None."""
+    try:
+        if not fix_stage_reply_cap_switch.enabled():
+            return None
+        from app.observability.transcript import _stage_from_config
+
+        if not _stage_from_config("").startswith("defect_fix_"):
+            return None
+        return min(FIX_STAGE_REPLY_TOKENS, ceiling) if ceiling and ceiling > 0 else FIX_STAGE_REPLY_TOKENS
+    except Exception:  # noqa: BLE001 - a cap that cannot be read asks for no cap
+        return None
+
+
+class _FixStageReplyCap:
+    """`FIX_STAGE_REPLY_CAP` as the switch registry reads one: off in code, the compose file turns it on."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("A defect-fix stage's replies are capped at 12,000 tokens; reply salvage answers a cut reply from its "
+                   "reasoning. Measured on one run, two fix-stage replies of 28k and 23k tokens took eight minutes.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("FIX_STAGE_REPLY_CAP", _FixStageReplyCap.ON_BY_DEFAULT)
+
+
+fix_stage_reply_cap_switch = _FixStageReplyCap()
+
+#: The longest reply a planning or review stage is asked for, behind `PLAN_REVIEW_REPLY_CAP` (owner 2026-10-29).
+#: Measured on one model over ten runs: the technical lead's replies reached 30,000-46,000 tokens, about five minutes
+#: each, mostly reasoning; a cut reply is answered by reply salvage as a fix stage's is. The architect is left out:
+#: its correct specification replies measured up to 22,810.
+PLAN_REVIEW_REPLY_TOKENS = 20_000
+#: The stages it applies to, by the start of their names.
+PLAN_REVIEW_STAGES = ("technical_lead", "scrum_master", "architecture_review", "acceptance_review", "acceptance_dispute",
+                      "milestone_review", "security_review", "advice_review")
+
+
+def plan_review_reply_cap(ceiling: int | None) -> int | None:
+    """`PLAN_REVIEW_REPLY_TOKENS` (or `ceiling` when smaller) for a planning or review stage with the switch on; else None."""
+    try:
+        if not plan_review_reply_cap_switch.enabled():
+            return None
+        from app.observability.transcript import _stage_from_config
+
+        if not _stage_from_config("").startswith(PLAN_REVIEW_STAGES):
+            return None
+        return min(PLAN_REVIEW_REPLY_TOKENS, ceiling) if ceiling and ceiling > 0 else PLAN_REVIEW_REPLY_TOKENS
+    except Exception:  # noqa: BLE001 - a cap that cannot be read asks for no cap
+        return None
+
+
+class _PlanReviewReplyCap:
+    """`PLAN_REVIEW_REPLY_CAP` as the switch registry reads one: off in code, the compose file turns it on."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("The planning and review stages' replies are capped at 20,000 tokens; reply salvage answers a cut "
+                   "reply from its reasoning. Measured on one model, the technical lead's replies reached 30-46k "
+                   "tokens, about five minutes each.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("PLAN_REVIEW_REPLY_CAP", _PlanReviewReplyCap.ON_BY_DEFAULT)
+
+
+plan_review_reply_cap_switch = _PlanReviewReplyCap()
 
 #: A failure after this long is the reply being cut off, not the call failing.
 SLOW_FAILURE_SECONDS = 60.0
@@ -272,6 +351,16 @@ def record_pace(server: tuple[str, str], tokens: int, seconds: float) -> None:
         return
     with _PACE_LOCK:
         _PACE.setdefault(server, deque(maxlen=PACE_SAMPLES)).append(tokens / seconds)
+
+
+def expected_reply_tokens(cap: int | None, ceiling: int | None) -> int:
+    """The longest reply a call may be expected to need: its cap, else the model's ceiling, else the longest real one.
+
+    A model with no reply ceiling (one whose replies are short, so none was set) had no pace to measure a call
+    against, so a request the server never answered kept the configured limit - thirty minutes - before it was
+    asked again. Measured: a run sat 13 minutes on one request while the same server answered new ones in 0.3 s.
+    """
+    return cap or ceiling or LARGEST_LEGITIMATE_OUTPUT_TOKENS
 
 
 def paced_timeout(server: tuple[str, str], reply_tokens: int | None, configured: Any) -> float | None:
@@ -339,6 +428,29 @@ def _remember_the_refusal(server: tuple[str, str]) -> None:
 
 #: (address, model) of servers that refuse a forced tool call while the model reasons.
 _NO_FORCED_TOOL_WHILE_THINKING: set[tuple[str, str]] = _refusals_remembered()
+
+
+#: (address, model) of servers that take only the strings none, auto and required as a tool choice: a named choice is
+#: sent to them as `required`. Learnt from a refusal, or from the model's diagnosis (`diagnostics.apply`).
+_NAMED_CHOICE_BECOMES_REQUIRED: set[tuple[str, str]] = set()
+
+
+def anthropic_client_arguments(base_url: str, workspace_id: str) -> dict:
+    """The address and workspace an Anthropic client is given, when the settings name them."""
+    from app.models.endpoints import anthropic_address
+
+    address = anthropic_address(base_url)
+    return {
+        **({"anthropic_api_url": address} if address else {}),
+        **({"default_headers": {"anthropic-workspace-id": workspace_id}} if workspace_id else {}),
+    }
+
+
+def takes_only_string_tool_choices(error: Exception) -> bool:
+    """Whether `error` is a server refusing a named tool choice because it takes only strings, `required` among them."""
+    status = getattr(error, "status_code", None)
+    text = str(error)
+    return status == 400 and "tool_choice" in text and "Supported string values" in text and "required" in text
 
 
 def refuses_a_forced_tool_while_thinking(error: Exception) -> bool:
@@ -455,6 +567,18 @@ class CompatibleChatOpenAI(ChatOpenAI):
     output alike.
     """
 
+    def _served_by(self) -> tuple[str, str]:
+        """(address, model) the next request goes to: where this client was built for, unless its run's model pin
+        sends it elsewhere (`app.models.model_pin`). Memos of what a server refused or how fast it is are kept
+        under it, so one server's habits are never applied to another."""
+        built = (str(self.openai_api_base or ""), str(self.model_name or ""))
+        try:
+            from app.models.model_pin import served_by
+
+            return served_by(self, built)
+        except Exception:  # noqa: BLE001
+            return built
+
     def _get_request_payload(self, input_, *, stop=None, **kwargs):  # type: ignore[override]
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
         for message in payload.get("messages", []):
@@ -480,12 +604,41 @@ class CompatibleChatOpenAI(ChatOpenAI):
                     payload[key] = min(payload[key], cap)
             if "max_tokens" not in payload and "max_completion_tokens" not in payload:
                 payload["max_tokens"] = cap
+        if "max_tokens" not in payload and "max_completion_tokens" not in payload:
+            # The deployment leaves replies uncapped: the ceiling the serving
+            # model's diagnosis chose, if any (`app.models.model_guidance`).
+            try:
+                from app.models.model_guidance import ceiling_for
+
+                chosen = ceiling_for(self._served_by())
+                if chosen:
+                    payload["max_tokens"] = chosen
+            except Exception:  # noqa: BLE001
+                pass
         deadline = getattr(_REPLY_CAP, "deadline", None)
         if deadline:
             payload["timeout"] = deadline
-        if (str(self.openai_api_base or ""), str(self.model_name or "")) in _NO_FORCED_TOOL_WHILE_THINKING:
+        # Before the downgrade below: `required` is the form this engine enforces; `auto` made its parser reject the
+        # model's output (measured, 0-1 of 3 replies answered) and `required` never did.
+        if self._served_by() in _NAMED_CHOICE_BECOMES_REQUIRED:
+            if isinstance(payload.get("tool_choice"), dict):
+                payload["tool_choice"] = "required"
+        if self._served_by() in _NO_FORCED_TOOL_WHILE_THINKING:
             if payload.get("tool_choice") not in (None, "auto", "none"):
                 payload["tool_choice"] = "auto"
+        # The sampling the owner turned on for the serving model on the
+        # settings page, and the DRY sampler (`capabilities`); nothing unless
+        # turned on - sampling is the owner's (ADR-0008).
+        try:
+            from app.models.capabilities import with_the_owner_s_sampling
+            from app.models.sampling_modes import with_the_mode_s_sampling
+
+            # The call's own mode first (thinking on or off), once the owner turned sampling by mode on; the one
+            # setting for every call fills in only what the mode leaves unset.
+            with_the_mode_s_sampling(payload, self._served_by()[1])
+            with_the_owner_s_sampling(payload, self._served_by()[1])
+        except Exception:  # noqa: BLE001 - the request as it was
+            pass
         return payload
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):  # type: ignore[override]
@@ -499,19 +652,39 @@ class CompatibleChatOpenAI(ChatOpenAI):
         a stage that answers in prose is reminded to use its answer tool
         (`settled_answer`).
         """
-        from app.models.call_gate import a_model_call
+        from app.models.call_gate import _stop_if_this_run_was_stopped, a_model_call
+
+        _stop_if_this_run_was_stopped()
+        # The owner's direction, for a call no agent middleware gave it to (drafting, rewrites, parts...).
+        from app.server.steering import with_the_direction
+
+        messages = with_the_direction(messages)
+        messages = _without_lone_surrogates(messages)
 
         # A deploy waits for this call to return (`app.models.call_gate`).
-        with a_model_call(str(self.openai_api_base or "")):
+        with a_model_call(self._served_by()[0]):
             return self._generate_once(messages, stop=stop, run_manager=run_manager, **kwargs)
 
     def _generate_once(self, messages, stop=None, run_manager=None, **kwargs):
         from app.models.tool_arguments import decode_structured_arguments
 
-        server = (str(self.openai_api_base or ""), str(self.model_name or ""))
+        server = self._served_by()
         try:
             result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
         except Exception as error:  # noqa: BLE001 - re-raised unless this is the refusal
+            if server not in _NAMED_CHOICE_BECOMES_REQUIRED and takes_only_string_tool_choices(error):
+                _NAMED_CHOICE_BECOMES_REQUIRED.add(server)
+                logger.warning(
+                    "%s takes only string tool choices; a named choice is sent as `required` from now on",
+                    server[1] or server[0],
+                )
+                result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+                from app.models.reply_salvage import salvaged
+
+                result = salvaged(self, messages, result, stop=stop, **kwargs)
+                from app.models.tool_arguments import decode_structured_arguments as _decoded
+
+                return _decoded(result, kwargs.get("tools"))
             if server in _NO_FORCED_TOOL_WHILE_THINKING or not refuses_a_forced_tool_while_thinking(error):
                 raise
             _remember_the_refusal(server)
@@ -520,6 +693,11 @@ class CompatibleChatOpenAI(ChatOpenAI):
                 "offered instead of forced from now on", server[1] or server[0],
             )
             result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+        # A reply cut off by the cap, salvaged from its own reasoning where
+        # this model's server was measured to allow it (`app.models.reply_salvage`).
+        from app.models.reply_salvage import salvaged
+
+        result = salvaged(self, messages, result, stop=stop, **kwargs)
         # An object sent as a string of JSON is decoded where the tool wants
         # an object (`app.models.tool_arguments`).
         return decode_structured_arguments(result, kwargs.get("tools"))
@@ -541,13 +719,13 @@ class CompatibleChatOpenAI(ChatOpenAI):
         if self.max_retries:
             return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
         ceiling = self.max_tokens if isinstance(self.max_tokens, int) else None
-        server = (str(self.openai_api_base or ""), str(self.model_name or ""))
-        cap = None
+        server = self._served_by()
+        cap = fix_stage_reply_cap(ceiling) or plan_review_reply_cap(ceiling)
         quick_failures = 0
         while True:
             started = time.monotonic()
             _REPLY_CAP.tokens = cap
-            _REPLY_CAP.deadline = paced_timeout(server, cap or ceiling, self.request_timeout)
+            _REPLY_CAP.deadline = paced_timeout(server, expected_reply_tokens(cap, ceiling), self.request_timeout)
             try:
                 result = super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
                 record_pace(server, _reply_tokens(result), time.monotonic() - started)
@@ -582,6 +760,11 @@ class CompatibleChatOpenAI(ChatOpenAI):
             for generation, choice in zip(result.generations, data.get("choices") or []):
                 message = (choice or {}).get("message") or {}
                 reasoning = message.get("reasoning_content") or message.get("reasoning")
+                from app.models.reply_salvage import remember_reasoning
+
+                # Whole, for this thread only: what a reply cut off while
+                # reasoning is salvaged from (`app.models.reply_salvage`).
+                remember_reasoning(reasoning.strip() if isinstance(reasoning, str) else "")
                 if isinstance(reasoning, str) and reasoning.strip():
                     generation.message.additional_kwargs[REASONING_FIELD] = (
                         reasoning.strip()[-REASONING_CARRIED_CHARS:]
@@ -690,6 +873,19 @@ def _runtime_settings() -> Settings:
         return load_settings()
 
 
+def _the_pin_clients(built_base: str, built_model: str, role: str, address_only: bool) -> dict[str, Any]:
+    """The http clients that let a run's model pin reroute this client's requests; none when they cannot be built."""
+    if not built_base:
+        return {}
+    try:
+        from app.models.model_pin import clients_for
+
+        return clients_for(built_base, built_model, role=role, address_only=address_only)
+    except Exception:  # noqa: BLE001 - without them the client is the one it always was
+        logger.warning("Could not install the model pin's transport", exc_info=True)
+        return {}
+
+
 def build_default_chat_model(
     settings: Settings | None = None, environment: Mapping[str, str] | None = None,
 ) -> BaseChatModel:
@@ -736,7 +932,8 @@ def build_default_chat_model(
             max_retries=3,
             timeout=_request_timeout(),
             max_tokens=reply_ceiling if reply_ceiling and reply_ceiling > 0 else None,
-            **thinking.anthropic_arguments(),
+            **thinking.anthropic_arguments(resolved_settings.model_name),
+            **anthropic_client_arguments(resolved_settings.openai_base_url, resolved_settings.anthropic_workspace_id),
         )
         if resolved_settings.openai_api_key:
             fallback = CompatibleChatOpenAI(
@@ -775,6 +972,16 @@ def build_default_chat_model(
             timeout=_request_timeout(),
             max_tokens=reply_ceiling if reply_ceiling and reply_ceiling > 0 else None,
             default_headers=naming or None,
+            # Each request asks which model its run is on now and goes there when that is not the model this client
+            # was built for (`app.models.model_pin`); outside a run, or on the same model, it is sent as it was.
+            **_the_pin_clients(
+                reached, resolved_settings.model_name,
+                # The judgement model is the one built from an environment of its own (`app.models.roles`); a
+                # caller that hands in the settings has chosen the provider and model itself (a run's own
+                # override), and only the address it is served from is the model pin's to say.
+                "judgement" if environment is not None else "default",
+                settings is not None and environment is None,
+            ),
             **thinking.openai_arguments(local=speaks_llama_cpp),
         )
         # If it's a local model that fails, fallback to Anthropic if available
@@ -782,6 +989,7 @@ def build_default_chat_model(
              fallback = ChatAnthropic(
                 api_key=resolved_settings.anthropic_api_key,
                 model=_fallback_model("ANTHROPIC_FALLBACK_MODEL", "claude-haiku-4-5-20251001"),
+                **anthropic_client_arguments("", resolved_settings.anthropic_workspace_id),
                 max_retries=3,
             timeout=_request_timeout(),
                 max_tokens=reply_ceiling if reply_ceiling and reply_ceiling > 0 else None,
@@ -819,3 +1027,41 @@ def environment_of(model: Any) -> Mapping[str, str] | None:
 
 
 __all__ = ["build_default_chat_model", "environment_of"]
+
+
+
+def _encodes(text: str) -> bool:
+    try:
+        text.encode("utf-8")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def _cleaned(value: Any) -> Any:
+    if isinstance(value, str):
+        return value if _encodes(value) else "".join("\ufffd" if 0xD800 <= ord(ch) <= 0xDFFF else ch for ch in value)
+    if isinstance(value, list):
+        return [_cleaned(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _cleaned(item) for key, item in value.items()}
+    return value
+
+
+def _without_lone_surrogates(messages: Any) -> Any:
+    """The messages with any lone surrogate replaced by U+FFFD; each message copied only when it holds one.
+
+    Measured on one run: a model's reply carried `\\ud800`, it went back in the conversation, and the next request
+    could not be encoded as JSON (`UnicodeEncodeError: surrogates not allowed`) - the run failed at the architect.
+    """
+    try:
+        out = []
+        for message in messages:
+            fields = {name: getattr(message, name, None) for name in ("content", "additional_kwargs", "tool_calls")}
+            if all(_encodes(json.dumps(value, ensure_ascii=False, default=str)) for value in fields.values() if value):
+                out.append(message)
+                continue
+            out.append(message.model_copy(update={name: _cleaned(value) for name, value in fields.items() if value}))
+        return out
+    except Exception:  # noqa: BLE001 - the messages go as they were
+        return messages

@@ -153,3 +153,64 @@ def test_the_harness_s_setup_is_not_counted_against_the_product_s_size(project) 
     names = {name for _, name in application}
     assert "notes/src/app.js" in names
     assert not [name for name in counted if contract.owned_by_the_harness(project, name)]
+
+
+def test_after_the_harness_s_own_repairs_its_files_raise_no_readiness_problem(project, monkeypatch) -> None:
+    """HR2.P.1: the repairs ran after the check, so 125 of 140 resends were for what they then fixed anyway."""
+    monkeypatch.setenv("WORKFLOW_WORK_ORDER_READINESS", "on")
+    plan = _plan(
+        _task("backend", "notes/src/app.js", "notes/scripts/serve.mjs"),
+        _task("testing", "notes/tests/app.test.js", "notes/acceptance/notes.spec.js"),
+    )
+    assert [p for p in readiness_problems(plan, project) if "the harness keeps" in p or "locked acceptance suite" in p]
+    repaired = with_the_harness_s_files_left_out(plan, project)
+    assert not [p for p in readiness_problems(repaired, project) if "the harness keeps" in p or "locked acceptance suite" in p]
+
+
+def test_the_planner_repairs_before_it_checks() -> None:
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+    check = source.index("        problems = readiness_problems(\n            update[\"milestone_plan\"],")
+    assert source.rindex("update[\"milestone_plan\"] = with_the_harness_s_files_left_out(", 0, check) > \
+        source.rindex("with_a_testing_work_order(", 0, check)
+    assert source.rindex("update[\"milestone_plan\"] = with_refused_commands_noted(", 0, check) > \
+        source.rindex("with_a_testing_work_order(", 0, check)
+
+
+def test_a_testing_order_that_writes_nothing_is_left_to_the_test_round(project, monkeypatch) -> None:
+    """Measured: a plan was sent back three times for "Run unit tests to verify ..." orders listing no files."""
+    from app.analysis.work_orders import with_run_only_testing_orders_left_to_the_test_round
+
+    monkeypatch.setenv("WORKFLOW_WORK_ORDER_READINESS", "on")
+    run_only = SpecialistTask(specialist_role="testing", title="Verify", task_description="Run the unit tests to verify the fix.",
+                              files=[], test_cases=["given the fix, when the tests run, then they pass"])
+    plan = _plan(_task("backend", "notes/src/app.js"), _task("testing", "notes/tests/app.test.js"), run_only)
+    assert [p for p in readiness_problems(plan, project) if "names no `files`" in p]
+
+    left, labels = with_run_only_testing_orders_left_to_the_test_round(plan)
+
+    assert len(labels) == 1 and len(left.delegated_tasks) == 2
+    assert not [p for p in readiness_problems(left, project) if "names no `files`" in p]
+    assert any("Verified by the harness's test round" in note for note in left.integration_notes)
+
+
+def test_a_plan_of_only_run_only_orders_is_left_as_it_is_for_the_check(project) -> None:
+    from app.analysis.work_orders import with_run_only_testing_orders_left_to_the_test_round
+
+    run_only = SpecialistTask(specialist_role="testing", title="Verify", task_description="Run the tests.", files=[],
+                              test_cases=["x"])
+    plan = _plan(run_only)
+    assert with_run_only_testing_orders_left_to_the_test_round(plan) == (plan, [])
+
+
+def test_the_measured_run_only_orders_are_left_and_a_writing_order_is_not() -> None:
+    from app.analysis.work_orders import _ONLY_RUNS, _WRITES
+
+    for said in ("Run unit tests to verify database fix and model/route corrections",
+                 "Run Playwright acceptance suite to verify all previously failing criteria"):
+        assert _ONLY_RUNS.search(said) and not _WRITES.search(said), said
+    assert _WRITES.search("Run the suite, then add tests for the empty title")
+    assert not _ONLY_RUNS.search("do testing work")

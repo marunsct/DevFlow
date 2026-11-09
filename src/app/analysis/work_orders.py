@@ -556,11 +556,28 @@ def _files_the_sprint_names_and_nobody_is_given(
         base = Path(repo_root or "") / project_dir if project_dir else Path(repo_root or "")
         existing: set[str] = set()
         if repo_root and base.is_dir():
+            from app.analysis.walk import files_under
             from app.tools.repository import IGNORED_DIRECTORIES
 
-            for path in base.rglob("*"):
-                if path.is_file() and not any(part in IGNORED_DIRECTORIES for part in path.parts):
+            for path in files_under(base, IGNORED_DIRECTORIES):
+                if not any(part in IGNORED_DIRECTORIES for part in path.parts):
                     existing.add(path.name.lower())
+        # The documents the harness keeps beside the project (the specification, the sprint record) exist
+        # too: a scope that names one was sent back three times for a file the lead cannot be given to write.
+        docs = Path(repo_root or "") / "docs"
+        if repo_root and project_dir and docs.is_dir():
+            existing.update(path.name.lower() for path in docs.iterdir() if path.is_file())
+        # The scaffold's stub of the served entrypoint exists and is not built: measured on one run, the scope named
+        # `src/app.ts` - "complete Hono app with all six endpoints" - no work order listed it, and the plan went out
+        # with only the storage module in it; the first draft passed 2 of 18 criteria against the stub.
+        try:
+            from app.stacks.scaffold import entrypoint_is_still_the_stub
+
+            stub = entrypoint_is_still_the_stub(repo_root) if repo_root else None
+        except Exception:  # noqa: BLE001 - then every existing file counts as built, as before
+            stub = None
+        if stub:
+            existing.discard(PurePosixPath(stub).name.lower())
         # What this project calls a file, beside what files are generally
         # called: `store.read()` in a scope is a call, not a file to hand out.
         in_use = {name.rsplit(".", 1)[-1] for name in listed | existing if "." in name}
@@ -569,9 +586,71 @@ def _files_the_sprint_names_and_nobody_is_given(
         return sorted(
             name for name in named
             if name.lower() not in known and not _another_spelling_of(name.lower(), known)
+            and not _data_the_product_writes(name, sprint_scope, repo_root)
+            and not _kept_by_the_harness(name, repo_root)
         )
     except Exception:  # noqa: BLE001 - the plan is still checked for everything else
         return []
+
+
+#: Suffixes of a file a product keeps its data in, rather than one a work order writes.
+_DATA_SUFFIXES = (".json", ".jsonl", ".ndjson", ".db", ".sqlite", ".sqlite3", ".csv")
+#: How near its data directory a file's name must be named to be the product's data, in characters.
+_NEAR = 160
+
+
+def _in_the_file_plan(name: str, repo_root: str | Path) -> bool:
+    """Whether the specification's File Plan section names `name`; True when there is no such section to read."""
+    spec = Path(repo_root) / "docs" / "technical_specification.md"
+    if not spec.is_file():
+        return True
+    section = re.search(r"^## File Plan\s*$(.*?)(?=^## |\Z)", spec.read_text(encoding="utf-8", errors="replace"),
+                        re.MULTILINE | re.DOTALL)
+    return section is None or bool(re.search(rf"(?<![\w.-]){re.escape(name)}(?![\w-])", section.group(1), re.I))
+
+
+def _kept_by_the_harness(name: str, repo_root: str | Path | None) -> bool:
+    """Whether `name` is a file the harness keeps for the project (its start script, its runners): no work order's."""
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(Path(repo_root)) if repo_root else None
+        kept = {PurePosixPath(str(path)).name.lower() for path in (getattr(found[0], "kept_files", ()) or ())} if found else set()
+        return name.lower() in kept
+    except Exception:  # noqa: BLE001 - then it is named as before
+        return False
+
+
+def _data_the_product_writes(name: str, sprint_scope: str, repo_root: str | Path | None) -> bool:
+    """Whether `name` is a file the product writes in its data directory at run time, not one a work order writes.
+
+    Measured on one run: the scope named `notes.json`, which the specification says the service "reads from
+    DATA_DIR" and writes there, and the plan was sent back for a file no work order can be given - it exists only once
+    the product runs. Read from the pack's data-directory variable (`StackPack.data_dir_env`) named near the file
+    in the scope or the specification. Never raises.
+    """
+    try:
+        if not name.lower().endswith(_DATA_SUFFIXES) or not repo_root:
+            return False
+        # On any stack (HR2.P.6): a data file the specification's file plan does not list is one the product writes,
+        # not one to build - pack-less stacks were sent back for `notes.json` and `bookmarks.json`.
+        if not _in_the_file_plan(name, repo_root):
+            return True
+        from app.stacks import contract
+
+        found = contract.the_pack(Path(repo_root))
+        env = str(getattr(found[0], "data_dir_env", "") or "") if found else ""
+        if not env:
+            return False
+        words = env.lower().split("_")
+        camel = words[0] + "".join(w.title() for w in words[1:])
+        where = rf"(?:{re.escape(env)}|{re.escape(camel)}|data director(?:y|ies)|data folder)"
+        spec = Path(repo_root) / "docs" / "technical_specification.md"
+        text = sprint_scope + "\n" + (spec.read_text(encoding="utf-8", errors="replace") if spec.is_file() else "")
+        named = re.escape(name)
+        return bool(re.search(rf"{where}[\s\S]{{0,{_NEAR}}}?\b{named}|\b{named}[\s\S]{{0,{_NEAR}}}?{where}", text, re.I))
+    except Exception:  # noqa: BLE001 - then it is named as before
+        return False
 
 
 def _touches_product_code(files: Sequence[str]) -> bool:
@@ -721,6 +800,38 @@ def untested_is_no_reason(declined: Sequence[str]) -> str:
         "or decline it with a reason it no longer holds - built already (say where), ruled out "
         "by the brief (say which line), or planned for a later sprint (say which)."
     )
+
+
+#: A work order that only runs or verifies, by how its description opens; one that writes anything is not.
+_ONLY_RUNS = re.compile(r"^\s*(?:re-?run|run|execute|verify|confirm|check)\b", re.I)
+#: Only the verbs that can only mean writing: "verify the database fix" is a run, so `fix` and `change` are not here.
+_WRITES = re.compile(r"\b(?:write|writes|add|adds|create|creates|implement|implements)\b", re.I)
+
+
+def with_run_only_testing_orders_left_to_the_test_round(plan: Any) -> tuple[Any, list[str]]:
+    """`plan` without its testing work orders that list no files: the round runs the tests; (plan, their labels).
+
+    Measured on a run: the lead's plan was sent back three times (six minutes and ~38k tokens a reply) for
+    \"Run unit tests to verify ...\" and \"Run the acceptance suite ...\" work orders - a testing order that writes
+    nothing can only run commands, and the harness's own test round runs both suites after every sprint. Each is
+    kept as a line of the plan's notes, so what the lead meant to verify is still said. Never raises.
+    """
+    try:
+        tasks = list(getattr(plan, "delegated_tasks", None) or [])
+        run_only = [t for t in tasks if _role(t) == _TESTING
+                    and not [f for f in getattr(t, "files", None) or [] if str(f).strip()]
+                    and _ONLY_RUNS.search(str(getattr(t, "task_description", "") or ""))
+                    and not _WRITES.search(str(getattr(t, "task_description", "") or ""))]
+        if not run_only or len(run_only) == len(tasks):
+            return plan, []
+        labels = [_label(tasks.index(t) + 1, t) for t in run_only]
+        notes = list(getattr(plan, "integration_notes", None) or []) + [
+            f"Verified by the harness's test round, not a work order: {str(getattr(t, 'task_description', '') or '')[:200]}"
+            for t in run_only]
+        return plan.model_copy(update={"delegated_tasks": [t for t in tasks if t not in run_only],
+                                       "integration_notes": notes}), labels
+    except Exception:  # noqa: BLE001 - the plan is checked as it was
+        return plan, []
 
 
 def readiness_problems(
@@ -914,7 +1025,7 @@ _THE_TESTING_TASK_S_FILES = (
 )
 
 
-__all__ = [
+__all__ = ["with_run_only_testing_orders_left_to_the_test_round", 
     "brief_for",
     "contract_for_testing",
     "readiness_feedback",

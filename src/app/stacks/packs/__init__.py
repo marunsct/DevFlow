@@ -8,7 +8,7 @@ from app.stacks.packs.browser_react import PACK as BROWSER_REACT
 from app.stacks.packs.browser_svelte import PACK as BROWSER_SVELTE
 from app.stacks.packs.browser_vue import PACK as BROWSER_VUE
 from app.stacks.packs.csharp_aspnet_api import PACK as CSHARP_ASPNET_API
-from app.stacks.packs.fullstack_frameworks import REACT_EXPRESS, REACT_FASTAPI, VUE_EXPRESS, VUE_FASTAPI
+from app.stacks.packs.fullstack_frameworks import PAGE_FASTAPI, REACT_EXPRESS, REACT_FASTAPI, VUE_EXPRESS, VUE_FASTAPI
 from app.stacks.packs.fullstack_django import PACK as FULLSTACK_DJANGO
 from app.stacks.packs.fullstack_next import PACK as FULLSTACK_NEXT
 from app.stacks.packs.fullstack_node import PACK as FULLSTACK_NODE
@@ -16,6 +16,8 @@ from app.stacks.packs.go_gin_api import PACK as GO_GIN_API
 from app.stacks.packs.go_http_api import PACK as GO_HTTP_API
 from app.stacks.packs.go_programs import GO_CLI, GO_LIBRARY
 from app.stacks.packs.java_spring_api import PACK as JAVA_SPRING_API
+from app.stacks.packs.node_hono_api import PACK as NODE_HONO_API
+from app.stacks.packs.node_hono_native_api import PACK as NODE_HONO_NATIVE_API
 from app.stacks.packs.node_http_api import PACK as NODE_HTTP_API
 from app.stacks.packs.node_nest_api import PACK as NODE_NEST_API
 from app.stacks.packs.node_programs import NODE_CLI, NODE_LIBRARY, TYPESCRIPT_CLI, TYPESCRIPT_LIBRARY
@@ -38,10 +40,13 @@ ALL_PACKS = (
     BROWSER_ANGULAR,
     NODE_HTTP_API,
     NODE_NEST_API,
+    NODE_HONO_API,
+    NODE_HONO_NATIVE_API,
     REACT_EXPRESS,
     VUE_EXPRESS,
     REACT_FASTAPI,
     VUE_FASTAPI,
+    PAGE_FASTAPI,
     FULLSTACK_NEXT,
     FULLSTACK_DJANGO,
     FULLSTACK_NODE,

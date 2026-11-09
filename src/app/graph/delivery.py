@@ -21,6 +21,8 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from app.acceptance import suite
+from app import completion_verdict
+from app.graph import release_with_failing_unit_tests
 from app.stacks import contract
 
 logger = logging.getLogger(__name__)
@@ -64,7 +66,7 @@ def _what_changed(root: str, since: str | None) -> str:
     try:
         result = subprocess.run(
             ["git", "diff", "--stat", since, "HEAD", "--", ".", ":(exclude)docs"],
-            cwd=root, capture_output=True, text=True, timeout=30, check=False,
+            cwd=root, capture_output=True, text=True, errors="replace", timeout=30, check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return ""
@@ -81,13 +83,13 @@ def _previous_sprint_tag(root: str, sprint_number: int) -> str | None:
             tag = f"sprint-{sprint_number - 1}"
             check = subprocess.run(
                 ["git", "rev-parse", "--verify", "--quiet", tag],
-                cwd=root, capture_output=True, text=True, timeout=10, check=False,
+                cwd=root, capture_output=True, text=True, errors="replace", timeout=10, check=False,
             )
             if check.returncode == 0:
                 return tag
         first = subprocess.run(
             ["git", "rev-list", "--max-parents=0", "HEAD"],
-            cwd=root, capture_output=True, text=True, timeout=10, check=False,
+            cwd=root, capture_output=True, text=True, errors="replace", timeout=10, check=False,
         )
         return first.stdout.strip().splitlines()[0] if first.stdout.strip() else None
     except (OSError, subprocess.SubprocessError, IndexError):
@@ -115,8 +117,8 @@ def evidence(state: Any, sprint_number: int, goal: str, heading: str = "") -> st
     try:
         from app.stacks import contract, pack_named, support_tier
 
-        record = contract.read(root) or {}
-        lines += [support_tier(pack_named(str(record.get("pack") or ""))), ""]
+        found = contract.the_pack(root)  # a proven custom setup's too (HR2.SS.6)
+        lines += [support_tier(found[0] if found else None), ""]
     except Exception:  # noqa: BLE001 - the page stands without it
         pass
     changed = _what_changed(root, _previous_sprint_tag(root, sprint_number))
@@ -134,7 +136,7 @@ def evidence(state: Any, sprint_number: int, goal: str, heading: str = "") -> st
         ]
         lines.append("")
     open_items = [
-        *(state.get("acceptance_open_problems") or []),
+        *suite.open_problems_still_true(root, state.get("acceptance_open_problems") or []),
         *(f"{cid}: {text}" for cid, text in suite.change_requests(root).items()
           if (saved.get("change_requests") or {}).get(cid, {}).get("status") != "passed"),
     ]
@@ -144,7 +146,7 @@ def evidence(state: Any, sprint_number: int, goal: str, heading: str = "") -> st
         lines += [f"- {item}" for item in open_items]
         lines += [f"- {cid} deferred: {why}" for cid, why in deferred.items()]
         lines.append("")
-    gaps = [str(gap) for gap in state.get("completion_gaps") or []]
+    gaps, notes = completion_verdict.split(state.get("completion_gaps"))
     if gaps:
         # The release page must carry what the release knew it did not prove,
         # beside the counts it measured - a record that says "verified" over a
@@ -152,10 +154,18 @@ def evidence(state: Any, sprint_number: int, goal: str, heading: str = "") -> st
         # Initiative J.5: every record cites the verdict it actually got.
         lines += [
             "## Completion gaps", "",
-            "What this release knows it did not prove - a completed run with these is not plain \"completed\":",
+            "What means this product may not work - a completed run with these is not deliverable:",
             "",
         ]
         lines += [f"- {gap}" for gap in gaps]
+        lines.append("")
+    if notes:
+        lines += [
+            "## Notes for the reader", "",
+            "What this release did not prove or set aside, with nothing measured against the product:",
+            "",
+        ]
+        lines += [f"- {note}" for note in notes]
         lines.append("")
     return "\n".join(lines)
 
@@ -187,6 +197,13 @@ def _unit_tests_failing(root: str) -> list[str]:
         return []
 
 
+#: What a release that is held back records. The handoff's own, for when no criterion fails: a README or a
+#: credential is what stands in the way, and the record said a criterion was failing.
+_FIX_THE_CRITERIA = "fix the failing criteria first"
+_FIX_THE_HANDOFF = "fix the handoff first"
+_RELEASE_OPTIONS = ["release", _FIX_THE_CRITERIA, _FIX_THE_HANDOFF]
+
+
 def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     """Every criterion that is not deferred must pass before the run completes."""
     from app.decisions import record_decision
@@ -210,6 +227,16 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     failing: list[Any] = []
     summary = "There is no acceptance suite; the milestone reviews were the gate."
     if suite.is_locked(root):
+        # A criterion deferred only because no test's name carries its id goes back to QA, before anything measures it.
+        from app.graph.acceptance_nodes import naming_back_to_qa
+
+        back_to_qa = naming_back_to_qa(state)
+        if back_to_qa is not None:
+            return back_to_qa
+        # One last try at each deferred criterion with a locked test, before the suite decides (deep review F3).
+        from app.graph import last_try_on_deferred
+
+        last_try_on_deferred.try_them(root, state)
         result = suite.run(root)
         failing = result.failing()
         summary = result.summary()
@@ -225,12 +252,26 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             # budget. See `suite.vacuous_green`.
             summary = "\n".join(vacuous) + "\n" + summary
             failing = [*vacuous, *failing]
+        not_starting = str(getattr(result, "problem", "") or "")
+        if not_starting.startswith(suite.PRODUCT_DID_NOT_START):
+            # The suite passed its own way and the product does not start its user's way: not releasable.
+            summary = not_starting[:600] + "\n" + summary
+            failing = [not_starting[:300], *failing]
+    # The project's production build: a suite on a development server never goes through it. Ahead of the unit tests,
+    # so a product that does not build is never released under their allowance below.
+    from app.stacks import production_build
+
+    build_output = "" if failing else production_build.failure(root)
     # The project's own unit tests too: they ship with the product and the CI
     # pipeline written below runs them first. Measured on one run: released
     # with every criterion passing or deferred while `npm test` failed on a
     # test a fix stage had written for a deferred criterion.
-    unit_failing = [] if failing else _unit_tests_failing(root)
-    if unit_failing:
+    unit_failing = [] if failing or build_output else _unit_tests_failing(root)
+    project_unit_failures = list(unit_failing)
+    if build_output:
+        failing = unit_failing = [production_build.THE_PRODUCT_DOES_NOT_BUILD]
+        summary = f"{production_build.THE_PRODUCT_DOES_NOT_BUILD} {production_build.reproduce(root)}\n{build_output}"
+    elif unit_failing:
         failing = unit_failing
         summary = (
             "The project's own unit tests do not all pass: "
@@ -245,14 +286,26 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # criterion while attempts remain, then is a gap.
     from app.stacks import release_audits, release_docs
 
-    if not failing:
+    handed_off = not failing
+    if handed_off:
         release_docs.complete_the_handoff(root)
     undocumented = [] if failing else [*release_docs.what_the_handoff_lacks(root), *release_audits.secrets_found(root)]
+    held_for_the_handoff = bool(undocumented) and int(state.get("release_attempts") or 0) < MAX_RELEASE_ATTEMPTS
     if undocumented and int(state.get("release_attempts") or 0) < MAX_RELEASE_ATTEMPTS:
         failing = undocumented
         summary = "The handoff is not ready for someone who did not write the product: " + " ".join(undocumented)
         unit_failing = undocumented
         undocumented = []
+    shipped_failing_unit_tests: list[str] = []
+    if failing and release_with_failing_unit_tests.may_ship(
+        project_unit_failures, failing,
+        accepted_at_an_escalation=release_with_failing_unit_tests.accepted_at_an_escalation(
+            project_unit_failures, state.get("unit_failures_accepted_at_an_escalation"),
+        ),
+        release_attempts=int(state.get("release_attempts") or 0),
+        most_release_attempts=MAX_RELEASE_ATTEMPTS,
+    ):
+        shipped_failing_unit_tests, failing = project_unit_failures, []
     if failing:
         attempts = int(state.get("release_attempts") or 0) + 1
         text = (
@@ -262,12 +315,13 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             "The product is not ready to release. " + summary
         )
         if attempts <= MAX_RELEASE_ATTEMPTS:
-            logger.warning("Release held back: acceptance criteria failing; the last sprint goes again")
+            logger.warning("Release held back: %s; the last sprint goes again",
+                           "the handoff is not ready" if held_for_the_handoff else "acceptance criteria failing")
             record_decision(
                 state, update, point="release",
                 question="Is the product ready to release?",
-                options=["release", "fix the failing criteria first"],
-                decision="fix the failing criteria first",
+                options=_RELEASE_OPTIONS,
+                decision=_FIX_THE_HANDOFF if held_for_the_handoff else _FIX_THE_CRITERIA,
                 rationale=summary,
             )
             return _handing_on(
@@ -282,8 +336,38 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
                 defect_cursor=0,
                 milestone_revision_count=0,
             )
+        # Held until its attempts ran out, the product is still what someone receives: it gets its handoff too
+        # (harness review HR2.PR.1 - 41 of 104 products went out with no README).
+        if not handed_off:
+            release_docs.complete_the_handoff(root)
         return _escalate_to_a_human(state, error=text, release_attempts=attempts)
 
+    # The run is going out: ahead of the checks below, so none of them counts one of these against the product.
+    # Every product that ships gets its handoff, not only one with nothing failing (HR2.PR.1): one shipped with
+    # failing unit tests had none. What it still lacks is a gap, never a hold, at this point.
+    if not handed_off:
+        release_docs.complete_the_handoff(root)
+        undocumented = [*undocumented, *release_docs.what_the_handoff_lacks(root), *release_audits.secrets_found(root)]
+    from app.tools.repository import PROJECT_MARKER, clear_the_code_of_command_lines
+
+    clear_the_code_of_command_lines(root)
+    # The pack's own template, unchanged and loaded by nothing, does not ship beside the product (HR2.PR.4).
+    from app.stacks.scaffold import remove_untouched_templates_nothing_loads
+
+    left_out = remove_untouched_templates_nothing_loads(root)
+    if left_out:
+        logger.info("Left out of the release the pack's untouched templates nothing loads: %s", ", ".join(left_out))
+    # The data the run's own tests wrote does not ship (HR2.PR.11): a declared data folder git ignores, every file in
+    # it newer than the run's start (the project marker is written as the run begins).
+    try:
+        marker = Path(root) / PROJECT_MARKER
+        if marker.is_file():
+            emptied = release_audits.remove_the_run_s_own_data(
+                root, marker.read_text(encoding="utf-8").strip(), marker.stat().st_mtime)
+            if emptied:
+                logger.info("Left out of the release the data the run's own tests wrote: %s", ", ".join(emptied))
+    except OSError:
+        logger.debug("Could not check the product's data folders", exc_info=True)
     deferred = suite.deferred(root)
     # What this release knows it did not prove, so no record of the run can
     # read as a plain success: the gaps ride the run record
@@ -295,7 +379,14 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     gaps: list[str] = []
     if not suite.is_locked(root):
         gaps.append("No acceptance suite was locked; the milestone reviews were the only gate.")
+    from app.acceptance.interface_contract import _its_criterion_passed
+
     for cid in sorted(deferred):
+        # Deferred during the run, but its own locked tests ran and passed at release: proven after all. Measured: 29
+        # runs shipped "deferred, unproven" criteria on a green locked suite, and 28 of them passed every hidden test.
+        if _its_criterion_passed(root, cid):
+            gaps.append(f"{cid} was deferred during the run; its own locked tests pass at release: {deferred[cid][:300]}")
+            continue
         gaps.append(f"{cid} ships deferred, unproven by the suite: {deferred[cid]}")
     reclassified = sorted(set(state.get("suite_reclassified_tests") or []))
     if reclassified:
@@ -305,13 +396,15 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         )
     gaps.extend(
         f"The suite was locked with this still open: {problem}"
-        for problem in state.get("acceptance_open_problems") or []
+        for problem in suite.open_problems_still_true(root, state.get("acceptance_open_problems") or [])
     )
     gaps.extend(
         f"The plan was dispatched with this noted against it: {problem}"
         for problem in state.get("work_order_problems") or []
     )
     gaps.extend(undocumented)
+    if shipped_failing_unit_tests:
+        gaps.append(release_with_failing_unit_tests.gap(shipped_failing_unit_tests))
     gaps.extend(release_audits.licence_gaps(root))
     unit_gap = _no_unit_tests_ran(root)
     if unit_gap:
@@ -326,12 +419,18 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # and review findings fast delivery recorded as risks instead of fixing.
     # They reached the record of each sprint and never the run's verdict, so a
     # run that carried them read as plain "completed" (Initiative AE).
-    gaps.extend(f"An escalation left this open: {issue}" for issue in state.get("known_issues") or [])
+    # A finding a decision settled is not open, and is stated as settled.
+    settled, left_open = _settled_and_open([str(issue) for issue in state.get("known_issues") or []])
+    gaps.extend(settled)
+    # Linked to the decision that accepted them (HR2.G.8), so the release says who accepted what.
+    accepted_at = _accepted_at_an_escalation({**state, **update})
+    gaps.extend(f"An escalation left this open{f' ({accepted_at})' if accepted_at else ''}: {issue}" for issue in left_open)
     gaps.extend(_findings_recorded_as_risks(state))
     gaps.extend(_reviews_that_were_not_independent(config["configurable"].get(APP_RUN_ID_KEY)))
-    gaps.extend(_code_no_review_read(config["configurable"].get(APP_RUN_ID_KEY)))
+    gaps.extend(_code_no_review_read(config["configurable"].get(APP_RUN_ID_KEY), {**state, **update}))
     gaps.extend(_what_the_release_re_check_finds(state, root))
     gaps.extend(_code_the_product_does_not_run(root))
+    gaps.extend(_a_development_server(root))
     # Plan item AF: whether the suite would notice the product breaking.
     from app.acceptance.mutation import what_the_suite_does_not_notice
 
@@ -351,6 +450,15 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.graph.workflow import _clear_the_throwaways
 
     _clear_the_throwaways(root)
+    gaps.extend(_measured_again_if_it_changed(root))
+    # The measure again starts the product, which may write its data again: cleared once more (HR2.PR.11).
+    try:
+        marker = Path(root) / PROJECT_MARKER
+        if marker.is_file():
+            release_audits.remove_the_run_s_own_data(root, marker.read_text(encoding="utf-8").strip(),
+                                                     marker.stat().st_mtime)
+    except OSError:
+        logger.debug("Could not clear the product's data after measuring again", exc_info=True)
     # Written before the gaps are stored: packaging that failed is a gap like
     # any other, not a line only the release decision carries (Initiative BK).
     release_outcome = release_files.write(root)
@@ -363,20 +471,20 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.acceptance import screenshot_rubric
 
     screenshot_rubric.score(root, getattr(ctx, "judgement_model", None), config["configurable"].get(APP_RUN_ID_KEY))
+    may_not_work, to_know = completion_verdict.split(gaps)
     record_decision(
         state, update, point="release",
         question="Is the product ready to release?",
-        options=["release", "fix the failing criteria first"],
+        options=_RELEASE_OPTIONS,
         decision="release",
         rationale=(
             "Every acceptance criterion passes"
             + (f", except those deferred: {', '.join(sorted(deferred))}" if deferred else "")
             + ".\n" + (f"{packaged}\n" if packaged else "") + summary
-            + (
-                "\nShips with gaps a plain 'completed' would hide:\n"
-                + "\n".join(f"- {gap}" for gap in gaps)
-                if gaps else ""
-            )
+            + ("\nShips with gaps that mean it may not work:\n" + "\n".join(f"- {gap}" for gap in may_not_work) if may_not_work else "")
+            + ("\nShips with notes for the reader:\n" + "\n".join(f"- {note}" for note in to_know) if to_know else "")
+            # Notes, not gaps: what a text check suspected of a locked test that passes.
+            + ("\nNoted, not a gap:\n" + "\n".join(f"- {note[:400]}" for note in notes) if (notes := suite.notes_kept(root)) else "")
         ),
     )
     goal = str(getattr(state.get("product_intake"), "product_name", "") or "the product")
@@ -442,6 +550,12 @@ def change_request_brief(root: str) -> list[str]:
 RECORDED_AS_RISKS = "record the findings as risks and go on"
 
 
+def _settled_and_open(issues: list[str]) -> tuple[list[str], list[str]]:
+    """The set-aside issues a decision settled, and the rest."""
+    settled = [issue for issue in issues if issue.startswith(completion_verdict.SETTLED_DESIGN_FINDING)]
+    return settled, [issue for issue in issues if issue not in settled]
+
+
 def _findings_recorded_as_risks(state: Any) -> list[str]:
     """One gap per milestone review whose findings were recorded as risks, not fixed."""
     gaps = []
@@ -450,6 +564,8 @@ def _findings_recorded_as_risks(state: Any) -> list[str]:
             continue
         rationale = str(record.get("rationale") or "")
         findings = rationale.split("\n", 1)[1] if "\n" in rationale else rationale
+        # The gap is cut below, and the verdict reads its severity: the worst findings go first.
+        findings = "\n".join(sorted(findings.splitlines(), key=lambda line: "[blocking]" not in line.lower()))
         gaps.append(
             f"A milestone review's findings were recorded as risks, not fixed ({record.get('id')}): "
             + " ".join(findings.split())[:400]
@@ -510,7 +626,93 @@ def _reviews_that_were_not_independent(run_id: str | None = None) -> list[str]:
 _CODE_REVIEWS = ("code_review", "milestone_review", "security_review")
 
 
-def _code_no_review_read(run_id: str | None) -> list[str]:
+#: Source files a development-server check reads, by suffix: the languages `seed.DEVELOPMENT_SERVERS` covers.
+_SERVER_SOURCES = {".py": "python", ".php": "php", ".rb": "ruby", ".js": "javascript", ".mjs": "javascript", ".sh": ""}
+
+
+#: How a release gap opens when the product changed at release and the suite, run again, did not pass.
+CHANGED_AT_RELEASE = "The product changed at release, after the suite last measured it, and the suite run again"
+
+
+def _measured_again_if_it_changed(root: Any) -> list[str]:
+    """The suite run again when the release's own clean-ups changed the product after its last run; a gap if it fails.
+
+    Harness review HR2.G.9: the command lines, throwaways, untouched templates and the run's own data are cleared
+    after the release's suite run, so what shipped was never measured as it shipped (one product shipped 0 of 9 on a
+    measurement taken before such a change). Only when the suite recorded what it measured and that has changed;
+    the run is fresh, never the reused one. Never raises.
+    """
+    try:
+        from app.acceptance import suite
+        from app.acceptance.unstable import unchanged_since_the_suite_measured
+
+        if not suite.is_locked(root) or not (suite.last_result(root) or {}).get("fingerprint"):
+            return []
+        if unchanged_since_the_suite_measured(root):
+            return []
+        # What passed before the clean-ups: only a test that passed then and fails now was broken by them. Measured:
+        # the first time this fired, the four tests it named were the deferred criteria's, failing all along.
+        passed_before = {str(t.get("name")) for entry in ((suite.last_result(root) or {}).get("criteria") or {}).values()
+                         for t in entry.get("tests") or [] if t.get("outcome") == "passed"}
+        logger.info("The release's clean-ups changed the product after the suite measured it; running the suite again")
+        again = suite.run(root)
+        failed = [str(t.name) for t in getattr(getattr(again, "report", None), "tests", None) or []
+                  if getattr(t, "outcome", "") == "failed" and str(t.name) in passed_before]
+        if not getattr(again, "ran", False):
+            return [f"{CHANGED_AT_RELEASE} could not run: {str(getattr(again, 'problem', '') or 'no report')[:400]}"]
+        if failed:
+            return [f"{CHANGED_AT_RELEASE} failed {len(failed)} test(s): " + ", ".join(failed[:5])]
+        return []
+    except Exception:  # noqa: BLE001 - the release stands on the measurement it has
+        logger.debug("Could not measure the product again at release", exc_info=True)
+        return []
+
+
+def _a_development_server(root: Any) -> list[str]:
+    """A note when a product no pack set up serves through a development server; [] otherwise. Never raises.
+
+    Harness review HR2.PR.12: both products of one custom stack served through a standard-library development server while their declared
+    dependencies named a production server. A pack's start is its own choice, and is not read.
+    """
+    try:
+        from app.plugins.seed import DEVELOPMENT_SERVERS
+        from app.stacks import contract
+        from app.stacks.custom_setup import PROVEN_SETUP
+
+        found = contract.the_pack(Path(root))
+        if found and getattr(found[0], "name", "") != PROVEN_SETUP:
+            return []
+        project = (Path(root) / ".project-directory").read_text(encoding="utf-8").strip() \
+            if (Path(root) / ".project-directory").is_file() else ""
+        base = Path(root) / project if project else Path(root)
+        every = tuple(marker for markers in DEVELOPMENT_SERVERS.values() for marker in markers)
+        for path in sorted(base.rglob("*")):
+            parts = set(path.relative_to(base).parts)
+            if not path.is_file() or path.suffix not in _SERVER_SOURCES or parts & {"node_modules", ".venv", "venv",
+                                                                                    "tests", "test", "acceptance"}:
+                continue
+            language = _SERVER_SOURCES[path.suffix]
+            markers = every if not language else DEVELOPMENT_SERVERS.get(language, ())
+            text = path.read_text(encoding="utf-8", errors="replace")
+            hit = next((m for m in markers if m in text), None)
+            if hit:
+                return [f"The product serves through a development server: `{hit.strip()}` in "
+                        f"`{path.relative_to(Path(root)).as_posix()}`. It is for trying code out, not for serving others; "
+                        "start it through a production server instead."]
+        return []
+    except Exception:  # noqa: BLE001 - the release says nothing it cannot read
+        return []
+
+
+def _accepted_at_an_escalation(state: Any) -> str:
+    """The id of the escalation decision that accepted a sprint as it stood or deferred its criteria; "" when none."""
+    for record in reversed(list((state or {}).get("decisions") or [])):
+        if str(record.get("point")) == "escalation" and "stop the run" not in str(record.get("decision") or ""):
+            return str(record.get("id") or "")
+    return ""
+
+
+def _code_no_review_read(run_id: str | None, state: Any = None) -> list[str]:
     """A gap when the run released code no review stage ever read; [] otherwise or when unknown.
 
     Measured on one run: the setup stage wrote the whole product, every sprint
@@ -528,6 +730,11 @@ def _code_no_review_read(run_id: str | None) -> list[str]:
         return []
     if not stages or any(stage.startswith(_CODE_REVIEWS) for stage in stages):
         return []
+    # A sprint accepted at an escalation skips the reviews by routing, not by a review failing (HR2.G.8: 8 of 40 runs).
+    decided = _accepted_at_an_escalation(state)
+    if decided:
+        return [f"No review read the product's code: the sprint was accepted at an escalation ({decided}), "
+                "so no code, milestone or security review ran."]
     return [
         "No review read the product's code: every sprint was accepted on its locked suite "
         "alone, so no code, milestone or security review ran."
@@ -566,6 +773,14 @@ def _no_unit_tests_ran(root: Any) -> str:
                 "The product ships no unit tests: its unit test directory holds no test file the "
                 "unit runner collects, so the command ran none."
             )
+        if not parsed.tests and _a_unit_test_file_exists(Path(root) / project, pack):
+            # The report is whatever wrote it last. Measured on one run: a builder ran the unit command with
+            # `--collect-only`, the report said no test ran, and a product with 41 passing unit tests shipped
+            # "ships no unit tests". Before saying so, the harness runs the command itself.
+            from app.graph.workflow import _run_unit_tests_procedurally
+
+            _run_unit_tests_procedurally(str(root))
+            parsed = junit.read(Path(root) / project / report)
     except Exception:  # noqa: BLE001 - the release says nothing it cannot measure
         return ""
     if parsed.tests:
@@ -579,7 +794,9 @@ def _a_unit_test_file_exists(project: Any, pack: Any) -> bool:
     pattern = str(getattr(pack, "unit_pattern", "") or "")
     if not unit_dir or not pattern:
         return True  # nothing to look for: claim nothing
+    from app.analysis.walk import files_under
+
     folder = project / unit_dir
-    return folder.is_dir() and any(
-        "node_modules" not in found.parts for found in folder.rglob(pattern)
-    )
+    # A pack whose unit tests sit beside the code (`unit_dir="."`) names the
+    # whole project here, `node_modules` and all.
+    return folder.is_dir() and any(True for _ in files_under(folder, ("node_modules",), pattern))

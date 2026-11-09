@@ -48,3 +48,20 @@ def test_a_spec_that_imports_it_answers_it(tmp_path: Path) -> None:
     root = _product(tmp_path, SPEC)
 
     assert _missing_playwright_for_ui(_source_files(root), root, None) == []
+
+
+def test_a_page_test_in_python_answers_it(tmp_path: Path) -> None:
+    """Measured on one run: every page test was Python Playwright, and this asked for a JavaScript one."""
+    root = _product(tmp_path, None)
+    (root / "app" / "tests" / "test_ui.py").write_text(
+        "from playwright.sync_api import Page, expect\n\n\ndef test_saves(page: Page):\n    page.goto('/')\n",
+        encoding="utf-8")
+
+    assert _missing_playwright_for_ui(_source_files(root), root, None) == []
+
+
+def test_a_python_file_that_only_mentions_it_does_not(tmp_path: Path) -> None:
+    root = _product(tmp_path, None)
+    (root / "app" / "tests" / "test_notes.py").write_text("# playwright is installed for later\nx = 1\n", encoding="utf-8")
+
+    assert len(_missing_playwright_for_ui(_source_files(root), root, None)) == 1

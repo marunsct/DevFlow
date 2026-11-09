@@ -244,6 +244,27 @@ def _delivered_by_its_head(measure: str, words: list[str], text: str) -> bool:
     )
 
 
+def _the_compound_partners(measure: str, words: list[str]) -> dict[str, str]:
+    """{first item: the word before it, last item: the word after it}, where each makes a compound noun with it.
+
+    The list reads single words beside its conjunction, so "the correct status code and response shape" is the list
+    "code", "response" - each half of a compound. Measured on three runs: the plan was handed back for "code" and
+    "response" though it delivered every status and the JSON shape. An item counts as named when its partner is,
+    which errs toward not flagging, as `_item_named_in` does.
+    """
+    partners: dict[str, str] = {}
+    if len(words) < 2:
+        return partners
+    before = re.search(rf"\b([A-Za-z][\w-]*)\s+{re.escape(words[0])}\b", measure)
+    after = re.search(rf"\b{re.escape(words[-1])}\s+([A-Za-z][\w-]*)", measure)
+    if before and before.group(1).lower() not in _NOT_A_CAPABILITY and len(before.group(1)) >= 4:
+        partners[words[0]] = before.group(1)
+    if after and after.group(1).lower() not in _NOT_A_CAPABILITY | {"and", "or", "per", "by", "from", "as"} \
+            and len(after.group(1)) >= 4:
+        partners[words[-1]] = after.group(1)
+    return partners
+
+
 def capabilities_never_named(text: str, measures: list[str]) -> dict[int, list[str]]:
     """Items of each measure's own lists that `text` never names.
 
@@ -254,7 +275,9 @@ def capabilities_never_named(text: str, measures: list[str]) -> dict[int, list[s
         for every_item, words in enumerations(measure):
             if _delivered_by_its_head(str(measure), words, text):
                 continue
-            absent = [w for w in words if not _item_named_in(w, text)]
+            partners = _the_compound_partners(str(measure), words)
+            absent = [w for w in words if not _item_named_in(w, text) and not (
+                partners.get(w) and named_in(partners[w], text))]
             if (every_item and absent) or (not every_item and len(absent) == len(words)):
                 bucket = missing.setdefault(number, [])
                 bucket.extend(w for w in absent if w not in bucket)

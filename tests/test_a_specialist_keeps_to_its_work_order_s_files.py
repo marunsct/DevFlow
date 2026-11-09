@@ -184,5 +184,27 @@ def test_the_owners_are_the_work_orders_as_dispatched_not_as_planned(tmp_path: P
         write_approved_artifact(tmp_path, "shop/m0.py", "X = 1\n")
 
     source = inspect.getsource(workflow)
-    assert '_record_the_owners(state["repository"].root_path, list(drafted["milestone_plan"].delegated_tasks))' in source
+    assert 'done=(drafted.get("specialist_outputs") or {})' in source
     assert source.count("_record_the_owners(") >= 4
+
+
+def test_a_work_order_already_done_owns_no_file(tmp_path: Path, monkeypatch) -> None:
+    """Measured over 40 runs (harness review P4): 42 of 64 ownership refusals named an owner that never ran as a
+    stage - its files drafted whole in fast delivery - and 12 more an owner already finished; a later stage needing
+    a change there was refused with no one to ask."""
+    from app.graph import workflow
+    from app.agents.technical_lead import SpecialistTask
+
+    (tmp_path / ".project-directory").write_text("shop\n", encoding="utf-8")
+    (tmp_path / "shop").mkdir()
+    drafted = SpecialistTask(specialist_role="backend", task_description="the service", acceptance_criteria=["works"],
+                             files=["shop/app.py"])
+    pending = SpecialistTask(specialist_role="frontend", task_description="the page", acceptance_criteria=["shows"],
+                             files=["shop/index.html"])
+    workflow._record_the_owners(tmp_path, [drafted, pending], done={"specialist_backend_0": object()})
+
+    _as(monkeypatch, "specialist_backend_2")
+    write_approved_artifact(tmp_path, "shop/app.py", "X = 1\n")
+    assert (tmp_path / "shop" / "app.py").is_file()
+    with pytest.raises(RepositoryToolError, match="belongs to another work order"):
+        write_approved_artifact(tmp_path, "shop/index.html", "<p>x</p>\n")

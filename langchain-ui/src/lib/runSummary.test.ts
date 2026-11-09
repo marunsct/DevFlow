@@ -90,4 +90,13 @@ describe('the pressure on the model', () => {
   it('says nothing before any call', () => {
     expect(pressure([], 126_464)).toBeNull();
   });
+
+  it('gives the run\'s overall pace beside the last reply\'s: every reply\'s tokens over every second waited', () => {
+    const now = Date.parse('2026-10-19T12:00:00Z');
+    const stages = [{ output_tokens: 6_000, model_seconds: 300 }, { output_tokens: 2_000, model_seconds: 100 }];
+    const found = pressure([call(1, 118_000, 300, 180)], 126_464, now, stages)!;
+    expect(found.overall).toBeCloseTo(20);
+    expect(found.pace[found.pace.length - 1]).toBeCloseTo(300 / 180);
+    expect(pressure([call(1, 1, 1, 1)], null, now)!.overall).toBeNull();
+  });
 });

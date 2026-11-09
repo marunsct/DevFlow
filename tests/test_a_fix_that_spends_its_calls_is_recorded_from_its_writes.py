@@ -53,7 +53,7 @@ def test_a_fix_that_wrote_files_is_recorded_from_them():
 
 def test_a_stage_that_wrote_nothing_or_is_not_a_fix_is_started_over_as_before():
     assert _a_fix_recorded_from_its_writes("defect_fix_2_8", _result()) is None
-    assert _a_fix_recorded_from_its_writes("specialist_backend_0", _result(("edit_artifact", "app/a.py"))) is None
+    assert _a_fix_recorded_from_its_writes("product_manager", _result(("edit_artifact", "app/a.py"))) is None
 
 
 def test_the_no_answer_path_uses_it_only_when_the_budget_stopped_the_stage():
@@ -119,3 +119,12 @@ def test_the_same_unit_run_still_failing_stays_open(tmp_path):
     defect = _settled(tmp_path, UNIT_TESTS_FAIL + " The runner's output ends:\n7 errors", {}, unit={"tests/test_auth.py › test_login": "failed"})
 
     assert defect.status != "fixed"
+
+
+def test_a_build_stage_that_spends_its_calls_is_recorded_too():
+    # Measured on one run: a builder wrote the product, ran out of calls twice, and was started over each time: about
+    # 30 minutes. The test round after it measures what was written, as for a fix.
+    recorded = _a_fix_recorded_from_its_writes("specialist_ui_ux_2", _result(("write_artifact", "app/src/App.tsx")))
+
+    assert recorded is not None and recorded.changed_files == ["app/src/App.tsx"]
+

@@ -4,9 +4,12 @@ import { ModelServerCard } from '../components/ModelServerCard';
 import { RunDefaultsCard } from '../components/RunDefaultsCard';
 import { useServerHealth } from '../lib/serverHealth';
 import { LessonsPanel } from '../components/LessonsPanel';
+import { ModelGuidancePanel } from '../components/ModelGuidancePanel';
+import { ModelCapabilitiesPanel } from '../components/ModelCapabilitiesPanel';
+import { ModelSamplingPanel } from '../components/ModelSamplingPanel';
 import { AppearanceSettings } from '../components/AppearanceSettings';
 import React, { useEffect, useState } from 'react';
-import { Server, User, Shield, Info, Save, Trash2 } from 'lucide-react';
+import { User, Shield, Info, Save, Trash2 } from 'lucide-react';
 import { api, saveLocalModelSettings, saveFrontierModelSettings } from '../api';
 
 import type { ModelProfile, SettingsView } from '../types';
@@ -27,6 +30,7 @@ const oneOf = <T extends string>(value: string | null | undefined, allowed: read
 
 interface ProviderForm {
   llm_provider: string;
+  anthropic_workspace_id?: string;
   openai_base_url: string;
   model_name: string;
   model_context_window: number;
@@ -50,6 +54,25 @@ interface ProviderForm {
 type CredentialField = 'openai_api_key' | 'anthropic_api_key' | 'google_api_key' | 'judgement_api_key';
 
 /** What each derived budget is, in words a reader can check against their model. */
+const MODEL_SECTIONS: Array<[string, string]> = [
+  ['build', 'Build model'],
+  ['behaviour', 'Behaviour'],
+  ['frontier', 'Frontier model'],
+  ['server', 'Model server'],
+  ['diagnosis', 'Diagnosis & guides'],
+  ['capabilities', 'Capabilities'],
+];
+
+const SettingsSection: React.FC<{ id: string; title: string; text: string; children: React.ReactNode }> = ({ id, title, text, children }) => (
+  <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-20 glass-card rounded-2xl">
+    <div className="border-b border-border/50 px-6 py-4">
+      <h2 id={`${id}-title`} className="font-semibold text-text-primary">{title}</h2>
+      <p className="mt-0.5 text-xs text-text-muted">{text}</p>
+    </div>
+    <div className="space-y-4 px-6 py-4">{children}</div>
+  </section>
+);
+
 const DERIVED_LABELS: Array<[string, string, string]> = [
   ['reply_ceiling_tokens', 'Longest single reply', 'tokens'],
   ['input_ceiling_tokens', 'Room for the conversation', 'tokens'],
@@ -268,6 +291,8 @@ export const Settings: React.FC = () => {
         model_max_output_tokens: settings.model_max_output_tokens ?? 0,
         thinking_mode: oneOf(settings.thinking_mode, THINKING_MODES, 'default'),
         thinking_effort: oneOf(settings.thinking_effort, THINKING_EFFORTS, 'medium'),
+        anthropic_workspace_id: settings.anthropic_workspace_id ?? '',
+        execution_mode: oneOf(settings.execution_mode, EXECUTION_MODES, 'linear'),
         ...(credentials[buildKeyField] !== '' ? { api_key: credentials[buildKeyField] } : {}),
       };
       const res = await saveLocalModelSettings(payload);
@@ -300,6 +325,8 @@ export const Settings: React.FC = () => {
         escalate_after_attempts: settings.escalate_after_attempts ?? 2,
         plan_on_judgement_model: settings.plan_on_judgement_model ?? true,
         no_model: isNoModel,
+        anthropic_workspace_id: settings.anthropic_workspace_id ?? '',
+        execution_mode: oneOf(settings.execution_mode, EXECUTION_MODES, 'linear'),
         ...(credentials.judgement_api_key !== '' ? { judgement_api_key: credentials.judgement_api_key } : {}),
       };
       const res = await saveFrontierModelSettings(payload);
@@ -347,19 +374,22 @@ export const Settings: React.FC = () => {
             id: 'models',
             label: 'Models',
             content: (
-              <div className="space-y-6">
-                <ModelServerCard health={health} />
-                {/* Server Configuration */}
-                <div className="glass-card rounded-2xl overflow-hidden">
-                  <div className="px-6 py-4 border-b border-border/50 flex items-center gap-2">
-                    <Server className="h-5 w-5 text-primary" />
-                    <h2 className="font-semibold text-text-primary">AI Provider Configuration</h2>
-                  </div>
-                  <div className="px-6 py-4">
-                    {!settings ? (
-                      <p className="text-sm text-text-muted">Loading settings...</p>
-                    ) : (
-                      <form onSubmit={handleSave} className="space-y-4">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]">
+                <nav aria-label="Model settings" className="hidden lg:block">
+                  <ul className="sticky top-20 space-y-1 text-sm">
+                    {MODEL_SECTIONS.map(([id, label]) => (
+                      <li key={id}>
+                        <a href={`#${id}`} className="block rounded-lg px-3 py-1.5 text-text-secondary hover:bg-overlay hover:text-text-primary">{label}</a>
+                      </li>
+                    ))}
+                  </ul>
+                </nav>
+                <div className="space-y-6 min-w-0">
+                  {!settings ? (
+                    <p className="text-sm text-text-muted">Loading settings...</p>
+                  ) : (
+                    <form onSubmit={handleSave} className="space-y-6">
+                      <SettingsSection id="build" title="Build model" text="Writes the code and the fixes. Pick a saved model, or set one up here and keep it with Save Local Model below.">
                         <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
                           <div className="flex items-center justify-between mb-1">
                             <label
@@ -368,15 +398,7 @@ export const Settings: React.FC = () => {
                             >
                               Saved Local (Build) Models
                             </label>
-                            <button
-                              type="button"
-                              onClick={handleSaveLocal}
-                              disabled={savingLocal}
-                              className="flex items-center gap-1.5 px-3 py-1 bg-accent-soft hover:bg-primary/30 text-primary border border-primary/40 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-                            >
-                              <Save className="h-3.5 w-3.5" />
-                              {savingLocal ? 'Saving Local...' : 'Save Local Model'}
-                            </button>
+
                           </div>
                           <div className="flex items-center gap-2 mt-2">
                             <select
@@ -407,10 +429,9 @@ export const Settings: React.FC = () => {
                           </div>
                           <p className="mt-1.5 text-xs text-text-muted leading-relaxed">
                             Saved configurations for your local build model (LM Studio / Ollama / local endpoints).
-                            Click &ldquo;Save Local Model&rdquo; to persist current build model settings separately.
+                            &ldquo;Save Local Model&rdquo; in the bar at the bottom keeps the settings of this section as one.
                           </p>
                         </div>
-
                         <div>
                           <label className="block text-sm font-medium text-text-secondary mb-1">Provider</label>
                           <select aria-label="Provider"
@@ -424,7 +445,6 @@ export const Settings: React.FC = () => {
                             <option value="gemini">Google Gemini</option>
                           </select>
                         </div>
-
                         <div>
                           <label className="block text-sm font-medium text-text-secondary mb-1">Model Name</label>
                           <input aria-label="Model Name"
@@ -435,7 +455,52 @@ export const Settings: React.FC = () => {
                             placeholder="e.g. gpt-4o, claude-3-5-sonnet-20241022"
                           />
                         </div>
-
+                        <div>
+                          <label className="block text-sm font-medium text-text-secondary mb-1">Base URL</label>
+                          <input aria-label="Base URL"
+                            type="text"
+                            value={settings.openai_base_url}
+                            onChange={(e) => setSettings({ ...settings, openai_base_url: e.target.value })}
+                            className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
+                            placeholder="http://localhost:1234/v1"
+                          />
+                        </div>
+                        {/* Write-only. The server never returns a key, so this starts empty
+                            and only what is typed gets sent. Each endpoint keeps its own. */}
+                        <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
+                          <p className="text-xs font-medium text-text-secondary mb-1 uppercase tracking-wider">API key for this endpoint</p>
+                          <p className="text-xs text-text-muted mb-3 leading-relaxed">
+                            Kept for the provider and address above: each endpoint remembers its own key, so
+                            switching to a saved model uses the key saved with it.{' '}
+                            {settings.endpoint_key_saved
+                              ? 'This endpoint has a key saved.'
+                              : 'No key is saved for this endpoint yet.'}
+                          </p>
+                          {buildProvider === 'anthropic' && (
+                            <div className="mb-2">
+                              <label className="block text-xs text-text-secondary mb-1">Anthropic workspace id (for a key not scoped to a workspace)</label>
+                              <input aria-label="Anthropic workspace id"
+                                type="text"
+                                value={settings.anthropic_workspace_id ?? ''}
+                                onChange={(e) => setSettings({ ...settings, anthropic_workspace_id: e.target.value.trim() })}
+                                className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                placeholder="empty when the key belongs to one workspace"
+                              />
+                            </div>
+                          )}
+                          <CredentialInput
+                            label={buildKeyLabel}
+                            configured={buildKeyConfigured}
+                            hint={buildKeyHint}
+                            placeholder="leave empty to keep the saved key"
+                            value={credentials[buildKeyField]}
+                            onChange={(value) => setCredentials((current) => ({ ...current, [buildKeyField]: value }))}
+                          />
+                        </div>
+                      <div id="behaviour" className="scroll-mt-20 border-t border-border/50 pt-4">
+                        <h3 className="text-sm font-semibold text-text-primary">Behaviour</h3>
+                        <p className="mt-0.5 text-xs text-text-muted">How much the model is given and asked for, whether it thinks first, and whether stages run one at a time.</p>
+                      </div>
                         <div>
                           <label className="block text-sm font-medium text-text-secondary mb-1">
                             Context window
@@ -597,8 +662,6 @@ export const Settings: React.FC = () => {
                             </>
                           )}
                         </div>
-
-
                         {/* Execution Mode */}
                         <div className="mt-4 rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
                           <label className="block text-sm font-medium text-text-secondary mb-1">Execution Mode</label>
@@ -633,39 +696,8 @@ export const Settings: React.FC = () => {
                             Parallel is faster when the model can handle concurrent requests.
                           </p>
                         </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-text-secondary mb-1">Base URL</label>
-                          <input aria-label="Base URL"
-                            type="text"
-                            value={settings.openai_base_url}
-                            onChange={(e) => setSettings({ ...settings, openai_base_url: e.target.value })}
-                            className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
-                            placeholder="http://localhost:1234/v1"
-                          />
-                        </div>
-
-                        {/* Write-only. The server never returns a key, so this starts empty
-                            and only what is typed gets sent. Each endpoint keeps its own. */}
-                        <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
-                          <p className="text-xs font-medium text-text-secondary mb-1 uppercase tracking-wider">API key for this endpoint</p>
-                          <p className="text-xs text-text-muted mb-3 leading-relaxed">
-                            Kept for the provider and address above: each endpoint remembers its own key, so
-                            switching to a saved model uses the key saved with it.{' '}
-                            {settings.endpoint_key_saved
-                              ? 'This endpoint has a key saved.'
-                              : 'No key is saved for this endpoint yet.'}
-                          </p>
-                          <CredentialInput
-                            label={buildKeyLabel}
-                            configured={buildKeyConfigured}
-                            hint={buildKeyHint}
-                            placeholder="leave empty to keep the saved key"
-                            value={credentials[buildKeyField]}
-                            onChange={(value) => setCredentials((current) => ({ ...current, [buildKeyField]: value }))}
-                          />
-                        </div>
-
+                      </SettingsSection>
+                      <SettingsSection id="frontier" title="Frontier model" text="Optional: a stronger model for planning, specification, reviews and escalated fixes.">
                         {/* The planning and judgement model. Empty name: every stage uses the model above. */}
                         <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
                           <div className="flex items-center justify-between mb-1">
@@ -764,6 +796,18 @@ export const Settings: React.FC = () => {
                                 <option value="gemini">Google Gemini</option>
                               </select>
                             </div>
+                            {(settings.judgement_provider || buildProvider) === 'anthropic' && (
+                              <div>
+                                <label className="block text-xs text-text-secondary mb-1">Anthropic workspace id (for a key not scoped to a workspace)</label>
+                                <input aria-label="Frontier Anthropic workspace id"
+                                  type="text"
+                                  value={settings.anthropic_workspace_id ?? ''}
+                                  onChange={(e) => setSettings({ ...settings, anthropic_workspace_id: e.target.value.trim() })}
+                                  className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                  placeholder="empty when the key belongs to one workspace"
+                                />
+                              </div>
+                            )}
                             <div>
                               <label className="block text-xs text-text-secondary mb-1">Base URL</label>
                               <input aria-label="Base URL"
@@ -848,21 +892,45 @@ export const Settings: React.FC = () => {
                             </label>
                           </div>
                         </div>
-
-                        <div className="pt-2 flex items-center justify-between">
-                          <span className="text-sm text-primary">{message}</span>
-                          <button
-                            type="submit"
-                            disabled={saving}
-                            className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-primary-foreground rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                          >
-                            <Save className="h-4 w-4" />
-                            {saving ? 'Saving...' : 'Save Settings'}
-                          </button>
+                      </SettingsSection>
+                      <div className="sticky bottom-0 z-20 -mx-1 flex items-center justify-between gap-3 rounded-xl border border-border bg-surface/95 px-4 py-3 backdrop-blur">
+                        <span className="text-sm text-primary">{message || 'Changes apply to the next model call of every run once saved.'}</span>
+                        <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveLocal}
+                          disabled={savingLocal}
+                          title="Keep the build model and behaviour above as a saved local model"
+                          className="flex items-center gap-1.5 px-3 py-2 bg-accent-soft hover:bg-primary/30 text-primary border border-primary/40 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                        >
+                          <Save className="h-4 w-4" />
+                          {savingLocal ? 'Saving Local...' : 'Save Local Model'}
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={saving}
+                          className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-primary-foreground rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                        >
+                          <Save className="h-4 w-4" />
+                          {saving ? 'Saving...' : 'Save Settings'}
+                        </button>
                         </div>
-                      </form>
-                    )}
-                  </div>
+                      </div>
+                    </form>
+                  )}
+                  <section id="server" className="scroll-mt-20"><ModelServerCard health={health} /></section>
+                  <details id="diagnosis" className="scroll-mt-20 glass-card rounded-2xl">
+                    <summary className="cursor-pointer list-none px-6 py-4 font-semibold text-text-primary">Diagnosis &amp; guides <span className="ml-2 text-xs font-normal text-text-muted">what the harness measured of this model, and the guidance it gives it</span></summary>
+                    <div className="px-2 pb-2"><ModelGuidancePanel /></div>
+                  </details>
+                  <details id="capabilities" className="scroll-mt-20 glass-card rounded-2xl">
+                    <summary className="cursor-pointer list-none px-6 py-4 font-semibold text-text-primary">Capabilities <span className="ml-2 text-xs font-normal text-text-muted">what the served model can do, and where each fact came from</span></summary>
+                    <div className="px-2 pb-2"><ModelCapabilitiesPanel /></div>
+                  </details>
+                  <details id="sampling" className="scroll-mt-20 glass-card rounded-2xl">
+                    <summary className="cursor-pointer list-none px-6 py-4 font-semibold text-text-primary">Sampling by mode <span className="ml-2 text-xs font-normal text-text-muted">how the model picks each word, for calls with thinking on and off</span></summary>
+                    <div className="px-2 pb-2"><ModelSamplingPanel /></div>
+                  </details>
                 </div>
               </div>
             ),

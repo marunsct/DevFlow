@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.role_agent import create_role_agent
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
+from app.acceptance.requests import TESTS_ASSUME_ONLY_WHAT_THEY_MADE  # one text for the writer and its reviewer
 
 _NAME = "acceptance_reviewer"
 _STAGE = "acceptance"
@@ -71,10 +72,7 @@ to leave or join it at once. A suite that only checks each view as it is first
 chosen passes a product whose views go stale the moment a record changes.
 
 Then ask the opposite: could a product that does meet the criterion pass it?
-Each test runs alone, against a product that holds no data - nothing another
-test created is there. A test that acts on something it never created (an item,
-a record, an entry) can pass only on a product that ships with that data, which
-no correct product does: it must create what it acts on first.
+{TESTS_ASSUME_ONLY_WHAT_THEY_MADE}
 
 Then read the tests side by side. Two tests that take the same steps must expect
 the same result: one that expects the newest record first and another that
@@ -118,6 +116,8 @@ def build_acceptance_review_request(
         if already_passing
         else ""
     )
+    from app.acceptance import actions_within_a_view
+
     content = (
         "The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         + (f"--- The brief, as the customer wrote it ---\n{brief.strip()[:12_000]}\n\n" if brief.strip() else "")
@@ -136,6 +136,7 @@ def build_acceptance_review_request(
         f"{passing}"
         "Review the suite. For each criterion, would its tests fail if the product did "
         "not meet it?"
+        + actions_within_a_view.review_rule()
     )
     return {"messages": [{"role": "user", "content": content}]}
 

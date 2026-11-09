@@ -44,3 +44,15 @@ def test_a_subdirectory_with_another_name_is_fine(workspace) -> None:
     write_approved_artifact(workspace, "the-app/src/the-app.css", "body { margin: 0; }\n")
 
     assert (workspace / "the-app" / "src" / "the-app.css").exists()
+
+
+def test_a_package_named_like_its_project_is_written(workspace) -> None:
+    """Measured on full-stack runs whose Python package shares the project's name (`bookmarks/bookmarks/`, made by the
+    setup): `bookmarks/bookmarks/models.py` was refused as the project inside itself and the builder was told to
+    write `bookmarks/models.py` - out of the package, where the service never imports it."""
+    (workspace / "the-app" / "the-app").mkdir()
+    (workspace / "the-app" / "the-app" / "__init__.py").write_text('"""The app."""\n', encoding="utf-8")
+
+    write_approved_artifact(workspace, "the-app/the-app/models.py", "VALUE = 1\n")
+
+    assert (workspace / "the-app" / "the-app" / "models.py").read_text(encoding="utf-8") == "VALUE = 1\n"

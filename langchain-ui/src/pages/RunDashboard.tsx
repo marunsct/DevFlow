@@ -31,6 +31,8 @@ import { LogViewer } from '../components/LogViewer';
 import { LatestChange } from '../components/LatestChange';
 import { AuditTable } from '../components/AuditTable';
 import { ModelPressure } from '../components/ModelPressure';
+import { ModelPinSwitch } from '../components/ModelPinSwitch';
+import { RunNameField } from '../components/RunNameField';
 import { Timeline } from '../components/Timeline';
 import { Tabs } from '../ui';
 import { ChangesPanel } from '../components/ChangesPanel';
@@ -53,6 +55,39 @@ import { useNow } from '../lib/usePageVisible';
 import { useFeedback } from '../components/Feedback';
 
 
+
+function GapsOfTheRun({ blocking, all }: { blocking: string[]; all: string[] }) {
+  const stated = new Set(blocking);
+  const notes = all.filter((gap) => !stated.has(gap));
+  return (
+    <>
+      {blocking.length > 0 && (
+        <div className="mt-3 rounded-xl border border-warning/30 bg-warning-bg px-3 py-2">
+          <p className="text-xs font-semibold text-warning">
+            Completed with {blocking.length} gap{blocking.length === 1 ? '' : 's'} that may mean it does not work
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {blocking.map((gap, index) => (
+              <li key={index} className="text-xs text-text-secondary leading-relaxed">• {gap}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {notes.length > 0 && (
+        <div className="mt-3 rounded-xl border border-border/50 px-3 py-2">
+          <p className="text-xs font-semibold text-text-secondary">
+            {notes.length} note{notes.length === 1 ? '' : 's'} on what it did not prove
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {notes.map((note, index) => (
+              <li key={index} className="text-xs text-text-muted leading-relaxed">• {note}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  );
+}
 
 export const RunDashboard: React.FC = () => {
   const { notify, confirm: askConfirm } = useFeedback();
@@ -411,6 +446,7 @@ export const RunDashboard: React.FC = () => {
     }
   };
 
+  /** Keep this run on its model, or let it follow the model settings; takes effect on the next request. */
   const handleResume = async () => {
     if (!runId) return;
     try {
@@ -525,15 +561,19 @@ export const RunDashboard: React.FC = () => {
   // How long the run has been going, or took. The dashboard could say which
   // node was current but never how long any of it had taken, which is the first
   // thing anyone watching a long build wants to know.
+  // Time the run was not working is not its time (owner, 2026-11-03; 2026-11-08: stopped by a fault or waiting on a
+  // person too, not only paused): left out, and said how much was.
   const startedAt = new Date(run.created_at).getTime();
   const endedAt = isTerminal ? new Date(run.updated_at).getTime() : now;
-  const totalSeconds = Math.max(0, Math.round((endedAt - startedAt) / 1000));
-  const elapsed =
-    totalSeconds < 60
-      ? `${totalSeconds}s`
-      : totalSeconds < 3600
-        ? `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`
-        : `${Math.floor(totalSeconds / 3600)}h ${Math.floor((totalSeconds % 3600) / 60)}m`;
+  const pausedSeconds = Math.max(0, Math.round(run.paused_seconds ?? 0));
+  const totalSeconds = Math.max(0, Math.round((endedAt - startedAt) / 1000) - pausedSeconds);
+  const asTime = (seconds: number) =>
+    seconds < 60
+      ? `${seconds}s`
+      : seconds < 3600
+        ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+        : `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+  const elapsed = asTime(totalSeconds);
 
   const stageCopy = describeStage(run.current_stage);
   // Panels that read the run's state again when it moves to another stage or status.
@@ -597,6 +637,15 @@ export const RunDashboard: React.FC = () => {
               title="Stop at the next step and keep the run to resume later">
               <Pause className="h-3.5 w-3.5" /> Pause
             </button>
+          )}
+          {!isTerminal && run.status !== 'created' && (
+            <ModelPinSwitch
+              runId={run.run_id}
+              pinned={!!run.model_pinned}
+              model={run.model_last?.model}
+              endpoint={run.model_last?.endpoint}
+              onChanged={() => { void fetchState(); }}
+            />
           )}
           {RESUMABLE.includes(run.status) && !run.error?.startsWith('Interrupted:') && (
             <button onClick={handleResume}
@@ -666,6 +715,7 @@ export const RunDashboard: React.FC = () => {
                 <StatusIcon className={`h-4 w-4 ${config.text}`} />
               </span>
               <div className="min-w-0">
+                <RunNameField runId={run.run_id} name={run.run_name} onChanged={() => { void fetchState(); }} />
                 <h1 className="text-base sm:text-lg font-semibold text-text-primary leading-tight truncate">
                   {stageCopy.title}
                 </h1>
@@ -685,21 +735,9 @@ export const RunDashboard: React.FC = () => {
             )}
             {/* A completed run that knows what it did not prove says so here,
                 beside the green badge - the record must not read as a plain
-                success (Initiative J.4). */}
-            {run.completion_gaps && run.completion_gaps.length > 0 && (
-              <div className="mt-3 rounded-xl border border-warning/30 bg-warning-bg px-3 py-2">
-                <p className="text-xs font-semibold text-warning">
-                  Completed with {run.completion_gaps.length} gap{run.completion_gaps.length === 1 ? '' : 's'} it did not prove
-                </p>
-                <ul className="mt-1 space-y-0.5">
-                  {run.completion_gaps.map((gap, index) => (
-                    <li key={index} className="text-xs text-text-secondary leading-relaxed">
-                      • {gap}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+                success (Initiative J.4). What may mean the product does not
+                work is a warning; a note is only worth knowing. */}
+            <GapsOfTheRun blocking={run.blocking_gaps ?? []} all={run.completion_gaps ?? []} />
             {/* The workspace tells the truth after the run ends: what the
                 NON-DELIVERABLE marker says, on the run card (Initiative J.6). */}
             {run.non_deliverable && (
@@ -725,6 +763,9 @@ export const RunDashboard: React.FC = () => {
               </dt>
               <dd className="mt-1 text-[13px] text-text-primary tabular-nums">
                 {elapsed}
+                {pausedSeconds >= 60 && (
+                  <span className="block text-xs text-text-muted">{asTime(pausedSeconds)} stopped or waiting, not counted</span>
+                )}
                 {!isTerminal && typical && <span className="block max-w-56 text-xs text-text-muted">{typical}</span>}
               </dd>
             </div>
@@ -877,11 +918,13 @@ export const RunDashboard: React.FC = () => {
             row's height, or the work area and the rail stretch with it. */}
         <div className="relative min-h-0 lg:col-span-2 xl:col-span-1">
           <div className="space-y-4 xl:absolute xl:inset-0 xl:overflow-y-auto">
-            {/* Acceptance criteria, screenshots and the decision log, then the
-                sprints - refreshed as the run moves between stages. */}
+            {/* The sprints first, one short row each (owner, 2026-11-05: below
+                every criterion they were out of sight), then the acceptance
+                criteria, screenshots and the decision log - refreshed as the
+                run moves between stages. */}
+            <SprintSummaryPanel runId={runId!} refreshKey={stageKey} />
             <DeliveryPanel runId={runId!} refreshKey={stageKey} onOpenChange={selectChange} />
             {run?.status === 'completed' && <OwnerRating runId={runId!} />}
-            <SprintSummaryPanel runId={runId!} refreshKey={stageKey} />
           </div>
         </div>
       </div>

@@ -205,7 +205,7 @@ def test_the_author_is_told_the_criteria_the_pack_and_the_rules(project) -> None
     assert "AC-1: Add a note with a title" in text
     assert "notes/acceptance/" in text and "page.goto('/')" in text
     assert "RUN and FAIL now" in text
-    assert "Each test runs alone, against a product that holds no data" in text
+    assert "Each test assumes nothing it did not make" in text
 
 
 def test_untestable_criteria_are_read_from_blockers() -> None:
@@ -540,3 +540,31 @@ def test_a_test_whose_own_source_keeps_a_promise_is_sent_back(project) -> None:
 
     assert [b.split("`")[1] for b in broken] == ["[AC-3] assigns to another user"]
     assert "await it" in broken[0]
+
+
+def test_the_author_is_told_the_skeleton_is_not_the_product_to_finish(project) -> None:
+    """Measured across runs: suite writers read the stack's starting skeleton as a half-built product and wrote its
+    models, storage and manifest "so the tests can pass" - 48 such refused writes in one run, 19 in another."""
+    import re
+
+    text = requests.build_author_request(project, suite.criteria(project))["messages"][0]["content"]
+    rule = text[text.index("RUN and FAIL now"):]
+    rule = rule[:rule.index("\n- ")]
+    assert "starting skeleton" in rule and "after this suite is locked" in rule
+    assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", rule, re.I)
+
+
+def test_the_author_adds_two_records_in_a_row_from_one_page(project) -> None:
+    """Measured on one run: the page left its save control disabled after the first save, so a second bookmark
+    could never be saved; every locked test saved one record per page, the suite passed, and two hidden tests that
+    save twice from one page timed out (a false acceptance)."""
+    import re
+
+    text = requests.build_author_request(project, suite.criteria(project))["messages"][0]["content"]
+    start = text.index("adds records through")
+    rule = text[text.rindex("\n- ", 0, start):text.index("\n- ", start)]
+    assert "one after the other" in rule and "without reloading" in rule
+    # Measured on the next run: the test typed the second record while the first save was still on its way, the
+    # page cleared the form when that save finished and wiped what was typed, and a right product failed for hours.
+    assert "waits until the first is shown" in rule
+    assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", rule, re.I)

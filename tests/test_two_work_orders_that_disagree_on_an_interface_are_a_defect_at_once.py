@@ -48,7 +48,7 @@ def test_on_a_removed_name_another_work_order_still_uses_is_a_defect_owned_by_th
 
 def test_off_or_with_no_other_user_there_is_no_defect(tmp_path):
     outputs = _batch(tmp_path)
-    with mock.patch.dict(os.environ, {"INTERFACE_CLASH_CHECK": ""}):
+    with mock.patch.dict(os.environ, {"INTERFACE_CLASH_CHECK": "off"}):
         assert interface_clashes.clashes(tmp_path, outputs) == []
     (tmp_path / "app" / "routes.py").write_text("from app.store import fetch_items\n")
     with mock.patch.dict(os.environ, ON):

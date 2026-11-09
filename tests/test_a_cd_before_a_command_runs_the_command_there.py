@@ -73,3 +73,26 @@ def test_a_cd_into_the_folder_it_already_runs_in_is_not_doubled(tmp_path, monkey
     assert where == "shop"
     _, where, _ = agent_toolkit._a_cd_taken_as_the_working_directory(["cd", "tests", "&&", "ls"], "shop", str(tmp_path))
     assert where == "shop/tests", "a real folder inside it is still entered"
+
+
+def test_a_cd_into_the_working_directory_runs_where_the_program_is(tmp_path):
+    """Measured over 30 runs: 23 "`.venv/bin/python` is not installed" refusals came from `cd bookmarks && .venv/...`
+    with `bookmarks` as the working directory, run in `bookmarks/bookmarks` - a real folder, the package named like
+    its project - where no `.venv` is."""
+    from app.tools.agent_toolkit import _a_cd_taken_as_the_working_directory
+
+    (tmp_path / "bookmarks" / "bookmarks").mkdir(parents=True)
+    (tmp_path / "bookmarks" / ".venv" / "bin").mkdir(parents=True)
+    (tmp_path / "bookmarks" / ".venv" / "bin" / "python").write_text("")
+    command, where, _ = _a_cd_taken_as_the_working_directory(
+        ["cd", "bookmarks", "&&", ".venv/bin/python", "-m", "pytest", "tests"], "bookmarks", str(tmp_path))
+    assert command == [".venv/bin/python", "-m", "pytest", "tests"]
+    assert where == "bookmarks"
+
+
+def test_a_cd_into_a_real_subfolder_still_goes_there(tmp_path):
+    from app.tools.agent_toolkit import _a_cd_taken_as_the_working_directory
+
+    (tmp_path / "app" / "web").mkdir(parents=True)
+    _, where, _ = _a_cd_taken_as_the_working_directory(["cd", "web", "npm", "test"], "app", str(tmp_path))
+    assert where == "app/web"

@@ -77,8 +77,12 @@ def service_dockerfile(server: str, port: int = 8000) -> str:
 
 
 UNIT_TEST = (".venv/bin/python", "-m", "pytest", "tests", "-q", "--junitxml=test-results/unit.xml")
+#: `--confcutdir=acceptance`: no `conftest.py` above the suite is loaded. Measured on one run: a root `conftest.py` a
+#: builder wrote skipped a locked acceptance test in `pytest_collection_modifyitems`, and the suite's writer, who may
+#: write only `acceptance/`, could not take it out. The kept `pytest.ini` puts the project on the import path itself.
 ACCEPTANCE_TEST = (
-    ".venv/bin/python", "-m", "pytest", "acceptance", "-q", "--junitxml=test-results/acceptance.xml",
+    ".venv/bin/python", "-m", "pytest", "acceptance", "-q", "--confcutdir=acceptance",
+    "--junitxml=test-results/acceptance.xml",
 )
 
 UNIT_GUIDE = """Unit tests go in `tests/`, named `test_<module>.py`, as plain pytest functions
@@ -97,6 +101,14 @@ NAMING = """Name each test after the criterion it proves: `test_ac3_<what_it_che
 AC-3 (a test that proves two writes both: `test_ac3_ac4_<...>`). A test with no
 criterion id in its name proves nothing the harness can count."""
 
+#: Measured on one run: tests imported a helper from `conftest` in a folder with `__init__.py`; the second copy of the
+#: module had empty state, and no test of 46 reached the product.
+SHARED_HELPERS = """
+
+Share a helper through a fixture in `conftest.py`, or from a module of its own: a test
+never imports `conftest` by name, because pytest has loaded that file under another
+name and the import makes a second copy with empty state."""
+
 
 #: A pytest failure raised by the test's own code: a name it never defined, a
 #: fixture that does not exist, a file that does not parse. An ImportError or
@@ -112,4 +124,35 @@ TEST_BUGS = (
     r"fixture '[^']+' not found",
     # A request to an address the suite never serves (see the JavaScript packs').
     r"host='(?:localhost|127\.0\.0\.1|::1)', port=(?:80|443)\)",
+    # A dict, list or set used as a key or set member: `json={{"title": ""}}` (a set holding a dict, double braces
+    # carried over from a template), raised by the test's own line before any request is made. Measured on a
+    # small-model run: five locked tests carried it, none could pass, and the sprint spent two hours on them.
+    r"TypeError: unhashable type: '(?:dict|list|set)'",
+)
+
+
+#: Errors a Python run is known to raise, by a phrase of the message, and their cause (`app.stacks.known_errors`).
+#: Measured on three held-out runs: the unit tests and the code they test disagreed about a function's parameters
+#: (some tests passed a connection first, others by keyword; the product's own caller passed neither), written by
+#: different work orders. Each fix changed the function to suit some tests, broke the rest and was reverted, and the
+#: sprint was planned again until the run failed.
+PYTHON_KNOWN_ERRORS = {
+    phrase: (
+        "a call and the function it calls disagree on the function's parameters - here the calls are in the unit "
+        "tests and the function is in the product, written by different work orders. Read how the product's own code "
+        "calls the function, call it that way in every test of the file in one rewrite of the file, and change the "
+        "function only when the product's own callers need it. Changing the function to suit some tests breaks the "
+        "rest."
+    )
+    for phrase in ("positional argument", "unexpected keyword argument")
+}
+#: Measured on a held-out run: unit tests used the product's database helper in a `with` block while the product
+#: defines it as a plain generator it hands to a framework as a dependency; each fix changed the helper to suit some
+#: tests, broke the rest and was reverted.
+PYTHON_KNOWN_ERRORS["context manager protocol"] = (
+    "the unit tests use a function in a `with` block, but the product defines it as a plain generator (it hands it to "
+    "a framework as a dependency, or iterates it). Read how the product's own code uses the function and keep that "
+    "definition: change the TESTS - call the generator with `next(...)` and close it, or wrap it with "
+    "`contextlib.contextmanager` inside the test module - in every test of the file in one rewrite. Changing the "
+    "product's function to suit some tests breaks its other callers."
 )

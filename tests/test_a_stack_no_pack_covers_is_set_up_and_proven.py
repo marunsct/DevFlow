@@ -418,3 +418,53 @@ def test_the_acceptance_smoke_test_is_kept_as_the_example_qa_copies(tmp_path):
 
     _pack, record = contract.the_pack(tmp_path)
     assert record["setup"]["acceptance_example"] == "test('[AC-0] the page opens', () => {})\n"
+
+
+# --- setup telemetry (harness review HR2.SS.4) -----------------------------------------
+
+def test_a_replay_that_fails_leaves_a_decision_naming_the_entry_and_the_step(stage, tmp_path, monkeypatch):
+    from app.graph import acceptance_nodes
+
+    custom_setup.remember(STACK, {"declaration": json.dumps(DECLARED), "files": {"tests/smoke.test.ts": "//"}})
+    stage.outcome["proven"] = False
+    decided, noted = [], []
+    monkeypatch.setattr(acceptance_nodes, "_decide", lambda state, update, **record: decided.append(record))
+    monkeypatch.setattr(custom_setup, "noted", lambda result, **k: noted.append((result.ok, k)))
+    monkeypatch.setattr(custom_setup, "set_aside_what_did_not_prove", lambda root: "notes-nuxt.json")
+
+    stage.node(_state(tmp_path))
+
+    replay = [d for d in decided if d.get("question") == "Does the setup proven in an earlier run hold here?"]
+    assert len(replay) == 1
+    assert "`notes-nuxt.json`" in replay[0]["rationale"] and "The unit smoke test did not pass" in replay[0]["rationale"]
+    assert noted[0] == (False, {"replayed": True, "set_aside": "notes-nuxt.json"})
+    assert noted[1][1] == {}, "the setup stage's own proof is recorded too"
+
+
+def test_the_proof_records_the_level_it_reached(tmp_path):
+    _set_up(tmp_path)
+    assert prove(tmp_path, "notes", STACK, run=_runner(tmp_path, failing="acceptance")).level == "unit"
+    _set_up(tmp_path)
+    assert prove(tmp_path, "notes", STACK, run=_runner(tmp_path, failing="unit")).level == "install"
+    _set_up(tmp_path)
+    assert prove(tmp_path, "notes", STACK, run=_runner(tmp_path)).level == "recorded"
+
+
+def test_the_effects_report_has_a_setup_row() -> None:
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "loop" / "effects.py"
+    spec = importlib.util.spec_from_file_location("loop_effects_setup", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    records = [
+        {"kind": "setup", "source": "replayed", "ok": False, "level": "install", "problem": "build failed",
+         "set_aside": "x.json"},
+        {"stage": "stack_setup_0", "kind": "tool_call", "tool": "write_artifact",
+         "args": {"relative_path": "notes/app.py", "content": "a\nb\n"}},
+        {"stage": "stack_setup_0", "kind": "tool_call", "tool": "write_artifact",
+         "args": {"relative_path": "notes/src/routes.py", "content": "a\nb\nc\n"}},
+    ]
+    lines = module.setup_lines(records, {"project": "notes", "files": ["app.py"]})
+    assert lines[0] == "setup replayed: not proven (reached install), set aside x.json: build failed"
+    assert lines[1].startswith("setup scope: 1 framework file(s) asked; 1 other file(s) written (3 lines;")

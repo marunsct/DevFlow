@@ -31,6 +31,7 @@ from app.agents.technical_lead import SpecialistRole
 from app.tools.docs import docs_tools
 from app.tools.web_search import web_tools
 from app.tools.mcp_tools import tools_for as mcp_tools_for
+from app.analysis.package_exports import exports_tools
 from app.tools.package_registry import lookup_tools
 from app.tools.page_view import page_view_tools
 from app.tools.runtimes import runtime_tools
@@ -82,7 +83,8 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
         "every compilation and linter error before returning; where the stack "
         "is plain HTML/CSS/JS with no build tooling, there is nothing to "
         "install or compile, and adding either contradicts the stack. "
-        "Do not write or change test files: the Testing specialist owns them. "
+        "In a work order, do not write or change test files: the Testing specialist owns them. "
+        "A fix whose brief asks for a regression test is the one exception - write that test. "
         "Running the tests that check your work is how you prove it, and the "
         "way to fix a failing test is to change the interface it checks. "
         "Return your structured response when the application code is complete. "
@@ -1023,7 +1025,9 @@ def build_test_run_request(
         "no testing framework, that was a decision - the product is meant to be "
         "verified the way the stack says, and initialising a package manager or "
         "installing a package here creates the very dependency the brief ruled out. If you cannot run a check without "
-        "new tooling, report that as a blocker instead of installing it.\n\n"
+        "new tooling, report that as a blocker instead of installing it. A package the suite already imports "
+        "and the stack's guidance names, missing from this environment, is not a new framework: it goes in the "
+        "test-only scope, as the testing rule says.\n\n"
         "Report EVERY failure in the `defects` field, each with a severity, reproduction "
         "steps, expected behavior, actual behavior, affected files, and the specialist "
         "role that must fix it. If everything passes, return an empty `defects` list. "
@@ -1113,7 +1117,7 @@ def _observed_output(observed: dict[str, str] | None) -> str:
     if not observed or not observed.get("output"):
         return ""
     return (
-        "--- What the last failing command actually printed ---\n"
+        f"--- {observed.get('title') or 'What the last failing command actually printed'} ---\n"
         f"$ {observed.get('command', '')}\n"
         f"{observed['output']}\n\n"
         "The description above is another specialist's reading of a failure and "
@@ -1299,10 +1303,37 @@ _VALIDATION_NOTE = (
 )
 
 
-def _system_prompt(role: SpecialistRole) -> str:
-    """Build the full system prompt for one specialist role."""
+#: The testing role's sentence about reporting failures, which a suite writer must not follow: every test fails before
+#: anything is built, and that is right.
+_REPORT_EVERY_FAILURE = ("Report every failure as a structured defect in the `defects` field, naming the specialist role "
+                         "that must fix it, so the workflow can track and route it.")
+#: What a suite writer proves, in place of building, starting or testing its own work.
+_PROVE_THE_SUITE = (
+    "- Prove the suite by running it with its own command, and record that command in\n"
+    "  `verification` with its exit code. The suite's setup starts the product; never start the product\n"
+    "  yourself. Before the product is built every test fails, and that is right: it is no defect.\n"
+)
+_PROVE_THE_WORK = (
+    "- Prove your work by running it. Write the code, then use `run_terminal_command`\n"
+    "  to build it, start it, or test it, and record every command you ran in\n"
+    "  `verification` with its exit code. A task reported complete with an empty\n"
+    "  `verification` list is a task nobody checked.\n"
+)
+
+
+def _system_prompt(role: SpecialistRole, writing_the_suite: bool = False) -> str:
+    """Build the full system prompt for one specialist role.
+
+    `writing_the_suite`: the testing role writing the acceptance suite. Its request says never start the product, that
+    every test fails now and that product code is not its own; the role's system prompt said to start the product,
+    report every failure as a defect and change the function, not the test. Those three are left out for it.
+    """
     role_description = _ROLE_DESCRIPTIONS[role]
+    if writing_the_suite:
+        role_description = " ".join(role_description.split()).replace(_REPORT_EVERY_FAILURE, "").rstrip()
     validation = _VALIDATION_NOTE if role == "testing" else ""
+    prove = _PROVE_THE_SUITE if writing_the_suite else _PROVE_THE_WORK
+    testability = "" if writing_the_suite else TESTABILITY_RULE
     return f"""{role_description}
 
 Responsibilities:
@@ -1310,11 +1341,7 @@ Responsibilities:
   expand scope on your own initiative.
 - Report every changed file, notable decision, added or updated test, added or
   updated documentation, risk, and blocker.
-- Prove your work by running it. Write the code, then use `run_terminal_command`
-  to build it, start it, or test it, and record every command you ran in
-  `verification` with its exit code. A task reported complete with an empty
-  `verification` list is a task nobody checked.
-{validation}- If a command's output was truncated, call `read_command_output` with the
+{prove}{validation}- If a command's output was truncated, call `read_command_output` with the
   reference in the truncation pointer to see the part that was cut. The real
   error is usually there.
 - If you cannot verify something (a test, a security property), say so as a
@@ -1329,7 +1356,7 @@ Beginner documentation requirement:
   your `documentation` field or inline comments you propose.
 
 Constraints:
-- You may use the `run_terminal_command` tool to execute shell commands, build code, install dependencies, and perform end-to-end development.
+- You may use the `run_terminal_command` tool to run programs: build code, install dependencies, and perform end-to-end development.
 - There is no shell, so `cd`, `&&`, `|` and `$(...)` do not work and `cd` is not
   a program you can run. To act on a subdirectory, pass `working_directory` -
   for a project directory named `myapp`, run `["<program>", "<args>"]` with
@@ -1340,7 +1367,7 @@ Constraints:
   project that disagrees with the real one.
 - Keep the output structured and concise.
 
-{TESTABILITY_RULE}
+{testability}
 
 {TESTING_DEPENDENCY_RULE}
 
@@ -1357,6 +1384,7 @@ def create_specialist_agent(
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | Path | None = None,
         allow_subdirectories: bool = True,
+    writing_the_suite: bool = False,
 ) -> Any:
     """Create one specialist role worker.
 
@@ -1380,6 +1408,8 @@ def create_specialist_agent(
         build_journal_read_tool(resolved_repo_root),
         # Versions move faster than any model's training: see `app.tools.package_registry`.
         *lookup_tools(),
+        # What an installed package really exports, before a name is imported from it (WM.1, PACKAGE_EXPORTS_NAMED).
+        *exports_tools(resolved_repo_root),
         # A framework's or package's current documentation, the web for what is
         # newer than the model, and the MCP servers: see `app.tools.docs`,
         # `app.tools.web_search` and `app.tools.mcp_tools`.
@@ -1409,7 +1439,7 @@ def create_specialist_agent(
     return create_role_agent(
         name=f"specialist_{role}",
         stage=_STAGE,
-        system_prompt=_system_prompt(role),
+        system_prompt=_system_prompt(role, writing_the_suite=writing_the_suite),
         response_format=AGENT_ANSWER,
         model=model,
         checkpointer=checkpointer,

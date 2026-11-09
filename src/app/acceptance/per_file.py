@@ -11,8 +11,11 @@ and what each failing file printed.
 from __future__ import annotations
 
 import fnmatch
+import logging
 from pathlib import Path
 from typing import Any, Callable, Sequence
+
+logger = logging.getLogger(__name__)
 
 #: Characters of one file's output kept.
 MOST_OUTPUT_CHARACTERS = 2_500
@@ -50,7 +53,11 @@ def _its_own_tests(report: Path, naming: set[str]) -> str:
     own = [t for t in junit.read(report).tests if set(junit.tags_in(t.name)) & naming]
     if not own:
         return ""
-    return "finished" if all(t.outcome in ("passed", "skipped") for t in own) else "failed"
+    # Skipped is not passed: measured on one run, a defect whose tests were all
+    # written `test.skip(...)` was closed at dispatch as already fixed.
+    if not all(t.outcome in ("passed", "skipped") for t in own):
+        return "failed"
+    return "finished" if any(t.outcome == "passed" for t in own) else "skipped"
 
 
 def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, naming: set[str] | None = None) -> list[dict[str, str]]:
@@ -66,8 +73,57 @@ def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, nam
     base = Path(repo_root) / project / directory
     if not argv or not base.is_dir():
         return []
+    # Once a file's run shows the product never came up, the rest would each wait out the same start: measured
+    # on one run, five files waited 60 seconds each after every write a fixer made.
+    never_started: dict[str, str] = {}
+    report = Path(repo_root) / project / str(record.get("acceptance_report") or "") if record.get("acceptance_report") else None
+    # The whole suite's report is what the next round reads (MEASURE_ONCE reuses it): one file's run must not leave
+    # its own in its place. Measured on one run: a defect's re-measure ran one file, the round then read that
+    # file's ten tests as the suite's thirteen, and a green suite was reopened for three tests "never run".
+    kept = _the_report_as_it_is(report)
+    try:
+        return _each(repo_root, project, directory, pattern, argv, base, naming, report, never_started, run)
+    finally:
+        _put_back(report, kept)
+
+
+def _the_report_as_it_is(report: Path | None) -> dict[Path, bytes]:
+    """Every file of the suite's report as it is now: the file, or each report in its folder."""
+    if report is None:
+        return {}
+    try:
+        files = sorted(report.glob("*.xml")) if report.is_dir() else [report] if report.is_file() else []
+        return {path: path.read_bytes() for path in files}
+    except OSError:
+        return {}
+
+
+def _put_back(report: Path | None, kept: dict[Path, bytes]) -> None:
+    """The suite's report as it was before one file's run replaced it; none, when there was none."""
+    if report is None:
+        return
+    try:
+        from app.acceptance import junit
+
+        junit.clear(report)
+        for path, content in kept.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+    except OSError:
+        logger.debug("Could not put the suite's report back", exc_info=True)
+
+
+def _each(repo_root: str | Path, project: str, directory: str, pattern: str, argv: list[Any], base: Path,
+          naming: set[str] | None, report: Path | None, never_started: dict[str, str], run: Runner) -> list[dict[str, str]]:
+    """`each_file`'s runs, one file at a time."""
     found: list[dict[str, str]] = []
-    for path in sorted(p for p in base.rglob("*") if p.is_file() and fnmatch.fnmatch(p.name, pattern)):
+    from app.analysis.walk import files_under
+    from app.acceptance.suite import the_product_did_not_start
+
+    # Not into `node_modules`: a suite with its own dependencies holds
+    # thousands of files there, and a package's own `*.spec.js` is no test of
+    # this product.
+    for path in sorted(p for p in files_under(base, ("node_modules",)) if fnmatch.fnmatch(p.name, pattern)):
         relative = path.relative_to(Path(repo_root) / project).as_posix()
         if naming is not None:
             try:
@@ -76,7 +132,9 @@ def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, nam
                 continue
             if not any(name in text for name in naming):
                 continue
-        report = Path(repo_root) / project / str(record.get("acceptance_report") or "") if record.get("acceptance_report") else None
+        if never_started:
+            found.append({"file": f"{project}/{relative}" if project else relative, **never_started})
+            continue
         if naming is not None and report is not None:
             from app.acceptance import junit
 
@@ -93,6 +151,10 @@ def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, nam
             "outcome": "hung" if hung else verdict,
             "output": output.strip()[-MOST_OUTPUT_CHARACTERS:],
         })
+        if the_product_did_not_start(output):
+            never_started = {"outcome": found[-1]["outcome"],
+                             "output": f"Not run: the product did not start for {found[-1]['file']}, so it would "
+                                       "not start for this file either."}
     return found
 
 

@@ -45,13 +45,17 @@ functions that use the library only the way a caller would: through
 `import {{package}}` and the names in its `__all__`, never internal modules. Check
 return values exactly, and check that invalid input raises the error the
 criteria name (`with pytest.raises(ValueError): ...`).
-""" + _python.NAMING
+""" + _python.NAMING + _python.SHARED_HELPERS
 
 PACK = StackPack(
+    known_errors=_python.PYTHON_KNOWN_ERRORS,
     name="python-library",
     title="Library in Python",
     kind="library",
     language="python",
+    # A folder with no code in it imports as an empty namespace, so finding the module is not enough.
+    how_it_is_used=("python", "-c", "import importlib, sys; "
+                    "sys.exit(0 if getattr(importlib.import_module('{{package}}'), '__file__', None) else 3)"),
     frameworks=(),
     files={
         "pyproject.toml": PYPROJECT,

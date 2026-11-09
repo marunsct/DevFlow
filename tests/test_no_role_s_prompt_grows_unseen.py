@@ -15,7 +15,11 @@ from tests.test_prompt_names_only_offered_tools import rendered  # noqa: F401 - 
 #: Characters, today's size plus about 5%. Lower one when a prompt shrinks.
 CEILINGS = {
     "specialist": 13_400,
-    "principal_architect": 12_200,
+    # + the rule that the product ships every route, so none is added only for the tests (LF.757): a fixer added an
+    # unauthenticated route that deletes every record, for a test's clean-up.
+    # + the rule that a comparison rule also says how its values are shown (LF.780): two runs printed "The 3" where a
+    # brief compared words in lower case.
+    "principal_architect": 12_800,
     "technical_lead": 10_800,
     "stack_selector": 10_100,
     "senior_architect_reviewer": 9_500,
@@ -23,7 +27,11 @@ CEILINGS = {
     "scrum_master": 6_000,
     # + the rule that a test never starts a running product itself (LF.159): one
     # such test hung a whole acceptance suite and its writer for 40 minutes.
-    "acceptance_reviewer": 4_600,
+    # + the rule that a test never reads a kept file's text (LF.647): two full-stack runs in a row reopened their
+    # locked suite after the build for a test asserting the kept start script's lines.
+    # + the rule that a count of the test's own text is computed, not typed (LF.772): two runs in a row locked a test
+    # expecting 24 characters for a string of 23 or 25.
+    "acceptance_reviewer": 5_100,
 }
 OTHERWISE = 4_200
 

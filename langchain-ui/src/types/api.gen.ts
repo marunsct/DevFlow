@@ -78,6 +78,10 @@ export interface CallUsage {
   stage: string;
 }
 
+export interface CapabilityValues {
+  values?: Record<string, unknown>;
+}
+
 /** Response after storing a codebase archive for a run. */
 export interface CodebaseUploadResponse {
   /** Stored size in bytes. */
@@ -124,7 +128,9 @@ export interface EventPage {
 
 /** Save the frontier judgement model configuration specifically, or select No Model. */
 export interface FrontierModelSettingsPayload {
+  anthropic_workspace_id?: string | null;
   escalate_after_attempts?: number;
+  execution_mode?: "linear" | "parallel" | null;
   judgement_api_key?: string | null;
   judgement_base_url?: string;
   judgement_context_window?: number;
@@ -136,13 +142,19 @@ export interface FrontierModelSettingsPayload {
   plan_on_judgement_model?: boolean;
 }
 
+export interface GuideOverride {
+  override?: boolean | null;
+}
+
 export interface HTTPValidationError {
   detail: ValidationError[];
 }
 
 /** Save the local build model configuration specifically. */
 export interface LocalModelSettingsPayload {
+  anthropic_workspace_id?: string | null;
   api_key?: string | null;
+  execution_mode?: "linear" | "parallel" | null;
   llm_provider?: string;
   model_context_window?: number;
   model_max_output_tokens?: number;
@@ -150,6 +162,16 @@ export interface LocalModelSettingsPayload {
   openai_base_url?: string;
   thinking_effort?: "low" | "medium" | "high";
   thinking_mode?: "default" | "on" | "off";
+}
+
+/** Pin a run to the model it last ran on, or let it follow the current model settings again. With `base_url` and/or `model` (pinning only) the run is pinned to that endpoint and model instead, without touching the global settings. Neither carries a credential: the endpoint's key is resolved server-side, per endpoint. */
+export interface ModelPinRequest {
+  /** Pin to this OpenAI-compatible address (http or https, no credentials in it). */
+  base_url?: string | null;
+  /** Pin to this model name. */
+  model?: string | null;
+  /** True keeps the run on its model; false follows the current settings. */
+  pinned: boolean;
 }
 
 /** A model configuration saved earlier, ready to fill the form again. Never a credential: those stay write-only. Each endpoint keeps the key last saved for it (`runtime_settings.endpoint_keys`), so picking a profile picks its key too. */
@@ -173,6 +195,14 @@ export interface ModelProfile {
   thinking_mode: string | null;
   updated_at: string | null;
   updated_by: string | null;
+}
+
+/** A run's model as the status shows it: the name and where it is served, never a credential. */
+export interface ModelSummary {
+  /** host:port the model is served from. */
+  endpoint: string;
+  /** The model name. */
+  model: string;
 }
 
 /** A rating as kept: who gave it and when. */
@@ -316,6 +346,12 @@ export interface RunListResponse {
   total: number;
 }
 
+/** Give a run a name, or clear it (an empty name). */
+export interface RunNameRequest {
+  /** The name to show for the run; empty clears it. */
+  name: string;
+}
+
 /** Information about a specific stage in the run. */
 export interface RunStage {
   /** Approvals this stage passed through - progress, not repetition. */
@@ -346,7 +382,9 @@ export interface RunStatusResponse {
   artifacts: ArtifactInfo[];
   /** Whether the run answers its own approval gates (unattended). The UI needs this to know whether a gate is waiting on a person or will clear itself, and the wizard uses it to label a paused stage. */
   auto_approve: boolean;
-  /** What this release knew it did not prove: deferred criteria, problems the suite was locked with, an unproven setup (Initiative J.4). Empty on a completed run that proved everything it claims; a completed run with gaps here is never plain 'completed' on any surface that shows it. */
+  /** The `completion_gaps` that mean the product may not work; the rest are notes for a reader, and every later measurement went on to pass. */
+  blocking_gaps: string[];
+  /** What this release knew it did not prove: deferred criteria, problems the suite was locked with, an unproven setup (Initiative J.4). Empty on a completed run that proved everything it claims; a completed run with gaps here is never plain 'completed' on any surface that shows it. Those not in `blocking_gaps` are notes. */
   completion_gaps: string[];
   /** What this run has spent on model calls so far, when the worker holding its total is this process. Absent rather than zero when it is not: a run whose accounting lives in another worker has an unknown cost, and reporting $0.00 for it would be the fabricated measurement this field was added to remove. */
   cost: RunCostSummary | null;
@@ -368,14 +406,22 @@ export interface RunStatusResponse {
   max_run_cost_usd: number | null;
   /** The deployment's bound on the tokens a run uses (`MAX_RUN_TOKENS`), or null when none is set. */
   max_run_tokens: number | null;
-  /** What the workspace's NON-DELIVERABLE marker says, or '' when the workspace is marked deliverable. A terminal state other than a clean release writes it into the workspace root (Initiative J.6). */
+  /** The model the run last ran on: its name and host:port only, never a credential. */
+  model_last: ModelSummary | null;
+  /** Whether the run is kept on the model it last ran on (true) or follows the current model settings (false). */
+  model_pinned: boolean;
+  /** What the workspace's NON-DELIVERABLE marker says, or '' when the workspace is marked deliverable. A run that failed, or that completed with a gap meaning the product may not work (`blocking_gaps`), writes it into the workspace root (Initiative J.6); notes alone do not. */
   non_deliverable: string;
+  /** Seconds the run has spent paused, the pause going on now included; not the run's time. */
+  paused_seconds: number;
   /** Remediation information if applicable. */
   remediation: RemediationInfo | null;
   /** Reviews associated with the run. */
   reviews: ReviewInfo[];
   /** Unique identifier for the run. */
   run_id: string;
+  /** The name the person gave the run, or null. */
+  run_name: string | null;
   /** Meaning of the current stage. */
   stage_meaning: string | null;
   /** Stage history, when available. */
@@ -392,7 +438,9 @@ export interface RunStatusResponse {
 
 /** A brief summary of a run. */
 export interface RunSummary {
-  /** How many things the release knew it did not prove. */
+  /** How many of `completion_gaps` mean the product may not work. */
+  blocking_gaps: number;
+  /** How many things the release knew it did not prove, notes included. */
   completion_gaps: number;
   /** Timestamp when the run was created. */
   created_at: string;
@@ -410,8 +458,14 @@ export interface RunSummary {
   gate_deadline: string | null;
   /** Whether the run was started not to use the frontier model. */
   local_only: boolean | null;
+  /** The model the run last ran on: name and host:port only. */
+  model_last: ModelSummary | null;
+  /** Whether the run is kept on the model it last ran on. */
+  model_pinned: boolean;
   /** Unique identifier for the run. */
   run_id: string;
+  /** The name the person gave the run, or null. */
+  run_name: string | null;
   /** Current overarching status of the run. */
   status: string;
   /** When the run last moved. */
@@ -424,6 +478,13 @@ export interface RunUsage {
   recent_calls: CallUsage[];
   /** One row per stage; empty before the transcript has any. */
   stages: StageUsage[];
+}
+
+export interface SamplingUpdate {
+  mode?: string | null;
+  send?: boolean | null;
+  thinking_calls?: string | null;
+  values?: Record<string, unknown> | null;
 }
 
 /** What the build model's server says of itself, read with one request for its status and never a model call (plan BG.5). */
@@ -483,6 +544,7 @@ export interface SettingsUpdate {
 export interface SettingsView {
   anthropic_api_key_configured: boolean;
   anthropic_api_key_hint: string | null;
+  anthropic_workspace_id: string;
   delivery_mode: string;
   derived_budgets: Record<string, number>;
   endpoint_key_saved: boolean;
@@ -618,14 +680,24 @@ export interface StartRunRequest {
   llm_provider?: string | null;
   /** Override the model for this run. */
   model_name?: string | null;
+  /** A name for the run, shown in its header and in the runs list; can be changed later. */
+  name?: string | null;
   /** Override the OpenAI-compatible base URL. */
   openai_base_url?: string | null;
+  /** With pin_model: pin to this OpenAI-compatible address instead of the settings' (no credentials in it). */
+  pin_base_url?: string | null;
+  /** Keep this run on the model it starts on, whatever the model settings become. False (the default) follows the current settings on every request. */
+  pin_model?: boolean;
+  /** With pin_model: pin to this model name instead of the settings'. */
+  pin_model_name?: string | null;
   /** Which optional human review gates to enable. */
   review_policy?: Record<string, boolean> | null;
   /** Identity recorded on review decisions. */
   reviewer?: string | null;
   /** Seed the workspace from an existing codebase. Omit for a greenfield run. */
   source?: WorkspaceSource | null;
+  /** This run's own switch settings, {name: true|false}, beating the admin page and the environment for this run only: two runs on one harness version can then be a measurement's two arms. */
+  switches?: Record<string, boolean> | null;
   /** Whether stages that need judgement (specification, reviews, escalated fixes) use the frontier model. False keeps every stage on the build model. Omit for the frontier model as configured. */
   use_frontier_model?: boolean | null;
   /** Optional human-readable label for this run's workspace directory. */
@@ -634,9 +706,29 @@ export interface StartRunRequest {
 
 /** The owner's direction to a running run, carried by its next model calls. */
 export interface SteeringNote {
+  /** Who the note is for: everyone, a group of stages (design, planning, build, tests, review) or one role. */
+  audience?: ("all" | "design" | "planning" | "build" | "tests" | "review" | "ui_ux" | "backend" | "database" | "security_reliability" | "testing" | "documentation" | "devops")[];
   /** For the rest of the run, or for the one stage that is working when it is first read. */
   scope?: "run" | "next_stage";
   text: string;
+}
+
+/** One switch on the admin page: what it does, and where its value comes from. */
+export interface SwitchEntry {
+  default: boolean;
+  details: string;
+  docker: boolean | null;
+  group: string;
+  module: string;
+  name: string;
+  on: boolean;
+  setting: boolean | null;
+  source: "setting" | "docker" | "default";
+  summary: string;
+}
+
+export interface SwitchSetting {
+  setting?: boolean | null;
 }
 
 export interface Token {

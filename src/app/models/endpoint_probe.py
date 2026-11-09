@@ -181,9 +181,29 @@ def probe_endpoint(base_url: str, api_key: str = "", *, timeout: int = PROBE_TIM
         )
 
 
+def _anthropic_status(settings: object) -> EndpointStatus:
+    """Anthropic asked in its own form: refused here, a run is told why before it starts, not at its first stage."""
+    from app.models.frontier_check import _answers, _request
+
+    why = _answers(_request(
+        "anthropic",
+        str(getattr(settings, "openai_base_url", "") or ""),
+        str(getattr(settings, "anthropic_api_key", "") or ""),
+        str(getattr(settings, "anthropic_workspace_id", "") or ""),
+    ))
+    if why is None:
+        return EndpointStatus(True, "Anthropic answered.")
+    return EndpointStatus(
+        "could not be reached" in why,
+        f"Anthropic {why}. Check the key and workspace under Settings → Models.",
+    )
+
+
 def describe_model_endpoint(settings: object) -> EndpointStatus:
     """Probe whatever endpoint these settings point at. Never raises."""
     try:
+        if str(getattr(settings, "llm_provider", "") or "").lower() == "anthropic":
+            return _anthropic_status(settings)
         return probe_endpoint(
             str(getattr(settings, "openai_base_url", "") or ""),
             str(getattr(settings, "openai_api_key", "") or ""),

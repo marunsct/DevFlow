@@ -94,7 +94,7 @@ export const cloneRun = async (
 
 
 /** How many runs one page of the list holds. */
-export const RUNS_PER_PAGE = 50;
+export const RUNS_PER_PAGE = 10;
 
 /** One page of runs, newest first; page 1 unless asked. */
 export const listRuns = async (page = 1): Promise<RunListResponse> => {
@@ -109,6 +109,8 @@ export interface RunOutcome {
   status: string;
   /** What the release knew it did not prove (Initiative J.4). */
   completion_gaps?: string[];
+  /** Those that mean the product may not work; the rest are notes. */
+  blocking_gaps?: string[];
   delivery_mode: string;
   use_frontier_model: boolean;
   started_at: string | null;
@@ -228,6 +230,27 @@ export const submitApproval = async (
 /** Stop a running run at its next step and keep it to be resumed. */
 export const pauseRun = async (runId: string): Promise<{ message: string }> => {
   const response = await api.post<{ message: string }>(`/runs/${runId}/pause`);
+  return response.data;
+};
+
+/** Give a run a name to tell it from the others in the list; an empty name clears it. */
+export const setRunName = async (runId: string, name: string): Promise<{ run_id: string; run_name: string | null }> => {
+  const response = await api.post(`/runs/${runId}/name`, { name });
+  return response.data;
+};
+
+/**
+ * Keep a run on the model it last ran on (`pinned: true`), or let it follow the current model settings again.
+ * Works mid-run: a request already sent finishes where it was sent, every new one goes to the run's model.
+ * `base_url` and `model` (when pinning) pin it to that endpoint instead, without touching the settings; neither
+ * carries a credential.
+ */
+export const setModelPin = async (
+  runId: string,
+  pinned: boolean,
+  target?: { base_url?: string; model?: string },
+): Promise<{ model_pinned: boolean; model_last: { model: string; endpoint: string } | null }> => {
+  const response = await api.post(`/runs/${runId}/model-pin`, { pinned, ...(pinned ? target : {}) });
   return response.data;
 };
 

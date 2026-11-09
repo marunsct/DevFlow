@@ -21,6 +21,8 @@ not show it for a `.js` file either. These codes are kept because each means
 the code fails when it runs:
 
     2304, 2552  a name nothing defines          -> ReferenceError
+    1361, 1362  a name imported or exported with `import type`/`export type`
+                used as a value: stripped with the types -> ReferenceError
     2448-2450   a const/let, class or enum used before its declaration runs
                                                 -> ReferenceError ("Cannot access
                                                    'x' before initialization")
@@ -79,7 +81,7 @@ MOST_FINDINGS = 8
 BROWSER, NODE, BOTH = "browser", "node", "both"
 
 _SCRIPT = r"""
-const [compiler, project, target, runtime, checkNames] = process.argv.slice(1);
+const [compiler, project, target, nodeTypes, runtime, checkNames] = process.argv.slice(1);
 const ts = require(compiler);
 const fs = require('fs'), path = require('path');
 let content = '';
@@ -106,12 +108,20 @@ process.stdin.on('data', d => content += d).on('end', () => {
     + ' declare var exports: any; declare var __dirname: string; declare var __filename: string;'
     + ' declare var Buffer: any; declare var global: any; declare var setImmediate: any;'
     + ' declare var clearImmediate: any;';
-  if (runtime !== 'browser') roots.push(NODE_GLOBALS);
+  // The project's own `@types/node`, when it is told to read it: the built-in modules (`node:fs/promises`) are then
+  // checked for the names an import asks of them. Without it they are unresolved and nothing about them is said.
+  const typeRoots = nodeTypes === '1'
+    ? [path.join(project, 'node_modules', '@types'), path.join(project, '..', 'node_modules', '@types')]
+        .filter(d => fs.existsSync(path.join(d, 'node')))
+    : [];
+  const withNodeTypes = typeRoots.length > 0;
+  if (runtime !== 'browser' && !withNodeTypes) roots.push(NODE_GLOBALS);
   const options = {
     allowJs: true, checkJs: true, noEmit: true, strict: false, noImplicitAny: false,
     strictNullChecks: false, target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext,
     moduleResolution: ts.ModuleResolutionKind.Bundler, jsx: ts.JsxEmit.Preserve,
-    lib: ['lib.esnext.d.ts', 'lib.dom.d.ts', 'lib.dom.iterable.d.ts'], types: [], skipLibCheck: true,
+    lib: ['lib.esnext.d.ts', 'lib.dom.d.ts', 'lib.dom.iterable.d.ts'], types: withNodeTypes ? ['node'] : [],
+    ...(withNodeTypes ? { typeRoots } : {}), skipLibCheck: true,
     maxNodeModuleJsDepth: 0, allowImportingTsExtensions: true,
     // A browser loads modules as ES modules and nothing else: a default import
     // from a module with no default export fails as the page loads. Node may
@@ -128,7 +138,7 @@ process.stdin.on('data', d => content += d).on('end', () => {
     return get(f, lang, onError, fresh);
   };
   const program = ts.createProgram(roots, options, host);
-  const NAMES = new Set([2304, 2552, 2448, 2449, 2450]);
+  const NAMES = new Set([2304, 2552, 2448, 2449, 2450, 1361, 1362]);
   const IMPORTS = new Set([2305, 2614, 1192, 2613, 2306, 2307]);
   // A call of a method on a built-in type that no built-in type has at all.
   const MISSING_MEMBER = new Set([2339, 2551]);
@@ -216,10 +226,35 @@ process.stdin.on('data', d => content += d).on('end', () => {
     }
     return true;
   }
+  // What the module an import at `pos` names really exports, for a built-in module that lacks a name asked of it.
+  function exportsAt(sf, pos, wanted) {
+    if (!withNodeTypes) return '';
+    for (let n = nodeAt(sf, pos); n; n = n.parent) {
+      if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier) {
+        if (!/^node:/.test(n.moduleSpecifier.text)) return '';
+        const symbol = checker.getSymbolAtLocation(n.moduleSpecifier);
+        if (!symbol) return '';
+        // The names a program can import and use: values, not the types a module also declares.
+        const isValue = e => {
+          try { return ((e.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(e) : e).flags & ts.SymbolFlags.Value) !== 0; }
+          catch { return true; }
+        };
+        const names = checker.getExportsOfModule(symbol).filter(isValue).map(e => e.name).filter(x => x !== 'default');
+        if (!names.length) return '';
+        const near = names.filter(x => wanted && (x.toLowerCase().includes(wanted.toLowerCase())
+          || wanted.toLowerCase().includes(x.toLowerCase())));
+        const rest = names.filter(x => !near.includes(x)).sort();
+        return ' `' + n.moduleSpecifier.text + '` exports only: ' + [...near, ...rest].slice(0, 40).join(', ')
+          + ' - import one of those, or write the function yourself';
+      }
+    }
+    return '';
+  }
   function describe(d, sf) {
     const at = sf.getLineAndCharacterOfPosition(d.start);
-    return { line: at.line + 1, code: d.code,
-             message: ts.flattenDiagnosticMessageText(d.messageText, ' ').split(path.resolve(project) + path.sep).join(''),
+    let message = ts.flattenDiagnosticMessageText(d.messageText, ' ').split(path.resolve(project) + path.sep).join('');
+    if (d.code === 2305) message += exportsAt(sf, d.start, sf.text.slice(d.start, d.start + (d.length || 0)));
+    return { line: at.line + 1, code: d.code, message,
              text: sf.text.split('\n')[at.line].trim().slice(0, 160) };
   }
   // The file an import at `pos` loads, as the compiler resolves it; '' when it
@@ -332,6 +367,18 @@ def runs_in(repo_root: str | Path) -> str:
     return found[0].code_runs_in or BOTH
 
 
+def _reads_node_types() -> bool:
+    """Whether the built-in modules are checked against the project's `@types/node` (behind `PACKAGE_EXPORTS_NAMED`).
+
+    Measured on a small-model run: `import { promises as fs } from 'node:fs/promises'` - a name that module does not
+    export - stopped the product at start-up, `tsc` reported it, and this service said nothing: it reads no type
+    declarations of Node's own, so every `node:` import was unresolved and left alone.
+    """
+    from app.analysis import package_exports
+
+    return package_exports.enabled()
+
+
 def underlined(repo_root: str | Path, target: Path, content: str, project: Path | None = None) -> Underlined | None:
     """The language service's certain findings for `target` holding `content`; None when it cannot run.
 
@@ -370,7 +417,8 @@ def underlined(repo_root: str | Path, target: Path, content: str, project: Path 
     runtime = runs_in(root) if kind == "application" else BOTH
     try:
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [node, "-e", _SCRIPT, compiler, str(project), str(target), runtime, "1" if check_names else "0"],
+            [node, "-e", _SCRIPT, compiler, str(project), str(target), "1" if _reads_node_types() else "0",
+             runtime, "1" if check_names else "0"],
             input=content, capture_output=True, text=True, timeout=TIMEOUT_SECONDS,
         )
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing
@@ -585,12 +633,66 @@ def _python_module_defines(project: Path, importer: Path, line: str) -> tuple[Pa
                     elif isinstance(node, (ast.Import, ast.ImportFrom)):
                         names += [(a.asname or a.name).split(".")[0] for a in node.names if a.name != "*"]
                 return candidate, sorted(dict.fromkeys(names))
+    if not dots:
+        from app.analysis import package_exports
+
+        names = package_exports.python_package_exports(project, spec)
+        if names is not None:
+            return Path(spec), names
+    return None
+
+
+_SCRIPT_IMPORT_FROM = __import__("re").compile(r"""\bfrom\s+['"]([^'"]+)['"]|\brequire\(\s*['"]([^'"]+)['"]\s*\)""")
+#: What a JavaScript or TypeScript module exports: `export function f`, `export const c`, `export { a, b as c }`, `export default`.
+_SCRIPT_EXPORTED = __import__("re").compile(
+    r"^\s*export\s+(?:declare\s+)?(?:default\s+)?(?:async\s+)?(?:abstract\s+)?"
+    r"(?:function\*?|class|const|let|var|interface|type|enum|namespace)\s+([A-Za-z_$][\w$]*)",
+    __import__("re").M,
+)
+_SCRIPT_EXPORT_LIST = __import__("re").compile(r"^\s*export\s*(?:type\s*)?\{([^}]*)\}", __import__("re").M)
+_SCRIPT_DEFAULT = __import__("re").compile(r"^\s*export\s+default\b", __import__("re").M)
+_SCRIPT_EXTENSIONS = (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")
+
+
+def _script_module_defines(project: Path, importer: Path, line: str) -> tuple[Path, list[str]] | None:
+    """The module a relative `import ... from './m'` line reads, and the names it exports; None when not found here."""
+    import re
+
+    found = _SCRIPT_IMPORT_FROM.search(line or "")
+    specifier = (found.group(1) or found.group(2)) if found else ""
+    if not specifier:
+        return None
+    if not specifier.startswith("."):
+        # A package, not a file of the project: what it really exports (a relative Path marks it as not the project's).
+        from app.analysis import package_exports
+
+        names = package_exports.script_package_exports(project, specifier)
+        return (Path(specifier), names) if names is not None else None
+    stem = (importer.parent / specifier).resolve()
+    # TypeScript writes `./m.js` for a file that is `m.ts`.
+    bare = stem.with_suffix("") if stem.suffix in _SCRIPT_EXTENSIONS else stem
+    candidates = [stem] if stem.suffix in _SCRIPT_EXTENSIONS else []
+    candidates += [Path(f"{bare}{extension}") for extension in _SCRIPT_EXTENSIONS]
+    candidates += [bare / f"index{extension}" for extension in _SCRIPT_EXTENSIONS]
+    for candidate in candidates:
+        if candidate.is_file():
+            text = candidate.read_text(encoding="utf-8", errors="replace")
+            names = list(_SCRIPT_EXPORTED.findall(text))
+            for listed in _SCRIPT_EXPORT_LIST.findall(text):
+                for part in listed.split(","):
+                    name = re.split(r"\s+as\s+", part.strip())[-1].strip()
+                    if name and name != "default":
+                        names.append(name)
+            if _SCRIPT_DEFAULT.search(text):
+                names.append("default")
+            return candidate, sorted(dict.fromkeys(names))
     return None
 
 
 #: What a module defines, by the importer's suffix: `(project, importer, import line) -> (module, names)`.
 _MODULE_DEFINES: dict[str, Callable[[Path, Path, str], tuple[Path, list[str]] | None]] = {
     ".py": _python_module_defines,
+    **{suffix: _script_module_defines for suffix in (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")},
 }
 
 
@@ -601,6 +703,54 @@ def what_the_module_defines(project: Path, importer: Path, line: str) -> tuple[P
         return reader(project, importer, line) if reader else None
     except Exception:  # noqa: BLE001 - a finding goes out as it was
         return None
+
+
+#: A name an import asks for that the module does not have: Pyright's wording, then TypeScript's.
+_A_MISSING_NAME = __import__("re").compile(
+    r"\"([^\"]+)\" is unknown import symbol|has no exported member '([^']+)'|has no default export"
+)
+
+
+def the_names_the_module_has(project: Path, importer: Path, finding: dict) -> str:
+    """A sentence naming what the module an import reads really defines, for a finding about a missing name; else "".
+
+    The compiler says which name is missing and not which exist, so a writer guesses again: measured over one night,
+    `create_access_token` imported from a module that defined `create_token`, `createApp` from one that exported
+    `app`. The harness can read the module; a model's guess at it is not a fact.
+    """
+    message = str(finding.get("message") or "")
+    wanted = _A_MISSING_NAME.search(message)
+    if wanted is None:
+        return _the_paths_the_package_has(project, message)
+    answer = what_the_module_defines(project, importer, str(finding.get("text") or ""))
+    if answer is None:
+        return ""
+    module, names = answer
+    if not module.is_absolute():
+        # A package: nothing in the project can add a name to it.
+        return (f" `{module.as_posix()}` is a package; it exports only: {', '.join(names[:25]) or 'nothing readable'}"
+                " - import one of those, or write the function yourself")
+    try:
+        shown = module.relative_to(project).as_posix()
+    except ValueError:
+        shown = module.name
+    return (f" `{shown}` defines: {', '.join(names[:25])}" if names else f" `{shown}` defines no names")
+
+
+_A_MISSING_MODULE = __import__("re").compile(r"Cannot find module '([^']+)'")
+
+
+def _the_paths_the_package_has(project: Path, message: str) -> str:
+    """A sentence naming the import paths of an installed package, after a finding about a path it does not export; else ""."""
+    found = _A_MISSING_MODULE.search(message)
+    if found is None:
+        return ""
+    from app.analysis import package_exports
+
+    paths = package_exports.package_paths(project, found.group(1))
+    if not paths:
+        return ""
+    return f" `{found.group(1)}` is not a path that package exports; the paths it exports are: {', '.join(paths[:30])}"
 
 
 #: The service that reads each suffix, as a finding names it; the rest are the TypeScript service's.
@@ -666,5 +816,5 @@ _READ_TOGETHER[".py"] = lambda project, targets: python_underlined_together(proj
 
 __all__ = [
     "BOTH", "BROWSER", "NODE", "SUFFIXES", "Underlined", "python_underlined", "python_underlined_together", "runs_in",
-    "service_name", "underlined", "underlined_any", "underlined_in", "what_the_module_defines",
+    "service_name", "the_names_the_module_has", "underlined", "underlined_any", "underlined_in", "what_the_module_defines",
 ]

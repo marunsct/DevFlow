@@ -147,6 +147,7 @@ def build_architecture_review_request(
     `app.agents.brief_constraints`.
     """
     from app.agents.brief_constraints import constraints_note
+    from app.agents.brief_over_spec import review_section
     from app.agents.text_budget import excerpt, specification_budget
 
     specification = excerpt(
@@ -161,6 +162,7 @@ def build_architecture_review_request(
         + f"--- Technical specification and ADRs under review (/docs/technical_specification.md) ---\n{specification}\n"
         + "\n" + _the_sections_it_can_have()
         + _what_the_brief_requires_that_this_defers(document_text, technical_specification_text)
+        + review_section(document_text)
         + _what_you_asked_for_last_time(earlier or [], revision)
     )
     return {"messages": [{"role": "user", "content": brief}]}
@@ -175,7 +177,9 @@ def _the_setup(environment: str) -> str:
         + environment.strip()
         + "\nWhat this setup requires is not a departure from the brief: a specification that does what it "
         "says here meets the brief's constraints in this environment. Do not raise a finding against it, "
-        "and do not ask for a change that would undo it.\n\n"
+        "and do not ask for a change that would undo it. Where the specification disagrees with it about a file the "
+        "harness keeps, the runners, the start or the entry, the setup decides, and every later stage is told so: that "
+        "is at most a minor finding whose remediation gives the setup's value, never a choice between the two.\n\n"
     )
 
 

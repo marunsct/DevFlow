@@ -993,6 +993,45 @@ def _nothing_new_lately(messages: list[Any], count: int = NOTHING_NEW_BEFORE_THE
     return False
 
 
+#: Times a fix stage is told its defect's own tests pass before only its
+#: answer is left to it (plan AY step 3).
+FIXED_NOTICES_BEFORE_THE_ANSWER = 2
+
+
+def _told_its_defect_is_fixed(messages: list[Any]) -> bool:
+    """Whether the harness has measured this stage's defect fixed after its writes at least twice, the last time too.
+
+    The measurement after each write (`app.graph.verify_after_write`) tells a
+    fixer its defect's tests pass and to answer, and a model can carry on
+    regardless. Measured on an all-on run: a fixer whose unit-test defect was
+    fixed was told so seven times and went on diagnosing another defect's
+    500s with one throwaway script after another, its own budget running out
+    on work another fixer is given. Counted from the conversation, so it
+    survives a pause and a rebuilt agent; the last measurement must still be
+    a pass, so a later write that broke the tests again keeps its tools.
+    """
+    from app.graph.verify_after_write import FAILING, PASSED
+
+    passed, last = 0, None
+    for message in messages:
+        if getattr(message, "type", None) != "tool":
+            continue
+        said = str(getattr(message, "content", "") or "")
+        if PASSED in said:
+            passed, last = passed + 1, True
+        elif FAILING in said:
+            last = False
+    return passed >= FIXED_NOTICES_BEFORE_THE_ANSWER and last is True
+
+
+#: Sent with the tools withheld once `_told_its_defect_is_fixed`.
+_FIXED_ANSWER_NOW_NOTICE = (
+    "The harness has measured your defect's own tests passing after your changes, and has told you so "
+    "more than once. Your tools are withheld: return your structured answer now, saying what you changed. "
+    "Other failing tests are other defects, each with its own fixer."
+)
+
+
 def _nothing_left_but_the_answer(messages: list[Any], limit: int, schema: Any) -> bool:
     """True on the last calls of the budget with no answer written yet.
 
@@ -1229,6 +1268,30 @@ def _pointed_reads(messages: list[Any]) -> int:
     )
 
 
+#: How much of a refusal's opening is its kind, once what it quotes and counts are taken out.
+_KIND_CHARACTERS = 80
+_QUOTED = re.compile(r"'[^']*'|`[^`]*`")
+
+
+#: The tools a refusal of the same kind does not make a loop of (see `_a_tool_refused_identically`).
+_WRITES_A_FILE = frozenset({"write_artifact", "edit_artifact", "replace_lines", "replace_approved_lines",
+                            "delete_artifact", "move_artifact"})
+
+
+def _the_kind_of(refusal: str) -> str:
+    """A refusal's opening with what it quotes and every number taken out: what kind of refusal it is."""
+    text = refusal
+    try:
+        found = json.loads(refusal[refusal.index("{"):]) if "{" in refusal else None
+        if isinstance(found, dict) and isinstance(found.get("error"), str):
+            text = found["error"]
+    except ValueError:
+        pass
+    plain = _QUOTED.sub("X", text)
+    plain = re.sub(r"\d+", "N", plain)
+    return " ".join(plain.split())[:_KIND_CHARACTERS]
+
+
 def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
     """The tool this stage keeps calling to the same failure, and how often.
 
@@ -1291,6 +1354,18 @@ def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
             continue
         key = (pair[0], "invalid_tool") if "is not a valid tool" in content else pair
         failures[key] = failures.get(key, 0) + 1
+        # And by the kind of refusal: a stage that changes its call a little
+        # each time - a different shell line, refused the same way - was never
+        # the same call twice. Measured on one run: a fixer sent ten shell
+        # lines in a minute, each refused as a whole command line in one
+        # string, and nothing escalated. The kind is the refusal's opening
+        # with whatever it quotes and counts taken out, so no guard's wording
+        # is matched.
+        # Not for a tool that writes: a stage editing a file that does not yet
+        # parse is refused the same way edit after edit while it fixes it.
+        if pair[0] not in _WRITES_A_FILE:
+            kind = (pair[0], "kind:" + _the_kind_of(content))
+            failures[kind] = failures.get(kind, 0) + 1
     if not failures:
         return None
     (name, _identity), count = max(failures.items(), key=lambda item: item[1])
@@ -1519,7 +1594,61 @@ def _thinking_is_off_here(messages: list[Any], stage_name: str = "", lost_before
     """
     return _the_last_reply_was_all_reasoning(messages) or (
         max(lost_before, _replies_that_were_all_reasoning(messages)) >= LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
-    )
+    ) or _a_fix_stage_s_salvaged_replies_turn_thinking_off(messages, lost_before)
+
+
+def _salvaged_from_its_reasoning(message: Any) -> bool:
+    """Whether a reply reasoned to its cap and was answered by reply salvage from that reasoning."""
+    from app.models.reply_salvage import SALVAGED
+
+    return getattr(message, "type", None) == "ai" and str(
+        (getattr(message, "response_metadata", None) or {}).get(SALVAGED) or "") == "reasoning"
+
+
+def _a_fix_stage_s_salvaged_replies_turn_thinking_off(messages: list[Any], lost_before: int = 0) -> bool:
+    """In a defect-fix stage, a reply salvaged from reasoning counts as one lost to it (behind the switch; owner 2026-10-29).
+
+    A salvaged reply is not lost - it was answered - so thinking stayed on and the next reply reasoned to the cap
+    again. Measured on one model: nearly every call of a fix stage reasoned its whole 12,000-token reply, about four
+    minutes a tool call, with thinking switched off once in the stage. The reply after a salvaged one goes without
+    thinking, and two in the visit (with any lost) keep it off.
+    """
+    try:
+        if not salvaged_replies_switch.enabled():
+            return False
+        from app.observability.transcript import _stage_from_config
+
+        if not _stage_from_config("").startswith("defect_fix_"):
+            return False
+        replies = [message for message in messages if getattr(message, "type", None) == "ai"]
+        if not replies:
+            return False
+        if _salvaged_from_its_reasoning(replies[-1]):
+            return True
+        salvaged = sum(1 for message in replies if _salvaged_from_its_reasoning(message))
+        lost = max(lost_before, _replies_that_were_all_reasoning(messages))
+        return salvaged + lost >= LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
+    except Exception:  # noqa: BLE001 - then thinking is decided as before
+        return False
+
+
+class _SalvagedRepliesTurnThinkingOff:
+    """`SALVAGED_REPLIES_TURN_THINKING_OFF` as the switch registry reads one: off in code, the compose file turns it on."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("In a defect-fix stage, a reply that reasoned to its cap and was salvaged counts as one lost to "
+                   "reasoning: the next reply goes without thinking, and two keep it off for the stage. Measured on one "
+                   "model, nearly every fix call reasoned its whole 12k reply, about four minutes each.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("SALVAGED_REPLIES_TURN_THINKING_OFF", _SalvagedRepliesTurnThinkingOff.ON_BY_DEFAULT)
+
+
+salvaged_replies_switch = _SalvagedRepliesTurnThinkingOff()
 
 
 def _the_same_call_running(messages: list[Any]) -> tuple[str, int] | None:
@@ -1831,6 +1960,56 @@ def _with_cut_replies_shortened(request: Any) -> Any:
     except Exception:  # noqa: BLE001 - never fail the call over a saving
         return request
 
+#: The model calls a defect-fix stage may make, behind `FIX_STAGE_CALL_CAP`. Measured over ten runs: the median
+#: productive agent-loop fix was 12 calls; the five most expensive stages were loops of 36-40 calls that ended in a
+#: surrender ("we can't fix all", empty `changed_files`), 1.1-1.9M input tokens each, under the 40-call budget every
+#: stage shares. The answer is asked for at the cap, as at any budget, and the rewrite path stays for the next try.
+FIX_STAGE_MODEL_CALLS = 16
+
+
+def _the_step_limit(step_limit: int) -> int:
+    """`step_limit`, or `FIX_STAGE_MODEL_CALLS` for a defect-fix stage when that is smaller and the switch is on."""
+    if not step_limit or not fix_stage_call_cap.enabled():
+        return step_limit
+    from app.observability.transcript import _stage_from_config
+
+    return min(step_limit, FIX_STAGE_MODEL_CALLS) if _stage_from_config("").startswith("defect_fix_") else step_limit
+
+
+class _FixStageCallCap:
+    """`FIX_STAGE_CALL_CAP` as the switch registry reads one: off in code, the compose file turns it on."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("A defect-fix stage stops at 16 model calls instead of the 40 every stage shares, and is asked for "
+                   "its answer there. Over ten runs the median productive fix took 12 calls; the costliest stages were "
+                   "36-40-call loops that ended in a surrender.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("FIX_STAGE_CALL_CAP", _FixStageCallCap.ON_BY_DEFAULT)
+
+
+fix_stage_call_cap = _FixStageCallCap()
+
+
+#: Files a stage is asked to produce as its result, written whatever has been withheld: withholding stops a stalling
+#: stage, it must not refuse the stage's own deliverable. Measured on one run: the setup stage wrote its declaration
+#: last, `write_artifact` was withheld by then, the write was refused and the setup was left to the agents.
+DELIVERABLE_FILES = ("stack-setup.json",)
+_WRITE_TOOLS = ("write_artifact", "edit_artifact")
+
+
+def _writes_the_stage_s_deliverable(call: Any) -> bool:
+    if str(call.get("name") or "") not in _WRITE_TOOLS:
+        return False
+    args = call.get("args") or {}
+    path = str(args.get("relative_path") or args.get("file_path") or args.get("path") or "")
+    return path.replace("\\", "/").rsplit("/", 1)[-1] in DELIVERABLE_FILES
+
+
 def build_settled_answer_middleware(
     schema: Any, stage_name: str = "", step_limit: int = 0
 ) -> Any:
@@ -1874,8 +2053,17 @@ def build_settled_answer_middleware(
             )
             request = _without_reasoning_after_a_lost_reply(request, stage_name, lost)
             request = _with_cut_replies_shortened(request)
+            # Older refusals as a line each in what the model reads; the
+            # guards below still count the conversation as it is stored.
+            from app.agents.refusal_folding import with_old_refusals_folded
+
+            counted = request
+            request = with_old_refusals_folded(request)
             try:
-                messages = getattr(request, "messages", None)
+                # Counted as stored - folded refusals would read as none - and
+                # sent as folded (`refusal_folding`).
+                messages = getattr(counted, "messages", None)
+                sent_messages = getattr(request, "messages", None) or messages
                 if not isinstance(messages, list) or not messages:
                     return handler(request)
                 last_ai = next(
@@ -1892,6 +2080,14 @@ def build_settled_answer_middleware(
                         "shape an answer has",
                         stage_name or "?",
                     )
+                    # Asked again with only its schema allowed, where the
+                    # server enforces that (`structured_extraction`); the
+                    # reminder below when it cannot be had.
+                    from app.agents.structured_extraction import answered_in_its_schema
+
+                    extracted = answered_in_its_schema(request, schema, stage_name)
+                    if extracted is not None:
+                        return extracted
                 elif correction:
                     logger.info(
                         "Stage %s sent an answer that does not satisfy its schema "
@@ -1913,7 +2109,7 @@ def build_settled_answer_middleware(
                     # could not be answered from the record at all, and the
                     # schema-failure count silently absorbed every warning.
                     # Diagnosing what you cannot see is finding 47 again.
-                    correction = _running_out_of_room(messages, step_limit, schema)
+                    correction = _running_out_of_room(messages, _the_step_limit(step_limit), schema)
                     if correction:
                         logger.info(
                             "Stage %s is close to its model-call budget; telling "
@@ -1998,9 +2194,13 @@ def build_settled_answer_middleware(
                     _without_the_looking_tools_in(list(getattr(request, "tools", None) or []))
                     if ignored or stalled else []
                 )
+                fixed_already = schema is not None and _told_its_defect_is_fixed(messages)
+                if fixed_already:
+                    correction = f"{correction}\n\n{_FIXED_ANSWER_NOW_NOTICE}" if correction else _FIXED_ANSWER_NOW_NOTICE
+                    logger.warning("Stage %s was told its defect is fixed and carried on; only its answer is left", stage_name or "?")
                 answer_only = (spiralled and not spiral_quiet) or _nothing_left_but_the_answer(
-                    messages, step_limit, schema
-                ) or (stalled and not writers) or (ignored and not writers) or stuck_on_a_failure
+                    messages, _the_step_limit(step_limit), schema
+                ) or (stalled and not writers) or (ignored and not writers) or stuck_on_a_failure or fixed_already
                 if ignored:
                     # Named as well: the model is told which call it kept
                     # sending, not only that its tools are gone.
@@ -2042,7 +2242,7 @@ def build_settled_answer_middleware(
                             "written; withholding its tools so the only move left "
                             "is the answer",
                             stage_name or "?",
-                            step_limit - _model_calls_used(messages),
+                            _the_step_limit(step_limit) - _model_calls_used(messages),
                         )
                 # The two withholding rungs are independent. `repeated` used to
                 # be computed only when nothing else had produced a correction,
@@ -2078,6 +2278,12 @@ def build_settled_answer_middleware(
                         notice = _the_same_call_running_notice(*repeated) if repeated is not None else ""
                     if notice:
                         notices.append(notice)
+                    # What the model has already done, when it sends the same action again (behind `AGENT_LOOP_FIX_LIMITS`).
+                    from app.graph import agent_loop_fix_limits
+
+                    again = agent_loop_fix_limits.repeat_notice(messages, _the_graph_stage(stage_name))
+                    if again:
+                        notices.append(again)
                     if notices:
                         correction = "\n\n".join([correction, *notices] if correction else notices)
                 if not correction:
@@ -2134,12 +2340,16 @@ def build_settled_answer_middleware(
                         without_reads = _without_the_read_tools_in(kept)
                         if without_reads is not None:
                             kept, narrowed = without_reads, True
+                            already = the_read_tool_is_withheld()
                             _remember_the_read_tool_is_withheld()
-                            logger.warning(
-                                "Stage %s has been refused %d redundant reads and pointed to the "
-                                "project memory for %d; withholding the read tool for the rest of it",
-                                stage_name or "?", reading_nothing_new, _pointed_reads(messages),
-                            )
+                            # Said once per stage: it is withheld on every later call too, and one stage logged it
+                            # five times in a minute.
+                            if not already:
+                                logger.warning(
+                                    "Stage %s has been refused %d redundant reads and pointed to the "
+                                    "project memory for %d; withholding the read tool for the rest of it",
+                                    stage_name or "?", reading_nothing_new, _pointed_reads(messages),
+                                )
                     if repeated is not None:
                         without_it = _without_that_tool_in(kept, repeated[0])
                         if without_it is not None:
@@ -2167,7 +2377,7 @@ def build_settled_answer_middleware(
                     refused_fallback = {**overrides, "model_settings": spiral_plainer}
                 if withheld_here:
                     correction += stable_tools_notice(withheld_here)
-                corrected = [*messages, {"role": "user", "content": correction}]
+                corrected = [*sent_messages, {"role": "user", "content": correction}]
                 if refused_fallback is not None:
                     refused_fallback = request.override(messages=corrected, **refused_fallback)
                 if "tools" in overrides:
@@ -2227,7 +2437,10 @@ def build_settled_answer_middleware(
             """
             call = getattr(request, "tool_call", None) or {}
             name = str(call.get("name") or "")
-            if name and name in self._withheld_now():
+            scratch = a_harness_scratch_delete(call)
+            if scratch is not None:
+                return scratch
+            if name and name in self._withheld_now() and not _writes_the_stage_s_deliverable(call):
                 from langchain_core.messages import ToolMessage
 
                 # Opens as a refusal, so the guards that count refused and
@@ -2271,7 +2484,7 @@ def build_settled_answer_middleware(
                 # after reading the refusal, 51 calls past its budget, until the
                 # run's own guard restarted it.
                 refused = _the_same_refused_answer_running(messages, schema)
-                over = bool(step_limit) and _model_calls_used(messages) >= step_limit
+                over = bool(_the_step_limit(step_limit)) and _model_calls_used(messages) >= _the_step_limit(step_limit)
                 if refused and (over or refused >= SAME_REFUSED_ANSWERS_BEFORE_ENDING):
                     logger.warning(
                         "Stage %s sent the same refused answer %d time(s) running%s; ending it so "
@@ -2332,7 +2545,7 @@ def build_settled_answer_middleware(
             # when a valid answer exists, and ending with a valid answer is
             # never worse than continuing without one. Under the budget,
             # repetition is still required.
-            if step_limit and _model_calls_used(messages) >= step_limit:
+            if _the_step_limit(step_limit) and _model_calls_used(messages) >= _the_step_limit(step_limit):
                 spent = _most_recent_answer(messages, schema)
                 if spent is not None:
                     logger.info(
@@ -2510,3 +2723,27 @@ __all__ = [
     "was_stopped_by_the_budget",
     "was_stopped_for_no_progress",
 ]
+
+
+#: The name the harness saves a command line's code under (`agent_toolkit`).
+_HARNESS_SCRATCH = re.compile(r"(?:^|/)tmp-inline-[0-9a-f]{8}\.\w+$")
+
+
+def a_harness_scratch_delete(call: dict) -> Any:
+    """The answer to a delete of a file the harness saved command-line code to, or None for any other call.
+
+    Nothing to delete: the harness removes these itself. Answered as done rather than refused - measured over 30
+    runs, stages tried 67 times, and a refusal while deleting was withheld was sent again and again.
+    """
+    if str(call.get("name") or "") != "delete_artifact":
+        return None
+    path = str((call.get("args") or {}).get("relative_path") or "")
+    if not _HARNESS_SCRATCH.search(path):
+        return None
+    from langchain_core.messages import ToolMessage
+
+    return ToolMessage(
+        content=f"`{path}` is the harness's own copy of a command's code: it removes it itself, so there is nothing "
+                "to delete. Go on with the work.",
+        tool_call_id=str(call.get("id") or ""), name="delete_artifact", status="success",
+    )

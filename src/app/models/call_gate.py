@@ -71,6 +71,27 @@ def forget_calls_from_before(started: float) -> int:
     return removed
 
 
+def lift_a_hold_from_before(started: float) -> bool:
+    """Remove the hold when it was set before `started`: the deploy that set it is over.
+
+    A deploy sets the hold, restarts the worker and lifts it. Found in review:
+    the deploy runs under `set -e`, so a failed `compose up` or an interrupted
+    deploy exits with the hold still set, and from then on every model call
+    waits its whole `MOST_SECONDS_HELD` for a deploy that no longer exists. A
+    worker that starts after the hold was set is the restart that hold was
+    waiting for. Called by a worker as it starts, with its own start time;
+    returns whether a hold was removed.
+    """
+    hold = gate_directory() / "hold"
+    try:
+        if hold.stat().st_mtime < started:
+            hold.unlink()
+            return True
+    except OSError:
+        return False
+    return False
+
+
 def _wait_while_held(sleep=time.sleep, clock=time.monotonic) -> None:
     if not held():
         return
@@ -141,7 +162,23 @@ def a_model_call(server: str = "") -> Iterator[None]:
         try:
             from app.models import server_profile
 
-            server_profile.check_again(run)
+            noticed = server_profile.check_again(run)
+            if any(part.startswith("model ") for part in noticed.split(": ", 1)[-1].split(", ")):
+                # Another model behind the same server: diagnosed before this
+                # call, as a run's first segment would (`app.models.diagnostics`).
+                from app.models import build_default_chat_model
+                from app.models.diagnostics import diagnose_if_new
+                from app.models.reply_salvage import measure_if_new
+
+                served = build_default_chat_model()
+                diagnose_if_new(served)
+                measure_if_new(served)
+                from app.models.diagnostics import apply, recorded
+                from app.models.model_guidance import deep_if_new
+                from app.models.reply_salvage import served_name
+
+                deep_if_new(served)
+                apply(served, recorded(served_name(served)))
         except Exception:  # noqa: BLE001 - telemetry never stops a call
             pass
     key = _server_key(server)
@@ -176,3 +213,24 @@ def a_model_call(server: str = "") -> Iterator[None]:
                 )
                 logger.warning(text)
                 _tell_the_run(run, stage, text)
+
+
+
+def _stop_if_this_run_was_stopped() -> None:
+    """Raise the run's stop when this process paused or cancelled the run whose stage is calling (`workflow.stopped_here`)."""
+    import sys
+
+    if "app.graph.workflow" not in sys.modules:
+        return
+    from app.graph.workflow import RunCancelled, stopped_here
+
+    try:
+        from langgraph.config import get_config
+
+        from app.tracing import APP_RUN_ID_KEY
+
+        run_id = (get_config() or {}).get("configurable", {}).get(APP_RUN_ID_KEY)
+    except Exception:  # noqa: BLE001 - outside a run there is nothing to stop
+        return
+    if stopped_here(run_id):
+        raise RunCancelled(f"Run {run_id} was stopped; this stage's call is not made.")

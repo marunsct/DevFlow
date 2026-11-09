@@ -72,6 +72,23 @@ def test_a_disputed_test_that_fails_alone_goes_on_to_the_reopen(tmp_path, monkey
     assert still == ["[AC-4] deletes a record"] and alone == []
 
 
+def test_only_the_files_holding_a_disputed_test_are_run_again(tmp_path, monkeypatch, _a_small_suite) -> None:
+    """A service suite runs each file with its own server; the dispute needs only the files of the tests it names."""
+    asked = []
+    monkeypatch.setattr("app.stacks.contract.read", lambda root: {})
+    monkeypatch.setattr("app.stacks.scaffold.sandbox_runner", lambda root: (lambda *a, **k: {}))
+
+    def each_file(root, record, run, *, naming=None):
+        asked.append(naming)
+        return [{"file": FLOW, "outcome": "failed"}]
+
+    monkeypatch.setattr("app.acceptance.per_file.each_file", each_file)
+
+    acceptance_nodes.tests_that_fail_alone(tmp_path, ["[AC-4] deletes a record"])
+
+    assert asked == [{"AC-4"}]
+
+
 def test_a_test_that_cannot_be_re_measured_is_left_on_the_list(tmp_path, monkeypatch, _a_small_suite) -> None:
     """No runner, no record, no file: unknown is not passed, and the dispute
     keeps the test it named."""

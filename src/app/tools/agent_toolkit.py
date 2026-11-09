@@ -37,6 +37,17 @@ from app.tools.repository import (
 
 logger = logging.getLogger(__name__)
 
+#: The most lines `read_repository_file` returns when asked for a whole file:
+#: `read_file`'s own default window, `workspace_paths.DEFAULT_READ_LINES` - not
+#: imported, because that module imports this one.
+MOST_LINES_READ_WHOLE = 400
+
+#: What a whole-file read past `MOST_LINES_READ_WHOLE` says after its first window.
+FIRST_WINDOW_NOTE = (
+    "This file has {total} lines; the first {shown} are above. Read the rest by giving start_line and "
+    "line_count, or search the file for the name you need."
+)
+
 
 def build_repository_read_tools(repo_root: str, allow_subdirectories: bool = True) -> list[BaseTool]:
     """Return read-only repository tools bound to a fixed repository root.
@@ -85,7 +96,14 @@ def build_repository_read_tools(repo_root: str, allow_subdirectories: bool = Tru
         """
         try:
             if start_line == 1 and line_count is None:
-                return read_text_file(repo_root, relative_path)
+                text = read_text_file(repo_root, relative_path)
+                if text.count("\n") < MOST_LINES_READ_WHOLE:
+                    return text
+                # A file of a large codebase runs to thousands of lines, and
+                # whole it filled the window. The first window and where the
+                # rest is, as `read_file` pages a file it was not given a limit for.
+                window = read_text_lines(repo_root, relative_path, start_line=1, line_count=MOST_LINES_READ_WHOLE)
+                return {**window, "note": FIRST_WINDOW_NOTE.format(shown=window["end_line"], total=window["total_lines"])}
             return read_text_lines(
                 repo_root, relative_path, start_line=start_line, line_count=line_count
             )
@@ -662,6 +680,10 @@ def _code_flags_in_words() -> str:
     )
 
 
+#: Code written as an ES module: a static `import ... from` / `import '...'` / `export` at a line's start.
+_ESM_SYNTAX = re.compile(r"^\s*(?:import\s+[\w*{\s][^;\n]*?\sfrom\s+['\"]|import\s+['\"]|export\s+(?:default|const|function|class|async|\{))", re.M)
+
+
 def _code_on_the_command_line_as_a_file(
     command: Any, repo_root: str, working_directory: str | None, author: str = ""
 ) -> tuple[Any, str]:
@@ -692,6 +714,11 @@ def _code_on_the_command_line_as_a_file(
     extension, template = flags[str(command[at])]
     given = str(command[at + 1])
     code = template.replace("{code_json}", json.dumps(given)).replace("{code}", given)
+    # `.cjs` so `require` works whatever the package's module type - unless the code is written as a module: a
+    # `.cjs` file cannot `import`, and measured on one run two fixers' probes failed on that alone and each concluded
+    # "cannot run tests in this environment".
+    if extension == ".cjs" and _ESM_SYNTAX.search(code):
+        extension = ".mjs"
     try:
         from app.tools.repository import pinned_project_directory
 
@@ -715,10 +742,15 @@ def _code_on_the_command_line_as_a_file(
         project_memory.record(root, recorded, _stage_from_config(author or "run_terminal_command"))
     except Exception:  # noqa: BLE001 - bookkeeping must never fail the command
         pass
-    return rewritten, (
-        f"Ran the code you passed on the command line from `{recorded}`, saved there so what ran can be "
-        "read afterwards; a `tmp-` file is removed before the next test round and at release."
-    )
+    return rewritten, f"Ran the code you passed on the command line from `{recorded}`. " + SAVED_CODE_NOTE
+
+
+#: Said with every command whose code was saved to a file. Measured over 30 runs: stages tried to delete these files
+#: 67 times, many while deleting was withheld, each refusal sent again.
+SAVED_CODE_NOTE = (
+    "It was saved there so what ran can be read afterwards; the harness removes the file itself before the next "
+    "test round and at release - do not delete it."
+)
 
 
 #: Shell operators a `cd` may be followed by before its command.
@@ -755,6 +787,17 @@ def _a_cd_taken_as_the_working_directory(
             joined = alone
         elif base == alone or base.endswith("/" + alone):
             joined = base
+    program = rest[0]
+    if repo_root and base and "/" in program and not os.path.isabs(program) \
+            and not (Path(repo_root) / joined / program).exists():
+        # The folder the command's own program is in. Measured over 30 runs: 23 refusals of `.venv/bin/python` "not
+        # installed" came from `cd bookmarks && .venv/bin/python ...` with `bookmarks` as `working_directory`, run in
+        # `bookmarks/bookmarks` - a real folder, the product's package named like its project - where no `.venv` is.
+        alone = os.path.normpath(folder.strip("/"))
+        for candidate in (alone, base):
+            if (Path(repo_root) / candidate / program).exists():
+                joined = candidate
+                break
     moved = (
         f"Ran `{' '.join(rest)}` in `{joined}`: `cd` is not a program here, so the folder was taken as "
         f"`working_directory`, which is how to run a command elsewhere."

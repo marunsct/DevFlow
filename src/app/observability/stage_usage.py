@@ -63,6 +63,12 @@ def stage_usage(entries: Iterable[dict]) -> list[dict[str, Any]]:
     asked_at: dict[str, list[datetime]] = {}
     read_calls: dict[str, str] = {}
     for entry in entries:
+        if entry.get("kind") == "provenance":
+            # A new segment of the run (a start, a resume, a deploy): a request still open was the stopped process's
+            # and will never be answered. Measured (owner, 2026-11-08): one open when a host fault stopped the run was
+            # paired with the first reply 19 hours later, and the run's tokens a second fell from about 90 to 3.3.
+            asked_at.clear()
+            continue
         stage = str(entry.get("stage") or "")
         if not stage:
             continue
@@ -79,6 +85,10 @@ def stage_usage(entries: Iterable[dict]) -> list[dict[str, Any]]:
         if kind == "model_request" and at is not None:
             # Oldest first: a stage asks several at once (a specification in parts).
             asked_at.setdefault(stage, []).append(at)
+        elif kind == "model_error":
+            # It has no reply: left open, the next reply would be timed from it, a pause or a restart included.
+            if asked_at.get(stage):
+                asked_at[stage].pop(0)
         elif kind == "model_response":
             row["model_calls"] += 1
             started = asked_at[stage].pop(0) if asked_at.get(stage) else None
@@ -124,6 +134,8 @@ def recent_calls(entries: Iterable[dict], now: datetime | None = None) -> list[d
             continue
         if entry.get("kind") == "model_request":
             asked_at.setdefault(stage, []).append(at)
+        elif entry.get("kind") == "model_error" and asked_at.get(stage):
+            asked_at[stage].pop(0)  # no reply to time
         elif entry.get("kind") == "model_response":
             started = asked_at[stage].pop(0) if asked_at.get(stage) else None
             usage = entry.get("usage") or {}

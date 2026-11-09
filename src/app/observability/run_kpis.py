@@ -122,12 +122,15 @@ def _calls_shown_lessons(records: list[dict]) -> int:
 
 def _the_prefix_breaks(records: list[dict]) -> dict:
     """Why calls missed the cached prefix, and the uncached input tokens behind each reason (plan PX.1)."""
-    from app.observability.prefix_breaks import REASONS, breaks
+    from app.observability.prefix_breaks import OPENING_BLOCKS, REASONS, breaks
 
     found = breaks(records)
     return {
         **{f"prefix_break_{why}": found["calls_by_reason"].get(why, 0) for why in REASONS},
         **{f"uncached_tokens_{why}": found["uncached_tokens_by_reason"].get(why, 0) for why in REASONS},
+        # Which opening block moved (HR2.C.3): the input to any change of the request layout.
+        **{f"uncached_tokens_opening_{block}": found.get("uncached_tokens_opening_by_block", {}).get(block, 0)
+           for block in OPENING_BLOCKS},
     }
 
 
@@ -187,7 +190,10 @@ def kpis(records: list[dict]) -> dict:
                 model_iv.append((opened[stage].pop(0), _seconds(r["at"])))
             usage = r.get("usage") or {}
             output = usage.get("output_tokens") or 0
-            cached = (usage.get("input_token_details") or {}).get("cache_read") or 0
+            details = usage.get("input_token_details") or {}
+            if "cache_read" in details:
+                count["cache_reported"] += 1
+            cached = details.get("cache_read") or 0
             tokens["input"] += usage.get("input_tokens") or 0
             tokens["output"] += output
             tokens["cached"] += cached
@@ -210,7 +216,11 @@ def kpis(records: list[dict]) -> dict:
                 extra["output_lost"] += output
                 row["lost_replies"] += 1
         elif kind == "model_error":
-            count["model_errors"] += 1
+            # A request a pause cut short is the operator's doing, not the model's (measured: 14 of one run's 15).
+            if not str(r.get("error") or "").startswith("RunCancelled"):
+                count["model_errors"] += 1
+            if opened.get(stage):
+                opened[stage].pop(0)  # no reply: the next one is timed from its own request
         elif kind == "resumed":
             count["resumes"] += 1
         elif kind == "steering_applied":
@@ -258,7 +268,11 @@ def kpis(records: list[dict]) -> dict:
     wall = max((max(times) - min(times)) - discarded, 0.0) if times else 0.0
     model_busy = _busy(model_iv)
     ordered = sorted(times)
-    gaps = [b - a for a, b in zip(ordered, ordered[1:])]
+    # A silence inside one model call is the model working, not a run left without a worker (harness review R3,
+    # measured: every gap over ten minutes since the orphan sweep was fixed was one request waiting 11-14 minutes
+    # for its own reply, and was taken off the run's active time as "orphaned").
+    gaps = [b - a for a, b in zip(ordered, ordered[1:])
+            if not any(start <= a and b <= end for start, end in model_iv)]
     # A rewind's own gap is discarded time, already taken off the wall.
     orphan = max(sum(g for g in gaps if g > ORPHAN_GAP_SECONDS) - discarded, 0.0)
     effective_input = tokens["input"] - tokens["cached"]
@@ -299,7 +313,9 @@ def kpis(records: list[dict]) -> dict:
         "reasoning_share_estimated": _share(extra["reasoning_tokens_estimated"], tokens["output"]),
         "lost_reply_output_share": _share(extra["output_lost"], tokens["output"]),
         "invalid_tool_call_rate": _share(extra["invalid_tool_calls"], count["model_calls"]),
-        "cached_token_share": _share(tokens["cached"], tokens["input"]),
+        # Unknown, not 0, when no call reported a cache read: a server that reports nothing has no share (harness
+        # review C1 - 112 of 217 ledger rows read 0% for that reason alone).
+        "cached_token_share": _share(tokens["cached"], tokens["input"]) if count["cache_reported"] else None,
         "replies_lost_to_length": count["replies_lost_to_length"],
         "tool_calls": count["tool_calls"],
         "tool_failure_rate": _share(count["tool_failures"], count["tool_calls"]),

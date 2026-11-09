@@ -24,7 +24,7 @@ from datetime import datetime, timedelta, timezone
 
 _FAMILIES = (
     (r"^defect_fix(_\d+_\d+)?$", "defect_fix"), (r"^test_round_\d+$", "test_round"),
-    (r"^acceptance_author_\d+$", "acceptance_author"), (r"^acceptance_review_\d+$", "acceptance_review"),
+    (r"^acceptance_author_\d+(_g\d+|_fill)?$", "acceptance_author"), (r"^acceptance_review_\d+$", "acceptance_review"),
     (r"^consult_.+$", "consult"), (r"^advice_review_.+$", "advice_review"), (r"^specialist_.+$", "specialist"),
     (r"^code_review_.+$", "code_review"), (r"^stack_setup_\d+$", "stack_setup"),
 )

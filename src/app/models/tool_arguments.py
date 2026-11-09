@@ -522,6 +522,30 @@ def _bare(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", cleaned.lower())
 
 
+def _the_call_it_wraps(call: dict[str, Any], parameters: dict[str, Any]) -> None:
+    """A call wrapping an offered tool's call - its name in one argument, its arguments in another - made that call.
+
+    Measured on one run: a sprint planner sent its whole plan as
+    `Skill({"skill": "SprintPlanOutput", "arguments": {...}})`. `Skill` is not
+    offered, so the call was refused and the plan thrown away; its next
+    answer, sent properly, had dropped half of it. A call to a tool not
+    offered, holding exactly one value that names an offered tool and one
+    object, is that tool's call with that object. Never raises.
+    """
+    try:
+        name, args = str(call.get("name") or ""), call.get("args")
+        if name in parameters or not isinstance(args, dict):
+            return
+        named = [value.strip() for value in args.values() if isinstance(value, str) and value.strip() in parameters]
+        objects = [value for value in args.values() if isinstance(value, dict)]
+        if len(named) != 1 or len(objects) != 1 or len(args) != 2:
+            return
+        logger.info("A call to `%s` wrapping `%s` taken as that call", name, named[0])
+        call["name"], call["args"] = named[0], objects[0]
+    except Exception:  # noqa: BLE001 - the refusal stands
+        return
+
+
 def _taken_as_the_tool_it_learned_elsewhere(call: dict[str, Any], parameters: dict[str, Any]) -> None:
     """A call to a tool known by another harness's name, renamed to the offered one it means (M.5). Never raises."""
     try:
@@ -593,6 +617,30 @@ def _the_one_its_arguments_fit(args: Any, parameters: dict[str, Any]) -> str | N
     return fitting[0] if len(fitting) == 1 else None
 
 
+def _the_answer_in_the_text(message: Any, name: str, schema: dict[str, Any]) -> dict[str, Any]:
+    """The answer's fields from the reply's text, when an answer tool was called empty; {} otherwise.
+
+    Only a stage's answer tool, named after its schema's class: a work tool called empty is the model's mistake to
+    see, not something to fill. Measured on one run: the architect's whole core specification came back as JSON in
+    the text beside `TechnicalSpecificationOutput({})`, and the empty call was taken - every core section empty.
+    """
+    if not name or name == name.lower():
+        return {}
+    text = getattr(message, "content", "")
+    if isinstance(text, list):
+        text = "".join(str(part.get("text", "")) if isinstance(part, dict) else str(part) for part in text)
+    text = str(text or "")
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return {}
+    found = _parsed_leniently(text[start:end + 1])
+    fields = set((schema or {}).get("properties") or {})
+    if not isinstance(found, dict) or not fields:
+        return {}
+    taken = {key: value for key, value in found.items() if key in fields}
+    return taken if taken and len(taken) * 2 >= len(found) else {}
+
+
 def decode_structured_arguments(result: Any, tools: Any) -> Any:
     """Each tool call in a chat result, its arguments decoded where its tool's schema wants structure."""
     parameters = _parameters_by_tool(tools)
@@ -605,12 +653,19 @@ def decode_structured_arguments(result: Any, tools: Any) -> Any:
         except Exception:  # noqa: BLE001 - a recovery that cannot run changes nothing
             logger.info("Invalid tool calls could not be recovered", exc_info=True)
         for call in getattr(message, "tool_calls", None) or []:
+            _the_call_it_wraps(call, parameters)
             _taken_as_the_tool_it_learned_elsewhere(call, parameters)
             offered = _the_offered_tool_meant(str(call.get("name") or ""), parameters, call.get("args"))
             if offered is not None:
                 logger.info("A call to `%s`, which is not offered, taken as `%s`", call.get("name"), offered)
                 call["name"] = offered
             schema = parameters.get(str(call.get("name") or ""))
+            if schema is not None and not call.get("args"):
+                written = _the_answer_in_the_text(message, str(call.get("name") or ""), schema)
+                if written:
+                    logger.warning("`%s` was called with no arguments and its %d field(s) in the reply's text; "
+                                   "answered from the text", call.get("name"), len(written))
+                    call["args"] = written
             if schema is not None:
                 call["args"] = with_the_written_parameters_apart(call.get("args"), schema)
                 if isinstance(call["args"], dict) and CUT_OFF in call["args"]:

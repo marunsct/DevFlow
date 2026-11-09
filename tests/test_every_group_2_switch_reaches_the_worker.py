@@ -20,22 +20,47 @@ from app.observability.provenance import SWITCHES
 
 COMPOSE = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text()
 
-#: Built after the all-on baseline and not turned on by the owner: plan QM.2
-#: adds fix stages to every sprint whose criteria pass, so it is measured
-#: before it joins the baseline.
-NOT_TURNED_ON_YET = frozenset({"MUTATION_GUIDED_TESTS"})
+#: Since 2026-10-29 (owner: no switch for a bug; premium features bundled over a free base; experiments off until
+#: measured) the deployed switches are the bundles and the experiments; every feature is one of those or built in.
 
 
-def test_every_switch_is_passed_through_and_defaults_on():
+def test_the_operated_switches_reach_the_worker_bundles_on_and_experiments_off():
+    from app import switches
+
+    for name in switches.BUNDLES:
+        assert re.search(rf"^  {name}: \$\{{{name}:-on\}}$", COMPOSE, re.M), name
+    for name in switches.EXPERIMENTS:
+        deployed = "on" if name in switches.EXPERIMENTS_ON else "off"
+        assert re.search(rf"^  {name}: \$\{{{name}:-{deployed}\}}$", COMPOSE, re.M), name
+    assert set(switches.EXPERIMENTS_ON) <= set(switches.EXPERIMENTS)
+
+
+def test_every_feature_is_built_in_bundled_or_an_experiment_once_and_none_is_deployed_on_its_own():
+    from app import switches
+
+    places = [*switches.BUILT_IN, *(m for members in switches.BUNDLES.values() for m in members), *switches.EXPERIMENTS]
+    assert sorted(places) == sorted(SWITCHES)
     for name in SWITCHES:
-        found = re.search(rf"^  {name}: \$\{{{name}:-([a-z]*)\}}$", COMPOSE, re.M)
-        assert found, f"{name} does not reach the worker"
-        assert found.group(1) == ("off" if name in NOT_TURNED_ON_YET else "on"), name
+        if name not in switches.EXPERIMENTS:
+            assert not re.search(rf"^  {name}: ", COMPOSE, re.M), name
 
 
-def test_the_switches_not_turned_on_yet_are_switches_off_in_their_code_too():
+def test_a_built_in_fix_is_on_with_nothing_set_and_a_feature_follows_its_bundle(monkeypatch):
+    from app import switches
+
+    monkeypatch.delenv("SWITCH_OVERRIDES_FROM_SETTINGS", raising=False)
+    monkeypatch.delenv("STALL_RULE", raising=False)
+    assert switches.is_on("STALL_RULE", False) is True
+    monkeypatch.delenv("MUTATION_GUIDED_TESTS", raising=False)
+    monkeypatch.setenv("PREMIUM_DEEP_VERIFICATION", "off")
+    assert switches.is_on("MUTATION_GUIDED_TESTS", True) is False
+    monkeypatch.setenv("PREMIUM_DEEP_VERIFICATION", "on")
+    assert switches.is_on("MUTATION_GUIDED_TESTS", False) is True
+
+
+def test_the_experiments_are_off_in_their_code_too():
+    from app import switches
     from app.observability.provenance import switch
 
-    for name in NOT_TURNED_ON_YET:
-        assert name in SWITCHES, name
+    for name in switches.EXPERIMENTS:
         assert switch(SWITCHES[name]).ON_BY_DEFAULT is False, name

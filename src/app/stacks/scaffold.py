@@ -17,7 +17,7 @@ import logging
 import re
 import shutil
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Sequence
 
 from app.acceptance import junit
@@ -43,6 +43,8 @@ class ScaffoldResult:
     project: str
     steps: list[dict[str, Any]] = field(default_factory=list)
     problem: str = ""
+    #: How far a custom setup's proof got: "", declaration, install, build, unit, acceptance, recorded (HR2.SS.4).
+    level: str = ""
 
 
 def entrypoint_is_still_the_stub(repo_root: str | Path) -> str | None:
@@ -65,7 +67,9 @@ def entrypoint_is_still_the_stub(repo_root: str | Path) -> str | None:
     record = contract.read(repo_root)
     if not record or not record.get("scaffolded", True):
         return None
-    pack = pack_named(str(record.get("pack") or ""))
+    # By the contract, so a proven custom setup's pack is found too (HR2.SS.6), not only a named pack.
+    found = contract.the_pack(repo_root)
+    pack = found[0] if found else None
     if not pack:
         return None
     declared = [str(e) for e in (getattr(pack, "entrypoint", "") or "", *(getattr(pack, "entrypoints", ()) or ())) if e]
@@ -100,7 +104,8 @@ def _served_entrypoints(repo_root: str | Path) -> tuple[str, list[str]]:
     from app.stacks import contract, pack_named
 
     record = contract.read(repo_root) or {}
-    pack = pack_named(str(record.get("pack") or ""))
+    found = contract.the_pack(repo_root)  # a proven custom setup's too (HR2.SS.6)
+    pack = found[0] if found else None
     if not pack:
         return "", []
     project = str(record.get("project") or "")
@@ -233,6 +238,112 @@ def _modules_nothing_imports(root: Path, project: str, entrypoints: list[str], p
     return problems
 
 
+#: Source code only: a manifest, a page or a configuration file is loaded by the tools, not named by the code.
+_SOURCE_SUFFIXES = frozenset({".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".go", ".rs", ".rb", ".java", ".kt",
+                              ".php", ".cs", ".swift", ".dart", ".ex", ".exs"})
+#: Folders whose files never load a template: installed dependencies, caches, reports.
+_NOT_A_LOADER = ("node_modules", ".venv", "venv", "__pycache__", ".git", "dist", "build", "test-results", "coverage")
+
+
+def _the_ways_a_file_is_named(relative: str) -> list[str]:
+    """How another file would load `relative`: its path, its file name, its module path, a relative import."""
+    path = PurePosixPath(relative)
+    names = [relative, path.name]
+    if path.suffix == ".py":
+        module = ".".join(path.with_suffix("").parts)
+        names += [module, f"from .{path.stem} ", f"from . import {path.stem}", f"import {path.stem}"]
+        if path.stem == "__init__":
+            return []  # a package marker is loaded by its folder's name
+    else:
+        names += [f"./{path.stem}'", f'./{path.stem}"', f"./{path.name}"]
+    return names
+
+
+def remove_untouched_templates_nothing_loads(repo_root: str | Path) -> list[str]:
+    """Delete each pack source file still byte-equal to the pack's template that no other file names; the paths deleted.
+
+    Harness review HR2.PR.4: 16 products shipped the browser pack's unchanged `src/main.js` beside the `app.js` the page
+    loads, and one shipped a 150-line scaffold module nothing served. Only the harness's own file, unchanged, and only
+    when no other file of the project names it by path, file name or module; kept files (the start script and the
+    like) are never touched. Never raises.
+    """
+    try:
+        from app.analysis.file_kinds import classify_file
+        from app.stacks import contract
+
+        root = Path(repo_root)
+        found = contract.the_pack(root)
+        if not found:
+            return []
+        pack, record = found
+        project = str((record or {}).get("project") or "")
+        base = root / project if project else root
+        templates = pack.render(project, str((record or {}).get("title") or project))
+        others: dict[Path, str] = {}
+        for path in base.rglob("*"):
+            if path.is_file() and not (set(path.relative_to(base).parts) & set(_NOT_A_LOADER)) and path.stat().st_size < 400_000:
+                try:
+                    others[path] = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+        removed: list[str] = []
+        for relative, template in templates.items():
+            target = base / relative
+            if relative in getattr(pack, "kept_files", ()) or classify_file(relative) != "application" \
+                    or PurePosixPath(relative).suffix not in _SOURCE_SUFFIXES:
+                continue
+            if not target.is_file() or others.get(target) != template:
+                continue
+            names = _the_ways_a_file_is_named(relative)
+            if not names or any(name in text for path, text in others.items() if path != target for name in names):
+                continue
+            target.unlink()
+            removed.append(target.relative_to(root).as_posix())
+        return removed
+    except Exception:  # noqa: BLE001 - a template left behind is untidy, not wrong
+        logger.debug("Could not look for untouched templates", exc_info=True)
+        return []
+
+
+#: An entry file this short is the pack's own stub, which the release removes (LF.717), not a second copy of the code.
+_A_STUB_S_LINES = 20
+
+
+def _entries_the_page_does_not_load(root: Path, project: str, entrypoints: list[str], pack: Any) -> list[str]:
+    """A declared entry file of real size that the pack's own page does not load: the page runs other code.
+
+    Measured on a run (hidden 10/10): the page ran its whole program in an inline script, while the 410-line
+    `src/main.js` the pack declares was loaded by nothing - fixes were made in it, and all twelve changes the
+    mutation check made to it went unnoticed. The page is the one the pack writes (an `.html` file of its files).
+    """
+    files = getattr(pack, "files", {}) or {}
+    pages = [name for name in files if str(name).endswith(".html") and "{{" not in str(name)]
+    found: list[str] = []
+    for page in pages:
+        target = root / page
+        if not target.is_file():
+            continue
+        html = target.read_text(encoding="utf-8", errors="replace")
+        # The scripts the pack's own page loads: what this page must load. A declared entry another module imports
+        # (a framework's root component, imported by the page's script) is not the page's to load.
+        loaded_by_the_template = re.findall(r"<script[^>]*\bsrc=[\"']\.?/?([^\"']+)[\"']", str(files.get(page) or ""))
+        for entry in dict.fromkeys(loaded_by_the_template):
+            path = root / entry
+            if not entry.endswith((".js", ".mjs", ".ts", ".tsx", ".jsx")) or not path.is_file():
+                continue
+            if entry in html or Path(entry).name in html:
+                continue
+            lines = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+            if lines < _A_STUB_S_LINES:
+                continue
+            found.append(
+                f"`{project}/{page}` does not load `{project}/{entry}` ({lines} lines): the page runs other code, so "
+                f"changes to `{project}/{entry}` change nothing anyone sees. Have the page load it "
+                f"(`<script type=\"module\" src=\"{entry}\">`) and keep the program in that one file."
+            )
+    return found
+
+
 def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
     """Code beside the served app that the product never runs, and unit tests that only test it. Never raises.
 
@@ -251,11 +362,17 @@ def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
     try:
         project, entrypoints = _served_entrypoints(repo_root)
         root = Path(repo_root) / project
+        from app.stacks import contract as _contract
+
+        found_pack = _contract.the_pack(repo_root)
+        page_problems = _entries_the_page_does_not_load(root, project, entrypoints, found_pack[0]) \
+            if found_pack and root.is_dir() else []
         if not entrypoints or not root.is_dir():
-            return []
+            return page_problems
         from app.stacks import contract, pack_named
 
-        pack = pack_named(str((contract.read(repo_root) or {}).get("pack") or ""))
+        found = contract.the_pack(repo_root)  # a proven custom setup's too (HR2.SS.6)
+        pack = found[0] if found else None
         from app.acceptance import suite
         from app.analysis.walk import files_under
 
@@ -272,7 +389,9 @@ def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
                 f"(e.g. `{project}/{mirrored[0]}`), and nothing serves it: the product runs from "
                 f"`{project}/{entrypoint}`. Change the served copy; the other is never built or run."
             )
+        problems.extend(page_problems)
         problems.extend(_modules_nothing_imports(root, project, entrypoints, pack))
+
         for family in sorted({_family(e) for e in entrypoints} - {""}):
             tests = [f for f in files if _family(f) == family and _a_unit_test(Path(f).name, pack)]
             served_folders = {
@@ -428,6 +547,20 @@ def _this_scaffold_s_own(repo_root: Path, pack: StackPack, project: str) -> bool
     return bool(record) and record.get("pack") == pack.name and record.get("project") == project \
         and not _contract.scaffolded(record)
 
+def make_a_script_executable(target: Path, content: str) -> None:
+    """A file the pack writes that starts with `#!` is a script: it is run by its name, so it can be.
+
+    Measured: a pack's `start.sh` was written without the execute bit, a fixer for the criterion "the project has a
+    start.sh that starts the service" rewrote it to get one, and its rewrite replaced the pack's command with one that
+    only worked inside the test run's environment.
+    """
+    if content.startswith("#!"):
+        try:
+            target.chmod(target.stat().st_mode | 0o111)
+        except OSError:
+            pass
+
+
 def scaffold(
     repo_root: str | Path,
     pack: StackPack,
@@ -458,6 +591,7 @@ def scaffold(
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+        make_a_script_executable(target, content)
     # Recorded before the first command, as not yet proven: the sandbox reads
     # the pack's needs from it (`sandbox._process_memory`), and a toolchain
     # that needs more than every pack gets failed its own smoke test without.

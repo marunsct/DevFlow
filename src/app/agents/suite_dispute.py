@@ -19,6 +19,7 @@ product is wrong is not named, and stays the product's to fix.
 
 from __future__ import annotations
 
+import logging
 import re
 
 from pathlib import Path
@@ -53,6 +54,64 @@ class SuiteDispute(BaseModel):
     )
 
 
+class DisputeRuling(BaseModel):
+    """One failing test, ruled on against a quoted standard (plan item 19, behind `STRUCTURED_DISPUTE_VERDICT`)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    test: str = Field(..., description="The failing test's name exactly as given.")
+    the_test_is_wrong: bool = Field(
+        ...,
+        description=(
+            "True only when no product doing what the standard below says could pass the test as written; "
+            "false when a right product would pass it and this product fails it."
+        ),
+    )
+    the_test_asserts: str = Field(..., description="What the test checks, in one sentence, from its code.")
+    the_standard_says: str = Field(
+        ...,
+        description=(
+            "The sentence of the criterion, the brief or the specification the test is judged against, quoted "
+            "word for word."
+        ),
+    )
+
+
+class SuiteDisputeWithRulings(SuiteDispute):
+    """The answer with one ruling per failing test, so the harness reads the verdict, not the wording."""
+
+    rulings: list[DisputeRuling] = Field(
+        ...,
+        min_length=1,
+        description=(
+            "One ruling for each failing test shown - required, even when every failure is the product's (then each "
+            "ruling says the test is not wrong). The harness reopens a test only when its ruling says the test is "
+            "wrong and quotes the standard."
+        ),
+    )
+
+
+class _StructuredDisputeVerdict:
+    """`STRUCTURED_DISPUTE_VERDICT` as the switch registry reads one: off in code and in compose until measured."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("The QA lead's dispute answer carries one ruling per failing test - wrong or right, what it asserts, "
+                   "the standard's sentence quoted - and the harness reopens tests by the ruling rather than reading "
+                   "its prose (plan item 19). Off until measured against the prose reading.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("STRUCTURED_DISPUTE_VERDICT", _StructuredDisputeVerdict.ON_BY_DEFAULT)
+
+
+structured_verdict_switch = _StructuredDisputeVerdict()
+
+
+from app.agents.brief_over_spec import QA_RULE  # the rule the suite's writer was given
+
 _SYSTEM_PROMPT = (
     "You are the QA lead. The acceptance suite you approved is locked: it is the definition "
     "of done, and only QA may change it. A sprint's attempt has failed, and some locked tests "
@@ -64,16 +123,22 @@ _SYSTEM_PROMPT = (
     "criterion and the brief do not. A test the product fails because the product is wrong is "
     "not named: that is the product's to fix. The product's code is not the standard: what "
     "it renders, returns or lacks says nothing about whether a test is right, so never open "
-    "the product's files to decide what a test may expect - the criterion, the brief and the "
-    "specification decide. An empty answer is a good answer. You write no code and no files."
+    "the product's files to decide what a test may expect - the criterion and the brief decide, "
+    "and the specification only what the brief leaves open. "
+    + QA_RULE.lstrip("- ").strip() + " "
+    "An empty answer is a good answer. You write no code and no files."
     "\n\n" + STRUCTURED_RESPONSE_RULE
 )
 
 
 def build_dispute_request(
-    failing: Sequence[tuple[str, str, str]], test_code: str, brief: str
+    failing: Sequence[tuple[str, str, str]], test_code: str, brief: str, measured: Sequence[str] = ()
 ) -> dict[str, list[dict[str, str]]]:
-    """The QA lead's input: (test name, criterion, failure) for each, the suite's code, the brief."""
+    """The QA lead's input: (test name, criterion, failure) for each, the suite's code, the brief, and what was measured.
+
+    `measured`: `suite.the_suite_failed_in_its_own_words`. Measured on one run: a dispute ruled on what 46 tests assert,
+    found each fair, and none of them had ever reached the product.
+    """
     shown = "\n\n".join(
         f"### {name}\nCriterion: {criterion}\nHow it failed:\n{message[:FAILURE_CHARS]}"
         for name, criterion, message in list(failing)[:MOST_TESTS]
@@ -81,7 +146,13 @@ def build_dispute_request(
     content = (
         "The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         f"--- The locked tests that failed through every round of the attempt ---\n{shown}\n\n"
-        f"--- The suite's code ---\n{test_code}\n\n"
+        + (
+            "--- What the harness measured about these failures ---\n" + "\n".join(measured) + "\n"
+            "A fair assertion that never ran proves nothing: rule on whether these tests can pass as the suite stands, "
+            "not only on what they assert.\n\n"
+            if measured else ""
+        )
+        + f"--- The suite's code ---\n{test_code}\n\n"
         + (f"--- The brief ---\n{brief.strip()[:4000]}\n\n" if brief.strip() else "")
         + "Name each test above that no product doing what its criterion says could pass, "
         "and why. Leave out every one the product fails because it is wrong."
@@ -101,7 +172,7 @@ def create_suite_dispute_agent(
         name="suite_dispute",
         stage="acceptance_dispute",
         system_prompt=_SYSTEM_PROMPT,
-        response_format=SuiteDispute,
+        response_format=SuiteDisputeWithRulings if structured_verdict_switch.enabled() else SuiteDispute,
         model=model,
         checkpointer=checkpointer,
         repo_root=repo_root,
@@ -111,6 +182,8 @@ def create_suite_dispute_agent(
 
 
 #: A test title's criterion tags: `[AC-5][AC-12] `.
+logger = logging.getLogger(__name__)
+
 _TAGS = re.compile(r"^(?:\s*\[[^\]]+\])+\s*")
 
 
@@ -125,7 +198,202 @@ def _what_a_line_says_of(lines: Sequence[str], spellings: Sequence[str]) -> str 
     return None
 
 
-def tests_it_names(answer: Any, failing_names: Sequence[str]) -> list[str]:
+#: A clause whose cause is what the product does: the implementation, the code, the actual answer.
+_THE_PRODUCT_DOES = re.compile(
+    r"\b(?:the\s+)?(?:implementation|product|code|actual(?:\s+\w+){0,2}|server|service|api|endpoint|handler|"
+    r"response|returned\s+\w+)\b[^.;]{0,40}?\b(?:includes?|returns?|contains?|has|have|adds?|sends?|responds?|gives?|"
+    r"lacks?|omits?|parses?|sets?|uses?|loads?|reads?|writes?|persists?|stores?|saves?|ignores?|throws?|crash\w*|"
+    r"never\s+\w+|fails?\s+to|cannot|can't|did\s+not|didn't|does\s+not|doesn't|is\s+not|isn't|are\s+not|aren't)\b", re.I)
+#: A clause whose subject is the test asking for what the standard does not give.
+_THE_TEST_OVERASKS = re.compile(
+    r"\b(?:test|it|assert\w*|expect\w*|asks?|requires?)\b[^.;]{0,100}?\b(?:criterion|criteria|brief|specification|spec|"
+    r"interface)\b[^.;]{0,40}?\b(?:does\s+not|do\s+not|doesn't|never|nowhere|not\s+(?:require|mention|state|say|specify|define|ask))\b",
+    re.I)
+
+
+#: A predicate about what the product does, whatever its subject - a product's own symbol as often as "the product":
+#: `StorageService.load() is never called`, `data is not loaded on startup`, `the handler never runs`.
+_A_PRODUCT_PREDICATE = re.compile(
+    r"\b(?:is|are|was|were|gets?)\s+(?:never|not)\s+\w+(?:ed|en)\b|"
+    r"\bnever\s+(?:called|invoked|runs?|executed|loaded|loads|read|reads|written|writes|persisted|persists|saved|saves|"
+    r"stored|stores|implemented|happens|reached|triggered|set|initiali[sz]ed|awaited|registered|mounted|wired)\b|"
+    r"\b(?:is|are)\s+(?:missing|undefined|absent|unimplemented|hard-?coded)\b", re.I)
+
+
+#: A clause about the test's own steps, in the words the dispute asks for ("it asserts something its own steps never
+#: set up"), or saying it fails whatever the product does. Measured on one run: "it asserts that updated.title equals
+#: a freshly generated random string ...; its own steps never set up" matched "never set" as the product's, and a
+#: test no product can pass stayed locked.
+_THE_TEST_S_OWN = re.compile(
+    r"\b(?:its|the\s+test'?s?)\s+own\s+(?:steps|setup|calls?|requests?|data|values?|arguments?)\b|"
+    r"\b(?:would|will|must)\s+fail\s+(?:even|whatever|for\s+any|on\s+any|against\s+any)\b", re.I)
+
+
+def judged_by_the_code(why: str) -> bool:
+    """Whether a reason sets a test aside for what the product does rather than for what the criterion says.
+
+    Measured on two runs: "the implementation includes createdAt and updatedAt, which are not part of the criterion"
+    set aside the tests of a criterion that lists a record's three fields; "the implementation parses the body as
+    JSON regardless of header and responds with 200 instead of the 415 the specification defines" set aside the
+    specification's own test. Each is the product departing from the standard, which is the product's to fix. A
+    reason is the product's only when no clause of it says the test asks for what the standard does not.
+    """
+    clauses = [clause for clause in re.split(r"[.;]", str(why or "")) if clause.strip()]
+    if any(_THE_TEST_OVERASKS.search(clause) or _THE_TEST_S_OWN.search(clause) for clause in clauses):
+        return False
+    return any(_THE_PRODUCT_DOES.search(clause) or _A_PRODUCT_PREDICATE.search(clause) for clause in clauses)
+
+
+def _plainly(text: str) -> str:
+    """Text as a reader sees it, for comparing a quote: no markdown marks, one kind of quote mark, single spaces."""
+    text = re.sub(r"[`*]", "", str(text or "")).replace('"', "'").replace("\u2014", " ").replace("\u2013", " ")
+    # "AC-3:" quoted for the criteria's "AC-3", a comma dropped: marks a reader does not weigh.
+    text = re.sub(r"[:,]", " ", text)
+    return " ".join(text.split()).casefold()
+
+
+#: The run of a quoted sentence's words the standard must hold in order, or all of them when it has fewer.
+WORDS_IN_A_ROW = 8
+
+
+def _with_dashes_kept(text: str) -> str:
+    """`text` with a dash between words kept as " - ", which `_plainly` would otherwise make a space."""
+    return re.sub(r"\s*[\u2014\u2013]\s*", " - ", str(text or ""))
+
+
+#: The fewest words a quote before a dash must have to stand on its own as the standard quoted.
+LEAST_QUOTED_WORDS = 4
+
+
+def _a_run_held(words: list[str], the_standard: str) -> bool:
+    """Whether `WORDS_IN_A_ROW` of `words` in order (all of them when fewer) are in the plain standard."""
+    needed = min(WORDS_IN_A_ROW, len(words))
+    return any(
+        f" {' '.join(words[at:at + needed])}".rstrip(".;") in the_standard
+        for at in range(len(words) - needed + 1)
+    )
+
+
+#: A criterion's label - `AC-15`, `[AC-15]` - names the sentence; it is not one of the standard's words. Measured on one
+#: run: "AC-15: Filter functionality works correctly." was refused where the standard held the criterion unlabelled.
+_A_LABEL = re.compile(r"\[?(?<![\w-])[a-z]{1,6}-\d+(?![\w-])\]?")
+
+
+def _without_labels(plain: str) -> str:
+    return " ".join(_A_LABEL.sub(" ", plain).split())
+
+
+def _the_standard_holds(quoted: str, standard: str) -> bool:
+    """Whether most of a quote - by its words - is sentences with a long run of words in the standard, marks aside.
+
+    Measured on one run: right rulings joined sentences of the specification, left out its backticks and put a
+    function's signature before a sentence of it, a match of the whole string refused each, and fixers went after a
+    product doing what the standard says. A sentence the standard does not hold still refuses the quote: one run's
+    "standard" was a sentence of the instructions.
+    """
+    the_standard = " " + " ".join(word.strip("'") for word in _without_labels(_plainly(standard)).split()) + " "
+    # A quote, a dash, then the judge's reason: the reason is not offered as the standard. Measured on one run: a
+    # criterion quoted verbatim, then a longer "- the test creates two but asserts three", was refused twice and the
+    # run re-planned a right product. The quoted half must be the standard's own words, at least four of them.
+    quoted = _without_labels(_plainly(_with_dashes_kept(quoted)))
+    lead, dash, _ = quoted.partition(" - ")
+    lead_words = [word.strip("'") for word in lead.split() if word.strip("'")]
+    if dash and len(lead_words) >= LEAST_QUOTED_WORDS and _a_run_held(lead_words, the_standard):
+        return True
+    # The same with a full stop: the standard's sentence, then the judge's working. Measured on one run: "characters
+    # counts every character, newlines included. The string ... is 23 characters long (11 + 1 + 11)" was refused for
+    # both of two wrong tests, and the run went on fixing a product that counted right.
+    first, stop, _ = quoted.partition(". ")
+    first_words = [word.strip("'") for word in first.split() if word.strip("'")]
+    if stop and len(first_words) >= LEAST_QUOTED_WORDS and _a_run_held(first_words, the_standard):
+        return True
+    held = total = 0
+    # A quoted passage and a gloss after a dash are parts of their own: `"when it is empty, all are shown" - meaning
+    # every bookmark` was one 12-word sentence needing 8 words in a row, though its quoted half was verbatim.
+    parts = re.split(r"(?<=[.;])\s+|\s+-\s+|'\s+|\s+'", quoted)
+    for sentence in parts:
+        words = [word.strip("'") for word in sentence.split() if word.strip("'")]
+        if not words:
+            continue
+        total += len(words)
+        if _a_run_held(words, the_standard):
+            held += len(words)
+    # Most of the quote must be the standard's own sentences; a line of the judge's own beside them does not refuse
+    # it. Measured on one run: three right rulings in a row, each with one summary line, were refused.
+    return bool(total) and held * 2 >= total
+
+
+class _CriterionQuoted:
+    """Whether a ruling whose quote is not the standard's own words is taken with its test's own criterion quoted.
+
+    Measured on two runs: five rulings rightly called a test wrong (24 characters for a 25-character string), each
+    quoting the criterion in its own words ("count_characters returns len(text)"); each was refused, and the runs
+    went on fixing products that counted right. The criterion each test is for is the harness's own text.
+    """
+
+    #: `DISPUTE_QUOTES_THE_CRITERION` set to on or off overrides this.
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("A dispute ruling that calls a test wrong in its own words, not the standard's, is taken with the "
+                   "failing test's own criterion quoted for the repair and the judge's wording labelled as the "
+                   "judge's; a ruling with no criterion of its own is still refused. Off until measured.")
+
+    def enabled(self) -> bool:
+        from app.switches import is_on
+
+        return is_on("DISPUTE_QUOTES_THE_CRITERION", self.ON_BY_DEFAULT)
+
+
+criterion_quoted_switch = _CriterionQuoted()
+CRITERION_QUOTED_ON_BY_DEFAULT = _CriterionQuoted.ON_BY_DEFAULT
+
+
+def _tests_the_rulings_name(
+    rulings: Sequence[Any], failing_names: Sequence[str], standard: str = "", refused: list[tuple[str, str]] | None = None,
+    criteria_of: dict[str, str] | None = None,
+) -> list[str]:
+    """The repair feedback for each failing test a ruling calls wrong, with what it asserts and the standard quoted.
+
+    Read by the field, not the wording: tonight's prose classifier filed "its own steps never set up" as a reason about
+    the product (LF.405) and needed four patches. A ruling with no quoted standard reopens nothing.
+    """
+    named = []
+    for ruling in rulings:
+        test = " ".join(str(getattr(ruling, "test", "") or "").split())
+        quoted = " ".join(str(getattr(ruling, "the_standard_says", "") or "").split())
+        asserts = " ".join(str(getattr(ruling, "the_test_asserts", "") or "").split())
+        if not getattr(ruling, "the_test_is_wrong", False) or len(quoted.split()) < 3 or not asserts:
+            continue
+        name = next((n for n in failing_names if n == test or _TAGS.sub("", n).strip() == _TAGS.sub("", test).strip()), None)
+        # Measured on one run: the "standard" quoted was a sentence of the instructions this very call was given.
+        if standard.strip() and not _the_standard_holds(quoted, standard):
+            own = " ".join(str((criteria_of or {}).get(name or "", "") or "").split())
+            if name and own and criterion_quoted_switch.enabled():
+                # The test's own criterion, as the harness holds it, is what the repair is held to; the judge's
+                # wording goes with it as the judge's.
+                if not any(line.startswith(f"`{name}`") for line in named):
+                    named.append(
+                        f"`{name}` cannot pass for any product that does what its criterion says: it checks that "
+                        f"{asserts}. Its criterion says \"{own}\" (the judge's reading: {quoted}). Fix the test so "
+                        "that it checks what the criterion says."
+                    )
+                continue
+            logger.warning("A ruling on `%s` quotes what the standard does not say; the test stays locked: %s", test, quoted[:200])
+            if refused is not None:
+                refused.append((test, "quotes what the standard does not say"))
+            continue
+        if name and not any(line.startswith(f"`{name}`") for line in named):
+            named.append(
+                f"`{name}` cannot pass for any product that does what its criterion says: it checks that {asserts}, "
+                f"and the standard says \"{quoted}\". Fix the test so that it checks what the standard says."
+            )
+    return named
+
+
+def tests_it_names(
+    answer: Any, failing_names: Sequence[str], standard: str = "", refused: list[tuple[str, str]] | None = None,
+    criteria_of: dict[str, str] | None = None,
+) -> list[str]:
     """The suite's repair feedback for each failing test the answer names.
 
     By its name, or by its title without the criterion tags, in any case: one
@@ -134,13 +402,25 @@ def tests_it_names(answer: Any, failing_names: Sequence[str]) -> list[str]:
     and none of them reopened while only the exact name counted. Only tests
     that are failing can be named, so a loose match names nothing else.
     """
+    rulings = list(getattr(answer, "rulings", None) or []) if structured_verdict_switch.enabled() else []
+    if rulings:
+        return _tests_the_rulings_name(rulings, failing_names, standard, refused, criteria_of)
     lines = [" ".join(str(line).split()) for line in getattr(answer, "cannot_pass", None) or []]
     named = []
-    for name in failing_names:
-        clean_tag = name.split()[0] if name.startswith("[") else name
-        why = _what_a_line_says_of(lines, (name, _TAGS.sub("", name).strip(), clean_tag))
+    # A bare tag stands for a test only when no other failing test carries it: two tests of one criterion named as
+    # "[AC-4]" reopened both, counted both against the cap, and told QA to change the right one (deep review, A3).
+    leading = [name.split()[0] if name.startswith("[") else name for name in failing_names]
+    for name, clean_tag in zip(failing_names, leading):
+        alone = leading.count(clean_tag) == 1
+        why = _what_a_line_says_of(lines, (name, _TAGS.sub("", name).strip(), clean_tag if alone else ""))
         # A name with no reason is not a judgement: one run's QA lead listed
         # nine names bare, eight of them a later sprint's unbuilt work.
+        if why and len(why.split()) >= 3 and judged_by_the_code(why):
+            # The code is not the standard (the prompt's rule): a test set aside for what the product does stays.
+            logger.warning("The QA lead set `%s` aside for what the product does, not what its criterion says; it stays locked: %s", name, why[:200])
+            if refused is not None:
+                refused.append((name, "judged by what the product does"))
+            continue
         if why and len(why.split()) >= 3:
             named.append(
                 f"`{name}` cannot pass for any product that does what its criterion says"
@@ -154,5 +434,6 @@ __all__ = [
     "SuiteDispute",
     "build_dispute_request",
     "create_suite_dispute_agent",
+    "judged_by_the_code",
     "tests_it_names",
 ]

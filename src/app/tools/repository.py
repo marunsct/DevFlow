@@ -17,6 +17,8 @@ import subprocess
 import logging
 import threading
 import tomllib
+import contextlib
+import contextvars
 from collections import OrderedDict
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
@@ -1750,11 +1752,14 @@ def _a_file_the_harness_keeps(root: Path, relative: str) -> str | None:
     except Exception:  # noqa: BLE001 - no contract, nothing kept
         return None
     project = str(record.get("project") or "")
-    command = " ".join(str(part) for part in record.get("acceptance_test") or [])
+    # Both runners: a kept file may configure the unit tests, and naming only the acceptance command sent a stage
+    # that wanted the unit run to skip a folder to a suite it was not running (eight refused edits in a row).
+    commands = [" ".join(str(part) for part in record.get(key) or []) for key in ("unit_test", "acceptance_test")]
+    named = " and ".join(f"`{c}`" for c in dict.fromkeys(c for c in commands if c)) or "the project's test commands"
     return (
-        f"'{relative}' is test configuration the harness set up and keeps: it starts the "
-        f"product for the acceptance suite and already works. It cannot be changed. Run "
-        f"`{command}` in `{project}/` as it is; if it fails, the cause is in the product."
+        f"'{relative}' is test configuration the harness set up and keeps, for the project's test runners, and it "
+        f"already works. It cannot be changed. Run {named} in `{project}/` as they are; a test that fails there is "
+        "fixed in the product, or in that test's own file - never by changing which tests the runner collects."
     )
 
 
@@ -1787,8 +1792,30 @@ _COMMANDS_HELD_TO_THE_LINE = (_THE_ACCEPTANCE_AUTHOR, _A_TEST_ROUND)
 _MOST_HELD_BYTES = 40 * 1024 * 1024
 
 
+#: Set while the harness only asks whether a write would be refused, with nothing written or refused.
+_JUST_ASKING: contextvars.ContextVar[bool] = contextvars.ContextVar("just_asking_whether_a_write_is_refused", default=False)
+
+
+@contextlib.contextmanager
+def just_asking():
+    """Inside it the write guards answer as always but count no refusal.
+
+    Measured on one run: before and after every command the harness asked the
+    guards about every file in the workspace, and each product file counted as
+    a refused write. The acceptance author's count stood at 124 after six
+    commands with one real refusal among them, so that one said "every one
+    will be refused: stop and return your structured response".
+    """
+    token = _JUST_ASKING.set(True)
+    try:
+        yield
+    finally:
+        _JUST_ASKING.reset(token)
+
+
 def _not_this_stage_s(root: Path, target: Path) -> bool:
-    return bool(_the_harness_s_own_or_the_locked_suite(root, target) or _a_tester_changing_the_product(root, target))
+    with just_asking():
+        return bool(_the_harness_s_own_or_the_locked_suite(root, target) or _a_tester_changing_the_product(root, target))
 
 
 def _workspace_files(root: Path) -> list[Path]:
@@ -1811,7 +1838,7 @@ def _ignored_by_git(root: Path, relatives: list[str]) -> set[str]:
         return set()
     try:
         done = subprocess.run(["git", "-C", str(root), "check-ignore", "--stdin"], input="\n".join(relatives),
-                              capture_output=True, text=True, timeout=20)
+                              capture_output=True, text=True, errors="replace", timeout=20)
     except (OSError, subprocess.SubprocessError):
         return set()
     return {line.strip() for line in done.stdout.splitlines() if line.strip()}
@@ -1920,8 +1947,9 @@ def _the_harness_s_own_or_the_locked_suite(root: Path, target: Path) -> str | No
         if where and not inside:
             return _outside_its_own_files() + (
                 f"'{relative}' is not part of the acceptance suite. QA writes only "
-                f"`{where}/`; the product is built by the stages that own it, after "
-                "this suite is locked."
+                f"`{where}/`; the product is built and fixed by the stages that own it. A test that fails "
+                "because the product is wrong is right as it is: leave it failing for them. Change a test "
+                "only where it checks something its criterion does not say."
             )
         return None
     if not protected:
@@ -1953,7 +1981,14 @@ def _a_tester_changing_the_product(root: Path, target: Path, content: str = "") 
     work order listed, over the version another stage had just written.
 
     Tests, test configuration, documents and package manifests stay theirs.
+
+    A fix stage held to tests only (`TESTS_ONLY_WRITES`) is refused product code the same way.
     """
+    from app.tools import tests_only_writes
+
+    held = tests_only_writes.refusal(root, target)
+    if held is not None:
+        return held
     try:
         from app.observability.transcript import _stage_from_config
 
@@ -2058,6 +2093,47 @@ def record_work_order_files(root: str | Path, owners: Mapping[str, str]) -> None
         logger.warning("Could not record the work orders' files", exc_info=True)
 
 
+#: The files a layered setup stage was asked to write, by the project they are in (`custom_setup.layered_setup`).
+SETUP_SCOPE_FILE = ".harness/setup-scope.json"
+_TEST_PARTS = frozenset({"test", "tests", "acceptance", "spec", "__tests__", "e2e"})
+_A_TEST_NAME = re.compile(r"(^test_|_test\.|\.test\.|\.spec\.)")
+
+
+def _beyond_the_setup_s_files(root: Path, target: Path) -> str | None:
+    """The refusal for a layered setup stage writing the product's own code, behind `SETUP_SCOPE_GUARD`; else None.
+
+    Measured on a stack no pack covers: asked for four framework files, the setup stage wrote the whole product -
+    a 239-line application, its storage, 297 lines of acceptance tests - before the specification's builders ran;
+    nothing changed after the lock and the product shipped a start that worked nowhere else (hidden 0 of 9).
+    Only a code file that is neither one the stage was asked for nor a test is refused; manifests, configuration and
+    the declaration stay open.
+    """
+    try:
+        from app.observability.transcript import _stage_from_config
+        from app.stacks import setup_scope
+
+        if not str(_stage_from_config("") or "").startswith("stack_setup") or not setup_scope.enabled():
+            return None
+        scope = json.loads((root / SETUP_SCOPE_FILE).read_text(encoding="utf-8"))
+        shown = target.relative_to(root).as_posix()
+    except (OSError, ValueError, TypeError):
+        return None
+    project = str(scope.get("project") or "").strip("/")
+    asked = {f"{project}/{path}" if project else str(path) for path in scope.get("files") or []}
+    parts = shown.split("/")
+    if (shown in asked or not shown.endswith(_CODE_SUFFIXES_OF_A_PRODUCT) or parts[-1] == "__init__.py"
+            or _TEST_PARTS & set(parts[:-1]) or _A_TEST_NAME.search(parts[-1])):
+        return None
+    listed = ", ".join(f"`{path}`" for path in sorted(asked)) or "its framework files"
+    return (f"'{shown}' is the product's code, not the setup's: this stage writes {listed}, its declaration, its "
+            "smoke tests and the project's manifests and test configuration. The builders write the product from "
+            "the specification after the setup is proven. Nothing was written.")
+
+
+_CODE_SUFFIXES_OF_A_PRODUCT = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".cs",
+                               ".rb", ".php", ".ex", ".exs", ".vue", ".svelte")
+
+
 def _another_work_order_s_file(root: Path, target: Path) -> str | None:
     """The refusal for a specialist writing a file another work order owns, or None.
 
@@ -2072,6 +2148,9 @@ def _another_work_order_s_file(root: Path, target: Path) -> str | None:
     lists, and only in the milestone whose plan recorded it. Files no work
     order lists stay open to whoever needs them.
     """
+    beyond = _beyond_the_setup_s_files(root, target)
+    if beyond is not None:
+        return beyond
     try:
         from app.observability.transcript import _stage_from_config
 
@@ -2131,6 +2210,8 @@ def _outside_its_own_files() -> str:
     through `edit_artifact` - fourteen calls, every one a different file or
     tool, so the count kept per file never reached its threshold.
     """
+    if _JUST_ASKING.get():
+        return ""
     try:
         from app.agents.stage_memory import store
 
@@ -2155,6 +2236,8 @@ def _again_and_again(shown: str) -> str:
     was refused `src/ui.js`, the interface work order's file, six times with
     six different `replace_lines`, the same refusal each time.
     """
+    if _JUST_ASKING.get():
+        return ""
     try:
         from app.agents.stage_memory import store
 
@@ -3460,6 +3543,127 @@ def _typography_insensitive_span(original: str, find: str) -> tuple[int, int] | 
     return start, start + len(plain_find)
 
 
+def _a_repaired_span(original: str, find: str) -> tuple[tuple[int, int], str] | None:
+    """Where a `find` that matches nowhere as given matches once repaired, and what was forgiven; else None.
+
+    Before refusing, try the two things that are wrong with a `find` far more
+    often than the agent's intent is: line-number prefixes copied out of
+    `read_file`, and a different left margin. Each fallback still requires a
+    *unique* match, so the exactness guarantee is unchanged - only the
+    transcription is forgiven. Shared by `edit_approved_artifact` and
+    `content_with_passage_replaced`.
+    """
+    attempts: list[tuple[str, str]] = []
+    # Composed, not tried one at a time. Each repair used to be applied
+    # to the original `find` alone, so a passage carrying BOTH faults
+    # defeated both: `\\\\n` collapses to `\\n`, which is still a
+    # literal backslash-n and still not the newline the file holds, and
+    # neither candidate ever matched.
+    #
+    # Measured on one run's `test_round_1`, which sent
+    # `...index.html`;\\n    await page.evaluate(...)` - double-escaped
+    # around a JSON-escaped newline - and was answered with a quoted
+    # near-miss it could not act on. Composing costs three extra string
+    # searches on a call that has already failed.
+    for candidate, explanation in _transcription_repairs(find):
+        attempts.append((candidate, explanation))
+    attempts.append((
+        find,
+        "Matched ignoring indentation - the passage you gave was indented "
+        "differently from the file. Copy indentation exactly from what you read.",
+    ))
+
+    for candidate, explanation in attempts:
+        if candidate != find and original.count(candidate) == 1:
+            start = original.index(candidate)
+            span: tuple[int, int] | None = (start, start + len(candidate))
+        else:
+            span = _indentation_insensitive_span(original, candidate)
+        if span is None:
+            # Blank lines are the other part of a passage an agent
+            # reconstructs rather than reads. See
+            # `_blank_line_insensitive_span`.
+            span = _blank_line_insensitive_span(original, candidate)
+            if span is not None:
+                explanation = (
+                    "Matched ignoring blank lines and indentation - every line "
+                    "you gave is in the file, in that order, but the spacing "
+                    "between them differs. Copy the passage exactly from what "
+                    "you read, blank lines included."
+                )
+        if span is None:
+            # Typographic characters the model wrote plainly, or the
+            # other way round (Initiative G, the Unicode half).
+            span = _typography_insensitive_span(original, candidate)
+            if span is not None:
+                explanation = (
+                    "Matched ignoring quotes, dashes and non-breaking spaces written "
+                    "differently from the file (curly or straight, a long dash or a "
+                    "hyphen). Copy those characters exactly from what you read."
+                )
+        if span is not None:
+            return span, explanation
+    span = _whitespace_insensitive_span(original, find)
+    if span is not None:
+        return span, ("Matched ignoring spaces inside the lines - the passage you gave is spaced differently "
+                      "from the file. Copy spacing exactly from what you read.")
+    return None
+
+
+#: The shortest passage, spaces left out, that is matched ignoring its spacing.
+_LEAST_FOR_A_SPACING_MATCH = 20
+
+
+def _whitespace_insensitive_span(original: str, find: str) -> tuple[int, int] | None:
+    """Where `find` matches once with every space, tab and newline left out of both; None otherwise (deep review F7).
+
+    Measured on one run: an anchor copied as `{a:1}` where the file reads `{ a: 1 }` was refused, and every such
+    refusal cost a model turn. Still exactly one match, and only for a passage long enough to identify one.
+    """
+    wanted = re.sub(r"\s+", "", find)
+    if len(wanted) < _LEAST_FOR_A_SPACING_MATCH:
+        return None
+    kept = [(i, ch) for i, ch in enumerate(original) if not ch.isspace()]
+    squeezed = "".join(ch for _, ch in kept)
+    at = squeezed.find(wanted)
+    if at < 0 or squeezed.find(wanted, at + 1) >= 0:
+        return None
+    return kept[at][0], kept[at + len(wanted) - 1][0] + 1
+
+
+def content_with_passage_replaced(relative_path: str, original: str, find: str, replace: str) -> str:
+    """`original` with the one passage `find` replaced by `replace`, written nowhere.
+
+    The matching `edit_approved_artifact` does - exactly once, else the same
+    repairs of a transcribed passage, each still unique - for a caller that
+    applies several edits to one file and writes the result once, through the
+    write path and its parse checks. Raises RepositoryToolError, saying why,
+    when `find` is empty or matches no passage or several.
+    """
+    if not find:
+        raise RepositoryToolError(
+            "The SEARCH part is empty. Copy the lines to change from the file into it."
+        )
+    occurrences = original.count(find)
+    if occurrences == 1:
+        return original.replace(find, replace, 1)
+    if occurrences > 1:
+        raise RepositoryToolError(
+            f"That SEARCH text appears {occurrences} times in '{relative_path}', so it is "
+            f"ambiguous which one to change. It starts at {_where_each_match_starts(original, find)}. "
+            "Add a line around it that differs between them."
+        )
+    repaired = _a_repaired_span(original, find)
+    if repaired is not None:
+        (start, end), _ = repaired
+        written = _the_replacement_without_its_find_s_gutter(find, replace)
+        return original[:start] + written + original[end:]
+    raise RepositoryToolError(
+        f"Could not find that SEARCH text in '{relative_path}'. It must match the file exactly, "
+        f"including whitespace and punctuation.{_how_it_differs(original, find)}"
+    )
+
+
 def edit_approved_artifact(
     repo_root: str | Path, relative_path: str, find: str, replace: str
 ) -> dict[str, str]:
@@ -3511,62 +3715,9 @@ def edit_approved_artifact(
             return _already_there(target, root, relative_path, replace, wrapped)
 
         if occurrences == 0:
-            # Before refusing, try the two things that are wrong with a `find`
-            # far more often than the agent's intent is: line-number prefixes
-            # copied out of `read_file`, and a different left margin. Each
-            # fallback still requires a *unique* match, so the exactness
-            # guarantee is unchanged - only the transcription is forgiven.
-            attempts: list[tuple[str, str]] = []
-            # Composed, not tried one at a time. Each repair used to be applied
-            # to the original `find` alone, so a passage carrying BOTH faults
-            # defeated both: `\\\\n` collapses to `\\n`, which is still a
-            # literal backslash-n and still not the newline the file holds, and
-            # neither candidate ever matched.
-            #
-            # Measured on one run's `test_round_1`, which sent
-            # `...index.html`;\\n    await page.evaluate(...)` - double-escaped
-            # around a JSON-escaped newline - and was answered with a quoted
-            # near-miss it could not act on. Composing costs three extra string
-            # searches on a call that has already failed.
-            for candidate, explanation in _transcription_repairs(find):
-                attempts.append((candidate, explanation))
-            attempts.append((
-                find,
-                "Matched ignoring indentation - the passage you gave was indented "
-                "differently from the file. Copy indentation exactly from what you read.",
-            ))
-
-            for candidate, explanation in attempts:
-                if candidate != find and original.count(candidate) == 1:
-                    start = original.index(candidate)
-                    span = (start, start + len(candidate))
-                else:
-                    span = _indentation_insensitive_span(original, candidate)
-                if span is None:
-                    # Blank lines are the other part of a passage an agent
-                    # reconstructs rather than reads. See
-                    # `_blank_line_insensitive_span`.
-                    span = _blank_line_insensitive_span(original, candidate)
-                    if span is not None:
-                        explanation = (
-                            "Matched ignoring blank lines and indentation - every line "
-                            "you gave is in the file, in that order, but the spacing "
-                            "between them differs. Copy the passage exactly from what "
-                            "you read, blank lines included."
-                        )
-                if span is None:
-                    # Typographic characters the model wrote plainly, or the
-                    # other way round (Initiative G, the Unicode half).
-                    span = _typography_insensitive_span(original, candidate)
-                    if span is not None:
-                        explanation = (
-                            "Matched ignoring quotes, dashes and non-breaking spaces written "
-                            "differently from the file (curly or straight, a long dash or a "
-                            "hyphen). Copy those characters exactly from what you read."
-                        )
-                if span is None:
-                    continue
-                start, end = span
+            repaired = _a_repaired_span(original, find)
+            if repaired is not None:
+                (start, end), explanation = repaired
                 written = _the_replacement_without_its_find_s_gutter(find, replace)
                 if written != replace:
                     explanation += " The same line numbers were removed from your `replace`."
@@ -3654,6 +3805,17 @@ def edit_approved_artifact(
                 f"Could not find that text in '{relative_path}'. It must match exactly, "
                 f"including whitespace and punctuation.{detail}"
             )
+        if (occurrences > 1 and replace.startswith(find) and replace[len(find):].startswith("\n")
+                and original.rstrip().endswith(find.rstrip())):
+            # Text added after the last of them, which ends the file: an addition at the end, never ambiguous.
+            # Measured on one run: QA added a test after `});` and was refused nine times as ambiguous (F7).
+            at = original.rindex(find)
+            _write_unless_it_changes_nothing(
+                target, original, original[:at] + replace + original[at + len(find):], relative_path
+            )
+            return _edited(target, root, relative_path, replace,
+                           f"That text appears {occurrences} times; your `replace` keeps it and adds after it, "
+                           "and the last of them ends the file, so the addition went at the end of the file.", find)
         if occurrences > 1:
             raise RepositoryToolError(
                 f"That text appears {occurrences} times in '{relative_path}', so it is "
@@ -3665,6 +3827,7 @@ def edit_approved_artifact(
                 "ambiguous, and the numbers are in the list above."
                 f"{_a_collision_on_one_line(original, find)}"
                 f"{_what_sits_around_each_match(original, find)}"
+                f"{_the_replace_lines_call_for_each_copy(original, find)}"
             )
 
         _write_unless_it_changes_nothing(
@@ -3967,6 +4130,29 @@ def _what_sits_around_each_match(text: str, find: str) -> str:
     return "\n\n" + "\n\n".join(blocks)
 
 
+#: Copies of an ambiguous passage given their own `replace_lines` arguments, at most.
+_MOST_COPIES_GIVEN_A_CALL = 4
+
+
+def _the_replace_lines_call_for_each_copy(text: str, find: str) -> str:
+    """For each copy of `find`, the `replace_lines` arguments that change it alone; "" when it cannot say.
+
+    Measured on one run: QA sent one edit of a line every test repeats seven times, each refused as ambiguous with
+    the lines named, and identical calls doubled. The arguments themselves leave nothing to work out.
+    """
+    starts: list[int] = []
+    at = text.find(find)
+    while at >= 0 and len(starts) < _MOST_COPIES_GIVEN_A_CALL:
+        starts.append(text.count("\n", 0, at) + 1)
+        at = text.find(find, at + 1)
+    if len(starts) < 2:
+        return ""
+    span = find.rstrip("\n").count("\n")
+    calls = "; ".join(f"`start_line={n}, end_line={n + span}`" for n in dict.fromkeys(starts))
+    return (f" To change one copy only, call `replace_lines` with its lines and your new text - {calls} - each "
+            "replacing those whole lines.")
+
+
 def _where_each_match_starts(text: str, find: str) -> str:
     """"line 7 and line 10", or "lines 7, 10 and 14".
 
@@ -4161,6 +4347,88 @@ def _javascript_parse_error(target: Path, relative_path: str, content: str) -> s
 _ABOUT_ANOTHER_FILE = re.compile(r"has no exported member|Cannot find module|is not a module|has no default export", re.I)
 
 
+#: A finding about a module that exists: its exports are what they are, and an import of one it lacks fails at load.
+_A_MISSING_EXPORT = re.compile(r"has no exported member|has no default export", re.I)
+_THE_MODULE_NAMED = re.compile(r"""Module\s+['"]+([^'"]+)['"]+""")
+#: What an import without an extension may name on disk.
+_MODULE_SUFFIXES = ("", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", "/index.ts", "/index.js")
+
+
+def _the_package_is_installed(importer: Path, module: str) -> bool:
+    """Whether the package an import names (`hono`, `@scope/name`, with or without a subpath) is under the nearest `node_modules`."""
+    parts = module.split("/")
+    package = "/".join(parts[:2]) if module.startswith("@") and len(parts) > 1 else parts[0]
+    for folder in [importer.parent, *importer.parents]:
+        if (folder / "node_modules" / package).exists():
+            return True
+        if (folder / ".harness").is_dir():
+            break
+    return False
+
+
+def _another_file_not_written_yet(root: Path, importer: Path, message: str) -> bool:
+    """Whether a finding about another file's exports is excused: that file, or a planned file, is not written yet.
+
+    Work orders run side by side, so an import of what another order has not written is no error of this write.
+    Once the module exists and every planned file is written - every fix stage - a name it does not export fails at
+    load, and the write is refused with the checker's own hint. Measured on one run: three fixes in a row rewrote a
+    route importing `{ StorageService }` from a module that exports only a default instance; each was committed,
+    broke the start, and was reverted.
+    """
+    if not _ABOUT_ANOTHER_FILE.search(message):
+        return False
+    if not _A_MISSING_EXPORT.search(message):
+        return True
+    named = _THE_MODULE_NAMED.search(message)
+    module = named.group(1) if named else ""
+    if not module.startswith("."):
+        # A package: its exports are known once it is installed. Measured on one run: `import bodyLimit from
+        # 'hono/body-limit'` (a named export only) was written twice, broke the start twice, and was reverted twice.
+        return not _the_package_is_installed(importer, module)
+    exists = any((importer.parent / (module + suffix)).is_file() for suffix in _MODULE_SUFFIXES)
+    if not exists:
+        return True
+    try:
+        table = json.loads((root / WORK_ORDER_FILES).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        table = {}
+    return isinstance(table, dict) and any(not (root / planned).exists() for planned in table)
+
+
+#: A JavaScript test framework's own module, imported by a test: the runner it needs.
+_ANOTHER_RUNNER_IMPORTED = re.compile(r"""(?:from\s+|require\(\s*)['"](vitest|jest|@jest/globals|mocha|ava|tap|uvu|bun:test)['"]""")
+
+
+def _refuse_a_test_for_another_runner(target: Path, relative_path: str, content: str) -> None:
+    """Refuse a test file that imports a test framework the project's kept unit command does not run.
+
+    Measured on one run: the pack's kept `test` script runs `node --test`; the drafter wrote two unit test files
+    importing from `vitest` (and added vitest to the manifest), and both crashed with "Vitest failed to access its
+    internal state" under Node's runner. Only when the pack keeps a `test` script that runs `node --test`.
+    """
+    found = _ANOTHER_RUNNER_IMPORTED.search(content or "")
+    if not found:
+        return
+    try:
+        from app.analysis.file_kinds import classify_file
+        from app.stacks import contract
+
+        if classify_file(relative_path) != "test":
+            return
+        root = next((folder for folder in target.parents if (folder / ".harness").is_dir()), None)
+        pack = (contract.the_pack(root) or (None,))[0] if root is not None else None
+        if pack is None or "node --test" not in str((getattr(pack, "kept_scripts", None) or {}).get("test", "")):
+            return
+    except Exception:  # noqa: BLE001 - a check that cannot run refuses nothing
+        return
+    raise RepositoryToolError(
+        f"Refusing to write '{relative_path}': it imports from '{found.group(1)}', but this project's unit tests run "
+        "under Node's own runner (`node --test`), where that framework's functions do not work. Write the tests with "
+        "`import { test, describe } from 'node:test';` and `import assert from 'node:assert/strict';` instead, and do "
+        "not add the framework to the manifest. Nothing was written."
+    )
+
+
 def _refuse_if_it_adds_errors(target: Path, relative_path: str, content: str, previous: str, *, editing: bool = False) -> None:
     """Refuse a product file write that adds errors the language service is sure of, in every delivery mode.
 
@@ -4189,7 +4457,7 @@ def _refuse_if_it_adds_errors(target: Path, relative_path: str, content: str, pr
     known = {f.get("message") for f in getattr(before, "here", None) or []}
     new = [
         f for f in getattr(after, "here", None) or []
-        if f.get("message") not in known and not _ABOUT_ANOTHER_FILE.search(str(f.get("message") or ""))
+        if f.get("message") not in known and not _another_file_not_written_yet(root, target, str(f.get("message") or ""))
     ]
     if new:
         found = "; ".join(f"line {f.get('line', '?')}: {f.get('message', '')}" for f in new[:6])
@@ -5287,6 +5555,7 @@ def _write_unless_it_changes_nothing(
         _refuse_a_hand_built_dom_again(relative_path, updated, target)
         _refuse_rewriting_the_platform(relative_path, updated, original)
         _refuse_to_switch_a_suite_off(relative_path, original, updated)
+        _refuse_a_test_for_another_runner(target, relative_path, updated)
         _refuse_if_it_adds_errors(target, relative_path, updated, original, editing=True)
         try:
             _refuse_if_broken(relative_path, updated, editing=True)
@@ -5803,13 +6072,20 @@ def pin_the_directory_the_product_names(root: str | Path, product_name: str) -> 
 
     So the name is fixed once, at intake, the way every one of them was
     deriving it: lowercase, words joined by hyphens. Only for a workspace with
-    no project directory yet - an uploaded codebase already says where its code
-    lives - and never over an existing pin. A name with no letters or digits
-    in the Latin alphabet pins nothing, and the plan's own name is used later
-    as before.
+    no project directory yet - a codebase seeded in a project folder already
+    says where its code lives - and never over an existing pin. A name with no
+    letters or digits in the Latin alphabet pins nothing, and the plan's own
+    name is used later as before.
+
+    A product seeded at the workspace root has no such folder, so it is moved
+    into the directory pinned here (`app.stacks.seeded_product`). An existing
+    pin is checked too: a visit cut short finishes the move on the next one.
     """
+    from app.stacks.seeded_product import move_the_seeded_product_in
+
     base = Path(root)
     if pinned_project_directory(base) is not None:
+        move_the_seeded_product_in(base)
         return None
     try:
         if any(entry.is_dir() and _is_project_directory(entry.name) for entry in base.iterdir()):
@@ -5820,6 +6096,7 @@ def pin_the_directory_the_product_names(root: str | Path, product_name: str) -> 
     if not name or name in _SUBDIRECTORY_NAMES or not _is_project_directory(name):
         return None
     _pin_project_directory(base, name)
+    move_the_seeded_product_in(base)
     return name
 
 
@@ -6606,7 +6883,10 @@ def write_approved_artifact(
         # with ENOENT, and the fix stage wrote a second copy of the page there
         # and a test asserting the copy exists.
         pinned_inside = pinned_project_directory(artifact_root)
-        if pinned_inside and pinned_inside == relative_parts[0]:
+        # Unless that inner directory is real: a package named like its project (`bookmarks/bookmarks/`, made by the
+        # setup). Measured on two full-stack runs: its modules were refused and the builder sent to the project root.
+        real_inner = (Path(artifact_root) / relative_parts[0] / relative_parts[1]).is_dir()
+        if pinned_inside and pinned_inside == relative_parts[0] and not real_inner:
             real = "/".join(relative_parts[1:])
             raise RepositoryToolError(
                 f"Refusing to write '{relative_path}': that is the project directory "
@@ -6687,6 +6967,7 @@ def write_approved_artifact(
         if not _sent_again_past_a_grammar(relative_path, content):
             raise
     _refuse_if_node_cannot_parse(target, relative_path, content)
+    _refuse_a_test_for_another_runner(target, relative_path, content)
     _refuse_if_it_adds_errors(
         target, relative_path, content,
         target.read_text(encoding="utf-8", errors="replace") if target.is_file() else "",
@@ -6940,6 +7221,25 @@ def _a_stage_is_running() -> bool:
         return False
 
 
+#: The rounds of one QA author: `acceptance_author_0`, `_1`, `_2`, ... write one suite between them.
+#: The setup stage too: its attempts after a setup left to the agents are one author, not two.
+_ROUNDS_OF_ONE_AUTHOR = re.compile(r"^((?:acceptance_author|stack_setup))_\d+$")
+
+
+def _the_same_author(created_by: str, running: str) -> bool:
+    """Whether two stage names are one stage, or two rounds of the one QA author writing one suite.
+
+    Measured on a held-out run: QA left two probe specs in its first round, and in the next rounds - stages of the
+    same name but for the round number - was told they were "a test that acceptance_author_1 wrote" and refused
+    every delete and move. The suite was locked with them, then reopened for one of them, and QA spent thirty
+    calls trying to edit or delete a scratch file it had written itself.
+    """
+    if created_by == running:
+        return True
+    first, second = _ROUNDS_OF_ONE_AUTHOR.match(created_by or ""), _ROUNDS_OF_ONE_AUTHOR.match(running or "")
+    return bool(first and second and first.group(1) == second.group(1))
+
+
 def _this_stage_created(root: Path, shown: str) -> bool:
     """Whether the stage running now created this file, so may delete it outright.
 
@@ -6959,7 +7259,7 @@ def _this_stage_created(root: Path, shown: str) -> bool:
         running = _stage_from_config("")
     except Exception:  # noqa: BLE001 - unknown is not this stage
         return False
-    return bool(created_by and running and created_by == running)
+    return bool(created_by and running and _the_same_author(created_by, running))
 
 
 def _another_stage_s_test(root: Path, shown: str) -> str:
@@ -6999,7 +7299,7 @@ def _another_stage_s_test(root: Path, shown: str) -> str:
             return ""
     except Exception:  # noqa: BLE001 - a guard that cannot decide lets the call through
         return ""
-    if not created_by or not running or created_by == running:
+    if not created_by or not running or _the_same_author(created_by, running):
         return ""
     return created_by
 
@@ -7142,10 +7442,11 @@ def clear_the_throwaways_left_behind(repo_root: str | Path) -> list[str]:
         if not pinned:
             return removed
         project = root / pinned
+        from app.analysis.walk import files_under
+
         everything = [
-            path for path in project.rglob("*")
-            if path.is_file()
-            and not any(
+            path for path in files_under(project, {*IGNORED_DIRECTORIES, *_NOT_SWEPT, "node_modules"})
+            if not any(
                 part in IGNORED_DIRECTORIES or part in _NOT_SWEPT or part == "node_modules"
                 for part in path.relative_to(project).parts[:-1]
             )
@@ -7174,6 +7475,33 @@ def clear_the_throwaways_left_behind(repo_root: str | Path) -> list[str]:
             except OSError:
                 continue
             removed.append(shown)
+    except Exception:  # noqa: BLE001 - tidying must never fail the stage after it
+        return removed
+    return removed
+
+
+#: The name `agent_toolkit` saves code from a command line under; the hash makes it the harness's, not a stage's.
+_A_COMMAND_LINE_S_CODE = re.compile(r"tmp-inline-[0-9a-f]{8}\.\w+")
+
+
+def clear_the_code_of_command_lines(repo_root: str | Path) -> list[str]:
+    """Delete every file the harness saved a command line's code to, across the workspace. Returns them. Never raises.
+
+    For a run going out, when no command is left to run from one. `clear_the_throwaways_left_behind` weighs a stage's
+    scripts between rounds, so it looks only in the pinned project and only at what the project memory recorded. These
+    were written by the harness and do not need weighing: measured on the stored workspaces, more than a dozen sat at the
+    workspace's root, which that sweep never reads, and one released project folder held 7. The code stays in the
+    transcript, in the call that ran it; the run's records name the file and nothing reads it.
+    """
+    removed: list[str] = []
+    try:
+        root = _normalize_repo_root(repo_root)
+        from app.analysis.walk import files_under
+
+        for path in files_under(root, {*IGNORED_DIRECTORIES, ".agent-home", ".harness", "node_modules"}):
+            if _A_COMMAND_LINE_S_CODE.fullmatch(path.name):
+                path.unlink(missing_ok=True)
+                removed.append(path.relative_to(root).as_posix())
     except Exception:  # noqa: BLE001 - tidying must never fail the stage after it
         return removed
     return removed
@@ -7227,6 +7555,32 @@ def _is_the_project_s_own_manifest(root: Path, target: Path) -> bool:
     return bool(pinned) and target.parent == root / pinned
 
 
+def _a_declared_smoke_test(root: Path, target: Path) -> str | None:
+    """Why `target` stays, when a setup declaration still names it as a smoke test; None otherwise.
+
+    Measured on a custom-stack baseline: the setup stage deleted its own smoke tests before ending, on both
+    attempts; the proof found the declared files missing and the setup was left to the agents. The harness removes
+    them itself once the setup is proven (`custom_setup.prove`), and deletes the declaration with them.
+    """
+    for folder in target.parents:
+        declaration = folder / "stack-setup.json"
+        if declaration.is_file():
+            try:
+                named = json.loads(declaration.read_text(encoding="utf-8")).get("smoke_files") or []
+                mine = target.relative_to(folder).as_posix()
+            except (OSError, ValueError, AttributeError):
+                return None
+            if any(str(name).split("::")[0].removeprefix("./") == mine for name in named if isinstance(name, str)):
+                return (
+                    f"'{target.relative_to(root).as_posix()}' is a smoke test `stack-setup.json` names: the harness "
+                    "runs it to prove the setup and removes it itself afterwards. Leave it in place."
+                )
+            return None
+        if folder == root:
+            return None
+    return None
+
+
 def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[str, str]:
     """Delete one file the agent created inside the workspace.
 
@@ -7277,6 +7631,9 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
             f"'{shown}' records which directory this project lives in and is not "
             "clutter. Leave it alone; every later stage reads it."
         )
+    smoke = _a_declared_smoke_test(root, target)
+    if smoke is not None:
+        raise RepositoryToolError(smoke)
     # A test is evidence, not clutter. Measured on one run: the test round
     # wrote four suites, ran them - 27 assertions passing against the real
     # application - and then deleted three of them as "temporary helper
@@ -7672,7 +8029,7 @@ def _git_value(root: Path, args: list[str]) -> str | None:
             ["git", *args],
             cwd=str(root),
             capture_output=True,
-            text=True,
+            text=True, errors="replace",
             check=False,
             timeout=10,
         )

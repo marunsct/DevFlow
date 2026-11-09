@@ -7,9 +7,10 @@ import { FeedbackProvider } from '../components/Feedback';
 const { run } = vi.hoisted(() => ({ run: {
   run_id: 'run-1', thread_id: 't', status: 'running', current_stage: 'defect_fix_2_3', stage_meaning: null,
   created_at: '2026-10-19T00:00:00Z', updated_at: '2026-10-19T01:00:00Z', stages: [], artifacts: [], reviews: [],
-  remediation: null, error: null, auto_approve: false, completion_gaps: [], gate_deadline: null,
+  remediation: null, error: null, auto_approve: false, completion_gaps: [], blocking_gaps: [], gate_deadline: null,
   approval_timeout_minutes: null, non_deliverable: '', delivery_mode: 'fast', use_frontier_model: false,
   max_run_tokens: null, max_run_cost_usd: null, cost: null,
+  run_name: null, model_pinned: false, model_last: { model: 'model-a', endpoint: '127.0.0.1:8888' },
 } }));
 
 const { known } = vi.hoisted(() => ({ known: {} as Record<string, ReturnType<typeof vi.fn>> }));
@@ -59,9 +60,48 @@ beforeEach(() => {
   vi.stubGlobal('WebSocket', FakeSocket);
   for (const fn of Object.values(known)) if (typeof fn === 'function' && 'mockClear' in fn) fn.mockClear();
 });
-afterEach(() => vi.unstubAllGlobals());
+const theRunAsItStarts = { ...run };
+afterEach(() => {
+  vi.unstubAllGlobals();
+  Object.assign(run, theRunAsItStarts);
+});
 
 describe('the run page', () => {
+  it('says what may mean the product does not work apart from the notes', async () => {
+    Object.assign(run, { status: 'completed', current_stage: 'complete', completion_gaps: ['AC-2 ships deferred', 'Code the product does not run: x'], blocking_gaps: ['AC-2 ships deferred'] });
+    render(
+      <MemoryRouter initialEntries={['/runs/run-1']}>
+        <FeedbackProvider>
+          <Routes><Route path="/runs/:runId" element={<RunDashboard />} /></Routes>
+        </FeedbackProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('Completed with 1 gap that may mean it does not work')).toBeTruthy();
+    expect(screen.getByText('1 note on what it did not prove')).toBeTruthy();
+    expect(screen.queryByText(/gaps? it did not prove/)).toBeNull();
+  });
+
+  it('leaves the time the run spent paused out of the time it took, and says how much', async () => {
+    // Created 00:00, ended 01:00, paused for 25 minutes of that hour.
+    Object.assign(run, { status: 'completed', current_stage: 'complete', paused_seconds: 1500 });
+    renderPage();
+    expect(await screen.findByText('35m 0s')).toBeTruthy();
+    expect(screen.getByText('25m 0s stopped or waiting, not counted')).toBeTruthy();
+  });
+
+  it('calls a run with only notes neither gapped nor proved everything', async () => {
+    Object.assign(run, { status: 'completed', current_stage: 'complete', completion_gaps: ['Code the product does not run: x'], blocking_gaps: [] });
+    render(
+      <MemoryRouter initialEntries={['/runs/run-1']}>
+        <FeedbackProvider>
+          <Routes><Route path="/runs/:runId" element={<RunDashboard />} /></Routes>
+        </FeedbackProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('1 note on what it did not prove')).toBeTruthy();
+    expect(screen.queryByText(/may mean it does not work/)).toBeNull();
+  });
+
   it('pages the log history while the stream is down, and not once the stream carries it', async () => {
     render(
       <MemoryRouter initialEntries={['/runs/run-1']}>
@@ -111,6 +151,18 @@ describe('the run page', () => {
     finish(run);
 
     await waitFor(() => expect(known.getRun.mock.calls.length).toBe(3), { timeout: 3000 });
+  });
+
+  it('offers to keep a running run on its model, naming the model and its port, and sends the choice', async () => {
+    renderPage();
+    await screen.findByText('Fixing problem 4 (test round 2)');
+    const toggle = await screen.findByRole('switch', { name: 'Keep this run on its model' });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByText('(model-a @ 127.0.0.1:8888)')).toBeTruthy();
+
+    toggle.click();
+
+    await waitFor(() => expect(known.setModelPin).toHaveBeenCalledWith('run-1', true));
   });
 });
 

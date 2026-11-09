@@ -240,6 +240,50 @@ it, expect } from 'vitest'`) and Vue Test Utils (`mount`) in a simulated DOM."""
 )
 
 
+PLAIN = Frontend(
+    entry="src/main.js",
+    name="page",
+    # No component framework: the pack a stack fits when it names none (`_frontend_fits`).
+    words=(),
+    label="HTML and JavaScript",
+    dependencies={},
+    dev_dependencies={},
+    vite_plugin_import="",
+    vite_plugin_call="",
+    files={
+        "index.html": INDEX % {"root": "app", "main": "main.js"},
+        "src/main.js": """import './styles.css';
+
+// Draws the page into `root`; the unit tests call it on a node of their own.
+export function render(root) {
+  root.innerHTML = '<main><h1>{{title}}</h1></main>';
+}
+
+const root = document.getElementById('app');
+if (root) render(root);
+""",
+        "src/styles.css": STYLES,
+    },
+    unit_glob="*.test.js",
+    smoke_unit=("tests/client/scaffold-smoke.test.js", """import { describe, expect, it } from 'vitest';
+import { render } from '../../src/main.js';
+
+describe('the page', () => {
+  it('renders its heading', () => {
+    const root = document.createElement('div');
+    render(root);
+    expect(root.querySelector('h1')).not.toBeNull();
+  });
+});
+"""),
+    guide="""The interface is a page in plain HTML and JavaScript, with no component framework:
+`index.html` loads `src/main.js`, which draws the page and calls the service's `/api/`
+routes with `fetch`. Keep it in JavaScript modules under `src/`. Its unit tests go in
+`tests/client/`, named `<name>.test.js`, using Vitest (`import { describe, it, expect }
+from 'vitest'`) in a simulated DOM.""",
+)
+
+
 # --- the services ---------------------------------------------------------------
 
 EXPRESS_APP = """import express from 'express';
@@ -477,7 +521,7 @@ FASTAPI = Service(
         "{{package}}/main.py": FASTAPI_MAIN,
         "scripts/unit-tests.mjs": UNIT_TESTS % {"python": "'.venv/bin/python'"},
     },
-    start_argv="['.venv/bin/python', '-m', 'uvicorn', '{{package}}.main:app', '--host', '127.0.0.1', '--port', process.env.PORT]",
+    start_argv="['.venv/bin/python', '-m', 'uvicorn', '{{package}}.main:app', '--host', process.env.HOST || '127.0.0.1', '--port', process.env.PORT]",
     install=(
         *js.INSTALL,
         *_python.INSTALL,
@@ -558,7 +602,7 @@ export default defineConfig({
   },
   test: {
     projects: [
-      { extends: true, test: { name: 'page', environment: 'jsdom', include: ['tests/client/**/*.test.{ts,tsx}'] } },%(service_project)s
+      { extends: true, test: { name: 'page', environment: 'jsdom', include: ['tests/client/**/*.test.{ts,tsx,js}'] } },%(service_project)s
     ],
   },
 });
@@ -622,6 +666,16 @@ def _json(entries: dict[str, str]) -> str:
     return json.dumps(dict(sorted(entries.items())), indent=2).replace("\n", "\n  ")
 
 
+#: A full-stack product's start script: the suite's server, so the two cannot drift.
+START_SH = """#!/bin/sh
+# Kept by the harness: starts the product - builds the page, then the service on HOST (127.0.0.1 unless set) at PORT, data under DATA_DIR.
+cd "$(dirname "$0")" || exit 1
+export PORT="${PORT:-8000}" DATA_DIR="${DATA_DIR:-data}"
+mkdir -p "$DATA_DIR"
+exec node scripts/serve-acceptance.mjs
+"""
+
+
 def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
     """The pack for `frontend` served by `service`."""
     api_port = "8000" if service.language == "python" else "3000"
@@ -657,6 +711,10 @@ def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
         ".gitignore": js.GITIGNORE + "dist/\n" + (_python.GITIGNORE if service.language == "python" else ""),
         **frontend.files,
         **service.files,
+        # How a person starts the product, as briefs ask: the suite's own server - the page built, the service on
+        # PORT, its data under DATA_DIR. Measured on one run: with no start script in the pack, a builder wrote one
+        # calling a bare `uvicorn` outside the project's environment.
+        "start.sh": START_SH,
     }
     title = f"Browser app in {frontend.label} with its own HTTP service in {service.label}"
     return StackPack(
@@ -680,7 +738,7 @@ def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
         test_helpers=service.test_helpers,
         kept_files=(
             "playwright.config.js", "playwright.setup.mjs", "vite.config.ts", "scripts/serve-acceptance.mjs",
-            *service.kept,
+            "start.sh", *service.kept,
         ),
         kept_scripts={"test": service.unit_script, "test:acceptance": "playwright test", "start": start},
         smoke_files={
@@ -715,6 +773,8 @@ def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
         module_system_mismatch=js.module_system_mismatch,
         unawaited_helpers=js.unawaited_helpers,
         locators_with_an_ignored_option=js.locators_with_a_name_option,
+        locators_matching_a_pattern_as_text=js.locators_matching_a_pattern_as_text,
+        whole_page_lookups=js.whole_page_lookups,
         expects_what_it_never_gave=js.expects_what_it_never_gave,
         positions_it_asserts=js.positions_it_asserts,
         filtered_by_a_field_value=js.a_locator_filtered_by_a_field_value,

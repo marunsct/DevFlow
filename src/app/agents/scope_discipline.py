@@ -45,9 +45,8 @@ Scope discipline - the brief is the boundary:
   Kubernetes deployment artefacts.
 
 - Evidence that cannot exist here is not a missing deliverable. There is no
-  browser, no database server and no container runtime, so "no screenshot",
-  "migrations were not applied" and "the image was not built" describe this
-  environment, not a fault in the work. Ask for what can be produced - the
+  database server and no container runtime, so "migrations were not applied"
+  and "the image was not built" describe this environment, not a fault in the work. Ask for what can be produced - the
   file, the migration, the test that runs - and never block a sprint for the
   absence of the rest.""".strip()
 

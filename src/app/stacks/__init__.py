@@ -103,6 +103,18 @@ class StackPack:
     test_helpers: tuple[str, ...] = ()
     #: Where screenshots and other evidence the acceptance run leaves are found.
     evidence_dir: str = ""
+    #: The command that type-checks the project without writing anything, run in the project directory; () when
+    #: there is none. Read when the product does not start (`compiler_errors`).
+    typecheck: tuple[str, ...] = ()
+    #: The command that makes what would be shipped, run in the project directory, when the acceptance suite does not
+    #: go through it (a suite on a development server); () when the suite's own start already proves it, or nothing
+    #: is built. Run at each test round where the product changed and at release (`production_build`).
+    production_build: tuple[str, ...] = ()
+    #: The environment variable the product keeps its data under, when it has one: a test run gets a fresh directory
+    #: in it. Measured on one run: unit tests posting megabyte bodies to the product's default data directory on
+    #: every round grew its data file to 205 MB, the service parsed all of it per request, and the worker container
+    #: was killed at its memory limit mid-stage.
+    data_dir_env: str = ""
     #: The file the drafted service's routes or handlers live in, which the
     #: scaffold writes as a stub. While it is still byte-identical to that
     #: stub, nothing the run drafted is wired into the service the acceptance
@@ -117,6 +129,15 @@ class StackPack:
     #: `backend/app/`, the served page stayed the scaffold's `src/App.tsx`, and
     #: every page test failed its first control while 13 fixers chased criteria.
     entrypoints: tuple[str, ...] = ()
+    #: Names an entry file of the scaffold must keep exporting, by file relative to the project: the pack's own
+    #: smoke test and start file import them (`app.stacks.entry_exports`).
+    required_exports: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    #: Whether the scaffold's own files call each required export with no arguments (`createApp()`), so one that
+    #: needs an argument receives `undefined` (`app.stacks.entry_exports.what_the_start_file_cannot_call`).
+    required_exports_called_bare: bool = False
+    #: ".ts" for a pack whose TypeScript Node runs as it is: the harness adds the extension to a relative import that
+    #: lacks it (`app.stacks.import_extensions`). "" for every other pack.
+    relative_import_extension: str = ""
     #: Whether the product's code reaches its modules only through imports, so
     #: a source file under an entrypoint's folder that no import reaches is
     #: code the product never runs (`app.analysis.reachability`). Off for a
@@ -152,6 +173,9 @@ class StackPack:
     #: Patterns, with `{name}` for a regex-escaped name, of a test finding a
     #: control by that name. Every control the brief names must be found so.
     finds_by_name: tuple[str, ...] = ()
+    #: How a user reaches the product when it has nothing to start, run from the project with `{{package}}` filled in:
+    #: it exits 0 when what they asked for is there. A suite's runner can reach what they cannot.
+    how_it_is_used: tuple[str, ...] = ()
     #: A suite file's text -> (line, locator, text) where a test finds something
     #: by a text and asserts that it does not show that text.
     contradicting_locators: Callable[[str], Sequence[tuple[int, str, str]]] | None = None
@@ -173,6 +197,11 @@ class StackPack:
     #: A suite file's text -> lines that pass a locator an option it ignores, so
     #: it matches more than the test means.
     locators_with_an_ignored_option: Callable[[str], Sequence[int]] | None = None
+    #: A suite file's text -> lines that give a locator a pattern as plain text
+    #: (`hasText: '^B$'`), which it matches as those characters.
+    locators_matching_a_pattern_as_text: Callable[[str], Sequence[int]] | None = None
+    #: A suite file's text and the controls every record has -> lines asking the whole page for one of them.
+    whole_page_lookups: Callable[[str, list[str]], Sequence[int]] | None = None
     #: A suite file's text -> (line, title, value) of each test that looks on
     #: the page for a value it made at run time and never gave the product.
     expects_what_it_never_gave: Callable[[str], Sequence[tuple[int, str, str]]] | None = None
@@ -228,6 +257,24 @@ class StackPack:
     #: thread under 1.5 GB. The command's whole tree stays bounded by its real
     #: use (`sandbox._run_and_watch_the_tree`).
     process_memory: str = ""
+    #: How long the pack's acceptance suite waits for the product's server to answer, in milliseconds; 0 when
+    #: unknown. One acceptance file's run is given longer (`sandbox.timeout_for`), so the runner, not the
+    #: sandbox's limit, is what says the server never came up.
+    server_wait_ms: int = 0
+    #: A command, run in the project, that prints the routes the application serves, one `METHOD /path` a line; empty
+    #: when the pack has none. The start probe adds them when the readiness route is not served (a router mounted
+    #: under its own path once served `/health/health`).
+    list_routes: tuple[str, ...] = ()
+    #: An error a product on this stack is known to raise, by a phrase of its message, and what causes it; added to a
+    #: defect whose text carries the phrase (`app.stacks.known_errors`).
+    known_errors: Mapping[str, str] = field(default_factory=dict)
+    #: The files that belong to this pack's framework, by path, with what each must do (SF.2). A stack of the same
+    #: kind and language that no pack covers is set up on the rest of this pack - its install, runners, report flags
+    #: and kept test configuration - and the agent writes only these files for its own framework.
+    framework_files: Mapping[str, str] = field(default_factory=dict)
+    #: A proven setup's own short product code as it was when it started and passed its smoke test - how it creates
+    #: the application and how the server loads it - shown to every builder; empty for a code pack.
+    proven_code: Mapping[str, str] = field(default_factory=dict)
 
 
     @property
@@ -238,7 +285,13 @@ class StackPack:
         module, so a new kind of pack declares its runner here and the checks
         stay free of any one tool (Initiative AO.10, AU).
         """
-        return "playwright" if "playwright.config.js" in self.files else ""
+        if "playwright.config.js" in self.files:
+            return "playwright"
+        # A suite run by pytest whose kept conftest starts the service and gives its address (the Python service
+        # packs): measured, these were the only HTTP services whose contract was never probed.
+        if "base_url" in str(self.files.get("acceptance/conftest.py") or ""):
+            return "pytest"
+        return ""
 
     @property
     def coverage(self) -> tuple[str, ...]:
@@ -526,6 +579,18 @@ def _framework_fits(pack: StackPack, stack: Any) -> bool:
 
 
 def choose_pack(stack: Any, text: str = "", rationale: str = "") -> StackPack | None:
+    """The pack for this stack and brief (see `_pack_that_fits`), or its measured arm when that arm is switched on."""
+    pack = _pack_that_fits(stack, text, rationale)
+    if pack is not None and pack.name == "node-hono-api":
+        from app.stacks.packs.node_hono_native_api import enabled
+
+        # A measured arm (owner 2026-10-25): Hono run by Node itself, with node:test, for weaker models.
+        if enabled():
+            return pack_named("node-hono-native-api") or pack
+    return pack
+
+
+def _pack_that_fits(stack: Any, text: str = "", rationale: str = "") -> StackPack | None:
     """The pack for this stack and brief, or None when no pack fits.
 
     A pack fits when it is for this kind of product, in the stack's language,
@@ -560,7 +625,40 @@ def choose_pack(stack: Any, text: str = "", rationale: str = "") -> StackPack | 
         and _framework_fits(pack, stack)
         and (not pack.frontend_frameworks or _frontend_fits(pack, stack) or not _names_a_frontend(stack))
     ]
-    return named[0] if len(named) == 1 else None
+    if len(named) == 1:
+        return named[0]
+    # A page left unstated that nothing anywhere builds with a component framework is plain HTML and JavaScript:
+    # the selector writes it as an empty field. Measured on one run: "no stack pack fits" for exactly that stack.
+    said = f"{rationale} {text}"
+    if not named and not _states_its_page(stack) and _a_plain_page_in(said) and not _a_framework_in(said):
+        plain = [
+            pack for pack in ALL_PACKS
+            if pack.kind == kind and pack.language in languages and _framework_fits(pack, stack)
+            and "HTML and JavaScript" in str((pack.stack or {}).get("frontend_framework", ""))
+        ]
+        if len(plain) == 1:
+            return plain[0]
+    return None
+
+
+def _a_plain_page_in(words: str) -> bool:
+    """Whether some writing says the page is plain HTML and JavaScript."""
+    return bool(re.search(r"\bhtml\b[^.\n]{0,40}\b(?:javascript|js)\b|\b(?:vanilla|plain)\s+(?:javascript|js|html)\b", words, re.I))
+
+
+#: A phrase ruling something out, to the end of its clause: "No React, Vue, Svelte, Angular, or Vite is needed".
+_RULED_OUT = re.compile(r"\b(?:no|not|without|never|nor|neither|instead of|rather than)\b[^.;:\n]*", re.I)
+
+
+def _a_framework_in(words: str) -> bool:
+    """Whether some writing names a component framework a page could be built with, other than to rule it out.
+
+    Measured on one run: a rationale saying "No React, Vue, Svelte, Angular, or Vite is needed" for a plain page was
+    read as naming five frameworks, no pack fitted, and the agents set the stack up by hand.
+    """
+    words = _RULED_OUT.sub(" ", words)
+    words = re.sub(rf"(?<![a-z])({'|'.join(_COMPONENT_FRAMEWORKS)})\.?js(?![a-z])", r"\1", words.lower())
+    return any(re.search(rf"(?<![a-z]){word}(?![a-z])", words) for word in _COMPONENT_FRAMEWORKS)
 
 
 def _names_a_frontend(stack: Any) -> bool:
@@ -596,8 +694,20 @@ def _frontend_fits(pack: StackPack, stack: Any) -> bool:
         if re.search(rf"(?<![a-z]){re.escape(framework)}(?![a-z])", frontend.replace(".js", ""))
     )
     if not pack.frontend_frameworks:
+        # A full-stack pack in plain HTML and JavaScript fits a stack that says what its page is built with and names
+        # no framework; one that leaves its page unstated is not taken for plain (its rationale may name the pack).
+        if "HTML and JavaScript" in str((pack.stack or {}).get("frontend_framework", "")) and not _states_its_page(stack):
+            return False
         return not named
     return bool(named) and any(word in pack.frontend_frameworks for word in named)
+
+
+_UNSTATED = re.compile(r"^\s*(?:|not stated|unstated|none|n/?a|unknown|tbd|-)\s*$", re.I)
+
+
+def _states_its_page(stack: Any) -> bool:
+    """Whether the stack says what its page is built with (plain HTML and JavaScript counts)."""
+    return not _UNSTATED.match(str(getattr(stack, "frontend_framework", "") or ""))
 
 
 #: What a run on a stack can promise, by whether a pack fits it. Stated in the
@@ -610,6 +720,12 @@ CUSTOM_STACK = "custom stack"
 
 def support_tier(pack: StackPack | None) -> str:
     """The support tier, with what it means, for a run on `pack` (None: no pack fits)."""
+    if pack is not None and pack.name == "proven-setup":
+        return (
+            "Support tier: proven setup - no pack fits, so a setup stage set the project up and the harness proved "
+            "its install and both smoke tests through the commands it declared; the harness's checks run on those "
+            "commands as on a pack's, and the release carries no packaged CI or container files."
+        )
     if pack is not None:
         return (
             f"Support tier: {PACK_SUPPORTED} - the {pack.name} pack's scaffold, install and "

@@ -42,7 +42,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.analysis.walk import files_under
-from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE
+from app.tools.bounded_output import HeadAndTail, read_into
+from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE, pinned_project_directory
 from typing import Any, Dict, Iterable, Sequence
 
 logger = logging.getLogger(__name__)
@@ -348,7 +349,26 @@ _WITHOUT_AN_INSTALL = {
     "python": ("Python's own `unittest` and the standard library need no install, and logic written as "
                "functions that take their inputs as arguments can be tested without the service running. "
                "A test suite is a different matter: a line in `requirements-dev.txt` is not shipped and "
-               "breaks no constraint in the brief."),
+               "breaks no constraint in the brief, and `pytest` itself may be installed into a `.venv` "
+               "of the project."),
+}
+
+#: The test tools of a manager with no test scope of its own, per manager. The flag that says "not shipped" does not
+#: exist for these (`_is_a_test_only_install`), so the package's name is all that says it. Measured on one run on a
+#: brief with no dependencies and no pack: `pip install pytest` was refused about seven times, in every spelling, and
+#: QA wrote its own wrapper to find a runner. Names of tools only: a library the product could import is still refused.
+_TEST_TOOLS_OF_A_MANAGER_WITH_NO_TEST_SCOPE = {
+    manager: re.compile(r"pytest(-[a-z0-9_.-]+)?|coverage|hypothesis") for manager in ("pip", "pip3")
+}
+
+#: Where such a test tool goes, per manager: the command that makes a place every later command can find it.
+_WHERE_A_TEST_TOOL_GOES = {
+    manager: (
+        "`{packages}` is a test tool and ships to nobody, so the brief's rule on dependencies does not reach it. Do not "
+        "install it with this `pip`, though: it is not the `pip` of the `python3` the commands here run, so nothing "
+        "would find what it installs. In the project's folder run `python3 -m venv .venv`, then "
+        "`.venv/bin/pip install {packages}` as category \"install\", then run the tests with `.venv/bin/pytest`."
+    ) for manager in ("pip", "pip3")
 }
 
 
@@ -356,6 +376,41 @@ def _the_ecosystem_of(command: Sequence[str]) -> str:
     """`python` for a pip install, `node` otherwise."""
     names = {Path(str(part)).name for part in command}
     return "python" if names & {"pip", "pip3", "python", "python3", "uv", "poetry"} else "node"
+
+
+def _only_test_tools(command: Sequence[str], packages: Sequence[str]) -> bool:
+    """Whether every package named is a test tool of a manager that has no test scope to say so."""
+    tools = _TEST_TOOLS_OF_A_MANAGER_WITH_NO_TEST_SCOPE.get(_manager_of(command) or "")
+    return tools is not None and bool(packages) and all(
+        tools.fullmatch(re.split(r"[=<>!~\[;@ ]", str(package), maxsplit=1)[0].lower()) for package in packages
+    )
+
+
+def _a_test_tool_install_nothing_would_find(command: Sequence[str], packages: Sequence[str], repo_root: str) -> str:
+    """How to install this test tool so it can be run, when this command would put it out of reach; else "".
+
+    A `pip` named by a path into the workspace is the workspace's own, and a project's virtualenv is at the front
+    of every command's PATH (`_child_environment`), so a bare one is that virtualenv's when there is one.
+    """
+    program = str(command[0])
+    if (os.sep in program and not os.path.isabs(program)) or _the_project_virtualenv(repo_root):
+        return ""
+    words = _WHERE_A_TEST_TOOL_GOES.get(_manager_of(command) or "")
+    return words.format(packages=" ".join(str(package) for package in packages)) if words else ""
+
+
+def _a_path_in_the_workspace(package: str, repo_root: str) -> bool:
+    """Whether an install's package is a directory or file of the workspace, named by its path."""
+    spec = package[5:] if package.startswith("file:") else package
+    if not spec or not package.startswith("file:") and re.match(r"^[A-Za-z][\w.-]*(?:\[|[=<>!~;@ ]|$)", spec) and not spec.endswith("/") and spec not in (".", ".."):
+        # A bare name is a package on the index, whatever directory shares it.
+        return False
+    try:
+        root = Path(repo_root).resolve()
+        target = (root / spec).resolve()
+        return target.exists() and (target == root or root in target.parents)
+    except (OSError, ValueError):
+        return False
 
 
 def _refuse_an_install_the_brief_rules_out(
@@ -389,7 +444,9 @@ def _refuse_an_install_the_brief_rules_out(
     direction. The constraint was never aimed at the test suite; refusing its
     install made the product worse and the review wrong.
     """
-    packages = _a_package_this_command_would_add(command)
+    # The workspace's own project, installed by its path (`pip install -e .`), adds no dependency: measured on two
+    # runs in a row, a suite writer's `pip install -e . pytest` was refused under "no third-party dependencies".
+    packages = [p for p in _a_package_this_command_would_add(command) if not _a_path_in_the_workspace(str(p), repo_root)]
     if not packages:
         return ""
     if _is_a_test_only_install(command):
@@ -397,6 +454,8 @@ def _refuse_an_install_the_brief_rules_out(
         # Recording it as a risk or refusing it is the constraint applied to
         # the wrong thing.
         return ""
+    if _only_test_tools(command, packages):
+        return _a_test_tool_install_nothing_would_find(command, packages, repo_root)
     constraint = _the_brief_forbids_installing_anything(repo_root)
     if not constraint:
         return ""
@@ -490,6 +549,10 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
         # by accident, and `npx` can execute any package at all, so withholding
         # `node` bought no safety and cost a turn.
         "node",
+        # `python -m pip install` was already permitted, so a bare `pip` adds nothing it could not do. Measured on one
+        # run: the setup declared `.venv/bin/pip install`, the harness proves a setup and reinstalls as this role, and
+        # both setup attempts ended unproven on that refusal.
+        "pip", "pip3",
     }),
     # Writes prose, and checks it against the code it documents.
     "documentation_specialist": frozenset({"python3", "node", "npx"}),
@@ -651,7 +714,9 @@ def _max_output_size() -> int:
 
 MAX_OUTPUT_SIZE = _max_output_size()
 
-TIMEOUTS = {"install": 300, "build": 180, "test": 300, "default": 120, "probe": 60}
+#: `start` is the harness's own short start of the product, to read what it writes (`acceptance.start_output`): a
+#: service never exits by itself, so this limit is what ends it.
+TIMEOUTS = {"install": 300, "build": 180, "test": 300, "default": 120, "probe": 60, "start": 20}
 
 #: How much longer than the JavaScript baseline each toolchain needs.
 #:
@@ -707,13 +772,29 @@ def timeout_for(category: str, repo_root: str | Path | None = None) -> int:
     try:
         pinned = project_stack(repo_root)
     except Exception:  # noqa: BLE001 - a timeout must not fail the command
-        return base
-    if not pinned:
-        return base
+        pinned = None
     # The slowest toolchain in the stack decides. A Rust backend with a
     # TypeScript frontend builds at Rust's pace.
-    scale = max((TOOLCHAIN_TIMEOUT_SCALE.get(key, 1.0) for key in pinned), default=1.0)
-    return int(min(base * scale, MAX_TIMEOUT_SECONDS))
+    scale = max((TOOLCHAIN_TIMEOUT_SCALE.get(key, 1.0) for key in pinned or ()), default=1.0)
+    limit = base * scale
+    if category == "probe":
+        # One acceptance file's run outlasts the wait its suite gives the server, so a product that never comes
+        # up is reported by the runner. Measured on one run: both were 60 seconds, the sandbox stopped each run
+        # just before the runner said so, and every file waited its minute after each write.
+        try:
+            from app.stacks import contract
+
+            found = contract.the_pack(repo_root)
+            wait = found[0].server_wait_ms / 1000 if found else 0
+        except Exception:  # noqa: BLE001 - the limit as it was
+            wait = 0
+        if wait:
+            limit = max(limit, wait + PROBE_AFTER_THE_SERVER_WAIT_SECONDS)
+    return int(min(limit, MAX_TIMEOUT_SECONDS))
+
+
+#: Seconds one acceptance file's run is given beyond its suite's wait for the server.
+PROBE_AFTER_THE_SERVER_WAIT_SECONDS = 15
 
 #: The least a command is given after its last run used the whole limit, and
 #: the share of the limit it gets.
@@ -815,28 +896,33 @@ def _bytes_of(size: str, fallback: int) -> int:
         return fallback
 
 
-def _process_memory(workspace: str | Path | None) -> int:
+def _process_memory(workspace: str | Path | None, argv: list[str] | None = None) -> int:
     """The data limit for each process of a command in this workspace, in bytes.
 
     The configured limit, or more where the project's pack says its toolchain
     needs more (`StackPack.process_memory`). Read from the pack the contract
     names, which the scaffold writes before its first install, so the
-    scaffold's own commands get it too.
+    scaffold's own commands get it too. A command that starts a Node program
+    gets the Node toolchain's room whatever the project is: a stack no pack
+    covers (its setup written by an agent or replayed from the library) has no
+    pack to say so, and its test runner's worker threads then could not start.
     """
     configured = _memory_limit_bytes()
+    starts_node = bool(argv) and Path(str(argv[0])).name in _NODE_LAUNCHERS
+    on_node = max(configured, NODE_TOOLCHAIN_MEMORY) if starts_node else configured
     try:
         from app.stacks import contract
 
         found = contract.the_pack(workspace)
     except Exception:  # noqa: BLE001 - then the configured limit stands
-        return configured
+        return on_node
     if not found:
-        return configured
+        return on_node
     pack, record = found
     need = _bytes_of(pack.process_memory, 0) if pack.process_memory else 0
     if _its_tests_run_on_node(pack, record):
         need = max(need, NODE_TOOLCHAIN_MEMORY)
-    return max(configured, need)
+    return max(on_node, need)
 
 
 #: The data limit a toolchain that runs its tests on Node needs. Measured in the
@@ -955,7 +1041,9 @@ def _the_project_virtualenv(workspace: str) -> str | None:
     Found through the project contract, so it is the same directory the
     pack's own commands use - `.venv/bin/python` in a Python pack's install,
     unit and serve argv - and never a guess about where a virtualenv might
-    be (Initiative K.5). None when there is no contract, no project, no
+    be (Initiative K.5). A project with no contract (a seeded product built on
+    as it is) has only its pinned directory to say where it is, which holds a
+    virtualenv only if a stage made one. None when there is no project, no
     virtualenv or no interpreter in it: a command then keeps the PATH it
     had, and nothing is claimed that is not there.
     """
@@ -963,7 +1051,7 @@ def _the_project_virtualenv(workspace: str) -> str | None:
         from app.stacks import contract
 
         record = contract.read(workspace)
-        project = str((record or {}).get("project") or "")
+        project = str((record or {}).get("project") or "") or pinned_project_directory(Path(workspace))
         if not project:
             return None
         candidate = Path(workspace) / project / ".venv" / "bin"
@@ -972,6 +1060,50 @@ def _the_project_virtualenv(workspace: str) -> str | None:
     except Exception:  # noqa: BLE001 - a PATH that cannot be enriched stays as it is
         logger.debug("Could not look for the project's virtualenv", exc_info=True)
     return None
+
+
+def _a_fresh_data_directory(workspace: str, category: str) -> Dict[str, str]:
+    """`{<pack.data_dir_env>: <a fresh directory>}` for a test run of a product that keeps data; {} otherwise.
+
+    The acceptance configuration the harness keeps starts the service with an empty data directory of its own; a
+    unit run had none. Measured on one run: unit tests posting megabyte bodies to the product's default data
+    directory on every round grew its data file to 205 MB, the service parsed all of it per request, and the worker
+    container was killed at its memory limit mid-stage. The directory is under the project's `test-results/`, which
+    git ignores. Never raises.
+    """
+    if category != "test":
+        return {}
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(workspace)
+        if not found or not getattr(found[0], "data_dir_env", ""):
+            return {}
+        pack, record = found
+        project = str(record.get("project") or "")
+        fresh = Path(workspace) / project / "test-results" / f"unit-data-{os.getpid()}-{time.time_ns()}"
+        fresh.mkdir(parents=True, exist_ok=True)
+        return {pack.data_dir_env: str(fresh)}
+    except Exception:  # noqa: BLE001 - a run without it is a run as before
+        return {}
+
+
+def _remove_the_fresh_data_directories(fresh: Dict[str, str]) -> None:
+    """Delete the data directories `_a_fresh_data_directory` made for a command that has ended. Never raises.
+
+    Found in review: one was made for every test command and none was ever
+    removed, so a run's `test-results/` gathered a directory per test run -
+    each holding whatever the product's tests wrote, which on the run that
+    motivated them was a data file of 205 MB. Only a directory
+    named the way that function names them is removed.
+    """
+    for directory in (fresh or {}).values():
+        try:
+            path = Path(directory)
+            if path.name.startswith("unit-data-") and path.parent.name == "test-results":
+                shutil.rmtree(path, ignore_errors=True)
+        except (OSError, TypeError, ValueError):
+            continue
 
 
 def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict[str, str]:
@@ -1098,6 +1230,15 @@ class _TreeOverBudget(Exception):
 #: How often a running command's process tree is measured.
 _TREE_POLL_SECONDS = 0.5
 
+#: The most resident memory the last command's process tree held at any of
+#: those measurements, in bytes; None when it ran too briefly to be measured or
+#: did not run here. Written onto the command's ledger entry: found in review,
+#: the watch measured every command's tree twice a second and kept nothing, so
+#: when the worker was killed for memory no record named the command that grew.
+_MEMORY_PEAK_OF_THE_COMMAND: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "memory_peak_of_the_command", default=None
+)
+
 #: The least a command's tree is ever allowed, whatever the container has free.
 _LEAST_TREE_BUDGET_BYTES = 512 * 1024**2
 
@@ -1209,25 +1350,27 @@ def _run_and_watch_the_tree(
     # Measured live: a product's test setup opened a database thread at
     # import; pytest printed "7 errors in 0.26s" and then never exited, and
     # every run of it waited out the timeout - 300 s, then 60 s, then 60 s.
-    chunks: dict[str, list[str]] = {"stdout": [], "stderr": []}
+    # Kept to a head and a tail (`bounded_output`): read whole, a product that
+    # printed without end grew this process past every limit the command had.
+    chunks = {"stdout": HeadAndTail(), "stderr": HeadAndTail()}
     last_output = [time.monotonic()]
 
-    def read(name: str, stream: Any) -> None:
-        for line in iter(stream.readline, ""):
-            chunks[name].append(line)
-            last_output[0] = time.monotonic()
-        stream.close()
+    def heard() -> None:
+        last_output[0] = time.monotonic()
 
     readers = [
-        threading.Thread(target=read, args=(name, stream), daemon=True)
+        threading.Thread(target=read_into, args=(stream, chunks[name]), kwargs={"on_read": heard}, daemon=True)
         for name, stream in (("stdout", process.stdout), ("stderr", process.stderr))
     ]
     for reader in readers:
         reader.start()
+    # The most the tree held at any measurement, for the ledger (`_MEMORY_PEAK_OF_THE_COMMAND`).
+    peak = [0]
 
     def watch() -> None:
         while not finished.wait(_TREE_POLL_SECONDS):
             used = _tree_memory_bytes(process.pid)
+            peak[0] = max(peak[0], used)
             if used > budget:
                 over.append(used)
                 _kill_the_tree(process.pid)
@@ -1235,7 +1378,7 @@ def _run_and_watch_the_tree(
             if (
                 ends_at_its_summary
                 and time.monotonic() - last_output[0] >= SETTLED_AFTER_THE_SUMMARY_SECONDS
-                and _the_run_has_summed_up("".join(chunks["stdout"]) or "".join(chunks["stderr"]))
+                and _the_run_has_summed_up(chunks["stdout"].text() or chunks["stderr"].text())
             ):
                 lingered.append(True)
                 _kill_the_tree(process.pid)
@@ -1251,16 +1394,17 @@ def _run_and_watch_the_tree(
         for reader in readers:
             reader.join(timeout=5)
         raise subprocess.TimeoutExpired(
-            argv, timeout, output="".join(chunks["stdout"]), stderr="".join(chunks["stderr"])
+            argv, timeout, output=chunks["stdout"].text(), stderr=chunks["stderr"].text()
         ) from None
     finally:
         finished.set()
         watcher.join(timeout=2)
+        _MEMORY_PEAK_OF_THE_COMMAND.set(peak[0] or None)
         # Whatever the command left behind in its group goes with it.
         _kill_the_tree(process.pid)
     for reader in readers:
         reader.join(timeout=5)
-    stdout, stderr = "".join(chunks["stdout"]), "".join(chunks["stderr"])
+    stdout, stderr = chunks["stdout"].text(), chunks["stderr"].text()
     if over:
         raise _TreeOverBudget(over[0], budget, stdout, stderr)
     if lingered:
@@ -1725,6 +1869,12 @@ ASSIGNMENT_ADVICE = (
 #: commands can simply be run.
 _INSTEAD_OF: dict[str, str] = {
     "rm": "To remove a file, use the `delete_artifact` tool, which records what it removed.",
+    # Measured on one run: a setup declared `.venv/bin/pip install`, which the testing role cannot run, while the
+    # refusal named `pip install <tool>` as the way to install; the stage spent its budget on it.
+    "pip": "This role runs pip through Python: `python -m pip install ...`, or the project environment's own "
+           "`.venv/bin/python -m pip install ...`.",
+    "pip3": "This role runs pip through Python: `python3 -m pip install ...`, or the project environment's own "
+            "`.venv/bin/python -m pip install ...`.",
     "rmdir": "To remove a file, use the `delete_artifact` tool, which records what it removed.",
     "mv": "To move or rename a file, use the `move_artifact` tool.",
     "cp": "To copy a file, read it with `read_file` and write the copy with `write_artifact`.",
@@ -2032,6 +2182,61 @@ def _what_to_do_with_that_argument(
     )
 
 
+#: What joins commands, or sends one's output elsewhere, in a shell's command line.
+_SHELL_JOINS = ("&&", "||", ";", "|", ">", "<", "$(", "`")
+
+
+def _a_command_line_in_one_string(argv: list[str], permitted: Sequence[str], role_name: str) -> str:
+    """Why a whole command line as the first item is refused, and what to send instead.
+
+    The program was the line's last path part: `cd /workspace/app && cat
+    app/routes.py | head -50` was refused as "'routes.py | head -50' is not
+    permitted", with the list of permitted programs. Measured on one run: a
+    fixer sent eight such lines in a minute, each told a different fragment of
+    its own line was not permitted, and none that there is no shell.
+    """
+    line = argv[0]
+    first_word = os.path.basename(line.split()[0])
+    joined = any(mark in line for mark in _SHELL_JOINS)
+    message = (
+        f"'{line[:120]}' is a whole command line in one string. There is no shell here, so nothing splits it "
+        "or runs its parts: send one program per call, the program name as the first item of `command` and "
+        "each argument as its own item."
+    )
+    if joined:
+        message += (" Commands joined with `&&`, `||`, `;` or `|`, and redirections, are separate calls - or "
+                    "one script file, run as one command.")
+    if first_word == "cd":
+        message += " To run a command in a folder, give the folder as `working_directory`; `cd` is not a program."
+    elif first_word not in permitted:
+        message += (f" '{first_word}' is not permitted for role '{role_name}' either."
+                    f"{_what_to_do_instead(first_word)} {_what_can_actually_run(permitted)}")
+    elif not joined:
+        message += f" '{first_word}' is permitted - send {[first_word, *line.split()[1:], *argv[1:]]!r}."
+    return message
+
+
+_NOT_THE_WORKSPACE_S_CODE = {".venv", "venv", "node_modules", "site-packages", ".git", "__pycache__"}
+
+
+def _the_workspace_s_own_module(module: str, repo_root: str | Path | None) -> bool:
+    """Whether `python -m <module>` runs the product's own code: a package or module file in the workspace.
+
+    Running one of the workspace's own files is allowed (`-c` is refused with "put the code in a file inside the
+    workspace"), and `-m` on the product's own package is the same code. Measured on one release: every contract line
+    of a command-line tool was `python -m <its package> ...`, refused, so none was checked. Never a module found only
+    in an installed environment.
+    """
+    top = (module or "").split(".")[0]
+    if not top.isidentifier() or repo_root is None:
+        return False
+    root = Path(repo_root)
+    for base in (root, *(p for p in root.iterdir() if p.is_dir() and p.name not in _NOT_THE_WORKSPACE_S_CODE)) if root.is_dir() else ():
+        if (base / top / "__init__.py").is_file() or (base / top / "__main__.py").is_file() or (base / f"{top}.py").is_file():
+            return True
+    return False
+
+
 def validate_command(
     command: Sequence[str], role_name: str, repo_root: str | Path | None = None
 ) -> list[str]:
@@ -2045,9 +2250,27 @@ def validate_command(
     if not argv:
         raise CommandNotAllowed("Command cannot be empty.")
 
+    permitted = allowed_executables(role_name, repo_root)
+    if len(argv[0].split()) > 1:
+        raise CommandNotAllowed(_a_command_line_in_one_string(argv, permitted, role_name))
+    # Before any check of a permitted program's arguments: a shell line split
+    # into items - `["python", "-m", "uvicorn", ..., "&&", ...]` - was answered
+    # about the module `-m` names, and its operator never mentioned. A program
+    # not permitted (`cd`, a builtin) keeps its own refusal below.
+    operator = _uses_a_shell_operator(argv) if os.path.basename(argv[0]) in permitted else None
+    if operator is not None:
+        raise CommandNotAllowed(
+            f"'{operator}' is a shell operator and there is no shell here, so it "
+            f"would be passed to '{os.path.basename(argv[0])}' as an ordinary "
+            "argument. The command would run, exit successfully and not do what "
+            "you meant - a redirect writes no file, a pipe feeds nothing. "
+            "To create or change a file use write_artifact or edit_artifact; to "
+            "use the output of one command in another, run them separately and "
+            "read the result."
+        )
+
     executable = os.path.basename(argv[0])
 
-    permitted = allowed_executables(role_name, repo_root)
     if executable not in permitted:
         # A whole command line packed into the first element is not a missing
         # permission, and saying so sends the agent looking for the wrong fix.
@@ -2081,23 +2304,11 @@ def validate_command(
             )
         if arg == "-m" and executable in {"python", "python3"}:
             module = argv[index + 1] if index + 1 < len(argv) else ""
-            if module not in _ALLOWED_PYTHON_MODULES:
+            if module not in _ALLOWED_PYTHON_MODULES and not _the_workspace_s_own_module(module, repo_root):
                 raise CommandNotAllowed(
                     f"'{executable} -m {module}' is not permitted: it can execute arbitrary code. "
                     f"Allowed modules: {', '.join(sorted(_ALLOWED_PYTHON_MODULES))}."
                 )
-
-    operator = _uses_a_shell_operator(argv)
-    if operator is not None:
-        raise CommandNotAllowed(
-            f"'{operator}' is a shell operator and there is no shell here, so it "
-            f"would be passed to '{os.path.basename(argv[0])}' as an ordinary "
-            "argument. The command would run, exit successfully and not do what "
-            "you meant - a redirect writes no file, a pipe feeds nothing. "
-            "To create or change a file use write_artifact or edit_artifact; to "
-            "use the output of one command in another, run them separately and "
-            "read the result."
-        )
 
     code_to_check = _code_given_to_node_check(argv)
     if code_to_check is not None:
@@ -3204,18 +3415,26 @@ def _truncate(text: str, label: str = "output", workspace: str | None = None) ->
     The tail is kept as well as the head: a build's actual error is almost
     always in the last lines, and a head-only cut reliably discards it.
 
-    `workspace` only tags the entry with the run it came from. The journal is one
+    `workspace` tags the entry with the run it came from. The journal is one
     shared directory, so without the tag `read_command_output` could neither list
     a run's own entries nor keep from offering another run's.
+
+    Before the cut, the runs of stack frames outside the project are collapsed
+    (`app.analysis.tracebacks`, plan SZ.3), so the cut falls on what remains;
+    the journal keeps the output whole.
     """
     if len(text) <= MAX_OUTPUT_SIZE:
         return text
 
+    from app.analysis.tracebacks import without_outside_frames
     from app.tools.journal import scope_of, write_entry
 
     reference = write_entry(label, text, scope=scope_of(workspace))
-    head = text[: int(MAX_OUTPUT_SIZE * 0.4)]
-    tail = text[-int(MAX_OUTPUT_SIZE * 0.4):]
+    shown = without_outside_frames(text, workspace)
+    if len(shown) <= MAX_OUTPUT_SIZE:
+        return shown + (f"\n\n...[full output saved as {reference}]...\n" if reference else "")
+    head = shown[: int(MAX_OUTPUT_SIZE * 0.4)]
+    tail = shown[-int(MAX_OUTPUT_SIZE * 0.4):]
     pointer = (
         f"\n\n...[{len(text) - len(head) - len(tail)} bytes omitted"
         + (f"; full output saved as {reference}" if reference else "")
@@ -3475,6 +3694,7 @@ def _record_execution(
     working_directory: str | None = None,
     category: str = "default",
     duration_seconds: float | None = None,
+    memory_peak_bytes: int | None = None,
 ) -> None:
     """Append one command's outcome to the run's ledger. Never raises.
 
@@ -3517,6 +3737,11 @@ def _record_execution(
             ),
             **_the_counts_a_test_run_reported(result),
         }
+        if memory_peak_bytes:
+            # The most the command's process tree held while it ran
+            # (`_MEMORY_PEAK_OF_THE_COMMAND`), so a worker killed for memory
+            # has a record naming the command that grew.
+            entry["memory_peak_mb"] = round(memory_peak_bytes / 1024**2, 1)
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry) + "\n")
     except OSError:
@@ -4654,6 +4879,41 @@ class SandboxExecutor:
             search = os.pathsep.join((venv, search))
         return shutil.which(name, path=search)
 
+    @staticmethod
+    def _the_same_path_in_a_project(program: str, workspace: str, run_in: str | None) -> str:
+        """The workspace-relative path of a relative program found in a project folder, not where the command runs.
+
+        Measured on one run: a fixer ran `./.venv/bin/python -m pytest` from the workspace root, the virtualenv was
+        the project's (`textkit/.venv`), and the refusal said to create one.
+        """
+        if "/" not in program or os.path.isabs(program):
+            return ""
+        relative = program[2:] if program.startswith("./") else program
+        try:
+            for child in sorted(p for p in Path(workspace).iterdir() if p.is_dir() and not p.name.startswith(".")):
+                if (run_in or "").strip("./") == child.name:
+                    continue
+                candidate = child / relative
+                if candidate.is_file() and os.access(candidate, os.X_OK):
+                    return f"{child.name}/{relative}"
+        except OSError:
+            return ""
+        return ""
+
+    @staticmethod
+    def _a_project_binary_off_the_path(name: str, workspace: str, run_in: str | None) -> str:
+        """The `node_modules/.bin/<name>` a command's bare name stands for, relative to its folder, or "".
+
+        Measured: a setup declared `["vitest", "run"]`; vitest was installed, the sandbox said it was "not
+        installed - run `npm install`", and the setup (which had run it) could not tell what was wrong.
+        """
+        try:
+            base = Path(workspace) / str(run_in or "")
+            found = base / "node_modules" / ".bin" / name
+            return f"node_modules/.bin/{name}" if "/" not in name and found.exists() else ""
+        except (OSError, ValueError):
+            return ""
+
     @classmethod
     def _execute_here(
         cls,
@@ -4678,6 +4938,24 @@ class SandboxExecutor:
         except CommandNotAllowed as exc:
             return {"error": str(exc)}
         if executable is None:
+            local = cls._a_project_binary_off_the_path(argv[0], workspace, run_in)
+            if local:
+                return {
+                    "error": (
+                        f"'{argv[0]}' is installed in the project (`{local}`) but is not on the PATH here, so it is "
+                        f"not run by its bare name. Run it as `npx {argv[0]} ...`, or through an npm script "
+                        f"(`npm test`, `npm run <script>`)."
+                    )
+                }
+            elsewhere = cls._the_same_path_in_a_project(argv[0], workspace, run_in)
+            if elsewhere:
+                return {
+                    "error": (
+                        f"There is no '{argv[0]}' where this command runs ({run_in or 'the workspace root'}); "
+                        f"the project's is `{elsewhere}`. Run it from the project: the same command with "
+                        f"`working_directory` set to `{elsewhere.split('/', 1)[0]}`. Nothing needs installing."
+                    )
+                }
             return {
                 "error": (
                     f"'{argv[0]}' is not installed in this environment. Install it into "
@@ -4691,13 +4969,15 @@ class SandboxExecutor:
             "sandbox exec (in-container) role=%s category=%s argv=%s",
             role_name, category, argv,
         )
+        # This one command's data directory, removed when it ends (`_remove_the_fresh_data_directories`).
+        fresh_data = _a_fresh_data_directory(workspace, category)
         try:
             result = _run_and_watch_the_tree(
                 [executable, *argv[1:]],
                 cwd=run_in or workspace,
-                env=_child_environment(workspace, extra_env),
+                env=_child_environment(workspace, {**fresh_data, **(extra_env or {})}),
                 timeout=timeout,
-                data_bytes=_process_memory(workspace),
+                data_bytes=_process_memory(workspace, argv),
                 ends_at_its_summary=_runs_tests(argv),
             )
         except subprocess.TimeoutExpired as expired:
@@ -4724,6 +5004,8 @@ class SandboxExecutor:
             }
         except OSError as exc:
             return {"error": f"Could not run '{argv[0]}': {exc}"}
+        finally:
+            _remove_the_fresh_data_directories(fresh_data)
 
         finished = {
             "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout", workspace), workspace),
@@ -4783,6 +5065,14 @@ class SandboxExecutor:
         # A command is held to the line the stage's file tools are (see
         # `repository.what_a_command_may_not_change`).
         held = None
+        # The imports Node will load are named before the command runs, and
+        # before the files it may not change are noted, so the repair is not
+        # put back after it (see `imports_before_a_run`).
+        put_right = ""
+        if not for_the_harness:
+            from app.stacks.imports_before_a_run import put_right as _put_the_imports_right
+
+            put_right = _put_the_imports_right(repo_root)
         if not for_the_harness:
             from app.tools.repository import what_a_command_may_not_change
 
@@ -4794,6 +5084,10 @@ class SandboxExecutor:
                 )
         finally:
             _FOR_THE_HARNESS.reset(token)
+        # A service a test started with the restart helper and never stopped is stopped now (see `stray_services`).
+        from app.acceptance.stray_services import stop_strays
+
+        stop_strays(repo_root)
         # What the command wrote, so a conversation that read a file before a
         # formatter, a generator or an install rewrote it is not told it still
         # holds it (Initiative AO.9). Only for a command that ran.
@@ -4814,6 +5108,9 @@ class SandboxExecutor:
             changed = files_changed_since(repo_root, begun)
             if changed:
                 outcome = {**outcome, "files_changed": changed}
+        if put_right and isinstance(outcome, dict):
+            earlier = str(outcome.get("note") or "")
+            outcome = {**outcome, "note": (earlier + "\n\n" if earlier else "") + put_right}
         return outcome
 
     @classmethod
@@ -4911,6 +5208,8 @@ class SandboxExecutor:
             }
         else:
             began = time.time()
+            # A peak left from an earlier command on this context is not this one's.
+            _MEMORY_PEAK_OF_THE_COMMAND.set(None)
             outcome = cls._run(
                 command, repo_root, role_name, category, extra_env, working_directory
             )
@@ -4962,6 +5261,7 @@ class SandboxExecutor:
         _record_execution(
             repo_root, role_name, command, outcome, working_directory, category,
             duration_seconds=time.monotonic() - started,
+            memory_peak_bytes=None if already_timed_out else _MEMORY_PEAK_OF_THE_COMMAND.get(),
         )
         return outcome
 
@@ -4979,7 +5279,12 @@ class SandboxExecutor:
             return {"error": "Command execution is disabled (ALLOW_COMMAND_EXECUTION is not enabled)."}
 
         try:
-            argv = validate_command(command, role_name, repo_root)
+            # The refusals of a server command are there to save an agent the wait; the harness's own short start
+            # wants exactly that command and has its own limit. No agent reaches this: only the harness's flag does.
+            argv = (
+                [str(part) for part in command] if category == "start" and running_for_the_harness()
+                else validate_command(command, role_name, repo_root)
+            )
         except CommandNotAllowed as exc:
             return {"error": str(exc)}
 

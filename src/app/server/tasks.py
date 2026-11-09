@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import time
+from typing import Callable
 import os
 from datetime import datetime, timezone
 
@@ -103,6 +104,18 @@ def _forget_the_calls_of_a_previous_worker(**_kwargs) -> None:
 
 
 @worker_ready.connect
+def _lift_a_hold_a_previous_deploy_left(**_kwargs) -> None:
+    """Remove a model-call hold set before this worker started, so no call waits on a deploy that is over. See `call_gate`."""
+    try:
+        from app.models.call_gate import lift_a_hold_from_before
+
+        if lift_a_hold_from_before(_WORKER_STARTED):
+            logger.info("Lifted a model-call hold a deploy set before this worker started")
+    except Exception:  # noqa: BLE001 - a call still goes ahead once the hold's own limit passes
+        logger.debug("Could not lift an old model-call hold", exc_info=True)
+
+
+@worker_ready.connect
 def _record_whether_commands_can_run(**_kwargs) -> None:
     """Tell the API whether this worker can run commands. See `app.server.execution_readiness`."""
     try:
@@ -156,7 +169,15 @@ def _recover_runs_their_worker_abandoned(**_kwargs) -> None:
         # than a race: several workers come up together on every deploy.
         client = get_redis_client()
         if not client.set("harness:recover-orphans", "1", nx=True, ex=_RECOVERY_LOCK_SECONDS):
-            logger.info("Another worker is recovering abandoned runs; skipping")
+            # The lock may be a dead worker's: measured on one deploy, a worker that came up on a host restart took
+            # it and was replaced within the two minutes, its sweep died with it, and the run it should have
+            # resumed sat at `running` until the next worker start. So look again once the lock has lapsed.
+            logger.info("Another worker is recovering abandoned runs; looking again when its lock lapses")
+            import threading
+
+            threading.Thread(
+                target=_sweep_when_the_lock_lapses, args=(client,), name="orphan-sweep-later", daemon=True
+            ).start()
             return
     except Exception:  # noqa: BLE001 - no lock is a reason to skip, not to crash
         logger.warning("Could not take the orphan-recovery lock; skipping", exc_info=True)
@@ -176,8 +197,86 @@ def _recover_runs_their_worker_abandoned(**_kwargs) -> None:
     import threading
 
     threading.Thread(
-        target=_sweep_for_abandoned_runs, name="orphan-sweep", daemon=True
+        target=_sweep_and_keep_sweeping, name="orphan-sweep", daemon=True
     ).start()
+
+
+#: How often the Celery parent looks again for a running row whose task is gone, after the start-time sweep.
+#: Measured on one run: the pool process was OOM-killed mid-stage and the row sat `running` for 14 minutes, until a
+#: deploy's restart swept; nothing had looked at running rows between restarts.
+_RECURRING_SWEEP_SECONDS = 90
+#: How long one sweep pass may take before the loop leaves it and goes on. Measured: the sweep thread sat in a socket
+#: read from the worker's start, and no sweep ran again until the next restart. A pass that hangs is left on its own
+#: daemon thread; the next pass runs on a new one.
+_SWEEP_PASS_DEADLINE_SECONDS = 120
+#: The start-time sweep waits for the broker (up to 30 s) and sweeps twice a minute apart: well inside this.
+_START_SWEEP_DEADLINE_SECONDS = 300
+
+
+def _within(work: Callable[[], object], seconds: float, what: str) -> bool:
+    """Run `work` on its own daemon thread and wait at most `seconds`. True when it finished. Never raises."""
+    import threading
+
+    done = threading.Thread(target=work, name="orphan-sweep-pass", daemon=True)
+    done.start()
+    done.join(seconds)
+    if done.is_alive():
+        logger.warning("%s did not finish in %s s; left behind, the next pass runs on its own", what, seconds)
+        return False
+    return True
+_RECURRING_LOCK_KEY = "harness:recover-orphans:recurring"
+
+
+def _a_quiet_emit(line: str) -> None:
+    """The sweep's words, at INFO when it changed something and at DEBUG when it found nothing."""
+    loud = "->" in line or "Recovered" in line or "Resum" in line or "OOM" in line
+    (logger.info if loud else logger.debug)(line)
+
+
+def _keep_sweeping(*, sleep: Callable[[float], None] | None = None, stop: Callable[[], bool] = lambda: False) -> None:
+    """Sweep for abandoned runs every `_RECURRING_SWEEP_SECONDS` for as long as this worker lives. Never raises.
+
+    The same guarded sweep as at start (`recover_orphaned_runs`: a row is touched only when the broker answers and
+    its task is in no worker's active, reserved or scheduled list, and it was not written to in the last minute),
+    under a short lock so one worker sweeps at a time.
+    """
+    from app.server.manage import RECENTLY_TOUCHED_SECONDS, recover_orphaned_runs
+
+    if _RECURRING_SWEEP_SECONDS <= 0:
+        return
+    pause = sleep or time.sleep
+    def one_pass() -> None:
+        try:
+            from app.server.redis_client import get_redis_client
+
+            client = get_redis_client()
+            if not client.set(_RECURRING_LOCK_KEY, "1", nx=True, ex=max(10, _RECURRING_SWEEP_SECONDS - 10)):
+                return
+            recover_orphaned_runs(dry_run=False, emit=_a_quiet_emit, grace_seconds=RECENTLY_TOUCHED_SECONDS)
+        except Exception:  # noqa: BLE001 - a sweep must never take a worker down
+            logger.warning("The recurring orphan sweep failed; looking again later", exc_info=True)
+
+    while not stop():
+        pause(_RECURRING_SWEEP_SECONDS)
+        _within(one_pass, _SWEEP_PASS_DEADLINE_SECONDS, "a recurring orphan sweep")
+
+
+def _sweep_and_keep_sweeping() -> None:
+    """The start-time sweep, then the recurring one, on the same daemon thread; neither waits on a pass that hangs."""
+    _within(_sweep_for_abandoned_runs, _START_SWEEP_DEADLINE_SECONDS, "the start-time orphan sweep")
+    _keep_sweeping()
+
+
+def _sweep_when_the_lock_lapses(client) -> None:
+    """Take the recovery lock once the holder's has lapsed and sweep, unless another worker took it again. Never raises."""
+    try:
+        time.sleep(_RECOVERY_LOCK_SECONDS + 5)
+        if client.set("harness:recover-orphans", "1", nx=True, ex=_RECOVERY_LOCK_SECONDS):
+            _sweep_for_abandoned_runs()
+        else:
+            logger.info("Another worker took the orphan-recovery lock again; leaving the sweep to it")
+    except Exception:  # noqa: BLE001 - a worker that cannot run this must still accept tasks
+        logger.warning("The second orphan sweep failed", exc_info=True)
 
 
 #: How long to give this worker to become answerable on the broker before
@@ -378,6 +477,43 @@ def handle_task_failure(sender=None, task_id=None, exception=None, args=None, kw
         client.ltrim("celery_dlq", 0, 999)
     except Exception:  # noqa: BLE001
         logger.error("Failed to write to the dead-letter queue", exc_info=True)
+    _recover_the_run_of_a_lost_worker(sender, task_id, exception, args, kwargs)
+
+
+def _a_lost_worker(exception: BaseException | None) -> bool:
+    """Whether a task failed because its pool process was killed: `WorkerLostError`, or the hard time limit."""
+    from celery.exceptions import TimeLimitExceeded, WorkerLostError
+
+    return isinstance(exception, (WorkerLostError, TimeLimitExceeded))
+
+
+def _recover_the_run_of_a_lost_worker(sender, task_id, exception, args, kwargs) -> None:
+    """Mark and resume a workflow run whose pool process was killed, now rather than at the next sweep. Never raises.
+
+    Found in review: a pool process lost to the OOM killer or a SIGKILL left
+    its row `running` until the recurring sweep judged it. Celery's parent
+    knows at once - it sends this failure with `WorkerLostError` - so the run
+    is marked the way recovery marks it and resumed the same way
+    (`manage.recover_a_run_whose_worker_was_lost`). On a thread: the resume
+    asks the model server and the broker, and this hook runs on the parent's
+    own loop.
+    """
+    try:
+        if getattr(sender, "name", "") != "execute_workflow_run" or not _a_lost_worker(exception):
+            return
+        run_id = (kwargs or {}).get("run_id") or (args[0] if args else None)
+        if not run_id:
+            return
+        import threading
+
+        from app.server.manage import recover_a_run_whose_worker_was_lost
+
+        threading.Thread(
+            target=recover_a_run_whose_worker_was_lost, args=(str(run_id), task_id),
+            name=f"lost-worker-{str(run_id)[:12]}", daemon=True,
+        ).start()
+    except Exception:  # noqa: BLE001 - the recurring sweep still finds it
+        logger.warning("Could not recover the run of a lost worker process", exc_info=True)
 
 
 def _mark_failed(run_id: str, message: str) -> None:
@@ -444,6 +580,22 @@ def _record_a_cancellation_nothing_else_will(runner: Any, run_id: str, status: s
         logger.warning("Could not record the cancellation of run %s", run_id, exc_info=True)
 
 
+@celery_app.task(name="fill_model_capabilities", ignore_result=True)
+def fill_model_capabilities() -> None:
+    """The settings page's "find what is missing" for the model's capabilities (`steering_job`)."""
+    from app.models.steering_job import fill_capabilities
+
+    fill_capabilities()
+
+
+@celery_app.task(name="diagnose_the_model", ignore_result=True)
+def diagnose_the_model() -> None:
+    """The settings page's "diagnose this model" action, in the worker that reaches the model (`steering_job`)."""
+    from app.models.steering_job import run
+
+    run()
+
+
 @celery_app.task(
     bind=True, name="execute_workflow_run", max_retries=2, ignore_result=True
 )
@@ -463,11 +615,52 @@ def execute_workflow_run(
             logger.error("Run %s not found; nothing to execute", run_id)
             return
 
+        from app.observability.transcript import record as note_in_transcript
+
         # What the build model's server gives each request, read once per
         # segment (a deploy or a model change between segments re-reads it).
         from app.models import server_profile
 
         profile = server_profile.record()
+        # A model not seen before is diagnosed now, while no stage waits for
+        # the server - tools, reasoning, reply salvage - and what was measured
+        # is kept with the model and used for it (`app.models.diagnostics`).
+        try:
+            from app.models import build_default_chat_model
+            from app.models.diagnostics import diagnose_if_new
+            from app.models.reply_salvage import measure_if_new
+
+            served = build_default_chat_model()
+            # Said in the transcript (HR2.OB.1): a new model's diagnosis makes dozens of calls before the first
+            # stage, and an audit reading only the transcript saw a run "stalled at 0%".
+            note_in_transcript(run_id, "", "model_diagnostic", event="start", steps="diagnose, salvage, deep, capabilities")
+            diagnose_if_new(served)
+            measure_if_new(served)
+            from app.models.model_guidance import deep_if_new
+
+            deep_if_new(served)
+            from app.models.diagnostics import apply, recorded
+            from app.models.reply_salvage import served_name
+
+            apply(served, recorded(served_name(served)))
+            from app.models import capabilities
+
+            if not capabilities.found_values(served_name(served)):
+                capabilities.fill(served, served_name(served), str(getattr(served, "model_name", "") or ""))
+            note_in_transcript(run_id, "", "model_diagnostic", event="end")
+        except Exception:  # noqa: BLE001 - salvage is measured at the first reply that needs it instead
+            note_in_transcript(run_id, "", "model_diagnostic", event="failed")
+        # The reasoning tag from the server this run is served by, which may not be the default setting's - on its
+        # own, so a failure in the steps above never skips it.
+        try:
+            from app.models import capabilities, model_pin
+
+            with model_pin.as_the_run(run_id):
+                where = model_pin.destination("default", run_id)
+                if where is not None and where.model:
+                    capabilities.reasoning_tag_if_missing(where.model, where.base_url, where.key)
+        except Exception:  # noqa: BLE001 - the salvage works as before without it
+            logger.debug("Could not read the serving model's reasoning tag", exc_info=True)
         # What this segment runs on (plan MF.1): every deploy restarts the
         # worker, so a run on more than one harness version is seen as one.
         from app.observability.provenance import record_the_segment
@@ -510,7 +703,10 @@ def execute_workflow_run(
         from app import delivery
         from app.models.roles import on_the_build_model_only
 
-        with delivery.for_the_run(getattr(record, "delivery_mode", "")), \
+        from app.server.driving import driving
+
+        # Held while this task drives the run, so a rewind waits for the step in flight (harness review R1).
+        with driving(run_id), delivery.for_the_run(getattr(record, "delivery_mode", "")), \
                 on_the_build_model_only(bool(getattr(record, "local_only", False))):
             asyncio.run(runner._run_loop(record, document, repository, resume=resume))
     except _RETRYABLE as exc:

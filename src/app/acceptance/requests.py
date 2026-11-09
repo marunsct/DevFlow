@@ -5,10 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Sequence
 
-from app.acceptance import suite
+from app.acceptance import actions_within_a_view, suite
 from app.acceptance.api_reference import api_reference
 from app.acceptance.criteria import Criterion
+from app.agents import brief_over_spec
 from app.stacks import contract
+from app.plugins.seed import JUNIT_REPORTS
 
 #: How much of the brief QA is handed. Briefs are short; this is a ceiling.
 BRIEF_CHARS = 12_000
@@ -39,6 +41,24 @@ SHARED_STORE = (
     "must not assume it starts empty: create what it reads under names no other test uses (a "
     "username of its own, say), and look for its own records rather than counting all of them."
 )
+#: Said to the suite's writer and its reviewer, true on every stack. It said each test ran alone against an empty
+#: product, beside `SHARED_STORE`, which says the opposite for a service the suite starts once; the
+#: reviewer had only the first, and a test counting a shared table read as right to both.
+TESTS_ASSUME_ONLY_WHAT_THEY_MADE = (
+    "- Each test assumes nothing it did not make: what it acts on or reads, it creates first, through the "
+    "product as a user would, under names no other test uses. Other tests' records may be there too - on a "
+    "service the suite starts once they are - so a test looks for its own records and never counts them all. "
+    "A test that acts on something it never created can pass only on a product that ships with that data. "
+    # Measured on two full-stack runs in a row: a test read the kept start script and asserted its lines; found only
+    # after the build, each cost a suite reopen and a repair.
+    "And a test never reads the text of a file the harness keeps - its start script, its configuration: that "
+    "text is not the product's to change. What such a file must do, the test shows on the running product.\n"
+    # Measured on two runs in a row, both arms of a measurement: a locked test expected 24 characters for a string of
+    # 23 (or 25), counted by hand; each cost two fix rounds on a product that counted right.
+    "- A count or length of text the test writes itself - its characters, lines or bytes - is worked out in the test "
+    "from that text (its length, its lines), never written as a number: a number counted by hand is often one off, "
+    "and the test then fails a product that counts right.\n"
+)
 #: The kinds of product whose suite runs against one long-lived service.
 _A_SHARED_SERVICE = frozenset({"http_api", "fullstack"})
 
@@ -62,10 +82,15 @@ def _how_to_write_them(repo_root: str | Path, project: str, acceptance_dir: str,
         f"`{project}/{acceptance_dir}/{suite.DECLARED_COMMAND_FILE}` saying how they run: "
         '{"command": ["<executable>", "<argument>", ...], "report": "<path>"} - the command '
         f"is run in `{project}/`, and must write a JUnit XML report at `report` (a path "
-        f"relative to `{project}/`). Test the product the way its user meets it: a page "
+        f"relative to `{project}/`). When the suite needs several runners, list each with its own report instead: "
+        '{"runs": [{"command": [...], "report": "<path>"}, ...]} - no script of your own to combine them; each runs in '
+        "turn and the harness reads each report as it finishes. Test the product the way its user meets it: a page "
         "through a browser, a service over HTTP, a program as a process, a library through "
         "its public functions. Each test's name carries the id of the criterion it proves, "
-        "`[AC-3]` in a title or `ac3` in an identifier."
+        "`[AC-3]` in a title or `ac3` in an identifier.\n"
+        # Measured on one run: a browser runner was asked for its report in a form it does not read, and five rounds
+        # failed on a report that was never written; the writers had never been told how each runner writes one.
+        f"How each runner writes that report:\n{JUNIT_REPORTS}"
     )
 
 
@@ -161,6 +186,7 @@ def build_author_request(
     testability: Sequence[str] = (),
     interface_contract: Sequence[str] = (),
     specification: Any = None,
+    batch_note: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """The QA stage's brief: write the acceptance suite before anything is built.
 
@@ -209,6 +235,7 @@ def build_author_request(
         "You are the QA engineer. " + state_of_the_product + "Once "
         "reviewed, the suite is locked, and the product is finished when it passes.\n\n"
         f"--- Acceptance criteria ---\n{criteria_text(criteria, deferred)}\n\n"
+        f"{batch_note}"
         f"{_how_each_was_made_testable(testability)}"
         f"{requests_text}"
         f"{feedback_text}"
@@ -232,11 +259,14 @@ def build_author_request(
         "test that proves several criteria carries every one of their ids. A criterion whose id "
         "is in no test's name cannot be tracked or credited. A criterion is proven by checking "
         "the result a user observes, not by calling internal code.\n"
-        "- Each test runs alone, against a product that holds no data: nothing another test "
-        "created is there. A test that acts on something - an item, a record, an entry - "
-        "creates it first, through the product as a user would; otherwise it can pass only "
-        "on a product that ships with that data.\n"
-        "- A test that a product keeps its data checks every kind of change it offers - not only "
+        "- A test checks what the brief or the interface contract says, and no more. Where they give a "
+        "status code, a field or an exact message, the test checks that. Where they give no wording for an "
+        "error or a message, the test checks that it is an error - the status, the shape - and not the "
+        "words the specification happened to choose. A product built to the brief fails a test that "
+        "asserts wording nobody required, and the suite is locked with that failing.\n"
+        + brief_over_spec.qa_rule()
+        + TESTS_ASSUME_ONLY_WHAT_THEY_MADE
+        + "- A test that a product keeps its data checks every kind of change it offers - not only "
         "creating a record, but each way one can be changed or removed - survives a reload or a "
         "restart. A product that keeps only what was created passes a weaker test and loses its "
         "user's changes.\n"
@@ -244,7 +274,14 @@ def build_author_request(
         "state while that view is shown and checks the record leaves it - or joins it - at "
         "once, not only after the view is chosen again. A product that updates a view only "
         "when it is re-chosen passes every check made on a fresh view and fails its user.\n"
-        f"- Write only inside `{project}/{acceptance_dir}/`. Product code is not yours.\n"
+        + actions_within_a_view.author_rule()
+        + "- Where the user adds records through a page, one test adds two, one after the other, "
+        "from the same page without reloading it, and checks both are shown. A page that works "
+        "only once - a control left disabled, or a form left in its first state, after the first "
+        "save - passes every test that adds one record and fails its user at the second. The test "
+        "waits until the first is shown before it types the second, as a person does: a page that "
+        "empties its form once a save has finished would otherwise empty what the test typed.\n"
+        + f"- Write only inside `{project}/{acceptance_dir}/`. Product code is not yours.\n"
         "- Never start a product that keeps running - a service, or the server a page is served "
         "from - yourself, in a test or by a command: the suite's own setup starts it before the "
         "tests and stops it after. A test that runs its start script or its server waits for a "
@@ -252,8 +289,11 @@ def build_author_request(
         "A criterion about how it starts is proven by the running product the setup gives you. "
         "A program that runs and exits is run by its tests, as its user runs it.\n"
         "- Run the suite once. The tests must RUN and FAIL now, because nothing is built: "
+        "what the project holds now is the stack's starting skeleton - a health check, an "
+        "empty entry point, a manifest - and the builders write the product after this suite "
+        "is locked. Finishing it is not yours, not even to see one test pass; "
         "failing because a control, endpoint, command or function does not exist yet is "
-        "right. A syntax error, an import that does not resolve, \"no tests found\", or an "
+        "right.A syntax error, an import that does not resolve, \"no tests found\", or an "
         "error the test's own code throws - a helper called with the wrong arguments, a name "
         "the test never defined - is yours to fix before you finish: read why each test "
         "failed, not only that it did.\n"

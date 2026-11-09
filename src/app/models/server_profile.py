@@ -38,6 +38,8 @@ class ServerProfile:
     quantisation: str = ""
     #: The model file the server holds, by its name.
     model: str = ""
+    #: Whether the server holds a vision part for it (`modalities.vision`); None when it does not say.
+    reads_images: bool | None = None
 
     @property
     def bits(self) -> int | None:
@@ -66,11 +68,13 @@ def from_props(props: dict[str, Any]) -> ServerProfile:
     path = str(props.get("model_path") or "")
     name = path.replace("\\", "/").rsplit("/", 1)[-1]
     found = _QUANT.findall(name)
+    vision = (props.get("modalities") or {}).get("vision") if isinstance(props.get("modalities"), dict) else None
     return ServerProfile(
         slots=slots if isinstance(slots, int) and slots > 0 else None,
         slot_context=context if isinstance(context, int) and context > 0 else None,
         quantisation=found[-1].upper() if found else "",
         model=name,
+        reads_images=vision if isinstance(vision, bool) else None,
     )
 
 
@@ -83,17 +87,55 @@ def read(base_url: str, api_key: str = "") -> ServerProfile | None:
 
         reached, naming = reached_from_here(base_url.rstrip("/"))
         root = reached[:-3] if reached.endswith("/v1") else reached
-        request = urllib.request.Request(
-            root + "/props", headers={**({"Authorization": f"Bearer {api_key}"} if api_key else {}), **naming}
-        )
-        with urllib.request.urlopen(request, timeout=PROPS_TIMEOUT_SECONDS) as reply:
-            props = json.load(reply)
-    except Exception:  # noqa: BLE001 - a server without /props says nothing
+        headers = {**({"Authorization": f"Bearer {api_key}"} if api_key else {}), **naming}
+    except Exception:  # noqa: BLE001
         return None
-    return from_props(props) if isinstance(props, dict) else None
+    if root not in _WITHOUT_PROPS:
+        props = _get_json(root + "/props", headers)
+        if isinstance(props, dict) and any(key in props for key in _PROPS_KEYS):
+            return from_props(props)
+        # No `/props`, or an answer without one (LM Studio says 200 with an error body, and logs an ERROR each time).
+        _WITHOUT_PROPS.add(root)
+    return _from_lm_studio(_get_json(root + "/api/v0/models", headers))
+
+
+#: Fields a llama.cpp `/props` body has; an answer with none of them is not one.
+_PROPS_KEYS = ("total_slots", "default_generation_settings", "model_path")
+#: Servers that answered without a `/props`, by root: not asked for it again in this process.
+_WITHOUT_PROPS: set[str] = set()
+
+
+def _get_json(url: str, headers: dict[str, str]) -> Any:
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=PROPS_TIMEOUT_SECONDS) as reply:
+            return json.load(reply)
+    except Exception:  # noqa: BLE001 - a server without the endpoint says nothing
+        return None
+
+
+def _from_lm_studio(models: Any) -> ServerProfile | None:
+    """The profile from LM Studio's `/api/v0/models`: the one loaded model's context and quantisation; else None.
+
+    It names the context the model was loaded with, not a share per request, so `slots` stays unknown; the context
+    budget takes the smaller of this and the configured window, so it can only tighten the budget.
+    """
+    entries = models.get("data") if isinstance(models, dict) else None
+    loaded = [m for m in entries or [] if isinstance(m, dict) and m.get("state") == "loaded"]
+    if len(loaded) != 1:
+        return None
+    model = loaded[0]
+    context = model.get("loaded_context_length")
+    quantisation = str(model.get("quantization") or "")
+    return ServerProfile(
+        slot_context=context if isinstance(context, int) and context > 0 else None,
+        quantisation=quantisation.upper() if _QUANT.fullmatch(quantisation) else "",
+        model=str(model.get("id") or ""),
+    )
 
 
 _RECORDED: ServerProfile | None = None
+#: When this process last read the server (`record`), on the monotonic clock.
+_READ_AT = 0.0
 #: Whether a read of the server was attempted in this process. Before it, "no facts" means
 #: "not asked yet", which is not what a server that has none is.
 _TRIED = False
@@ -101,12 +143,16 @@ _TRIED = False
 
 def record() -> ServerProfile | None:
     """Read the build model's server profile and keep it for this process. Never raises."""
-    global _RECORDED, _TRIED
+    global _RECORDED, _TRIED, _READ_AT, _DESTINATION
+    import time
+
     _TRIED = True
+    _READ_AT = time.monotonic()
     try:
         from app.models import _runtime_settings
 
         settings = _runtime_settings()
+        _DESTINATION = (settings.openai_base_url or "", settings.model_name or "")
         if (settings.llm_provider or "") in {"anthropic", "gemini"}:
             _RECORDED = None
             return None
@@ -138,7 +184,35 @@ def what_changed(before: ServerProfile, after: ServerProfile) -> list[str]:
         changes.append(f"tokens per slot {before.slot_context or '?'} -> {after.slot_context or '?'}")
     if before.quantisation != after.quantisation:
         changes.append(f"quantisation {before.quantisation or '?'} -> {after.quantisation or '?'}")
+    # The model itself: a server restarted with another model at the same slots
+    # and context was no change at all, and what was measured of the old one
+    # (reply salvage, `app.models.reply_salvage`) went on being used for it.
+    if before.model != after.model:
+        changes.append(f"model {before.model or '?'} -> {after.model or '?'}")
     return changes
+
+
+#: (address, model) the profile in `_RECORDED` was read for; None before the first read.
+_DESTINATION: tuple[str, str] | None = None
+
+
+def _the_run_moved(run_id: str) -> bool:
+    """Whether the run now talks to a different (address, model) than the profile was read for. Never raises."""
+    global _DESTINATION
+    if not run_id or _RECORDED is None:
+        return False
+    try:
+        from app.models.model_pin import destination
+
+        found = destination("default", run_id)
+    except Exception:  # noqa: BLE001
+        return False
+    if found is None:
+        return False
+    here = (found.base_url, found.model)
+    moved = _DESTINATION is not None and here != _DESTINATION
+    _DESTINATION = here
+    return moved
 
 
 def check_again(run_id: str = "", *, clock: Any = None, reader: Any = None) -> str:
@@ -156,7 +230,10 @@ def check_again(run_id: str = "", *, clock: Any = None, reader: Any = None) -> s
     import time
 
     now = (clock or time.monotonic)()
-    if not _TRIED or _RECORDED is None or now - _LAST_CHECK < HEALTH_CHECK_SECONDS:
+    # A run moved to another model server (its model pin was toggled, or the settings changed under it) is not
+    # waited for: the facts recorded are the old server's, so it asks the new one now.
+    moved = _the_run_moved(run_id)
+    if not _TRIED or _RECORDED is None or (now - _LAST_CHECK < HEALTH_CHECK_SECONDS and not moved):
         return ""
     _LAST_CHECK = now
     try:
@@ -200,17 +277,38 @@ def current() -> ServerProfile | None:
     return _RECORDED
 
 
+#: How old, at most, the profile the settings page names a model by may be.
+PAGE_MAX_AGE_SECONDS = 30
+
+
+def recent(max_age: float = PAGE_MAX_AGE_SECONDS, *, clock: Any = None) -> ServerProfile | None:
+    """The profile, read again when this process's read is older than `max_age` or there was none. Never raises.
+
+    For a process no run reads the server in - the API the settings page asks:
+    it never read the server, so it named the model by its configured name
+    while the diagnosis kept what it measured under the server's own, and the
+    page showed nothing of it. A model swapped since is named afresh too.
+    """
+    import time
+
+    if not _TRIED or (clock or time.monotonic)() - _READ_AT > max_age:
+        return record()
+    return _RECORDED
+
+
 def asked() -> bool:
     """Whether the server's profile has been read in this process (it may have said nothing)."""
     return _TRIED
 
 
 def forget() -> None:
-    global _RECORDED, _TRIED, _LAST_CHECK, _UNREACHABLE
+    global _RECORDED, _TRIED, _LAST_CHECK, _UNREACHABLE, _READ_AT, _DESTINATION
+    _DESTINATION = None
     _RECORDED = None
+    _READ_AT = 0.0
     _TRIED = False
     _LAST_CHECK = 0.0
     _UNREACHABLE = False
 
 
-__all__ = ["ServerProfile", "asked", "check_again", "current", "forget", "from_props", "read", "record", "what_changed"]
+__all__ = ["PAGE_MAX_AGE_SECONDS", "ServerProfile", "asked", "check_again", "current", "forget", "from_props", "read", "recent", "record", "what_changed"]

@@ -14,10 +14,13 @@ changes what a stage is offered.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -41,7 +44,9 @@ GENERIC = FamilyProfile(
 
 #: (a pattern on the served model's name, its profile), most specific first.
 FAMILIES: tuple[tuple[re.Pattern[str], FamilyProfile], ...] = (
-    (re.compile(r"qwen3[.\-_]?\d*[-_ ]?coder", re.I), FamilyProfile(
+    # Any words between the version and "coder": `qwen3.8-flash-next-coder` was
+    # read as plain qwen3 (JSON tool calls) though its template writes XML ones.
+    (re.compile(r"qwen3[\w.\- ]*?coder", re.I), FamilyProfile(
         "qwen3-coder", "qwen3_coder (XML tool calls)", "", None,
         "temperature 0.7, top_p 0.8, top_k 20, repetition_penalty 1.05")),
     (re.compile(r"qwen3", re.I), FamilyProfile(
@@ -99,12 +104,60 @@ def fitness_dir() -> Path:
     return Path(os.environ.get("DATA_DIR") or "data") / "model-fitness"
 
 
-def record_edit_rates(model_name: str, rates: dict[str, float]) -> Path:
-    """Keep a model's measured well-formed rates; the path written."""
+def merge_into_fitness(model_name: str, measured: dict) -> Path:
+    """Keep `measured` in the model's fitness file beside what else was measured of it; the path written.
+
+    One file a model, more than one measurement in it: the edit rates and the
+    reply salvage (`reply_salvage`). Each kept its own by rewriting the file,
+    so measuring one would have forgotten the other.
+    """
     path = fitness_dir() / f"{_slug(model_name)}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"model": model_name, **rates}, indent=1, sort_keys=True), encoding="utf-8")
+    try:
+        found = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        found = {}
+    found = found if isinstance(found, dict) else {}
+    path.write_text(json.dumps({**found, "model": model_name, **measured}, indent=1, sort_keys=True), encoding="utf-8")
     return path
+
+
+def fold_into_served(served: str, configured: str) -> None:
+    """What was kept under a model's configured name, moved into its file under the server's name. Never raises.
+
+    One model, two names: the server's file name, which runs and the
+    diagnosis keep their measurements under, and the configured name, which
+    the settings page used when its process had not read the server. The
+    owner's capability settings went to one file and the runs read the other.
+    What the served file already holds wins; the configured file is removed.
+    """
+    if not served or not configured or _slug(served) == _slug(configured):
+        return
+    old = fitness_dir() / f"{_slug(configured)}.json"
+    if not old.is_file():
+        return
+    try:
+        stray = json.loads(old.read_text(encoding="utf-8"))
+        path = fitness_dir() / f"{_slug(served)}.json"
+        try:
+            kept = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            kept = {}
+        merged = {**stray, **kept}
+        for key, value in stray.items():
+            if isinstance(value, dict) and isinstance(kept.get(key), dict):
+                merged[key] = {**value, **kept[key]}
+        merged["model"] = served
+        path.write_text(json.dumps(merged, indent=1, sort_keys=True), encoding="utf-8")
+        old.unlink()
+        logger.info("Kept what was saved under %s with the served model %s", configured, served)
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not fold %s into %s", configured, served, exc_info=True)
+
+
+def record_edit_rates(model_name: str, rates: dict[str, float]) -> Path:
+    """Keep a model's measured well-formed rates; the path written."""
+    return merge_into_fitness(model_name, rates)
 
 
 def measured_edit_rates(model_name: str) -> dict[str, float]:
@@ -132,10 +185,16 @@ def describe(model_name: str) -> str:
     edits = (f"edits well formed {rates.get('edit', 0):.0%}, whole files {rates.get('whole', 0):.0%} -> prefer "
              f"{'whole files' if edit_preference(model_name) == 'whole' else 'edits'}"
              if rates else "edit preference unmeasured (`loop.sh fitness --edits` between runs)")
+    try:
+        from app.models import reply_salvage
+
+        salvage = reply_salvage.describe(reply_salvage.recorded(model_name))
+    except Exception:  # noqa: BLE001
+        salvage = "unmeasured"
     return (f"family {profile.family}; server parser {profile.parser}; thinking switch "
             f"{profile.thinking_switch or 'none known'}; per-request reasoning budget {budget}; {edits}; "
-            f"recommended sampling (advice, never sent): {profile.sampling}")
+            f"reply salvage {salvage}; recommended sampling (advice, never sent): {profile.sampling}")
 
 
 __all__ = ["TOOL_ALIASES", "FAMILIES", "FamilyProfile", "GENERIC", "WELL_FORMED_EDITS", "describe", "edit_preference",
-           "measured_edit_rates", "profile_for", "record_edit_rates"]
+           "fold_into_served", "measured_edit_rates", "merge_into_fitness", "profile_for", "record_edit_rates"]

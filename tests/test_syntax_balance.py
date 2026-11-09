@@ -139,7 +139,8 @@ def test_both_edit_paths_build_their_result_in_one_place() -> None:
 
     source = inspect.getsource(repository.edit_approved_artifact)
 
-    assert source.count("_edited(") == 2
+    # The repaired span, the addition at the end of the file (LF.338) and the exact match: each through `_edited`.
+    assert source.count("_edited(") == 3
     assert '"status": "edited"' not in source, "the result shape belongs in _edited"
 
 

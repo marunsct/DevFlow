@@ -336,6 +336,7 @@ PRODUCT_INTAKE_REVIEW = "product_intake"
 
 from app.agents import interface_clashes  # noqa: E402 - beside its siblings
 from app.acceptance import mutation_guided  # noqa: E402 - beside its siblings
+from app.graph import defect_fix_modes  # noqa: E402 - beside its siblings
 from app.graph.acceptance_nodes import ACCEPTANCE_REVIEW  # noqa: E402 - beside its siblings
 from app.graph.delivery import RECORDED_AS_RISKS, RELEASE_REVIEW  # noqa: E402 - beside its siblings
 from app.graph.escalation import ESCALATION_REVIEW  # noqa: E402 - beside its siblings
@@ -500,6 +501,8 @@ class WorkflowGraphState(TypedDict, total=False):
     # against a specification. See `_a_success_measure_the_specification_drops`.
     specification_coverage_checked: bool
     specification_deferrals_checked: bool
+    specification_contract_lines_checked: bool
+    specification_kept_files_checked: bool
     specification_repair_count: int
     layout_repair_count: int
     # Per-stage count of attempts that ended without a structured response.
@@ -516,6 +519,7 @@ class WorkflowGraphState(TypedDict, total=False):
     # made to pass. Counted apart from `milestone_revision_count`, which is the
     # milestone review's: see `_replan_or_escalate`.
     sprint_replan_count: int
+    sprint_best_history: list
     sprint_plan: SprintPlanOutput
     # Success measures a sprint plan left unassigned or only partly delivered,
     # as {"measure": n, "missing": [items]}, carried into the one re-plan that
@@ -640,6 +644,7 @@ class WorkflowGraphState(TypedDict, total=False):
     escalation: dict[str, Any] | None
     escalation_count: int
     known_issues: list[str]
+    unit_failures_accepted_at_an_escalation: list[str]
     # Plan QM.2, off until measured: the sprint attempts whose sources were
     # probed with deliberate changes ("<sprint index>:<re-plan count>"), and
     # the findings no unit test was made to notice, for the release's gaps.
@@ -1156,7 +1161,7 @@ def the_round_s_measurement(root: Any) -> str:
     )
 
 
-def _record_the_owners(root: Any, tasks: list[Any]) -> None:
+def _record_the_owners(root: Any, tasks: list[Any], done: Any = ()) -> None:
     """Record which stage owns each file the dispatched work orders list; a file two list has none.
 
     From the work orders as dispatched, not as the lead planned them. Measured
@@ -1170,11 +1175,17 @@ def _record_the_owners(root: Any, tasks: list[Any]) -> None:
         return
     from app.tools.repository import record_work_order_files
 
+    finished = set(done or ())
     declared: dict[str, list[str]] = {}
     for index, task in enumerate(tasks or []):
         for path in getattr(task, "files", None) or []:
             declared.setdefault(str(path), []).append(_specialist_stage_name(task, index))
-    record_work_order_files(root, {path: stages[0] for path, stages in declared.items() if len(set(stages)) == 1})
+    # A work order already done - drafted whole by the harness, or finished by its stage - owns nothing any more
+    # (harness review P4). Measured over 40 runs: 42 of 64 ownership refusals named an owner that never ran as a
+    # stage, its files drafted in fast delivery, so a later stage needing a change there was refused with no one to
+    # ask; 12 more named an owner already finished.
+    record_work_order_files(root, {path: stages[0] for path, stages in declared.items()
+                                   if len(set(stages)) == 1 and stages[0] not in finished})
 
 
 def _specialist_stage_name(task: Any, index: int) -> str:
@@ -1262,26 +1273,116 @@ def _noted_as_reverted(cycle: Any, indices: list[int], broke: list[str], *, in_a
     those against one locked test call for a dispute. A batch reverted whole is
     noted otherwise: which of its fixes broke the test is not known, and each is
     fixed alone next.
+
+    The note replaces the one before it, and counts the defect's reverts and the
+    locked tests they broke (`_the_reverts_noted`). Found in a code review: each
+    revert appended the same ~400-character note, three reverts left about 4,200
+    characters of notes ahead of the runner's output, and the rewrite's failure
+    text was cut at test 23 of 79.
     """
-    unit_guidance = (
-        "\nIf the behaviour this sprint delivers is different from what was built before, the "
-        "test is out of date, not the product: change what it asserts to the behaviour "
-        "this sprint delivers, keep the test's name (a test that disappears is counted "
-        "as broken), and say in your answer that the test was out of date."
-        if any(item.startswith("unit:") for item in broke)
-        else ""
-    )
+    # On one line each: the note is found, replaced and read line by line.
+    named = "; ".join(str(item).replace("\n", " ") for item in broke[:5])
+    unit_guidance = _A_UNIT_TEST_MAY_BE_OUT_OF_DATE if any(item.startswith("unit:") for item in broke) else ""
     note = (
         "A batch of fixes including this one was reverted, because together they broke what "
-        f"passed before them: {'; '.join(broke[:5])}. It is fixed on its own next.{unit_guidance}"
+        f"passed before them: {named}. It is fixed on its own next."
         if in_a_batch
-        else f"A fix was tried and reverted, because it broke what passed before it: {'; '.join(broke[:5])}.{unit_guidance}"
+        else f"A fix was tried and reverted, because it broke what passed before it: {named}."
     )
+
+    def noted(item: Any) -> str:
+        reverts, broken = _the_reverts_noted(str(item.actual_behavior or ""))
+        if not in_a_batch:
+            broken.update(name.strip() for name in named.split("; ") if name.strip().startswith("acceptance:"))
+        tally = ""
+        if reverts >= 1:
+            tally = f"\n{_REVERTS_SO_FAR} {reverts + 1}." + (
+                f" {_THE_TESTS_THEY_BROKE} " + "; ".join(f"{name} ({count})" for name, count in broken.most_common()) + "."
+                if broken else "")
+        return (f"{_without_the_revert_note(str(item.actual_behavior or ''))}\n{note}{tally}{unit_guidance}"
+                f"{_the_unit_tests_are_out_of_date(item, broke)}")
+
     return cycle.model_copy(update={"defects": [
-        item.model_copy(update={"actual_behavior": f"{item.actual_behavior}\n{note}"})
-        if position in indices else item
+        item.model_copy(update={"actual_behavior": noted(item)}) if position in indices else item
         for position, item in enumerate(cycle.defects)
     ]})
+
+
+#: What a reverted fix of a defect whose broken tests include unit tests is told.
+_A_UNIT_TEST_MAY_BE_OUT_OF_DATE = (
+    "\nIf the behaviour this sprint delivers is different from what was built before, the "
+    "test is out of date, not the product: change what it asserts to the behaviour "
+    "this sprint delivers, keep the test's name (a test that disappears is counted "
+    "as broken), and say in your answer that the test was out of date."
+)
+#: How the line that counts a defect's reverted fixes begins, and how it names the locked tests they broke.
+_REVERTS_SO_FAR = "Fixes of this defect reverted so far:"
+_THE_TESTS_THEY_BROKE = "The locked acceptance tests they broke, each with how many of them broke it:"
+_A_REVERT_TALLY = re.compile(
+    rf"^{re.escape(_REVERTS_SO_FAR)} (\d+)\.(?: {re.escape(_THE_TESTS_THEY_BROKE)} (.+)\.)?$", re.M)
+#: The first line of a revert note, alone or in a batch, and the line that counts the reverts.
+_A_REVERT_NOTE_LINE = re.compile(
+    rf"\n?^(?:A fix was tried and reverted, because|A batch of fixes including this one was reverted, because"
+    rf"|{re.escape(_REVERTS_SO_FAR)})[^\n]*", re.M)
+
+
+def _without_the_revert_note(actual_behavior: str) -> str:
+    """`actual_behavior` with the revert note a fix left on it taken out, whatever came after it kept."""
+    text = _A_REVERT_NOTE_LINE.sub("", actual_behavior)
+    for guidance in (_A_UNIT_TEST_MAY_BE_OUT_OF_DATE, UNIT_TESTS_AGAINST_THE_SUITE):
+        text = text.replace(guidance, "")
+    return text.rstrip("\n")
+
+
+def _the_reverts_noted(actual_behavior: str) -> tuple[int, Any]:
+    """How many fixes of the defect were reverted, and how many of them broke each locked acceptance test.
+
+    Read from the tally line a second revert writes; a note without one (a single revert, or notes appended before
+    the note was replaced) is counted note by note.
+    """
+    from collections import Counter
+
+    broken: Counter[str] = Counter()
+    tally = _A_REVERT_TALLY.search(actual_behavior)
+    if tally:
+        for entry in (tally.group(2) or "").split("; "):
+            name, _, count = entry.strip().rpartition(" (")
+            if name and count.rstrip(")").isdigit():
+                broken[name] += int(count.rstrip(")"))
+        return int(tally.group(1)), broken
+    for match in _REVERTED_FOR.finditer(actual_behavior):
+        for name in match.group(1).split("; "):
+            if name.strip().startswith("acceptance:"):
+                broken[name.strip()] += 1
+    reverts = len(_REVERTED_FOR.findall(actual_behavior)) + actual_behavior.count(
+        "A batch of fixes including this one was reverted")
+    return reverts, broken
+
+
+#: What a unit-test defect is told when its fix broke the locked acceptance suite. Measured on one run: the unit tests
+#: called the product's factory as it was before a fix made it asynchronous, and two fixes in turn changed the product
+#: to suit them, broke three and then seven passing acceptance tests, and were reverted; the sprint was planned again.
+UNIT_TESTS_AGAINST_THE_SUITE = (
+    "\nThe product before this fix passed those acceptance tests, and no fix may change them: where the unit tests "
+    "and the acceptance suite disagree, the unit tests are out of date. Change the unit tests to use the product as "
+    "it now is - its functions as they are now called, what they now return - keep each test's name, leave the "
+    "product as it is, and say in your answer that the unit tests were out of date."
+)
+
+
+def _the_unit_tests_are_out_of_date(defect: Any, broke: list[str]) -> str:
+    """`UNIT_TESTS_AGAINST_THE_SUITE` for a failing-unit-tests defect whose fix broke acceptance tests; else ""."""
+    if not str(getattr(defect, "description", "") or "").startswith(UNIT_TESTS_FAIL):
+        return ""
+    return UNIT_TESTS_AGAINST_THE_SUITE if any(item.startswith("acceptance:") for item in broke) else ""
+
+
+def _the_unit_tests_a_kept_fix_broke(state: Any) -> dict[str, Any]:
+    """The update raising what `unit_tests_disagree` kept a fix over, for the next round; {} when nothing was."""
+    from app.graph import unit_tests_disagree
+
+    raised = unit_tests_disagree.raised(state)
+    return {"review_defects": [*(state.get("review_defects") or []), *raised]} if raised else {}
 
 
 def _a_revert_escalates_this_fix(cycle: Any, defect_index: int) -> bool:
@@ -1306,9 +1407,7 @@ def _a_revert_escalates_this_fix(cycle: Any, defect_index: int) -> bool:
         notes = str(getattr(defect, "actual_behavior", "") or "")
     except (AttributeError, IndexError, TypeError):
         return False
-    reverts = len(_REVERTED_FOR.findall(notes)) + notes.count(
-        "A batch of fixes including this one was reverted"
-    )
+    reverts, _ = _the_reverts_noted(notes)
     return reverts == 1
 
 
@@ -2019,14 +2118,41 @@ def _what_the_ledger_confirms(repo_root: str, verification: Any) -> str:
         return ""
 
 
-def _what_the_last_failure_printed(run_id: str | None) -> dict[str, str] | None:
+def _what_the_criteria_s_tests_printed(repo_root: str, defect: Any) -> dict[str, str] | None:
+    """The failing tests of the criteria a defect names, with their output; None for any other defect. Never raises."""
+    try:
+        from app.acceptance import suite as _the_suite
+        from app.acceptance.junit import tags_in
+
+        return _the_suite.what_the_criteria_s_tests_printed(repo_root, tags_in(str(getattr(defect, "description", "") or "")))
+    except Exception:  # noqa: BLE001 - a brief is better without it than absent
+        return None
+
+
+def _what_the_unit_tests_printed(repo_root: str, defect: Any) -> dict[str, str] | None:
+    """A unit-test defect's own failing tests and their output (HR F3); None for any other defect. Never raises."""
+    try:
+        from app.acceptance import suite as _the_suite
+
+        return _the_suite.what_the_unit_tests_printed(repo_root, str(getattr(defect, "description", "") or ""),
+                                                      str(getattr(defect, "caught_by", "") or ""))
+    except Exception:  # noqa: BLE001 - the last failing command stands in, as before
+        return None
+
+
+def _what_the_last_failure_printed(run_id: str | None, defect: Any = None) -> dict[str, str] | None:
     """The last failing command's own output, or None. Never raises.
 
     Imported here rather than at module scope: the transcript module is
     observability, and a defect fix must not fail because a record could not be
-    read.
+    read. Never for a mutation finding (HR2.fix.6): its product is not failing, and the last command was another
+    defect's - mutation fixers were shown it 78 times to their own evidence twice; the finding says what settles it.
     """
     try:
+        from app.acceptance import mutation_guided
+
+        if defect is not None and mutation_guided.is_a_finding(defect):
+            return None
         from app.observability.transcript import last_failing_command
 
         return last_failing_command(run_id)
@@ -2226,7 +2352,7 @@ def _restart_on_a_fresh_conversation(
     try:
         from app.agents.carry_over import carry_over_note
 
-        note = carry_over_note(inner_thread_id, repo_root)
+        note = carry_over_note(inner_thread_id, repo_root, stage_name, why)
     except Exception:  # noqa: BLE001 - never fail a restart over a hint
         note = ""
     if note:
@@ -2476,7 +2602,9 @@ def _a_fix_recorded_from_its_writes(stage_name: str, result: Mapping[str, Any]) 
     breaks a passing test is reverted, one whose own tests still fail stays
     open (Initiative AO).
     """
-    if not str(stage_name or "").startswith("defect_fix_"):
+    # A build stage too: measured on one run, a builder wrote the product, ran out of calls twice and was started over
+    # each time, about 30 minutes; the test round after it measures what was written, as for a fix.
+    if not str(stage_name or "").startswith(("defect_fix_", "specialist_")):
         return None
     written = _files_the_conversation_wrote(result)
     if not written:
@@ -2639,6 +2767,16 @@ def _another_work_order_writes_it(root: str, importer: str, finding: dict, stage
     )
 
 
+def _the_names_the_module_has(project: Path, importer: Path, finding: dict) -> str:
+    """What the module an import reads defines, after a finding about a missing name; "" when it cannot say."""
+    try:
+        from app.analysis.language_service import the_names_the_module_has
+
+        return the_names_the_module_has(project, importer, finding)
+    except Exception:  # noqa: BLE001 - the finding goes out as it was
+        return ""
+
+
 def _diagnostics_in_files_touched(
     state: Any, result: dict[str, Any], structured_response: Any, stage_name: str = "",
 ) -> list[str]:
@@ -2669,11 +2807,18 @@ def _diagnostics_in_files_touched(
     for file_name in getattr(structured_response, "changed_files", None) or ():
         files_to_check.add(_without_a_leading_dot_slash(str(file_name)))
 
+    # Only writes that happened: measured on one run, QA was refused an edit of the product's `app.ts`, was
+    # then asked to fix that file's missing import, and spent sixteen more refused writes on it.
+    results = {
+        str(getattr(message, "tool_call_id", "")): getattr(message, "content", "")
+        for message in result.get("messages") or () if getattr(message, "type", None) == "tool"
+    }
     for message in result.get("messages") or ():
         for call in getattr(message, "tool_calls", None) or ():
             name = call.get("name") if isinstance(call, dict) else getattr(call, "name", "")
             args = (call.get("args") if isinstance(call, dict) else getattr(call, "args", None)) or {}
-            if name in _FILE_WRITES:
+            call_id = str(call.get("id") if isinstance(call, dict) else getattr(call, "id", ""))
+            if name in _FILE_WRITES and _a_tool_result_that_succeeded(results.get(call_id)):
                 for key in ("relative_path", "destination"):
                     if args.get(key):
                         files_to_check.add(_without_a_leading_dot_slash(str(args[key])))
@@ -2694,6 +2839,7 @@ def _diagnostics_in_files_touched(
                         continue
                     line = finding.get("line", "?")
                     msg = finding.get("message", "")
+                    msg += _the_names_the_module_has(project or Path(root), target, finding)
                     diagnostics.append(f"- In `{relative}` line {line}: {msg}")
                     if len(diagnostics) >= 4:
                         return diagnostics
@@ -2809,11 +2955,24 @@ def _what_the_failure_says(output: str) -> str:
     return "\n".join(dict.fromkeys(stated[-MOST_CAUSE_LINES:]))[:1_000]
 
 
-def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
+#: What a failing-unit-tests defect is told when the locked suite passes in full beside it (deep review B17). Measured
+#: on two runs: the unit tests that shipped failing asserted a key order, a count other tests' data changed, and an
+#: empty 404 body the interface does not give; the fixers changed the product for them and were reverted.
+BESIDE_A_GREEN_SUITE = (
+    "The locked acceptance suite passes in full on this product, so it does what the specification asks. A unit test "
+    "that fails here may assert what the specification does not - an order of keys, a count that depends on data "
+    "other tests leave, a body the interface does not give. Correct such a test to what the specification and the "
+    "acceptance suite say, keeping its name; change the product only for a failure the specification backs, and say "
+    "in your answer which you did."
+)
+
+
+def _the_unit_tests_fail(milestone: Any, output: str, *, beside_a_green_suite: bool = False) -> Any:
     """The defect for a failing unit run, owned by the role that writes the product.
 
     Not the testing role's: a defect it owns is closed by changing the test,
-    and a failing unit test is first the product's to answer.
+    and a failing unit test is first the product's to answer. `beside_a_green_suite`: the locked suite passed in
+    full on the same product, and the fixer is told the unit test may be the one that is wrong.
     """
     from app.agents.specialists import ReportedDefect
 
@@ -2825,14 +2984,22 @@ def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
     # service's passing output from the page runner's timing line on, and the
     # failing test and its error - before it - were in no defect.
     causes = _what_the_failure_says(str(output or ""))
+    # The note a stage's own command gets for the same output: measured on one
+    # run, two fixes read `spawn /bin/sh ENOENT` - a child started in a working
+    # directory that does not exist - as "no shell here" and changed nothing.
+    from app.tools.sandbox import _a_missing_path_that_is_here
+
+    here = _a_missing_path_that_is_here({"stdout": str(output or "")})
     return ReportedDefect(
         description=UNIT_TESTS_FAIL + (f" It says:\n{causes}\n" if causes else "")
+        + (f" {here}\n" if here else "")
         + " The runner's output ends:\n" + (tail or "(no output)"),
         severity="major",
         reproduction_steps="Run the project's unit test command.",
         expected_behavior="Every unit test passes.",
-        actual_behavior=("The unit test command exits non-zero. It says:\n" + causes) if causes
-        else "The unit test command exits non-zero.",
+        actual_behavior=(("The unit test command exits non-zero. It says:\n" + causes) if causes
+                         else "The unit test command exits non-zero.")
+        + (f"\n{BESIDE_A_GREEN_SUITE}" if beside_a_green_suite else ""),
         affected_files=[],
         owner=owner,
     )
@@ -2840,6 +3007,116 @@ def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
 
 #: Files that are a page or a page's component, whatever framework draws it.
 _PAGE_SUFFIXES = frozenset({".tsx", ".jsx", ".vue", ".svelte", ".html", ".astro"})
+
+
+def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: Any) -> Any:
+    """`test_result` with a defect for each contract line a bare request makes the server fail on, behind the switch.
+
+    Measured on one run: a bare `POST /notes` and `PUT /notes/:id` answered 500 on a green suite; the contract's checks
+    ran only at release, so the crash shipped as a gap and no fixer was given it. Asked when the locked suite is green:
+    a red one has its own defects, and the checks start the product once more. Never raises.
+    """
+    try:
+        from app.acceptance import interface_contract
+        from app.agents.specialists import ReportedDefect
+        from app.graph import acceptance_nodes
+
+        root = state["repository"].root_path
+        if not interface_contract.server_errors_at_a_round_switch.enabled() or not acceptance_nodes.suite.is_locked(root):
+            return test_result
+        if any(str(d.description or "").startswith(interface_contract.SERVER_FAILED) for d in test_result.defects):
+            return test_result
+        errors = interface_contract.server_errors(root) or []
+        bad_body = interface_contract.bad_body_errors(root) or []
+        if errors or bad_body:
+            logger.warning("A green round's contract checks made the server fail on %d line(s)", len(errors) + len(bad_body))
+            test_result = _with_a_server_error_defect(state, test_result, milestone, errors, bad_body)
+        return _with_an_emptied_field_defect(state, test_result, milestone)
+    except Exception:  # noqa: BLE001 - the round as measured stands
+        logger.debug("Could not add the contract's server errors to the round", exc_info=True)
+        return test_result
+
+
+def _with_an_emptied_field_defect(state: Any, test_result: Any, milestone: Any) -> Any:
+    """`test_result` with one defect for each write that accepted a field the criteria refuse empty. Never raises.
+
+    Measured on one run: the suite tried an empty title on create only, the product accepted it on update, and the run
+    shipped as passing while a hidden test failed.
+    """
+    try:
+        from app.acceptance import interface_contract
+        from app.agents.specialists import ReportedDefect
+        from app.graph import acceptance_nodes
+
+        root = state["repository"].root_path
+        if any(str(d.description or "").startswith(interface_contract.EMPTIED_FIELD_ACCEPTED) for d in test_result.defects):
+            return test_result
+        accepted = interface_contract.emptied_field_errors(root) or []
+        if not accepted:
+            return test_result
+        logger.warning("A green round's emptied-field probe: %d write(s) accepted an empty field", len(accepted))
+        defect = ReportedDefect(
+            description=interface_contract.emptied_field_description(accepted),
+            severity="major",
+            reproduction_steps="; ".join(
+                f"send `{c.method} {c.path}` a valid body with `{c.emptied}` set to an empty string" for c, _ in accepted[:6]),
+            expected_behavior="; ".join(f"`{c.method} {c.path}` refuses it with a 4xx and stores nothing" for c, _ in accepted[:6]),
+            actual_behavior="; ".join(f"`{c.method} {c.path}` answered {status}" for c, status in accepted[:6]),
+            affected_files=sorted({f for f, _ in acceptance_nodes.where_errors_become_5xx(root)}),
+            owner=_the_unit_tests_fail(milestone, "").owner,
+        )
+        return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
+    except Exception:  # noqa: BLE001 - the round as measured stands
+        logger.debug("Could not add the emptied-field defect to the round", exc_info=True)
+        return test_result
+
+
+def _with_the_lock_s_server_errors(state: Any, test_result: Any, milestone: Any) -> Any:
+    """`test_result` with a defect for what the contract's checks at the lock found, red suite or green. Never raises.
+
+    Settled like the green round's: by the same checks, run again.
+    """
+    try:
+        from app.acceptance import interface_contract
+
+        errors = interface_contract.errors_found_at_the_lock(state["repository"].root_path)
+        if not errors or any(
+            str(d.description or "").startswith(interface_contract.SERVER_FAILED) for d in test_result.defects
+        ):
+            return test_result
+        return _with_a_server_error_defect(state, test_result, milestone, errors)
+    except Exception:  # noqa: BLE001 - the round as measured stands
+        logger.debug("Could not add the lock's server errors to the round", exc_info=True)
+        return test_result
+
+
+def _with_a_server_error_defect(state: Any, test_result: Any, milestone: Any, errors: list[Any],
+                                bad_body: list[Any] | None = None) -> Any:
+    """`test_result` with one defect for `errors`, each a contract check and the 5xx it got, and for `bad_body`, the same for a body nothing can parse."""
+    from app.acceptance import interface_contract
+    from app.agents.specialists import ReportedDefect
+    from app.graph import acceptance_nodes
+
+    root = state["repository"].root_path
+    unparsable = list(bad_body or [])
+    defect = ReportedDefect(
+        description=interface_contract.server_error_description(errors, unparsable),
+        severity="major",
+        reproduction_steps="; ".join([
+            *(f"send `{check.method} {check.path}` with no body to the running service" for check, _ in errors[:6]),
+            *(f"send `{check.method} {check.path}` the JSON content type and the body "
+              f"`{interface_contract.A_BODY_NOTHING_CAN_PARSE}`" for check, _ in unparsable[:6]),
+        ]),
+        expected_behavior="; ".join([
+            *(f"`{check.method} {check.path}` answers {' or '.join(map(str, check.statuses or (check.status,)))}"
+              for check, _ in errors[:6]),
+            *(f"`{check.method} {check.path}` refuses a body it cannot parse with a status under 500" for check, _ in unparsable[:6]),
+        ]),
+        actual_behavior="; ".join(f"`{check.method} {check.path}` answered {status}" for check, status in [*errors[:6], *unparsable[:6]]),
+        affected_files=sorted({f for f, _ in acceptance_nodes.where_errors_become_5xx(root)}),
+        owner=_the_unit_tests_fail(milestone, "").owner,
+    )
+    return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
 
 
 def _the_served_app_is_the_scaffold_s_stub(relative: str, owner: str) -> Any:
@@ -2922,6 +3199,31 @@ def _diagnosed_file_by_file(state: Any, saved_run: dict[str, Any], milestone: An
     )
 
 
+_NOT_A_PROBE_S = object()
+
+
+def _settled_by_its_own_probe(root: Path, defect: Any) -> Any:
+    """Whether a finding of the contract's own probes still holds, by asking that probe again; `_NOT_A_PROBE_S` else.
+
+    Measured on one run: the emptied-field probe found `PATCH` taking an empty title and cited the criterion that
+    refuses it; the re-measure at dispatch ran that criterion's acceptance file - which sends an empty title on create
+    only - saw it pass, and closed the finding without a fixer. The probe raised it again each round, three attempts
+    did not beat the best, and a product passing every locked test was escalated. None when the probe cannot run.
+    """
+    from app.acceptance import interface_contract
+
+    description = str(getattr(defect, "description", "") or "")
+    if description.startswith(interface_contract.EMPTIED_FIELD_ACCEPTED):
+        found = interface_contract.emptied_field_errors(root)
+        return None if found is None else not found
+    if description.startswith(interface_contract.SERVER_FAILED):
+        errors, bad_body = interface_contract.server_errors(root), interface_contract.bad_body_errors(root)
+        if errors is None and bad_body is None:
+            return None
+        return not (errors or []) and not (bad_body or [])
+    return _NOT_A_PROBE_S
+
+
 def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
     """Whether the acceptance files naming the defect's criteria now pass - or the unit tests, when it names none; None when neither can say."""
     try:
@@ -2932,12 +3234,37 @@ def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
 
         from app.graph.acceptance_nodes import THE_PRODUCT_DOES_NOT_START
 
+        settled = _settled_by_its_own_probe(root, defect)
+        if settled is not _NOT_A_PROBE_S:
+            return settled
+        # What the suite's own run does first: the harness's files put back and a relative import given the
+        # extension its runtime needs. Measured on a small-model run: a fixer wrote `./app.js` for `./app.ts`
+        # (Node runs the `.ts` itself), the tests it was told "still fail" failed on that import alone, and it
+        # spent the stage on the same edit; the harness corrected the import only at the next suite run.
+        contract.enforce(root)
+        # A server error at the contract's checks is settled by those checks, run again (`interface_contract.still_raised`).
+        from app.acceptance import interface_contract
+
+        raised = interface_contract.still_raised(root, str(getattr(defect, "description", "") or ""))
+        if raised is not None:
+            return not raised
+        # A failing build by the build itself: no test answers for it.
+        from app.stacks import production_build
+
+        raised = production_build.still_raised(root, str(getattr(defect, "description", "") or ""))
+        if raised is not None:
+            return not raised
         if str(getattr(defect, "description", "") or "").startswith(THE_PRODUCT_DOES_NOT_START):
             # The suite starts the product its own way; unit tests that pass say
             # nothing about whether it does. Closing this on them left the same
             # defect to be raised again every round while no fixer ever saw it.
             return None
-        tags = {t for t in tags_in(str(getattr(defect, "description", "") or "")) if t.startswith(("AC-", "CR-"))}
+        # A failing unit run is answered by the unit tests alone, whatever ids their names carry: measured on two
+        # runs, unit tests named "AC-1 CreateNoteTest" sent the re-measure to the acceptance files of those
+        # criteria, which passed, and the defect was closed every round with four unit tests still failing.
+        unit_run = str(getattr(defect, "description", "") or "").startswith(UNIT_TESTS_FAIL)
+        tags = set() if unit_run else {
+            t for t in tags_in(str(getattr(defect, "description", "") or "")) if t.startswith(("AC-", "CR-"))}
         if tags:
             runs = each_file(root, contract.read(root) or {}, sandbox_runner(root), naming=tags)
             if runs:
@@ -2970,7 +3297,13 @@ def _the_suite_already_guards_it(state: Any, measured: str, defect: Any) -> bool
     description = str(getattr(defect, "description", "") or "")
     # A locked criterion, or the failing unit tests themselves: either way the
     # tests that were failing are the regression test, and they were just measured.
-    is_a_failing_test = description.startswith(UNIT_TESTS_FAIL) or any(
+    # A server error at the contract's checks has those checks for its regression test: they run at every green
+    # round and at release (`_with_the_contract_s_server_errors`).
+    from app.acceptance.interface_contract import SERVER_FAILED
+    from app.stacks.production_build import THE_PRODUCT_DOES_NOT_BUILD
+
+    # A failing build has the build for its regression test: it runs at every round where the product changed.
+    is_a_failing_test = description.startswith((UNIT_TESTS_FAIL, SERVER_FAILED)) or description.startswith(THE_PRODUCT_DOES_NOT_BUILD) or any(
         t.startswith(("AC-", "CR-")) for t in tags_in(description)
     )
     if not is_a_failing_test:
@@ -3021,6 +3354,24 @@ def _the_defect_s_tests_in(root: str, label: str, defect: Any) -> bool | None:
         left = dependency_drift.still_undeclared(Path(root) / project, str(getattr(defect, "description", "") or ""))
         if left is not None:
             return not left
+        # So is one about the scaffold's contract: by the check that raised it (`entry_exports.still_raised`).
+        from app.stacks import entry_exports
+
+        raised = entry_exports.still_raised(root, str(getattr(defect, "description", "") or ""))
+        if raised is not None:
+            return not raised
+        # And one about a server error at the contract's checks: by those checks, run again.
+        from app.acceptance import interface_contract
+
+        raised = interface_contract.still_raised(root, str(getattr(defect, "description", "") or ""))
+        if raised is not None:
+            return not raised
+        # And a failing build: by the build (it runs only if the product changed since it last did).
+        from app.stacks import production_build
+
+        raised = production_build.still_raised(root, str(getattr(defect, "description", "") or ""))
+        if raised is not None:
+            return not raised
         snapshot = ci.load(root, "latest")
         if snapshot is None or snapshot.label != label:
             return None
@@ -3089,10 +3440,18 @@ def _settle_the_fix(
         # reply at all now answers this way (`_blocked_for_want_of_room`).
         # The next round measures it again.
         update["remediation"] = cycle
+        # A package it says cannot be loaded, loaded by the harness: the next fixer is given the fact, not the claim.
+        loads = _what_a_claimed_unloadable_package_does(state["repository"].root_path, list(fix_result.blockers))
+        if loads:
+            defects = list(cycle.defects)
+            defects[defect_index] = defect.model_copy(
+                update={"actual_behavior": f"{defect.actual_behavior or ''}\n{loads}".strip()})
+            update["remediation"] = cycle.model_copy(update={"defects": defects})
         defect_ledger.note(
             "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
             sprint=state.get("current_sprint_index", 0),
-            detail="the fix stage changed nothing and reported: " + "; ".join(map(str, fix_result.blockers))[:300],
+            detail="the fix stage changed nothing and reported: " + "; ".join(map(str, fix_result.blockers))[:300]
+            + (f" - {loads}" if loads else ""),
         )
     elif (measured_now := _the_defect_s_tests_in(state["repository"].root_path, measured, defect)) is False:
         # Its own tests still fail, measured after the fix. Closed, the next
@@ -3198,7 +3557,15 @@ def _a_mutation_finding_settled(state: Any, cycle: Any, defect_index: int, stage
 
     defect = cycle.defects[defect_index]
     where = {"round_": state.get("test_round", 0), "index": defect_index, "sprint": state.get("current_sprint_index", 0)}
-    checked = mutation_guided.settled(state["repository"].root_path, defect)
+    root = state["repository"].root_path
+    # Tests that fail on the product as it is, or notice nothing, are put back first (`MUTATION_TEST_RETENTION`).
+    from app.acceptance import mutation_equivalents, mutation_retention
+    from app.observability.transcript import _run_id_from_config
+
+    checked, put_back = mutation_retention.judged(
+        root, _run_id_from_config(), stage_name, lambda: mutation_guided.settled(root, defect))
+    if put_back:
+        defect_ledger.note("retention", stage_name, defect=defect, detail=put_back, **where)
     if checked is True:
         detail = "the unit tests fail with the change and pass without it, measured by the harness"
         defect_ledger.note("fixed", stage_name, defect=defect, detail=detail, **where)
@@ -3210,11 +3577,12 @@ def _a_mutation_finding_settled(state: Any, cycle: Any, defect_index: int, stage
     why = mutation_guided.equivalent_because(fix_result)
     if why and not fix_result.changed_files:
         defect_ledger.note("closed", stage_name, defect=defect, detail="judged equivalent: " + why, **where)
+        mutation_equivalents.remember(root, defect, why)
         return accept_risk(cycle, defect_index, reason=mutation_guided.EQUIVALENT + why)
     measured = (
         "the unit tests still pass with the change" if checked is False
         else "the change could not be made again where it was, or the unit tests did not run"
-    )
+    ) + (f" ({put_back})" if put_back else "")
     tries = failed_fix_tries(cycle, defect_index) + 1
     if tries >= mutation_guided.MOST_TRIES:
         defect_ledger.note("closed", stage_name, defect=defect, detail=f"a completion gap after {tries} tries: {measured}", **where)
@@ -3285,6 +3653,24 @@ def _mutation_findings_set_aside(state: Any, cycle: Any, test_round: int) -> tup
     return cycle, list(dict.fromkeys([*known, *gaps]))
 
 
+def _only_unit_tests_open_beside_a_green_suite(state: Any, cycle: Any) -> bool:
+    """Whether the suite ran with every due criterion passing and every open defect is a failing unit test. Never raises."""
+    try:
+        from app.acceptance import suite
+        from app.graph import acceptance_nodes, settle_when_green
+
+        still_open = [d for d in getattr(cycle, "defects", None) or () if getattr(d, "status", "") == "open"]
+        if not still_open:
+            return False
+        failing, command = acceptance_nodes._failing_due(state)
+        saved = suite.last_result(state["repository"].root_path) or {}
+        if failing or not saved.get("ran") or int(saved.get("failed") or 0) > 0:
+            return False
+        return all(settle_when_green._a_unit_test_failure(d, command) for d in still_open)
+    except Exception:  # noqa: BLE001 - the round goes on as before
+        return False
+
+
 def _the_mutation_probe(state: Any, cycle: Any, test_round: int) -> dict[str, Any]:
     """The update for a sprint whose due criteria all pass: its findings to fix, or only that it was probed; {} when off.
 
@@ -3321,6 +3707,84 @@ def _the_mutation_probe(state: Any, cycle: Any, test_round: int) -> dict[str, An
     }
 
 
+#: How each runtime is asked whether a package loads: the command, with `{name}` for the package. Node imports it as
+#: the product does (an ES module, or a CommonJS one through its default).
+_LOAD_A_PACKAGE = {
+    "node": ["node", "-e", "import('{name}').then(m => console.log('LOADS', Object.keys(m).slice(0, 8).join(', ')))"
+                           ".catch(e => { console.log('FAILS', String(e && e.message || e).slice(0, 300)); process.exit(1); })"],
+}
+#: Words of a claim that something cannot be loaded.
+_A_LOADING_CLAIM = re.compile(r"\b(?:import|imports|imported|require|load|loads|resolve|module|ESM|CommonJS)\b", re.I)
+
+
+def _what_a_claimed_unloadable_package_does(repo_root: str, blockers: list[str]) -> str:
+    """What loading a declared package the blockers say cannot be loaded shows, or "". Never raises.
+
+    Measured on one run: two fixers reported that `sqlite3` could not be imported as an ES module, changed nothing,
+    and one ran to the call cap; `await import('sqlite3')` loaded it in the project. A runtime the table does not
+    name, or a claim naming no declared package, says nothing.
+    """
+    try:
+        import json as _json
+
+        from app.stacks import contract
+        from app.stacks.scaffold import sandbox_runner
+
+        text = " ".join(map(str, blockers or []))
+        found = contract.the_pack(repo_root)
+        command = _LOAD_A_PACKAGE.get(str(getattr(found[0], "code_runs_in", "") or "")) if found else None
+        if not command or not _A_LOADING_CLAIM.search(text):
+            return ""
+        project = str(found[1].get("project") or "")
+        manifest = _json.loads((Path(repo_root) / project / "package.json").read_text(encoding="utf-8"))
+        declared = [*(manifest.get("dependencies") or {}), *(manifest.get("devDependencies") or {})]
+        named = [name for name in declared if re.search(rf"(?<![\w@/-]){re.escape(name)}(?![\w/-])", text, re.I)]
+        if not named:
+            return ""
+        name = named[0]
+        outcome = sandbox_runner(repo_root)([part.replace("{name}", name) for part in command], "probe", project) or {}
+        said = str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "")
+        if "LOADS" in said:
+            exports = said.split("LOADS", 1)[1].strip().splitlines()[0][:200] if said.split("LOADS", 1)[1].strip() else ""
+            return (f"The harness loaded it: `{name}` loads in this project (its exports: {exports or 'none listed'}). "
+                    "Loading it is not what is wrong; the cause is elsewhere.")
+        if "FAILS" in said:
+            return f"The harness tried loading `{name}` in this project and it fails: {said.split('FAILS', 1)[1].strip()[:300]}"
+        return ""
+    except Exception:  # noqa: BLE001 - the claim stands as it was made
+        return ""
+
+
+def _the_unit_run_kept(repo_root: str, command: list[Any]) -> tuple[bool, str] | None:
+    """The last unit run's (passed, output) when the product and the command are as they were then; else None.
+
+    The record (`ci.UNIT_RUN_FILE`, MEASURE_ONCE) is one, shared with every CI snapshot.
+    """
+    from app import ci
+
+    saved = ci.the_unit_run_kept(repo_root, command)
+    if saved is None:
+        return None
+    logger.info("The product is as the unit tests last measured it; that run stands")
+    return bool(saved.get("passed")), str(saved.get("output") or "")
+
+
+def _keep_the_unit_run(repo_root: str, command: list[Any], passed: bool, output: str) -> None:
+    """Keep this unit run with the product's fingerprint, for `_the_unit_run_kept` and CI's snapshots. Never raises.
+
+    Each test's outcome in the pack's report goes with it, so the next snapshot of the same product reads it
+    instead of running the unit tests again.
+    """
+    from app import ci
+
+    try:
+        outcomes = ci.unit_outcomes_in_the_pack_s_report(repo_root)
+    except Exception:  # noqa: BLE001 - kept without outcomes, a snapshot runs them again
+        outcomes = None
+    unit, found = outcomes if outcomes is not None else (None, False)
+    ci.keep_the_unit_run(repo_root, command, passed, output, unit, found)
+
+
 def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
     """Run the contract's unit test command: (whether it passed, its output).
 
@@ -3344,6 +3808,11 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
         reports = _the_unit_reports(repo_root, found, cmd)
         from app.acceptance import junit
 
+        # An unchanged product's unit run stands (MEASURE_ONCE): measured on one run, one test round ran the same
+        # `npm test` four times with no fix between, five minutes each on a unit test that never settled.
+        kept = _the_unit_run_kept(repo_root, cmd)
+        if kept is not None:
+            return kept
         for report in reports:
             junit.clear(report)
         runner = sandbox_runner(repo_root)
@@ -3357,6 +3826,7 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
         output = str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "")
         if rc != 0:
             output = (output.rstrip() + "\n" + _what_the_unit_reports_say(reports)).strip()
+        _keep_the_unit_run(repo_root, cmd, rc == 0, output)
         return rc == 0, output
     except Exception as error:  # noqa: BLE001 - procedural test failure falls back to agent triage
         return False, f"The harness could not run the unit tests: {error}"
@@ -3386,16 +3856,10 @@ def _the_unit_reports(repo_root: str, record: dict[str, Any], command: list[Any]
 
 def _what_the_unit_reports_say(reports: list[Path]) -> str:
     """The failing tests in the unit reports, each with its message; "" when none are found."""
+    from app import ci
     from app.acceptance import junit
 
-    failed = [test for report in reports for test in junit.read(report).tests if test.outcome == "failed"]
-    if not failed:
-        return ""
-    return "Failing tests, from the runner's report:\n" + "\n".join(
-        f"- {test.within + ' › ' if test.within else ''}{test.name}"
-        f"{' (' + test.file + ')' if test.file else ''}: {test.message[:600]}"
-        for test in failed[:12]
-    ) + (f"\n... and {len(failed) - 12} more" if len(failed) > 12 else "")
+    return ci.what_the_failing_unit_tests_say([test for report in reports for test in junit.read(report).tests])
 
 
 def _the_reply_was_cut_off_before_it_began(message: Any) -> bool:
@@ -3672,6 +4136,22 @@ class RunCancelled(RuntimeError):
 #: cancellation is never withdrawn - `request_cancel` only sets the flag - so
 #: this can cache the positive and must not cache the negative.
 _CANCELLED_RUNS: set[str] = set()
+
+
+def remember_the_stop(run_id: str | None) -> None:
+    """Remember, in this process, that `run_id` was stopped (paused or cancelled) - see `stopped_here`."""
+    if run_id:
+        _CANCELLED_RUNS.add(str(run_id))
+
+
+def stopped_here(run_id: str | None) -> bool:
+    """Whether this process stopped `run_id` and has not resumed it since. No database read.
+
+    A stage's agent loop runs in an executor thread that the stopped task does not end. Measured on one run: after a
+    pause, the paused stage kept calling the model for five minutes, beside the same run rewound in the other worker
+    process, and could have written into the workspace the rewind had just restored. Each model call asks this.
+    """
+    return bool(run_id) and str(run_id) in _CANCELLED_RUNS
 
 
 def forget_the_stop(run_id: str | None) -> None:
@@ -4238,9 +4718,11 @@ def _run_gated_agent(
         # instead of a loop: without it the resume path re-enters the very
         # conversation that failed, replays it, and fails identically - which is
         # exactly what happened on one run until this existed.
+        from app.graph.agent_loop_fix_limits import ends_for_good
+
         restarted = (
             None
-            if out_of_room
+            if out_of_room or ends_for_good(stage_name, result)
             else _restart_on_a_fresh_conversation(
                 state, stage_name, inner_thread_id, "produced no structured response",
                 _repository_root(state),
@@ -4455,9 +4937,9 @@ def _the_scaffold_s_facts(state: Any) -> list[str]:
         package = python_package_name(project) if project and pack.language == "python" else None
         # The same lines every builder and judge reads once the scaffold is
         # set up (plan CM.1): one function, so the two cannot drift.
-        from app.agents.shared_facts import layout_facts
+        from app.agents.shared_facts import layout_facts, what_the_setup_decides
 
-        return layout_facts(pack, project, package)
+        return [*layout_facts(pack, project, package), *what_the_setup_decides(pack, project, package)]
     except Exception:  # noqa: BLE001 - the architect plans as before
         logger.debug("Could not describe the scaffold's layout", exc_info=True)
         return []
@@ -4656,7 +5138,7 @@ def _a_success_measure_the_specification_drops(state: Any, spec_text: str) -> An
     """
     if state.get("specification_coverage_checked"):
         return None
-    if state.get("architecture_revision_count", 0) + 1 >= MAX_ARCHITECTURE_REVISIONS:
+    if state.get("architecture_revision_count", 0) + 1 >= _the_revision_limit():
         return None
     measures = [
         str(m) for m in (getattr(state.get("product_intake"), "success_measures", None) or []) if str(m).strip()
@@ -4692,6 +5174,35 @@ def _a_success_measure_the_specification_drops(state: Any, spec_text: str) -> An
     )
 
 
+def _contract_lines_nothing_can_read(state: Any) -> Any:
+    """A major finding for the interface contract's lines that follow none of its forms, behind the switch.
+
+    Measured on one run: 32 of 58 lines at the lock read as nothing, and the release was the first to say so, when no
+    one could still rewrite them. Raised by the workflow, like `_a_brief_feature_the_specification_defers`: once per
+    run, and never on the revision that would exhaust `MAX_ARCHITECTURE_REVISIONS`.
+    """
+    from app.acceptance import interface_contract
+
+    if (not interface_contract.unread_at_review_switch.enabled() or state.get("specification_contract_lines_checked")
+            or state.get("architecture_revision_count", 0) + 1 >= _the_revision_limit()):
+        return None
+    lines = getattr(state.get("technical_specification"), "interface_contract", None) or ()
+    text = interface_contract.unread_lines_finding(lines)
+    if not text:
+        return None
+    from app.agents.architecture_reviewer import ArchitectureReviewFinding
+
+    return ArchitectureReviewFinding(
+        severity="major",
+        description=text,
+        evidence="Read by the workflow with the same reader the suite's lock and the release use.",
+        required_remediation=(
+            "Rewrite each in one of the three forms: `AC-3 GET /api/notes -> 200`, `AC-1 page /login textbox \"Email\"`, "
+            "`AC-5 command notes add milk -> exit 0`. What a line is for goes before its arrow or in the other sections."
+        ),
+    )
+
+
 def _a_brief_feature_the_specification_defers(state: Any, spec_text: str) -> Any:
     """A major finding for a feature the operator's brief lists and the specification defers.
 
@@ -4705,7 +5216,7 @@ def _a_brief_feature_the_specification_defers(state: Any, spec_text: str) -> Any
     """
     if state.get("specification_deferrals_checked"):
         return None
-    if state.get("architecture_revision_count", 0) + 1 >= MAX_ARCHITECTURE_REVISIONS:
+    if state.get("architecture_revision_count", 0) + 1 >= _the_revision_limit():
         return None
     brief = getattr(state.get("document"), "text", "") or ""
     from app.analysis.integration_checks import brief_features_the_text_defers
@@ -4730,6 +5241,88 @@ def _a_brief_feature_the_specification_defers(state: Any, spec_text: str) -> Any
             "verifies it - or, where the specification builds it under another name, say where."
         ),
     )
+
+
+#: Behaviour a specification has given the pack's kept start files that a review then sends a sprint back for:
+#: handling the stop signals. Narrow on purpose: measured over 20 specifications, broader words (validates,
+#: persists) named test lines and deferral lists in 13, and "creates the data directory" 9 runs that all passed,
+#: since the product creates it anyway; the stop signals cost a milestone revision and a blocking finding.
+_PRODUCT_BEHAVIOUR = re.compile(
+    r"\b(?:SIGTERM|SIGINT|signal\s+handl\w*|graceful(?:ly)?\s+shut\w*|shutdown\s+handl\w*)", re.I)
+#: How far after the file's name the behaviour may be named for the file to be its subject.
+_NEAR_ITS_NAME = 100
+#: A sentence about tests or about what is left out says nothing of what a file does.
+_NOT_ABOUT_THE_FILE = re.compile(r"\b(?:AC|CR)-\d+\b|\btests?\b|\bassert\w*|\bdefer\w*|\bout of scope\b", re.I)
+#: Another file named in a sentence, which the behaviour may belong to instead.
+_ANOTHER_FILE_NAMED = re.compile(r"\b[\w-]+\.(?:[cm]?[jt]sx?|py|rb|go|rs|java|kt|cs|php|sh|json|toml|ya?ml)\b")
+
+
+def _gives_it_behaviour(sentence: str, start: int, end: int) -> bool:
+    """Whether a sentence gives the file at `start:end` the behaviour: named soon after it, no other file between."""
+    if _NOT_ABOUT_THE_FILE.search(sentence):
+        return False
+    for match in _PRODUCT_BEHAVIOUR.finditer(sentence, end):
+        between = sentence[end:match.start()]
+        if len(between) <= _NEAR_ITS_NAME and not _ANOTHER_FILE_NAMED.search(between):
+            return True
+    return False
+
+
+def _behaviour_the_specification_gives_kept_files(state: Any, spec_text: str) -> Any:
+    """A major finding for each sentence of the specification that gives product behaviour to a file the pack keeps.
+
+    Measured on four runs: told the pack's files are the harness's and do nothing more, the specification still
+    wrote "Entry Point (src/main.ts - kept by harness): ... registering signal handlers for graceful shutdown ...
+    Creates DATA_DIR" and "start.sh creates DATA_DIR"; the design reviews left it open and a milestone review sent a
+    sprint back for it. Raised by the workflow like `_a_brief_feature_the_specification_defers`: once per run, and
+    never on the revision that would exhaust `MAX_ARCHITECTURE_REVISIONS`. Never raises.
+    """
+    try:
+        if state.get("specification_kept_files_checked"):
+            return None
+        if state.get("architecture_revision_count", 0) + 1 >= _the_revision_limit():
+            return None
+        from app.stacks import choose_pack
+
+        stack = getattr(state.get("stack_selection"), "technology_stack", None)
+        pack = choose_pack(stack, getattr(state.get("document"), "text", "") or "") if stack is not None else None
+        if pack is None:
+            return None
+        kept = {*pack.kept_files, *(["start.sh"] if "start.sh" in (pack.files or {}) else [])}
+        served = [e for e in (pack.entrypoint, *pack.entrypoints) if e and e not in kept]
+        names = {PurePosixPath(path).name: path for path in kept}
+        found: list[tuple[str, str]] = []
+        for sentence in re.split(r"(?<=[.!?])\s+|\n", spec_text or ""):
+            for name, path in names.items():
+                at = re.search(rf"(?<![\w.-]){re.escape(name)}\b", sentence)
+                if at and _gives_it_behaviour(sentence, at.start(), at.end()):
+                    found.append((path, " ".join(sentence.split())[:200]))
+                    break
+        if not found:
+            return None
+        from app.agents.architecture_reviewer import ArchitectureReviewFinding
+
+        files = sorted({path for path, _ in found})
+        return ArchitectureReviewFinding(
+            severity="major",
+            description=(
+                "The specification gives product behaviour to "
+                + ", ".join(f"`{path}`" for path in files)
+                + ", which the harness writes and keeps as it is - no work order may change "
+                + ("it" if len(files) == 1 else "them") + ": "
+                + "; ".join(f"\"{where}\"" for _, where in found[:4])
+                + "."
+            ),
+            evidence="Compared by the workflow against the files the stack's setup keeps.",
+            required_remediation=(
+                "Give that behaviour to the product's own files"
+                + (f" - `{served[0]}`, which the start file loads, or a module it imports" if served else "")
+                + " - in every section that names it, and say what the kept file does only as it is."
+            ),
+        )
+    except Exception:  # noqa: BLE001 - the review stands as written
+        logger.debug("Could not check the specification against the kept files", exc_info=True)
+        return None
 
 
 def _a_pass_over_its_own_findings(
@@ -4762,6 +5355,20 @@ def _a_pass_over_its_own_findings(
         stage_name, passing_status, len(gating), "/".join(sorted(_GATING_SEVERITIES)),
     )
     return review.model_copy(update={"status": "changes_required"})
+
+
+def _milestone_findings_that_block(state: Any, review: Any) -> list[Any]:
+    """The milestone review's blocking findings; with `MILESTONE_EVIDENCE_GATE` on, only those a test or check shows."""
+    blocking = _findings_that_block(review, state["repository"].root_path)
+    from app.graph import milestone_evidence
+
+    if not blocking or not milestone_evidence.enabled():
+        return blocking
+    shown, unshown = milestone_evidence.shown_and_not(state, blocking)
+    if unshown:
+        logger.warning("Milestone review: %d blocking finding(s) no test, check or underline shows; advice, not a "
+                       "send-back (MILESTONE_EVIDENCE_GATE)", len(unshown))
+    return shown
 
 
 def _findings_that_block(review: Any, repo_root: str | None = None) -> list[Any]:
@@ -5230,8 +5837,13 @@ _A_LABEL = re.compile(r"^[A-Z][\w ]{0,30}\([^()\n]*(?:\([^()\n]*\)[^()\n]*)*\):\
 def _names_in(text: str) -> set[str]:
     """The names a defect's text gives, lower-cased: what it is about."""
     names: set[str] = set()
-    for match in _A_NAME.finditer(_A_LABEL.sub("", text or "", count=1)):
+    unlabelled = _A_LABEL.sub("", text or "", count=1)
+    for match in _A_NAME.finditer(unlabelled):
         name = next(group for group in match.groups() if group).strip().lower()
+        # A folder in a path says where a runner was, not what is wrong: measured on one run, the project folder in a
+        # unit run's paths merged a criterion's own failure into that defect.
+        if unlabelled[match.end():match.end() + 1] == "/" or unlabelled[max(0, match.start() - 1):match.start()] == "/":
+            continue
         if _A_FILE_NAME.match(name) and not name.startswith(("#", ".")):
             continue
         names.add(name)
@@ -5302,14 +5914,33 @@ def _names_a_cause(defect: Any) -> bool:
 
     The language service's findings (a name at a file and line, a package no
     manifest declares) are certain and say where the change is; a failing
-    test only says something is wrong.
+    test only says something is wrong. So is the pack contract's (an entry
+    file that no longer exports what the pack's start file imports): measured
+    on a small-model run, it was merged under "The unit tests fail" and the
+    fixers never read which name was gone.
     """
     from app.analysis import dependency_drift
 
     return (
-        str(getattr(defect, "source", "") or "") == "language service"
+        str(getattr(defect, "source", "") or "") in {"language service", "pack contract"}
         or str(getattr(defect, "description", "") or "").startswith(dependency_drift.OPENING)
     )
+
+
+def _with_a_stopped_service_s_report(item: Any, others: list[Any]) -> str:
+    """The lead defect's `actual_behavior`, with what a merged defect says a service wrote as it stopped by itself.
+
+    A merge keeps only the lead's: the report that names the cause would go with the defect merged away.
+    """
+    from app.acceptance import start_output, suite as acceptance_suite
+
+    actual = str(getattr(item, "actual_behavior", "") or "")
+    for other in others:
+        said = str(getattr(other, "actual_behavior", "") or "")
+        for report in (acceptance_suite.what_a_stopped_service_wrote(said), start_output.in_text(said)):
+            if report and report not in actual:
+                actual = f"{actual}\n{report}".strip()
+    return actual
 
 
 def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
@@ -5394,6 +6025,7 @@ def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
         ))
         merged.append(item.model_copy(update={
             "expected_behavior": " ".join(e for e in expected if e)[:2000],
+            "actual_behavior": _with_a_stopped_service_s_report(item, others),
             "description": f"{item.description}{SAME_PROBLEM_ELSEWHERE}{also}",
             "affected_files": files,
             "severity": severity,
@@ -5491,6 +6123,38 @@ def _the_failure_as_met(item: Any) -> str:
     return _A_NUMBER.sub("#", " | ".join(lines) + "\n" + page) if lines else ""
 
 
+_A_CRITERION_DEFECT = re.compile(r"^\[((?:AC|CR)-\d+)\] (.*)$", re.S)
+
+
+def _one_defect_per_failing_tests(reported: list[Any], result: dict[str, Any]) -> list[Any]:
+    """`reported` with defects for criteria whose failing tests are exactly the same set merged, in order.
+
+    The same failing tests decide every criterion they carry, so one fixer settles them all. Measured on one run:
+    two criteria carried by one failing test had two fixers, about 40 and 45 minutes, both left open.
+    """
+    criteria = (result or {}).get("criteria") or {}
+    if len(reported) < 2 or not criteria:
+        return list(reported)
+    first_with: dict[frozenset[str], Any] = {}
+    merged: list[Any] = []
+    for item in reported:
+        found = _A_CRITERION_DEFECT.match(str(getattr(item, "description", "") or ""))
+        failing = frozenset(
+            str(t.get("name")) for t in ((criteria.get(found.group(1)) or {}).get("tests") or [])
+            if t.get("outcome") == "failed"
+        ) if found else frozenset()
+        lead = first_with.get(failing) if failing else None
+        if lead is None:
+            if failing:
+                first_with[failing] = item
+            merged.append(item)
+            continue
+        lead_found = _A_CRITERION_DEFECT.match(lead.description)
+        lead.description = f"[{lead_found.group(1)}][{found.group(1)}] {lead_found.group(2)}" if lead_found else lead.description
+        lead.expected_behavior = f"{getattr(lead, 'expected_behavior', '')}; {getattr(item, 'expected_behavior', '')}".strip("; ")
+    return merged
+
+
 def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
     """`reported` with the defects that fail at one layer behind one cause merged, in order.
 
@@ -5575,6 +6239,7 @@ def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
             for other in others
         )
         merged.append(item.model_copy(update={
+            "actual_behavior": _with_a_stopped_service_s_report(item, others),
             "description": (
                 f"{item.description}\n\n{len(others)} other criteria meet the same first failure "
                 f"({layer}); one cause is behind them, so one repair answers all of them:\n{also}"
@@ -5589,8 +6254,25 @@ def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
     return merged
 
 
+#: A workspace path written in a finding: `notes-api/package.json`, `notes-api/test/notes.test.ts`.
+_A_PATH_IN_A_FINDING = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w.-]+\.(?:json|[cm]?[jt]sx?|py|toml|cfg|ya?ml))(?![\w/])")
+
+
+def _the_workspace_files_named(root: str | None, text: str, most: int = 6) -> list[str]:
+    """The files `text` names that exist in the workspace at `root`, in the order named; [] without a root."""
+    if not root:
+        return []
+    found: list[str] = []
+    for name in _A_PATH_IN_A_FINDING.findall(str(text or "")):
+        if name not in found and (Path(root) / name).is_file():
+            found.append(name)
+        if len(found) >= most:
+            break
+    return found
+
+
 def _proven_problems_the_round_left_out(
-    proven: list[str], reported: list[Any], milestone: Any
+    proven: list[str], reported: list[Any], milestone: Any, state_root: str | None = None
 ) -> list[Any]:
     """A defect for each proven problem no reported defect names, or [].
 
@@ -5640,6 +6322,8 @@ def _proven_problems_the_round_left_out(
             if any(opening and opening in text.lower() for text in told):
                 continue
         owner = next((owners[name] for name in sorted(named) if name in owners), "testing")
+        # The files it names are the fix's to change together: a fix given none changed one side and broke the other.
+        affected = _the_workspace_files_named(state_root, problem)
         try:
             left_out.append(ReportedDefect(
                 description=problem,
@@ -5647,7 +6331,7 @@ def _proven_problems_the_round_left_out(
                 reproduction_steps="Read the files it names; this was decided by comparing them.",
                 expected_behavior="The two files agree.",
                 actual_behavior=problem,
-                affected_files=[],
+                affected_files=affected,
                 owner=owner,
             ))
         except Exception:  # noqa: BLE001 - an owner the model type refuses
@@ -6204,8 +6888,15 @@ def _closed_if_an_earlier_fix_resolved_it(
 
         defect = cycle.defects[defect_index]
         root = state["repository"].root_path
-        resolved = acceptance_nodes.passing_since_reported(state, list(defect.failing_criteria or []))
-        proof, why = ("", "") if resolved else _resolved_by_a_measurement(state, defect)
+        from app.acceptance import unstable
+
+        # A stored measurement closes a defect only while the product is as the suite measured it. Found in a code
+        # review: `ci.revert_to` puts the tree back, but the suite's saved result is git-ignored and survives it, so a
+        # reverted fix's green run closed another defect without a fixer and the next round raised it again. A
+        # product that changed since goes to the re-measure below, which reads the product as it is.
+        stale = acceptance_suite.is_locked(root) and not unstable.unchanged_since_the_suite_measured(root)
+        resolved = [] if stale else acceptance_nodes.passing_since_reported(state, list(defect.failing_criteria or []))
+        proof, why = ("", "") if resolved or stale else _resolved_by_a_measurement(state, defect)
         if proof:
             logger.warning(
                 "Defect '%s' is already fixed: %s; closed without a fixer", defect.description[:80], why,
@@ -6243,8 +6934,6 @@ def _closed_if_an_earlier_fix_resolved_it(
                 # Taken before the probe: a product keeping its store in a
                 # committed file is rewritten by the probe itself, and read
                 # after it the product had always "changed".
-                from app.acceptance import unstable
-
                 unchanged = unstable.unchanged_since_the_suite_measured(root)
                 if _the_defect_s_tests_pass(Path(root), defect):
                     # Passing alone on the very product the suite measured it
@@ -6783,17 +7472,31 @@ def _this_sprint_s_scope_for_review(state: Any) -> str:
         return ""
 
 
-def _defects_only_about(reported: list[Any], criteria: list[str]) -> tuple[list[Any], list[Any]]:
-    """(the reported defects a fix can close, those naming only `criteria`).
+def _defects_only_about(
+    reported: list[Any], criteria: list[str], root: str | Path | None = None,
+) -> tuple[list[Any], list[Any]]:
+    """(the reported defects a fix can close, those naming only `criteria` or only the locked suite's files).
 
     `criteria` are those whose locked tests cannot pass and may not be
     repaired again (`acceptance_nodes.beyond_repair`): a defect about them
-    alone has nothing a fix stage can change.
+    alone has nothing a fix stage can change. Nor has the testing role's
+    finding that names only the locked suite's own files: measured on one run,
+    "Acceptance test all_ops.spec.js uses fetch and expects listRes.status()"
+    named no criterion, and two fix stages each answered that the locked suite
+    was wrong and changed nothing.
     """
     if not criteria:
         return reported, []
     from app.acceptance.junit import tags_in
 
+    suite_names: set[str] = set()
+    if root is not None:
+        try:
+            from app.acceptance import suite as _suite
+
+            suite_names = {path.name for path in _suite.suite_files(root)}
+        except Exception:  # noqa: BLE001 - only the criteria decide, as before
+            suite_names = set()
     kept: list[Any] = []
     set_aside: list[Any] = []
     for item in reported:
@@ -6802,7 +7505,13 @@ def _defects_only_about(reported: list[Any], criteria: list[str]) -> tuple[list[
             for name in ("description", "reproduction_steps", "expected_behavior", "actual_behavior")
         )
         named = {tag for tag in tags_in(text) if tag.startswith("AC-")}
-        (set_aside if named and named <= set(criteria) else kept).append(item)
+        files = {Path(str(f)).name for f in getattr(item, "affected_files", None) or () if str(f).strip()}
+        about_the_suite_alone = (
+            bool(suite_names) and "testing" in str(getattr(item, "owner", "") or "").lower()
+            and any(name in text for name in suite_names) and files <= suite_names
+            and not (named - set(criteria))
+        )
+        (set_aside if (named and named <= set(criteria)) or about_the_suite_alone else kept).append(item)
     return kept, set_aside
 
 
@@ -7454,6 +8163,18 @@ def _the_suite_the_ledger_measured(state: WorkflowGraphState) -> dict[str, int] 
         return None
 
 
+def _the_last_test_command(state: WorkflowGraphState) -> str:
+    """The command of the last test run this sprint recorded in the execution ledger, as one string; "" if none."""
+    try:
+        recorded = [dict(entry) for entry in (state.get("sprint_attempts") or [])]
+        since = max((str(entry.get("ended_at")) for entry in recorded if entry.get("ended_at")), default=None)
+        entry = last_test_run(_the_ledger(state["repository"].root_path, 1000), since=since) or {}
+        command = entry.get("command") or entry.get("argv") or ""
+        return " ".join(str(part) for part in command) if isinstance(command, (list, tuple)) else str(command)
+    except Exception:  # noqa: BLE001 - then the gate reads as before
+        return ""
+
+
 def _a_red_suite_the_review_called_green(state: WorkflowGraphState) -> str:
     """Why this sprint cannot be accepted on the review's word, or "".
 
@@ -7496,6 +8217,19 @@ def _a_red_suite_the_review_called_green(state: WorkflowGraphState) -> str:
     cases = _the_suite_the_ledger_measured(state)
     if not cases or not a_suite_that_did_not_pass(cases):
         return ""
+    # Another command's failing run beside a locked suite measured fully green is no reason to redraft: measured on
+    # three runs, the last ledger run was a unit-test or partial run (9 cases, 1 failed) while the suite stood at 18 of
+    # 18, and each sprint was sent back for a revision the owner's rule (LF.327) says a green sprint does not get; the
+    # failures ship as a known issue (`release_with_failing_unit_tests`).
+    from app.graph import settle_when_green
+
+    if settle_when_green.enabled() and settle_when_green.the_locked_suite_is_green(state["repository"].root_path):
+        last = str(_the_last_test_command(state) or "")
+        acceptance = settle_when_green.the_acceptance_command(state["repository"].root_path)
+        if acceptance and last and last != acceptance:
+            logger.info("The ledger's last failing run was `%s`, not the locked suite, which is green; not sent back",
+                        last[:120])
+            return ""
     # A failure the counts cannot show. A composite command - `npm test` chaining
     # `node --test` and `playwright test` - has its first runner's summary parsed,
     # so a later runner's failure leaves `failed: 0` beside a non-zero exit code.
@@ -7539,8 +8273,39 @@ def _about_the_harness_s_files_only(finding: Any, repo_root: str) -> bool:
     named = {PurePosixPath(str(path)).name for path in getattr(finding, "affected_files", None) or []}
     named |= files_named_in(
         f"{getattr(finding, 'description', '')} {getattr(finding, 'remediation', '')}"
+        f" {getattr(finding, 'required_remediation', '')}"
     )
     return bool(named) and named <= kept
+
+
+def _findings_about_the_harness_s_files_made_minor(review: Any, repo_root: str) -> Any:
+    """`review` with each gating finding whose files are all the harness's own recorded as minor. Never raises.
+
+    No work order may change a file the harness keeps - `contract.enforce` puts it back before every run - so a
+    revision asked for one cannot be made, and the sprint is sent back for work nobody may do. Measured on one run:
+    the milestone review asked for signal handlers in the pack's kept start file `src/main.ts`. The security review
+    leaves such findings out (`_without_findings_about_the_harness_s_files`); the milestone review keeps them, minor,
+    because an emptied `changes_required` review is asked again.
+    """
+    try:
+        findings, moved = [], 0
+        for finding in getattr(review, "findings", None) or []:
+            if _severity_gates(getattr(finding, "severity", "")) and _about_the_harness_s_files_only(finding, repo_root):
+                moved += 1
+                finding = finding.model_copy(update={
+                    "severity": "minor",
+                    "description": (
+                        "The files this names are the harness's own, put back before every run, and no work order "
+                        f"may change them; not a reason to send the sprint back: {finding.description}"
+                    ),
+                })
+            findings.append(finding)
+        if not moved:
+            return review
+        logger.warning("Milestone review raised %d gating finding(s) about the harness's own files; recorded as minor", moved)
+        return review.model_copy(update={"findings": findings})
+    except Exception:  # noqa: BLE001 - the review as written stands
+        return review
 
 
 def _without_findings_about_the_harness_s_files(review: Any, repo_root: str) -> Any:
@@ -7600,6 +8365,17 @@ def _criteria_the_suite_names(root: Any) -> set[str]:
         }
     except Exception:  # noqa: BLE001 - unknown: nothing is called missing on its account
         return set()
+
+
+def criteria_past_the_cap(failing: list[tuple[str, str, str]], past_the_cap: list[str]) -> list[str]:
+    """The criteria ids of the failing tests a dispute called wrong past the reclassification cap, sorted.
+
+    `past_the_cap` holds the dispute's repair sentences ("`test_x` cannot pass for ..."), each naming its test in the
+    backticks it opens with; a bare name is taken as it is. Measured live: matched as whole strings, they named no
+    test, and nothing was deferred.
+    """
+    names = {(re.match(r"\s*`([^`]+)`", item) or re.match(r"(.*)", item)).group(1).strip() for item in past_the_cap}
+    return sorted({cid for name, text, _ in failing if name in names for cid in re.findall(r"\b(?:AC|CR)-\d+", text)})
 
 
 def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
@@ -7732,7 +8508,12 @@ def _blames_a_locked_test(state: Any, blockers: list[str]) -> bool:
         return False
 
 
-def _a_dispute_may_be_held_now(state: Any) -> bool:
+def _the_test_named(entry: str) -> str:
+    """A test's own title from a revert's `acceptance: <file> › ... › <title>` entry."""
+    return str(entry).rsplit(" › ", 1)[-1].strip()
+
+
+def _a_dispute_may_be_held_now(state: Any, also: list[str] | None = None) -> bool:
     """Whether this attempt may have its failing locked tests judged before it ends.
 
     Measured on one run: sprint 4's locked responsive test had a logic error -
@@ -7748,12 +8529,45 @@ def _a_dispute_may_be_held_now(state: Any) -> bool:
     if _this_attempt(state) in (state.get("disputed_sprints") or []):
         return False
     failing = _the_locked_tests_still_failing(state)
-    return bool(failing) and may_repair(state, [f"`{name}`" for name, _, _ in failing])
+    # `also`: a passing locked test the dispute is about (two reverted fixes broke it). Measured on one run: every
+    # fix of a DELETE criterion was reverted for breaking another criterion's test, five times, and no dispute was
+    # held - the failing tests had been repaired already, the contested one never had.
+    contested = [f"`{_the_test_named(name)}`" for name in also or []]
+    return bool(failing) and may_repair(state, [*(f"`{name}`" for name, _, _ in failing), *contested])
 
 
 #: What a reverted fix leaves on its defect's actual behaviour. See the
 #: `broke` branch of `defect_remediation_node`.
 _REVERTED_FOR = re.compile(r"A fix was tried and reverted, because it broke what passed before it: (.+?)\.(?:\n|$)")
+
+
+#: Reverted fixes, each breaking one passing locked test, before that test stops reverting a fix alone: two, the
+#: evidence a dispute is held on (`_a_locked_test_two_fixes_broke`). Counted within an attempt, which a re-plan starts
+#: afresh: measured on one run, three never came in one attempt while the same test reverted eight fixes over four.
+REVERTS_BEFORE_A_TEST_IS_CONTESTED = 2
+
+
+def _a_contested_test_past_repair(state: Any, cycle: Any) -> str:
+    """A passing locked test that two reverted fixes broke and the suite may no longer be repaired for; else "".
+
+    Measured on one run: every fix of a DELETE criterion was reverted for breaking a test that asserted JSON on every
+    response, a 204 included - eight times over four attempts - with the suite's repairs spent, so no dispute could
+    judge it. Such a test no longer reverts, alone, a fix that makes other tests pass (`engineering.after_a_fix`).
+    """
+    try:
+        from collections import Counter
+
+        from app.graph.acceptance_nodes import may_repair
+
+        counts: Counter[str] = Counter()
+        for defect in getattr(cycle, "defects", None) or []:
+            counts.update(_the_reverts_noted(str(getattr(defect, "actual_behavior", "") or ""))[1])
+        name = next((n for n, c in counts.most_common() if c >= REVERTS_BEFORE_A_TEST_IS_CONTESTED), "")
+        if not name or may_repair(state, [f"`{_the_test_named(name)}`"]):
+            return ""
+        return name
+    except Exception:  # noqa: BLE001 - the revert gate stands as it was
+        return ""
 
 
 def _a_locked_test_two_fixes_broke(cycle: Any) -> str:
@@ -7771,10 +8585,7 @@ def _a_locked_test_two_fixes_broke(cycle: Any) -> str:
 
     counts: Counter[str] = Counter()
     for defect in getattr(cycle, "defects", None) or []:
-        for match in _REVERTED_FOR.finditer(str(getattr(defect, "actual_behavior", "") or "")):
-            for name in match.group(1).split("; "):
-                if name.strip().startswith("acceptance:"):
-                    counts[name.strip()] += 1
+        counts.update(_the_reverts_noted(str(getattr(defect, "actual_behavior", "") or ""))[1])
     return next((name for name, count in counts.most_common() if count >= 2), "")
 
 
@@ -8118,6 +8929,16 @@ def _the_stack_pack_for(state: Any, update: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _the_revision_limit() -> int:
+    """How many design revisions this run has: two in fast delivery, else `MAX_ARCHITECTURE_REVISIONS`.
+
+    One helper for the escalation and every harness finding's guard (HR2.D.4): the guards compared with the full
+    limit while fast delivery escalated at two, so a harness finding first raised on the last revision passed its
+    guard and escalated unrevised.
+    """
+    return 2 if _fast_delivery() else MAX_ARCHITECTURE_REVISIONS
+
+
 def _fast_delivery() -> bool:
     """Whether this deployment delivers fast (`app.delivery`).
 
@@ -8328,6 +9149,10 @@ def build_workflow_graph(
         pin_the_directory_the_product_names(
             state["repository"].root_path, getattr(update["product_intake"], "product_name", "")
         )
+        # A product seeded at the root has just moved there: a reader of the decisions sees it.
+        from app.stacks.seeded_product import record_the_move
+
+        record_the_move(state, update)
         
         # After product manager finishes, optionally route to review
         next_stage = "user_review_product_intake" if _review_enabled(state, PRODUCT_INTAKE_REVIEW) else "tools_models"
@@ -8598,10 +9423,16 @@ def build_workflow_graph(
             from app.graph.specification_parts import CORE_NOTE
 
             request["messages"][-1]["content"] += CORE_NOTE
+        # One naming standard, before any name is written (NAMING_STANDARD).
+        from app.stacks.naming import standard_for
+
+        naming = standard_for(getattr(state.get("stack_selection"), "technology_stack", None))
+        if naming:
+            request["messages"][-1]["content"] += "\n\n" + naming
         # The layout the scaffold will set up, before the file plan is written:
-        # cheaper than the repair after it, which on one run never ran.
-        if not required_changes:
-            request["messages"][-1]["content"] += _the_scaffold_s_layout(state)
+        # cheaper than the repair after it, which on one run never ran. A revision is
+        # told too: measured, sent back over the harness's files, it had nothing to answer from.
+        request["messages"][-1]["content"] += _the_scaffold_s_layout(state)
         # The reading done first, by the harness and the build model, and
         # handed over: the architect's reasoning goes on the specification,
         # not on which page to read next. See `app.agents.research_brief`.
@@ -8623,12 +9454,17 @@ def build_workflow_graph(
         from app.tools.research import researched
 
         def parts_context() -> str:
-            return "\n\n".join(
-                f"--- {title} ---\n{_as_text(state.get(key))[:20_000]}"
-                for title, key in (("Product intake", "product_intake"), ("Stack", "stack_selection"),
-                                   ("Specialists' advice", "specialist_advice"))
-                if state.get(key)
-            )
+            # The advice numbered with its ids and the rule for answering it, as the architect's own request has it
+            # (HR2.D.1): as raw JSON it carried no ids, and 224 rounds over 120 runs were spent asking for them.
+            from app.agents.specialist_advice import advice_block
+
+            advice = advice_block(state.get("specialist_advice")) if state.get("specialist_advice") else ""
+            return "\n\n".join([
+                *(f"--- {title} ---\n{_as_text(state.get(key))[:20_000]}"
+                  for title, key in (("Product intake", "product_intake"), ("Stack", "stack_selection"))
+                  if state.get(key)),
+                *([advice[:20_000]] if advice else []),
+            ]) + _the_scaffold_s_layout(state)  # These calls write the sections that name the runner, the start and the files.
 
         update = None
         # Fast delivery revises in place: only the sections the review's
@@ -8669,13 +9505,7 @@ def build_workflow_graph(
             from app.graph.specification_parts import with_the_parts_written
 
             update["technical_specification"] = with_the_parts_written(
-                update["technical_specification"], judgement_model,
-                "\n\n".join(
-                    f"--- {title} ---\n{_as_text(state.get(key))[:20_000]}"
-                    for title, key in (("Product intake", "product_intake"), ("Stack", "stack_selection"),
-                                       ("Specialists' advice", "specialist_advice"))
-                    if state.get(key)
-                ),
+                update["technical_specification"], judgement_model, parts_context(),
             )
         if not _hand_back(update, "technical_specification"):
             # Consumed: the revision request above already delivered them, so
@@ -8833,6 +9663,20 @@ def build_workflow_graph(
             )
             update["architecture_review"] = review
             update["specification_deferrals_checked"] = True
+        unread_finding = _contract_lines_nothing_can_read(state)
+        if unread_finding is not None:
+            review = review.model_copy(
+                update={"findings": [*review.findings, unread_finding], "status": "changes_required"}
+            )
+            update["architecture_review"] = review
+            update["specification_contract_lines_checked"] = True
+        kept_finding = _behaviour_the_specification_gives_kept_files(state, spec_text)
+        if kept_finding is not None:
+            review = review.model_copy(
+                update={"findings": [*review.findings, kept_finding], "status": "changes_required"}
+            )
+            update["architecture_review"] = review
+            update["specification_kept_files_checked"] = True
 
         review = _a_pass_over_its_own_findings(
             review, state["repository"].root_path, "approved", "architecture_review"
@@ -8877,7 +9721,8 @@ def build_workflow_graph(
             update["architecture_revision_count"] = revision_count
             # Fast delivery revises once: blocking findings still open after
             # that are decided as risks, as they are after the full count.
-            if revision_count >= (2 if _fast_delivery() else MAX_ARCHITECTURE_REVISIONS):
+            limit = _the_revision_limit()
+            if revision_count >= limit:
                 # Decided, not stopped: see `app.graph.escalation`. The run used
                 # to fail here - one stored run after six revisions - although
                 # the acceptance suite, written from the brief, is what decides
@@ -8891,7 +9736,8 @@ def build_workflow_graph(
                     "findings": outstanding,
                     "error": (
                         f"The architecture reviewer still asked for changes to the specification "
-                        f"after {MAX_ARCHITECTURE_REVISIONS} revisions."
+                        # The count the run stopped at: fast delivery's two, not the full limit (review D8).
+                        f"after {revision_count} revision{'s' if revision_count != 1 else ''}."
                     ),
                 }
             else:
@@ -8933,6 +9779,9 @@ def build_workflow_graph(
             ),
             built_ahead=built_ahead_asked_about,
         )
+        from app.agents.specification_rulings import with_the_rulings
+
+        request = with_the_rulings(request, root_path)
         try:
             update = _run_gated_agent(
                 state,
@@ -9185,6 +10034,9 @@ def build_workflow_graph(
         due_brief = acceptance_nodes.criteria_brief(state)
         if due_brief:
             request["messages"][-1]["content"] += due_brief
+        from app.agents.specification_rulings import with_the_rulings
+
+        request = with_the_rulings(request, state["repository"].root_path)
         # A release held back hands on with no milestone plan, so the lead
         # plans afresh - and the planning request never read the comments:
         # a release held for a missing README or a credential in the code
@@ -9362,6 +10214,13 @@ def build_workflow_graph(
             )
             if given:
                 logger.info("Test files the sprint names and no work order listed, given to testing: %s", ", ".join(given))
+        # A testing order that writes nothing only runs the tests the round runs anyway (before a testing order is
+        # added to a plan with none, so a plan is never left without one).
+        from app.analysis.work_orders import with_run_only_testing_orders_left_to_the_test_round
+
+        update["milestone_plan"], run_only = with_run_only_testing_orders_left_to_the_test_round(update["milestone_plan"])
+        if run_only:
+            logger.info("Testing work orders that write no file left to the test round: %s", "; ".join(run_only))
         from app.analysis.work_orders import with_a_testing_work_order
 
         update["milestone_plan"], added_testing = with_a_testing_work_order(
@@ -9369,6 +10228,18 @@ def build_workflow_graph(
         )
         if added_testing:
             logger.info("The plan had code and no testing work order; the harness added one")
+        # The harness's own repairs before the readiness check, not after it (HR2.P.1): 125 of 140 resends since 11-01
+        # were for what these then fixed anyway - the locked suite's file on a work order (50), a command the sandbox
+        # refuses (30). The check sees only what the harness cannot fix.
+        from app.analysis.planned_commands import with_refused_commands_noted
+        from app.analysis.work_orders import with_the_harness_s_files_left_out
+
+        update["milestone_plan"] = with_the_harness_s_files_left_out(
+            update["milestone_plan"], state["repository"].root_path
+        )
+        update["milestone_plan"] = with_refused_commands_noted(
+            update["milestone_plan"], state["repository"].root_path
+        )
         problems = readiness_problems(
             update["milestone_plan"],
             state["repository"].root_path,
@@ -9439,11 +10310,6 @@ def build_workflow_graph(
                     f"Not ready when dispatched: {problem}" for problem in problems
                 ]
             })
-        from app.analysis.work_orders import with_the_harness_s_files_left_out
-
-        update["milestone_plan"] = with_the_harness_s_files_left_out(
-            update["milestone_plan"], state["repository"].root_path
-        )
         update["work_order_problems"] = []
         update["unready_plan"] = ""
         update["best_unready_plan"] = ""
@@ -9459,14 +10325,7 @@ def build_workflow_graph(
             if key != _READINESS_RETRIES
         }
 
-        # Before it is written down or dispatched: a command the plan tells a
-        # specialist to run, which the sandbox will refuse, is noted on the task.
-        # See `app.analysis.planned_commands`.
-        from app.analysis.planned_commands import with_refused_commands_noted
-
-        update["milestone_plan"] = with_refused_commands_noted(
-            update["milestone_plan"], state["repository"].root_path
-        )
+        # A command the sandbox will refuse was noted on its work order before the readiness check (HR2.P.1).
         # And a command whose file another work order writes - see
         # `app.analysis.work_orders.with_borrowed_files_noted`.
         from app.analysis.work_orders import with_borrowed_files_noted
@@ -9594,6 +10453,13 @@ def build_workflow_graph(
         tasks, split = in_work_orders_of_at_most(tasks)
         if split:
             logger.info("Fast delivery: %d work order(s) of more than three files split into parts", split)
+        from app.graph.best_attempt import files_the_best_attempt_already_has
+
+        kept = files_the_best_attempt_already_has(
+            state["repository"].root_path,
+            [str(path) for task in tasks for path in (getattr(task, "files", None) or [])],
+            replans=int(state.get("sprint_replan_count") or 0),
+        )
         drafted = draft_work_orders(
             tasks, specification, getattr(state.get("stack_selection"), "technology_stack", None),
             state["repository"].root_path, _the_build_model(state, "drafting"), workers=concurrent_requests(),
@@ -9601,6 +10467,7 @@ def build_workflow_graph(
             diagnose=lambda files: _diagnostics_in_files_touched(
                 state, {"messages": []}, __import__("types").SimpleNamespace(changed_files=files), "drafting",
             ),
+            kept=kept,
         )
         outputs = {
             f"specialist_{tasks[index].specialist_role}_{index}": output for index, output in drafted.items()
@@ -9618,14 +10485,17 @@ def build_workflow_graph(
             return missing
         drafted = _drafted_from_the_specification(state, config)
         if drafted is not None:
-            if "milestone_plan" in drafted:
-                # Split into parts: the owners are the parts'.
-                _record_the_owners(state["repository"].root_path, list(drafted["milestone_plan"].delegated_tasks))
+            if "milestone_plan" in drafted or drafted.get("specialist_outputs"):
+                # Split into parts: the owners are the parts'; and the orders drafted whole own nothing.
+                plan = drafted.get("milestone_plan") or state.get("milestone_plan")
+                _record_the_owners(state["repository"].root_path, list(getattr(plan, "delegated_tasks", None) or []),
+                                   done=(drafted.get("specialist_outputs") or {}))
             return drafted
         # On every dispatch, from the plan as it stands: a run resumed on a
         # plan whose table an earlier version recorded is put right here.
         _record_the_owners(
             state["repository"].root_path, list(getattr(state.get("milestone_plan"), "delegated_tasks", None) or []),
+            done=(state.get("specialist_outputs") or {}),
         )
             
         # `effective_settings`, not `load_settings`. `load_settings` is a pure
@@ -9924,7 +10794,7 @@ def build_workflow_graph(
             acceptance_text, cannot_pass = acceptance_nodes.acceptance_for_round(state)
             # A locked test that cannot pass whatever is built is not a
             # product defect: no fix can close it. Repaired by QA first.
-            reopened = acceptance_nodes.reopen_the_suite_for(state, cannot_pass)
+            reopened = acceptance_nodes.reopen_the_suite_for(state, cannot_pass, model=judgement_model)
             if reopened is not None:
                 return reopened
             # And once the suite may not be repaired again, the round is told,
@@ -9939,6 +10809,7 @@ def build_workflow_graph(
                     part for part in (acceptance_text, acceptance_nodes.beyond_repair_note(cannot_pass, beyond_repair))
                     if part
                 )
+                acceptance_nodes.defer_what_is_beyond_repair(state, beyond_repair, cannot_pass)
         failing_due, _ = acceptance_nodes._failing_due(state)
         # The round is the harness's own only on evidence: a locked suite whose
         # last run happened and passes everything due, the unit tests run and
@@ -9999,7 +10870,10 @@ def build_workflow_graph(
                 test_round, {True: "pass", False: "fail", None: "not recorded"}[unit_ok],
             )
             harness_defects: list[Any] = (
-                [] if unit_ok is not False else [_the_unit_tests_fail(milestone, unit_output)]
+                [] if unit_ok is not False else [_the_unit_tests_fail(
+                    milestone, unit_output,
+                    beside_a_green_suite=not failing_due and int(saved_run.get("failed") or 0) == 0,
+                )]
             )
             if failing_due:
                 # The suite ran and locked criteria failed: ask whether what it
@@ -10076,6 +10950,14 @@ def build_workflow_graph(
                 return update  # paused waiting for approval on a test artifact
 
         test_result: SpecialistOutput = update.pop("__test_result__")
+        # Asked whenever the locked suite is green, whatever else the round found: measured on one run, failing unit
+        # tests kept every round from being clean and the checks were never asked before release.
+        if not failing_due and int(saved_run.get("failed") or 0) == 0:
+            test_result = _with_the_contract_s_server_errors(state, test_result, milestone)
+            from app.acceptance import order_probe
+
+            order_probe.at_a_green_round(state["repository"].root_path)
+        test_result = _with_the_lock_s_server_errors(state, test_result, milestone)
         # CI's regressions and the code review's findings for this batch, once.
         reported: list[ReportedDefect] = _each_defect_once(
             [*raised_by("test round", test_result.defects), *(state.get("review_defects") or [])]
@@ -10104,7 +10986,7 @@ def build_workflow_graph(
                 _what_later_sprints_build(state),
                 getattr(state.get("document"), "text", "") or "",
             )
-            left_out = _proven_problems_the_round_left_out(still_proven, reported, milestone)
+            left_out = _proven_problems_the_round_left_out(still_proven, reported, milestone, state["repository"].root_path)
         except Exception:  # noqa: BLE001 - the round's own report stands
             logger.debug("Could not compare the round's report with what is proven", exc_info=True)
             left_out = []
@@ -10122,6 +11004,11 @@ def build_workflow_graph(
             reported = reported + raised_by("page check", acceptance_nodes.interface_defects(state))
         except Exception:  # noqa: BLE001 - the round's own report stands
             logger.debug("Could not check how the page is presented", exc_info=True)
+        # What the pack's scaffold depends on and a rewrite dropped (PACK_ENTRY_EXPORTS_KEPT).
+        try:
+            reported = reported + raised_by("pack contract", acceptance_nodes.pack_contract_defects(state))
+        except Exception:  # noqa: BLE001 - the round's own report stands
+            logger.debug("Could not check what the pack's entry file must export", exc_info=True)
         reported, later_work = _defects_a_later_sprint_builds(reported, state)
         if later_work:
             logger.warning(
@@ -10130,7 +11017,7 @@ def build_workflow_graph(
                 test_round, len(later_work),
                 "; ".join(str(getattr(item, "description", ""))[:60] for item in later_work[:4]),
             )
-        reported, unfixable = _defects_only_about(reported, beyond_repair)
+        reported, unfixable = _defects_only_about(reported, beyond_repair, state["repository"].root_path)
         if unfixable:
             logger.warning(
                 "test_round_%d reported %d defect(s) only about locked tests that cannot pass and may "
@@ -10140,10 +11027,30 @@ def build_workflow_graph(
             )
         try:
             unreported_criteria = acceptance_nodes.failing_due_defects(state, reported)
+            # Nor the backstop's own for them: deferred above, they are no fix stage's.
+            unreported_criteria, _ = _defects_only_about(unreported_criteria, beyond_repair)
         except Exception:  # noqa: BLE001 - the round's own report stands
             logger.debug("Could not compare the round's report with the acceptance suite", exc_info=True)
             unreported_criteria = []
         logger.info("test_round_%d: %s", test_round, the_round_s_measurement(state["repository"].root_path))
+        from app.graph import best_attempt
+
+        best_attempt.note(state["repository"].root_path)
+        if best_attempt.after_a_redraft(
+            state["repository"].root_path, test_round=test_round, replans=int(state.get("sprint_replan_count") or 0),
+        ):
+            # The redraft left the product clearly worse than its best: the best is back, so the sprint is planned
+            # again at once, not after a whole round of fixers on the wreck (KEEP_THE_BEST_ATTEMPT).
+            spent = state.get("remediation") or start_remediation(
+                milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS
+            )
+            return _replan_or_escalate(
+                state,
+                {"remediation": spent, "test_round": test_round + 1, "pending_approval": None,
+                 "pending_inner_thread_id": None, "pending_decision": None},
+                spent,
+                "the redraft left the product worse than its best; the best was put back",
+            )
         if unreported_criteria:
             logger.warning(
                 "test_round_%d raised %d defect(s) for failing acceptance criteria its report left out",
@@ -10156,6 +11063,10 @@ def build_workflow_graph(
         # failure share no words to bundle by, only the layer they fail at.
         # See `_one_defect_per_root_error` (Initiative L.1).
         reported = _one_defect_per_root_error(reported)
+        # One set of failing tests, one fixer: the criteria they carry are settled together.
+        from app.acceptance import suite as _the_suite
+
+        reported = _one_defect_per_failing_tests(reported, _the_suite.last_result(state["repository"].root_path) or {})
         if not reported:
             unreported = _a_suite_failure_the_round_did_not_report(
                 state["repository"].root_path, f"test_round_{test_round}",
@@ -10167,6 +11078,10 @@ def build_workflow_graph(
                     "failed; recording that as a defect", test_round,
                 )
                 reported = raised_by("test command", [unreported])
+        # An error the stack pack knows, given its cause (`app.stacks.known_errors`).
+        from app.stacks.known_errors import with_known_causes
+
+        reported = with_known_causes(state["repository"].root_path, reported)
         cycle = state.get("remediation") or start_remediation(
             milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS
         )
@@ -10282,6 +11197,14 @@ def build_workflow_graph(
             )
 
         if any(defect.status == "open" for defect in cycle.defects):
+            if _only_unit_tests_open_beside_a_green_suite(state, cycle):
+                # The due criteria pass and only unit tests the model wrote fail: probe now, once an attempt, so
+                # its findings join this fix round. Measured on every run of one day: with a failing unit test
+                # nearly always open, the probe below - nothing open - was never reached (MUTATION_GUIDED_TESTS).
+                probed = _the_mutation_probe(state, cycle, test_round)
+                if probed.get("stage"):
+                    return _handing_on(**{**base_update, **probed})
+                base_update.update(probed)
             return _handing_on(**base_update, stage="defect_remediation", defect_cursor=0)
 
         # Tests pass and nothing is open. The acceptance gate is still the
@@ -10337,6 +11260,25 @@ def build_workflow_graph(
         nobody had been given a chance to fix.
         """
         revision_count = state.get("sprint_replan_count", 0) + 1
+        # A fully green acceptance suite with only a unit test open is where the re-plans stop (SETTLE_WHEN_ACCEPTANCE_IS_GREEN).
+        from app.graph import settle_when_green
+
+        if settle_when_green.applies(state["repository"].root_path, getattr(cycle, "defects", None), revision_count - 1):
+            why = f"{why}; every acceptance test passes and only the unit tests fail"
+            revision_count = MAX_MILESTONE_REVISIONS + 1
+        # Attempts that stop beating the best product end where the re-plan limit does (STALL_RULE).
+        from app.graph import stalled_sprint
+
+        best_history = stalled_sprint.record(state["repository"].root_path, state.get("sprint_best_history"))
+        if stalled_sprint.stalled(best_history):
+            why = f"{why}; the last {stalled_sprint.AFTER_FLAT_ATTEMPTS} attempts did not beat the best product"
+            revision_count = MAX_MILESTONE_REVISIONS + 1
+        # A sprint planned again starts from the best product it has had (KEEP_THE_BEST_ATTEMPT).
+        from app.graph import best_attempt
+
+        # Even one test fewer than the best is worse here: a run released at 17 of 18 criteria, with AC-14 deferred,
+        # after an earlier attempt had passed all 18.
+        best_attempt.restore_if_worse(state["repository"].root_path, margin=1)
         # Every defect still open ends its story here: the ledger had it
         # raised and nothing after, which reads like a round cut short.
         from app.observability import defect_ledger
@@ -10393,6 +11335,7 @@ def build_workflow_graph(
             specialist_outputs={},
             defect_cursor=0,
             sprint_replan_count=revision_count,
+            sprint_best_history=best_history,
         )
 
     def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_index: int) -> tuple[dict[str, Any], list[tuple[int, Any]]]:
@@ -10411,7 +11354,10 @@ def build_workflow_graph(
             getattr(state.get("stack_selection"), "technology_stack", None),
             # What the failing command actually printed, alongside the prose
             # description of it. See `build_defect_fix_request`.
-            _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
+            # A failing criterion's own tests first: the last failing command may be another criterion's.
+            _what_the_criteria_s_tests_printed(state["repository"].root_path, defect)
+            or _what_the_unit_tests_printed(state["repository"].root_path, defect)
+            or _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY), defect),
             caught_by=getattr(defect, "caught_by", ""),
             # Only for a defect that is not itself a failing criterion - nor a
             # mutation finding, whose product is not wrong (plan QM.2).
@@ -10424,6 +11370,8 @@ def build_workflow_graph(
             what_settles_it=mutation_guided.what_settles_it(defect),
         )
         request["messages"][-1]["content"] += _what_a_fix_stage_must_leave_alone(state, defect)
+        # What this attempt may write: test files only, for a first fix of a failing unit test beside a green suite.
+        request["messages"][-1]["content"] += defect_fix_modes.briefing(state, config, defect_index)
         co_defects = _bundle_co_defects(cycle, defect_index)
         request["messages"][-1]["content"] += _the_specification_for_the_fix(state, defect, co_defects)
         if co_defects:
@@ -10459,41 +11407,92 @@ def build_workflow_graph(
 
         request = project_graph.with_the_neighbourhood(request, state["repository"].root_path, [
             *(defect.affected_files or []), *(f for _, d in co_defects for f in (d.affected_files or []))])
+        # The page as a person sees it, for a build model that reads images:
+        # only the reviewer was shown it. Last, as it makes the request's text
+        # a list of parts.
+        from app.agents.page_screenshots import with_the_page_for_a_fixer
+
+        request = with_the_page_for_a_fixer(request, state["repository"].root_path)
+        # What this fixer was shown, so a later try can be compared with it (deep review F9): once a fixer, not on
+        # each resume of its stage after a gated tool call (measured: every 6 to 10 seconds for one fixer).
+        from app.observability import defect_ledger
+
+        if not state.get("pending_inner_thread_id"):
+            defect_ledger.shown(
+                f"defect_fix_{state.get('test_round', 0)}_{defect_index}", defect, request["messages"][-1]["content"],
+                round_=state.get("test_round", 0), index=defect_index, sprint=state.get("current_sprint_index", 0),
+            )
         return request, co_defects
 
-    def _fixed_by_rewriting(state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0) -> Any:
+    def _fixed_by_rewriting(
+        state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0,
+        after_a_surrender: bool = False, why: dict[str, str] | None = None,
+    ) -> Any:
         """A fast-delivery fix by rewriting the defect's files, or None for the agent loop.
 
         After a failed fix, and with a judgement model of its own, several
         candidates are asked of the judgement model at once and the first the
         defect's tests pass is kept (`rewritten_fixes.fix_by_candidates`).
         """
+        def declined(reason: str) -> None:
+            if why is not None:
+                why["why"] = reason
+
         if not _the_run_approves_its_own_writes(config["configurable"].get(APP_RUN_ID_KEY)):
+            declined("the run does not approve its own writes")
             return None
         if mutation_guided.is_a_finding(defect):
             # A rewrite rewrites the files a failure points at - here the
             # product's own source, which the finding must leave as it is. A
             # new unit test is the agent loop's (plan QM.2).
+            declined("a mutation finding: the product's source stays as it is")
             return None
         from types import SimpleNamespace
 
-        from app.graph.rewritten_fixes import fix_by_candidates, fix_by_rewriting
-        from app.tools.repository import _the_harness_s_own_or_the_locked_suite
+        from app.graph.rewritten_fixes import fix_by_candidates, fix_by_rewriting, files_to_fix, what_failed
+        from app.tools.repository import _the_harness_s_own_or_the_locked_suite, just_asking
 
         from app.graph.bounded_fixes import the_candidate_model
 
         root = Path(state["repository"].root_path)
+        def may_write(path: str) -> bool:
+            with just_asking():
+                return (_the_harness_s_own_or_the_locked_suite(root, root / path) is None
+                        and defect_fix_modes.may_write(state, config, defect, root, path))
+
+        # The defect's own failing tests first, as the agent loop's request does (HR F3).
+        last_failure = (
+            _what_the_criteria_s_tests_printed(str(root), defect)
+            or _what_the_unit_tests_printed(str(root), defect)
+            or _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY), defect)
+        )
+        # The other open defects, whose failures that point at a file go into its rewrite (behind `CO_DEFECT_FAILURES_IN_REWRITES`).
+        from app.graph.co_defect_failures import open_besides
+
+        co_defects = open_besides(state.get("remediation"), defect)
+        # Carried from the candidates path into the rewrite that follows it,
+        # so a retry that already asked where the defect lives - same defect,
+        # same failure - does not ask again. None when candidates were never
+        # tried: `fix_by_rewriting` localises for itself, as before, so a
+        # defect this never reaches pays nothing extra for it.
+        located: list[str] | None = None
         # A judgement model of its own, or with the fix cycle on the fix's own
         # model (plan AY step 2); None asks for no candidates.
         candidate_model = the_candidate_model(judgement_model, model, fix_model)
-        if failed_tries >= 1 and candidate_model is not None:
+        if failed_tries >= 1 and candidate_model is not None and not after_a_surrender:
             try:
+                from app.graph.localisation import localised
+
+                failure = what_failed(defect, root, last_failure)
+                located = localised(
+                    defect, failure, root, fix_model or model or building_model,
+                    files_to_fix(defect, failure, root, may_write), may_write,
+                )
                 kept = fix_by_candidates(
                     defect, root, candidate_model, lambda: _the_defect_s_tests_pass(root, defect),
                     specification=state.get("technical_specification"),
                     stack=getattr(state.get("stack_selection"), "technology_stack", None),
-                    last_failure=_what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
-                    may_write=lambda path: _the_harness_s_own_or_the_locked_suite(root, root / path) is None,
+                    last_failure=last_failure, may_write=may_write, files=located, co_defects=co_defects,
                 )
                 if kept is not None:
                     return kept
@@ -10502,21 +11501,23 @@ def build_workflow_graph(
         # Candidates are in every delivery mode: they are kept only when the
         # defect's tests pass. A single rewrite in place of the agent loop is
         # fast delivery's.
-        if not _fast_delivery():
+        if not _fast_delivery() and not after_a_surrender:
             return None
+        # Read only when nothing is written: the rewrite found no file it may write, or wrote none.
+        declined("the rewrite found no file it may write, or wrote none")
         try:
             return fix_by_rewriting(
                 defect, root, fix_model or model or building_model,
                 specification=state.get("technical_specification"),
                 stack=getattr(state.get("stack_selection"), "technology_stack", None),
-                last_failure=_what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
-                may_write=lambda path: _the_harness_s_own_or_the_locked_suite(root, root / path) is None,
+                last_failure=last_failure, may_write=may_write, files=located, co_defects=co_defects,
                 diagnose=lambda files: _diagnostics_in_files_touched(
                     state, {"messages": []}, SimpleNamespace(changed_files=files),
                 ),
             )
-        except Exception:  # noqa: BLE001 - the agent loop takes the defect
+        except Exception as error:  # noqa: BLE001 - the agent loop takes the defect
             logger.warning("Fixing by rewriting failed; the agent loop takes the defect", exc_info=True)
+            declined(f"the rewrite raised {type(error).__name__}")
             return None
 
     def _fix_one(state: Any, config: RunnableConfig, defect_index: int) -> dict[str, Any]:
@@ -10565,11 +11566,19 @@ def build_workflow_graph(
             if state.get("pending_inner_thread_id")
             else engineering.before_a_fix(state["repository"].root_path, stage_name)
         )
+        # The mode this fix runs in: what it may write, and what is kept of it (`app.graph.defect_fix_modes`).
+        defect_fix_modes.begin(state, config, cycle, defect_index, stage_name)
         # Fast delivery: the harness gathers what failed and the files it points
         # at, and the model rewrites each file in one call. See
         # `app.graph.rewritten_fixes`; a defect it cannot place goes to the agent loop.
-        rewritten = None if state.get("pending_inner_thread_id") else _fixed_by_rewriting(
-            state, config, defect, fix_model, failed_fix_tries(cycle, defect_index),
+        # A reverted fix whose own tests passed is measured a second time first (behind `KEPT_FIX_CANDIDATES`).
+        from app.graph import kept_fix_candidates
+
+        repo = Path(state["repository"].root_path)
+        rewritten = None if state.get("pending_inner_thread_id") else (
+            kept_fix_candidates.replayed(repo, defect, stage_name) or _fixed_by_rewriting(
+                state, config, defect, fix_model, failed_fix_tries(cycle, defect_index),
+            )
         )
         if rewritten is not None:
             update: dict[str, Any] = {}
@@ -10582,11 +11591,15 @@ def build_workflow_graph(
             )
             request, co_defects = _the_fix_request(state, config, cycle, defect_index)
             # Each write followed by the defect's own tests (plan AY step 3, off until measured).
+            from app.acceptance import mutant_check_in_stage
             from app.graph import verify_after_write
 
             root = Path(state["repository"].root_path)
             with verify_after_write.watching(
-                config["configurable"].get(APP_RUN_ID_KEY), stage_name, lambda: _the_defect_s_tests_pass(root, defect),
+                config["configurable"].get(APP_RUN_ID_KEY), stage_name,
+                # A mutation finding's write is answered by its own change (`MUTANT_CHECK_IN_THE_FIX_STAGE`).
+                mutant_check_in_stage.check_for(root, defect, lambda: _the_defect_s_tests_pass(root, defect)),
+                **mutant_check_in_stage.how_for(defect),
             ):
                 update = _run_gated_agent(
                     state,
@@ -10603,8 +11616,27 @@ def build_workflow_graph(
                 return update  # paused waiting for approval on this fix
 
             fix_result = update.pop("__fix_result__")
+            # An answer that changed no file goes to the harness's rewrite once (behind `SURRENDER_TO_REWRITE`).
+            from app.graph.surrender_to_rewrite import after_a_surrender
+
+            from app.observability import defect_ledger as _surrender_ledger
+
+            why: dict[str, str] = {}
+            fix_result = after_a_surrender(fix_result,
+                lambda: _fixed_by_rewriting(state, config, defect, fix_model, failed_fix_tries(cycle, defect_index),
+                                            after_a_surrender=True, why=why),
+                note=lambda outcome: _surrender_ledger.note(
+                    "rewrite after surrender", stage_name, defect=defect, index=defect_index,
+                    round_=state.get("test_round", 0),
+                    detail=outcome + (f": {why['why']}" if outcome == "declined" and why.get("why") else ""),
+                ),
+            )
+        defect_fix_modes.end(config, stage_name)
         broke = engineering.after_a_fix(
-            state["repository"].root_path, fix_base, stage_name, defect.description
+            state["repository"].root_path, fix_base, stage_name, defect.description,
+            contested=_a_contested_test_past_repair(state, cycle),
+            on_revert=lambda lost: kept_fix_candidates.keep(
+                repo, fix_base, defect, stage_name, lambda: _the_defect_s_tests_pass(repo, defect), lost),
         )
         from app.observability import defect_ledger
 
@@ -10622,7 +11654,7 @@ def build_workflow_graph(
             noted = _with_the_attempt(noted, defect_index, stage_name, fix_result, f"reverted: it broke {'; '.join(broke[:3])}",
                                       defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name, started))
             contested = _a_locked_test_two_fixes_broke(noted)
-            if contested and _a_dispute_may_be_held_now(state):
+            if contested and _a_dispute_may_be_held_now(state, also=[contested]):
                 logger.warning(
                     "Two fixes were reverted for breaking the locked test %s; the QA lead "
                     "judges the failing locked tests before the round goes on", contested,
@@ -10658,6 +11690,7 @@ def build_workflow_graph(
                 defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name, started),
             )
         update.update(settled)
+        update.update(_the_unit_tests_a_kept_fix_broke(state))
         if blames and _a_dispute_may_be_held_now(state):
             # The fix stage left its defect open and says a locked test is
             # what cannot pass - in its blockers, or among its decisions beside
@@ -10893,6 +11926,7 @@ def build_workflow_graph(
             update["specialist_outputs"] = settled["specialist_outputs"]
             blamed = blamed or blames
         update.update(remediation=settled_cycle, fix_batch=[], fix_base_commit="", fix_batch_started="", fixes_tried=tried)
+        update.update(_the_unit_tests_a_kept_fix_broke(state))
         if blamed and _a_dispute_may_be_held_now(state):
             logger.warning("A fix in the batch blames the locked suite; the QA lead judges its failing tests")
             return _handing_on(**update, stage="acceptance_dispute", dispute_returns_to="test_and_triage")
@@ -10998,7 +12032,8 @@ def build_workflow_graph(
             agent=agent,
             # The facts the work is built and judged under (plan CM.1).
             initial_request=with_the_facts(_with_the_api(_with_the_reason(
-                build_dispute_request(failing, code, getattr(state.get("document"), "text", "") or ""),
+                build_dispute_request(failing, code, getattr(state.get("document"), "text", "") or "",
+                                      measured=acceptance_suite.the_suite_s_own_words_when_last_measured(root)),
                 str(state.get("dispute_reason") or ""),
             ), state), state["repository"].root_path),
             output_key="__suite_dispute__",
@@ -11006,7 +12041,20 @@ def build_workflow_graph(
         )
         if _hand_back(update, "__suite_dispute__"):
             return update
-        named = tests_it_names(update.pop("__suite_dispute__"), [name for name, _, _ in failing])
+        from app.agents.specification_rulings import _the_specification
+
+        standard = "\n".join((
+            getattr(state.get("document"), "text", "") or "",
+            _the_specification(state.get("technical_specification"), root),
+            *(criterion for _, criterion, _ in failing),
+        ))
+        refused: list[tuple[str, str]] = []
+        named = tests_it_names(
+            update.pop("__suite_dispute__"), [name for name, _, _ in failing], standard=standard, refused=refused,
+            criteria_of={name: criterion for name, criterion, _ in failing},
+        )
+        called_wrong = list(named)
+        passed_alone: list[str] = []
         # The executable leg before a reclassification (Initiative J.2): each
         # named test is run alone against the delivered surface in the
         # project's own runner. One that passes alone is not unpassable - the
@@ -11018,6 +12066,12 @@ def build_workflow_graph(
                     "Disputed test(s) %s pass when run alone; they stay locked",
                     ", ".join(passed_alone),
                 )
+        named, service_stopped = acceptance_nodes.tests_whose_service_stayed_up(root, named)
+        if service_stopped:
+            logger.warning(
+                "Disputed test(s) %s saw their service stop by itself; they stay locked",
+                ", ".join(service_stopped),
+            )
         # And the cap: this run may reclassify this many locked tests, period.
         # Past it the tests stay as they are and the run carries them to its
         # release rather than rewriting what it is checked against.
@@ -11027,6 +12081,15 @@ def build_workflow_graph(
                 "Disputed test(s) %s are past this run's reclassification cap; they stay as they are",
                 ", ".join(past_the_cap),
             )
+            # Carried to the release as the cap means, not re-planned against: measured on one run, the same two
+            # tests the dispute called wrong (a character count off by one) failed every sprint after the cap, and the
+            # sprint was planned again for hours on a product that counted right. Their criteria are deferred with why,
+            # as a locked test beyond repair is, so the rounds stop raising them and the release names them.
+            beyond = criteria_past_the_cap(failing, past_the_cap)
+            if beyond:
+                acceptance_nodes.defer_what_is_beyond_repair(state, beyond, [
+                    f"{name}: the dispute judged it wrong, and this run may reclassify no more tests"
+                    for name in past_the_cap])
         missing = [
             f"`{name}` is missing from the locked suite; no test checks what the criterion says. Add a test for `{name.split()[0]}` or tag an existing test that proves it."
             for name, _, _ in failing
@@ -11034,13 +12097,34 @@ def build_workflow_graph(
         ]
         to_repair = [*named, *missing]
         update.pop("stage", None)
+
+        def _the_outcome(reopened: bool) -> None:
+            # One decision per dispute with every way it ended (harness review HR2.Q.4): until now each was a warning.
+            from app.decisions import record_decision
+            from app.graph import dispute_outcomes
+
+            record = dispute_outcomes.outcome(
+                shown=[name for name, _, _ in failing], called_wrong=called_wrong, refused=refused,
+                passed_alone=passed_alone, service_stopped=service_stopped, past_the_cap=past_the_cap,
+                missing=missing, reopened=reopened,
+            )
+            dispute_outcomes.write(root, record, sprint=_this_attempt(state))
+            record_decision(
+                state, update, point="acceptance_dispute",
+                question="Can the locked tests the attempt still fails pass for a product that meets its criteria?",
+                decision=dispute_outcomes.summary(record),
+                rationale=json.dumps(record)[:4000],
+            )
+
         if to_repair:
             logger.warning("The QA lead / harness identifies %d locked test(s)/missing criteria cannot pass; reopening the suite", len(to_repair))
             reopened = reopen_the_suite_for(
-                state, to_repair, return_to=returns_to or SPRINT_REPLAN, reclassifying=True,
+                state, to_repair, return_to=returns_to or SPRINT_REPLAN, reclassifying=True, model=judgement_model,
             )
             if reopened is not None:
+                _the_outcome(True)
                 return _handing_on(**{**update, **reopened, "disputed_sprints": disputed, "dispute_returns_to": None, "dispute_reason": None})
+        _the_outcome(False)
         return _handing_on(**update, stage=carry_on, disputed_sprints=disputed, dispute_returns_to=None, dispute_reason=None)
 
     def _advice_reviews_due(state: Any) -> list[str]:
@@ -11304,25 +12388,28 @@ def build_workflow_graph(
         if "__milestone_review__" not in update:
             return update
             
-        review: MilestoneReviewOutput = _a_pass_over_its_own_findings(
-            _findings_no_measure_holds(_findings_the_command_record_contradicts(
-                _findings_about_a_server_only_the_tests_start(
-                    _findings_the_dependency_check_contradicts(
-                        _security_graded_by_its_own_review(
-                            _findings_a_later_sprint_builds(update.pop("__milestone_review__"), state),
-                            state.get("security_review"),
-                        ),
-                        state,
-                    ),
-                    state["repository"].root_path,
-                ),
-                state["repository"].root_path,
-            ), state["repository"].root_path),
-            state["repository"].root_path,
-            "accepted",
-            "milestone_review",
-        )
-        review = _accepted_when_nothing_in_it_gates(review, state["repository"].root_path)
+        # Each filter in turn, and what it dropped or moved recorded under its name (harness review HR2.G.1): until
+        # now they only logged, and 6 of 21 send-backs over 40 runs were relabelled accepted with no record.
+        from app.acceptance.check_findings import filtered as _what_it_filtered
+
+        root = state["repository"].root_path
+        review_round = int(state.get("milestone_revision_count", 0) or 0) + 1
+
+        def _through(name: str, before: Any, after: Any) -> Any:
+            return _what_it_filtered(root, review_round, f"milestone:{name}", before, after)
+
+        review = update.pop("__milestone_review__")
+        review = _through("a_later_sprint_builds", review, _findings_a_later_sprint_builds(review, state))
+        review = _through("security_graded_by_its_own_review", review,
+                          _security_graded_by_its_own_review(review, state.get("security_review")))
+        review = _through("the_dependency_check_contradicts", review, _findings_the_dependency_check_contradicts(review, state))
+        review = _through("about_the_harness_s_files", review, _findings_about_the_harness_s_files_made_minor(review, root))
+        review = _through("a_server_only_the_tests_start", review, _findings_about_a_server_only_the_tests_start(review, root))
+        review = _through("the_command_record_contradicts", review, _findings_the_command_record_contradicts(review, root))
+        review = _through("no_measure_holds", review, _findings_no_measure_holds(review, root))
+        review = _through("a_pass_over_its_own_findings", review,
+                          _a_pass_over_its_own_findings(review, root, "accepted", "milestone_review"))
+        review = _through("nothing_in_it_gates", review, _accepted_when_nothing_in_it_gates(review, root))
         # This round's findings, in the state the sprint record below reads, so
         # a sprint that ends on this review records the review that ended it.
         from app.sprint.record import findings_of
@@ -11353,7 +12440,7 @@ def build_workflow_graph(
             )
         elif review.status == "changes_required" and (
             not review.findings
-            or _findings_that_block(review, state["repository"].root_path)
+            or _milestone_findings_that_block(state, review)
         ):
             # A `changes_required` carrying nothing above the gating severities
             # falls through to the accepted path below - the same hole that
@@ -11722,6 +12809,7 @@ def build_workflow_graph(
             "revision_comments": [],
             "milestone_revision_count": 0,
             "sprint_replan_count": 0,
+            "sprint_best_history": [],
         }
 
     def complete_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001

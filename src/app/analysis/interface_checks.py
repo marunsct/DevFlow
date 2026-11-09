@@ -77,9 +77,11 @@ def _same(one: str, other: str) -> bool:
 
 
 def _the_product_s(base: Path, pattern: str) -> list[Path]:
+    from app.analysis.walk import files_under
+
     return [
-        path for path in base.rglob(pattern)
-        if path.is_file() and not any(part in _NOT_THE_PRODUCT for part in path.relative_to(base).parts)
+        path for path in files_under(base, _NOT_THE_PRODUCT, pattern)
+        if not any(part in _NOT_THE_PRODUCT for part in path.relative_to(base).parts)
     ]
 
 

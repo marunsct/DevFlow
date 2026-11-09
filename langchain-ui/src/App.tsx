@@ -9,6 +9,7 @@ import { RunList } from './pages/RunList';
 import { Compare } from './pages/Compare';
 import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
+import { Admin } from './pages/Admin';
 import React, { useEffect, useState } from 'react';
 import { api } from './api';
 import { FeedbackProvider } from './components/Feedback';
@@ -109,6 +110,7 @@ function App() {
             <Route path="runs/compare" element={<Compare />} />
             <Route path="runs/:runId" element={<RunDashboard />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="admin" element={<Admin />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

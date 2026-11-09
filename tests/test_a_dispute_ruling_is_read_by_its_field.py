@@ -1,0 +1,131 @@
+"""Behind `STRUCTURED_DISPUTE_VERDICT` (off until measured), the dispute is read by one ruling per test, not its prose.
+
+Plan item 19. The prose reading (`judged_by_the_code`) needed four patches, the last after "its own steps never set up"
+was filed as a reason about the product and a test no product could pass stayed locked.
+"""
+from __future__ import annotations
+
+import inspect
+import re
+
+from app.agents import suite_dispute
+from app.agents.suite_dispute import DisputeRuling, SuiteDispute, SuiteDisputeWithRulings
+
+BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
+FAILING = ["[AC-2][AC-9] list notes returns 200 with a JSON array", "[AC-4] updates a note"]
+QUOTE = "AC-2 List all notes: GET /notes answers 200 with every note"
+
+
+def _answer(*rulings, prose=()):
+    return SuiteDisputeWithRulings(cannot_pass=list(prose), rulings=list(rulings))
+
+
+def test_a_ruling_that_the_test_is_wrong_with_a_quote_reopens_it_whatever_its_words(monkeypatch):
+    monkeypatch.setenv("STRUCTURED_DISPUTE_VERDICT", "on")
+    ruling = DisputeRuling(test=FAILING[0], the_test_is_wrong=True,
+                           the_test_asserts="titles starting `list-${slug}-` number two, though it sent `list-a-${slug}`",
+                           the_standard_says=QUOTE)
+    named = suite_dispute.tests_it_names(_answer(ruling), FAILING)
+    assert len(named) == 1 and named[0].startswith(f"`{FAILING[0]}`") and QUOTE in named[0]
+    assert not BANNED.search(named[0])
+
+
+def test_a_ruling_for_the_product_or_without_a_quote_reopens_nothing(monkeypatch):
+    monkeypatch.setenv("STRUCTURED_DISPUTE_VERDICT", "on")
+    right = DisputeRuling(test=FAILING[1], the_test_is_wrong=False, the_test_asserts="the title changes",
+                          the_standard_says="AC-4 Update a note's title and body")
+    unquoted = DisputeRuling(test=FAILING[0], the_test_is_wrong=True, the_test_asserts="two notes", the_standard_says="")
+    assert suite_dispute.tests_it_names(_answer(right, unquoted), FAILING) == []
+
+
+def test_off_the_prose_is_read_and_the_model_sees_no_rulings(monkeypatch):
+    monkeypatch.setenv("STRUCTURED_DISPUTE_VERDICT", "off")
+    ruling = DisputeRuling(test=FAILING[0], the_test_is_wrong=True, the_test_asserts="two notes", the_standard_says=QUOTE)
+    assert suite_dispute.tests_it_names(_answer(ruling), FAILING) == []
+    assert "rulings" not in SuiteDispute.model_fields
+    assert "SuiteDisputeWithRulings if structured_verdict_switch.enabled() else SuiteDispute" in inspect.getsource(
+        suite_dispute.create_suite_dispute_agent)
+    for field in DisputeRuling.model_fields.values():
+        assert not BANNED.search(field.description or "")
+
+
+def test_an_answer_without_rulings_does_not_satisfy_the_schema():
+    """Measured on one run: both disputes under the switch returned no rulings, so the field taught nothing."""
+    import pydantic
+    import pytest
+
+    with pytest.raises(pydantic.ValidationError):
+        SuiteDisputeWithRulings(cannot_pass=[], rulings=[])
+    with pytest.raises(pydantic.ValidationError):
+        SuiteDisputeWithRulings(cannot_pass=[])
+    right = DisputeRuling(test=FAILING[1], the_test_is_wrong=False, the_test_asserts="the title changes",
+                          the_standard_says="AC-4 Update a note's title and body")
+    assert SuiteDisputeWithRulings(rulings=[right]).rulings == [right]
+
+
+def _ruling(quote):
+    return DisputeRuling(test=FAILING[0], the_test_is_wrong=True, the_test_asserts="it asserts a thing", the_standard_says=quote)
+
+
+def test_a_quote_that_is_not_in_the_standard_reopens_nothing(monkeypatch):
+    # Measured on one run: the ruling's "standard" was a sentence of the harness's own instructions to it.
+    monkeypatch.setenv("STRUCTURED_DISPUTE_VERDICT", "on")
+    answer = _answer(_ruling("A line with no reason is not counted."))
+    assert suite_dispute.tests_it_names(answer, FAILING, standard="AC-4 Update a note's title and body.") == []
+
+
+def test_a_quote_from_the_standard_reopens_the_test_whatever_its_case_and_spacing(monkeypatch):
+    monkeypatch.setenv("STRUCTURED_DISPUTE_VERDICT", "on")
+    answer = _answer(_ruling("update a note's  title and body"))
+    assert len(suite_dispute.tests_it_names(answer, FAILING, standard="AC-4 Update a note's\ntitle and body.")) == 1
+
+
+def test_the_node_gives_the_standard_to_the_reading_of_the_dispute():
+    from app.graph import workflow
+
+    node = inspect.getsource(workflow)
+    node = node[node.index("def acceptance_dispute_node"):]
+    assert 'update.pop("__suite_dispute__"), [name for name, _, _ in failing], standard=standard' in node
+
+
+STANDARD = (
+    "`textkit.truncate(text, limit, suffix='...')` takes a string `text`, an integer `limit`, and an optional string "
+    "`suffix` (default '...'). Returns the original text if its length is at most limit. Otherwise returns the first "
+    "(limit - len(suffix)) characters of text followed by suffix, producing exactly limit characters total."
+)
+
+
+def _ruling_quoting(quoted):
+    return DisputeRuling(test=FAILING[0], the_test_is_wrong=True, the_test_asserts="it asks for six characters",
+                         the_standard_says=quoted)
+
+
+def test_a_quote_of_several_sentences_without_the_marks_still_counts():
+    # Measured on one run: a right ruling joined two sentences of the specification and left out its backticks, the
+    # whole-string match refused it, and fixers went after a product doing what the standard says.
+    quoted = (
+        "textkit.truncate(text, limit, suffix='...') takes a string text, an integer limit, and an optional string "
+        "suffix (default '...'). Otherwise returns the first (limit - len(suffix)) characters of text followed by "
+        "suffix, producing exactly limit characters total."
+    )
+    assert suite_dispute._tests_the_rulings_name([_ruling_quoting(quoted)], FAILING, standard=STANDARD)
+
+
+def test_a_quote_with_any_sentence_the_standard_does_not_hold_is_refused():
+    made_up = "Otherwise returns the first characters of text. The result must never be shorter than ten characters."
+    assert suite_dispute._tests_the_rulings_name([_ruling_quoting(made_up)], FAILING, standard=STANDARD) == []
+
+
+def test_a_true_sentence_with_a_signature_put_before_it_still_counts():
+    # Measured on the same run: the next ruling put the function's signature before the specification's own sentence.
+    quoted = (
+        "textkit.truncate(text, limit, suffix='...') returns the original text if its length is at most limit. "
+        "Otherwise returns the first (limit - len(suffix)) characters of text followed by suffix, producing exactly "
+        "limit characters total."
+    )
+    assert suite_dispute._tests_the_rulings_name([_ruling_quoting(quoted)], FAILING, standard=STANDARD)
+
+
+def test_a_sentence_sharing_only_a_few_words_with_the_standard_is_refused():
+    quoted = "Returns the first characters unless the caller asks for a shorter result of any length at all."
+    assert suite_dispute._tests_the_rulings_name([_ruling_quoting(quoted)], FAILING, standard=STANDARD) == []

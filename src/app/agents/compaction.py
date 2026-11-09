@@ -44,6 +44,12 @@ _WRITING_TOOLS = frozenset({
     "move_artifact", "delete_artifact",
 })
 _PATH_ARGUMENTS = ("relative_path", "path", "file_path")
+#: The calls whose long arguments are shortened behind the kept tail. deepagents
+#: shortens only its own `write_file` and `edit_file`, which no stage here has:
+#: they write through `write_artifact` and `edit_artifact`, so a written file's
+#: whole content stayed in every later request of the stage, and the relief
+#: `role_agent` configures for exactly that never fired.
+_ARGUMENTS_SHORTENED = frozenset({"write_file", "edit_file", *_WRITING_TOOLS})
 
 MOST_FILES_NAMED = 40
 
@@ -198,6 +204,41 @@ class RequestKeepingSummarization(SummarizationMiddleware):
                 break
             cutoff = moved
         return cutoff
+
+    def _truncate_args(self, messages: list[AnyMessage], total_tokens: int) -> tuple[list[AnyMessage], bool]:
+        """Old calls' long arguments shortened, and - with `OBSERVATION_FOLDING` - old long results folded.
+
+        Both only once the conversation reaches the argument trigger, so a small
+        stage is sent as it is. Behind a boundary that moves `FOLD_STEP`
+        messages at a time (`observation_folding.boundary`), so what is
+        shortened stays the same, and cached, between steps.
+        """
+        from app.agents import observation_folding
+
+        if not self._should_truncate_args(messages, total_tokens):
+            return messages, False
+        cutoff = observation_folding.boundary(min(self._determine_truncate_cutoff_index(messages), len(messages)))
+        if cutoff <= 0:
+            return messages, False
+        shortened: list[AnyMessage] = []
+        modified = False
+        for index, message in enumerate(messages):
+            if index < cutoff and isinstance(message, AIMessage) and message.tool_calls:
+                calls = [self._truncate_tool_call(call) if call.get("name") in _ARGUMENTS_SHORTENED else call
+                         for call in message.tool_calls]
+                if calls != message.tool_calls:
+                    message = message.model_copy()
+                    message.tool_calls = calls
+                    modified = True
+            shortened.append(message)
+        if observation_folding.enabled():
+            shortened, folded = observation_folding.fold(shortened, cutoff)
+            if folded:
+                modified = True
+                observation_folding.a_read_was_folded(sum(
+                    1 for m in shortened[:cutoff] if observation_folding.FOLDED in str(getattr(m, "content", ""))
+                ))
+        return (shortened, True) if modified else (messages, False)
 
     def _should_summarize(self, messages: list[AnyMessage], total_tokens: int) -> bool:
         if not super()._should_summarize(messages, total_tokens):

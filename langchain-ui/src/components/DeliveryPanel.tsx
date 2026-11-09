@@ -36,6 +36,8 @@ interface Evidence {
   screenshots: string[];
   pages: string[];
   completion_gaps?: string[];
+  /** Those that mean the product may not work; the rest are notes. */
+  blocking_gaps?: string[];
   support_tier?: string;
   /** Each criterion's first passing test: after which step, and when (plan BG.9). */
   first_passed?: Record<string, { test: string; after: string; at: string }>;
@@ -261,8 +263,10 @@ export const DeliveryPanel: React.FC<{
                 <ul className="space-y-1">
                   {evidence!.completion_gaps!.map((gap, index) => (
                     <li key={index} className="text-sm text-text-secondary flex gap-2">
-                      <span className="text-warning shrink-0" aria-hidden="true">!</span>
-                      <span className="min-w-0 break-words">{gap}</span>
+                      {evidence!.blocking_gaps?.includes(gap)
+                        ? <span className="text-warning shrink-0" aria-hidden="true">!</span>
+                        : <span className="text-text-muted shrink-0" aria-hidden="true">·</span>}
+                      <span className="min-w-0 break-words">{evidence!.blocking_gaps?.includes(gap) ? gap : `Note: ${gap}`}</span>
                     </li>
                   ))}
                 </ul>

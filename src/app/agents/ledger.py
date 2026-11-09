@@ -17,7 +17,6 @@ its 10 contract lines at release.
 
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
@@ -42,12 +41,9 @@ _CRITERION = re.compile(r"^\s*((?:AC|CR)-\d+)\b")
 
 def enabled() -> bool:
     """Whether stages read the ledger (plan CM.2)."""
-    value = str(os.environ.get("DECISION_LEDGER") or "").strip().lower()
-    if value in ("1", "on", "true", "yes"):
-        return True
-    if value in ("0", "off", "false", "no"):
-        return False
-    return ON_BY_DEFAULT
+    from app.switches import is_on
+
+    return is_on("DECISION_LEDGER", ON_BY_DEFAULT)
 
 
 @dataclass(frozen=True)

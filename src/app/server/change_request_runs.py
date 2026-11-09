@@ -38,7 +38,7 @@ def enabled() -> bool:
 
 def _head(root: Path) -> str:
     try:
-        result = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=30)
+        result = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, errors="replace", timeout=30)
         return result.stdout.strip() if result.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):
         return ""

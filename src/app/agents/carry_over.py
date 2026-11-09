@@ -88,12 +88,33 @@ def _commands_already_run(repo_root: str | None) -> list[tuple[str, Any]]:
     return ran
 
 
-def carry_over_note(thread_id: str, repo_root: str | None) -> str:
+def _files_refused_as_another_s(thread_id: str) -> list[str]:
+    """The files the dead attempt was refused because another work order owns them."""
+    from app.agents.stage_memory import recall
+
+    return sorted(str(name) for name in recall(thread_id, "files_refused_as_another_work_order_s"))
+
+
+def _files_it_changed(repo_root: str | None, stage_name: str) -> list[str]:
+    """The files the dead attempt was the last to change."""
+    if not repo_root or not stage_name:
+        return []
+    from app.analysis.project_memory import files_changed_by
+
+    return files_changed_by(repo_root, stage_name)
+
+
+def carry_over_note(thread_id: str, repo_root: str | None, stage_name: str = "", why: str = "") -> str:
     """A compact note for the fresh attempt, or "" when there is nothing to say.
 
     Empty when the dead attempt established nothing - a stage that failed on its
     first call has no facts to pass on, and an empty preamble is one more thing
     for the next attempt to read past.
+
+    `why` and what it changed and was refused say how it ended. Measured on one run: a unit-test stage found a
+    crash in a file another work order owns, was refused it, and spent the rest of its forty calls building a
+    child-process runner around the product's module state; the next attempt was told only the commands it had
+    run, read the half-built runner it found, and started down the same road.
     """
     try:
         files = _files_already_read(thread_id, repo_root)
@@ -101,17 +122,34 @@ def carry_over_note(thread_id: str, repo_root: str | None) -> str:
         from app.tools.research import what_was_found
 
         looked_up = what_was_found(thread_id)
+        refused = _files_refused_as_another_s(thread_id)
+        changed = _files_it_changed(repo_root, stage_name)
     except Exception:  # noqa: BLE001 - never fail a restart over a hint
         logger.debug("Could not build a carry-over note", exc_info=True)
         return ""
-    if not files and not commands and not looked_up:
+    if not files and not commands and not looked_up and not refused and not changed:
         return ""
 
     lines = [
-        "[Carrying over from your previous attempt at this task, which ended "
+        "[Carrying over from your previous attempt at this stage, which ended "
         "without a structured response. The conversation is gone; these facts "
         "are not. Do not re-establish them.]",
     ]
+    if why:
+        lines.append(f"\nIt ended because it {why}: answer sooner this time, with what you have.")
+    if refused:
+        lines.append(
+            "\nFiles it was refused because another work order owns them: " + ", ".join(refused[:MAX_FILES_NAMED])
+            + ". They are not yours to change. What your work needs from them goes in your answer's `blockers`, "
+            "and a fault you found in them in its `defects` - do not build around it."
+        )
+    if changed:
+        shown = changed[-MAX_FILES_NAMED:]
+        lines.append(
+            "\nFiles it changed, as it left them: " + ", ".join(shown)
+            + ". Keep what works; a helper it was part way through and that does not work is better removed than "
+            "finished."
+        )
     if files:
         shown = files[:MAX_FILES_NAMED]
         more = len(files) - len(shown)

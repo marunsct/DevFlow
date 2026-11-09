@@ -22,9 +22,24 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any, Callable, Collection
 
 logger = logging.getLogger(__name__)
+
+#: The longest reply one file's draft may take, in tokens; the agent loop builds a file that needs more.
+MOST_DRAFT_TOKENS = 16_000
+#: Said to a draft asked again because its first came back mostly the same lines over again.
+DRAFT_REPEATS = (
+    "Your last draft of this file repeats the same lines over and over. Write each behaviour once: one test or "
+    "one function per thing the specification asks, not one for every variant you can name."
+)
+
+
+def repeats_itself(content: str) -> bool:
+    """Whether a draft is mostly the same lines over again: a reply caught in a loop, not a file."""
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    return len(lines) >= 300 and len(set(lines)) < len(lines) / 8
+
 
 #: The most of the files it works with that one draft is shown.
 MOST_NEIGHBOUR_CHARACTERS = 24_000
@@ -35,9 +50,24 @@ _FENCE = re.compile(r"```[^\n`]*\n(.*?)```", re.S)
 _A_PATH = re.compile(r"[\w./@-]+\.[A-Za-z0-9]{1,8}\b")
 
 
+#: A line that opens or closes a fenced block.
+_FENCE_LINE = re.compile(r"^[ \t]*```", re.M)
+
+
 def the_content_in(reply: str) -> str:
-    """The file a reply holds: its longest fenced block, or the whole reply when it has none."""
+    """The file a reply holds: its longest fenced block, or the whole reply when it has none; "" when it was cut off.
+
+    A reply that reached the reply cap ends inside its block, with no closing
+    fence. That was taken as a file with no fence at all - the whole reply,
+    its opening ```` ```python ```` line included - and written over the file,
+    or, when the reply held a short block before the long one, the short one
+    was. A file longer than the cap allows is the large-codebase case of it.
+    "" is what every caller already treats as no draft: nothing is written and
+    the file stays as it was.
+    """
     text = str(reply or "")
+    if len(_FENCE_LINE.findall(text)) % 2:
+        return ""
     blocks = _FENCE.findall(text)
     if blocks:
         return max(blocks, key=len).rstrip() + "\n"
@@ -202,9 +232,9 @@ def _stack_line(stack: Any) -> str:
     return ", ".join(part for part in parts if part) or "as the specification says"
 
 
-def _neighbours(root: Path, path: str, task: Any, detail: str) -> str:
-    """The files this one works with, as they are on disk: the work order's own and any its entries name."""
-    named = [*(getattr(task, "files", None) or []), *_A_PATH.findall(detail)]
+def _neighbours(root: Path, path: str, task: Any, detail: str, code_under_test: Collection[str] = ()) -> str:
+    """The files this one works with, as they are on disk: the code a test tests first, then the work order's own and any its entries name."""
+    named = [*code_under_test, *(getattr(task, "files", None) or []), *_A_PATH.findall(detail)]
     shown, used = [], 0
     for other in dict.fromkeys(named):
         other = other.strip().lstrip("./")
@@ -212,6 +242,12 @@ def _neighbours(root: Path, path: str, task: Any, detail: str) -> str:
             continue
         candidates = [root / other, *(root.glob(f"*/{other}"))]
         target = next((c for c in candidates if c.is_file()), None)
+        if target is None:
+            # Deeper than one folder: the one file whose path ends so (see `the_file_ending`).
+            from app.analysis.walk import the_file_ending
+            from app.tools.repository import IGNORED_DIRECTORIES
+
+            target = the_file_ending(root, other, IGNORED_DIRECTORIES)
         if target is None:
             continue
         try:
@@ -244,9 +280,31 @@ def _where_dependencies_go(root: Path) -> str:
         return ""
 
 
+def _the_naming_standard(stack: Any) -> str:
+    try:
+        from app.stacks.naming import standard_for
+
+        return standard_for(stack)
+    except Exception:  # noqa: BLE001 - the request as it was
+        return ""
+
+
+def _the_builder_s_facts(root: Path, path: str) -> str:
+    try:
+        from app.graph.builder_facts import section
+
+        return section(root, path)
+    except Exception:  # noqa: BLE001 - the request as it was
+        return ""
+
+
 def draft_request(root: Path, path: str, task: Any, specification: Any, stack: Any,
-                  diagnostics: list[str] | None = None) -> str:
-    """What one file's draft is asked; `diagnostics` are what the compiler reported on its last draft."""
+                  diagnostics: list[str] | None = None, code_under_test: Collection[str] = ()) -> str:
+    """What one file's draft is asked; `diagnostics` are what the compiler reported on its last draft.
+
+    `code_under_test` are the product files a unit test tests, already written: shown first, so the test uses
+    their real names, signatures, messages and storage set-up instead of guessing them from the specification.
+    """
     from app.agents.shared_facts import the_facts_section
     from app.agents.specialists import specification_for_the_work_order
 
@@ -261,10 +319,14 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         except (OSError, UnicodeDecodeError):
             now = ""
     criteria = "\n".join(f"- {c}" for c in getattr(task, "acceptance_criteria", None) or [])
-    neighbours = _neighbours(root, path, task, detail)
+    neighbours = _neighbours(root, path, task, detail, code_under_test)
     return "\n\n".join(part for part in (
         f"Write the file `{path}` of this product, exactly as its specification says. "
         f"The stack: {_stack_line(stack)}.",
+        ("The code this test tests is already written and shown below. Call it by its real names and "
+         "signatures, expect its real messages, and set up its data the way it stores it: where the code and "
+         "the specification differ, test what the specification asks with the code's own names.")
+        if code_under_test else "",
         detail.strip(),
         f"--- The work order it belongs to ---\n{getattr(task, 'task_description', '')}"
         + (f"\nDone when:\n{criteria}" if criteria else ""),
@@ -273,6 +335,9 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         ("--- The compiler reports, in the draft above ---\n" + "\n".join(diagnostics)) if diagnostics else "",
         # The layout every builder and judge reads (plan CM.1).
         the_facts_section(root, built=False).strip(),
+        # What a fixer is told after a failure, told before the file is written (BUILDER_FACTS).
+        _the_builder_s_facts(root, path),
+        _the_naming_standard(stack),
         _where_dependencies_go(root),
         f"Reply with the complete content of `{path}` and nothing else, in one fenced code block. "
         "Every name, signature, message, import and library call is the one the specification "
@@ -281,20 +346,49 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
 
 
 def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any, stack: Any,
-               diagnostics: list[str] | None = None) -> str:
+               diagnostics: list[str] | None = None, code_under_test: Collection[str] = ()) -> str:
     from langchain_core.messages import HumanMessage, SystemMessage
 
     from app.observability.direct_calls import config_for_this_run
 
-    reply = model.invoke([
-        SystemMessage(content="You write source files for a software product from its specification. "
-                              "You reply with one file's complete content in one fenced code block."),
-        HumanMessage(content=draft_request(root, path, task, specification, stack, diagnostics)),
-    ], **config_for_this_run("drafting"))
-    return the_content_in(getattr(reply, "content", "") if not isinstance(reply, str) else reply)
+    try:
+        # One file's own limit: a draft caught repeating itself ran to the model's whole reply limit (measured,
+        # about 25 minutes for one test file).
+        bounded = model.bind(max_tokens=MOST_DRAFT_TOKENS)
+    except Exception:  # noqa: BLE001 - a model that takes no limit is asked as it is
+        bounded = model
+    request = draft_request(root, path, task, specification, stack, diagnostics, code_under_test)
+    for attempt in range(2):
+        reply = bounded.invoke([
+            SystemMessage(content="You write source files for a software product from its specification. "
+                                  "You reply with one file's complete content in one fenced code block."),
+            HumanMessage(content=request),
+        ], **config_for_this_run("drafting"))
+        content = the_content_in(getattr(reply, "content", "") if not isinstance(reply, str) else reply)
+        if not repeats_itself(content):
+            return content
+        request += "\n\n" + DRAFT_REPEATS
+    return ""
 
 
 Write = Callable[[str, str, str], Any]
+
+
+def _noted(path: str, attempt: str, outcome: str) -> None:
+    """One `draft` transcript record: the file, which pass (first, content-refusal, repair-n), and how it ended.
+
+    Harness review HR2.P.5: whether a draft's repair held and why a file went to the agent loop were log lines only,
+    so no change to drafting could be judged. Never raises.
+    """
+    try:
+        from app.observability.log_context import _TASK_RUN, _from_the_graph
+        from app.observability.transcript import record
+
+        run, _ = _from_the_graph()
+        record(str(run or _TASK_RUN.get() or "") or None, "drafting", "draft",
+               path=str(path), attempt=attempt, outcome=str(outcome)[:300])
+    except Exception:  # noqa: BLE001 - a record must never cost the draft
+        logger.debug("Could not record a draft", exc_info=True)
 
 #: Passes over drafted files the compiler still reports errors in.
 MOST_REPAIR_PASSES = 2
@@ -314,6 +408,11 @@ def _repaired_where_the_compiler_says(
     tasks = {path: task for _, path, task in jobs}
     for _pass in range(MOST_REPAIR_PASSES):
         reported = diagnose(written) if written else []
+        # The compiler's own errors beside the language service's: `tsc` reports a router handed to `app.use`, the
+        # service does not (BUILDER_FACTS).
+        from app.graph.builder_facts import compiler_lines
+
+        reported = [*reported, *(line for line in compiler_lines(repo_root, written) if line not in reported)]
         if not reported:
             return
         failing = [path for path in written if any(f"`{path}`" in line for line in reported)]
@@ -324,12 +423,61 @@ def _repaired_where_the_compiler_says(
                 content = _draft_one(model, root, path, tasks[path], specification, stack, mine)
                 if content.strip():
                     write(repo_root, path, content)
+                    _noted(path, f"repair-{_pass + 1}", "accepted")
+                else:
+                    _noted(path, f"repair-{_pass + 1}", "empty; the earlier draft stays")
             except Exception as error:  # noqa: BLE001 - the next stage meets what is there
                 logger.info("Repair of draft %s failed: %s", path, str(error)[:200])
+                _noted(path, f"repair-{_pass + 1}", f"refused; the earlier draft stays: {error}")
 
 
 #: Words of a refused write that name the content, not the path: drafted once more with them.
 CONTENT_REFUSALS = ("language service is sure of", "cannot parse this file")
+
+
+#: What a work order promises in its `interfaces`, in the words the lead writes them: `export function makeThing(...)`,
+#: `export interface Thing`, `def make_thing(`, `class Thing`.
+_A_PROMISED_NAME = re.compile(
+    r"\bexport\s+(?:default\s+)?(?:async\s+)?(?:abstract\s+)?(?:interface|class|function|const|let|type|enum)\s+([A-Za-z_$][\w$]*)"
+    r"|\b(?:def|class)\s+([A-Za-z_]\w*)"
+)
+_A_DEFINITION = (
+    r"(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:abstract\s+)?"
+    r"(?:interface|class|function|const|let|var|type|enum|def|fn|func|struct|trait)\s+{name}\b"
+)
+
+
+def promised_names(task: Any) -> list[str]:
+    """The names a work order says its files will export or define; [] when it names none."""
+    found: list[str] = []
+    for line in getattr(task, "interfaces", None) or []:
+        for match in _A_PROMISED_NAME.finditer(str(line)):
+            name = match.group(1) or match.group(2)
+            if name and name not in found:
+                found.append(name)
+    return found
+
+
+def not_defined_in(names: list[str], files: dict[str, str]) -> list[str]:
+    """The promised names no drafted file defines (the word only mentioned or imported does not count)."""
+    return [
+        name for name in names
+        if not any(re.search(_A_DEFINITION.format(name=re.escape(name)), text) for text in files.values())
+    ]
+
+
+def _promised_but_not_written(task: Any, written: list[str], root: Path) -> list[str]:
+    """The names the work order promises that none of its written files defines; [] when it names none or all are there."""
+    names = promised_names(task)
+    if not names:
+        return []
+    texts: dict[str, str] = {}
+    for path in written:
+        try:
+            texts[path] = (root / path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+    return not_defined_in(names, texts) if texts else []
 
 
 def draft_work_orders(
@@ -342,6 +490,7 @@ def draft_work_orders(
     write: Write | None = None,
     workers: int = 1,
     diagnose: Callable[[list[str]], list[str]] | None = None,
+    kept: Collection[str] = (),
 ) -> dict[int, Any]:
     """Each work order whose files were all drafted, by its index, with the output an agent would return.
 
@@ -376,15 +525,19 @@ def draft_work_orders(
         for index, task in enumerate(tasks)
         for path in (getattr(task, "files", None) or [])
         if str(path).strip() and not str(path).endswith("/") and str(path) not in never_written
+        # A file the best attempt already has, on a re-plan, stays as it is (`best_attempt.files_the_best_attempt_already_has`).
+        and str(path) not in kept
     ]
-    if not jobs and not never_written:
+    if not jobs and not never_written and not kept:
         return {}
 
-    def run(job: tuple[int, str, Any]) -> tuple[int, str, bool]:
+    def run(job: tuple[int, str, Any], code_under_test: Collection[str] = ()) -> tuple[int, str, bool]:
         index, path, task = job
+        attempt = "first"
         try:
-            content = _draft_one(model, root, path, task, specification, stack)
+            content = _draft_one(model, root, path, task, specification, stack, None, code_under_test)
             if not content.strip():
+                _noted(path, attempt, "left to the loop: the draft was empty")
                 return index, path, False
             try:
                 write(repo_root, path, content)
@@ -395,17 +548,36 @@ def draft_work_orders(
                 # on one line, and its whole work order went to the agent loop.
                 if not any(said in str(refused) for said in CONTENT_REFUSALS):
                     raise
-                content = _draft_one(model, root, path, task, specification, stack, [str(refused)])
+                _noted(path, attempt, f"refused for its content: {refused}")
+                attempt = "content-refusal"
+                content = _draft_one(model, root, path, task, specification, stack, [str(refused)], code_under_test)
                 write(repo_root, path, content)
+            _noted(path, attempt, "accepted")
             return index, path, True
         except Exception as error:  # noqa: BLE001 - the agent loop takes this work order
             logger.info("Draft of %s left to the agent loop: %s", path, str(error)[:200])
+            _noted(path, attempt, f"left to the loop: {error}")
             return index, path, False
 
     from app.observability.direct_calls import mapped_in_this_context
 
+    # The product first, its unit tests after: drafted in one batch, a test was written before the code it tests
+    # and guessed its signatures, messages and storage - measured over 18 runs, 25 of 31 fixes of failing unit
+    # tests were left open. Each test is shown the product files drafted here, those it names first.
+    code_jobs = [job for job in jobs if classify_file(job[1]) != "test"]
+    test_jobs = [job for job in jobs if classify_file(job[1]) == "test"]
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        results = mapped_in_this_context(pool, run, jobs)
+        results = mapped_in_this_context(pool, run, code_jobs)
+    drafted_code = [path for _, path, ok in results if ok]
+
+    def the_code_it_tests(path: str, task: Any) -> list[str]:
+        words = set(re.findall(r"[a-z0-9]+", f"{path} {getattr(task, 'task_description', '')}".lower())) - {"test", "tests", "spec"}
+        named = [code for code in drafted_code if PurePosixPath(code).stem.lower() in words]
+        return [*named, *(code for code in drafted_code if code not in named)]
+
+    if test_jobs:
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+            results += mapped_in_this_context(pool, lambda job: run(job, the_code_it_tests(job[1], job[2])), test_jobs)
     if diagnose is not None:
         _repaired_where_the_compiler_says(results, jobs, diagnose, model, root, repo_root, specification, stack, write)
     drafted: dict[int, Any] = {}
@@ -413,16 +585,27 @@ def draft_work_orders(
         mine = [(path, ok) for i, path, ok in results if i == index]
         if not all(ok for _, ok in mine):
             continue
-        if not mine and not any(str(p) in never_written for p in (getattr(task, "files", None) or [])):
+        if not mine and not any(str(p) in never_written or str(p) in kept for p in (getattr(task, "files", None) or [])):
             continue
         written = [path for path, _ in mine]
+        left = [str(p) for p in (getattr(task, "files", None) or []) if str(p) in kept]
+        # A file drafted from a specification that does not describe what the work order adds comes out as the
+        # file it was: measured, a work order to add a SQLite store was recorded as done with `store.ts` unchanged.
+        # A work order is done when what it promised is there; else the agent loop builds it, as for a failed file.
+        absent = _promised_but_not_written(task, [*written, *left], root)
+        if absent:
+            logger.info("Work order %d is left to the agent loop: its files do not define %s", index, ", ".join(absent))
+            for path in written:
+                _noted(path, "promise check", f"left to the loop: the work order's files do not define {', '.join(absent)}")
+            continue
         skipped = [str(p) for p in (getattr(task, "files", None) or []) if str(p) in never_written]
         drafted[index] = SpecialistOutput(
             changed_files=written,
             tests=[path for path in written if classify_file(path) == "test"],
             decisions=["Drafted from the specification, one call per file (fast delivery)."]
             + [f"`{path}` is a credential file no stage writes; its settings take development defaults."
-               for path in skipped],
+               for path in skipped]
+            + [f"`{path}` was left as the best attempt so far had it." for path in left],
         )
     logger.info(
         "Drafted %d of %d work order(s) from the specification (%d of %d files)",

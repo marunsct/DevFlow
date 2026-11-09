@@ -122,10 +122,22 @@ def test_the_settings_page_sets_and_clears_it(client, _clean_runtime_settings) -
     assert "sk-judge-secret-9876" not in str(body)
     assert runtime_settings.effective_environment()["JUDGEMENT_MODEL"] == "big-model"
 
-    cleared = client.put("/api/settings", json={
+    # A general save that names no frontier model leaves it as it is: it has its own section and its own
+    # "No model". Measured: a general save six seconds after a frontier save wiped the frontier model.
+    kept = client.put("/api/settings", json={
         "llm_provider": "local",
         "openai_base_url": "http://host:1234/v1",
         "model_name": "small-model",
+        "judgement_model_name": "",
+        "judgement_provider": "",
+        "judgement_base_url": "",
+    }).json()
+    assert kept["judgement_model_name"] == "big-model"
+
+    cleared = client.put("/api/settings/frontier", json={
+        "judgement_provider": "", "judgement_base_url": "", "judgement_model_name": "",
+        "judgement_context_window": 0, "judgement_max_output_tokens": 0,
+        "escalate_after_attempts": 2, "plan_on_judgement_model": False, "no_model": True,
     }).json()
     assert cleared["judgement_model_name"] == ""
 

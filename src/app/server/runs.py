@@ -47,6 +47,9 @@ from app.server.models import (
     CreateRunResponse,
     ReviewDecisionRequest,
     ReviewPayload,
+    ModelPinRequest,
+    ModelSummary,
+    RunNameRequest,
     RewindRequest,
     RunListResponse,
     RunStatusResponse,
@@ -121,6 +124,25 @@ def _require_run(runner: WorkflowRunner, run_id: str, user: UserInDB) -> RunReco
     return record
 
 
+def _the_pin_target(pinned: bool, base_url: str | None, model: str | None) -> tuple[str | None, str | None]:
+    """(address, model name) to pin a run to, validated; (None, None) for the model it is on. HTTP 422 when refused.
+
+    An address must be http or https with no credentials in it, and a model name must not be empty: nothing
+    secret is accepted here, the endpoint's key is resolved server-side.
+    """
+    from app.models import model_pin
+
+    if (base_url is not None or model is not None) and not pinned:
+        raise HTTPException(status_code=422, detail="An address or a model name can only be given when pinning.")
+    try:
+        return (
+            model_pin.clean_base_url(base_url) if base_url is not None else None,
+            model_pin.clean_model_name(model) if model is not None else None,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+
+
 def _a_completed_run_s_workspace(runner: WorkflowRunner, run_id: str, user: UserInDB) -> Path | None:
     """The workspace of a completed run the caller may see, or None (plan BW.2)."""
     record = runner.run_store.load(run_id)
@@ -137,7 +159,8 @@ def _support_tier_of(root: Any) -> str:
         from app.stacks import contract, pack_named, support_tier
 
         record = contract.read(root) or {}
-        return support_tier(pack_named(str(record.get("pack") or ""))) if record.get("pack") else ""
+        found = contract.the_pack(root) if record.get("pack") else None  # a proven custom setup's too (HR2.SS.6)
+        return support_tier(found[0] if found else None) if record.get("pack") else ""
     except Exception:  # noqa: BLE001 - the evidence page works without it
         return ""
 
@@ -349,6 +372,18 @@ def create_runs_router(
 
         body = body or StartRunRequest()
 
+        # A run pinned to an endpoint of its own is refused before anything is prepared if that is not an address
+        # or a model name worth pinning to.
+        pin_base_url, pin_model_name = _the_pin_target(body.pin_model, body.pin_base_url, body.pin_model_name)
+        if body.switches:
+            # Only switches the harness has, refused before the run starts: an unknown name is no arm.
+            from app.observability.provenance import SWITCHES as _KNOWN
+            from app.switches import operated as _operated
+
+            unknown = sorted(name for name in body.switches if name not in {*_KNOWN, *_operated()})
+            if unknown:
+                raise HTTPException(status_code=422, detail=f"Unknown switch(es): {', '.join(unknown)}")
+
         # Asked for the frontier model, it must be there and answering before
         # anything is prepared (owner, 2026-10-19): otherwise the run's
         # specification and reviews would quietly run on the local model, or it
@@ -429,9 +464,17 @@ def create_runs_router(
                 delivery_mode=body.delivery_mode,
                 use_frontier_model=body.use_frontier_model,
                 approval_timeout_minutes=body.approval_timeout_minutes,
+                pin_model=body.pin_model,
+                pin_base_url=pin_base_url,
+                pin_model_name=pin_model_name,
             )
         except RunConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc))
+
+        if body.name and " ".join(body.name.split()):
+            await asyncio.to_thread(lambda: runner.run_store.set_run_name(run_id, " ".join(body.name.split())[:80]))
+        if body.switches:
+            await asyncio.to_thread(lambda: runner.run_store.set_switch_overrides(run_id, dict(body.switches)))
 
         record_audit(
             actor=user.username, tenant_id=user.tenant_id, action="run.start", subject=run_id,
@@ -501,16 +544,76 @@ def create_runs_router(
 
     @runs.post("/{run_id}/pause", status_code=202)
     async def pause_run(
-        run_id: str, user: UserInDB = Depends(require_operator)
+        run_id: str, at: str | None = None, ceiling: int = 600, user: UserInDB = Depends(require_operator)
     ) -> dict[str, str]:
-        """Pause a running run at its next stage boundary; resume continues it."""
+        """Pause a running run; resume continues it.
+
+        `at=boundary` waits for the running stage to end, up to `ceiling` seconds, before stopping it (HR2.R.2);
+        without it the stage is stopped now and runs again on resume.
+        """
         _require_run(runner, run_id, user)
+        if at not in (None, "", "boundary"):
+            raise HTTPException(status_code=422, detail="at is 'boundary' or absent")
         try:
-            await runner.pause_run(run_id)
+            await runner.pause_run(run_id, at_boundary=at == "boundary", ceiling_seconds=float(max(0, min(ceiling, 3600))))
         except RunConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc))
         record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.pause", subject=run_id)
         return {"message": f"Run {run_id} is pausing."}
+
+    @runs.post("/{run_id}/name")
+    async def name_run(
+        run_id: str, payload: RunNameRequest, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, Any]:
+        """Give the run a name to tell it from the others in the list, or clear it with an empty name."""
+        _require_run(runner, run_id, user)
+        name = " ".join(payload.name.split())[:80]
+        changed = await asyncio.to_thread(lambda: runner.run_store.set_run_name(run_id, name or None))
+        if not changed:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
+        record_audit(
+            actor=user.username, tenant_id=user.tenant_id, action="run.name", subject=run_id, detail={"name": name},
+        )
+        return {"run_id": run_id, "run_name": name or None}
+
+    @runs.post("/{run_id}/model-pin")
+    async def pin_run_model(
+        run_id: str, payload: ModelPinRequest, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, Any]:
+        """Keep the run on the model it last ran on, or let it follow the current model settings again.
+
+        Works at any time, mid-run included: a request already sent finishes where it was sent, and every new
+        one asks which model the run is on. With `base_url` and/or `model` the run is pinned to that endpoint
+        instead (the global settings are not touched); no credential is accepted or stored.
+        """
+        from app.models import model_pin
+        from app.server.runtime_settings import global_model_snapshot
+
+        _require_run(runner, run_id, user)
+        base_url, model_name = _the_pin_target(payload.pinned, payload.base_url, payload.model)
+        store = runner.run_store
+        explicit = None
+        if base_url or model_name:
+            # The settings as they are now, with just these two replaced: the provider stays, no key is stored.
+            explicit = model_pin.snapshot_for(global_model_snapshot(), base_url, model_name)
+        # A run with no recorded model (it began before the pin existed) is pinned to what the settings name now.
+        changed = await asyncio.to_thread(
+            lambda: store.set_model_pin(
+                run_id, payload.pinned, last=explicit, if_unknown=global_model_snapshot() if payload.pinned else None
+            )
+        )
+        if not changed:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
+        model_pin.forget(run_id)
+        record_audit(
+            actor=user.username, tenant_id=user.tenant_id, action="run.model_pin", subject=run_id,
+            detail={"pinned": payload.pinned, "base_url": base_url, "model": model_name},
+        )
+        state = await asyncio.to_thread(store.model_state, run_id)
+        return {
+            "model_pinned": bool(state and state[0]),
+            "model_last": model_pin.summary_of(state[1] if state else None),
+        }
 
     @runs.post("/{run_id}/clone", status_code=201, response_model=CreateRunResponse)
     async def clone_run(
@@ -566,6 +669,8 @@ def create_runs_router(
         """List runs in the caller's tenant, newest first."""
         tenant = None if user.role == "admin" else user.tenant_id
         records = runner.run_store.list_all(tenant_id=tenant, limit=limit, offset=offset)
+        pins = _the_model_pins([r.run_id for r in records], runner)
+        names = runner.run_store.run_names([r.run_id for r in records])
         return RunListResponse(
             runs=[
                 RunSummary(
@@ -578,7 +683,10 @@ def create_runs_router(
                     delivery_mode=getattr(r, "delivery_mode", None),
                     local_only=getattr(r, "local_only", None),
                     completion_gaps=len(getattr(r, "completion_gaps", None) or []),
+                    blocking_gaps=len(_blocking_gaps(r)),
                     gate_deadline=_when_the_gate_approves_itself(r),
+                    **pins.get(r.run_id, {}),
+                    run_name=names.get(r.run_id),
                     **_how_many_criteria_hold(r),
                 )
                 for r in records
@@ -1027,6 +1135,7 @@ def create_runs_router(
             "pages": pages,
             # What the release knew it did not prove, and how well the stack's own checks cover it.
             "completion_gaps": [str(gap) for gap in (getattr(record, "completion_gaps", None) or [])],
+            "blocking_gaps": _blocking_gaps(record),
             "support_tier": _support_tier_of(root),
             # Each criterion's first passing test, after which step and when (plan BG.9).
             "first_passed": first_passes(root),
@@ -1092,7 +1201,7 @@ def create_runs_router(
             # resumed, and the owner reads "sent" as "followed" (Initiative AS).
             raise HTTPException(status_code=409, detail="This run is paused. Resume it first, then send the direction.")
         try:
-            return {"run_id": run_id, "note": add(record.repo_root, body.text, user.username, body.scope)}
+            return {"run_id": run_id, "note": add(record.repo_root, body.text, user.username, body.scope, body.audience)}
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
@@ -2047,11 +2156,15 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         error=record.error,
         auto_approve=bool(record.auto_approve),
         completion_gaps=[str(gap) for gap in (getattr(record, "completion_gaps", None) or [])],
+        blocking_gaps=_blocking_gaps(record),
         gate_deadline=_when_the_gate_approves_itself(record),
         approval_timeout_minutes=getattr(record, "approval_timeout_minutes", None),
         non_deliverable=_what_the_marker_says(record),
         delivery_mode=str(getattr(record, "delivery_mode", "") or ""),
         use_frontier_model=not bool(getattr(record, "local_only", False)),
+        **_the_model_pin(record.run_id, runner),
+        **_the_run_name(record.run_id, runner),
+        **_the_time_paused(record.run_id, runner),
         cost=_cost_summary(record.run_id),
         # The ceilings the worker holds the run to: the API reads the same environment.
         max_run_tokens=_max_run_tokens() or None,
@@ -2059,6 +2172,52 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         # Its size, so the page can say what a run of this size takes here.
         **_how_many_criteria_hold(record),
     )
+
+
+def _the_time_paused(run_id: str, runner: Any) -> dict[str, Any]:
+    """`paused_seconds` for a status response, or nothing. Never raises."""
+    try:
+        seconds = runner.run_store.paused_seconds([run_id]).get(run_id)
+        return {"paused_seconds": round(seconds, 1)} if seconds else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _the_run_name(run_id: str, runner: Any) -> dict[str, Any]:
+    """`run_name` for a status response, or nothing: a status is never failed by the name."""
+    try:
+        name = runner.run_store.run_names([run_id]).get(run_id)
+        return {"run_name": name} if name else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _the_model_pins(run_ids: list[str], runner: Any) -> dict[str, dict[str, Any]]:
+    """`_the_model_pin` for a page of runs, from one statement: {run_id: the fields a summary carries}."""
+    try:
+        from app.models.model_pin import summary_of
+
+        out: dict[str, dict[str, Any]] = {}
+        for run_id, (pinned, last) in runner.run_store.model_states(run_ids).items():
+            summary = summary_of(last)
+            out[run_id] = {"model_pinned": bool(pinned), "model_last": ModelSummary(**summary) if summary else None}
+        return out
+    except Exception:  # noqa: BLE001 - a list is never failed by the pin
+        return {}
+
+
+def _the_model_pin(run_id: str, runner: Any) -> dict[str, Any]:
+    """`model_pinned` and `model_last` for a status response: whether the run is kept on its model, and which."""
+    try:
+        from app.models.model_pin import summary_of
+
+        state = runner.run_store.model_state(run_id)
+        if not state:
+            return {}
+        summary = summary_of(state[1])
+        return {"model_pinned": bool(state[0]), "model_last": ModelSummary(**summary) if summary else None}
+    except Exception:  # noqa: BLE001 - a status response is never failed by the pin
+        return {}
 
 
 def _when_the_gate_approves_itself(record: Any) -> Any:
@@ -2081,6 +2240,13 @@ def _when_the_gate_approves_itself(record: Any) -> Any:
     if since.tzinfo is None:
         since = since.replace(tzinfo=timezone.utc)
     return since + timedelta(minutes=int(minutes))
+
+
+def _blocking_gaps(record: Any) -> list[str]:
+    """The run's gaps that mean the product may not work; the rest are notes. See `completion_verdict`."""
+    from app import completion_verdict
+
+    return completion_verdict.split(getattr(record, "completion_gaps", None))[0]
 
 
 def _what_the_marker_says(record: Any) -> str:

@@ -10,6 +10,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { FeedbackProvider } from '../components/Feedback';
 import { Settings } from './Settings';
+import * as api from '../api';
 
 const settings = {
   llm_provider: 'openai', openai_base_url: 'http://localhost:8888/v1', model_name: 'local-model',
@@ -46,5 +47,22 @@ describe('Settings', () => {
 
     expect(document.activeElement).toBe(screen.getByLabelText('API key'));
     expect((screen.getByLabelText('API key') as HTMLInputElement).value).toBe('sk-local');
+  });
+
+  it('saves the parallel choice with the model, so the save does not put linear back', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/settings') return { data: { ...settings, execution_mode: 'linear' } };
+      if (url === '/auth/me') return { data: { username: 'admin', role: 'admin' } };
+      if (url.startsWith('/lessons')) return { data: { lessons: [] } };
+      return { data: [] };
+    });
+    const save = vi.mocked(api.saveLocalModelSettings);
+    save.mockResolvedValue({ ...settings, execution_mode: 'parallel' } as never);
+    render(<MemoryRouter><FeedbackProvider><Settings /></FeedbackProvider></MemoryRouter>);
+
+    await userEvent.click(await screen.findByRole('button', { name: /Parallel/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Save Local Model/ }));
+
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ execution_mode: 'parallel' }));
   });
 });

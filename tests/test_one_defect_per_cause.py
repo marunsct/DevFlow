@@ -97,3 +97,34 @@ class TestWhatIsOne:
         reported = [_d("one thing"), _d("another")]
 
         assert _one_defect_per_cause(reported) == reported
+
+
+def test_a_pack_contract_finding_leads_the_unit_test_symptom_it_is_merged_with():
+    symptom = _d(
+        "The unit tests fail. It says: SyntaxError: The requested module './app.ts' does not provide an export named "
+        "'createApp'", ["notes-api/src/app.ts"], source="test round", owner="backend",
+    )
+    cause = _d(
+        "notes-api/src/app.ts no longer exports `createApp`, which the scaffold's start file and unit smoke test import.",
+        ["notes-api/src/app.ts"], source="pack contract", owner="backend",
+    )
+
+    merged = _one_defect_per_cause([symptom, cause])
+
+    assert len(merged) == 1
+    assert merged[0].description.startswith("notes-api/src/app.ts no longer exports `createApp`")
+
+
+def test_a_folder_named_in_a_path_is_not_what_a_defect_is_about():
+    # Measured on one run: "notes" in a criterion's `/notes/{id}` matched the project folder `notes-api` in the unit
+    # run's paths. The criterion lost its own defect and shipped deferred after six fixes aimed at another file.
+    unit = _d("The unit tests fail. It says: TypeError at notes-api/test/store.test.ts:12 and file:///w/notes-api/src/a.ts:3")
+    criterion = _d("[AC-11] GET /notes/{id} answers 404 for an id that does not exist. Expected: 404, Received: 500")
+    assert not _the_same_cause(unit, criterion)
+    assert not _the_same_cause(criterion, unit)
+
+
+def test_a_check_s_rule_named_on_its_own_is_still_matched():
+    rule = _d("Page check: color-contrast fails on the home page")
+    prose = _d("The contrast of the heading is too low on the home page")
+    assert _the_same_cause(rule, prose)

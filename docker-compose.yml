@@ -38,39 +38,38 @@ x-app-env: &app-env
   SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
   HARNESS_MCP_DISCOVERY: ${HARNESS_MCP_DISCOVERY:-true}
   SANDBOX_RUNTIMES_ENABLED: ${SANDBOX_RUNTIMES_ENABLED:-true}
-  # Group 2 switches (app/observability/provenance.py SWITCHES): each is off
-  # unless the host sets it, so a subsystem is measured by exporting its
-  # switches before `loop.sh deploy`. These two change nothing the model does
-  # during a run and are on (owner, 2026-10-22).
-  LESSON_DISTILLER: ${LESSON_DISTILLER:-on}
-  CHANGE_REQUEST_RUNS: ${CHANGE_REQUEST_RUNS:-on}
-  ASK_SPECIFICATION: ${ASK_SPECIFICATION:-on}
-  ASSUMPTIONS_GATE: ${ASSUMPTIONS_GATE:-on}
-  CANONICAL_MEMORY: ${CANONICAL_MEMORY:-on}
-  CODE_GRAPH_TOOL: ${CODE_GRAPH_TOOL:-on}
-  DECISION_LEDGER: ${DECISION_LEDGER:-on}
-  DEFECT_CALL_CAP: ${DEFECT_CALL_CAP:-on}
-  FIX_CYCLE: ${FIX_CYCLE:-on}
-  INTERFACE_CHANGES_NAMED: ${INTERFACE_CHANGES_NAMED:-on}
-  INTERFACE_CLASH_CHECK: ${INTERFACE_CLASH_CHECK:-on}
-  LOCALISE_FIRST: ${LOCALISE_FIRST:-on}
-  PROJECT_GRAPH_BUILDERS: ${PROJECT_GRAPH_BUILDERS:-on}
-  PROJECT_GRAPH_FIXES: ${PROJECT_GRAPH_FIXES:-on}
-  REGRESSION_CONTRACT: ${REGRESSION_CONTRACT:-on}
-  RELEASE_AUDITS: ${RELEASE_AUDITS:-on}
-  RELEASE_DOCS_REQUIRED: ${RELEASE_DOCS_REQUIRED:-on}
-  SCREENSHOT_RUBRIC: ${SCREENSHOT_RUBRIC:-on}
-  SHARED_FACTS: ${SHARED_FACTS:-on}
-  STABLE_TOOLS: ${STABLE_TOOLS:-on}
-  STATE_AT_DISPATCH: ${STATE_AT_DISPATCH:-on}
-  STEERING_AT_THE_TAIL: ${STEERING_AT_THE_TAIL:-on}
-  VERIFY_AFTER_WRITE: ${VERIFY_AFTER_WRITE:-on}
-  WHERE_THINGS_STAND: ${WHERE_THINGS_STAND:-on}
-  # Plan QM.2 ships off: the owner has not turned it on (2026-10-22). It adds
-  # fix stages to a sprint whose criteria pass, so it is measured before it is
-  # part of the baseline. Changes tried per sprint: MUTATION_GUIDED_TESTS_CHANGES.
-  MUTATION_GUIDED_TESTS: ${MUTATION_GUIDED_TESTS:-off}
+  # Feature switches (owner 2026-10-29): bug fixes are built in and always on; the premium
+  # features come in four bundles over the free base; experiments stay off until measured.
+  # See `app.switches` for what each bundle holds.
+  PREMIUM_MODEL_TUNING: ${PREMIUM_MODEL_TUNING:-on}
+  PREMIUM_PROJECT_INTELLIGENCE: ${PREMIUM_PROJECT_INTELLIGENCE:-on}
+  PREMIUM_DEEP_VERIFICATION: ${PREMIUM_DEEP_VERIFICATION:-on}
+  PREMIUM_CHANGE_REQUESTS: ${PREMIUM_CHANGE_REQUESTS:-on}
+  OBSERVATION_FOLDING: ${OBSERVATION_FOLDING:-off}
+  SETUP_SCOPE_GUARD: ${SETUP_SCOPE_GUARD:-off}
+  MILESTONE_EVIDENCE_GATE: ${MILESTONE_EVIDENCE_GATE:-off}
+  DISPUTE_QUOTES_THE_CRITERION: ${DISPUTE_QUOTES_THE_CRITERION:-off}
+  BATCH_ACCEPTANCE_AUTHOR: ${BATCH_ACCEPTANCE_AUTHOR:-off}
+  STABLE_STAGE_PREFIX: ${STABLE_STAGE_PREFIX:-off}
+  NAMED_TEST_REWRITE: ${NAMED_TEST_REWRITE:-on}
+  TESTS_ONLY_WRITES: ${TESTS_ONLY_WRITES:-on}
+  MUTANT_CHECK_IN_THE_FIX_STAGE: ${MUTANT_CHECK_IN_THE_FIX_STAGE:-off}
+  REVIEWS_WITHOUT_REASONING: ${REVIEWS_WITHOUT_REASONING:-off}
+  MUTATION_TEST_RETENTION: ${MUTATION_TEST_RETENTION:-on}
+  EQUIVALENT_MUTANTS_REMEMBERED: ${EQUIVALENT_MUTANTS_REMEMBERED:-off}
+  CONTRACT_LINE_COVERAGE: ${CONTRACT_LINE_COVERAGE:-on}
+  CONTRACT_PROBE_AT_LOCK: ${CONTRACT_PROBE_AT_LOCK:-on}
+  CONTRACT_UNREAD_LINES_AT_REVIEW: ${CONTRACT_UNREAD_LINES_AT_REVIEW:-on}
+  CONTRACT_NON_NUMERIC_IDS: ${CONTRACT_NON_NUMERIC_IDS:-on}
+  CONTRACT_PROBE_WITH_A_RECORD: ${CONTRACT_PROBE_WITH_A_RECORD:-on}
+  CONTRACT_PROBE_WITH_A_BAD_BODY: ${CONTRACT_PROBE_WITH_A_BAD_BODY:-on}
+  NAMING_FINDING_BEFORE_DEFERRAL: ${NAMING_FINDING_BEFORE_DEFERRAL:-on}
+  SPEC_DRY_RUN: ${SPEC_DRY_RUN:-on}
+  ORDER_PROBE: ${ORDER_PROBE:-on}
+  IDS_READ_WITHOUT_A_CREATE: ${IDS_READ_WITHOUT_A_CREATE:-on}
   MUTATION_GUIDED_TESTS_CHANGES: ${MUTATION_GUIDED_TESTS_CHANGES:-6}
+  # Switches set on the admin page (/admin) beat the values above, in every process (`app.switches`).
+  SWITCH_OVERRIDES_FROM_SETTINGS: ${SWITCH_OVERRIDES_FROM_SETTINGS:-on}
   PAGE_VIEW_ENABLED: ${PAGE_VIEW_ENABLED:-true}
   CUSTOM_STACK_SETUP: ${CUSTOM_STACK_SETUP:-true}
   # At most this many agents of one run at once in parallel mode: work orders,
@@ -283,6 +282,11 @@ services:
   worker:
     build: .
     restart: unless-stopped
+    # An init as PID 1 that reaps orphans. Celery is PID 1 otherwise, and a
+    # product's test servers and their children, once their parent exits, are
+    # handed to it and never waited for: zombies accumulate in the worker for
+    # the container's life.
+    init: true
     depends_on:
       db:
         condition: service_healthy

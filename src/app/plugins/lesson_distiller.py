@@ -13,6 +13,12 @@ A proposal seen again refreshes the one already proposed instead of adding a
 second; one whose lesson was already approved is counted as recurring (RL.2:
 a lesson whose trigger keeps recurring is not working). Approval stays the
 owner's (`GET /api/lessons`, `loop.sh lessons`).
+
+A lesson rests on facts: each quotes what the transcripts recorded and counts
+the runs that recorded it, and a rule says only what the harness does. One rule
+here said any change breaking a test is reverted, while `net_gain` and
+`unit_tests_disagree` keep some, and it reached prompts on every stack approved.
+`check_the_evidence` holds the lessons on record to the same standard.
 """
 
 from __future__ import annotations
@@ -32,6 +38,8 @@ ON_BY_DEFAULT = False
 #: Fix attempts on one defect past which its kind is worth a lesson.
 ATTEMPTS_WORTH_A_LESSON = 2
 _PACKAGES = re.compile(r"no manifest declares: (.+?)(?:\(| A clean|$)")
+#: How a revert names a test it broke. A product that stopped building or a language-service finding names none.
+_A_BROKEN_TEST = re.compile(r"\b(?:unit|acceptance): ")
 
 
 def enabled() -> bool:
@@ -39,7 +47,7 @@ def enabled() -> bool:
 
 
 def proposals(records: Iterable[dict[str, Any]]) -> list[dict[str, str]]:
-    """The lessons a run's transcript records argue for, as {trigger, rule}; one per kind. Never raises."""
+    """The lessons a run's transcript records argue for, as {trigger, rule, evidence}; one per kind. Never raises."""
     found: dict[str, dict[str, str]] = {}
     attempts: dict[str, int] = {}
     for record in records:
@@ -47,29 +55,43 @@ def proposals(records: Iterable[dict[str, Any]]) -> list[dict[str, str]]:
             continue
         event, detail = str(record.get("event") or ""), str(record.get("detail") or "")
         description = str(record.get("description") or "")
-        if event == "reverted" and "test" in detail:
+        if event == "reverted" and _A_BROKEN_TEST.search(detail):
             found.setdefault("reverted", {
                 "trigger": "a fix reverted for breaking tests that passed before it",
-                "rule": "Before answering, run the whole unit and acceptance suites, not only the failing test: "
-                        "a change that makes one test pass by breaking another is reverted.",
+                "rule": "Before answering, run the unit and acceptance suites, not only the failing test: "
+                        "the harness runs both after a change and weighs what it broke against what it gained.",
+                "evidence": detail,
             })
         if "no manifest declares" in description:
             # The rule is the stack's, so it names no one product's packages.
             found.setdefault("undeclared", {
                 "trigger": "code imports a package no manifest declares",
                 "rule": "Add every package the code imports to the project's manifest in the same change.",
+                "evidence": description,
             })
         if event in ("left open", "reverted", "fixed"):
             # One defect is fixed across rounds under the same description, not the same (round, index).
             key = description or str(record.get("index"))
             attempts[key] = attempts.get(key, 0) + 1
-    if any(count > ATTEMPTS_WORTH_A_LESSON for count in attempts.values()):
+    most = max(attempts, key=lambda key: attempts[key], default="")
+    if most and attempts[most] > ATTEMPTS_WORTH_A_LESSON:
         found.setdefault("attempts", {
             "trigger": f"a defect that needed more than {ATTEMPTS_WORTH_A_LESSON} fix attempts",
             "rule": "Read the failing test's assertion and the code path it reaches before the first edit; "
                     "change what the evidence names, and run that test again before answering.",
+            "evidence": f"{attempts[most]} fix attempts on: {most}",
         })
     return list(found.values())
+
+
+def _records(transcript: str | Path) -> list[Any]:
+    records = []
+    for line in Path(transcript).read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            records.append(json.loads(line))
+        except ValueError:
+            continue
+    return records
 
 
 def the_stack(root: str | Path) -> str:
@@ -93,15 +115,12 @@ def distil(transcript: str | Path, root: str | Path, *, path: Path | None = None
         stack = the_stack(root)
         if not stack:
             return []
-        records = []
-        for line in Path(transcript).read_text(encoding="utf-8", errors="replace").splitlines():
-            try:
-                records.append(json.loads(line))
-            except ValueError:
-                continue
         done = []
-        for proposal in proposals(records):
-            lesson = lessons.propose(stack, proposal["trigger"], proposal["rule"], 1, source="harness", path=path)
+        for proposal in proposals(_records(transcript)):
+            lesson = lessons.propose(
+                stack, proposal["trigger"], proposal["rule"], 1, source="harness",
+                run_id=Path(transcript).stem, evidence=proposal["evidence"], path=path,
+            )
             if lesson.get("status") == "approved":
                 # Once per run: the distiller runs with every `loop.sh kpi`.
                 lesson = lessons.recurred(lesson["id"], run_id=Path(transcript).stem, path=path)
@@ -112,4 +131,27 @@ def distil(transcript: str | Path, root: str | Path, *, path: Path | None = None
         return []
 
 
-__all__ = ["ATTEMPTS_WORTH_A_LESSON", "ON_BY_DEFAULT", "distil", "enabled", "proposals", "the_stack"]
+def check_the_evidence(
+    runs: Iterable[tuple[str | Path, str | Path]], *, path: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Add what these (transcript, workspace) pairs recorded to the lessons on record; those left with no evidence.
+
+    Proposes nothing and decides nothing: a lesson with none is named for the owner. A rejected one is not named.
+    """
+    from app.plugins import lessons
+
+    for transcript, root in runs:
+        stack = the_stack(root)
+        if not stack:
+            continue
+        for proposal in proposals(_records(transcript)):
+            lessons.add_evidence(
+                stack, proposal["trigger"], run_id=Path(transcript).stem, evidence=proposal["evidence"], path=path,
+            )
+    return [
+        lesson for lesson in lessons.load(path)
+        if lesson.get("status") != "rejected" and not lesson.get("evidence_in")
+    ]
+
+
+__all__ = ["ATTEMPTS_WORTH_A_LESSON", "ON_BY_DEFAULT", "check_the_evidence", "distil", "enabled", "proposals", "the_stack"]

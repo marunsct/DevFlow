@@ -560,6 +560,8 @@ def build_plugin_instructions_middleware(repo_root: str, role: str = "") -> Any:
     """Append the stack's framework instructions to every call's system prompt."""
     from langchain.agents.middleware import AgentMiddleware
 
+    held: dict[str, Any] = {}
+
     class PluginInstructionsMiddleware(AgentMiddleware):
         """Append framework-specific plugin instructions to the system prompt."""
 
@@ -568,6 +570,14 @@ def build_plugin_instructions_middleware(repo_root: str, role: str = "") -> Any:
         def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
             keywords = _extract_stack_keywords(repo_root)
             keys = [*_with_the_setup_notes(keywords, repo_root), *_the_pack_s_name(repo_root)]
+            # The serving model's own guidance, a row of the same table
+            # (`app.models.model_guidance`, behind `MODEL_GUIDANCE`).
+            try:
+                from app.models.model_guidance import guidance_key
+
+                keys += guidance_key()
+            except Exception:  # noqa: BLE001 - no guidance is the stack's guidance alone
+                pass
             instructions = get_plugin_instructions(keys, role) if keys else ""
             # The owner's direction for this run, sent while it runs, after
             # the stack's instructions (`app.server.steering`).
@@ -593,6 +603,23 @@ def build_plugin_instructions_middleware(repo_root: str, role: str = "") -> Any:
             tail = direction.strip() if at_the_tail() else ""
             if not tail:
                 instructions += direction
+            # A model whose steering profile asks for it reads its guidance
+            # once more at the end of the request (`app.models.guidance`).
+            try:
+                from app.models.model_guidance import reminder
+
+                again = reminder()
+            except Exception:  # noqa: BLE001 - no reminder
+                again = ""
+            if again:
+                tail = f"{tail}\n\n{again}".strip()
+            # The system prompt as this stage's first call read it; a later call's additions go to the tail
+            # (`STABLE_STAGE_PREFIX`, off until measured).
+            from app.agents.stable_prefix import held_instructions
+
+            instructions, later = held_instructions(instructions, held)
+            if later:
+                tail = f"{later}\n\n{tail}".strip()
             if not instructions and not tail:
                 return handler(request)
 

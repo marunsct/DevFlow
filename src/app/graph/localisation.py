@@ -45,11 +45,19 @@ def enabled() -> bool:
     return is_on("LOCALISE_FIRST", ON_BY_DEFAULT)
 
 
-def _the_map(root: Path) -> str:
-    try:
-        from app.agents.project_memory import current, map_of
+def _the_map(root: Path, focus: str = "") -> str:
+    """What each file defines, within `_MOST_MAP_CHARS`, the files the failure points at first when not all fit.
 
-        return map_of({p: t for p, t in current(root).items() if not p.startswith(("docs/", ".harness/"))})[:_MOST_MAP_CHARS]
+    It was cut at the budget in path order, so on a large project the
+    localiser saw the first folders alphabetically and none of the rest.
+    """
+    try:
+        from app.agents.project_memory import current, importance_of, map_of
+
+        files = {p: t for p, t in current(root).items() if not p.startswith(("docs/", ".harness/"))}
+        return map_of(files, focus=focus, most_characters=_MOST_MAP_CHARS,
+                      importance=importance_of(root) if sum(map(len, files.values())) > _MOST_MAP_CHARS else None,
+                      root=root)
     except Exception:  # noqa: BLE001
         return ""
 
@@ -83,10 +91,11 @@ def localised(defect: Any, failure: str, root: str | Path, model: Any, found: li
         from app.observability.direct_calls import config_for_this_run
 
         base = Path(root)
+        focus = "\n".join([*found, str(getattr(defect, "description", "")), str(failure)])
         prompt = (
             f"A defect: {getattr(defect, 'description', '')}\nExpected: {getattr(defect, 'expected_behavior', '')}\n"
             f"Actual: {getattr(defect, 'actual_behavior', '')}\n\nWhat failed:\n{str(failure)[:_MOST_FAILURE_CHARS]}\n\n"
-            f"What each file of the project defines:\n{_the_map(base)}\n\n"
+            f"What each file of the project defines:\n{_the_map(base, focus)}\n\n"
             + (f"The failure text names these files: {', '.join(found)}.\n" if found else "")
             + f"Name at most {MOST_FILES} files whose change fixes this, the symbols in them the cause is in, and "
             "one sentence saying what is wrong. Answer with one JSON object with the fields `files`, `symbols` "

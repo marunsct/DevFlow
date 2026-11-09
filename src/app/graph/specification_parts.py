@@ -14,6 +14,8 @@ empty sections, which sends them back to the architect as before.
 
 from __future__ import annotations
 
+import re
+
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -35,6 +37,9 @@ PARTS = (
     ("testing", "test_cases", "acceptance_criteria", "deployment", "interface_design",
      "interface_contract", "specialist_advice_decisions", "open_questions"),
 )
+
+#: The sections written in parts that fix the names writers use.
+NAMING_SECTIONS = frozenset({"function_contracts", "error_catalogue", "implementation_order"})
 
 #: What the architect's request says, in fast delivery.
 CORE_NOTE = (
@@ -68,6 +73,24 @@ def _sections_as_json(specification: Any, names: Any) -> dict[str, Any]:
     return {name: dumped.get(name, getattr(specification, name, None)) for name in names}
 
 
+#: The sections that give the acceptance criteria their ids; a part writing neither cannot see them.
+_CRITERIA_SECTIONS = frozenset({"acceptance_criteria", "interface_contract"})
+#: Said to every other part. Measured on one run: `implementation_order` cited AC ids while another part wrote the
+#: criteria at the same time, every step pointed at the wrong one, and the design review sent it all back.
+CITE_NO_CRITERION = (
+    "The acceptance criteria and the interface contract are being written at the same time as these sections, "
+    "so the ids they add are not known here: cite an AC-n id only where the material above already gives it. "
+    "Otherwise name the behaviour itself - "
+    "the endpoint, file, function or rule - and the criteria will point at it."
+)
+
+
+def _one_source_for_limits() -> str:
+    from app.agents.principal_architect import ONE_SOURCE_FOR_LIMITS
+
+    return ONE_SOURCE_FOR_LIMITS.strip()
+
+
 def part_request(specification: Any, names: tuple[str, ...], context: str) -> str:
     """What one part's call is asked."""
     core = _sections_as_json(specification, CORE)
@@ -78,6 +101,9 @@ def part_request(specification: Any, names: tuple[str, ...], context: str) -> st
         context.strip(),
         "--- The specification's core ---\n" + json.dumps(core, indent=1, default=str),
         "--- The sections to write ---\n" + _described(type(specification), names),
+        "" if _CRITERIA_SECTIONS & set(names) else CITE_NO_CRITERION,
+        # The architect's own rule for limits: the part writers write `domain_model` and the sections that cite it.
+        _one_source_for_limits(),
         "Reply with one JSON object and nothing else. Its keys are exactly: " + ", ".join(names)
         + ". Each value is a list of strings, one entry per item, each entry complete on its own.",
     ) if part)
@@ -124,6 +150,18 @@ def with_the_parts_written(specification: Any, model: Any, context: str) -> Any:
     parameters = convert_to_openai_tool(type(specification))["function"]["parameters"]
 
     def write(names: tuple[str, ...]) -> dict[str, Any]:
+        written = ask(names)
+        # A section that fixes names and came back empty is asked for once more (NAMING_STANDARD): the writers
+        # downstream take their names from it, and "Not specified" left each to invent its own.
+        from app.stacks.naming import enabled
+
+        missing = tuple(n for n in names if n in NAMING_SECTIONS and n not in written) if enabled() else ()
+        if missing:
+            logger.info("Asking again for the specification sections %s", ", ".join(missing))
+            written = {**written, **ask(missing)}
+        return written
+
+    def ask(names: tuple[str, ...]) -> dict[str, Any]:
         try:
             messages = [
                 SystemMessage(content="You write sections of software technical specifications as JSON."),
@@ -174,6 +212,30 @@ def _names(specification: Any) -> list[str]:
     return list(getattr(type(specification), "model_fields", {}) or {})
 
 
+#: How a repair the harness writes names what it wants back: "Return only `testing` ...".
+_RETURN_ONLY = re.compile(r"Return only (?:the missing fields: )?(.+?)(?:[.;]\s|[.;]$|$)", re.DOTALL)
+
+
+def sections_the_harness_named(specification: Any, required_changes: str) -> list[str]:
+    """The sections a harness-made repair names, when every part of `required_changes` is one; else [].
+
+    A review's own findings name no section this way, so a text with any part that is not a harness repair is asked
+    of the model as before, its named sections included.
+    """
+    names = _names(specification)
+    parts = [part for part in re.split(r"\n\s*\n", required_changes) if part.strip()]
+    chosen: list[str] = []
+    for part in parts:
+        found = _RETURN_ONLY.search(part)
+        if not found:
+            return []
+        named = [name for name in names if re.search(rf"\b{re.escape(name)}\b", found.group(1))]
+        if not named:
+            return []
+        chosen.extend(name for name in named if name not in chosen)
+    return chosen
+
+
 def sections_to_revise(specification: Any, required_changes: str, model: Any) -> list[str]:
     """The sections the required changes touch, asked of `model` once; [] if it cannot say."""
     from langchain_core.messages import HumanMessage
@@ -220,6 +282,19 @@ def _bounded_by_what_the_review_names(chosen: list[str], required_changes: str, 
     return [*[name for name in chosen if name in named], *[n for n in named if n not in chosen], *extra]
 
 
+def _the_form_of(parameters: dict[str, Any], names: Any) -> str:
+    """The schema of the named sections, so a section that holds nothing yet still has a form to be written in.
+
+    Measured: a section that was an empty list was rewritten with record keys
+    of the reply's own (`summary` for `context` and `decision`), since the
+    "form of the current value" was none - nine validation errors, and the
+    revision thrown away.
+    """
+    properties = (parameters or {}).get("properties") or {}
+    form = {name: properties[name] for name in names if name in properties}
+    return "--- The form of each section (JSON schema) ---\n" + json.dumps(form, default=str) if form else ""
+
+
 def revised_in_place(specification: Any, required_changes: str, model: Any, context: str) -> Any | None:
     """`specification` with only the sections the changes touch rewritten, or None to revise as before."""
     from langchain_core.messages import HumanMessage, SystemMessage
@@ -229,7 +304,10 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
 
     if model is None or not required_changes.strip():
         return None
-    chosen = sections_to_revise(specification, required_changes, model)
+    # A repair the harness made names its sections itself (HR2.D.2): 251 of 357 rounds were such repairs, each still
+    # asked of the model ("Name every section ..."), whose answer was then mostly bounded away.
+    chosen = sections_the_harness_named(specification, required_changes) or sections_to_revise(
+        specification, required_changes, model)
     if not chosen:
         # Not a reason to hand the whole document back to one reply. Measured
         # live on a medium brief: the architect's full rewrite was cut at the
@@ -250,9 +328,10 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
             context.strip(),
             f"--- Required changes ---\n{required_changes.strip()[:20_000]}",
             "--- The specification's core, as it stands ---\n" + json.dumps(core, indent=1, default=str),
+            _the_form_of(parameters, names),
             "--- The sections to rewrite, as they stand ---\n" + json.dumps(current, indent=1, default=str),
             "Reply with one JSON object and nothing else. Its keys are exactly: " + ", ".join(names)
-            + ". Each value has the same form as the section's current value.",
+            + ". Each value has the form its schema gives, whatever the section holds now.",
         ) if part)
         try:
             reply = model.invoke([
@@ -262,6 +341,13 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
             found = _the_object_in(reply) or {}
             decoded = with_structure_decoded({k: v for k, v in found.items() if k in names}, parameters)
             written = {k: v for k, v in decoded.items() if v not in (None, "", [], {})}
+            # A section answered with an empty value is a section left as it
+            # stands: measured, a reply wrote the one section the changes
+            # touched and answered an empty list for a second that held none,
+            # and the nine minutes it took were thrown away for a full rewrite.
+            for name in names:
+                if name not in written and name in decoded and decoded[name] is not None and not decoded[name] and name in current:
+                    written[name] = current[name]
             if len(written) < len(names):
                 logger.info("A revision of %s came back without %s", ", ".join(names),
                             ", ".join(n for n in names if n not in written))

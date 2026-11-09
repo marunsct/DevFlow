@@ -19,7 +19,7 @@ TYPES_NODE = "^24.0.0"
 
 def _script(directory: str, report: str, extension: str) -> str:
     return (
-        "mkdir -p test-results && node --test --test-reporter=spec --test-reporter-destination=stdout "
+        f"mkdir -p test-results && node --test {js.TEST_TIMEOUT} --test-reporter=spec --test-reporter-destination=stdout "
         f"--test-reporter=junit --test-reporter-destination=test-results/{report} "
         f"'{directory}/**/*.test.{extension}'"
     )

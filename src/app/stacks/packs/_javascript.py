@@ -21,8 +21,12 @@ AXE_CORE = "4.14.0"
 #: test runs, so `tests/` itself cannot be named the way Node 20 allowed.
 UNIT_FILES = "'tests/**/{test,test-*,*[._-]test}.{js,mjs,cjs}'"
 
+#: Every test of Node's own runner fails at 20 seconds: measured on one run, a unit test whose promise never
+#: settled held `node --test` until the sandbox's five-minute limit, on every unit run the harness made.
+TEST_TIMEOUT = "--test-timeout=20000"
+
 UNIT_SCRIPT = (
-    "mkdir -p test-results && node --test --test-reporter=spec --test-reporter-destination=stdout "
+    f"mkdir -p test-results && node --test {TEST_TIMEOUT} --test-reporter=spec --test-reporter-destination=stdout "
     f"--test-reporter=junit --test-reporter-destination=test-results/unit.xml {UNIT_FILES}"
 )
 
@@ -360,7 +364,9 @@ export default defineConfig({
   },
 });
 """ % {
-        "command": server_command, "ready": ready_path, "screenshot": screenshot,
+        # A shell's own `${HOST:-127.0.0.1}` is literal text in this template string; `${port}` stays JavaScript's.
+        "command": re.sub(r"\$\{(?=[A-Z_][A-Z0-9_]*[:}-])", r"\\${", server_command),
+        "ready": ready_path, "screenshot": screenshot,
         "server_timeout": f"{server_timeout_ms:_}",
         "global_setup": "\n  globalSetup: './playwright.setup.mjs'," if checks_the_page else "",
     }
@@ -608,6 +614,18 @@ PLAYWRIGHT_LOCATORS_RULE = (
     "never access localStorage or sessionStorage before goto, which causes a browser SecurityError."
 )
 
+#: Measured over three runs: suites compared a promise where its value was meant - `expect(page.getByText(..))
+#: .toBeVisible()` unawaited (dozens in one suite), `String(res.headerValue('content-type'))` read as `"[object
+#: Promise]"` - and each one went to a fixer as a product fault no product change could close.
+AWAIT_EVERY_VALUE = (
+    "Await every Playwright call that gives back a value or waits for the page: `await expect(locator)...`, "
+    "`await response.json()`, `await response.text()`, `await response.headerValue('content-type')`, "
+    "`await locator.textContent()`, `await locator.inputValue()`, `await locator.count()`. Unawaited, the test "
+    "holds a promise in place of the value - `String()` of it is \"[object Promise]\" - and fails, or passes, "
+    "whatever the product does. `response.status()`, `response.ok()` and `response.headers()` give their value at "
+    "once and take no await."
+)
+
 FIND_CONTROLS = """Find each control by the name a person sees, exactly as the brief gives
 it: a field the brief says is labelled "Email" is
 `page.getByLabel('Email', { exact: true })`, a button named "Send" is
@@ -627,7 +645,7 @@ on what the page shows after it. Act on a locator - `page.getByLabel(...).fill(.
 never `page.fill(selector, ...)` or `page.click(selector)` - and never take
 `.first()` of a control found by its name: both act on whichever match comes
 first, so a page that shows the same control twice still passes, where a
-locator refuses more than one. """ + PLAYWRIGHT_LOCATORS_RULE + """ A locator found by its text keeps that filter:
+locator refuses more than one. """ + PLAYWRIGHT_LOCATORS_RULE + " " + AWAIT_EVERY_VALUE + """ A locator found by its text keeps that filter:
 once the test changes the text, find the item again by its new text. A list
 item takes no name from its text: find one by
 `page.getByRole('listitem').filter({ hasText: '...' })`, never by
@@ -661,6 +679,9 @@ LOCATORS_NOBODY_SEES = (
     r"\bgetByTestId\s*\(",
     r"""\blocator\s*\(\s*(['"`])(?![a-z_-]+=)(?!\s*(?:meta|link|script|style|head|html|title)\b)"""
     r"""(?:(?!\1).)*?(?:\[\s*[\w-]+\s*[~|^$*]?=|[.#][A-Za-z_-])""",
+    # A control found by its tag alone - any link, any field - is found without the name a person reads. Measured on
+    # one run: `listItem.locator('a')` passed a page that linked the URL where the brief linked the title.
+    r"""\blocator\s*\(\s*(['"`])\s*(?:a|button|input|select|textarea)(?:\[[\w-]+\])?\s*\1\s*\)""",
 )
 
 #: Locator methods from other libraries (such as Testing Library) that do not
@@ -923,6 +944,17 @@ def storage_before_page_open(text: str) -> list[tuple[int, str, str]]:
             elif not g_match:
                 helpers_touching_storage[name] = (line, s_match.group(1), name, False)
 
+    # A helper of the file that opens the page opens it for the test that calls it: measured on one run, a test's
+    # `await goToApp(page)` was not counted, and a right test was sent back for an hour of repair.
+    openers = []
+    for match in _A_HELPER.finditer(preamble):
+        name = match.group(1) or match.group(2)
+        following = _A_HELPER.search(preamble, match.end())
+        body = preamble[match.start():following.start() if following else first_test]
+        if name and _GOTO.search(body) and name not in helpers_touching_storage:
+            openers.append(re.escape(name))
+    opens_the_page = re.compile(rf"\b(?:goto|{'|'.join(openers)})\s*\(") if openers else _GOTO
+
     problems: list[tuple[int, str, str]] = []
     for name, (line, storage_name, ctx, has_late_goto) in helpers_touching_storage.items():
         if has_late_goto:
@@ -943,9 +975,12 @@ def storage_before_page_open(text: str) -> list[tuple[int, str, str]]:
         title = title_match.group(2) if title_match else "a test"
 
         if not before_each_has_goto:
-            s_match = _STORAGE_USAGE.search(body)
+            # From after the title: a title that names the storage it checks is not a use of it. Measured on one
+            # run: "[AC-9] ... updates localStorage completed flag" was called a test that can never pass, the
+            # suite's repair made it worse, the criterion was deferred, and its hidden test failed.
+            s_match = _STORAGE_USAGE.search(body, title_match.end() if title_match else 0)
             if s_match:
-                g_match = _GOTO.search(body[:s_match.start()])
+                g_match = opens_the_page.search(body[:s_match.start()])
                 if not g_match:
                     line = text.count("\n", 0, begin + s_match.start()) + 1
                     problems.append((line, s_match.group(1), f"test `{title}`"))
@@ -953,7 +988,7 @@ def storage_before_page_open(text: str) -> list[tuple[int, str, str]]:
                 if not has_late_goto:
                     h_call = re.search(rf"\b{re.escape(h_name)}\s*\(", body)
                     if h_call:
-                        g_match = _GOTO.search(body[:h_call.start()])
+                        g_match = opens_the_page.search(body[:h_call.start()])
                         if not g_match:
                             line = text.count("\n", 0, begin + h_call.start()) + 1
                             problems.append((line, s_name, f"test `{title}` calling `{h_name}`"))
@@ -990,12 +1025,48 @@ def module_system_mismatch(project_root: Path, path: Path, text: str) -> list[tu
     match = _A_REQUIRE_CALL.search(code)
     if not match:
         return []
+    line = code.count("\n", 0, match.start()) + 1
+    statement = code.splitlines()[line - 1] if line <= len(code.splitlines()) else ""
+    # Inside a function the call throws only when that code runs; at the top it throws as the file loads.
+    when = ("the test around it fails with `require is not defined`" if statement[:1].isspace()
+            else "it throws before its tests run")
     return [(
-        code.count("\n", 0, match.start()) + 1,
+        line,
         "uses CommonJS `require(...)` in a file Node loads as an ES module (`package.json` "
-        "says `\"type\": \"module\"`), so it throws before its tests run. Use `import` "
-        "(`import { test, expect } from '@playwright/test';`).",
+        f"says `\"type\": \"module\"`), so {when}. {_the_import_instead(code, statement)}",
     )]
+
+
+_A_REQUIRE_STATEMENT = re.compile(
+    r"""^\s*(?:const|let|var)\s+(\{[^}]*\}|[A-Za-z_$][\w$]*)\s*=\s*require\(\s*(['"])([^'"]+)\2\s*\)"""
+)
+_AN_IMPORT = re.compile(r"""^\s*import\s+([^'";]+?)\s+from\s+(['"])([^'"]+)\2""", re.M)
+
+
+def _the_import_instead(code: str, statement: str) -> str:
+    """The exact correction for one `require` statement: the line to delete, or the `import` to write at the top.
+
+    Measured on one run: told to "use `import` (`import { test, expect } from '@playwright/test';`)" about a
+    `require` inside one test of a module whose name the file already imported at its top, QA kept the line through
+    three review rounds and the suite was locked with it.
+    """
+    found = _A_REQUIRE_STATEMENT.match(statement)
+    if not found:
+        return "Load it with an `import` at the top of the file instead."
+    target, module = found.group(1), found.group(3)
+    names = ({part.split(":")[-1].strip() for part in target.strip("{} ").split(",") if part.strip()}
+             if target.startswith("{") else {target})
+    for imported in _AN_IMPORT.finditer(code):
+        if imported.group(3) != module:
+            continue
+        have = {part.split(" as ")[-1].strip() for part in imported.group(1).replace("{", ",").replace("}", ",").split(",")}
+        if names <= have:
+            where = code.count("\n", 0, imported.start()) + 1
+            return (f"Delete the line `{statement.strip()[:160]}`: line {where} already imports "
+                    f"{', '.join(f'`{name}`' for name in sorted(names))} from '{module}'.")
+    written = f"import {target.strip()} from '{module}';" if target.startswith("{") else (
+        f"import {target} from '{module}';")
+    return f"Delete it and write `{written}` at the top of the file, with the other imports."
 
 
 _AN_ASYNC_HELPER = re.compile(
@@ -1077,12 +1148,50 @@ def locators_with_a_name_option(text: str) -> list[int]:
     return sorted({code.count("\n", 0, m.start()) + 1 for m in _A_LOCATOR_WITH_A_NAME.finditer(code)})
 
 
+#: Text a page locator matches, given as a string that starts with `^` or ends with `$`: a pattern written as text.
+_A_PATTERN_AS_TEXT = re.compile(
+    r"""(?:\bhas(?:Not)?Text\s*:\s*|\bgetByText\s*\(\s*)(['"`])(\^[^'"`\n]*|[^'"`\n]*\$|"""
+    # Backslashes meant for a regular expression, in a string: `'Lifecycle task \\(edited\\)'`. Measured on one
+    # run: Playwright looked for the backslashes, and the test failed every round until a dispute named it.
+    r"""[^'"`\n]*\\\\[()\[\]{}.*+?|dDsSwW][^'"`\n]*)\1"""
+)
+
+
+def whole_page_lookups(text: str, per_record: list[str]) -> list[int]:
+    """Lines that ask the whole page (`page.getBy...`) for a control named in `per_record`, which every record has.
+
+    The page has one per record, so the lookup matches several and the runner refuses it - but only once the product
+    draws more than one record (measured: a whole fix round went by first). Find the record, then the control in it.
+    """
+    if not per_record:
+        return []
+    names = "|".join(re.escape(name) for name in per_record)
+    lookup = re.compile(rf"""(?<![\w.])page\s*\.\s*getBy(?:Role|Text|Label)\s*\([^)]*?['"`](?:{names})['"`]""")
+    code = code_only(text)
+    return sorted({code.count("\n", 0, m.start()) + 1 for m in lookup.finditer(code)})
+
+
+def locators_matching_a_pattern_as_text(text: str) -> list[int]:
+    """Lines where a locator is given `'^B$'` as text: Playwright matches a string as text, so it looks for `^B$`.
+
+    Only a regular expression literal (`/^B$/`) is a pattern. Measured on one run: a filtering test waited for a
+    control inside an item no page shows, fixers spent an hour on a product that filtered, and the same locator's
+    `not.toBeVisible()` passed whatever the page drew.
+    """
+    code = code_only(text)
+    return sorted({code.count("\n", 0, m.start()) + 1 for m in _A_PATTERN_AS_TEXT.finditer(code)})
+
+
 #: Something only the test can know: the clock, a random number, a fresh id.
 _MADE_AT_RUN_TIME = re.compile(
     r"\bDate\s*\.\s*now\s*\(|\bMath\s*\.\s*random\s*\(|\brandomUUID\s*\(|\bperformance\s*\.\s*now\s*\(|"
     r"\bnew\s+Date\s*\(\s*\)\s*\.\s*(?:getTime|valueOf|toISOString)\s*\("
 )
 _A_BINDING = re.compile(r"\b(?:const|let|var)\s+(\w+)\s*=\s*([^;\n]+)")
+#: A binding whose own making sends what it makes to the product - a request, a field filled - and so gives it.
+#: Measured on one run: `const bm = await (await request.post('/api/x', { data: { title: `x-${Date.now()}` } })).json()`
+#: read back as `bm.title` sent a locked suite to its writers four times.
+_GIVEN_IN_ITS_MAKING = re.compile(r"\brequest\s*\.\s*(?:post|put|patch|fetch)\s*\(|\bfetch\s*\(|\.\s*(?:fill|type|pressSequentially)\s*\(")
 #: What stands just before a value a test looks for, not one it gives:
 #: `hasText: v`, `getByRole('row', { name: v`, `getByText(v`, `toHaveText(v`,
 #: `text=${v`. A `name:` anywhere else may be a request body's - given.
@@ -1122,7 +1231,7 @@ def expects_what_it_never_gave(text: str) -> list[tuple[int, str, str]]:
         title = re.match(r"""test\s*\(\s*(['"`])(.*?)\1""", body)
         for binding in _A_BINDING.finditer(body):
             value, made = binding.group(1), binding.group(2)
-            if not made_by.search(made):
+            if not made_by.search(made) or _GIVEN_IN_ITS_MAKING.search(made):
                 continue
             uses = [use for use in re.finditer(rf"\b{re.escape(value)}\b", body) if use.start() >= binding.end()]
             looked = [use for use in uses if _LOOKED_FOR.search(body[max(0, use.start() - 120):use.start()])]
@@ -1259,6 +1368,31 @@ harness can count."""
 #: run: `const id = (await request.get(...)).json().then((r) => r.id)` stores a
 #: Promise, the request was sent with `assignee_id: {}`, the service rightly
 #: answered 422, and fixers bent the product to coerce it for an hour.
+#: Playwright's page assertions: they wait for the page and return a promise, so each needs `await`.
+_PAGE_MATCHERS = (
+    "toBeVisible|toBeHidden|toHaveText|toContainText|toHaveCount|toBeChecked|toHaveValue|toHaveValues|"
+    "toHaveAttribute|toBeEnabled|toBeDisabled|toBeEditable|toHaveURL|toHaveTitle|toBeAttached|toBeEmpty|"
+    "toBeFocused|toHaveClass|toHaveId|toHaveCSS|toHaveJSProperty|toHaveScreenshot|toBeInViewport|toHaveAccessibleName"
+)
+_AN_UNAWAITED_PAGE_ASSERTION = re.compile(
+    r"^[ \t]*expect\s*\((?:(?!\n[ \t]*(?:await|const|let|var|expect)\b)[\s\S]){0,400}?\)\s*\.\s*(?:not\s*\.\s*)?(?:"
+    + _PAGE_MATCHERS + r")\s*\(",
+    re.M,
+)
+
+
+def unawaited_page_assertions(text: str) -> list[int]:
+    """The lines where a Playwright page assertion is a statement of its own without `await`.
+
+    Unawaited, the test does not wait for it: it passes a product that fails it, or fails detached at a line it
+    never reached. Measured on one run: dozens in one suite, and two fixers chased the detached failure.
+    """
+    if "@playwright/test" not in text:
+        return []
+    code = code_only(text)
+    return [code.count("\n", 0, m.start()) + 1 for m in _AN_UNAWAITED_PAGE_ASSERTION.finditer(code)]
+
+
 TEST_SOURCE_BUGS = (
     r"\b(?:const|let|var)\s+\w+\s*=\s*\(\s*await\b[^;]*?\)\s*\.json\(\)\s*\.then\(",
 )
@@ -1266,7 +1400,11 @@ TEST_SOURCE_BUGS = (
 TEST_BUGS = (
     r"Playwright Test did not expect \S+ to be called here",
     r"First argument must use the object destructuring pattern",
-    r"^(?!.*\bevaluate\b).*\b(?:TypeError|ReferenceError|SyntaxError)\b",
+    # Not a body that is not JSON: `response.json()` on a product's `404 Not Found` throws a SyntaxError
+    # naming JSON. Measured on one run: fourteen right tests were sent back to QA as broken for it.
+    # Nor a request nothing answered: Node's `fetch` says `TypeError: fetch failed` when no server is listening -
+    # measured on one run, a start-script test's request reopened the suite while the service had not come up.
+    r"^(?!.*\bevaluate\b)(?!.*\bSyntaxError\b.*\bJSON\b)(?!.*\bTypeError: fetch failed\b).*\b(?:TypeError|ReferenceError|SyntaxError)\b",
     r"^(?!.*\bevaluate\b).*Cannot read propert(?:y|ies) of (?:undefined|null)",
     r"^(?!.*\bevaluate\b).*\bis not a function\b",
     r"^(?!.*\bevaluate\b).*\bis not defined\b",
@@ -1276,3 +1414,29 @@ TEST_BUGS = (
     # and every test using it failed on `connect ECONNREFUSED ::1:80`.
     r"\bconnect ECONNREFUSED (?:\[?::1\]?|127\.0\.0\.1|localhost):(?:80|443)\b",
 )
+
+
+#: Errors a unit test run by `node --test` is known to raise, by a phrase of the message, and their cause
+#: (`app.stacks.known_errors`). Measured on two runs: unit tests written for Vitest's globals failed "describe is not
+#: defined" on the pack's `node:test` runner, and both fixers rewrote the manifest and a Vitest config - the test
+#: command is the pack's and was put back - so neither fix could work and the tests shipped failing.
+NODE_TEST_KNOWN_ERRORS = {
+    **{
+        phrase: (
+            "the unit tests run on Node's own `node:test`, which has no global `describe`, `it`, `test` or `expect`: "
+            "import them in each test file - `import { describe, it } from 'node:test'` and "
+            "`import assert from 'node:assert/strict'` - and assert with `assert`. The test command is the pack's and "
+            "is put back, so changing the manifest or adding a Vitest or Jest configuration cannot fix this."
+        )
+        for phrase in ("describe is not defined", "it is not defined", "expect is not defined", "vi is not defined")
+    },
+    # Measured on a held-out run: every unit test file imported the product with `../../src/...` from `test/`, one
+    # directory too far up, so Node looked outside the project; the fixers read the error as a missing file, edited
+    # the manifest and the product, and the tests shipped failing.
+    "err_module_not_found": (
+        "a relative import in a unit test climbs one directory too far, or too few, so Node looks outside the file's "
+        "real place: count the directories from the test file to the file it imports (a test in `test/` reaches "
+        "`src/` with `../src/`, not `../../src/`), and correct that import in every test file in one rewrite of each. "
+        "The product's files and the manifest are in the right place; do not move or edit them for this."
+    ),
+}

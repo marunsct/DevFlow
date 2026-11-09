@@ -31,6 +31,28 @@ os.environ.setdefault("WORKFLOW_WORK_ORDER_READINESS", "off")
 # auth refuses to load without a key - whether it did depended on which worker
 # collected which file first.
 os.environ.setdefault("ENV", "development")
+# No test reaches a real model. `load_settings` reads `.env` without overriding, so without this the suite took its
+# model server from the operator's file: a run's startup path diagnoses the model, and when the file named a server
+# that needs no key the tests sent it real requests, beside the live runs, and took minutes. Port 9 refuses at once;
+# a test wanting an address sets its own.
+os.environ["OPENAI_BASE_URL"] = "http://127.0.0.1:9/v1"
+os.environ["JUDGEMENT_BASE_URL"] = ""
+
+
+@pytest.fixture(autouse=True)
+def _the_built_in_fixes_at_their_code_default(monkeypatch):
+    """Each built-in fix's old variable set off, as every test was written against: a test sets one on to test it.
+
+    The base product has them always on (`app.switches.BUILT_IN`, owner 2026-10-29). The suite was written while each
+    was a switch off in its code, and its tests turn on only the one they test; this keeps that. A test that sets
+    a variable itself, or clears one to see the product's default, still does.
+    """
+    from app.switches import BUILT_IN
+
+    for name in BUILT_IN:
+        if name not in os.environ:
+            monkeypatch.setenv(name, "off")
+    yield
 
 
 @pytest.fixture(autouse=True)
@@ -102,6 +124,19 @@ def no_research_reaches_the_network():
     yield
 
 
+@pytest.fixture(autouse=True)
+def no_model_server_is_read(monkeypatch):
+    """The model server's `/props` is never read from a test; a test that needs a profile sets one.
+
+    The settings page reads the server afresh to name the served model
+    (`steering_job.page_model`); from a test that would read the developer's
+    own server, and its profile would be every later test's.
+    """
+    from app.models import server_profile
+
+    monkeypatch.setattr(server_profile, "read", lambda *args, **kwargs: None)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def an_openai_key_that_is_not_a_secret():
     """A dummy `OPENAI_API_KEY` for the tests that build a real client.
@@ -149,7 +184,7 @@ def no_model_server_needed(request, monkeypatch):
     if request.node.get_closest_marker("real_endpoint_probe") is None:
         from app.server.runner import WorkflowRunner
 
-        monkeypatch.setattr(WorkflowRunner, "_require_a_reachable_model", lambda self: None)
+        monkeypatch.setattr(WorkflowRunner, "_require_a_reachable_model", lambda self, *args, **kwargs: None)
     yield
 
 

@@ -84,8 +84,13 @@ def _later_sprints_files(root: Path) -> dict[str, list[str]]:
         return {}
 
 
-def project_snapshot(repo_root: str | Path) -> str:
+def project_snapshot(repo_root: str | Path, only_whether_empty: bool = False) -> str:
     """The project's files with numbered lines, or "" when there is no project or it is too big.
+
+    With `only_whether_empty`, the empty-project notice or "" - read no further
+    than the first file with something in it. Under the project memory that is
+    all a stage is given from here, and every file of the project was read for
+    it at each stage's start; on a large project, all of them every time.
 
     Never raises: a stage without a snapshot reads files, as it always has.
     """
@@ -107,6 +112,8 @@ def project_snapshot(repo_root: str | Path) -> str:
         for name in names:
             text = _readable(root / name)
             if text is not None and text.strip():
+                if only_whether_empty:
+                    return ""
                 files.append((name, text))
         if not files:
             # Said, not left silent. With no snapshot a stage goes to look: one
@@ -179,8 +186,9 @@ def for_a_stage(repo_root: str | Path) -> str:
     """
     from app.agents import project_memory
 
-    text = project_snapshot(repo_root)
-    if text and project_memory.enabled() and not text.startswith("The project directory `"):
+    under_the_memory = project_memory.enabled()
+    text = project_snapshot(repo_root, only_whether_empty=under_the_memory)
+    if text and under_the_memory and not text.startswith("The project directory `"):
         return ""
     return text
 

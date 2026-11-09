@@ -40,7 +40,9 @@ def test_the_same_product_is_unchanged_and_any_product_change_is_not(tmp_path):
     assert not unstable.unchanged_since_the_suite_measured(root)
     (root / "app.py").write_text("x = 1\n")
     _git(root, "commit", "-qm", "noop", "--allow-empty")
-    assert not unstable.unchanged_since_the_suite_measured(root), "a new commit is a changed product"
+    # A commit that changes no product file leaves the product as it was: the harness commits its own records between
+    # measurements, and counting each commit made an unchanged product's unit tests run again (LF.350).
+    assert unstable.unchanged_since_the_suite_measured(root), "a commit of nothing is the same product"
 
 
 def test_a_suite_measurement_records_its_fingerprint_and_no_record_is_never_unchanged(tmp_path):

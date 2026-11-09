@@ -28,6 +28,7 @@ harness's own "done" can be trusted. `report.py` totals them across runs.
 from __future__ import annotations
 
 import json
+import re
 import os
 import shutil
 import socket
@@ -64,10 +65,18 @@ def _node_runner() -> Path:
 
 
 def _python_runner() -> Path:
+    """The runner's interpreter, with pytest and httpx importable.
+
+    Ready only when they import, not when the interpreter exists: an install
+    cut off part-way (a scoring command whose output pipe closed early) left
+    the interpreter without pytest, every later score reused it, and a run
+    whose product passed its suite was scored 0/10 as a false acceptance.
+    """
     home = RUNNERS / "py"
     python = home / "bin" / "python"
     if not python.exists():
         _run([sys.executable, "-m", "venv", str(home)], RUNNERS if RUNNERS.exists() else Path("/tmp"))
+    if _run([str(python), "-c", "import pytest, httpx"], home).returncode != 0:
         _run([str(python), "-m", "pip", "install", "--quiet", "pytest", "httpx"], home)
     return python
 
@@ -107,6 +116,76 @@ def _junit(path: Path) -> list[dict]:
                 outcome = "skipped"
         tests.append({"name": case.get("name", ""), "outcome": outcome, "message": message})
     return tests
+
+
+#: Folders a handoff check never reads: installed dependencies and caches.
+_NOT_THE_PRODUCT_S = {"node_modules", ".venv", "venv", "__pycache__", ".git", "dist", "build", ".pytest_cache", "test-results"}
+#: Files a product should not ship with: a database its own runs wrote.
+_SHIPPED_DATA = re.compile(r"\.(db|sqlite|sqlite3)$", re.IGNORECASE)
+#: A comment that is the model thinking aloud, not a note for the code's reader.
+_DELIBERATION = re.compile(r"^\s*(#|//|\*)\s*(wait[,.]|actually[,]|hmm\b|let me\b|i think\b|on second thought)", re.IGNORECASE)
+#: A program reading its port from the environment, in the common spellings of each language's own call.
+_READS_PORT = re.compile(r"""(?:process\.env\.PORT|process\.env\[["']PORT["']\]|environ(?:\.get)?\(\s*["']PORT|"""
+                         r"""environ\[["']PORT|getenv\(\s*["']PORT|Getenv\(\s*"PORT|ENV\[["']PORT|env\("PORT|"""
+                         r"""Deno\.env\.get\(\s*["']PORT)""")
+_SOURCE = re.compile(r"\.(py|js|ts|jsx|tsx|mjs|cjs|go|rs|rb|java|kt|php|cs)$")
+
+
+def _files_of(product: Path):
+    for path in product.rglob("*"):
+        if path.is_file() and not (set(path.relative_to(product).parts) & _NOT_THE_PRODUCT_S):
+            yield path
+
+
+def _it_has_configuration(product: Path) -> bool:
+    """Whether the product reads any setting: its start script reads a variable, or the specification lists one."""
+    start = product / "start.sh"
+    if start.is_file() and re.search(r"\$\{?[A-Z][A-Z0-9_]*", start.read_text(encoding="utf-8", errors="replace")):
+        return True
+    spec = product.parent / "docs" / "technical_specification.md"
+    if spec.is_file():
+        section = re.search(r"^## Configuration\s*$(.*?)(?=^## |\Z)", spec.read_text(encoding="utf-8", errors="replace"),
+                            re.MULTILINE | re.DOTALL)
+        # A variable by name (`variable: PORT`, `Environment Variable: DATA_DIR`), not "Environment Variable: None":
+        # a static page whose specification said it reads none was scored as failing to document its configuration.
+        return bool(section and re.search(r"(?i:variable):\s*`?[A-Z][A-Z0-9_]+\b", section.group(1)))
+    return False
+
+
+def handoff(product: Path) -> dict:
+    """Whether a stranger could take the product over, read from its files alone (harness review HR2.PR.10).
+
+    Nothing recorded whether a product was usable by someone else; a sweep found 41 runs with no README. Each check is
+    True, False or None (not applicable); the score is the share of applicable checks passed. Not measured here: a
+    start honouring its variables when run, a development server, lint and unit tests - those need the product run.
+    """
+    readme = next((p for p in (product / "README.md", product / "README", product / "readme.md",
+                                product.parent / "README.md") if p.is_file()), None)
+    text = readme.read_text(encoding="utf-8", errors="replace").lower() if readme else ""
+    start = product / "start.sh"
+    files = list(_files_of(product))
+    checks = {
+        "readme": readme is not None,
+        "readme_says_how_to_start": ("```" in text or "    " in text) and bool(re.search(r"\b(start|run|using it|usage|use)\b", text)) if readme else False,
+        "readme_says_how_to_test": bool(re.search(r"\btests?\b", text)) if readme else False,
+        "readme_names_its_configuration": None if not _it_has_configuration(product) else bool(
+            re.search(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|\bPORT\b", readme.read_text(encoding="utf-8", errors="replace"))
+            or re.search(r"\bport\b|environment variable|configuration", text)) if readme else False,
+        # The start script, or the program it runs: one start runs `node src/main.ts`, which reads PORT itself.
+        "start_reads_its_port": ("PORT" in start.read_text(encoding="utf-8", errors="replace") or any(
+            _READS_PORT.search(p.read_text(encoding="utf-8", errors="replace"))
+            for p in files if _SOURCE.search(p.name) and p.stat().st_size < 400_000)) if start.is_file() else None,
+        "no_shipped_data": not any(_SHIPPED_DATA.search(p.name) for p in files),
+        "no_thinking_aloud_in_comments": not any(
+            _DELIBERATION.match(line)
+            for p in files if _SOURCE.search(p.name) and p.stat().st_size < 400_000
+            for line in p.read_text(encoding="utf-8", errors="replace").splitlines()
+        ),
+        "ci_file": any((root / ".github" / "workflows").is_dir() or (root / ".gitlab-ci.yml").is_file()
+                       for root in (product, product.parent)),
+    }
+    applicable = [v for v in checks.values() if v is not None]
+    return {"handoff": checks, "handoff_score": round(sum(applicable) / len(applicable), 3) if applicable else None}
 
 
 def harness_verdict(product: Path, status: str = "", completion_gaps: list[str] | None = None) -> dict:
@@ -179,7 +258,7 @@ def _the_quality_set(bench: Path, work: Path, runner: str, env: dict, notes: lis
 
 def score(
     product: Path, bench: Path, out: Path, status: str = "", completion_gaps: list[str] | None = None,
-    own_brief: str = "",
+    own_brief: str = "", model_last: str = "",
 ) -> dict:
     spec = json.loads((bench / "bench.json").read_text())
     kind, runner = spec["kind"], spec["runner"]
@@ -249,15 +328,65 @@ def score(
         result["quality_total"] = len(quality)
         result["quality_tests"] = quality
     result["harness"] = harness_verdict(product, status, completion_gaps)
+    try:
+        result.update(handoff(product))
+    except OSError:
+        pass
     result.update(brief_pairing(own_brief))
+    # No report means the tests never ran - a broken runner, not a broken
+    # product. Scored 0 it read as a false acceptance and went into the KPI
+    # ledger as one; unscored, it says what happened and is left out.
+    result["unscored"] = not tests
+    if result["unscored"]:
+        result["score"] = None
     result["false_acceptance"] = (
-        result["harness"]["status"] == "completed" and result["score"] < 1.0 and not result["brief_mismatch"]
+        not result["unscored"] and result["harness"]["status"] == "completed"
+        and result["score"] < 1.0 and not result["brief_mismatch"]
     )
     # What the release knew it did not prove, top level as well: the outcome
     # dashboard and `report.py` read the export without walking `harness`.
     result["completion_gaps"] = result["harness"]["completion_gaps"]
+    result.update(visible_and_hidden(result))
+    result.update(the_model(model_last))
     out.write_text(json.dumps(result, indent=2))
     return result
+
+
+def the_model(model_last: str) -> dict:
+    """{"model": name, "endpoint": host:port} the run last ran on, from its record's `model_last`; {} when unknown.
+
+    A score with no model beside it could not be compared across models (owner, 2026-11-04: store the model a run ran
+    on). The record holds the model's non-secret settings only; nothing else is read from it.
+    """
+    try:
+        last = json.loads(model_last or "{}")
+    except ValueError:
+        return {}
+    if not isinstance(last, dict) or not last.get("OPENAI_MODEL"):
+        return {}
+    from urllib.parse import urlparse
+
+    base = str(last.get("OPENAI_BASE_URL") or "")
+    try:
+        parsed = urlparse(base)
+        where = f"{parsed.hostname}:{parsed.port}" if parsed.hostname and parsed.port else (parsed.hostname or "")
+    except ValueError:
+        where = ""
+    return {"model": str(last["OPENAI_MODEL"]), "endpoint": where, "provider": str(last.get("LLM_PROVIDER") or "")}
+
+
+def visible_and_hidden(result: dict) -> dict:
+    """The locked suite's pass rate beside the hidden score, and the gap between them (plan item 21; SpecBench).
+
+    A run whose own suite passes far more than the hidden tests do measured itself on a weaker standard than the
+    one it is judged by - the integrity gap - and the score alone cannot show it. {} when either is unknown.
+    """
+    harness = result.get("harness") or {}
+    passed, failed = int(harness.get("locked_passed") or 0), int(harness.get("locked_failed") or 0)
+    if result.get("unscored") or passed + failed == 0 or result.get("score") is None:
+        return {}
+    visible = round(passed / (passed + failed), 3)
+    return {"visible_score": visible, "visible_hidden_gap": round(visible - float(result["score"]), 3)}
 
 
 if __name__ == "__main__":
@@ -271,10 +400,17 @@ if __name__ == "__main__":
             gaps = []
     result = score(
         product, bench, out, sys.argv[4] if len(sys.argv) > 4 else "", gaps, sys.argv[6] if len(sys.argv) > 6 else "",
+        model_last=sys.argv[7] if len(sys.argv) > 7 else "",
     )
-    print(f"{result['benchmark']}: {result['passed']}/{result['total']} hidden tests pass (score {result['score']})")
+    if result["unscored"]:
+        print(f"{result['benchmark']}: UNSCORED - the hidden tests produced no report; see the notes below")
+    else:
+        print(f"{result['benchmark']}: {result['passed']}/{result['total']} hidden tests pass (score {result['score']})")
     if "quality_total" in result:
         print(f"  quality: {result['quality_passed']}/{result['quality_total']} of the brief's edges held")
+    if result.get("handoff_score") is not None:
+        missing = [name for name, ok in result["handoff"].items() if ok is False]
+        print(f"  handoff: {result['handoff_score']}" + (f" (missing: {', '.join(missing)})" if missing else ""))
     if result["brief_mismatch"]:
         print("  BRIEF MISMATCH: the run was not started from this benchmark's brief; not a false acceptance")
     harness = result["harness"]
@@ -283,6 +419,8 @@ if __name__ == "__main__":
         f"{harness.get('locked_failed', '?')} failed"
         + ("  <- FALSE ACCEPTANCE: the harness finished a product that fails hidden tests" if result["false_acceptance"] else "")
     )
+    if "visible_hidden_gap" in result:
+        print(f"  visible {result['visible_score']} vs hidden {result['score']} (gap {result['visible_hidden_gap']:+})")
     if result["completion_gaps"]:
         print(f"  completed with {len(result['completion_gaps'])} gap(s) the release knew it did not prove:")
         for gap in result["completion_gaps"]:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
+from app.stacks.packs._service import FACTORY_GUIDE, RESTART_GUIDE, SERVICE_HELPER
 
 PACKAGE_JSON = """{
   "name": "{{project}}",
@@ -116,6 +117,7 @@ PACK = StackPack(
         "src/app.js": APP,
         "src/index.js": INDEX,
         "start.sh": START,
+        "acceptance/service.cjs": SERVICE_HELPER,
         ".gitignore": js.GITIGNORE,
     },
     install=js.INSTALL,
@@ -127,14 +129,17 @@ PACK = StackPack(
     acceptance_dir="acceptance",
     acceptance_pattern="*.spec.js",
     unit_pattern="*.test.js",
-    kept_files=("playwright.config.js",),
+    # The start script is the harness's (the suite runs it when the project has one) and so is the restart helper QA tests
+    # persistence with (see `_service`).
+    kept_files=("playwright.config.js", "start.sh", "acceptance/service.cjs"),
     kept_scripts={"start": SERVE_COMMAND, "test": js.UNIT_SCRIPT, "test:acceptance": "playwright test"},
     smoke_files={
         "tests/scaffold-smoke.test.js": SMOKE_UNIT,
         "acceptance/scaffold-smoke.spec.js": SMOKE_ACCEPTANCE,
     },
-    guide=GUIDE,
-    acceptance_guide=ACCEPTANCE_GUIDE,
+    guide=f"{GUIDE}\n{FACTORY_GUIDE}",
+    acceptance_guide=f"{ACCEPTANCE_GUIDE}\n{RESTART_GUIDE}",
+    data_dir_env="DATA_DIR",
     stack={
         "language": "JavaScript",
         "framework": "Express",
@@ -148,6 +153,8 @@ PACK = StackPack(
     module_system_mismatch=js.module_system_mismatch,
     unawaited_helpers=js.unawaited_helpers,
     locators_with_an_ignored_option=js.locators_with_a_name_option,
+    locators_matching_a_pattern_as_text=js.locators_matching_a_pattern_as_text,
+    whole_page_lookups=js.whole_page_lookups,
     code_runs_in="node",
     ci_setup=js.CI_SETUP,
     # The `request` fixture needs no browser.

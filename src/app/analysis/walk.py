@@ -24,21 +24,24 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 
-def _walk(root: Path, skip: Iterable[str]) -> Iterator[tuple[Path, list[str], list[str]]]:
+def _walk(root: Path, skip: Iterable[str], skip_hidden: bool = False) -> Iterator[tuple[Path, list[str], list[str]]]:
     skipped = set(skip)
     for directory, subdirectories, files in os.walk(root, followlinks=False, onerror=lambda _: None):
         # Pruned in place: `os.walk` does not descend into what is removed here.
-        subdirectories[:] = sorted(d for d in subdirectories if d not in skipped)
+        subdirectories[:] = sorted(
+            d for d in subdirectories if d not in skipped and not (skip_hidden and d.startswith("."))
+        )
         yield Path(directory), subdirectories, sorted(files)
 
 
-def files_under(root: str | Path, skip: Iterable[str] = (), name: str = "*") -> Iterator[Path]:
+def files_under(root: str | Path, skip: Iterable[str] = (), name: str = "*", *, skip_hidden: bool = False) -> Iterator[Path]:
     """Every file under `root` whose basename matches `name`, outside `skip`.
 
     `skip` names directories, matched against each directory's own name at any
     depth - the same test the callers applied to `path.parts` afterwards.
+    `skip_hidden` leaves out every directory whose name starts with a dot too.
     """
-    for directory, _, files in _walk(Path(root), skip):
+    for directory, _, files in _walk(Path(root), skip, skip_hidden):
         for file_name in files:
             if name == "*" or fnmatch.fnmatchcase(file_name, name):
                 yield directory / file_name
@@ -52,4 +55,32 @@ def directories_under(root: str | Path, skip: Iterable[str] = (), name: str = "*
                 yield directory / sub
 
 
-__all__ = ["directories_under", "files_under"]
+def the_file_ending(root: str | Path, name: str, skip: Iterable[str] = ()) -> Path | None:
+    """The one file under `root` whose path ends with `name`, the shallowest such; None when none, or two tie.
+
+    A failure names a file as its traceback prints it: `store.py`,
+    `items/store.py`, rarely the whole path. Looked up as `root/name` or one
+    folder down, a file deeper in a large codebase's tree -
+    `services/api/items/store.py` - was never found, and the defect that named
+    it went to an agent loop to find it by reading.
+    """
+    wanted = name.strip().lstrip("./")
+    if not wanted:
+        return None
+    ending = "/" + wanted
+    best: list[Path] = []
+    depth = None
+    base = Path(root)
+    for path in files_under(base, skip, Path(wanted).name):
+        relative = "/" + path.relative_to(base).as_posix()
+        if not relative.endswith(ending):
+            continue
+        parts = relative.count("/")
+        if depth is None or parts < depth:
+            best, depth = [path], parts
+        elif parts == depth:
+            best.append(path)
+    return best[0] if len(best) == 1 else None
+
+
+__all__ = ["directories_under", "files_under", "the_file_ending"]

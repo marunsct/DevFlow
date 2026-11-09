@@ -44,6 +44,7 @@ from pathlib import Path
 import pytest
 
 PROJECT = Path(__file__).resolve().parent.parent
+LOG = PROJECT / "test-results" / "service.log"
 
 
 def _free_port() -> int:
@@ -66,10 +67,15 @@ class Service:
         # The way the brief starts it, when the project has its `start.sh`:
         # what the customer runs is what every test here proves starts.
         brief_s_way = ["sh", "start.sh"] if (PROJECT / "start.sh").is_file() else None
+        # Everything the service prints goes to a file the harness reads when a test meets a server error: a
+        # 500 says nothing about its cause, the traceback the service logged does. (A file, not a pipe: a pipe
+        # nobody reads fills up and stops the service.)
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        self._log = open(LOG, "a", encoding="utf-8")
         self._process = subprocess.Popen(
             brief_s_way or [sys.executable, "-m", "uvicorn", "{{package}}.main:app",
              "--host", "127.0.0.1", "--port", str(self.port)],
-            cwd=PROJECT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            cwd=PROJECT, env=env, stdout=self._log, stderr=subprocess.STDOUT, text=True,
             start_new_session=True,
         )
         deadline = time.monotonic() + 30
@@ -80,7 +86,7 @@ class Service:
             except OSError:
                 if self._process.poll() is not None or time.monotonic() > deadline:
                     self.stop()
-                    output = self._process.stdout.read() if self._process.stdout else ""
+                    output = LOG.read_text(encoding="utf-8", errors="replace") if LOG.is_file() else ""
                     pytest.fail(f"The service did not start:\\n{output[-3000:]}")
                 time.sleep(0.2)
 
@@ -95,6 +101,9 @@ class Service:
                 os.killpg(self._process.pid, 9)
             except ProcessLookupError:
                 pass
+        log = getattr(self, "_log", None)
+        if log is not None and not log.closed:
+            log.close()
 
     def restart(self) -> None:
         self.stop()
@@ -103,6 +112,7 @@ class Service:
 
 @pytest.fixture(scope="session")
 def service(tmp_path_factory):
+    LOG.unlink(missing_ok=True)
     running = Service(tmp_path_factory.mktemp("service-data"))
     running.start()
     yield running
@@ -150,9 +160,24 @@ To prove data survives a restart, take the `service` fixture and call
 `service.restart()` between the write and the read. The service keeps its data
 for the whole session, so a test must not assume it starts empty: create what it
 reads, and look for its own records rather than counting all of them.
-""" + _python.NAMING
+""" + _python.NAMING + _python.SHARED_HELPERS
 
 PACK = StackPack(
+    known_errors=_python.PYTHON_KNOWN_ERRORS,
+    framework_files={
+        "requirements.txt": "the framework and the server that runs it, one requirement per line as pip reads them",
+        "{{package}}/main.py": (
+            "the service's application object, importable as `{{package}}.main`, with a route `GET /health` that "
+            'answers 200 with {"status": "ok"}'
+        ),
+        "start.sh": (
+            'starts the service from the project folder with `.venv/bin/python`: `cd "$(dirname "$0")" && exec '
+            '.venv/bin/python ...`, listening on "${HOST:-127.0.0.1}" and "${PORT:-8000}"'
+        ),
+        "tests/test_scaffold_smoke.py": (
+            "one unit test of the application that passes as written, through the framework's own test client"
+        ),
+    },
     name="python-http-api",
     title="HTTP service in Python on FastAPI",
     kind="http_api",
@@ -181,7 +206,7 @@ PACK = StackPack(
     wired_by_imports=True,
     unit_test_names=_python.UNIT_TEST_NAMES,
     test_helpers=_python.TEST_HELPERS,
-    kept_files=("pytest.ini", "acceptance/conftest.py"),
+    kept_files=("pytest.ini", "acceptance/conftest.py", "start.sh"),
     kept_scripts={},
     smoke_files={
         "tests/test_scaffold_smoke.py": SMOKE_UNIT,

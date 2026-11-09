@@ -45,6 +45,74 @@ SWITCHES: dict[str, str] = {
     "REGRESSION_CONTRACT": "app.acceptance.regression_contract",
     "LESSON_DISTILLER": "app.plugins.lesson_distiller",
     "MUTATION_GUIDED_TESTS": "app.acceptance.mutation_guided",
+    "OBSERVATION_FOLDING": "app.agents.observation_folding",
+    "SETUP_SCOPE_GUARD": "app.stacks.setup_scope",
+    "MILESTONE_EVIDENCE_GATE": "app.graph.milestone_evidence",
+    "REPLY_SALVAGE": "app.models.reply_salvage",
+    "MODEL_GUIDANCE": "app.models.model_guidance",
+    "STRUCTURED_EXTRACTION": "app.agents.structured_extraction",
+    "BATCH_ACCEPTANCE_AUTHOR": "app.graph.acceptance_batches",
+    "RELEASE_WITH_FAILING_UNIT_TESTS": "app.graph.release_with_failing_unit_tests",
+    "KEEP_THE_BEST_ATTEMPT": "app.graph.best_attempt",
+    "KEEP_NET_GAINS": "app.graph.net_gain",
+    "PACKAGE_EXPORTS_NAMED": "app.analysis.package_exports",
+    "PACK_ENTRY_EXPORTS_KEPT": "app.stacks.entry_exports",
+    "HONO_NATIVE_TEST_RUNNER": "app.stacks.packs.node_hono_native_api",
+    "START_DEFECT_NAMES_COMPILER_ERRORS": "app.stacks.compiler_errors",
+    "SETTLE_WHEN_ACCEPTANCE_IS_GREEN": "app.graph.settle_when_green",
+    "STALL_RULE": "app.graph.stalled_sprint",
+    "BUILDER_FACTS": "app.graph.builder_facts",
+    "MEASURE_ONCE": "app.acceptance.measured_once",
+    "KEEP_THE_BEST_ON_A_REPLAN": "app.graph.best_attempt:keep_on_a_replan_switch",
+    "FIRST_REREAD_ANSWERED": "app.agents.project_memory:first_reread_switch",
+    "FIX_STAGE_CALL_CAP": "app.agents.settled_answer:fix_stage_call_cap",
+    "FIX_STAGE_REPLY_CAP": "app.models:fix_stage_reply_cap_switch",
+    "PLAN_REVIEW_REPLY_CAP": "app.models:plan_review_reply_cap_switch",
+    "SALVAGED_REPLIES_TURN_THINKING_OFF": "app.agents.settled_answer:salvaged_replies_switch",
+    "TARGETED_SUITE_REPAIR": "app.acceptance.suite:targeted_repair_switch",
+    "STRUCTURED_DISPUTE_VERDICT": "app.agents.suite_dispute:structured_verdict_switch",
+    "AGENT_LOOP_FIX_LIMITS": "app.graph.agent_loop_fix_limits",
+    "SURRENDER_TO_REWRITE": "app.graph.surrender_to_rewrite",
+    "KEPT_FIX_CANDIDATES": "app.graph.kept_fix_candidates",
+    "CO_DEFECT_FAILURES_IN_REWRITES": "app.graph.co_defect_failures",
+    "REPEATED_REWRITE_PROMPT_STOP": "app.graph.repeated_rewrite_prompts",
+    "STABLE_STAGE_PREFIX": "app.agents.stable_prefix:stable_stage_prefix_switch",
+    "NAMED_TEST_REWRITE": "app.graph.rewritten_tests:named_test_rewrite_switch",
+    "TESTS_ONLY_WRITES": "app.tools.tests_only_writes",
+    "MUTANT_CHECK_IN_THE_FIX_STAGE": "app.acceptance.mutant_check_in_stage",
+    "MUTATION_TEST_RETENTION": "app.acceptance.mutation_retention",
+    "EQUIVALENT_MUTANTS_REMEMBERED": "app.acceptance.mutation_equivalents",
+    "REVIEWS_WITHOUT_REASONING": "app.agents.reviews_without_reasoning",
+    "DISPUTE_QUOTES_THE_CRITERION": "app.agents.suite_dispute:criterion_quoted_switch",
+    "SPEC_DRY_RUN": "app.acceptance.spec_dry_run",
+    "ORDER_PROBE": "app.acceptance.order_probe",
+    "IDS_READ_WITHOUT_A_CREATE": "app.acceptance.ids_read_without_a_create",
+    "CONTRACT_SERVER_ERRORS_AT_A_ROUND": "app.acceptance.interface_contract:server_errors_at_a_round_switch",
+    "CONTRACT_LINE_COVERAGE": "app.acceptance.contract_coverage",
+    "CONTRACT_PROBE_AT_LOCK": "app.acceptance.interface_contract:probe_at_lock_switch",
+    "CONTRACT_UNREAD_LINES_AT_REVIEW": "app.acceptance.interface_contract:unread_at_review_switch",
+    "CONTRACT_NON_NUMERIC_IDS": "app.acceptance.interface_contract:named_ids_switch",
+    "CONTRACT_PROBE_WITH_A_RECORD": "app.acceptance.interface_contract:record_first_switch",
+    "CONTRACT_PROBE_WITH_A_BAD_BODY": "app.acceptance.interface_contract:bad_body_switch",
+    "SETTLE_SPEC_CONTRADICTIONS": "app.agents.specification_rulings",
+    "BRIEF_OVER_SPEC_ADDITIONS": "app.agents.brief_over_spec",
+    "TESTS_OF_ACTIONS_WITHIN_A_VIEW": "app.acceptance.actions_within_a_view",
+    "NAMING_FINDING_BEFORE_DEFERRAL": "app.graph.acceptance_nodes:naming_finding_switch",
+    "QA_SAYS_THE_PRODUCT_IS_AT_FAULT": "app.graph.product_at_fault",
+    "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE": "app.graph.unit_tests_disagree",
+    "LAST_TRY_ON_DEFERRED": "app.graph.last_try_on_deferred",
+    "START_PROBE": "app.acceptance.start_probe",
+    "EXTENSIONS_BEFORE_A_RUN": "app.stacks.imports_before_a_run",
+    "NAMING_STANDARD": "app.stacks.naming",
+    "REFUSALS_FOLDED": "app.agents.refusal_folding",
+    "GUIDE_ANSWER_IN_SCHEMA": "app.models.guidance:answer_in_schema_switch",
+    "GUIDE_STOP_WHEN_DONE": "app.models.guidance:stop_when_done_switch",
+    "GUIDE_NO_REPETITION": "app.models.guidance:no_repetition_switch",
+    "GUIDE_KEEP_TO_ROLE": "app.models.guidance:keep_to_role_switch",
+    "GUIDE_EXACT_ARGUMENTS": "app.models.guidance:exact_arguments_switch",
+    "GUIDE_ONE_PROGRAM_A_COMMAND": "app.models.guidance:one_program_a_command_switch",
+    "GUIDE_PATHS_AS_GIVEN": "app.models.guidance:paths_as_given_switch",
+    "GUIDE_HEED_REFUSALS": "app.models.guidance:heed_refusals_switch",
 }
 
 UNKNOWN = "unknown"
@@ -103,7 +171,20 @@ def record_the_segment(run_id: str, record: Any = None, profile: Any = None) -> 
     try:
         from app.observability.transcript import record as transcript_record
 
-        transcript_record(run_id, "", "provenance", **the_segment(record, profile))
+        from app.models.model_pin import as_the_run
+
+        # The switches as this run sees them: its own settings first (HR2.E.1), so its KPI row names its arm.
+        with as_the_run(run_id):
+            segment = the_segment(record, profile)
+        try:
+            from app.server.run_store import RunStore
+
+            overrides = RunStore.shared().switch_overrides(run_id)
+            if overrides:
+                segment["switch_overrides"] = [f"{name}={'on' if on else 'off'}" for name, on in sorted(overrides.items())]
+        except Exception:  # noqa: BLE001 - the switches on are recorded either way
+            pass
+        transcript_record(run_id, "", "provenance", **segment)
     except Exception:  # noqa: BLE001 - a record must never cost the run
         logger.debug("Could not record the run's provenance", exc_info=True)
 

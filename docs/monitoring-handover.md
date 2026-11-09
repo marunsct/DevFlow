@@ -27,6 +27,12 @@ why the change answers it.
 
 ## 0. Start here: the loop as it runs now
 
+**Host GPU fault takes the session down (2026-11-08 01:45 JST):** an amdgpu `ring gfx timeout` (process gnome-shell, `Illegal opcode in command stream`) aborted both llama-servers (`ROCm error: unspecified launch failure`); gnome-shell then died and systemd stopped every app it launched, Docker Desktop included (electron exit 1, qemu SIGTERM). Runs fail with "the model server would not serve the model". Tell it apart from a harness fault with `journalctl -k | grep amdgpu` and `journalctl --user | grep 'Stopping app-gnome'`. Nothing comes back until the owner logs in; the model apps are the owner's to start. Then `loop.sh ready` per port and `loop.sh resume <run>`. The 03:00 nightly fails without Docker: re-run `loop.sh nightly` by hand.
+
+**Docker Desktop 502 on a container create (2026-11-07 20:4x JST):** `ship-live` left the new app `Created`, the old worker running and both runs paused, and `docker compose up -d` then hung. Recovery: `docker start langchain-app-1`, wait for healthy, `loop.sh resume <run>` for each paused run; replace the worker (`loop.sh deploy`) at the next boundary once `docker info` answers promptly. It recurred at 21:17 JST (create hung again; the old containers ran on): a Docker Desktop restart, which stops every container, is the owner's call. Since LF.688 `ship-live` exits 2 with THE DEPLOY DID NOT LAND when the containers were not replaced. Resolved 22:24 JST with the owner's go-ahead: runs paused (`loop.sh rewind --pause-only`), `systemctl --user restart docker-desktop` (every container restarts, the owner's other services too), `loop.sh deploy` (image matched 7db0cb8), runs resumed - one minute paused.
+
+**Measurements:** every change under measurement - switch, arm, runs, verdict - is in [measuring.md](measuring.md), the one copy (owner 2026-11-07). Each audit says which arm the live runs are in; a switch change updates that file in the same commit.
+
 ### 0.1 The standing instruction
 
 Run a continuous audit / fix / deploy loop on this harness, and do not stop:
@@ -284,6 +290,24 @@ A new agent, session or account starts at `docs/HANDOVER.md`: the first ten minu
     22:00 JST sprint 1 attempt 2 ran out of rounds: two fast rewrites of the unit-test defect got the same request, made the same change, were reverted for the same unit test (LF.216). Deployed fc93ecd (LF.215+LF.216) at the dispute->technical_lead boundary, resumed; no rewind (the next fix stage runs on it).
     22:18 JST run-bf8a972f completed: hidden 10/10, 140 active min, 715k output tokens, 2 lost replies; sprint 2 accepted on its first suite measurement (25/25). 22:28 JST shakedown run 2 run-8cced4a9 started on fc93ecd (ALL READY).
     23:19 JST QM.2 built (behind MUTATION_GUIDED_TESTS, off): a deliberate change no test notices becomes a testing-role finding, settled by the harness's own check (not a named test); reviewed and merged (32e03a65) after reading the diff, confirming fail-on-old on the new test file and a green full suite myself.
+    23:41 JST owner screenshot: the run page's sprint header read "Sprint 1" while setting up what is actually sprint 2's work, and sprint 1 never showed a header while it was built. Traced to fast delivery's deterministic sprint-planning path emitting no event, so the sprint counter (counts `technical_lead` visits) skipped it. LF.217: that path now narrates itself. UI-only, never affects a run's outcome or score (owner).
+    00:17-00:35 JST run-8cced4a9 completed: hidden 10/10, 108 active min, quality 6/7, mutation 0.625. Both shakedown runs now clean of outcome-affecting bugs (owner: UI bugs do not count). Deployed 1246bb22 (LF.217) at the boundary, froze the SHA, started gated run 1 (run-f13f7438) - hidden tests only, no mid-run deploys.
+    00:50 JST owner: run-8cced4a9 found no bug, so it is gated run 1 (ran entirely on fc93ecd, not mixed - my earlier note was wrong) and run-f13f7438 is gated run 2. LF.218 (localisation once per retry) built and pushed after gated run 2 started; held for the Fix batch.
+    01:35-01:50 JST gated run 2 (run-f13f7438) completed: hidden 10/10, quality 6/7, mutation 0.5, 59 active min, 0 lost replies. First scored 0/10 FALSE ACCEPTANCE because the hidden-test runner's pytest install had been cut off (my scoring command piped into `head`); LF.219 makes the runner check pytest imports and leaves a reportless run unscored. Re-scored properly; the ledger row was replaced. Gate pair done.
+    01:47-01:50 JST deployed bc153af (Fix batch 5: LF.218; LF.219 is tooling). A run I had not started, run-3bfd71ee (tasks-api, fast, operator account, 01:40), was live: a second Claude session (langchain-90, the one before this conversation was interrupted) still had its loop crons. Asked it to stand down (one session drives). The run crossed the deploy and resumed in principal_architect: mixed_versions, kept as a third all-on run. The concurrent scoring of both sessions is the likely cause of the half-built runner (LF.219).
+    02:28 JST run-3bfd71ee defect_fix_1_0: told seven times its defect was fixed (53/53 unit tests) and carried on with another defect's work. LF.220 enforces the answer after the second pass notice; deployed at the next boundary.
+    03:21-03:30 JST run-3bfd71ee completed: hidden 10/10, quality 6/7 (parallel creates), 100 active min. At 03:27 the other session (langchain-90) scored it at the same second as this one: the two mutation runs collided. Asked it a second time to delete its crons; no new run started until it does.
+    00:47 JST 90-min deep analysis of run-f13f7438 (10 min in, principal_architect, no failures): found LF.218 - localisation ran twice per retry (candidates then the fallback rewrite); built and tested, filed for the next Fix batch (gated run, MF.4 - no mid-run deploys). Cleaned stale filed-not-built entries in STATE already resolved (prefix_breaks TypeError, answers.json lock).
+    01:35 JST run-f13f7438 (gated 1) completed: hidden 10/10, 59 active min, 0 tool failures, 0 lost replies, quality 6/7, mutation 0.5, no KPI regression. Sprint 2 passed with no defects. Gap: routes.py/validate.py (218 lines) drafted but never wired into app.py. 01:40 JST gated run 2 (run-3bfd71ee) started on the same frozen SHA 1246bb22 to complete the MF.4 pair.
+    08:08 JST owner approved the QM.2 arm: compose turns `MUTATION_GUIDED_TESTS` on; deployed after run-1409658f ends, then two tasks-api runs on that SHA compared with the all-on baseline on hidden/quality/mutation.
+    08:12-08:23 JST run-1409658f completed: hidden 10/10, quality 6/7, mutation 0.667, 81 min. Deployed 1f30088f (25/25 switches on, QM.2 included), started QM.2 arm run 1: run-85ad15b0.
+    09:21-09:29 JST QM.2 run 1 (run-85ad15b0) cancelled under the major-bug rule (0/10): a listening service answering the readiness request 404 was reported as "did not start" and the 404 line was cut from the excerpt, so fixes chased start-up for two attempts. LF.221 built, suite green, deployed 0df9ec3c (25/25 on); QM.2 arm restarted as run-514174a4.
+    09:59-10:37 JST run-514174a4 failed when the model server became unreachable (nothing listened on :8888); held at the owner's request while the DevFlow review was re-reviewed; resumed 10:37 through the API (not by the loop) on Qwen3.8-27B, 1 slot - a new model mid-arm, so it is a first look at that model, not the QM.2 arm. Meanwhile (owner: work on small and large codebases, approach by measured size) built LF.222, LF.223, SZ.1-SZ.11 (SZ.4 skipped) with two forks in worktrees, merged, full suite green but the 3 S3 tests; pushed, not deployed. New switch `OBSERVATION_FOLDING`, off in compose (`NOT_TURNED_ON_YET`).
+    10:51 JST run-514174a4 paused through the API (not by the loop); the server then held Qwen3.8-Flash-Next IQ1_M at :9090. Owner: diagnose new models (tools incl. forcing, reasoning), find their settings and build it into the harness; implement reply salvage. Built MD.1, RS.1, LF.224-LF.226; diagnosed the new model live from the worker without changing the container's code (all forced/named checks pass; it lists/searches via the terminal; salvage supported). A first stage-shaped check asked the model to report work it had not done and it refused - read as a forcing failure until the check carried the stage's work in the conversation.
+    16:53-18:30 JST run-ec1e5ae2 paused/resumed by the owner across Qwen3.8-Flash-Next and LFM2.5-24B-A2B (auto-diagnosed at its segment start, MD.1; first live reply salvages). Owner: deep-diagnose LFM2.5 and make it behave through settings or a switch with instructions, then fresh gate runs. Built MD.2 (`MODEL_GUIDANCE`), LF.227-LF.229; suite green but the 3 S3 tests; deep diagnosis kept two guidance lines (plan in schema 1/3->3/3, stop when done 1/3->3/3). run-ec1e5ae2 cancelled (two models); fresh tasks-api gate runs on LFM2.5.
+    ~19:50-20:10 JST owner: steering general, not per model; per-guide switches; settings action; keep growing checks. Built MD.3 (UI by a fork in a worktree, merged) with a research pass on how harnesses adapt to models (MD.4 roadmap); suite and UI tests green; not deployed into gate run 1 (run-ea0a7402).
+    20:03-20:36 JST LF.230 (a shell line in one string refused with a garbled fragment as the program; eight in a minute) and LF.231 (LFM2.5 reasons 80-144k tokens a reply; three lost replies had no salvage request in the worker log - the old code logged its precondition failure at debug only; empty salvages now logged at info). Owner: treat run-ea0a7402 as a test run - pause, fix, deploy, rewind. Paused, deployed 7588e46, re-diagnosed LFM2.5 (12 checks, 561 s), rewound to defect_remediation.
+    21:00-23:00 JST test run run-ea0a7402: LF.232-LF.236 found and deployed in place (salvage shape fallback, window-sized reasoning, echoed reasoning stripped, shell operators before argument checks). Owner asked for deep research on steering stubborn models (reports/Steering stubborn local models.md, 13-item playbook): llama.cpp enforces neither a named tool_choice nor - for LFM2.5 - `required`. Owner: build everything, cancel the run if no value - cancelled 22:36; built MD.6 (owner's sampling + DRY per request), MD.7 (prose answers asked again with only the schema allowed; older refusals folded), LF.237 (no <think> after a prefill), LF.238 (refusals counted by kind), LF.239 (a real forcing check).
     08:00 JST: run-f4f0030b's acceptance review re-read the 5 suite files its request said were "not shown" - all were in the project memory (LF.121: the note points at the memory). Deployed at a stage boundary, no rewind; group 2's code rides along switched off.
     08:10 JST: CM.3 (linear mode: a builder's blocker or decision naming a planned file reaches the next work order owning it) built behind `DECISION_LEDGER`. After the gate run: switch the built items on (their `ON_BY_DEFAULT`), deploy, then the before/after runs.
     11:35 JST deep analysis of run-846b8d62 (Thorough, local-only, 240 min, in test_round_1): reasoning 66% of output; acceptance authoring 59 of 199 model minutes over four stages; six architect/architecture-review rounds in 34 minutes; "68% redundant reads" is nearly all memory pointers, not repeated content (the measure counts a pointer as redundant). A shell builtin (`export X=1 && npm ...`) is now refused with the reason - there is no shell, so nothing carries to the next command - beside the list of programs. langchain-a3 (the resumed copy that drove from 07:11) has ended, so the original session drives again.
@@ -536,6 +560,12 @@ docker exec langchain-app-1 python -m app.server.manage create-user harness-test
 
 ### 0.4 One iteration, step by step
 
+**Every audit, bug or no bug (owner 2026-10-24):** also run `loop.sh patterns` (and `loop.sh scan`
+once WB.8 exists) and report an *improvement* line - tokens a call by stage against the last
+five runs, the longest replies, redundant reads, minutes in the stage - and add any open
+suggestion to `docs/STATE.md` "Next actions". The owner does not read every result; a
+suggestion that is not written down and reported does not reach them.
+
 ```sh
 export LOOP_USER=harness-test LOOP_PASSWORD=loop-test-only-pw-2026   # the operator account (0.3.1)
 scripts/loop/loop.sh ready                             # last line must be ALL READY; otherwise start nothing
@@ -634,6 +664,28 @@ working (the tool-approval check can fail transiently), schedule a retry about
 
 ### 0.5 Things that bite
 
+- `ship-live` builds the images first (`loop.sh build`, LF.709) and pauses runs only after the build succeeds; a failed build or a Docker that does not answer touches no run.
+- `ship-live` pauses each run at its next stage boundary (LF.710; up to `PAUSE_CEILING`, default 600 s, then stops the stage as before); `SHIP_NOW=1` stops the stages at once. (Before LF.710 it waited only while a run was in `principal_architect`.)
+  `SHIP_NOW=1` skips the wait for a fix the live run needs at once (LF.646).
+- Rewind to a stage's **original** entry time, never to a point an earlier rewind created. Measured 11-06/07 on L
+  web-todo 3: a second rewind to the point the first rewind wrote (same stage, a later time in `rewind --list`)
+  resumed past that stage without its model call. Rewinding again to the first entry's time replayed it properly.
+  Cause not yet reproduced (sweep queue: rewind of a rewound point).
+- The owner's model server can stop (a crash, a restart, the host's network): `loop.sh ready` says NOTREADY with
+  "Network is unreachable", the live run fails with a connection error and keeps its checkpoints. Start nothing.
+  `loop.sh resume-when-ready <run>` (in the background) resumes the same run once ALL READY; a new run is not
+  needed. Never start or load the model yourself.
+- Never restart the worker within two minutes of another restart or deploy: the orphan sweep takes a
+  120 s lock (`harness:recover-orphans`), the second worker logs "Another worker is recovering abandoned
+  runs; skipping", and nothing sweeps again - the run stays "running" with no worker. Recover it by hand:
+  `docker compose exec -T worker python -c "from app.server.manage import recover_orphaned_runs; recover_orphaned_runs()"`
+  (try `dry_run=True` first), then `loop.sh resumed`. A model setting that is applied at segment start (the
+  reply ceiling) needs that restart; wait out the lock first.
+- The model is named one way in every process: the file the server reports
+  (`model_guidance.served_as`). The worker reads the server per segment; the
+  API's settings page reads it afresh (`steering_job.page_model`, at most every
+  30 s). `tests/conftest.py` stubs `server_profile.read` for every test, so a
+  test that needs a profile sets one - none reads the developer's server.
 - Deploy = `docker compose build app worker && docker compose up -d app worker`.
   There is no source mount; a restart deploys nothing. `loop.sh deploy`
   compares the image's files with the working tree.
@@ -661,6 +713,21 @@ working (the tool-approval check can fail transiently), schedule a retry about
   by both pid 1 and a pool child is the defect. Every shared pool and the
   worker's runner are per process (`app.server.process_local`); a new one must
   be too.
+- **A run `failed` with a Python exception is a harness bug, not a model fault (LF.264).** `loop.sh status` shows
+  the exception as the failure reason; read the traceback in `docker compose logs worker`. A decode error
+  (`UnicodeDecodeError`) is a `ValueError`, so the `except (OSError, SubprocessError)` around a subprocess does
+  not catch it: read command output with `errors="replace"`. To recover: fix, `loop.sh ship`,
+  `BOUNDARY_WAIT=0 loop.sh deploy` (no live run, so no boundary), then `loop.sh resume <run>` with
+  `LOOP_USER`/`LOOP_PASSWORD` set from HANDOVER §3; the run continues from its last checkpoint.
+
+- **Start a run in a call of its own, never chained after `score` or `kpi` (2026-10-25).** A chained
+  `score && ... && bench X` that ran past the tool's timeout moved to the background and started its run
+  15 minutes later, a minute after the same run had been started by hand: two live runs on one model, and
+  `current_run.txt` pointing at the newer. Cancel the duplicate and rewrite `data/loop/current_run.txt`.
+
+- **Never cap `loop.sh score` with `timeout` (2026-10-25).** It copies the workspace, starts the product and runs the
+  hidden tests and the mutation probe; a 330 s cap cut it short and the run read `UNSCORED - the hidden tests produced
+  no report`. Run it in the background and read its log.
 
 ### 0.5.1 Parked: known, not fixed
 
@@ -1316,3 +1383,104 @@ was per-run Chromium copies and 0.9 GB `node_modules`. Both were cleared and
 the image-level browser cache means the Chromium half will not come back.
 Transcripts are about 500 MB and are **the evidence base for every
 measurement in the findings log** - do not delete those.
+
+2026-11-02 11:50 JST LF.531: lessons L-4, 6, 7, 10, 13, 15, 17, 21 rejected on the owner's word (false claim about reverts; backup data/lessons.json.bak-20261102). Lessons now quote their records and count distinct runs.
+
+2026-11-02 12:18 JST run-304c1913 failed at the suite's 5th round: its second runner emptied the folder holding the first runner's report. LF.532 sharpens the finding; the run is rewound, not restarted.
+
+2026-11-02 12:43 JST run-304c1913 failed the same way after LF.532. LF.533: `run.json` takes `runs`; rewound again to its third suite round.
+
+2026-11-02 13:28 JST run-304c1913 scored 3/8 with its own suite 27/27: plain containers and a placeholder, found by CSS. LF.534 gives no-pack browser suites the page checks; rewound to its third suite round.
+
+2026-11-02 14:45 JST run-304c1913: suite 25/2, both failures a label lookup without exact. LF.535 sends such a test back to QA; deployed into the run (paused, resumed).
+
+2026-11-02 15:44 JST run-304c1913 fullstack-bookmarks-py 8/8 (up from 3/8 today), 142 active min, mutation 4 of 12; read non-deliverable for a test id taken as a file, fixed by LF.536.
+
+2026-11-02 17:59 JST RC 1 fullstack-bookmarks-py (run-0d817a9a): suite 33/33, hidden unscored: start.sh passes uvicorn an option it lacks, so no hidden test could run. LF.537, LF.538 deployed 18:05; the RC count restarts on this version.
+
+2026-11-02 20:04 JST RC 1 fullstack-bookmarks (run-9bc85e07): page still the scaffold's after a re-plan named it; KEEP_THE_BEST kept the scaffold as best work. LF.539-541 deployed, RC count restarts again.
+
+2026-11-02 21:34 JST run-4e57c399 web-todo-react hidden 10/10 with its task list measured collapsed to 34 px: hidden suites using toContainText cannot see an invisible element; owner decides whether to tighten them. LF.542 built, not deployed.
+
+2026-11-02 22:14 JST textkit-lib: dispute ruled two tests wrong, the quote check refused the rulings. LF.543 and LF.542 deployed together; no clean RC run had finished.
+
+2026-11-02 22:37 JST run-da433831 textkit-lib 0/8, own suite 22/23; run-9bc85e07 fullstack-bookmarks 8/8, 22/23. LF.544 checks a library the way its user imports it. Clean RC count starts on that deploy.
+
+2026-11-02 23:58 JST LF.545: a green suite whose product its user cannot run now raises a blocking defect (LF.537/544 only recorded it). LF.546: root-relative page references looked for up to the project. Deployed into the live fullstack-py run; the clean count restarts.
+
+2026-11-03 00:22 JST run-eb5cffb8 fullstack-py hidden 0/8: start.sh works only from a folder named bookmarks. LF.547 starts the product from a copy named product. Deployed into notes-api and fullstack-py clean runs; count restarts.
+
+2026-11-03 05:10 JST OPEN: resume of run-8ac1d382 crashes 54 times with AttributeError 'CompatibleChatOpenAI' object has no attribute 'count' at deepagents/_models.py resolve_model via acceptance_nodes.py:363 -> specialists.py:1412 -> role_agent.py:755: isinstance(model, BaseChatModel) is False for the model object on the resume path only (a fresh object passes). The worker had stopped (warm shutdown) at 01:20 and again at 01:33 JST; not by the loop. Needs a reproduction before a fix. Fresh clean run run-b7ab7422 started instead.
+
+2026-11-03 05:20 JST The 05:11 entry's cause: the model router returns primary.with_fallbacks() once a second model is configured; every agent since the 01:33 worker restart failed. LF.548 deployed.
+
+2026-11-03 06:45 JST notes-api-hono clean 1 of 3: 9/9, 72 min, mutation 11/12, mixed_versions False. Read non-deliverable for the PUT probe's 415; LF.549 built and pushed, to deploy at the next count restart (it costs no score).
+
+2026-11-03 07:10 JST LF.550 built and pushed (specification-ruling quote check generalised from LF.543); deploy with LF.549 at the next count restart.
+
+2026-11-03 07:48 JST LF.549-551 deployed (fullstack-py's setup was in LF.551's refusal loop at 2.5 h); fullstack-py rewound to stack_setup, tasks-api paused/resumed (mixed). Clean count restarts; notes-api-hono's 9/9 on be1fc06 is evidence.
+
+2026-11-03 09:10 JST tasks-api run-8ac0e9c0: hidden 10/10, 130 active min, mutation 6/12, non-deliverable (3 unit tests fail on 422 vs 401, the contradiction whose ruling was rejected before LF.550). RC clean notes-api-hono 1b started 09:05.
+
+2026-11-03 09:45 JST fullstack-py run-7570da3a hidden 7/8 at a green suite: the derived proven-setup pack silenced LF.534's checks. LF.552 deployed; clean count restarts.
+2026-11-03 11:00 JST LF.553-555 (owner request): keys sent only to the endpoint they were saved for, so a saved Anthropic key no longer gives local runs a paid fallback; Anthropic workspace id, address, adaptive thinking; run name on Home. Anthropic not yet proven by a call: the saved key is not scoped to a workspace.
+2026-11-03 11:58 JST LF.556: notes-api 2a AC-9 expected exactly 2 notes on a list an earlier test wrote to; the shared-list count check read only JS suites. Python reading added, deployed mid-run, both runs mixed.
+2026-11-03 12:48 JST notes-api 2a run-9747df55 hidden 9/9 (mixed; LF.556 reopened the suite and the same product passed 13/13). Started fullstack-bookmarks-py recheck run-c54c3d41 on :8888. loop.sh ready took over 120 s once: give the gate 240 s.
+2026-11-03 14:19 JST web-todo 1b run-37d4fe76 hidden 10/10 (mixed). fullstack-bookmarks-py 2a run-c54c3d41 failed: its run.json asked Playwright for `--reporter=junit:<path>`, which Playwright does not read; 5 suite rounds never fixed it. LF.557 deployed.
+2026-11-03 15:08 JST LF.558: fullstack-bookmarks-py 2b spent both setup attempts (about 30 min) on `.venv/bin/pip` refused for the testing role while the refusal advised `pip install`; setup left unproven. pip allowed for that role, refusal advice added, deployed mid-run.
+2026-11-03 15:28 JST LF.559: fullstack-bookmarks-py 2b writer guessed three Playwright report flag forms; custom-stack suite writers now get seed.JUNIT_REPORTS. Deployed into both (already mixed) runs.
+2026-11-03 16:05 JST fullstack-bookmarks-py 2b run-e6542099 hidden 3/8 false acceptance (mixed): page records are divs, brief says list items; the suite review raised it, the lock at the round cap (3) dropped it silently, the release said every criterion passes. Fix queued.
+2026-11-03 16:24 JST LF.560: product-side record check (list item / table row the brief names) holds the sprint open and raises a blocking defect, so a lenient suite locked at its cap cannot release a page that draws divs.
+2026-11-03 17:42 JST LF.561 (start verdict reaches every reader) and LF.562 (an empty suite is told where its commands run and what the runner could not find) deployed; fullstack-bookmarks-py 2c had collected zero tests twice from commands naming files in the wrong folder.
+2026-11-03 18:43 JST LF.563: fullstack-bookmarks-py 2c locked 43 tests (41 pass) and its first round raised two wrong blocking cross-file defects (Python Playwright not counted; the suite's own package.json asked for a test script). LF.562 helped: the writer fixed the run.json paths after one message.
+2026-11-03 18:55 JST fullstack-bookmarks-py 2c run-0743adbc hidden 8/8 (mixed). Every family full today, so RC1 frozen at bf23015; first run notes-api-hono run-7e3d3acb on :8888. Fix batch queue: replayed proven setup installs Python into the project environment; remaining deep-review now-items (agent build at start-up, 401/403 merge, still_raised, scaffold by content); stable stage openings.
+2026-11-03 19:45 JST RC1 notes-api-hono 1 run-7e3d3acb hidden 9/9, no false acceptance, mutation 0.833 (first counted RC result on bf23015). Started RC1 notes-api 1 run-72eae009 on :8888.
+2026-11-03 20:15 JST owner paused web-todo 1c (:1234) at 20:07 to rest the GPU; leave it paused until the owner resumes it. Pause time is no longer a run's time: a database trigger (`runs_pause_clock`) keeps `paused_since`/`paused_seconds` for every pause; the page subtracts it. Deployed to the API/UI server only (worker frozen for RC1).
+2026-11-03 20:46 JST RC1 notes-api 1 run-72eae009 9/9. Owner set Anthropic as the default and started run-08cdefe1 (their one-off test; leave alone); a :8888 pin would have kept the anthropic provider, so LF.564 was built and deployed at 20:44 with web-todo 1c paused and resumed. RC2 started on 5eb1e083: tasks-api 1 run-cdfc8a19.
+2026-11-03 21:14 JST RC2 tasks-api 1 waited 28 min for a worker (two slots: the owner's Anthropic run and web-todo 1c); pool grown to three with `celery control pool_grow 1`, no restart; the run started on :8888.
+2026-11-03 22:57 JST web-todo 1c run-aceb831c (mixed, :1234) hidden 9/10, false acceptance: lost "a task completed while filtered to active leaves the active list" - the AC-9 behaviour deferred after the suite repair worsened (1 -> 3 problems) and its budget ran out. Fix batch priority 1: a repair may not leave the suite worse; restore the previous suite instead. Started RC2 web-todo 1 run-32bffa53 on :1234.
+2026-11-03 23:32 JST RC2 tasks-api 1 run-cdfc8a19 hidden 10/10, no false acceptance (first RC2 counted result); mutation timed out at 8 min, not measured. Started RC2 fullstack-bookmarks-py 1 run-5a3a8dcc on :8888.
+2026-11-04 00:13 JST LF.565-567 deployed. The owner's NVIDIA run made one paid Anthropic call at its first stage (a forked worker's stale inherited settings, LF.566). The owner said :1234 serves 182K; RC2 web-todo 1's pinned window was corrected from 662144 by hand, and pins now take saved limits (LF.567). RC count restarts as RC3.
+2026-11-04 01:18 JST web-todo 1 run-32bffa53 (mixed, :1234) hidden 10/10, no false acceptance: the test 1c lost now passes; a wrong AC-15 test went to dispute and targeted repair, not deferral. Started RC3 web-todo 1 run-49ceb94d on :1234; its pin carries the saved profile limits (LF.567 verified). No Anthropic calls since LF.566.
+2026-11-04 03:06 JST RC3 web-todo 1 run-49ceb94d 10/10 (first counted RC3 result); fullstack-bookmarks-py 1 run-5a3a8dcc (mixed) 8/8 - its broken shared fixture was fixed by the writers after the dispute; LF.568 built for it. Started RC3 notes-api-hono 1 and web-todo 2. The gate can take ~50 s per server; short timeouts made two starts fail silently.
+2026-11-04 04:08 JST RC3 notes-api-hono 1 run-0dd4c424 9/9 (no fix round: built clean in one drafting pass); RC3 web-todo 2 run-c02293f3 10/10 (1 h). RC3 so far 3/3 full. Started RC3 notes-api 1 run-fe8bb168 (:8888) and web-todo 3 run-238fd986 (:1234).
+2026-11-04 04:55 JST RC3 notes-api 1 run-fe8bb168 9/9 (41 min; every acceptance test passing, the unit tests' remaining failures released as known issues by the unattended escalation). RC3 4/4 full. Started RC3 tasks-api 1 run-2af46bfb on :8888.
+2026-11-04 05:57 JST RC3 web-todo 3 run-238fd986 9/10 false acceptance: lost "a task completed while filtered to active leaves the active list"; the suite filtered after setting done, never completed an item under the Active view. Same hidden test as 1c. TESTS_OF_ACTIONS_WITHIN_A_VIEW (prompt rule) was on and did not help. Fix batch priority 1. Started RC3 notes-api-hono 2 on :1234.
+2026-11-04 06:06 JST RC3 tasks-api 1 run-2af46bfb 10/10 (67 min; a storage-setup fault made the server answer 500 until round 2; the acceptance suite then went 10 -> 37 of 37). Started RC3 fullstack-bookmarks-py 1 run-fd60d938 on :8888.
+2026-11-04 07:05 JST RC3 notes-api-hono 2 run-7d265888 (:1234) 9/9, 64 min; two unit-test fixes proven. RC3: 6 clean, 1 failed (web-todo 3). Started RC3 notes-api 2 run-0245e825 on :1234.
+2026-11-04 09:59 JST RC3 fullstack-bookmarks-py 1 run-fd60d938 8/8 (3 h 50 m: unproven setup from the stale replay, three page tests asking the whole page for a per-record Delete, a repair that dropped 20 browser tests, three refused milestone plans - LF.570-572 target these). RC3 7 clean, 1 failed. Started RC3 tasks-api 2 run-0e6c0986 on :8888.
+2026-11-04 10:45 JST RC3 notes-api 2 fell from 17/17 (10:11) to 3/17 (10:21) with clean code: the mutation check left Python's compiled cache of a same-size change undone within the same second. Cleared the run's __pycache__ by hand; LF.573 deployed with LF.568-572; RC4 starts. My audits missed the drop: they read stage and defects, not the suite's latest result - now they do.
+2026-11-04 11:10 JST LF.574 live (434076a); tasks-api 2 and notes-api 2 resumed (owner reloaded :1234). Deep audit over 24 runs of the last day: no measured-worse, stale-cache, mutation-left or other-model anywhere; failures only the owner's groq run (413 TPM) and the 11-03 recheck fixed by LF.557; waste: :1234 slow replies (22-30 min), one 1-min refusal burst; B16 (stale lock notes at release) seen again.
+2026-11-04 11:20 JST host restarted ~11:08 (owner); tasks-api 2 run-0e6c0986 failed on resume before :8888 had its model (connection error; resume once ready), notes-api 2 left paused as the owner left it. deep-audit with run ids fixed (RunStore.load); suite 15617 passed, 3 S3.
+2026-11-04 12:10 JST RC3 notes-api 2 run-0245e825 completed 11:56, hidden 9/9 (mutation 0.583; :1234, mixed). Score first failed: containers left as <id>_langchain-worker-1 by the restart mid-recreate; renamed, LF.575 (loop.sh by compose service). tasks-api 2 waits: :8888 llama-server ROCm abort on its 45k-token request (11:27, 11:40); avalon.service disabled by the owner.
+2026-11-04 13:15 JST :8888 down since 12:35 (ROCm abort, Unsloth stopped respawning); idle, so built B16 as LF.576 (lock notes refuted by the release measurement are not shipped); suite 15625 passed, 3 S3; deploying before RC4 (deployed 13:10).
+2026-11-04 13:35 JST owner: stop testing while they fix :8888 inference. Audit cron removed; tasks-api 2 run-0e6c0986 paused; nothing running.
+2026-11-04 13:50 JST owner: :8888 fixed, test on :8888 (owner works on :1234). RC3 tasks-api 2 run-0e6c0986 completed 13:49, hidden 10/10. LF.577: errored requests closed in every request/reply pairing (overall speed 7.8 -> 33.4 tok/s on that run); suite 15631 passed, 3 S3.
+2026-11-04 14:01 JST RC4 notes-api-hono 1 run-6b01808f started on ee48b84 (:8888). Audit cron recreated.
+2026-11-04 15:09 JST RC4 notes-api-hono 1 run-6b01808f completed 15:01, hidden 9/9 (60 min, mutation 0.667; first RC4 count). RC4 web-todo 1 run-a135c8cf started 15:09 (:8888).
+2026-11-04 16:22 JST owner: test on :1234 as well. RC4 notes-api 1 run-cf0ddc97 started on :1234 (qwen3.6-35b-a3b-mtp).
+2026-11-04 16:45 JST RC4 web-todo 1: ~60 min of filter fixes on a test that cannot pass (hasText: '^B$' as a string). LF.578 built (pattern-as-text locators go back to the suite); suite 15636 passed, 3 S3; deploying into both runs (web-todo 1 -> mixed_versions).
+2026-11-04 17:30 JST RC4 notes-api 1 run-cf0ddc97 completed 17:24, hidden 8/9 FALSE ACCEPTANCE (PUT with empty title accepted; suite covered POST only; same gap named in earlier lock notes). 44 unit tests shipped failing, mutation 0.083; fixer added an unrequested DELETE /notes. RC4 web-todo 1 re-planning after the real Active-filter fault. Next on :1234: RC5 tasks-api 1.
+2026-11-04 18:00 JST RC4 web-todo 1 run-a135c8cf completed 17:55, hidden 10/10 (mixed). RC5 fullstack-bookmarks-py 1 started on :8888.
+2026-11-04 18:17 JST RC5 tasks-api 1 run-d1e03017 completed 18:15, hidden 10/10 (48 min, counted on 0751b4f). RC5 notes-api-hono 1 started on :1234.
+2026-11-04 18:47 JST LF.579 built (emptied-field probe at a green round; corpus accepted for Check.emptied); suite 15643 passed, 3 S3; deploying into RC5 fullstack-bookmarks-py 1 and notes-api-hono 1 (both now mixed).
+2026-11-04 19:28 JST RC5 notes-api-hono 1 run-3b50fd2f completed 19:20, hidden 9/9 (mixed). RC6 notes-api 1 started on :1234 (first run fully on a0473c4).
+2026-11-04 19:48 JST owner UX request: Home redesigned (guided single column: brief, delivery, involvement, model; Advanced folded; sticky Start) and Settings > Models restructured (side nav, editable sections first, sticky save, diagnosis/capabilities folded); app-only deploy (deploy-app) from 2089e592. Owner: UI-only changes do not reset the RC count or mark runs mixed. Next UX: Admin switches, Runs list, dashboard polish, other Settings tabs.
+2026-11-04 20:05 JST RC5 fullstack-bookmarks-py 1 run-ef91b0a4 completed, hidden 8/8 (mixed). Owner: no new runs on :8888. UI deploy-app 9a5ff0a0 (Settings build+behaviour merged with both saves in the bar; Runs 10 per page with page outcomes; Admin filters/grouping).
+2026-11-04 20:46 JST RC6 notes-api 1 run-1a17cf7f completed 20:40, hidden 9/9 (counted, a0473c4). RC6 notes-api-hono 1 started on :1234.
+2026-11-05 09:45 JST host restarted ~09:37 (worker still a0473c4). Owner: resume testing on both ports. RC6 notes-api-hono 1 run-37f78b1b resumed (:1234; paused since 11-04 21:36); RC6 tasks-api 1 run-ce9eafa3 started (:8888). Audit cron recreated.
+2026-11-05 09:58 JST RC6 notes-api-hono 1 run-37f78b1b completed 09:52, hidden 9/9 (counted). RC6 web-todo 1 run-a9aefc9d started on :1234. RC6 2/2 full.
+2026-11-05 10:50 JST LF.580 (owner): unit tests drafted after the code they test, shown it. Root cause found by the per-role audit (25/31 unit-test fixes left open, 7 runs shipped failing unit tests). Suite 15647 passed, 3 S3. Deploying into RC6 tasks-api 1 and web-todo 1 (both mixed); the clean count restarts as RC7. Owner rule: bug fixes and quality changes always on; only non-quality improvements behind switches, grouped.
+2026-11-05 10:57 JST LF.581 deployed (d9cc3e8): a 500 the service never logged is named to the fixer (tasks-api 1 sign-in hidden by a catch-all handler). RC7 counts from d9cc3e8.
+2026-11-05 11:17 JST RC6 web-todo 1 run-a9aefc9d completed 11:08, hidden 10/10 (mixed). RC7 notes-api 1 run-259ad0f3 started on :1234 (d9cc3e8).
+2026-11-05 11:56 JST RC6 tasks-api 1 run-ce9eafa3 10/10 (mixed). LF.582 deployed 11:55 (543519f): switch regroup per owner; 13 checks on as a measured batch. RC8 counts from 543519f; RC8 fullstack-bookmarks-py 1 started on :8888.
+2026-11-05 13:26 JST LF.583 (a test too weak to lock goes back once at the review limit) and LF.584 (drafts capped at 16k tokens; a looping draft is drafted again) built from the per-role audit; suite 15664 passed, 3 S3. Deploying into RC8 fullstack-bookmarks-py 1 and notes-api 1.
+2026-11-05 14:08 JST RC8 fullstack-bookmarks-py 1 run-43cda98f FAILED (suite cannot run after 5 rounds) with hidden 8/8 - custom-stack two-runner setup broken; building a FastAPI + plain page pack. RC9 tasks-api 1 run-f0e47299 started on :8888.
+2026-11-05 14:21 JST LF.585 deployed (0768791): FastAPI + plain page pack. RC8 notes-api 1 run-2f4b8166 9/9 (mixed; tool failures 22.5%). RC10 counts from 0768791; RC10 fullstack-bookmarks-py 1 run-fc0441d0 on :1234 (the pack's first run).
+2026-11-05 14:34 JST LF.586 deployed (f412ca9): plain page as an empty field gets the plain-page pack. RC10 fullstack run fc0441d0 cancelled (stack decided before the fix). RC11 counts from f412ca9; RC11 fullstack-bookmarks-py 1 run-ead6c2c2 on :1234.
+2026-11-05 15:47 JST RC9 tasks-api 1 run-f0e47299 10/10 (mixed). RC11 fullstack-bookmarks-py 1 on the new pack: suite locked 15:12 in ~22 min. RC11 tasks-api 1 run-926a1029 started on :8888.
+2026-11-05 17:08 JST LF.587 deployed (6fbcc21): whole-table counts go back to the suite (tasks-api 1 test_ac21, 19 == 0). Measured and dropped: a 20-min fix-stage budget (long fix stages fix at 42%, like short ones). RC12 counts from 6fbcc21.
+2026-11-05 17:47 JST RC11 tasks-api 1 run-926a1029 10/10 (mixed; LF.583 + LF.587 fired). RC12 web-todo 1 run-032cdb9f started on :8888.
+2026-11-05 18:41 JST owner: deploy fixes at once, learning runs until none pending, then freeze. Deployed 39d39ea (LF.588-590). RC12 web-todo 1 run-032cdb9f 10/10. L notes-api 1 run-2d7ee2d3 started on :8888.
+2026-11-05 19:05 JST LF.591 deployed (6b53601): fixer memory leads with the code, plans named only (fixer deep dive). LF.590 first sign: no blocking first-review findings in L notes-api 1.
+2026-11-06 08:55 JST worker pool churn (77 SIGKILLs from 08:50): a grown third pool process could not come up; shrunk to 2. The routine `pool_grow 1` after a deploy is dropped - it is for a third queued run only (HANDOVER worker slots); check the SIGKILL count after each deploy.

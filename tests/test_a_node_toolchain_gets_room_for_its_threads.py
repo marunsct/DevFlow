@@ -38,3 +38,20 @@ def test_a_toolchain_that_runs_no_node_keeps_the_configured_limit(tmp_path, monk
     workspace = _workspace(tmp_path, "python-http-api")
 
     assert sandbox._process_memory(workspace) == 1024**3
+
+
+def test_a_node_command_gets_room_in_a_project_no_pack_covers(tmp_path, monkeypatch):
+    """Measured: a stack no pack covers (its setup replayed or written by an agent) has no pack to say its tests run on
+    Node, so `npx vitest run` ran under the 1 GB limit and every worker thread died with "Failed to reserve virtual
+    memory for CodeRange" (exit 133): the setup could not be proven and the locked suite could not run."""
+    monkeypatch.setattr(sandbox, "MEMORY_LIMIT", "1g")
+
+    assert sandbox._process_memory(tmp_path, ["npx", "vitest", "run"]) >= 4 * 1024**3
+    assert sandbox._process_memory(tmp_path, ["/usr/bin/node", "--test"]) >= 4 * 1024**3
+
+
+def test_a_command_that_starts_no_node_program_keeps_the_configured_limit_in_such_a_project(tmp_path, monkeypatch):
+    monkeypatch.setattr(sandbox, "MEMORY_LIMIT", "1g")
+
+    assert sandbox._process_memory(tmp_path, ["python3", "-m", "pytest"]) == 1024**3
+    assert sandbox._process_memory(tmp_path) == 1024**3

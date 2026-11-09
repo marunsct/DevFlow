@@ -19,6 +19,27 @@ import json
 import os
 import sys
 
+def stories_by_id(events):
+    """Each defect's story across rounds, keyed by its stable id (LF.680; HR2.fix.7): the rounds it was raised
+    in, its attempt outcomes in order and how it ended. Only defects raised in two or more rounds are a story;
+    events without an id (runs before LF.680) are left out."""
+    by_id = collections.defaultdict(list)
+    for event in events:
+        if event.get("defect_id"):
+            by_id[event["defect_id"]].append(event)
+    stories = {}
+    for defect_id, its in by_id.items():
+        rounds = sorted({e.get("round") for e in its if e.get("event") == "raised" and e.get("round") is not None})
+        if len(rounds) < 2:
+            continue
+        outcomes = [e.get("event") for e in its if e.get("event") in
+                    ("fixed", "left open", "reverted", "closed", "closed without a fixer", "deferred")]
+        first = next((e for e in its if e.get("event") == "raised"), its[0])
+        stories[defect_id] = {"description": first.get("description") or "", "rounds": rounds,
+                              "outcomes": outcomes, "ending": outcomes[-1] if outcomes else "open"}
+    return stories
+
+
 run = sys.argv[1]
 paths = sorted(glob.glob(f"{os.environ.get('TRANSCRIPTS_DIR', '/app/data/transcripts')}/{run}*.jsonl"))
 if not paths:
@@ -91,3 +112,10 @@ for sprint in sorted(cycles, key=lambda s: (s is None, s)):
                       + (f" - {_short(later.get('detail'), 160)}" if later.get("detail") else ""))
             if raised and len(story) == 1:
                 print("      (nothing recorded after it was raised: still open, or the round ended first)")
+
+stories = stories_by_id(events)
+if stories:
+    print(f"\n== defects raised in more than one round ({len(stories)}; by stable id)")
+    for defect_id, story in sorted(stories.items(), key=lambda item: item[1]["rounds"][0]):
+        print(f"  {defect_id} rounds {story['rounds']}: {' > '.join(story['outcomes']) or 'no fixer yet'}"
+              f" -> {story['ending']}  | {_short(story['description'], 90)}")

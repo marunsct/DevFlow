@@ -91,7 +91,15 @@ def test_a_measurement_before_a_later_fix_is_since_the_report_too(tmp_path) -> N
     assert acceptance_nodes.passing_since_reported(_state(tmp_path), ["AC-4"]) == ["AC-4"]
 
 
+def test_a_batch_of_fixes_run_side_by_side_is_since_the_report_too(tmp_path) -> None:
+    """Fixes run side by side are measured as one batch; a defect they fixed on the way is closed without a fixer."""
+    _measured(tmp_path, "after defect_fix_2_batch", AC_4="passed")
+
+    assert acceptance_nodes.passing_since_reported(_state(tmp_path), ["AC-4"]) == ["AC-4"]
+
+
 @pytest.mark.parametrize("label", [
+    "after defect_fix_1_batch",   # an earlier round's batch
     "after the work orders",      # the measurement the round itself reported on
     "after defect_fix_1_0",       # an earlier round's fix
     "accepted",

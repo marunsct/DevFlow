@@ -38,18 +38,36 @@ CACHE_SECONDS = 60
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
-def _request(provider: str, base_url: str, key: str) -> urllib.request.Request:
+def _request(provider: str, base_url: str, key: str, workspace_id: str = "") -> urllib.request.Request:
+    if provider == "anthropic":
+        from app.models.endpoints import anthropic_address
+
+        address = anthropic_address(base_url)
+        return urllib.request.Request(
+            f"{address}/v1/models" if address else HOSTED_LISTINGS[provider],
+            headers={
+                "x-api-key": key, "anthropic-version": "2023-06-01",
+                **({"anthropic-workspace-id": workspace_id} if workspace_id else {}),
+            },
+        )
     if base_url:
         from app.models.endpoints import reached_from_here
 
         reached, naming = reached_from_here(base_url.rstrip("/"))
         headers = {**naming, **({"Authorization": f"Bearer {key}"} if key else {})}
         return urllib.request.Request(reached + "/models", headers=headers)
-    if provider == "anthropic":
-        return urllib.request.Request(HOSTED_LISTINGS[provider], headers={"x-api-key": key, "anthropic-version": "2023-06-01"})
     if provider in ("gemini", "google"):
         return urllib.request.Request(HOSTED_LISTINGS[provider], headers={"x-goog-api-key": key})
     return urllib.request.Request(HOSTED_LISTINGS.get(provider, HOSTED_LISTINGS["openai"]), headers={"Authorization": f"Bearer {key}"})
+
+
+def _what_it_said(error: urllib.error.HTTPError) -> str:
+    """The provider's own message, which says what to change; "" when there is none to read."""
+    try:
+        message = json.loads(error.read(4096)).get("error", {}).get("message")
+    except (ValueError, AttributeError, OSError):
+        return ""
+    return f": {str(message)[:300]}" if message else ""
 
 
 def _answers(request: urllib.request.Request) -> str | None:
@@ -59,9 +77,10 @@ def _answers(request: urllib.request.Request) -> str | None:
             json.load(reply)
         return None
     except urllib.error.HTTPError as error:
+        said = _what_it_said(error)
         if error.code in (401, 403):
-            return f"refused its key (HTTP {error.code})"
-        return f"answered HTTP {error.code}"
+            return f"refused its key (HTTP {error.code}){said}"
+        return f"answered HTTP {error.code}{said}"
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         return f"could not be reached ({getattr(error, 'reason', error)})"
     except ValueError:
@@ -98,7 +117,7 @@ def check_frontier(
     kept = _CACHE.get(cache_key)
     if kept and clock() - kept[0] < CACHE_SECONDS:
         return kept[1]
-    why = reader(_request(provider, base_url, key))
+    why = reader(_request(provider, base_url, key, str(built.get("ANTHROPIC_WORKSPACE_ID") or "").strip()))
     answer = {**found, "active": why is None,
               "problem": None if why is None else f"The frontier model {name} on {provider} {why}. Check it under Settings → Models."}
     _CACHE[cache_key] = (clock(), answer)

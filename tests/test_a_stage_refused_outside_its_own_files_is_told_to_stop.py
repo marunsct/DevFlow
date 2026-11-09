@@ -55,3 +55,26 @@ def test_the_lead_uses_none_of_the_banned_words(acceptance_writer):
         last = _refused(acceptance_writer, f"notes-api/notes_api/{name}")
     lead = last.split("'notes-api")[0]
     assert not re.search(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", lead, re.I)
+
+
+def test_asking_whether_a_write_is_refused_is_not_a_refusal(acceptance_writer):
+    """Measured: the harness asked about every workspace file around each command; the count reached 124."""
+    for number in range(40):
+        with repository.just_asking():
+            assert repository._the_harness_s_own_or_the_locked_suite(
+                acceptance_writer, acceptance_writer / f"notes-api/notes_api/f{number}.py")
+
+    first = _refused(acceptance_writer, "notes-api/notes_api/real.py")
+
+    assert "not part of the acceptance suite" in first and "now been refused" not in first
+
+
+def test_the_files_a_command_may_not_change_count_no_refusals(acceptance_writer):
+    for name in ("a", "b", "c", "d", "e"):
+        (acceptance_writer / "notes-api" / "notes_api").mkdir(exist_ok=True)
+        (acceptance_writer / "notes-api" / "notes_api" / f"{name}.py").write_text("x = 1\n")
+
+    for _ in range(3):
+        repository.what_a_command_may_not_change(acceptance_writer)
+
+    assert "now been refused" not in _refused(acceptance_writer, "notes-api/notes_api/real.py")

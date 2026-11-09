@@ -41,7 +41,7 @@ WORSE_WHEN_HIGHER = (*WORSE_WHEN_HIGHER, "lost_reply_output_share", "invalid_too
 
 
 #: Quality measures, each a share in [0, 1]: a drop of this much below the recent mean is a regression.
-WORSE_WHEN_LOWER = ("hidden_score", "quality_score", "mutation_score")
+WORSE_WHEN_LOWER = ("hidden_score", "quality_score", "mutation_score", "handoff_score")
 DROP = 0.15
 
 
@@ -121,11 +121,13 @@ def _numbers(rows: list[dict], key: str) -> list[float]:
     return values
 
 
-def the_arm(rows: list[dict], commit: str, benchmark: str = "") -> list[dict]:
+def the_arm(rows: list[dict], commit: str, benchmark: str = "", switch: str = "", state: bool | None = None) -> list[dict]:
     """The ledger's runs on exactly one harness commit, a mixed run left out (plans MF.1, MF.5).
 
     `commit` may be the short form the docs and the deploy use: the ledger
     keeps the full one, and an exact match found no run of either arm.
+    With `switch` and `state`, only the runs that had that switch on (True) or off (False): two arms on one
+    commit, each run's own switch settings deciding which (harness review HR2.E.1).
     """
     wanted = str(commit).strip().lower()
     return [
@@ -134,6 +136,7 @@ def the_arm(rows: list[dict], commit: str, benchmark: str = "") -> list[dict]:
         and wanted and commits[0].lower().startswith(wanted)
         and str(r.get("mixed_versions") or "False") != "True"
         and (not benchmark or str(r.get("benchmark") or "") == benchmark)
+        and (not switch or state is None or (switch in str(r.get("switches_on") or "").split()) == state)
     ]
 
 
@@ -141,7 +144,16 @@ def compare_arms(a: list[dict], b: list[dict], minimum: int = MINIMUM_RUNS_PER_A
     """Each numeric KPI's mean and spread (min-max) on two arms of runs; refused below `minimum` runs an arm."""
     if len(a) < minimum or len(b) < minimum:
         return [f"not compared: {len(a)} and {len(b)} run(s); each arm needs at least {minimum}"]
-    out = [f"{'kpi':<34} {'arm A (n=' + str(len(a)) + ')':>24} {'arm B (n=' + str(len(b)) + ')':>24}"]
+    # The counts first (HR2.E.3): with 34 of 40 runs at a hidden score of 1.0, a mean says "equal" where one arm lost
+    # a hidden test or falsely accepted a product.
+    def total(rows: list[dict], key: str) -> str:
+        values = _numbers(rows, key)
+        return f"{sum(values):g} in {len(values)} run(s)" if values else "not recorded"
+
+    out = [f"hidden tests lost: arm A {total(a, 'hidden_tests_failed')}, arm B {total(b, 'hidden_tests_failed')}",
+           f"false acceptances: arm A {total(a, 'false_acceptance')}, arm B {total(b, 'false_acceptance')}",
+           f"defects left open: arm A {total(a, 'defects_left_open')}, arm B {total(b, 'defects_left_open')}",
+           f"{'kpi':<34} {'arm A (n=' + str(len(a)) + ')':>24} {'arm B (n=' + str(len(b)) + ')':>24}"]
     for key in sorted({k for r in [*a, *b] for k in r}):
         x, y = _numbers(a, key), _numbers(b, key)
         if len(x) < minimum or len(y) < minimum:
@@ -163,6 +175,18 @@ def with_the_scores(row: dict, bench: Path = Path("data/bench")) -> dict:
     try:
         scored = json.loads((bench / f"{run}.json").read_text())
         row["hidden_score"] = scored.get("score")
+        if scored.get("benchmark"):
+            # The family the run was scored against. The brief last started is the other port's run
+            # whenever two runs are live, and filed a run under the wrong family.
+            row["benchmark"] = scored["benchmark"]
+        # Counts the hidden score hides at its ceiling (HR2.E.3): two runs an arm scoring 1.0 and 0.9 read "0.95";
+        # "one hidden test lost" is what the arm comparison needs.
+        if isinstance(scored.get("total"), int) and isinstance(scored.get("passed"), int):
+            row["hidden_tests_failed"] = scored["total"] - scored["passed"]
+        if "false_acceptance" in scored:
+            row["false_acceptance"] = 1 if scored.get("false_acceptance") else 0
+        if scored.get("handoff_score") is not None:
+            row["handoff_score"] = scored["handoff_score"]
         if scored.get("quality_total"):
             row["quality_score"] = round(scored["quality_passed"] / scored["quality_total"], 3)
     except (OSError, ValueError, TypeError, ZeroDivisionError):
@@ -177,7 +201,7 @@ def with_the_scores(row: dict, bench: Path = Path("data/bench")) -> dict:
 
 def main(path: str, ledger: str = "data/kpi/ledger.csv", benchmark: str = "") -> int:
     row = with_the_scores(json.loads(Path(path).read_text()))
-    if benchmark:
+    if benchmark and not row.get("benchmark"):
         row["benchmark"] = benchmark
     earlier = append(Path(ledger), row)
     flagged = regressions(earlier, row)
@@ -192,6 +216,14 @@ if __name__ == "__main__" and len(sys.argv) > 1:
     if sys.argv[1] == "compare" and len(sys.argv) == 4:
         # python kpi_ledger.py compare data/kpi/<A>.json data/kpi/<B>.json
         print("\n".join(compare(*(json.loads(Path(f).read_text()) for f in sys.argv[2:4]))))
+        raise SystemExit(0)
+    if sys.argv[1] == "switch-arms" and len(sys.argv) >= 5:
+        # python kpi_ledger.py switch-arms data/kpi/ledger.csv <commit> <SWITCH> [benchmark]: on (A) against off (B)
+        with open(sys.argv[2], newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        kind = sys.argv[5] if len(sys.argv) > 5 else ""
+        print("\n".join(compare_arms(the_arm(rows, sys.argv[3], kind, sys.argv[4], True),
+                                     the_arm(rows, sys.argv[3], kind, sys.argv[4], False))))
         raise SystemExit(0)
     if sys.argv[1] == "arms" and len(sys.argv) >= 5:
         # python kpi_ledger.py arms data/kpi/ledger.csv <commit-a> <commit-b> [benchmark]

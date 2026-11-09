@@ -75,6 +75,7 @@ CMD ["sh", "-c", "exec gunicorn {{package}}.wsgi:app --bind \\"$HOST:$PORT\\""]
 """ % {"python": _python.PYTHON_VERSION}
 
 PACK = StackPack(
+    known_errors=_python.PYTHON_KNOWN_ERRORS,
     name="python-flask-api",
     title="HTTP service in Python on Flask",
     kind="http_api",
@@ -104,7 +105,7 @@ PACK = StackPack(
     wired_by_imports=True,
     unit_test_names=_python.UNIT_TEST_NAMES,
     test_helpers=_python.TEST_HELPERS,
-    kept_files=("pytest.ini", "acceptance/conftest.py"),
+    kept_files=("pytest.ini", "acceptance/conftest.py", "start.sh"),
     kept_scripts={},
     smoke_files={
         "tests/test_scaffold_smoke.py": SMOKE_UNIT,

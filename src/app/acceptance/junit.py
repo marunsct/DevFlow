@@ -60,8 +60,14 @@ class TestResult:
 
     @property
     def tags(self) -> tuple[str, ...]:
-        """The criterion and change-request ids this test names, in order."""
-        return tags_in(f"{self.suite} {self.name}")
+        """The criterion and change-request ids this test names, in order; its suite's only when its name has none.
+
+        Playwright's `classname` is the spec file, so a file named for one criterion tagged every test in it: a test of
+        AC-5 failing in `ac-3.spec.js` charged AC-3, the round raised it, dispatch found it passing and closed it, and
+        the next round raised it again - the loop `unstable.py` describes, on a right product (deep review, acceptance
+        A1). The test's own name carries its `describe` titles too, so nothing it names is lost.
+        """
+        return tags_in(self.name) or tags_in(f"{self.within} {self.suite}")
 
 
 @dataclass
@@ -84,11 +90,31 @@ class Report:
         return sum(1 for test in self.tests if test.outcome == "skipped")
 
 
+#: pytest's own shortening of a long message attribute: its first lines, then this, the whole failure in the body.
+_SHORTENED = re.compile(r"\s*\[\+\d+ more lines?; full report in element text\]\s*$")
+#: Of a body past the limit, the share kept from its end - where a traceback names what was raised.
+_FROM_THE_END = 2 / 3
+
+
 def _text_of(element: ET.Element) -> str:
-    """A failure's message attribute and body, joined and trimmed."""
-    parts = [element.get("message") or "", element.text or ""]
-    text = "\n".join(part.strip() for part in parts if part and part.strip())
-    return text[:MAX_MESSAGE_CHARS]
+    """A failure's message attribute and body, joined and trimmed; past the limit its end is what is kept.
+
+    Measured on a run whose product stopped starting: the attribute was pytest's shortened head - the traceback's
+    first frames and "[+35 more lines; ...]" - and the body was cut from its start, so eleven fixers in a row saw
+    neither the exception the service raised nor its last lines, and each fix was reverted for the same unseen cause.
+    """
+    message = _SHORTENED.sub("", element.get("message") or "").strip()
+    body = (element.text or "").strip()
+    # pytest's body repeats the message's lines: kept once, the limit goes to the traceback.
+    # (An attribute's line breaks are read as spaces, so the two are compared word by word.)
+    if message and body and " ".join(message.split()) in " ".join(body.split()):
+        message = ""
+    text = "\n".join(part for part in (message, body) if part)
+    if len(text) <= MAX_MESSAGE_CHARS:
+        return text
+    tail = int(MAX_MESSAGE_CHARS * _FROM_THE_END)
+    head = MAX_MESSAGE_CHARS - tail - 5
+    return text[:head].rstrip() + "\n...\n" + text[-tail:].lstrip()
 
 
 def parse(text: str) -> Report:

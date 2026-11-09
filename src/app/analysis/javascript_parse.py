@@ -43,6 +43,45 @@ logger = logging.getLogger(__name__)
 #: Extensions Node parses as JavaScript.
 PARSEABLE = (".js", ".cjs", ".mjs")
 
+#: TypeScript Node itself loads, by stripping its types, in a pack that runs it that way. The compiler's parser
+#: passes what only Node's early errors catch: measured on a small-model run, a rewrite declared `const body` twice
+#: in one handler, the parser said nothing, and the service did not start - two fixes reverted for it in a row.
+#: `node --check` on a `.ts` module does not parse its function bodies, so the types are removed the way Node removes
+#: them (`module.stripTypeScriptTypes`, which keeps every line where it was) and the JavaScript is checked instead.
+NODE_RUNS_AS_IT_IS = (".ts", ".mts", ".cts")
+_AS_JAVASCRIPT = {".ts": ".js", ".mts": ".mjs", ".cts": ".cjs"}
+_STRIP_FAILED = "STRIP FAILED:"
+_STRIP = (
+    "const m = require('node:module'); let s = ''; process.stdin.setEncoding('utf8');"
+    "process.stdin.on('data', (d) => { s += d; }).on('end', () => {"
+    " if (typeof m.stripTypeScriptTypes !== 'function') process.exit(3);"
+    " try { process.stdout.write(m.stripTypeScriptTypes(s)); }"
+    " catch (e) { process.stdout.write('" + _STRIP_FAILED + "' + e.message); } });"
+)
+
+
+def _without_its_types(node: str, content: str) -> str | None:
+    """The JavaScript Node runs for this TypeScript, `_STRIP_FAILED` and why, or None when it cannot say."""
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [node, "-e", _STRIP], input=content, capture_output=True, text=True, timeout=TIMEOUT_SECONDS,
+        )
+    except Exception:  # noqa: BLE001 - a check that cannot run says nothing
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
+def _node_runs_it_as_it_is(path: Path) -> bool:
+    """Whether the scaffolded pack above `path` has Node run its TypeScript without a build. Never raises."""
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack_above(path)
+        return found is not None and getattr(found[0], "relative_import_extension", "") == ".ts"
+    except Exception:  # noqa: BLE001 - not known means not checked
+        return False
+
+
 #: A parse that takes longer than this is not a parse. Node reports a syntax
 #: error in milliseconds; a hang means something else is wrong, and a write
 #: must not wait on it.
@@ -51,7 +90,7 @@ TIMEOUT_SECONDS = 10
 #: `/path/to/file.mjs:83` then the offending line, a caret line, and the
 #: message. The parts worth repeating are the line number and the message.
 _LINE = re.compile(r"^[^\n]*?:(\d+)$", re.M)
-_MESSAGE = re.compile(r"^(SyntaxError:.*)$", re.M)
+_MESSAGE = re.compile(r"^(SyntaxError(?: \[\w+\])?:.*)$", re.M)
 
 
 def _node() -> str | None:
@@ -133,9 +172,20 @@ def parse_error(path: Path, content: str) -> str | None:
         # compiled them, so the compiler's parser is the one to ask.
         from app.analysis import typescript_parse
 
-        if suffix in typescript_parse.PARSEABLE:
-            return typescript_parse.parse_error(path, content)
-        return None
+        if suffix not in typescript_parse.PARSEABLE:
+            return None
+        found = typescript_parse.parse_error(path, content)
+        if found or suffix not in NODE_RUNS_AS_IT_IS or not _node_runs_it_as_it_is(path):
+            return found
+        node = _node()
+        stripped = _without_its_types(node, content) if node else None
+        if stripped is None:
+            return None
+        if stripped.startswith(_STRIP_FAILED):
+            return (f"Node cannot load this file: {stripped[len(_STRIP_FAILED):].strip()}. Node runs this TypeScript "
+                    "by removing its types, so only syntax that is types and nothing else can be written.")
+        # Checked as the JavaScript Node will run, beside the real file so its `package.json` decides the module goal.
+        path, content, suffix = path.with_suffix(_AS_JAVASCRIPT[suffix]), stripped, _AS_JAVASCRIPT[suffix]
     node = _node()
     if node is None:
         return None

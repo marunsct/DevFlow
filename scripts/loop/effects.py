@@ -9,6 +9,7 @@ change the run has not given a chance to act yet.
 """
 from __future__ import annotations
 
+import collections
 import glob
 import json
 import re
@@ -42,11 +43,25 @@ def _text(value) -> str:
     return value if isinstance(value, str) else json.dumps(value, default=str)
 
 
+def _lost(record: dict, usage: dict) -> bool:
+    """A reply cut off at the cap with nothing in it - `run_kpis`' rule; by size alone only when its end is not recorded.
+
+    By size alone a long reply that answered was lost: one architect's
+    specification came back whole, as its tool call, at 33,613 tokens.
+    """
+    finish = record.get("finish_reason")
+    if finish:
+        answered = bool(str(record.get("text") or "").strip()) or record.get("tool_calls") not in (None, "", "[]", [])
+        return finish == "length" and not answered
+    return int(usage.get("output_tokens") or 0) >= 32_000
+
+
 def effects(records: list[dict], decisions: str = "") -> list[str]:
     """The report's lines for these transcript records and this decision log."""
     counts: Counter = Counter()
     lost = lost_minutes = 0.0
     defects: Counter = Counter()
+    salvaged: Counter = Counter()
     for record in records:
         if not isinstance(record, dict):
             continue
@@ -63,7 +78,11 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
                     counts[label] += 1
         elif kind == "model_response":
             usage = record.get("usage") if isinstance(record.get("usage"), dict) else {}
-            if int(usage.get("output_tokens") or 0) >= 32_000:
+            if record.get("salvaged"):
+                # RS.1: its usage counts the cut-off reply too, so it is past
+                # the cap, but it was answered (`app.models.reply_salvage`).
+                salvaged[str(record["salvaged"])] += 1
+            elif _lost(record, usage):
                 lost += 1
         elif kind == "defect":
             defects[str(record.get("event") or "")] += 1
@@ -77,9 +96,75 @@ def effects(records: list[dict], decisions: str = "") -> list[str]:
     lines = [f"  {counts[label]:>4}  {label}" if counts[label] else f"     -  {label}: not reached"
              for label, _, _ in SIGNALS]
     lines.append(f"  {int(lost):>4}  replies lost to the output cap (the cost the reasoning work targets)")
+    lines.append(f"  {salvaged['reasoning']:>4}  RS.1 replies cut off while reasoning, answered from their reasoning")
+    lines.append(f"  {salvaged['continuation']:>4}  RS.1 replies cut off part way through their text, continued")
     if defects:
         lines.append("  defects: " + ", ".join(f"{event} {n}" for event, n in sorted(defects.items())))
+    # Beside what fired: a switch that was on, had its chance and did nothing (`CHANCES`).
+    from app.observability.switch_firing import chance_lines
+
+    lines.extend(chance_lines(records, decisions))
     return lines
+
+
+def order_probe_line(probed: dict) -> str:
+    """What the order probe recorded (`ORDER_PROBE`), to read beside the unstable disputes the signals above count."""
+    return (f"  {len(probed.get('unstable') or []):>4}  tests failing only when their file runs alone "
+            f"({probed.get('files_run', 0)} files probed, {probed.get('files_without_a_report', 0)} without a report)")
+
+
+def draft_lines(records: list[dict]) -> list[str]:
+    """How the run's drafted files ended (HR2.P.5): first-pass and content-refusal acceptances, repairs kept, left to the loop."""
+    drafts = [r for r in records if r.get("kind") == "draft"]
+    if not drafts:
+        return []
+    files = {str(r.get("path")) for r in drafts}
+    first = sum(1 for r in drafts if r.get("attempt") == "first" and r.get("outcome") == "accepted")
+    refusal = sum(1 for r in drafts if r.get("attempt") == "content-refusal" and r.get("outcome") == "accepted")
+    repairs = [r for r in drafts if str(r.get("attempt", "")).startswith("repair-")]
+    kept = sum(1 for r in repairs if r.get("outcome") == "accepted")
+    left = [str(r.get("outcome", ""))[len("left to the loop: "):] for r in drafts
+            if str(r.get("outcome", "")).startswith("left to the loop")]
+    why = collections.Counter(reason.split(":")[0][:60] for reason in left)
+    return [f"drafts: {len(files)} file(s), {first} accepted at the first pass, {refusal} after a content refusal; "
+            f"{len(repairs)} repair pass(es), {kept} kept; {len(left)} left to the loop"
+            + (" (" + ", ".join(f"{n} {reason}" for reason, n in why.most_common(3)) + ")" if left else "")]
+
+
+def setup_lines(records: list[dict], scope: dict | None = None) -> list[str]:
+    """Each setup proof (replayed or written, level reached, set aside) and what a setup stage wrote beyond its files (HR2.SS.4)."""
+    out = []
+    for r in (r for r in records if r.get("kind") == "setup"):
+        out.append(f"setup {r.get('source')}: {'proven' if r.get('ok') in (True, 'True') else 'not proven'} "
+                   f"(reached {r.get('level') or 'none'})" + (f", set aside {r['set_aside']}" if r.get("set_aside") else "")
+                   + ("" if r.get("ok") in (True, "True") else f": {str(r.get('problem') or '')[:160]}"))
+    asked = set((scope or {}).get("files") or [])
+    project = str((scope or {}).get("project") or "")
+    if asked:
+        beyond: dict[str, int] = {}
+        for r in records:
+            if not str(r.get("stage", "")).startswith("stack_setup") or r.get("kind") != "tool_call" \
+                    or r.get("tool") != "write_artifact":
+                continue
+            args = r.get("args") or {}
+            path = str(args.get("relative_path") or "")
+            inside = path[len(project) + 1:] if project and path.startswith(project + "/") else path
+            if path and path not in asked and inside not in asked:
+                beyond[path] = len(str(args.get("content") or "").splitlines())
+        out.append(f"setup scope: {len(asked)} framework file(s) asked; {len(beyond)} other file(s) written "
+                   f"({sum(beyond.values())} lines; the declaration, smoke tests and manifests are among them)" + (": " + ", ".join(sorted(beyond)[:6]) if beyond else ""))
+    return out
+
+
+def contract_probe_lines(stored: dict) -> list[str]:
+    """One line per probe of the locked contract: lines considered, asked, probed, and the skip reasons counted (HR2.Q.9)."""
+    out = []
+    for kind, record in sorted(stored.items()):
+        reasons = collections.Counter(str(s.get("reason", "")) for s in record.get("skipped") or [])
+        why = "; ".join(f"{n} {reason}" for reason, n in reasons.most_common(4))
+        out.append(f"contract probe {kind}: {record.get('considered', 0)} lines, {record.get('asked', 0)} asked, "
+                   f"{record.get('probed', 0)} probed" + (f"; skipped: {why}" if why else ""))
+    return out
 
 
 def main(run: str) -> None:
@@ -98,6 +183,20 @@ def main(run: str) -> None:
         decisions = Path(log).read_text(encoding="utf-8", errors="replace")
     print(f"effects of the changes in {run} ({len(records)} records)")
     print("\n".join(effects(records, decisions)))
+    for line in draft_lines(records):
+        print(line)
+    scope = None
+    for found in glob.glob(f"/app/data/workspaces/*/workspace-{run}*/.harness/setup-scope.json"):
+        try:
+            scope = json.loads(Path(found).read_text(encoding="utf-8"))
+        except ValueError:
+            pass
+    for line in setup_lines(records, scope):
+        print(line)
+    for probed in glob.glob(f"/app/data/workspaces/*/workspace-{run}*/.harness/order_probe.json"):
+        print(order_probe_line(json.loads(Path(probed).read_text(encoding="utf-8"))))
+    for probed in glob.glob(f"/app/data/workspaces/*/workspace-{run}*/.harness/contract-probe.json"):
+        print("\n".join(contract_probe_lines(json.loads(Path(probed).read_text(encoding="utf-8")))))
 
 
 if __name__ == "__main__":

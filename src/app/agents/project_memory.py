@@ -92,16 +92,24 @@ _FILES: dict[tuple[str, str], tuple[int, int, str]] = {}
 def _ignored(parts: tuple[str, ...]) -> bool:
     from app.tools.repository import IGNORED_DIRECTORIES
 
-    return any(part in IGNORED_DIRECTORIES or part in (".harness", ".agent-home", "test-results") for part in parts)
+    return any(part in IGNORED_DIRECTORIES or part in (".harness", ".agent-home", "test-results")
+               or part.endswith((".egg-info", ".dist-info")) for part in parts)
+
+
+#: Code the harness saved from a command line (`agent_toolkit`): it stays in the transcript, in the call that ran it.
+_A_COMMAND_LINE_S_CODE = re.compile(r"^tmp-inline-[0-9a-f]{8}\.\w+$")
 
 
 def _candidates(root: Path) -> list[str]:
+    from app.analysis.integration_checks import _HARNESS_BOOKKEEPING
+
     found: list[str] = []
     for folder, directories, files in os.walk(root):
         relative_folder = Path(folder).relative_to(root)
         directories[:] = [d for d in directories if not _ignored((*relative_folder.parts, d))]
         for name in files:
-            if name in _SKIPPED_NAMES or name.startswith(".project-") or not (
+            if (name in _SKIPPED_NAMES or name in _HARNESS_BOOKKEEPING or name.startswith(".project-")
+                    or _A_COMMAND_LINE_S_CODE.match(name)) or not (
                 name.endswith(_TEXT_SUFFIXES) or name.endswith(_BUILD_SUFFIXES) or name in _BUILD_NAMES
             ):
                 continue
@@ -227,7 +235,50 @@ MOST_MAP_CHARACTERS = 20_000
 MOST_DEFINITIONS_PER_FILE = 12
 
 
-def map_of(files: dict[str, str]) -> str:
+#: Files named one by one as left out of the memory, at most; the rest are counted.
+MOST_NAMED_LEFT_OUT = 60
+
+
+def _definitions(text: str) -> list[str]:
+    found = []
+    for line in text.splitlines():
+        if _DEFINES.match(line):
+            found.append(" ".join(line.strip().rstrip("{:").split())[:120])
+            if len(found) >= MOST_DEFINITIONS_PER_FILE:
+                break
+    return found
+
+
+def _by_relevance(entries: dict[str, list[str]], focus: str, importance: dict[str, int],
+                  root: str | Path | None = None) -> list[str]:
+    """The files most worth a place first: those `focus` names, their neighbours, those defining its words, the most imported.
+
+    Agentless localises by files, then their definitions; Aider's repository
+    map ranks files by how much the rest of the code refers to them. Both
+    without a parser per language here: the words and the import counts.
+    """
+    words = set(_WORD.findall(focus.lower()))
+    named = {path for path in entries if path in focus or (len(path.rsplit("/", 1)[-1]) > 4 and path.rsplit("/", 1)[-1] in focus)}
+    near: set[str] = set()
+    if root is not None and named:
+        try:
+            from app.analysis.project_graph import build
+
+            graph = build(root)
+            near = {other for path in named for other in (*graph.get(path, {}).get("imports", []),
+                                                          *graph.get(path, {}).get("imported_by", []))} - named
+        except Exception:  # noqa: BLE001 - no graph, no neighbours
+            pass
+
+    def score(path: str) -> tuple[int, int, int, str]:
+        said = sum(1 for d in entries[path] for w in _WORD.findall(d.lower()) if w in words)
+        return (0 if path in named else 1 if path in near else 2, -said, -importance.get(path, 0), path)
+
+    return sorted(entries, key=score)
+
+
+def map_of(files: dict[str, str], focus: str = "", most_characters: int = MOST_MAP_CHARACTERS,
+           importance: dict[str, int] | None = None, root: str | Path | None = None) -> str:
     """For each file, the lines that define something - its functions, classes and types - one file a line.
 
     A large project's files do not all fit; naming the ones left out told a
@@ -235,24 +286,41 @@ def map_of(files: dict[str, str]) -> str:
     lines that define something are most of what a reader needs to know
     which one to open (the idea of Aider's repository map, without a parser
     per language).
+
+    While every file fits, the map is in path order, as it always was. Past
+    `most_characters` it was cut there too - alphabetically, so on a large
+    project the map held `api/` and `app/` and never `src/` - and said
+    nothing of the rest. Now the files most worth a place come first
+    (`_by_relevance`: by `focus`, else by `importance`, how many files import
+    each; with `root`, the code graph's neighbours of the files `focus`
+    names next), and a last line counts the files left out.
     """
-    lines: list[str] = []
+    entries = {path: found for path in sorted(files) if (found := _definitions(files[path]))}
+    lines = [f"- {path}: " + " | ".join(found) for path, found in entries.items()]
+    if sum(len(line) for line in lines) <= most_characters:
+        return "\n".join(lines)
+    chosen: list[str] = []
     used = 0
-    for path in sorted(files):
-        found = []
-        for line in files[path].splitlines():
-            if _DEFINES.match(line):
-                found.append(" ".join(line.strip().rstrip("{:").split())[:120])
-                if len(found) >= MOST_DEFINITIONS_PER_FILE:
-                    break
-        if not found:
+    for path in _by_relevance(entries, focus, importance or {}, root):
+        entry = f"- {path}: " + " | ".join(entries[path])
+        if used + len(entry) > most_characters:
             continue
-        entry = f"- {path}: " + " | ".join(found)
-        if used + len(entry) > MOST_MAP_CHARACTERS:
-            break
-        lines.append(entry)
+        chosen.append(entry)
         used += len(entry)
-    return "\n".join(lines)
+    left = len(entries) - len(chosen)
+    note = (f"\n({left:,} more files define things not shown here; search for a name or list a folder to find them.)"
+            if left else "")
+    return "\n".join(chosen) + note
+
+
+def importance_of(repo_root: str | Path) -> dict[str, int]:
+    """How many of the project's files import each one, from the harness's code graph; {} when there is none."""
+    try:
+        from app.analysis.project_graph import build
+
+        return {path: len(node.get("imported_by") or []) for path, node in build(repo_root).items()}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def where_things_stand(repo_root: str | Path, files: dict[str, str]) -> str:
@@ -286,8 +354,88 @@ def where_things_stand(repo_root: str | Path, files: dict[str, str]) -> str:
     return line + "\n"
 
 
-def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tuple[str, dict[str, str]]:
-    """The memory as text within `budget_characters`, and the files it holds by path."""
+#: A fixer's share of the specification: its outline and the sections its defect points at.
+FIXER_SPECIFICATION_CHARACTERS = 8_000
+#: The documents a fixer is given; the plans that led to the code are named, not held.
+FIXER_DOCUMENTS = ("docs/technical_specification.md", "docs/acceptance_criteria.md")
+
+
+#: How a request quotes sections of the specification (`technical_lead._the_contracts`), and each quoted section.
+_QUOTED_SPECIFICATION = re.compile(r"^--- From the approved technical specification\b[^\n]*---\n(.*?)(?=^--- |\Z)", re.M | re.S)
+_QUOTED_HEADING = re.compile(r"^([A-Z][\w ()/-]*):$", re.M)
+
+
+def _without_the_quoted_sections(document: str, request: str) -> tuple[str, list[str]]:
+    """`document` less the `## ` sections `request` quotes under the same heading, and their names.
+
+    Measured on three runs: the technical lead's request quoted the specification's contract sections (~31k
+    characters) while its memory held the whole specification again.
+    """
+    found = _QUOTED_SPECIFICATION.search(request or "")
+    if not found:
+        return document, []
+    quoted = {" ".join(h.lower().split()) for h in _QUOTED_HEADING.findall(found.group(1))}
+    kept: list[str] = []
+    dropped: list[str] = []
+    skipping = False
+    for line in document.splitlines(keepends=True):
+        if line.startswith("## "):
+            name = line[3:].strip()
+            skipping = " ".join(name.lower().split()) in quoted
+            if skipping:
+                dropped.append(name)
+        if not skipping:
+            kept.append(line)
+    return "".join(kept), dropped
+
+
+#: The stages that plan the work and write no file: the harness's kept files are named to them, not held.
+_PLANNING_STAGES = ("technical_lead", "scrum_master")
+
+
+def _kept_out_for(stage: str, repo_root: str | Path) -> tuple[str, ...]:
+    """Files a stage's memory leaves out: the harness's own for a planning stage; the specification for a layered setup.
+
+    A setup on a runner layer writes a few framework files; the specification is the product's (HR2.SS.2: its memory
+    held the whole document, and one layered stage wrote the product from it).
+    """
+    if planning_stage(stage):
+        return kept_by_the_harness(repo_root)
+    if str(stage or "").startswith("stack_setup"):
+        from app.tools.repository import SETUP_SCOPE_FILE
+
+        if (Path(repo_root) / SETUP_SCOPE_FILE).is_file():
+            return ("docs/technical_specification.md",)
+    return ()
+
+
+def planning_stage(stage: str) -> bool:
+    return str(stage or "").startswith(_PLANNING_STAGES)
+
+
+def kept_by_the_harness(repo_root: str | Path) -> tuple[str, ...]:
+    """The workspace paths of the files the harness writes and keeps for this run's pack; () when none. Never raises."""
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(repo_root)
+        if found is None:
+            return ()
+        project = str((found[1] or {}).get("project") or "")
+        return tuple(f"{project}/{name}" if project else name for name in found[0].kept_files)
+    except Exception:  # noqa: BLE001 - held as before
+        return ()
+
+
+def render(repo_root: str | Path, budget_characters: int, focus: str = "",
+           for_a_fixer: bool = False, kept_out: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
+    """The memory as text within `budget_characters`, and the files it holds by path.
+
+    `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
+    sections the defect points at; the other plans named only. Measured over 64 fix attempts: every fixer opened on
+    about 164k characters of plans with its failure about 2k of it, and those left open read twice as many files and
+    reasoned nearly three times as long as those that fixed their defect.
+    """
     files = current(repo_root)
     if not files or budget_characters <= 0:
         return "", {}
@@ -298,6 +446,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
     canonical = canonical_order()
     after_the_rest: list[str] = []
     left_out: list[str] = []
+    kept_named: list[str] = []
     used = 0
     try:
         from app.stacks.scaffold import folders_nothing_serves
@@ -312,10 +461,31 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
     except Exception:  # noqa: BLE001 - every file is due
         later = {}
     held_back: list[str] = []
-    for path in _ranked(files, focus, unserved):
+    from app.agents.stable_prefix import document_limit
+
+    shorter_documents = document_limit(files)
+    ranked = _ranked(files, focus, unserved)
+    if for_a_fixer:
+        ranked = [p for p in ranked if not p.startswith("docs/")] + [p for p in ranked if p.startswith("docs/")]
+    for path in ranked:
         text = files[path]
+        if for_a_fixer and path.startswith("docs/"):
+            if path not in FIXER_DOCUMENTS:
+                left_out.append(path)
+                continue
+            if path.endswith("technical_specification.md"):
+                digest = digest_of(text, focus, min(FIXER_SPECIFICATION_CHARACTERS, max(0, budget_characters - used)))
+                if digest:
+                    block = f"=== {path} (outline and the sections this defect points at; read others by line) ===\n{digest}\n"
+                    parts.append(block)
+                    used += len(block)
+                continue
         if _RECORDS.match(path):
             left_out.append(path)
+            continue
+        if path in kept_out:
+            # Measured on one run: the technical lead's memory held the harness's 44k `test-setup.mjs`.
+            kept_named.append(path)
             continue
         if path in later:
             # A later sprint's tests, handed over whole, read as this sprint's
@@ -323,11 +493,17 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
             # back and the memory now stands in for it.
             held_back.append(f"{path} ({', '.join(later[path])})")
             continue
+        if path.endswith("technical_specification.md"):
+            text, quoted = _without_the_quoted_sections(text, focus)
+            if quoted:
+                text += ("\n(Not repeated here because this request quotes them in full: " + ", ".join(quoted) + ".)\n")
         block = f"=== {path} ===\n{text.rstrip()}\n"
-        if len(text) > LARGEST_FILE_CHARACTERS and path.endswith(".md"):
+        # A small product's documents are held as a digest sooner (`STABLE_STAGE_PREFIX`, off until measured).
+        largest = (shorter_documents or LARGEST_FILE_CHARACTERS) if path.startswith("docs/") else LARGEST_FILE_CHARACTERS
+        if len(text) > largest and path.endswith(".md"):
             # Too large to hold whole: its outline and the sections this
             # stage's request points at, so it is not read window by window.
-            digest = digest_of(text, focus, min(LARGEST_FILE_CHARACTERS, budget_characters - used))
+            digest = digest_of(text, focus, min(largest, budget_characters - used))
             if digest:
                 block = f"=== {path} (outline and the sections this request points at; read others by line) ===\n{digest}\n"
                 # Chosen by the request's words, so after what every request shares (plan PX.3).
@@ -348,11 +524,25 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
         "by the harness. Use them as they are here; read a file only if it is named at the end as not "
         "included.]\n\n"
     ) + where_things_stand(repo_root, files)
-    tail = ("\nNot included here (read when needed): " + ", ".join(left_out) + "\n") if left_out else ""
+    # Named one by one only up to `MOST_NAMED_LEFT_OUT`, in the memory's own
+    # order: a large project's left-out list was every path it has, larger
+    # than the memory itself and outside its budget.
+    named = left_out[:MOST_NAMED_LEFT_OUT]
+    more = len(left_out) - len(named)
+    tail = ("\nNot included here (read when needed): " + ", ".join(named)
+            + (f", and {more:,} more (list a folder or search to find them)" if more else "") + "\n") if left_out else ""
+    if kept_named:
+        tail += ("\nNot included because the harness writes and keeps them, and no work order changes them: "
+                 + ", ".join(kept_named) + "\n")
     if held_back:
         tail += ("\nNot included because every test in them is for a criterion a later sprint builds: "
                  + ", ".join(held_back) + "\n")
-    shapes = map_of({path: files[path] for path in left_out if not path.startswith("docs/")})
+    sources = {path: files[path] for path in left_out if not path.startswith("docs/")}
+    # Ranked by the request only when the memory's order may follow it
+    # (`CANONICAL_MEMORY` off); otherwise by what does not change between
+    # requests, so the memory stays the same, and cached, from call to call.
+    shapes = map_of(sources, focus="" if canonical else focus,
+                    importance=importance_of(repo_root) if sum(map(len, sources.values())) > MOST_MAP_CHARACTERS else None)
     if shapes:
         tail += "\nWhat those files define (read one when you need its body):\n" + shapes + "\n"
     return head + "\n".join(parts) + tail, held
@@ -434,6 +624,43 @@ def _the_read_tool_is_withheld() -> bool:
         return False
 
 
+#: A unified diff's hunk header: `@@ -57,2 +57,4 @@`.
+_A_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+#: The hunks past the cut named by where they are, and the longest first line quoted for each.
+MOST_HIDDEN_HUNKS_NAMED = 8
+HIDDEN_LINE_CHARS = 90
+
+
+def _where_the_rest_changed(rest: list[str]) -> str:
+    """`: at lines ...` for the hunks of a diff past its cut, each with its first changed line; the rest are in the file.
+
+    Measured on one run: a repair made three edits, and the note showed only the first two before "... 33 more changed
+    lines". The model read that as the whole of what it had done ("the update confirms only AC-8 and AC-9 were
+    applied"), disbelieved the edit tool's "already applied" and sent the third edit five times more until its tools
+    were withheld. A cut note names where the rest is and says those changes are in the file.
+    """
+    hunks: list[tuple[int, int, str]] = []
+    for line in rest:
+        header = _A_HUNK.match(line)
+        if header:
+            start = int(header.group(1))
+            hunks.append((start, start + max(int(header.group(2) or 1), 1) - 1, ""))
+        elif hunks and not hunks[-1][2] and line[:1] in "+-" and line[1:].strip():
+            hunks[-1] = (*hunks[-1][:2], line[:1] + " " + line[1:].strip()[:HIDDEN_LINE_CHARS])
+    if not hunks:
+        return "; they are in the file now, and `grep` finds any text in it"
+    named = [
+        (f"line {a}" if a == b else f"lines {a}-{b}") + (f" ({first})" if first else "")
+        for a, b, first in hunks[:MOST_HIDDEN_HUNKS_NAMED]
+    ]
+    if len(hunks) > MOST_HIDDEN_HUNKS_NAMED:
+        named.append(f"{len(hunks) - MOST_HIDDEN_HUNKS_NAMED} more place(s)")
+    return (
+        ", at " + "; ".join(named) + " of the file now. Those changes are in the file too: this shows only the "
+        "first of them, not all that was done. `grep` finds any text in it"
+    )
+
+
 def changes_since(snapshot: dict[str, str], now: dict[str, str]) -> str:
     """A note naming what changed since the memory was taken, for the end of a call; "" if nothing did.
 
@@ -460,7 +687,7 @@ def changes_since(snapshot: dict[str, str], now: dict[str, str]) -> str:
             lines.append(f"{path} ({len(now[path].splitlines())} lines now):")
             lines.extend(f"  {line}" for line in body)
             if more > 0:
-                lines.append(f"  ... {more} more changed lines; `grep` finds any text in the file")
+                lines.append(f"  ... {more} more changed lines, not shown" + _where_the_rest_changed(shown[len(body):]))
         if len(changed) > MOST_CHANGED_FILES_SHOWN:
             lines.append("Also changed: " + ", ".join(changed[MOST_CHANGED_FILES_SHOWN:40]))
     elif changed:
@@ -484,6 +711,34 @@ def _a_narrow_window(args: dict, text: str) -> bool:
     except (TypeError, ValueError):
         return False
     return 0 < wanted <= MOST_WINDOW_LINES
+
+
+#: The longest file a first re-read is answered with whole; a longer one gets the pointer at once.
+MOST_LINES_A_FIRST_REREAD_GETS = 400
+
+
+class _FirstRereadAnswered:
+    """`FIRST_REREAD_ANSWERED` as the switch registry reads one: off in code, the compose file turns it on."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("A stage's first read of a file it already holds in its opening project memory gets the file's "
+                   "numbered lines back; only a second read gets the pointer to the memory. Measured on one run, 28 "
+                   "of 197 model calls were such reads answered with a pointer that brought nothing back.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("FIRST_REREAD_ANSWERED", _FirstRereadAnswered.ON_BY_DEFAULT)
+
+
+first_reread_switch = _FirstRereadAnswered()
+
+
+def _numbered(content: str) -> str:
+    """`content` with each line's number, as a read of the file shows it."""
+    return "\n".join(f"{number:>6}\t{line}" for number, line in enumerate(content.splitlines(), start=1))
 
 
 def build_project_memory_middleware(repo_root: str) -> Any:
@@ -525,7 +780,12 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                                 for m in messages), "")
                 visit = self._visit()
                 if visit.get("snapshot") is None:
-                    visit["snapshot"], visit["held"] = render(repo_root, budget_for(getattr(request, "model", None)), opening)
+                    from app.observability.log_context import _from_the_graph
+
+                    stage = str(_from_the_graph()[1] or "")
+                    visit["snapshot"], visit["held"] = render(repo_root, budget_for(getattr(request, "model", None)), opening,
+                                                              for_a_fixer=stage.startswith("defect_fix"),
+                                                              kept_out=_kept_out_for(stage, repo_root))
                     visit["files"] = dict(current(repo_root))
                 memory = visit["snapshot"]
                 held = visit.get("held") or {}
@@ -573,6 +833,17 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     remember(path, held)
                     from langchain_core.messages import ToolMessage
 
+                    answered = visit.setdefault("first_rereads_answered", [])
+                    if (first_reread_switch.enabled() and path not in answered
+                            and held.count("\n") + 1 <= MOST_LINES_A_FIRST_REREAD_GETS):
+                        # The first time, the lines themselves: a pointer is a turn that brings nothing back.
+                        answered.append(path)
+                        return ToolMessage(
+                            content=f"{_numbered(held)}\n\n[`{path}` is also held in the project memory at the "
+                                    "start of this conversation; a second read of it is answered from there.]",
+                            tool_call_id=call.get("id") or "",
+                            name="read_file",
+                        )
                     return ToolMessage(
                         content=f"`{path}` {HELD_POINTER}, whole and as "
                                 "it is now; it has not changed since. Use it, and any lines of it, from there. "

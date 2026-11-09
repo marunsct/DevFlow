@@ -5,6 +5,9 @@
 #   scripts/loop/loop.sh status [run]        state of the run (default: current) + anything else running
 #   scripts/loop/loop.sh start [brief]       create and start a run (default tests/brief_low.md)
 #   scripts/loop/loop.sh cancel [run-id]     cancel a run (default: the current one); needs LOOP_USER/LOOP_PASSWORD
+#   scripts/loop/loop.sh measuring             one row per switch in docs/measuring.md, from the ledger and scores
+#   scripts/loop/loop.sh pin on|off [run-id] keep a run on its model / let it follow the settings (PIN_URL, PIN_MODEL_NAME pin it to an endpoint); PIN_MODEL=1 on start/bench pins at the start; RUN_NAME="..." on start/bench names the run
+#                                            SWITCHES_OFF="A B" / SWITCHES_ON="C" on start/bench set this run's own switches (an arm on one SHA, HR2.E.1)
 #   scripts/loop/loop.sh wait [minutes] [run] block until the run (default: current) ends or N minutes pass (default 18),
 #                                            then print status, key log lines and the audit
 #   scripts/loop/loop.sh audit [run-id]      failure / redundancy audit of a run (audit_live.py)
@@ -13,8 +16,13 @@
 #   scripts/loop/loop.sh deploy [commit]     rebuild app and worker from a commit (default HEAD), at a stage boundary
 #   scripts/loop/loop.sh deploy-app          rebuild and restart the app container only (API, UI); the worker and live runs untouched
 #   scripts/loop/loop.sh effects [run]          what each fix and switch did in a run (fired, saved, cost)
+#   scripts/loop/loop.sh effects gate [N]       each switch on: runs on, runs fired, KPI movement against its off arm, candidates to park after N runs (default 3); report only
 #   scripts/loop/loop.sh lessons [distil <run>] the lessons awaiting the owner, or propose a run's (LESSON_DISTILLER)
 #   scripts/loop/loop.sh patterns [since]     across every run: where replies run out, fix outcome by bundle size, failures that recur
+#   scripts/loop/loop.sh ship-live           deploy into the live runs in one checked step: login, pause all, deploy, resume, churn check (ship_live.sh)
+#   scripts/loop/loop.sh impact [N]          whether the runs after each of the last N changes got worse, each against its own family (impact.py)
+#   scripts/loop/loop.sh suite-checks       per suite check: findings settled or raised again (harness review Q1)
+#   scripts/loop/loop.sh stack-misses       runs that went to the custom setup: fixed misses and open ones (SF.0c)
 #   scripts/loop/loop.sh timing [run-id..]   where the wall-clock time went: model vs tools, phases, reasoning share (run_timing.py)
 #   scripts/loop/loop.sh kpi [run-id]        the run's KPIs as JSON (data/kpi/<run>.json), a row of data/kpi/ledger.csv,
 #                                            and any KPI past 1.5x its 5-run mean (kpi.py, kpi_ledger.py); score runs it too
@@ -38,12 +46,14 @@
 #                                            what a stage was told, the calls it made, and its answer (asked.py)
 #   scripts/loop/loop.sh failures [run-id] [--full]
 #                                            each failing acceptance test: criterion, error, the page (failures.py)
+#   scripts/loop/loop.sh deep-audit [run...] every invariant a run must hold, worst first (deep_audit.py); no ids: the last day
 #   scripts/loop/loop.sh ready               is the model the settings name served where they name it?
 #                                            last line ALL READY, or start nothing (model_ready.py)
 #   scripts/loop/loop.sh resumed             after a deploy while a run was live: wait up to 10 minutes
 #                                            for orphan recovery to resume it (await_resume.sh)
 #   scripts/loop/loop.sh freshness           pins in the stack packs a major version behind their registry
 #                                            (pack_freshness.py, on the host)
+#   scripts/loop/loop.sh diagnose [--again] [--deep]  the served model's tools, reasoning, reply salvage and (--deep) guidance, kept with it
 #   scripts/loop/loop.sh reasoning-probe [run]  does the server shorten replies when asked to think less? prints a plan
 #                                            unless given `run` (uses the model: only when no run waits)
 #   scripts/loop/loop.sh lessons [min-runs]  failed-call shapes recurring across runs, by language: candidates
@@ -71,15 +81,20 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HERE="$ROOT/scripts/loop"
 STATE="$ROOT/data/loop"
 API="${LOOP_API:-http://localhost:8000}"
-DB=(docker exec langchain-db-1 psql -U postgres -d langchain -tAc)
 PY="$ROOT/.venv/bin/python"
 [ -x "$PY" ] || PY=python3
 mkdir -p "$STATE"
 cd "$ROOT"
+# By compose service: a recreate cut short by a restart leaves `<id>_langchain-worker-1` behind.
+WORKER_C=$(docker compose ps -q worker 2>/dev/null | head -1 || true); WORKER_C=${WORKER_C:-langchain-worker-1}
+DB_C=$(docker compose ps -q db 2>/dev/null | head -1 || true); DB_C=${DB_C:-langchain-db-1}
+DB=(docker exec "$DB_C" psql -U postgres -d langchain -tAc)
 
 current() { cat "$STATE/current_run.txt" 2>/dev/null || { echo "no current run: use 'start'" >&2; exit 1; }; }
 in_worker() { local script=$1; shift; docker compose exec -T worker python - "$@" < "$HERE/$script"; }
 jst() { TZ=Asia/Tokyo date "$@"; }
+# The commit both service images were built from (their HARNESS_COMMIT), or "" when they differ or are missing.
+built_from() { local w a; w=$(docker image inspect langchain-worker --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^HARNESS_COMMIT=//p'); a=$(docker image inspect langchain-app --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^HARNESS_COMMIT=//p'); [ -n "$w" ] && [ "$w" = "$a" ] && echo "$w" || true; }
 
 # One group, parsed whole before it runs, that exits inside itself: bash reads a script as it
 # goes, so an edit to this file while a long command runs - a deploy, the suite - would otherwise be
@@ -92,14 +107,21 @@ status)
   "${DB[@]}" "select status, left(coalesce(error,''),300), updated_at from runs where run_id='$run'"
   echo "live runs:"
   "${DB[@]}" "select run_id, status, updated_at from runs where status in ('running','queued','pending')"
+  # The prompt-cache share and where the prefix broke, so a stage that re-prefills its context shows at every check.
+  in_worker cache_status.py "$run" 2>/dev/null || true
   ;;
 
 start)
   brief="${2:-tests/brief_low.md}"
   # Never a run on a model that does not answer: the readiness check is part
   # of starting, so a pipeline around `ready` cannot swallow its verdict.
-  if ! in_worker model_ready.py | grep -q "ALL READY"; then
-    in_worker model_ready.py | grep -v "^READY" >&2 || true
+  # A run given a server or a model is pinned to it, and it is that server that must answer, with its own key.
+  if [ -n "${PIN_URL:-}${PIN_MODEL_NAME:-}" ]; then PIN_MODEL="${PIN_MODEL:-1}"; fi
+  target=()
+  [ -z "${PIN_URL:-}" ] || target+=("pin_url=$PIN_URL")
+  [ -z "${PIN_MODEL_NAME:-}" ] || target+=("pin_model=$PIN_MODEL_NAME")
+  if ! in_worker model_ready.py "${target[@]+"${target[@]}"}" | grep -qx "ALL READY"; then
+    in_worker model_ready.py "${target[@]+"${target[@]}"}" | grep -v "^READY" >&2 || true
     echo "not starting: the models are not all ready" >&2
     exit 1
   fi
@@ -126,8 +148,14 @@ start)
   # A refused start (a frontier model asked for and not answering, a run
   # already started) said "started" before; it names the refusal now, and the
   # run it created is not left behind as the current one.
+  # The run's own switch settings (HR2.E.1): SWITCHES_OFF="A B" SWITCHES_ON="C" make this run one arm of a
+  # measurement on the harness as deployed, with no deploy between the arms.
+  switches=""
+  for name in ${SWITCHES_OFF:-}; do switches="$switches${switches:+, }\"$name\": false"; done
+  for name in ${SWITCHES_ON:-}; do switches="$switches${switches:+, }\"$name\": true"; done
+  [ -z "$switches" ] || switches=", \"switches\": {$switches}"
   answer=$(curl -s -w '\n%{http_code}' -X POST "$API/api/runs/$run/start" -H "Authorization: Bearer $token" \
-       -H "Content-Type: application/json" -d "{\"auto_approve\": true${DELIVERY:+, \"delivery_mode\": \"$DELIVERY\"}${FRONTIER:+, \"use_frontier_model\": $FRONTIER}$source}")
+       -H "Content-Type: application/json" -d "{\"auto_approve\": true${DELIVERY:+, \"delivery_mode\": \"$DELIVERY\"}${FRONTIER:+, \"use_frontier_model\": $FRONTIER}${RUN_NAME:+, \"name\": \"$RUN_NAME\"}${PIN_MODEL:+, \"pin_model\": true}${PIN_MODEL:+${PIN_URL:+, \"pin_base_url\": \"$PIN_URL\"}}${PIN_MODEL:+${PIN_MODEL_NAME:+, \"pin_model_name\": \"$PIN_MODEL_NAME\"}}$switches$source}")
   code=$(echo "$answer" | tail -n 1)
   echo "$answer" | sed '$d'
   if [ "$code" != "202" ]; then
@@ -143,6 +171,13 @@ start)
 bench)
   name="${2:?name a benchmark under benchmarks/}"
   [ -f "benchmarks/$name/brief.md" ] || { echo "no benchmark named $name" >&2; exit 2; }
+  # A held-out family (bench.json "held_out_since") is for Measure runs only (HR2.E.4): a static set is tuned to,
+  # and a learning run's fixes would be written after its hidden failures. MEASURE=1 runs it; the first fix that
+  # cites one of its hidden tests retires it to the learning set (remove the key and write the next held-out brief).
+  held=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1])).get('held_out_since') or '')" "benchmarks/$name/bench.json")
+  if [ -n "$held" ] && [ "${MEASURE:-0}" != 1 ]; then
+    echo "$name is held out since $held: Measure runs only (MEASURE=1 loop.sh bench $name)" >&2; exit 2
+  fi
   # A brownfield bench names its previous product in bench.json's "base"; the run starts from it.
   base=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1])).get('base') or '')" "benchmarks/$name/bench.json")
   if [ -n "$base" ]; then
@@ -154,15 +189,25 @@ bench)
 
 score)
   run="${2:-$(current)}"
+  # The benchmark is the one whose brief this run was started from, by content: the brief last started on the host
+  # belongs to whichever port started last (measured: a web-todo run scored against the full-stack hidden tests).
+  name="${3:-}"
+  if [ -z "$name" ]; then
+    first=$("${DB[@]}" "select document_paths from runs where run_id='$run'" 2>/dev/null \
+      | "$PY" -c 'import json,sys;p=json.loads(sys.stdin.read() or "[]");print(p[0] if len(p)==1 else "")' 2>/dev/null)
+    [ -n "$first" ] && name=$(docker compose exec -T worker cat "$first" 2>/dev/null \
+      | "$PY" "$ROOT/scripts/bench/brief_match.py" --benchmark-of "$ROOT/benchmarks" 2>/dev/null)
+  fi
   brief=$(cat "$STATE/current_brief.txt" 2>/dev/null || true)
-  name="${3:-$(echo "$brief" | sed -n 's#^benchmarks/\([^/]*\)/brief.md$#\1#p')}"
+  name="${name:-$(echo "$brief" | sed -n 's#^benchmarks/\([^/]*\)/brief.md$#\1#p')}"
+  echo "scoring $run against benchmarks/$name"
   [ -n "$name" ] && [ -d "benchmarks/$name/hidden" ] || { echo "say which benchmark: score <run> <name>" >&2; exit 2; }
   ws="/app/data/workspaces/default/workspace-$run"
   project=$(docker compose exec -T worker cat "$ws/.project-directory" 2>/dev/null | tr -d '\r\n')
   [ -n "$project" ] || { echo "$run has no project directory yet" >&2; exit 1; }
   docker compose exec -T -u root worker sh -c "rm -rf /tmp/bench-src/$name && mkdir -p /tmp/bench-src"
-  docker cp "benchmarks/$name" "langchain-worker-1:/tmp/bench-src/$name" >/dev/null
-  docker cp scripts/bench/score.py langchain-worker-1:/tmp/bench-src/score.py >/dev/null
+  docker cp "benchmarks/$name" "$WORKER_C:/tmp/bench-src/$name" >/dev/null
+  docker cp scripts/bench/score.py $WORKER_C:/tmp/bench-src/score.py >/dev/null
   docker compose exec -T -u root worker chown -R appuser:appuser /tmp/bench-src
   status=$("${DB[@]}" "select status from runs where run_id='$run'" | tr -d '[:space:]')
   # What the release knew it did not prove rides the export (Initiative J.4).
@@ -177,11 +222,17 @@ score)
     # Normalised text and a similarity, not a byte comparison (Initiative AN).
     own=$(docker compose exec -T worker cat "$doc" | "$PY" "$ROOT/scripts/bench/brief_match.py" - "benchmarks/$name/brief.md" 2>/dev/null | tr ' ' ':')
   fi
-  docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json" "$status" "$gaps" "$own"
+  # The model the run ran on, from its record (non-secret settings only), so a score names its model.
+  model_last=$("${DB[@]}" "select coalesce(model_last,'') from runs where run_id='$run'" 2>/dev/null | head -1)
+  docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json" "$status" "$gaps" "$own" "$model_last"
   mkdir -p data/bench
-  docker cp "langchain-worker-1:/tmp/bench-$run.json" "data/bench/$run.json" >/dev/null && echo "result: data/bench/$run.json"
+  docker cp "$WORKER_C:/tmp/bench-$run.json" "data/bench/$run.json" >/dev/null && echo "result: data/bench/$run.json"
+  # What each of this run's gap kinds has meant before (HR2.G.3).
+  "$PY" "$HERE/gap_precision.py" data/bench "data/bench/$run.json" 2>/dev/null || true
+  # STATE.md's generated block names the newest scores (HR2.O.2).
+  "$PY" "$HERE/state_blocks.py" >/dev/null 2>&1 || true
   # The score alone - no test names - for the outcome dashboard (app.server.outcomes).
-  "$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({k:d.get(k) for k in ("benchmark","passed","total","score","quality_passed","quality_total","completion_gaps","brief_mismatch")}))' "data/bench/$run.json" \
+  "$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({k:d.get(k) for k in ("benchmark","passed","total","score","quality_passed","quality_total","completion_gaps","brief_mismatch","model","endpoint")}))' "data/bench/$run.json" \
     | docker compose exec -T worker sh -c "mkdir -p /app/data/outcomes && cat > /app/data/outcomes/$run.json" || true
   # The hidden tests and the copy they ran against leave the worker at once:
   # it is the container the harness's agents work in.
@@ -196,10 +247,10 @@ score)
 mutate)
   # How strong is the run's own locked suite? See scripts/bench/mutate.py.
   run="${2:-$(current)}"; count="${3:-12}"
-  docker cp scripts/bench/mutate.py langchain-worker-1:/tmp/mutate.py >/dev/null
+  docker cp scripts/bench/mutate.py $WORKER_C:/tmp/mutate.py >/dev/null
   docker compose exec -T worker python /tmp/mutate.py "/app/data/workspaces/default/workspace-$run" "/tmp/mutate-$run.json" "$count"
   mkdir -p data/bench/mutation
-  docker cp "langchain-worker-1:/tmp/mutate-$run.json" "data/bench/mutation/$run.json" >/dev/null && echo "result: data/bench/mutation/$run.json"
+  docker cp "$WORKER_C:/tmp/mutate-$run.json" "data/bench/mutation/$run.json" >/dev/null && echo "result: data/bench/mutation/$run.json"
   ;;
 
 bench-report)
@@ -218,6 +269,30 @@ cancel)
   echo "cancel requested for $run at $(jst +%H:%M) JST: $("${DB[@]}" "select status from runs where run_id='$run'")"
   ;;
 
+pin)
+  # Keep a run on the model it last ran on (on), or let it follow the model settings again (off); mid-run too.
+  #   loop.sh pin on|off [run-id]
+  #   PIN_URL=http://host.docker.internal:1234/v1 PIN_MODEL_NAME=qwen3.6-35b-a3b-mtp loop.sh pin on [run-id]
+  # pins the run to that endpoint instead, without touching the global settings. No key is sent: the
+  # endpoint's key is resolved server-side. PIN_MODEL=1 does the same at `start` / `bench`.
+  case "${2:-}" in
+    on) pinned=true ;;
+    off) pinned=false ;;
+    *) echo "usage: loop.sh pin on|off [run-id]" >&2; exit 2 ;;
+  esac
+  run="${3:-$(current)}"
+  : "${LOOP_USER:?set LOOP_USER to the loop operator account}"
+  : "${LOOP_PASSWORD:?set LOOP_PASSWORD for that account}"
+  token=$(curl -s -X POST "$API/api/auth/token" --data-urlencode "username=$LOOP_USER" \
+            --data-urlencode "password=$LOOP_PASSWORD" |
+          "$PY" -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  curl -s -X POST "$API/api/runs/$run/model-pin" -H "Authorization: Bearer $token" \
+       -H "Content-Type: application/json" \
+       -d "{\"pinned\": $pinned${PIN_URL:+, \"base_url\": \"$PIN_URL\"}${PIN_MODEL_NAME:+, \"model\": \"$PIN_MODEL_NAME\"}}"
+  echo
+  echo "model pin $2 for $run at $(jst +%H:%M) JST"
+  ;;
+
 rewind)
   # Rewind a run to the start of a stage, its files as they were then, and run
   # it on from there (owner, 2026-10-20): after a fix, instead of a new run that
@@ -226,25 +301,51 @@ rewind)
   # the rewind, and the rewound stage runs on the new code:
   #   loop.sh rewind --pause-only; BOUNDARY_WAIT=0 loop.sh deploy; loop.sh rewind <stage>
   #   loop.sh rewind <graph stage> [run-id] [at or before, e.g. 2026-10-19T22:20]
+  #   loop.sh rewind --list [run-id]   the run's points; touches no run (--help and -h too)
+  # Nothing is touched until the stage is known to be a point of the run: an
+  # unknown stage or flag used to pause the run before it was refused.
+  usage="usage: loop.sh rewind <graph stage>|--pause-only|--list [run-id] [at-or-before]"
+  stage="${2:-}"
+  case "$stage" in
+    "") echo "$usage" >&2; exit 2 ;;
+    --help|-h)
+      echo "$usage"
+      if [ -z "${LOOP_USER:-}" ] || [ -z "${LOOP_PASSWORD:-}" ]; then
+        echo "set LOOP_USER and LOOP_PASSWORD to list the run's points"; exit 0
+      fi
+      stage=--list ;;
+    --list|--pause-only) ;;
+    -*) echo "unknown flag $stage: no run was touched. $usage" >&2; exit 2 ;;
+  esac
   : "${LOOP_USER:?set LOOP_USER to the loop operator account}"
   : "${LOOP_PASSWORD:?set LOOP_PASSWORD for that account}"
-  stage="${2:?usage: loop.sh rewind <graph stage>|--pause-only [run-id] [at-or-before]}"
   run="${3:-$(current)}"
   token=$(curl -s -X POST "$API/api/auth/token" --data-urlencode "username=$LOOP_USER" \
             --data-urlencode "password=$LOOP_PASSWORD" |
           "$PY" -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
   status() { "${DB[@]}" "select status from runs where run_id='$run'" | tr -d '[:space:]'; }
+  # Timeouts on both calls (plan OP.4): listing the points of a long run took
+  # minutes, and a call with none waited on a server that had stopped answering.
+  points() { curl -s -m "${REWIND_TIMEOUT:-600}" "$API/api/runs/$run/rewind-points" -H "Authorization: Bearer $token"; }
+  if [ "$stage" = "--list" ]; then
+    points | "$PY" "$HERE/rewind_point.py" --list
+    exit 0
+  fi
+  if [ "$stage" != "--pause-only" ]; then
+    points | "$PY" "$HERE/rewind_point.py" --check "$stage" "${4:-}" || {
+      echo "not rewound and not paused: $stage is not a point of $run, as listed above" >&2; exit 1; }
+  fi
   if [ "$(status)" = "running" ] || [ "$(status)" = "queued" ]; then
-    curl -s -X POST "$API/api/runs/$run/pause" -H "Authorization: Bearer $token" >/dev/null
+    # PAUSE_AT=boundary waits for the running stage to end, up to PAUSE_CEILING seconds (HR2.R.2; ship-live sets it).
+    curl -s -X POST "$API/api/runs/$run/pause${PAUSE_AT:+?at=$PAUSE_AT&ceiling=${PAUSE_CEILING:-600}}" -H "Authorization: Bearer $token" >/dev/null
     waited=0
-    while [ "$(status)" != "paused" ] && [ "$waited" -lt 600 ]; do sleep 5; waited=$((waited + 5)); done
+    most=$(( ${PAUSE_AT:+${PAUSE_CEILING:-600} + }600 ))
+    while [ "$(status)" != "paused" ] && [ "$waited" -lt "$most" ]; do sleep 5; waited=$((waited + 5)); done
     echo "paused $run after ${waited}s ($(jst +%H:%M) JST): $(status)"
   fi
   [ "$stage" = "--pause-only" ] && exit 0
-  # Timeouts on both calls (plan OP.4): listing the points of a long run took
-  # minutes, and a call with none waited on a server that had stopped answering.
-  checkpoint=$(curl -s -m "${REWIND_TIMEOUT:-600}" "$API/api/runs/$run/rewind-points" -H "Authorization: Bearer $token" |
-               "$PY" "$HERE/rewind_point.py" "$stage" "${4:-}") || exit 1
+  # Read again: the run may have entered the stage once more on its way to the pause.
+  checkpoint=$(points | "$PY" "$HERE/rewind_point.py" "$stage" "${4:-}") || exit 1
   answer=$(curl -s -m "${REWIND_TIMEOUT:-600}" -w '\n%{http_code}' -X POST "$API/api/runs/$run/rewind" -H "Authorization: Bearer $token" \
        -H "Content-Type: application/json" -d "{\"checkpoint_id\": \"$checkpoint\"}")
   code=$(echo "$answer" | tail -n 1)
@@ -283,6 +384,7 @@ wait)
   ;;
 
 audit)  in_worker audit_live.py "${2:-$(current)}" ;;
+deep-audit) shift; in_worker deep_audit.py "$@" ;;
 defects) in_worker defects.py "${2:-$(current)}" ;;
 asked)
   shift
@@ -296,6 +398,12 @@ failures)
   ;;
 reads)  in_worker redundant_reads.py "${2:-$(current)}" ;;
 patterns) shift; in_worker patterns.py "$@" ;;
+ceiling) shift; in_worker set_ceiling.py "$@" ;;
+scan)
+  # The improvement scan (WB.8): where the run spends far more than the recent runs; read at every audit.
+  run="${2:-$(cat "$STATE/current_run.txt" 2>/dev/null)}"
+  in_worker scan.py "$run"
+  ;;
 documents)
   # A finished run's unit-test and acceptance-test documents (plans DT.1, DT.6), from a copy of its
   # workspace without what installs made, written on the host into data/documents/<run>/.
@@ -306,6 +414,15 @@ documents)
   rm -rf "$copy"
   ;;
 lessons) shift; in_worker lessons.py "${@:-list}" ;;
+ship-live) "$HERE/ship_live.sh" ;;
+impact) shift; "$PY" "$HERE/impact.py" data/kpi/ledger.csv "${1:-12}" ;;
+suite-checks) shift; docker exec -i "$WORKER_C" python3 - /app/data/workspaces/default < "$HERE/suite_check_settling.py" ;;
+state) shift; "$PY" "$HERE/state_blocks.py" ;;
+measuring) shift; "$PY" "$HERE/switch_register.py" ;;
+gap-precision) shift; "$PY" "$HERE/gap_precision.py" data/bench ;;
+blind-spots) shift; "$PY" "$HERE/blind_spots.py" "$@" ;;
+disputes) shift; docker exec -i "$WORKER_C" python3 - /app/data/workspaces/default < "$HERE/disputes.py" | "$PY" "$HERE/disputes.py" --join "$ROOT/data/kpi/ledger.csv" ;;
+stack-misses) shift; docker cp "$HERE/stack_misses.py" "$WORKER_C:/tmp/stack_misses.py" >/dev/null && docker exec -w /app "$WORKER_C" python3 /tmp/stack_misses.py ;;
 timing) shift; in_worker run_timing.py "${@:-$(current)}" ;;
 kpi)
   run="${2:-$(current)}"
@@ -324,7 +441,14 @@ kpi)
     rm -f "data/kpi/$run.json.tmp"; echo "kpi: the worker could not read $run's transcript; nothing was changed" >&2; exit 1
   fi
   ;;
-effects) in_worker effects.py "${2:-$(current)}" ;;
+effects)
+  if [ "${2:-}" = gate ]; then
+    # Reads the ledger and the plan on the host; reports only, and never changes a switch.
+    "$PY" "$HERE/switch_gate.py" data/kpi/ledger.csv "${3:-3}" docs/improvement-plan.md
+  else
+    in_worker effects.py "${2:-$(current)}"
+  fi
+  ;;
 product) in_worker product_audit.py "${2:-$(current)}" ;;
 corpus)
   # The reader corpus (plan RC): `corpus harvest [run]` keeps a run's reader inputs
@@ -334,9 +458,16 @@ corpus)
   case "${2:-list}" in
   harvest)
     in_worker corpus.py "${3:-$(current)}"
-    mkdir -p data/corpus && docker cp langchain-worker-1:/app/data/corpus/. data/corpus/ >/dev/null 2>&1 || true
+    mkdir -p data/corpus && docker cp $WORKER_C:/app/data/corpus/. data/corpus/ >/dev/null 2>&1 || true
     ;;
-  accept) DATA_DIR=data PYTHONPATH="$ROOT/src" "$PY" -c 'from app.observability.reader_corpus import replay; print(replay(accept=True))' ;;
+  # Accepted here and copied into the worker: `harvest` copies the worker's corpus over this one after every
+  # scored run, and an acceptance made only here was undone by the next score, failing the suite again.
+  accept) DATA_DIR=data PYTHONPATH="$ROOT/src" "$PY" -c 'from app.observability.reader_corpus import replay; print(replay(accept=True))'
+          # `docker cp` keeps the host's owner, and the worker's own user then cannot write a sample again: measured
+          # on the next scored run, the harvest failed with "Permission denied" on every file the accept had copied.
+          { docker cp data/corpus/. $WORKER_C:/app/data/corpus/ >/dev/null 2>&1 \
+            && docker compose exec -T -u root worker sh -c 'chown -R "$(stat -c %u:%g /app/data)" /app/data/corpus' >/dev/null 2>&1; } \
+            || echo "corpus: the accepted results were not copied into the worker; the next harvest will undo them" >&2 ;;
   *) DATA_DIR=data PYTHONPATH="$ROOT/src" "$PY" -c 'from app.observability.reader_corpus import sizes, replay; print(sizes()); print("changed:", replay())' ;;
   esac
   ;;
@@ -346,10 +477,24 @@ checks)
   case " $* " in *" --write "*) (cd "$ROOT" && docker compose cp data/bench worker:/app/data/ >/dev/null) ;; esac
   in_worker check_precision.py "$@"
   ;;
-ready)  in_worker model_ready.py ;;
+ready)  shift; in_worker model_ready.py "$@" ;;
 fitness) shift; in_worker model_fitness.py "$@" ;;
 reasoning-probe) shift; in_worker reasoning_probe.py "${@:-plan}" ;;
+diagnose) shift; in_worker model_diagnose.py "$@" ;;
 resumed) sh "$HERE/await_resume.sh" ;;
+resume)
+  # Resume a failed, paused or cancelled run in place from its last checkpoint (refused while the model is unreachable).
+  run="${2:-$(current)}"
+  : "${LOOP_USER:?set LOOP_USER to the loop operator account}"
+  : "${LOOP_PASSWORD:?set LOOP_PASSWORD for that account}"
+  token=$(curl -s -X POST "$API/api/auth/token" --data-urlencode "username=$LOOP_USER" \
+            --data-urlencode "password=$LOOP_PASSWORD" |
+          "$PY" -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  curl -s -X POST "$API/api/runs/$run/resume" -H "Authorization: Bearer $token"
+  echo
+  ;;
+ship) shift; "$HERE/ship.sh" "$@" ;;
+resume-when-ready) shift; "$PY" "$HERE/resume_when_ready.py" "$@" ;;
 stage)
   [ -n "${2:-}" ] || { echo "usage: loop.sh stage <stage> [HH:MM UTC]" >&2; exit 2; }
   in_worker stage_trace.py "$(current)" "$2" "${3:-}"
@@ -378,17 +523,15 @@ deploy)
   flock -n 9 || { echo "another deploy is running (lock $STATE/deploy.lock); not starting a second" >&2; exit 1; }
   echo "live runs before deploy (they will be resumed by orphan recovery):"
   "${DB[@]}" "select run_id, status from runs where status in ('running','queued','pending')"
-  # Built from a clean checkout of HEAD, never the working tree: another
-  # session's uncommitted, unverified edits sat in the same tree, and a build
-  # of it shipped them into the live run.
-  head_tree=$(mktemp -d)/head
   # A named commit, else HEAD: a Measure pair runs on exactly its Fix batch while
   # later work goes on above it (plan MF.4).
   built=$(git -C "$ROOT" rev-parse "${2:-HEAD}^{commit}")
-  git -C "$ROOT" worktree add -q --detach "$head_tree" "$built"
-  docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
-    build --progress=plain --build-arg HARNESS_COMMIT="$built" app worker >/dev/null 2>&1
-  git -C "$ROOT" worktree remove --force "$head_tree"
+  # Built already (`loop.sh build`, which `ship-live` runs before it pauses anything - HR2.R.3), or built here.
+  if [ "$(built_from)" = "$built" ]; then
+    echo "images already built from ${built:0:7}"
+  else
+    "$0" build "$built" || { echo "the build failed; nothing was deployed" >&2; exit 1; }
+  fi
   # At a stage boundary: a resume restarts the running stage's conversation,
   # and one fix stage was restarted five times in an hour by deploys landing
   # mid-stage. Wait (up to BOUNDARY_WAIT seconds, default 1800; 0 skips) for
@@ -406,6 +549,12 @@ deploy)
   # in flight to return, then restart (app.models.call_gate). GATE_WAIT caps the
   # wait in seconds; a call still running then is restarted with its stage.
   gate=/app/data/loop/gate
+  # Lifted however this deploy ends: under `set -e` a failed `compose up`, or
+  # an interrupted wait, left the hold set, and every model call then waited
+  # its full 20 minutes (`call_gate.MOST_SECONDS_HELD`) on a deploy that was
+  # gone. A worker that is not up to lift it lifts it as it starts
+  # (`tasks._lift_a_hold_a_previous_deploy_left`).
+  trap 'docker compose exec -T worker sh -c "rm -f $gate/hold" >/dev/null 2>&1 || true' EXIT
   docker compose exec -T worker sh -c "mkdir -p $gate/inflight && touch $gate/hold"
   waited=0
   while :; do
@@ -422,7 +571,8 @@ deploy)
     sleep 5; waited=$((waited + 5))
   done
   [ "$waited" -gt 0 ] && echo "model calls finished after ${waited}s; deploying ($(jst '+%H:%M JST'))"
-  docker compose up -d app worker
+  # Never left hanging on a container at Created, and a service not on its new image is brought up again.
+  "$ROOT/scripts/loop/compose_up.sh" app worker 9>&-
   # The old processes are gone: their markers mean nothing now. Lift the hold.
   docker compose exec -T worker sh -c "rm -f $gate/inflight/* $gate/hold"
   sleep 10
@@ -442,6 +592,44 @@ deploy)
   "${DB[@]}" "select run_id, status from runs where status in ('running','queued','pending')"
   ;;
 
+build)
+  # The images, built from a clean checkout of one commit (HEAD by default), with no run touched (harness review
+  # HR2.R.3): `ship-live` builds first and pauses only after, so a build's minutes and a build that fails (Docker
+  # Desktop hung on a create, 11-07) cost no run anything. Prints its seconds; exits 1 on a failed build.
+  exec 8>"$STATE/build.lock"
+  flock -n 8 || { echo "another build is running (lock $STATE/build.lock)" >&2; exit 1; }
+  timeout 20 docker info >/dev/null 2>&1 || { echo "Docker does not answer (docker info, 20 s); nothing was built" >&2; exit 1; }
+  built=$(git -C "$ROOT" rev-parse "${2:-HEAD}^{commit}")
+  # Built already: nothing to do, and no registry asked (a retry's build hung on Docker's credential helper for an
+  # image that was already there). REBUILD=1 builds anyway.
+  if [ "$(built_from)" = "$built" ] && [ "${REBUILD:-0}" != 1 ]; then echo "images already built from ${built:0:7}"; exit 0; fi
+  # Built from a clean checkout, never the working tree: another session's uncommitted, unverified edits sat in the
+  # same tree, and a build of it shipped them into the live run.
+  head_tree=$(mktemp -d)/head
+  git -C "$ROOT" worktree add -q --detach "$head_tree" "$built"
+  started=$(date +%s)
+  ok=1
+  # The lock is not handed down (8>&-): Docker's credential helper, hung on a locked key store, kept it and every
+  # later build refused to start.
+  # Asked of the registry anonymously first (the images are public): with the owner's credential store locked,
+  # Docker's credential helper hung every build for an hour. The owner's own configuration is the fall-back.
+  anon="$STATE/docker-anonymous"; home_config="${DOCKER_CONFIG:-$HOME/.docker}"
+  mkdir -p "$anon"; for part in contexts cli-plugins buildx; do [ -e "$home_config/$part" ] && ln -sfn "$home_config/$part" "$anon/$part"; done
+  context=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("currentContext") or "")' "$home_config/config.json" 2>/dev/null || true)
+  printf '{"currentContext": "%s"}\n' "${context:-default}" > "$anon/config.json"
+  DOCKER_CONFIG="$anon" docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
+    build --progress=plain --build-arg HARNESS_COMMIT="$built" app worker > "$STATE/build.log" 2>&1 8>&- || ok=0
+  if [ "$ok" = 0 ]; then
+    ok=1
+    docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
+      build --progress=plain --build-arg HARNESS_COMMIT="$built" app worker >> "$STATE/build.log" 2>&1 8>&- || ok=0
+  fi
+  git -C "$ROOT" worktree remove --force "$head_tree"
+  if [ "$ok" = 0 ] || [ "$(built_from)" != "$built" ]; then
+    echo "build of ${built:0:7} FAILED after $(( $(date +%s) - started ))s; see $STATE/build.log" >&2; exit 1
+  fi
+  echo "built ${built:0:7} in $(( $(date +%s) - started ))s"
+  ;;
 freshness) "$PY" "$HERE/pack_freshness.py" ;;
 lessons) shift; in_worker lessons.py "${@:-3}" ;;
 backup)
@@ -452,11 +640,11 @@ backup)
     dump=$(ls -1d data/backups/*/ 2>/dev/null | sort | tail -1)
     [ -n "$dump" ] && [ -f "$dump/langchain.dump" ] || { echo "no backup to check" >&2; exit 1; }
     scratch="restore_check_$(date +%s)"
-    docker exec langchain-db-1 psql -U postgres -qc "create database $scratch" >/dev/null
-    docker exec -i langchain-db-1 pg_restore -U postgres --no-owner -d "$scratch" < "$dump/langchain.dump" >/dev/null 2>&1
-    restored=$(docker exec langchain-db-1 psql -U postgres -d "$scratch" -tAc "select count(*) from runs" 2>/dev/null | tr -d '[:space:]')
+    docker exec "$DB_C" psql -U postgres -qc "create database $scratch" >/dev/null
+    docker exec -i "$DB_C" pg_restore -U postgres --no-owner -d "$scratch" < "$dump/langchain.dump" >/dev/null 2>&1
+    restored=$(docker exec "$DB_C" psql -U postgres -d "$scratch" -tAc "select count(*) from runs" 2>/dev/null | tr -d '[:space:]')
     live=$("${DB[@]}" "select count(*) from runs" | tr -d '[:space:]')
-    docker exec langchain-db-1 psql -U postgres -qc "drop database $scratch" >/dev/null
+    docker exec "$DB_C" psql -U postgres -qc "drop database $scratch" >/dev/null
     echo "restore check of $dump: ${restored:-0} run(s) restored, ${live:-?} in the live database"
     [ "${restored:-0}" -gt 0 ] || exit 1
     exit 0
@@ -464,8 +652,8 @@ backup)
   dir="data/backups/$(date +%F)"
   mkdir -p "$dir"
   # Custom format, compressed: the checkpoint tables dumped as plain SQL came to 15 GB.
-  docker exec langchain-db-1 pg_dump -U postgres -d langchain --no-owner -Fc > "$dir/langchain.dump.tmp" && mv "$dir/langchain.dump.tmp" "$dir/langchain.dump"
-  docker cp langchain-worker-1:/app/data/lessons.json "$dir/lessons.json" >/dev/null 2>&1 || true
+  docker exec "$DB_C" pg_dump -U postgres -d langchain --no-owner -Fc > "$dir/langchain.dump.tmp" && mv "$dir/langchain.dump.tmp" "$dir/langchain.dump"
+  docker cp $WORKER_C:/app/data/lessons.json "$dir/lessons.json" >/dev/null 2>&1 || true
   # Three days kept.
   ls -1d data/backups/*/ 2>/dev/null | sort | head -n -3 | xargs -r rm -rf
   echo "backup -> $dir ($(du -sh "$dir" | cut -f1))"
@@ -476,18 +664,21 @@ restore)
   # then point DATABASE_URL at it, or rename it over the live one by hand.
   src="${2:?usage: loop.sh restore <backup-dir> <new-database>}"; target="${3:?name a new database to restore into}"
   [ "$target" != "langchain" ] || { echo "not over the live database; name a new one" >&2; exit 1; }
-  docker exec langchain-db-1 psql -U postgres -qc "create database $target" && \
-    docker exec -i langchain-db-1 pg_restore -U postgres --no-owner -d "$target" < "$src/langchain.dump" >/dev/null && \
+  docker exec "$DB_C" psql -U postgres -qc "create database $target" && \
+    docker exec -i "$DB_C" pg_restore -U postgres --no-owner -d "$target" < "$src/langchain.dump" >/dev/null && \
     echo "restored $src into database $target"
   ;;
 nightly)
   # The backup first, live run or not: it reads the database and touches nothing else.
   "$0" backup | tee -a "$STATE/nightly.log"
-  # Never beside a live run: scaffolding 27 packs competes for its memory and CPU.
+  # Not beside two live runs: scaffolding the packs competes for their memory and CPU. Beside one it runs - it uses a
+  # scratch workspace and no model - since skipping whenever any run was live skipped 15 of 18 nights (HR2.O.3).
   live=$("${DB[@]}" "select count(*) from runs where status in ('running','queued','pending')")
-  if [ "${live:-1}" != "0" ]; then echo "$(jst '+%F %H:%M JST') nightly skipped: a run is live" | tee -a "$STATE/nightly.log"; exit 0; fi
+  if [ "${live:-2}" -ge "${NIGHTLY_SKIP_AT:-2}" ]; then echo "$(jst '+%F %H:%M JST') nightly skipped: $live runs are live" | tee -a "$STATE/nightly.log"; exit 0; fi
   log="$STATE/nightly-$(date +%F).log"
-  { echo "== $(jst)"; in_worker verify_packs.py; "$PY" "$HERE/pack_freshness.py"; } > "$log" 2>&1 || true
+  # In a throwaway container of the worker image (HR2.SS.5): exec'd into the live worker, a deploy that recreated it
+  # killed the check mid-way with no summary (11-08 09:4x).
+  { echo "== $(jst)"; docker compose run --rm -T --no-deps worker python - < "$HERE/verify_packs.py"; "$PY" "$HERE/pack_freshness.py"; } > "$log" 2>&1 || true
   echo "$(jst '+%F %H:%M JST') nightly: $(grep -E 'packs scaffolded' "$log" | tail -1); $(tail -1 "$log") -> $log" | tee -a "$STATE/nightly.log"
   ;;
 suite)

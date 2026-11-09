@@ -24,13 +24,18 @@ def _stack(language, framework, kind="http_api"):
     )
 
 
+@pytest.mark.parametrize("framework", ["Elysia on Node", "Fastify on Node.js"])
+def test_another_framework_on_the_same_runtime_gets_no_pack(framework):
+    assert choose_pack(_stack("TypeScript on Node.js >= 20", framework), "") is None
+
+
 @pytest.mark.parametrize("framework", [
     "Hono 4 served by @hono/node-server 2, bound to 127.0.0.1:$PORT",
     "Hono HTTP framework on Node.js",
-    "Elysia on Node",
 ])
-def test_another_framework_on_the_same_runtime_gets_no_pack(framework):
-    assert choose_pack(_stack("TypeScript on Node.js >= 20", framework), "") is None
+def test_hono_on_node_is_hono_s_pack_and_not_express_s(framework):
+    """The stack named Hono served by @hono/node-server: the Express pack must not take it, the Hono one does."""
+    assert choose_pack(_stack("TypeScript on Node.js >= 20", framework), "").name == "node-hono-api"
 
 
 @pytest.mark.parametrize("language, framework, chosen", [

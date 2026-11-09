@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from langchain_core.runnables import RunnableConfig
 
@@ -53,6 +53,22 @@ def _tasks(state: Any) -> list[Any]:
 
 def _title(task: Any) -> str:
     return str(getattr(task, "title", "") or getattr(task, "task_description", "") or "")[:80]
+
+
+def owner_of_the_file(state: Any, relative: str) -> str:
+    """Who fixes a finding in `relative`: the testing role for a test file, else as `_owner_of` chooses.
+
+    Measured on one run: a unit test naming a function the module does not have was given to the first builder in
+    the plan, and two backend fixers in a row left it "still reported".
+    """
+    try:
+        from app.analysis.file_kinds import is_test
+
+        if is_test(str(relative or "")) and any(str(t.specialist_role) == "testing" for t in _tasks(state)):
+            return "testing"
+    except Exception:  # noqa: BLE001 - chosen as before
+        pass
+    return _owner_of(state, "")
 
 
 def _owner_of(state: Any, work_order: str) -> str:
@@ -280,7 +296,7 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
     certain, and named by file and line. See `app.analysis.language_service`.
     """
     from app.agents.specialists import ReportedDefect
-    from app.analysis.language_service import ALL_SUFFIXES, service_name, underlined_in
+    from app.analysis.language_service import ALL_SUFFIXES, service_name, the_names_the_module_has, underlined_in
 
     try:
         from app.tools.repository import pinned_project_directory
@@ -312,7 +328,15 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
             lines = ", ".join(str(f["line"]) for f in where[:6])
             module, defined, importers = missing.get((relative, message), ("", [], []))
             expected = "Every name the code uses is defined or imported, and every import names something its module exports."
-            if module:
+            if "Cannot find module" in message:
+                # A path an installed package does not export: say which paths it does (PACKAGE_EXPORTS_NAMED).
+                expected += the_names_the_module_has(project or Path(root), Path(root) / relative, where[0])
+            if module and not importers:
+                expected += (
+                    f" `{module}` is a package and exports only {', '.join(f'`{n}`' for n in defined[:20]) or 'nothing readable'}: "
+                    "import one of those names or write the function yourself; a name cannot be added to a package."
+                )
+            elif module:
                 expected += (
                     f" `{module}` defines {', '.join(f'`{n}`' for n in defined[:20]) or 'nothing at its top level'}; "
                     f"{len(importers)} file(s) import this name from it ({', '.join(importers[:6])}): define it in "
@@ -330,7 +354,7 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
                 # defect - measured: two modules and nine routers, sixteen
                 # findings, one rewrite of four files.
                 affected_files=[module] if module and len(importers) > 1 else [relative],
-                owner=_owner_of(state, ""),
+                owner=owner_of_the_file(state, relative),
             ))
     defects.extend(_what_the_compiler_says(state, root, since, pinned or ""))
     # The bundled manifest-drift defect rides after the cap: it is one defect
@@ -347,7 +371,7 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
     ]
 
 
-_UNKNOWN_IMPORT = re.compile(r'"([^"]+)" is unknown import symbol')
+_UNKNOWN_IMPORT = re.compile(r'"([^"]+)" is unknown import symbol|has no exported member \'([^\']+)\'')
 
 
 def _names_their_modules_lack(root: str, project: Path | None, findings: dict[str, list[dict]]) -> dict:
@@ -371,8 +395,12 @@ def _names_their_modules_lack(root: str, project: Path | None, findings: dict[st
             answer = what_the_module_defines(base, Path(root) / relative, str(finding.get("text") or ""))
             if answer is None:
                 continue
+            if not answer[0].is_absolute():
+                # A package: nothing in the project defines its names, so there are no importers to bundle.
+                seen[(relative, str(finding["message"]))] = (answer[0].as_posix(), answer[1], [])
+                continue
             module = answer[0].relative_to(Path(root)).as_posix() if answer[0].is_relative_to(Path(root)) else str(answer[0])
-            key = (module, name.group(1))
+            key = (module, name.group(1) or name.group(2))
             importers.setdefault(key, [])
             if relative not in importers[key]:
                 importers[key].append(relative)
@@ -730,7 +758,7 @@ def _lines_added(root: str, base: str, relative: str) -> set[int] | None:
 
     try:
         done = subprocess.run(["git", "-C", root, "diff", "-U0", base, "--", relative],
-                              capture_output=True, text=True, timeout=30)
+                              capture_output=True, text=True, errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return set()
     if done.returncode != 0:
@@ -772,26 +800,83 @@ def what_the_fix_made_certain_to_fail(root: str, base: str) -> list[str]:
         return []
 
 
-def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list[str]:
-    """Measure the fix. A fix that broke what passed before it is reverted; returns what it broke."""
+def what_the_fix_did_to_the_install(root: str, base: str) -> str:
+    """Why the project's dependencies no longer install, when this fix edited a manifest and the install now fails; "".
+
+    Measured on a small-model run: a fix pinned `python-jose==4.3.0`, which does not exist, and the five fixers after it
+    each ended "its own tests still fail" on a project nothing could install, for the rest of the round; the defect that
+    carried the registry's answer was raised only when the round ended. A fix that makes the install fail is reverted at
+    once, with the installer's words and what the registry has. An install that was already failing is not this fix's.
+    """
+    try:
+        from app.analysis.manifests import MANIFEST_NAMES
+        from app.stacks.contract import INSTALL_FAILED
+
+        notes = [str(line) for line in (suite.last_result(root) or {}).get("repairs") or [] if INSTALL_FAILED in str(line)]
+        if not notes:
+            return ""
+        changed = ci._git(root, "diff", "--name-only", base)
+        names = {Path(line.strip()).name for line in (changed.stdout.splitlines() if changed is not None else []) if line.strip()}
+        if not names & MANIFEST_NAMES:
+            return ""
+        return "it broke the install: " + " ".join(notes[-1].split())[:600]
+    except Exception:  # noqa: BLE001 - a check that cannot run blames nothing
+        return ""
+
+
+def the_start_and_end_of(problem: str, limit: int = 600) -> str:
+    """A start or build failure in one line, its opening and its end kept: a traceback names what was raised last.
+
+    Measured on a run whose fixes kept stopping the service: the first 400 characters were the server's own frames,
+    so each revert named `add_route` and never the error the framework raised, and the next fixer repeated the change.
+    """
+    text = " ".join(str(problem or "").split())
+    if len(text) <= limit:
+        return text
+    head = limit // 4
+    return text[:head].rstrip() + " ... " + text[-(limit - head - 5):].lstrip()
+
+
+def after_a_fix(
+    root: str, base: str, stage_name: str, description: str, contested: str = "",
+    on_revert: Callable[[list[str]], Any] | None = None,
+) -> list[str]:
+    """Measure the fix. A fix that broke what passed before it is reverted; returns what it broke.
+
+    `contested`: a passing locked test past judging (`workflow._a_contested_test_past_repair`); a fix whose only
+    casualty is that test, and that made others pass, is kept. `on_revert` is called with what the fix broke while
+    the fix is still in the workspace, just before it is reverted (`kept_fix_candidates.keep`); its failure reverts nothing differently.
+    """
     if not base or not ci_applies(root):
         return []
     before = ci.load(root, "latest")
     after = ci.take(root, f"after {stage_name}")
     lost = ci.regressions(before, after)
     broken = _broken_tests(lost, before, after)
+    broke_the_install = what_the_fix_did_to_the_install(root, base)
+    if broke_the_install:
+        broken = [broke_the_install, *broken]
     if broken and after.problem:
         # Every test "broke" because none could run: the cause goes first, or
         # the next fixer reads a list of tests and never the build error.
         # Measured live: one rewrite of the served page broke its build twice,
         # reverted each time as "broke 3 test(s)", the same rewrite again next round.
-        cause = " ".join(after.problem.split())[:400]
-        broken = [f"the product no longer builds or starts after it ({cause})", *broken]
+        cause = the_start_and_end_of(after.problem)
+        # Only a product that started before the fix stopped because of it: measured, two fixes were blamed for a start
+        # that had already failed, and the next fixer went after a cause they had not made.
+        said = ("the product did not start before this fix either" if before is not None and before.problem
+                else "the product no longer builds or starts after it")
+        broken = [f"{said} ({cause})", *broken]
+    elif after.problem.startswith(suite.PRODUCT_DID_NOT_START) and before is not None and not before.problem:
+        # Every test still passes the suite's way, and the user's way no longer starts: a regression all the same.
+        broken = ["the product no longer starts the way its user starts it after this fix ("
+                  + the_start_and_end_of(after.problem) + ")"]
     if broken:
         kept = _its_tests_without_its_product_change(root, base, before, broken, stage_name)
         if kept is not None:
+            # Committed first, and the measurement saved with that commit (see the end of this function).
+            kept.commit = ci.commit(root, f"Fix, its tests only: {description[:50]}") or kept.commit
             ci.save(root, kept)
-            ci.commit(root, f"Fix, its tests only: {description[:50]}")
             return []
     elif not after.passing() - (before.passing() if before is not None else set()):
         # Nothing passed before, so nothing could break, and the fix made
@@ -803,7 +888,51 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list
         certain = what_the_fix_made_certain_to_fail(root, base)
         if certain:
             broken = ["it wrote code the language service is sure fails when it runs: " + "; ".join(certain[:3])]
+    gained_now = after.passing() - (before.passing() if before is not None else set())
+    from app.graph import net_gain, unit_tests_disagree
+
+    # The locked suite is the definition of done: a fix that made a locked test pass and broke only unit tests stays,
+    # and each one is raised naming the locked test it disagrees with (behind its switch).
+    product_runs = not after.problem and not broke_the_install
+    locked_gained = unit_tests_disagree.locked_tests_gained(broken, before, after, product_runs=product_runs)
+    if locked_gained:
+        logger.warning("Kept %s: it made the locked %s pass and broke only %d unit test(s), each raised as a defect",
+                       stage_name, "; ".join(locked_gained[:3]), len(broken))
+        unit_tests_disagree.note(root, broken, locked_gained, [name for name in broken if _gone(after, name)])
+        broken = []
+    # Weighed against the tests that genuinely broke, not every test that no longer passes: `lost` counts the unit
+    # tests a fix replaced on purpose, which `_broken_tests` forgives. Found in a code review: a fix that broke one
+    # criterion and renamed four unit tests on purpose (every unit test passing after it) was weighed as five broken,
+    # and had to make 15 tests pass to stay instead of 4. What is not a test's name (the install, the build) is not
+    # weighed. The renamed tests' new names are not a gain either, or a fix that only renamed them would buy its
+    # broken criterion back with them.
+    broken_tests = [item for item in broken if item.startswith(("unit: ", "acceptance: "))]
+    weighed_gain = gained_now
+    if any(item.startswith("unit: ") and item not in broken for item in lost):
+        known_before = {f"unit: {name}" for name in (before.unit if before is not None else {})}
+        weighed_gain = {item for item in gained_now if not item.startswith("unit: ") or item in known_before}
+    if broken and net_gain.keeps(broken_tests, weighed_gain, product_runs=product_runs):
+        logger.warning(
+            "Kept %s: it made %d test(s) pass and broke %d unit test(s), which the next round raises: %s",
+            stage_name, len(weighed_gain), len(broken_tests), "; ".join(broken_tests[:3]),
+        )
+        broken = []
+    if broken and contested and broken == [contested] and gained_now and not after.problem:
+        # The test the suite could not be repaired for, broken alone by a fix that makes others pass: measured on one
+        # run, eight such fixes of a DELETE criterion were reverted for a test asserting JSON on a 204.
+        logger.warning("Kept %s: it made %d test(s) pass and broke only the contested %s", stage_name,
+                       len(gained_now), contested)
+        broken = []
+    if broken and on_revert is not None:
+        try:
+            on_revert(broken)
+        except Exception:  # noqa: BLE001 - the fix is reverted as before
+            logger.warning("Could not look at %s before it was reverted", stage_name, exc_info=True)
     if broken and ci.revert_to(root, base):
+        if after.problem and any(str(item).startswith("the product no longer builds or starts") for item in broken):
+            from app.agents import start_breaks
+
+            start_breaks.record(root, stage_name, the_start_and_end_of(after.problem))
         # What the reverted fix had gained as well, so whether a whole fix
         # should go for one broken test can be measured: the snapshot after a
         # reverted fix is not kept. Measured live: a fix that rewrote the served
@@ -814,19 +943,29 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list
             stage_name, len(broken), len(gained),
         )
         return broken
+    # Committed first, and the measurement saved with the commit it measured. Found in a code review: the snapshot
+    # was saved with the commit before the fix's own, so the next fix's `before_a_fix` read "the workspace moved
+    # since it was measured" and ran the unit tests and the acceptance suite again on the product just measured.
+    after.commit = ci.commit(root, f"Fix: {description[:60]}") or after.commit
     ci.save(root, after)
-    ci.commit(root, f"Fix: {description[:60]}")
+    if not after.problem:
+        from app.agents import start_breaks
+
+        start_breaks.clear(root)
     return []
 
 
-def accepted_state(root: str) -> None:
-    """Measure the workspace as the sprint is accepted: the next sprint's baseline."""
+def accepted_state(root: str) -> list[str]:
+    """Measure the workspace as the sprint is accepted, the next sprint's baseline; the unit tests it holds open."""
     if not ci_applies(root):
-        return
+        return []
     try:
-        ci.save(root, ci.take(root, "accepted"), accepted=True)
+        measured = ci.take(root, "accepted")
+        ci.save(root, measured, accepted=True)
     except Exception:  # noqa: BLE001 - a missing baseline only means fewer regressions found
         logger.warning("Could not measure the accepted state", exc_info=True)
+        return []
+    return sorted(name for name, outcome in measured.unit.items() if outcome != "passed")
 
 
 def suite_locked(root: str) -> None:

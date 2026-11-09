@@ -1012,6 +1012,17 @@ def other_scripts_that_run_them(scripts: dict, owned: dict) -> list[str]:
     )
 
 
+def _the_pack_keeps_this_test_script(root: Path, command: str) -> bool:
+    """Whether `command` is the `test` script the project's stack pack writes and keeps. Never raises."""
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(Path(root))
+        return bool(found) and str((found[0].kept_scripts or {}).get("test") or "").strip() == command.strip()
+    except Exception:  # noqa: BLE001 - then the finding reads as before
+        return False
+
+
 def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
     """Test files the project's own `npm test` will not execute.
 
@@ -1223,6 +1234,15 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
         )
         if not where:
             continue
+        if _the_pack_keeps_this_test_script(root, command):
+            # Measured on one run: told to widen the pattern of a script the harness puts back before every run, the
+            # sprint was planned again for a change no work order may make. The files move, or go.
+            why = (
+                f"which runs only what {', '.join(f'`{p}`' for p in patterns) or 'it names'} "
+                f"match{'' if len(patterns) > 1 else 'es'}. That command is the harness's own and is put back "
+                "before every run, so it is not to be changed: give each stranded file that is a test a name the "
+                "pattern matches, and delete each that nothing runs."
+            )
         problems.append(
             f"{manifest.relative_to(root)} runs `{command}`, {why} Stranded: {where}."
         )
@@ -2409,6 +2429,15 @@ def _broken_local_references(files: list[Path], root: Path) -> list[str]:
             # product tripped this on its first file. The two sibling checks
             # above already strip it; this one did not.
             referenced = path.parent / target.lstrip("/")
+            # Where a service serves it from is not known here, so any folder up to the project may be its root:
+            # measured, `static/index.html` loading `/static/app.js` was looked for in `static/static/` alone.
+            if target.startswith("/") and not referenced.exists():
+                for folder in path.parent.parents:
+                    if (folder / target.lstrip("/")).exists():
+                        referenced = folder / target.lstrip("/")
+                        break
+                    if folder == root:
+                        break
             if not referenced.exists():
                 problems.append(
                     f"{path.relative_to(root)} references `{target}`, which does "
@@ -2443,6 +2472,25 @@ _DECLARES_ESM = re.compile(r'"type"\s*:\s*"module"')
 
 #: How many offending files to name before the list stops being useful.
 MAX_CONTRADICTING_FILES = 8
+
+
+def _test_files_a_runner_loaded(package: Path) -> set[str]:
+    """The file names of tests the package's own JUnit reports show ran (passed or failed). Never raises."""
+    names: set[str] = set()
+    try:
+        from app.acceptance import junit
+
+        for report in package.glob("test-results/*.xml"):
+            for test in junit.read(report).tests:
+                if test.outcome not in ("passed", "failed"):
+                    continue
+                for said in (test.file, test.suite):
+                    said = str(said or "").replace("\\", "/")
+                    if said:
+                        names.add(said.rsplit("/", 1)[-1])
+    except Exception:  # noqa: BLE001 - no report says nothing about what loaded
+        return set()
+    return names
 
 
 def _files_that_contradict_the_declared_module_type(
@@ -2503,6 +2551,12 @@ def _files_that_contradict_the_declared_module_type(
                 _FEATURE_DETECTS_COMMONJS.search(body)
             ):
                 offenders.append(str(path.relative_to(root)))
+        # A file whose tests a runner's report shows ran was loaded: its runner transforms it, whatever the
+        # manifest says. Measured on one run: a locked Playwright spec using `require` under `"type": "module"`
+        # passed 10 of 10, this finding said "the suite cannot run", two fixers changed the manifest, broke the
+        # start both times, and the sprint was escalated.
+        loaded = _test_files_a_runner_loaded(package)
+        offenders = [f for f in offenders if Path(f).name not in loaded]
         if not offenders:
             continue
         shown = ", ".join(sorted(offenders)[:MAX_CONTRADICTING_FILES])
@@ -3522,7 +3576,7 @@ def _manifest_defects(files: list[Path], root: Path, stack: Any) -> list[str]:
                 "runs `npm test` here gets a failure that says nothing about the "
                 "product."
             )
-        elif not test_script:
+        elif not test_script and not _in_the_acceptance_suite(root, path):
             # A suite nobody can reach by the obvious command. Measured on
             # one run: 153 passing tests in `app.test.mjs`, a manifest with
             # no `scripts` at all, and `npm test` answering "missing script:
@@ -4018,6 +4072,20 @@ _TEST_RUNNERS: dict[str, tuple[str, ...]] = {
 }
 
 
+def _files_that_import(files: list[Path], root: Path, package: str, most: int = 8) -> list[str]:
+    """The files, relative to `root`, that import or require `package`."""
+    pattern = re.compile(rf"""(?:from\s+|require\(\s*|import\s+)['"]{re.escape(package)}(?:/[^'"]*)?['"]""")
+    found: list[str] = []
+    for path in files:
+        if path.suffix.lower() not in (".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".jsx", ".tsx"):
+            continue
+        if pattern.search(_read(path) or ""):
+            found.append(path.relative_to(root).as_posix())
+            if len(found) >= most:
+                break
+    return found
+
+
 def _a_test_runner_the_stack_did_not_choose(files: list[Path], root: Path, stack: Any) -> list[str]:
     """A test framework installed over the one the stack selected.
 
@@ -4067,12 +4135,17 @@ def _a_test_runner_the_stack_did_not_choose(files: list[Path], root: Path, stack
                    for alias in aliases):
                 continue
             chosen = getattr(stack, "testing_framework", "")
+            # Who imports it: measured on one run, three fixes in a row removed the package from the manifest alone,
+            # broke the 19 tests whose files still imported it, and were reverted.
+            importers = _files_that_import(files, root, package)
             problems.append(
                 f"{path.relative_to(root)} installs '{package}', but this run's "
                 f"stack chose '{chosen}' as the testing framework. Tests written "
                 "for a runner the stack did not choose fail on that runner's own "
                 "setup, not on the product. Either use the chosen approach or "
                 "change the stack."
+                + (f" These files import '{package}' and must be rewritten for the chosen approach in the same "
+                   f"change, before the package is removed: {', '.join(importers)}." if importers else "")
             )
     return problems
 
@@ -4526,6 +4599,11 @@ def _a_source_file_that_does_not_parse(files: list[Path], root: Path) -> list[st
     parsed = 0
     for path in files:
         if "node_modules" in path.parts or parsed >= _PARSED_AT_MOST:
+            continue
+        # A throwaway is not the product: the one-liner a command was run from (`tmp-inline-<hash>.py`) held
+        # a stage's own typo, and the check raised it as a defect for a fixer - measured, the first
+        # defect of a sprint.
+        if _A_SCRATCH_SCRIPT.search(path.name):
             continue
         relative = str(path.relative_to(root))
         suffix = path.suffix.lower()
@@ -6003,6 +6081,34 @@ def _a_field_the_brief_asks_for_that_nothing_collects(
     ]
 
 
+#: The HTTP methods a service serves each action by. A route is named by its method and path, not by the action's word:
+#: measured on one run, `app.put('/notes/:id', ...)` served the brief's `PUT /notes/{id}` (every hidden test passed)
+#: and the last-sprint check, finding no "update" in the code, called the brief undelivered.
+_METHODS_OF_AN_ACTION = {
+    "add": ("post",), "create": ("post",),
+    "update": ("put", "patch"), "edit": ("put", "patch"), "modify": ("put", "patch"), "rename": ("put", "patch"),
+    "delete": ("delete",), "remove": ("delete",),
+}
+
+
+def _a_route_for(corpus: str, action: str) -> bool:
+    """Whether the code declares an HTTP route by a method that serves `action`, in any of the common forms."""
+    methods = _METHODS_OF_AN_ACTION.get(action)
+    if not methods:
+        return False
+    either = "|".join(methods)
+    pattern = (
+        rf"""(?i:[.@](?:{either}))\s*\(\s*[rf]?['"`]/"""            # app.put('/x'), @router.patch("/x")
+        rf"""|(?i:methods)\s*=\s*\[[^\]]*['"](?i:{either})['"]"""  # methods=["PUT"]
+        rf"""|['"](?i:{either})\s+/"""                              # "PUT /x"
+        rf"""|\b(?:{'|'.join(m.capitalize() for m in methods)})Mapping\b"""  # @PutMapping
+        rf"""|\[Http(?:{'|'.join(m.capitalize() for m in methods)})\b"""     # [HttpPut]
+        rf"""|\bMethod(?:{'|'.join(m.capitalize() for m in methods)})\b"""   # http.MethodPut
+        rf"""|\bRoute::(?:{either})\b"""                            # Route::put
+    )
+    return re.search(pattern, corpus) is not None
+
+
 def _a_required_action_nothing_implements(
     files: list[Path], root: Path, brief: str = ""
 ) -> list[str]:
@@ -6104,7 +6210,7 @@ def _a_required_action_nothing_implements(
         # inside `deleteTask` is `Array.prototype.filter`, and it was the only
         # thing standing between one run's three dead filter buttons and
         # this finding.
-        if _names_the_action(corpus, words):
+        if _names_the_action(corpus, words) or _a_route_for(corpus, action):
             continue
         alternatives = ", ".join(f"`{word}`" for word in words[1:])
         deferral = _where_the_run_deferred_it(root, action, words)
@@ -6839,6 +6945,21 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
 _CLIENT_LOGIC_SUFFIXES = frozenset({".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"})
 
 
+def _in_the_acceptance_suite(root: Path, path: Path) -> bool:
+    """Whether `path` is in the locked acceptance suite's folder, which `run.json` runs and no fixer may change.
+
+    Measured on one run: the suite's own `package.json` had no `test` script, and a blocking defect no fixer could
+    close asked for one.
+    """
+    try:
+        from app.acceptance import suite
+
+        folder = suite.directory(root)
+    except Exception:  # noqa: BLE001 - unknown: checked as before
+        return False
+    return folder is not None and (path.parent == folder or folder in path.parents)
+
+
 def _missing_playwright_for_ui(files: list[Path], root: Path, stack: Any) -> list[str]:
     """A UI with behaviour and no browser test, or [].
 
@@ -6917,11 +7038,18 @@ def _missing_playwright_for_ui(files: list[Path], root: Path, stack: Any) -> lis
     # unit tests of its state module - this check was satisfied by the
     # manifest line alone, and the review accepted a page nothing had opened.
     drives_the_page = re.compile(r"""(?:from\s*|require\(\s*|import\(\s*)["']@?playwright(?:/test)?["']""")
+    # Playwright's other bindings open the page as well. Measured on one run: every page test was Python
+    # (`from playwright.sync_api import Page`), and this raised a blocking defect asking for a JavaScript one.
+    drives_it_in_another_language = re.compile(
+        r"^\s*(?:from\s+playwright[\w.]*\s+import|import\s+playwright\b|import\s+com\.microsoft\.playwright"
+        r"|using\s+Microsoft\.Playwright)", re.M)
     specs = [
         path for path in files
         if is_test(str(path.relative_to(root)))
-        and path.suffix.lower() in _CLIENT_LOGIC_SUFFIXES
-        and drives_the_page.search(_read(path))
+        and (
+            (path.suffix.lower() in _CLIENT_LOGIC_SUFFIXES and drives_the_page.search(_read(path)))
+            or drives_it_in_another_language.search(_read(path))
+        )
     ]
     if not specs:
         return [

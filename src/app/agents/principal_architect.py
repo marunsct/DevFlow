@@ -232,7 +232,9 @@ class TechnicalSpecificationOutput(BaseModel):
         description=(
             "Every failure a user or caller can cause and every failure of something the product "
             "depends on, one entry each: the condition, the exact message or status the product "
-            "gives, and what it leaves unchanged."
+            "gives, and what it leaves unchanged. A value the product requires is refused when it is "
+            "empty or only whitespace once trimmed, exactly as when it is missing: list that with the "
+            "missing case, for every required text value."
         ),
     )
     implementation_order: list[str] = Field(
@@ -540,6 +542,14 @@ def build_architecture_revision_request(
     return {"messages": [{"role": "user", "content": brief}]}
 
 
+#: Most first reviews sent the specification back for contradicting itself, mostly over limits the brief never set
+#: (measured: 19 of 31 blocking or major findings over 14 runs).
+ONE_SOURCE_FOR_LIMITS = """- Add no limit the brief does not state: no maximum length, size cap, count, rate or
+  format it leaves open. Where the product cannot work without one, state it once,
+  in `domain_model`, and in every other section name that section instead of
+  repeating the value - a value written twice ends up written two ways."""
+
+
 _SYSTEM_PROMPT = f"""You are the Principal Architect for this workflow.
 
 Your role is to turn an approved product intake and an approved tools-and-models
@@ -565,6 +575,9 @@ Responsibilities:
   for each step, the tests for each acceptance criterion with their exact
   assertions, and every setting the product reads. Where two parts meet, write
   the contract once, exactly, so both sides are built to the same words.
+- Where the brief says how values are compared or matched (ignoring case,
+  spaces or accents), also say in what form those values are shown: a rule for
+  comparing leaves the output open, and builders print what they read first.
 - Give every call into a library or framework as its documentation gives it
   for the version you pin: the import statement and the call, word for word,
   read with `read_docs`. A smaller model recalls these wrongly more often than
@@ -574,6 +587,7 @@ Responsibilities:
   directories, and the names of the test runners' configuration files are
   stated once and agree everywhere: a builder copies both the configuration
   and the files, and where the two disagree the build fails.
+{ONE_SOURCE_FOR_LIMITS}
 
 {SCOPE_DISCIPLINE}
 

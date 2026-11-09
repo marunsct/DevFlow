@@ -40,7 +40,7 @@ def test_on_a_change_its_decisions_do_not_name_is_added_and_one_they_do_is_not(t
 
     with mock.patch.dict(os.environ, {"INTERFACE_CHANGES_NAMED": "on"}):
         got = interface_changes.with_them(output, tmp_path)
-    with mock.patch.dict(os.environ, {"INTERFACE_CHANGES_NAMED": ""}):
+    with mock.patch.dict(os.environ, {"INTERFACE_CHANGES_NAMED": "off"}):
         off = interface_changes.with_them(output, tmp_path)
 
     assert got.decisions == ["Added `mount` to the page.", "Interface of `app/store.py`: added `fetch`; removed `load`."]

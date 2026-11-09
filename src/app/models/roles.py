@@ -51,6 +51,10 @@ def judgement_environment(environment: Mapping[str, str]) -> dict[str, str] | No
     key = str(environment.get("JUDGEMENT_API_KEY") or "").strip()
     if key:
         built[_KEY_FOR_PROVIDER.get(built.get("LLM_PROVIDER", ""), "OPENAI_API_KEY")] = key
+    elif str(built.get("OPENAI_BASE_URL") or "").rstrip("/") != str(environment.get("OPENAI_BASE_URL") or "").rstrip("/"):
+        # With no key of its own, somewhere else is not given the default model's.
+        if _KEY_FOR_PROVIDER.get(built.get("LLM_PROVIDER", ""), "OPENAI_API_KEY") == _KEY_FOR_PROVIDER.get(default_provider, "OPENAI_API_KEY"):
+            built.pop(_KEY_FOR_PROVIDER.get(default_provider, "OPENAI_API_KEY"), None)
     window = str(environment.get("JUDGEMENT_CONTEXT_WINDOW") or "").strip()
     if window and window != "0":
         built["MODEL_CONTEXT_WINDOW"] = window

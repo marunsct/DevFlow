@@ -97,6 +97,7 @@ class SettingsView(BaseModel):
     #: key of their own saved (`runtime_settings.endpoint_keys`).
     endpoint_key_saved: bool = False
     judgement_endpoint_key_saved: bool = False
+    anthropic_workspace_id: str = ""
 
 
 class SettingsUpdate(BaseModel):
@@ -323,6 +324,7 @@ def _judgement_view() -> dict[str, Any]:
         "judgement_max_output_tokens": reply,
         "judgement_api_key_hint": _mask(key),
         "judgement_api_key_configured": bool(key),
+        "anthropic_workspace_id": str(environment.get("ANTHROPIC_WORKSPACE_ID") or ""),
         "escalate_after_attempts": escalate_after(environment),
         "plan_on_judgement_model": plans_on_the_judgement_model(environment),
         **_endpoints_with_keys(environment),
@@ -398,6 +400,22 @@ def _check_read_only() -> None:
         )
 
 
+def _the_frontier_fields(payload: Any) -> dict[str, str]:
+    """The frontier (judgement) model's stored overrides from a save that names one."""
+    return {
+        "judgement_provider": payload.judgement_provider,
+        "judgement_base_url": payload.judgement_base_url,
+        "judgement_model_name": payload.judgement_model_name.strip(),
+        "judgement_context_window": (
+            str(payload.judgement_context_window) if payload.judgement_context_window else ""
+        ),
+        "judgement_max_output_tokens": (
+            str(payload.judgement_max_output_tokens) if payload.judgement_max_output_tokens else ""
+        ),
+        "plan_on_judgement_model": "true" if payload.plan_on_judgement_model else "false",
+    }
+
+
 @settings_router.put("", response_model=SettingsView)
 async def update_settings(
     payload: SettingsUpdate, user: UserInDB = Depends(require_admin)
@@ -433,19 +451,13 @@ async def update_settings(
             "thinking_effort": payload.thinking_effort,
             "execution_mode": payload.execution_mode,
             **({"delivery_mode": payload.delivery_mode} if payload.delivery_mode else {}),
-            # Empty clears each override, which with an empty name turns the
-            # judgement model off.
-            "judgement_provider": payload.judgement_provider,
-            "judgement_base_url": payload.judgement_base_url,
-            "judgement_model_name": payload.judgement_model_name.strip(),
-            "judgement_context_window": (
-                str(payload.judgement_context_window) if payload.judgement_context_window else ""
-            ),
-            "judgement_max_output_tokens": (
-                str(payload.judgement_max_output_tokens) if payload.judgement_max_output_tokens else ""
-            ),
+            # The frontier model only when this save carries one. It has its own
+            # section and its own "No model" (`PUT /settings/frontier`); written
+            # empty from here, a general save six seconds after a frontier save
+            # wiped the frontier model the owner had just set (audit log,
+            # 2026-10-26 15:09:19 and 15:09:25 UTC).
+            **(_the_frontier_fields(payload) if payload.judgement_model_name.strip() else {}),
             "escalate_after_attempts": str(payload.escalate_after_attempts),
-            "plan_on_judgement_model": "true" if payload.plan_on_judgement_model else "false",
         },
         actor=user.username,
     )
@@ -549,6 +561,10 @@ class LocalModelSettingsPayload(BaseModel):
     model_max_output_tokens: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
     thinking_mode: Literal["default", "on", "off"] = Field(default="default")
     thinking_effort: Literal["low", "medium", "high"] = Field(default="medium")
+    anthropic_workspace_id: str | None = Field(default=None, max_length=128, pattern=r"^[A-Za-z0-9_-]*$")
+    # The parallel/linear toggle sits beside these on the page; a save that left it out reloaded the stored mode
+    # over the person's choice. None leaves it as it is.
+    execution_mode: Literal["linear", "parallel"] | None = Field(default=None)
     api_key: str | None = Field(default=None, max_length=512, repr=False)
 
     @field_validator("api_key")
@@ -574,6 +590,10 @@ class FrontierModelSettingsPayload(BaseModel):
     escalate_after_attempts: int = Field(default=2, ge=1, le=10)
     plan_on_judgement_model: bool = Field(default=True)
     no_model: bool = Field(default=False, description="Explicitly select no frontier model (local only).")
+    anthropic_workspace_id: str | None = Field(default=None, max_length=128, pattern=r"^[A-Za-z0-9_-]*$")
+    # The parallel/linear toggle sits beside these on the page; a save that left it out reloaded the stored mode
+    # over the person's choice. None leaves it as it is.
+    execution_mode: Literal["linear", "parallel"] | None = Field(default=None)
 
     @field_validator("judgement_api_key")
     @classmethod
@@ -606,6 +626,10 @@ async def update_local_model_settings(
         },
         actor=user.username,
     )
+    if payload.anthropic_workspace_id is not None:
+        runtime_settings.save({"anthropic_workspace_id": payload.anthropic_workspace_id}, actor=user.username)
+    if payload.execution_mode is not None:
+        runtime_settings.save({"execution_mode": payload.execution_mode}, actor=user.username)
     if payload.api_key is not None:
         provider = (payload.llm_provider or "local").strip().lower()
         runtime_settings.save_endpoint_key(provider, payload.openai_base_url, payload.api_key, actor=user.username)
@@ -642,6 +666,8 @@ async def update_frontier_model_settings(
 ) -> SettingsView:
     """Save only the frontier judgement model settings, or select No Model to turn it off."""
     _check_read_only()
+    if payload.execution_mode is not None:
+        runtime_settings.save({"execution_mode": payload.execution_mode}, actor=user.username)
     if payload.no_model or not payload.judgement_model_name.strip():
         runtime_settings.save(
             {
@@ -678,6 +704,8 @@ async def update_frontier_model_settings(
         },
         actor=user.username,
     )
+    if payload.anthropic_workspace_id is not None:
+        runtime_settings.save({"anthropic_workspace_id": payload.anthropic_workspace_id}, actor=user.username)
     if payload.judgement_api_key is not None:
         effective = runtime_settings.effective_environment()
         runtime_settings.save_endpoint_key(
@@ -722,6 +750,237 @@ async def frontier_status(user: UserInDB = Depends(get_current_active_user)) -> 
     from app.models.frontier_check import check_frontier
 
     return await run_in_threadpool(check_frontier)
+
+
+@settings_router.get("/model/steering")
+async def model_steering(user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+    """The serving model's diagnosis and the guidance it gets (plan MD.3, `app.models.steering_job`)."""
+    from app.models.steering_job import view
+
+    return view()
+
+
+def _a_run_is_live() -> bool:
+    from app.server.run_store import RunStore
+
+    return any(str(r.status) in ("running", "queued") for r in RunStore.shared().list_all(limit=50))
+
+
+@settings_router.post("/model/steering/diagnose", status_code=202)
+async def diagnose_the_model(user: UserInDB = Depends(require_admin)) -> dict[str, Any]:
+    """Diagnose the serving model afresh and save the guidance it needs against it; refused while a run is live."""
+    from fastapi import HTTPException
+
+    from app.models.steering_job import set_status, status
+
+    if status().get("status") == "running":
+        return {"status": "running", "message": "already diagnosing"}
+    if _a_run_is_live():
+        raise HTTPException(status_code=409, detail="A run is live: diagnose the model between runs, so the two do "
+                                                    "not share the model's slots.")
+    from app.server.tasks import diagnose_the_model as job
+
+    set_status("running", "queued")
+    job.delay()
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_diagnosis")
+    return {"status": "running", "message": "diagnosing the model"}
+
+
+@settings_router.get("/model/capabilities")
+async def model_capabilities(user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+    """What the serving model can do: the owner's values, else what was found, and where each came from (plan MD.5)."""
+    from app.models.steering_job import capabilities_view
+
+    return capabilities_view()
+
+
+class CapabilityValues(BaseModel):
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
+@settings_router.put("/model/capabilities")
+async def set_model_capabilities(payload: CapabilityValues, user: UserInDB = Depends(require_admin)) -> dict[str, Any]:
+    """The owner's values for the serving model's capabilities; null gives a field back to what is found."""
+    from fastapi import HTTPException
+
+    from app.models import capabilities
+    from app.models.steering_job import capabilities_view, page_model
+
+    name = page_model()
+    if not name:
+        raise HTTPException(status_code=409, detail="No model is serving.")
+    try:
+        capabilities.set_owner_values(name, payload.values)
+    except KeyError as unknown:
+        raise HTTPException(status_code=404, detail=f"No capability {unknown}.")
+    except (TypeError, ValueError) as wrong:
+        raise HTTPException(status_code=422, detail=str(wrong))
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_capabilities",
+                 detail={"model": name, "keys": sorted(payload.values)})
+    return capabilities_view()
+
+
+@settings_router.post("/model/capabilities/fill", status_code=202)
+async def fill_model_capabilities(user: UserInDB = Depends(require_admin)) -> dict[str, Any]:
+    """Find every capability the owner has not set - asking the server, the model and its model card."""
+    from fastapi import HTTPException
+
+    from app.models.steering_job import set_status, status
+
+    if status().get("status") == "running":
+        return {"status": "running", "message": "already working on the model"}
+    if _a_run_is_live():
+        raise HTTPException(status_code=409, detail="A run is live: find the model's capabilities between runs, so "
+                                                    "the questions do not share the model's slots.")
+    from app.server.tasks import fill_model_capabilities as job
+
+    set_status("running", "queued")
+    job.delay()
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_capabilities_fill")
+    return {"status": "running", "message": "finding what the model can do"}
+
+
+@settings_router.get("/model/sampling")
+async def model_sampling(user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+    """The serving model's sampling for each mode of a call: what each mode is for, its values and their source."""
+    from app.models import sampling_modes
+    from app.models.steering_job import page_model
+
+    name = page_model()
+    return sampling_modes.view(name) if name else {"model": "", "settings": list(sampling_modes.SETTINGS), "modes": [],
+                                                   "choices": {"send": False, "thinking_calls": "thinking_precise"},
+                                                   "determined_at": ""}
+
+
+@settings_router.post("/model/sampling/determine")
+async def determine_model_sampling(user: UserInDB = Depends(require_admin)) -> dict[str, Any]:
+    """Derive every mode's sampling for the serving model from its model card and family, and keep it."""
+    import asyncio
+
+    from fastapi import HTTPException
+
+    from app.models import sampling_modes
+    from app.models.steering_job import page_model
+
+    name = page_model()
+    if not name:
+        raise HTTPException(status_code=409, detail="No model is serving.")
+    await asyncio.to_thread(sampling_modes.determine, name)
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_sampling_determine",
+                 detail={"model": name})
+    return sampling_modes.view(name)
+
+
+class SamplingUpdate(BaseModel):
+    #: One mode's values; null with a mode gives it back to what was determined.
+    mode: str | None = None
+    values: dict[str, Any] | None = None
+    #: The owner's choices.
+    send: bool | None = None
+    thinking_calls: str | None = None
+
+
+@settings_router.put("/model/sampling")
+async def set_model_sampling(payload: SamplingUpdate, user: UserInDB = Depends(require_admin)) -> dict[str, Any]:
+    """The owner's values for one mode, or whether to send sampling by mode and which mode a thinking call uses."""
+    from fastapi import HTTPException
+
+    from app.models import sampling_modes
+    from app.models.capabilities import forget_sampling
+    from app.models.steering_job import page_model
+
+    name = page_model()
+    if not name:
+        raise HTTPException(status_code=409, detail="No model is serving.")
+    try:
+        if payload.mode is not None:
+            sampling_modes.set_owner(name, payload.mode, payload.values)
+        if payload.send is not None or payload.thinking_calls is not None:
+            sampling_modes.set_choices(name, send=payload.send, thinking_calls=payload.thinking_calls)
+    except KeyError as unknown:
+        raise HTTPException(status_code=404, detail=f"No sampling mode or setting {unknown}.")
+    except (TypeError, ValueError) as wrong:
+        raise HTTPException(status_code=422, detail=str(wrong))
+    forget_sampling()
+    sampling_modes.forget()
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_sampling",
+                 detail={"model": name, "mode": payload.mode, "send": payload.send,
+                         "thinking_calls": payload.thinking_calls})
+    return sampling_modes.view(name)
+
+
+class GuideOverride(BaseModel):
+    override: bool | None = None
+
+
+@settings_router.put("/model/steering/guides/{guide_id}")
+async def set_guide_override(
+    guide_id: str, payload: GuideOverride, user: UserInDB = Depends(require_admin)
+) -> dict[str, Any]:
+    """One guide on, off, or back to what the diagnosis chose, for the serving model."""
+    from fastapi import HTTPException
+
+    from app.models import guidance
+    from app.models.steering_job import page_model, view
+
+    name = page_model()
+    if not name:
+        raise HTTPException(status_code=409, detail="No model is serving.")
+    try:
+        guidance.set_override(name, guide_id, payload.override)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"No guide {guide_id}.")
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.model_guide",
+                 subject=guide_id, detail={"override": payload.override, "model": name})
+    return view()
+
+
+class SwitchEntry(BaseModel):
+    """One switch on the admin page: what it does, and where its value comes from."""
+
+    name: str
+    module: str
+    summary: str
+    details: str = ""
+    #: The code's own default (`ON_BY_DEFAULT`).
+    default: bool
+    #: The deployed environment's value (the compose file), or None when it sets none.
+    docker: bool | None = None
+    #: The admin page's setting, or None when the switch follows the environment.
+    setting: bool | None = None
+    on: bool
+    #: Which of the three decided `on`: "setting", "docker" or "default".
+    source: Literal["setting", "docker", "default"]
+    #: What it is for: "Bundles", "Being measured", or an improvement group ("Context and cost", "Efficiency").
+    group: str = ""
+
+
+class SwitchSetting(BaseModel):
+    #: On, off, or None to follow the deployed environment again.
+    setting: bool | None = None
+
+
+@settings_router.get("/switches", response_model=list[SwitchEntry])
+async def list_switches(user: UserInDB = Depends(get_current_active_user)) -> list[SwitchEntry]:
+    """Every switch, what it does, and whether it is on: the admin page's setting, else Docker, else the code."""
+    from app.server import switch_catalogue
+
+    return [SwitchEntry(**entry) for entry in switch_catalogue.entries()]
+
+
+@settings_router.put("/switches/{name}", response_model=list[SwitchEntry])
+async def set_switch(name: str, payload: SwitchSetting, user: UserInDB = Depends(require_admin)) -> list[SwitchEntry]:
+    """Set one switch on or off for every process, or back to the deployed environment's value (`null`)."""
+    from app.server import switch_catalogue
+    from app.switches import operated
+
+    if name not in operated():
+        raise HTTPException(status_code=404, detail=f"No switch {name}.")
+    _check_read_only()
+    runtime_settings.save_switch(name, payload.setting, actor=user.username)
+    record_audit(actor=user.username, tenant_id=user.tenant_id, action="settings.switch",
+                 subject=name, detail={"setting": payload.setting})
+    return [SwitchEntry(**entry) for entry in switch_catalogue.entries()]
 
 
 @settings_router.get("/models", response_model=list[ModelProfile])

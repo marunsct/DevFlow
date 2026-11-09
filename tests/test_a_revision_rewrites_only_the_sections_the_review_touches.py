@@ -59,6 +59,41 @@ def test_a_section_that_comes_back_empty_leaves_the_revision_to_the_architect():
     assert specification_parts.revised_in_place(PREVIOUS, "- change", model, "") is None
 
 
+def test_a_section_answered_with_an_empty_list_is_left_as_it_stands_and_the_others_are_kept():
+    """Measured: the one changed section came back written, a second came back `[]`, and the revision was dropped."""
+    model = _Model(["testing", "decisions"], {"testing": ["node:test, 2 tiers"], "decisions": []})
+
+    revised = specification_parts.revised_in_place(PREVIOUS, "- the testing section is thin", model, "")
+
+    assert revised is not None
+    assert revised.testing == ["node:test, 2 tiers"]
+    assert revised.decisions == PREVIOUS.decisions
+
+
+def test_a_section_answered_empty_that_already_held_nothing_stays_empty():
+    previous = Spec(product_scope="Notes.", file_plan=["a"], testing=["t"], decisions=[])
+    model = _Model(["testing", "decisions"], {"testing": ["u"], "decisions": []})
+
+    revised = specification_parts.revised_in_place(previous, "- change", model, "")
+
+    assert revised is not None and revised.testing == ["u"] and revised.decisions == []
+
+
+def test_the_request_gives_the_form_of_every_section_to_rewrite_even_one_that_holds_nothing():
+    """Measured: an empty section had no form to copy, the reply invented record keys, and nine fields failed to validate."""
+    previous = Spec(product_scope="Notes.", file_plan=["a"], testing=["t"], decisions=[])
+    model = _Model(["decisions"], {"decisions": ["d"]})
+
+    specification_parts.revised_in_place(previous, "- add the missing decision", model, "")
+
+    asked = model.asked[-1]
+    form = asked.split("--- The form of each section (JSON schema) ---\n")[1].split("\n\n")[0]
+    assert set(json.loads(form)) == {"decisions"}
+    assert "Decisions and why." in form
+    assert not BANNED.search(asked.split("--- The form of each section")[0].split("--- Required changes")[0])
+    assert not BANNED.search("--- The form of each section (JSON schema) ---")
+
+
 def test_a_model_that_cannot_name_the_sections_and_cannot_revise_leaves_it_to_the_architect():
     assert specification_parts.revised_in_place(PREVIOUS, "- change", _Model([], {}), "") is None
 
@@ -150,3 +185,26 @@ def test_the_sections_the_review_names_are_rewritten_and_at_most_a_few_more():
     assert len(chosen) == 2 + specification_parts.MOST_UNNAMED_SECTIONS
     # A review that names no section keeps what the model chose.
     assert specification_parts._bounded_by_what_the_review_names(["testing"], "make it consistent", names) == ["testing"]
+
+
+# --- a repair the harness made names its own sections (harness review HR2.D.2) -------------
+
+REPAIR = ("The specification's testing names a check nobody here can carry out. Return only `testing` with those "
+          "checks corrected; unchanged sections are automatically preserved.")
+
+
+def test_a_harness_repair_with_its_sections_named_makes_no_naming_call():
+    model = _Model(["product_scope"], {"testing": ["node:test, every route"]})
+
+    revised = specification_parts.revised_in_place(PREVIOUS, REPAIR, model, "context")
+
+    assert revised.testing == ["node:test, every route"]
+    assert not any('{"sections"' in asked for asked in model.asked), "the repair named its section; nothing is asked"
+    assert len(model.asked) == 1
+
+
+def test_a_review_finding_beside_a_repair_is_still_asked_of_the_model():
+    assert specification_parts.sections_the_harness_named(PREVIOUS, REPAIR + "\n\n- AC-6: a store module is missing") == []
+    assert specification_parts.sections_the_harness_named(
+        PREVIOUS, "The file plan names none of them. Return only `file_plan`, `testing` and `decisions` with the paths corrected; x"
+    ) == ["file_plan", "testing", "decisions"]

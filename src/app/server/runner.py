@@ -232,7 +232,35 @@ BUDGET_PAUSE_STATUS = "waiting_for_budget"
 
 
 #: Statuses a run is resumed from, from its last checkpoint.
+def _remember_the_stop(run_id: str) -> None:
+    """Mark the run stopped in this process, so a stage thread the stopped task left running ends at its next model call."""
+    try:
+        from app.graph.workflow import remember_the_stop
+
+        remember_the_stop(run_id)
+    except Exception:  # noqa: BLE001 - the stop itself is recorded already
+        logger.debug("Could not remember the stop of %s", run_id, exc_info=True)
+
+
 RESUMABLE_STATUSES = ("failed", BUDGET_PAUSE_STATUS, "paused", "cancelled")
+
+
+def _a_worker_is_running(task_id: str | None) -> bool:
+    """Whether a worker reports this task among the ones it is executing now; False when none answers or it has no task.
+
+    Asked only on a cancel. A worker that does not answer within a second is
+    taken as not running it: a run cancelled that a worker was running stops at
+    its next check of the flag either way.
+    """
+    if not task_id:
+        return False
+    try:
+        from app.server.tasks import celery_app
+
+        active = celery_app.control.inspect(timeout=1.0).active() or {}
+        return any(task.get("id") == task_id for tasks in active.values() for task in tasks or [])
+    except Exception:  # noqa: BLE001 - no answer is no worker
+        return False
 
 
 CANCELLABLE_WHILE_PARKED = (
@@ -953,7 +981,7 @@ class WorkflowRunner:
                 "to MODEL_PRICES_JSON, or unset MAX_RUN_COST_USD to run without a ceiling."
             )
 
-    def _require_a_reachable_model(self) -> None:
+    def _require_a_reachable_model(self, run_id: str | None = None, snapshot: dict[str, str] | None = None) -> None:
         """Refuse to start when nothing is serving the configured endpoint.
 
         A model server that is not there and one that is merely slow produce
@@ -974,7 +1002,12 @@ class WorkflowRunner:
         from app.server.runtime_settings import effective_environment
 
         try:
-            settings = load_settings(dict(effective_environment()))
+            # The model the run will use: its own when it is pinned (a resume), the one it is being started on
+            # (`snapshot`), else the settings'.
+            from app.models.model_pin import as_the_run
+
+            with as_the_run(run_id):
+                settings = load_settings(dict(effective_environment(model=snapshot)))
         except Exception:  # noqa: BLE001 - never block on reading settings
             logger.warning("Could not read settings for the endpoint probe", exc_info=True)
             return
@@ -1016,19 +1049,31 @@ class WorkflowRunner:
         delivery_mode: str | None = None,
         use_frontier_model: bool | None = None,
         approval_timeout_minutes: int | None = None,
+        pin_model: bool = False,
+        pin_base_url: str | None = None,
+        pin_model_name: str | None = None,
     ) -> None:
         """Persist start settings and dispatch the run to a worker.
 
         The status transition is atomic: two concurrent starts cannot both win,
         because only one UPDATE can match ``status = 'created'``.
+
+        The run's model is fixed at its first snapshot here (`app.models.model_pin`): what the settings name
+        now, or, with `pin_model`, that with `pin_base_url` / `pin_model_name` in place of the settings' own,
+        kept for the run whatever the settings become.
         """
         record = self.run_store.load(run_id)
         if record is None:
             raise ValueError(f"Run {run_id} is not registered")
 
+        from app.models import model_pin
+        from app.server.runtime_settings import global_model_snapshot
+
+        snapshot = model_pin.snapshot_for(global_model_snapshot(), pin_base_url, pin_model_name) if pin_model else None
+
         await self._require_command_execution()
         self._require_a_ceiling_that_can_hold()
-        self._require_a_reachable_model()
+        self._require_a_reachable_model(snapshot=snapshot)
 
         record.repo_root = str(repository.root_path)
         record.review_policy = review_policy or {}
@@ -1051,6 +1096,10 @@ class WorkflowRunner:
         record.model_overrides = _public_model_overrides(model_overrides)
         record.updated_at = datetime.now(timezone.utc).isoformat()
         self._persist(record)
+        # After the row is saved (`save` does not write these columns): the model the run starts on.
+        self.run_store.set_model_pin(
+            run_id, bool(pin_model), last=snapshot if pin_model else global_model_snapshot()
+        )
 
         if not self.run_store.compare_and_set_status(
             run_id, "created", "running", updated_at=record.updated_at
@@ -1087,7 +1136,7 @@ class WorkflowRunner:
 
         await self._require_command_execution()
         self._require_a_ceiling_that_can_hold()
-        self._require_a_reachable_model()
+        self._require_a_reachable_model(run_id)
 
         now = datetime.now(timezone.utc).isoformat()
         # A run parked at its spending ceiling, paused by its owner or cancelled
@@ -1108,7 +1157,42 @@ class WorkflowRunner:
             )
         # The stop flag a pause or a cancel raised would stop it again at once.
         self.run_store.clear_stop(run_id)
-        self._dispatch(run_id, resume=True, decision_payload=None)
+        # Said in the transcript (HR2.R.5): the audit's "resumed after its worker stopped" line and the `resumes`
+        # KPI read this record, and a resume had stopped writing it (73 resumes in a day, 0 records).
+        try:
+            from app.observability.transcript import record as note_in_transcript
+
+            note_in_transcript(run_id, "", "resumed", why=f"resumed from {resumable} (a pause, a rewind or a deploy)")
+        except Exception:  # noqa: BLE001 - a resume is never failed by its note
+            logger.debug("Could not note the resume of %s", run_id, exc_info=True)
+        try:
+            self._dispatch(run_id, resume=True, decision_payload=None)
+        except Exception:
+            self._put_back_a_resume_that_was_not_dispatched(run_id, resumable, record)
+            raise
+
+    def _put_back_a_resume_that_was_not_dispatched(
+        self, run_id: str, came_from: str, record: RunRecord | None
+    ) -> None:
+        """Return a run to the status it was resumed from, with its error, when no task was dispatched. Never raises.
+
+        Found in review: `resume_run` sets the row `running` before it
+        dispatches, so the dispatch's own failure - a broker that did not
+        answer, every run slot taken - left a row reading `running` under the
+        previous, finished task's id. Nothing was driving it, a resume refused
+        it ("not in one of the states a run resumes from"), and only the orphan
+        sweep, a minute and more later, moved it again. Put back as it was, it
+        can be resumed again at once, and a run recovery marked keeps the
+        words (`STOPPED_WORKER_MARKER`) that let a starting worker resume it.
+        """
+        try:
+            self.run_store.compare_and_set_status(
+                run_id, "running", came_from,
+                updated_at=datetime.now(timezone.utc).isoformat(),
+                error=(record.error if record is not None else None) or None,
+            )
+        except Exception:  # noqa: BLE001 - the dispatch's own error is the one the caller needs
+            logger.warning("Could not put run %s back after its resume was not dispatched", run_id, exc_info=True)
 
     def _graph_for(self, record: RunRecord) -> Any:
         return build_workflow_graph(
@@ -1139,6 +1223,14 @@ class WorkflowRunner:
         if record.status not in (*RESUMABLE_STATUSES, "completed"):
             raise RunConflict(
                 f"Run {run_id} is {record.status}; pause it first, then rewind it."
+            )
+        # "Paused" is honoured at the next stage boundary; the step in flight still finishes and writes its
+        # checkpoint. Measured: it wrote over a rewind nine seconds later, and the rewound stage never ran.
+        from app.server import driving
+
+        if not await asyncio.to_thread(driving.wait_until_free, run_id):
+            raise RunConflict(
+                f"Run {run_id} is still finishing the step it was on when it was paused; rewind it once that is done."
             )
         graph = self._graph_for(record)
         done = await asyncio.to_thread(rewind_to, graph, record.thread_id, checkpoint_id, record.repo_root)
@@ -1179,13 +1271,18 @@ class WorkflowRunner:
         await self.resume_run(run_id)
         return done
 
-    async def pause_run(self, run_id: str) -> None:
+    async def pause_run(self, run_id: str, *, at_boundary: bool = False, ceiling_seconds: float = 600.0) -> None:
         """Stop a running run at a stage boundary, keeping it to be resumed.
 
         The same two mechanisms as a cancel: the flag stops it cleanly at the
         next checkpoint, and the revoke stops a task mid-stage now - the stage
         it was in runs again on resume, as after a redeploy. Only the status
         recorded differs (`_finish_stopped`), and nothing is cleaned up.
+
+        `at_boundary` (harness review HR2.R.2): the flag alone, and the revoke only if the run is still running
+        `ceiling_seconds` later. A stage cut off mid-way starts again on resume - measured, 41 of 102 cancelled calls
+        in one day were in the architect's stage, whose parallel rewrites a cut loses - so a deploy waits for the
+        stage to end, up to the ceiling, and then stops it as before.
         """
         record = self.run_store.load(run_id)
         if record is None:
@@ -1195,13 +1292,10 @@ class WorkflowRunner:
             raise RunConflict(
                 f"Run {run_id} is {record.status}; only a running run can be paused."
             )
-        if record.task_id:
-            try:
-                from app.server.tasks import celery_app
-
-                celery_app.control.revoke(record.task_id, terminate=True, signal="SIGTERM")
-            except Exception:  # noqa: BLE001 - the flag still stops it at the next check
-                logger.warning("Could not revoke task %s for run %s", record.task_id, run_id, exc_info=True)
+        if record.task_id and at_boundary:
+            self._background(self._revoke_if_still_running(run_id, record.task_id, ceiling_seconds))
+        elif record.task_id:
+            self._revoke(run_id, record.task_id)
         await self.event_bus.publish(
             run_id,
             RunEvent(
@@ -1212,6 +1306,37 @@ class WorkflowRunner:
                 message="Run paused by user; resume it to continue from where it stopped.",
             ),
         )
+
+    def _revoke(self, run_id: str, task_id: str) -> None:
+        try:
+            from app.server.tasks import celery_app
+
+            celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+        except Exception:  # noqa: BLE001 - the flag still stops it at the next check
+            logger.warning("Could not revoke task %s for run %s", task_id, run_id, exc_info=True)
+
+    def _background(self, work: Any) -> None:
+        """Run `work` on this process's loop without awaiting it; the task is kept so it is not collected."""
+        task = asyncio.ensure_future(work)
+        pending = getattr(self, "_pending_revokes", None)
+        if pending is None:
+            pending = self._pending_revokes = set()
+        pending.add(task)
+        task.add_done_callback(pending.discard)
+
+    async def _revoke_if_still_running(self, run_id: str, task_id: str, ceiling_seconds: float) -> None:
+        """The ceiling of a boundary pause: the stage did not end in time, so it is stopped now, as a plain pause is."""
+        waited = 0.0
+        while waited < ceiling_seconds:
+            step = min(5.0, ceiling_seconds - waited)
+            await asyncio.sleep(step)
+            waited += step
+            record = self.run_store.load(run_id)
+            if record is None or record.status != "running":
+                return
+        logger.warning("Run %s did not reach a stage boundary within %.0fs of its pause; stopping its stage",
+                       run_id, ceiling_seconds)
+        self._revoke(run_id, task_id)
 
     async def submit_approval(self, run_id: str, decision: dict[str, Any]) -> None:
         # Defence in depth against a stale status row. An unattended run answers
@@ -1284,6 +1409,13 @@ class WorkflowRunner:
                 "cancelled",
                 updated_at=now,
             )
+        elif record.status in ("running", "queued") and not _a_worker_is_running(record.task_id):
+            # "Running" with no worker running it - left so by a restart - has
+            # nobody to notice the flag either. Measured: the owner cancelled
+            # one such run again and again; each cancel touched the run, so
+            # orphan recovery kept judging it too recent to be abandoned, and
+            # it stayed "running" with the cancel requested.
+            self.run_store.compare_and_set_status(run_id, ("running", "queued"), "cancelled", updated_at=now)
 
         await self.event_bus.publish(
             run_id,
@@ -1537,17 +1669,23 @@ class WorkflowRunner:
                 # machine-readable marker in its root, and a clean release
                 # clears whatever an earlier attempt left there.
                 if record.repo_root:
+                    from app import completion_verdict
                     from app.graph import terminal_state
 
-                    if stage == "complete" and not record.completion_gaps:
-                        terminal_state.clear(record.repo_root)
+                    blocking, notes = completion_verdict.split(record.completion_gaps)
+                    if stage == "complete" and not blocking:
+                        terminal_state.clear(record.repo_root, status=record.status, notes=notes)
                     else:
                         terminal_state.mark(
                             record.repo_root,
                             status=record.status,
-                            reason=str(record.error or "completed with gaps it did not prove"),
+                            reason=str(
+                                record.error
+                                or f"completed with {len(blocking)} gap(s) that mean the product may not work"
+                            ),
                             stage=str(state.get("stage") or stage),
-                            gaps=record.completion_gaps,
+                            gaps=blocking,
+                            notes=notes,
                         )
                 self._persist(record)
                 await asyncio.to_thread(self._archive_artifacts, record)
@@ -1958,6 +2096,7 @@ class WorkflowRunner:
                 record.repo_root, status="cancelled", reason="The run was cancelled before it finished."
             )
         self._persist(record)
+        _remember_the_stop(record.run_id)
         logger.info("Run %s cancelled", record.run_id)
         # Cancellation is a terminal outcome like any other, and leaves the same
         # journal and context files behind. Pruning only on complete/failed meant
@@ -1970,6 +2109,7 @@ class WorkflowRunner:
         record.status = "paused"
         record.updated_at = datetime.now(timezone.utc).isoformat()
         self._persist(record)
+        _remember_the_stop(record.run_id)
         logger.info("Run %s paused", record.run_id)
 
     def _update_record(self, record: RunRecord, state: dict[str, Any]) -> None:

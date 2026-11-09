@@ -204,3 +204,21 @@ def test_a_rewrite_is_told_what_happened_to_the_attempts_before_it(tmp_path):
     with _mock.patch.dict(_os.environ, {"DECISION_LEDGER": "on"}):
         text = rewritten_fixes.fix_request(root, "notes-api/src/store.ts", defect, "x", None, None, [], [])
     assert "Reverted: it broke 1 test(s)" in text and "Earlier attempts at this defect" in text
+
+
+def test_a_failing_unit_run_may_rewrite_its_test_whatever_ids_the_test_names_carry(tmp_path):
+    """Measured on two runs: unit tests named "AC-1 CreateNoteTest" made the failing-unit-tests defect read as the
+    suite's, every test file was left out, and both fixes rewrote the product, broke other unit tests and were
+    reverted."""
+    from app.graph import rewritten_fixes, workflow
+
+    (tmp_path / "notes-api" / "test").mkdir(parents=True)
+    (tmp_path / "notes-api" / "src").mkdir()
+    (tmp_path / "notes-api" / "test" / "app.test.ts").write_text("test('AC-1 CreateNoteTest', () => {});\n")
+    (tmp_path / "notes-api" / "src" / "app.ts").write_text("export const app = 1;\n")
+    defect = SimpleNamespace(description=f"{workflow.UNIT_TESTS_FAIL} It says: AC-1 CreateNoteTest failed",
+                             expected_behavior="", affected_files=[])
+    failure = "not ok 1 - AC-1 CreateNoteTest\n  at notes-api/test/app.test.ts:1:1\n  at notes-api/src/app.ts:1:1\n"
+
+    found = rewritten_fixes.files_to_fix(defect, failure, tmp_path, lambda name: True)
+    assert "notes-api/test/app.test.ts" in found

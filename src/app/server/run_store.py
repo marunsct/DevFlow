@@ -88,6 +88,43 @@ _MIGRATIONS = (
     # suite was locked with, an unproven setup (Initiative J.4). A completed
     # run with a non-empty list is never plain "completed" on any surface.
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS completion_gaps TEXT NOT NULL DEFAULT '[]'",
+    # The run's own model (`app.models.model_pin`): whether it is kept on the model it last ran on, and that model
+    # (a JSON snapshot of the non-secret model settings - never a key). Owned by `set_model_pin` / `set_model_last`,
+    # not by `save`.
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS model_pinned BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS model_last TEXT",
+    # A name the person gives a run to tell it from the others in the list (never written by `save`: owned by
+    # `set_run_name`, so a worker persisting its record cannot undo a rename).
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS run_name TEXT",
+    # The run's own switch settings, {name: true|false}, beating the admin page and the environment for this run
+    # only (harness review HR2.E.1: both arms of a measurement on one harness version). Owned by
+    # `set_switch_overrides` / `switch_overrides`, not by `save`.
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS switch_overrides TEXT NOT NULL DEFAULT '{}'",
+    # How long the run has been paused in all, and since when it is paused now: kept by the database itself, so every
+    # way a run is paused (the page, the loop, a worker at a stage boundary) is counted and no process can forget it.
+    # A run's time on the page is its time less these (owner, 2026-11-03: pause time is not the run's time).
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS paused_since TIMESTAMPTZ",
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS paused_seconds DOUBLE PRECISION NOT NULL DEFAULT 0",
+    # Every stretch the run was not working counts, not only a pause (owner, 2026-11-08): stopped by a fault, a
+    # cancel, or waiting on a person. Measured: a host fault left two runs `failed` for 19 hours, then they were
+    # resumed, and the page counted those hours as the runs' time.
+    """CREATE OR REPLACE FUNCTION runs_pause_clock() RETURNS trigger AS $clock$
+    DECLARE
+        stopped CONSTANT text[] := ARRAY['paused', 'failed', 'cancelled', 'waiting_for_approval',
+                                         'waiting_for_review', 'waiting_for_budget'];
+    BEGIN
+        IF NEW.status = ANY(stopped) AND NOT (OLD.status = ANY(stopped)) THEN
+            NEW.paused_since := now();
+        ELSIF NOT (NEW.status = ANY(stopped)) AND OLD.status = ANY(stopped) THEN
+            NEW.paused_seconds := COALESCE(OLD.paused_seconds, 0)
+                + GREATEST(EXTRACT(EPOCH FROM now() - COALESCE(OLD.paused_since, now())), 0);
+            NEW.paused_since := NULL;
+        END IF;
+        RETURN NEW;
+    END
+    $clock$ LANGUAGE plpgsql""",
+    "DROP TRIGGER IF EXISTS runs_pause_clock ON runs",
+    "CREATE TRIGGER runs_pause_clock BEFORE UPDATE ON runs FOR EACH ROW EXECUTE FUNCTION runs_pause_clock()",
     "CREATE INDEX IF NOT EXISTS runs_tenant_created_idx ON runs (tenant_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS runs_owner_idx ON runs (owner)",
 )
@@ -201,18 +238,11 @@ class RunStore:
 
     @contextmanager
     def get_connection(self):
-        conn = self._pool.getconn()
-        try:
+        # A dead connection is replaced, and one that breaks is not kept (HR2.RT.1).
+        from app.server.db_pool import borrowed
+
+        with borrowed(self._pool) as conn:
             yield conn
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            self._pool.putconn(conn)
 
     # ------------------------------------------------------------------
     # Writes
@@ -388,6 +418,163 @@ class RunStore:
             with conn.cursor() as cur:
                 cur.execute("UPDATE runs SET task_id = %s WHERE run_id = %s", (task_id, run_id))
             conn.commit()
+
+    def model_state(self, run_id: str) -> tuple[bool, dict[str, str]] | None:
+        """(pinned, the model the run last ran on) for the run; None when there is no such run.
+
+        Read by the worker on every model request (through a short cache), written by the API, so it has
+        its own statement and is not part of the record `save` writes.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT model_pinned, model_last FROM runs WHERE run_id = %s", (run_id,))
+                row = cur.fetchone()
+        if not row:
+            return None
+        try:
+            last = json.loads(row[1]) if row[1] else {}
+        except (TypeError, ValueError):
+            last = {}
+        return bool(row[0]), {str(k): str(v) for k, v in last.items()} if isinstance(last, dict) else {}
+
+    def switch_overrides(self, run_id: str) -> dict[str, bool]:
+        """The run's own switch settings; {} when it has none or there is no such run."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT switch_overrides FROM runs WHERE run_id = %s", (run_id,))
+                row = cur.fetchone()
+        try:
+            found = json.loads(row[0]) if row and row[0] else {}
+        except (TypeError, ValueError):
+            found = {}
+        return {str(k): bool(v) for k, v in found.items()} if isinstance(found, dict) else {}
+
+    def set_switch_overrides(self, run_id: str, overrides: dict[str, bool]) -> bool:
+        """Set the run's own switch settings (replacing any); True when the run exists."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE runs SET switch_overrides = %s WHERE run_id = %s",
+                            (json.dumps({str(k): bool(v) for k, v in overrides.items()}), run_id))
+                changed = cur.rowcount
+            conn.commit()
+        return changed == 1
+
+    def model_states(self, run_ids: list[str]) -> dict[str, tuple[bool, dict[str, str]]]:
+        """`model_state` for several runs with one statement: {run_id: (pinned, the model it last ran on)}.
+
+        The runs list shows each run's pin beside its other controls; asking one run at a time made a page of 50
+        runs 50 statements. A run with no row is left out. Never raises: the list is not failed by the pin.
+        """
+        if not run_ids:
+            return {}
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT run_id, model_pinned, model_last FROM runs WHERE run_id = ANY(%s)", (list(run_ids),)
+                    )
+                    rows = cur.fetchall()
+        except Exception:  # noqa: BLE001
+            return {}
+        found: dict[str, tuple[bool, dict[str, str]]] = {}
+        for run_id, pinned, raw in rows:
+            try:
+                last = json.loads(raw) if raw else {}
+            except (TypeError, ValueError):
+                last = {}
+            found[str(run_id)] = (bool(pinned), {str(k): str(v) for k, v in last.items()} if isinstance(last, dict) else {})
+        return found
+
+    def run_names(self, run_ids: list[str]) -> dict[str, str]:
+        """{run_id: name} for the runs asked for that have one, with one statement. Never raises."""
+        if not run_ids:
+            return {}
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT run_id, run_name FROM runs WHERE run_id = ANY(%s) AND COALESCE(run_name, '') <> ''",
+                        (list(run_ids),),
+                    )
+                    return {str(run_id): str(name) for run_id, name in cur.fetchall()}
+        except Exception:  # noqa: BLE001 - a list is never failed by a name
+            return {}
+
+    def paused_seconds(self, run_ids: list[str]) -> dict[str, float]:
+        """{run_id: seconds stopped in all (paused, failed, cancelled, waiting on a person), the stop going on now included
+        while the run can still go on} for the runs asked for. Never raises."""
+        if not run_ids:
+            return {}
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        # The stretch going on now counts only while the run can still go on: a finished run's
+                        # time on the page ends where it ended, so its last stop is no part of it.
+                        "SELECT run_id, paused_seconds + CASE WHEN status IN ('completed', 'failed', 'cancelled') "
+                        "THEN 0 ELSE COALESCE(EXTRACT(EPOCH FROM now() - paused_since), 0) END "
+                        "FROM runs WHERE run_id = ANY(%s)",
+                        (list(run_ids),),
+                    )
+                    return {str(run_id): max(float(seconds or 0), 0.0) for run_id, seconds in cur.fetchall()}
+        except Exception:  # noqa: BLE001 - a run's time is never failed by its pauses
+            return {}
+
+    def set_run_name(self, run_id: str, name: str | None) -> bool:
+        """Give the run a name (None or empty clears it); True when the run exists.
+
+        Its own statement, kept out of `save` and its ON CONFLICT update, like the pin: a worker saving its
+        in-memory record must not undo what the person typed.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE runs SET run_name = %s WHERE run_id = %s", ((name or None), run_id))
+                changed = cur.rowcount
+            conn.commit()
+        return changed == 1
+
+    def set_model_pin(
+        self, run_id: str, pinned: bool, *, last: dict[str, str] | None = None, if_unknown: dict[str, str] | None = None
+    ) -> bool:
+        """Pin the run to its model, or let it follow the settings again; True when the run exists.
+
+        `last` replaces the model the run last ran on (an explicit endpoint to pin to). `if_unknown` fills it
+        only when the run has none recorded (a run that began before this existed). Never touched otherwise: a
+        pin keeps "the model where it was last run".
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE runs SET model_pinned = %s, "
+                    "model_last = CASE WHEN %s::text IS NOT NULL THEN %s::text "
+                    "WHEN COALESCE(model_last, '') = '' THEN %s::text ELSE model_last END WHERE run_id = %s",
+                    (
+                        bool(pinned),
+                        json.dumps(last) if last else None,
+                        json.dumps(last) if last else None,
+                        json.dumps(if_unknown) if if_unknown else None,
+                        run_id,
+                    ),
+                )
+                changed = cur.rowcount
+            conn.commit()
+        return changed == 1
+
+    def set_model_last(self, run_id: str, snapshot: dict[str, str]) -> bool:
+        """Record the model an unpinned run is running on; False (and nothing written) while the run is pinned.
+
+        The condition is in the statement, so a pin set between the worker reading the flag and writing here
+        cannot be overwritten by it.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE runs SET model_last = %s WHERE run_id = %s AND model_pinned = FALSE",
+                    (json.dumps(snapshot), run_id),
+                )
+                changed = cur.rowcount
+            conn.commit()
+        return changed == 1
 
     def delete(self, run_id: str) -> None:
         with self.get_connection() as conn:

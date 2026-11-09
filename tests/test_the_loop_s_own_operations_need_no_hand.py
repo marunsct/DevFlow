@@ -32,7 +32,13 @@ def test_a_restore_never_goes_over_the_live_database():
 
 def test_the_nightly_job_backs_up_even_beside_a_live_run():
     nightly = _branch("nightly")
-    assert nightly.index('"$0" backup') < nightly.index("nightly skipped: a run is live")
+    assert nightly.index('"$0" backup') < nightly.index("nightly skipped: $live runs are live")
+
+
+def test_the_nightly_runs_beside_one_live_run_and_skips_only_beside_two():
+    """It uses a scratch workspace and no model; skipping whenever a run was live skipped 15 of 18 nights (HR2.O.3)."""
+    nightly = _branch("nightly")
+    assert '[ "${live:-2}" -ge "${NIGHTLY_SKIP_AT:-2}" ]' in nightly
 
 
 def test_one_deploy_at_a_time_and_a_rewind_with_timeouts():
@@ -59,4 +65,25 @@ def test_a_deploy_can_build_a_named_commit_for_a_measure_pair():
     body = script[script.index("\ndeploy)\n"):script.index("\ndeploy-app)") if script.index("\ndeploy-app)") > script.index("\ndeploy)\n") else None]
 
     assert 'built=$(git -C "$ROOT" rev-parse "${2:-HEAD}^{commit}")' in body
-    assert 'worktree add -q --detach "$head_tree" "$built"' in body
+    # The named commit is built by `loop.sh build` (HR2.R.3), from its own clean checkout.
+    assert '"$0" build "$built"' in body
+    build = script[script.index("\nbuild)\n"):script.index("\nfreshness)")]
+    assert 'worktree add -q --detach "$head_tree" "$built"' in build
+
+
+def test_a_held_out_family_refuses_a_learning_run(tmp_path):
+    """A static held-out set is tuned to; a held-out family runs for a Measure run only (HR2.E.4)."""
+    import shutil
+    import subprocess
+
+    root = Path(__file__).resolve().parents[1]
+    family = root / "benchmarks" / "zz-held-out-probe"
+    family.mkdir()
+    try:
+        (family / "brief.md").write_text("# probe\n")
+        (family / "bench.json").write_text('{"kind": "http_api", "held_out_since": "2026-11-08"}')
+        done = subprocess.run(["bash", str(root / "scripts" / "loop" / "loop.sh"), "bench", "zz-held-out-probe"],
+                              cwd=root, capture_output=True, text=True, timeout=60)
+        assert done.returncode == 2 and "held out since 2026-11-08" in done.stderr
+    finally:
+        shutil.rmtree(family)

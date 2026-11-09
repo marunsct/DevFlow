@@ -103,8 +103,19 @@ SEED_INSTRUCTIONS: dict[str, str] = {
     "fastapi": (
         "You are working with FastAPI.\n"
         "- Type Hints: Strictly use Pydantic models and Python type hints for request/response validation.\n"
-        "- Async Flow: Use `async def` for async I/O operations (like database calls). For synchronous blocking tasks, use standard `def` so they run in a threadpool.\n"
-        "- Dependency Injection: Use FastAPI's `Depends` for reusable logic like authentication and database sessions."
+        "- Async Flow: Use `async def` for async I/O operations (like database calls). For synchronous blocking work, use standard `def` so it runs in a threadpool.\n"
+        "- Dependency Injection: Use FastAPI's `Depends` for reusable logic like authentication and database sessions.\n"
+        "- Teardown runs after the reply: since FastAPI 0.118 the code after `yield` in a dependency runs once the\n"
+        "  response has been sent, so a commit placed there can land after the client's next request has read the\n"
+        "  database - a sign-up answered 201 whose account the next sign-in cannot find. Commit in the route before it\n"
+        "  returns, or declare the dependency `Depends(get_db, scope=\"function\")` so it ends before the response.\n"
+        "  `TestClient` waits for the teardown, so unit tests pass while the running service fails.\n"
+        "- A header the route checks itself is declared optional (`Header(None)`); a required `Header()` answers a\n"
+        "  request without it 422, not the 401 a missing credential calls for.\n"
+        "- Pydantic is version 2: constrain with `Field(min_length=..., max_length=...)` and check with\n"
+        "  `@field_validator` / `@model_validator`. Version 1's `__get_validators__`, `@validator`, `class Config` and\n"
+        "  `.dict()` are ignored or deprecated, so a model written with them accepts what it should refuse (and the\n"
+        "  unit tests that expect `ValidationError` get none)."
     ),
     "java": (
         "You are working in a Java environment.\n"
@@ -237,6 +248,21 @@ _BROWSER_PAGE_SETUP = """Setting up a page's tests:
   exist, and Node reports that as `spawn /bin/sh ENOENT` - naming the shell,
   which is present - so the suite looks unrunnable when one line is wrong."""
 
+#: How each runner writes its JUnit report: told at setup, and again to a suite whose runner ran and wrote none.
+JUNIT_REPORTS = """- A JUNIT XML REPORT COMES FROM THE RUNNER'S OWN REPORTER - never write a
+  reporter class of your own: a hand-written one wrote no file under a newer
+  runner, the setup could not be proven, and the project was left unproven.
+  Vitest has one built in and there is no separate package for it: in the
+  `test` section of its configuration, `reporters: ['default', 'junit']` and
+  `outputFile: { junit: '<path>' }`. Jest's is the `jest-junit` package, named
+  in `reporters: ['default', 'jest-junit']`. Node's own runner takes it as flags:
+  `node --test --test-reporter=junit --test-reporter-destination=<path>`.
+  Playwright: `reporter: [['junit', { outputFile: '<path>' }]]`. A package
+  lookup that says a reporter package does not exist is the sign you are
+  looking for something the runner already has.
+- pytest: `--junitxml=<path>`. Playwright as flags: `PLAYWRIGHT_JUNIT_OUTPUT_NAME=<path>` with `--reporter=junit`;
+  `--reporter=junit:<path>` is not a form it reads, and a second `--reporter` replaces the first."""
+
 #: How JavaScript and TypeScript modules are tested, and where their test-only
 #: packages go. Moved here from `TESTABILITY_RULE` and `TESTING_DEPENDENCY_RULE`.
 _JAVASCRIPT_TESTING = """Testing JavaScript and TypeScript:
@@ -276,7 +302,13 @@ _JAVASCRIPT_TESTING = """Testing JavaScript and TypeScript:
   a quoted pattern, never a directory - or `vitest run tests`) or
   its configuration ignores the other (`testPathIgnorePatterns: ['/e2e/']` for
   Jest, `exclude: ['e2e/**', 'node_modules/**']` for Vitest), and Playwright's
-  configuration sets `testDir: 'e2e'`."""
+  configuration sets `testDir: 'e2e'`.
+- A PROJECT'S OWN TOOL IS RUN THROUGH `npx` OR AN NPM SCRIPT. What `npm install`
+  puts in `node_modules/.bin` (`vitest`, `jest`, `tsc`, `playwright`) is not on
+  the PATH of a command the harness runs, so a declared `["vitest", "run"]` is
+  "not installed" even though it is. Declare `["npx", "vitest", "run"]`, or
+  `["npm", "test"]` / `["npm", "run", "<script>"]`.
+""" + JUNIT_REPORTS
 
 #: How JavaScript tests are written, whoever set the runner up.
 _JAVASCRIPT_TEST_WRITING = """Writing JavaScript tests:
@@ -399,4 +431,14 @@ SEED_INSTRUCTIONS["playwright"] = (
 )
 
 
-__all__ = ["SEED_INSTRUCTIONS", "SETUP"]
+#: Development servers, per language: each is the framework's or the standard library's server for trying code out,
+#: not for serving a product (harness review HR2.PR.12 - both Falcon products served through `wsgiref`). A product no
+#: pack set up that serves through one ships with a note saying so; a pack that chose one on purpose is not read.
+DEVELOPMENT_SERVERS: dict[str, tuple[str, ...]] = {
+    "python": ("wsgiref.simple_server", "from wsgiref", "http.server", "SimpleHTTPServer", "manage.py runserver"),
+    "php": ("php -S ",),
+    "ruby": ("webrick", "WEBrick"),
+    "javascript": ("http-server ", "live-server "),
+}
+
+__all__ = ["DEVELOPMENT_SERVERS", "SEED_INSTRUCTIONS", "SETUP"]

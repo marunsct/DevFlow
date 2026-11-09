@@ -91,3 +91,41 @@ def test_any_other_failing_command_still_is(workspace) -> None:
     defect = _a_suite_failure_the_round_did_not_report(str(workspace), "test_round_3", but_the_acceptance_suite=True)
 
     assert defect is not None and "`npm test` exited 1" in defect.description
+
+
+def test_a_testing_finding_about_only_the_locked_suite_s_files_is_set_aside(tmp_path: Path) -> None:
+    """Measured on one run: with the suite's repairs spent, the round reported "Acceptance test
+    all_ops.spec.js uses fetch and expects listRes.status()", owned by testing and naming no criterion;
+    two fix stages each answered that the locked suite was wrong and changed nothing."""
+    (tmp_path / ".harness").mkdir()
+    (tmp_path / ".harness" / "acceptance.json").write_text(json.dumps({"project": "app", "acceptance_dir": "acceptance"}))
+    (tmp_path / "app" / "acceptance").mkdir(parents=True)
+    (tmp_path / "app" / "acceptance" / "all_ops.spec.js").write_text("test('[AC-2] x', async () => {});\n")
+    about_the_suite = SimpleNamespace(
+        description="Acceptance test all_ops.spec.js uses fetch and expects listRes.status()", owner="testing",
+        reproduction_steps="", expected_behavior="", actual_behavior="", affected_files=["app/acceptance/all_ops.spec.js"])
+    about_the_product = SimpleNamespace(
+        description="all_ops.spec.js fails: the routes answer 500", owner="backend",
+        reproduction_steps="", expected_behavior="", actual_behavior="", affected_files=["app/src/routes.ts"])
+
+    kept, set_aside = _defects_only_about([about_the_suite, about_the_product], ["AC-13"], tmp_path)
+
+    assert set_aside == [about_the_suite] and kept == [about_the_product]
+
+
+def test_a_criterion_beyond_repair_is_deferred_with_why(tmp_path: Path) -> None:
+    """Measured on one run: the persistence criteria's only test was beyond repair, and each round still raised
+    "the acceptance suite says this does not work yet" for them; the sprint was planned again three times for
+    criteria no fix could prove. Deferred, the next measurement reads them as deferred, not failing."""
+    from app.acceptance.criteria import number
+
+    (tmp_path / ".project-directory").write_text("app\n")
+    suite.save_criteria(tmp_path, number("# Brief\n## Features\n- Add a note\n- Notes survive a restart\n"))
+    state = {"repository": SimpleNamespace(root_path=str(tmp_path))}
+
+    nodes.defer_what_is_beyond_repair(state, ["AC-2"], ["`[AC-2] restart` fails because of an error in the test's own code"])
+
+    reason = suite.deferred(tmp_path)["AC-2"]
+    assert "cannot pass" in reason and "AC-1" not in suite.deferred(tmp_path)
+    for word in BANNED:
+        assert not re.search(rf"\b{word}\b", reason.lower()), word

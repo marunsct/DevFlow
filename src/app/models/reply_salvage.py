@@ -1,0 +1,541 @@
+"""A reply cut off by the reply cap is salvaged from its own reasoning, where the model's server allows it (behind `REPLY_SALVAGE`).
+
+A reasoning model that reaches the cap while still thinking writes nothing:
+measured over nine runs, 19 of 1,927 replies, 15 of them in fix stages, and
+10% of every output token the runs spent. The recovery so far was the next call
+with the tools withheld, then thinking switched off for the rest of the stage -
+the reasoning thrown away, and the stage's later calls reasoning less. A cap on
+reasoning would have cost more: 74 replies of the same runs finished between
+16,000 and 32,768 tokens, 21 of them past 24,000.
+
+So the reasoning is kept and finished instead, as a reasoning budget ends
+thinking rather than discarding it (vLLM's reasoning budget; the Qwen3 report's
+thinking budget): the request is sent again with the model's reply begun - its
+own reasoning, closed, and a sentence saying it answers now - and the model
+writes the answer that reasoning was for. A reply cut off part way through its
+text is continued the same way, from where it stopped (Aider's "infinite
+output"). No reply that finishes under the cap is touched.
+
+Whether a server continues a begun reply, and how a reasoning model's begun
+reply must be shaped for its template, is the model's and the server's, not
+the harness's. So it is measured, not assumed: `measure` asks a few small
+questions with a begun reply in each shape, and keeps what worked beside the
+model's other measurements (`registry.fitness_dir`), under its served name.
+It runs the first time a model is seen - at a run segment's start, or at the
+first reply that needs it - and never again for that model unless asked
+(`loop.sh salvage-probe`). Salvage is used only where it was measured to work.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import threading
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from typing import Any
+
+from app.switches import is_on
+
+logger = logging.getLogger(__name__)
+
+#: `REPLY_SALVAGE` set to on or off overrides this.
+ON_BY_DEFAULT = False
+
+#: The ways a begun reply is sent, tried in this order. `reasoning_field` puts
+#: the reasoning where the server's own template renders it (llama.cpp reads an
+#: assistant message's `reasoning_content`); `think_tags` writes the template's
+#: markup into the content.
+SHAPES = ("reasoning_field", "think_tags")
+#: Said at the end of the kept reasoning, so the model answers rather than
+#: reasoning again.
+ENOUGH = "I have reasoned enough about this. I will give my answer now, from what I have worked out above."
+#: The most of a cut-off reply's reasoning sent back, from its end, where the
+#: model has said what it concluded; the request must still fit its window.
+MOST_REASONING_CHARACTERS = 48_000
+#: Continuations of one reply cut off part way through its text, at most.
+MOST_CONTINUATIONS = 2
+#: The most a salvage's own reply may run. One that reasoned again ran to the
+#: model's ceiling - 40,000 tokens, about four minutes - for nothing; an answer
+#: from finished reasoning, a whole file included, is far less.
+SALVAGE_REPLY_TOKENS = 16_000
+#: The probe's reply ceiling: an answer to its questions is a few tokens.
+PROBE_REPLY_TOKENS = 256
+#: A probe reply that reasoned more than this ignored the begun reply and thought again.
+PROBE_MOST_REASONING_CHARACTERS = 400
+#: Where a reply salvaged says so, on its response metadata and in the transcript.
+SALVAGED = "harness_salvaged"
+#: The key a model's measurement is kept under in its fitness file.
+RECORD_KEY = "reply_salvage"
+
+
+def enabled() -> bool:
+    return is_on("REPLY_SALVAGE", ON_BY_DEFAULT)
+
+
+@dataclass(frozen=True)
+class Support:
+    """What one model's server was measured to do with a begun reply."""
+
+    #: The shape that worked, or "" when none did.
+    shape: str = ""
+    #: Whether an answer after kept reasoning can be a tool call.
+    tools: bool = False
+    #: Whether a reply begun with its own text is continued.
+    continuation: bool = False
+    #: Whether the server's reply repeats the begun text before continuing it.
+    echoes: bool = False
+    #: The shape that answered after a long request, when it was not `shape`:
+    #: the probe's short question passed with one and a stage's long one did not.
+    long_shape: str = ""
+    model: str = ""
+    measured_at: str = ""
+
+    @property
+    def salvages(self) -> bool:
+        return bool(self.shape)
+
+
+_SUPPORT: dict[str, Support] = {}
+_LOCK = threading.Lock()
+#: The whole reasoning of the last reply parsed on this thread (`CompatibleChatOpenAI._create_chat_result`).
+_LAST = threading.local()
+
+
+def remember_reasoning(text: str) -> None:
+    _LAST.reasoning = text
+
+
+def _the_last_reasoning() -> str:
+    text = getattr(_LAST, "reasoning", "") or ""
+    _LAST.reasoning = ""
+    return text
+
+
+def served_name(model: Any) -> str:
+    """The name a model's measurement is kept under: the file the server holds, else the configured name."""
+    configured = str(getattr(model, "model_name", "") or "unknown")
+    try:
+        from app.models.model_guidance import served_as
+
+        return served_as(configured)
+    except Exception:  # noqa: BLE001
+        return configured
+
+
+def _path(name: str):
+    from app.models.registry import _slug, fitness_dir
+
+    return fitness_dir() / f"{_slug(name)}.json"
+
+
+def recorded(name: str) -> Support | None:
+    """The kept measurement for `name`, or None when it was never measured."""
+    with _LOCK:
+        if name in _SUPPORT:
+            return _SUPPORT[name]
+    try:
+        found = json.loads(_path(name).read_text(encoding="utf-8")).get(RECORD_KEY)
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not isinstance(found, dict):
+        return None
+    support = Support(**{k: v for k, v in found.items() if k in Support.__dataclass_fields__})
+    with _LOCK:
+        _SUPPORT[name] = support
+    return support
+
+
+def keep(name: str, support: Support) -> None:
+    """Keep `support` in `name`'s fitness file beside what else was measured of it."""
+    from app.models.registry import merge_into_fitness
+
+    merge_into_fitness(name, {RECORD_KEY: asdict(support)})
+    with _LOCK:
+        _SUPPORT[name] = support
+
+
+def forget() -> None:
+    """Drop what this process has read. For tests."""
+    with _LOCK:
+        _SUPPORT.clear()
+
+
+# --- the probe -----------------------------------------------------------------
+
+_QUESTION = "What is 17 multiplied by 23? Reply with the number only."
+_REASONING = "The user wants 17 * 23. 17 * 20 = 340 and 17 * 3 = 51, so 17 * 23 = 391."
+_ANSWER_TOOL = {"type": "function", "function": {
+    "name": "give_answer", "description": "Give the answer.",
+    "parameters": {"type": "object", "properties": {"value": {"type": "integer"}}, "required": ["value"]}}}
+_COUNT = "Count from one to six in words, separated by commas, nothing else."
+_COUNT_BEGUN = "one, two, three,"
+
+
+def begun_reply(shape: str, reasoning: str, text: str = "") -> dict[str, Any]:
+    """The assistant message a request ends with, so the server continues it: `reasoning` closed, then `text`."""
+    closed = f"{reasoning.rstrip()}\n\n{ENOUGH}" if reasoning.strip() else ""
+    if shape == "reasoning_field":
+        message: dict[str, Any] = {"role": "assistant", "content": text}
+        if closed:
+            message["reasoning_content"] = closed
+        return message
+    return {"role": "assistant", "content": (f"<think>\n{closed}\n</think>\n\n" if closed else "") + text}
+
+
+def _reply(response: Any) -> tuple[str, str, list[dict], str]:
+    """(content, reasoning, tool calls, finish reason) of a raw chat completion."""
+    data = response if isinstance(response, dict) else response.model_dump(warnings=False)
+    choice = (data.get("choices") or [{}])[0] or {}
+    message = choice.get("message") or {}
+    return (str(message.get("content") or ""), str(message.get("reasoning_content") or message.get("reasoning") or ""),
+            list(message.get("tool_calls") or []), str(choice.get("finish_reason") or ""))
+
+
+def _without_the_echo(text: str, begun: str) -> tuple[str, bool]:
+    stripped = text.lstrip()
+    if begun and stripped.startswith(begun.strip()):
+        return stripped[len(begun.strip()):], True
+    return text, False
+
+
+def measure(model: Any, name: str = "") -> Support:
+    """Ask the model's server a few small questions with a begun reply in each shape; keep and return what worked.
+
+    Uses the model: run where no stage waits for the server (a segment's start,
+    or the one reply that needs it). Never raises; a server that answers none of
+    it is kept as supporting nothing, so it is not asked again.
+    """
+    name = name or served_name(model)
+    shape, tools, continuation, echoes = "", False, False, False
+    create = model.root_client.chat.completions.create
+    base = {"model": model.model_name, "max_tokens": PROBE_REPLY_TOKENS, "stream": False}
+    for candidate in SHAPES:
+        try:
+            content, reasoning, _calls, _finish = _reply(create(**base, messages=[
+                {"role": "user", "content": _QUESTION}, begun_reply(candidate, _REASONING)]))
+        except Exception:  # noqa: BLE001 - a shape the server refuses is not this one
+            continue
+        if "391" in content and len(reasoning) <= PROBE_MOST_REASONING_CHARACTERS:
+            shape = candidate
+            break
+    if shape:
+        try:
+            _content, _reasoning, calls, _finish = _reply(create(**base, tools=[_ANSWER_TOOL], messages=[
+                {"role": "user", "content": _QUESTION.replace("Reply with the number only.", "Answer with give_answer.")},
+                begun_reply(shape, _REASONING)]))
+            arguments = json.loads(((calls or [{}])[0].get("function") or {}).get("arguments") or "{}")
+            tools = str(arguments.get("value")) == "391"
+        except Exception:  # noqa: BLE001
+            tools = False
+        try:
+            content, _reasoning, _calls, _finish = _reply(create(**base, messages=[
+                {"role": "user", "content": _COUNT}, begun_reply(shape, "The user wants one to six in words.", _COUNT_BEGUN)]))
+            rest, echoes = _without_the_echo(content, _COUNT_BEGUN)
+            continuation = "four" in rest.lower() and "one" not in rest.lower().split("four")[0]
+        except Exception:  # noqa: BLE001
+            continuation = False
+    support = Support(shape=shape, tools=tools, continuation=continuation, echoes=echoes, model=name,
+                      measured_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    try:
+        keep(name, support)
+    except Exception:  # noqa: BLE001 - measured for this process at least
+        with _LOCK:
+            _SUPPORT[name] = support
+    logger.info("Reply salvage for %s: %s", name, describe(support))
+    return support
+
+
+def measure_if_new(model: Any) -> Support | None:
+    """`name`'s kept measurement, measured now when there is none. Never raises; None when off or unmeasurable."""
+    if not enabled():
+        return None
+    try:
+        name = served_name(model)
+        found = recorded(name)
+        if found is not None:
+            return found
+        from app.models.diagnostics import the_model_answers
+
+        return measure(model, name) if the_model_answers(model) else None
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not measure reply salvage", exc_info=True)
+        return None
+
+
+def describe(support: Support | None) -> str:
+    if support is None:
+        return "unmeasured"
+    if not support.salvages:
+        return "not supported by this server (measured)"
+    return (f"supported ({support.shape}); answers after kept reasoning {'may' if support.tools else 'may not'} "
+            f"be tool calls; cut-off text {'is' if support.continuation else 'is not'} continued")
+
+
+# --- the salvage ------------------------------------------------------------
+
+#: The tail a cut-off text is judged by, and the longest unit whose repetition fills it.
+_TAIL_CHARACTERS = 400
+_LONGEST_REPEATED_UNIT = 16
+
+
+def repeating(text: str) -> bool:
+    """Whether `text` ends in one short unit over and over: a model stuck, not a reply cut short.
+
+    Measured on the first live continuation: a drafted test file ended
+    `"never-issued-token-000000..."` to the cap, and continuing it wrote more
+    zeros twice. Such a reply has nothing to continue.
+    """
+    tail = text[-_TAIL_CHARACTERS:]
+    if len(tail) < _TAIL_CHARACTERS:
+        return False
+    for size in range(1, _LONGEST_REPEATED_UNIT + 1):
+        unit = tail[-size:]
+        if (unit * (_TAIL_CHARACTERS // size + 1)).endswith(tail):
+            return True
+    return False
+
+
+def _lost(message: Any) -> bool:
+    return not str(getattr(message, "content", "") or "").strip() and not (getattr(message, "tool_calls", None) or ()) \
+        and not (getattr(message, "invalid_tool_calls", None) or ())
+
+
+def _cut_text(message: Any) -> bool:
+    return bool(str(getattr(message, "content", "") or "").strip()) and not (getattr(message, "tool_calls", None) or ()) \
+        and not (getattr(message, "invalid_tool_calls", None) or ())
+
+
+def reasoning_left_open(text: str) -> str | None:
+    """The reasoning of a text that opens a reasoning tag it never closes; None for any other text."""
+    from app.models.capabilities import REASONING_TAGS
+
+    body = text.lstrip()
+    for tag in REASONING_TAGS:
+        if tag.startswith("<|"):
+            continue  # its closing form is the model's own; left to the paths that know it
+        if body.startswith(tag):
+            return None if "</" + tag[1:] in body else body[len(tag):].strip()
+    return None
+
+
+def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **kwargs: Any) -> Any:
+    """`result`, or - when its reply hit the cap - the reply its own reasoning answers, or its text continued. Never raises."""
+    reasoning = _the_last_reasoning()
+    try:
+        generation = result.generations[0]
+        message = generation.message
+        if (getattr(generation, "generation_info", None) or {}).get("finish_reason") != "length" or not enabled():
+            return result
+        lost, cut = _lost(message), _cut_text(message)
+        if not (lost or cut):
+            return result
+        # Text that is reasoning: a reply whose text opens a reasoning tag it never closes was cut while reasoning,
+        # not while answering. Measured on one run: a fix stage's reply, its thinking switched off, opened `<think>`
+        # in its text, reached the cap, and was continued twice more to 29,570 tokens - more reasoning, no answer.
+        unclosed = reasoning_left_open(str(message.content or "")) if cut else None
+        if unclosed is not None:
+            lost, cut, reasoning = True, False, unclosed
+        if cut and repeating(str(message.content or "")):
+            return result
+        support = measure_if_new(model)
+        if support is None or not support.salvages or (cut and not support.continuation):
+            return result
+        if lost and (not reasoning.strip() or (kwargs.get("tools") and not support.tools)):
+            return result
+        kept = reasoning[-MOST_REASONING_CHARACTERS:]
+        if lost:
+            room = _room_for_the_reasoning(message)
+            if room is not None and room < MOST_REASONING_CHARACTERS:
+                if room < SMALLEST_KEPT_CHARACTERS:
+                    logger.info("A reply cut off while reasoning was not salvaged: its request leaves no room in "
+                                "the window for its reasoning and an answer")
+                    return result
+                kept = reasoning[-room:]
+            return _answered_from_its_reasoning(model, messages, stop, kwargs, support, kept, result)
+        text = str(message.content or "") if cut else ""
+        finish = "length"
+        for _ in range(MOST_CONTINUATIONS if cut else 1):
+            payload = model._get_request_payload(messages, stop=stop, **kwargs)
+            payload["stream"] = False
+            payload["messages"].append(begun_reply(support.shape, kept, text))
+            _with_its_reasoning_kept_closed(payload, support.model or served_name(model))
+            response = _sent(model, payload)
+            content, more_reasoning, calls, finish = _reply(response)
+            rest, _echoed = _without_the_echo(content, text) if support.echoes else (content, False)
+            text += rest
+            if finish != "length" or repeating(text):
+                break
+        return _with_the_text(result, text, "continuation", finish)
+    except Exception as error:  # noqa: BLE001 - the reply as it was
+        logger.info("A cut-off reply could not be salvaged: %s: %s", type(error).__name__, str(error)[:200])
+        logger.debug("Could not salvage a cut-off reply", exc_info=True)
+        return result
+
+
+#: Less kept reasoning than this is not worth an answer from it.
+SMALLEST_KEPT_CHARACTERS = 4_000
+#: Characters a token is counted as, as the context budget counts them.
+_CHARS_PER_TOKEN = 3
+
+
+def _room_for_the_reasoning(message: Any) -> int | None:
+    """Characters of reasoning that fit beside the request and an answer in the window; None when unknown.
+
+    Measured on one run: a salvage of a large fix stage's reply was refused as
+    "Message too long: 149266 tokens exceeds the context" - the request, the
+    48,000 characters of reasoning kept, and the answer's room did not fit.
+    """
+    try:
+        from app.models.server_profile import current
+
+        window = (current().slot_context if current() is not None else None)
+        used = int(((getattr(message, "usage_metadata", None) or {}).get("input_tokens")) or 0)
+        if not window or not used:
+            return None
+        return max(0, (window - used - SALVAGE_REPLY_TOKENS - 1_024) * _CHARS_PER_TOKEN)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _answered_from_its_reasoning(model: Any, messages: list[Any], stop: Any, kwargs: dict, support: Support,
+                                 kept: str, result: Any) -> Any:
+    """The reply asked of its own reasoning, in the shape that answered after a long request, else each other shape once.
+
+    Measured on one run: a model whose probe answered in the `reasoning_field`
+    shape reasoned again from it on a fix stage's long request - 173,569
+    characters, to its ceiling - so nothing was salvaged; the template's own
+    closing tag, written into the reply, is the other way to say the
+    reasoning is over.
+    """
+    first = support.long_shape or support.shape
+    for shape in (first, *(s for s in SHAPES if s != first)):
+        payload = model._get_request_payload(messages, stop=stop, **kwargs)
+        payload["stream"] = False
+        payload["max_tokens"] = min(int(payload.get("max_tokens") or SALVAGE_REPLY_TOKENS), SALVAGE_REPLY_TOKENS)
+        payload["messages"].append(begun_reply(shape, kept))
+        _with_its_reasoning_kept_closed(payload, support.model or served_name(model))
+        response = _sent(model, payload)
+        content, more_reasoning, calls, finish = _reply(response)
+        if content.strip() or calls:
+            if shape != first or not support.long_shape:
+                _keep_the_long_shape(support, shape)
+            fresh = model._create_chat_result(response)
+            _without_the_reasoning_it_was_given(fresh.generations[0].message, begun_reply(shape, kept))
+            return _with_the_salvage(result, fresh, "reasoning")
+        # Said, so an audit can tell this from no attempt.
+        logger.info("A reply cut off while reasoning could not be salvaged in the %s shape: asked to answer from "
+                    "its reasoning, it reasoned again (%s, %d characters)", shape, finish, len(more_reasoning))
+    return result
+
+
+def _sent(model: Any, payload: dict) -> Any:
+    """`payload` sent; a server that refuses its `logit_bias` is asked again without it, the stop string still in.
+
+    The ban is an aid. A server whose front end rejects the field in any form must not cost the
+    salvage of a reply that took minutes to produce.
+    """
+    try:
+        return model.client.create(**payload)
+    except Exception as error:  # noqa: BLE001 - only this refusal is retried
+        if "logit_bias" not in payload or "logit_bias" not in str(error):
+            raise
+        logger.info("The server refused the reasoning-tag ban (%s); asking again without it", str(error)[:120])
+        return model.client.create(**{k: v for k, v in payload.items() if k != "logit_bias"})
+
+
+def _with_its_reasoning_kept_closed(payload: dict, model_name: str) -> None:
+    """`payload` unable to open the reasoning again: its tag banned when it is one token, and a stop either way.
+
+    A model given its own reasoning back, closed, opened its reasoning tag
+    again and reasoned on to the ceiling (measured on one run, 173,569
+    characters). Re-opening is its trained reflex after the template's opening
+    tag, which nothing in the request forbade. With the tag as one token the
+    server can be told never to produce it (`logit_bias`, -100); as
+    several tokens, a stop string ends the reply where it would start. The tag
+    and its tokens are what the model's server reported (`capabilities`).
+    Unknown: the request is left as it was. Never raises.
+    """
+    try:
+        from app.models.capabilities import think_ban
+
+        ban = think_ban(model_name) if model_name else None
+        if ban is None:
+            return
+        tag, token = ban
+        if token is not None and not payload.get("logit_bias"):
+            # An object, as the OpenAI API names it: one model's server answered the list form
+            # llama.cpp itself takes with 400 "logit_bias: Input should be a valid dictionary", and the
+            # reply cut at the ceiling was lost. A bias of -100 is a ban in effect on every server.
+            payload["logit_bias"] = {str(token): -100}
+        stops = payload.get("stop")
+        stops = [stops] if isinstance(stops, str) else list(stops or [])
+        if tag not in stops:
+            payload["stop"] = [*stops, tag]
+    except Exception:  # noqa: BLE001 - the request as it was
+        logger.debug("Could not keep the reasoning closed", exc_info=True)
+
+
+def _without_the_reasoning_it_was_given(message: Any, begun: dict) -> None:
+    """The salvaged answer's text without the begun reply the server echoed back before it.
+
+    Measured on one run: the server returns the whole assistant message, the
+    begun part included, so a salvaged fix answer began `<think>` and tens of
+    thousands of characters of the model's own reasoning - and the stage's
+    answer reader rightly called it "prose where the schema was expected".
+    """
+    text = getattr(message, "content", "")
+    if not isinstance(text, str) or not text:
+        return
+    begun_text = str(begun.get("content") or "")
+    if begun_text and text.startswith(begun_text):
+        text = text[len(begun_text):]
+    elif "</think>" in text and text.lstrip().startswith("<think>"):
+        text = text.split("</think>", 1)[1]
+    message.content = text.lstrip("\n")
+
+
+def _keep_the_long_shape(support: Support, shape: str) -> None:
+    try:
+        from dataclasses import replace
+
+        if support.model:
+            keep(support.model, replace(support, long_shape=shape))
+    except Exception:  # noqa: BLE001 - used for this call at least
+        pass
+
+
+def _with_the_salvage(original: Any, fresh: Any, kind: str) -> Any:
+    old, new = original.generations[0].message, fresh.generations[0].message
+    new.additional_kwargs = {**(old.additional_kwargs or {}), **(new.additional_kwargs or {})}
+    new.response_metadata = {**(new.response_metadata or {}), SALVAGED: kind,
+                             "reasoning_chars": (old.response_metadata or {}).get("reasoning_chars", 0)}
+    new.usage_metadata = _summed(old.usage_metadata, new.usage_metadata)
+    fresh.generations[0].generation_info = {**(fresh.generations[0].generation_info or {}), SALVAGED: kind}
+    logger.info("A reply cut off while reasoning was salvaged from its own reasoning")
+    return fresh
+
+
+def _with_the_text(original: Any, text: str, kind: str, finish: str) -> Any:
+    message = original.generations[0].message
+    message.content = text
+    message.response_metadata = {**(message.response_metadata or {}), SALVAGED: kind, "finish_reason": finish}
+    original.generations[0].generation_info = {**(original.generations[0].generation_info or {}),
+                                               "finish_reason": finish, SALVAGED: kind}
+    logger.info("A reply cut off part way through its text was continued")
+    return original
+
+
+def _summed(one: Any, two: Any) -> Any:
+    if not one or not two:
+        return two or one
+    try:
+        return {**two, **{k: int(one.get(k) or 0) + int(two.get(k) or 0)
+                          for k in ("input_tokens", "output_tokens", "total_tokens")}}
+    except Exception:  # noqa: BLE001
+        return two
+
+
+__all__ = ["ENOUGH", "MOST_CONTINUATIONS", "MOST_REASONING_CHARACTERS", "ON_BY_DEFAULT", "RECORD_KEY", "SALVAGED",
+           "SHAPES", "Support", "begun_reply", "describe", "enabled", "forget", "keep", "measure", "measure_if_new",
+           "recorded", "remember_reasoning", "repeating", "salvaged", "served_name"]

@@ -15,6 +15,30 @@ class RewindRequest(BaseModel):
     checkpoint_id: str = Field(min_length=1, max_length=200, description="The checkpoint before the stage.")
 
 
+class ModelPinRequest(BaseModel):
+    """Pin a run to the model it last ran on, or let it follow the current model settings again.
+
+    With `base_url` and/or `model` (pinning only) the run is pinned to that endpoint and model instead,
+    without touching the global settings. Neither carries a credential: the endpoint's key is resolved
+    server-side, per endpoint.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    pinned: bool = Field(description="True keeps the run on its model; false follows the current settings.")
+    base_url: str | None = Field(
+        default=None, max_length=300, description="Pin to this OpenAI-compatible address (http or https, no credentials in it).",
+    )
+    model: str | None = Field(default=None, max_length=200, description="Pin to this model name.")
+
+
+class ModelSummary(BaseModel):
+    """A run's model as the status shows it: the name and where it is served, never a credential."""
+    model_config = ConfigDict(extra="forbid")
+
+    model: str = Field(default="", description="The model name.")
+    endpoint: str = Field(default="", description="host:port the model is served from.")
+
+
 class CreateRunResponse(BaseModel):
     """Response returned when a new run is created."""
     model_config = ConfigDict(extra="forbid")
@@ -138,6 +162,31 @@ class StartRunRequest(BaseModel):
             "Minutes a gate that asks a person (an approval or a review) waits before it is approved "
             "automatically. Omit to wait for the person however long it takes."
         ),
+    )
+    name: str | None = Field(
+        default=None, max_length=80,
+        description="A name for the run, shown in its header and in the runs list; can be changed later.",
+    )
+    switches: dict[str, bool] | None = Field(
+        default=None,
+        description=(
+            "This run's own switch settings, {name: true|false}, beating the admin page and the environment for "
+            "this run only: two runs on one harness version can then be a measurement's two arms."
+        ),
+    )
+    pin_model: bool = Field(
+        default=False,
+        description=(
+            "Keep this run on the model it starts on, whatever the model settings become. "
+            "False (the default) follows the current settings on every request."
+        ),
+    )
+    pin_base_url: str | None = Field(
+        default=None, max_length=300,
+        description="With pin_model: pin to this OpenAI-compatible address instead of the settings' (no credentials in it).",
+    )
+    pin_model_name: str | None = Field(
+        default=None, max_length=200, description="With pin_model: pin to this model name instead of the settings'.",
     )
     auto_approve: bool | None = Field(
         default=None,
@@ -396,6 +445,11 @@ class SteeringNote(BaseModel):
     scope: Literal["run", "next_stage"] = Field(
         default="run", description="For the rest of the run, or for the one stage that is working when it is first read."
     )
+    audience: list[Literal["all", "design", "planning", "build", "tests", "review", "ui_ux", "backend", "database",
+                           "security_reliability", "testing", "documentation", "devops"]] = Field(
+        default_factory=lambda: ["all"],
+        description="Who the note is for: everyone, a group of stages (design, planning, build, tests, review) or one role.",
+    )
 
 
 class RunStatusResponse(BaseModel):
@@ -434,8 +488,9 @@ class RunStatusResponse(BaseModel):
         default="",
         description=(
             "What the workspace's NON-DELIVERABLE marker says, or '' when the "
-            "workspace is marked deliverable. A terminal state other than a "
-            "clean release writes it into the workspace root (Initiative J.6)."
+            "workspace is marked deliverable. A run that failed, or that completed "
+            "with a gap meaning the product may not work (`blocking_gaps`), writes "
+            "it into the workspace root (Initiative J.6); notes alone do not."
         ),
     )
     gate_deadline: datetime | None = Field(
@@ -455,7 +510,14 @@ class RunStatusResponse(BaseModel):
             "problems the suite was locked with, an unproven setup (Initiative "
             "J.4). Empty on a completed run that proved everything it claims; "
             "a completed run with gaps here is never plain 'completed' on any "
-            "surface that shows it."
+            "surface that shows it. Those not in `blocking_gaps` are notes."
+        ),
+    )
+    blocking_gaps: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The `completion_gaps` that mean the product may not work; the rest are "
+            "notes for a reader, and every later measurement went on to pass."
         ),
     )
     delivery_mode: str = Field(
@@ -473,6 +535,18 @@ class RunStatusResponse(BaseModel):
     )
     use_frontier_model: bool = Field(
         default=True, description="Whether this run uses the frontier model; False is the build model only.",
+    )
+    run_name: str | None = Field(default=None, description="The name the person gave the run, or null.")
+    paused_seconds: float = Field(
+        default=0.0, description="Seconds the run has spent paused, the pause going on now included; not the run's time.",
+    )
+    model_pinned: bool = Field(
+        default=False,
+        description="Whether the run is kept on the model it last ran on (true) or follows the current model settings (false).",
+    )
+    model_last: ModelSummary | None = Field(
+        default=None,
+        description="The model the run last ran on: its name and host:port only, never a credential.",
     )
     auto_approve: bool = Field(
         default=False,
@@ -691,6 +765,13 @@ class WizardModel(BaseModel):
     )
 
 
+class RunNameRequest(BaseModel):
+    """Give a run a name, or clear it (an empty name)."""
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(max_length=80, description="The name to show for the run; empty clears it.")
+
+
 class RunSummary(BaseModel):
     """A brief summary of a run."""
     model_config = ConfigDict(extra="forbid")
@@ -703,13 +784,17 @@ class RunSummary(BaseModel):
     updated_at: datetime | None = Field(default=None, description="When the run last moved.")
     delivery_mode: str | None = Field(default=None, description="fast or thorough.")
     local_only: bool | None = Field(default=None, description="Whether the run was started not to use the frontier model.")
-    completion_gaps: int = Field(default=0, description="How many things the release knew it did not prove.")
+    completion_gaps: int = Field(default=0, description="How many things the release knew it did not prove, notes included.")
+    blocking_gaps: int = Field(default=0, description="How many of `completion_gaps` mean the product may not work.")
     criteria_proven: int | None = Field(default=None, description="Acceptance criteria passing in the last measurement, or null before one.")
     criteria_total: int | None = Field(default=None, description="Acceptance criteria of the run, or null before the suite is written.")
     gate_deadline: datetime | None = Field(
         default=None,
         description="When a waiting gate approves itself, or null when nothing waits or it waits for the person.",
     )
+    run_name: str | None = Field(default=None, description="The name the person gave the run, or null.")
+    model_pinned: bool = Field(default=False, description="Whether the run is kept on the model it last ran on.")
+    model_last: ModelSummary | None = Field(default=None, description="The model the run last ran on: name and host:port only.")
 
 
 class ServerHealth(BaseModel):

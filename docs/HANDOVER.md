@@ -65,6 +65,7 @@ git status --short                      # clean (docs/logs.md was removed from g
 export LOOP_USER=harness-test LOOP_PASSWORD=loop-test-only-pw-2026
 scripts/loop/loop.sh status             # the current run, and whether anything is live
 scripts/loop/loop.sh ready              # last line ALL READY, exit 0 - otherwise start nothing (§5)
+scripts/loop/loop.sh ready deep         # also sends a ~13k-token request; use it when the owner has just (re)loaded a model
 scripts/loop/loop.sh start tests/brief_medium.md   # only when nothing is live
 scripts/loop/loop.sh wait 10            # every ~10 min for 40 min, then `wait 18`
 ```
@@ -135,6 +136,8 @@ the cause fixed in general, deployed, and the run started again.
 bug or gap at any time, cancel immediately.
 
 **Shakedown runs (owner 2026-10-22 20:00 JST):** for the first couple of runs with every group 2 switch on, a confirmed harness bug is fixed immediately and the run paused, deployed and rewound to the earliest affected stage - `loop.sh rewind --pause-only; BOUNDARY_WAIT=0 loop.sh deploy; loop.sh rewind <stage>` - whatever the run's age (the 40-minute rule does not apply). Their scores are not arms; the gated runs start once a run passes with no new harness bug. Only a bug that changes the run's outcome or wastes its time is deployed this way; a fix that does not (measurement, log wording, tooling) is pushed and deployed with the next significant one (owner, 20:19 JST).
+
+- **Rewind to before the wrong verdict, not to the stage that read it** (2026-10-28): a rewind replays from the stage entry at or before the time given, keeping every ledger verdict written before it. To undo a fix stage's wrong "left open", give a time before that fix stage began (`loop.sh defects` shows it); rewinding to the round that read it replays the same verdict.
 
 **Mid-run deploys when defect fixed (owner instruction 2026-10-10 18:45 JST):**
 
@@ -417,6 +420,10 @@ test that fails on the old code:
   `plugins/seed.py`, a per-language table or service (`sandbox.CODE_AS_A_FILE`, `language_service`) - never
   a special case in generic code, and a fix for one stack must not hinder another: check it against the
   others before it ships (LF.70).
+- **Owner, 2026-10-23: the product works on small and large codebases.** Plan every change for both: ask what
+  it does at 10 files and at 10,000. Keep the small-codebase path exact and switch to the bounded one (ranking,
+  skeletons, caps that say what they cut) only past a measured size, chosen at run time; test both sides of the
+  threshold (plan SZ.1-SZ.11).
 - **Owner, 2026-10-20: the routine audit runs every 10 minutes** (cron `3,13,23,33,43,53 * * * *`).
   After a restart of this session the crons are gone and must be re-created: the 10-minute audit and the two
   90-minute deep analyses (`13 0,3,6,9,12,15,18,21` and `43 1,4,7,10,13,16,19,22`). After a host restart check
@@ -453,7 +460,7 @@ run-8b0c94df to end. Worth knowing:
 - The interface has tests: `cd langchain-ui && npm test` (Vitest, in the suite too).
 - `loop.sh reasoning-probe run` measures whether the server shortens replies when
   asked to think less; it needs the model server free.
-- Lessons: `lessons.py list|approve|reject`, or Settings -> Lessons.
+- Lessons: `lessons.py list|approve|reject`, or Settings -> Lessons. `loop.sh lessons evidence` reads every transcript into the lessons on record and names any no transcript backs.
 
 ### 2.000 Fast delivery (2026-10-14, `e55dd6f`)
 
@@ -537,6 +544,12 @@ sets `/app/data/loop/gate/hold` (new calls wait), waits for
 hold (`app.models.call_gate`).
 A call to a tool the model call withheld is refused, not run
 (`SettledAnswerMiddleware.wrap_tool_call`).
+`loop.sh diagnose [--again] [--deep]` prints the served model's diagnosis (plan MD.1; `--deep` adds MD.2, the guidance measured to help it, kept as its `model:` row of `plugin_instructions`): tools offered, required and
+named, stage-shaped structured answers, recall, the fitness and edit probes, each reasoning switch's cost, and
+reply salvage (RS.1). Settings > Models has "Model capabilities" (MD.5: each field set by the owner or found - "Find what is missing") and "Diagnose this model and set its guidance" and an Auto/On/Off control per guide (MD.3; refused while a run is live). A model never seen is diagnosed automatically at a run segment's start (~2.5 minutes, once
+per model) and kept in `DATA_DIR/model-fitness/<served name>.json`; `--again` re-measures. Owner 2026-10-23:
+every new model is diagnosed and the harness adapts from the result; no reasoning cap - reply salvage instead.
+
 `loop.sh fitness` probes the build model with five scripted tool calls
 (`app.models.fitness`: FIT/USABLE/UNFIT + advice); run it after `ready`,
 before a run, never beside a live one. While every test command passes, a
@@ -1024,3 +1037,19 @@ The decisions below that these settle are marked; the rest stand.
 In parallel mode with auto-approve, gated calls pause and drain one per
 superstep. Fixing that would be a redesign of the runner's auto-approve loop,
 not a fix.
+
+**Keys (LF.553, 2026-11-03):** a key saved in Settings reaches only the endpoint it was saved for; an endpoint with no saved key gets none, unless the deployment environment supplies one. Anthropic: a key not scoped to a workspace needs the workspace id field in Settings → Models.
+
+**Gate for a pinned run (2026-11-03):** pass the pin to the gate: `loop.sh ready pin_url=<url> pin_model=<name>`; a bare `ready` checks the default model, and a busy one blocked a run pinned to the other server for an hour.
+
+**Workspace retention (2026-11-03):** the run workspaces live on the Docker VM disk (`/app/data/workspaces/default`, 503 GB). A finished run's workspace is deleted once it is two days old - never a live, paused or owner's run; scores (`data/bench`), transcripts and run records are kept. 98 removed on 11-03 (about 14 GB).
+
+**Pause time (owner 2026-11-03):** a run's time excludes time paused. The database trigger `runs_pause_clock` on `runs` keeps `paused_since` and `paused_seconds` for every pause however made; `GET /api/runs/{id}` gives `paused_seconds`, and the page shows "Took/Running for" less it. A UI or API-only change can ship without touching the worker: build `app` from a clean checkout and `up -d --no-deps app`.
+
+**Worker slots (2026-11-03):** the worker runs `CELERY_CONCURRENCY` (default 2) jobs; a third run queues while a model server sits idle. Grow a live worker without a restart: `docker exec langchain-worker-1 sh -c 'celery -A app.server.tasks control pool_grow 1 -d celery@$HOSTNAME'`. It reverts at the next worker restart; to keep three, set `CELERY_CONCURRENCY=3` in the deployment environment.
+
+**A score names its model (owner 2026-11-04):** `loop.sh score` passes the run's `model_last` to `score.py`, which writes `model`, `endpoint` and `provider` into `data/bench/<run>.json` (and model and endpoint into the outcome record). 67 earlier scores were filled in from their run records; 145 older ones have no model on record.
+
+**Deep audit (owner 2026-11-04):** `loop.sh deep-audit [run...]` (no ids: the last day) checks every invariant a run must hold, worst first: MUST FIX (failed, measured-worse, stale-cache, mutation-left, other-model), CHECK (uncommitted, lost-reply, shipped-gap), WASTE (slow-reply over 20 min, long-stage over 60 min of working time, refusal-storm over 10). Run it at every routine audit for the live runs and at every finished run; a MUST FIX is investigated before the turn ends.
+
+**Containers by service (LF.575):** `loop.sh` resolves the worker and database with `docker compose ps -q <service>`, so a recreate cut short by a host restart (names left as `<id>_langchain-worker-1`) no longer breaks `score`. To tidy the names by hand: `docker rename <id>_langchain-worker-1 langchain-worker-1` (same for app). If :8888 drops its model on a large request, read `~/.unsloth/studio/logs/backend-*.log` for `ROCm error`; it is the owner's server - report it, do not reload.

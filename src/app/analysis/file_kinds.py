@@ -177,6 +177,10 @@ def is_application(relative_path: str) -> bool:
 #: name only, never the directory.
 SCRATCH_NAME = re.compile(
     r"^(?:tmp|temp|scratch|debug)\d*[_.-]|^test[_-]debug"
+    # And camelCase, `tmpCheckMultiple.js`: a fixer's probe whose language-service error made the revert gate put a
+    # whole fix back. Only `tmp` and `scratch`, with a capital next (case kept): `tempConverter.js`, `debugLogger.ts`
+    # and `tmpfile.ts` may be the product's own, and the sweeper deletes what matches.
+    r"|^(?:tmp|scratch)(?-i:[A-Z])"
     # The numbered form, `temp2.js` to `temp5.mjs`: one fix stage left four,
     # a test round reported a defect in the first, and a testing stage was
     # refused seven times deleting it as product code. `template.js` and

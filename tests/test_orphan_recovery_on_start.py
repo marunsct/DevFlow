@@ -192,3 +192,30 @@ def test_late_acknowledgement_stays_off(tasks):
     """
     assert tasks.celery_app.conf.task_acks_late is False
     assert tasks.celery_app.conf.task_reject_on_worker_lost is False
+
+
+def test_a_lock_a_dead_worker_held_is_taken_once_it_lapses_and_the_sweep_runs(monkeypatch, tasks):
+    """Measured on one deploy: the worker that held the lock was replaced within its two minutes, and the run it
+    should have resumed sat at `running` until the next worker start."""
+    swept: list[bool] = []
+    answers = iter([False, True])
+
+    class _Lock:
+        def set(self, *_args, **_kwargs):
+            return next(answers)
+
+    class _Now:
+        def __init__(self, target, args=(), **_kw):
+            self.target, self.args = target, args
+
+        def start(self):
+            self.target(*self.args)
+
+    monkeypatch.setattr("app.server.redis_client.get_redis_client", lambda: _Lock())
+    monkeypatch.setattr("threading.Thread", _Now)
+    monkeypatch.setattr(tasks.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(tasks, "_sweep_for_abandoned_runs", lambda: swept.append(True))
+
+    tasks._recover_runs_their_worker_abandoned()
+
+    assert swept == [True]

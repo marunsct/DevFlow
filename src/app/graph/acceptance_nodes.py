@@ -23,16 +23,59 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from app.acceptance import requests as acceptance_requests
-from app.acceptance import suite
+from app.acceptance import start_output, suite
 from app.acceptance.criteria import number
+from app.graph import acceptance_batches
 from app.agents.shared_facts import with_the_facts
-from app.stacks import contract, pack_named
+from app.stacks import compiler_errors, contract, pack_named
 
 logger = logging.getLogger(__name__)
 
 #: How many times QA writes the suite before it is locked as it stands. Each
 #: pass after the first is handed what the last review found.
 MAX_ACCEPTANCE_ROUNDS = 3
+
+#: A review finding that a test asserts too little to prove its criterion: a status alone, or a result never checked.
+_TOO_WEAK = re.compile(
+    r"\bonly (?:asserts?|checks?|verif(?:y|ies))\b|\b(?:does not|doesn't|never) (?:assert|check|verif(?:y|ies))\b"
+    r"|\bwould pass even if\b",
+    re.I,
+)
+#: Said with the findings sent back for strengthening: the rest of the suite is not rewritten.
+STRENGTHEN_ONLY = (
+    "Strengthen only the tests named below: keep each test and add the assertions it lacks - what the product "
+    "returns and what it stores, not only the status - so it cannot pass on a product that gets this wrong. "
+    "Change no other test."
+)
+
+
+#: Said with the tests sent back at the limit because no product could pass them.
+REPAIR_ONLY = (
+    "Repair only the tests named below, each only as far as its own code is wrong, so that it can pass once the "
+    "product works. Change no other test and nothing any test checks."
+)
+
+
+def cannot_pass_to_lock(cannot: list[str], *, rounds: int, limit: int) -> list[str]:
+    """The harness's findings that a test can never pass, sent back once at the review's round limit; [] otherwise.
+
+    A test no product can pass is a definition of done nobody meets: measured on one run, a suite locked at the limit
+    with whole-page lookups of a per-record control and went back to its writers after a build and a test round.
+    Once: at the limit itself, never after it.
+    """
+    return [REPAIR_ONLY, *cannot] if cannot and rounds == limit else []
+
+
+def too_weak_to_lock(findings: list[str], *, rounds: int, limit: int) -> list[str]:
+    """The findings that a test is too weak, sent back once more at the review's round limit; [] otherwise.
+
+    Over 21 release-candidate runs 13 of 30 problems the suite locked with said a test only checked a status, and
+    such a gap shipped a false acceptance. Once: at the limit itself, never after it.
+    """
+    if rounds != limit:
+        return []
+    return [finding for finding in findings if _TOO_WEAK.search(str(finding))]
+
 
 #: Review point: the acceptance suite, before it is locked.
 ACCEPTANCE_REVIEW = "acceptance_tests"
@@ -54,6 +97,9 @@ class Context:
 #: cannot answer for it - the suite starts the product on its own - so no probe of
 #: them closes it.
 THE_PRODUCT_DOES_NOT_START = "The product does not start for the acceptance suite, so no test can reach it."
+#: The one defect for a service that died part-way through the suite (`suite.the_product_crashed_mid_suite`).
+THE_PRODUCT_CRASHED = ("The product crashes while the acceptance suite runs: an unhandled error stops the service, and "
+                       "every test after it finds nothing listening.")
 
 
 def _the_install_that_failed(saved: dict[str, Any], state: Any) -> list[Any]:
@@ -97,6 +143,33 @@ def _the_install_that_failed(saved: dict[str, Any], state: Any) -> list[Any]:
     )]
 
 
+def _the_build_that_fails(state: Any, reported: list[Any]) -> list[Any]:
+    """A defect for the project's production build failing, with what the compiler said; [] when it builds. Never raises.
+
+    As severe as a product that does not start: what would be shipped does not exist, whatever a suite running on a
+    development server measured. `production_build` runs it only when the product changed.
+    """
+    from app.agents.specialists import ReportedDefect
+    from app.stacks import production_build
+
+    root = _root(state)
+    said = production_build.failure(root)
+    if not said or any(
+        str(getattr(item, "description", "") or "").startswith(production_build.THE_PRODUCT_DOES_NOT_BUILD)
+        for item in reported
+    ):
+        return []
+    return [ReportedDefect(
+        description=production_build.THE_PRODUCT_DOES_NOT_BUILD,
+        severity="blocking",
+        reproduction_steps=production_build.reproduce(root),
+        expected_behavior="The production build finishes with no error, so that what it makes can be shipped.",
+        actual_behavior=said,
+        affected_files=production_build.files_named(root, said),
+        owner=_owner_for(state, said),
+    )]
+
+
 def _what_the_language_service_finds(state: Any) -> list[Any]:
     """The language service's certain findings in what this sprint changed, as the gate raises them; [] when none.
 
@@ -124,6 +197,13 @@ def _what_the_language_service_finds(state: Any) -> list[Any]:
 #: (`workflow._one_defect_per_root_error` reads it).
 THE_PAGE_WHEN_IT_FAILED = "\nThe page when it failed:\n"
 
+def _what_the_start_shows(root: str) -> str:
+    """What the product printed and answered when started the way the suite starts it (`start_probe`); "" when off."""
+    from app.acceptance.start_probe import what_the_start_shows
+
+    return what_the_start_shows(root)
+
+
 def _root(state: Any) -> str:
     return state["repository"].root_path
 
@@ -148,6 +228,23 @@ def scaffold(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]
     pack = pack_named(state.get("stack_pack"))
     update: dict[str, Any] = {}
     already_done = bool((state.get("scaffold_result") or {}).get("ok"))
+    seeded_project = None if already_done else _the_seeded_project_built_on_as_it_is(state, root)
+    if seeded_project:
+        # Not a pack around it either: a pack's kept files are put back over the
+        # product's own, and its scaffold refuses a project with a manifest,
+        # which stops the run as an unproven setup.
+        update = {
+            "stack_pack": None,
+            "scaffold_result": {"ok": True, "pack": None, "project": seeded_project, "problem": ""},
+        }
+        _decide(
+            state, update, point="scaffold", question="How is the project set up?",
+            options=["built on as it is", "a new setup"], decision="built on as it is",
+            rationale=f"`{seeded_project}/` holds the seeded product, with its code. The acceptance suite declares "
+            "its own command, and no unit command is recorded for the unit gate.",
+        )
+        logger.info("%s/ holds the seeded product; it is built on as it is", seeded_project)
+        return _handing_on(**update, stage="acceptance_author")
     if pack is not None and not already_done:
         from app.stacks.scaffold import scaffold as scaffold_pack
         from app.tools.repository import pin_the_directory_the_product_names, pinned_project_directory
@@ -222,6 +319,21 @@ def scaffold(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]
     return _handing_on(**update, stage="acceptance_author")
 
 
+def _the_seeded_project_built_on_as_it_is(state: Any, root: str) -> str | None:
+    """The pinned project, when it is a seeded product no setup has started on; None otherwise."""
+    from app.acceptance.regression_contract import seeded
+    from app.graph.workflow import _the_stage_that_paused
+    from app.stacks import contract, custom_setup
+    from app.tools.repository import pinned_project_directory
+
+    project = pinned_project_directory(Path(root))
+    if not project or not seeded(root) or state.get("scaffold_result") or contract.read(root) is not None:
+        return None
+    if str(_the_stage_that_paused(state) or "").startswith("stack_setup_"):
+        return None
+    return project if custom_setup.already_set_up(Path(root) / project) else None
+
+
 def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any] | None:
     """Have the testing specialist set the project up, and prove it like a pack; None to skip.
 
@@ -270,10 +382,11 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         return _handing_on(**update, stage="acceptance_author")
 
     if attempt == 0 and not resuming:
-        replayed = custom_setup.replay(project_root, stack)
+        replayed = custom_setup.replay(project_root, stack, ctx.model)
         if replayed:
             proven = custom_setup.prove(root, project, stack, brief=brief, title=title or project)
             if proven.ok:
+                custom_setup.noted(proven, replayed=True)
                 update = {
                     "stack_pack": custom_setup.PROVEN_SETUP,
                     "scaffold_result": {"ok": True, "pack": custom_setup.PROVEN_SETUP, "project": project, "problem": ""},
@@ -287,9 +400,30 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
                 logger.info("Replayed a setup proven in an earlier run on this stack in %s/", project)
                 return _handing_on(**update, stage="acceptance_author")
             logger.warning("A setup proven in an earlier run did not prove here; asking the setup stage: %s", proven.problem)
+            set_aside = custom_setup.set_aside_what_did_not_prove(project_root)
+            if set_aside:
+                logger.warning("Set aside the proven setup %s: it did not prove, so it is not replayed again", set_aside)
+            custom_setup.noted(proven, replayed=True, set_aside=set_aside)
+            replay_failed: dict[str, Any] = {}
+            _decide(
+                state, replay_failed, point="scaffold", question="Does the setup proven in an earlier run hold here?",
+                options=["replay it", "ask the setup stage"], decision="ask the setup stage",
+                rationale=(f"The replayed setup{f' `{set_aside}`' if set_aside else ''} got as far as "
+                           f"{proven.level or 'nothing'} and failed: {proven.problem}"
+                           + (" It is set aside and not replayed again." if set_aside else "")),
+            )
+            if replay_failed.get("decisions"):
+                state = {**state, "decisions": replay_failed["decisions"]}
             for relative in replayed:
                 (project_root / relative).unlink(missing_ok=True)
 
+    # On its language's runner layer when a pack of its kind and language has one (SF.2): the harness writes the
+    # install, runners, reports, acceptance configuration and the declaration; the stage writes the framework's files.
+    layer_files = custom_setup.layered_setup(
+        project_root, stack, product_kind(stack, brief), project, title or project,
+        write=attempt == 0 and not resuming,
+    )
+    custom_setup.record_the_setup_s_scope(Path(ctx.repo_root), project, layer_files)
     agent = create_specialist_agent(
         "testing", model=ctx.model, checkpointer=ctx.checkpointer,
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
@@ -300,11 +434,14 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         agent=agent,
         initial_request=custom_setup.build_setup_request(
             project, stack, product_kind(stack, brief), str(previous.get("problem") or ""),
-            specification=state.get("technical_specification"),
+            specification=state.get("technical_specification"), layer_files=layer_files,
         ),
         output_key="__stack_setup__",
         next_stage="acceptance_author",
     )
+    # A replay that failed is decided before the stage; its record goes with whatever the stage hands on.
+    if state.get("decisions") and "decisions" not in update:
+        update["decisions"] = list(state["decisions"])
     if "__stack_setup__" not in update:
         if update.get("stage") == "failed":
             return left_to_the_agents({}, str(update.get("error") or "the setup stage did not finish"))
@@ -312,6 +449,7 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
     update.pop("__stack_setup__")
     update.pop("stage", None)
     result = custom_setup.prove(root, project, stack, brief=brief, title=title or project)
+    custom_setup.noted(result)
     if result.ok:
         update["stack_pack"] = custom_setup.PROVEN_SETUP
         update["scaffold_result"] = {"ok": True, "pack": custom_setup.PROVEN_SETUP, "project": project, "problem": ""}
@@ -334,6 +472,50 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
 
 
 # --- acceptance author ---------------------------------------------------------
+
+def _written_in_batches(state, config, agent, root, criteria, batches, round_, request_for):
+    """The suite written a batch of criteria at a time; (the last update, every blocker), or (the pause, None).
+
+    A batch is done when its criteria are covered, so a stage resumed after a pause or a deploy
+    goes on at the first batch not done. Each batch has its own conversation. A criterion still
+    without a test afterwards, and not set aside, is asked for once more, alone; what is still
+    missing then is left to the review, as it is when the suite is written whole.
+    """
+    from app.graph.workflow import _run_gated_agent
+
+    blockers: list = []
+    update: dict = {}
+
+    def write(name: str, group: list, note: str):
+        nonlocal update
+        done = _run_gated_agent(
+            state, config, stage_name=f"acceptance_author_{round_}_{name}", agent=agent,
+            initial_request=request_for(group, note), output_key="__acceptance_author__", next_stage="acceptance_review",
+        )
+        if "__acceptance_author__" not in done:
+            return done
+        blockers.extend(getattr(done.pop("__acceptance_author__"), "blockers", None) or [])
+        update = done
+        return None
+
+    for index, group in enumerate(batches):
+        covered = suite.coverage(root)
+        if all(criterion.id in covered for criterion in group):
+            continue
+        files = sorted({name for name, _ in suite.declared_tests(root)})
+        paused = write(f"g{index}", group, acceptance_batches.note(index, len(batches), group, files))
+        if paused is not None:
+            return paused, None
+    covered, set_aside = suite.coverage(root), set(suite.deferred(root)) | set(acceptance_requests.not_automatable(blockers))
+    missing = [criterion for criterion in criteria if criterion.id not in covered and criterion.id not in set_aside]
+    if missing:
+        logger.info("Batched acceptance suite: %s still have no test; asked for once more", ", ".join(c.id for c in missing))
+        files = sorted({name for name, _ in suite.declared_tests(root)})
+        paused = write("fill", missing, acceptance_batches.note(len(batches), len(batches) + 1, missing, files))
+        if paused is not None:
+            return paused, None
+    return update, blockers
+
 
 def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]:
     """QA writes the acceptance suite from the numbered criteria."""
@@ -358,27 +540,43 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
 
     agent = create_specialist_agent(
         "testing", model=ctx.model if delivery.fast() else ctx.judgement_model, checkpointer=ctx.checkpointer,
-        repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
+        repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories, writing_the_suite=True,
     )
-    request = acceptance_requests.build_author_request(
-        root, criteria, _stack(state), feedback=feedback, change_requests=suite.change_requests(root),
-        brief=getattr(state.get("document"), "text", "") or "",
-        testability=_the_testability_advice(state),
-        interface_contract=getattr(state.get("technical_specification"), "interface_contract", None) or (),
-        specification=state.get("technical_specification"),
-    )
-    update = _run_gated_agent(
-        state, config,
-        stage_name=f"acceptance_author_{round_}",
-        agent=agent,
-        initial_request=request,
-        output_key="__acceptance_author__",
-        next_stage="acceptance_review",
-    )
-    if "__acceptance_author__" not in update:
-        return update
-    output = update.pop("__acceptance_author__")
-    reasons = acceptance_requests.not_automatable(getattr(output, "blockers", None) or [])
+    def request_for(group: list, note: str = "") -> dict:
+        from app.agents.specification_rulings import with_the_rulings
+
+        # The suite is written to the same answer the product is drafted to; the rest of the facts stay as they were here.
+        return with_the_rulings(acceptance_requests.build_author_request(
+            root, group, _stack(state), feedback=feedback, change_requests=suite.change_requests(root),
+            brief=getattr(state.get("document"), "text", "") or "",
+            testability=_the_testability_advice(state),
+            interface_contract=getattr(state.get("technical_specification"), "interface_contract", None) or (),
+            specification=state.get("technical_specification"),
+            batch_note=note,
+        ), root)
+
+    # Only a first writing, in the whole, is split: a repair is small and made against a built product.
+    batches = acceptance_batches.plan(criteria) if round_ == 0 and not feedback else [criteria]
+    if len(batches) > 1:
+        update, blockers = _written_in_batches(state, config, agent, root, criteria, batches, round_, request_for)
+        if blockers is None:
+            return update  # paused for approval, or retrying
+    else:
+        update = _run_gated_agent(
+            state, config,
+            stage_name=f"acceptance_author_{round_}",
+            agent=agent,
+            initial_request=request_for(criteria),
+            output_key="__acceptance_author__",
+            next_stage="acceptance_review",
+        )
+        if "__acceptance_author__" not in update:
+            return update
+        blockers = getattr(update.pop("__acceptance_author__"), "blockers", None) or []
+    from app.graph import product_at_fault
+
+    blockers = product_at_fault.take_claims(root, blockers)
+    reasons = acceptance_requests.not_automatable(blockers)
     # A criterion the suite has a test for is automatable: that test is how.
     # Deferring it takes it out of the release gate. One run's QA, repairing a
     # reopened suite and unable to fix the product, listed the product's bugs as
@@ -441,6 +639,14 @@ def _scenarios(root: str) -> str:
     return "\n".join(lines)
 
 
+def _the_specification_on_disk(root: str) -> str:
+    """The recorded specification's text, or ""."""
+    try:
+        return (Path(root) / "docs" / "technical_specification.md").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
 def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]:
     """Check the suite mechanically, have a QA lead judge it, then lock it."""
     from app.agents.acceptance_reviewer import (
@@ -451,8 +657,20 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
 
     root = _root(state)
     rounds = int(state.get("acceptance_round") or 1)
+    # A file the runner skips only for its name's separator is renamed, not sent back (five rounds once ran out on it).
+    suite.rename_files_the_runner_skips(root)
+    # So is a read of `request.baseURL`, left through three rounds although each named the corrected line.
+    suite.correct_reads_of_the_fixture_s_baseurl(root)
     problems = suite.gaps(root)
     result = suite.run(root)
+    worse = suite.a_repair_that_made_it_worse(root, result)
+    if worse:
+        # The suite as it was locked comes back before anything else reads this one; the writers are told what the
+        # repair lost, so it is never locked in place of the better suite.
+        put_back = suite.put_back_the_suite_before_the_repair(root)
+        logger.warning("A repair left the suite worse; put back %d file(s) as locked", len(put_back))
+        result = suite.run(root)
+        problems = [worse, *problems]
     if not result.ran:
         problems.append(
             f"The suite does not run: {result.problem}.\n{result.output[-1500:]}".strip()
@@ -467,21 +685,57 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
                 "running product instead. This is about the tests, not the product: nothing of the "
                 "product is missing for this reason."
             )
-    problems.extend(suite.tests_that_cannot_pass(root, result))
+    # A suite under repair has been locked before: the same rule as at a round, or a false finding found here locks it
+    # with a problem "still open", which is a release gap.
+    from app.acceptance import check_findings
+
+    cannot_pass = suite.tests_that_cannot_pass(root, result)
+    cannot = suite.findings_that_reopen(root, result, cannot_pass)
+    # A repair that left a test it was sent for exactly as it was goes back with the cannot-pass findings (and once
+    # at the review's limit, `cannot_pass_to_lock`).
+    cannot = [*cannot, *suite.tests_left_unrepaired(root)]
+    # Each of the checks inside `tests_that_cannot_pass` recorded under its own name (HR2.Q.1); a finding none of
+    # them raised (a repair left unrepaired) under the bucket's.
+    named = getattr(cannot_pass, "checks", {}) or {}
+    for check in dict.fromkeys(named.get(str(f), "tests_that_cannot_pass") for f in cannot):
+        check_findings.noted(root, rounds, check, [f for f in cannot
+                                                  if named.get(str(f), "tests_that_cannot_pass") == check])
+    problems.extend(cannot)
+    # Against the specification's contract, before it is recorded at the lock (the rounds read the locked one).
+    problems.extend(check_findings.noted(root, rounds, "tests_that_want_json_from_a_204", suite.tests_that_want_json_from_a_204(
+        root, getattr(state.get("technical_specification"), "interface_contract", None) or ())))
+    problems.extend(check_findings.noted(root, rounds, "tests_whose_success_status_the_contract_does_not_give",
+                                         suite.tests_whose_success_status_the_contract_does_not_give(
+        root, getattr(state.get("technical_specification"), "interface_contract", None) or ())))
     vacuous = suite.vacuous_green(root, result)
-    problems.extend(vacuous)
+    problems.extend(check_findings.noted(root, rounds, "vacuous_green", vacuous))
     # Too lenient rather than impossible: a suite that passes a product it
     # should fail. The review sends these back; a test round has nothing to
     # charge for them.
-    problems.extend(suite.locators_nobody_sees(root))
-    problems.extend(suite.locators_that_pick_one(root))
-    problems.extend(
+    problems.extend(check_findings.noted(root, rounds, "locators_nobody_sees", suite.locators_nobody_sees(root)))
+    problems.extend(check_findings.noted(root, rounds, "locators_that_pick_one", suite.locators_that_pick_one(root)))
+    problems.extend(check_findings.noted(root, rounds, "controls_never_found_by_name",
         suite.controls_never_found_by_name(root, getattr(state.get("document"), "text", "") or "")
-    )
+    ))
+    problems.extend(check_findings.noted(root, rounds, "records_never_found_as_the_brief_shows_them",
+        suite.records_never_found_as_the_brief_shows_them(root, getattr(state.get("document"), "text", "") or "")
+    ))
+    problems.extend(check_findings.noted(root, rounds, "views_never_acted_within",
+                                         suite.views_never_acted_within(root, getattr(state.get("document"), "text", "") or "")))
+    # Plan item 16: at a first writing only; a repair is told to change nothing but the tests it was sent for.
+    from app.acceptance import contract_coverage
+
+    if contract_coverage.enabled() and not state.get("acceptance_return_to"):
+        missing_lines = contract_coverage.lines_with_no_test(
+            root, getattr(state.get("technical_specification"), "interface_contract", None) or ())
+        if missing_lines:
+            problems.extend(check_findings.noted(root, rounds, "contract_lines_with_no_test", [contract_coverage.finding(missing_lines)]))
     if not result.ran:
         if rounds < MAX_ACCEPTANCE_ROUNDS + 2:
             logger.warning("Acceptance suite could not run (exit %s); sent back to QA", result.exit_code)
             return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
+        if (kept := _kept_as_locked_before(state, root, f"the repaired suite cannot run: {result.problem}")) is not None:
+            return kept
         logger.error("Acceptance suite failed to run after %d rounds: %s", rounds, result.problem)
         return _handing_on(
             stage="failed",
@@ -495,6 +749,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         if rounds < MAX_ACCEPTANCE_ROUNDS + 2:
             logger.warning("Acceptance suite proved nothing (%d reason(s)); sent back to QA", len(vacuous))
             return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
+        if (kept := _kept_as_locked_before(state, root, "the repaired suite proves nothing: " + "; ".join(vacuous)[:1200])) is not None:
+            return kept
         logger.error("Acceptance suite still proves nothing after %d rounds", rounds)
         return _handing_on(
             stage="failed",
@@ -503,11 +759,30 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     if problems and rounds < MAX_ACCEPTANCE_ROUNDS:
         logger.info("Acceptance suite sent back to QA: %d problem(s)", len(problems))
         return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
+    if repair := cannot_pass_to_lock(cannot, rounds=rounds, limit=MAX_ACCEPTANCE_ROUNDS):
+        logger.info("At the review's limit, %d test(s) no product could pass go back once to be repaired", len(cannot))
+        return _handing_on(stage="acceptance_author", acceptance_feedback=repair)
 
     findings: list[str] = []
     update: dict[str, Any] = {}
-    if not problems:
-        already_passing = [test.name for test in result.report.tests if test.outcome == "passed"]
+    # Plan item 10: a repair that changed only the tests sent for it is judged by the checks above, not reviewed again.
+    targeted = not problems and suite.targeted_repair_switch.enabled() and suite.only_the_repaired_tests_changed(root)
+    if targeted:
+        logger.info("The reopened suite changed only the tests sent for repair; locked again on the harness's checks")
+    from app.acceptance.api_reference import api_reference
+    from app.graph import product_at_fault
+
+    specification = state.get("technical_specification")
+    no_fault_found = product_at_fault.evidence(root, result, problems, [
+        getattr(state.get("document"), "text", "") or "",
+        *(getattr(specification, "interface_contract", None) or ()),
+        *(criterion.text for criterion in suite.criteria(root)),
+        api_reference(specification),
+        _the_specification_on_disk(root),
+    ]) if product_at_fault.enabled() else []
+    targeted = targeted or bool(no_fault_found)
+    if not problems and not targeted:
+        already_passing =[test.name for test in result.report.tests if test.outcome == "passed"]
         deferred = suite.deferred(root)
         deferred_text = (
             "--- Criteria QA says no automated test can check ---\n"
@@ -515,8 +790,10 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             + "\nJudge whether each reason holds; a criterion that can be tested must be.\n\n"
             if deferred else ""
         )
+        from app.agents.reviews_without_reasoning import the_review_model
+
         agent = create_acceptance_reviewer_agent(
-            model=ctx.judgement_model, checkpointer=ctx.checkpointer,
+            model=the_review_model(ctx.judgement_model), checkpointer=ctx.checkpointer,
             repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
         )
         request = build_acceptance_review_request(
@@ -531,8 +808,6 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         # The facts the work is built and judged under (plan CM.1).
         request = with_the_facts(request, state["repository"].root_path)
         # What the tests are judged against, whole (see `app.acceptance.api_reference`).
-        from app.acceptance.api_reference import api_reference
-
         request["messages"][-1]["content"] += "\n" + api_reference(state.get("technical_specification"))
         update = _run_gated_agent(
             state, config,
@@ -548,6 +823,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         update.pop("stage", None)
         if not review.approved and review.findings:
             findings = suite.findings_about_the_suite([str(item) for item in review.findings])
+            # The QA lead is the largest sender of send-backs (240 of 295 items left open at the lock): recorded
+            # beside the harness's own checks so its settle rate is measured too (HR2.Q.1).
+            check_findings.noted(root, rounds, "qa_lead", findings)
             if len(findings) < len(review.findings):
                 logger.info(
                     "QA lead's review: %d of %d finding(s) were about the product, not the tests; not sent back",
@@ -558,17 +836,38 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
 
             # Fast delivery sends a suite back once; what is still open after
             # that is locked in as an open problem, as after the full count.
-            if rounds < (2 if delivery.fast() else MAX_ACCEPTANCE_ROUNDS):
+            limit = 2 if delivery.fast() else MAX_ACCEPTANCE_ROUNDS
+            if rounds < limit:
                 logger.info("QA lead sent the acceptance suite back: %d finding(s)", len(findings))
                 return _handing_on(**update, stage="acceptance_author", acceptance_feedback=findings)
+            if weak := too_weak_to_lock(findings, rounds=rounds, limit=limit):
+                logger.info("At the review's limit, %d test(s) too weak to lock go back once to be strengthened", len(weak))
+                return _handing_on(**update, stage="acceptance_author", acceptance_feedback=[STRENGTHEN_ONLY, *weak])
 
+    if suite.undefer_what_a_test_now_carries(root):
+        logger.info("Deferred criteria a test now carries are no longer deferred")
     suite.lock(root)
-    from app.acceptance.interface_contract import record_at_lock
+    update.update(product_at_fault.settled(root, no_fault_found))
+    if no_fault_found:
+        logger.warning("QA found no fault in the test(s) sent for repair, and the harness's checks agree; locked, nothing charged")
+        _decide(
+            state, update, point="acceptance_tests",
+            question="QA found no fault in the tests a dispute sent back: is the failure the product's?",
+            options=["the tests stay locked and the product is fixed", "QA repairs the tests"],
+            decision="the tests stay locked and the product is fixed",
+            rationale="; ".join(no_fault_found),
+        )
+    from app.acceptance.interface_contract import probe_at_the_lock, record_at_lock
 
-    record_at_lock(root, getattr(state.get("technical_specification"), "interface_contract", None) or ())
+    record_at_lock(root, getattr(state.get("technical_specification"), "interface_contract", None) or (),
+                   specification=state.get("technical_specification"))
+    contract_coverage.record_at_lock(root)
     from app.graph.engineering import suite_locked
 
     suite_locked(root)
+    # After the lock is complete: the checks start the product, and their files are their own.
+    if errors_at_lock := probe_at_the_lock(root):
+        logger.warning("The contract's checks at the lock made the server fail on %d line(s)", len(errors_at_lock))
     open_problems = [*problems, *findings]
     _record_document(state, "docs/acceptance_tests.md", _scenarios(root))
     tests = len(result.report.tests)
@@ -769,7 +1068,8 @@ def passing_since_reported(state: Any, failing: list[str]) -> list[str]:
     if not failing:
         return []
     latest = ci.load(_root(state), "latest")
-    measured_since = rf"(?:before|after) defect_fix_{int(state.get('test_round', 0) or 0)}_\d+"
+    # A batch of fixes run side by side is measured as `defect_fix_{round}_batch` (`defect_fix_parallel_node`).
+    measured_since = rf"(?:before|after) defect_fix_{int(state.get('test_round', 0) or 0)}_(?:\d+|batch)"
     if latest is None or not re.fullmatch(measured_since, str(latest.label or "")):
         return []
     for criterion in failing:
@@ -889,6 +1189,9 @@ def sprint_already_done(state: Any) -> str:
     due = [c for c in (criteria_due(state) or []) if c not in excused]
     if not due:
         return ""
+    # A page that does not draw records the way the brief shows them has work left, whatever the suite says.
+    if suite.records_the_page_never_makes(root, getattr(state.get("document"), "text", "") or ""):
+        return ""
     result = suite.run(root)
     if not result.ran or result.runtime_problems:
         return ""
@@ -900,6 +1203,46 @@ def sprint_already_done(state: Any) -> str:
         "the acceptance suite made at the start of the sprint, so there is nothing left to build "
         "for it.\n" + result.summary(due)
     )
+
+
+def pack_contract_defects(state: Any) -> list[Any]:
+    """A defect for each export the pack's scaffold depends on that a stage's rewrite of its entry file dropped."""
+    from app.agents.specialists import ReportedDefect
+    from app.stacks import entry_exports
+
+    root = _root(state)
+    lost = entry_exports.what_the_entry_no_longer_exports(root)
+    called_bare = entry_exports.what_the_start_file_cannot_call(root)
+    if not lost and not called_bare:
+        return []
+    defects = []
+    for path, name, needed in called_bare:
+        defects.append(ReportedDefect(
+            description=f"{path} declares `{name}({needed})`, but the scaffold's start file and unit smoke test call `{name}()` with no arguments, so `{needed}` is undefined on every request.",
+            severity="blocking",
+            reproduction_steps=f"Read {path} and the pack's start file: it calls `{name}()`.",
+            expected_behavior=(
+                f"`{name}()` takes no parameters and makes what it needs itself (read the data directory from the "
+                "environment, create the store inside it), as the pack's guide says."
+            ),
+            actual_behavior=f"`{name}` requires `{needed}`; called with none, it is undefined wherever it is used.",
+            affected_files=[path],
+            owner=_owner_for(state, ""),
+        ))
+    for path, name in lost:
+        defects.append(ReportedDefect(
+            description=f"{path} no longer exports `{name}`, which the scaffold's start file and unit smoke test import.",
+            severity="major",
+            reproduction_steps=f"Read {path}: it has no `export` of `{name}`.",
+            expected_behavior=(
+                f"{path} keeps exporting `{name}`: the harness's own files import it by that name, and so "
+                "do the tests written for it. Add routes to what it builds; do not replace or rename it."
+            ),
+            actual_behavior=f"{path} does not export `{name}`.",
+            affected_files=[path],
+            owner=_owner_for(state, ""),
+        ))
+    return defects
 
 
 def interface_defects(state: Any) -> list[Any]:
@@ -1016,6 +1359,164 @@ def interface_defects(state: Any) -> list[Any]:
     return defects
 
 
+from app.acceptance.suite import what_the_server_logged  # noqa: E402 - kept here for its callers
+
+
+#: A product frame in a logged stack: `(file://)?<path>:<line>`.
+_A_PRODUCT_FRAME = re.compile(r"(?:file://)?((?:[\w@.-]+/)*[\w@.-]+\.(?:ts|tsx|js|mjs|cjs|py)):(\d+)")
+#: A line that throws an error of its own making, and a handler that catches one, per language family.
+_THROWS_ITS_OWN = re.compile(r"^\s*(?:throw\s+new\s+\w*Error\s*\(|raise\s+\w+\s*\()")
+_A_HANDLER = re.compile(r"\bcatch\s*(?:\(\s*(\w*)\s*\))?\s*\{|^\s*except\b[^:]*?(?:\bas\s+(\w+))?\s*:")
+
+
+def what_the_logged_frames_hide(root: str | Path, logged: str) -> str:
+    """A note when the first product frame logged throws an error of its own in place of the one it caught; "".
+
+    Measured on one run: the server logged `Error: Internal server error at NotesRepository.save
+    (persistence.ts:44)`, and line 44 was `throw new Error('Internal server error')` inside `catch (_)`: the real
+    cause - the folder the write needed did not exist - was thrown away, and the fixers saw only the replacement.
+    """
+    try:
+        for match in _A_PRODUCT_FRAME.finditer(str(logged or "")):
+            relative, number = match.group(1).lstrip("/"), int(match.group(2))
+            if "node_modules" in relative:
+                continue
+            path = Path(root) / relative
+            if not path.is_file():
+                continue
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            if not 0 < number <= len(lines) or not _THROWS_ITS_OWN.match(lines[number - 1]):
+                return ""
+            above = "\n".join(lines[max(0, number - 4):number - 1])
+            handler = _A_HANDLER.search(above)
+            if handler is None:
+                return ""
+            caught = handler.group(1) or handler.group(2) or ""
+            if caught and caught != "_" and re.search(rf"\b{re.escape(caught)}\b", lines[number - 1]):
+                return ""  # it passes on what it caught
+            return (f"`{relative}` line {number} throws its own error in place of the one it caught, so the real "
+                    "cause is in no log: let the caught error through, or carry it (as its cause, or in the "
+                    "message) while finding what fails.")
+        return ""
+    except Exception:  # noqa: BLE001 - the log stands as it was
+        return ""
+
+
+#: A test that received a server error status.
+_A_5XX_RECEIVED = re.compile(r"\b(?:Received|received|status(?: code)?|got|returned)\b\W{0,12}(5\d\d)\b")
+
+#: What a defect says when the service answered 5xx and logged nothing. Measured on one run: POST answered 500, the
+#: error handler returned JSON without logging, and ten fix stages changed headers and middleware around a cause
+#: none of them could see; each ended "its own tests still fail".
+THE_SERVER_HID_THE_CAUSE = (
+    "\nThe service answered a 5xx status and logged nothing while it did: its error handler hides the cause. First "
+    "make that handler write the error it caught - message and stack - to the process's standard error, keeping the "
+    "5xx answer, so the next measurement shows the cause; then fix the cause. A guess at the cause without that "
+    "trace changes the wrong file."
+)
+
+
+def the_server_hid_the_cause(messages: list[str], logged: str, root: str | Path | None = None) -> str:
+    """`THE_SERVER_HID_THE_CAUSE` when a failing test received a 5xx and the server logged nothing; else "".
+
+    With `root`, the product's lines that answer 5xx from a `catch` are named: measured on one run, told only that
+    the handler hid the cause, the next fixers rewrote other files and the log stayed empty.
+    """
+    if str(logged or "").strip():
+        return ""
+    if not any(_A_5XX_RECEIVED.search(str(m or "")) for m in messages):
+        return ""
+    found = where_errors_become_5xx(root) if root is not None else []
+    return THE_SERVER_HID_THE_CAUSE + (
+        " It is answered here, from a catch that writes nothing: " + "; ".join(f"`{f}` line {n}" for f, n in found) + "."
+        if found else ""
+    )
+
+
+#: A line answering a 5xx status, and a `catch`/`except`/`rescue` opening a few lines above it.
+_A_5XX_ANSWER = re.compile(r"(?<![\w.])5\d\d(?![\w.])")
+_A_CATCH = re.compile(r"\b(?:catch|except|rescue|recover)\b")
+_A_LOG_CALL = re.compile(r"\b(?:console\.\w+|logger\.\w+|logging\.\w+|log\.\w+|print|eprintln!?|fmt\.Fprint\w*)\s*\(")
+_SOURCE_SUFFIXES = (".ts", ".tsx", ".js", ".mjs", ".cjs", ".py", ".rb", ".go", ".rs", ".java", ".kt", ".php")
+
+
+def where_errors_become_5xx(root: str | Path | None, most: int = 8) -> list[tuple[str, int]]:
+    """(file, line) of the product's lines that answer 5xx inside a catch block that logs nothing. Never raises."""
+    try:
+        from app.analysis.file_kinds import classify_file
+        from app.analysis.walk import files_under
+
+        base = Path(str(root))
+        found: list[tuple[str, int]] = []
+        for path in sorted(files_under(base, ("node_modules", ".git", ".harness", "test-results", ".venv"))):
+            relative = path.relative_to(base).as_posix()
+            if path.suffix.lower() not in _SOURCE_SUFFIXES or classify_file(relative) != "application":
+                continue
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            for at, line in enumerate(lines):
+                if not _A_5XX_ANSWER.search(line):
+                    continue
+                window = lines[max(0, at - 6):at + 1]
+                opened = max((i for i, w in enumerate(window) if _A_CATCH.search(w)), default=None)
+                if opened is None or any(_A_LOG_CALL.search(w) for w in window[opened:]):
+                    continue
+                found.append((relative, at + 1))
+                if len(found) >= most:
+                    return found
+        return found
+    except Exception:  # noqa: BLE001 - a note without the lines is the note as before
+        return []
+
+
+def _the_start_that_fails(state: Any, reported: list[Any], command: str) -> list[Any]:
+    """A defect for a product a green suite reached and its user cannot; [] otherwise.
+
+    Measured on one run: the suite's own way of starting it passed 38 of 38, its start script could not run, the result
+    said so, and with nothing failing no defect was raised.
+    """
+    from app.agents.specialists import ReportedDefect
+
+    said = str((suite.last_result(_root(state)) or {}).get("problem") or "")
+    if not said.startswith(suite.PRODUCT_DID_NOT_START) or any(
+        str(getattr(item, "description", "") or "") == THE_PRODUCT_DOES_NOT_START for item in reported
+    ):
+        return []
+    return [ReportedDefect(
+        description=THE_PRODUCT_DOES_NOT_START,
+        severity="blocking",
+        reproduction_steps=f"The suite passes through `{command}`; use the product its user's way, as the failure says.",
+        expected_behavior="The product works the way its user runs it, not only the way the suite reaches it.",
+        actual_behavior=said[:1500],
+        affected_files=[],
+        owner=_owner_for(state, said),
+    )]
+
+
+#: The start of a defect for records the page never draws as the brief shows them.
+RECORDS_NOT_AS_THE_BRIEF_SHOWS = "The page does not draw records the way the brief shows them"
+
+
+def _records_the_page_never_makes(state: Any, reported: list[Any]) -> list[Any]:
+    """A defect for each kind of record the brief shows that the page never makes; [] otherwise. See `suite`."""
+    from app.agents.specialists import ReportedDefect
+
+    found = suite.records_the_page_never_makes(_root(state), getattr(state.get("document"), "text", "") or "")
+    if not found or any(
+        str(getattr(item, "description", "") or "").startswith(RECORDS_NOT_AS_THE_BRIEF_SHOWS) for item in reported
+    ):
+        return []
+    said = " ".join(found)
+    return [ReportedDefect(
+        description=f"{RECORDS_NOT_AS_THE_BRIEF_SHOWS}: {said}"[:600],
+        severity="blocking",
+        reproduction_steps="Read the page's markup, scripts and templates for the element each record is drawn as.",
+        expected_behavior="Each record is drawn as the brief shows it, so it is found by its role.",
+        actual_behavior=said[:1500],
+        affected_files=[],
+        owner=_owner_for(state, said),
+    )]
+
+
 def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     """A defect for each due criterion that fails and that the round did not report.
 
@@ -1032,8 +1533,10 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
         defect for defect in _the_install_that_failed(suite.last_result(_root(state)) or {}, state)
         if not any("do not install" in str(getattr(item, "description", "") or "") for item in reported)
     ]
+    # Whether or not anything fails, too: a suite on a development server never goes through the build.
+    installs = [*installs, *_the_build_that_fails(state, reported)]
     if not failing:
-        return installs
+        return [*installs, *_the_start_that_fails(state, reported, command), *_records_the_page_never_makes(state, reported)]
     from app.acceptance.junit import tags_in
     from app.agents.specialists import ReportedDefect
 
@@ -1067,11 +1570,28 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             severity="blocking",
             reproduction_steps=f"Run `{command}` in the project directory: the product fails before any test runs.",
             expected_behavior="The product builds and starts, and the acceptance suite's tests run against it.",
-            actual_behavior=never_started[:1500],
+            actual_behavior=(never_started[:1500] + _what_the_start_shows(_root(state))
+                             + (f"\n\n{wrote}" if (wrote := start_output.in_text(str(saved.get("server_log") or ""))) else "")
+                             + compiler_errors.the_errors(_root(state))),
             affected_files=[],
             owner=_owner_for(state, never_started),
         ))
-        return defects + installs + _what_the_language_service_finds(state)
+        return defects + installs + _what_the_language_service_finds(state) + _records_the_page_never_makes(state, reported)
+    if never_started.startswith(suite.PRODUCT_CRASHED):
+        # One defect for the one cause, first: the criteria it took down are its symptoms, each failing only on a
+        # connection to a service that was gone. A criterion with any other failure keeps its own defect.
+        defects.append(ReportedDefect(
+            description=THE_PRODUCT_CRASHED,
+            severity="blocking",
+            reproduction_steps=f"Run `{command}` in the project directory: the service exits part-way through the suite.",
+            expected_behavior="The service keeps answering for the whole suite; an error in one request is answered, not fatal.",
+            actual_behavior=never_started[:2200],
+            affected_files=[],
+            owner=_owner_for(state, never_started),
+        ))
+        failing = [entry for entry in failing if not all(
+            suite._THE_SERVICE_WAS_GONE.search(t.get("message") or "")
+            for t in (entry.get("tests") or []) if t.get("outcome") == "failed")]
     if problems:
         defects.append(ReportedDefect(
             description="The product reports errors by itself while it loads, before any test touches it.",
@@ -1083,6 +1603,17 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             # Errors the page reports while it loads are the page's.
             owner=_owner_for(state, "page.load: " + "; ".join(str(p) for p in problems)),
         ))
+    # From the whole run, kept as it ran: the saved output is its tail, and an early error was cut (LF.355).
+    logged = str(saved.get("server_log") or "") or what_the_server_logged(str(saved.get("output") or ""))
+    # A defect the round wrote itself about a failing criterion takes the place of the one below, so it carries this too.
+    ids = {entry.get("id") for entry in failing}
+    for said_of_it in (suite.what_a_stopped_service_wrote(logged), start_output.in_text(logged)):
+        if not said_of_it:
+            continue
+        for item in reported:
+            actual = str(getattr(item, "actual_behavior", "") or "")
+            if said_of_it not in actual and ids & set(tags_in(str(getattr(item, "description", "") or ""))):
+                item.actual_behavior = f"{actual}\n{said_of_it}".strip()
     for entry in failing:
         if entry.get("id") in mentioned:
             continue
@@ -1097,13 +1628,20 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
         met = next((suite.page_it_failed_on(t.get("message", "")) for t in failed if suite.page_it_failed_on(t.get("message", ""))), "")
         if met:
             detail += f"{THE_PAGE_WHEN_IT_FAILED}{met}"
+        if logged:
+            detail += f"\nWhat the product's server logged while the suite ran:\n{logged}"
+            hidden = what_the_logged_frames_hide(_root(state), logged)
+            if hidden:
+                detail += f"\n{hidden}"
+        hid = the_server_hid_the_cause([t.get("message") or "" for t in failed], logged, _root(state))
+        detail += hid
         defects.append(ReportedDefect(
             description=f"[{entry.get('id')}] {entry.get('text')} - the acceptance suite says this does not work yet.",
             severity="major",
             reproduction_steps=f"Run `{command}` in the project directory and read the {entry.get('id')} tests.",
             expected_behavior=str(entry.get("text") or ""),
             actual_behavior=detail + seen,
-            affected_files=[],
+            affected_files=sorted({f for f, _ in where_errors_become_5xx(_root(state))}) if hid else [],
             owner=_owner_for(state, detail),
         ))
     return [*installs, *defects]
@@ -1155,6 +1693,20 @@ def _which_test(item: str) -> str:
     return (found.group(1) if found else str(item)).strip()[:300]
 
 
+def _which_tests(state: Any, item: str) -> list[str]:
+    """The tests a finding is about: the titles at the file and lines it names, else its first quoted name.
+
+    Measured on one run: a file-level finding was known by its file, so an earlier false finding for the same file
+    made a real one "already sent", and its criteria - read from tags the finding's text does not carry - were
+    never deferred; fixers were sent a test fault.
+    """
+    try:
+        titles = suite._the_tests_at(_root(state), item)  # noqa: SLF001 - the suite's own reading of a finding
+    except Exception:  # noqa: BLE001 - known by its first name, as before
+        titles = []
+    return titles or [_which_test(item)]
+
+
 def may_repair(state: Any, broken: list[str]) -> bool:
     """Whether the suite may be reopened for `broken`: within the budget, or a test never sent before.
 
@@ -1167,7 +1719,7 @@ def may_repair(state: Any, broken: list[str]) -> bool:
     if repairs < MAX_SUITE_REPAIRS:
         return True
     sent = set(state.get("suite_repaired_tests") or [])
-    fresh = {_which_test(item) for item in broken} - sent
+    fresh = {name for item in broken for name in _which_tests(state, item)} - sent
     return bool(fresh) and repairs < MAX_SUITE_REPAIRS_IN_ALL
 
 #: The most locked tests one run's disputes may reclassify when the suite is
@@ -1228,7 +1780,10 @@ def tests_that_fail_alone(repo_root: Any, names: list[str]) -> tuple[list[str], 
         for shown, declared in suite.declared_tests(repo_root):
             for tag in junit.tags_in(declared):
                 tagged.setdefault(tag, set()).add(shown)
-        runs = each_file(repo_root, contract.read(repo_root) or {}, sandbox_runner(repo_root))
+        # Only the files that hold a disputed test: the others have no bearing on the dispute, and a service suite
+        # runs each file with its own server (deep review 2026-10-26).
+        disputed = {tag for name in names for tag in junit.tags_in(name)}
+        runs = each_file(repo_root, contract.read(repo_root) or {}, sandbox_runner(repo_root), naming=disputed or None)
         outcome = {str(run.get("file")): str(run.get("outcome")) for run in runs}
     except Exception:  # noqa: BLE001 - a check that cannot run re-measures nothing
         logger.warning("Could not re-measure the disputed tests file by file", exc_info=True)
@@ -1249,9 +1804,44 @@ def tests_that_fail_alone(repo_root: Any, names: list[str]) -> tuple[list[str], 
     return still, passed
 
 
+def tests_whose_service_stayed_up(repo_root: Any, lines: list[str]) -> tuple[list[str], list[str]]:
+    """(the dispute's lines to act on, the tests that stay locked because the service they started stopped by itself).
+
+    Measured on one run: the product exited on its first write under the restart test, the test saw only "fetch
+    failed", and the dispute called it impossible. QA may not change the product, so the suite went back to QA for
+    nothing. Only a test in a file that starts its own service can be the one the helper reported.
+    """
+    from app.stacks.packs._service import SERVICE_STOPPED_BY_ITSELF  # noqa: PLC0415 - a pack's text, read here alone
+
+    saved = suite.last_result(repo_root) or {}
+    # The saved output is the run's tail; the report kept from the whole run is with what the server logged.
+    output = f"{saved.get('output') or ''}\n{saved.get('server_log') or ''}"
+    if SERVICE_STOPPED_BY_ITSELF not in output:
+        return list(lines), []
+    texts = []
+    for path in suite.suite_files(repo_root):
+        try:
+            texts.append(path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    starting_its_own = [text for text in texts if "startService" in text]
+    kept: list[str] = []
+    locked: list[str] = []
+    for line in lines:
+        title = line.split("`")[1] if line.count("`") >= 2 else ""
+        if title and any(title in text for text in starting_its_own):
+            locked.append(title)
+        else:
+            kept.append(line)
+    return kept, locked
+
+
 #: What QA is held to when it repairs a locked suite.
 REPAIR_RULE = (
-    "Change only the tests named above, and only as far as their own code is wrong. "
+    "Change the tests named above, and only as far as their own code is wrong. "
+    "A test not named above that has the very same fault - the same wrong step, written the same "
+    "way - is repaired the same way in this pass: a locked test that cannot pass is sent back "
+    "once for its fault, not once for each test that has it. "
     "Every other test, and what each test checks, stays exactly as it is: the suite is "
     "being repaired, not rewritten."
 )
@@ -1271,11 +1861,31 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
         return "", []
     root = _root(state)
     broken = [
-        *suite.tests_that_cannot_pass(root, result),
+        *suite.findings_that_reopen(root, result, suite.tests_that_cannot_pass(root, result)),
         *suite.tests_left_behind_by_their_own_change(root, result),
+        *suite.tests_finding_a_per_record_control_on_the_whole_page(
+            root, result, getattr(state.get("document"), "text", "") or ""),
         *suite.vacuous_green(root, result),
+        *_due_criteria_with_no_test(root, due),
     ]
     return acceptance_requests.acceptance_block(result, due), broken
+
+
+def _due_criteria_with_no_test(root: str, due: list[str]) -> list[str]:
+    """The suite's gaps for criteria due now that no locked test names: QA's to write, not a fixer's to build.
+
+    Measured on a small-model run: the suite was locked with AC-15 untested, every round raised it as a product
+    defect, the dispatch closed it at once (no test of it failed), and the sprint was planned again - four rounds
+    and a re-plan in two minutes, at 17 of 18 with every test passing. A product change cannot give a criterion a
+    test.
+    """
+    wanted = {str(item) for item in due or ()}
+    if not wanted:
+        return []
+    try:
+        return [gap for gap in suite.gaps(root) if gap.split(" ", 1)[0] in wanted]
+    except Exception:  # noqa: BLE001 - a check that cannot run reopens nothing
+        return []
 
 
 #: Where a suite repaired for a failed attempt's dispute goes back to: the
@@ -1283,8 +1893,56 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
 SPRINT_REPLAN = "sprint_replan"
 
 
+def _kept_as_locked_before(state: dict, root: Path, why: str) -> dict | None:
+    """A repair that ran out of rounds keeps the suite as it was last locked and goes back where it came from; None
+    when the suite was never locked (a first writing still fails the run).
+
+    Measured on one run: a suite reopened after the build, for a locked test the product's own `conftest.py` skipped,
+    went five rounds and then failed the run - a product passing every hidden test, its suite 22 of 22, never released.
+    The suite it had been locked with is still a fair definition of done; what the repair could not settle is a gap.
+    """
+    from app.graph.workflow import _handing_on
+
+    return_to = state.get("acceptance_return_to")
+    if not return_to or not suite.is_being_repaired(root):
+        return None
+    put_back = suite.put_back_the_suite_before_the_repair(root)
+    suite.lock(root)
+    logger.warning("A repair ran out of rounds; the suite as last locked is kept (%d file(s) put back)", len(put_back))
+    result = suite.run(root)
+    return _handing_on(
+        stage="technical_lead" if return_to == SPRINT_REPLAN else return_to,
+        acceptance_return_to=None,
+        acceptance_feedback=[],
+        acceptance_open_problems=[f"The suite's repair ran out of rounds and the suite as last locked was kept; {why}"],
+        acceptance_result=result.as_dict(),
+        revision_comments=list(state.get("revision_comments") or []),
+    )
+
+
+def _rewritten_in_one_call_each(state: Any, broken: list[str], model: Any) -> bool:
+    """Whether the named tests were rewritten in place, one gathered call each (plan item 10 part 2, `NAMED_TEST_REWRITE`)."""
+    from app.graph import rewritten_tests
+
+    if not rewritten_tests.enabled():
+        return False
+    try:
+        from app.acceptance.api_reference import api_reference
+        from app.agents.specification_rulings import the_rulings_section
+
+        done = rewritten_tests.repair(
+            _root(state), broken, model, which_test=_which_test,
+            reference=api_reference(state.get("technical_specification")) + the_rulings_section(_root(state)),
+            reason=str(state.get("dispute_reason") or ""),
+        )
+    except Exception:  # noqa: BLE001 - QA's agent loop repairs, as before
+        logger.warning("Could not rewrite the named tests in place", exc_info=True)
+        return False
+    return done is not None
+
+
 def reopen_the_suite_for(
-    state: Any, broken: list[str], return_to: str = "test_and_triage", *, reclassifying: bool = False
+    state: Any, broken: list[str], return_to: str = "test_and_triage", *, reclassifying: bool = False, model: Any = None
 ) -> dict[str, Any] | None:
     """Send tests that can never pass back to QA, then back to `return_to`; None when spent.
 
@@ -1312,7 +1970,7 @@ def reopen_the_suite_for(
     try:
         from app.acceptance import suite as _suite
 
-        _suite.repairing(state["repository"].root_path, [_which_test(item) for item in broken])
+        _suite.repairing(state["repository"].root_path, [name for item in broken for name in _which_tests(state, item)])
     except Exception:  # noqa: BLE001 - the repair goes on without its guard
         logger.debug("Could not record the tests under repair", exc_info=True)
     reclassified = (
@@ -1322,15 +1980,24 @@ def reopen_the_suite_for(
         if reclassifying
         else {}
     )
+    # Rewritten where they stand, then straight to the review: QA's author loop is for what cannot be placed.
+    rewritten = _rewritten_in_one_call_each(state, broken, model)
+    # Only a dispute's repair may answer that the test is right: a harness check measured the fault of any other.
+    from app.graph import product_at_fault
+
+    no_fault_rule = product_at_fault.offered(
+        state, _root(state), [_which_test(item) for item in broken]) if reclassifying and not rewritten else []
     return _handing_on(
         **update,
         **reclassified,
-        stage="acceptance_author",
+        stage="acceptance_review" if rewritten else "acceptance_author",
         acceptance_return_to=return_to,
-        acceptance_round=0,
-        acceptance_feedback=[*broken, REPAIR_RULE],
+        acceptance_round=1 if rewritten else 0,
+        acceptance_feedback=[] if rewritten else [*broken, REPAIR_RULE, *no_fault_rule],
+        **({"revision_comments": []} if rewritten else {}),
         suite_repairs=repairs + 1,
-        suite_repaired_tests=sorted({*(state.get("suite_repaired_tests") or []), *map(_which_test, broken)}),
+        suite_repaired_tests=sorted({*(state.get("suite_repaired_tests") or []),
+                                     *(name for item in broken for name in _which_tests(state, item))}),
     )
 
 
@@ -1347,7 +2014,35 @@ def beyond_repair(state: Any, broken: list[str]) -> list[str]:
 
     if not broken or may_repair(state, broken):
         return []
-    return sorted({tag for item in broken for tag in tags_in(item) if tag.startswith("AC-")})
+    named = [item for item in broken] + [title for item in broken for title in _which_tests(state, item)]
+    return sorted({tag for item in named for tag in tags_in(item) if tag.startswith("AC-")})
+
+
+def defer_what_is_beyond_repair(state: Any, criteria: list[str], broken: list[str]) -> None:
+    """Defer the criteria `beyond_repair` names, each with why; never raises.
+
+    Measured on one run: the persistence criteria's only test was beyond
+    repair, each round still raised "the acceptance suite says this does not
+    work yet" for them, and the sprint was planned again three times for
+    criteria no fix could prove. Deferred, the next measurement reads them as
+    deferred, and the release names them among what it did not prove.
+    """
+    if not criteria:
+        return
+    try:
+        from app.acceptance.junit import tags_in
+
+        reasons = {}
+        for criterion in criteria:
+            why = next((item for item in broken if criterion in tags_in(item)), "")
+            reasons[criterion] = (
+                "its locked test cannot pass whatever is built, and the suite may not be repaired again in "
+                "this run" + (f": {why[:300]}" if why else "")
+            )
+        suite.defer(_root(state), reasons)
+        logger.warning("Deferred %s: their locked tests cannot pass and may not be repaired", ", ".join(criteria))
+    except Exception:  # noqa: BLE001 - the round goes on with them set aside, as before
+        logger.debug("Could not defer the criteria beyond repair", exc_info=True)
 
 
 def beyond_repair_note(broken: list[str], criteria: list[str]) -> str:
@@ -1358,6 +2053,77 @@ def beyond_repair_note(broken: list[str], criteria: list[str]) -> str:
         "stage can close them: a defect that names only these criteria is set aside.\n"
         + "\n".join(f"- {item}" for item in broken)
     )
+
+
+#: `suite.repairing`'s mark for a repair that adds criterion ids to names: the tests it renames cannot be listed first.
+NAMING_REPAIR = suite.NAMING_REPAIR
+
+
+class _NamingFindingSwitch:
+    """`NAMING_FINDING_BEFORE_DEFERRAL` as the switch registry reads one: off until measured."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("At release, a criterion the harness deferred and no test's name carries goes back to QA once as a "
+                   "naming finding, instead of shipping deferred.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("NAMING_FINDING_BEFORE_DEFERRAL", _NamingFindingSwitch.ON_BY_DEFAULT)
+
+
+naming_finding_switch = _NamingFindingSwitch()
+
+
+def _naming_findings(root: str) -> dict[str, str]:
+    """{criterion: what QA is told} for each deferred criterion the harness set aside and no test's name carries, not sent yet.
+
+    A reason QA gave stays: its lead judged that reason at the review. These are the harness's own deferrals of a
+    criterion it measured as untested, where what is missing may be only an id in a name.
+    """
+    state = suite._state(root)  # noqa: SLF001 - the suite's own record
+    sent = set(state.get("naming_findings_sent") or [])
+    carried = suite.coverage(root)
+    texts = {c.id: c.text for c in suite.criteria(root)}
+    return {
+        cid: (f"{cid} (\"{texts.get(cid, '')}\") would ship deferred because no test's name carries `{cid}`. Where a "
+              f"test already checks what it says, add `{cid}` to that test's name and change nothing else; where none "
+              "does, write one.")
+        for cid, why in suite.deferred(root).items()
+        if not carried.get(cid) and cid not in sent and str(why).startswith(suite.DEFERRED_BY_THE_HARNESS)
+    }
+
+
+def naming_back_to_qa(state: Any) -> dict[str, Any] | None:
+    """Back to QA with each criterion deferred only for want of a test carrying its id, once each, then to the release; None when none.
+
+    Measured on recent runs: a criterion went out as "ships deferred, unproven" while the suite's tests were right and
+    only its id was missing from a name. No repair budget is charged: nothing is judged, and each is sent once. Behind
+    `NAMING_FINDING_BEFORE_DEFERRAL`. Never raises.
+    """
+    if not naming_finding_switch.enabled():
+        return None
+    try:
+        from app.graph.workflow import _handing_on
+
+        root = _root(state)
+        found = _naming_findings(root)
+        if not found:
+            return None
+        record = suite._state(root)  # noqa: SLF001 - the suite's own record
+        record["naming_findings_sent"] = sorted({*(record.get("naming_findings_sent") or []), *found})
+        suite._save_state(root, record)  # noqa: SLF001
+        suite.repairing(root, [NAMING_REPAIR])
+        logger.warning("Deferred only for want of an id in a test's name: %s; back to QA", ", ".join(sorted(found)))
+        return _handing_on(
+            stage="acceptance_author", acceptance_return_to="release", acceptance_round=0,
+            acceptance_feedback=[*found.values(), REPAIR_RULE],
+        )
+    except Exception:  # noqa: BLE001 - the release goes on as it would have
+        logger.debug("Could not send the naming findings back to QA", exc_info=True)
+        return None
 
 
 # --- decision records ------------------------------------------------------------

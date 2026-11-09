@@ -21,7 +21,8 @@ x-app-env: &app-env
   ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
   AUTH_DB_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@db:5432/${POSTGRES_DB:-langchain}"
   DB_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@db:5432/${POSTGRES_DB:-langchain}"
-  REDIS_URL: "redis://redis:6379/0"
+  # The harness's queue: password-protected, because product commands run in the worker, on its network.
+  REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is not set - run scripts/setup-env.sh}@redis:6379/0"
   DATA_DIR: /app/data
   WORKFLOW_UPLOAD_DIR: /app/data/uploads
   WORKFLOW_WORKSPACE_ROOT: /app/data/workspaces
@@ -210,11 +211,14 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction",
+              "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is not set - run scripts/setup-env.sh}"]
+    environment:
+      REDISCLI_AUTH: "${REDIS_PASSWORD:?REDIS_PASSWORD is not set - run scripts/setup-env.sh}"
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 5

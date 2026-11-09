@@ -5,6 +5,7 @@
 #   scripts/loop/loop.sh status [run]        state of the run (default: current) + anything else running
 #   scripts/loop/loop.sh start [brief]       create and start a run (default tests/brief_low.md)
 #   scripts/loop/loop.sh cancel [run-id]     cancel a run (default: the current one); needs LOOP_USER/LOOP_PASSWORD
+#   scripts/loop/loop.sh measuring             one row per switch in docs/measuring.md, from the ledger and scores
 #   scripts/loop/loop.sh pin on|off [run-id] keep a run on its model / let it follow the settings (PIN_URL, PIN_MODEL_NAME pin it to an endpoint); PIN_MODEL=1 on start/bench pins at the start; RUN_NAME="..." on start/bench names the run
 #                                            SWITCHES_OFF="A B" / SWITCHES_ON="C" on start/bench set this run's own switches (an arm on one SHA, HR2.E.1)
 #   scripts/loop/loop.sh wait [minutes] [run] block until the run (default: current) ends or N minutes pass (default 18),
@@ -417,6 +418,7 @@ ship-live) "$HERE/ship_live.sh" ;;
 impact) shift; "$PY" "$HERE/impact.py" data/kpi/ledger.csv "${1:-12}" ;;
 suite-checks) shift; docker exec -i "$WORKER_C" python3 - /app/data/workspaces/default < "$HERE/suite_check_settling.py" ;;
 state) shift; "$PY" "$HERE/state_blocks.py" ;;
+measuring) shift; "$PY" "$HERE/switch_register.py" ;;
 gap-precision) shift; "$PY" "$HERE/gap_precision.py" data/bench ;;
 blind-spots) shift; "$PY" "$HERE/blind_spots.py" "$@" ;;
 disputes) shift; docker exec -i "$WORKER_C" python3 - /app/data/workspaces/default < "$HERE/disputes.py" | "$PY" "$HERE/disputes.py" --join "$ROOT/data/kpi/ledger.csv" ;;

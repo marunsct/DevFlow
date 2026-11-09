@@ -313,6 +313,9 @@ that is the call the approval gate interrupts on.
 """
 
 
+from app.agents.edits_together import build_edits_together_middleware  # noqa: E402
+
+
 def _workspace_filesystem_middleware(repo_root: str) -> FilesystemMiddleware:
     """Point the built-in filesystem tools at the run's real workspace.
 
@@ -750,6 +753,8 @@ def create_role_agent(
         build_project_memory_middleware(resolved_repo_root),
         build_plugin_instructions_middleware(resolved_repo_root, name),
         _workspace_filesystem_middleware(resolved_repo_root),
+        # A reply's edits to one file that parse only together are made one edit (`app.agents.edits_together`).
+        build_edits_together_middleware(resolved_repo_root),
         # After the filesystem middleware, so it sees the tool results the
         # model will. `read_file` has its own, better notice in the backend;
         # this covers the listings and searches beside it, which had none.

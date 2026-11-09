@@ -422,3 +422,47 @@ class TestALocatorFilteredByAFieldValue:
         assert "only as the value of a field" in problem
         for word in BANNED:
             assert not re.search(rf"\b{word}\b", problem.split("`")[-1].lower()), word
+
+
+class TestTheBriefSControlsKeepTheirNames:
+    """One run's filters read "All (0)", "Active (0)" and "Completed (0)"; the suite found them another way and
+    every customer check that asked for "All", "Active" or "Completed" by name timed out."""
+
+    BRIEF = ('A text field labelled "Title" and a button named "Add task".\n'
+             'Three buttons named "All", "Active" and "Completed" filter the list.\n'
+             'Each entry has a button named "Delete".')
+    SHOWS = ('- main:\n  - textbox "Title"\n  - button "Add task"\n  - button "All (0)"\n'
+             '  - button "Active (0)"\n  - button "Completed (0)"\n')
+
+    def test_a_name_with_more_beside_it_is_named(self) -> None:
+        from app.analysis.interface_checks import named_controls_renamed
+
+        assert named_controls_renamed(self.BRIEF, self.SHOWS) == [
+            ("All", "All (0)"), ("Active", "Active (0)"), ("Completed", "Completed (0)")]
+
+    def test_exact_names_and_controls_not_yet_shown_are_left_alone(self) -> None:
+        from app.analysis.interface_checks import named_controls_renamed
+
+        exact = self.SHOWS.replace(" (0)", "")
+        assert named_controls_renamed(self.BRIEF, exact) == []
+        assert ("Delete", "Delete") not in named_controls_renamed(self.BRIEF, self.SHOWS), "not on the page yet"
+        assert named_controls_renamed('A button named "Add".', '- button "Address book"') == [], "whole words only"
+
+    def test_it_is_a_ui_ux_defect_that_names_no_product(self, tmp_path) -> None:
+        import json
+        from types import SimpleNamespace
+
+        from app.acceptance import suite
+        from app.graph import acceptance_nodes
+
+        path = tmp_path / suite.RESULT_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"ran": True, "shows": self.SHOWS}))
+        defects = acceptance_nodes.interface_defects(
+            {"repository": SimpleNamespace(root_path=str(tmp_path)), "document": SimpleNamespace(text=self.BRIEF)}
+        )
+        [defect] = [d for d in defects if "another name" in d.description]
+        assert defect.owner == "ui_ux" and '"All" is shown as "All (0)"' in defect.description
+        rule = f"{defect.description} {defect.expected_behavior} {defect.reproduction_steps}".lower()
+        for word in BANNED:
+            assert not re.search(rf"\b{word}\b", rule), word

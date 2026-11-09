@@ -1337,6 +1337,28 @@ def interface_defects(state: Any) -> list[Any]:
             owner="ui_ux",
             regression_test_required=False,
         ))
+    renamed = interface_checks.named_controls_renamed(brief, str(saved.get("shows") or ""))
+    if renamed:
+        listed = ", ".join(f'"{name}" is shown as "{shown}"' for name, shown in renamed)
+        defects.append(ReportedDefect(
+            description=(
+                f"A control the brief names has another name on the page: {listed}. A person who asks for it "
+                "by the brief's name - a screen reader, a voice command, a customer's own check - finds nothing."
+            ),
+            severity="major",
+            reproduction_steps=(
+                "Load the page and read what it shows: the harness's page check records each "
+                "control with its accessible name before any test touches it."
+            ),
+            expected_behavior=(
+                "Each control the brief names has exactly that accessible name. Anything shown beside it - a "
+                "count, an icon - sits outside the name, in its own element."
+            ),
+            actual_behavior=f"{listed}, as the page shows it.",
+            affected_files=[],
+            owner="ui_ux",
+            regression_test_required=False,
+        ))
     overflow = int(saved.get("phone_overflow") or 0)
     if overflow > 0 and interface_checks.asks_for_small_screens(brief):
         defects.append(ReportedDefect(

@@ -136,9 +136,35 @@ def named_controls_disabled_on_load(brief_text: str, shows: str) -> list[str]:
     return disabled
 
 
+#: A control in the page check's accessibility tree: `- button "All (0)"`, its role and its name.
+_A_SHOWN_CONTROL = re.compile(r'^\s*-\s+([a-z]+)\s+"([^"\n]{1,120})"', re.M)
+
+
+def named_controls_renamed(brief_text: str, shows: str) -> list[tuple[str, str]]:
+    """(the brief's name, the name the page gives it) for each control the page shows under another name.
+
+    A control counts as renamed when no control on the page has the brief's name exactly and one has a name that
+    holds it as a whole word: the brief's "All" shown as "All (0)". Measured on one run: the filters read "All (0)",
+    "Active (0)" and "Completed (0)", the suite found them some other way, and every customer check that asked for
+    "All", "Active" or "Completed" by name timed out. A name the page does not show at all - a control that appears
+    only once there are records - is not judged.
+    """
+    shown = [(role, " ".join(name.split())) for role, name in _A_SHOWN_CONTROL.findall(shows or "")]
+    renamed: list[tuple[str, str]] = []
+    for name in controls_the_brief_names(brief_text):
+        if any(_same(name, other) for _, other in shown):
+            continue
+        word = re.compile(rf"(?<![\w]){re.escape(name)}(?![\w])", re.I)
+        holding = [other for _, other in shown if word.search(other)]
+        if holding:
+            renamed.append((name, holding[0]))
+    return renamed
+
+
 __all__ = [
     "asks_for_small_screens",
     "controls_the_brief_names",
     "named_controls_disabled_on_load",
+    "named_controls_renamed",
     "nobody_styled_it",
 ]

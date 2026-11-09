@@ -513,3 +513,48 @@ class TestADisabledControlDefectNamesWhereItIsDisabled:
         for word in BANNED:
             harness_words = defect.actual_behavior.split("as the page shows it.", 1)[1].split(": app/", 1)[0]
             assert not re.search(rf"\b{word}\b", harness_words.lower()), word
+
+
+class TestAnAccessibilityDefectNamesItsFiles:
+    """Over 30 runs, accessibility defects carried no files and 0 of 10 attempts fixed one: a colour-contrast fix went
+    to a script, not the stylesheet that sets the colour."""
+
+    def _workspace(self, tmp_path):
+        product = tmp_path / "app"
+        product.mkdir()
+        (product / "index.html").write_text('<ul id="entry-list" role="list"></ul>\n')
+        (product / "style.css").write_text(".empty-state {\n  color: #64748b;\n}\n.empty-states-other { color: red; }\n")
+        (product / "main.js").write_text("note.className = 'empty-state';\n")
+        return tmp_path
+
+    def test_the_lines_that_define_each_selector_are_found(self, tmp_path) -> None:
+        from app.analysis.interface_checks import where_selectors_are_defined
+
+        found = where_selectors_are_defined(self._workspace(tmp_path), ["#entry-list", "main > li.empty-state"])
+        assert found == [
+            'app/index.html:1: <ul id="entry-list" role="list"></ul>',
+            "app/main.js:1: note.className = 'empty-state';",
+            "app/style.css:1: .empty-state {",
+        ]
+        assert where_selectors_are_defined(tmp_path, ["main > li"]) == [], "no id or class: nothing to look for"
+
+    def test_the_defect_carries_them(self, tmp_path) -> None:
+        import json
+        from types import SimpleNamespace
+
+        from app.acceptance import suite
+        from app.graph import acceptance_nodes
+
+        root = self._workspace(tmp_path)
+        path = root / suite.RESULT_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"ran": True, "shows": '- list', "accessibility": [
+            {"id": "color-contrast", "impact": "serious", "help": "Elements must meet contrast", "count": 1,
+             "where": [".empty-state"], "why": ["contrast 4.36"]}]}))
+        defects = acceptance_nodes.interface_defects(
+            {"repository": SimpleNamespace(root_path=str(root)), "document": SimpleNamespace(text="A list.")})
+        [defect] = [d for d in defects if "accessibility" in d.description]
+        assert defect.affected_files == ["app/main.js", "app/style.css"]
+        assert "app/style.css:1: .empty-state {" in defect.actual_behavior
+        for word in BANNED:
+            assert not re.search(rf"\b{word}\b", defect.actual_behavior.lower()), word

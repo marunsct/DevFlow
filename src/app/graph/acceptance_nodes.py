@@ -1284,6 +1284,8 @@ def interface_defects(state: Any) -> list[Any]:
         ))
     broken = [rule for rule in saved.get("accessibility") or [] if isinstance(rule, dict) and rule.get("id")]
     if broken:
+        defined = interface_checks.where_selectors_are_defined(
+            root, [where for rule in broken for where in rule.get("where") or []])
         listed = "; ".join(
             f"{rule.get('id')} ({rule.get('impact')}): {rule.get('help')} - {rule.get('count')} element(s)"
             + (f", e.g. {', '.join(rule.get('where') or [])}" if rule.get("where") else "")
@@ -1308,8 +1310,9 @@ def interface_defects(state: Any) -> list[Any]:
                 "Every control has a name a screen reader announces, text has enough contrast "
                 "to read, and the page's structure is announced correctly."
             ),
-            actual_behavior=listed[:1500],
-            affected_files=[],
+            actual_behavior=listed[:1500] + (
+                " Where those elements are made and styled: " + "; ".join(defined) if defined else ""),
+            affected_files=sorted({line.split(":", 1)[0] for line in defined}),
             owner="ui_ux",
             regression_test_required=False,
         ))

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 #: Product kinds whose interface is a page.
 _A_PAGE = frozenset({"browser_app", "fullstack"})
@@ -144,6 +145,55 @@ _NOT_ITS_OWN = frozenset({"tests", "test", "__tests__", "acceptance", "e2e", "sp
 _DISABLES = re.compile(r"(?<![\w-])disabled(?![\w-])")
 
 
+def _product_lines(repo_root: str | Path | None, suffixes: frozenset[str], matches: Any, most: int) -> list[str]:
+    """`path:line: text` for the product's lines that `matches`, in files with `suffixes`; tests and hidden folders
+    skipped. Never raises."""
+    try:
+        from app.analysis.walk import files_under
+
+        base = Path(repo_root or "")
+        if not base.is_dir():
+            return []
+        found: list[str] = []
+        for path in sorted(files_under(base, _NOT_THE_PRODUCT, "*", skip_hidden=True)):
+            relative = path.relative_to(base)
+            if path.suffix.lower() not in suffixes or any(part in _NOT_ITS_OWN for part in relative.parts):
+                continue
+            if re.search(r"\.(?:spec|test)\.[a-z]+$", path.name):
+                continue
+            for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+                if matches(line):
+                    found.append(f"{relative.as_posix()}:{number}: {line.strip()[:120]}")
+                    if len(found) >= most:
+                        return found
+        return found
+    except Exception:  # noqa: BLE001 - a hint that cannot be found says nothing
+        return []
+
+
+_STYLE_SOURCES = _PAGE_SOURCES | {".css", ".scss", ".sass", ".less"}
+#: The last `#id` or `.class` of a selector axe reports: `main > ul#task-list li.empty-state` -> `empty-state`.
+_A_NAMED_PART = re.compile(r"[#.]([A-Za-z_][\w-]*)")
+
+
+def where_selectors_are_defined(repo_root: str | Path | None, selectors: list[str], most: int = 10) -> list[str]:
+    """`path:line: text` for the product's lines that name the id or class each of `selectors` ends in.
+
+    Measured over 30 runs: accessibility defects carried no files and 0 of 10 attempts fixed one - a colour-contrast
+    fix went to a script, not the stylesheet that sets the colour. The selectors axe reports name the element; the
+    lines that define its id or class are where it is made and styled.
+    """
+    names = []
+    for selector in selectors or []:
+        parts = _A_NAMED_PART.findall(str(selector))
+        if parts and parts[-1] not in names:
+            names.append(parts[-1])
+    if not names:
+        return []
+    pattern = re.compile(r"(?<![\w-])(?:" + "|".join(re.escape(name) for name in names) + r")(?![\w-])")
+    return _product_lines(repo_root, _STYLE_SOURCES, pattern.search, most)
+
+
 def where_controls_are_disabled(repo_root: str | Path | None, most: int = 8) -> list[str]:
     """`path:line: text` for each line of the product's page and script files that disables a control. Never raises.
 
@@ -151,27 +201,7 @@ def where_controls_are_disabled(repo_root: str | Path | None, most: int = 8) -> 
     read it as "disable it in more cases" - each fix made the control disabled for blank text too, broke the
     product's own empty-entry tests and was reverted, and the run shipped with the control disabled.
     """
-    try:
-        base = Path(repo_root or "")
-        if not base.is_dir():
-            return []
-        found: list[str] = []
-        from app.analysis.walk import files_under
-
-        for path in sorted(files_under(base, _NOT_THE_PRODUCT, "*", skip_hidden=True)):
-            relative = path.relative_to(base)
-            if path.suffix.lower() not in _PAGE_SOURCES or any(part in _NOT_ITS_OWN for part in relative.parts):
-                continue
-            if re.search(r"\.(?:spec|test)\.[a-z]+$", path.name):
-                continue
-            for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-                if _DISABLES.search(line):
-                    found.append(f"{relative.as_posix()}:{number}: {line.strip()[:120]}")
-                    if len(found) >= most:
-                        return found
-        return found
-    except Exception:  # noqa: BLE001 - a hint that cannot be found says nothing
-        return []
+    return _product_lines(repo_root, _PAGE_SOURCES, _DISABLES.search, most)
 
 
 #: A control in the page check's accessibility tree: `- button "All (0)"`, its role and its name.
@@ -205,5 +235,6 @@ __all__ = [
     "named_controls_disabled_on_load",
     "named_controls_renamed",
     "where_controls_are_disabled",
+    "where_selectors_are_defined",
     "nobody_styled_it",
 ]

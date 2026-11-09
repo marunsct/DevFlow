@@ -655,6 +655,7 @@ class CompatibleChatOpenAI(ChatOpenAI):
         from app.server.steering import with_the_direction
 
         messages = with_the_direction(messages)
+        messages = _without_lone_surrogates(messages)
 
         # A deploy waits for this call to return (`app.models.call_gate`).
         with a_model_call(self._served_by()[0]):
@@ -1022,3 +1023,41 @@ def environment_of(model: Any) -> Mapping[str, str] | None:
 
 
 __all__ = ["build_default_chat_model", "environment_of"]
+
+
+
+def _encodes(text: str) -> bool:
+    try:
+        text.encode("utf-8")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def _cleaned(value: Any) -> Any:
+    if isinstance(value, str):
+        return value if _encodes(value) else "".join("\ufffd" if 0xD800 <= ord(ch) <= 0xDFFF else ch for ch in value)
+    if isinstance(value, list):
+        return [_cleaned(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _cleaned(item) for key, item in value.items()}
+    return value
+
+
+def _without_lone_surrogates(messages: Any) -> Any:
+    """The messages with any lone surrogate replaced by U+FFFD; each message copied only when it holds one.
+
+    Measured on one run: a model's reply carried `\\ud800`, it went back in the conversation, and the next request
+    could not be encoded as JSON (`UnicodeEncodeError: surrogates not allowed`) - the run failed at the architect.
+    """
+    try:
+        out = []
+        for message in messages:
+            fields = {name: getattr(message, name, None) for name in ("content", "additional_kwargs", "tool_calls")}
+            if all(_encodes(json.dumps(value, ensure_ascii=False, default=str)) for value in fields.values() if value):
+                out.append(message)
+                continue
+            out.append(message.model_copy(update={name: _cleaned(value) for name, value in fields.items() if value}))
+        return out
+    except Exception:  # noqa: BLE001 - the messages go as they were
+        return messages

@@ -300,6 +300,13 @@ def _the_standard_holds(quoted: str, standard: str) -> bool:
     lead_words = [word.strip("'") for word in lead.split() if word.strip("'")]
     if dash and len(lead_words) >= LEAST_QUOTED_WORDS and _a_run_held(lead_words, the_standard):
         return True
+    # The same with a full stop: the standard's sentence, then the judge's working. Measured on one run: "characters
+    # counts every character, newlines included. The string ... is 23 characters long (11 + 1 + 11)" was refused for
+    # both of two wrong tests, and the run went on fixing a product that counted right.
+    first, stop, _ = quoted.partition(". ")
+    first_words = [word.strip("'") for word in first.split() if word.strip("'")]
+    if stop and len(first_words) >= LEAST_QUOTED_WORDS and _a_run_held(first_words, the_standard):
+        return True
     held = total = 0
     # A quoted passage and a gloss after a dash are parts of their own: `"when it is empty, all are shown" - meaning
     # every bookmark` was one 12-word sentence needing 8 words in a row, though its quoted half was verbatim.

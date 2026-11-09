@@ -41,3 +41,21 @@ def test_a_gloss_longer_than_its_quote_is_refused():
     assert not sd._the_standard_holds(
         '"all are shown" — meaning every record ever stored by any user of any service anywhere in the world',
         FILTER_STANDARD)
+
+
+# LF.771, measured on one run: the standard's sentence, then the judge's working after a full stop, was refused for
+# both of two tests that miscounted characters, and the run went on fixing a product that counted right.
+COUNTS = ("- AC-7 A word is a run of letters, digits and apostrophes. characters counts every character, newlines "
+          "included. lines is the number of lines; a last line without a newline still counts\n")
+
+
+def test_the_standard_s_sentence_then_the_judge_s_working_holds():
+    quoted = ("characters counts every character, newlines included. The string 'hello world\\nfoo bar baz' is 23 "
+              "characters long (11 + 1 newline + 11), so the test asserts a value its own steps never produce.")
+    assert sd._the_standard_holds(quoted, COUNTS)
+
+
+def test_an_opening_sentence_the_standard_does_not_hold_still_refuses():
+    quoted = ("characters exclude the final newline of a file. The string 'hello world\\nfoo bar baz' is 23 "
+              "characters long (11 + 1 newline + 11), so the test asserts a value its own steps never produce.")
+    assert not sd._the_standard_holds(quoted, COUNTS)

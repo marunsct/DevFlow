@@ -166,3 +166,16 @@ def test_settings_written_one_a_line_are_read_and_a_benchmark_s_are_not():
 def test_a_benchmark_s_settings_are_used_only_when_the_card_has_nothing_else():
     only = "## Results\n- **SWE-bench**: temperature = 0.6, top_p = 0.95\n"
     assert sm.from_the_card(only) == {"any": {"temperature": 0.6, "top_p": 0.95}}
+
+
+# LF.775: the page, a run pinned to one server and another server named one model three ways.
+def test_one_model_is_one_record_however_it_is_named(store):
+    names = ("Qwen3.6-35B-A3B-MTP-GGUF", "unsloth/Qwen3.6-35B-A3B-MTP-GGUF", "qwen3.6-35b-a3b-mtp")
+    assert {sm.canonical(n) for n in names} == {"qwen3.6-35b-a3b-mtp"}
+    assert sm.canonical("bartowski/Llama-3.3-70B-Instruct-Q4_K_M.gguf") == "llama-3.3-70b-instruct"
+    sm.keep_found(names[0], sm.derive("qwen3.6", CARD))
+    sm.set_choices(names[0], send=True)
+    sm.forget()
+    for pinned in names[1:]:
+        payload: dict = {}
+        assert sm.with_the_mode_s_sampling(payload, pinned) and payload["temperature"] == 0.6

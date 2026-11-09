@@ -185,10 +185,27 @@ def derive(model: str, readme: str = "") -> dict[str, dict[str, Any]]:
 
 # --- what is kept for a model ------------------------------------------------------------------------------------------
 
+#: A packaging suffix that names how a model is stored, not which model it is.
+_PACKAGING = re.compile(r"[-_.](?:gguf|ggml|mlx|awq|gptq|exl2|fp8|fp16|bf16|f16|i?q\d[\w]*)$", re.I)
+
+
+def canonical(model: str) -> str:
+    """One name for one model however a server or a run's pin spells it: no publisher, no packaging, lower case.
+
+    Measured: the settings page named the served model `Qwen3.6-35B-A3B-MTP-GGUF`, a run pinned to that server
+    `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` and another server `qwen3.6-35b-a3b-mtp` - three records, so sampling turned
+    on in the page reached no run on either port.
+    """
+    name = str(model or "").strip().split("/")[-1]
+    while (shorter := _PACKAGING.sub("", name)) != name:
+        name = shorter
+    return name.lower()
+
+
 def _record(model: str) -> dict:
     from app.models import capabilities
 
-    return capabilities._record(model)  # noqa: SLF001 - one record a model
+    return capabilities._record(canonical(model))  # noqa: SLF001 - one record a model
 
 
 def found(model: str) -> dict[str, dict[str, Any]]:
@@ -211,7 +228,7 @@ def keep_found(model: str, derived: dict[str, dict[str, Any]]) -> None:
 
     from app.models.registry import merge_into_fitness
 
-    merge_into_fitness(model, {FOUND_KEY: {**derived, "_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}})
+    merge_into_fitness(canonical(model), {FOUND_KEY: {**derived, "_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}})
 
 
 def set_owner(model: str, mode: str, values: dict[str, Any] | None) -> None:
@@ -233,7 +250,7 @@ def set_owner(model: str, mode: str, values: dict[str, Any] | None) -> None:
             number = float(number)
             clean[name] = int(number) if name == "top_k" else number
         kept[mode] = clean
-    merge_into_fitness(model, {OWNER_KEY: kept})
+    merge_into_fitness(canonical(model), {OWNER_KEY: kept})
 
 
 def set_choices(model: str, send: bool | None = None, thinking_calls: str | None = None) -> None:
@@ -246,7 +263,7 @@ def set_choices(model: str, send: bool | None = None, thinking_calls: str | None
         if thinking_calls not in ("thinking_precise", "thinking_general"):
             raise ValueError(f"a thinking call uses thinking_precise or thinking_general, not {thinking_calls}")
         kept["thinking_calls"] = thinking_calls
-    merge_into_fitness(model, {CHOICES_KEY: kept})
+    merge_into_fitness(canonical(model), {CHOICES_KEY: kept})
 
 
 def values_for(model: str, mode: str) -> dict[str, float]:
@@ -306,6 +323,7 @@ def _cached(model: str) -> tuple[dict[str, Any], dict[str, dict[str, float]]]:
     import time
 
     now = time.perf_counter()
+    model = canonical(model)
     held = _CACHE.get(model)
     if held and held[0] > now:
         return held[1], held[2]
@@ -368,5 +386,5 @@ def determine(model: str) -> dict[str, dict[str, Any]]:
     return derived
 
 
-__all__ = ["CACHE_SECONDS", "forget", "BY_ID", "MODES", "SETTINGS", "choices", "derive", "determine", "found", "from_the_card", "mode_of", "owner",
+__all__ = ["canonical", "CACHE_SECONDS", "forget", "BY_ID", "MODES", "SETTINGS", "choices", "derive", "determine", "found", "from_the_card", "mode_of", "owner",
            "set_choices", "set_owner", "thinking_is_off", "values_for", "view", "with_the_mode_s_sampling"]

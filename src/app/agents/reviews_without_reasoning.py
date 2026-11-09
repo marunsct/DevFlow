@@ -26,6 +26,13 @@ def the_review_model(model: Any) -> Any:
         return model
     from app.agents.thinking import without_reasoning
 
+    if model is None:
+        # No judgement model configured: the stage would build the default one itself, reasoning as configured.
+        # Measured on the switch's first run: three review replies of 54-74k reasoning characters each with it on.
+        # Built here as fast delivery builds its own (`workflow`'s `building_model`).
+        from app.models import build_default_chat_model
+
+        model = build_default_chat_model()
     return without_reasoning(model)
 
 

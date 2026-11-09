@@ -44,3 +44,22 @@ def test_on_sends_the_reasoning_switch(monkeypatch):
 
 def test_the_acceptance_review_takes_its_model_through_the_switch():
     assert "model=the_review_model(ctx.judgement_model)" in inspect.getsource(acceptance_nodes)
+
+
+def test_on_with_no_judgement_model_builds_the_default_one_without_reasoning(monkeypatch):
+    # Measured on the switch's first run: the judgement model was None, the switch returned it unchanged, and the
+    # review reasoned as configured.
+    monkeypatch.setenv("REVIEWS_WITHOUT_REASONING", "on")
+    from app import models
+    from app.agents import thinking
+
+    monkeypatch.setattr(models, "build_default_chat_model", _model)
+    monkeypatch.setattr(thinking, "least_reasoning_effort", lambda model: "none")
+    reviewed = reviews_without_reasoning.the_review_model(None)
+    assert reviewed is not None
+    assert reviewed.extra_body["chat_template_kwargs"]["enable_thinking"] is False
+
+
+def test_off_with_no_judgement_model_leaves_it_to_the_stage(monkeypatch):
+    monkeypatch.setenv("REVIEWS_WITHOUT_REASONING", "off")
+    assert reviews_without_reasoning.the_review_model(None) is None

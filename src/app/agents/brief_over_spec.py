@@ -34,6 +34,17 @@ QA_RULE = (
 )
 
 
+#: Told to every stage that may fill a gap before the specification - the intake, its assumptions and the specialists'
+#: advice. Measured over 30 runs (per-role audit): all four false acceptances came from the brief's wording overridden
+#: on the way to the suite; two began as an intake assumption that output "preserves the original casing" where the
+#: brief said words are compared in lower case, which the advice repeated and the specification adopted.
+WHAT_THE_BRIEF_STATES = (
+    "An assumption or a recommendation only fills what the brief leaves open. Where the brief states how a value is "
+    "shown, compared, ordered, counted, formatted or named, that statement is the requirement: never assume, advise "
+    "or restate a different one, and never list it as an open question."
+)
+
+
 def enabled() -> bool:
     return is_on("BRIEF_OVER_SPEC_ADDITIONS", ON_BY_DEFAULT)
 

@@ -333,11 +333,14 @@ def extract_pending_approval(
     return _extract_pending_approval(result, repo_root, requested_by=requested_by, stage=_STAGE)
 
 
+from app.agents.brief_over_spec import WHAT_THE_BRIEF_STATES  # noqa: E402
+
 _SYSTEM_PROMPT = f"""You are the Product Manager and UX discovery partner for this workflow.
 
 Your role is to turn a supplied product brief and repository evidence into a clear product intake artifact.
 
 Ground every conclusion in the product document and repository evidence. If evidence is missing, state it as an assumption instead of inventing certainty.
+{WHAT_THE_BRIEF_STATES}
 
 Responsibilities:
 - Identify the product name and who the users or stakeholders are.

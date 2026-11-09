@@ -22,8 +22,17 @@ ON_BY_DEFAULT = False
 #: Asked of the product manager when on.
 RULE = (
     "\n\nFor each open question, write the answer this product assumes until the owner says otherwise, "
-    "in the form `question -> assumed: answer`. Assume the simplest answer that meets the brief."
+    "in the form `question -> assumed: answer`. Assume the simplest answer that meets the brief. "
 )
+
+
+def _with_what_the_brief_states(rule: str) -> str:
+    from app.agents.brief_over_spec import WHAT_THE_BRIEF_STATES
+
+    return rule + WHAT_THE_BRIEF_STATES
+
+
+RULE = _with_what_the_brief_states(RULE)
 #: The answer to a question the product manager left without one.
 SIMPLEST = "The simplest reading that meets the brief; nothing beyond it."
 #: How an assumption's decision record begins, so it can be found again.

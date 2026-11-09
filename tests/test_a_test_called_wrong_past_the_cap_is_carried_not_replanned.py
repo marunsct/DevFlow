@@ -22,6 +22,13 @@ def test_the_criteria_of_the_tests_past_the_cap_are_named():
     assert workflow.criteria_past_the_cap(failing, []) == []
 
 
+def test_the_dispute_s_repair_sentences_name_their_tests():
+    # What `past_the_cap` holds live: the repair sentence, its test in the backticks it opens with.
+    failing = [("test_ac4_stdin_mode", "AC-4: Read standard input when the file is given as -", "...")]
+    said = ["`test_ac4_stdin_mode` cannot pass for any product that does what its criterion says: it checks that ..."]
+    assert workflow.criteria_past_the_cap(failing, said) == ["AC-4"]
+
+
 def test_the_dispute_defers_them_as_beyond_repair():
     source = inspect.getsource(workflow)
     at = source.index("reclassification cap; they stay as they are")

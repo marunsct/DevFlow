@@ -8368,8 +8368,13 @@ def _criteria_the_suite_names(root: Any) -> set[str]:
 
 
 def criteria_past_the_cap(failing: list[tuple[str, str, str]], past_the_cap: list[str]) -> list[str]:
-    """The criteria ids of the failing tests a dispute called wrong past the reclassification cap, sorted."""
-    names = set(past_the_cap)
+    """The criteria ids of the failing tests a dispute called wrong past the reclassification cap, sorted.
+
+    `past_the_cap` holds the dispute's repair sentences ("`test_x` cannot pass for ..."), each naming its test in the
+    backticks it opens with; a bare name is taken as it is. Measured live: matched as whole strings, they named no
+    test, and nothing was deferred.
+    """
+    names = {(re.match(r"\s*`([^`]+)`", item) or re.match(r"(.*)", item)).group(1).strip() for item in past_the_cap}
     return sorted({cid for name, text, _ in failing if name in names for cid in re.findall(r"\b(?:AC|CR)-\d+", text)})
 
 

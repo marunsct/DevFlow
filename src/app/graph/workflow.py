@@ -8367,6 +8367,12 @@ def _criteria_the_suite_names(root: Any) -> set[str]:
         return set()
 
 
+def criteria_past_the_cap(failing: list[tuple[str, str, str]], past_the_cap: list[str]) -> list[str]:
+    """The criteria ids of the failing tests a dispute called wrong past the reclassification cap, sorted."""
+    names = set(past_the_cap)
+    return sorted({cid for name, text, _ in failing if name in names for cid in re.findall(r"\b(?:AC|CR)-\d+", text)})
+
+
 def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
     """(test name, criterion, failure) for each locked test the last measurement shows failing."""
     from app.acceptance import suite as acceptance_suite
@@ -12070,6 +12076,15 @@ def build_workflow_graph(
                 "Disputed test(s) %s are past this run's reclassification cap; they stay as they are",
                 ", ".join(past_the_cap),
             )
+            # Carried to the release as the cap means, not re-planned against: measured on one run, the same two
+            # tests the dispute called wrong (a character count off by one) failed every sprint after the cap, and the
+            # sprint was planned again for hours on a product that counted right. Their criteria are deferred with why,
+            # as a locked test beyond repair is, so the rounds stop raising them and the release names them.
+            beyond = criteria_past_the_cap(failing, past_the_cap)
+            if beyond:
+                acceptance_nodes.defer_what_is_beyond_repair(state, beyond, [
+                    f"{name}: the dispute judged it wrong, and this run may reclassify no more tests"
+                    for name in past_the_cap])
         missing = [
             f"`{name}` is missing from the locked suite; no test checks what the criterion says. Add a test for `{name.split()[0]}` or tag an existing test that proves it."
             for name, _, _ in failing

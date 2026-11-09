@@ -326,7 +326,7 @@ services:
         limits:
           cpus: "2"
           # 4g was not enough for a JavaScript toolchain. Measured on
-          # run-cbd22a34: `npx vitest run` forks one worker per CPU, each
+          # one run: `npx vitest run` forks one worker per CPU, each
           # allowed SANDBOX_MEMORY_LIMIT (2g) of heap by RLIMIT_DATA, and the
           # tree collectively reached memory.peak = 4,294,975,488 - exactly this
           # limit. The kernel killed the Celery workers mid-task

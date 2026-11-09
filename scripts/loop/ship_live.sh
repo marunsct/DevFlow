@@ -16,7 +16,7 @@ cd "$(dirname "$0")/../.."
 L=scripts/loop/loop.sh
 WORKER_C=$(docker compose ps -q worker 2>/dev/null | head -1 || true); WORKER_C=${WORKER_C:-langchain-worker-1}
 
-eval "$(sed -n 65p docs/HANDOVER.md)"
+eval "$(scripts/loop/operator_login.sh)"
 export LOOP_USER LOOP_PASSWORD
 if [ -z "${LOOP_USER:-}" ] || [ -z "${LOOP_PASSWORD:-}" ]; then
   echo "ship-live: the operator login is not loaded; nothing was touched" >&2; exit 1

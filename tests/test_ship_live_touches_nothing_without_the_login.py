@@ -15,6 +15,7 @@ def test_no_login_means_no_call(tmp_path):
     loop = tmp_path / "scripts" / "loop"
     loop.mkdir(parents=True)
     shutil.copy(SCRIPT, loop / "ship_live.sh")
+    shutil.copy(SCRIPT.parent / "operator_login.sh", loop / "operator_login.sh")
     calls = tmp_path / "calls.txt"
     (loop / "loop.sh").write_text(f"#!/bin/sh\necho \"$@\" >> {calls}\n")
     os.chmod(loop / "loop.sh", 0o755)
@@ -45,6 +46,7 @@ def _fakes(tmp_path, stages):
     loop = tmp_path / "scripts" / "loop"
     loop.mkdir(parents=True)
     shutil.copy(SCRIPT, loop / "ship_live.sh")
+    shutil.copy(SCRIPT.parent / "operator_login.sh", loop / "operator_login.sh")
     calls = tmp_path / "calls.txt"
     (tmp_path / "stages.txt").write_text("\n".join(stages) + "\n")
     (loop / "loop.sh").write_text(f"""#!/bin/sh
@@ -64,7 +66,7 @@ esac
     for tool in (bin_dir / "docker", bin_dir / "sleep"):
         os.chmod(tool, 0o755)
     (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "HANDOVER.md").write_text("\n" * 64 + "LOOP_USER=op LOOP_PASSWORD=pw\n")
+    (tmp_path / "docs" / "HANDOVER.md").write_text("\n" * 64 + "LOOP_USER=op LOOP_PASSWORD=pw   # operator-login\n")
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "SHIP_WAIT_SECONDS": "200"}
     return loop, calls, env
 

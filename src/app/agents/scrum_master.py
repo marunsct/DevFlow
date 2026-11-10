@@ -593,7 +593,11 @@ def _how_many_sprints(criteria: str) -> str:
     count = len(set(re.findall(r"\b(?:AC|CR)-\d+\b", criteria)))
     if not count:
         return ""
-    most = max_sprints_for_criteria_count(count)
+    from app import delivery
+
+    # The same limit the plan is cut by (`with_capped_sprint_count`, given `delivery.fast()`): measured over 30 runs,
+    # the request said 3 or 4 sprints, fast delivery then cut 26 plans to 1 after 494k tokens of planning.
+    most = max_sprints_for_criteria_count(count, fast=delivery.fast())
     return (
         f"Plan at most {most} sprint{'s' if most > 1 else ''} for these {count} criteria - fewer "
         f"when the work is small. A plan with more is cut back to {most}, its later sprints "

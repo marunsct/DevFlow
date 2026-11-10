@@ -28,6 +28,8 @@ first reply that needs it - and never again for that model unless asked
 
 from __future__ import annotations
 
+import re
+
 import json
 import logging
 import threading
@@ -319,6 +321,25 @@ def reasoning_left_open(text: str) -> str | None:
     return None
 
 
+#: A sentence that opens the way a model's reasoning does, not an answer: "Wait -", "Actually, let me ...", "Hmm".
+_A_REASONING_TURN = re.compile(
+    r"(?:^|\n|[.!?:]\s+)\s*(?:\*\*)?(?:Wait|Actually|Hmm+|Hold on|Let me|Let's|But wait|Oh,|Okay,? so|So what)\b",
+)
+#: Reasoning turns in a capped reply's text before it is read as reasoning, not a half-written answer.
+REASONING_TURNS_IN_PROSE = 5
+
+
+def reasoning_in_prose(text: str) -> str | None:
+    """The text, when it reasons in plain prose - no reasoning tag, many turns that open as reasoning does; else None.
+
+    Measured on one run: a fix stage, its thinking switched off, wrote 45,000 characters of "Wait - ...", "Actually,
+    let me re-read ...", "So what can I do?" to the reply cap, twice, with no call and no answer; each was continued as
+    a half-written answer, about 11 minutes apiece.
+    """
+    turns = len(_A_REASONING_TURN.findall(text or ""))
+    return text.strip() if turns >= REASONING_TURNS_IN_PROSE else None
+
+
 def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **kwargs: Any) -> Any:
     """`result`, or - when its reply hit the cap - the reply its own reasoning answers, or its text continued. Never raises."""
     reasoning = _the_last_reasoning()
@@ -334,6 +355,8 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
         # not while answering. Measured on one run: a fix stage's reply, its thinking switched off, opened `<think>`
         # in its text, reached the cap, and was continued twice more to 29,570 tokens - more reasoning, no answer.
         unclosed = reasoning_left_open(str(message.content or "")) if cut else None
+        if unclosed is None and cut and not getattr(message, "tool_calls", None):
+            unclosed = reasoning_in_prose(str(message.content or ""))
         if unclosed is not None:
             lost, cut, reasoning = True, False, unclosed
         if cut and repeating(str(message.content or "")):

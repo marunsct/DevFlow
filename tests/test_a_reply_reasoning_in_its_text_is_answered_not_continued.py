@@ -25,3 +25,26 @@ def test_salvage_treats_it_as_cut_while_reasoning():
     source = inspect.getsource(reply_salvage.salvaged)
     assert "reasoning_left_open(str(message.content or \"\")) if cut else None" in source
     assert "lost, cut, reasoning = True, False, unclosed" in source
+
+
+# Measured on one run: a fix stage, its thinking switched off, wrote 45,000 characters of "Wait - ...", "Actually, let me
+# re-read ...", "So what can I do?" to the cap, twice, with no call and no answer; each was continued, about 11 minutes.
+SPIRAL = (
+    "Now I can see the full file. The tests show two failures.\n\n"
+    "Wait - `getByRole('listitem').last()` returns the last item.\n\nActually, let me re-read the defect.\n\n"
+    "Hmm, the filter reads `tasks` from the closure.\n\nSo what can I do? I can't modify the test.\n\n"
+    "But wait, `init()` runs twice.\n\nLet me check the handler again.\n\nOkay so the order is task 1, task 2."
+)
+
+
+def test_prose_that_reasons_is_reasoning_and_an_answer_is_not():
+    assert reply_salvage.reasoning_in_prose(SPIRAL) == SPIRAL.strip()
+    answer = ("## Changes\n\nThe handler now reads the filter once. Let me note the files: app.js and styles.css.\n\n"
+              "The test for the filter passes. Actually the list is drawn once per change.")
+    assert reply_salvage.reasoning_in_prose(answer) is None
+
+
+def test_salvage_reads_capped_prose_without_calls_as_reasoning():
+    source = inspect.getsource(reply_salvage.salvaged)
+    assert 'unclosed = reasoning_in_prose(str(message.content or ""))' in source
+    assert 'if unclosed is None and cut and not getattr(message, "tool_calls", None):' in source

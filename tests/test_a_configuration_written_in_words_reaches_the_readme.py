@@ -93,3 +93,19 @@ def test_a_library_s_readme_shows_its_calls_from_the_specification(tmp_path):
     assert "textkit.slugify(text='Hello, World!')  # -> 'hello-world'" in section
     assert "import textkit  # -> textkit.slugify available" in section
     assert release_docs._the_using_section("# Lib\n", [], None) == "", "no specification, nothing to show"
+
+
+# Measured on one release: `- PORT: The port ... Default: 3000. Environment variable: PORT.` - the name first, the
+# variable said last - matched neither form, and the README named no setting.
+def test_the_name_first_with_the_variable_said_last_is_read(tmp_path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "technical_specification.md").write_text(
+        "## Configuration\n"
+        "- PORT: The port number the server listens on. Default: 3000. Environment variable: PORT.\n"
+        "- DATA_DIR: The directory where notes.json is stored. Default: ./data. Environment variable: DATA_DIR.\n"
+        "- start.sh: The entry point script.\n"
+        "- Hono: The web framework. Version: 4.13.17.\n")
+    assert release_docs._the_configuration(tmp_path) == [
+        ("PORT", "3000", "The port number the server listens on"),
+        ("DATA_DIR", "./data", "The directory where notes.json is stored"),
+    ]

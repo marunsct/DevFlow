@@ -260,6 +260,10 @@ _A_VARIABLE = re.compile(r"^\s*[-*]\s*variable:\s*`?([A-Za-z_][A-Za-z0-9_]*)`?\s
 #: release, that form matched nothing and the README named no setting.
 _A_VARIABLE_IN_WORDS = re.compile(
     r"^\s*[-*]\s*(?i:environment\s+)?(?i:variable):\s*`?([A-Z][A-Z0-9_]*)`?\s*(?:\(([^)]*)\))?\s*[-\u2013\u2014:.]\s*(.*)$")
+#: Or the name first and the variable said last: `- PORT: The port it listens on. Default: 3000. Environment variable: PORT.`
+#: - measured on one release, the README named no setting.
+_A_NAMED_VARIABLE = re.compile(
+    r"^\s*[-*]\s*`?([A-Z][A-Z0-9_]*)`?\s*:\s*(.*?)\s*(?i:environment\s+variable)\s*:\s*`?\1`?\.?\s*$")
 _ITS_DEFAULT = re.compile(r"\bDefault(?:s to)?:?\s*(.+?)(?:\.\s|\.?$)", re.IGNORECASE)
 
 
@@ -274,6 +278,13 @@ def _the_configuration(root: Path) -> list[tuple[str, str, str]]:
     for line in (section.group(1) if section else "").splitlines():
         match = _A_VARIABLE.match(line)
         if not match:
+            if named := _A_NAMED_VARIABLE.match(line):
+                rest = named.group(2)
+                default = _ITS_DEFAULT.search(rest)
+                meaning = rest[:default.start()] if default else rest
+                found.append((named.group(1), (default.group(1).strip(" '\"`") if default else "")[:60].replace("|", "/"),
+                              " ".join(meaning.split()).rstrip(" .").replace("|", "/")[:160]))
+                continue
             if words := _A_VARIABLE_IN_WORDS.match(line):
                 rest = words.group(3)
                 default = _ITS_DEFAULT.search(rest)

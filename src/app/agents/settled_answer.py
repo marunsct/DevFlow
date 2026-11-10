@@ -2417,11 +2417,12 @@ def build_settled_answer_middleware(
                 corrected = [*sent_messages, {"role": "user", "content": correction}]
                 if refused_fallback is not None:
                     refused_fallback = request.override(messages=corrected, **refused_fallback)
+                every = {_named(tool) for tool in getattr(request, "tools", None) or []} - {""}
                 if "tools" in overrides:
                     sent = {_named(tool) for tool in overrides["tools"]}
-                    self._set_withheld({_named(tool) for tool in getattr(request, "tools", None) or []} - sent - {""})
+                    self._set_withheld(every - sent, every)
                 elif withheld_here is not None:
-                    self._set_withheld(withheld_here)
+                    self._set_withheld(withheld_here, every)
                 request = request.override(messages=corrected, **overrides)
             except Exception:  # noqa: BLE001 - never fail the call over a hint
                 return handler(request)
@@ -2444,7 +2445,7 @@ def build_settled_answer_middleware(
                 )
                 return handler(refused_fallback)
 
-        def _set_withheld(self, names: Any) -> None:
+        def _set_withheld(self, names: Any, every: Any = None) -> None:
             """The tools this call withholds, on the instance and in the stage's memory.
 
             A call that needs approval pauses the graph, and the node builds the
@@ -2455,7 +2456,20 @@ def build_settled_answer_middleware(
             from app.agents.stage_memory import store
 
             self._withheld = set(names)
-            store("withheld tools", {})["names"] = sorted(self._withheld)
+            kept = store("withheld tools", {})
+            kept["names"] = sorted(self._withheld)
+            if every is not None:
+                self._usable = sorted(set(every) - self._withheld)
+                kept["usable"] = self._usable
+
+        def _usable_now(self) -> list[str] | None:
+            """The tools still offered, or None when this call did not record them."""
+            if "_usable" in self.__dict__:
+                return list(self._usable)
+            from app.agents.stage_memory import store
+
+            usable = store("withheld tools", {}).get("usable")
+            return list(usable) if usable is not None else None
 
         def _withheld_now(self) -> set[str]:
             if "_withheld" in self.__dict__:
@@ -2483,10 +2497,16 @@ def build_settled_answer_middleware(
                 # Opens as a refusal, so the guards that count refused and
                 # nothing-new results count it: unopened, a stalled stage's
                 # check was reset by each refused call and never escalated.
+                # Naming what is left: measured over 30 runs, 57 refusals in 18 runs went to stages that, told only
+                # "the tools you were offered", called another withheld one next.
+                usable = self._usable_now()
+                left = ("Use the tools you were offered on this call." if usable is None
+                        else f"The tools you may call now: {', '.join(f'`{tool}`' for tool in usable)}." if usable
+                        else "No tool is left to you: return your structured response now.")
                 return ToolMessage(
                     content=(
                         f"Refusing: `{name}` is withheld at this point of the stage and was not run. Use what this "
-                        "conversation already holds, and the tools you were offered on this call."
+                        f"conversation already holds. {left}"
                     ),
                     tool_call_id=str(call.get("id") or ""),
                     name=name,

@@ -21,6 +21,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agents.brief_over_spec import WHAT_THE_BRIEF_STATES
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
 from app.agents.project_layout import PROJECT_LAYOUT
 from app.agents.testability import TESTABILITY_RULE
@@ -578,6 +579,9 @@ Responsibilities:
 - Where the brief says how values are compared or matched (ignoring case,
   spaces or accents), also say in what form those values are shown: a rule for
   comparing leaves the output open, and builders print what they read first.
+- {WHAT_THE_BRIEF_STATES} Where the brief says one output
+  replaces another ("instead", "only", "rather than"), that mode prints
+  nothing else.
 - Where an example gives a count or a length of its own text - characters,
   words, lines, bytes - write the text exactly and count it from that text,
   one unit at a time, including spaces and line breaks; or state the count as

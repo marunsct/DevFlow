@@ -21,7 +21,9 @@ CEILINGS = {
     # brief compared words in lower case.
     # + the rule that a count of example text is worked out from the text (LF.804): hand-typed counts in the
     # specification were copied into locked tests in three runs, one costing 283 model calls on a right product.
-    "principal_architect": 13_200,
+    # + what the brief states is never restated otherwise, and "instead" means nothing else (LF.807): a specification
+    # added "followed by three-count summary lines" to a mode the brief said prints the top words instead.
+    "principal_architect": 13_700,
     "technical_lead": 10_800,
     "stack_selector": 10_100,
     "senior_architect_reviewer": 9_500,

@@ -218,14 +218,35 @@ def _the_running_and_testing_sections(where: str, commands: list[str], install: 
 MOST_COMMANDS_SHOWN = 8
 
 
-def _the_using_section(text: str, locked: list) -> str:
-    """For a product used by command (a command-line tool): its contract's own commands, as examples; "" otherwise.
+#: A command or call line of the specification's Interface Contract: `- AC-3 command textkit.slugify(text='x') -> 'x'`.
+_A_CONTRACT_COMMAND = re.compile(r"^\s*[-*]\s*(?:(?:AC|CR)-\d+\s+)?command\s+(.+?)\s+->\s+(.+?)\s*$", re.IGNORECASE)
+
+
+def _the_specified_commands(root: Path | None) -> list[str]:
+    """Each command or call the specification's Interface Contract lists, with what it gives, as `call  # -> result`."""
+    try:
+        text = (Path(root) / "docs" / "technical_specification.md").read_text(encoding="utf-8", errors="replace")
+    except (OSError, TypeError):
+        return []
+    section = re.search(r"^## Interface Contract\s*$(.*?)(?=^## |\Z)", text, re.MULTILINE | re.DOTALL)
+    found = []
+    for line in (section.group(1) if section else "").splitlines():
+        if match := _A_CONTRACT_COMMAND.match(line):
+            found.append(f"{match.group(1)}  # -> {match.group(2)}")
+    return found
+
+
+def _the_using_section(text: str, locked: list, root: Path | None = None) -> str:
+    """For a product used by command or call (a command-line tool, a library): its contract's own commands, as
+    examples; "" otherwise.
 
     A tool has no start script, so the README said how to install and test it and never how to use it (measured on
-    the first release with LF.715). Its locked contract holds exactly that, one line per command.
+    the first release with LF.715). Its locked contract holds exactly that, one line per command. A library's calls
+    are not locked as commands, so its README said nothing of how to call it (measured on one release): those come
+    from the specification's own Interface Contract.
     """
-    commands = [c.command for c in locked if c.kind == "command" and c.command]
-    commands = [c for c in dict.fromkeys(commands) if c not in text][:MOST_COMMANDS_SHOWN]
+    commands = [c.command for c in locked if c.kind == "command" and c.command] or _the_specified_commands(root)
+    commands = [c for c in dict.fromkeys(commands) if c.split("  # ->")[0] not in text][:MOST_COMMANDS_SHOWN]
     if not commands:
         return ""
     return "\n## Using it\n\nExamples of each way it is used:\n\n```sh\n" + "\n".join(commands) + "\n```\n"
@@ -416,7 +437,7 @@ def complete_the_handoff(repo_root: str | Path) -> list[str]:
             # `PORT` or `DATA_DIR`, though every specification listed them.
             added += ("\n## Configuration\n\n| Variable | Default | What it sets |\n| --- | --- | --- |\n"
                       + "\n".join(f"| `{name}` | {default or ''} | {meaning} |" for name, default, meaning in variables) + "\n")
-        added += _the_using_section(text + added, the_locked_contract(root))
+        added += _the_using_section(text + added, the_locked_contract(root), root)
         locked = [c for c in the_locked_contract(root) if c.kind == "http"]
         # Named in the README itself: the specification under `docs/` naming the routes once kept the table out of
         # the README a stranger reads (HR2.PR.2: 3 of 63 READMEs named a route).

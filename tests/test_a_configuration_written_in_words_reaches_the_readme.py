@@ -77,3 +77,19 @@ def test_a_full_stop_after_the_variable_and_a_bracketed_default_are_read(tmp_pat
         "- File: index.html. Entry point.\n")
     assert release_docs._the_configuration(tmp_path) == [
         ("PORT", "3000", "Used by scripts/serve.mjs to set the port the server listens on")]
+
+
+# Measured on one release: a library's README said how to install and test it and never how to call it - its calls
+# are not locked as commands, so the usage section had nothing to show.
+def test_a_library_s_readme_shows_its_calls_from_the_specification(tmp_path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "technical_specification.md").write_text(
+        "## Interface Contract\n"
+        "- AC-1 command import textkit -> textkit.slugify available\n"
+        "- AC-3 command textkit.slugify(text='Hello, World!') -> 'hello-world'\n"
+        "- AC-5 command textkit.truncate(text='Hello', limit=-1) -> ValueError\n\n## File Plan\n- x\n")
+    section = release_docs._the_using_section("# Lib\n", [], tmp_path)
+    assert section.startswith("\n## Using it")
+    assert "textkit.slugify(text='Hello, World!')  # -> 'hello-world'" in section
+    assert "import textkit  # -> textkit.slugify available" in section
+    assert release_docs._the_using_section("# Lib\n", [], None) == "", "no specification, nothing to show"

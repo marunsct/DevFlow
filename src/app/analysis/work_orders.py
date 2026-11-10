@@ -352,6 +352,45 @@ def _without_output_trimming(command: str) -> str:
 _CD_THEN = re.compile(r"^\s*cd\s+(['\"]?)([^\s'\"&;]+)\1\s*(?:&&|;)\s*(\S.*)$")
 
 
+#: Shell that only joins or quiets a command: what is left is the command itself.
+_REDIRECTED = re.compile(r"\s+(?:\d?>{1,2}\s*(?:/dev/null|&\d)|&>\s*/dev/null)")
+_OR_ELSE = re.compile(r"\s+\|\|\s+.*$")
+
+
+def _split_joined(command: str) -> list[str]:
+    """`a && b`, `a; b` as `[a, b]`, each without `|| ...`, output redirection or a trailing `&`; quoted text kept whole.
+
+    Per-role audit over 30 runs: 6 plans were sent back for a `verification` line the sandbox refuses for shell
+    syntax alone - two commands joined, an `|| true`, a redirection - which the harness can write as the commands
+    they are.
+    """
+    parts, current, quote = [], "", ""
+    at = 0
+    while at < len(command):
+        character = command[at]
+        if quote:
+            quote = "" if character == quote else quote
+        elif character in "'\"":
+            quote = character
+        elif command.startswith("&&", at) or character == ";":
+            parts.append(current)
+            current = ""
+            at += 2 if character == "&" else 1
+            continue
+        current += character
+        at += 1
+    parts.append(current)
+    if len(parts) > 1 and any(re.match(r"\s*cd\b", part) for part in parts):
+        return [command]  # a `cd` changes where the rest runs: left whole for the readiness check to report
+    cleaned = []
+    for part in parts:
+        part = _OR_ELSE.sub("", _REDIRECTED.sub("", part)).strip()
+        part = re.sub(r"\s*&\s*$", "", part).strip()
+        if part:
+            cleaned.append(part)
+    return cleaned
+
+
 def with_the_project_directory_cd_dropped(milestone: Any, repo_root: str | Path | None) -> Any:
     """The plan with `cd <the project directory> && <command>` written as `<command>`.
 
@@ -381,7 +420,7 @@ def with_the_project_directory_cd_dropped(milestone: Any, repo_root: str | Path 
                 found = _CD_THEN.match(command.strip().strip("`"))
                 if found and found.group(2).rstrip("/") in here:
                     command = found.group(3).strip()
-                kept.append(_without_output_trimming(command))
+                kept.extend(_without_output_trimming(one) for one in _split_joined(command))
             if kept != commands:
                 changed = True
                 task = task.model_copy(update={"verification": kept})

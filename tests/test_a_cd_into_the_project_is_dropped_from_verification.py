@@ -43,14 +43,25 @@ def test_a_cd_into_the_project_directory_is_dropped(tmp_path) -> None:
     ) == ["npm test", "npx playwright test --grep 'AC-1'", "node --test tests/a.test.js", "npm test"]
 
 
-def test_any_other_shell_use_is_left_for_the_readiness_check(tmp_path) -> None:
+def test_a_cd_anywhere_else_is_left_for_the_readiness_check(tmp_path) -> None:
     kept = [
         "cd /notes-app/src && npm test",
-        "npm test && npm run lint",
         "cd /elsewhere && npm test",
         "npm test",
     ]
     assert _dropped(tmp_path, *kept) == kept
+
+
+# Per-role audit over 30 runs: 6 plans were sent back for a verification line refused for shell syntax alone.
+def test_joined_or_quieted_commands_become_the_commands_they_are(tmp_path) -> None:
+    assert _dropped(
+        tmp_path,
+        "npm test && npm run lint",
+        "node --test tests/a.test.js; node --test tests/b.test.js",
+        "npm test 2>&1 || true",
+        "npx playwright test --grep 'AC-1 && AC-2' > /dev/null",
+    ) == ["npm test", "npm run lint", "node --test tests/a.test.js", "node --test tests/b.test.js", "npm test",
+          "npx playwright test --grep 'AC-1 && AC-2'"]
 
 
 def test_without_a_project_directory_nothing_changes(tmp_path) -> None:

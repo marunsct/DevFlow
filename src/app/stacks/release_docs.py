@@ -264,6 +264,10 @@ _A_VARIABLE_IN_WORDS = re.compile(
 #: - measured on one release, the README named no setting.
 _A_NAMED_VARIABLE = re.compile(
     r"^\s*[-*]\s*`?([A-Z][A-Z0-9_]*)`?\s*:\s*(.*?)\s*(?i:environment\s+variable)\s*:\s*`?\1`?\.?\s*$")
+#: Any other phrasing: a line that calls an upper-case name an environment variable or a setting. Three forms were
+#: added one release at a time (LF.756, LF.797, LF.809); this reads the next one without a fourth.
+_ANY_NAMED_SETTING = re.compile(r"(?<![\w`])`?([A-Z][A-Z0-9]*_[A-Z0-9_]+|[A-Z]{3,}[A-Z0-9]*)`?(?![\w])")
+_CALLED_A_SETTING = re.compile(r"\b(?:environment(?:\s+variable)?|env(?:\s+var(?:iable)?)?|variable|setting)\b", re.I)
 _ITS_DEFAULT = re.compile(r"\bDefault(?:s to)?:?\s*(.+?)(?:\.\s|\.?$)", re.IGNORECASE)
 
 
@@ -278,6 +282,18 @@ def _the_configuration(root: Path) -> list[tuple[str, str, str]]:
     for line in (section.group(1) if section else "").splitlines():
         match = _A_VARIABLE.match(line)
         if not match:
+            if not _A_NAMED_VARIABLE.match(line) and not _A_VARIABLE_IN_WORDS.match(line) \
+                    and line.lstrip().startswith(("-", "*")) and _CALLED_A_SETTING.search(line):
+                token = _ANY_NAMED_SETTING.search(line)
+                if token and token.group(1) not in {name for name, _, _ in found}:
+                    rest = line.lstrip(" -*").replace(token.group(0), "", 1).strip(" :-\u2013\u2014")
+                    default = _ITS_DEFAULT.search(rest)
+                    meaning = rest[:default.start()] if default else rest
+                    meaning = re.sub(r"\(?\s*(?:environment\s+variable|env\s+var(?:iable)?)\s*\)?\s*[:.-]?", "", meaning, flags=re.I)
+                    found.append((token.group(1),
+                                  (default.group(1).strip(" '\"`") if default else "")[:60].replace("|", "/"),
+                                  " ".join(meaning.split()).rstrip(" .:").replace("|", "/")[:160]))
+                continue
             if named := _A_NAMED_VARIABLE.match(line):
                 rest = named.group(2)
                 default = _ITS_DEFAULT.search(rest)

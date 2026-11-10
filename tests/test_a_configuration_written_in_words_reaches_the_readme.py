@@ -109,3 +109,18 @@ def test_the_name_first_with_the_variable_said_last_is_read(tmp_path):
         ("PORT", "3000", "The port number the server listens on"),
         ("DATA_DIR", "./data", "The directory where notes.json is stored"),
     ]
+
+
+# Three phrasings were added one release at a time; any other line that calls an upper-case name an environment
+# variable or a setting is read too, and a line that is not about a setting is not.
+def test_any_other_phrasing_of_a_setting_is_read(tmp_path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "technical_specification.md").write_text(
+        "## Configuration\n"
+        "- The environment variable `MAX_ITEMS` caps the list; default 100.\n"
+        "- Setting LOG_LEVEL controls logging. Default: info.\n"
+        "- Uses JSON for all responses.\n"
+        "- File: README.md describes it.\n")
+    found = release_docs._the_configuration(tmp_path)
+    assert [name for name, _, _ in found] == ["MAX_ITEMS", "LOG_LEVEL"]
+    assert found[1][1] == "info"

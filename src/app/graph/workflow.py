@@ -8452,8 +8452,13 @@ def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
     return failing
 
 
-def _this_attempt(state: Any) -> str:
+def _this_attempt(state: Any, judging_the_last: bool = False) -> str:
     """The sprint and how many attempts at it have been recorded: "4:2" for sprint 5's third.
+
+    `judging_the_last`: the key of the attempt that just failed, for a dispute held at its re-plan - the attempt is
+    recorded by then, so the count is one past it. Without this, a re-plan dispute after attempt N and a dispute held
+    during attempt N+1 shared one key: measured on one run, every fixer that blamed a locked test during the next two
+    attempts found its attempt "already disputed", and fixers worked a right product for 283 more calls.
 
     A dispute is judged once per failed attempt, not once per sprint: one run's
     first dispute named all three tests that could not pass, a fault in the
@@ -8466,7 +8471,7 @@ def _this_attempt(state: Any) -> str:
         entry for entry in state.get("sprint_attempts") or []
         if isinstance(entry, dict) and entry.get("sprint_index") == index
     ]
-    return f"{index}:{len(attempts)}"
+    return f"{index}:{max(0, len(attempts) - 1) if judging_the_last and attempts else len(attempts)}"
 
 
 def _a_dispute_is_due(state: Any) -> bool:
@@ -8477,7 +8482,7 @@ def _a_dispute_is_due(state: Any) -> bool:
         return False
     if [c for c in state.get("revision_comments") or [] if str(c).strip()]:
         return False
-    if _this_attempt(state) in (state.get("disputed_sprints") or []):
+    if _this_attempt(state, judging_the_last=True) in (state.get("disputed_sprints") or []):
         return False
     failing = _the_locked_tests_still_failing(state)
     return bool(failing) and may_repair(state, [f"`{name}`" for name, _, _ in failing])
@@ -12011,10 +12016,12 @@ def build_workflow_graph(
         from app.agents.suite_dispute import build_dispute_request, tests_it_names
         from app.graph.acceptance_nodes import SPRINT_REPLAN, reopen_the_suite_for
 
-        disputed = sorted({*map(str, state.get("disputed_sprints") or []), _this_attempt(state)})
         # Held mid-attempt, it goes back to the attempt: a repaired suite to the
         # round, and nothing to repair to the remediation it interrupted.
         returns_to = state.get("dispute_returns_to")
+        # Keyed by the attempt it judges: the one running, or at a re-plan the one that just failed.
+        disputed = sorted({*map(str, state.get("disputed_sprints") or []),
+                           _this_attempt(state, judging_the_last=not returns_to)})
         carry_on = "defect_remediation" if returns_to else "technical_lead"
         failing = _the_locked_tests_still_failing(state)
         if not failing:

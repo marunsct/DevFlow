@@ -89,8 +89,8 @@ class TestWhenADisputeIsDue:
         monkeypatch.setattr(suite, "is_locked", lambda root: True)
         _measured(tmp_path, **{"AC-5": "failed"})
 
-        assert not workflow._a_dispute_is_due(self._state(tmp_path, disputed_sprints=["4:1"]))
-        again = self._state(tmp_path, disputed_sprints=["4:1"])
+        assert not workflow._a_dispute_is_due(self._state(tmp_path, disputed_sprints=["4:0"]))
+        again = self._state(tmp_path, disputed_sprints=["4:0"])
         again["sprint_attempts"] = [*again["sprint_attempts"], {"sprint_index": 4, "status": "Failed"}]
         assert workflow._a_dispute_is_due(again)
         assert not workflow._a_dispute_is_due(

@@ -176,10 +176,28 @@ def undefer_what_a_test_now_carries(repo_root: str | Path) -> list[str]:
     round, wrote two tests titled `[AC-14][AC-15]` in a later one, and the deferral stayed - the suite locked with a
     note saying the reason no longer held, and the release listed both as shipped unproven. Called as the suite is
     locked, so a deferral the harness makes later, for a criterion whose test fails, is not touched.
+
+    A deferral the harness made because the tests it judged cannot pass is kept while those tests stand as they were
+    judged - not sent for repair, not rewritten, not renamed. Measured on one run: a dispute ruled two tests wrong past
+    the reclassification cap, their criteria were deferred, and the next lock took the deferrals off because another
+    test - repaired for its own fault - carried one of the ids in its title; fixers then worked a right product for 283
+    more model calls.
     """
     try:
         carried = coverage(repo_root)
-        stale = sorted(cid for cid in deferred(repo_root) if carried.get(cid))
+        state = _state(repo_root)
+        judged = state.get(JUDGED_UNPASSABLE) or {}
+        sent = {str(name) for name in state.get("repairing") or []}
+        now = _test_bodies(repo_root) if judged else {}
+
+        def still_as_judged(cid: str) -> bool:
+            tests = judged.get(cid) or {}
+            return bool(tests) and all(
+                name not in sent and name in now and now[name].strip() == str(body).strip()
+                for name, body in tests.items())
+
+        stale = sorted(cid for cid, why in deferred(repo_root).items()
+                       if carried.get(cid) and not (str(why).startswith(DEFERRED_BY_THE_HARNESS) and still_as_judged(cid)))
         if stale:
             undefer(repo_root, stale)
         return stale
@@ -187,10 +205,32 @@ def undefer_what_a_test_now_carries(repo_root: str | Path) -> list[str]:
         return []
 
 
+#: Where the tests a deferral was judged on are kept, each with its code as judged, by criterion.
+JUDGED_UNPASSABLE = "judged_unpassable"
+
+
+def record_judged_unpassable(repo_root: str | Path, judged: dict[str, list[str]]) -> None:
+    """Keep, for each deferred criterion, the tests it was judged unpassable on and their code as it stands. Never raises."""
+    try:
+        bodies = _test_bodies(repo_root)
+        state = _state(repo_root)
+        kept = dict(state.get(JUDGED_UNPASSABLE) or {})
+        for cid, names in judged.items():
+            found = {name: bodies[name] for name in dict.fromkeys(names) if name in bodies}
+            if found:
+                kept[cid] = found
+        state[JUDGED_UNPASSABLE] = kept
+        _save_state(repo_root, state)
+    except Exception:  # noqa: BLE001 - without the record the lock decides as before
+        pass
+
+
 def undefer(repo_root: str | Path, ids: list[str]) -> None:
     """Take criteria off the deferred list: a later measurement proved them (`last_try_on_deferred`)."""
     state = _state(repo_root)
     state["deferred"] = {c: why for c, why in (state.get("deferred") or {}).items() if c not in set(ids)}
+    if state.get(JUDGED_UNPASSABLE):
+        state[JUDGED_UNPASSABLE] = {c: t for c, t in state[JUDGED_UNPASSABLE].items() if c not in set(ids)}
     _save_state(repo_root, state)
     from app.acceptance.criteria import render
 

@@ -2092,6 +2092,11 @@ def defer_what_is_beyond_repair(state: Any, criteria: list[str], broken: list[st
                 "this run" + (f": {why[:300]}" if why else "")
             )
         suite.defer(_root(state), reasons)
+        # Which tests each was judged on, as they stand: the lock keeps the deferral while they stay so.
+        suite.record_judged_unpassable(_root(state), {
+            criterion: [name for item in broken if criterion in tags_in(item) for name in _which_tests(state, item)]
+            for criterion in criteria
+        })
         logger.warning("Deferred %s: their locked tests cannot pass and may not be repaired", ", ".join(criteria))
     except Exception:  # noqa: BLE001 - the round goes on with them set aside, as before
         logger.debug("Could not defer the criteria beyond repair", exc_info=True)

@@ -131,8 +131,19 @@ _SYSTEM_PROMPT = (
 )
 
 
+#: Said to the QA lead when the suite runs against one service. Measured: a locked test that counted every entry
+#: in a list other tests also add to was judged fair, and failed a right product through every round.
+ONE_SHARED_SERVICE = (
+    "--- How the suite runs ---\n"
+    "Every test runs against one service, started once for the whole suite and never emptied between tests, "
+    "in whatever order the runner picks. A test that assumes the service starts empty, or counts or indexes "
+    "records other tests also create, cannot pass for a right product: name it.\n\n"
+)
+
+
 def build_dispute_request(
-    failing: Sequence[tuple[str, str, str]], test_code: str, brief: str, measured: Sequence[str] = ()
+    failing: Sequence[tuple[str, str, str]], test_code: str, brief: str, measured: Sequence[str] = (),
+    *, shared_service: bool = False,
 ) -> dict[str, list[dict[str, str]]]:
     """The QA lead's input: (test name, criterion, failure) for each, the suite's code, the brief, and what was measured.
 
@@ -152,6 +163,7 @@ def build_dispute_request(
             "not only on what they assert.\n\n"
             if measured else ""
         )
+        + (ONE_SHARED_SERVICE if shared_service else "")
         + f"--- The suite's code ---\n{test_code}\n\n"
         + (f"--- The brief ---\n{brief.strip()[:4000]}\n\n" if brief.strip() else "")
         + "Name each test above that no product doing what its criterion says could pass, "
@@ -432,6 +444,7 @@ def tests_it_names(
 
 __all__ = [
     "SuiteDispute",
+    "ONE_SHARED_SERVICE",
     "build_dispute_request",
     "create_suite_dispute_agent",
     "judged_by_the_code",

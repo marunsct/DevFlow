@@ -12013,6 +12013,7 @@ def build_workflow_graph(
         from pathlib import Path
 
         from app.acceptance import suite as acceptance_suite
+        from app.acceptance.requests import shares_one_service
         from app.agents.suite_dispute import build_dispute_request, tests_it_names
         from app.graph.acceptance_nodes import SPRINT_REPLAN, reopen_the_suite_for
 
@@ -12043,7 +12044,8 @@ def build_workflow_graph(
             # The facts the work is built and judged under (plan CM.1).
             initial_request=with_the_facts(_with_the_api(_with_the_reason(
                 build_dispute_request(failing, code, getattr(state.get("document"), "text", "") or "",
-                                      measured=acceptance_suite.the_suite_s_own_words_when_last_measured(root)),
+                                      measured=acceptance_suite.the_suite_s_own_words_when_last_measured(root),
+                                      shared_service=shares_one_service(root)),
                 str(state.get("dispute_reason") or ""),
             ), state), state["repository"].root_path),
             output_key="__suite_dispute__",

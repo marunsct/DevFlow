@@ -63,6 +63,12 @@ TESTS_ASSUME_ONLY_WHAT_THEY_MADE = (
 _A_SHARED_SERVICE = frozenset({"http_api", "fullstack"})
 
 
+def shares_one_service(repo_root: str | Path) -> bool:
+    """Whether this workspace's suite runs against one service started once and shared by every test."""
+    found = contract.the_pack(repo_root)
+    return found is not None and getattr(found[0], "kind", "") in _A_SHARED_SERVICE
+
+
 def _how_to_write_them(repo_root: str | Path, project: str, acceptance_dir: str, stack: Any) -> str:
     found = contract.the_pack(repo_root)
     if found is not None:

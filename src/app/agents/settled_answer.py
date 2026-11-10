@@ -1667,11 +1667,11 @@ def _a_fix_stage_s_salvaged_replies_turn_thinking_off(
     reasoned to the cap, two minutes each.
     """
     try:
-        if not salvaged_replies_switch.enabled():
-            return False
         from app.observability.transcript import _stage_from_config
 
-        if not _stage_from_config("").startswith("defect_fix_"):
+        stage = _stage_from_config("")
+        if not ((stage.startswith("defect_fix_") and salvaged_replies_switch.enabled())
+                or (stage.startswith(PLANNING_STAGES) and salvaged_planning_switch.enabled())):
             return False
         replies = [message for message in messages if getattr(message, "type", None) == "ai"]
         if last_salvaged or (replies and _salvaged_from_its_reasoning(replies[-1])):
@@ -1702,6 +1702,33 @@ class _SalvagedRepliesTurnThinkingOff:
 
 
 salvaged_replies_switch = _SalvagedRepliesTurnThinkingOff()
+
+#: The planning stages the same rule reaches behind `SALVAGED_PLANNING_THINKING_OFF` (per-role audit, planning item 1).
+PLANNING_STAGES = ("technical_lead", "scrum_master")
+
+
+class _SalvagedPlanningThinkingOff:
+    """`SALVAGED_PLANNING_THINKING_OFF`: the salvaged-reply rule for the planning stages, measured on its own.
+
+    Measured over 27 runs: 50 of the lead's 151 replies reasoned to the cap and were salvaged, 178 of its 267 model
+    minutes; 22 of them only read files, and 15 came right after another salvaged reply. The rule's gate named only
+    the fix stages. A plan is worth its reasoning, so this is its own switch, kept only if the plans do not get worse.
+    """
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("In the planning stages (the technical lead and the scrum master), a reply that reasoned to its cap "
+                   "and was salvaged turns thinking off for the next reply, and two keep it off for the stage, as in "
+                   "the fix stages. Measured: a third of the lead's replies reasoned to the cap, two thirds of its time.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("SALVAGED_PLANNING_THINKING_OFF", _SalvagedPlanningThinkingOff.ON_BY_DEFAULT)
+
+
+salvaged_planning_switch = _SalvagedPlanningThinkingOff()
 
 
 def _the_same_call_running(messages: list[Any]) -> tuple[str, int] | None:

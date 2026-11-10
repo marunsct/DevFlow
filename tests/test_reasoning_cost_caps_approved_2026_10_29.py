@@ -105,3 +105,23 @@ def test_salvaged_replies_are_counted_as_they_come_back_not_from_a_compacted_his
     assert asked == [(0, False), (1, True), (1, False), (2, True), (2, False)]
     off = [settled_answer._thinking_is_off_here(compacted, "specialist_backend", 0, *seen) for seen in asked]
     assert off == [False, True, False, True, True]  # two salvaged in the stage keep it off from then on
+
+
+def test_the_planning_stages_turn_thinking_off_after_a_salvaged_reply_behind_their_own_switch(monkeypatch):
+    """Per-role audit, planning item 1: a third of the lead's replies reasoned to the cap and were salvaged, and the
+    rule's gate named only the fix stages."""
+    from app import switches
+
+    monkeypatch.setenv("SALVAGED_REPLIES_TURN_THINKING_OFF", "on")
+    for stage in ("technical_lead", "scrum_master"):
+        monkeypatch.setattr(transcript, "_stage_from_config", lambda fallback, _s=stage: _s)
+        monkeypatch.setenv("SALVAGED_PLANNING_THINKING_OFF", "off")
+        assert settled_answer._thinking_is_off_here([HumanMessage(content="plan"), _salvaged()], "lead") is False
+        monkeypatch.setenv("SALVAGED_PLANNING_THINKING_OFF", "on")
+        assert settled_answer._thinking_is_off_here([HumanMessage(content="plan"), _salvaged()], "lead") is True
+        assert settled_answer._thinking_is_off_here([HumanMessage(content="plan")], "lead", 0, 2, False) is True
+    monkeypatch.setattr(transcript, "_stage_from_config", lambda fallback: "principal_architect")
+    assert settled_answer._thinking_is_off_here([HumanMessage(content="design"), _salvaged()], "architect") is False
+    assert "SALVAGED_PLANNING_THINKING_OFF" in provenance.SWITCHES
+    assert "SALVAGED_PLANNING_THINKING_OFF" in switches.BUNDLES["PREMIUM_MODEL_TUNING"]
+    assert settled_answer.salvaged_planning_switch.ON_BY_DEFAULT is False

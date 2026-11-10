@@ -11,7 +11,10 @@ from a brief. It runs under a **standing, never-stopping improvement loop**:
 
 **Start at [docs/STATE.md](docs/STATE.md)** - the one mandatory read (plan MF.6):
 what is live, what is off, the last three runs and the next action, in at most
-150 lines. Rewrite it whenever any of those changes. Read
+150 lines. Rewrite it whenever any of those changes. Owner decisions still in force (applied,
+deferred with their trigger, or waiting on the owner) are in
+[docs/owner-decisions.md](docs/owner-decisions.md): read it before acting on any
+subject it lists. Read
 [docs/HANDOVER.md](docs/HANDOVER.md) (rules, accounts, commands) and
 [docs/monitoring-handover.md](docs/monitoring-handover.md) (mechanics, run log)
 only for what the next action needs.

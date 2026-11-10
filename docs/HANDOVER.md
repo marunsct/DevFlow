@@ -9,6 +9,10 @@ the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
 sprint runs) and §0.9 (where a run's time goes). `AGENTS.md` at the repo root
 points here.
 
+**Owner decisions in force** - applied, deferred with their trigger, or waiting on the owner - are in
+[owner-decisions.md](owner-decisions.md) (since 2026-11-10). Check it before touching the owner's runs, models,
+Docker Desktop, credentials or the backing-services work.
+
 The previous agent's private notes (Claude Code's memory) do not travel.
 Everything they held that is not a secret is in this file.
 

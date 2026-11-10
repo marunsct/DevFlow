@@ -1048,6 +1048,8 @@ Vendor-entry tier B (HANA, Oracle, SQL Server, Db2) is filed in Phase I.
 
 ### What needs the owner's explicit yes
 
+**Answered 2026-11-10 21:30 JST: every recommendation below accepted.** Status, triggers and owner actions are in [owner-decisions.md](owner-decisions.md) (#5 to #13 there map to the rows here).
+
 | # | Decision | Needed for | Recommendation |
 |---|---|---|---|
 | 1 | A3 rollout: regenerate `.env`, change the Redis image to a digest-pinned Redis 8 (AGPL) or Valkey, and restart redis, app and worker at a boundary | A3 | Yes (Redis 8) |

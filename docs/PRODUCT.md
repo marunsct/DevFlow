@@ -375,6 +375,13 @@ and says no for a model it cannot place), `judgement_provider`, `judgement_base_
 `WORKFLOW_MAX_STRUCTURED_RETRIES`, `OPENAI_ENDPOINT_KIND`, `ALLOWED_MODEL_HOSTS`,
 `JWT_SECRET_KEY`, `SETTINGS_ENCRYPTION_KEY`.
 
+**First-time setup** (owner decision 2026-11-10: execution stays opt-in). Run `scripts/setup-env.sh` once on a new
+`.env`: it writes the secrets, including `REDIS_PASSWORD`. A fresh install then builds documents but runs no product
+command until you set `ALLOW_COMMAND_EXECUTION=true` and choose `SANDBOX_EXECUTION_MODE`: `in-container` on a single
+machine with no Docker socket, `container` where a container runtime is reachable. `loop.sh ready` says which is in
+force before any run starts. Never run `setup-env.sh` on an existing deployment's `.env` to add one value: add that
+value by hand (see `docs/owner-decisions.md`).
+
 ---
 
 ## 12. Technical specifications

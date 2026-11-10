@@ -49,7 +49,7 @@ _LEAST_QUOTE_CHARS = 8
 _MOST_QUOTE_CHARS = 500
 _MOST_WHY_CHARS = 400
 
-HEADING = "--- What the specification left contradictory, and which side stands ---"
+HEADING = "--- What the specification left contradictory or apart from the brief, and which side stands ---"
 
 
 class Ruling(BaseModel):
@@ -58,6 +58,8 @@ class Ruling(BaseModel):
     second_statement: str = Field(default="", description="The other statement, copied word for word from the specification.")
     stands: str = Field(default="", description="`first` or `second`: the statement that holds.")
     why: str = Field(default="", description="One sentence: why that one holds.")
+    #: Set by the harness, never asked for: the second statement is the brief's own words, so it stands.
+    from_the_brief: bool = Field(default=False, exclude=True)
 
 
 class Rulings(BaseModel):
@@ -120,7 +122,14 @@ def the_request(findings: list[str], specification: str, brief: str, setup: Sequ
         "two conflicting statements exactly as the specification writes them, from the specification and not from the "
         "findings, each a short single statement, and say "
         "which stands: the one the brief's own words support, and where the brief does not decide it, the one that "
-        f"allows more. At most {MOST_RULINGS} rulings.\n"
+        "allows more.\n"
+        # Measured: the one open major finding at an escalation was a statement departing from the brief's stated
+        # output, it was not a contradiction inside the specification, so nothing settled it, and the hidden test of
+        # that output was lost.
+        "Other open findings may say the specification departs from something the brief states: an output, a form, "
+        "a format, a limit or a rule. Settle those too: copy the specification's statement as the first statement and "
+        "the brief's own words, copied from the brief, as the second. The brief's words stand.\n"
+        f"At most {MOST_RULINGS} rulings.\n"
         "Answer with one JSON object and nothing else: {\"rulings\": [{\"finding\": <the finding's number>, "
         "\"first_statement\": \"...\", \"second_statement\": \"...\", \"stands\": \"first\" or \"second\", "
         "\"why\": \"one sentence\"}]}. With no contradiction among them, answer {\"rulings\": []}."
@@ -178,14 +187,23 @@ def _cut_through(quote: str) -> bool:
     return bool(open_) or quote.count('"') % 2 == 1 or quote.count("`") % 2 == 1
 
 
-def verified(answer: Rulings, specification: str, findings: list[str]) -> list[Ruling]:
-    """The rulings whose both quotes are in the specification word for word and that settle an open finding, at most `MOST_RULINGS`."""
-    text = _plain(specification)
+def verified(answer: Rulings, specification: str, findings: list[str], brief: str = "") -> list[Ruling]:
+    """The rulings whose quotes are word for word and that settle an open finding, at most `MOST_RULINGS`.
+
+    Both quotes in the specification: a contradiction, settled as the ruling says. The first in the specification and
+    the second in the brief: a departure from the brief, and the brief's words stand whatever the ruling says.
+    """
+    text, said = _plain(specification), _plain(brief)
     kept: list[Ruling] = []
     seen: set[frozenset[str]] = set()
     for ruling in answer.rulings[:MOST_RULINGS]:
         first, second = _as_quoted(ruling.first_statement, text), _as_quoted(ruling.second_statement, text)
+        from_the_brief = bool(said) and not _in_the_specification(second, text, specification)
+        if from_the_brief:
+            second = _as_quoted(ruling.second_statement, said)
         ruling = ruling.model_copy(update={"first_statement": first, "second_statement": second})
+        if from_the_brief:
+            ruling = ruling.model_copy(update={"stands": "second", "from_the_brief": True})
         problem = (
             "it names no open finding" if not 1 <= ruling.finding <= len(findings)
             else "it does not say which statement stands" if ruling.stands.strip().lower() not in ("first", "second")
@@ -195,7 +213,10 @@ def verified(answer: Rulings, specification: str, findings: list[str]) -> list[R
             else "one quote is inside the other" if first in second or second in first
             else "a quote is cut from a longer statement" if _cut_through(first) or _cut_through(second)
             else "a quote is not in the specification word for word"
-            if not (_in_the_specification(first, text, specification) and _in_the_specification(second, text, specification))
+            if not _in_the_specification(first, text, specification)
+            or (not from_the_brief and not _in_the_specification(second, text, specification))
+            else "the second quote is in neither the specification nor the brief word for word"
+            if from_the_brief and not _in_the_specification(second, said, brief)
             else "it repeats a ruling" if frozenset((first, second)) in seen
             else ""
         )
@@ -252,18 +273,19 @@ def settle(state: Any, update: dict[str, Any], model: Any, findings: list[str]) 
 
         answer = _the_call(model, the_request(findings, specification, brief, _the_scaffold_s_facts(state)))
         kept: list[dict[str, Any]] = []
-        for ruling in verified(answer, specification, findings) if answer is not None else []:
+        for ruling in verified(answer, specification, findings, brief) if answer is not None else []:
             first_stands = ruling.stands.strip().lower() == "first"
             stands = _plain(ruling.first_statement if first_stands else ruling.second_statement)
             gives_way = _plain(ruling.second_statement if first_stands else ruling.first_statement)
             why = _plain(ruling.why)[:_MOST_WHY_CHARS]
             record = record_decision(
                 state, update, point="technical_specification",
-                question="The specification contradicts itself: which statement stands?",
+                question=("The specification departs from what the brief states: which statement stands?"
+                          if ruling.from_the_brief else "The specification contradicts itself: which statement stands?"),
                 options=[stands, gives_way], decision=stands, rationale=why, decided_by="auto",
             )
             kept.append({"decision": record["id"], "finding": ruling.finding, "stands": stands,
-                         "gives_way": gives_way, "why": why})
+                         "gives_way": gives_way, "why": why, **({"from_the_brief": True} if ruling.from_the_brief else {})})
         _save(root, kept)
         logger.info("The specification's contradictions: %d ruling(s) kept", len(kept))
         return kept
@@ -300,8 +322,11 @@ def the_rulings_section(root: str | Path | None) -> str:
     if not rulings:
         return ""
     return f"\n\n{HEADING}\n" + "\n".join(
-        f"- {r.get('decision')}: \"{r.get('stands')}\" stands, over \"{r.get('gives_way')}\". {r.get('why')} "
-        "Build and test to the statement that stands."
+        (f"- {r.get('decision')}: the brief's \"{r.get('stands')}\" stands, over the specification's "
+         f"\"{r.get('gives_way')}\". {r.get('why')} Build and test to the brief's words."
+         if r.get("from_the_brief") else
+         f"- {r.get('decision')}: \"{r.get('stands')}\" stands, over \"{r.get('gives_way')}\". {r.get('why')} "
+         "Build and test to the statement that stands.")
         for r in rulings
     ) + "\n"
 

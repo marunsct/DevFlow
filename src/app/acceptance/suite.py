@@ -4233,25 +4233,39 @@ _A_PYTHON_DEF = re.compile(r"^([ \t]*)(?:async[ \t]+)?def[ \t]+(\w+)[ \t]*\(", r
 #: A request that writes to a path: `client.post("/notes"`, `httpx.post(f"{base}/notes"`, `requests.put(BASE + "/notes"`.
 _A_PYTHON_WRITE = re.compile(
     r"\.(?:post|put|patch)\(\s*(?:[\w.]+\s*\+\s*)?f?[\"'](?:\{[^}\"']*\})?(/[^\"'?{}]*)")
-#: A request that reads one, assigned: `resp = client.get("/notes")`.
+#: A request that reads one, assigned: `resp = client.get("/notes")`, `resp = await client.get("/notes", timeout=5)`,
+#: `notes = client.get("/notes").json()` (its `json` group set). Only arguments that leave the list whole are allowed
+#: after the path: a query string, params (by name or by position), headers, auth or cookies narrow or scope it.
 _A_PYTHON_READ = re.compile(
-    r"\b(\w+)\s*=\s*[\w.]+\.get\(\s*(?:[\w.]+\s*\+\s*)?f?[\"'](?:\{[^}\"']*\})?(/[^\"'?{}]*)[\"']\s*\)")
+    r"\b(\w+)\s*=\s*(?:await\s+)?[\w.]+\.get\(\s*(?:[\w.]+\s*\+\s*)?f?[\"'](?:\{[^}\"']*\})?(/[^\"'?{}]*)[\"']\s*"
+    r"(?:,\s*(?:timeout|follow_redirects|allow_redirects|verify|stream)\s*=\s*[\w.]+(?:\([^()\n]*\))?\s*)*,?\s*\)"
+    r"(?P<json>\.json\(\))?")
 #: `assert len(notes) == 2`, `assert len(resp.json()) == 2`, `assert notes == []`.
 _A_PYTHON_EXACT_COUNT = re.compile(
     r"^[ \t]*assert[ \t]+(?:len\((?P<read>[\w.]+(?:\(\))?)\)[ \t]*==[ \t]*(?P<count>\d+)"
     r"|(?P<empty>[\w.]+(?:\(\))?)[ \t]*==[ \t]*\[\])[ \t]*$", re.M)
 #: pytest's own words for a failed comparison: `assert 3 == 2`.
 _PYTHON_COMPARED = re.compile(r"\bassert (\d+) == (\d+)\b")
+#: `assert notes[0]["id"] == first`, `assert resp.json()[1]["title"] == "b"`: a position counted from the start.
+#: Only an equality on the record or a field of it: `is not None`, `!=` or `.keys() ==` pass for any record there.
+_A_PYTHON_POSITION = re.compile(
+    r"^[ \t]*assert[ \t]+(?P<read>\w+(?:\.json\(\))?)[ \t]*\[[ \t]*(?P<at>\d+)[ \t]*\]"
+    r"(?:[ \t]*\[[^\]\n]+\]|\.get\([^)\n]*\))*[ \t]*==[ \t]*(?P<wanted>[^\n#]+?)[ \t]*(?:#.*)?$",
+    re.M)
+#: Every record of a list deleted in a loop over a read of it, so the list holds only what the test makes after it.
+_PYTHON_DELETES_IN_A_LOOP = r"\bfor\s+[\w, ()]+\s+in\s+[^\n]*\.get\([^\n]*:\s*\n[^\n]*\.delete\s*\("
 
 
 def _python_defs(text: str) -> dict[str, str]:
     """Each function's name and its whole text, its decorators' lines included."""
     found: dict[str, str] = {}
     marks = list(_A_PYTHON_DEF.finditer(text))
+    # A class at the def's indent or less ends it as a def does: a test before a class of tests is not the class's.
+    bounds = sorted([*marks, *re.finditer(r"^([ \t]*)class[ \t]+\w+", text, re.M)], key=lambda m: m.start())
     for at, mark in enumerate(marks):
         indent = len(mark.group(1).expandtabs())
         end = len(text)
-        for later in marks[at + 1:]:
+        for later in (b for b in bounds if b.start() > mark.start()):
             if len(later.group(1).expandtabs()) <= indent:
                 end = text.rfind("\n", 0, later.start()) + 1 or later.start()
                 break
@@ -4267,15 +4281,31 @@ def _python_defs(text: str) -> dict[str, str]:
 
 
 def _python_route_counted(block: str, read: str, at: int) -> str | None:
-    """The route a counted list was read from, when the test reads it straight from one; None otherwise."""
-    name = read.removesuffix(".json()").removesuffix("()")
-    response = name
-    if not read.endswith(".json()"):
-        bound = list(re.finditer(rf"\b{re.escape(name)}\s*=\s*(\w+)\.json\(\)\s*$", block[:at], re.M))
-        if not bound:
+    """The route a counted list was read from, when the test reads it straight from one; None otherwise.
+
+    The name's last binding before the assert decides: `notes = resp.json()` or `notes = client.get(...).json()` is the
+    whole list, and anything bound after it (`notes = [n for n in notes if ...]`, `sorted(...)`) is not.
+    """
+    before = block[:at]
+    if read.endswith(".json()"):
+        response = read.removesuffix(".json()")
+    else:
+        name = read.removesuffix("()")
+        bindings = [b for b in re.finditer(
+            rf"(?:^|;)[ \t]*{re.escape(name)}[ \t]*(?::[^=\n;]+)?=(?!=)[ \t]*(?P<value>[^\n;#]*?)[ \t]*(?=[;#\n]|$)",
+            before, re.M) if not b.group("value").endswith(",")]
+        if not bindings:
             return None
-        response = bound[-1].group(1)
-    reads = [m for m in _A_PYTHON_READ.finditer(block[:at]) if m.group(1) == response]
+        value = bindings[-1].group("value")
+        chained = _A_PYTHON_READ.fullmatch(f"{name} = {value}")
+        if chained is not None and chained.group("json"):
+            return chained.group(2).rstrip("/") or "/"
+        bound = re.fullmatch(r"(\w+)\.json\(\)", value)
+        if bound is None:
+            return None
+        response = bound.group(1)
+        before = before[:bindings[-1].start()]
+    reads = [m for m in _A_PYTHON_READ.finditer(before) if m.group(1) == response and not m.group("json")]
     return reads[-1].group(2).rstrip("/") or "/" if reads else None
 
 
@@ -4338,6 +4368,7 @@ def python_tests_that_count_a_list_other_tests_write_to(
         return []
     root = Path(repo_root)
     files: dict[Path, dict[str, str]] = {}
+    stripped: dict[Path, str] = {}
     for path in suite_files(repo_root):
         if path.suffix.lower() != ".py":
             continue
@@ -4345,18 +4376,53 @@ def python_tests_that_count_a_list_other_tests_write_to(
             text = re.sub(r"^[ \t]*#.*$", "", path.read_text(encoding="utf-8", errors="replace"), flags=re.M)
         except OSError:
             continue
-        files[path] = _python_defs(text)
+        files[path], stripped[path] = _python_defs(text), text
     helpers = {name: body for defs in files.values() for name, body in defs.items() if not name.startswith("test")}
+
+    by_helper: dict[str, set[str]] = {}
 
     def writes(block: str, seen: frozenset[str] = frozenset()) -> set[str]:
         routes = {m.group(1).rstrip("/") or "/" for m in _A_PYTHON_WRITE.finditer(block)}
         for name, body in helpers.items():
             if name not in seen and re.search(rf"(?<![.\w]){re.escape(name)}\s*\(", block):
-                routes |= writes(body, seen | {name})
+                if name not in by_helper:
+                    by_helper[name] = writes(body, seen | {name})
+                routes |= by_helper[name]
         return routes
 
     def clears(block: str) -> bool:
-        return bool(re.search(_A_CLEARING_CALL, block, re.I))
+        return bool(re.search(_A_CLEARING_CALL, block, re.I) or re.search(_PYTHON_DELETES_IN_A_LOOP, block, re.I))
+
+    def made_at(block: str, route: str) -> list[str] | None:
+        """Each line of the block that makes one record at the route, in order; None when one runs in a loop."""
+        lines = block.splitlines()
+        made: list[str] = []
+        for at, line in enumerate(lines):
+            posts = [m for m in re.finditer(r"\.post\(", line) if any(
+                (w.group(1).rstrip("/") or "/") == route for w in _A_PYTHON_WRITE.finditer(line[m.start():]))]
+            called = [h for h in helpers if re.search(rf"(?<![.\w]){re.escape(h)}\s*\(", line)
+                      and route in writes(helpers[h], frozenset({h}))]
+            if not posts and not called:
+                continue
+            indent = len(line) - len(line.lstrip())
+            if any(re.match(r"[ \t]*(?:async[ \t]+)?(?:for|while)\b", above) and len(above) - len(above.lstrip()) < indent
+                   for above in lines[:at]):
+                return None
+            made.append(line)
+        return made
+
+    def signature_left_out(block: str) -> str:
+        """The block without its decorators and its `def` line: a test's name says nothing about what it does."""
+        return re.sub(r"\A(?:[ \t]*@[^\n]*\n)*[^\n]*\bdef[ \t]+\w+[^\n]*\n?", "", block, count=1)
+
+    def line_of(path: Path, body: str, at: int) -> int:
+        """The line, in the file as written, of an offset into a test's text (comments are blanked, never removed)."""
+        return stripped[path].count("\n", 0, max(stripped[path].find(body), 0) + at) + 1
+
+    def failed(test: str, name: str) -> bool:
+        """Whether a reported test is this function: `test_x`, `mod.test_x`, `file::test_x`, `test_x[case]`."""
+        test = re.sub(r"\[.*\]$", "", test)
+        return test == name or test.endswith(("." + name, "::" + name))
 
     tests = {(path, name): body for path, defs in files.items() for name, body in defs.items() if name.startswith("test")}
     writers: dict[str, set[tuple[Path, str]]] = {}
@@ -4376,12 +4442,12 @@ def python_tests_that_count_a_list_other_tests_write_to(
         for count in _A_PYTHON_EXACT_COUNT.finditer(body):
             read = count.group("read") or count.group("empty")
             route = _python_route_counted(body, read, count.start())
-            if route is None or clears(body[:count.start()]):
+            if route is None or clears(signature_left_out(body[:count.start()])):
                 continue
             if not writers.get(route, set()) - {(path, name)}:
                 continue
             if known:
-                messages = [m for test, m in failing.items() if test == name or test.endswith(("." + name, "::" + name))]
+                messages = [m for test, m in failing.items() if failed(test, name)]
                 if not messages:
                     continue
                 wanted_count = count.group("count")
@@ -4390,8 +4456,7 @@ def python_tests_that_count_a_list_other_tests_write_to(
                     for m in messages for got, wanted in _PYTHON_COMPARED.findall(m)
                 ):
                     continue
-            text = path.read_text(encoding="utf-8", errors="replace")
-            line = text.count("\n", 0, max(text.find(count.group(0).strip()), 0)) + 1
+            line = line_of(path, body, count.start())
             wanted = "an empty list" if count.group("count") is None else f"exactly {count.group('count')}"
             problems.append(
                 f"`{path.relative_to(root).as_posix()}` line {line}: `{name}` expects {wanted} from the whole list at "
@@ -4399,6 +4464,50 @@ def python_tests_that_count_a_list_other_tests_write_to(
                 "its data for the whole run, so that count depends on what ran before it and no product can be made to "
                 "answer it. Keep only the records this test made - give them a value of its own and filter on it - "
                 "and count those, or compare with a count it read first (`len(before) + 1`), or assert `>=`."
+            )
+            break
+        # A position in the whole list, as `tests_that_count_a_list_other_tests_write_to` reads it in JavaScript.
+        # Named only when the record expected there is traced to one this test made at that route, and neither order
+        # of the list can put it there: oldest first, other tests' records come before it; newest first, the record
+        # at position i is the one this test made (i+1)th from last. What cannot be traced is left alone.
+        for position in _A_PYTHON_POSITION.finditer(body):
+            read, at, wanted = position.group("read"), int(position.group("at")), position.group("wanted").strip()
+            route = _python_route_counted(body, read, position.start())
+            if route is None or clears(signature_left_out(body[:position.start()])):
+                continue
+            if not writers.get(route, set()) - {(path, name)}:
+                continue
+            made = made_at(signature_left_out(body[:position.start()]), route)
+            if not made:
+                continue
+            literal = re.fullmatch(r"""[rbuf]?(["'])(.+)\1""", wanted)
+            bound = None if literal else re.fullmatch(r"([A-Za-z_]\w*)(?:\[[^\]]+\]|\.\w+)*", wanted)
+            if literal:
+                quoted = (f'"{literal.group(2)}"', f"'{literal.group(2)}'")
+                which = [i for i, line in enumerate(made) if any(q in line for q in quoted)]
+            elif bound:
+                which = [i for i, line in enumerate(made)
+                         if re.match(rf"[ \t]*{re.escape(bound.group(1))}[ \t]*=(?!=)", line)]
+            else:
+                which = []
+            if len(which) != 1 or which[0] == len(made) - 1 - at:
+                continue
+            if known:
+                messages = [m for test, m in failing.items() if failed(test, name)]
+                if not messages:
+                    continue
+                # Once the product answers, only a failure that reached the position counts: one that stopped
+                # earlier (a status, a write) is the product's to answer for. A name's value is not in pytest's
+                # message, so it is left alone then.
+                if needs_proof and not (literal and any(repr(literal.group(2)) in m for m in messages)):
+                    continue
+            line = line_of(path, body, position.start())
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line}: `{name}` expects a record at position "
+                f"{position.group('at')} of the whole list at `{route}`, and other tests in the suite write to `{route}` "
+                "as well. They all share one service and its data for the whole run, so what sits there depends on "
+                "what ran before it and no product can be made to answer it. Find this test's own records in the "
+                "list - by the id or a value only it gave them - and check their order relative to each other."
             )
             break
     return problems[:6]

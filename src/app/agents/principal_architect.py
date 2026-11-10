@@ -578,6 +578,11 @@ Responsibilities:
 - Where the brief says how values are compared or matched (ignoring case,
   spaces or accents), also say in what form those values are shown: a rule for
   comparing leaves the output open, and builders print what they read first.
+- Where an example gives a count or a length of its own text - characters,
+  words, lines, bytes - write the text exactly and count it from that text,
+  one unit at a time, including spaces and line breaks; or state the count as
+  "the length of the text above" with no number. A count written by guess is
+  often one off, and every test copies it.
 - Give every call into a library or framework as its documentation gives it
   for the version you pin: the import statement and the call, word for word,
   read with `read_docs`. A smaller model recalls these wrongly more often than

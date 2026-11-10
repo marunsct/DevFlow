@@ -19,7 +19,9 @@ CEILINGS = {
     # unauthenticated route that deletes every record, for a test's clean-up.
     # + the rule that a comparison rule also says how its values are shown (LF.780): two runs printed "The 3" where a
     # brief compared words in lower case.
-    "principal_architect": 12_800,
+    # + the rule that a count of example text is worked out from the text (LF.804): hand-typed counts in the
+    # specification were copied into locked tests in three runs, one costing 283 model calls on a right product.
+    "principal_architect": 13_200,
     "technical_lead": 10_800,
     "stack_selector": 10_100,
     "senior_architect_reviewer": 9_500,

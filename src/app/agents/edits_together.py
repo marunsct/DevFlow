@@ -74,6 +74,31 @@ def together(message: Any, repo_root: str | Path) -> Any | None:
     return message.model_copy(update={"tool_calls": kept})
 
 
+def one_of_each(message: Any) -> Any | None:
+    """A copy of the reply with each repeated call - the same tool with the same arguments - kept once; None when
+    nothing repeats.
+
+    Measured on one run: an intake reply ran to its output cap as 1,316 tool calls, 1,314 of them `read_file("/")`;
+    each was run and answered, and the next request carried every answer. A call repeated within one reply can only
+    get the same answer.
+    """
+    import json
+
+    calls = list(getattr(message, "tool_calls", None) or [])
+    seen: set[str] = set()
+    kept = []
+    for call in calls:
+        key = json.dumps([call.get("name"), call.get("args")], sort_keys=True, default=str)
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(call)
+    if len(kept) == len(calls):
+        return None
+    logger.warning("A reply repeated %d of its %d tool calls; each is run once", len(calls) - len(kept), len(calls))
+    return message.model_copy(update={"tool_calls": kept})
+
+
 def build_edits_together_middleware(repo_root: str | Path) -> Any:
     from langchain.agents.middleware import AgentMiddleware
 
@@ -84,8 +109,10 @@ def build_edits_together_middleware(repo_root: str | Path) -> Any:
                 messages = list((state or {}).get("messages") or [])
                 if not messages or getattr(messages[-1], "type", None) != "ai":
                     return None
-                merged = together(messages[-1], repo_root)
-                return {"messages": [merged]} if merged is not None else None
+                once = one_of_each(messages[-1])
+                merged = together(once if once is not None else messages[-1], repo_root)
+                result = merged if merged is not None else once
+                return {"messages": [result]} if result is not None else None
             except Exception:  # noqa: BLE001
                 logger.debug("Could not combine a reply's edits", exc_info=True)
                 return None
@@ -93,4 +120,4 @@ def build_edits_together_middleware(repo_root: str | Path) -> Any:
     return EditsTogetherMiddleware()
 
 
-__all__ = ["build_edits_together_middleware", "combined", "together"]
+__all__ = ["build_edits_together_middleware", "combined", "one_of_each", "together"]

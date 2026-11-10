@@ -61,3 +61,22 @@ def test_every_role_agent_has_it():
     from app.agents import role_agent
 
     assert "build_edits_together_middleware(resolved_repo_root)" in inspect.getsource(role_agent)
+
+
+# Measured on one run: an intake reply ran to its output cap as 1,316 tool calls, 1,314 of them `read_file("/")`, each
+# run and answered, and the next request carried every answer.
+def test_a_call_repeated_within_one_reply_is_run_once(tmp_path):
+    reply = AIMessage(content="", id="m1", tool_calls=[
+        {"name": "read_file", "id": f"r{i}", "args": {"file_path": "/"}} for i in range(50)
+    ] + [{"name": "ls", "id": "l", "args": {"path": "/"}}, {"name": "read_file", "id": "r-x", "args": {"file_path": "/a"}}])
+    once = et.one_of_each(reply)
+    assert [c["id"] for c in once.tool_calls] == ["r0", "l", "r-x"]
+    assert et.one_of_each(once) is None, "nothing repeats: the reply goes as sent"
+
+
+def test_the_middleware_runs_it_before_combining_edits(tmp_path):
+    middleware = et.build_edits_together_middleware(_root(tmp_path))
+    reply = AIMessage(content="", id="m2", tool_calls=[
+        {"name": "read_file", "id": f"r{i}", "args": {"file_path": "app/m.py"}} for i in range(3)])
+    update = middleware.after_model({"messages": [reply]})
+    assert [c["id"] for c in update["messages"][0].tool_calls] == ["r0"]

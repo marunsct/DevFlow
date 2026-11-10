@@ -253,3 +253,44 @@ def test_before_any_product_answers_the_shape_alone_is_named_to_the_writer(tmp_p
 
 def test_a_test_not_in_the_report_is_not_named(tmp_path):
     assert _with_results(tmp_path, INLINE, _test("something else", "failed", TOO_MANY)) == []
+
+
+# Measured on one Measure run: a test made two notes and asserted `list[0].id` was its first; earlier tests' notes came
+# first on the shared service, no product could pass it, and the dispute kept it.
+POSITIONAL = HEAD + """test('[AC-2] lists all notes in order', async ({ request }) => {
+  const first = await request.post('/notes', { data: { title: 'one' } });
+  const note1 = await first.json();
+  await request.post('/notes', { data: { title: 'two' } });
+  const listRes = await request.get('/notes');
+  const list = await listRes.json();
+  expect(list.some((n) => n.id === note1.id)).toBe(true);
+  expect(list[0].id).toBe(note1.id);
+});
+"""
+OWN_RECORDS_ONLY = HEAD + """test('[AC-2] lists all notes in order', async ({ request }) => {
+  const first = await request.post('/notes', { data: { title: 'one' } });
+  const note1 = await first.json();
+  const listRes = await request.get('/notes');
+  const list = await listRes.json();
+  const mine = list.filter((n) => n.id === note1.id);
+  expect(mine[0].id).toBe(note1.id);
+});
+"""
+
+
+def test_a_position_in_a_shared_list_is_named(tmp_path):
+    [problem] = _found(tmp_path, POSITIONAL)
+    assert "position 0 of the whole list at `/notes`" in problem and "`[AC-2] lists all notes in order`" in problem
+    assert "Find this test's own records" in problem
+    assert not BANNED.search(problem.split(":", 1)[1].split("`", 2)[-1].lower())
+
+
+def test_a_position_among_its_own_records_is_left_alone(tmp_path):
+    assert _found(tmp_path, OWN_RECORDS_ONLY) == []
+
+
+def test_a_passing_positional_test_is_never_named(tmp_path):
+    root = _suite(tmp_path, {"a.spec.js": WRITER, "b.spec.js": POSITIONAL})
+    passed = suite.AcceptanceResult(ran=True, exit_code=0, command="x", report=junit.Report(found=True, tests=[
+        junit.TestResult(name="b.spec.js › [AC-2] lists all notes in order")]))
+    assert suite.tests_that_count_a_list_other_tests_write_to(root, passed) == []

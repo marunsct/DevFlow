@@ -3902,6 +3902,11 @@ _AN_EXACT_COUNT = re.compile(
     r"expect\s*\(\s*(?P<read>\(?\s*await[^;\n]*?|[A-Za-z_$][\w$]*(?:\s*\.\s*length)?)\s*\)\s*\.\s*"
     r"(?P<how>(?:toBe|toEqual|toStrictEqual|toHaveLength)\s*\(\s*(?P<count>\d+)\s*\)|(?:toEqual|toStrictEqual)\s*\(\s*\[\s*\]\s*\))"
 )
+#: A position in a list asserted exactly: `expect(list[0].id).toBe(note1.id)`, `expect(list.at(0)).toEqual(...)`.
+_A_POSITION_ASSERTED = re.compile(
+    r"expect\s*\(\s*(?P<read>[A-Za-z_$][\w$]*)\s*(?:\[\s*(?P<at>\d+)\s*\]|\.\s*at\s*\(\s*(?P<at2>\d+)\s*\))"
+    r"(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\)\s*\.\s*(?:toBe|toEqual|toStrictEqual|toMatchObject)\s*\("
+)
 #: A list scoped to someone: the count is that someone's, and no other test's writes reach it.
 _SCOPED_TO_SOMEONE = re.compile(
     r"authorization|bearer|cookie|\btoken\b|storageState|extraHTTPHeaders|newContext|sign_?-?in|log_?-?in|sign_?-?up|register",
@@ -4196,6 +4201,28 @@ def tests_that_count_a_list_other_tests_write_to(repo_root: str | Path, result: 
                     "product can be made to answer it. Keep only the records this test made - give them a value of "
                     "its own and `.filter` on it - and count those, or compare with a count it read first "
                     "(`before.length + 1`), or use `toBeGreaterThanOrEqual`."
+                )
+                break
+            # A position in the whole list: what sits at it depends on what ran before, as a count does. Measured on
+            # one Measure run: a test made two notes and asserted `list[0].id` was its first; earlier tests' notes
+            # came first, no product could pass it, and the dispute kept it.
+            for position in _A_POSITION_ASSERTED.finditer(block):
+                if known and not any(title and title in name for name in failing):
+                    continue
+                read = position.group("read")
+                route = _the_list_read_by(block, read, position.start())
+                if route is None or clears(block[:position.start()]):
+                    continue
+                if not writers.get(route, set()) - {(path, start)}:
+                    continue
+                line = text.count("\n", 0, start + position.start()) + 1
+                at = position.group("at") or position.group("at2")
+                problems.append(
+                    f"`{path.relative_to(root).as_posix()}` line {line}: `{title}` expects a record at position {at} "
+                    f"of the whole list at `{route}`, and other tests in the suite write to `{route}` as well. They "
+                    "all share one service and its data for the whole run, so what sits there depends on what ran "
+                    "before it and no product can be made to answer it. Find this test's own records in the list - "
+                    "by the id or a value only it gave them - and check their order relative to each other."
                 )
                 break
     return problems[:6]

@@ -1636,6 +1636,26 @@ def _the_transcript_stage() -> str:
         return ""
 
 
+def _salvaged_so_far(stage: str) -> tuple[int, bool]:
+    """(replies of this stage the run's transcript records as salvaged from reasoning, whether its last reply was one).
+
+    A stage resumed after a restart - a deploy, an orphan recovery - starts a fresh count, and thinking came back on.
+    Measured on one run: a fix stage that had turned thinking off after two salvaged replies resumed after a deploy and
+    reasoned two more replies to the cap. The transcript holds what the stage did before; (0, False) without it.
+    """
+    try:
+        from app.observability.transcript import _run_id_from_config, read_transcript
+
+        run = _run_id_from_config()
+        if not run or not stage:
+            return 0, False
+        replies = [e for e in read_transcript(run, {"model_response"}) if e.get("stage") == stage]
+        salvaged = [str(e.get("salvaged") or "") == "reasoning" for e in replies]
+        return sum(salvaged), bool(salvaged and salvaged[-1])
+    except Exception:  # noqa: BLE001 - a fresh count, as before
+        return 0, False
+
+
 def _salvaged_in(response: Any) -> int:
     """How many replies in a model call's response were salvaged from their reasoning."""
     found = getattr(response, "result", None)
@@ -2141,6 +2161,8 @@ def build_settled_answer_middleware(
             counts = getattr(self, "_salvaged_replies", None)
             if counts is None:
                 counts = self._salvaged_replies = {}
+            if salvaged_key and salvaged_key not in counts:
+                counts[salvaged_key] = _salvaged_so_far(salvaged_key)
             salvaged_now = counts.get(salvaged_key, (0, False))
             request = _without_reasoning_after_a_lost_reply(request, stage_name, lost, *salvaged_now)
             answered = handler

@@ -125,3 +125,35 @@ def test_the_planning_stages_turn_thinking_off_after_a_salvaged_reply_behind_the
     assert "SALVAGED_PLANNING_THINKING_OFF" in provenance.SWITCHES
     assert "SALVAGED_PLANNING_THINKING_OFF" in switches.BUNDLES["PREMIUM_MODEL_TUNING"]
     assert settled_answer.salvaged_planning_switch.ON_BY_DEFAULT is False
+
+
+def test_a_stage_resumed_after_a_restart_keeps_the_count_its_transcript_holds(monkeypatch, tmp_path):
+    """Measured on one run: a fix stage that had kept thinking off after two salvaged replies resumed after a deploy
+    with a fresh count and reasoned two more replies to the cap."""
+    from pydantic import BaseModel
+
+    class Verdict(BaseModel):
+        status: str = ""
+
+    monkeypatch.setenv("SALVAGED_REPLIES_TURN_THINKING_OFF", "on")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("RUN_TRANSCRIPT", "on")
+    monkeypatch.setattr(transcript, "_stage_from_config", lambda fallback: "defect_fix_1_12")
+    monkeypatch.setattr(transcript, "_run_id_from_config", lambda: "run-resumed")
+    for salvaged in ("", "reasoning", "", "reasoning", ""):
+        transcript.record("run-resumed", "defect_fix_1_12", "model_response", salvaged=salvaged)
+    transcript.record("run-resumed", "defect_fix_1_11", "model_response", salvaged="reasoning")
+    assert settled_answer._salvaged_so_far("defect_fix_1_12") == (2, False)
+
+    asked: list[tuple[int, bool]] = []
+    real = settled_answer._without_reasoning_after_a_lost_reply
+
+    def spy(request, stage_name, lost_before=0, salvaged_before=0, last_salvaged=False):
+        asked.append((salvaged_before, last_salvaged))
+        return real(request, stage_name, lost_before, salvaged_before, last_salvaged)
+
+    monkeypatch.setattr(settled_answer, "_without_reasoning_after_a_lost_reply", spy)
+    fresh = settled_answer.build_settled_answer_middleware(Verdict, "specialist_backend", 40)
+    fresh.wrap_model_call(_Request([HumanMessage(content="fix it")]), lambda request: _Response(AIMessage(content="x")))
+    assert asked == [(2, False)]
+    assert settled_answer._thinking_is_off_here([HumanMessage(content="fix it")], "specialist_backend", 0, *asked[0])

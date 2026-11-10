@@ -1608,7 +1608,9 @@ def _the_same_refused_answer_running(messages: list[Any], schema: Any) -> int:
 LOST_REPLIES_BEFORE_THINKING_STAYS_OFF = 2
 
 
-def _thinking_is_off_here(messages: list[Any], stage_name: str = "", lost_before: int = 0) -> bool:
+def _thinking_is_off_here(
+    messages: list[Any], stage_name: str = "", lost_before: int = 0, salvaged_before: int = 0, last_salvaged: bool = False
+) -> bool:
     """Whether this call goes without thinking: the reply right after one lost
     to reasoning, or any reply once a visit has lost
     `LOST_REPLIES_BEFORE_THINKING_STAYS_OFF`.
@@ -1621,7 +1623,24 @@ def _thinking_is_off_here(messages: list[Any], stage_name: str = "", lost_before
     """
     return _the_last_reply_was_all_reasoning(messages) or (
         max(lost_before, _replies_that_were_all_reasoning(messages)) >= LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
-    ) or _a_fix_stage_s_salvaged_replies_turn_thinking_off(messages, lost_before)
+    ) or _a_fix_stage_s_salvaged_replies_turn_thinking_off(messages, lost_before, salvaged_before, last_salvaged)
+
+
+def _the_transcript_stage() -> str:
+    """The stage the transcript names for the running call (`defect_fix_1_6`), or "" outside one."""
+    try:
+        from app.observability.transcript import _stage_from_config
+
+        return str(_stage_from_config("") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _salvaged_in(response: Any) -> int:
+    """How many replies in a model call's response were salvaged from their reasoning."""
+    found = getattr(response, "result", None)
+    messages = found if isinstance(found, list) else [response]
+    return sum(1 for message in messages if _salvaged_from_its_reasoning(message))
 
 
 def _salvaged_from_its_reasoning(message: Any) -> bool:
@@ -1632,13 +1651,20 @@ def _salvaged_from_its_reasoning(message: Any) -> bool:
         (getattr(message, "response_metadata", None) or {}).get(SALVAGED) or "") == "reasoning"
 
 
-def _a_fix_stage_s_salvaged_replies_turn_thinking_off(messages: list[Any], lost_before: int = 0) -> bool:
+def _a_fix_stage_s_salvaged_replies_turn_thinking_off(
+    messages: list[Any], lost_before: int = 0, salvaged_before: int = 0, last_salvaged: bool = False
+) -> bool:
     """In a defect-fix stage, a reply salvaged from reasoning counts as one lost to it (behind the switch; owner 2026-10-29).
 
     A salvaged reply is not lost - it was answered - so thinking stayed on and the next reply reasoned to the cap
     again. Measured on one model: nearly every call of a fix stage reasoned its whole 12,000-token reply, about four
     minutes a tool call, with thinking switched off once in the stage. The reply after a salvaged one goes without
     thinking, and two in the visit (with any lost) keep it off.
+
+    `salvaged_before` and `last_salvaged` are the visit's own, kept by the middleware from the replies as they came
+    back: counted from the history alone, compaction took the salvaged replies out of it. Measured on one run: a fix
+    stage carried 0 to 3 messages after compacting, the count never reached two, and six more 12,000-token replies
+    reasoned to the cap, two minutes each.
     """
     try:
         if not salvaged_replies_switch.enabled():
@@ -1648,11 +1674,11 @@ def _a_fix_stage_s_salvaged_replies_turn_thinking_off(messages: list[Any], lost_
         if not _stage_from_config("").startswith("defect_fix_"):
             return False
         replies = [message for message in messages if getattr(message, "type", None) == "ai"]
-        if not replies:
-            return False
-        if _salvaged_from_its_reasoning(replies[-1]):
+        if last_salvaged or (replies and _salvaged_from_its_reasoning(replies[-1])):
             return True
-        salvaged = sum(1 for message in replies if _salvaged_from_its_reasoning(message))
+        if not replies and not salvaged_before:
+            return False
+        salvaged = max(salvaged_before, sum(1 for message in replies if _salvaged_from_its_reasoning(message)))
         lost = max(lost_before, _replies_that_were_all_reasoning(messages))
         return salvaged + lost >= LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
     except Exception:  # noqa: BLE001 - then thinking is decided as before
@@ -1907,7 +1933,9 @@ def _the_stage_across_visits() -> tuple[str, str] | None:
     return str(run), str(stage)
 
 
-def _without_reasoning_after_a_lost_reply(request: Any, stage_name: str, lost_before: int = 0) -> Any:
+def _without_reasoning_after_a_lost_reply(
+    request: Any, stage_name: str, lost_before: int = 0, salvaged_before: int = 0, last_salvaged: bool = False
+) -> Any:
     """`request` with thinking switched off on the reply after one lost to
     reasoning, and for the rest of a visit that has lost
     `LOST_REPLIES_BEFORE_THINKING_STAYS_OFF`; otherwise `request` unchanged.
@@ -1923,7 +1951,9 @@ def _without_reasoning_after_a_lost_reply(request: Any, stage_name: str, lost_be
     try:
         from app.agents.thinking import answering_without_reasoning
 
-        if not _thinking_is_off_here(list(getattr(request, "messages", None) or []), stage_name, lost_before):
+        if not _thinking_is_off_here(
+            list(getattr(request, "messages", None) or []), stage_name, lost_before, salvaged_before, last_salvaged
+        ):
             return request
         quiet = answering_without_reasoning(getattr(request, "model", None))
         if not quiet:
@@ -2078,7 +2108,25 @@ def build_settled_answer_middleware(
                 _replies_that_were_all_reasoning(seen),
                 _LOST_ACROSS_VISITS.get(visit_stage, 0) if visit_stage else 0,
             )
-            request = _without_reasoning_after_a_lost_reply(request, stage_name, lost)
+            # Each reply salvaged from its reasoning, counted as it comes back (see
+            # `_a_fix_stage_s_salvaged_replies_turn_thinking_off`), per stage the transcript names.
+            salvaged_key = _the_transcript_stage()
+            counts = getattr(self, "_salvaged_replies", None)
+            if counts is None:
+                counts = self._salvaged_replies = {}
+            salvaged_now = counts.get(salvaged_key, (0, False))
+            request = _without_reasoning_after_a_lost_reply(request, stage_name, lost, *salvaged_now)
+            answered = handler
+
+            def handler(request: Any, _answered: Any = answered, _key: str = salvaged_key) -> Any:  # noqa: F811
+                response = _answered(request)
+                try:
+                    came_back = _salvaged_in(response)
+                    before, _ = counts.get(_key, (0, False))
+                    counts[_key] = (before + came_back, came_back > 0)
+                except Exception:  # noqa: BLE001 - a count missed is thinking decided as before
+                    pass
+                return response
             request = _with_cut_replies_shortened(request)
             # Older refusals as a line each in what the model reads; the
             # guards below still count the conversation as it is stored.

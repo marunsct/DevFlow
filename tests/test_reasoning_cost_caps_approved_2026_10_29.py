@@ -59,3 +59,49 @@ def test_other_stages_and_the_switch_off_keep_thinking(monkeypatch):
 
 def test_both_switches_are_registered():
     assert {"PLAN_REVIEW_REPLY_CAP", "SALVAGED_REPLIES_TURN_THINKING_OFF"} <= set(provenance.SWITCHES)
+
+
+class _Request:
+    def __init__(self, messages):
+        self.messages, self.tools, self.model = messages, [], None
+
+    def override(self, **changes):
+        other = _Request(changes.get("messages", self.messages))
+        other.tools = changes.get("tools", self.tools)
+        return other
+
+
+class _Response:
+    def __init__(self, *messages):
+        self.result = list(messages)
+
+
+def test_salvaged_replies_are_counted_as_they_come_back_not_from_a_compacted_history(monkeypatch):
+    """Measured on one run: a fix stage compacted its history to 0-3 messages, the salvaged count read from it never
+    reached two, and six more 12,000-token replies reasoned to the cap after the rule had fired once."""
+    from pydantic import BaseModel
+
+    class Verdict(BaseModel):
+        status: str = ""
+
+    monkeypatch.setenv("SALVAGED_REPLIES_TURN_THINKING_OFF", "on")
+    monkeypatch.setattr(transcript, "_stage_from_config", lambda fallback: "defect_fix_1_6")
+    asked: list[tuple[int, bool]] = []
+    real = settled_answer._without_reasoning_after_a_lost_reply
+
+    def spy(request, stage_name, lost_before=0, salvaged_before=0, last_salvaged=False):
+        asked.append((salvaged_before, last_salvaged))
+        return real(request, stage_name, lost_before, salvaged_before, last_salvaged)
+
+    monkeypatch.setattr(settled_answer, "_without_reasoning_after_a_lost_reply", spy)
+    middleware = settled_answer.build_settled_answer_middleware(Verdict, "specialist_backend", 40)
+    compacted = [HumanMessage(content="fix it")]  # the history as compaction leaves it: no reply in it
+    replies = [_Response(_salvaged()), _Response(AIMessage(content="read")), _Response(_salvaged()),
+               _Response(AIMessage(content="edit"))]
+    for response in replies:
+        middleware.wrap_model_call(_Request(list(compacted)), lambda request, _r=response: _r)
+    middleware.wrap_model_call(_Request(list(compacted)), lambda request: _Response(AIMessage(content="done")))
+
+    assert asked == [(0, False), (1, True), (1, False), (2, True), (2, False)]
+    off = [settled_answer._thinking_is_off_here(compacted, "specialist_backend", 0, *seen) for seen in asked]
+    assert off == [False, True, False, True, True]  # two salvaged in the stage keep it off from then on

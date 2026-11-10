@@ -146,6 +146,24 @@ def _a_refusal_is_allowed(check: "Check") -> bool:
     return any(400 <= code < 500 for code in _allowed(check))
 
 
+#: A record named by a number in a route: `/bookmarks/1`, `/notes/999/tags`. Not `/v2` nor `/2fa`: digits only.
+_A_LITERAL_ID = re.compile(r"(?<=/)\d+(?=/|$)")
+
+
+def _a_literal_id_as_a_parameter(check: "Check") -> "Check":
+    """`check` with the one record its route names by number read as the route's parameter, `/bookmarks/{id}`.
+
+    Measured over the scored runs: `AC-1 DELETE /api/bookmarks/1 -> 204` was probed at release as written, on a product
+    holding no record 1, and reported twelve times as a contract the product does not keep. The specification gave an
+    example of the route; a record made first, or one that does not exist, is what such a line is about.
+    """
+    from dataclasses import replace as _with
+
+    if check.kind != "http" or _A_TEMPLATE.search(check.path) or len(_A_LITERAL_ID.findall(check.path)) != 1:
+        return check
+    return _with(check, path=_A_LITERAL_ID.sub("{id}", check.path))
+
+
 def checkable(checks: list["Check"]) -> list["Check"]:
     """The HTTP and page checks a bare probe can settle, a route's parameters filled with a record that does not exist.
 
@@ -155,7 +173,7 @@ def checkable(checks: list["Check"]) -> list["Check"]:
     from dataclasses import replace as _with
 
     kept: list[Check] = []
-    for check in checks:
+    for check in map(_a_literal_id_as_a_parameter, checks):
         if check.kind not in ("http", "page"):
             continue
         templated = bool(_A_TEMPLATE.search(check.path))
@@ -179,6 +197,7 @@ def with_a_record_made_first(checks: list["Check"], bodies: list[Any]) -> list["
     """
     from dataclasses import replace as _with
 
+    checks = [_a_literal_id_as_a_parameter(c) for c in checks]
     writes = {c.path.rstrip("/") for c in checks if c.kind == "http" and c.method == "POST" and _a_write_that_needs_a_body(c)
               and not _A_TEMPLATE.search(c.path)}
     made: list[Check] = []
@@ -421,6 +440,7 @@ def bad_body_checks(checks: list[Check], bodies: list[Any]) -> tuple[list[Check]
     """
     from dataclasses import replace as _with
 
+    checks = [_a_literal_id_as_a_parameter(c) for c in checks]
     made_by = {c.path.rstrip("/") for c in checks if c.kind == "http" and c.method == "POST" and _a_write_that_needs_a_body(c)
                and not _A_TEMPLATE.search(c.path)}
     asked: list[Check] = []
@@ -1285,7 +1305,8 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
             state = suite._state(root)  # noqa: SLF001 - one state file for the suite and its contract
             web += with_a_record_made_first(locked, list(state.get("interface_contract_bodies") or []))
         settled = {c.line for c in web}
-        templated = [c for c in locked if c.kind in ("http", "page") and _A_TEMPLATE.search(c.path) and c.line not in settled]
+        templated = [c for c in locked if c.kind in ("http", "page")
+                     and _A_TEMPLATE.search(_a_literal_id_as_a_parameter(c).path) and c.line not in settled]
         writes = [c for c in locked if _a_write_that_needs_a_body(c) and c not in templated and c.line not in settled]
         unchecked = [
             *unreadable,

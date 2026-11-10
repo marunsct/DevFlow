@@ -1650,7 +1650,7 @@ def _salvaged_so_far(stage: str) -> tuple[int, bool]:
         if not run or not stage:
             return 0, False
         replies = [e for e in read_transcript(run, {"model_response"}) if e.get("stage") == stage]
-        salvaged = [str(e.get("salvaged") or "") == "reasoning" for e in replies]
+        salvaged = [str(e.get("salvaged") or "") in ("reasoning", "failed") for e in replies]
         return sum(salvaged), bool(salvaged and salvaged[-1])
     except Exception:  # noqa: BLE001 - a fresh count, as before
         return 0, False
@@ -1668,7 +1668,7 @@ def _salvaged_from_its_reasoning(message: Any) -> bool:
     from app.models.reply_salvage import SALVAGED
 
     return getattr(message, "type", None) == "ai" and str(
-        (getattr(message, "response_metadata", None) or {}).get(SALVAGED) or "") == "reasoning"
+        (getattr(message, "response_metadata", None) or {}).get(SALVAGED) or "") in ("reasoning", "failed")
 
 
 def _a_fix_stage_s_salvaged_replies_turn_thinking_off(

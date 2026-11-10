@@ -67,6 +67,8 @@ PROBE_REPLY_TOKENS = 256
 PROBE_MOST_REASONING_CHARACTERS = 400
 #: Where a reply salvaged says so, on its response metadata and in the transcript.
 SALVAGED = "harness_salvaged"
+#: The mark on a reply whose salvage reasoned to the cap again: counted as lost to reasoning.
+FAILED = "failed"
 #: The key a model's measurement is kept under in its fitness file.
 RECORD_KEY = "reply_salvage"
 
@@ -192,6 +194,53 @@ def _reply(response: Any) -> tuple[str, str, list[dict], str]:
     message = choice.get("message") or {}
     return (str(message.get("content") or ""), str(message.get("reasoning_content") or message.get("reasoning") or ""),
             list(message.get("tool_calls") or []), str(choice.get("finish_reason") or ""))
+
+
+def _capped(model: Any, payload: dict, tokens: int | None) -> dict:
+    """`payload` asking for at most `tokens`, whichever length field the client wrote, with a deadline paced to it.
+
+    Measured on one run: the stage's 12,000-token cap is cleared before salvage runs, and the 16,000 clamp here wrote
+    `max_tokens` beside the client's `max_completion_tokens`, which stayed at the model's 35,000 ceiling and was what
+    the server read; one salvage reasoned to it, 47,000 tokens for one reply, about seven minutes.
+    """
+    if not tokens or tokens <= 0:
+        return payload
+    fields = [key for key in ("max_completion_tokens", "max_tokens") if isinstance(payload.get(key), int)]
+    if not fields:
+        payload["max_tokens"] = tokens
+    for key in fields:
+        payload[key] = min(payload[key], tokens)
+    try:
+        from app.models import expected_reply_tokens, paced_timeout
+
+        deadline = paced_timeout(model._served_by(), expected_reply_tokens(tokens, None), model.request_timeout)
+        if deadline:
+            payload["timeout"] = deadline
+    except Exception:  # noqa: BLE001 - the client's own limit, as before
+        pass
+    return payload
+
+
+def _the_stage_cap(model: Any) -> int | None:
+    """The reply cap the running stage's first request had (`fix_stage_reply_cap`, `plan_review_reply_cap`); None if none."""
+    try:
+        from app.models import fix_stage_reply_cap, plan_review_reply_cap
+
+        ceiling = model.max_tokens if isinstance(getattr(model, "max_tokens", None), int) else None
+        return fix_stage_reply_cap(ceiling) or plan_review_reply_cap(ceiling)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def reasoned_to_the_cap(content: str, finish: str, calls: Any = None) -> bool:
+    """Whether a reply ran to its cap reasoning: cut, no call, and its text a reasoning tag left open or prose reasoning.
+
+    Measured on one run: asked to answer from its reasoning, a reply reasoned on in prose to the ceiling - 147,829
+    characters of "Let me trace ..." - and was taken as the answer because it had text.
+    """
+    if finish != "length" or calls:
+        return False
+    return reasoning_left_open(content) is not None or reasoning_in_prose(content) is not None
 
 
 def _without_the_echo(text: str, begun: str) -> tuple[str, bool]:
@@ -379,7 +428,7 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
         text = str(message.content or "") if cut else ""
         finish = "length"
         for _ in range(MOST_CONTINUATIONS if cut else 1):
-            payload = model._get_request_payload(messages, stop=stop, **kwargs)
+            payload = _capped(model, model._get_request_payload(messages, stop=stop, **kwargs), _the_stage_cap(model))
             payload["stream"] = False
             payload["messages"].append(begun_reply(support.shape, kept, text))
             _with_its_reasoning_kept_closed(payload, support.model or served_name(model))
@@ -387,7 +436,7 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
             content, more_reasoning, calls, finish = _reply(response)
             rest, _echoed = _without_the_echo(content, text) if support.echoes else (content, False)
             text += rest
-            if finish != "length" or repeating(text):
+            if finish != "length" or repeating(text) or reasoned_to_the_cap(rest, finish, calls):
                 break
         return _with_the_text(result, text, "continuation", finish)
     except Exception as error:  # noqa: BLE001 - the reply as it was
@@ -433,13 +482,18 @@ def _answered_from_its_reasoning(model: Any, messages: list[Any], stop: Any, kwa
     """
     first = support.long_shape or support.shape
     for shape in (first, *(s for s in SHAPES if s != first)):
-        payload = model._get_request_payload(messages, stop=stop, **kwargs)
+        payload = _capped(model, model._get_request_payload(messages, stop=stop, **kwargs), SALVAGE_REPLY_TOKENS)
         payload["stream"] = False
-        payload["max_tokens"] = min(int(payload.get("max_tokens") or SALVAGE_REPLY_TOKENS), SALVAGE_REPLY_TOKENS)
         payload["messages"].append(begun_reply(shape, kept))
         _with_its_reasoning_kept_closed(payload, support.model or served_name(model))
         response = _sent(model, payload)
         content, more_reasoning, calls, finish = _reply(response)
+        if reasoned_to_the_cap(content, finish, calls):
+            # Prose reasoning does not depend on the shape it was asked in: another shape reasons again. Marked, so
+            # the reply counts as one lost to reasoning, not one answered.
+            logger.info("A reply cut off while reasoning could not be salvaged: asked to answer from its reasoning, it "
+                        "reasoned on in its text to the cap (%d characters)", len(content))
+            return _marked_failed(result)
         if content.strip() or calls:
             if shape != first or not support.long_shape:
                 _keep_the_long_shape(support, shape)
@@ -537,6 +591,17 @@ def _with_the_salvage(original: Any, fresh: Any, kind: str) -> Any:
     fresh.generations[0].generation_info = {**(fresh.generations[0].generation_info or {}), SALVAGED: kind}
     logger.info("A reply cut off while reasoning was salvaged from its own reasoning")
     return fresh
+
+
+def _marked_failed(original: Any) -> Any:
+    """`original`, marked as a salvage that failed: its reply reasoned to the cap, and asking again did too."""
+    try:
+        message = original.generations[0].message
+        message.response_metadata = {**(message.response_metadata or {}), SALVAGED: FAILED}
+        original.generations[0].generation_info = {**(original.generations[0].generation_info or {}), SALVAGED: FAILED}
+    except Exception:  # noqa: BLE001
+        pass
+    return original
 
 
 def _with_the_text(original: Any, text: str, kind: str, finish: str) -> Any:

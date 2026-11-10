@@ -219,7 +219,9 @@ MOST_COMMANDS_SHOWN = 8
 
 
 #: A command or call line of the specification's Interface Contract: `- AC-3 command textkit.slugify(text='x') -> 'x'`.
-_A_CONTRACT_COMMAND = re.compile(r"^\s*[-*]\s*(?:(?:AC|CR)-\d+\s+)?command\s+(.+?)\s+->\s+(.+?)\s*$", re.IGNORECASE)
+#: Any criterion id before it: `AC-3`, `AC-CLI-1`, `CR-2` (measured on one release: `AC-CLI-1` matched nothing).
+_A_CONTRACT_COMMAND = re.compile(
+    r"^\s*[-*]\s*(?:[A-Z]{2,}(?:-[A-Z0-9]+)+\s+)?command\s+(.+?)\s+->\s+(.+?)\s*$", re.IGNORECASE)
 
 
 def _the_specified_commands(root: Path | None) -> list[str]:

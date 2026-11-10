@@ -124,3 +124,15 @@ def test_any_other_phrasing_of_a_setting_is_read(tmp_path):
     found = release_docs._the_configuration(tmp_path)
     assert [name for name, _, _ in found] == ["MAX_ITEMS", "LOG_LEVEL"]
     assert found[1][1] == "info"
+
+
+# Measured on one release: the contract's criterion ids were `AC-CLI-1`, and no line matched - the README of a
+# command-line tool said nowhere how to run it.
+def test_a_command_under_any_criterion_id_reaches_the_using_section(tmp_path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "technical_specification.md").write_text(
+        "## Interface Contract\n"
+        "- AC-CLI-1 command python -m wordstats <file> prints three lines to stdout -> exit 0\n"
+        "- AC-CLI-2 command python -m wordstats <file> --top N prints N lines -> exit 0\n\n## File Plan\n")
+    section = release_docs._the_using_section("# Tool\n", [], tmp_path)
+    assert "python -m wordstats <file> prints three lines to stdout  # -> exit 0" in section

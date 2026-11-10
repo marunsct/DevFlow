@@ -151,3 +151,18 @@ R3 not needed now, measured: no real orphan since LF.595; the KPI that suggested
 R2 not needed, measured over the last 30 runs: 178 deploy cancellations, every one a call refused before it was sent ("this stage's call is not made"); no call in flight was lost at a resume - the pause already drains at the call boundary.
 Not built on evidence: G1 (measured), G6 (measured), P5 (on merit). Covered: G2 (LF.648).
 To build, in order: none left - the switched items next (table above).
+
+## Measure batch 2026-11-10/11 (frozen 87d7c9b8, owner's go 11:33 JST)
+
+Two runs per family, scored by hidden tests only; no deploys into the batch.
+
+| Family | Runs | Hidden | Wall minutes | Notes |
+|---|---|---|---|---|
+| textkit-lib | run-80d8b13a, run-7f175172 | 8/8, 8/8 | 28, 27 | |
+| tasks-api | run-629f0be3, run-f1f2a8ec | 10/10, 10/10 | 87, 235 | 235: suite rework, 3 sprint attempts |
+| web-todo | run-c0622089, run-42527557 | 10/10, 10/10 | 88, 111 | 111: prose spiral (LF.805), wrong filter tests (LF.806) |
+| wordstats-cli | run-447c561f, run-510c3a03 | **6/8 (false acceptance)**, 8/8 | 32, 49 | spec overrode the brief's "instead" (LF.807) |
+| notes-api-hono | run-a418c471, run-76a4a334 | 9/9, 9/9 | 250 (72 active), 60 | 4a: :8888 outage; unpassable `list[0]` test (LF.808) |
+| fullstack-bookmarks-py | run-cbb75448, run-7c8e03f5 | 8/8, 8/8 | 107, 526 | 526: 24 fix stages, 59 salvaged replies (LF.805, LF.811) |
+
+**Result: 10 of 11 full (one false acceptance).** Fix batch LF.801-813 deployed 2026-11-11 05:19 JST (33a45a6).

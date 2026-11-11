@@ -13,9 +13,14 @@ import hashlib
 import re
 from typing import Any
 
-#: What changes between two rounds' copies of one defect: numbers, quoted values, paths' line numbers.
-_VARYING = re.compile(r"`[^`]*`|\"[^\"]*\"|'[^']*'|\d+")
+#: Values that change from round to round: quoted strings and numbers. Not what a defect names in backticks - a route,
+#: a file, a test, a change - which is what tells two defects apart. Measured on one run: with backticked names taken
+#: out, six mutation findings of one file shared one id, the per-defect call cap summed their calls, and one was left
+#: open at "64 calls" that five others had spent before it had a single fix stage.
+_VARYING = re.compile(r"\"[^\"]*\"|'[^']*'|\d+")
 _A_CRITERION = re.compile(r"\b(?:AC|CR)-\d+\b")
+_THE_LINE_READS = re.compile(r"^The line reads: (.*)$", re.M)
+_A_PLACE = re.compile(r"line \d+, column \d+")
 
 
 def defect_id(defect: Any) -> str:
@@ -24,9 +29,14 @@ def defect_id(defect: Any) -> str:
     in the next round was a new row, and no outcome KPI could follow one defect to its end."""
     description = str(getattr(defect, "description", "") or "")
     criteria = ",".join(sorted(set(_A_CRITERION.findall(description))))
-    wording = " ".join(_VARYING.sub("_", _A_CRITERION.sub("", description)).split()).lower()[:200]
+    wording = " ".join(_VARYING.sub("_", _A_CRITERION.sub("", description)).split()).lower()[:300]
+    # A changed line's own text tells apart two findings of one file whose line numbers are all that differ; the
+    # number itself moves when a fix adds a line above it.
+    # Where the text alone is the same - one statement repeated on several lines - its place tells them apart too.
+    line = _THE_LINE_READS.search(str(getattr(defect, "reproduction_steps", "") or ""))
+    place = _A_PLACE.search(description) if line else None
     key = "|".join((str(getattr(defect, "source", "") or ""), str(getattr(defect, "owner", "") or ""), criteria,
-                    wording))
+                    wording, " ".join(line.group(1).split()) if line else "", place.group(0) if place else ""))
     return hashlib.sha1(key.encode("utf-8", errors="replace")).hexdigest()[:10]
 
 

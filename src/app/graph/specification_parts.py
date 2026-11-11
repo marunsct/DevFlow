@@ -282,6 +282,44 @@ def _bounded_by_what_the_review_names(chosen: list[str], required_changes: str, 
     return [*[name for name in chosen if name in named], *[n for n in named if n not in chosen], *extra]
 
 
+#: Where one finding of the required changes begins: "- [blocking] ...", "- [major] ...".
+_A_FINDING = re.compile(r"\n(?=\s*-\s*\[)")
+
+
+def grouped_by_finding(chosen: list[str], required_changes: str) -> list[tuple[str, ...]]:
+    """`chosen` in groups of at most `SECTIONS_PER_REVISION`, the sections one finding names always in one group.
+
+    Each group is rewritten by its own call, at once, blind to the others' new text. Measured on one run: a finding
+    said `file_plan` declares `create_app(storage)` while `function_contracts` declares `create_app()`; the two fell
+    in different groups, each was rewritten alone, and the second review raised the same contradiction word for word.
+    A set of sections findings tie together larger than a group is one group.
+    """
+    parent = {name: name for name in chosen}
+
+    def root(name: str) -> str:
+        while parent[name] != name:
+            parent[name] = parent[parent[name]]
+            name = parent[name]
+        return name
+
+    for finding in _A_FINDING.split(required_changes or ""):
+        text = finding.lower().replace("-", " ")
+        named = [name for name in chosen if name.lower() in text or name.replace("_", " ").lower() in text]
+        for other in named[1:]:
+            parent[root(other)] = root(named[0])
+    tied: dict[str, list[str]] = {}
+    for name in chosen:
+        tied.setdefault(root(name), []).append(name)
+    groups: list[list[str]] = []
+    for members in tied.values():
+        last = groups[-1] if groups else None
+        if last is not None and len(last) + len(members) <= SECTIONS_PER_REVISION:
+            last.extend(members)
+        else:
+            groups.append(list(members))
+    return [tuple(group) for group in groups]
+
+
 def _the_form_of(parameters: dict[str, Any], names: Any) -> str:
     """The schema of the named sections, so a section that holds nothing yet still has a form to be written in.
 
@@ -315,7 +353,7 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
         # each. Every section, a few at a time, fits where one reply does not.
         logger.info("Could not tell which sections the review's changes touch; revising every section in parts")
         chosen = _names(specification)
-    groups = [tuple(chosen[n:n + SECTIONS_PER_REVISION]) for n in range(0, len(chosen), SECTIONS_PER_REVISION)]
+    groups = grouped_by_finding(chosen, required_changes)
     parameters = convert_to_openai_tool(type(specification))["function"]["parameters"]
     core = _sections_as_json(specification, CORE)
 

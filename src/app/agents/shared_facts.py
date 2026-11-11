@@ -201,7 +201,57 @@ def what_the_setup_decides(pack: Any, project: str, package: str | None) -> list
         lines.append(f'- `{prefix}package.json` is the setup\'s and already declares `"type": "{kind}"`: its `.js` files are '
                      + ("ES modules (`import` / `export`)" if kind == "module" else "CommonJS modules (`require`)")
                      + ". The specification needs no other module setting.")
+    lines.extend(_what_the_setup_already_writes(pack, project, package))
     return lines
+
+
+#: Dependency manifests whose runtime lines the setup's design stages are told; a development one is left out.
+_A_RUNTIME_MANIFEST = re.compile(r"(?:^|/)(?:requirements(?:\.txt|/base\.txt)|package\.json)$")
+
+
+def _what_the_setup_already_writes(pack: Any, project: str, package: str | None) -> list[str]:
+    """The files the setup writes beside the kept ones, and the runtime dependencies it declares; [] when none.
+
+    Measured on one run: the design review blocked on "missing wsgi.py" and "gunicorn not declared" - the setup had
+    written both `wsgi.py` and a requirements file declaring gunicorn, but the review was told only of the kept files,
+    and the specification went back twice and escalated.
+    """
+    files = getattr(pack, "files", None) or {}
+    kept = set(getattr(pack, "kept_files", None) or ())
+    prefix = f"{project}/" if project else ""
+    written = [pack.filled(path, project, "", package) for path in files
+               if path not in kept and not path.startswith(".") and "/." not in path]
+    if not written:
+        return []
+    lines = [f"- The setup has already written {_at_most(written, MOST_NAMED, prefix)}: none of them is missing, and "
+             "the product may fill or change them."]
+    declared: list[str] = []
+    for path, text in files.items():
+        if not _A_RUNTIME_MANIFEST.search(path):
+            continue
+        body = pack.filled(str(text or ""), project, "", package)
+        if path.endswith(".json"):
+            try:
+                import json as _json
+
+                declared += list((_json.loads(body) or {}).get("dependencies") or {})
+            except (ValueError, TypeError, AttributeError):
+                continue
+        else:
+            declared += [line.strip() for line in body.splitlines() if line.strip() and not line.strip().startswith(("#", "-"))]
+    if declared:
+        lines.append(f"- The setup already declares the runtime dependencies {_at_most(declared, MOST_NAMED)}: "
+                     "no step adds them.")
+    return lines
+
+
+#: Names one setup line lists before it says how many more: each line goes into every design request.
+MOST_NAMED = 6
+
+
+def _at_most(names: list[str], most: int, prefix: str = "") -> str:
+    shown = ", ".join(f"`{prefix}{name}`" for name in names[:most])
+    return shown + (f" and {len(names) - most} more" if len(names) > most else "")
 
 
 def facts_from_the_workspace(root: str | Path | None, *, built: bool = True) -> list[str]:

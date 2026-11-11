@@ -98,7 +98,9 @@ def test_every_pack_says_it_from_its_own_data(pack, tmp_path, monkeypatch):
     assert pack.stack["testing_framework"] in told
     assert "{{" not in told
     assert ("`createApp`" in told) == ("createApp" in str(dict(pack.required_exports)))
-    assert len(told) - len("\n".join(layout_facts(pack, "demo", "demo"))) < 1_000
+    # 1,300 since the setup's starter files and runtime dependencies were added (a review blocked on "missing wsgi.py"
+    # and "gunicorn not declared" that the setup had written); the largest pack measured 1,211.
+    assert len(told) - len("\n".join(layout_facts(pack, "demo", "demo"))) < 1_300
 
 
 def test_the_builders_requests_do_not_grow(state, monkeypatch):

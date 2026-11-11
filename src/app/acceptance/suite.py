@@ -2669,19 +2669,26 @@ def locators_that_do_not_exist(repo_root: str | Path) -> list[str]:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        hits = sorted({text.count("\n", 0, match.start()) + 1
+        # A pattern with a `call` group reports that group - the use - not the whole span it matched.
+        def _at(match: re.Match) -> int:
+            return match.start("call") if "call" in match.re.groupindex else match.start()
+
+        def _called(match: re.Match) -> str:
+            return match.group("call") if "call" in match.re.groupindex else match.group(0).split("(")[0]
+
+        hits = sorted({text.count("\n", 0, _at(match)) + 1
                        for pattern in patterns for match in pattern.finditer(text)})
         if not hits:
             continue
         lines = text.splitlines()
         snippet = lines[hits[0] - 1].strip()[:160]
         where = ", ".join(str(line) for line in hits[:8]) + (" ..." if len(hits) > 8 else "")
-        called = sorted({m.group(0).split("(")[0].strip() for p in patterns for m in p.finditer(text)})
+        called = sorted({" ".join(_called(m).split()) for p in patterns for m in p.finditer(text)})
         called_str = ", ".join(f"`{c}`" for c in called[:3])
         problems.append(
             f"`{path.relative_to(root).as_posix()}` calls {called_str}, which the test runner does not "
             f"define, on line(s) {where} (`{snippet}`). Use a locator method defined by the project's "
-            "test framework."
+            "test framework; a locator is not a list - `await locator.all()` gives one."
         )
     return problems[:6]
 

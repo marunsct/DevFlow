@@ -693,6 +693,13 @@ LOCATORS_THAT_DO_NOT_EXIST = (
     r"\b(?:get|query|find|getAll|queryAll|findAll)ByDisplayValue\s*\(",
     r"\b(?:query|find|getAll|queryAll|findAll)By(?:Role|Text|Label|Placeholder|AltText|Title|TestId)\s*\(",
     r"""\b(?:get|query|find|getAll|queryAll|findAll)ByRole\s*\(\s*['"`](?:textarea|input|select|dropdown|field)['"`]""",
+    # A locator used as a list: `const items = page.locator('li'); items.map(...)`. A locator is not an array, so the
+    # call throws "is not a function" on every product; `await items.all()` gives one. Measured on one run: a locked
+    # test did this and the builder ran the suite ten times against it. The use is reported, never a later
+    # declaration of the same name that holds a real list.
+    r"""(?s)\b(?:const|let|var)\s+(?P<v>\w+)\s*=\s*\w+\s*\.\s*(?:locator|getBy\w+)\s*\("""
+    r"""(?:(?!\.all\s*\(|\.count\s*\(|\.evaluate\w*\s*\(|\.all[A-Z]\w*\s*\()[^;\n])*;"""
+    r"""(?:(?!\b(?:const|let|var)\s+(?P=v)\b).)*?(?P<call>\b(?P=v)\s*\.\s*(?:map|forEach|reduce|some|every))\s*\(""",
 )
 
 #: Roles that take no name from what they show, found by a `name` anyway: the

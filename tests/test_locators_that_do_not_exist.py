@@ -152,3 +152,29 @@ def test_new_locator_rule_contains_no_forbidden_words(word: str) -> None:
 
     assert not re.search(rf"\b{re.escape(word)}\b", PLAYWRIGHT_LOCATORS_RULE, re.I), f"Forbidden word found: {word}"
 
+
+
+def test_a_locator_used_as_a_list_is_caught_at_its_use(tmp_path: Path) -> None:
+    """Measured on one run: a locked test called `items.map` on a locator; it threw "is not a function" on every
+    product and the builder ran the suite ten times against it."""
+    acceptance = _scaffolded(tmp_path)
+    acceptance.mkdir(parents=True, exist_ok=True)
+    (acceptance / "items.spec.js").write_text(
+        "test('[AC-1] each item has a Done box', async ({ page }) => {\n"
+        "  await page.goto('/');\n"
+        "  const items = page.getByRole('listitem');\n"
+        "  const boxes = items.map(item => item.getByLabel('Done', { exact: true }));\n"
+        "});\n"
+        "test('[AC-2] lists them', async ({ page }) => {\n"
+        "  const rows = await page.getByRole('listitem').all();\n"
+        "  const names = rows.map(row => row.textContent());\n"
+        "  const items = await page.locator('li').all();\n"
+        "  items.forEach(item => item);\n"
+        "});\n"
+    )
+
+    problems = suite.locators_that_do_not_exist(tmp_path)
+    assert len(problems) == 1, problems
+    assert "`items.map`" in problems[0] and "line(s) 4 " in problems[0]
+    assert "`await locator.all()`" in problems[0]
+    assert "rows.map" not in problems[0] and "items.forEach" not in problems[0]

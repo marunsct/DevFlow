@@ -2459,6 +2459,94 @@ def records_never_found_as_the_brief_shows_them(repo_root: str | Path, brief_tex
     ]
 
 
+#: An output the brief writes out as a literal object: `prints {...}`, `answers 200 with {...}`, `returns {...}`.
+_A_LITERAL_OUTPUT = re.compile(
+    r"\b(?:prints?|outputs?|returns?|writes?|responds? with|answers?(?:\s+\d{3})?\s+with)\s+`(\{[^`]*\})`", re.I)
+#: A key, quoted or bare, followed by a colon: `"top":`, `'words':`, `top:`.
+_A_KEY = re.compile(r"""\s*["']?([A-Za-z_][\w-]*)["']?\s*:""")
+
+
+def _top_level_keys(literal: str) -> frozenset[str]:
+    """The keys at the first level of a literal object as written in prose or code; nested objects' keys left out."""
+    depth, keys = 0, set()
+    for i, ch in enumerate(literal):
+        if ch in "{[(":
+            depth += 1
+        elif ch in "}])":
+            depth -= 1
+        if depth == 1 and ch in "{,":
+            found = _A_KEY.match(literal, i + 1)
+            if found:
+                keys.add(found.group(1))
+    return frozenset(keys)
+
+
+def _held_whole(keys: frozenset[str], others: frozenset[str], suite_text: str) -> bool:
+    """Whether some test holds an output to exactly `keys`: a whole-object comparison, a key-set comparison, or a
+    check that one of the other form's keys is absent."""
+    for other in others:
+        o = re.escape(other)
+        if re.search(rf"""["']{o}["']\s+not\s+in\b|not\.toHaveProperty\(\s*["']{o}["']|assertNotIn\(\s*["']{o}["']"""
+                     rf"""|\.{o}\)\.toBeUndefined|\[["']{o}["']\]\)\.toBeUndefined""", suite_text):
+            return True
+    for compared in re.finditer(r"(?:==|toEqual\(|toStrictEqual\(|deepEqual\(|assertEqual\([^,]+,)\s*([\[{])", suite_text):
+        start = compared.start(1)
+        depth = 0
+        for end in range(start, min(len(suite_text), start + 4000)):
+            depth += suite_text[end] in "{[(" and 1 or 0
+            depth -= suite_text[end] in "}])" and 1 or 0
+            if depth == 0:
+                break
+        literal = suite_text[start:end + 1]
+        if literal.startswith("{") and _top_level_keys(literal) == keys:
+            return True
+        if set(re.findall(r"""["']([A-Za-z_][\w-]*)["']""", literal)) == set(keys) and re.search(
+                r"\b(?:set|sorted|keys|Object\.keys)\b", suite_text[max(0, start - 60):start]):
+            return True
+    return False
+
+
+def outputs_held_only_in_part(repo_root: str | Path, brief_text: str) -> list[str]:
+    """Each output the brief gives in place of another - two literal objects with no key in common, on one line - that
+    no test holds to its whole form.
+
+    Measured on three runs of one brief, each a false acceptance or one on its way: the brief said `--json` prints the
+    counts, "or with `--top N` prints `{"top": [...]}`"; the locked test checked only that `top` was there, and a
+    product printing the counts and the top words together passed it. A prompt rule to the writer and the reviewer
+    (LF.845) did not reach the test; this reads it.
+    """
+    forms: list[tuple[frozenset[str], frozenset[str], str]] = []
+    for line in (brief_text or "").splitlines():
+        found = [(literal, _top_level_keys(literal)) for literal in _A_LITERAL_OUTPUT.findall(line)]
+        found = [(literal, keys) for literal, keys in found if keys]
+        for literal, keys in found:
+            others = frozenset().union(*(k for l, k in found if l != literal and not (k & keys)))
+            if others:
+                forms.append((keys, others, literal))
+    if not forms:
+        return []
+    texts = []
+    for path in suite_files(repo_root):
+        try:
+            texts.append(path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    suite_text = "\n".join(texts)
+    findings = []
+    for keys, others, literal in forms:
+        if not any(re.search(rf"""["']{re.escape(key)}["']""", suite_text) for key in keys):
+            continue  # its mode is not tested at all: coverage is another check's
+        if _held_whole(keys, others, suite_text):
+            continue
+        shown = ", ".join(f"`{key}`" for key in sorted(others))
+        findings.append(
+            f"The brief gives `{literal}` as an output of its own, in place of another, and no test checks that it "
+            f"holds nothing else: each test of it would pass even if the product also printed {shown}. Compare the "
+            f"whole parsed output with that form, or check that {shown} is absent from it."
+        )
+    return findings
+
+
 #: What makes each kind of record in a page's sources, in markup, a script or a template: `<li>`, `createElement('li')`,
 #: `role="listitem"`; `<tr>`, `insertRow(`, `role="row"`.
 _MADE_BY = {

@@ -735,6 +735,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     problems.extend(check_findings.noted(root, rounds, "records_never_found_as_the_brief_shows_them",
         suite.records_never_found_as_the_brief_shows_them(root, getattr(state.get("document"), "text", "") or "")
     ))
+    partial = check_findings.noted(root, rounds, "outputs_held_only_in_part",
+                                   suite.outputs_held_only_in_part(root, getattr(state.get("document"), "text", "") or ""))
+    problems.extend(partial)
     problems.extend(check_findings.noted(root, rounds, "views_never_acted_within",
                                          suite.views_never_acted_within(root, getattr(state.get("document"), "text", "") or "")))
     # Plan item 16: at a first writing only; a repair is told to change nothing but the tests it was sent for.
@@ -774,6 +777,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     if problems and rounds < MAX_ACCEPTANCE_ROUNDS:
         logger.info("Acceptance suite sent back to QA: %d problem(s)", len(problems))
         return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
+    if partial and rounds == MAX_ACCEPTANCE_ROUNDS:
+        logger.info("At the review's limit, %d output(s) held only in part go back once to be strengthened", len(partial))
+        return _handing_on(stage="acceptance_author", acceptance_feedback=[STRENGTHEN_ONLY, *partial])
     if repair := cannot_pass_to_lock(cannot, rounds=rounds, limit=MAX_ACCEPTANCE_ROUNDS):
         logger.info("At the review's limit, %d test(s) no product could pass go back once to be repaired", len(cannot))
         return _handing_on(stage="acceptance_author", acceptance_feedback=repair)

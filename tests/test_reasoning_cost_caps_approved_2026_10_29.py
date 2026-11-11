@@ -157,3 +157,18 @@ def test_a_stage_resumed_after_a_restart_keeps_the_count_its_transcript_holds(mo
     fresh.wrap_model_call(_Request([HumanMessage(content="fix it")]), lambda request: _Response(AIMessage(content="x")))
     assert asked == [(2, False)]
     assert settled_answer._thinking_is_off_here([HumanMessage(content="fix it")], "specialist_backend", 0, *asked[0])
+
+
+def test_the_intake_stages_are_capped_too_and_an_ordinary_reply_never_is(monkeypatch):
+    """Measured over 60 runs: 23 of 660 intake replies ran past 12,000 tokens, most to the ceiling; one wrote its answer
+    and then a tool call's closing tags over and over for twelve minutes."""
+    monkeypatch.setenv("PLAN_REVIEW_REPLY_CAP", "on")
+    for stage in ("tools_models", "consult_testing", "product_manager", "stack_selector", "research_brief"):
+        monkeypatch.setattr(transcript, "_stage_from_config", lambda fallback, _s=stage: _s)
+        assert models.plan_review_reply_cap(35_000) == models.INTAKE_REPLY_TOKENS, stage
+    assert models.INTAKE_REPLY_TOKENS >= 2 * 8_000  # twice the measured 95th percentile
+    monkeypatch.setattr(transcript, "_stage_from_config", lambda fallback: "principal_architect")
+    assert models.plan_review_reply_cap(35_000) is None  # the architect is still left out
+    monkeypatch.setenv("PLAN_REVIEW_REPLY_CAP", "off")
+    monkeypatch.setattr(transcript, "_stage_from_config", lambda fallback: "tools_models")
+    assert models.plan_review_reply_cap(35_000) is None

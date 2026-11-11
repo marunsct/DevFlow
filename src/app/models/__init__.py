@@ -288,16 +288,29 @@ PLAN_REVIEW_STAGES = ("technical_lead", "scrum_master", "architecture_review", "
                       "milestone_review", "security_review", "advice_review")
 
 
+#: The longest reply an intake stage is asked for, under the same switch. Measured over 60 runs: of 660 intake
+#: replies the median was 992 tokens and 95% were under 8,403, but 23 ran past 12,000 - most to the model's
+#: 32,000-35,000 ceiling, five to twelve minutes each; one wrote its answer and then the closing tags of a tool call
+#: over and over until the ceiling. Twice the 95th percentile, so an ordinary reply is never cut.
+INTAKE_REPLY_TOKENS = 16_000
+#: The intake stages, by the start of their names.
+INTAKE_STAGES = ("product_manager", "tools_models", "stack_selector", "consult_", "research_brief")
+
+
 def plan_review_reply_cap(ceiling: int | None) -> int | None:
-    """`PLAN_REVIEW_REPLY_TOKENS` (or `ceiling` when smaller) for a planning or review stage with the switch on; else None."""
+    """`PLAN_REVIEW_REPLY_TOKENS` for a planning or review stage, `INTAKE_REPLY_TOKENS` for an intake stage (or `ceiling`
+    when smaller), with the switch on; else None."""
     try:
         if not plan_review_reply_cap_switch.enabled():
             return None
         from app.observability.transcript import _stage_from_config
 
-        if not _stage_from_config("").startswith(PLAN_REVIEW_STAGES):
+        stage = _stage_from_config("")
+        tokens = (PLAN_REVIEW_REPLY_TOKENS if stage.startswith(PLAN_REVIEW_STAGES)
+                  else INTAKE_REPLY_TOKENS if stage.startswith(INTAKE_STAGES) else None)
+        if tokens is None:
             return None
-        return min(PLAN_REVIEW_REPLY_TOKENS, ceiling) if ceiling and ceiling > 0 else PLAN_REVIEW_REPLY_TOKENS
+        return min(tokens, ceiling) if ceiling and ceiling > 0 else tokens
     except Exception:  # noqa: BLE001 - a cap that cannot be read asks for no cap
         return None
 

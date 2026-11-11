@@ -330,7 +330,7 @@ def _the_files(
 
 
 def fix_request(root: Path, path: str, defect: Any, failure: str, specification: Any,
-                stack: Any, others: list[str], diagnostics: list[str], co_failures: str = "") -> str:
+                stack: Any, others: list[str], diagnostics: list[str], co_failures: str = "", kept: str = "") -> str:
     """What one file's rewrite is asked. `co_failures`: the other open defects that point at this file (`co_defect_failures`)."""
     from app.agents.shared_facts import the_facts_section
     from app.agents.specialists import specification_for_the_work_order
@@ -370,6 +370,10 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
         earlier_attempts(defect).strip(),
         f"--- What failed ---\n{failure}" if failure.strip() else "",
         co_failures,
+        # The fixes made before this one, which a rewrite must not undo (`specialists.fixes_to_keep_section`).
+        # Measured on one run: every fix of a page's list-structure check came through this rewrite, which was never
+        # told of the fix it kept undoing for another test.
+        kept.strip(),
         ("--- The compiler still reports, in the files just written ---\n" + "\n".join(diagnostics)) if diagnostics else "",
         ("--- Edits from the last pass that were not made, and why ---\n" + "\n".join(unapplied)) if unapplied else "",
         detail.strip(),
@@ -480,7 +484,7 @@ def fix_by_rewriting(
     last_failure: Any = None, may_write: Callable[[str], bool] | None = None,
     write: Callable[[str, str, str], Any] | None = None,
     diagnose: Callable[[list[str]], list[str]] | None = None,
-    files: list[str] | None = None, co_defects: Sequence[Any] = (),
+    files: list[str] | None = None, co_defects: Sequence[Any] = (), kept: str = "",
 ) -> Any | None:
     """The fix stage's output for a defect fixed by rewriting its files, or None for the agent loop.
 
@@ -549,7 +553,7 @@ def fix_by_rewriting(
                     break
                 current = (root / path).read_text(encoding="utf-8", errors="replace")
                 asked = fix_request(root, path, defect, failure, specification, stack,
-                                    [f for f in files if f != path], diagnostics, co_failures.get(path, ""))
+                                    [f for f in files if f != path], diagnostics, co_failures.get(path, ""), kept=kept)
                 if repeated_rewrite_prompts.exhausted(root, asked):
                     logger.info("Rewrite of %s not sent: the same request has failed %d times", path,
                                 repeated_rewrite_prompts.MOST_IDENTICAL)
@@ -616,7 +620,7 @@ def fix_by_candidates(
     defect: Any, repo_root: str | Path, model: Any, check: Callable[[], bool | None], *,
     specification: Any = None, stack: Any = None, last_failure: Any = None,
     may_write: Callable[[str], bool] | None = None, write: Callable[[str, str, str], Any] | None = None,
-    candidates: int = CANDIDATES, files: list[str] | None = None, co_defects: Sequence[Any] = (),
+    candidates: int = CANDIDATES, files: list[str] | None = None, co_defects: Sequence[Any] = (), kept: str = "",
 ) -> Any | None:
     """A defect fixed by several candidate rewrites asked for at once, the first its tests pass kept; or None.
 
@@ -683,7 +687,7 @@ def fix_by_candidates(
             if active_model is None or not hasattr(active_model, "invoke"):
                 return index, path, ""
             asked = fix_request(root, path, defect, failure, specification, stack,
-                                [f for f in files if f != path], [], co_failures.get(path, ""))
+                                [f for f in files if f != path], [], co_failures.get(path, ""), kept=kept)
             if repeated_rewrite_prompts.exhausted(root, asked):
                 return index, path, ""
             sent.append(asked)

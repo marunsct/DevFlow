@@ -7343,6 +7343,21 @@ def _the_specification_for_the_fix(state: Any, defect: Any, co_defects: list[tup
     )
 
 
+def _the_fixes_to_keep_for(state: Any, defect: Any) -> str:
+    """The earlier fixes a rewrite of `defect` must keep, as the section a fix stage is shown; "" for none. Never raises."""
+    try:
+        from app.agents.specialists import fixes_to_keep_section
+        from app.sprint import record as sprint_record
+
+        return fixes_to_keep_section(sprint_record.fixes_to_keep(
+            list(state.get("sprint_attempts") or []),
+            files=[str(f) for f in getattr(defect, "affected_files", None) or []],
+            role=str(getattr(defect, "owner", "") or ""),
+        ))
+    except Exception:  # noqa: BLE001 - a rewrite asked without them, as before
+        return ""
+
+
 def _what_a_fix_stage_must_leave_alone(state: Any, defect: Any) -> str:
     """What later sprints build, and the fixes earlier ones made in the defect's files, for a fix stage.
 
@@ -11508,6 +11523,7 @@ def build_workflow_graph(
                     specification=state.get("technical_specification"),
                     stack=getattr(state.get("stack_selection"), "technology_stack", None),
                     last_failure=last_failure, may_write=may_write, files=located, co_defects=co_defects,
+                    kept=_the_fixes_to_keep_for(state, defect),
                 )
                 if kept is not None:
                     return kept
@@ -11526,6 +11542,7 @@ def build_workflow_graph(
                 specification=state.get("technical_specification"),
                 stack=getattr(state.get("stack_selection"), "technology_stack", None),
                 last_failure=last_failure, may_write=may_write, files=located, co_defects=co_defects,
+                kept=_the_fixes_to_keep_for(state, defect),
                 diagnose=lambda files: _diagnostics_in_files_touched(
                     state, {"messages": []}, SimpleNamespace(changed_files=files),
                 ),

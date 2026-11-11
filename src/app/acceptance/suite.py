@@ -1656,9 +1656,16 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
             continue
         if any(pattern.search(said) for pattern in patterns):
             first = next((line.strip() for line in said.splitlines() if line.strip()), "")
+            # The line the pattern found is the reason; the first line may be only where. Measured on one run: a
+            # setup error read "failed on setup with "file .../test_items.py, line 8", its reason - `fixture
+            # 'auth_token' not found` - three lines down, and the writer sent back twice did not fix what it was
+            # never told.
+            reason = next((line.strip() for line in said.splitlines()
+                           if line.strip() and any(pattern.search(line) for pattern in patterns)), "")
+            why = first if not reason or reason in first else f"{first[:200]} ... {reason[:200]}"
             broken.append(
                 f"`{test.name}` fails because of an error in the test's own code, not because the "
-                f"product is unbuilt: {first[:300]}. Fix the test so that it can pass once the "
+                f"product is unbuilt: {why[:420]}. Fix the test so that it can pass once the "
                 "product works."
             )
     return broken

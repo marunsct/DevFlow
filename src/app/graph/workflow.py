@@ -8573,6 +8573,23 @@ def criteria_past_the_cap(failing: list[tuple[str, str, str]], past_the_cap: lis
     return sorted({cid for name, text, _ in failing if name in names for cid in re.findall(r"\b(?:AC|CR)-\d+", text)})
 
 
+def past_the_cap_with_their_criteria(failing: list[tuple[str, str, str]], past_the_cap: list[str]) -> list[str]:
+    """Each test past the cap as "[AC-n] `name` ...": its criteria's tags in front, its name in backticks.
+
+    The deferral keeps the tests it was judged on by reading these tags; the dispute's own sentences carry none.
+    Measured on one run: AC-7 and AC-11 were deferred with no test recorded against them, so the very next lock took
+    the deferrals off as "a test now carries them" - the same broken tests - and the fixers were sent to them again.
+    """
+    tags = {name: " ".join(f"[{cid}]" for cid in dict.fromkeys(re.findall(r"\b(?:AC|CR)-\d+", text)))
+            for name, text, _ in failing}
+    lines = []
+    for item in past_the_cap:
+        name = (re.match(r"\s*`([^`]+)`", item) or re.match(r"(.*)", item)).group(1).strip()
+        rest = item if item.lstrip().startswith("`") else f"`{name}`"
+        lines.append(f"{tags.get(name, '')} {rest}".strip())
+    return lines
+
+
 def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
     """(test name, criterion, failure) for each locked test the last measurement shows failing."""
     from app.acceptance import suite as acceptance_suite
@@ -12313,8 +12330,8 @@ def build_workflow_graph(
             beyond = criteria_past_the_cap(failing, past_the_cap)
             if beyond:
                 acceptance_nodes.defer_what_is_beyond_repair(state, beyond, [
-                    f"{name}: the dispute judged it wrong, and this run may reclassify no more tests"
-                    for name in past_the_cap])
+                    f"{line}: the dispute judged it wrong, and this run may reclassify no more tests"
+                    for line in past_the_cap_with_their_criteria(failing, past_the_cap)])
         missing = [
             f"`{name}` is missing from the locked suite; no test checks what the criterion says. Add a test for `{name.split()[0]}` or tag an existing test that proves it."
             for name, _, _ in failing

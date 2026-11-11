@@ -385,8 +385,12 @@ DEFERRED_BY_THE_HARNESS = ("could not be made to pass", "its locked test cannot 
 
 #: Where QA's "the product is at fault" claims are kept in the suite's state (`graph.product_at_fault._CLAIMS`).
 PRODUCT_AT_FAULT_CLAIMS = "product_at_fault_claims"
-#: A Python test function and its body, to the next top-level definition.
-_A_PYTHON_TEST_BODY = re.compile(r"^(?:async\s+)?def\s+(test_\w+)\s*\(.*?(?=^(?:async\s+)?def\s|^class\s|\Z)", re.M | re.S)
+#: A Python test function or method and its body, to the next definition at any depth, class or top-level line.
+#: Measured on one run: written at column 0 only, it found no test of a suite written as classes, so the tests a
+#: deferral was judged on were never recorded and the next lock took the deferral off.
+_A_PYTHON_TEST_BODY = re.compile(
+    r"^[ \t]*(?:async\s+)?def\s+(test_\w+)\s*\(.*?(?=^[ \t]*(?:async\s+)?def\s|^[ \t]*class\s|^(?=\S)(?!\))|\Z)",
+    re.M | re.S)
 
 
 def _test_bodies(repo_root: str | Path) -> dict[str, str]:

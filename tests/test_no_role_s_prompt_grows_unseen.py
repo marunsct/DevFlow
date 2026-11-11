@@ -36,7 +36,9 @@ CEILINGS = {
     # + the rule that a count of the test's own text is computed, not typed (LF.772): two runs in a row locked a test
     # expecting 24 characters for a string of 23 or 25.
     # 5,300 since a kind of input is tested with more than one member (a false acceptance: tabs never tested).
-    "acceptance_reviewer": 5_300,
+    # 5,700 since a mode whose output replaces another's is tested for the other's absence (LF.845): two false
+    # acceptances of one brief, each a test that looked only for the mode's own part.
+    "acceptance_reviewer": 5_700,
 }
 OTHERWISE = 4_200
 

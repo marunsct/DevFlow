@@ -71,6 +71,12 @@ TESTS_ASSUME_ONLY_WHAT_THEY_MADE = (
     "- Where a criterion speaks of a kind of input - whitespace, punctuation, separators, digits, letters of any "
     "case - its tests use more than one member of that kind (a space and a tab, a comma and a full stop), so a "
     "product that handles only the first one fails.\n"
+    # Measured on two runs, both false acceptances of one brief: it gave a mode an output of its own in place of
+    # another's; the test checked only that its own part was there, and a product printing both passed.
+    "- Where the brief gives one mode an output in place of another's - \"instead\", \"only\", \"rather than\", "
+    "or \"with this, it prints ...\" - a test of that mode also checks the other output is absent: it compares the "
+    "whole set of keys or lines with the ones the brief shows for that mode. A product that prints both passes a test "
+    "that looks only for its own part.\n"
 )
 #: The kinds of product whose suite runs against one long-lived service.
 _A_SHARED_SERVICE = frozenset({"http_api", "fullstack"})

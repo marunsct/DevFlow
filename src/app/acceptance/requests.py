@@ -66,6 +66,11 @@ TESTS_ASSUME_ONLY_WHAT_THEY_MADE = (
     "- A count or length of text the test writes itself - its characters, lines or bytes - is worked out in the test "
     "from that text (its length, its lines), never written as a number: a number counted by hand is often one off, "
     "and the test then fails a product that counts right.\n"
+    # Measured on one run, a false acceptance: the brief said a function leaves "the whitespace exactly as it was",
+    # every test used spaces alone, the product split words on spaces only, and a hidden test with a tab failed.
+    "- Where a criterion speaks of a kind of input - whitespace, punctuation, separators, digits, letters of any "
+    "case - its tests use more than one member of that kind (a space and a tab, a comma and a full stop), so a "
+    "product that handles only the first one fails.\n"
 )
 #: The kinds of product whose suite runs against one long-lived service.
 _A_SHARED_SERVICE = frozenset({"http_api", "fullstack"})

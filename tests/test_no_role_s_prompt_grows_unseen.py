@@ -35,7 +35,8 @@ CEILINGS = {
     # locked suite after the build for a test asserting the kept start script's lines.
     # + the rule that a count of the test's own text is computed, not typed (LF.772): two runs in a row locked a test
     # expecting 24 characters for a string of 23 or 25.
-    "acceptance_reviewer": 5_100,
+    # 5,300 since a kind of input is tested with more than one member (a false acceptance: tabs never tested).
+    "acceptance_reviewer": 5_300,
 }
 OTHERWISE = 4_200
 

@@ -71,6 +71,7 @@ scripts/loop/loop.sh status             # the current run, and whether anything 
 scripts/loop/loop.sh ready              # last line ALL READY, exit 0 - otherwise start nothing (§5)
 scripts/loop/install_hooks.sh          # once per clone: a commit adding the owner's 5433 db port is refused
 scripts/loop/loop.sh ready deep         # also sends a ~13k-token request; use it when the owner has just (re)loaded a model
+scripts/loop/loop.sh ready http://host.docker.internal:8888/v1 pin_model=unsloth/Qwen3.6-35B-A3B-MTP-GGUF   # a port other than the default: name its address and its model, as the run's pin will (a bare address was ignored before LF.841)
 scripts/loop/loop.sh start tests/brief_medium.md   # only when nothing is live
 scripts/loop/loop.sh wait 10            # every ~10 min for 40 min, then `wait 18`
 ```

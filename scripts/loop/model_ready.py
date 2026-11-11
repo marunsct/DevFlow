@@ -147,6 +147,11 @@ def server_facts(reached, naming, key):
 def the_pin_asked_for(argv):
     """The model snapshot a run started with `pin_url=...` / `pin_model=...` will use, as `start` builds it; None for no pin."""
     said = dict(arg.split("=", 1) for arg in argv if arg.startswith(("pin_url=", "pin_model=")))
+    # A bare address is the server to check, as `loop.sh ready http://host:8888/v1` is written: read alone it was
+    # ignored, and every check of the second port checked the default one instead.
+    bare = [arg for arg in argv if arg.startswith(("http://", "https://"))]
+    if bare and not said.get("pin_url"):
+        said["pin_url"] = bare[0]
     if not any(said.values()):
         return None
     from app.models.model_pin import snapshot_for

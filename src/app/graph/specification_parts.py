@@ -260,6 +260,21 @@ def sections_to_revise(specification: Any, required_changes: str, model: Any) ->
     return _bounded_by_what_the_review_names(chosen, required_changes, names)
 
 
+#: What a review calls a section other than its name: an architecture decision record is "ADR-6", and the
+#: specification keeps those in `decisions`. Measured on one run: a finding about ADR-06's counts was the only one a
+#: revision left unfixed - the section was never chosen to be rewritten - and the run escalated on it.
+_SECTION_CALLED = {"decisions": re.compile(r"\badrs?\b(?:[\s-]*\d+)?", re.I)}
+
+
+def named_in(name: str, text: str) -> bool:
+    """Whether `text` names the section `name`: as written, in words, or as reviews call it (`_SECTION_CALLED`)."""
+    lowered = (text or "").lower()
+    spaced = lowered.replace("-", " ")
+    called = _SECTION_CALLED.get(name)
+    return (name.lower() in lowered or name.replace("_", " ").lower() in spaced
+            or bool(called is not None and called.search(text or "")))
+
+
 #: Sections a revision rewrites beyond those the review's own words name.
 MOST_UNNAMED_SECTIONS = 2
 
@@ -274,8 +289,7 @@ def _bounded_by_what_the_review_names(chosen: list[str], required_changes: str, 
     architect's model minutes. The review cites the sections it means
     ("Function contracts section line 147", "Configuration section").
     """
-    text = (required_changes or "").lower().replace("-", " ")
-    named = [name for name in names if name.replace("_", " ").lower() in text]
+    named = [name for name in names if named_in(name, required_changes)]
     if not named:
         return chosen
     extra = [name for name in chosen if name not in named][:MOST_UNNAMED_SECTIONS]
@@ -303,8 +317,7 @@ def grouped_by_finding(chosen: list[str], required_changes: str) -> list[tuple[s
         return name
 
     for finding in _A_FINDING.split(required_changes or ""):
-        text = finding.lower().replace("-", " ")
-        named = [name for name in chosen if name.lower() in text or name.replace("_", " ").lower() in text]
+        named = [name for name in chosen if named_in(name, finding)]
         for other in named[1:]:
             parent[root(other)] = root(named[0])
     tied: dict[str, list[str]] = {}

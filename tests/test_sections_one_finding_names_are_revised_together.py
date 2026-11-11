@@ -36,3 +36,17 @@ def test_sections_named_in_words_are_tied_too_and_a_large_tie_stays_whole():
     groups = grouped_by_finding(CHOSEN, changes)
     tied = [group for group in groups if "file_plan" in group][0]
     assert {"file_plan", "function_contracts", "configuration", "test_cases"} <= set(tied)
+
+
+def test_an_adr_named_by_number_is_the_decisions_section():
+    """Measured on one run: a finding about ADR-06's counts was the only one a revision left unfixed: the section that
+    holds the ADRs was never chosen to be rewritten."""
+    from app.graph.specification_parts import _bounded_by_what_the_review_names, named_in
+
+    changes = "- [major] The test cases for AC-8 and ADR-06 have incorrect word counts.\n"
+    assert named_in("decisions", changes) and named_in("test_cases", changes)
+    assert not named_in("decisions", "- [major] The deployment section omits the worker count.\n")
+    chosen = _bounded_by_what_the_review_names(["test_cases"], changes, ["test_cases", "decisions", "deployment"])
+    assert "decisions" in chosen
+    groups = grouped_by_finding(["test_cases", "deployment", "decisions"], changes)
+    assert any({"test_cases", "decisions"} <= set(group) for group in groups)

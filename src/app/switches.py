@@ -162,10 +162,11 @@ GROUPS: dict[str, tuple[str, ...]] = {
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)
 #: The grouped switches deployed on, each with why.
-#: Measured switches taken off for what they cost. `TESTS_ONLY_WRITES`, on a second costly case (owner's standing rule):
-#: a unit test was right, the product answered a body nothing could parse with a 500, and the fix stage could write
-#: only test files - it surrendered, and the rewrite after it found no file it might write.
-TAKEN_OFF_FOR_COST = frozenset({"TESTS_ONLY_WRITES"})
+#: Measured switches taken off for what they cost. Empty: `TESTS_ONLY_WRITES` was taken off on a second costly case
+#: (one first fix attempt, about 4.5 minutes) and put back the same day on what it saves: of the runs scored that day,
+#: 9 with it on shipped no failing unit test, and 3 of the 8 with it off shipped 2, 10 and 10 (quality before cost,
+#: owner 2026-11-05). Its cost stays bounded: it covers only the first attempt at a failing unit test.
+TAKEN_OFF_FOR_COST: frozenset[str] = frozenset()
 EXPERIMENTS_ON = {name: "measured batch from release candidate 7 (owner, 2026-11-05)"
                   for name in GROUPS["Being measured"] if name not in TAKEN_OFF_FOR_COST}
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}

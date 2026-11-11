@@ -202,9 +202,9 @@ def test_the_switch_is_an_experiment_that_ships_off() -> None:
     from app import switches
 
     assert "TESTS_ONLY_WRITES" in switches.EXPERIMENTS and "TESTS_ONLY_WRITES" in switches.GROUPS["Being measured"]
-    # Taken off for cost on a second costly case: a right unit test, a product answering 500, and a fix stage that
-    # could write only tests.
-    assert "TESTS_ONLY_WRITES" not in switches.EXPERIMENTS_ON and "TESTS_ONLY_WRITES" in switches.TAKEN_OFF_FOR_COST
+    # Taken off for cost one afternoon and put back on what it saves: 0 of 9 runs with it on shipped a failing unit
+    # test, 3 of 8 with it off did.
+    assert "TESTS_ONLY_WRITES" in switches.EXPERIMENTS_ON and "TESTS_ONLY_WRITES" not in switches.TAKEN_OFF_FOR_COST
     assert tests_only_writes.ON_BY_DEFAULT is False
     with mock.patch.dict("os.environ", {"TESTS_ONLY_WRITES": ""}):
         assert tests_only_writes.enabled() is False

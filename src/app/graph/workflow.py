@@ -503,6 +503,7 @@ class WorkflowGraphState(TypedDict, total=False):
     specification_deferrals_checked: bool
     specification_contract_lines_checked: bool
     specification_kept_files_checked: bool
+    specification_command_order_checked: bool
     # The workflow's own design checks that sent back a specification the reviewer approved (`HARNESS_FINDINGS_RECHECKED`).
     approved_but_for_the_harness: list[str]
     specification_repair_count: int
@@ -5208,9 +5209,11 @@ _THE_HARNESS_S_DESIGN_CHECKS = {
     "deferrals": lambda state, spec: _a_brief_feature_the_specification_defers(state, spec),
     "contract": lambda state, spec: _contract_lines_nothing_can_read(state),
     "kept": lambda state, spec: _behaviour_the_specification_gives_kept_files(state, spec),
+    "order": lambda state, spec: _the_same_command_in_another_order(state, spec),
 }
 _THE_CHECKS_ONCE_FLAGS = ("specification_coverage_checked", "specification_deferrals_checked",
-                          "specification_contract_lines_checked", "specification_kept_files_checked")
+                          "specification_contract_lines_checked", "specification_kept_files_checked",
+                          "specification_command_order_checked")
 
 
 def _the_harness_findings_still_open(state: Any, spec_text: str, names: Sequence[str]) -> list[Any]:
@@ -5259,6 +5262,39 @@ def _approved_once_the_harness_s_findings_are_settled(state: Any, spec_text: str
     )
     update["stage"] = "user_review_specification" if _review_enabled(state, SPECIFICATION_REVIEW) else "scaffold"
     return update
+
+
+def _the_same_command_in_another_order(state: Any, spec_text: str) -> Any:
+    """A major finding for command lines that differ only in the order of their arguments and give different results.
+
+    Measured on two runs of one brief, both false acceptances: the specification gave `--top N --json` and
+    `--json --top N` different output, the suite tested both, and the product followed the one the brief did not
+    state. Once per run, and never on the revision that would exhaust the limit, like the checks beside it.
+    """
+    if state.get("specification_command_order_checked"):
+        return None
+    if state.get("architecture_revision_count", 0) + 1 >= _the_revision_limit():
+        return None
+    from app.acceptance.interface_contract import commands_that_differ_only_in_order
+
+    pairs = commands_that_differ_only_in_order(spec_text)
+    if not pairs:
+        return None
+    from app.agents.architecture_reviewer import ArchitectureReviewFinding
+
+    return ArchitectureReviewFinding(
+        severity="major",
+        description=(
+            "The specification gives one command two results by the order of its options alone: "
+            + "; ".join(f"`{a}` against `{b}`" for a, b in pairs)
+            + ". The order of a command's options does not change what it does."
+        ),
+        evidence="Compared by the workflow across the specification's command lines.",
+        required_remediation=(
+            "Give the command one result whatever the order of its options - the one the brief states - and "
+            "change every line and criterion that says otherwise."
+        ),
+    )
 
 
 def _contract_lines_nothing_can_read(state: Any) -> Any:
@@ -9792,6 +9828,14 @@ def build_workflow_graph(
             update["architecture_review"] = review
             update["specification_contract_lines_checked"] = True
             fired.append("contract")
+        order_finding = _the_same_command_in_another_order(state, spec_text)
+        if order_finding is not None:
+            review = review.model_copy(
+                update={"findings": [*review.findings, order_finding], "status": "changes_required"}
+            )
+            update["architecture_review"] = review
+            update["specification_command_order_checked"] = True
+            fired.append("order")
         kept_finding = _behaviour_the_specification_gives_kept_files(state, spec_text)
         if kept_finding is not None:
             review = review.model_copy(

@@ -1482,6 +1482,30 @@ def errors_found_at_the_lock(repo_root: str | Path) -> list[tuple[Check, int]]:
         return []
 
 
+#: A command line in any section of a specification, with what it is said to give: `command <argv> -> <result>`.
+_A_COMMAND_AND_ITS_RESULT = re.compile(r"\bcommand\s+(?P<argv>.+?)\s*->\s*(?P<result>.+?)\s*$", re.I | re.M)
+
+
+def commands_that_differ_only_in_order(text: str) -> list[tuple[str, str]]:
+    """Pairs of command lines whose arguments are the same in another order and whose results differ.
+
+    The order of a command's options does not change what it does. Measured on two runs of one brief, both false
+    acceptances: a specification said `--top N --json` prints only the top words and `--json --top N` prints the
+    counts as well; the suite tested both, the product printed the counts, and the hidden test failed.
+    """
+    seen: dict[tuple[str, ...], list[tuple[tuple[str, ...], str, str]]] = {}
+    pairs: list[tuple[str, str]] = []
+    for found in _A_COMMAND_AND_ITS_RESULT.finditer(text or ""):
+        argv = tuple(found.group("argv").replace("`", "").split())
+        result = " ".join(found.group("result").replace("`", "").split()).rstrip(".")
+        line = found.group(0).strip()
+        for other_argv, other_result, other_line in seen.get(tuple(sorted(argv)), []):
+            if other_argv != argv and other_result != result and (other_line, line) not in pairs:
+                pairs.append((other_line, line))
+        seen.setdefault(tuple(sorted(argv)), []).append((argv, result, line))
+    return pairs[:4]
+
+
 def unread_lines_finding(lines: list[str] | tuple[str, ...]) -> str:
     """What the architect's review is told about contract lines that follow none of the forms; "" when all are read."""
     unread = parse(lines)[1]

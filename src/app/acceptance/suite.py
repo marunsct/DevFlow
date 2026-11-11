@@ -2551,6 +2551,41 @@ def outputs_held_only_in_part(repo_root: str | Path, brief_text: str) -> list[st
     return findings
 
 
+#: A criterion that speaks of whitespace as a kind of input.
+_SPEAKS_OF_WHITESPACE = re.compile(r"\bwhite[\s-]?space\b", re.I)
+#: Whitespace other than a plain space written in a test: an escaped or literal tab, line break or carriage return.
+_WHITESPACE_BEYOND_A_SPACE = re.compile(r"\\[tnrfv]|\t|\\x0[9abcd]|\\u000[9abcd]", re.I)
+
+
+def whitespace_tested_with_spaces_only(repo_root: str | Path) -> list[str]:
+    """Each criterion that speaks of whitespace whose tests use no whitespace but a plain space.
+
+    Measured on two runs of one brief: it said `title_case` leaves "the whitespace exactly as it was"; every locked
+    test used spaces alone, a product splitting words on spaces only passed, and a hidden test with a tab failed. A
+    prompt rule to the writer and the reviewer (LF.842) did not reach the second suite; this reads it.
+    """
+    try:
+        speaking = [c for c in criteria(repo_root) if _SPEAKS_OF_WHITESPACE.search(c.text or "")]
+        if not speaking:
+            return []
+        from app.acceptance.junit import tags_in
+
+        bodies = _test_bodies(repo_root)
+        findings = []
+        for criterion in speaking:
+            carrying = {name: body for name, body in bodies.items() if criterion.id in tags_in(name)}
+            if not carrying or any(_WHITESPACE_BEYOND_A_SPACE.search(body) for body in carrying.values()):
+                continue
+            named = ", ".join(f"`{name}`" for name in sorted(carrying)[:4])
+            findings.append(
+                f"{criterion.id} speaks of whitespace, and its tests ({named}) use only spaces: a product that "
+                "handles only the space passes them. Add a case with a tab and a line break, checked the same way."
+            )
+        return findings
+    except Exception:  # noqa: BLE001 - a check that cannot read the suite finds nothing
+        return []
+
+
 #: What makes each kind of record in a page's sources, in markup, a script or a template: `<li>`, `createElement('li')`,
 #: `role="listitem"`; `<tr>`, `insertRow(`, `role="row"`.
 _MADE_BY = {

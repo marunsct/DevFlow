@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
 from collections import deque
@@ -323,16 +324,23 @@ plan_review_reply_cap_switch = _PlanReviewReplyCap()
 #: cap (behind `THINKING_OFF_REPLY_CAP`; reasoning-cost review M3, L3). Measured over 25 runs: 57 of 57 thinking-off fix
 #: replies that hit the 12,000 cap were prose reasoning, 344 minutes of wall time. `THINKING_OFF_REPLY_TOKENS` overrides.
 THINKING_OFF_REPLY_TOKENS = 4_000
-#: (run, stage) -> whether a reply of that stage has reasoned in prose to its cap; read once from the transcript.
+#: (run, stage family) -> whether a reply of that family has reasoned in prose to its cap; read once from the transcript.
 _REASONED_IN_PROSE: dict[tuple[str, str], bool] = {}
 
 
+def _the_family(stage: str) -> str:
+    """A stage's family: `defect_fix_2_12` -> `defect_fix`; a stage without numbers is its own."""
+    return re.sub(r"(?:_\d+)+$", "", stage)
+
+
 def _the_run_and_stage() -> tuple[str, str] | None:
+    """(run, stage family) of the running call. By family, not stage: measured on one run, every new fix stage paid one
+    full-cap reply of prose reasoning before its own flag was set, though a dozen earlier fix stages had shown it."""
     try:
         from app.observability.transcript import _run_id_from_config, _stage_from_config
 
         run, stage = _run_id_from_config(), _stage_from_config("")
-        return (str(run), str(stage)) if run and stage else None
+        return (str(run), _the_family(str(stage))) if run and stage else None
     except Exception:  # noqa: BLE001
         return None
 
@@ -353,7 +361,7 @@ def _has_reasoned_in_prose(key: tuple[str, str]) -> bool:
             from app.observability.transcript import read_transcript
 
             _REASONED_IN_PROSE[key] = any(
-                e.get("stage") == key[1] and str(e.get("salvaged") or "") in ("reasoning", "failed")
+                _the_family(str(e.get("stage") or "")) == key[1] and str(e.get("salvaged") or "") in ("reasoning", "failed")
                 and not int(e.get("reasoning_chars") or 0)
                 for e in read_transcript(key[0], {"model_response"})
             )

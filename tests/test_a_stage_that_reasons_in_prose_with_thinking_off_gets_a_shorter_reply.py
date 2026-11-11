@@ -54,3 +54,19 @@ def test_the_paced_call_asks_for_it():
     import inspect
 
     assert "cap = thinking_off_reply_cap(cap, ceiling, kwargs)" in inspect.getsource(models.CompatibleChatOpenAI._generate_paced)
+
+
+def test_a_new_stage_of_the_same_family_starts_capped(monkeypatch, tmp_path):
+    """Measured on one run: every new fix stage paid one full-cap reply of prose reasoning before its own flag was set,
+    though a dozen earlier fix stages of the same run had shown it."""
+    _at(monkeypatch, tmp_path, stage="defect_fix_1_12")
+    monkeypatch.setenv("THINKING_OFF_REPLY_CAP", "on")
+    models.note_reasoned_in_prose()
+    monkeypatch.setattr(transcript, "_stage_from_config", lambda fallback: "defect_fix_2_3")
+    assert models.thinking_off_reply_cap(12_000, 35_000, OFF) == models.THINKING_OFF_REPLY_TOKENS
+    monkeypatch.setattr(transcript, "_stage_from_config", lambda fallback: "technical_lead")
+    assert models.thinking_off_reply_cap(12_000, 35_000, OFF) == 12_000  # another family
+    models._REASONED_IN_PROSE.clear()
+    transcript.record("run-prose", "defect_fix_1_6", "model_response", salvaged="reasoning", reasoning_chars=0)
+    monkeypatch.setattr(transcript, "_stage_from_config", lambda fallback: "defect_fix_3_1")
+    assert models.thinking_off_reply_cap(12_000, 35_000, OFF) == models.THINKING_OFF_REPLY_TOKENS

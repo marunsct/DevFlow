@@ -406,6 +406,10 @@ def salvaged(model: Any, messages: list[Any], result: Any, stop: Any = None, **k
         unclosed = reasoning_left_open(str(message.content or "")) if cut else None
         if unclosed is None and cut and not getattr(message, "tool_calls", None):
             unclosed = reasoning_in_prose(str(message.content or ""))
+            if unclosed is not None:
+                from app.models import note_reasoned_in_prose
+
+                note_reasoned_in_prose()
         if unclosed is not None:
             lost, cut, reasoning = True, False, unclosed
         if cut and repeating(str(message.content or "")):

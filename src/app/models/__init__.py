@@ -319,6 +319,93 @@ class _PlanReviewReplyCap:
 
 plan_review_reply_cap_switch = _PlanReviewReplyCap()
 
+#: The longest reply a stage is asked for with thinking off, once one of its replies wrote its reasoning in prose to the
+#: cap (behind `THINKING_OFF_REPLY_CAP`; reasoning-cost review M3, L3). Measured over 25 runs: 57 of 57 thinking-off fix
+#: replies that hit the 12,000 cap were prose reasoning, 344 minutes of wall time. `THINKING_OFF_REPLY_TOKENS` overrides.
+THINKING_OFF_REPLY_TOKENS = 4_000
+#: (run, stage) -> whether a reply of that stage has reasoned in prose to its cap; read once from the transcript.
+_REASONED_IN_PROSE: dict[tuple[str, str], bool] = {}
+
+
+def _the_run_and_stage() -> tuple[str, str] | None:
+    try:
+        from app.observability.transcript import _run_id_from_config, _stage_from_config
+
+        run, stage = _run_id_from_config(), _stage_from_config("")
+        return (str(run), str(stage)) if run and stage else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def note_reasoned_in_prose() -> None:
+    """Record that the running stage's reply wrote its reasoning in prose to the cap. Never raises."""
+    key = _the_run_and_stage()
+    if key is not None:
+        if len(_REASONED_IN_PROSE) > 2000:
+            _REASONED_IN_PROSE.clear()
+        _REASONED_IN_PROSE[key] = True
+
+
+def _has_reasoned_in_prose(key: tuple[str, str]) -> bool:
+    """Whether a reply of this stage reasoned in prose to its cap: a reply salvaged with no reasoning of its own."""
+    if key not in _REASONED_IN_PROSE:
+        try:
+            from app.observability.transcript import read_transcript
+
+            _REASONED_IN_PROSE[key] = any(
+                e.get("stage") == key[1] and str(e.get("salvaged") or "") in ("reasoning", "failed")
+                and not int(e.get("reasoning_chars") or 0)
+                for e in read_transcript(key[0], {"model_response"})
+            )
+        except Exception:  # noqa: BLE001
+            return False
+    return _REASONED_IN_PROSE[key]
+
+
+def _thinking_is_off_in(kwargs: dict) -> bool:
+    """Whether a call's settings switch thinking off (`app.agents.thinking.answering_without_reasoning`)."""
+    body = kwargs.get("extra_body") or {}
+    template = body.get("chat_template_kwargs") or {}
+    return template.get("enable_thinking") is False or str(body.get("reasoning_effort") or "") == "none"
+
+
+def thinking_off_reply_cap(cap: int | None, ceiling: int | None, kwargs: dict) -> int | None:
+    """`cap`, lowered to `THINKING_OFF_REPLY_TOKENS` for a thinking-off call in a stage that has reasoned in prose to its cap.
+
+    Thinking off does not stop a model that writes its reasoning in its text: measured, every such capped reply
+    burned the whole cap, then salvage answered from it. Behind `THINKING_OFF_REPLY_CAP`, off until measured: a
+    shorter reply can cut prose reasoning that would have found the fix.
+    """
+    try:
+        if not thinking_off_reply_cap_switch.enabled() or not _thinking_is_off_in(kwargs):
+            return cap
+        key = _the_run_and_stage()
+        if key is None or not _has_reasoned_in_prose(key):
+            return cap
+        lower = max(SMALLEST_REPLY_CAP, int(os.environ.get("THINKING_OFF_REPLY_TOKENS") or THINKING_OFF_REPLY_TOKENS))
+        return min(x for x in (cap, ceiling, lower) if x and x > 0)
+    except Exception:  # noqa: BLE001 - the cap as it was
+        return cap
+
+
+class _ThinkingOffReplyCap:
+    """`THINKING_OFF_REPLY_CAP` as the switch registry reads one: off in code, measured before it is kept."""
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("Once a stage's reply has written its reasoning in plain text to the cap with thinking off, its later "
+                   "thinking-off replies are capped at 4,000 tokens and salvage answers from that. Measured over 25 runs: "
+                   "every capped thinking-off fix reply was prose reasoning, 344 minutes in all.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("THINKING_OFF_REPLY_CAP", _ThinkingOffReplyCap.ON_BY_DEFAULT)
+
+
+thinking_off_reply_cap_switch = _ThinkingOffReplyCap()
+
 #: A failure after this long is the reply being cut off, not the call failing.
 SLOW_FAILURE_SECONDS = 60.0
 
@@ -721,6 +808,7 @@ class CompatibleChatOpenAI(ChatOpenAI):
         ceiling = self.max_tokens if isinstance(self.max_tokens, int) else None
         server = self._served_by()
         cap = fix_stage_reply_cap(ceiling) or plan_review_reply_cap(ceiling)
+        cap = thinking_off_reply_cap(cap, ceiling, kwargs)
         quick_failures = 0
         while True:
             started = time.monotonic()

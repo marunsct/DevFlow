@@ -8423,6 +8423,56 @@ def _about_the_harness_s_files_only(finding: Any, repo_root: str) -> bool:
     return bool(named) and named <= kept
 
 
+def _about_the_locked_suite_only(finding: Any, repo_root: str) -> bool:
+    """Whether every file a finding names is in the locked acceptance suite, and it names one. Never raises.
+
+    By path, not by name: a unit test may share a suite file's name.
+    """
+    try:
+        from app.acceptance import suite
+
+        if not suite.is_locked(repo_root):
+            return False
+        where = suite.directory(repo_root)
+        if where is None:
+            return False
+        root = Path(repo_root).resolve()
+        inside = where.resolve()
+        named = [str(path).strip().lstrip("/") for path in getattr(finding, "affected_files", None) or [] if str(path).strip()]
+        return bool(named) and all(inside in (root / path).resolve().parents for path in named)
+    except Exception:  # noqa: BLE001 - not known to be the suite's
+        return False
+
+
+def _findings_about_the_locked_suite_made_minor(review: Any, repo_root: str) -> Any:
+    """`review` with each gating finding whose files are all in the locked acceptance suite recorded as minor.
+
+    No sprint may change the locked suite - only its own reopening does - so a revision asked for one cannot be made
+    and the sprint goes back for work nobody may do. Measured on one run: every test passed, and the milestone review
+    called a locked test vacuous (major); the lead's plan was sent back twice for a work order to change it. Kept in
+    the review and the Sprint Record, so the release names it as a gap.
+    """
+    try:
+        findings, moved = [], 0
+        for finding in getattr(review, "findings", None) or []:
+            if _severity_gates(getattr(finding, "severity", "")) and _about_the_locked_suite_only(finding, repo_root):
+                moved += 1
+                finding = finding.model_copy(update={
+                    "severity": "minor",
+                    "description": (
+                        "The files this names are the locked acceptance suite, which no sprint may change; recorded "
+                        f"as a gap in the suite, not a reason to send the sprint back: {finding.description}"
+                    ),
+                })
+            findings.append(finding)
+        if not moved:
+            return review
+        logger.warning("Milestone review raised %d gating finding(s) about the locked suite only; recorded as minor", moved)
+        return review.model_copy(update={"findings": findings})
+    except Exception:  # noqa: BLE001 - the review as written stands
+        return review
+
+
 def _findings_about_the_harness_s_files_made_minor(review: Any, repo_root: str) -> Any:
     """`review` with each gating finding whose files are all the harness's own recorded as minor. Never raises.
 
@@ -12579,6 +12629,7 @@ def build_workflow_graph(
                           _security_graded_by_its_own_review(review, state.get("security_review")))
         review = _through("the_dependency_check_contradicts", review, _findings_the_dependency_check_contradicts(review, state))
         review = _through("about_the_harness_s_files", review, _findings_about_the_harness_s_files_made_minor(review, root))
+        review = _through("about_the_locked_suite", review, _findings_about_the_locked_suite_made_minor(review, root))
         review = _through("a_server_only_the_tests_start", review, _findings_about_a_server_only_the_tests_start(review, root))
         review = _through("the_command_record_contradicts", review, _findings_the_command_record_contradicts(review, root))
         review = _through("no_measure_holds", review, _findings_no_measure_holds(review, root))

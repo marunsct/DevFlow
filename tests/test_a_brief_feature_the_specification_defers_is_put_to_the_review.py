@@ -106,3 +106,17 @@ def test_the_review_node_adds_it():
     from app.graph import workflow
 
     assert "deferral_finding = _a_brief_feature_the_specification_defers(state, spec_text)" in inspect.getsource(workflow)
+
+
+def test_a_signature_s_parameters_in_code_are_no_features():
+    """Measured on one run: `truncate(text, limit, suffix=...)` was read as the list "text, limit and suffix", a
+    "Defers:" line naming "additional text transformations" deferred the feature `text`, and an approved
+    specification was sent back, reviewed again and escalated."""
+    from app.analysis.integration_checks import brief_features_the_text_defers
+
+    brief = ('# Text kit\n\n- `textkit.truncate(text, limit, suffix="...")` returns `text` unchanged when it has at most '
+             '`limit` characters.\n- Tags, due dates and reminders on every entry.\n')
+    spec = "Defers: CLI or web interface, additional text transformations beyond the four functions, reminders."
+    found = [feature for feature, _, _ in brief_features_the_text_defers(brief, spec)]
+    assert "text" not in found and "limit" not in found and "suffix" not in found
+    assert "reminders" in found  # a feature in prose is still checked

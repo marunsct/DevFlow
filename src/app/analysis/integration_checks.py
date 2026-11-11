@@ -5842,6 +5842,10 @@ def brief_actions_the_text_defers(brief: str, text: str) -> list[tuple[str, str,
 _A_BRIEF_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 
 
+#: An inline code span of Markdown.
+_A_CODE_SPAN = re.compile(r"`[^`\n]*`")
+
+
 def brief_features_the_text_defers(brief: str, text: str) -> list[tuple[str, str, str]]:
     """Each feature the brief lists that `text` defers, as (feature, brief line, text line).
 
@@ -5865,7 +5869,12 @@ def brief_features_the_text_defers(brief: str, text: str) -> list[tuple[str, str
         if not _A_BRIEF_ITEM.match(raw):
             continue
         line = raw.strip()
-        for every_item, words in enumerations(line):
+        # Code in backticks names parameters and functions, not features. Measured on one run: the signature
+        # `textkit.truncate(text, limit, suffix="...")` was read as the list "text, limit and suffix", a "Defers:"
+        # line naming "additional text transformations" was taken to defer the feature `text`, and an approved
+        # specification was sent back, reviewed again and escalated.
+        prose = _A_CODE_SPAN.sub(" ", line)
+        for every_item, words in enumerations(prose):
             for word in words if every_item else ():
                 key = word.lower()
                 if len(key) >= 4 and key not in actions and key not in required:

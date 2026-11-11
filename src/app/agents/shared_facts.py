@@ -223,8 +223,11 @@ def _what_the_setup_already_writes(pack: Any, project: str, package: str | None)
                if path not in kept and not path.startswith(".") and "/." not in path]
     if not written:
         return []
-    lines = [f"- The setup has already written {_at_most(written, MOST_NAMED, prefix)}: none of them is missing, and "
-             "the product may fill or change them."]
+    # Measured on two runs after this line said "has already written": the architect, told so before the setup had
+    # run, read the starter files and was told no such file exists yet. The words hold at every stage.
+    lines = [f"- The setup writes {_at_most(written, MOST_NAMED, prefix)} when the build starts: none of them is "
+             "missing, and the product may fill or change them. Before the build they are not on disk, so no "
+             "call reads them."]
     declared: list[str] = []
     for path, text in files.items():
         if not _A_RUNTIME_MANIFEST.search(path):
@@ -240,7 +243,7 @@ def _what_the_setup_already_writes(pack: Any, project: str, package: str | None)
         else:
             declared += [line.strip() for line in body.splitlines() if line.strip() and not line.strip().startswith(("#", "-"))]
     if declared:
-        lines.append(f"- The setup already declares the runtime dependencies {_at_most(declared, MOST_NAMED)}: "
+        lines.append(f"- The setup declares the runtime dependencies {_at_most(declared, MOST_NAMED)}: "
                      "no step adds them.")
     return lines
 

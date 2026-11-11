@@ -41,6 +41,14 @@ SHARED_STORE = (
     "must not assume it starts empty: create what it reads under names no other test uses (a "
     "username of its own, say), and look for its own records rather than counting all of them."
 )
+#: Said to the writer of a suite that drives a page. Measured on runs: a test saved an entry and typed the next one
+#: at once; the page emptied its form when the save finished and erased what the test had typed, and the test failed
+#: a product that was right.
+WAIT_FOR_THE_SAVE = (
+    "After a test sends a form - an entry saved, a sign-in - it waits for what the page shows once that is done "
+    "(the new entry listed, the form emptied) before it types into the form again: a page may empty its form when "
+    "the save completes, and erase whatever was typed in the meantime."
+)
 #: Said to the suite's writer and its reviewer, true on every stack. It said each test ran alone against an empty
 #: product, beside `SHARED_STORE`, which says the opposite for a service the suite starts once; the
 #: reviewer had only the first, and a test counting a shared table read as right to both.
@@ -61,6 +69,8 @@ TESTS_ASSUME_ONLY_WHAT_THEY_MADE = (
 )
 #: The kinds of product whose suite runs against one long-lived service.
 _A_SHARED_SERVICE = frozenset({"http_api", "fullstack"})
+#: The kinds of product whose suite drives a page.
+_DRIVES_A_PAGE = frozenset({"browser_app", "fullstack"})
 
 
 def shares_one_service(repo_root: str | Path) -> bool:
@@ -77,6 +87,8 @@ def _how_to_write_them(repo_root: str | Path, project: str, acceptance_dir: str,
         guide = pack.filled(pack.acceptance_guide, project, record.get('title') or project, record.get('package'))
         if getattr(pack, "kind", "") in _A_SHARED_SERVICE and "starts empty" not in guide:
             guide = guide.rstrip() + "\n" + SHARED_STORE
+        if getattr(pack, "kind", "") in _DRIVES_A_PAGE:
+            guide = guide.rstrip() + "\n" + WAIT_FOR_THE_SAVE
         return (
             f"{guide}\n"
             f"Run the suite with `{command}` in `{project}/`."

@@ -37,7 +37,9 @@ RULE = _with_what_the_brief_states(RULE)
 SIMPLEST = "The simplest reading that meets the brief; nothing beyond it."
 #: How an assumption's decision record begins, so it can be found again.
 MARK = "Assumed until the owner says otherwise"
-_ASSUMED = re.compile(r"\s*(?:->|→|=>)\s*assumed\s*:\s*", re.I)
+#: "-> assumed:" as asked, and "-> Assumption:" / "-> Assume:" as written: measured on one run, all five assumptions
+#: were written "-> Assumption:", none split, and each was recorded with the generic answer.
+_ASSUMED = re.compile(r"\s*(?:->|→|=>)\s*assum(?:ed|ption|e)\s*:\s*", re.I)
 #: Assumptions recorded at most.
 MOST = 12
 

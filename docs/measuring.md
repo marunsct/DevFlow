@@ -35,7 +35,7 @@ Written by `loop.sh measuring` from 253 scored runs in the ledger. On and off co
 | `NAMING_FINDING_BEFORE_DEFERRAL` | Being measured | on | 67 | no signal | 0 | not measured: needs 0 more on and 2 more off |
 | `ORDER_PROBE` | Being measured | on | 67 | no signal | 0 | not measured: needs 0 more on and 2 more off |
 | `SPEC_DRY_RUN` | Being measured | on | 67 | 2 | 0 | not measured: needs 0 more on and 2 more off |
-| `TESTS_ONLY_WRITES` | Being measured | on | 67 | no signal | 0 | not measured: needs 0 more on and 2 more off |
+| `TESTS_ONLY_WRITES` | Being measured | **off** (taken off for cost 2026-11-11, LF.835) | 67 | no signal | 0 | second costly case: a right unit test, a product answering 500, a fix stage limited to tests surrendered and the rewrite found no file it might write |
 | `PREMIUM_CHANGE_REQUESTS` | Bundles | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `PREMIUM_DEEP_VERIFICATION` | Bundles | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `PREMIUM_MODEL_TUNING` | Bundles | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |

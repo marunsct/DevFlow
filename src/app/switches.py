@@ -162,7 +162,12 @@ GROUPS: dict[str, tuple[str, ...]] = {
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)
 #: The grouped switches deployed on, each with why.
-EXPERIMENTS_ON = {name: "measured batch from release candidate 7 (owner, 2026-11-05)" for name in GROUPS["Being measured"]}
+#: Measured switches taken off for what they cost. `TESTS_ONLY_WRITES`, on a second costly case (owner's standing rule):
+#: a unit test was right, the product answered a body nothing could parse with a 500, and the fix stage could write
+#: only test files - it surrendered, and the rewrite after it found no file it might write.
+TAKEN_OFF_FOR_COST = frozenset({"TESTS_ONLY_WRITES"})
+EXPERIMENTS_ON = {name: "measured batch from release candidate 7 (owner, 2026-11-05)"
+                  for name in GROUPS["Being measured"] if name not in TAKEN_OFF_FOR_COST}
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}
 
 

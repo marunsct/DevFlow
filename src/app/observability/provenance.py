@@ -70,6 +70,7 @@ SWITCHES: dict[str, str] = {
     "PLAN_REVIEW_REPLY_CAP": "app.models:plan_review_reply_cap_switch",
     "SALVAGED_REPLIES_TURN_THINKING_OFF": "app.agents.settled_answer:salvaged_replies_switch",
     "SALVAGED_PLANNING_THINKING_OFF": "app.agents.settled_answer:salvaged_planning_switch",
+    "HARNESS_FINDINGS_RECHECKED": "app.graph.workflow:harness_findings_rechecked",
     "THINKING_OFF_REPLY_CAP": "app.models:thinking_off_reply_cap_switch",
     "TARGETED_SUITE_REPAIR": "app.acceptance.suite:targeted_repair_switch",
     "STRUCTURED_DISPUTE_VERDICT": "app.agents.suite_dispute:structured_verdict_switch",

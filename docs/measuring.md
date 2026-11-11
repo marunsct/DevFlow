@@ -71,6 +71,7 @@ Written by `loop.sh measuring` from 253 scored runs in the ledger. On and off co
 | `SALVAGED_REPLIES_TURN_THINKING_OFF` | bundle PREMIUM_MODEL_TUNING | on | 155 | no signal | 0 | not measured: needs 0 more on and 2 more off |
 | `SALVAGED_PLANNING_THINKING_OFF` | bundle PREMIUM_MODEL_TUNING | on | 0 | no signal | 0 | not measured: added 2026-11-11 (LF.820); keep only if plans do not get worse (re-plans, send-backs, hidden score) |
 | `THINKING_OFF_REPLY_CAP` | bundle PREMIUM_MODEL_TUNING | on | 0 | no signal | 0 | not measured: added 2026-11-11 (LF.825, reasoning-cost review M3/L3); keep only if fix-stage visits to green and hidden scores do not get worse; cap `THINKING_OFF_REPLY_TOKENS` (4,000) |
+| `HARNESS_FINDINGS_RECHECKED` | group Efficiency | off | 0 | no signal | 0 | not measured: added 2026-11-11 (LF.834); turn on for a measured arm; keep only if design-escalation rate falls and hidden scores hold |
 | `STEERING_AT_THE_TAIL` | bundle PREMIUM_MODEL_TUNING | on | 243 | no signal | 2 | measured: hidden 0.91 on / 0.70 off; minutes 88.40 / 206.75 |
 | `STRUCTURED_EXTRACTION` | bundle PREMIUM_MODEL_TUNING | on | 236 | no signal | 0 | not measured: needs 0 more on and 2 more off |
 | `BUILDER_FACTS` | bundle PREMIUM_PROJECT_INTELLIGENCE | on | 199 | no signal | 0 | not measured: needs 0 more on and 2 more off |

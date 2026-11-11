@@ -503,6 +503,8 @@ class WorkflowGraphState(TypedDict, total=False):
     specification_deferrals_checked: bool
     specification_contract_lines_checked: bool
     specification_kept_files_checked: bool
+    # The workflow's own design checks that sent back a specification the reviewer approved (`HARNESS_FINDINGS_RECHECKED`).
+    approved_but_for_the_harness: list[str]
     specification_repair_count: int
     layout_repair_count: int
     # Per-stage count of attempts that ended without a structured response.
@@ -5177,6 +5179,88 @@ def _a_success_measure_the_specification_drops(state: Any, spec_text: str) -> An
     )
 
 
+class _HarnessFindingsRechecked:
+    """`HARNESS_FINDINGS_RECHECKED`: a revision made only for the workflow's own findings is checked by them, not reviewed again.
+
+    Measured on one day: in three runs the reviewer approved the specification, one of the workflow's checks below
+    added a finding, and after the revision a whole second review raised new findings and escalated - which also
+    skips the code reviews. The checks are mechanical and cheap; the second review costs minutes and starts over.
+    Behind a switch, measured: a second review can catch an error the revision brings in.
+    """
+
+    ON_BY_DEFAULT = False
+    #: What the admin page says this switch does.
+    explanation = ("When the design reviewer approves and only the workflow's own checks send the specification back, "
+                   "the revision is checked by those checks alone, not reviewed again whole.")
+
+    @staticmethod
+    def enabled() -> bool:
+        from app.switches import is_on
+
+        return is_on("HARNESS_FINDINGS_RECHECKED", _HarnessFindingsRechecked.ON_BY_DEFAULT)
+
+
+harness_findings_rechecked = _HarnessFindingsRechecked()
+
+#: The workflow's own design checks, by name, each asked again as if for the first time.
+_THE_HARNESS_S_DESIGN_CHECKS = {
+    "coverage": lambda state, spec: _a_success_measure_the_specification_drops(state, spec),
+    "deferrals": lambda state, spec: _a_brief_feature_the_specification_defers(state, spec),
+    "contract": lambda state, spec: _contract_lines_nothing_can_read(state),
+    "kept": lambda state, spec: _behaviour_the_specification_gives_kept_files(state, spec),
+}
+_THE_CHECKS_ONCE_FLAGS = ("specification_coverage_checked", "specification_deferrals_checked",
+                          "specification_contract_lines_checked", "specification_kept_files_checked")
+
+
+def _the_harness_findings_still_open(state: Any, spec_text: str, names: Sequence[str]) -> list[Any]:
+    """The findings the named checks still raise on the specification as it is now; never raises (an error is open)."""
+    fresh = {**state, "architecture_revision_count": 0, **{flag: False for flag in _THE_CHECKS_ONCE_FLAGS}}
+    still = []
+    for name in names:
+        check = _THE_HARNESS_S_DESIGN_CHECKS.get(name)
+        if check is None:
+            continue
+        try:
+            found = check(fresh, spec_text)
+        except Exception:  # noqa: BLE001 - not known to be settled
+            logger.debug("Could not ask a design check again", exc_info=True)
+            return [object()]
+        if found is not None:
+            still.append(found)
+    return still
+
+
+def _approved_once_the_harness_s_findings_are_settled(state: Any, spec_text: str) -> dict[str, Any] | None:
+    """The approving update for a revision that settled the workflow's own findings on an approved specification; else None.
+
+    Behind `HARNESS_FINDINGS_RECHECKED`. None - review it as usual - when the switch is off, nothing was overturned,
+    no revision has been made, or a check still finds what it found.
+    """
+    overturned = list(state.get("approved_but_for_the_harness") or [])
+    if not (overturned and harness_findings_rechecked.enabled() and state.get("architecture_revision_count", 0) >= 1):
+        return None
+    if _the_harness_findings_still_open(state, spec_text, overturned):
+        return None
+    from app.agents.architecture_reviewer import ArchitectureReviewOutput
+    from app.decisions import record_decision
+
+    logger.info("The revision settled the workflow's own findings (%s): approved without a second review",
+                ", ".join(overturned))
+    approved = ArchitectureReviewOutput(status="approved", findings=[])
+    update: dict[str, Any] = {"architecture_review": approved, "approved_but_for_the_harness": []}
+    _record_document(state, "docs/architecture_review.md", render_architecture_review(approved))
+    record_decision(
+        state, update, point="technical_specification",
+        question="Is the specification ready to build from?",
+        options=["approve", "send it back to the architect"], decision="approve",
+        rationale=("The architecture reviewer approved it; the revision settled the workflow's own findings "
+                   f"({', '.join(overturned)}), checked again by the same checks."),
+    )
+    update["stage"] = "user_review_specification" if _review_enabled(state, SPECIFICATION_REVIEW) else "scaffold"
+    return update
+
+
 def _contract_lines_nothing_can_read(state: Any) -> Any:
     """A major finding for the interface contract's lines that follow none of its forms, behind the switch.
 
@@ -9651,8 +9735,11 @@ def build_workflow_graph(
         missing = _missing_upstream(state, "technical_specification")
         if missing is not None:
             return missing
-        agent = create_architecture_reviewer_agent(model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         spec_text = _as_text(state.get("technical_specification"))
+        settled = _approved_once_the_harness_s_findings_are_settled(state, spec_text)
+        if settled is not None:
+            return settled
+        agent = create_architecture_reviewer_agent(model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         previous_review = state.get("architecture_review")
         request = build_architecture_review_request(
             spec_text,
@@ -9678,6 +9765,8 @@ def build_workflow_graph(
             return update
 
         review: ArchitectureReviewOutput = update["architecture_review"]
+        reviewer_approved = review.status == "approved"
+        fired: list[str] = []
 
         coverage_finding = _a_success_measure_the_specification_drops(state, spec_text)
         if coverage_finding is not None:
@@ -9686,6 +9775,7 @@ def build_workflow_graph(
             )
             update["architecture_review"] = review
             update["specification_coverage_checked"] = True
+            fired.append("coverage")
         deferral_finding = _a_brief_feature_the_specification_defers(state, spec_text)
         if deferral_finding is not None:
             review = review.model_copy(
@@ -9693,6 +9783,7 @@ def build_workflow_graph(
             )
             update["architecture_review"] = review
             update["specification_deferrals_checked"] = True
+            fired.append("deferrals")
         unread_finding = _contract_lines_nothing_can_read(state)
         if unread_finding is not None:
             review = review.model_copy(
@@ -9700,6 +9791,7 @@ def build_workflow_graph(
             )
             update["architecture_review"] = review
             update["specification_contract_lines_checked"] = True
+            fired.append("contract")
         kept_finding = _behaviour_the_specification_gives_kept_files(state, spec_text)
         if kept_finding is not None:
             review = review.model_copy(
@@ -9707,11 +9799,14 @@ def build_workflow_graph(
             )
             update["architecture_review"] = review
             update["specification_kept_files_checked"] = True
+            fired.append("kept")
 
         review = _a_pass_over_its_own_findings(
             review, state["repository"].root_path, "approved", "architecture_review"
         )
         update["architecture_review"] = review
+        # The reviewer approved and only the workflow's checks sent it back: the revision is checked by them alone.
+        update["approved_but_for_the_harness"] = fired if reviewer_approved and fired else []
 
         # Rendered from the decision, not written by the reviewer as a second
         # copy that can disagree with it. See `app.agents.review_document`.

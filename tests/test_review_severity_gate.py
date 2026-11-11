@@ -121,7 +121,9 @@ def test_both_reviewers_route_on_it() -> None:
     # what lets a finding about something nobody asked for be capped rather
     # than blocking. Matched on the call rather than its exact arguments so
     # the next argument added here does not read as the routing being lost.
-    assert "_findings_that_block(review" in source[architecture:architecture + 4000]
+    # 5,000 since the node records which of the workflow's own checks fired (`HARNESS_FINDINGS_RECHECKED`): the
+    # window proves the node routes on the gate, it is not a limit on the node's length.
+    assert "_findings_that_block(review" in source[architecture:architecture + 5000]
     # The milestone node routes through `_milestone_findings_that_block`, which adds the evidence gate (G3).
     assert "_milestone_findings_that_block(state, review)" in source[milestone:milestone + 12000]
     wrapper = source[source.index("def _milestone_findings_that_block"):][:600]

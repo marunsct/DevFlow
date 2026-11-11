@@ -6861,6 +6861,13 @@ def _the_product_starts_now(root: str, defect: Any) -> str:
 
 def _resolved_by_a_measurement(state: Any, defect: Any, *, measured_since: bool = True) -> tuple[str, str]:
     """(what proves it, why it is resolved) for a defect a measurement shows resolved; else ("", "")."""
+    if mutation_guided.is_a_finding(defect):
+        # A test an earlier fix wrote may already notice this change (`mutation_guided.what_settles_it` shows a
+        # fixer the others in its file). Measured as the fix of it would be: two unit runs, not a fix stage. Only
+        # before a fixer is sent: a finding the round's own probe just raised is unnoticed by definition.
+        if measured_since and mutation_guided.settled(state["repository"].root_path, defect):
+            return "the unit tests", "a unit test already fails with this change and passes without it"
+        return "", ""
     regressed = _a_regressed_test_passing_since(state, defect)
     if regressed:
         return regressed, f"{regressed} passes again"
@@ -11375,7 +11382,7 @@ def build_workflow_graph(
                 or mutation_guided.is_a_finding(defect)
                 else acceptance_nodes.done_by_the_definition(state)
             ),
-            what_settles_it=mutation_guided.what_settles_it(defect),
+            what_settles_it=mutation_guided.what_settles_it(defect, cycle.defects),
         )
         request["messages"][-1]["content"] += _what_a_fix_stage_must_leave_alone(state, defect)
         # What this attempt may write: test files only, for a first fix of a failing unit test beside a green suite.

@@ -248,11 +248,34 @@ def defect(site: dict, sprint_goal: str = "") -> Any:
     )
 
 
-def what_settles_it(defect: Any) -> str:
-    """What the fixer of a finding is told settles it; "" for any other defect."""
-    if not is_a_finding(defect):
+def _the_others_in_its_file(defect: Any, others: Any) -> str:
+    """The other open findings in the same file, as lines; "" when there are none.
+
+    Measured on one run: three findings, each `True` made `False` at the same column of one file, went to three fix
+    stages of 11 to 13 calls each; one test written with all three in view could have settled them together.
+    """
+    site = site_of(defect)
+    if site is None:
+        return ""
+    lines = []
+    for other in others or ():
+        found = site_of(other) if other is not defect and getattr(other, "status", "open") == "open" else None
+        if found and found["file"] == site["file"] and is_a_finding(other):
+            lines.append(f"- {_where(found)}")
+    if not lines:
         return ""
     return (
+        "\n--- The other changes no test notices in the same file ---\n" + "\n".join(lines[:MOST_FINDINGS * 2]) + "\n"
+        "Each is its own finding, settled the same way. A test that checks what those lines decide, written now, "
+        "settles them too, and the harness closes each it settles without another fix stage.\n"
+    )
+
+
+def what_settles_it(defect: Any, others: Any = ()) -> str:
+    """What the fixer of a finding is told settles it, and the other open findings in its file; "" for any other defect."""
+    if not is_a_finding(defect):
+        return ""
+    return _the_others_in_its_file(defect, others) + (
         "--- What settles this finding ---\n"
         "The product is not wrong here: its tests are too weak to notice the change described "
         "above. Add or strengthen a unit test in the product's own unit tests - not the locked "

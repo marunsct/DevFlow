@@ -1803,9 +1803,24 @@ def _the_same_call_answered_the_same(messages: list[Any]) -> tuple[str, int] | N
         if call != calls[-1]:
             break
         running += 1
-    if running < SAME_CALL_SAME_ANSWER_RUNNING:
+    # The same reply of several calls, sent again: compared reply by reply, since call by call a pair repeated
+    # (A, B, A, B, ...) never runs past one. Measured on one run: a fix stage sent the same two searches seven times
+    # in a row and was never told.
+    replies: list[tuple[tuple[str, str, str], ...]] = []
+    for message in messages:
+        made = [(str((c or {}).get("name") or ""), json.dumps((c or {}).get("args") or {}, sort_keys=True, default=str),
+                 answers.get(str((c or {}).get("id") or ""), "")) for c in getattr(message, "tool_calls", None) or ()]
+        if made and all(name and str((c or {}).get("id") or "") in answers
+                        for (name, _, _), c in zip(made, getattr(message, "tool_calls", None) or ())):
+            replies.append(tuple(sorted(made)))
+    alike = 0
+    for reply in reversed(replies):
+        if not replies or reply != replies[-1] or len(reply) < 2:
+            break
+        alike += 1
+    if max(running, alike) < SAME_CALL_SAME_ANSWER_RUNNING:
         return None
-    return calls[-1][0], running
+    return (calls[-1][0], running) if running >= alike else (replies[-1][-1][0], alike)
 
 
 def stable_tools_notice(withheld: set[str]) -> str:

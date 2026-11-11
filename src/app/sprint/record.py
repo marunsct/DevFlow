@@ -302,9 +302,12 @@ def fixes_to_keep(
                 continue
             named = [str(f) for f in row.get("files") or [] if str(f).strip()]
             if files or role:
-                if named:
-                    if not any(_the_same_file(mine, theirs) for mine in files or () for theirs in named):
+                if named and files:
+                    if not any(_the_same_file(mine, theirs) for mine in files for theirs in named):
                         continue
+                # A request that names no files - a page check's, say - is shown its role's fixes whatever files they
+                # named. Measured on one run: a fix moved an empty-state message out of the list for one test; the
+                # fixer of the page's list-structure check, told nothing of it, moved it back, and the test failed again.
                 elif not role or str(row.get("owner") or "") != role:
                     continue
             description = " ".join(str(row.get("description") or "").split())[:220]

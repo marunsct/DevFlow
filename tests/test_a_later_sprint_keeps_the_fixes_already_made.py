@@ -142,3 +142,19 @@ class TestWhatAReviewIsTold:
 
         for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
             assert not re.search(rf"\b{re.escape(word)}\b", text), word
+
+
+def test_a_request_naming_no_files_is_shown_its_role_s_fixes_whatever_files_they_named():
+    """Measured on one run: a fix moved an empty-state message out of the list for one test; the fixer of the page's
+    list-structure check, which names no files, was told nothing of it, moved it back, and the test failed again."""
+    from app.sprint.record import fixes_to_keep
+
+    attempts = [{"defect_log": [
+        {"state": "fixed", "owner": "ui_ux", "files": ["web/app.js"],
+         "description": "[AC-7] An empty list shows no entries", "resolution": "the empty-state message is a paragraph, not a list item"},
+        {"state": "fixed", "owner": "backend", "files": ["web/server.js"], "description": "A route answers 500"},
+    ]}]
+    kept = fixes_to_keep(attempts, files=[], role="ui_ux")
+    assert kept == ["[AC-7] An empty list shows no entries - fixed: the empty-state message is a paragraph, not a list item"]
+    # With files named, a fix in other files is still not shown.
+    assert fixes_to_keep(attempts, files=["web/styles.css"], role="ui_ux") == []

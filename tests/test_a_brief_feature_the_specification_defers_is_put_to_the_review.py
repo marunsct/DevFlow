@@ -120,3 +120,16 @@ def test_a_signature_s_parameters_in_code_are_no_features():
     found = [feature for feature, _, _ in brief_features_the_text_defers(brief, spec)]
     assert "text" not in found and "limit" not in found and "suffix" not in found
     assert "reminders" in found  # a feature in prose is still checked
+
+
+def test_an_extension_of_a_feature_the_specification_specifies_is_not_the_feature_deferred():
+    """Measured on three runs in one day: "password reset", "search beyond tag filtering" and "item descriptions" were
+    each taken to defer the brief's feature, which the specification's own criteria specified."""
+    from app.analysis.integration_checks import brief_features_the_text_defers
+
+    brief = "# Notes\n\n- Sign up with a username and a password, tags and reminders.\n"
+    spec = ("## Acceptance criteria\n- AC-1 A person signs up with a username and a password.\n"
+            "- AC-2 Each note carries tags.\n"
+            "Deferred: password reset or account recovery, reminders.\n")
+    found = [feature for feature, _, _ in brief_features_the_text_defers(brief, spec)]
+    assert found == ["reminders"]

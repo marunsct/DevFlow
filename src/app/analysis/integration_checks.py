@@ -5880,6 +5880,12 @@ def brief_features_the_text_defers(brief: str, text: str) -> list[tuple[str, str
                 if len(key) >= 4 and key not in actions and key not in required:
                     required[key] = line
     found: list[tuple[str, str, str]] = []
+    # A feature the text also specifies is not deferred: what a deferral line names beside it is an extension of it.
+    # Measured on three runs in one day, every finding was of this kind - "password reset" for sign-up with a
+    # password, "search beyond tag filtering" for filtering, "item descriptions" for items - each feature specified by
+    # the specification's own criteria, and each sent an approved or nearly approved specification back. The case
+    # the check was built for named its feature nowhere else.
+    specified: set[str] = set()
     under_a_deferral = False
     for raw in _the_lines_of(text):
         line = raw.strip()
@@ -5888,14 +5894,17 @@ def brief_features_the_text_defers(brief: str, text: str) -> list[tuple[str, str
             continue
         if not line:
             continue
-        parts = _what_a_line_defers(line) + ([line] if under_a_deferral else [])
+        deferred_parts = _what_a_line_defers(line)
+        parts = deferred_parts + ([line] if under_a_deferral else [])
+        if not parts:
+            specified.update(word for word in required if names_the_word(word, line))
         for word, brief_line in required.items():
             if any(word == done for done, _, _ in found):
                 continue
             naming = next((part for part in parts if names_the_word(word, part)), None)
             if naming is not None:
                 found.append((word, brief_line, _the_sentence_of(line, naming)))
-    return found
+    return [entry for entry in found if entry[0] not in specified]
 
 
 def _the_lines_of(text: str) -> list[str]:

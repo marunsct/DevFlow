@@ -969,10 +969,13 @@ def readiness_problems(
     carried = [str(item) for item in carried_forward or () if str(item).strip()]
     decided = [str(d) for d in getattr(milestone, "carried_forward_decisions", None) or [] if str(d).strip()]
     if carried and len(decided) < len(carried):
+        # Measured on three runs: told only the two counts, the lead returned the same short list three times and the
+        # plan went out with the problem noted. The items, numbered, are what it answers line by line.
+        listed = "\n".join(f"  {number}. {item[:200]}" for number, item in enumerate(carried, 1))
         problems.append(
             f"{len(carried)} item(s) were carried forward from earlier sprints and "
-            f"`carried_forward_decisions` records {len(decided)}. Give one line per item: "
-            "the work order that takes it, or why it is declined."
+            f"`carried_forward_decisions` records {len(decided)}. Give one line per item, starting with its "
+            "number: the work order that takes it, or why it is declined. The items:\n" + listed
         )
     untested = declined_because_untested(decided) if carried else []
     if untested:

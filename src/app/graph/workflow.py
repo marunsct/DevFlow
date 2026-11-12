@@ -642,6 +642,8 @@ class WorkflowGraphState(TypedDict, total=False):
     #: "cannot pass" past the harness's own re-measure and its cap. Named in
     #: the release's `completion_gaps` (Initiative J.2).
     suite_reclassified_tests: list[str]
+    #: How many causes those reclassifications were - one broken helper is one - which the cap counts.
+    suite_reclassified_causes: int
     release_attempts: int
     # The last rung: a stuck sprint's decision. See `app.graph.escalation`.
     escalation: dict[str, Any] | None
@@ -12317,7 +12319,9 @@ def build_workflow_graph(
         # And the cap: this run may reclassify this many locked tests, period.
         # Past it the tests stay as they are and the run carries them to its
         # release rather than rewriting what it is checked against.
-        named, past_the_cap = acceptance_nodes.within_the_cap(state, named)
+        # One cause, one place under the cap: rulings that blame one helper of the suite are grouped.
+        named, past_the_cap, causes = acceptance_nodes.within_the_cap_by_cause(
+            state, acceptance_nodes.by_shared_cause(named, code))
         if past_the_cap:
             logger.warning(
                 "Disputed test(s) %s are past this run's reclassification cap; they stay as they are",
@@ -12362,6 +12366,7 @@ def build_workflow_graph(
             logger.warning("The QA lead / harness identifies %d locked test(s)/missing criteria cannot pass; reopening the suite", len(to_repair))
             reopened = reopen_the_suite_for(
                 state, to_repair, return_to=returns_to or SPRINT_REPLAN, reclassifying=True, model=judgement_model,
+                causes=causes + len(missing),
             )
             if reopened is not None:
                 _the_outcome(True)

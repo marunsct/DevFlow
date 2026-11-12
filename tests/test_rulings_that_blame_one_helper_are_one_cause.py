@@ -39,3 +39,28 @@ def test_rulings_blaming_one_fixture_are_grouped_and_others_stand_alone():
 def test_a_name_the_suite_does_not_define_is_no_shared_cause():
     rulings = ["`test_a` cannot pass: product_store is wrong", "`test_b` cannot pass: product_store is wrong"]
     assert by_shared_cause(rulings, SUITE) == [[rulings[0]], [rulings[1]]]
+
+
+def test_the_cap_counts_causes_so_a_shared_fixture_takes_one_place(tmp_path):
+    from types import SimpleNamespace
+
+    from app.graph.acceptance_nodes import reclassification_room, within_the_cap_by_cause
+
+    state = {"repository": SimpleNamespace(root_path=str(tmp_path)), "suite_reclassified_tests": []}
+    groups = [["a1", "a2", "a3", "a4"], ["b"], ["c"]]
+    kept, past, causes = within_the_cap_by_cause(state, groups)
+    # The floor is two causes: the shared fixture's four rulings and one more; the third cause waits.
+    assert kept == ["a1", "a2", "a3", "a4", "b"] and past == ["c"] and causes == 2
+    assert reclassification_room({**state, "suite_reclassified_causes": 2,
+                                  "suite_reclassified_tests": ["a1", "a2", "a3", "a4", "b"]}) == 0
+    assert reclassification_room({**state, "suite_reclassified_causes": 1,
+                                  "suite_reclassified_tests": ["a1", "a2", "a3", "a4"]}) == 1
+
+
+def test_the_dispute_groups_rulings_before_the_cap():
+    import inspect
+
+    from app.graph import workflow
+    source = inspect.getsource(workflow)
+    assert "acceptance_nodes.within_the_cap_by_cause(" in source and "acceptance_nodes.by_shared_cause(named, code)" in source
+    assert "causes=causes + len(missing)" in source

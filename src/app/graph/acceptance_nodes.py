@@ -1801,7 +1801,9 @@ def most_reclassifications(repo_root: Any) -> int:
 
 def reclassification_room(state: Any) -> int:
     """How many more locked tests this run's disputes may reclassify."""
-    done = len(set(state.get("suite_reclassified_tests") or []))
+    # Causes when the dispute counted them (one broken helper is one), tests before that.
+    causes = state.get("suite_reclassified_causes")
+    done = int(causes) if causes is not None else len(set(state.get("suite_reclassified_tests") or []))
     return max(0, most_reclassifications(_root(state)) - done)
 
 
@@ -1809,6 +1811,23 @@ def reclassification_room(state: Any) -> int:
 _A_SUITE_DEFINITION = r"""(?:^|\n)[ \t]*(?:@pytest\.fixture[^\n]*\n[ \t]*)?(?:async\s+)?(?:def|function)\s+{name}\s*\(|(?:const|let|var)\s+{name}\s*=|^\s*{name}\s*=\s*\w"""
 #: A name a ruling quotes, in backticks or as code: `_compute_words`, auth_token.
 _A_QUOTED_NAME = re.compile(r"`([A-Za-z_][A-Za-z0-9_]{2,})`|\b([a-z_][a-z0-9_]*_[a-z0-9_]+)\b")
+
+
+def within_the_cap_by_cause(state: Any, groups: list[list[str]]) -> tuple[list[str], list[str], int]:
+    """(the rulings a reclassification may still cover, the ones past the cap, how many causes were kept).
+
+    As `within_the_cap`, but each group of `by_shared_cause` takes one place: a helper that broke six tests is one
+    repair, not six.
+    """
+    room = reclassification_room(state)
+    kept, past, causes = [], [], 0
+    for group in groups:
+        if causes < room:
+            kept.extend(group)
+            causes += 1
+        else:
+            past.extend(group)
+    return kept, past, causes
 
 
 def by_shared_cause(rulings: list[str], suite_text: str) -> list[list[str]]:
@@ -2032,8 +2051,7 @@ def _rewritten_in_one_call_each(state: Any, broken: list[str], model: Any) -> bo
 
 
 def reopen_the_suite_for(
-    state: Any, broken: list[str], return_to: str = "test_and_triage", *, reclassifying: bool = False, model: Any = None
-) -> dict[str, Any] | None:
+    state: Any, broken: list[str], return_to: str = "test_and_triage", *, reclassifying: bool = False, model: Any = None, causes: int | None = None) -> dict[str, Any] | None:
     """Send tests that can never pass back to QA, then back to `return_to`; None when spent.
 
     `reclassifying` marks the reopen a dispute's - a judgement about what the
@@ -2063,10 +2081,12 @@ def reopen_the_suite_for(
         _suite.repairing(state["repository"].root_path, [name for item in broken for name in _which_tests(state, item)])
     except Exception:  # noqa: BLE001 - the repair goes on without its guard
         logger.debug("Could not record the tests under repair", exc_info=True)
+    before = state.get("suite_reclassified_causes")
+    before = int(before) if before is not None else len(set(state.get("suite_reclassified_tests") or []))
     reclassified = (
         {"suite_reclassified_tests": sorted({
             *(state.get("suite_reclassified_tests") or []), *map(_which_test, broken),
-        })}
+        }), "suite_reclassified_causes": before + (causes if causes is not None else len(set(map(_which_test, broken))))}
         if reclassifying
         else {}
     )

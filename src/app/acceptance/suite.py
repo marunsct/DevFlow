@@ -1696,6 +1696,38 @@ _A_FILTER_THEN_A_TEXT = re.compile(
 _FOUND_NOTHING = re.compile(r"element\(s\) not found|resolved to 0 elements|Expected: visible", re.I)
 
 
+#: A record filtered by a pattern anchored to its whole text: `filter({ hasText: /^Title$/ })`.
+_A_WHOLE_TEXT_FILTER = re.compile(r"""filter\(\s*\{\s*hasText:\s*/\^(?P<text>[^/\n]+?)\$/\w*\s*\}\s*\)""")
+
+
+def tests_that_match_a_record_by_its_whole_text(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
+    """Each failing page test that filtered records by `/^text$/`, found none, while the page showed that text.
+
+    `hasText` reads a record's whole text - its controls' labels too ("Done", "Delete") - so a pattern anchored at
+    both ends matches no record that holds a control, on every product. Measured on one run: a test rewritten by a
+    dispute used `/^Filter test active$/`, failed on a page showing that record, and the run went on to fix the
+    product. Only a test whose failure shows that locator and a page that shows the text.
+    """
+    tests = list(getattr(getattr(result, "report", None), "tests", None) or [])
+    found, seen = [], set()
+    for test in tests:
+        if test.outcome != "failed" or str(test.name) in seen:
+            continue
+        message = str(test.message or "")
+        hit = _A_WHOLE_TEXT_FILTER.search(message)
+        page = message.split(_PAGE_MARK, 1)[1] if _PAGE_MARK in message else ""
+        if hit is None or hit.group("text") not in page:
+            continue
+        seen.add(str(test.name))
+        found.append(
+            f"`{test.name}` cannot pass whatever is built: it finds a record with `/^{hit.group('text')}$/`, which must "
+            "match the record's whole text - its controls' names too - so it matches none, though the page shows "
+            f"'{hit.group('text')}'. Match the text without anchoring it to the whole record. Fix the test so that it "
+            "can pass once the product works."
+        )
+    return found
+
+
 def tests_that_follow_a_record_by_the_text_they_change(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Each failing page test that held a record by one text, typed another into it, and looked for the new one inside.
 
@@ -5399,6 +5431,8 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *_by(checks, "tests_that_broke_themselves", tests_that_broke_themselves(repo_root, result)),
         *_by(checks, "tests_that_follow_a_record_by_the_text_they_change",
              tests_that_follow_a_record_by_the_text_they_change(repo_root, result)),
+        *_by(checks, "tests_that_match_a_record_by_its_whole_text",
+             tests_that_match_a_record_by_its_whole_text(repo_root, result)),
         *_by(checks, "tests_broken_by_their_own_setup", tests_broken_by_their_own_setup(repo_root, result)),
         *_by(checks, "tests_that_need_what_they_never_made", tests_that_need_what_they_never_made(repo_root, result)),
         *_by(checks, "tests_that_assert_a_kept_file_s_text", tests_that_assert_a_kept_file_s_text(repo_root, result)),

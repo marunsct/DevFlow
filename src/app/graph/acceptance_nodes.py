@@ -1805,6 +1805,36 @@ def reclassification_room(state: Any) -> int:
     return max(0, most_reclassifications(_root(state)) - done)
 
 
+#: A name defined in a suite as something its tests call or receive: a function, a fixture, a constant holding one.
+_A_SUITE_DEFINITION = r"""(?:^|\n)[ \t]*(?:@pytest\.fixture[^\n]*\n[ \t]*)?(?:async\s+)?(?:def|function)\s+{name}\s*\(|(?:const|let|var)\s+{name}\s*=|^\s*{name}\s*=\s*\w"""
+#: A name a ruling quotes, in backticks or as code: `_compute_words`, auth_token.
+_A_QUOTED_NAME = re.compile(r"`([A-Za-z_][A-Za-z0-9_]{2,})`|\b([a-z_][a-z0-9_]*_[a-z0-9_]+)\b")
+
+
+def by_shared_cause(rulings: list[str], suite_text: str) -> list[list[str]]:
+    """The rulings grouped by one helper of the suite they all blame; a ruling naming none is a group of its own.
+
+    A helper is a name the suite defines that is not a test - a function, a fixture - and that the ruling quotes.
+    Measured on two runs: one broken helper (`_compute_words` lost its `+`) and one fixture (`auth_token`, copied with
+    the same username) each failed many tests, the cap counted every test, and right criteria were deferred. Grouped,
+    one cause is one repair. Never raises; on any doubt each ruling stands alone.
+    """
+    try:
+        groups: dict[str, list[str]] = {}
+        alone: list[list[str]] = []
+        for ruling in rulings:
+            named = [a or b for a, b in _A_QUOTED_NAME.findall(str(ruling))]
+            helper = next((n for n in dict.fromkeys(named) if not n.startswith("test")
+                           and re.search(_A_SUITE_DEFINITION.format(name=re.escape(n)), suite_text, re.M)), None)
+            if helper is None:
+                alone.append([ruling])
+            else:
+                groups.setdefault(helper, []).append(ruling)
+        return [*groups.values(), *alone]
+    except Exception:  # noqa: BLE001 - each ruling its own cause, as before
+        return [[ruling] for ruling in rulings]
+
+
 def within_the_cap(state: Any, names: list[str]) -> tuple[list[str], list[str]]:
     """(the disputed tests a reclassification may still cover, the ones past the cap).
 

@@ -120,7 +120,8 @@ def test_they_become_one_blocking_defect_ahead_of_the_criteria(tmp_path) -> None
 
     assert defects[0].severity == "blocking"
     assert "loadTasks(...).then is not a function" in defects[0].actual_behavior
-    assert [d.description[:5] for d in defects[1:]] == ["[AC-1", "[AC-2"]
+    # An uncaught error leaves the page dead: the one cause alone, as for a product that never starts (LF.859).
+    assert [d.description[:5] for d in defects[1:]] == []
     # A round that already reported it is not told twice.
     reported = [SimpleNamespace(description="Page fails: uncaught error: loadTasks(...).then is not a function")]
     assert not [d for d in nodes.failing_due_defects(state, reported) if "by itself" in d.description]
@@ -228,7 +229,7 @@ def test_each_criterion_s_defect_carries_what_the_page_reported_while_loading(tm
     """Measured on one run: the page's own script answered 404, every criterion timed out waiting for a request it
     could never send, and each fixer - shown only the timeouts - spent 19 calls without the cause."""
     pack = _locked(tmp_path)
-    suite.run(tmp_path, runner=_runner(tmp_path, pack, ["HTTP 404 for http://127.0.0.1:9/src/main.js"]))
+    suite.run(tmp_path, runner=_runner(tmp_path, pack, ["HTTP 404 for http://127.0.0.1:9/favicon.ico"]))
     state = {
         "repository": SimpleNamespace(root_path=str(tmp_path)),
         "sprint_plan": SimpleNamespace(sprints=[SimpleNamespace(criteria=["AC-1", "AC-2"])]),
@@ -239,4 +240,19 @@ def test_each_criterion_s_defect_carries_what_the_page_reported_while_loading(tm
 
     for defect in defects[1:]:
         assert nodes.THE_PAGE_REPORTED_WHILE_LOADING in defect.actual_behavior
-        assert "HTTP 404 for http://127.0.0.1:9/src/main.js" in defect.actual_behavior
+        assert "HTTP 404 for http://127.0.0.1:9/favicon.ico" in defect.actual_behavior
+
+
+
+def test_a_page_whose_script_did_not_load_is_raised_alone(tmp_path) -> None:
+    """Measured on one run: the page's script answered 404, all 17 criteria were raised, and each got a fixer of its
+    own shown only timeouts. A dead page is one cause, raised alone, as a product that never starts is."""
+    pack = _locked(tmp_path)
+    suite.run(tmp_path, runner=_runner(tmp_path, pack, ["HTTP 404 for http://127.0.0.1:9/src/main.js"]))
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "sprint_plan": SimpleNamespace(sprints=[SimpleNamespace(criteria=["AC-1", "AC-2"])]),
+        "current_sprint_index": 0,
+    }
+    defects = nodes.failing_due_defects(state, [])
+    assert len(defects) == 1 and "by itself" in defects[0].description

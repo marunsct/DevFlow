@@ -1651,6 +1651,11 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
         failing = [entry for entry in failing if not all(
             suite._THE_SERVICE_WAS_GONE.search(t.get("message") or "")
             for t in (entry.get("tests") or []) if t.get("outcome") == "failed")]
+    # A page whose own script did not load, or threw while loading, is dead: every criterion on it fails for that one
+    # cause. Measured on one run: the page's script answered 404, all 17 criteria were raised, and each got a fixer of
+    # its own (19 calls each) shown only timeouts. As with a product that never starts, the round raises the one cause
+    # alone; the next round measures again and raises whatever still fails.
+    page_is_dead = any(_THE_PAGE_DID_NOT_RUN.search(str(p)) for p in problems)
     if problems:
         defects.append(ReportedDefect(
             description="The product reports errors by itself while it loads, before any test touches it.",
@@ -1662,6 +1667,8 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             # Errors the page reports while it loads are the page's.
             owner=_owner_for(state, "page.load: " + "; ".join(str(p) for p in problems)),
         ))
+        if page_is_dead:
+            return [*installs, *defects]
     # From the whole run, kept as it ran: the saved output is its tail, and an early error was cut (LF.355).
     logged = str(saved.get("server_log") or "") or what_the_server_logged(str(saved.get("output") or ""))
     # A defect the round wrote itself about a failing criterion takes the place of the one below, so it carries this too.
@@ -1709,6 +1716,10 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             owner=_owner_for(state, detail),
         ))
     return [*installs, *defects]
+
+
+#: A load error that leaves the page without its script: the script itself failed to load, or threw while loading.
+_THE_PAGE_DID_NOT_RUN = re.compile(r"(?:HTTP 404|request failed|ERR_\w+)[^;]*\.(?:m?js|ts|tsx|jsx)\b|uncaught", re.I)
 
 
 #: Said before the page's own load errors, on each criterion's defect while they stand.

@@ -1402,6 +1402,10 @@ def unawaited_page_assertions(text: str) -> list[int]:
 
 TEST_SOURCE_BUGS = (
     r"\b(?:const|let|var)\s+\w+\s*=\s*\(\s*await\b[^;]*?\)\s*\.json\(\)\s*\.then\(",
+    # A field read off `json()` itself: `res.json().id`, `res.json()['id']`. It returns a promise - in Playwright and in
+    # fetch alike - so the field is undefined on every product. Measured on one run: `createResp.json().id` sent
+    # `DELETE /api/bookmarks/undefined`, the service rightly answered 422, and five locked tests went past the cap.
+    r"\.json\(\)\s*(?:\.\s*(?!then\b|catch\b|finally\b)[A-Za-z_$][\w$]*|\[)",
 )
 
 TEST_BUGS = (

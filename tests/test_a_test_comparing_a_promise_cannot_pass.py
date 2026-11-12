@@ -37,3 +37,31 @@ def test_a_promise_received_as_text_is_the_test_s_own_code(tmp_path):
 
 def test_a_value_the_product_gave_is_still_the_product_s(tmp_path):
     assert suite.tests_that_broke_themselves(_root(tmp_path), _result(PRODUCT)) == []
+
+
+def _root_with(tmp_path, body):
+    contract.write(tmp_path, pack_named("fullstack-page-fastapi"), "bookmarks", "Bookmarks")
+    (tmp_path / "bookmarks" / "acceptance").mkdir(parents=True)
+    (tmp_path / "bookmarks" / "acceptance" / "api.spec.js").write_text(
+        "test('[AC-13] deletes a bookmark', async ({ request }) => {\n" + body + "\n});\n")
+    return tmp_path
+
+
+def _a_failure():
+    return SimpleNamespace(ran=True, report=SimpleNamespace(found=True, tests=[SimpleNamespace(
+        name="[AC-13] deletes a bookmark", outcome="failed", message="Expected: 204\nReceived: 422")]))
+
+
+def test_a_field_read_off_json_itself_is_the_test_s_own_code(tmp_path):
+    """Measured on one run: `createResp.json().id` sent `DELETE /api/bookmarks/undefined`, the service rightly
+    answered 422, and five locked tests went past the reclassification cap."""
+    root = _root_with(tmp_path, "  const id = createResp.json().id;\n  await request.delete(`/api/bookmarks/${id}`);")
+    [found] = suite.tests_that_broke_themselves(root, _a_failure())
+    assert "createResp.json().id" in found and "await it" in found
+
+
+def test_an_awaited_json_or_a_then_is_left_alone(tmp_path):
+    for i, body in enumerate(["  const id = (await createResp.json()).id;",
+                              "  const body = await createResp.json();\n  const id = body.id;",
+                              "  const id = await createResp.json().then((b) => b.id);"]):
+        assert suite.tests_that_broke_themselves(_root_with(tmp_path / str(i), body), _a_failure()) == [], body

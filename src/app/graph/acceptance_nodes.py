@@ -1694,6 +1694,11 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
                 detail += f"\n{hidden}"
         hid = the_server_hid_the_cause([t.get("message") or "" for t in failed], logged, _root(state))
         detail += hid
+        # What the page reported while it loaded is likely why this criterion fails too: measured on one run, the
+        # page's own script answered 404, every criterion timed out waiting for a request it could never send, and the
+        # fixers of each criterion - shown only the timeouts - spent 19 calls each without the cause.
+        if problems:
+            detail += f"\n{THE_PAGE_REPORTED_WHILE_LOADING}" + "; ".join(str(p) for p in problems)[:600]
         defects.append(ReportedDefect(
             description=f"[{entry.get('id')}] {entry.get('text')} - the acceptance suite says this does not work yet.",
             severity="major",
@@ -1704,6 +1709,10 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             owner=_owner_for(state, detail),
         ))
     return [*installs, *defects]
+
+
+#: Said before the page's own load errors, on each criterion's defect while they stand.
+THE_PAGE_REPORTED_WHILE_LOADING = "While it loaded, before any test acted, the page itself reported: "
 
 
 def due_criteria_failing(state: Any) -> str:

@@ -222,3 +222,21 @@ def test_a_failing_test_carries_the_page_it_failed_on(tmp_path) -> None:
     }
     (defect,) = nodes.failing_due_defects(state, [])
     assert "The page when it failed:" in defect.actual_behavior and "checkbox [checked]" in defect.actual_behavior
+
+
+def test_each_criterion_s_defect_carries_what_the_page_reported_while_loading(tmp_path) -> None:
+    """Measured on one run: the page's own script answered 404, every criterion timed out waiting for a request it
+    could never send, and each fixer - shown only the timeouts - spent 19 calls without the cause."""
+    pack = _locked(tmp_path)
+    suite.run(tmp_path, runner=_runner(tmp_path, pack, ["HTTP 404 for http://127.0.0.1:9/src/main.js"]))
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "sprint_plan": SimpleNamespace(sprints=[SimpleNamespace(criteria=["AC-1", "AC-2"])]),
+        "current_sprint_index": 0,
+    }
+
+    defects = nodes.failing_due_defects(state, [])
+
+    for defect in defects[1:]:
+        assert nodes.THE_PAGE_REPORTED_WHILE_LOADING in defect.actual_behavior
+        assert "HTTP 404 for http://127.0.0.1:9/src/main.js" in defect.actual_behavior

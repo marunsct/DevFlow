@@ -2613,9 +2613,12 @@ def whitespace_tested_with_spaces_only(repo_root: str | Path) -> list[str]:
 
 #: What makes each kind of record in a page's sources, in markup, a script or a template: `<li>`, `createElement('li')`,
 #: `role="listitem"`; `<tr>`, `insertRow(`, `role="row"`.
+#: A role given in a script as well as in markup: `setAttribute('role', 'listitem')`, `el.role = 'listitem'`,
+#: `{ role: 'listitem' }`. Measured on one run: a page set its records' role with `setAttribute`, the check saw no list
+#: item, and a right page's sprint was planned again three times.
 _MADE_BY = {
-    "listitem": re.compile(r"""<li\b|['"`]li['"`]|role\s*=\s*['"]listitem['"]""", re.I),
-    "row": re.compile(r"""<tr\b|['"`]tr['"`]|\binsertRow\s*\(|role\s*=\s*['"]row['"]""", re.I),
+    "listitem": re.compile(r"""<li\b|['"`]li['"`]|role['"`]?\s*[=:,]\s*['"`]listitem['"`]""", re.I),
+    "row": re.compile(r"""<tr\b|['"`]tr['"`]|\binsertRow\s*\(|role['"`]?\s*[=:,]\s*['"`]row['"`]""", re.I),
 }
 #: Sources a page is made from.
 _PAGE_SOURCES = frozenset({".html", ".htm", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte", ".py",

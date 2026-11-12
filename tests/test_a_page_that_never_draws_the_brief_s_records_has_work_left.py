@@ -83,3 +83,15 @@ def test_the_sprint_is_not_closed_as_already_done(tmp_path, monkeypatch):
              "current_sprint_index": 0}
     assert acceptance_nodes.sprint_already_done(state) == ""
     assert ran == [], "decided before measuring anything"
+
+
+@pytest.mark.parametrize("script", [
+    "const item = document.createElement('div');\nitem.setAttribute('role', 'listitem');\n",
+    "const item = document.createElement('div');\nitem.role = 'listitem';\n",
+    "h('div', { role: 'listitem' }, title);\n",
+])
+def test_a_role_given_from_a_script_is_a_list_item(tmp_path, script):
+    """Measured on one run: the page set each record's role with `setAttribute`; the check saw no list item and a
+    right page's sprint was planned again three times."""
+    _product(tmp_path, script)
+    assert suite.records_the_page_never_makes(tmp_path, BRIEF) == []

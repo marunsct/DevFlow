@@ -1689,6 +1689,48 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
     return broken
 
 
+#: A failed locator that filters records by one text and looks inside for another: `filter({ hasText: 'Old' }).getByText('New')`.
+_A_FILTER_THEN_A_TEXT = re.compile(
+    r"""filter\(\s*\{\s*hasText:\s*(['"`])(?P<held>[^'"`]+)\1\s*\}\s*\)\s*\.getByText\(\s*(['"`])(?P<sought>[^'"`]+)\3""")
+#: The runner's word that the locator found nothing.
+_FOUND_NOTHING = re.compile(r"element\(s\) not found|resolved to 0 elements|Expected: visible", re.I)
+
+
+def tests_that_follow_a_record_by_the_text_they_change(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
+    """Each failing page test that held a record by one text, typed another into it, and looked for the new one inside.
+
+    A locator is read again each time it is used, so once the edit lands no record has the old text and the lookup
+    finds nothing - on every product that edits as it should. Measured on one run: three locked edit tests held
+    `filter({ hasText: 'Old title' })` and then sought 'New title' inside it; fixers spent nine fix stages on a right
+    product. Only a test whose failure shows that very locator and whose own code typed the text it sought.
+    """
+    tests = list(getattr(getattr(result, "report", None), "tests", None) or [])
+    if not tests:
+        return []
+    sources = _the_tests_sources(repo_root)
+    found, seen = [], set()
+    for test in tests:
+        if test.outcome != "failed" or str(test.name) in seen:
+            continue
+        seen.add(str(test.name))
+        message = str(test.message or "")
+        hit = _A_FILTER_THEN_A_TEXT.search(message)
+        if hit is None or not _FOUND_NOTHING.search(message):
+            continue
+        held, sought = hit.group("held"), hit.group("sought")
+        body = next((b for name, (b, _) in sources.items() if name and name in str(test.name or "")), "")
+        typed = re.search(rf"""\.fill\(\s*(['"`]){re.escape(sought)}\1""", body)
+        if held == sought or held in sought or typed is None:
+            continue
+        found.append(
+            f"`{test.name}` cannot pass whatever is built: it holds the record by `filter({{ hasText: '{held}' }})`, "
+            f"types '{sought}' into it, then looks for '{sought}' inside that same locator - which is read again and, "
+            f"once the change lands, finds no record with '{held}'. Find the record again by '{sought}' after the "
+            "change. Fix the test so that it can pass once the product works."
+        )
+    return found
+
+
 #: A test's own setup calling something with arguments it does not take, in each runtime's words.
 _A_CALL_IT_DOES_NOT_TAKE = re.compile(
     r"(?P<callee>[A-Za-z_$][\w$.]*)\(\) (?:got an unexpected keyword argument|takes \d+ positional|"
@@ -5355,6 +5397,8 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
     measured = [
         *_by(checks, "spec_dry_run", spec_dry_run.findings(repo_root)),
         *_by(checks, "tests_that_broke_themselves", tests_that_broke_themselves(repo_root, result)),
+        *_by(checks, "tests_that_follow_a_record_by_the_text_they_change",
+             tests_that_follow_a_record_by_the_text_they_change(repo_root, result)),
         *_by(checks, "tests_broken_by_their_own_setup", tests_broken_by_their_own_setup(repo_root, result)),
         *_by(checks, "tests_that_need_what_they_never_made", tests_that_need_what_they_never_made(repo_root, result)),
         *_by(checks, "tests_that_assert_a_kept_file_s_text", tests_that_assert_a_kept_file_s_text(repo_root, result)),

@@ -408,11 +408,14 @@ def _test_bodies(repo_root: str | Path) -> dict[str, str]:
     return found
 
 
-def tests_left_unrepaired(repo_root: str | Path) -> list[str]:
+def tests_left_unrepaired(repo_root: str | Path, result: Any = None) -> list[str]:
     """The tests a repair was sent for whose code it has not changed, as one problem; [] when none or no repair is open.
 
     Measured on one run: a repair sent for three tests a dispute ruled wrong changed one file and left two of the
     three as they were; locked again, the ruled-wrong test failed the rest of the run and a right product was escalated.
+
+    A test `result` shows passing is repaired whatever its own code: measured on one run, the fault was a shared
+    fixture, the repair fixed the fixture, the three tests passed - and were sent back twice as "not changed".
     """
     state = _state(repo_root)
     sent = state.get("repair_bodies") or {}
@@ -422,8 +425,10 @@ def tests_left_unrepaired(repo_root: str | Path) -> list[str]:
     # on purpose, and is judged by that claim, not here.
     vouched = " ".join(str(claim) for claim in state.get(PRODUCT_AT_FAULT_CLAIMS) or ())
     now = _test_bodies(repo_root)
+    passing = _passing_names(result)
     left = [name for name, body in sent.items()
-            if name in now and now[name].strip() == str(body).strip() and name not in vouched]
+            if name in now and now[name].strip() == str(body).strip() and name not in vouched
+            and not _is_among(name, passing)]
     if not left:
         return []
     return [
@@ -431,6 +436,19 @@ def tests_left_unrepaired(repo_root: str | Path) -> list[str]:
         + ("it" if len(left) == 1 else "them") + ": each is exactly as it was locked. Repair each as its finding says - "
         "the fault named is in that test's own code."
     ]
+
+
+def _passing_names(result: Any) -> list[str]:
+    """The names a measurement shows passing; [] when there is none. Never raises."""
+    try:
+        return [str(test.name) for test in result.report.tests if test.outcome == "passed"]
+    except Exception:  # noqa: BLE001 - no measurement, nothing known to pass
+        return []
+
+
+def _is_among(name: str, reported: list[str]) -> bool:
+    """Whether a test known by its own name is one of the runner's reported names (`file::name`, `a.b.name`, `x › name`)."""
+    return any(r == name or r.endswith((f"::{name}", f".{name}", f" › {name}", f" {name}")) for r in reported)
 
 
 def repairing(repo_root: str | Path, tests: list[str]) -> None:

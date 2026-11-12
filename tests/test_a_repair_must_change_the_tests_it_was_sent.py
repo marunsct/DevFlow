@@ -50,7 +50,7 @@ def test_the_review_of_a_repair_checks_it():
 
     from app.graph import acceptance_nodes
 
-    assert "tests_left_unrepaired(root)" in inspect.getsource(acceptance_nodes.acceptance_review)
+    assert "tests_left_unrepaired(root, result)" in inspect.getsource(acceptance_nodes.acceptance_review)
 
 
 def test_a_test_qa_vouches_for_is_not_named(tmp_path, monkeypatch):
@@ -66,3 +66,21 @@ def test_the_claims_key_is_the_one_product_at_fault_keeps():
     from app.graph import product_at_fault
 
     assert product_at_fault._CLAIMS == suite.PRODUCT_AT_FAULT_CLAIMS
+
+
+def test_a_test_that_now_passes_is_repaired_though_its_code_is_the_same(tmp_path, monkeypatch):
+    """Measured on one run: the fault was a shared fixture; the repair fixed the fixture and the three tests it was
+    sent for passed - and the suite went back twice saying they had not been changed."""
+    from types import SimpleNamespace
+
+    from app.acceptance import junit
+
+    _suite(tmp_path, monkeypatch)
+    suite.repairing(tmp_path, ["test_ac7_survives_restart", "test_ac21_invalid"])
+    result = SimpleNamespace(report=SimpleNamespace(tests=[
+        junit.TestResult(name="acceptance/test_api.py::test_ac7_survives_restart", outcome="passed"),
+        junit.TestResult(name="acceptance.test_api.test_ac21_invalid", outcome="failed", message="m"),
+    ]))
+
+    [left] = suite.tests_left_unrepaired(tmp_path, result)
+    assert "test_ac21_invalid" in left and "test_ac7_survives_restart" not in left

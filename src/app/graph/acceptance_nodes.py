@@ -708,7 +708,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     cannot = suite.findings_that_reopen(root, result, cannot_pass)
     # A repair that left a test it was sent for exactly as it was goes back with the cannot-pass findings (and once
     # at the review's limit, `cannot_pass_to_lock`).
-    cannot = [*cannot, *suite.tests_left_unrepaired(root)]
+    cannot = [*cannot, *suite.tests_left_unrepaired(root, result)]
     # Each of the checks inside `tests_that_cannot_pass` recorded under its own name (HR2.Q.1); a finding none of
     # them raised (a repair left unrepaired) under the bucket's.
     named = getattr(cannot_pass, "checks", {}) or {}

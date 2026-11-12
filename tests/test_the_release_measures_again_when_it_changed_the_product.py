@@ -49,7 +49,7 @@ def test_a_changed_product_that_still_passes_ships_without_a_gap(monkeypatch, tm
 
 def test_the_release_measures_again_after_its_clean_ups() -> None:
     source = inspect.getsource(delivery.release)
-    assert source.index("_clear_the_throwaways(root)") < source.index("_measured_again_if_it_changed(root)") \
+    assert source.index("_clear_the_throwaways(root)") < source.index("_measured_again_if_it_changed(root, left_out)") \
         < source.index("release_outcome = release_files.write(root)")
 
 

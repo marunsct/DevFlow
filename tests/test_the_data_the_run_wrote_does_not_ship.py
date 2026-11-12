@@ -79,5 +79,5 @@ def test_a_database_the_file_plan_lists_stays(tmp_path) -> None:
 
 def test_the_release_clears_the_data_again_after_measuring_again() -> None:
     source = inspect.getsource(delivery.release)
-    measured = source.index("_measured_again_if_it_changed(root)")
+    measured = source.index("_measured_again_if_it_changed(root, left_out)")
     assert source.index("remove_the_run_s_own_data", measured) > measured

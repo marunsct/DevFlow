@@ -252,8 +252,10 @@ def _the_ways_a_file_is_named(relative: str) -> list[str]:
     if path.suffix == ".py":
         module = ".".join(path.with_suffix("").parts)
         names += [module, f"from .{path.stem} ", f"from . import {path.stem}", f"import {path.stem}"]
-        if path.stem == "__init__":
-            return []  # a package marker is loaded by its folder's name
+        if path.stem in ("__init__", "__main__"):
+            # A package marker is loaded by its folder's name, and `__main__` by `python -m` itself - no file names
+            # it. Measured on one run: the release removed an untouched `__main__.py`, and `python -m` failed 19 of 19.
+            return []
     else:
         names += [f"./{path.stem}'", f'./{path.stem}"', f"./{path.name}"]
     return names
@@ -302,6 +304,34 @@ def remove_untouched_templates_nothing_loads(repo_root: str | Path) -> list[str]
         return removed
     except Exception:  # noqa: BLE001 - a template left behind is untidy, not wrong
         logger.debug("Could not look for untouched templates", exc_info=True)
+        return []
+
+
+def put_back_templates(repo_root: str | Path, removed: list[str]) -> list[str]:
+    """Write back the pack templates `remove_untouched_templates_nothing_loads` removed (paths from the repo root).
+
+    A template left behind is untidy, never wrong; a removal that broke the product is undone. Never raises.
+    """
+    try:
+        from app.stacks import contract
+
+        root = Path(repo_root)
+        found = contract.the_pack(root)
+        if not found or not removed:
+            return []
+        pack, record = found
+        project = str((record or {}).get("project") or "")
+        templates = pack.render(project, str((record or {}).get("title") or project))
+        put: list[str] = []
+        for relative, text in templates.items():
+            path = (root / project / relative) if project else (root / relative)
+            if path.relative_to(root).as_posix() in removed and not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+                put.append(path.relative_to(root).as_posix())
+        return put
+    except Exception:  # noqa: BLE001 - the gap stands as measured
+        logger.debug("Could not put the removed templates back", exc_info=True)
         return []
 
 

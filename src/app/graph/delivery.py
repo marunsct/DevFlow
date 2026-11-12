@@ -450,7 +450,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.graph.workflow import _clear_the_throwaways
 
     _clear_the_throwaways(root)
-    gaps.extend(_measured_again_if_it_changed(root))
+    gaps.extend(_measured_again_if_it_changed(root, left_out))
     # The measure again starts the product, which may write its data again: cleared once more (HR2.PR.11).
     try:
         marker = Path(root) / PROJECT_MARKER
@@ -634,7 +634,7 @@ _SERVER_SOURCES = {".py": "python", ".php": "php", ".rb": "ruby", ".js": "javasc
 CHANGED_AT_RELEASE = "The product changed at release, after the suite last measured it, and the suite run again"
 
 
-def _measured_again_if_it_changed(root: Any) -> list[str]:
+def _measured_again_if_it_changed(root: Any, left_out: list[str] | None = None) -> list[str]:
     """The suite run again when the release's own clean-ups changed the product after its last run; a gap if it fails.
 
     Harness review HR2.G.9: the command lines, throwaways, untouched templates and the run's own data are cleared
@@ -660,6 +660,18 @@ def _measured_again_if_it_changed(root: Any) -> list[str]:
                   if getattr(t, "outcome", "") == "failed" and str(t.name) in passed_before]
         if not getattr(again, "ran", False):
             return [f"{CHANGED_AT_RELEASE} could not run: {str(getattr(again, 'problem', '') or 'no report')[:400]}"]
+        if failed and left_out:
+            # The release's own removal broke it: undo it and measure again. Measured on one run: an untouched
+            # `__main__.py` was removed, and a product that passed 19 of 19 shipped failing every hidden test.
+            from app.stacks.scaffold import put_back_templates
+
+            put = put_back_templates(root, list(left_out))
+            if put:
+                logger.warning("The release's removal broke %d test(s); put back %s and measuring again",
+                               len(failed), ", ".join(put))
+                again = suite.run(root)
+                failed = [str(t.name) for t in getattr(getattr(again, "report", None), "tests", None) or []
+                          if getattr(t, "outcome", "") == "failed" and str(t.name) in passed_before]
         if failed:
             return [f"{CHANGED_AT_RELEASE} failed {len(failed)} test(s): " + ", ".join(failed[:5])]
         return []

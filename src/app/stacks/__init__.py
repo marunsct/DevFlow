@@ -396,6 +396,16 @@ def stated_module(text: str) -> str | None:
     return None
 
 
+def the_python_package(project: str, brief: str) -> str:
+    """The package a Python product is built as: the one its brief names, else one named after its directory.
+
+    One rule for the setup and for what the design stages are told it will write. Measured on one run: the stages were
+    told `text_toolkit_library/__init__.py` (from the directory) while the setup wrote `textkit/` (from the brief's
+    `import textkit`); the design review called the plan contradictory and two rulings sided with the path never made.
+    """
+    return stated_module(brief) or python_package_name(project)
+
+
 #: How a stack's language field names each language a pack can be in.
 _LANGUAGE_NAMES = {
     "typescript": re.compile(r"typescript|(?<![a-z])ts(?![a-z])"),

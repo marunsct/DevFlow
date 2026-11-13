@@ -4933,16 +4933,17 @@ def _the_scaffold_s_facts(state: Any) -> list[str]:
     nothing served them. Never raises.
     """
     try:
-        from app.stacks import choose_pack, python_package_name
+        from app.stacks import choose_pack, the_python_package
         from app.tools.repository import pinned_project_directory
 
         stack = getattr(state.get("stack_selection"), "technology_stack", None)
-        pack = choose_pack(stack, getattr(state.get("document"), "text", "") or "") if stack is not None else None
+        brief = getattr(state.get("document"), "text", "") or ""
+        pack = choose_pack(stack, brief) if stack is not None else None
         if pack is None:
             return []
         root = getattr(state.get("repository"), "root_path", None)
         project = (pinned_project_directory(Path(root)) if root else None) or ""
-        package = python_package_name(project) if project and pack.language == "python" else None
+        package = the_python_package(project, brief) if project and pack.language == "python" else None
         # The same lines every builder and judge reads once the scaffold is
         # set up (plan CM.1): one function, so the two cannot drift.
         from app.agents.shared_facts import layout_facts, what_the_setup_decides
@@ -5044,7 +5045,7 @@ def _the_served_files_the_plan_leaves_out(specification: Any, state: Any) -> lis
     first control. Said to the architect, the cheapest moment to fix it.
     """
     try:
-        from app.stacks import choose_pack, python_package_name
+        from app.stacks import choose_pack, the_python_package
         from app.tools.repository import pinned_project_directory
 
         stack = getattr(state.get("stack_selection"), "technology_stack", None)
@@ -5056,7 +5057,8 @@ def _the_served_files_the_plan_leaves_out(specification: Any, state: Any) -> lis
             return []
         root = getattr(state.get("repository"), "root_path", None)
         project = pinned_project_directory(Path(root)) if root else None
-        package = python_package_name(project) if project and pack.language == "python" else None
+        package = (the_python_package(project, getattr(state.get("document"), "text", "") or "")
+                   if project and pack.language == "python" else None)
         plan = " ".join(str(item) for item in getattr(specification, "file_plan", None) or [])
         if not plan.strip():
             return []

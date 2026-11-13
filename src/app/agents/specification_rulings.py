@@ -224,7 +224,8 @@ def verified(answer: Rulings, specification: str, findings: list[str], brief: st
         if problem:
             logger.warning("A ruling on the specification was rejected: %s", problem)
             if rejected is not None:
-                rejected.append(f"finding {ruling.finding}: {problem}")
+                # The quotes too: a rejection for a quote "not word for word" cannot be judged without them.
+                rejected.append(f"finding {ruling.finding}: {problem} - first: {first[:200]!r}; second: {second[:200]!r}")
             continue
         seen.add(frozenset((first, second)))
         kept.append(ruling)

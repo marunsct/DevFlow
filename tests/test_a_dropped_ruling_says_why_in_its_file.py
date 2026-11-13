@@ -15,7 +15,8 @@ def test_a_rejected_ruling_is_recorded_with_its_reason(tmp_path, on):
     _decide(tmp_path, Model(_reply(first="GET /health answers with nothing at all")))
     saved = json.loads((tmp_path / RULINGS_FILE).read_text())
     assert saved["rulings"] == [] and saved["answered"] == 1
-    assert saved["rejected"] == ["finding 1: a quote is not in the specification word for word"]
+    assert saved["rejected"][0].startswith("finding 1: a quote is not in the specification word for word - first: ")
+    assert "GET /health answers with nothing at all" in saved["rejected"][0]
 
 
 def test_an_unreadable_answer_is_recorded_as_such(tmp_path, on):

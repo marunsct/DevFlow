@@ -1409,6 +1409,10 @@ TEST_SOURCE_BUGS = (
     # fetch alike - so the field is undefined on every product. Measured on one run: `createResp.json().id` sent
     # `DELETE /api/bookmarks/undefined`, the service rightly answered 422, and five locked tests went past the cap.
     r"\.json\(\)\s*(?:\.\s*(?!then\b|catch\b|finally\b)[A-Za-z_$][\w$]*|\[)",
+    # A lookup by empty text: `getByText('')`, `filter({ hasText: '' })`. It matches nearly every element, so "it is
+    # not visible" never holds and "it is visible" holds on any page. Measured on one run: a dispute's rewrite asserted
+    # `expect(page.getByText('')).not.toBeVisible()`, and a right product failed it through every round after.
+    r"""\b(?:getByText|getByLabel|getByPlaceholder)\(\s*(['"`])\1\s*[,)]|\bhasText\s*:\s*(['"`])\2""",
 )
 
 TEST_BUGS = (

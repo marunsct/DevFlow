@@ -5512,6 +5512,63 @@ def tests_whose_label_also_matches_a_longer_name(repo_root: str | Path, result: 
         return []
 
 
+#: `assert x == "text"` / `expect(x).toBe('text')`, and `assert len(x) == 10` / `expect(x.length).toBe(10)` /
+#: `expect(x).toHaveLength(10)`: a value and its length asserted apart.
+_A_VALUE_ASSERTED = (
+    re.compile(r"""\bassert\s+(?P<name>[A-Za-z_][\w.]*)\s*==\s*(?P<lit>(?P<q>['"])(?:\\.|(?!(?P=q)).)*(?P=q))"""),
+    re.compile(r"""\bexpect\(\s*(?P<name>[A-Za-z_$][\w.$]*)\s*\)\s*\.(?:toBe|toEqual|toStrictEqual)\(\s*"""
+               r"""(?P<lit>(?P<q>['"])(?:\\.|(?!(?P=q)).)*(?P=q))\s*\)"""),
+)
+_A_LENGTH_ASSERTED = (
+    re.compile(r"""\bassert\s+len\(\s*(?P<name>[A-Za-z_][\w.]*)\s*\)\s*==\s*(?P<n>\d+)\b"""),
+    re.compile(r"""\bexpect\(\s*(?P<name>[A-Za-z_$][\w.$]*)\.length\s*\)\s*\.(?:toBe|toEqual)\(\s*(?P<n>\d+)\s*\)"""),
+    re.compile(r"""\bexpect\(\s*(?P<name>[A-Za-z_$][\w.$]*)\s*\)\s*\.toHaveLength\(\s*(?P<n>\d+)\s*\)"""),
+)
+
+
+def _the_literal(text: str) -> str | None:
+    import ast
+
+    try:
+        value = ast.literal_eval(text)
+    except (ValueError, SyntaxError):
+        return None
+    return value if isinstance(value, str) else None
+
+
+def tests_whose_value_and_length_disagree(repo_root: str | Path) -> list[str]:
+    """Each test that asserts a value equals a text and, of the same value, a length that text does not have.
+
+    No value is both, so the test cannot pass whatever is built. Measured on one run: `truncate("Hello, World!", 10)`
+    was asserted to equal `"Hello, W..."` (11 characters) and to have length 10; the dispute upheld it, two fixes of a
+    right product were reverted for breaking it, and the sprint was planned again.
+    """
+    findings = []
+    try:
+        for name, body in sorted(_test_bodies(repo_root).items()):
+            lengths: dict[str, set[int]] = {}
+            for pattern in _A_LENGTH_ASSERTED:
+                for match in pattern.finditer(body):
+                    lengths.setdefault(match.group("name"), set()).add(int(match.group("n")))
+            if not lengths:
+                continue
+            for pattern in _A_VALUE_ASSERTED:
+                for match in pattern.finditer(body):
+                    value = _the_literal(match.group("lit"))
+                    said = lengths.get(match.group("name")) or set()
+                    if value is None or not said or len(value) in said:
+                        continue
+                    findings.append(
+                        f"`{name}` asserts `{match.group('name')}` equals {match.group('lit')} ({len(value)} characters) "
+                        f"and that its length is {min(said)}: no value is both, so it cannot pass whatever is built. "
+                        "Work the expected text out again from what the criterion says, so it has the length asserted."
+                    )
+                    break
+    except Exception:  # noqa: BLE001 - a check that cannot read the suite finds nothing
+        return []
+    return findings
+
+
 def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Locked tests no product can pass, by every check that says so; one list for every caller.
 
@@ -5575,6 +5632,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *_by(checks, "locators_that_contradict_their_assertions", locators_that_contradict_their_assertions(repo_root)),
         *_by(checks, "tests_with_module_system_mismatch", tests_with_module_system_mismatch(repo_root)),
         *_by(checks, "tests_with_unawaited_async_helpers", tests_with_unawaited_async_helpers(repo_root)),
+        *_by(checks, "tests_whose_value_and_length_disagree", tests_whose_value_and_length_disagree(repo_root)),
     ]
     return _CannotPass([*measured, *read_from_text], read_from_text, checks)
 

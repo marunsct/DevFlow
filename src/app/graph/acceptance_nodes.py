@@ -662,6 +662,15 @@ def _the_qa_lead_has_read_it(config: Any) -> bool:
         return True
 
 
+#: Said with a control disabled on load. Measured on one run: each fix that kept the control usable was reverted for
+#: breaking the project's own unit tests, which asserted it was disabled, and the defect stayed open into a third
+#: attempt - while a hidden test of the refusal clicks the control.
+DISABLED_CONTROL_UNIT_TESTS = (
+    " A unit test of the project's own that asserts the control is disabled holds the product to this fault: change "
+    "it in the same fix, to check the refusal and its message instead."
+)
+
+
 #: The change that settles each accessibility rule without moving what the tests read. Measured on three runs: the
 #: message shown when a list is empty was put inside the list as a plain element, breaking the `list` rule, and a fix
 #: that turned it into a list item was reverted for breaking the tests that count the list's items.
@@ -1383,7 +1392,7 @@ def interface_defects(state: Any) -> list[Any]:
             expected_behavior=(
                 "Every control the brief names can be used. An action that cannot go ahead - a "
                 "required field left empty - is refused when it is tried, with a message saying "
-                "what is missing."
+                "what is missing." + DISABLED_CONTROL_UNIT_TESTS
             ),
             actual_behavior=(
                 f"{named} disabled on load, as the page shows it."

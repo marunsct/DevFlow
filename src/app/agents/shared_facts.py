@@ -116,7 +116,22 @@ def layout_facts(pack: Any, project: str, package: str | None) -> list[str]:
         # behaviour no work order may write there.
         lines.append("- Those files do what they do now and nothing more: put whatever else the product must do - "
                      "at start, at shutdown, with its settings or its data directory - in the product's own files.")
+    if str(getattr(pack, "kind", "")) in _KINDS_WITH_A_PAGE:
+        lines.append(CONTROLS_STAY_USABLE)
     return lines
+
+
+#: Products with a page a person uses.
+_KINDS_WITH_A_PAGE = frozenset({"browser_app", "fullstack"})
+#: Said to every stage that plans, builds or judges a page. Measured on two runs: the drafted page disabled the control
+#: that adds a record while its required field was empty, its unit tests asserted it, every fix keeping it usable was
+#: reverted for those tests, and a hidden test that tries the refusal timed out on the disabled control - a false
+#: acceptance each time. The page check already raises such a control as a defect; this says so before the build.
+CONTROLS_STAY_USABLE = (
+    "- Every control the brief names stays usable from the moment the page loads: an action that cannot go ahead - a "
+    "required field left empty - is refused when it is tried, with a message saying what is missing, never by "
+    "disabling the control. Unit tests check the refusal and its message, not a disabled control."
+)
 
 
 #: A kept file of code is shown whole when it is this short, so the design stages read what it does and leaves undone.

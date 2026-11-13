@@ -187,7 +187,8 @@ def _cut_through(quote: str) -> bool:
     return bool(open_) or quote.count('"') % 2 == 1 or quote.count("`") % 2 == 1
 
 
-def verified(answer: Rulings, specification: str, findings: list[str], brief: str = "") -> list[Ruling]:
+def verified(answer: Rulings, specification: str, findings: list[str], brief: str = "",
+             rejected: list[str] | None = None) -> list[Ruling]:
     """The rulings whose quotes are word for word and that settle an open finding, at most `MOST_RULINGS`.
 
     Both quotes in the specification: a contradiction, settled as the ruling says. The first in the specification and
@@ -222,6 +223,8 @@ def verified(answer: Rulings, specification: str, findings: list[str], brief: st
         )
         if problem:
             logger.warning("A ruling on the specification was rejected: %s", problem)
+            if rejected is not None:
+                rejected.append(f"finding {ruling.finding}: {problem}")
             continue
         seen.add(frozenset((first, second)))
         kept.append(ruling)
@@ -232,10 +235,21 @@ def _asked(root: str | Path) -> bool:
     return (Path(root) / RULINGS_FILE).is_file()
 
 
-def _save(root: str | Path, rulings: list[dict[str, Any]]) -> None:
+def _save(root: str | Path, rulings: list[dict[str, Any]], rejected: list[str] | None = None,
+          answered: int | None = None) -> None:
+    """The rulings kept, and - beside them - how many the call gave and why each other was dropped.
+
+    Measured: a run whose call kept none could not be diagnosed, because the reasons were only in the worker's log and
+    a deploy recreated the worker before anyone read it.
+    """
     path = Path(root) / RULINGS_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"rulings": rulings}, indent=2), encoding="utf-8")
+    record: dict[str, Any] = {"rulings": rulings}
+    if answered is not None:
+        record["answered"] = answered
+    if rejected:
+        record["rejected"] = rejected[:MOST_RULINGS]
+    path.write_text(json.dumps(record, indent=2), encoding="utf-8")
 
 
 def _the_call(model: Any, request: str) -> Rulings | None:
@@ -273,7 +287,8 @@ def settle(state: Any, update: dict[str, Any], model: Any, findings: list[str]) 
 
         answer = _the_call(model, the_request(findings, specification, brief, _the_scaffold_s_facts(state)))
         kept: list[dict[str, Any]] = []
-        for ruling in verified(answer, specification, findings, brief) if answer is not None else []:
+        rejected: list[str] = [] if answer is not None else ["the call gave no readable answer"]
+        for ruling in verified(answer, specification, findings, brief, rejected) if answer is not None else []:
             first_stands = ruling.stands.strip().lower() == "first"
             stands = _plain(ruling.first_statement if first_stands else ruling.second_statement)
             gives_way = _plain(ruling.second_statement if first_stands else ruling.first_statement)
@@ -286,7 +301,7 @@ def settle(state: Any, update: dict[str, Any], model: Any, findings: list[str]) 
             )
             kept.append({"decision": record["id"], "finding": ruling.finding, "stands": stands,
                          "gives_way": gives_way, "why": why, **({"from_the_brief": True} if ruling.from_the_brief else {})})
-        _save(root, kept)
+        _save(root, kept, rejected, len(answer.rulings) if answer is not None else 0)
         logger.info("The specification's contradictions: %d ruling(s) kept", len(kept))
         return kept
     except Exception:  # noqa: BLE001 - the run goes on with its findings open, as it would have

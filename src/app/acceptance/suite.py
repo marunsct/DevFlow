@@ -4384,8 +4384,6 @@ def page_tests_that_count_a_shared_list(repo_root: str | Path, result: Acceptanc
             titled = _A_DECLARED_TITLE.match(block)
             title = titled.group(1).strip() if titled else ""
             for count in _A_PAGE_COUNT.finditer(block):
-                if int(count.group("count")) < 1:
-                    continue
                 read = count.group("read").strip()
                 # A bound locator, narrowed further where it is read: `filteredItems.filter({ hasText: tag })`.
                 named = re.match(r"(\w+)([\s\S]*)", read)
@@ -4394,6 +4392,11 @@ def page_tests_that_count_a_shared_list(repo_root: str | Path, result: Acceptanc
                 if items is None:
                     continue
                 narrowing = expression[items.start():]
+                # None of the test's own records left is a fair count of 0; no record at all on the whole list is not,
+                # on a service other tests write to. Measured on one run: "an invalid bookmark is refused" counted the
+                # whole list as 0 after other tests had saved theirs, and a dispute reopened the suite after the build.
+                if int(count.group("count")) < 1 and (".filter(" in narrowing or _HAS_TEXT.search(narrowing)):
+                    continue
                 # Narrowed by a value held in a name or made at run time, not a quoted one: the test's own, as far as
                 # its text shows. Measured on one run: six counts narrowed by a unique tag in a name were sent back.
                 if ".filter(" in narrowing and not _HAS_TEXT.search(narrowing):

@@ -143,3 +143,26 @@ def test_a_list_narrowed_by_a_value_held_in_a_name_is_not_named(tmp_path):
     """Measured on the run after it shipped: six such counts were sent back at the review's limit, the writer could
     not see what to change, and the suite was locked with a false finding spent."""
     assert suite.page_tests_that_count_a_shared_list(_root(tmp_path, BY_A_NAME)) == []
+
+
+# Measured on one run: "an invalid bookmark is refused" counted the whole list as 0 after other tests had saved theirs
+# to the one service, could never pass, and a dispute reopened the suite after the build.
+NONE_AT_ALL = """test('[AC-8][AC-17] invalid bookmarks are rejected', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Title', { exact: true }).fill('');
+  await expect(page.getByRole('listitem')).toHaveCount(0);
+});
+test('[AC-1] saves', async ({ page }) => {
+  await page.getByLabel('Title', { exact: true }).fill('Other');
+});
+"""
+NONE_OF_MINE = NONE_AT_ALL.replace("page.getByRole('listitem'))", "page.getByRole('listitem').filter({ hasText: 'Refused 1' }))")
+
+
+def test_no_record_at_all_on_a_shared_list_is_named(tmp_path):
+    [found] = suite.page_tests_that_count_a_shared_list(_root(tmp_path, NONE_AT_ALL))
+    assert "toHaveCount(0)" in found and "every item of the page's list" in found
+
+
+def test_none_of_the_test_s_own_records_left_is_not(tmp_path):
+    assert suite.page_tests_that_count_a_shared_list(_root(tmp_path, NONE_OF_MINE)) == []

@@ -1451,3 +1451,13 @@ NODE_TEST_KNOWN_ERRORS = {
         "The product's files and the manifest are in the right place; do not move or edit them for this."
     ),
 }
+
+
+#: The production build type-checks only what ships. Measured on the browser packs: `tsconfig.json` takes in the unit
+#: tests for the editor, so a type error in a test failed `npm run build`, raised as "what would be shipped does not
+#: exist" and sent to a page fixer; in 2 of 7 React runs every build fix changed only tests or the tsconfig.
+TSCONFIG_BUILD_SHIPPED_ONLY = """{
+  "extends": "./tsconfig.json",
+  "include": ["src"]
+}
+"""

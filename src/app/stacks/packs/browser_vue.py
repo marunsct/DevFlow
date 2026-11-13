@@ -17,7 +17,7 @@ PACKAGE_JSON = """{
   "type": "module",
   "scripts": {
     "start": "vite --host 127.0.0.1",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "vue-tsc --noEmit -p tsconfig.build.json && vite build",
     "test": "%(unit)s",
     "test:acceptance": "playwright test"
   },
@@ -105,6 +105,7 @@ PACK = StackPack(
         "package.json": PACKAGE_JSON,
         "vite.config.ts": VITE_CONFIG,
         "tsconfig.json": TSCONFIG,
+        "tsconfig.build.json": js.TSCONFIG_BUILD_SHIPPED_ONLY,
         "playwright.config.js": js.playwright_config(
             "node_modules/.bin/vite --host 127.0.0.1 --port ${port} --strictPort", "/", screenshot="on",
             checks_the_page=True,

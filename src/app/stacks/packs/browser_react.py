@@ -29,6 +29,7 @@ PACKAGE_JSON = """{
   "devDependencies": {
     "@playwright/test": "%(playwright)s",
     "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
     "axe-core": "%(axe)s",
     "@testing-library/react": "^16.1.0",
     "@types/react": "^19.0.0",
@@ -52,6 +53,8 @@ export default defineConfig({
     environment: 'jsdom',
     // Testing Library unmounts each test's render only when vitest gives it a global afterEach.
     globals: true,
+    // The page matchers (`toBeInTheDocument`, `toHaveValue`, ...) unit tests reach for: 6 of 7 runs added them by hand.
+    setupFiles: ['./vitest.setup.ts'],
     include: ['tests/**/*.test.{ts,tsx}'],
   },
 });
@@ -70,9 +73,11 @@ TSCONFIG = """{
     "isolatedModules": true,
     "types": ["vite/client"]
   },
-  "include": ["src", "tests"]
+  "include": ["src", "tests", "vitest.setup.ts"]
 }
 """
+
+VITEST_SETUP = "import '@testing-library/jest-dom/vitest';\n"
 
 INDEX = """<!DOCTYPE html>
 <html lang="en">
@@ -178,6 +183,7 @@ PACK = StackPack(
         "vite.config.ts": VITE_CONFIG,
         "tsconfig.json": TSCONFIG,
         "tsconfig.build.json": js.TSCONFIG_BUILD_SHIPPED_ONLY,
+        "vitest.setup.ts": VITEST_SETUP,
         "playwright.config.js": js.playwright_config(
             "node_modules/.bin/vite --host 127.0.0.1 --port ${port} --strictPort", "/", screenshot="on",
             checks_the_page=True,

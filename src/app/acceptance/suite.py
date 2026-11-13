@@ -3140,9 +3140,31 @@ def views_never_acted_within(repo_root: str | Path, brief_text: str) -> list[str
     return [
         f"The brief narrows what the page shows ({shown}), and no test takes an action while such a view is on. A "
         "test of each view and a test of the action apart pass a product that leaves the wrong thing showing when the "
-        "two meet. Add a test that chooses a narrowing view, changes an item in it, and checks what that view shows "
-        "afterward."
+        f"two meet. Add a test that chooses a narrowing view, {_an_action_the_brief_offers(brief_text)} an item in it, "
+        "and checks what that view shows afterward."
     ]
+
+
+#: Actions on one item a brief may offer, in the words a finding uses for them.
+_ITEM_ACTIONS = (
+    (re.compile(r"\b(?:delet|remov)", re.I), "removes"),
+    (re.compile(r"\b(?:complet|mark(?:s|ed|ing)?\b|done\b|toggl)", re.I), "marks"),
+    (re.compile(r"\b(?:edit|renam|updat)", re.I), "edits"),
+    (re.compile(r"\barchiv", re.I), "archives"),
+)
+
+
+def _an_action_the_brief_offers(brief_text: str) -> str:
+    """The item actions the brief names, as a verb phrase; a neutral phrase when it names none.
+
+    Measured over 23 runs: on briefs offering only adding and removing, the finding asked for a test that "changes an
+    item", which no such brief offers; writers left it open for three rounds or more in 6 runs, and one invented an edit
+    the brief never had, which a dispute then reopened.
+    """
+    found = [verb for pattern, verb in _ITEM_ACTIONS if pattern.search(brief_text or "")]
+    if not found:
+        return "takes an action the brief offers on"
+    return (" or ".join(found)) + " (only what the brief offers)"
 
 
 def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list[str]:

@@ -910,7 +910,10 @@ def _without_the_arguments_of(text: str, callee: str) -> str:
     return "".join(out)
 
 
-_STORAGE_USAGE = re.compile(r"\b(localStorage|sessionStorage)\b")
+#: What a blank page cannot do before `goto`: touch storage, or fetch a relative address (there is no origin to resolve
+#: it against). Measured on one run: four tests made their records with `page.evaluate(() => fetch('/api/...'))` before
+#: opening the page; a fixer spent fifteen minutes on a right product and changed nothing.
+_STORAGE_USAGE = re.compile(r"""\b(localStorage|sessionStorage)\b|\b(fetch)\s*\(\s*['"`]/(?!/)""")
 _GOTO = re.compile(r"\bgoto\s*\(")
 
 
@@ -947,9 +950,9 @@ def storage_before_page_open(text: str) -> list[tuple[int, str, str]]:
             g_match = _GOTO.search(body)
             line = text.count("\n", 0, match.start() + s_match.start()) + 1
             if g_match and g_match.start() > s_match.start():
-                helpers_touching_storage[name] = (line, s_match.group(1), name, True)
+                helpers_touching_storage[name] = (line, (s_match.group(1) or "fetch('/...')"), name, True)
             elif not g_match:
-                helpers_touching_storage[name] = (line, s_match.group(1), name, False)
+                helpers_touching_storage[name] = (line, (s_match.group(1) or "fetch('/...')"), name, False)
 
     # A helper of the file that opens the page opens it for the test that calls it: measured on one run, a test's
     # `await goToApp(page)` was not counted, and a right test was sent back for an hour of repair.
@@ -974,7 +977,7 @@ def storage_before_page_open(text: str) -> list[tuple[int, str, str]]:
             g_match = _GOTO.search(body[:s_match.start()])
             if not g_match:
                 line = text.count("\n", 0, be_match.start() + s_match.start()) + 1
-                problems.append((line, s_match.group(1), "`beforeEach`"))
+                problems.append((line, (s_match.group(1) or "fetch('/...')"), "`beforeEach`"))
 
     for begin, end in zip(starts, starts[1:] + [len(text)]):
         body = text[begin:end]
@@ -990,7 +993,7 @@ def storage_before_page_open(text: str) -> list[tuple[int, str, str]]:
                 g_match = opens_the_page.search(body[:s_match.start()])
                 if not g_match:
                     line = text.count("\n", 0, begin + s_match.start()) + 1
-                    problems.append((line, s_match.group(1), f"test `{title}`"))
+                    problems.append((line, (s_match.group(1) or "fetch('/...')"), f"test `{title}`"))
             for h_name, (h_line, s_name, _, has_late_goto) in helpers_touching_storage.items():
                 if not has_late_goto:
                     h_call = re.search(rf"\b{re.escape(h_name)}\s*\(", body)

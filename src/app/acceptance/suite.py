@@ -3045,9 +3045,9 @@ def tests_that_access_storage_before_opening_the_page(repo_root: str | Path) -> 
         for line, storage_name, context in list(found[0].storage_before_page_open(text))[:4]:
             problems.append(
                 f"`{path.relative_to(root).as_posix()}` line {line}: {context} accesses `{storage_name}` "
-                "before opening the page with `goto`. Every test starts on a blank page where storage access "
-                "is forbidden and throws a browser SecurityError. Navigate with `await page.goto('/')` "
-                "first before touching storage."
+                "before opening the page with `goto`. Every test starts on a blank page, where storage access "
+                "throws a browser SecurityError and an address starting with `/` reaches nothing. Navigate with "
+                "`await page.goto('/')` first, or make records with the `request` fixture."
             )
     return problems[:6]
 

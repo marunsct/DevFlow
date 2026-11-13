@@ -31,3 +31,28 @@ def test_with_them_every_write_is_probed_with_the_title_emptied():
     fields = ic.fields_refused_when_empty(["A title that is missing or empty is refused with 400 or 422"])
     asked, _ = ic.emptied_field_checks(checks, ic.example_bodies(SPEC), fields)
     assert {(c.method, c.emptied) for c in asked} >= {("POST", "title"), ("PUT", "title")}
+
+
+# Measured on one run: the criteria wrote `{"username": ..., "password": ...}` and the specification
+# `{"title": "<string>" after signin returns 201 with {"id": ...}`; neither parsed and the probe asked no write.
+PROSE = SimpleNamespace(
+    data_contracts=[], test_cases=[], function_contracts=[],
+    api_and_event_contracts=['POST /items with {"title": "<string>" after signin returns 201 with body {"id": 1}',
+                             'PATCH /items/{id} with {"done": true}'],
+    acceptance_criteria=['AC-9 POST /signup with {"username": ..., "password": ...} answers 201'],
+)
+
+
+def test_bodies_prose_writes_are_read_as_their_fields():
+    bodies = ic.example_bodies(PROSE)
+    assert {"title": "example"} in bodies
+    assert {"username": "example", "password": "example"} in bodies
+    assert {"done": True} in bodies
+
+
+def test_with_them_the_refused_fields_are_probed():
+    checks, _ = ic.parse(["- AC-9 POST /signup -> 201", "- AC-12 POST /items -> 201"])
+    fields = ic.fields_refused_when_empty(["A missing or empty username or password is refused with 400 or 422",
+                                           "A missing or empty title is refused with 400 or 422"])
+    asked, _ = ic.emptied_field_checks(checks, ic.example_bodies(PROSE), fields)
+    assert {c.emptied for c in asked} >= {"title", "username", "password"}

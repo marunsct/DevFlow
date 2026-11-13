@@ -250,14 +250,14 @@ def example_bodies(specification: Any) -> list[dict[str, Any]]:
     # request bodies stood in the test cases, and the emptied-field probe found no title to empty; the product
     # accepted an update that emptied it and a hidden test failed.
     sent: list[dict[str, Any]] = []
-    for field in ("api_and_event_contracts", "data_contracts", "test_cases", "function_contracts"):
+    for field in ("api_and_event_contracts", "data_contracts", "test_cases", "function_contracts", "acceptance_criteria"):
         for entry in getattr(specification, field, None) or ():
             text = str(entry)
             for match in _A_WRITE_WITH_ITS_BODY.finditer(text):
                 try:
                     value, _ = decoder.raw_decode(text[match.end():])
                 except ValueError:
-                    continue
+                    value = _the_fields_written(text[match.end():])
                 if isinstance(value, dict) and value and value not in sent:
                     sent.append(value)
     about_a_request: list[dict[str, Any]] = list(sent)
@@ -281,6 +281,34 @@ def example_bodies(specification: Any) -> list[dict[str, Any]]:
 
 #: Tried in turn for one record: each refused try is one more request at a check that takes seconds.
 MOST_EXAMPLE_BODIES = 4
+
+#: One field of a body as prose writes it: `"title": ...`, `"title": "<string>"`, `"done": true`, `"count": 3`.
+_A_WRITTEN_FIELD = re.compile(r'"(?P<name>[A-Za-z_][\w-]*)"\s*:\s*(?P<value>"[^"\n]*"|\.\.\.|…|true|false|null|-?\d+(?:\.\d+)?)')
+
+
+def _the_fields_written(text: str) -> dict[str, Any]:
+    """A body prose writes but JSON cannot read - `{"title": ...}`, `{"title": "<string>" after sign-in` - as its fields,
+    each placeholder a plain string; {} when it names none.
+
+    Measured on one run: the criteria wrote `{"username": ..., "password": ...}` and the specification
+    `{"title": "<string>" after signin`; neither parsed, and the emptied-field probe asked no write.
+    """
+    opened = text[:1] == "{"
+    # It ends where it closes, or where the next object opens (the answer's, in `... returns 201 with {"id": ...}`).
+    ends = [at for at in (text.find("}"), text.find("{", 1)) if at != -1]
+    inside = text[1:min(ends) if ends else 300] if opened else ""
+    fields: dict[str, Any] = {}
+    for match in _A_WRITTEN_FIELD.finditer(inside):
+        raw = match.group("value")
+        if raw in ("...", "…") or (raw.startswith('"') and raw[1:2] == "<"):
+            fields[match.group("name")] = "example"
+        else:
+            try:
+                fields[match.group("name")] = json.loads(raw)
+            except ValueError:
+                fields[match.group("name")] = "example"
+    return fields
+
 
 #: A write and its path, then the body it sends: `POST /notes with {`, `PUT /notes/{id} {`.
 _A_WRITE_WITH_ITS_BODY = re.compile(r"\b(?:POST|PUT|PATCH)\s+/[^\s,;]*\s*(?:with\s+(?:a\s+)?(?:body\s+)?)?(?=\{)", re.I)
@@ -529,15 +557,23 @@ _REFUSED_WHEN_EMPTY = (
 )
 
 
+#: Several fields refused together: "a missing or empty username or password is refused", "an empty title, body or
+#: tag is rejected". Measured on one run: only the single-field forms were read, and the sign-up fields went unprobed.
+_SEVERAL_REFUSED_WHEN_EMPTY = re.compile(
+    r"\b(?:empty|blank)\s+`?(\w+)`?((?:\s*,\s*`?\w+`?)*\s*,?\s+(?:or|and)\s+`?\w+`?)\s+(?:is|are)\s+(?:refused|rejected)",
+    re.I)
+
+
 def fields_refused_when_empty(texts: Any) -> list[str]:
     """The fields the specification's rules refuse when empty, in the order first named."""
     found: list[str] = []
     for text in texts or ():
-        for rule in _REFUSED_WHEN_EMPTY:
-            for match in rule.finditer(str(text)):
-                name = match.group(1)
-                if name.lower() not in {"it", "that", "this", "one", "request", "value"} and name not in found:
-                    found.append(name)
+        names = [match.group(1) for rule in _REFUSED_WHEN_EMPTY for match in rule.finditer(str(text))]
+        for match in _SEVERAL_REFUSED_WHEN_EMPTY.finditer(str(text)):
+            names += [match.group(1), *re.findall(r"`?(\w+)`?", re.sub(r"\b(?:or|and)\b", ",", match.group(2)))]
+        for name in names:
+            if name.lower() not in {"it", "that", "this", "one", "request", "value", "or", "and"} and name not in found:
+                found.append(name)
     return found
 
 

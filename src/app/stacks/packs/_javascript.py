@@ -1412,7 +1412,9 @@ TEST_SOURCE_BUGS = (
     # A lookup by empty text: `getByText('')`, `filter({ hasText: '' })`. It matches nearly every element, so "it is
     # not visible" never holds and "it is visible" holds on any page. Measured on one run: a dispute's rewrite asserted
     # `expect(page.getByText('')).not.toBeVisible()`, and a right product failed it through every round after.
-    r"""\b(?:getByText|getByLabel|getByPlaceholder)\(\s*(['"`])\1\s*[,)]|\bhasText\s*:\s*(['"`])\2""",
+    # Text of only spaces is the same: the runner collapses white space, so `getByText('   ')` looks up empty text too
+    # (measured on one run: a refusal test asserted `getByText('   ')` was not visible, and every fix was reverted).
+    r"""\b(?:getByText|getByLabel|getByPlaceholder)\(\s*(['"`])[ \t]*\1\s*[,)]|\bhasText\s*:\s*(['"`])[ \t]*\2""",
 )
 
 #: What each of `TEST_SOURCE_BUGS` does wrong, by its pattern, for the finding that names it; a pattern not here keeps

@@ -16,10 +16,13 @@ def test_empty_text_lookups_are_found():
     assert EMPTY.search("await expect(page.getByText('')).not.toBeVisible();")
     assert EMPTY.search("page.getByRole('listitem').filter({ hasText: \"\" })")
     assert EMPTY.search("page.getByLabel(``, { exact: true })")
+    # Only spaces: the runner collapses them to nothing (measured: `getByText('   ')` in a refusal test).
+    assert EMPTY.search("await expect(page.getByText('   ')).not.toBeVisible();")
+    assert EMPTY.search("filter({ hasText: ' ' })")
 
 
 def test_real_lookups_are_not():
-    for text in ("page.getByText('Save')", "page.getByText(`${title}`)", "filter({ hasText: title })",
+    for text in ("page.getByText('Save')", "page.getByText(' Save ')", "page.getByText(`${title}`)", "filter({ hasText: title })",
                  "page.getByLabel('Title', { exact: true })"):
         assert not EMPTY.search(text), text
 

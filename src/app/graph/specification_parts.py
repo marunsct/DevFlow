@@ -40,6 +40,10 @@ PARTS = (
 
 #: The sections written in parts that fix the names writers use.
 NAMING_SECTIONS = frozenset({"function_contracts", "error_catalogue", "implementation_order"})
+#: Sections asked for once more whenever they come back empty: the release probes, the README's usage and the suite's
+#: contract checks read them. Measured: 5 of 206 specifications shipped "Not specified" here, and one release's README
+#: then said nowhere how to run the product, though its commands stood in another section.
+ASKED_AGAIN_WHEN_EMPTY = frozenset({"interface_contract"})
 
 #: What the architect's request says, in fast delivery.
 CORE_NOTE = (
@@ -155,7 +159,8 @@ def with_the_parts_written(specification: Any, model: Any, context: str) -> Any:
         # downstream take their names from it, and "Not specified" left each to invent its own.
         from app.stacks.naming import enabled
 
-        missing = tuple(n for n in names if n in NAMING_SECTIONS and n not in written) if enabled() else ()
+        again = (NAMING_SECTIONS if enabled() else frozenset()) | ASKED_AGAIN_WHEN_EMPTY
+        missing = tuple(n for n in names if n in again and n not in written)
         if missing:
             logger.info("Asking again for the specification sections %s", ", ".join(missing))
             written = {**written, **ask(missing)}

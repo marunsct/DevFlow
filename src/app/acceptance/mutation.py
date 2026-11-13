@@ -143,6 +143,31 @@ def _lines_that_are_not_code(lines: list[str], suffix: str) -> set[int]:
     return inside
 
 
+#: Languages where `<` and `>` also open and close markup tags or type arguments.
+_ANGLE_BRACKET_SUFFIXES = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"}
+_TAG_OR_TYPE_OPENED = re.compile(r"<[A-Za-z/>]")
+
+
+def _a_tag_or_type_bracket(line: str, match: re.Match) -> bool:
+    """Whether a matched `<` or `>` is a markup tag's or a type argument's bracket, not a comparison.
+
+    Measured on a React release: 7 of 12 changes turned `<h1`, `</div>` or a tag's closing `>` into a comparison; the
+    build broke, every test failed and each change was inconclusive - the probe measured nothing there.
+    """
+    text, at = match.group(0), match.start()
+    if text == "<":
+        return bool(_TAG_OR_TYPE_OPENED.match(line, at))
+    if text != ">":
+        return False
+    if line[:at].strip() in ("", "/"):
+        return True  # a multi-line tag's own closing line
+    after = line[at + 1:].strip()
+    if line[:at].rstrip().endswith(("}", '"', "'")) and (not after or after.startswith(("<", "{"))):
+        return True  # `style={{ ... }}>` or `className="x">` ending a tag that began on an earlier line
+    opened = max((m.start() for m in _TAG_OR_TYPE_OPENED.finditer(line, 0, at)), default=-1)
+    return opened != -1 and ">" not in line[opened + 1:at]
+
+
 def sites(files: list[Path], project: Path) -> list[dict]:
     """Every place an operator applies: file, line, column, the text it replaces and its replacement."""
     found = []
@@ -158,6 +183,8 @@ def sites(files: list[Path], project: Path) -> list[dict]:
             for pattern, replacement in OPERATORS:
                 for match in re.finditer(pattern, line):
                     if _in_comment_or_string(line, match.start()):
+                        continue
+                    if path.suffix in _ANGLE_BRACKET_SUFFIXES and _a_tag_or_type_bracket(line, match):
                         continue
                     found.append({
                         "file": str(path.relative_to(project)), "line": number, "column": match.start(),

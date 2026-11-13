@@ -662,6 +662,18 @@ def _the_qa_lead_has_read_it(config: Any) -> bool:
         return True
 
 
+#: The change that settles each accessibility rule without moving what the tests read. Measured on three runs: the
+#: message shown when a list is empty was put inside the list as a plain element, breaking the `list` rule, and a fix
+#: that turned it into a list item was reverted for breaking the tests that count the list's items.
+ACCESSIBILITY_REMEDIES = {
+    "list": ("A list holds only its items: put a message shown when it is empty, or any other element, beside the "
+             "list - before or after it - never inside it, and leave the items themselves as they are."),
+    "listitem": "A list item sits directly inside a list; an element marked as an item outside one is not an item.",
+    "color-contrast": ("Text needs a contrast of at least 4.5 to 1 with its background: take the colour from the "
+                       "page's own colour names (its design tokens) rather than writing a lighter one by hand."),
+}
+
+
 def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]:
     """Check the suite mechanically, have a QA lead judge it, then lock it."""
     from app.agents.acceptance_reviewer import (
@@ -1344,6 +1356,8 @@ def interface_defects(state: Any) -> list[Any]:
             expected_behavior=(
                 "Every control has a name a screen reader announces, text has enough contrast "
                 "to read, and the page's structure is announced correctly."
+                + "".join(f" {ACCESSIBILITY_REMEDIES[rule.get('id')]}" for rule in broken
+                          if rule.get("id") in ACCESSIBILITY_REMEDIES)
             ),
             actual_behavior=listed[:1500] + (
                 " Where those elements are made and styled: " + "; ".join(defined) if defined else ""),

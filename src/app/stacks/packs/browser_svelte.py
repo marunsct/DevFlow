@@ -45,6 +45,8 @@ export default defineConfig({
   resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
   test: {
     environment: 'jsdom',
+    // Testing Library unmounts each test's render only when vitest gives it a global afterEach.
+    globals: true,
     include: ['tests/**/*.test.ts'],
   },
 });

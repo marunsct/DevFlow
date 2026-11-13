@@ -46,6 +46,8 @@ export default defineConfig({
   plugins: [vue()],
   test: {
     environment: 'jsdom',
+    // Testing Library unmounts each test's render only when vitest gives it a global afterEach.
+    globals: true,
     include: ['tests/**/*.test.ts'],
   },
 });

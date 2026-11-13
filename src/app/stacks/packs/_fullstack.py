@@ -602,7 +602,7 @@ export default defineConfig({
   },
   test: {
     projects: [
-      { extends: true, test: { name: 'page', environment: 'jsdom', include: ['tests/client/**/*.test.{ts,tsx,js}'] } },%(service_project)s
+      { extends: true, test: { name: 'page', environment: 'jsdom', globals: true, include: ['tests/client/**/*.test.{ts,tsx,js}'] } },%(service_project)s
     ],
   },
 });

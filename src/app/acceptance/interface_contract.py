@@ -245,7 +245,22 @@ MADE_NO_RECORD = "the contract's write line made no record to probe with"
 def example_bodies(specification: Any) -> list[dict[str, Any]]:
     """The literal JSON examples the specification's request and data shapes give, those about a request first; [] if none."""
     decoder = json.JSONDecoder()
-    about_a_request: list[dict[str, Any]] = []
+    # A body written right after the write that sends it - `PUT /notes/{id} with {"title": ...}` - is a request body
+    # whatever section holds it. Measured on one run: the contracts held only error bodies (`{"detail": ...}`), the
+    # request bodies stood in the test cases, and the emptied-field probe found no title to empty; the product
+    # accepted an update that emptied it and a hidden test failed.
+    sent: list[dict[str, Any]] = []
+    for field in ("api_and_event_contracts", "data_contracts", "test_cases", "function_contracts"):
+        for entry in getattr(specification, field, None) or ():
+            text = str(entry)
+            for match in _A_WRITE_WITH_ITS_BODY.finditer(text):
+                try:
+                    value, _ = decoder.raw_decode(text[match.end():])
+                except ValueError:
+                    continue
+                if isinstance(value, dict) and value and value not in sent:
+                    sent.append(value)
+    about_a_request: list[dict[str, Any]] = list(sent)
     others: list[dict[str, Any]] = []
     for field in ("data_contracts", "api_and_event_contracts"):
         for entry in getattr(specification, field, None) or ():
@@ -266,6 +281,9 @@ def example_bodies(specification: Any) -> list[dict[str, Any]]:
 
 #: Tried in turn for one record: each refused try is one more request at a check that takes seconds.
 MOST_EXAMPLE_BODIES = 4
+
+#: A write and its path, then the body it sends: `POST /notes with {`, `PUT /notes/{id} {`.
+_A_WRITE_WITH_ITS_BODY = re.compile(r"\b(?:POST|PUT|PATCH)\s+/[^\s,;]*\s*(?:with\s+(?:a\s+)?(?:body\s+)?)?(?=\{)", re.I)
 
 
 def _a_write_that_needs_a_body(check: "Check") -> bool:

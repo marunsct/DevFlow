@@ -93,3 +93,21 @@ def test_the_call_is_asked_to_settle_departures_in_plain_words():
     asked = specification_rulings.the_request(["F"], "S", "B")
     assert "departs from something the brief states" in asked and "The brief's words stand." in asked
     assert not BANNED.search(asked)
+
+
+# Measured on one run: a right ruling quoted the setup's own fact against the specification and was rejected - the
+# quote was in neither the specification nor the brief - so the design's open finding stayed open.
+SETUP_SAYS = "start.sh is already set up and starts the service with `node src/main.ts`"
+SPEC_SAYS_START = "The tool prints a JSON array of objects with word and count fields"
+
+
+def test_what_the_setup_already_does_stands_like_the_brief(tmp_path, on, monkeypatch):
+    from app.graph import workflow
+
+    monkeypatch.setattr(workflow, "_the_scaffold_s_facts", lambda state: [f"- {SETUP_SAYS}."])
+    update = _decide(tmp_path, Model(_reply(first=SPEC_SAYS_START, second=SETUP_SAYS, stands="second",
+                                            why="The setup already starts the service that way.")))
+    [recorded] = _departures(update)
+    assert recorded["decision"] == SETUP_SAYS
+    saved = json.loads((tmp_path / ".harness/specification_rulings.json").read_text())
+    assert len(saved["rulings"]) == 1 and "rejected" not in saved

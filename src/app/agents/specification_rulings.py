@@ -286,17 +286,22 @@ def settle(state: Any, update: dict[str, Any], model: Any, findings: list[str]) 
         brief = str(getattr(state.get("document"), "text", "") or "")
         from app.graph.workflow import _the_scaffold_s_facts
 
-        answer = _the_call(model, the_request(findings, specification, brief, _the_scaffold_s_facts(state)))
+        facts = _the_scaffold_s_facts(state)
+        answer = _the_call(model, the_request(findings, specification, brief, facts))
         kept: list[dict[str, Any]] = []
         rejected: list[str] = [] if answer is not None else ["the call gave no readable answer"]
-        for ruling in verified(answer, specification, findings, brief, rejected) if answer is not None else []:
+        # What the setup already does stands as the brief does: measured on one run, a right ruling quoted the setup's
+        # fact (`start.sh` runs `node src/main.ts`) against the specification's `npx tsx`, and was rejected because
+        # the quote was in neither the specification nor the brief.
+        standing = "\n".join([brief, *map(str, facts or [])])
+        for ruling in verified(answer, specification, findings, standing, rejected) if answer is not None else []:
             first_stands = ruling.stands.strip().lower() == "first"
             stands = _plain(ruling.first_statement if first_stands else ruling.second_statement)
             gives_way = _plain(ruling.second_statement if first_stands else ruling.first_statement)
             why = _plain(ruling.why)[:_MOST_WHY_CHARS]
             record = record_decision(
                 state, update, point="technical_specification",
-                question=("The specification departs from what the brief states: which statement stands?"
+                question=("The specification departs from what the brief states, or the setup already does: which statement stands?"
                           if ruling.from_the_brief else "The specification contradicts itself: which statement stands?"),
                 options=[stands, gives_way], decision=stands, rationale=why, decided_by="auto",
             )

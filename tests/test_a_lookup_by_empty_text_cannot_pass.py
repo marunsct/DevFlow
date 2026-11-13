@@ -35,4 +35,5 @@ def test_a_failing_test_with_one_is_the_test_s_own(tmp_path):
     result = SimpleNamespace(ran=True, output="", report=SimpleNamespace(found=True, tests=[
         SimpleNamespace(name="[AC-8] refused", outcome="failed", message="Error: expect(locator).not.toBeVisible() failed")]))
     found = suite.tests_that_broke_themselves(tmp_path, result)
-    assert any("[AC-8] refused" in f for f in found)
+    [said] = [f for f in found if "[AC-8] refused" in f]
+    assert "empty text" in said and "promise" not in said

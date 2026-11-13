@@ -1693,10 +1693,13 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
         written = next((p for p in _SOURCE_BUGS.get(suffix, ()) if re.search(p, body)), None)
         if written is not None:
             line = next((l.strip() for l in body.splitlines() if re.search(written, l)), "")
+            from app.stacks.packs import _javascript
+
+            why = _javascript.TEST_SOURCE_BUG_WHY.get(
+                written, "keeps a promise as a value where the value was meant - await it")
             broken.append(
-                f"`{test.name}` cannot pass whatever is built: its own code `{line[:200]}` keeps a "
-                "promise as a value where the value was meant - await it. Fix the test so that it "
-                "can pass once the product works."
+                f"`{test.name}` cannot pass whatever is built: its own code `{line[:200]}` {why}. Fix the test so "
+                "that it can pass once the product works."
             )
             continue
         # The runner's own words only: the page tree and the service log the harness appends carry the product's

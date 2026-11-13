@@ -1415,6 +1415,14 @@ TEST_SOURCE_BUGS = (
     r"""\b(?:getByText|getByLabel|getByPlaceholder)\(\s*(['"`])\1\s*[,)]|\bhasText\s*:\s*(['"`])\2""",
 )
 
+#: What each of `TEST_SOURCE_BUGS` does wrong, by its pattern, for the finding that names it; a pattern not here keeps
+#: a promise as a value. Measured on one run: an empty-text lookup was reported as an unawaited promise, so the
+#: writers were told to await something that needed no await.
+TEST_SOURCE_BUG_WHY = {
+    TEST_SOURCE_BUGS[-1]: ("looks an element up by empty text, which matches nearly every element on the page - "
+                           "name the text, label or placeholder it means to find"),
+}
+
 TEST_BUGS = (
     r"Playwright Test did not expect \S+ to be called here",
     r"First argument must use the object destructuring pattern",

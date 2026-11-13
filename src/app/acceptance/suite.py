@@ -5575,6 +5575,47 @@ def tests_whose_value_and_length_disagree(repo_root: str | Path) -> list[str]:
     return findings
 
 
+#: A failure that is the service refusing a record it already holds: `assert 409 == 201`, `409 Conflict`.
+_ALREADY_HELD = re.compile(r"\b409\b")
+#: A quoted value handed to a call: `signup(base_url, "alice", "secret")`, `create({ name: 'Docs' })`.
+_A_VALUE_IN_A_CALL = re.compile(r"""\(\s*(?:[^()'"]*?,\s*)?(?P<q>['"])(?P<value>[A-Za-z][\w.@-]{1,40})(?P=q)""")
+
+
+def tests_that_make_what_other_tests_make(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
+    """Each failing test the service answered 409 that makes its record with a value other tests make theirs with.
+
+    The suite runs against one service: the first test to make a record with that value gets it, and every other is
+    refused as taken, whatever is built. Measured on one run: 40 calls signed up "alice"; 24 of 48 locked tests failed
+    `assert 409 == 201`, and the dispute's rulings on them were refused.
+    """
+    if result is None or not getattr(result, "ran", False):
+        return []
+    try:
+        failing = {t.name: t.message or "" for t in result.report.tests if t.outcome == "failed"}
+        if not any(_ALREADY_HELD.search(message) for message in failing.values()):
+            return []
+        bodies = _test_bodies(repo_root)
+        made_in = {name: {m.group("value") for m in _A_VALUE_IN_A_CALL.finditer(body)} for name, body in bodies.items()}
+        findings = []
+        for name, body in sorted(bodies.items()):
+            message = next((m for test, m in failing.items() if test == name or test.endswith(name) or name in test), None)
+            if message is None or not _ALREADY_HELD.search(message):
+                continue
+            shared = sorted(v for v in made_in.get(name, ()) if sum(v in values for values in made_in.values()) > 1)
+            if not shared:
+                continue
+            others = sum(shared[0] in values for values in made_in.values()) - 1
+            findings.append(
+                f"`{name}` makes its record with '{shared[0]}', which {others} other test(s) make theirs with too, and "
+                "the service answered 409: the suite runs against one service, so only the first test to make it gets "
+                "it, whatever is built. Give each test a value of its own (a name it alone uses, or one made at run "
+                "time) and use it throughout that test."
+            )
+        return findings[:8]
+    except Exception:  # noqa: BLE001 - a check that cannot read the suite finds nothing
+        return []
+
+
 def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Locked tests no product can pass, by every check that says so; one list for every caller.
 
@@ -5610,6 +5651,7 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *_by(checks, "tests_that_count_every_row_of_a_shared_table", tests_that_count_every_row_of_a_shared_table(repo_root, result)),
         *_by(checks, "the_suite_failed_in_its_own_words", the_suite_failed_in_its_own_words(repo_root, result)),
         *_by(checks, "tests_whose_label_also_matches_a_longer_name", tests_whose_label_also_matches_a_longer_name(repo_root, result)),
+        *_by(checks, "tests_that_make_what_other_tests_make", tests_that_make_what_other_tests_make(repo_root, result)),
     ]
     # These read a test's text, and text is a guess at what it does.
     read_from_text = [

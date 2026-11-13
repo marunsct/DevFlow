@@ -716,6 +716,17 @@ def _broken_tests(lost: list[str], before: ci.Snapshot | None, after: ci.Snapsho
     return broken_acceptance
 
 
+def _declares_dependencies(relative: str) -> bool:
+    """A dependency manifest or its lock file: what a test may need installed, and no behaviour of the product."""
+    from app.analysis.manifests import MANIFEST_NAMES
+
+    return Path(relative).name in MANIFEST_NAMES | _LOCK_FILES
+
+
+_LOCK_FILES = frozenset({"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "Cargo.lock",
+                         "go.sum", "composer.lock", "Gemfile.lock"})
+
+
 def _its_tests_without_its_product_change(
     root: str, base: str, before: ci.Snapshot | None, broken: list[str], stage_name: str,
 ) -> ci.Snapshot | None:
@@ -737,11 +748,23 @@ def _its_tests_without_its_product_change(
         changed = ci.changed_since(root, base)
         tests = [path for path in changed if classify_file(path) == "test"]
         product = [path for path in changed if path not in tests]
-        if not tests or not product or not ci.restore_paths(root, base, product):
+        if not tests or not product:
             return None
-        after = ci.take(root, f"after {stage_name}")
-        if after.problem or _broken_tests(ci.regressions(before, after), before, after):
+        # The dependency declarations stay with the tests first: measured, a fix added a test-only package to the
+        # manifest with a test that imports it, the split put the manifest back and kept the test, and the next round
+        # spent a sprint attempt on "cannot find package" for a package the fix had declared.
+        declared = [path for path in product if _declares_dependencies(path)]
+        after = None
+        for put_back in ([path for path in product if path not in declared], product) if declared else (product,):
+            if not put_back or not ci.restore_paths(root, base, put_back):
+                continue
+            after = ci.take(root, f"after {stage_name}")
+            if not after.problem and not _broken_tests(ci.regressions(before, after), before, after):
+                break
+            after = None
+        if after is None:
             return None
+        product = put_back
         logger.warning(
             "Kept %s's change to its tests and put back its change to %s, which broke %d acceptance test(s)",
             stage_name, ", ".join(product), len(broken),

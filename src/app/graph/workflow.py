@@ -3544,7 +3544,7 @@ def _settle_the_fix(
         # the judgement model (`_the_build_model`).
         update["remediation"] = _one_more_failed_fix(cycle, defect_index)
     blames = still_open and not mutation_guided.is_a_finding(defect) and _blames_a_locked_test(
-        state, [*fix_result.blockers, *fix_result.decisions]
+        state, [*fix_result.blockers, *fix_result.decisions], changed_nothing=not fix_result.changed_files
     )
     update["specialist_outputs"] = outputs
     return update, blames
@@ -8701,7 +8701,11 @@ def _a_dispute_is_due(state: Any) -> bool:
     return bool(failing) and may_repair(state, [f"`{name}`" for name, _, _ in failing])
 
 
-def _blames_a_locked_test(state: Any, blockers: list[str]) -> bool:
+#: The locked suite named as a whole: "the acceptance tests call ...", "the locked suite expects ...".
+_THE_SUITE_AS_A_WHOLE = re.compile(r"\b(?:locked|acceptance)\s+(?:test|tests|suite|spec|specs)\b", re.I)
+
+
+def _blames_a_locked_test(state: Any, blockers: list[str], changed_nothing: bool = False) -> bool:
     """Whether a fix stage's blockers name a file or a test of the locked acceptance suite. Never raises.
 
     By its test as well as its file: measured on a gate run, a fixer changed
@@ -8724,6 +8728,11 @@ def _blames_a_locked_test(state: Any, blockers: list[str]) -> bool:
             if title and (re.search(r"\b[A-Z]{2,}-\d+\b", title) or len(title.split()) >= 3 or "_" in title):
                 names.add(title)
         text = " ".join(map(str, blockers or []))
+        # A fix that changed nothing and says the acceptance tests are the trouble blames the suite though it names no
+        # file or test: measured on one run, a dozen fixers each wrote "The acceptance tests call page.evaluate() with
+        # fetch(...) before page.goto(...)", no dispute was held, and two rounds went to a right product.
+        if changed_nothing and _THE_SUITE_AS_A_WHOLE.search(text):
+            return True
         return any(name and re.search(rf"(?<![\w.]){re.escape(name)}(?![\w])", text) for name in names)
     except Exception:  # noqa: BLE001 - not blamed is how it was before
         return False

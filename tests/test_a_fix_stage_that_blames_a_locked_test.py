@@ -111,7 +111,7 @@ def test_a_change_that_left_it_open_and_a_decision_naming_the_test(
     held: list[int] = []
     monkeypatch.setattr(
         "app.graph.workflow._blames_a_locked_test",
-        lambda state, said: seen.append(list(said)) or any("views.spec.js" in s for s in said),
+        lambda state, said, **kw: seen.append(list(said)) or any("views.spec.js" in s for s in said),
     )
     monkeypatch.setattr(
         "app.graph.workflow._a_dispute_may_be_held_now",
@@ -150,7 +150,7 @@ def test_the_round_goes_on_after_a_dispute_that_finds_nothing(
 ) -> None:
     """Blamed, judged once, nothing to repair: remediation carries on and the run completes."""
     held: list[int] = []
-    monkeypatch.setattr("app.graph.workflow._blames_a_locked_test", lambda state, blockers: True)
+    monkeypatch.setattr("app.graph.workflow._blames_a_locked_test", lambda state, blockers, **kw: True)
     monkeypatch.setattr(
         "app.graph.workflow._a_dispute_may_be_held_now",
         lambda state: not held and (held.append(1) or True),

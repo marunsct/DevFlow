@@ -595,6 +595,47 @@ def _assertions_in(block: str) -> int:
     return block.count("expect(") + len(_A_PYTHON_ASSERTION.findall(block))
 
 
+def put_back_tests_the_repair_was_not_sent_for(repo_root: str | Path) -> list[str]:
+    """Each test a repair changed though it was not sent for it, put back as it was locked; the titles. Never raises.
+
+    Measured over the runs that lost a hidden test after a dispute: in 3 of 4 the repair that followed the ruling also
+    rewrote tests no ruling named, and loosened them to what the product did - an exact name made a pattern, a link
+    found by its text made any link, a dialog stubbed out - and the hidden tests of those very behaviours failed.
+    A repair changes the tests it was sent for; every other test stays as the review approved it.
+    """
+    try:
+        state = _state(repo_root)
+        under_repair = [str(name) for name in state.get("repairing") or []]
+        if "lock" in state or not under_repair or NAMING_REPAIR in under_repair:
+            return []
+        root = Path(repo_root)
+        locked = _the_files_of(root / SNAPSHOT_DIR)
+        put_back: list[str] = []
+        for path in suite_files(repo_root):
+            relative = path.relative_to(root).as_posix()
+            if relative not in locked:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if text == locked[relative]:
+                continue
+            _, before = _the_tests_of(locked[relative])
+            _, after = _the_tests_of(text)
+            changed = text
+            for title, block in after.items():
+                if title not in before or block == before[title] or title.startswith("#"):
+                    continue
+                if any(title == test or title in test or test in title for test in under_repair):
+                    continue
+                if changed.count(block) == 1:
+                    changed = changed.replace(block, before[title], 1)
+                    put_back.append(title)
+            if changed != text:
+                path.write_text(changed, encoding="utf-8")
+        return put_back
+    except Exception:  # noqa: BLE001 - the review reads the suite as it is
+        return []
+
+
 def only_the_repaired_tests_changed(repo_root: str | Path) -> bool:
     """Whether a reopened suite differs from its last lock only in the tests sent for repair, each still a check.
 

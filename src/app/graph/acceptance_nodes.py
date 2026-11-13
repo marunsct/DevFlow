@@ -676,6 +676,10 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     suite.rename_files_the_runner_skips(root)
     # So is a read of `request.baseURL`, left through three rounds although each named the corrected line.
     suite.correct_reads_of_the_fixture_s_baseurl(root)
+    # A repair changes only the tests it was sent for: any other it rewrote goes back as the review approved it.
+    untouched = suite.put_back_tests_the_repair_was_not_sent_for(root)
+    if untouched:
+        logger.warning("Put back %d test(s) the repair was not sent for: %s", len(untouched), ", ".join(untouched[:8]))
     problems = suite.gaps(root)
     result = suite.run(root)
     worse = suite.a_repair_that_made_it_worse(root, result)

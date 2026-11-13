@@ -81,3 +81,17 @@ def test_the_release_clears_the_data_again_after_measuring_again() -> None:
     source = inspect.getsource(delivery.release)
     measured = source.index("_measured_again_if_it_changed(root, left_out)")
     assert source.index("remove_the_run_s_own_data", measured) > measured
+
+
+def test_a_database_the_tests_wrote_does_not_ship_though_the_plan_names_one_like_it(tmp_path) -> None:
+    """Measured (hidden 10/10, handoff 0.875): the plan named the product's runtime `tasks.db`, and the suite's own
+    `acceptance/.test-data/tasks.db` shipped because a file of that name was planned."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "technical_specification.md").write_text(
+        "## File Plan\n- api/config.py: db_path is os.path.join(data_dir, 'tasks.db')\n")
+    (tmp_path / "api" / "acceptance" / ".test-data").mkdir(parents=True)
+    (tmp_path / "api" / "acceptance" / ".test-data" / "tasks.db").write_text("")
+    (tmp_path / "api" / "tasks.db").write_text("")
+    removed = release_audits.remove_the_run_s_own_data(tmp_path, "api", time.time() - 60)
+    assert removed == ["api/acceptance/.test-data/tasks.db"]
+    assert (tmp_path / "api" / "tasks.db").exists()

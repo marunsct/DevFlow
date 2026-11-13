@@ -259,6 +259,16 @@ _DATABASES = (".db", ".sqlite", ".sqlite3")
 _NOT_THE_PRODUCT_S = {"node_modules", ".venv", "venv", "__pycache__", ".git"}
 
 
+#: Folders whose files the tests write, not the product.
+_TEST_FOLDERS = frozenset({"acceptance", "tests", "test", "__tests__", "spec", "e2e", "test-results", "test-data"})
+
+
+def _written_by_the_tests(relative: Path) -> bool:
+    """Whether a file lies under a folder of the tests or a hidden folder."""
+    folders = [part.lower() for part in relative.parts[:-1]]
+    return any(part in _TEST_FOLDERS or part.startswith(".") for part in folders)
+
+
 def _databases_the_run_wrote(root: Path, base: Path, started: float) -> list[str]:
     """Each database file anywhere in the project that this run wrote and the file plan does not list; removed.
 
@@ -273,9 +283,13 @@ def _databases_the_run_wrote(root: Path, base: Path, started: float) -> list[str
             if (not path.is_file() or path.suffix.lower() not in _DATABASES
                     or set(path.relative_to(base).parts) & _NOT_THE_PRODUCT_S or path.stat().st_mtime < started):
                 continue
-            # Listed by name in the file plan: the product's own seed, kept. No file plan to read: kept too.
+            # Listed by name in the file plan: the product's own seed, kept. No file plan to read: kept too. One the
+            # tests wrote - under a test or acceptance folder, or a hidden one - is never the seed, whatever its name:
+            # measured on one run, the plan named the product's runtime `tasks.db` and the suite's own
+            # `acceptance/.test-data/tasks.db` shipped beside it.
             spec = root / "docs" / "technical_specification.md"
-            if not spec.is_file() or _in_the_file_plan(path.name, root):
+            if not _written_by_the_tests(path.relative_to(base)) and (
+                    not spec.is_file() or _in_the_file_plan(path.name, root)):
                 continue
             path.unlink()
             removed.append(path.relative_to(root).as_posix())

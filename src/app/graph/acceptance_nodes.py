@@ -739,6 +739,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
                                    suite.outputs_held_only_in_part(root, getattr(state.get("document"), "text", "") or ""))
     partial = [*partial, *check_findings.noted(root, rounds, "whitespace_tested_with_spaces_only",
                                                 suite.whitespace_tested_with_spaces_only(root))]
+    partial = [*partial, *check_findings.noted(root, rounds, "words_broken_only_at_spaces",
+                                                suite.words_broken_only_at_spaces(root))]
     problems.extend(partial)
     problems.extend(check_findings.noted(root, rounds, "views_never_acted_within",
                                          suite.views_never_acted_within(root, getattr(state.get("document"), "text", "") or "")))

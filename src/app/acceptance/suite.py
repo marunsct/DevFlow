@@ -2685,6 +2685,48 @@ def whitespace_tested_with_spaces_only(repo_root: str | Path) -> list[str]:
         return []
 
 
+#: An expected string in a test: `== "..."`, `toBe('...')`, `toEqual("...")`, `assertEqual(x, "...")`.
+_AN_EXPECTED_STRING = re.compile(r"""(?:==|\btoBe\(|\btoEqual\(|\btoStrictEqual\(|assertEqual\([^,\n]*,)\s*(?P<q>['"])(?P<text>(?:\\.|(?!(?P=q)).)*)(?P=q)""")
+#: A word after a space starting with a capital, and one after a tab or line break starting with a small letter.
+_CAPITAL_AFTER_A_SPACE = re.compile(r" [A-Z]")
+_SMALL_AFTER_OTHER_WHITESPACE = re.compile(r"(?:\\[tnr]|[\t\n\r])+[a-z]")
+
+
+def words_broken_only_at_spaces(repo_root: str | Path) -> list[str]:
+    """Each test of a whitespace criterion that expects a word after a tab or line break left as it was, while words after
+    spaces change: it holds the product to breaking words at spaces only.
+
+    Measured on one run: the suite tested `title_case("hello world\t\nfoo") == "Hello World\t\nFoo"`; a dispute
+    called it wrong, the rewrite expected `"...\t\nfoo"` - what a product splitting on spaces gives - the suite locked
+    47 of 47, and the hidden test of a word after a tab failed. A word is a word whatever whitespace comes before it.
+    """
+    try:
+        speaking = [c for c in criteria(repo_root) if _SPEAKS_OF_WHITESPACE.search(c.text or "")]
+        if not speaking:
+            return []
+        from app.acceptance.junit import tags_in
+
+        bodies = _test_bodies(repo_root)
+        findings = []
+        for criterion in speaking:
+            for name, body in sorted(bodies.items()):
+                if criterion.id not in tags_in(name):
+                    continue
+                for match in _AN_EXPECTED_STRING.finditer(body):
+                    text = match.group("text")
+                    if _CAPITAL_AFTER_A_SPACE.search(text) and _SMALL_AFTER_OTHER_WHITESPACE.search(text):
+                        findings.append(
+                            f"`{name}` ({criterion.id}) expects {match.group(0).split(match.group('q'), 1)[0].strip()} "
+                            f"{match.group('q')}{text}{match.group('q')}: words after spaces change but a word after a "
+                            "tab or line break is left as it was, so it passes only a product that breaks words at spaces. "
+                            "A word after any whitespace is a word: expect it changed the same way."
+                        )
+                        break
+        return findings
+    except Exception:  # noqa: BLE001 - a check that cannot read the suite finds nothing
+        return []
+
+
 #: What makes each kind of record in a page's sources, in markup, a script or a template: `<li>`, `createElement('li')`,
 #: `role="listitem"`; `<tr>`, `insertRow(`, `role="row"`.
 #: A role given in a script as well as in markup: `setAttribute('role', 'listitem')`, `el.role = 'listitem'`,

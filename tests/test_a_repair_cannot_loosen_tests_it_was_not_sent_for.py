@@ -54,3 +54,40 @@ def test_the_review_puts_them_back_before_it_reads_the_suite():
 
     source = inspect.getsource(acceptance_nodes.acceptance_review)
     assert source.index("put_back_tests_the_repair_was_not_sent_for") < source.index("problems = suite.gaps(root)")
+
+
+BROKEN = ("test('[AC-7] isolated', async ({ page }) => {\n  const id = await made(page.request, 'x');\n"
+          "  expect(await count(id)).toBe(1);\n});\n")
+
+
+def _failed_last(tmp_path, title, message):
+    import json
+
+    path = tmp_path / suite.RESULT_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"criteria": {"AC-7": {"id": "AC-7", "tests": [
+        {"name": title, "outcome": "failed", "message": message}]}}}))
+
+
+def test_a_test_that_failed_on_its_own_code_keeps_a_mend_that_keeps_its_assertions(tmp_path):
+    spec = _repairing(tmp_path, ["[AC-2] counts"])
+    spec.write_text(HEAD + CALLED_WRONG + RIGHT + "\n" + BROKEN)
+    suite.lock(tmp_path)
+    suite.unlock(tmp_path)
+    suite.repairing(tmp_path, ["[AC-2] counts"])
+    _failed_last(tmp_path, "[AC-7] isolated",
+                 "TypeError: Cannot read properties of undefined (reading 'post')\n    at made (acceptance/page.spec.js:7:3)")
+    mended = BROKEN.replace("made(page.request, 'x')", "made(page, 'x')")
+    spec.write_text(HEAD + CALLED_WRONG + RIGHT + "\n" + mended)
+
+    assert suite.put_back_tests_the_repair_was_not_sent_for(tmp_path) == []
+    assert "made(page, 'x')" in spec.read_text()
+
+    # Its assertion changed too: put back, whatever it failed on.
+    spec.write_text(HEAD + CALLED_WRONG + RIGHT + "\n" + mended.replace("toBe(1)", "toBeGreaterThan(0)"))
+    assert suite.put_back_tests_the_repair_was_not_sent_for(tmp_path) == ["[AC-7] isolated"]
+
+    # An assertion's failure is the product's to answer, not the test's code: put back.
+    _failed_last(tmp_path, "[AC-7] isolated", "Error: expect(received).toBe(expected) at page.spec.js:8")
+    spec.write_text(HEAD + CALLED_WRONG + RIGHT + "\n" + mended)
+    assert suite.put_back_tests_the_repair_was_not_sent_for(tmp_path) == ["[AC-7] isolated"]

@@ -595,6 +595,40 @@ def _assertions_in(block: str) -> int:
     return block.count("expect(") + len(_A_PYTHON_ASSERTION.findall(block))
 
 
+#: An error a program raises in its own code - not an assertion: a name, an attribute or a call it got wrong.
+_A_CODE_ERROR = re.compile(r"\b(?:AttributeError|TypeError|NameError|ReferenceError|UnboundLocalError|SyntaxError)\b")
+#: A line that asserts, in the runners the packs use: `assert`, `expect(...)`, `assertEqual(...)`, `.should`.
+_ASSERTS = re.compile(r"\bassert\b|\bexpect\s*\(|\bassert[A-Z_]\w*\s*\(|\.should\b")
+
+
+def _failed_on_its_own_code(repo_root: str | Path, title: str, file_name: str) -> bool:
+    """Whether the last measurement failed test `title` on an error its own code raised in `file_name`."""
+    for criterion in (last_result(repo_root).get("criteria") or {}).values():
+        for test in (criterion or {}).get("tests") or []:
+            name = str(test.get("name") or "")
+            if test.get("outcome") == "failed" and (name == title or name.endswith(title) or title.endswith(name)):
+                message = str(test.get("message") or "")
+                return bool(_A_CODE_ERROR.search(message)) and f"{file_name}:" in message
+    return False
+
+
+def _its_assertions(block: str) -> list[str]:
+    return [" ".join(line.split()) for line in block.splitlines() if _ASSERTS.search(line)]
+
+
+def _a_repair_of_its_own_code(repo_root: str | Path, title: str, file_name: str, before: str, after: str) -> bool:
+    """Whether a change to a test no ruling named only mends the code that broke it, keeping every assertion.
+
+    Measured on one run: four isolation tests failed on their own helper call (`'str' object has no attribute
+    'function'`); the repair sent for five other tests mended their calls too, the put-back restored the broken
+    calls, and the four failed again on any product. A test that failed on its own code and keeps each assertion
+    word for word cannot have been loosened by the change.
+    """
+    kept = _its_assertions(after)
+    return (_failed_on_its_own_code(repo_root, title, file_name)
+            and bool(_its_assertions(before)) and all(line in kept for line in _its_assertions(before)))
+
+
 def put_back_tests_the_repair_was_not_sent_for(repo_root: str | Path) -> list[str]:
     """Each test a repair changed though it was not sent for it, put back as it was locked; the titles. Never raises.
 
@@ -625,6 +659,8 @@ def put_back_tests_the_repair_was_not_sent_for(repo_root: str | Path) -> list[st
                 if title not in before or block == before[title] or title.startswith("#"):
                     continue
                 if any(title == test or title in test or test in title for test in under_repair):
+                    continue
+                if _a_repair_of_its_own_code(repo_root, title, path.name, before[title], block):
                     continue
                 if changed.count(block) == 1:
                     changed = changed.replace(block, before[title], 1)

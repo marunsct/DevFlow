@@ -66,6 +66,30 @@ def the_locked_suite_is_green(root: str | Path) -> bool:
         return False
 
 
+def the_locked_suite_is_green_for_this_sprint(root: str | Path) -> bool:
+    """Whether the locked suite's last run failed only tests that wait on a later sprint's criteria. Never raises.
+
+    Measured on one run: sprint 1 of 2 had 18 locked tests failing, every one a test of a criterion not yet due; the
+    milestone review accepted it, the measured-suite gate sent it back, the lead re-planned with nothing to build, and
+    the run went round review, re-plan and review three times without building anything.
+    """
+    try:
+        from app.acceptance import junit, sprint_scope, suite
+
+        result = suite.last_result(root) or {}
+        if not (result.get("ran") and int(result.get("passed") or 0) > 0 and not str(result.get("problem") or "")):
+            return False
+        waiting = sprint_scope.waiting_tests(root)
+        command = suite._command(root)  # noqa: SLF001 - the suite's own report
+        if not waiting or not command:
+            return False
+        report = junit.read(Path(root) / command[2] / command[1])
+        failing = [t.name for t in report.tests if t.outcome == "failed"]
+        return bool(failing) and all(sprint_scope.waits_on(name, waiting) for name in failing)
+    except Exception:  # noqa: BLE001 - a rule that cannot tell says it is not green
+        return False
+
+
 def the_acceptance_command(root: str | Path) -> str:
     """The locked suite's own command, as the execution ledger records commands; "" when unknown. Never raises."""
     try:

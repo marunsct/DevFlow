@@ -8379,6 +8379,11 @@ def _a_red_suite_the_review_called_green(state: WorkflowGraphState) -> str:
             logger.info("The ledger's last failing run was `%s`, not the locked suite, which is green; not sent back",
                         last[:120])
             return ""
+    # Failing only where a later sprint builds: this sprint is measured by its own share of the suite.
+    if settle_when_green.enabled() and settle_when_green.the_locked_suite_is_green_for_this_sprint(
+            state["repository"].root_path):
+        logger.info("The locked suite fails only tests of criteria a later sprint delivers; the sprint is not sent back")
+        return ""
     # A failure the counts cannot show. A composite command - `npm test` chaining
     # `node --test` and `playwright test` - has its first runner's summary parsed,
     # so a later runner's failure leaves `failed: 0` beside a non-zero exit code.

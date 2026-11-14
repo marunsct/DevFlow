@@ -5635,6 +5635,52 @@ def tests_whose_value_and_length_disagree(repo_root: str | Path) -> list[str]:
     return findings
 
 
+#: A length a test states in its own words: "(exactly 10 chars)", "exactly 10 characters".
+_A_LENGTH_STATED = re.compile(r"\bexactly (?P<n>\d{1,4}) (?:chars?|characters?)\b", re.I)
+#: The runner's comparison of two texts: pytest's `assert 'got' == 'wanted'`, a JavaScript runner's
+#: `Expected: "wanted"` / `Received: "got"`.
+_TWO_TEXTS_COMPARED = (
+    re.compile(r"""assert (?P<got>'[^'\n]*'|"[^"\n]*") == (?P<wanted>'[^'\n]*'|"[^"\n]*")"""),
+    re.compile(r"""Expected:\s*(?P<wanted>"[^"\n]*")\s*\n\s*Received:\s*(?P<got>"[^"\n]*")"""),
+)
+
+
+def tests_whose_expected_text_breaks_their_own_length(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
+    """Each failing test that states its result has exactly N characters, got N, and expects a text of another length.
+
+    Measured on one run: `truncate("Hello, world!", 10, suffix=">>")` was expected to equal "Hello, wo>>" (11
+    characters) under a docstring saying "exactly 10 chars"; the product returned the 10 the criterion asks for, the
+    dispute counted the slice the test's way, and a right product was planned again. Only a measured failure: what
+    the product returned has the stated length, and the text the test wants does not.
+    """
+    if result is None or not getattr(result, "ran", False):
+        return []
+    try:
+        failing = {t.name: str(t.message or "") for t in result.report.tests if t.outcome == "failed"}
+        findings = []
+        for name, body in sorted(_test_bodies(repo_root).items()):
+            stated = {int(m.group("n")) for m in _A_LENGTH_STATED.finditer(body)}
+            message = next((m for test, m in failing.items() if test == name or test.endswith(name)), None)
+            if len(stated) != 1 or message is None:
+                continue
+            [n] = stated
+            for pattern in _TWO_TEXTS_COMPARED:
+                match = pattern.search(message)
+                got = _the_literal(match.group("got")) if match else None
+                wanted = _the_literal(match.group("wanted")) if match else None
+                if got is not None and wanted is not None and len(got) == n and len(wanted) != n:
+                    findings.append(
+                        f"`{name}` says its result has exactly {n} characters, and the product returned {got!r} "
+                        f"({n}), but the test expects {wanted!r} ({len(wanted)}): the expected text breaks the test's "
+                        "own length, so it was counted by hand and is wrong. Work it out in the test from the "
+                        "criterion (a slice of the input, the suffix added) instead of writing it out."
+                    )
+                    break
+        return findings[:8]
+    except Exception:  # noqa: BLE001 - a check that cannot read the suite finds nothing
+        return []
+
+
 #: A failure that is the service refusing a record it already holds: `assert 409 == 201`, `409 Conflict`.
 _ALREADY_HELD = re.compile(r"\b409\b")
 #: A quoted value handed to a call: `signup(base_url, "alice", "secret")`, `create({ name: 'Docs' })`.
@@ -5747,6 +5793,8 @@ def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> l
         *_by(checks, "the_suite_failed_in_its_own_words", the_suite_failed_in_its_own_words(repo_root, result)),
         *_by(checks, "tests_whose_label_also_matches_a_longer_name", tests_whose_label_also_matches_a_longer_name(repo_root, result)),
         *_by(checks, "tests_that_make_what_other_tests_make", tests_that_make_what_other_tests_make(repo_root, result)),
+        *_by(checks, "tests_whose_expected_text_breaks_their_own_length",
+             tests_whose_expected_text_breaks_their_own_length(repo_root, result)),
     ]
     # These read a test's text, and text is a guess at what it does.
     read_from_text = [

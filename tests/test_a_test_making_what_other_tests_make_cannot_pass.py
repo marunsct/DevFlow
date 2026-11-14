@@ -86,3 +86,32 @@ def test_a_refusal_the_test_expected_or_a_value_made_alike_is_the_product_s(tmp_
     # Every test makes 'alice' with the same password: a sign-in refused is not the suite's doing.
     assert suite.tests_that_make_what_other_tests_make(
         alike, _failed("test_ac9_signup_success", "assert 401 == 201")) == []
+
+
+EMPTIED = '''
+def test_ac12_empty_title_rejected(base_url):
+    token = signin_user(base_url, "alice", "secret")
+    assert create(base_url, token, "").status_code == 400
+    assert list_items(base_url, token).json() == []
+
+
+def test_ac4_lists(base_url):
+    token = signin_user(base_url, "alice", "secret")
+    create(base_url, token, "first")
+
+
+def test_ac4_empty_for_a_new_account(base_url):
+    token = signin_user(base_url, "zed_only", "secret")
+    assert list_items(base_url, token).json() == []
+'''
+
+
+def test_an_empty_list_expected_under_a_shared_value_is_named(tmp_path):
+    _a_suite(tmp_path, EMPTIED)
+    said = "AssertionError: assert [{'done': Fal...'first'}] == []\nLeft contains 4 more items, first extra item"
+    [found] = suite.tests_that_make_what_other_tests_make(tmp_path, _failed("test_ac12_empty_title_rejected", said))
+    assert found.startswith("`test_ac12_empty_title_rejected` makes its record with 'alice'")
+    assert "found the records other tests made" in found and not BANNED.search(found)
+    # A value of its own: the records it found are the product's doing.
+    assert suite.tests_that_make_what_other_tests_make(
+        tmp_path, _failed("test_ac4_empty_for_a_new_account", said)) == []

@@ -5583,6 +5583,8 @@ _A_VALUE_IN_A_CALL = re.compile(r"""\(\s*(?:[^()'"]*?,\s*)?(?P<q>['"])(?P<value>
 _REFUSED_AS_NOT_MATCHING = re.compile(
     r"\bassert 40[13] ==|Received:\s*40[13]\b|\b40[13] (?:UNAUTHORIZED|FORBIDDEN)\b|\bstatus(?:_code)?\W+40[13]\b.{0,20}\bexpected\b",
     re.I)
+#: The suite expected an empty collection and got records: `assert [{...}] == []`, `Left contains 4 more items`.
+_EXPECTED_NONE_GOT_SOME = re.compile(r"assert \[.+\] == \[\]|Left contains \d+ more items?|assert [1-9]\d* == 0\b")
 #: The value a call makes and the quoted value handed with it: `signup(base_url, "alice", "secret123")`.
 _A_VALUE_WITH_THE_NEXT = re.compile(
     r"""\(\s*(?:[^()'"]*?,\s*)?(?P<q>['"])(?P<value>[A-Za-z][\w.@-]{1,40})(?P=q)\s*,\s*(?P<r>['"])(?P<next>[^'"\n]{1,60})(?P=r)""")
@@ -5609,7 +5611,7 @@ def tests_that_make_what_other_tests_make(repo_root: str | Path, result: Accepta
     try:
         failing = {t.name: t.message or "" for t in result.report.tests if t.outcome == "failed"}
         if not any(_ALREADY_HELD.search(message) or _REFUSED_AS_NOT_MATCHING.search(message)
-                   for message in failing.values()):
+                   or _EXPECTED_NONE_GOT_SOME.search(message) for message in failing.values()):
             return []
         bodies = _test_bodies(repo_root)
         made_in = {name: {m.group("value") for m in _A_VALUE_IN_A_CALL.finditer(body)} for name, body in bodies.items()}
@@ -5619,20 +5621,25 @@ def tests_that_make_what_other_tests_make(repo_root: str | Path, result: Accepta
             if message is None:
                 continue
             held = bool(_ALREADY_HELD.search(message))
-            if not held and not _REFUSED_AS_NOT_MATCHING.search(message):
+            refused = bool(_REFUSED_AS_NOT_MATCHING.search(message))
+            # Expected nothing and found others' records: measured on one run, three rejection tests signed in as a
+            # name 26 tests shared and asserted its list empty, which other tests' records made it on any product.
+            emptied = not held and not refused and bool(_EXPECTED_NONE_GOT_SOME.search(message))
+            if not (held or refused or emptied):
                 continue
             shared = sorted(v for v in made_in.get(name, ()) if sum(v in values for values in made_in.values()) > 1)
             # Refused as not matching only where another test makes the same value with something else beside it
             # (another password): measured on one run, a sign-in test signed up a name 30 tests shared, the sign-up
             # was refused unasserted, and the sign-in with its own password answered 401 - on any product.
-            if not held:
+            if refused and not held:
                 shared = [v for v in shared if _made_differently_elsewhere(name, v, bodies)]
             if not shared:
                 continue
             others = sum(shared[0] in values for values in made_in.values()) - 1
             answered = ("the service answered 409" if held else
                         "the service refused what this test presented with it, as another test made it first with "
-                        "something else beside it")
+                        "something else beside it" if refused else
+                        "the test expected nothing under it and found the records other tests made under it")
             findings.append(
                 f"`{name}` makes its record with '{shared[0]}', which {others} other test(s) make theirs with too, and "
                 f"{answered}: the suite runs against one service, so only the first test to make it gets "

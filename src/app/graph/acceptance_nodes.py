@@ -688,6 +688,45 @@ ACCESSIBILITY_REMEDIES = {
 }
 
 
+def _the_suite_s_files(root: str | Path) -> dict[Path, str]:
+    """Each file of the suite with its text now; {} when it cannot be read."""
+    try:
+        return {path: path.read_text(encoding="utf-8") for path in suite.suite_files(root)}
+    except Exception:  # noqa: BLE001 - nothing to put back to
+        return {}
+
+
+def _write_the_suite_s_files(files: dict[Path, str]) -> None:
+    for path, text in files.items():
+        try:
+            path.write_text(text, encoding="utf-8")
+        except OSError:
+            logger.debug("Could not write %s back", path, exc_info=True)
+
+
+def _the_repair_measured(root: str | Path) -> tuple[list[str], Any, str]:
+    """(the suite's gaps, its measurement, what a repair lost) after the tests a repair was not sent for are put back.
+
+    The put-back may be what broke it: a test put back into a file the repair reshaped. Measured on one run, the suite
+    then ran no test at all, and the whole repair of six tests was thrown away for the one put back - so a put-back
+    that leaves the suite worse is undone first, and the repair is judged as it was written.
+    """
+    as_repaired = _the_suite_s_files(root)
+    untouched = suite.put_back_tests_the_repair_was_not_sent_for(root)
+    if untouched:
+        logger.warning("Put back %d test(s) the repair was not sent for: %s", len(untouched), ", ".join(untouched[:8]))
+    problems = suite.gaps(root)
+    result = suite.run(root)
+    worse = suite.a_repair_that_made_it_worse(root, result)
+    if worse and untouched and as_repaired:
+        _write_the_suite_s_files(as_repaired)
+        kept = suite.run(root)
+        if not suite.a_repair_that_made_it_worse(root, kept):
+            logger.warning("Putting back %s broke the suite; the repair's version is kept", ", ".join(untouched[:4]))
+            return suite.gaps(root), kept, ""
+    return problems, result, worse
+
+
 def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]:
     """Check the suite mechanically, have a QA lead judge it, then lock it."""
     from app.agents.acceptance_reviewer import (
@@ -703,12 +742,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     # So is a read of `request.baseURL`, left through three rounds although each named the corrected line.
     suite.correct_reads_of_the_fixture_s_baseurl(root)
     # A repair changes only the tests it was sent for: any other it rewrote goes back as the review approved it.
-    untouched = suite.put_back_tests_the_repair_was_not_sent_for(root)
-    if untouched:
-        logger.warning("Put back %d test(s) the repair was not sent for: %s", len(untouched), ", ".join(untouched[:8]))
-    problems = suite.gaps(root)
-    result = suite.run(root)
-    worse = suite.a_repair_that_made_it_worse(root, result)
+    problems, result, worse = _the_repair_measured(root)
     if worse:
         # The suite as it was locked comes back before anything else reads this one; the writers are told what the
         # repair lost, so it is never locked in place of the better suite.

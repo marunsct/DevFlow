@@ -52,8 +52,10 @@ def test_the_review_puts_them_back_before_it_reads_the_suite():
 
     from app.graph import acceptance_nodes
 
-    source = inspect.getsource(acceptance_nodes.acceptance_review)
+    source = inspect.getsource(acceptance_nodes._the_repair_measured)
     assert source.index("put_back_tests_the_repair_was_not_sent_for") < source.index("problems = suite.gaps(root)")
+    review = inspect.getsource(acceptance_nodes.acceptance_review)
+    assert review.index("_the_repair_measured(root)") < review.index("suite.put_back_the_suite_before_the_repair")
 
 
 BROKEN = ("test('[AC-7] isolated', async ({ page }) => {\n  const id = await made(page.request, 'x');\n"

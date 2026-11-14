@@ -55,4 +55,4 @@ def test_a_suite_without_the_read_is_left_alone(tmp_path):
 
 def test_the_review_makes_the_correction_before_it_checks():
     source = inspect.getsource(acceptance_nodes.acceptance_review)
-    assert source.index("suite.correct_reads_of_the_fixture_s_baseurl(root)") < source.index("problems = suite.gaps(root)")
+    assert source.index("suite.correct_reads_of_the_fixture_s_baseurl(root)") < source.index("_the_repair_measured(root)")

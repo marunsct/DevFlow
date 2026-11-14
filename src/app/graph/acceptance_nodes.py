@@ -678,6 +678,11 @@ ACCESSIBILITY_REMEDIES = {
     "list": ("A list holds only its items: put a message shown when it is empty, or any other element, beside the "
              "list - before or after it - never inside it, and leave the items themselves as they are."),
     "listitem": "A list item sits directly inside a list; an element marked as an item outside one is not an item.",
+    # The same mistake under an explicit role: measured on one run, an empty-list message inside `<ul role="list">`
+    # was reported as this rule, not `list`, got no remedy, and stayed open through three fix rounds.
+    "aria-required-children": ("An element given a role that holds items (a list, a listbox, a menu, a table) holds "
+                               "only those items: put a message shown when it is empty, or any other element, beside "
+                               "it - before or after it - never inside it, and leave the items themselves as they are."),
     "color-contrast": ("Text needs a contrast of at least 4.5 to 1 with its background: take the colour from the "
                        "page's own colour names (its design tokens) rather than writing a lighter one by hand."),
 }

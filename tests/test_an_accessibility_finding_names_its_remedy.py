@@ -22,3 +22,10 @@ def test_each_measured_rule_has_a_remedy_in_plain_words():
 def test_the_finding_carries_the_remedies_of_the_rules_it_names():
     source = inspect.getsource(acceptance_nodes)
     assert "ACCESSIBILITY_REMEDIES[rule.get('id')]" in source and 'if rule.get("id") in ACCESSIBILITY_REMEDIES' in source
+
+
+def test_the_same_mistake_under_an_explicit_role_has_the_same_remedy():
+    """Measured on one run: an empty-list message inside `<ul role="list">` was reported as `aria-required-children`,
+    got no remedy, and stayed open through three fix rounds."""
+    remedy = acceptance_nodes.ACCESSIBILITY_REMEDIES["aria-required-children"]
+    assert "beside" in remedy and "never inside it" in remedy and not BANNED.search(remedy)

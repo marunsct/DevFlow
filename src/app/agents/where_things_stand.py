@@ -114,13 +114,30 @@ def _the_suite(root: str) -> str:
         return ""
 
 
+def _the_build(root: str) -> str:
+    """A line with the compiler's errors in the product's own files when its last build failed, or "". Never raises."""
+    try:
+        from app.stacks import production_build
+
+        errors = production_build.errors_in_the_product(root)
+    except Exception:  # noqa: BLE001 - no measurement is no line
+        return ""
+    if not errors:
+        return ""
+    return ("- The product's production build failed when last run, naming its own files: "
+            + "; ".join(f"`{e}`" for e in errors)
+            + ". A behaviour the suite finds broken can come from such an error; fix it first.")
+
+
 def block(state: Any, leave_out: str = "") -> str:
     """The block for a request, or "" when off or there is nothing to say. Never raises."""
     if not enabled():
         return ""
     try:
         outputs = state.get("specialist_outputs") or {}
-        lines: list[str] = []
+        # First: the block is cut at its length, and a build that fails explains more than anything after it.
+        built = _the_build(state["repository"].root_path)
+        lines: list[str] = [built] if built else []
         finished = _finished(outputs, leave_out)
         if finished:
             lines += ["Finished this sprint:", *finished]
@@ -136,6 +153,7 @@ def block(state: Any, leave_out: str = "") -> str:
         measured = _the_suite(state["repository"].root_path)
         if measured:
             lines.append(measured)
+
         if not lines:
             return ""
         text = HEADING + "\n" + "\n".join(lines)

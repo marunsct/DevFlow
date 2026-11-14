@@ -159,6 +159,36 @@ def files_named(repo_root: str | Path, output: str) -> list[str]:
     return found
 
 
+#: Folders whose files are tests, not the product: an error there does not explain a behaviour that fails.
+_TEST_FOLDERS = frozenset({"acceptance", "tests", "test", "__tests__", "spec", "e2e"})
+#: A test file by its own name.
+_A_TEST_NAME = re.compile(r"(?:^|[._-])(?:test|spec)(?:[._-]|$)", re.IGNORECASE)
+#: The most compiler lines the "where things stand" block carries.
+MOST_LINES = 3
+
+
+def _names_a_product_file(line: str) -> bool:
+    match = _A_PLACE.search(line)
+    if not match:
+        return False
+    parts = match["path"].removeprefix("./").split("/")
+    return not (_TEST_FOLDERS.intersection(parts[:-1]) or _A_TEST_NAME.search(parts[-1]) or "node_modules" in parts)
+
+
+def errors_in_the_product(repo_root: str | Path) -> list[str]:
+    """The compiler's lines naming the product's own files (not its tests) from the last build that failed; [] otherwise.
+
+    Measured on one run: the build named a call with one argument too many in the product's item view; three
+    acceptance criteria failed on that one error, and their fixers, told only what the suite saw, spent eight
+    rounds on markup and labels. Read from the kept answer only: this never runs the build. Never raises.
+    """
+    try:
+        said = str(_read_record(Path(repo_root)).get("failure") or "")
+        return [" ".join(line.split())[:240] for line in said.splitlines() if _names_a_product_file(line)][:MOST_LINES]
+    except Exception:  # noqa: BLE001 - no line rather than a wrong one
+        return []
+
+
 def reproduce(repo_root: str | Path) -> str:
     """The sentence saying how to see the failure."""
     command = declared(repo_root)
@@ -168,4 +198,5 @@ def reproduce(repo_root: str | Path) -> str:
     return f"Run `{' '.join(command[0])}`{where}: it fails, whatever the suite running on the development server says."
 
 
-__all__ = ["THE_PRODUCT_DOES_NOT_BUILD", "declared", "failure", "files_named", "reproduce", "still_raised"]
+__all__ = ["THE_PRODUCT_DOES_NOT_BUILD", "declared", "errors_in_the_product", "failure", "files_named", "reproduce",
+           "still_raised"]

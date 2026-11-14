@@ -845,6 +845,14 @@ def untested_is_no_reason(declined: Sequence[str]) -> str:
 _ONLY_RUNS = re.compile(r"^\s*(?:re-?run|run|execute|verify|confirm|check)\b", re.I)
 #: Only the verbs that can only mean writing: "verify the database fix" is a run, so `fix` and `change` are not here.
 _WRITES = re.compile(r"\b(?:write|writes|add|adds|create|creates|implement|implements)\b", re.I)
+#: A line that quotes a criterion (`- AC-3: Create item returns 201`): what is checked, not what the order does.
+_A_CRITERION_LINE = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])?\s*\[?[A-Z]{2,}-\d+\]?\s*[:\-\u2013\u2014]", re.M)
+
+
+def _its_own_words(description: str) -> str:
+    """A work order's description without the lines that quote criteria: measured on one run, a run-only order listed
+    "AC-3: Create item returns 201", read as writing, was kept, and the plan was sent back for it naming no files."""
+    return "\n".join(line for line in str(description or "").splitlines() if not _A_CRITERION_LINE.match(line))
 
 
 def with_run_only_testing_orders_left_to_the_test_round(plan: Any) -> tuple[Any, list[str]]:
@@ -860,7 +868,7 @@ def with_run_only_testing_orders_left_to_the_test_round(plan: Any) -> tuple[Any,
         run_only = [t for t in tasks if _role(t) == _TESTING
                     and not [f for f in getattr(t, "files", None) or [] if str(f).strip()]
                     and _ONLY_RUNS.search(str(getattr(t, "task_description", "") or ""))
-                    and not _WRITES.search(str(getattr(t, "task_description", "") or ""))]
+                    and not _WRITES.search(_its_own_words(str(getattr(t, "task_description", "") or "")))]
         if not run_only or len(run_only) == len(tasks):
             return plan, []
         labels = [_label(tasks.index(t) + 1, t) for t in run_only]

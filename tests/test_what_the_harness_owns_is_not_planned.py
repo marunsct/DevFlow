@@ -214,3 +214,23 @@ def test_the_measured_run_only_orders_are_left_and_a_writing_order_is_not() -> N
         assert _ONLY_RUNS.search(said) and not _WRITES.search(said), said
     assert _WRITES.search("Run the suite, then add tests for the empty title")
     assert not _ONLY_RUNS.search("do testing work")
+
+
+def test_a_run_only_order_quoting_criteria_is_still_left_to_the_test_round(project) -> None:
+    """Measured: "Run the full acceptance suite ... - AC-3: Create item returns 201" read as writing, was kept, and the
+    plan was sent back for it naming no files."""
+    from app.analysis.work_orders import _its_own_words, with_run_only_testing_orders_left_to_the_test_round
+
+    said = ("Run the full acceptance suite to verify every criterion passes.\n\nConfirm:\n"
+            "- AC-3: Create item returns 201 with id\n- [AC-9]: Add a second record\n1. AC-12 - Write rejected\n\n"
+            "Also run unit tests to verify no regressions.")
+    run_only = SpecialistTask(specialist_role="testing", title="", task_description=said, files=[], test_cases=["x"])
+    plan = _plan(_task("backend", "notes/src/app.js"), _task("testing", "notes/tests/app.test.js"), run_only)
+
+    left, labels = with_run_only_testing_orders_left_to_the_test_round(plan)
+
+    assert len(labels) == 1 and len(left.delegated_tasks) == 2
+    assert "Create" not in _its_own_words(said) and "Also run unit tests" in _its_own_words(said)
+    # A writing order says so in its own words, criteria or not.
+    writes = said + "\nThen write a test for the empty title."
+    assert "write a test" in _its_own_words(writes)

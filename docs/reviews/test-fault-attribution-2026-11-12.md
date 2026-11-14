@@ -41,3 +41,37 @@ review steps back: what the cases share, what the design gets wrong, and the cha
 1. Cause clusters (subsumes the filed shared-helper item and LF.854's case).
 2. Reopen-before-fix for a test-attributed cluster.
 3. Ship with LF.854-856 as one Fix batch; measure fix stages spent on right products against tonight's runs.
+
+## Follow-up 2026-11-14: one run, eight fixes
+
+L tasks-api 13 (10/10 hidden in the end) and L textkit-lib 9 (8/8) produced eight more fixes in this subsystem in one
+afternoon. They confirm the review above, and add one cause it did not name.
+
+| Fix | What the harness did wrong | Which of the shared causes |
+|---|---|---|
+| LF.893 | a failing unit run's defect showed frames, not errors; 20 failures of 2 causes read as one list | 1: one cause, many failures |
+| LF.894, LF.895 | a 401 and an empty list on a shared service were charged to the product (LF.889 read only a 409) | 1, and 3: a measured check widened |
+| LF.896 | a run-only testing order quoting a criterion read as writing tests | (planning, not attribution) |
+| LF.897, LF.898 | the put-back of tests a repair was not sent for restored broken calls to a helper the repair had changed | **new: tests judged one at a time, their shared code ignored** |
+| LF.899 | a deferred criterion's defect still went to fixers; one fix broke 37 tests | **new: a criterion's deferral not consulted** |
+| LF.900 | a hand-counted expected text; the dispute judge counted the slice the same wrong way | 2: the judge asked before a measured check |
+
+What held: every check that read a measured failure (LF.893-895, LF.900) fired on the live run and moved the score
+(tasks-api 34 -> 44 of 48 tests; textkit 53 -> 54 of 54). The dispute judge, a single model reply, was wrong twice
+(a sign-up it called 201 that the test never checked; text[:8] counted as 9 characters).
+
+What it adds to the change proposed above:
+
+1. **A suite file is the unit, not a test.** A helper in a file's head is shared by its tests; a repair or a put-back
+   that treats tests one by one leaves the file inconsistent (LF.898). The cause clusters proposed above should be
+   formed per file and per helper, and a put-back should restore or keep a file's head together with the tests that
+   call it.
+2. **Every gate reads the criterion's state.** Deferred, beyond repair, later sprint and reclassified are four records
+   of the same fact ("no fix stage's in this run"), read by different gates at different times (LF.899). One function
+   answering "is this criterion any fixer's now?" should be what every gate asks.
+3. **Measured before judged** stands: the dispute judge is asked only about failures no measured check explains, and
+   is shown what those checks found.
+
+Order, unchanged in spirit: (1) cause clusters per file and helper, subsuming LF.897-898's rules; (2) one
+"whose is this criterion" answer for every gate, subsuming LF.899; (3) the judge shown the measured findings. Each is
+a quality change (always on) with a test that fails on the old code; build at the next run boundary after the RC count.

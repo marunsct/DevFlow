@@ -2991,7 +2991,10 @@ def _the_unit_tests_fail(milestone: Any, output: str, *, beside_a_green_suite: b
     # command ran the page's tests and then the service's, the tail was the
     # service's passing output from the page runner's timing line on, and the
     # failing test and its error - before it - were in no defect.
-    causes = _what_the_failure_says(str(output or ""))
+    # Grouped by cause when the runner's report was read: the last error lines of the output are often one cause's.
+    from app import ci
+
+    causes = ci.the_distinct_causes(str(output or "")) or _what_the_failure_says(str(output or ""))
     # The note a stage's own command gets for the same output: measured on one
     # run, two fixes read `spawn /bin/sh ENOENT` - a child started in a working
     # directory that does not exist - as "no shell here" and changed nothing.

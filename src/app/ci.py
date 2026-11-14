@@ -206,16 +206,84 @@ def keep_the_unit_run(
         pass
 
 
+#: How the failures of one unit run, grouped by what they say, begin; `the_distinct_causes` reads them back.
+DISTINCT_CAUSES = "Distinct causes, most failing first:"
+#: Characters of one failure's message shown.
+MOST_MESSAGE = 600
+#: A line of a failure that states the error: `SomeError: ...`, an assertion, what was expected.
+_STATES_THE_ERROR = re.compile(r"\b\w*(?:Error|Exception)\b|\bassert(?:ion)?\b|\bexpected\b", re.I)
+#: A line that only says where, or what the runner shows of the source: a frame, an argument's value, a source line.
+_ONLY_SAYS_WHERE = re.compile(r'^(?:File "|at\s|\S+:\d+: in\b|>|self\s*=|\w+\s*=\s|_{5,}|\^+$|def\s)')
+
+
+def _its_error_lines(message: str) -> list[str]:
+    """The lines of a failure's message that state its error, in order; [] when none does.
+
+    pytest marks them itself (`E   TypeError: ...`); other runners' messages are read for a stated error. Measured on
+    one run: the report's message opened with the frame (`self = <...>`, `data_dir = '/tmp/...'`) and the first 600
+    characters of twenty failures never reached the error, so the fixer was told twenty frames and no cause.
+    """
+    lines = [" ".join(line.split()) for line in str(message or "").splitlines()]
+    marked = [line[2:] for line in lines if line.startswith("E ") and line[2:].strip()]
+    if marked:
+        return list(dict.fromkeys(marked))
+    return list(dict.fromkeys(line for line in lines
+                              if line and _STATES_THE_ERROR.search(line) and not _ONLY_SAYS_WHERE.match(line)))
+
+
+def _what_it_says(message: str) -> str:
+    """A failure's message as shown: whole when short, else its error lines; its start when none states one."""
+    text = str(message or "").strip()
+    if len(text) <= MOST_MESSAGE:
+        return text
+    stated = _its_error_lines(text)
+    return ("\n  ".join(stated) if stated else text)[:MOST_MESSAGE]
+
+
+def _its_cause(message: str) -> str:
+    """The one line a failure's cause is grouped by: its first stated error, else its first line."""
+    stated = _its_error_lines(message)
+    first = stated[0] if stated else next((" ".join(l.split()) for l in str(message or "").splitlines() if l.strip()), "")
+    return first[:200]
+
+
 def what_the_failing_unit_tests_say(tests: Sequence[Any]) -> str:
-    """The failing tests of a runner's report, each with its message; "" when none failed."""
+    """The failing tests of a runner's report, each with its message, then grouped by cause; "" when none failed.
+
+    Grouped because one cause fails many tests: measured on one run, eighteen tests failed on a table their fixture
+    never made and two on a call the test client does not offer; the fixer was shown the first and fixed neither.
+    """
     failed = [test for test in tests or () if getattr(test, "outcome", "") == "failed"]
     if not failed:
         return ""
-    return "Failing tests, from the runner's report:\n" + "\n".join(
+    listed = "Failing tests, from the runner's report:\n" + "\n".join(
         f"- {test.within + ' › ' if test.within else ''}{test.name}"
-        f"{' (' + test.file + ')' if test.file else ''}: {test.message[:600]}"
+        f"{' (' + test.file + ')' if test.file else ''}: {_what_it_says(test.message)}"
         for test in failed[:12]
     ) + (f"\n... and {len(failed) - 12} more" if len(failed) > 12 else "")
+    groups: dict[str, list[Any]] = {}
+    for test in failed:
+        groups.setdefault(_its_cause(test.message), []).append(test)
+    if len(failed) < 2:
+        return listed
+    lines = []
+    for cause, members in sorted(groups.items(), key=lambda item: -len(item[1]))[:6]:
+        named = ", ".join(f"`{(m.within + ' › ') if m.within else ''}{m.name}`" for m in members[:2])
+        lines.append(f"- {len(members)} failing, e.g. {named}: {cause or '(no message)'}")
+    return listed + "\n" + DISTINCT_CAUSES + "\n" + "\n".join(lines)
+
+
+def the_distinct_causes(output: str) -> str:
+    """The grouped causes `what_the_failing_unit_tests_say` wrote into a run's output; "" when it wrote none."""
+    _, found, after = str(output or "").rpartition(DISTINCT_CAUSES)
+    if not found:
+        return ""
+    lines = []
+    for line in after.splitlines()[1:]:
+        if not line.startswith("- "):
+            break
+        lines.append(line)
+    return (DISTINCT_CAUSES + "\n" + "\n".join(lines)) if lines else ""
 
 
 def unit_outcomes_in_the_pack_s_report(root: str | Path) -> tuple[dict[str, str], bool] | None:

@@ -140,6 +140,12 @@ def the_request(findings: list[str], specification: str, brief: str, setup: Sequ
 _A_LABEL_BEFORE_A_QUOTE = re.compile(r"^(?:[^:.]{1,60}:\s*)?(?:\.\.\.|…)?\s*")
 
 
+#: A pointer to a place with the words quoted inside it: `Section (line 17: 'the words')`, `line 17: "the words"`.
+_QUOTED_INSIDE_A_POINTER = re.compile(
+    r"""^[^'"\u2018\u201c]{0,80}\bline\s+\d+\s*[:,-]?\s*['"\u2018\u201c](?P<quote>.+)['"\u2019\u201d]\s*\)?\s*\.?$""",
+    re.IGNORECASE)
+
+
 def _as_quoted(statement: str, text: str) -> str:
     """`statement` in plain form, without the section's name or "..." before or after it when only that keeps it out of `text`.
 
@@ -150,7 +156,12 @@ def _as_quoted(statement: str, text: str) -> str:
     if plain in text:
         return plain
     bare = _A_LABEL_BEFORE_A_QUOTE.sub("", plain, count=1).removesuffix("...").removesuffix("…").strip()
-    return bare if bare in text else plain
+    if bare in text:
+        return bare
+    # Or the words quoted inside a pointer to where they are: `File Plan (line 138: 'Exports: generateId(): string')`.
+    # Measured on one run: three right rulings each quoted so, all three were rejected, the contradiction stayed open.
+    inside = _QUOTED_INSIDE_A_POINTER.search(plain)
+    return inside.group("quote") if inside and inside.group("quote") in text else plain
 
 
 def _in_the_specification(quote: str, text: str, specification: str) -> bool:

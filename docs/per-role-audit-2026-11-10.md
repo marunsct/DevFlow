@@ -315,6 +315,8 @@ LF.787 already covers the out-of-scope writes but is not yet measured; only efae
 
 ## 5. Ranked fix list
 
+*Status of the "Built?" column checked again 2026-11-14 17:3x JST.*
+
 Ranked by hidden score first, then by run time.
 
 | # | Fix | Expected effect | Built? |
@@ -324,9 +326,9 @@ Ranked by hidden score first, then by run time.
 | 3 | An escalated sprint still gets the milestone code review, and reclassified or deferred criteria count as unverified | 3 of the 4 false acceptances were escalated runs | Partly (LF.718, LF.778/779) |
 | 4 | The QA lead reviews every suite once before the lock | 3 runs had no QA-lead call (1 false acceptance); about 3 min per firing | No |
 | 5 | Run-wide defect call budget across re-plans | About 200–250 min per 30 runs; 5 of the 6 heaviest defects were never fixed | No (the cap exists per cycle; check `DEFECT_CALL_CAP`'s default) |
-| 6 | After a `cannot_pass` verdict, stop sending fixers; the re-plan text routes a wrong locked test to `blockers` | 40–60 calls per affected run; stops orders that target the suite | No (LF.772 and LF.183 cover neighbours) |
+| 6 | After a `cannot_pass` verdict, stop sending fixers; the re-plan text routes a wrong locked test to `blockers` | 40–60 calls per affected run; stops orders that target the suite | Partly (LF.772, LF.183; 11-14: LF.899 sends no fixer to a defect naming only deferred criteria, LF.894/895/900 add measured cannot-pass checks) |
 | 7 | Thinking off after a salvaged reply for `technical_lead` and `scrum_master` (existing switch) | At least 50 min per 30 runs | No |
-| 8 | The spec states counts of example text as "computed from the text" | Stops wrong counts in 3 runs and the fixer loops they cause | No (LF.772 covers the suite only) |
+| 8 | The spec states counts of example text as "computed from the text" | Stops wrong counts in 3 runs and the fixer loops they cause | Partly (LF.772 suite rule; 11-14: LF.900 catches a hand-counted expected text by measurement - the spec's own contract line was miscounted too on L textkit-lib 9) |
 | 9 | Repair `verification` before the readiness check; command-line arguments are not deliverables | About 31 min per 30 runs | No |
 | 10 | One sprint limit (`fast=`) in the scrum-master request; strip stale sprint numbers | Less scrum-master output (494k tokens); clean plans in 5 runs | No |
 

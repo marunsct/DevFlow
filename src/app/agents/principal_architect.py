@@ -579,6 +579,8 @@ Responsibilities:
 - Where the brief says how values are compared or matched (ignoring case,
   spaces or accents), also say in what form those values are shown: a rule for
   comparing leaves the output open, and builders print what they read first.
+  Where the brief names the form they are compared in ("in lower case",
+  "trimmed"), they are shown in that form unless the brief shows otherwise.
 - {WHAT_THE_BRIEF_STATES} Where the brief says one output
   replaces another ("instead", "only", "rather than"), that mode prints
   nothing else.

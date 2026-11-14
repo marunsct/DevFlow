@@ -26,3 +26,11 @@ def test_the_rule_asks_for_the_shown_form():
 
 def test_the_rule_bans_the_product_words():
     assert not BANNED.search(_rule())
+
+
+def test_a_named_compared_form_is_the_shown_form():
+    """Measured on a third run: "compared in lower case"; the architect chose "the casing of the first occurrence",
+    the suite followed it, and the two hidden tests expecting the lower-case form failed (a false acceptance)."""
+    rule = " ".join(_rule().split())
+    assert "Where the brief names the form they are compared in" in rule
+    assert "they are shown in that form unless the brief shows otherwise" in rule

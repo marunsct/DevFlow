@@ -110,3 +110,12 @@ def test_a_fix_that_gains_locked_tests_and_breaks_only_unit_tests_stays_whatever
     # Unit tests alone still answer to the ratio, and a lost criterion still needs the larger gain.
     assert net_gain.keeps(lost, [f"unit: x › {n}" for n in range(15)], product_runs=True) is False
     assert net_gain.keeps(["acceptance › [AC-1] a"], ["acceptance › [AC-2] b", "acceptance › [AC-3] c", "acceptance › [AC-4] d"], product_runs=True) is False
+
+
+def test_a_locked_test_lost_is_not_bought_back_with_unit_tests(monkeypatch):
+    """Measured on one run: three fixes each made 7 unit tests pass and broke one acceptance test, each was kept, and a
+    sprint green at its best was planned again each time."""
+    monkeypatch.setenv("KEEP_NET_GAINS", "on")
+    lost = ["acceptance: bookmarks.spec.js › [AC-8] POST rejects a body that is not JSON"]
+    assert not net_gain.keeps(lost, [f"unit: tests/app.test.js › case {n}" for n in range(7)], product_runs=True)
+    assert net_gain.keeps(lost, [f"acceptance: x › [AC-{n}] y" for n in range(4)], product_runs=True)

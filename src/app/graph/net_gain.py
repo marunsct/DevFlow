@@ -41,4 +41,8 @@ def keeps(lost: Collection[str], gained: Collection[str], *, product_runs: bool)
     if not a_criterion_lost and sum(1 for name in gained if not str(name).startswith("unit: ")) >= MIN_GAINED:
         return True
     least = MIN_GAINED_IF_A_CRITERION_IS_LOST if a_criterion_lost else MIN_GAINED
-    return len(gained) >= least and len(gained) >= RATIO * len(lost)
+    # A locked test lost is bought back only with locked tests: unit tests the workers wrote do not outweigh the
+    # definition of done. Measured on one run: three fixes each made 7 unit tests pass and broke one acceptance test,
+    # each was kept, the next round raised the criterion, and a sprint green at its best was planned again each time.
+    counted = [name for name in gained if not str(name).startswith("unit: ")] if a_criterion_lost else list(gained)
+    return len(counted) >= least and len(counted) >= RATIO * len(lost)

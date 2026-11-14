@@ -90,6 +90,9 @@ def test_a_required_export_the_start_file_calls_bare_that_now_needs_an_argument_
     assert entry_exports.what_the_start_file_cannot_call(tmp_path) == [("notes/src/app.ts", "createApp", "storage")]
     [defect] = acceptance_nodes.pack_contract_defects({"repository": SimpleNamespace(root_path=str(tmp_path))})
     assert "createApp(storage)" in defect.description and defect.affected_files == ["notes/src/app.ts"]
+    # Optional, not removed: measured on one run, "takes no parameters" made five fixes drop it, and the run's own unit
+    # tests passing it broke each time.
+    assert "make `storage` optional" in defect.expected_behavior and "takes no parameters" not in defect.expected_behavior
 
 
 @pytest.mark.parametrize("text", [

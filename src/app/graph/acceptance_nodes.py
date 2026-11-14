@@ -1282,9 +1282,12 @@ def pack_contract_defects(state: Any) -> list[Any]:
             description=f"{path} declares `{name}({needed})`, but the scaffold's start file and unit smoke test call `{name}()` with no arguments, so `{needed}` is undefined on every request.",
             severity="blocking",
             reproduction_steps=f"Read {path} and the pack's start file: it calls `{name}()`.",
+            # Optional, not removed: measured on one run, the defect said "takes no parameters", the run's own unit
+            # tests called `createApp(dataDir)`, and five fixes that dropped the parameter were reverted for them.
             expected_behavior=(
-                f"`{name}()` takes no parameters and makes what it needs itself (read the data directory from the "
-                "environment, create the store inside it), as the pack's guide says."
+                f"`{name}()` can be called with no arguments: make `{needed}` optional, with a default that makes "
+                "what it needs itself (read the data directory from the environment, create the store inside it), as "
+                "the pack's guide says. Callers that pass it keep working, so keep its name and its use."
             ),
             actual_behavior=f"`{name}` requires `{needed}`; called with none, it is undefined wherever it is used.",
             affected_files=[path],

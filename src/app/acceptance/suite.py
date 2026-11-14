@@ -616,7 +616,25 @@ def _its_assertions(block: str) -> list[str]:
     return [" ".join(line.split()) for line in block.splitlines() if _ASSERTS.search(line)]
 
 
-def _a_repair_of_its_own_code(repo_root: str | Path, title: str, file_name: str, before: str, after: str) -> bool:
+#: Where a helper is defined in a suite file's head: `def name(`, `function name(`, `const name = (` / `= async (`.
+_A_HELPER = re.compile(r"^\s*(?:async\s+)?(?:def|function)\s+(\w+)\s*\(|^\s*(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\(",
+                       re.M)
+
+
+def _helpers_of(head: str) -> dict[str, str]:
+    """Each helper the head defines, by name, with its text up to the next one."""
+    found = list(_A_HELPER.finditer(head))
+    return {(m.group(1) or m.group(2)): head[m.start():(found[i + 1].start() if i + 1 < len(found) else len(head))]
+            for i, m in enumerate(found)}
+
+
+def _helpers_changed(before_head: str, after_head: str) -> set[str]:
+    before, after = _helpers_of(before_head), _helpers_of(after_head)
+    return {name for name, text in after.items() if name in before and before[name] != text}
+
+
+def _a_repair_of_its_own_code(repo_root: str | Path, title: str, file_name: str, before: str, after: str,
+                              changed_helpers: set[str] = frozenset()) -> bool:
     """Whether a change to a test no ruling named only mends the code that broke it, keeping every assertion.
 
     Measured on one run: four isolation tests failed on their own helper call (`'str' object has no attribute
@@ -625,8 +643,13 @@ def _a_repair_of_its_own_code(repo_root: str | Path, title: str, file_name: str,
     word for word cannot have been loosened by the change.
     """
     kept = _its_assertions(after)
-    return (_failed_on_its_own_code(repo_root, title, file_name)
-            and bool(_its_assertions(before)) and all(line in kept for line in _its_assertions(before)))
+    if not (_its_assertions(before) and all(line in kept for line in _its_assertions(before))):
+        return False
+    # Or it calls a helper the repair changed: put back alone, it calls the new helper the old way. Measured on the
+    # same run: the put-back kept the changed helper and restored the old calls, the four failed inside the helper
+    # (401), and no longer on their own code - so the first rule never held again and the criterion was deferred.
+    calls_a_changed_helper = any(re.search(rf"\b{re.escape(name)}\s*\(", after) for name in changed_helpers)
+    return calls_a_changed_helper or _failed_on_its_own_code(repo_root, title, file_name)
 
 
 def put_back_tests_the_repair_was_not_sent_for(repo_root: str | Path) -> list[str]:
@@ -652,15 +675,16 @@ def put_back_tests_the_repair_was_not_sent_for(repo_root: str | Path) -> list[st
             text = path.read_text(encoding="utf-8", errors="replace")
             if text == locked[relative]:
                 continue
-            _, before = _the_tests_of(locked[relative])
-            _, after = _the_tests_of(text)
+            before_head, before = _the_tests_of(locked[relative])
+            after_head, after = _the_tests_of(text)
+            changed_helpers = _helpers_changed(before_head, after_head)
             changed = text
             for title, block in after.items():
                 if title not in before or block == before[title] or title.startswith("#"):
                     continue
                 if any(title == test or title in test or test in title for test in under_repair):
                     continue
-                if _a_repair_of_its_own_code(repo_root, title, path.name, before[title], block):
+                if _a_repair_of_its_own_code(repo_root, title, path.name, before[title], block, changed_helpers):
                     continue
                 if changed.count(block) == 1:
                     changed = changed.replace(block, before[title], 1)

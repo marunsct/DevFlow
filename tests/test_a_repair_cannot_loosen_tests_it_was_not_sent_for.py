@@ -91,3 +91,46 @@ def test_a_test_that_failed_on_its_own_code_keeps_a_mend_that_keeps_its_assertio
     _failed_last(tmp_path, "[AC-7] isolated", "Error: expect(received).toBe(expected) at page.spec.js:8")
     spec.write_text(HEAD + CALLED_WRONG + RIGHT + "\n" + mended)
     assert suite.put_back_tests_the_repair_was_not_sent_for(tmp_path) == ["[AC-7] isolated"]
+
+
+PY_HEAD = ('from ._helpers import signup\n\n\ndef _two(base_url, a, b):\n    signup(base_url, a, "p1")\n'
+           '    return 1, 2\n\n\n')
+PY_SENT = 'def test_ac2_sent(base_url):\n    assert _two(base_url, "x", "y")\n\n\n'
+PY_OTHER = ('def test_ac19_other(base_url):\n    one = _two(base_url, "alice", "pass1")\n'
+            '    assert one != 3\n')
+
+
+def _python_repairing(tmp_path):
+    contract.write(tmp_path, pack_named("python-flask-api"), "api", "Api")
+    folder = tmp_path / "api" / "acceptance"
+    folder.mkdir(parents=True, exist_ok=True)
+    spec = folder / "test_things.py"
+    spec.write_text(PY_HEAD + PY_SENT + PY_OTHER)
+    suite.save_criteria(tmp_path, [SimpleNamespace(id="AC-2", text="Two", source="brief"),
+                                   SimpleNamespace(id="AC-19", text="Kept apart", source="brief")])
+    suite.lock(tmp_path)
+    suite.unlock(tmp_path)
+    suite.repairing(tmp_path, ["test_ac2_sent"])
+    return spec
+
+
+def test_a_test_calling_a_helper_the_repair_changed_keeps_its_mended_call(tmp_path):
+    spec = _python_repairing(tmp_path)
+    head = PY_HEAD.replace('def _two(base_url, a, b):\n    signup(base_url, a, "p1")',
+                           'def _two(base_url, a, b):\n    signup(base_url, a, b)')
+    mended = PY_OTHER.replace('_two(base_url, "alice", "pass1")', '_two(base_url, "other_alice", "other_bob")')
+    spec.write_text(head + PY_SENT + mended)
+
+    assert suite.put_back_tests_the_repair_was_not_sent_for(tmp_path) == []
+    assert "other_alice" in spec.read_text()
+
+    # Its assertion loosened as well: put back, helper or not.
+    spec.write_text(head + PY_SENT + mended.replace("assert one != 3", "assert one"))
+    assert suite.put_back_tests_the_repair_was_not_sent_for(tmp_path) == ["test_ac19_other"]
+
+
+def test_a_test_calling_an_unchanged_helper_is_put_back(tmp_path):
+    spec = _python_repairing(tmp_path)
+    mended = PY_OTHER.replace('"alice"', '"other_alice"')
+    spec.write_text(PY_HEAD + PY_SENT + mended)
+    assert suite.put_back_tests_the_repair_was_not_sent_for(tmp_path) == ["test_ac19_other"]

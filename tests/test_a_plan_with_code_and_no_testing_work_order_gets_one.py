@@ -83,3 +83,28 @@ def test_a_work_order_with_nothing_to_test_from_takes_the_sprint_s_criteria() ->
     plan = with_test_cases_from_its_criteria(_plan(order), spec, ["AC-1: a user signs in"])
 
     assert plan.delegated_tasks[0].test_cases == ["AC-1: a user signs in"]
+
+
+def test_the_sprint_s_named_test_files_go_to_the_testing_order_the_harness_adds(monkeypatch, tmp_path):
+    """Measured on one run: the named test files were given out before the harness added the testing order, nobody
+    was given `test_cli.py`, and the plan was sent back for it."""
+    import inspect
+
+    from app.graph import workflow
+    from app.analysis.work_orders import with_named_tests_given_to_testing
+
+    pack = SimpleNamespace(unit_dir="tests", unit_pattern="test_*.py", unit_test=("pytest",))
+    monkeypatch.setattr(contract, "the_pack", lambda root: (pack, {}))
+    monkeypatch.setattr(work_orders, "_pinned_project_directory", lambda root: "tool")
+    scope = "Build the counter in tool/wordstats/counter.py with its tests in test_cli.py."
+    plan = _plan(_backend(["tool/wordstats/counter.py"]))
+
+    before, given_first = with_named_tests_given_to_testing(plan, tmp_path, scope, ["tool/tests/test_cli.py"])
+    assert given_first == []  # no testing order yet: nobody can be given it
+    added, _ = with_a_testing_work_order(before, tmp_path)
+    after, given = with_named_tests_given_to_testing(added, tmp_path, scope, ["tool/tests/test_cli.py"])
+    assert given == ["tool/tests/test_cli.py"] and "tool/tests/test_cli.py" in after.delegated_tasks[-1].files
+
+    source = inspect.getsource(workflow)
+    added_at = source.index('logger.info("The plan had code and no testing work order; the harness added one")')
+    assert "with_named_tests_given_to_testing(" in source[added_at:added_at + 1200]

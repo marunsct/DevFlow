@@ -10502,6 +10502,19 @@ def build_workflow_graph(
         )
         if added_testing:
             logger.info("The plan had code and no testing work order; the harness added one")
+            if not revising:
+                # The test files the sprint names go to the order just added: measured on one run, they were given out
+                # before it existed, nobody was given `test_cli.py`, and the plan was sent back for it.
+                from app.analysis.work_orders import with_named_tests_given_to_testing
+                from app.graph.drafting import planned_files
+
+                update["milestone_plan"], given = with_named_tests_given_to_testing(
+                    update["milestone_plan"], state["repository"].root_path, _what_this_sprint_builds(state),
+                    planned_files(state.get("technical_specification")),
+                )
+                if given:
+                    logger.info("Test files the sprint names, given to the testing work order the harness added: %s",
+                                ", ".join(given))
         # The harness's own repairs before the readiness check, not after it (HR2.P.1): 125 of 140 resends since 11-01
         # were for what these then fixed anyway - the locked suite's file on a work order (50), a command the sandbox
         # refuses (30). The check sees only what the harness cannot fix.

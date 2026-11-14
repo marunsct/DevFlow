@@ -125,5 +125,29 @@ def applies(root: str | Path, defects: Any, replans: int) -> bool:
         return False
 
 
+def open_after_the_put_back(root: str | Path, defects: Any) -> list[Any]:
+    """`defects` without those about criteria that all pass in the suite's last run: what is still open once the best
+    attempt is back. A defect naming no criterion stays. Never raises.
+
+    Measured on one run: a kept fix broke one acceptance test, the sprint ran out at 28 of 29, the best attempt (29 of
+    29, only unit tests failing) was put back after the decision to plan again, and the green sprint was planned again.
+    """
+    try:
+        from app.acceptance import suite
+        from app.acceptance.junit import tags_in
+
+        criteria = {**((suite.last_result(root) or {}).get("criteria") or {})}
+        kept = []
+        for defect in defects or ():
+            named = [tag for tag in tags_in(str(getattr(defect, "description", "") or "")) if tag in criteria]
+            passing = named and all((criteria[tag] or {}).get("status") == "passed" for tag in named)
+            if getattr(defect, "status", "") == "open" and passing:
+                defect = defect.model_copy(update={"status": "fixed"}) if hasattr(defect, "model_copy") else defect
+            kept.append(defect)
+        return kept
+    except Exception:  # noqa: BLE001 - the defects as they were
+        return list(defects or ())
+
+
 __all__ = ["AFTER_REPLANS", "ON_BY_DEFAULT", "READ_FROM_THE_FILES", "applies", "enabled", "the_acceptance_command",
-           "the_locked_suite_is_green"]
+           "the_locked_suite_is_green", "open_after_the_put_back"]

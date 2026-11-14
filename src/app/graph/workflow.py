@@ -11573,7 +11573,15 @@ def build_workflow_graph(
 
         # Even one test fewer than the best is worse here: a run released at 17 of 18 criteria, with AC-14 deferred,
         # after an earlier attempt had passed all 18.
-        best_attempt.restore_if_worse(state["repository"].root_path, margin=1)
+        put_back = best_attempt.restore_if_worse(state["repository"].root_path, margin=1)
+        # The best product back may be the green one: the settle rule above read the worse product's measurement.
+        if put_back and revision_count <= MAX_MILESTONE_REVISIONS and settle_when_green.applies(
+            state["repository"].root_path,
+            settle_when_green.open_after_the_put_back(state["repository"].root_path, getattr(cycle, "defects", None)),
+            revision_count - 1,
+        ):
+            why = f"{why}; with the best attempt put back every acceptance test passes and only the unit tests fail"
+            revision_count = MAX_MILESTONE_REVISIONS + 1
         # Every defect still open ends its story here: the ledger had it
         # raised and nothing after, which reads like a round cut short.
         from app.observability import defect_ledger

@@ -688,6 +688,23 @@ ACCESSIBILITY_REMEDIES = {
 }
 
 
+def a_repair_left_the_sprint_green(root: str | Path, result: Any) -> bool:
+    """Whether the repaired suite passes in full and the unit tests last passed on this same product. Never raises."""
+    try:
+        import json
+
+        from app import ci
+        from app.acceptance.unstable import fingerprint
+
+        tests = list(getattr(getattr(result, "report", None), "tests", None) or [])
+        if not getattr(result, "ran", False) or not tests or any(t.outcome != "passed" for t in tests):
+            return False
+        unit = json.loads((Path(root) / ci.UNIT_RUN_FILE).read_text(encoding="utf-8"))
+        return bool(unit.get("passed")) and unit.get("fingerprint") == fingerprint(root)
+    except Exception:  # noqa: BLE001 - planned again, as before
+        return False
+
+
 def _the_suite_s_files(root: str | Path) -> dict[Path, str]:
     """Each file of the suite with its text now; {} when it cannot be read."""
     try:
@@ -986,9 +1003,15 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     if return_to:
         from app.graph.delivery import change_request_brief
 
+        stage = "technical_lead" if return_to == SPRINT_REPLAN else return_to
+        if return_to == SPRINT_REPLAN and a_repair_left_the_sprint_green(root, result):
+            # Measured three times in one day: a dispute at an attempt's end repaired the suite, it then passed in full
+            # beside passing unit tests, and the sprint was planned again anyway - a lead's re-plan on a done product.
+            logger.warning("The repaired suite passes in full and the unit tests pass: measured again, not planned again")
+            stage = "test_and_triage"
         return _handing_on(
             **update,
-            stage="technical_lead" if return_to == SPRINT_REPLAN else return_to,
+            stage=stage,
             acceptance_return_to=None,
             acceptance_feedback=[],
             acceptance_open_problems=open_problems,

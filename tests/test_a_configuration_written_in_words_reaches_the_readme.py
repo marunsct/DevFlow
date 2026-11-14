@@ -136,3 +136,19 @@ def test_a_command_under_any_criterion_id_reaches_the_using_section(tmp_path):
         "- AC-CLI-2 command python -m wordstats <file> --top N prints N lines -> exit 0\n\n## File Plan\n")
     section = release_docs._the_using_section("# Tool\n", [], tmp_path)
     assert "python -m wordstats <file> prints three lines to stdout  # -> exit 0" in section
+
+
+# Measured on one release: a library's contract wrote each call as itself, with no `command` word; none matched, and its
+# README never said how to call it (handoff 0.833).
+def test_a_call_written_without_the_command_word_reaches_the_using_section(tmp_path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "technical_specification.md").write_text(
+        "## Interface Contract\n"
+        "- AC-1 import textkit -> success\n"
+        "- AC-2 hasattr(textkit, 'slugify') == True\n"
+        "- AC-6 textkit.slugify('Hello, World!') -> 'hello-world'\n"
+        "- AC-10 textkit.word_count('a  b') -> 2\n\n## File Plan\n")
+    section = release_docs._the_using_section("# Lib\n", [], tmp_path)
+    assert "textkit.slugify('Hello, World!')  # -> 'hello-world'" in section
+    assert "textkit.word_count('a  b')  # -> 2" in section
+    assert "hasattr" not in section and "import textkit  # -> success" not in section

@@ -222,6 +222,11 @@ MOST_COMMANDS_SHOWN = 8
 #: Any criterion id before it: `AC-3`, `AC-CLI-1`, `CR-2` (measured on one release: `AC-CLI-1` matched nothing).
 _A_CONTRACT_COMMAND = re.compile(
     r"^\s*[-*]\s*(?:[A-Z]{2,}(?:-[A-Z0-9]+)+\s+)?command\s+(.+?)\s+->\s+(.+?)\s*$", re.IGNORECASE)
+#: Or a call written as itself, with no `command` word: `- AC-6 textkit.slugify('Hello, World!') -> 'hello-world'`.
+#: Measured on one release: a library's contract was all such lines, none matched, and its README never said how to
+#: call it (handoff 0.833).
+_A_CONTRACT_CALL = re.compile(
+    r"^\s*[-*]\s*(?:[A-Z]{2,}(?:-[A-Z0-9]+)+\s+)?([A-Za-z_][\w.]*\(.*\))\s+->\s+(.+?)\s*$")
 
 
 def _the_specified_commands(root: Path | None) -> list[str]:
@@ -233,7 +238,7 @@ def _the_specified_commands(root: Path | None) -> list[str]:
     section = re.search(r"^## Interface Contract\s*$(.*?)(?=^## |\Z)", text, re.MULTILINE | re.DOTALL)
     found = []
     for line in (section.group(1) if section else "").splitlines():
-        if match := _A_CONTRACT_COMMAND.match(line):
+        if match := _A_CONTRACT_COMMAND.match(line) or _A_CONTRACT_CALL.match(line):
             found.append(f"{match.group(1)}  # -> {match.group(2)}")
     return found
 

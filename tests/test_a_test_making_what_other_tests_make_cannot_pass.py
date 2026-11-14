@@ -47,3 +47,42 @@ def test_a_value_of_its_own_or_another_failure_is_not(tmp_path):
 
 def test_it_is_one_of_the_cannot_pass_checks():
     assert "tests_that_make_what_other_tests_make(repo_root, result)" in inspect.getsource(suite.tests_that_cannot_pass)
+
+
+REFUSED = '''
+def test_ac10_signin_success(base_url):
+    signup(base_url, "alice", "secret123")
+    resp = signin(base_url, "alice", "secret123")
+    assert resp.status_code == 200
+
+
+def test_ac19_isolation(base_url):
+    signup(base_url, "alice", "pass1")
+    assert signin(base_url, "alice", "pass1").status_code == 200
+
+
+def test_ac11_no_auth(base_url):
+    signup(base_url, "alice", "secret123")
+    assert get_items(base_url).status_code == 401
+'''
+
+
+def test_a_refusal_after_making_a_value_another_test_makes_differently_is_named(tmp_path):
+    _a_suite(tmp_path, REFUSED)
+    said = "assert 401 == 200\n +  where 401 = <Response [401 UNAUTHORIZED]>.status_code"
+    [found] = suite.tests_that_make_what_other_tests_make(tmp_path, _failed("test_ac10_signin_success", said))
+    assert found.startswith("`test_ac10_signin_success` makes its record with 'alice'")
+    assert "refused what this test presented" in found and not BANNED.search(found)
+
+
+def test_a_refusal_the_test_expected_or_a_value_made_alike_is_the_product_s(tmp_path):
+    _a_suite(tmp_path, REFUSED)
+    # The product let in what the test expected refused: its fault, whatever the names.
+    assert suite.tests_that_make_what_other_tests_make(
+        tmp_path, _failed("test_ac11_no_auth", "assert 200 == 401\n +  where 200 = <Response [200 OK]>")) == []
+    alike = tmp_path / "alike"
+    alike.mkdir()
+    _a_suite(alike, SUITE)
+    # Every test makes 'alice' with the same password: a sign-in refused is not the suite's doing.
+    assert suite.tests_that_make_what_other_tests_make(
+        alike, _failed("test_ac9_signup_success", "assert 401 == 201")) == []

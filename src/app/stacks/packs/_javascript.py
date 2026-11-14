@@ -1403,7 +1403,16 @@ def unawaited_page_assertions(text: str) -> list[int]:
     return [code.count("\n", 0, m.start()) + 1 for m in _AN_UNAWAITED_PAGE_ASSERTION.finditer(code)]
 
 
+#: Fields taken straight off a response, not its body: `const { id } = await request.post(...)`, `= await fetch(...)`.
+#: A response object has no such field, so `id` is undefined on every product. Measured on one run: four locked tests
+#: posted a note, read `id` off the response, asked for `/notes/undefined` and got 404; three fixes of a right product
+#: were reverted before anyone read the test.
+FIELDS_OFF_A_RESPONSE = (
+    r"""\b(?:const|let|var)\s*\{[^}=]*\}\s*=\s*await\s+(?:(?:[\w$]+\.)?request\.(?:get|post|put|patch|delete|head|fetch)"""
+    r"""|fetch)\s*\(""")
+
 TEST_SOURCE_BUGS = (
+    FIELDS_OFF_A_RESPONSE,
     r"\b(?:const|let|var)\s+\w+\s*=\s*\(\s*await\b[^;]*?\)\s*\.json\(\)\s*\.then\(",
     # A field read off `json()` itself: `res.json().id`, `res.json()['id']`. It returns a promise - in Playwright and in
     # fetch alike - so the field is undefined on every product. Measured on one run: `createResp.json().id` sent
@@ -1421,6 +1430,8 @@ TEST_SOURCE_BUGS = (
 #: a promise as a value. Measured on one run: an empty-text lookup was reported as an unawaited promise, so the
 #: writers were told to await something that needed no await.
 TEST_SOURCE_BUG_WHY = {
+    FIELDS_OFF_A_RESPONSE: ("takes fields straight off the response, which has none of the body's fields - read the "
+                            "body first (`await response.json()`) and take them from that"),
     TEST_SOURCE_BUGS[-1]: ("looks an element up by empty text, which matches nearly every element on the page - "
                            "name the text, label or placeholder it means to find"),
 }

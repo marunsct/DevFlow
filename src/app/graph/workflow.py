@@ -7624,6 +7624,23 @@ def _this_sprint_s_scope_for_review(state: Any) -> str:
         return ""
 
 
+def _defects_only_about_deferred(reported: list[Any], root: str | Path) -> tuple[list[Any], list[Any]]:
+    """(the reported defects a fix can close, those naming only criteria the suite has deferred). Never raises.
+
+    A deferred criterion is no fix stage's in this run: its locked tests cannot pass, or a later sprint builds it.
+    Measured on one run: AC-19 was deferred with its repairs spent, but the round's checks named only one of its
+    four tests as unable to pass, so the defect about all four went on to fixers; one fix broke 37 tests and was
+    reverted, and the next round raised it again.
+    """
+    try:
+        from app.acceptance import suite as _suite
+
+        deferred = sorted((_suite.deferred(root) or {}).keys())
+    except Exception:  # noqa: BLE001 - the round's defects stand
+        return reported, []
+    return _defects_only_about(reported, deferred) if deferred else (reported, [])
+
+
 def _defects_only_about(
     reported: list[Any], criteria: list[str], root: str | Path | None = None,
 ) -> tuple[list[Any], list[Any]]:
@@ -11282,10 +11299,18 @@ def build_workflow_graph(
                 test_round, len(unfixable),
                 "; ".join(str(getattr(item, "description", ""))[:60] for item in unfixable[:4]),
             )
+        reported, deferred_only = _defects_only_about_deferred(reported, state["repository"].root_path)
+        if deferred_only:
+            logger.warning(
+                "test_round_%d reported %d defect(s) only about deferred criteria; set aside: %s",
+                test_round, len(deferred_only),
+                "; ".join(str(getattr(item, "description", ""))[:60] for item in deferred_only[:4]),
+            )
         try:
             unreported_criteria = acceptance_nodes.failing_due_defects(state, reported)
             # Nor the backstop's own for them: deferred above, they are no fix stage's.
             unreported_criteria, _ = _defects_only_about(unreported_criteria, beyond_repair)
+            unreported_criteria, _ = _defects_only_about_deferred(unreported_criteria, state["repository"].root_path)
         except Exception:  # noqa: BLE001 - the round's own report stands
             logger.debug("Could not compare the round's report with the acceptance suite", exc_info=True)
             unreported_criteria = []

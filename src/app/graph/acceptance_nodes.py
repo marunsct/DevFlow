@@ -59,14 +59,15 @@ REPAIR_ONLY = (
 )
 
 
-def cannot_pass_to_lock(cannot: list[str], *, rounds: int, limit: int) -> list[str]:
+def cannot_pass_to_lock(cannot: list[str], *, rounds: int, limit: int, already_sent: bool = False) -> list[str]:
     """The harness's findings that a test can never pass, sent back once at the review's round limit; [] otherwise.
 
     A test no product can pass is a definition of done nobody meets: measured on one run, a suite locked at the limit
     with whole-page lookups of a per-record control and went back to its writers after a build and a test round.
-    Once: at the limit itself, never after it.
+    Once per suite, at the limit or past it: rounds that could not run take a suite beyond the limit, and an exact
+    comparison never fired for it (see `too_weak_to_lock`).
     """
-    return [REPAIR_ONLY, *cannot] if cannot and rounds == limit else []
+    return [REPAIR_ONLY, *cannot] if cannot and rounds >= limit and not already_sent else []
 
 
 def too_weak_to_lock(findings: list[str], *, rounds: int, limit: int, already_sent: bool = False) -> list[str]:
@@ -867,11 +868,15 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     if problems and rounds < MAX_ACCEPTANCE_ROUNDS:
         logger.info("Acceptance suite sent back to QA: %d problem(s)", len(problems))
         return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
-    if partial and rounds == MAX_ACCEPTANCE_ROUNDS:
+    sent_back = suite._state(root)
+    if partial and rounds >= MAX_ACCEPTANCE_ROUNDS and not sent_back.get("partial_strengthened_once"):
         logger.info("At the review's limit, %d output(s) held only in part go back once to be strengthened", len(partial))
+        suite._save_state(root, {**sent_back, "partial_strengthened_once": True})
         return _handing_on(stage="acceptance_author", acceptance_feedback=[STRENGTHEN_ONLY, *partial])
-    if repair := cannot_pass_to_lock(cannot, rounds=rounds, limit=MAX_ACCEPTANCE_ROUNDS):
+    if repair := cannot_pass_to_lock(cannot, rounds=rounds, limit=MAX_ACCEPTANCE_ROUNDS,
+                                     already_sent=bool(sent_back.get("cannot_pass_repaired_once"))):
         logger.info("At the review's limit, %d test(s) no product could pass go back once to be repaired", len(cannot))
+        suite._save_state(root, {**suite._state(root), "cannot_pass_repaired_once": True})
         return _handing_on(stage="acceptance_author", acceptance_feedback=repair)
 
     findings: list[str] = []

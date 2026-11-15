@@ -82,5 +82,5 @@ def test_an_untested_form_is_left_to_the_coverage_checks(tmp_path):
 def test_the_review_sends_it_back_and_once_more_at_the_limit():
     source = inspect.getsource(acceptance_nodes.acceptance_review)
     assert 'check_findings.noted(root, rounds, "outputs_held_only_in_part"' in source
-    assert "if partial and rounds == MAX_ACCEPTANCE_ROUNDS:" in source
+    assert "if partial and rounds >= MAX_ACCEPTANCE_ROUNDS and not sent_back.get(" in source
     assert "acceptance_feedback=[STRENGTHEN_ONLY, *partial]" in source

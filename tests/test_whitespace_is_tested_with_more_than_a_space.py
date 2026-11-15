@@ -58,4 +58,4 @@ def test_a_tab_or_a_line_break_in_a_test_of_it_holds(tmp_path):
 def test_the_lock_sends_it_back_and_once_more_at_the_limit():
     source = inspect.getsource(acceptance_nodes.acceptance_review)
     assert 'check_findings.noted(root, rounds, "whitespace_tested_with_spaces_only"' in source
-    assert "if partial and rounds == MAX_ACCEPTANCE_ROUNDS:" in source
+    assert "if partial and rounds >= MAX_ACCEPTANCE_ROUNDS and not sent_back.get(" in source

@@ -14,7 +14,9 @@ CANNOT = ['`todo/acceptance/a.spec.js` line(s) 85 ask the whole page for "Done",
 
 def test_at_the_limit_cannot_pass_findings_go_back_once():
     assert nodes.cannot_pass_to_lock(CANNOT, rounds=3, limit=3) == [nodes.REPAIR_ONLY, *CANNOT]
-    assert nodes.cannot_pass_to_lock(CANNOT, rounds=4, limit=3) == []
+    assert nodes.cannot_pass_to_lock(CANNOT, rounds=4, limit=3) == [nodes.REPAIR_ONLY, *CANNOT], "past the limit, never reached by an exact comparison, still once"
+    assert nodes.cannot_pass_to_lock(CANNOT, rounds=4, limit=3, already_sent=True) == []
+    assert nodes.cannot_pass_to_lock(CANNOT, rounds=2, limit=3) == []
     assert nodes.cannot_pass_to_lock([], rounds=3, limit=3) == []
 
 
@@ -26,3 +28,13 @@ def test_the_review_uses_it_before_locking():
 
 def test_the_note_avoids_the_banned_words():
     assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", nodes.REPAIR_ONLY, re.I)
+
+
+def test_the_partial_output_send_back_also_reaches_a_suite_past_the_limit_once():
+    """The same exact comparison kept a suite whose rounds ran past the limit from being sent back, here and in the
+    weak-test and cannot-pass sends (one run locked a control found by no name and lost a hidden test)."""
+    import inspect
+
+    source = inspect.getsource(nodes.acceptance_review)
+    assert "rounds >= MAX_ACCEPTANCE_ROUNDS and not sent_back.get(\"partial_strengthened_once\")" in source
+    assert "rounds == MAX_ACCEPTANCE_ROUNDS" not in source

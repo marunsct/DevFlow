@@ -38,7 +38,10 @@ MAX_ACCEPTANCE_ROUNDS = 3
 #: A review finding that a test asserts too little to prove its criterion: a status alone, or a result never checked.
 _TOO_WEAK = re.compile(
     r"\bonly (?:asserts?|checks?|verif(?:y|ies))\b|\b(?:does not|doesn't|never) (?:assert|check|verif(?:y|ies))\b"
-    r"|\bwould pass even if\b",
+    r"|\bwould pass even if\b"
+    # A control the brief names, found only by something no person sees: the suite passes whatever the page calls it.
+    # Measured on one run: it locked with both findings open and a hidden test finding the field by its label failed.
+    r"|\bfinds a control by something no person sees\b|\bno test finds (?:any of them )?by that name\b",
     re.I,
 )
 #: Said with the findings sent back for strengthening: the rest of the suite is not rewritten.
@@ -66,13 +69,15 @@ def cannot_pass_to_lock(cannot: list[str], *, rounds: int, limit: int) -> list[s
     return [REPAIR_ONLY, *cannot] if cannot and rounds == limit else []
 
 
-def too_weak_to_lock(findings: list[str], *, rounds: int, limit: int) -> list[str]:
-    """The findings that a test is too weak, sent back once more at the review's round limit; [] otherwise.
+def too_weak_to_lock(findings: list[str], *, rounds: int, limit: int, already_sent: bool = False) -> list[str]:
+    """The findings that a test is too weak, sent back once more at the review's round limit or after it; [] otherwise.
 
     Over 21 release-candidate runs 13 of 30 problems the suite locked with said a test only checked a status, and
-    such a gap shipped a false acceptance. Once: at the limit itself, never after it.
+    such a gap shipped a false acceptance. Once per suite: a suite whose rounds ran past the limit (five passes that
+    could not run, on one run) reached the review beyond it, was never sent back, and locked with the gap open - a
+    hidden test failed on it.
     """
-    if rounds != limit:
+    if rounds < limit or already_sent:
         return []
     return [finding for finding in findings if _TOO_WEAK.search(str(finding))]
 
@@ -952,8 +957,10 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             if rounds < limit:
                 logger.info("QA lead sent the acceptance suite back: %d finding(s)", len(findings))
                 return _handing_on(**update, stage="acceptance_author", acceptance_feedback=findings)
-            if weak := too_weak_to_lock(findings, rounds=rounds, limit=limit):
+            sent = bool(suite._state(root).get("strengthened_once"))
+            if weak := too_weak_to_lock(findings, rounds=rounds, limit=limit, already_sent=sent):
                 logger.info("At the review's limit, %d test(s) too weak to lock go back once to be strengthened", len(weak))
+                suite._save_state(root, {**suite._state(root), "strengthened_once": True})
                 return _handing_on(**update, stage="acceptance_author", acceptance_feedback=[STRENGTHEN_ONLY, *weak])
 
     if suite.undefer_what_a_test_now_carries(root):

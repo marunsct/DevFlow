@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-17 05:50 JST (written by `loop.sh state`). Harness 6d4e23b1 committed; 7fb4f5f0 deployed (not the same).
-**Live, and stopped in the last day:** run-657c3113 running at defect_fix_1_0; run-281467f2 running at consult_testing; run-4db255e8 failed at failed; run-53970d86 failed at ?; run-bdf40247 failed at awaiting_approval:defect_fix_2_15; run-9831f11c failed at awaiting_approval:defect_fix_1_5
-**Last scored:** run-a99ce5d1 notes-api-csharp 9/9 (completed, mixed, 130 active min, handoff 1.0; scored 11-17 05:50 JST); run-9c05c6e7 notes-api-java 9/9 (completed, mixed, 100 active min, handoff 1.0; scored 11-17 04:52 JST); run-d8b0e95b notes-api-rust 9/9 (completed, mixed, 50 active min, handoff 1.0; scored 11-17 04:51 JST).
+**As of:** 11-17 07:55 JST (written by `loop.sh state`). Harness 5cb26916 committed; 9264d46b deployed (not the same).
+**Live, and stopped in the last day:** run-281467f2 running at defect_fix_1_1; run-4db255e8 failed at failed; run-53970d86 failed at ?; run-bdf40247 failed at awaiting_approval:defect_fix_2_15
+**Last scored:** run-657c3113 notes-api-php 9/9 (completed, handoff 1.0; scored 11-17 07:55 JST); run-a99ce5d1 notes-api-csharp 9/9 (completed, mixed, 130 active min, handoff 1.0; scored 11-17 05:50 JST); run-9c05c6e7 notes-api-java 9/9 (completed, mixed, 100 active min, handoff 1.0; scored 11-17 04:52 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -15,7 +15,7 @@ every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.
 |---|---|
 | Phase | Launch review (`docs/reviews/launch-review-2026-11-16.md`, LR.1-65) built item by item; M36 measuring runs on both ports. Owner hands off 11-16 21:50 JST: all review items by the morning of 11-17. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run pinned to its port (`PIN_MODEL=1`). Never load or change them. |
-| Harness | 9264d46b (LF.990) deployed 11-17 07:04 JST; LF.970-989 earlier tonight. Host has Pyright 1.1.414. |
+| Harness | dff2635e (LF.991) deploying 11-17 ~08:05 JST; LF.970-990 earlier tonight. Host has Pyright 1.1.414. |
 | Switches | 52 fixes built in (always on; only a host env var turns one off). 11 optional switches; one on - NEAR_GREEN_REPLANNED_ONCE (Efficiency, LF.977, measuring.md M14: off at once if a run it fires in loses a hidden test). Off: Context and cost (OBSERVATION_FOLDING, STABLE_STAGE_PREFIX, BATCH_ACCEPTANCE_AUTHOR, REASONING_KEPT_AFTER_AN_ANSWER), Efficiency (EQUIVALENT_MUTANTS_REMEMBERED, MUTANT_CHECK_IN_THE_FIX_STAGE, REVIEWS_WITHOUT_REASONING, HARNESS_FINDINGS_RECHECKED), Setup scope (SETUP_SCOPE_GUARD), Review gates (MILESTONE_EVIDENCE_GATE). Admin page: Controls. |
 | Operations | Backups nightly to `data/backups` and `BACKUP_DIR` (external disk, 7 daily + 4 weekly), checked by `loop.sh backup --check`; finished runs older than `RETENTION_DAYS` (60) cleared nightly; both set in git-ignored `data/loop/ops.env`. Owner's Postgres port in git-ignored `docker-compose.override.yml`; `docker-compose.prod.yml` + `deploy/Caddyfile` for TLS. |
 | Suites | `loop.sh suite` and `loop.sh suite-production` (every built-in fix on, as shipped) both green: 17,316 passed, 0 known failures. |
@@ -25,6 +25,8 @@ The 10 optional switches above. Hosted-model runs (LR.44) only when the owner st
 
 ## The last three runs
 Generated above. Tonight's M36 runs (hidden, quality, verdict):
+- notes-api-php 1 run-657c3113 (:8888): 9/9, 8/8, delivered, handoff 1.0; LF.986 found `GET /notes/not-a-number`
+  answering 500 and it was fixed in the run.
 - notes-api-csharp 2 run-a99ce5d1 (:1234): 9/9, 6/8 (a POST answer without `id`; writes at once lost),
   not_deliverable - rightly: its unit tests did not compile, now named by LF.979; handoff 1.0 after LF.988.
 - notes-api-java 1 run-9c05c6e7 (:8888): 9/9, 7/8 (`GET /notes/abc` answers 500), delivered, handoff 1.0 after the
@@ -60,7 +62,8 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   told kept files are tested by what they do (seen working in the next run); LF.986 routes probed with an id that
   is not a number (a 500 only a quality test found); LF.989 a product that listens but fails every request is
   told so, not "did not start"; LF.990 the LF.986 defect asks for a refusal, not the line's success (it
-  fired on PHP: `GET /notes/not-a-number` answered 500). Records: LF.976 real re-plan counts, LF.982, LF.987. Scorer: LF.985, LF.988.
+  fired on PHP: `GET /notes/not-a-number` answered 500). LF.991 the backend role refuses what it cannot use with a 4xx (3 of 6 sweep runs
+  had a 500 there). Records: LF.976 real re-plan counts, LF.982, LF.987. Scorer: LF.985, LF.988.
 - Sweep scores: every language 9/9 hidden; quality 7/8-8/8 but C# 6/8. Recurring product defects the harness does not
   yet catch: writes made at once lost (several families) - next: pack storage guidance and a concurrent-write probe.
 - In part: LR.20 (the report is built; the frozen batch is about 5 days of runs, not started), LR.30 (isolation
@@ -71,7 +74,7 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   after, not a night; LR.44 (hosted-model matrix) waits for the owner.
 
 ## Next actions
-1. Live: notes-api-php 1 run-657c3113 (:8888, 04:47) and notes-api-ruby 1 run-281467f2 (:1234, 05:46). Score each
+1. Live: notes-api-csharp 3 run-26084471 (:8888, 07:57) and notes-api-ruby 1 run-281467f2 (:1234, 05:46). Score each
    with its full id. The status board (Claude Doc) was not updated: the docs connector was not connected.
 2. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).

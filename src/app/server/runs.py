@@ -489,6 +489,32 @@ def create_runs_router(
         )
         return {"message": f"Run {run_id} started."}
 
+    @runs.post("/{run_id}/resume-with-direction", status_code=202)
+    async def resume_with_direction(
+        run_id: str, body: SteeringNote, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, Any]:
+        """Resume a stopped run with a direction its next model calls carry (LR.35).
+
+        Found in the launch review: a direction was refused on any run that was not running, so a failed run could be
+        resumed only as it was - the cause of its stop unaddressed - or cloned from the beginning.
+        """
+        from app.server.steering import add
+
+        record = _require_run(runner, run_id, user)
+        if record.status not in RESUMABLE_STATUSES or not record.repo_root:
+            raise HTTPException(status_code=409, detail=f"Run {run_id} is {record.status}; only a stopped run is resumed this way.")
+        try:
+            note = add(record.repo_root, body.text, user.username, body.scope, body.audience)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        try:
+            await runner.resume_run(run_id)
+        except RunConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.resume_with_direction", subject=run_id,
+                     detail={"characters": len(body.text)})
+        return {"message": f"Run {run_id} resumed with a direction.", "note": note}
+
     @runs.post("/{run_id}/resume", status_code=202)
     async def resume_run(
         run_id: str, user: UserInDB = Depends(require_operator)

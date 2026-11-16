@@ -73,6 +73,18 @@ describe('starting a build', () => {
   });
 });
 
+describe('a change to a finished product', () => {
+  it('starts from that run\'s product when opened for a change', async () => {
+    render(<MemoryRouter initialEntries={['/?changeOf=run-old']}><Home /></MemoryRouter>);
+    expect(screen.getByTestId('change-of').textContent).toContain('run-old');
+    await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a tag to a note');
+    await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
+    await waitFor(() => expect(mocks.startRun).toHaveBeenCalled());
+    const payload = (mocks.startRun.mock.calls.at(-1) as unknown as [string, Record<string, any>])[1];
+    expect(payload.source).toEqual({ type: 'run', run_id: 'run-old' });
+  });
+});
+
 describe('a first run that stops for a person', () => {
   it('offers to tell this browser when the run needs its owner, and asks only when starting', async () => {
     const asked = vi.fn(async () => 'granted');

@@ -24,6 +24,7 @@ import {
   cloneRun,
   downloadHandover,
   downloadProduct,
+  resumeWithDirection,
   downloadTranscript,
   startRun,
   type RewindPoint,
@@ -460,6 +461,18 @@ export const RunDashboard: React.FC = () => {
     }
   };
 
+  const [direction, setDirection] = useState<string | null>(null);
+  const handleResumeWithDirection = async () => {
+    if (!runId || !direction?.trim()) return;
+    try {
+      await resumeWithDirection(runId, direction.trim());
+      setDirection(null);
+      await fetchState();
+    } catch (err: any) {
+      notify("Failed to resume: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
   const openRewind = async () => {
     if (!runId) return;
     try {
@@ -656,6 +669,25 @@ export const RunDashboard: React.FC = () => {
               <Play className="h-3.5 w-3.5" /> Resume
             </button>
           )}
+          {RESUMABLE.includes(run.status) && !run.error?.startsWith('Interrupted:') && direction === null && (
+            <button onClick={() => setDirection('')}
+              title="Resume with a direction the next stages carry: what to do differently"
+              className={`${actionButton} text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
+              <Play className="h-3.5 w-3.5" /> Resume with a direction
+            </button>
+          )}
+          {direction !== null && (
+            <span className="flex items-center gap-2 flex-wrap">
+              <input aria-label="The direction to resume with" value={direction} onChange={(e) => setDirection(e.target.value)}
+                placeholder="What should it do differently?" maxLength={2000}
+                className="bg-surface/50 border border-border/50 rounded-lg px-2 py-1 text-xs text-text-primary w-72" />
+              <button onClick={handleResumeWithDirection} disabled={!direction.trim()} data-testid="resume-with-direction"
+                className={`${actionButton} text-primary border-primary/30 hover:border-primary/60 disabled:opacity-50`}>
+                Resume
+              </button>
+              <button onClick={() => setDirection(null)} className={`${actionButton} text-text-secondary border-border`}>Close</button>
+            </span>
+          )}
           {(RESUMABLE.includes(run.status) || run.status === 'completed') && rewindPoints === null && (
             <button onClick={openRewind}
               className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}
@@ -688,6 +720,13 @@ export const RunDashboard: React.FC = () => {
             className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}>
             <Copy className="h-3.5 w-3.5" /> Clone
           </button>
+          {run.status === 'completed' && (
+            <button onClick={() => navigate(`/?changeOf=${runId}`)} data-testid="request-a-change"
+              title="Start a run from this product, with a brief that says what to change"
+              className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}>
+              <Copy className="h-3.5 w-3.5" /> Request a change
+            </button>
+          )}
           {run.status === 'completed' && (
             <button onClick={() => void downloadProduct(runId!)} data-testid="download-product"
               title="The product's files and their git history, with how to run it, as one zip"

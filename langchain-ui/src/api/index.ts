@@ -78,6 +78,12 @@ export const startRun = async (
   return response.data;
 };
 
+/** Resume a stopped run with a direction its next model calls carry (LR.35). */
+export const resumeWithDirection = async (runId: string, text: string): Promise<{ message: string }> => {
+  const response = await api.post<{ message: string }>(`/runs/${runId}/resume-with-direction`, { text });
+  return response.data;
+};
+
 export const resumeRun = async (
   runId: string
 ): Promise<{ message: string }> => {

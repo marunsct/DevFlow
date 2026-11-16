@@ -1,6 +1,6 @@
 import { browserCanNotify, wantNotifications } from '../lib/notify';
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen } from 'lucide-react';
 import { api, createRun, deleteRun, startRun, getFrontierStatus, getOutcomes, uploadCodebase, type FrontierStatus, type RunForecast } from '../api';
 import { Link } from 'react-router-dom';
@@ -196,6 +196,9 @@ export const Home: React.FC = () => {
   }, [useFrontierModel]);
   // An existing codebase to start from, as an archive (a brownfield run).
   const [codebase, setCodebase] = useState<File | null>(null);
+  // A change to a finished run's product (LR.35): the new run starts from that product, with this brief as the change.
+  const [searchParams] = useSearchParams();
+  const changeOf = searchParams.get('changeOf');
   const hasBrief = files.length > 0 || briefText.trim().length > 0;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -257,7 +260,8 @@ export const Home: React.FC = () => {
       const uploaded = codebase ? ((await uploadCodebase(runData.run_id, codebase)) as { upload_id?: string }) : null;
 
       const payload: any = {
-        source: uploaded?.upload_id ? { type: 'archive', upload_id: uploaded.upload_id } : undefined,
+        source: uploaded?.upload_id ? { type: 'archive', upload_id: uploaded.upload_id }
+          : changeOf ? { type: 'run', run_id: changeOf } : undefined,
         // The person starting the run reviews it.
         reviewer: reviewer || undefined,
         name: runName.trim() || undefined,
@@ -348,7 +352,12 @@ export const Home: React.FC = () => {
   return (
     <div className="mx-auto w-full max-w-3xl mt-4 animate-fade-in pb-28">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold text-text-primary">Start a new run</h1>
+        <h1 className="text-2xl font-bold text-text-primary">{changeOf ? 'Request a change' : 'Start a new run'}</h1>
+        {changeOf && (
+          <p className="mt-1 text-sm text-text-secondary" data-testid="change-of">
+            The new run starts from the product of run {changeOf.slice(0, 12)}; write the change you want as the brief.
+          </p>
+        )}
         <p className="mt-1 text-sm text-text-secondary">Describe what to build, choose how it runs, and start it.</p>
         {holder && (
           <p role="status" className="mt-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">

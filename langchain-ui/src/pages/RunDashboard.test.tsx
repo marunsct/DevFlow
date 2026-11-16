@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { RunDashboard } from './RunDashboard';
 import { FeedbackProvider } from '../components/Feedback';
@@ -28,6 +29,7 @@ vi.mock('../api', () => {
     getPendingReview: { pending: false },
     getPendingApproval: { pending: false },
     getHowToRun: ['cd app', 'npm install', 'sh start.sh'],
+    resumeWithDirection: { message: 'ok' },
   };
   for (const [name, answer] of Object.entries(answers)) known[name] = vi.fn(async () => answer);
   known.api = { get: vi.fn(async () => ({ data: {} })) } as never;
@@ -96,6 +98,15 @@ describe('the run page', () => {
     renderPage();
     expect(await screen.findByTestId('download-product')).toBeTruthy();
     expect((await screen.findByTestId('how-to-run')).textContent).toContain('sh start.sh');
+  });
+
+  it('resumes a failed run with the direction typed for it', async () => {
+    Object.assign(run, { status: 'failed', current_stage: 'failed', error: 'The model server did not answer' });
+    renderPage();
+    await userEvent.click(await screen.findByText('Resume with a direction'));
+    await userEvent.type(screen.getByLabelText('The direction to resume with'), 'keep the store in one file');
+    await userEvent.click(screen.getByTestId('resume-with-direction'));
+    await waitFor(() => expect(known.resumeWithDirection).toHaveBeenCalledWith('run-1', 'keep the store in one file'));
   });
 
   it('says delivered for a completed run with no cut and nothing blocking', async () => {

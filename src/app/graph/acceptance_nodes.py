@@ -1849,6 +1849,26 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
         failing = [entry for entry in failing if not all(
             suite._THE_SERVICE_WAS_GONE.search(t.get("message") or "")
             for t in (entry.get("tests") or []) if t.get("outcome") == "failed")]
+    # The same refusal everywhere (LR.53): measured on one run, 16 tests of 14 criteria all failed with `assert 401 ==
+    # 201` - the product refused the token its own sign-in issued - and each criterion got a fixer of its own, shown
+    # one test, who sent the file back unchanged; round 2 ran ten fixers in three hours. One cause, one defect.
+    refused = one_refusal_for_all(failing)
+    if refused is not None:
+        code, count = refused
+        defects.append(ReportedDefect(
+            description=(f"{count} acceptance tests across {len(failing)} criteria are all answered {code} where they expect "
+                         "success: the product refuses the credentials its own sign-in issues, or asks for some no client "
+                         "is given."),
+            severity="blocking",
+            reproduction_steps=(f"Run `{command}`: sign up, sign in, then call any route that needs a signed-in user with "
+                                "the credentials the sign-in answered."),
+            expected_behavior="A route that needs a signed-in user accepts the credentials the product's own sign-in issued.",
+            actual_behavior=f"Every such call answers {code}. Find where the routes read the credentials and where the "
+                            "sign-in makes them, and make them agree; each criterion's own failures are measured again after.",
+            affected_files=[],
+            owner=_owner_for(state, f"refused {code}"),
+        ))
+        return [*installs, *defects]
     # A page whose own script did not load, or threw while loading, is dead: every criterion on it fails for that one
     # cause. Measured on one run: the page's script answered 404, all 17 criteria were raised, and each got a fixer of
     # its own (19 calls each) shown only timeouts. As with a product that never starts, the round raises the one cause
@@ -2029,6 +2049,35 @@ def reclassification_room(state: Any) -> int:
 _A_SUITE_DEFINITION = r"""(?:^|\n)[ \t]*(?:@pytest\.fixture[^\n]*\n[ \t]*)?(?:async\s+)?(?:def|function)\s+{name}\s*\(|(?:const|let|var)\s+{name}\s*=|^\s*{name}\s*=\s*\w"""
 #: A name a ruling quotes, in backticks or as code: `_compute_words`, auth_token.
 _A_QUOTED_NAME = re.compile(r"`([A-Za-z_][A-Za-z0-9_]{2,})`|\b([a-z_][a-z0-9_]*_[a-z0-9_]+)\b")
+
+
+_A_REFUSAL = re.compile(r"assert (401|403) (?:==|in) \(?\s*(?:2\d\d|4(?:0[0-9]|2[0-9]))")
+_ANY_STATUS = re.compile(r"assert ([1-5]\d\d) (?:==|in|!=)")
+
+
+def one_refusal_for_all(failing: list[dict]) -> tuple[str, int] | None:
+    """(the status, how many tests) when nearly every failing test was refused the same way; None otherwise.
+
+    Three criteria at least; three tests at least, and half of the failed tests, answered 401 (or 403) where they
+    expected a success or a client error; and no failed test answered any other status: one cause, not one per
+    criterion. Never raises.
+    """
+    try:
+        tests = [t for entry in failing for t in (entry.get("tests") or []) if t.get("outcome") == "failed"]
+        if len(failing) < 3 or not tests:
+            return None
+        codes = [m.group(1) for t in tests if (m := _A_REFUSAL.search(str(t.get("message") or "")))]
+        if not codes:
+            return None
+        code = max(set(codes), key=codes.count)
+        # Another status anywhere is another cause; a failure with none (a body read after a refused call: `KeyError:
+        # 'id'`, measured beside 401s on one run) is the refusal's symptom.
+        others = [t for t in tests if (m := _ANY_STATUS.search(str(t.get("message") or ""))) and m.group(1) != code]
+        if others or codes.count(code) < 3 or codes.count(code) * 2 < len(tests):
+            return None
+        return code, len(tests)
+    except Exception:  # noqa: BLE001 - each criterion keeps its own defect
+        return None
 
 
 def within_the_cap_by_cause(state: Any, groups: list[list[str]]) -> tuple[list[str], list[str], int]:

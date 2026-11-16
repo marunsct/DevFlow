@@ -644,10 +644,12 @@ build)
   # Each build kept under its commit (LR.63), the newest KEEP_IMAGES (default 5) of each, so `loop.sh rollback <commit>`
   # puts one back without building it again.
   for image in langchain-app langchain-worker; do
-    docker tag "$image:latest" "$image:${built:0:12}"
-    docker images "$image" --format '{{.CreatedAt}} {{.Tag}}' | grep -vE ' latest$' | sort -r | awk 'NR>'"${KEEP_IMAGES:-5}"' {print $NF}' \
-      | while read -r old_tag; do docker rmi "$image:$old_tag" >/dev/null 2>&1 || true; done
+    # Never fails the build it follows: a tag that cannot be made only leaves no rollback to this one.
+    docker tag "$image:latest" "$image:${built:0:12}" 2>/dev/null || continue
+    { docker images "$image" --format '{{.CreatedAt}} {{.Tag}}' 2>/dev/null || true; } | grep -vE ' latest$' | sort -r \
+      | awk 'NR>'"${KEEP_IMAGES:-5}"' {print $NF}' | while read -r old_tag; do docker rmi "$image:$old_tag" >/dev/null 2>&1 || true; done || true
   done
+  true
   ;;
 rollback)
   # Back to an earlier commit's images (LR.63): `deploy <commit>`, which retags a kept build instead of building.

@@ -22,6 +22,8 @@ No check asks a model.
 
 from __future__ import annotations
 
+from app.tools.version_control import git_safely  # noqa: E402
+
 import json
 import logging
 import re
@@ -82,7 +84,7 @@ def audit_command(pack: Any) -> str:
 
 def _tracked(root: Path) -> list[str]:
     try:
-        result = subprocess.run(["git", "-C", str(root), "ls-files", "-co", "--exclude-standard"],
+        result = subprocess.run([*git_safely(), "-C", str(root), "ls-files", "-co", "--exclude-standard"],
                                 capture_output=True, text=True, errors="replace", timeout=30)
         if result.returncode == 0:
             return [line for line in result.stdout.splitlines() if line.strip()]

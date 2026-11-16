@@ -189,6 +189,25 @@ def _search(root: Path, libraries: list[tuple[str, str]], fetch: Fetch | None) -
             logger.info("Official MCP server for %s: %s", name, ", ".join(s["server"] for s in servers))
 
 
+#: The only transports a found server may use: remote ones over https. A local command is never started for one.
+_FOUND_TRANSPORTS = {"streamable_http", "sse"}
+
+
+def _as_found(entry: Any, library: str) -> dict[str, Any] | None:
+    """A found server as the registry search writes it, rebuilt from its name and https address only; None otherwise.
+
+    The file lives in the workspace, which agent-run code and a seeded archive can write. Found in the launch review:
+    an entry read back whole could name a local command (`stdio`) the worker would start outside the sandbox, or
+    headers with `${...}` that expanded the worker's own secrets into a request to any address.
+    """
+    if not isinstance(entry, dict):
+        return None
+    url, transport, server = str(entry.get("url") or ""), str(entry.get("transport") or ""), str(entry.get("server") or "")
+    if not url.startswith("https://") or transport not in _FOUND_TRANSPORTS or not server or "${" in url:
+        return None
+    return {"server": server, "transport": transport, "url": url, "tools": "*", "library": library, "official": True}
+
+
 def official_servers(repo_root: str | Path | None, *, fetch: Fetch | None = None,
                      wait: bool = False) -> dict[str, dict[str, Any]]:
     """The official servers found so far for the product's libraries, by name; starts a search for the rest.
@@ -223,7 +242,8 @@ def official_servers(repo_root: str | Path | None, *, fetch: Fetch | None = None
         servers: dict[str, dict[str, Any]] = {}
         for ecosystem, name in libraries:
             for entry in found.get(f"{ecosystem}:{name}") or []:
-                servers.setdefault(re.sub(r"[^A-Za-z0-9]+", "_", entry["server"]).strip("_").lower(), entry)
+                if (clean := _as_found(entry, name)) is not None:
+                    servers.setdefault(re.sub(r"[^A-Za-z0-9]+", "_", clean["server"]).strip("_").lower(), clean)
         return servers
     except Exception:  # noqa: BLE001 - a stage without them is a stage as it was
         logger.debug("Could not read the official MCP servers", exc_info=True)

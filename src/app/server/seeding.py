@@ -26,6 +26,8 @@ this module is written defensively; each guard below notes what it stops.
 
 from __future__ import annotations
 
+from app.tools.version_control import git_safely  # noqa: E402
+
 import ipaddress
 import logging
 import os
@@ -374,7 +376,7 @@ def _clean_git_error(stderr: str, token: str | None) -> str:
 def _git_value(repo: Path, args: list[str]) -> str:
     try:
         result = subprocess.run(  # noqa: S603 - argv list, no shell
-            ["git", *args], cwd=repo, capture_output=True, text=True, errors="replace", timeout=15, check=False
+            [*git_safely(), *args], cwd=repo, capture_output=True, text=True, errors="replace", timeout=15, check=False
         )
     except (OSError, subprocess.TimeoutExpired):
         return ""
@@ -508,6 +510,10 @@ def seed_from_archive(workspace: Path, archive_path: str | Path) -> dict[str, st
 
         _enforce_size(staging, "The archive")
         _move_contents(_flatten_single_root(staging), workspace)
+    # An uploaded repository's own config and hooks can name commands git runs (LR.9): removed before any git command.
+    from app.tools.version_control import make_safe
+
+    make_safe(workspace)
 
     return {"type": "archive", "archive": archive.name, "format": suffix or archive.suffix}
 

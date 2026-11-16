@@ -18,6 +18,8 @@ knows.
 
 from __future__ import annotations
 
+from app.tools.version_control import git_safely  # noqa: E402
+
 import logging
 import re
 from pathlib import Path
@@ -780,7 +782,7 @@ def _lines_added(root: str, base: str, relative: str) -> set[int] | None:
     import subprocess
 
     try:
-        done = subprocess.run(["git", "-C", root, "diff", "-U0", base, "--", relative],
+        done = subprocess.run([*git_safely(), "-C", root, "diff", "-U0", base, "--", relative],
                               capture_output=True, text=True, errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return set()

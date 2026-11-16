@@ -9,6 +9,8 @@ hash and nothing else reaches the command line.
 
 from __future__ import annotations
 
+from app.tools.version_control import git_safely  # noqa: E402
+
 import re
 import subprocess
 from pathlib import Path
@@ -38,7 +40,7 @@ def _git(root: Path, *args: str) -> str:
         done = subprocess.run(
             # No textconv and no external diff: a filter the workspace's own
             # configuration names would run a command it chose (Initiative AO.8).
-            ["git", "-C", str(root), "-c", "core.quotepath=off", "-c", "core.fsmonitor=false", *args],
+            [*git_safely(), "-C", str(root), "-c", "core.quotepath=off", "-c", "core.fsmonitor=false", *args],
             capture_output=True, text=True, errors="replace", timeout=20, check=False,
         )
     except subprocess.TimeoutExpired as error:

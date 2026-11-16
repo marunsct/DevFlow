@@ -6350,7 +6350,7 @@
     ]
    },
    "post": {
-    "description": "Give a running run a direction its next model calls carry.",
+    "description": "Give a running run a direction its next model calls carry (an operator's; a viewer reads only).",
     "operationId": "post_steering_api_runs__run_id__steering_post",
     "parameters": [
      {

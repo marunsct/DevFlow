@@ -52,4 +52,6 @@ def test_a_large_request_is_what_the_deep_check_sends(monkeypatch):
 
 def test_the_deep_check_is_opt_in_and_reached_from_the_loop_script():
     assert 'DEEP = "deep" in sys.argv[1:]' in SOURCE
-    assert 'ready)  shift; in_worker model_ready.py "$@" ;;' in (ROOT / "scripts" / "loop" / "loop.sh").read_text()
+    loop = (ROOT / "scripts" / "loop" / "loop.sh").read_text()
+    ready = loop[loop.index("\nready)"):loop.index("\nfitness)")]
+    assert 'in_worker model_ready.py "$@" ;;' in ready

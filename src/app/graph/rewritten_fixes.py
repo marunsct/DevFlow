@@ -18,6 +18,8 @@ name, or a file the workspace refuses, goes to the agent loop, unchanged.
 
 from __future__ import annotations
 
+from app.tools.version_control import git_safely  # noqa: E402
+
 import logging
 import re
 from pathlib import Path, PurePosixPath
@@ -189,7 +191,7 @@ def _the_project_ignores(root: Path, relative: str) -> bool:
     import subprocess
 
     try:
-        done = subprocess.run(["git", "-C", str(root), "check-ignore", "-q", "--", relative],
+        done = subprocess.run([*git_safely(), "-C", str(root), "check-ignore", "-q", "--", relative],
                               capture_output=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return False

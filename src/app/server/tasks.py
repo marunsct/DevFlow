@@ -77,6 +77,68 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
 )
 
+#: When a segment asks its run to stop at the next stage boundary, so it is resumed in a fresh task before the task's
+#: own limit cuts it off (LR.2). Measured: two healthy twelve-hour runs were killed by the limit mid-stage, recorded
+#: cancelled then failed, and nothing resumed them.
+SEGMENT_PAUSE_AT_SECONDS = int(os.environ.get(
+    "RUN_SEGMENT_PAUSE_AT", str(max(600, int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "43200")) - 7200))))
+#: How many segments one run is carried across before it is left paused for a person: the run's total time budget.
+MOST_SEGMENTS = int(os.environ.get("RUN_MOST_SEGMENTS", "4"))
+
+
+def _segments_so_far(run_id: str, client: Any = None) -> int:
+    """How many segments this run has been carried across already (counted in Redis, kept a week); 0 when unread."""
+    try:
+        if client is None:
+            from app.server.redis_client import get_redis_client
+
+            client = get_redis_client()
+        count = int(client.incr(f"run-segments:{run_id}"))
+        client.expire(f"run-segments:{run_id}", 7 * 24 * 3600)
+        return count
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def carry_to_a_new_segment(runner: Any, run_id: str, *, client: Any = None) -> bool:
+    """After a segment paused its run at its limit: resume it in a new task, within `MOST_SEGMENTS`; whether it did."""
+    record = runner.run_store.load(run_id)
+    if record is None or record.status != "paused":
+        return False
+    if _segments_so_far(run_id, client) >= MOST_SEGMENTS:
+        logger.warning("Run %s has used its %d segments; left paused for a person", run_id, MOST_SEGMENTS)
+        return False
+    logger.warning("Run %s reached its segment's limit and stopped at a stage boundary; resumed in a new worker job", run_id)
+    asyncio.run(runner.resume_run(run_id))
+    return True
+
+
+class _SegmentClock:
+    """Asks the run to stop at its next stage boundary `seconds` after the segment starts."""
+
+    def __init__(self, runner: Any, run_id: str, seconds: float):
+        import threading
+
+        self.rang = False
+        self._timer = threading.Timer(seconds, self._ring, args=(runner, run_id))
+        self._timer.daemon = True
+
+    def _ring(self, runner: Any, run_id: str) -> None:
+        try:
+            if runner.run_store.request_pause(run_id, datetime.now(timezone.utc).isoformat()):
+                self.rang = True
+                logger.warning("Run %s: segment limit near; it stops at the next stage boundary", run_id)
+        except Exception:  # noqa: BLE001 - the task's own limit stands behind it
+            logger.debug("Could not ask run %s to stop for its segment's limit", run_id, exc_info=True)
+
+    def __enter__(self) -> "_SegmentClock":
+        self._timer.start()
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self._timer.cancel()
+
+
 #: How long a delivery is remembered as taken: longer than any redelivery could come.
 DELIVERY_REMEMBERED_SECONDS = 3 * 24 * 3600
 
@@ -738,8 +800,11 @@ def execute_workflow_run(
 
         # Held while this task drives the run, so a rewind waits for the step in flight (harness review R1).
         with driving(run_id), delivery.for_the_run(getattr(record, "delivery_mode", "")), \
-                on_the_build_model_only(bool(getattr(record, "local_only", False))):
+                on_the_build_model_only(bool(getattr(record, "local_only", False))), \
+                _SegmentClock(runner, run_id, SEGMENT_PAUSE_AT_SECONDS) as clock:
             asyncio.run(runner._run_loop(record, document, repository, resume=resume))
+        if clock.rang:
+            carry_to_a_new_segment(runner, run_id)
     except _RETRYABLE as exc:
         if self.request.retries < self.max_retries:
             countdown = 5 * (2**self.request.retries)

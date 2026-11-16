@@ -194,12 +194,33 @@ def operated() -> tuple[str, ...]:
     return (*BUNDLES, *EXPERIMENTS)
 
 
+_SAID_OFF: set[str] = set()
+
+
+def _built_in(name: str) -> bool:
+    """A built-in fix is on; only its variable set off on the host (a test's hook, or an operator's deliberate lever)
+    turns it off, and that is logged once.
+
+    Found in the launch review: a stored admin setting or a run's setting from before the fix was built in turned a
+    bug fix off with no trace in the run's record. Those are no longer read for a built-in fix.
+    """
+    environment = from_the_environment(name)
+    if environment is False and name not in _SAID_OFF:
+        _SAID_OFF.add(name)
+        import logging
+
+        logging.getLogger(__name__).warning("Built-in fix %s is off: its variable is set off on this host", name)
+    return True if environment is None else environment
+
+
 def is_on(name: str, default: bool) -> bool:
     """Whether switch `name` is on.
 
     The run's own setting first (HR2.E.1), then its own admin setting or variable (a test's hook, or a setting stored before the bundles); then a built-in
     fix is on, and a bundled feature follows its bundle's setting or variable; else `default`.
     """
+    if name in BUILT_IN:
+        return _built_in(name)
     run = for_the_run(name)
     if run is not None:
         return run

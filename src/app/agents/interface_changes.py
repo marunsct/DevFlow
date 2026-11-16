@@ -12,6 +12,8 @@ ledger (CM.2) and the next work order receive it.
 
 from __future__ import annotations
 
+from app.tools.version_control import git_safely  # noqa: E402
+
 import logging
 import subprocess
 from pathlib import Path
@@ -33,7 +35,7 @@ def enabled() -> bool:
 
 def _before(root: Path, relative: str) -> str:
     try:
-        done = subprocess.run(["git", "-C", str(root), "show", f"HEAD:{relative}"],
+        done = subprocess.run([*git_safely(), "-C", str(root), "show", f"HEAD:{relative}"],
                               capture_output=True, text=True, errors="replace", timeout=10)
     except (OSError, subprocess.SubprocessError):
         return ""

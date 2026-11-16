@@ -15,6 +15,8 @@ the dispatch compares it with the product now.
 
 from __future__ import annotations
 
+from app.tools.version_control import git_safely  # noqa: E402
+
 import hashlib
 import os
 import subprocess
@@ -42,7 +44,7 @@ def _git(root: Path, *args: str) -> str | None:
     from app.tools.bounded_output import run_bounded
 
     try:
-        done = run_bounded(["git", "-C", str(root), *args], text=True, errors="replace", timeout=30)
+        done = run_bounded([*git_safely(), "-C", str(root), *args], text=True, errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout if done.returncode == 0 else None

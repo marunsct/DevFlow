@@ -20,6 +20,7 @@ module existed.
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -87,6 +88,62 @@ together.
 
 _TIMEOUT_SECONDS = 30
 
+#: Settings every harness git command runs with: a repository's own config (a seeded archive's, or one an agent
+#: wrote) can name commands git runs on its own - a filesystem monitor, hooks, a pager. Found in the launch review:
+#: `git status` on an uploaded repository whose config named a monitor ran that command with the server's secrets.
+SAFE_SETTINGS = (
+    "-c", "core.fsmonitor=false",
+    "-c", "core.hooksPath=/dev/null",
+    "-c", "core.pager=cat",
+    "-c", "credential.helper=",
+)
+
+
+def git_safely() -> list[str]:
+    """The start of a harness git command: `git` with `SAFE_SETTINGS`."""
+    return ["git"] + list(SAFE_SETTINGS)
+
+
+#: Sections and keys a seeded repository's config may not keep: each can make git run a command of its choosing.
+_UNSAFE_CONFIG = re.compile(
+    r"^\s*(?:fsmonitor|hookspath|pager|sshcommand|editor|askpass|textconv|external|command|clean|smudge|process"
+    r"|helper|gpgprogram|program|path|cmd)\s*=", re.I)
+_UNSAFE_SECTIONS = re.compile(r'^\s*\[\s*(?:include|includeif|alias|filter|diff|merge|credential|gpg|sequence|uploadpack'
+                              r"|receive|protocol|url)\b", re.I)
+
+
+def make_safe(repo_root: str | Path) -> bool:
+    """Remove from a seeded repository's own config and hooks whatever can make git run a command; whether it changed.
+
+    The repository's history and branches stay; its hooks, filters, diff and merge drivers, aliases, includes and
+    command settings go. Called right after a codebase is unpacked or cloned into a workspace.
+    """
+    root = Path(repo_root) / ".git"
+    changed = False
+    config = root / "config"
+    try:
+        lines = config.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        lines = []
+    kept: list[str] = []
+    dropping = False
+    for line in lines:
+        if line.lstrip().startswith("["):
+            dropping = bool(_UNSAFE_SECTIONS.match(line))
+        if dropping or _UNSAFE_CONFIG.match(line):
+            changed = True
+            continue
+        kept.append(line)
+    if changed:
+        config.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    hooks = root / "hooks"
+    if hooks.is_dir():
+        for hook in hooks.iterdir():
+            if hook.is_file() and not hook.name.endswith(".sample"):
+                hook.unlink()
+                changed = True
+    return changed
+
 
 def _git(root: Path, *args: str, index: Path | None = None) -> subprocess.CompletedProcess | None:
     """Run one git command in `root`, or return None if git cannot run at all.
@@ -102,7 +159,7 @@ def _git(root: Path, *args: str, index: Path | None = None) -> subprocess.Comple
         env["GIT_INDEX_FILE"] = str(index)
     try:
         return subprocess.run(
-            [binary, *args],
+            [binary, *SAFE_SETTINGS, *args],
             cwd=str(root),
             capture_output=True,
             text=True,

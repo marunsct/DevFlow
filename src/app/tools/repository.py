@@ -10,6 +10,8 @@ agent from wandering outside the project boundary.
 
 from __future__ import annotations
 
+from app.tools.version_control import git_safely  # noqa: E402
+
 import re
 import json
 import os
@@ -1837,7 +1839,7 @@ def _ignored_by_git(root: Path, relatives: list[str]) -> set[str]:
     if not relatives:
         return set()
     try:
-        done = subprocess.run(["git", "-C", str(root), "check-ignore", "--stdin"], input="\n".join(relatives),
+        done = subprocess.run([*git_safely(), "-C", str(root), "check-ignore", "--stdin"], input="\n".join(relatives),
                               capture_output=True, text=True, errors="replace", timeout=20)
     except (OSError, subprocess.SubprocessError):
         return set()
@@ -8026,7 +8028,7 @@ def _git_value(root: Path, args: list[str]) -> str | None:
     """
     try:
         completed = subprocess.run(
-            ["git", *args],
+            [*git_safely(), *args],
             cwd=str(root),
             capture_output=True,
             text=True, errors="replace",

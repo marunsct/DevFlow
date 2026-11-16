@@ -82,6 +82,13 @@ def _connection(entry: dict[str, Any]) -> dict[str, Any] | None:
         return None
     transport = "streamable_http" if transport == "http" else transport
     connection: dict[str, Any] = {"transport": transport}
+    if entry.get("official"):
+        # A found server (`mcp_registry._as_found`) is an https address and nothing else: no command, no headers, and
+        # nothing from the worker's environment expanded into it.
+        if transport == "stdio" or not str(entry.get("url") or "").startswith("https://"):
+            return None
+        connection["url"] = str(entry["url"])
+        return connection
     for key in ("url", "headers", "command", "args", "env", "cwd"):
         if key in entry:
             connection[key] = _expanded(entry[key])

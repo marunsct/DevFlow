@@ -30,7 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.agents import context_budget
 from app.agents.context_budget import DEFAULT_CONTEXT_WINDOW
 from app.server import runtime_settings
-from app.server.auth import UserInDB, get_current_active_user, record_audit, require_admin
+from app.server.auth import UserInDB, get_current_active_user, record_audit, require_admin, require_operator
 
 logger = logging.getLogger(__name__)
 
@@ -351,7 +351,7 @@ def _endpoints_with_keys(environment: Mapping[str, str]) -> dict[str, bool]:
 
 
 @settings_router.get("", response_model=SettingsView)
-async def get_settings_view(user: UserInDB = Depends(get_current_active_user)) -> SettingsView:
+async def get_settings_view(user: UserInDB = Depends(require_operator)) -> SettingsView:
     """Current provider configuration, with credentials masked."""
     return _current_view()
 

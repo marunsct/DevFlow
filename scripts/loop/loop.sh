@@ -120,6 +120,7 @@ start)
   target=()
   [ -z "${PIN_URL:-}" ] || target+=("pin_url=$PIN_URL")
   [ -z "${PIN_MODEL_NAME:-}" ] || target+=("pin_model=$PIN_MODEL_NAME")
+  if ! "$PY" "$HERE/disk_ready.py" >&2; then echo "not starting: the disk is nearly full" >&2; exit 1; fi
   if ! in_worker model_ready.py "${target[@]+"${target[@]}"}" | grep -qx "ALL READY"; then
     in_worker model_ready.py "${target[@]+"${target[@]}"}" | grep -v "^READY" >&2 || true
     echo "not starting: the models are not all ready" >&2
@@ -383,7 +384,7 @@ wait)
   fi
   ;;
 
-audit)  in_worker audit_live.py "${2:-$(current)}" ;;
+audit)  "$PY" "$HERE/disk_ready.py" || true; in_worker audit_live.py "${2:-$(current)}" ;;
 deep-audit) shift; in_worker deep_audit.py "$@" ;;
 defects) in_worker defects.py "${2:-$(current)}" ;;
 asked)
@@ -477,7 +478,12 @@ checks)
   case " $* " in *" --write "*) (cd "$ROOT" && docker compose cp data/bench worker:/app/data/ >/dev/null) ;; esac
   in_worker check_precision.py "$@"
   ;;
-ready)  shift; in_worker model_ready.py "$@" ;;
+ready)
+  shift
+  # The disk first (LR.3): a full disk stops the database and every run with it. Its verdict line stays above the
+  # model's, and a disk under the floor makes the last line NOT ALL READY, so nothing gated on `ready` starts.
+  if ! "$PY" "$HERE/disk_ready.py"; then in_worker model_ready.py "$@" | sed '$d'; echo "NOT ALL READY"; exit 1; fi
+  in_worker model_ready.py "$@" ;;
 fitness) shift; in_worker model_fitness.py "$@" ;;
 reasoning-probe) shift; in_worker reasoning_probe.py "${@:-plan}" ;;
 diagnose) shift; in_worker model_diagnose.py "$@" ;;
@@ -669,7 +675,16 @@ restore)
     echo "restored $src into database $target"
   ;;
 nightly)
-  # The backup first, live run or not: it reads the database and touches nothing else.
+  # The model server's logs first (LR.3, owner 2026-11-14: clear them myself): LM Studio's server logs grew to 89 GB in
+  # two days and filled the disk the database lives on. Logs only - never its models or settings - older than
+  # LMSTUDIO_LOG_DAYS (default 2) days, and any single log over 2 GB.
+  logs="${LMSTUDIO_SERVER_LOGS:-$HOME/.lmstudio/server-logs}"
+  if [ -d "$logs" ]; then
+    freed=$(find "$logs" -type f -name '*.log' \( -mtime +"${LMSTUDIO_LOG_DAYS:-2}" -o -size +2G \) -print -delete | wc -l)
+    echo "$(jst '+%F %H:%M JST') nightly: removed $freed model-server log file(s) from $logs" | tee -a "$STATE/nightly.log"
+  fi
+  "$PY" "$HERE/disk_ready.py" | tee -a "$STATE/nightly.log" || true
+  # The backup next, live run or not: it reads the database and touches nothing else.
   "$0" backup | tee -a "$STATE/nightly.log"
   # Not beside two live runs: scaffolding the packs competes for their memory and CPU. Beside one it runs - it uses a
   # scratch workspace and no model - since skipping whenever any run was live skipped 15 of 18 nights (HR2.O.3).

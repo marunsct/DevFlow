@@ -13,6 +13,8 @@ read once and forgotten.
 
 from __future__ import annotations
 
+from app.tools.version_control import git_safely  # noqa: E402
+
 import logging
 import subprocess
 from pathlib import Path
@@ -65,7 +67,7 @@ def _what_changed(root: str, since: str | None) -> str:
         return ""
     try:
         result = subprocess.run(
-            ["git", "diff", "--stat", since, "HEAD", "--", ".", ":(exclude)docs"],
+            [*git_safely(), "diff", "--stat", since, "HEAD", "--", ".", ":(exclude)docs"],
             cwd=root, capture_output=True, text=True, errors="replace", timeout=30, check=False,
         )
     except (OSError, subprocess.SubprocessError):
@@ -82,13 +84,13 @@ def _previous_sprint_tag(root: str, sprint_number: int) -> str | None:
         if sprint_number > 1:
             tag = f"sprint-{sprint_number - 1}"
             check = subprocess.run(
-                ["git", "rev-parse", "--verify", "--quiet", tag],
+                [*git_safely(), "rev-parse", "--verify", "--quiet", tag],
                 cwd=root, capture_output=True, text=True, errors="replace", timeout=10, check=False,
             )
             if check.returncode == 0:
                 return tag
         first = subprocess.run(
-            ["git", "rev-list", "--max-parents=0", "HEAD"],
+            [*git_safely(), "rev-list", "--max-parents=0", "HEAD"],
             cwd=root, capture_output=True, text=True, errors="replace", timeout=10, check=False,
         )
         return first.stdout.strip().splitlines()[0] if first.stdout.strip() else None

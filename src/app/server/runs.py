@@ -1188,9 +1188,9 @@ def create_runs_router(
 
     @runs.post("/{run_id}/steering", status_code=201)
     async def post_steering(
-        run_id: str, body: SteeringNote, user: UserInDB = Depends(get_current_active_user)
+        run_id: str, body: SteeringNote, user: UserInDB = Depends(require_operator)
     ) -> dict[str, Any]:
-        """Give a running run a direction its next model calls carry."""
+        """Give a running run a direction its next model calls carry (an operator's; a viewer reads only)."""
         from app.server.steering import add
 
         record = _require_run(runner, run_id, user)
@@ -1201,7 +1201,10 @@ def create_runs_router(
             # resumed, and the owner reads "sent" as "followed" (Initiative AS).
             raise HTTPException(status_code=409, detail="This run is paused. Resume it first, then send the direction.")
         try:
-            return {"run_id": run_id, "note": add(record.repo_root, body.text, user.username, body.scope, body.audience)}
+            note = add(record.repo_root, body.text, user.username, body.scope, body.audience)
+            record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.steering", subject=run_id,
+                         detail={"scope": body.scope, "characters": len(body.text)})
+            return {"run_id": run_id, "note": note}
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 

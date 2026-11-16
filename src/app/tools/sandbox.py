@@ -3543,17 +3543,21 @@ _TAP_TESTS = re.compile(r"^\s*[#ℹ]\s*tests\s+(\d+)", re.M)
 #: runner that reports a total separately does not always agree with it -
 #: Playwright counts flaky and skipped tests in neither column.
 _RUNNER_TOTALS: tuple[tuple[str, re.Pattern[str], re.Pattern[str]], ...] = (
+    # Each read within its summary line (found in the launch review): read across lines, "Tests: 3 failed, 3 total"
+    # followed by "Snapshots: 2 passed" counted two passing tests, and pytest's bare "(\d+) passed" matched any line.
     # jest: "Tests:       1 failed, 5 passed, 6 total"
-    ("jest", re.compile(r"Tests:.*?(\d+)\s+passed", re.S),
-             re.compile(r"Tests:.*?(\d+)\s+failed", re.S)),
+    ("jest", re.compile(r"Tests:[^\n]*?(\d+)\s+passed"),
+             re.compile(r"Tests:[^\n]*?(\d+)\s+failed")),
     # vitest: "Tests  5 passed | 1 failed (6)"
-    ("vitest", re.compile(r"Tests\s+.*?(\d+)\s+passed", re.S),
-               re.compile(r"Tests\s+.*?(\d+)\s+failed", re.S)),
-    # pytest: "5 passed, 1 failed in 0.12s"
-    ("pytest", re.compile(r"(\d+)\s+passed"), re.compile(r"(\d+)\s+failed")),
+    ("vitest", re.compile(r"Tests\s+[^\n]*?(\d+)\s+passed"),
+               re.compile(r"Tests\s+[^\n]*?(\d+)\s+failed")),
+    # pytest: "5 passed, 1 failed in 0.12s" - the summary line, which ends with the time it took
+    ("pytest", re.compile(r"(\d+)\s+passed(?=[^\n]*\bin\s+[\d.]+s)"), re.compile(r"(\d+)\s+failed(?=[^\n]*\bin\s+[\d.]+s)")),
+    # playwright: "  3 failed" on its own line, then "  2 passed (30.0s)"
+    ("playwright", re.compile(r"^\s*(\d+)\s+passed\s+\([\d.]+m?s\)", re.M), re.compile(r"^\s*(\d+)\s+failed\s*$", re.M)),
     # cargo: "test result: FAILED. 3 passed; 1 failed;"
-    ("cargo", re.compile(r"test result:.*?(\d+)\s+passed", re.S),
-              re.compile(r"test result:.*?(\d+)\s+failed", re.S)),
+    ("cargo", re.compile(r"test result:[^\n]*?(\d+)\s+passed"),
+              re.compile(r"test result:[^\n]*?(\d+)\s+failed")),
     # go: one "--- PASS:" / "--- FAIL:" line per test
     ("go", re.compile(r"^---\s+PASS:", re.M), re.compile(r"^---\s+FAIL:", re.M)),
 )

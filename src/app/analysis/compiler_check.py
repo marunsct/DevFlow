@@ -140,7 +140,12 @@ def _relative(path: str, project: Path, workspace: Path) -> str:
             return candidate.relative_to(workspace.resolve()).as_posix()
         except ValueError:
             return candidate.as_posix()
-    return (project / path.removeprefix("./")).relative_to(workspace).as_posix()
+    relative = path.removeprefix("./")
+    # A relative path is the project's, unless only the workspace holds it: measured on one run, a compiler printed
+    # `notes-api/src/...` from the workspace and the finding named `notes-api/notes-api/src/...`, a file not there.
+    if not (project / relative).exists() and (workspace / relative).exists():
+        return Path(relative).as_posix()
+    return (project / relative).relative_to(workspace).as_posix()
 
 
 def errors_in(output: str, project: Path, workspace: Path) -> list[dict]:

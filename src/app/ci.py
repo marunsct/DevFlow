@@ -73,11 +73,28 @@ def head(root: str | Path) -> str:
     return result.stdout.strip() if result is not None and result.returncode == 0 else ""
 
 
+def _the_tree_is_clean(root: str | Path) -> bool:
+    """Whether git records nothing changed and nothing untracked (ignored files aside)."""
+    status = _git(root, "status", "--porcelain")
+    return status is not None and status.returncode == 0 and not status.stdout.strip()
+
+
 def commit(root: str | Path, message: str) -> str:
-    """Commit everything as it stands; the commit HEAD now names (new or not)."""
+    """Commit everything as it stands; the commit HEAD now names (new or not), or "" when the work is not committed.
+
+    Found in the launch review (LR.51): a commit that failed (an `index.lock`, a git that timed out) returned the old
+    HEAD as if the work were in it, and a later reset to that commit discarded the work. Now the tree is checked: work
+    left uncommitted answers "", which every caller treats as "no commit to go back to".
+    """
     from app.tools.version_control import commit_all
 
     commit_all(root, message)
+    # Tracked and staged changes against HEAD only: a failed commit leaves its staged work there, while a file another
+    # thread writes after the add (parallel fixers) is untracked and is not this commit's.
+    staged = _git(root, "diff", "--quiet", "HEAD")
+    if staged is None or staged.returncode != 0:
+        logger.warning("The workspace could not be committed (%s); its changes stay uncommitted", message[:60])
+        return ""
     return head(root)
 
 
@@ -467,6 +484,10 @@ def revert_to(root: str | Path, commit_id: str) -> bool:
         logger.warning("Could not reset the workspace to %s", commit_id)
         return False
     _git(root, "clean", "-fd", "--quiet")
+    # A clean that failed leaves the fix's new files beside the reverted ones (LR.51): reported, not called a revert.
+    if not _the_tree_is_clean(root):
+        logger.warning("The workspace still differs from %s after the reset and clean", commit_id)
+        return False
     return True
 
 

@@ -53,6 +53,19 @@ This runs in production mode (missing or published secrets stop the server; the 
 behind Caddy on ports 80 and 443 with TLS and security headers; the app itself is no longer published. Keep machine-only
 changes (an extra port, a volume) in `docker-compose.override.yml`, which Compose reads automatically and git ignores.
 
+### When several people share one deployment
+
+By default an agent's command runs inside the worker. That is fine on your own machine, but on a shared deployment add
+the sandbox file, so each command runs in a container of its own - no network unless it installs, no capabilities, a
+read-only root, only its run's workspace, none of the server's secrets:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.sandbox.yml up -d
+```
+
+The worker reaches Docker only through a proxy that allows running containers. The first commands pull the toolchain
+images (Node with browsers, Python, Go, Rust), which takes a few minutes once.
+
 ## Your first run
 
 1. On **Home**, write the brief: what the product does, its features as a list, and - if you know them - its

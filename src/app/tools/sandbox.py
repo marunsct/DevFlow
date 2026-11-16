@@ -3338,6 +3338,22 @@ def strip_a_doubled_working_directory(
     )
 
 
+def _workspace_mount(workspace: str) -> list[str]:
+    """How the sandbox container sees the workspace: a sub-path of the data volume, or the path on the host (LR.30).
+
+    Found in the launch review: the workspace lives in the worker's named data volume (`/app/data/...`), a path the
+    host's Docker does not have, so container mode could not mount it and the deployment ran every command in the
+    worker itself. With `SANDBOX_WORKSPACE_VOLUME` (the volume's name) the container mounts the workspace's sub-path
+    of that volume - only that run's workspace, nothing else of the harness's data.
+    """
+    volume = os.environ.get("SANDBOX_WORKSPACE_VOLUME", "").strip()
+    root = os.environ.get("SANDBOX_VOLUME_ROOT", os.environ.get("DATA_DIR", "/app/data")).rstrip("/")
+    if volume and (workspace == root or workspace.startswith(root + "/")):
+        subpath = os.path.relpath(workspace, root)
+        return ["--mount", f"type=volume,src={volume},dst=/workspace,volume-subpath={subpath}"]
+    return ["-v", f"{workspace}:/workspace"]
+
+
 def _docker_binary() -> str:
     binary = shutil.which("docker") or shutil.which("podman")
     if not binary:
@@ -5365,7 +5381,7 @@ class SandboxExecutor:
             "--read-only",
             # A tmpfs mount flag for the container, not a host temp path.
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",  # nosec B108
-            "-v", f"{workspace}:/workspace",
+            *_workspace_mount(workspace),
             # The mount is always the workspace root; only the working directory
             # inside it moves, so a subdirectory still sees its siblings.
             "-w", "/workspace/" + os.path.relpath(run_in, workspace)

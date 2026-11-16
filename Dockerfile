@@ -95,6 +95,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         ca-certificates \
         ripgrep \
+        docker-cli \
         libasound2t64 \
         libatk-bridge2.0-0t64 \
         libatk1.0-0t64 \

@@ -1,0 +1,36 @@
+# Each agent command in a container of its own (LR.30, launch review), for a deployment several people share:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.sandbox.yml up -d
+# A command's container has no network unless it installs, no Linux capabilities, a read-only root, process, memory
+# and CPU caps, none of the harness's environment, and only its run's workspace (a sub-path of the data volume).
+# The worker reaches Docker only through a proxy that allows running containers - never the host's socket itself,
+# which is root on the host.
+services:
+  worker:
+    environment:
+      SANDBOX_EXECUTION_MODE: container
+      SANDBOX_WORKSPACE_VOLUME: "${COMPOSE_PROJECT_NAME:-langchain}_appdata"
+      DOCKER_HOST: tcp://docker-proxy:2375
+      # Browser tests need Node and the browsers in one image.
+      SANDBOX_NODE_IMAGE: "${SANDBOX_NODE_IMAGE:-mcr.microsoft.com/playwright:v1.64.0-noble}"
+    volumes: !override
+      - appdata:/app/data
+    depends_on:
+      - docker-proxy
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      POST: 1
+      IMAGES: 1
+      INFO: 1
+      VERSION: 1
+      NETWORKS: 0
+      VOLUMES: 0
+      EXEC: 0
+      BUILD: 0
+      SWARM: 0
+      SERVICES: 0
+      SECRETS: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro

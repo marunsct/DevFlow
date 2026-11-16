@@ -60,6 +60,23 @@ REPAIR_ONLY = (
 )
 
 
+#: Rounds past the review's limit a suite may take while each repair leaves fewer tests no product can pass (LR.27).
+CANNOT_PASS_EXTRA_ROUNDS = 2
+
+
+def cannot_pass_again(cannot: list[str], *, rounds: int, limit: int, last_sent: int | None) -> list[str]:
+    """After the once-at-the-limit repair: send the tests no product can pass back again while repairs are working.
+
+    Found in the launch review: after the one send-back the suite locked with such findings standing, and 76 of 190
+    suites were later reopened for them at 20-30 minutes each, after a build and a test round. Before locking, a
+    repair that left fewer of them goes back again, up to `CANNOT_PASS_EXTRA_ROUNDS` rounds past the limit; a repair
+    that fixed none locks as before, with the findings recorded as open.
+    """
+    if not cannot or last_sent is None or rounds >= limit + CANNOT_PASS_EXTRA_ROUNDS or len(cannot) >= last_sent:
+        return []
+    return [REPAIR_ONLY, *cannot]
+
+
 def cannot_pass_to_lock(cannot: list[str], *, rounds: int, limit: int, already_sent: bool = False) -> list[str]:
     """The harness's findings that a test can never pass, sent back once at the review's round limit; [] otherwise.
 
@@ -731,7 +748,7 @@ def _write_the_suite_s_files(files: dict[Path, str]) -> None:
 #: The suite as it ran before an at-the-limit send-back, kept so a send-back can never cost the run its suite.
 BEFORE_THE_SEND_BACK = ".harness/suite-before-the-send-back.json"
 #: The once-per-lock send-backs at the review's limit; cleared when the suite is locked, so a reopened suite has them.
-ONCE_AT_THE_LIMIT = ("partial_strengthened_once", "cannot_pass_repaired_once", "strengthened_once")
+ONCE_AT_THE_LIMIT = ("partial_strengthened_once", "cannot_pass_repaired_once", "strengthened_once", "cannot_pass_sent")
 
 
 def _keep_before_the_send_back(root: str | Path) -> None:
@@ -944,8 +961,13 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
                                      already_sent=bool(sent_back.get("cannot_pass_repaired_once"))):
         logger.info("At the review's limit, %d test(s) no product could pass go back once to be repaired", len(cannot))
         _keep_before_the_send_back(root)
-        suite._save_state(root, {**suite._state(root), "cannot_pass_repaired_once": True})
+        suite._save_state(root, {**suite._state(root), "cannot_pass_repaired_once": True, "cannot_pass_sent": len(cannot)})
         return _handing_on(stage="acceptance_author", acceptance_feedback=repair)
+    if again := cannot_pass_again(cannot, rounds=rounds, limit=MAX_ACCEPTANCE_ROUNDS,
+                                  last_sent=suite._state(root).get("cannot_pass_sent")):
+        logger.info("The repair left %d test(s) no product could pass, fewer than before: sent back again", len(cannot))
+        suite._save_state(root, {**suite._state(root), "cannot_pass_sent": len(cannot)})
+        return _handing_on(stage="acceptance_author", acceptance_feedback=again)
 
     findings: list[str] = []
     update: dict[str, Any] = {}

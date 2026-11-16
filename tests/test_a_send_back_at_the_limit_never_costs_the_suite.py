@@ -48,7 +48,7 @@ def test_the_review_puts_the_suite_back_before_it_fails_the_run():
     for failure in ("The acceptance suite cannot run or load after", "The acceptance suite proves nothing after"):
         at = source.index(failure)
         assert "_put_back_before_the_send_back(root)" in source[at - 700:at]
-    for flag in nodes.ONCE_AT_THE_LIMIT:
+    for flag in ("partial_strengthened_once", "cannot_pass_repaired_once", "strengthened_once"):
         at = source.index(f'"{flag}": True')
         assert "_keep_before_the_send_back(root)" in source[at - 300:at]
     lock = source.index("suite.lock(root)")

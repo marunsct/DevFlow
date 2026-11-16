@@ -687,9 +687,11 @@ def _measured_again_if_it_changed(root: Any, left_out: list[str] | None = None) 
         if failed:
             return [f"{CHANGED_AT_RELEASE} failed {len(failed)} test(s): " + ", ".join(failed[:5])]
         return []
-    except Exception:  # noqa: BLE001 - the release stands on the measurement it has
-        logger.debug("Could not measure the product again at release", exc_info=True)
-        return []
+    except Exception as error:  # noqa: BLE001 - the release is not stopped; what was not measured is said (LR.27)
+        # Found in the launch review: a failure here returned no gap, so a product the clean-ups changed shipped as
+        # measured although nothing measured it as it shipped.
+        logger.warning("Could not measure the product again at release", exc_info=True)
+        return [f"{CHANGED_AT_RELEASE} could not run: the measurement failed ({type(error).__name__})"]
 
 
 def _a_development_server(root: Any) -> list[str]:

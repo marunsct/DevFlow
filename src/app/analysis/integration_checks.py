@@ -1599,6 +1599,23 @@ _COMMONJS = re.compile(
     re.M,
 )
 
+#: A `require` the module makes for itself: `const require = createRequire(import.meta.url)` is ES-module code.
+_A_REQUIRE_MADE_HERE = re.compile(r"(?<![\w.$])(?:const|let|var)\s+require\s*=\s*createRequire\s*\(")
+#: CommonJS other than `require`: what is left to name when the file made its own `require`.
+_COMMONJS_EXPORTS = re.compile(r"""^\s*module\.exports\s*=|^\s*exports\.\w+\s*=""", re.M)
+
+
+def _uses_commonjs(code: str) -> bool:
+    """Whether `code` uses CommonJS an ES module lacks. A `require` it made with `createRequire` is its own.
+
+    Measured on one run: a locked spec made its `require` with `createRequire(import.meta.url)`, passed 12 of 12, and
+    was called CommonJS that "cannot run" before any test had loaded; two fixers broke the suite changing the manifest.
+    """
+    if _A_REQUIRE_MADE_HERE.search(code):
+        return bool(_COMMONJS_EXPORTS.search(code))
+    return bool(_COMMONJS.search(code))
+
+
 #: `typeof module !== 'undefined'` and friends. `typeof` on an undeclared
 #: identifier is the one way to touch `module` or `require` without throwing,
 #: so a file that tests for them is written to load under either module system
@@ -2546,7 +2563,7 @@ def _files_that_contradict_the_declared_module_type(
                 # `_scratch_scripts_left_behind`, which names it with that.
                 continue
             body = _read(path)
-            if _COMMONJS.search(_only_the_code(body)) and not (
+            if _uses_commonjs(_only_the_code(body)) and not (
                 # Raw text for the guard: see `_commonjs_loaded_as_a_module`.
                 _FEATURE_DETECTS_COMMONJS.search(body)
             ):

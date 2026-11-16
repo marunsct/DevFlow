@@ -356,6 +356,28 @@ export const downloadHandover = async (runId: string): Promise<void> => {
   }
 };
 
+/** The product itself as one zip (LR.30a): its files and git history, with HOW-TO-RUN.txt. */
+export const downloadProduct = async (runId: string): Promise<void> => {
+  const response = await api.get(`/runs/${runId}/product`, { responseType: 'blob' });
+  const url = URL.createObjectURL(response.data as Blob);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${runId}-product.zip`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+};
+
+/** The commands that install, test and start the product (LR.30a). */
+export const getHowToRun = async (runId: string): Promise<string[]> => {
+  const response = await api.get<{ steps: string[] }>(`/runs/${runId}/how-to-run`);
+  return response.data.steps ?? [];
+};
+
 /** Time, tokens and failures per stage, from the run's transcript (plan BG.7). */
 export const getUsage = async (runId: string): Promise<RunUsage> => {
   const response = await api.get<RunUsage>(`/runs/${runId}/usage`);

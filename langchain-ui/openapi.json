@@ -5396,6 +5396,56 @@
     ]
    }
   },
+  "/api/runs/{run_id}/how-to-run": {
+   "get": {
+    "description": "The commands that install, test and start the product (LR.30a); [] when the stack does not say.",
+    "operationId": "get_how_to_run_api_runs__run_id__how_to_run_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get How To Run Api Runs  Run Id  How To Run Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Get How To Run",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
   "/api/runs/{run_id}/kpis": {
    "get": {
     "description": "The run's KPIs from its transcript, as the loop's ledger keeps them (plan UI-S6).",
@@ -5710,6 +5760,54 @@
      }
     ],
     "summary": "Pause Run",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/product": {
+   "get": {
+    "description": "The product itself as one zip (LR.30a): the workspace with its git history, without dependency folders,\ntest-runner output or the harness's own files, and a `HOW-TO-RUN.txt` with the stack's commands.",
+    "operationId": "download_product_api_runs__run_id__product_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "title": "Response Download Product Api Runs  Run Id  Product Get"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Download Product",
     "tags": [
      "runs"
     ]

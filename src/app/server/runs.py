@@ -940,6 +940,32 @@ def create_runs_router(
             headers={"Content-Disposition": f'attachment; filename="{run_id}-handover.zip"'},
         )
 
+    @runs.get("/{run_id}/product")
+    async def download_product(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> Any:
+        """The product itself as one zip (LR.30a): the workspace with its git history, without dependency folders,
+        test-runner output or the harness's own files, and a `HOW-TO-RUN.txt` with the stack's commands."""
+        from app.sprint.product_archive import build
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root or not Path(record.repo_root).is_dir():
+            raise HTTPException(status_code=404, detail="This run has no workspace.")
+        record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.product.download", subject=run_id, detail={})
+        return Response(
+            content=build(record.repo_root, run_id),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{run_id}-product.zip"'},
+        )
+
+    @runs.get("/{run_id}/how-to-run")
+    async def get_how_to_run(run_id: str, user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+        """The commands that install, test and start the product (LR.30a); [] when the stack does not say."""
+        from app.sprint.product_archive import how_to_run
+
+        record = _require_run(runner, run_id, user)
+        return {"run_id": run_id, "steps": how_to_run(record.repo_root) if record.repo_root else []}
+
     @runs.get("/{run_id}/logs", response_model=EventPage)
     async def get_logs(
         run_id: str,

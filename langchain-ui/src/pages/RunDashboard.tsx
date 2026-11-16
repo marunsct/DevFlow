@@ -1,3 +1,4 @@
+import { HowToRun } from '../components/HowToRun';
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type {
@@ -21,6 +22,7 @@ import {
   rewindRun,
   cloneRun,
   downloadHandover,
+  downloadProduct,
   downloadTranscript,
   startRun,
   type RewindPoint,
@@ -685,6 +687,13 @@ export const RunDashboard: React.FC = () => {
             className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}>
             <Copy className="h-3.5 w-3.5" /> Clone
           </button>
+          {run.status === 'completed' && (
+            <button onClick={() => void downloadProduct(runId!)} data-testid="download-product"
+              title="The product's files and their git history, with how to run it, as one zip"
+              className={`${actionButton} text-text-primary border-accent/40 hover:border-accent hover:bg-overlay`}>
+              <Download className="h-3.5 w-3.5" /> Download product
+            </button>
+          )}
           <button onClick={() => void downloadHandover(runId!)}
             title="The run's documents, decisions and acceptance suite, as one zip"
             className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}>
@@ -738,6 +747,7 @@ export const RunDashboard: React.FC = () => {
                 success (Initiative J.4). What may mean the product does not
                 work is a warning; a note is only worth knowing. */}
             <GapsOfTheRun blocking={run.blocking_gaps ?? []} all={run.completion_gaps ?? []} />
+            {run.status === 'completed' && <HowToRun runId={run.run_id} />}
             {/* The workspace tells the truth after the run ends: what the
                 NON-DELIVERABLE marker says, on the run card (Initiative J.6). */}
             {/* LR.21: a completed run says delivered, delivered with cuts, or not deliverable. Cuts are criteria

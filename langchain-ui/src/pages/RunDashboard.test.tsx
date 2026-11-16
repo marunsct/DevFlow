@@ -27,6 +27,7 @@ vi.mock('../api', () => {
     getSteering: [],
     getPendingReview: { pending: false },
     getPendingApproval: { pending: false },
+    getHowToRun: ['cd app', 'npm install', 'sh start.sh'],
   };
   for (const [name, answer] of Object.entries(answers)) known[name] = vi.fn(async () => answer);
   known.api = { get: vi.fn(async () => ({ data: {} })) } as never;
@@ -88,6 +89,13 @@ describe('the run page', () => {
     renderPage();
     expect(await screen.findByText('Delivered with cuts')).toBeTruthy();
     expect(screen.getByTestId('scope-cuts').textContent).toContain('the export view');
+  });
+
+  it('offers the product itself and how to run it once the run is complete', async () => {
+    Object.assign(run, { status: 'completed', current_stage: 'complete', verdict: 'delivered', scope_cuts: [] });
+    renderPage();
+    expect(await screen.findByTestId('download-product')).toBeTruthy();
+    expect((await screen.findByTestId('how-to-run')).textContent).toContain('sh start.sh');
   });
 
   it('says delivered for a completed run with no cut and nothing blocking', async () => {

@@ -32,3 +32,8 @@ def test_a_viewer_cannot_steer_a_run(as_viewer):
 
 def test_a_viewer_cannot_read_the_model_settings(as_viewer):
     assert as_viewer.get("/api/settings").status_code == 403
+
+
+def test_a_viewer_cannot_read_the_lessons_every_tenant_shares(as_viewer):
+    # LR.39: a lesson quotes the run it came from, from any tenant.
+    assert as_viewer.get("/api/lessons").status_code == 403

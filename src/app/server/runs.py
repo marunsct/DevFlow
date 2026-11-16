@@ -124,6 +124,10 @@ def _require_run(runner: WorkflowRunner, run_id: str, user: UserInDB) -> RunReco
     return record
 
 
+#: Beside a stored codebase archive: the run it was uploaded for.
+UPLOAD_OWNER_SUFFIX = ".run"
+
+
 def _a_known_model_address(base_url: str) -> bool:
     """Whether `base_url` is a model server the deployment knows: the configured one or a saved model profile."""
     def same(a: Any) -> bool:
@@ -302,6 +306,17 @@ def create_runs_router(
         ensure_local(f"uploads/{candidate.name}", candidate)
         return str(candidate) if candidate.is_file() else None
 
+    def _resolve_upload_for(upload_id: str, run_id: str) -> str | None:
+        """An upload's stored path only for the run it was uploaded for, or None (LR.39)."""
+        found = _resolve_upload(upload_id)
+        if found is None:
+            return None
+        try:
+            owner = Path(f"{found}{UPLOAD_OWNER_SUFFIX}").read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        return found if owner == run_id else None
+
     @runs.post("/{run_id}/codebase", response_model=CodebaseUploadResponse, status_code=201)
     async def upload_codebase(
         run_id: str,
@@ -336,6 +351,9 @@ def create_runs_router(
             raise HTTPException(status_code=400, detail=str(exc))
 
         archive_file(f"uploads/{Path(result.stored_path).name}", result.stored_path)
+        # Bound to this run (LR.39): an upload id was resolved for any run, so one that leaked let another run - another
+        # tenant's - start from that archive.
+        Path(f"{result.stored_path}{UPLOAD_OWNER_SUFFIX}").write_text(run_id, encoding="utf-8")
         record_audit(
             actor=user.username, tenant_id=user.tenant_id, action="run.codebase_upload",
             subject=run_id, detail={"archive": result.original_name, "bytes": result.file_size_bytes},
@@ -451,7 +469,8 @@ def create_runs_router(
         # "unknown" a blank directory yields.
         try:
             seeded = await run_in_threadpool(
-                seed_workspace, workspace, body.source, resolve_upload=_resolve_upload,
+                seed_workspace, workspace, body.source,
+                resolve_upload=lambda upload_id: _resolve_upload_for(upload_id, run_id),
                 resolve_run=lambda finished_id: _a_completed_run_s_workspace(runner, finished_id, user),
             )
         except SeedError as exc:

@@ -279,3 +279,15 @@ def test_an_unknown_source_type_is_rejected_by_the_schema(client, run_id):
     )
 
     assert response.status_code == 422
+
+
+def test_an_upload_starts_only_the_run_it_was_uploaded_for(client, run_id):
+    """LR.39: an upload id leaked to another run - another tenant's - let it start from that archive."""
+    upload = client.post(
+        f"/api/runs/{run_id}/codebase",
+        files=[("file", ("mvp.zip", _zip_bytes({"mvp/app/main.py": "run()"}), "application/zip"))],
+    ).json()
+    other = _create_run(client)
+    response = client.post(f"/api/runs/{other}/start",
+                           json={"source": {"type": "archive", "upload_id": upload["upload_id"]}})
+    assert response.status_code == 400, response.text

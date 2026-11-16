@@ -1,7 +1,8 @@
 """The lesson store over REST, for the Settings page (plan item AT).
 
-Reading is for any signed-in user; approving or rejecting a lesson decides
-what reaches every later run's prompts, so it is the administrator's.
+Reading, approving and rejecting are the administrator's: approving decides what reaches every later run's prompts,
+and a lesson quotes the run it came from - from any tenant, since the store is the deployment's (LR.39, launch review:
+any signed-in user could read every tenant's lessons).
 """
 
 from __future__ import annotations
@@ -11,13 +12,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.plugins import lessons as store
-from app.server.auth import UserInDB, get_current_active_user, record_audit, require_admin
+from app.server.auth import UserInDB, record_audit, require_admin
 
 lessons_router = APIRouter(prefix="/api/lessons", tags=["lessons"])
 
 
 @lessons_router.get("")
-async def list_lessons(user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+async def list_lessons(user: UserInDB = Depends(require_admin)) -> dict[str, Any]:
     """Every lesson on record, proposals first, with the evidence each rests on."""
     order = {"proposed": 0, "approved": 1, "rejected": 2}
     found = sorted(store.load(), key=lambda lesson: (order.get(str(lesson.get("status")), 3), str(lesson.get("id"))))

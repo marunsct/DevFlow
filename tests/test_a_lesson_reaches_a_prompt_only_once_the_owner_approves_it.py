@@ -141,7 +141,8 @@ def test_the_routes_exist_and_approving_needs_the_administrator():
     from app.server import lessons_api
 
     source = inspect.getsource(lessons_api)
-    assert source.count("Depends(require_admin)") == 2 and "Depends(get_current_active_user)" in source
+    # Reading too is the administrator's since LR.39: a lesson quotes the run it came from, from any tenant.
+    assert source.count("Depends(require_admin)") == 3 and "Depends(get_current_active_user)" not in source
     assert "include_router(lessons_router)" in inspect.getsource(__import__("app.server.api", fromlist=["x"]))
 
 

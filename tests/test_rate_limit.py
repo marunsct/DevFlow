@@ -40,8 +40,10 @@ def test_an_authenticated_caller_is_keyed_by_token(monkeypatch):
     """Keying on IP alone puts everyone behind a NAT in one shared bucket."""
     from app.server.rate_limit import client_identity
 
+    # By the verified user since LR.39 (a made-up token counts as its address).
+    monkeypatch.setattr("app.server.auth._decode", lambda token: "alice")
     identity = client_identity(_FakeRequest(headers={"Authorization": "Bearer abc.def.ghi"}))
-    assert identity.startswith("tok:")
+    assert identity == "user:alice"
 
 
 def test_forwarded_headers_are_ignored_from_an_untrusted_peer(monkeypatch):

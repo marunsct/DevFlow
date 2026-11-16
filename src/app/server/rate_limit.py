@@ -68,9 +68,17 @@ def client_identity(request: Request) -> str:
     """
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
-        # The token is not verified here; this is a bucketing key, not a
-        # security decision, and verification happens in the route dependency.
-        return f"tok:{hash(auth[7:]) & 0xFFFFFFFF:08x}"
+        # The verified subject (LR.39). Found in the launch review: the bucket was a per-process `hash()` of the
+        # unverified header, so a fresh random bearer string per request got a fresh bucket each time, and each
+        # worker process counted apart. A token that does not verify is bucketed by address, like no token.
+        try:
+            from app.server.auth import _decode
+
+            subject = _decode(auth[7:])
+        except Exception:  # noqa: BLE001 - unreadable is unverified
+            subject = None
+        if subject:
+            return f"user:{subject}"
 
     peer = request.client.host if request.client else "unknown"
     if _TRUSTED and peer != "unknown":

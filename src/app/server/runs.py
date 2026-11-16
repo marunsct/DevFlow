@@ -124,7 +124,30 @@ def _require_run(runner: WorkflowRunner, run_id: str, user: UserInDB) -> RunReco
     return record
 
 
-def _the_pin_target(pinned: bool, base_url: str | None, model: str | None) -> tuple[str | None, str | None]:
+def _a_known_model_address(base_url: str) -> bool:
+    """Whether `base_url` is a model server the deployment knows: the configured one or a saved model profile."""
+    def same(a: Any) -> bool:
+        return str(a or "").strip().rstrip("/").lower() == base_url.strip().rstrip("/").lower()
+
+    try:
+        from app.models import _runtime_settings
+
+        settings = _runtime_settings()
+        if any(same(getattr(settings, name, "")) for name in ("openai_base_url", "judgement_base_url")):
+            return True
+        from app.server import model_profiles
+
+        for profile in model_profiles.list_profiles():
+            values = profile.get("values") or profile
+            if any(same(values.get(name)) for name in ("openai_base_url", "base_url", "judgement_base_url")):
+                return True
+    except Exception:  # noqa: BLE001 - unknown is unknown
+        logger.debug("Could not read the known model addresses", exc_info=True)
+    return False
+
+
+def _the_pin_target(pinned: bool, base_url: str | None, model: str | None,
+                    user: Any = None) -> tuple[str | None, str | None]:
     """(address, model name) to pin a run to, validated; (None, None) for the model it is on. HTTP 422 when refused.
 
     An address must be http or https with no credentials in it, and a model name must not be empty: nothing
@@ -135,12 +158,20 @@ def _the_pin_target(pinned: bool, base_url: str | None, model: str | None) -> tu
     if (base_url is not None or model is not None) and not pinned:
         raise HTTPException(status_code=422, detail="An address or a model name can only be given when pinning.")
     try:
-        return (
+        cleaned = (
             model_pin.clean_base_url(base_url) if base_url is not None else None,
             model_pin.clean_model_name(model) if model is not None else None,
         )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error))
+    # An address no administrator saved is an administrator's to pin (LR.39): found in the launch review, an operator
+    # could point the worker at any host - the cloud metadata address, the search service, a machine on the LAN - and
+    # read its replies in the run's transcript.
+    if cleaned[0] and getattr(user, "role", "admin") != "admin" and not _a_known_model_address(cleaned[0]):
+        raise HTTPException(status_code=403, detail=(
+            "That model server is not one this deployment knows. Pin to the configured server or a saved model "
+            "profile, or ask an administrator to save this one in Settings > Models."))
+    return cleaned
 
 
 def _a_completed_run_s_workspace(runner: WorkflowRunner, run_id: str, user: UserInDB) -> Path | None:
@@ -374,7 +405,7 @@ def create_runs_router(
 
         # A run pinned to an endpoint of its own is refused before anything is prepared if that is not an address
         # or a model name worth pinning to.
-        pin_base_url, pin_model_name = _the_pin_target(body.pin_model, body.pin_base_url, body.pin_model_name)
+        pin_base_url, pin_model_name = _the_pin_target(body.pin_model, body.pin_base_url, body.pin_model_name, user)
         if body.switches:
             # Only switches the harness has, refused before the run starts: an unknown name is no arm.
             from app.observability.provenance import SWITCHES as _KNOWN
@@ -616,7 +647,7 @@ def create_runs_router(
         from app.server.runtime_settings import global_model_snapshot
 
         _require_run(runner, run_id, user)
-        base_url, model_name = _the_pin_target(payload.pinned, payload.base_url, payload.model)
+        base_url, model_name = _the_pin_target(payload.pinned, payload.base_url, payload.model, user)
         store = runner.run_store
         explicit = None
         if base_url or model_name:

@@ -111,6 +111,10 @@ def create_app(
         ),
         version="0.2.0",
         lifespan=lifespan,
+        # The interactive API pages describe every route to anyone who can reach the server: development only (LR.11).
+        docs_url="/docs" if _development() else None,
+        redoc_url="/redoc" if _development() else None,
+        openapi_url="/openapi.json" if _development() else None,
     )
 
     @application.middleware("http")
@@ -280,6 +284,12 @@ def create_app(
     return application
 
 
+def _development() -> bool:
+    from app.server.auth import _is_development
+
+    return _is_development()
+
+
 def _mount_metrics(application: FastAPI) -> None:
     """Expose Prometheus metrics.
 
@@ -309,6 +319,9 @@ def _mount_metrics(application: FastAPI) -> None:
                 raise HTTPException(status_code=401, detail="Invalid metrics credentials")
 
         dependencies = [Depends(_verify)]
+    elif not _development():
+        # No token outside development: the metrics (run counts, routes, timings) are not served to anyone (LR.11).
+        return
 
     Instrumentator().instrument(application).expose(application, dependencies=dependencies)
 

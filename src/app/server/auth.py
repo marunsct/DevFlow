@@ -34,8 +34,15 @@ def _is_development() -> bool:
     return os.environ.get("ENV", "").strip().lower() in {"dev", "development", "test", "testing"}
 
 
+#: Values written in the repository's development overlay: anyone can read them, so a signing key or first
+#: password equal to one of them is refused outside development (LR.11, launch review).
+KNOWN_DEVELOPMENT_VALUES = frozenset({"dev-only-secret-not-for-production-use-32", "admin", "changeme", "password"})
+
+
 def _load_secret_key() -> str:
     configured = os.environ.get("JWT_SECRET_KEY", "").strip()
+    if configured in KNOWN_DEVELOPMENT_VALUES and not _is_development():
+        raise ValueError("JWT_SECRET_KEY is a published development value; set a random 32+ character key.")
     if configured:
         if len(configured) < 32 and not _is_development():
             raise ValueError(
@@ -212,6 +219,8 @@ def init_db():
             c.execute("SELECT 1 FROM users WHERE username = 'admin'")
             if not c.fetchone():
                 admin_password = os.environ.get("ADMIN_PASSWORD")
+                if admin_password in KNOWN_DEVELOPMENT_VALUES and not _is_development():
+                    raise ValueError("ADMIN_PASSWORD is a published development value; set a password of your own.")
                 if not admin_password:
                     if not _is_development():
                         raise ValueError(

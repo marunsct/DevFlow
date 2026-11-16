@@ -101,6 +101,12 @@ class Diagnosis:
     settings: Settings = Settings()
 
 
+def speaks_chat_completions(model: Any) -> bool:
+    """Whether `model` has the OpenAI-style client every check calls (a hosted model's own client does not)."""
+    return callable(getattr(getattr(getattr(getattr(model, "root_client", None), "chat", None), "completions", None),
+                            "create", None))
+
+
 def _create(model: Any) -> Any:
     return model.root_client.chat.completions.create
 

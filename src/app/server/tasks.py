@@ -139,6 +139,10 @@ class _SegmentClock:
         self._timer.cancel()
 
 
+class _NotDiagnosed(Exception):
+    """The model's client is not one the diagnosis can call: the run goes on undiagnosed."""
+
+
 #: How long a delivery is remembered as taken: longer than any redelivery could come.
 DELIVERY_REMEMBERED_SECONDS = 3 * 24 * 3600
 
@@ -724,6 +728,14 @@ def execute_workflow_run(
             from app.models.reply_salvage import measure_if_new
 
             served = build_default_chat_model()
+            from app.models.diagnostics import speaks_chat_completions
+
+            if not speaks_chat_completions(served):
+                # A hosted model's own client (LR.16): the checks call an OpenAI-style client, and on one they failed
+                # three times, logged as "the model server does not answer", on a model that answered every stage.
+                note_in_transcript(run_id, "", "model_diagnostic", event="skipped",
+                                   why="the model's client is not an OpenAI-style one; its checks do not apply")
+                raise _NotDiagnosed
             # Said in the transcript (HR2.OB.1): a new model's diagnosis makes dozens of calls before the first
             # stage, and an audit reading only the transcript saw a run "stalled at 0%".
             note_in_transcript(run_id, "", "model_diagnostic", event="start", steps="diagnose, salvage, deep, capabilities")
@@ -741,6 +753,8 @@ def execute_workflow_run(
             if not capabilities.found_values(served_name(served)):
                 capabilities.fill(served, served_name(served), str(getattr(served, "model_name", "") or ""))
             note_in_transcript(run_id, "", "model_diagnostic", event="end")
+        except _NotDiagnosed:
+            pass
         except Exception:  # noqa: BLE001 - salvage is measured at the first reply that needs it instead
             note_in_transcript(run_id, "", "model_diagnostic", event="failed")
         # The reasoning tag from the server this run is served by, which may not be the default setting's - on its

@@ -10919,6 +10919,14 @@ def build_workflow_graph(
         )
         # The facts the work is built and judged under (plan CM.1).
         request = with_the_facts(request, state["repository"].root_path, built=False)
+        # What the work orders finished before it reported about its files (plan CM.3), as the linear builder gives:
+        # found in the launch review, the parallel site left it out, although a deferred work order sharing a file
+        # runs after the one it shares it with.
+        from app.agents import ledger
+
+        request = ledger.with_the_reports(
+            request, state.get("specialist_outputs") or {}, task,
+            list(getattr(state.get("milestone_plan"), "delegated_tasks", None) or ()), leave_out=stage_name)
         # Where the sprint stands, and the work order's slice of the code graph
         # (plans PH.1, CG.3; off until measured).
         from app.agents import where_things_stand
@@ -12029,7 +12037,10 @@ def build_workflow_graph(
         leaves the defect open, which costs a remediation attempt on the next
         test round rather than silently closing an unverified fix.
         """
-        if _fixes_run_side_by_side():
+        # A batch already in flight is finished as a batch, whatever the mode reads now. Found in the launch review:
+        # the mode is read at each visit, so switching to linear mid-batch left `fix_batch` set, never cleared, and a
+        # later parallel visit re-entered it with old indices in a new round.
+        if _fixes_run_side_by_side() or state.get("fix_batch"):
             return _the_next_fix_batch(state, config)
 
         cycle = state["remediation"]

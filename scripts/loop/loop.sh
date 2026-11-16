@@ -535,6 +535,12 @@ deploy)
   # Built already (`loop.sh build`, which `ship-live` runs before it pauses anything - HR2.R.3), or built here.
   if [ "$(built_from)" = "$built" ]; then
     echo "images already built from ${built:0:7}"
+  elif docker image inspect "langchain-worker:${built:0:12}" >/dev/null 2>&1 \
+       && docker image inspect "langchain-app:${built:0:12}" >/dev/null 2>&1; then
+    # Kept from an earlier build (LR.63): a rollback is a retag, not a rebuild - the step that hangs when Docker does.
+    docker tag "langchain-worker:${built:0:12}" langchain-worker:latest
+    docker tag "langchain-app:${built:0:12}" langchain-app:latest
+    echo "images of ${built:0:7} put back from their tags; nothing was built"
   else
     "$0" build "$built" || { echo "the build failed; nothing was deployed" >&2; exit 1; }
   fi
@@ -635,6 +641,17 @@ build)
     echo "build of ${built:0:7} FAILED after $(( $(date +%s) - started ))s; see $STATE/build.log" >&2; exit 1
   fi
   echo "built ${built:0:7} in $(( $(date +%s) - started ))s"
+  # Each build kept under its commit (LR.63), the newest KEEP_IMAGES (default 5) of each, so `loop.sh rollback <commit>`
+  # puts one back without building it again.
+  for image in langchain-app langchain-worker; do
+    docker tag "$image:latest" "$image:${built:0:12}"
+    docker images "$image" --format '{{.CreatedAt}} {{.Tag}}' | grep -vE ' latest$' | sort -r | awk 'NR>'"${KEEP_IMAGES:-5}"' {print $NF}' \
+      | while read -r old_tag; do docker rmi "$image:$old_tag" >/dev/null 2>&1 || true; done
+  done
+  ;;
+rollback)
+  # Back to an earlier commit's images (LR.63): `deploy <commit>`, which retags a kept build instead of building.
+  "$0" deploy "${2:?usage: loop.sh rollback <commit>}"
   ;;
 suite-production)
   # The suite as the product ships (LR.24): every built-in fix on together, which `suite` never runs (its tests turn

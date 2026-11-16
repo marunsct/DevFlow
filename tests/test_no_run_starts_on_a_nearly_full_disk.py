@@ -69,3 +69,14 @@ def test_the_nightly_checks_its_backup_and_reports_old_runs_removing_them_only_w
     assert '"$0" backup --check' in nightly
     assert 'if [ -n "${RETENTION_DAYS:-}" ]; then keep="--delete"; else keep=""; fi' in nightly
     assert "manage \"$what\" --older-than-days" in nightly and "docker compose exec -T worker" in nightly
+
+
+def test_each_build_is_kept_under_its_commit_and_a_rollback_retags_it():
+    loop = (ROOT / "scripts" / "loop" / "loop.sh").read_text()
+    build = loop[loop.index("\nbuild)"):]
+    build = build[:build.index("\nrollback)")]
+    assert 'docker tag "$image:latest" "$image:${built:0:12}"' in build and "KEEP_IMAGES" in build
+    deploy = loop[loop.index("\ndeploy)"):]
+    deploy = deploy[:deploy.index("compose_up.sh")]
+    assert 'docker tag "langchain-worker:${built:0:12}" langchain-worker:latest' in deploy
+    assert '"$0" deploy "${2:?usage: loop.sh rollback <commit>}"' in loop

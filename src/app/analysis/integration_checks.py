@@ -3576,16 +3576,17 @@ def _manifest_defects(files: list[Path], root: Path, stack: Any) -> list[str]:
                 "runs `npm test` here gets a failure that says nothing about the "
                 "product."
             )
-        elif not test_script and not _in_the_acceptance_suite(root, path):
+        elif not test_script and not _in_the_acceptance_suite(root, path) and _npm_runs_the_project_s_tests(root):
             # A suite nobody can reach by the obvious command. Measured on
             # one run: 153 passing tests in `app.test.mjs`, a manifest with
             # no `scripts` at all, and `npm test` answering "missing script:
             # test". The placeholder case above has been covered since
             # one run; having no script is the same outcome with less to
             # see - and it reads as "this project has no tests".
+            # Test files only: measured, a lock file and a runner configuration were named as the tests.
             suites = sorted(
                 str(p.relative_to(root)) for p in files
-                if p.parent == path.parent and (not is_application(str(p.relative_to(root))))
+                if p.parent == path.parent and is_test(str(p.relative_to(root)))
             )
             if suites:
                 named = ", ".join(suites[:3])
@@ -6961,6 +6962,29 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
 #: Extensions that carry behaviour a browser test could exercise. A page of
 #: markup and styling has none.
 _CLIENT_LOGIC_SUFFIXES = frozenset({".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"})
+
+
+#: Commands that run a project's tests through its `package.json`.
+_NPM_RUNNERS = frozenset({"npm", "npx", "node", "yarn", "pnpm", "bun"})
+
+
+def _npm_runs_the_project_s_tests(root: Path) -> bool:
+    """Whether the project's own tests run through its manifest; True when no pack recorded how they run.
+
+    Measured on the first two language-sweep runs (Go and Rust, each every hidden test passing): a `package.json`
+    there only for the browser acceptance suite was asked for a `test` script, and the release called each product not
+    deliverable for it, while the projects' own tests ran with `go test` and `cargo nextest`.
+    """
+    try:
+        from app.stacks import contract
+
+        record = contract.read(root) or {}
+    except Exception:  # noqa: BLE001 - unknown: checked as before
+        return True
+    command = record.get("unit_test")
+    if not isinstance(command, list) or not command:
+        return True
+    return Path(str(command[0])).name in _NPM_RUNNERS
 
 
 def _in_the_acceptance_suite(root: Path, path: Path) -> bool:

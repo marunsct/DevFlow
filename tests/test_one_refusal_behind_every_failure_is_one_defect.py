@@ -31,7 +31,14 @@ def test_mixed_failures_or_too_few_criteria_keep_their_own_defects():
     assert nodes.one_refusal_for_all(_failing(["assert 401 == 201", "assert 404 == 200", "assert 500 == 200",
                                                "AssertionError: title"])) is None
     assert nodes.one_refusal_for_all(_failing(["assert 401 == 201", "assert 401 == 200"])) is None
-    assert nodes.one_refusal_for_all(_failing(["assert 404 == 200"] * 4)) is None
+    # An answer the tests expected is not a wrong one.
+    assert nodes.one_refusal_for_all(_failing(["assert 404 == 404"] * 4)) is None
+
+
+def test_any_one_wrong_answer_everywhere_is_one_cause():
+    # Measured after a rewind of the same run: 12 tests answered 422 where they expected 201 or 200, 8 a KeyError after.
+    failing = _failing(["assert 422 == 201"] * 3 + ["assert 422 == 200"] * 2 + ["E   KeyError: 'id'"] * 3)
+    assert nodes.one_refusal_for_all(failing) == ("422", 8)
 
 
 def test_the_round_raises_it_alone_and_its_words_ban_the_product_s_nouns():

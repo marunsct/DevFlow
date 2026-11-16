@@ -1855,16 +1855,18 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     refused = one_refusal_for_all(failing)
     if refused is not None:
         code, count = refused
+        cause = ("the product refuses the credentials its own sign-in issues, or asks for some no client is given"
+                 if code in ("401", "403") else
+                 "one thing the routes share answers it for every request - the way a body is read or checked, a field "
+                 "every write needs, a lookup every route makes")
         defects.append(ReportedDefect(
             description=(f"{count} acceptance tests across {len(failing)} criteria are all answered {code} where they expect "
-                         "success: the product refuses the credentials its own sign-in issues, or asks for some no client "
-                         "is given."),
+                         f"another answer: {cause}."),
             severity="blocking",
-            reproduction_steps=(f"Run `{command}`: sign up, sign in, then call any route that needs a signed-in user with "
-                                "the credentials the sign-in answered."),
-            expected_behavior="A route that needs a signed-in user accepts the credentials the product's own sign-in issued.",
-            actual_behavior=f"Every such call answers {code}. Find where the routes read the credentials and where the "
-                            "sign-in makes them, and make them agree; each criterion's own failures are measured again after.",
+            reproduction_steps=f"Run `{command}`: every failing test's request is answered {code}.",
+            expected_behavior="Each route answers as the interface says for a well-formed request.",
+            actual_behavior=f"Every such call answers {code}. Find the one place the failing routes share that answers "
+                            f"{code}, and fix it there; each criterion's own failures are measured again after.",
             affected_files=[],
             owner=_owner_for(state, f"refused {code}"),
         ))
@@ -2051,22 +2053,23 @@ _A_SUITE_DEFINITION = r"""(?:^|\n)[ \t]*(?:@pytest\.fixture[^\n]*\n[ \t]*)?(?:as
 _A_QUOTED_NAME = re.compile(r"`([A-Za-z_][A-Za-z0-9_]{2,})`|\b([a-z_][a-z0-9_]*_[a-z0-9_]+)\b")
 
 
-_A_REFUSAL = re.compile(r"assert (401|403) (?:==|in) \(?\s*(?:2\d\d|4(?:0[0-9]|2[0-9]))")
+_A_REFUSAL = re.compile(r"assert (4\d\d|5\d\d) (?:==|in) \(?\s*(2\d\d|4\d\d)")
 _ANY_STATUS = re.compile(r"assert ([1-5]\d\d) (?:==|in|!=)")
 
 
 def one_refusal_for_all(failing: list[dict]) -> tuple[str, int] | None:
     """(the status, how many tests) when nearly every failing test was refused the same way; None otherwise.
 
-    Three criteria at least; three tests at least, and half of the failed tests, answered 401 (or 403) where they
-    expected a success or a client error; and no failed test answered any other status: one cause, not one per
-    criterion. Never raises.
+    Three criteria at least; three tests at least, and half of the failed tests, answered the same status where they
+    expected another (`assert 401 == 201`, `assert 422 == 201`); and no failed test answered any other status: one
+    cause, not one per criterion. Never raises.
     """
     try:
         tests = [t for entry in failing for t in (entry.get("tests") or []) if t.get("outcome") == "failed"]
         if len(failing) < 3 or not tests:
             return None
-        codes = [m.group(1) for t in tests if (m := _A_REFUSAL.search(str(t.get("message") or "")))]
+        # The answer each test got where it wanted another (`assert 422 == 201`): the same wrong answer everywhere.
+        codes = [m.group(1) for t in tests if (m := _A_REFUSAL.search(str(t.get("message") or ""))) and m.group(1) != m.group(2)]
         if not codes:
             return None
         code = max(set(codes), key=codes.count)

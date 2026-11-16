@@ -1,5 +1,14 @@
 # What is being measured (the one copy)
 
+
+**2026-11-16 (LR.65, launch review): the "Being measured" batch is concluded.** Its 13 checks (NAMED_TEST_REWRITE,
+TESTS_ONLY_WRITES, MUTATION_TEST_RETENTION, CONTRACT_LINE_COVERAGE, CONTRACT_PROBE_AT_LOCK, CONTRACT_UNREAD_LINES_AT_REVIEW,
+CONTRACT_NON_NUMERIC_IDS, CONTRACT_PROBE_WITH_A_RECORD, CONTRACT_PROBE_WITH_A_BAD_BODY, NAMING_FINDING_BEFORE_DEFERRAL,
+SPEC_DRY_RUN, ORDER_PROBE, IDS_READ_WITHOUT_A_CREATE) ran on in every run since release candidate 7 and through the
+measurement runs of 11-16; they check what a suite proves, so by the switch policy they are built in and keep no switch.
+The groups still switchable are cost and efficiency (Context and cost, Efficiency) and the two measured gates (Setup
+scope M6, Review gates M7).
+
 Owner 2026-11-07 17:1x JST: one document for every change under measurement, so no measurement is missed on or off.
 **This file is the only list.** STATE, the handovers, the status board and the plan point here and do not repeat it.
 Update it in the same commit as any switch change, deploy that turns a switch on or off, or verdict.

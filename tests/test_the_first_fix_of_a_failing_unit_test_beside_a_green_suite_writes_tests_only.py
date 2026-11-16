@@ -198,13 +198,10 @@ def test_the_fix_stage_is_wired_to_the_modes() -> None:
     assert "defect_fix_modes.may_write(state, config, defect, root, path)" in source
 
 
-def test_the_switch_is_an_experiment_that_ships_off() -> None:
+def test_the_switch_is_an_experiment_that_ships_off():
+    # Measured on in every run since release candidate 7 and moved to the built-in fixes (LR.65): no switch.
     from app import switches
 
-    assert "TESTS_ONLY_WRITES" in switches.EXPERIMENTS and "TESTS_ONLY_WRITES" in switches.GROUPS["Being measured"]
-    # Taken off for cost one afternoon and put back on what it saves: 0 of 9 runs with it on shipped a failing unit
-    # test, 3 of 8 with it off did.
-    assert "TESTS_ONLY_WRITES" in switches.EXPERIMENTS_ON and "TESTS_ONLY_WRITES" not in switches.TAKEN_OFF_FOR_COST
-    assert tests_only_writes.ON_BY_DEFAULT is False
-    with mock.patch.dict("os.environ", {"TESTS_ONLY_WRITES": ""}):
-        assert tests_only_writes.enabled() is False
+    assert "TESTS_ONLY_WRITES" in switches.BUILT_IN and "TESTS_ONLY_WRITES" not in switches.EXPERIMENTS
+
+

@@ -191,9 +191,11 @@ def test_the_review_node_asks_it():
     assert "update[\"specification_contract_lines_checked\"] = True" in inspect.getsource(workflow)
 
 
-def test_the_switches_are_registered_and_off(monkeypatch):
+def test_the_switches_are_registered_and_off():
+    # Measured on in every run since release candidate 7 and moved to the built-in fixes (LR.65): no switch.
+    from app import switches
+
     for name in NEW:
-        monkeypatch.delenv(name, raising=False)
-        assert name in switches.GROUPS["Being measured"] and name in switches.EXPERIMENTS_ON
-        assert name in provenance.SWITCHES
-        assert provenance.switch(provenance.SWITCHES[name]).enabled() is False
+        assert name in switches.BUILT_IN and name not in switches.EXPERIMENTS
+
+

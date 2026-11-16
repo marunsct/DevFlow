@@ -112,6 +112,22 @@ BUILT_IN = frozenset({
     # in 40 calls, and one on a lookup by text of only spaces (a false acceptance followed), were refused without it.
     # Measured so far: hidden 1.00 on (2 runs), 0.94 off (4); watch its minutes.
     "DISPUTE_QUOTES_THE_CRITERION",
+    # The "Being measured" batch (LR.65, launch review, 2026-11-16): on in every run since release candidate 7 and
+    # through the measurement runs of 11-16 (eight of nine full on hidden tests, every loss warned of); they check what a
+    # suite proves, so they are quality and keep no switch.
+    "NAMED_TEST_REWRITE",
+    "TESTS_ONLY_WRITES",
+    "MUTATION_TEST_RETENTION",
+    "CONTRACT_LINE_COVERAGE",
+    "CONTRACT_PROBE_AT_LOCK",
+    "CONTRACT_UNREAD_LINES_AT_REVIEW",
+    "CONTRACT_NON_NUMERIC_IDS",
+    "CONTRACT_PROBE_WITH_A_RECORD",
+    "CONTRACT_PROBE_WITH_A_BAD_BODY",
+    "NAMING_FINDING_BEFORE_DEFERRAL",
+    "SPEC_DRY_RUN",
+    "ORDER_PROBE",
+    "IDS_READ_WITHOUT_A_CREATE",
 })
 
 #: The premium features, one switch a bundle over the base product (owner, 2026-10-29: a free base version, these
@@ -147,12 +163,6 @@ BUNDLES: dict[str, tuple[str, ...]] = {
 #: verification checks built and tested but never measured in a run: on together as one measured batch from release
 #: candidate 7; each that holds moves to `BUILT_IN`, each that hurts is reworked or removed - none keeps its switch.
 GROUPS: dict[str, tuple[str, ...]] = {
-    "Being measured": (
-        "NAMED_TEST_REWRITE", "TESTS_ONLY_WRITES", "MUTATION_TEST_RETENTION", "CONTRACT_LINE_COVERAGE",
-        "CONTRACT_PROBE_AT_LOCK", "CONTRACT_UNREAD_LINES_AT_REVIEW", "CONTRACT_NON_NUMERIC_IDS",
-        "CONTRACT_PROBE_WITH_A_RECORD", "CONTRACT_PROBE_WITH_A_BAD_BODY", "NAMING_FINDING_BEFORE_DEFERRAL",
-        "SPEC_DRY_RUN", "ORDER_PROBE", "IDS_READ_WITHOUT_A_CREATE",
-    ),
     # How much of a long conversation a model is sent: cost and cache, not what the run proves.
     "Context and cost": ("OBSERVATION_FOLDING", "STABLE_STAGE_PREFIX", "BATCH_ACCEPTANCE_AUTHOR",
                          "REASONING_KEPT_AFTER_AN_ANSWER"),
@@ -172,8 +182,7 @@ EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)
 #: 9 with it on shipped no failing unit test, and 3 of the 8 with it off shipped 2, 10 and 10 (quality before cost,
 #: owner 2026-11-05). Its cost stays bounded: it covers only the first attempt at a failing unit test.
 TAKEN_OFF_FOR_COST: frozenset[str] = frozenset()
-EXPERIMENTS_ON = {name: "measured batch from release candidate 7 (owner, 2026-11-05)"
-                  for name in GROUPS["Being measured"] if name not in TAKEN_OFF_FOR_COST}
+EXPERIMENTS_ON: dict[str, str] = {}
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}
 
 

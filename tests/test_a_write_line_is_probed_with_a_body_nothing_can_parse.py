@@ -213,10 +213,10 @@ def test_a_probe_that_cannot_run_raises_nothing(project, monkeypatch):
     assert _round(project, monkeypatch, broken).defects == []
 
 
-def test_the_switch_is_registered_and_off(monkeypatch):
-    name = "CONTRACT_PROBE_WITH_A_BAD_BODY"
-    monkeypatch.delenv(name, raising=False)
-    assert name in switches.GROUPS["Being measured"] and name in switches.EXPERIMENTS_ON
-    assert provenance.switch(provenance.SWITCHES[name]).enabled() is False
-    compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
-    assert f"{name}: ${{{name}:-on}}" in compose
+def test_the_switch_is_registered_and_off():
+    # Measured on in every run since release candidate 7 and moved to the built-in fixes (LR.65): no switch.
+    from app import switches
+
+    assert "CONTRACT_PROBE_WITH_A_BAD_BODY" in switches.BUILT_IN and "CONTRACT_PROBE_WITH_A_BAD_BODY" not in switches.EXPERIMENTS
+
+

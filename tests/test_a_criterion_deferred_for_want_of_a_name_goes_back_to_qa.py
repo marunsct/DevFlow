@@ -82,8 +82,10 @@ def test_the_prefixes_are_the_ones_the_harness_writes():
     assert suite.DEFERRED_BY_THE_HARNESS[1] in inspect.getsource(acceptance_nodes.defer_what_is_beyond_repair)
 
 
-def test_the_switch_is_registered_and_off(monkeypatch):
-    monkeypatch.delenv("NAMING_FINDING_BEFORE_DEFERRAL", raising=False)
-    assert "NAMING_FINDING_BEFORE_DEFERRAL" in switches.EXPERIMENTS and "NAMING_FINDING_BEFORE_DEFERRAL" in switches.GROUPS["Being measured"] and "NAMING_FINDING_BEFORE_DEFERRAL" in switches.EXPERIMENTS_ON
-    assert "NAMING_FINDING_BEFORE_DEFERRAL" in provenance.SWITCHES
-    assert provenance.switch(provenance.SWITCHES["NAMING_FINDING_BEFORE_DEFERRAL"]).enabled() is False
+def test_the_switch_is_registered_and_off():
+    # Measured on in every run since release candidate 7 and moved to the built-in fixes (LR.65): no switch.
+    from app import switches
+
+    assert "NAMING_FINDING_BEFORE_DEFERRAL" in switches.BUILT_IN and "NAMING_FINDING_BEFORE_DEFERRAL" not in switches.EXPERIMENTS
+
+

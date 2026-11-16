@@ -34,7 +34,8 @@ def test_every_switch_of_the_code_has_a_row():
     names = register._the_switches()
     block = "\n".join(register.render(names, []))
     assert all(f"| `{name}` |" in block for name in names)
-    assert len(names) >= 58
+    # 58 once; 13 measured checks became built-in fixes on 11-16 (LR.65), and built-in fixes are not switches.
+    assert len(names) >= 45
 
 
 def test_loop_sh_writes_it():

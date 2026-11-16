@@ -20,8 +20,15 @@ BENCHES = sorted(p for p in ROOT.iterdir() if p.is_dir())
 def test_the_benchmark_has_every_part(bench: Path) -> None:
     assert "## Interface" in (bench / "brief.md").read_text()
     assert any((bench / "hidden").iterdir())
-    assert any((bench / "reference").iterdir())
-    assert json.loads((bench / "bench.json").read_text())["kind"]
+    spec = json.loads((bench / "bench.json").read_text())
+    assert spec["kind"]
+    # A language-sweep benchmark (LR.43) reuses another's tests, proven fair on that one's references; its own hidden
+    # tests must be that benchmark's, unchanged.
+    source = ROOT / spec["tests_from"] if spec.get("tests_from") else bench
+    assert any((source / "reference").iterdir())
+    if source is not bench:
+        for test in (source / "hidden").glob("*.py"):
+            assert (bench / "hidden" / test.name).read_bytes() == test.read_bytes()
 
 
 def test_the_python_sibling_holds_the_same_hidden_tests() -> None:

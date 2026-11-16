@@ -1787,6 +1787,14 @@
       "description": "The name the person gave the run, or null.",
       "title": "Run Name"
      },
+     "scope_cuts": {
+      "description": "The criteria a completed run shipped deferred, unproven by its suite.",
+      "items": {
+       "type": "string"
+      },
+      "title": "Scope Cuts",
+      "type": "array"
+     },
      "stage_meaning": {
       "anyOf": [
        {
@@ -1839,6 +1847,12 @@
       "description": "Whether this run uses the frontier model; False is the build model only.",
       "title": "Use Frontier Model",
       "type": "boolean"
+     },
+     "verdict": {
+      "default": "",
+      "description": "For a completed run, what its gaps say about the product: 'delivered', 'delivered_with_cuts' (criteria shipped deferred, listed in `scope_cuts`) or 'not_deliverable' (a gap means it may not work); '' otherwise.",
+      "title": "Verdict",
+      "type": "string"
      }
     },
     "required": [

@@ -65,11 +65,14 @@ def acceptance_test_document(facts: dict[str, Any]) -> str:
     if failing:
         lines += ["", "## What failed", ""]
         lines += [f"- {c.get('id')} `{_cell(t.get('name'), 80)}`: {_cell(t.get('message'), 400)}" for c, t in failing[:30]]
-    from app.completion_verdict import split
+    from app.completion_verdict import is_a_cut, split
 
     gaps, notes = split(facts.get("completion_gaps"))
+    cuts, notes = [n for n in notes if is_a_cut(n)], [n for n in notes if not is_a_cut(n)]
     if gaps:
         lines += ["", "## Shipped with these gaps", ""] + [f"- {_cell(g, 400)}" for g in gaps]
+    if cuts:
+        lines += ["", "## Scope cuts: shipped without proof", ""] + [f"- {_cell(c, 400)}" for c in cuts]
     if notes:
         lines += ["", "## Notes for the reader", ""] + [f"- {_cell(n, 400)}" for n in notes]
     return "\n".join(lines) + "\n"

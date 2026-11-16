@@ -3,13 +3,15 @@
 Every gap used to make a finished run "non-deliverable", so every run with a gap read the same whether it
 scored full marks or almost nothing, and the verdict said nothing. A gap is one of two things:
 
-- **Blocking:** evidence the product fails, or a thing it promised that has no proof at all: a deferred criterion, a
+- **Blocking:** evidence the product fails, or a thing it promised that has no proof at all: a
   failing unit test, a broken contract line, code that does not start, no suite, no way for someone else to run it.
 - **A note:** the proof was weaker than it could be, or a worry was set aside, and every later measurement went on to
   pass: an unchecked contract line says nothing against the product, a design point is about a document, a change
   the suite did not notice may behave the same, a problem the suite was locked with was followed by a green suite.
 
-Only the kinds listed here are notes; **a gap of any other kind blocks**, a new one included, because a false "not
+- **A cut:** a criterion shipped deferred, unproven by the suite: stated to the reader as a scope cut (LR.21).
+
+Only the kinds listed here are notes or cuts; **a gap of any other kind blocks**, a new one included, because a false "not
 deliverable" costs a reader a look and a false "deliverable" costs them a product that does not work. The split
 changes what the verdict says and nothing the release checks or holds back. Notes stay in every record of the run.
 """
@@ -52,9 +54,33 @@ _NOTES = re.compile(
 )
 
 
+#: A criterion the release ships without proof, stated: a scope cut the reader is told about, not a sign the product
+#: fails. Measured over the last 150 scored runs (LR.22): 29 runs shipped one or more deferred criteria, and none of
+#: them lost a hidden test, while every one was marked non-deliverable beside runs that did lose one.
+_CUTS = re.compile(r"(?:AC|CR)-\d+ ships deferred, unproven by the suite:")
+
+#: The three things a finished run can say about its product (LR.21).
+DELIVERED, DELIVERED_WITH_CUTS, NOT_DELIVERABLE = "delivered", "delivered_with_cuts", "not_deliverable"
+
+
+def is_a_cut(gap: str) -> bool:
+    """Whether this gap is a stated scope cut: a criterion shipped deferred, unproven by the suite."""
+    return _CUTS.match(str(gap).lstrip()) is not None
+
+
+def verdict(gaps: list[str] | None) -> str:
+    """What a finished run's gaps say about its product: not deliverable, delivered with cuts, or delivered."""
+    texts = [str(gap) for gap in gaps or []]
+    if any(is_blocking(gap) for gap in texts):
+        return NOT_DELIVERABLE
+    return DELIVERED_WITH_CUTS if any(is_a_cut(gap) for gap in texts) else DELIVERED
+
+
 def is_blocking(gap: str) -> bool:
-    """Whether this gap means the product may not work. An unknown kind does."""
+    """Whether this gap means the product may not work. An unknown kind does; a stated scope cut does not."""
     text = str(gap).lstrip()
+    if is_a_cut(text):
+        return False
     if text.startswith(_A_MILESTONE_RISK):
         return bool(_BLOCKING_FINDING.search(text))
     return _NOTES.match(text) is None
@@ -66,4 +92,5 @@ def split(gaps: list[str] | None) -> tuple[list[str], list[str]]:
     return [gap for gap in texts if is_blocking(gap)], [gap for gap in texts if not is_blocking(gap)]
 
 
-__all__ = ["SETTLED_DESIGN_FINDING", "is_blocking", "split"]
+__all__ = ["DELIVERED", "DELIVERED_WITH_CUTS", "NOT_DELIVERABLE", "SETTLED_DESIGN_FINDING", "is_a_cut", "is_blocking",
+           "split", "verdict"]

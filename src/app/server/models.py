@@ -484,6 +484,15 @@ class RunStatusResponse(BaseModel):
     reviews: list[ReviewInfo] = Field(default_factory=list, description="Reviews associated with the run.")
     remediation: RemediationInfo | None = Field(default=None, description="Remediation information if applicable.")
     error: str | None = Field(default=None, description="Error message if the run failed.")
+    verdict: str = Field(
+        default="",
+        description=(
+            "For a completed run, what its gaps say about the product: 'delivered', 'delivered_with_cuts' (criteria "
+            "shipped deferred, listed in `scope_cuts`) or 'not_deliverable' (a gap means it may not work); '' otherwise."
+        ),
+    )
+    scope_cuts: list[str] = Field(
+        default_factory=list, description="The criteria a completed run shipped deferred, unproven by its suite.")
     non_deliverable: str = Field(
         default="",
         description=(

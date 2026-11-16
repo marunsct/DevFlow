@@ -81,6 +81,22 @@ describe('the run page', () => {
     expect(screen.queryByText(/gaps? it did not prove/)).toBeNull();
   });
 
+  it('names the criteria a delivered run cut, and says delivered when it cut none', async () => {
+    Object.assign(run, { status: 'completed', current_stage: 'complete', verdict: 'delivered_with_cuts',
+      scope_cuts: ['AC-4 ships deferred, unproven by the suite: the export view'],
+      completion_gaps: ['AC-4 ships deferred, unproven by the suite: the export view'], blocking_gaps: [] });
+    renderPage();
+    expect(await screen.findByText('Delivered with cuts')).toBeTruthy();
+    expect(screen.getByTestId('scope-cuts').textContent).toContain('the export view');
+  });
+
+  it('says delivered for a completed run with no cut and nothing blocking', async () => {
+    Object.assign(run, { status: 'completed', current_stage: 'complete', verdict: 'delivered', scope_cuts: [] });
+    renderPage();
+    expect(await screen.findByTestId('delivered')).toBeTruthy();
+    expect(screen.queryByText('Delivered with cuts')).toBeNull();
+  });
+
   it('leaves the time the run spent paused out of the time it took, and says how much', async () => {
     // Created 00:00, ended 01:00, paused for 25 minutes of that hour.
     Object.assign(run, { status: 'completed', current_stage: 'complete', paused_seconds: 1500 });

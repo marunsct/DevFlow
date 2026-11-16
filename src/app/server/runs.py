@@ -2163,6 +2163,7 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         gate_deadline=_when_the_gate_approves_itself(record),
         approval_timeout_minutes=getattr(record, "approval_timeout_minutes", None),
         non_deliverable=_what_the_marker_says(record),
+        **_the_verdict(record),
         delivery_mode=str(getattr(record, "delivery_mode", "") or ""),
         use_frontier_model=not bool(getattr(record, "local_only", False)),
         **_the_model_pin(record.run_id, runner),
@@ -2250,6 +2251,16 @@ def _blocking_gaps(record: Any) -> list[str]:
     from app import completion_verdict
 
     return completion_verdict.split(getattr(record, "completion_gaps", None))[0]
+
+
+def _the_verdict(record: Any) -> dict[str, Any]:
+    """A completed run's verdict and its scope cuts (LR.21); empty for any other run."""
+    from app import completion_verdict
+
+    if getattr(record, "status", "") != "completed":
+        return {"verdict": "", "scope_cuts": []}
+    gaps = [str(gap) for gap in (getattr(record, "completion_gaps", None) or [])]
+    return {"verdict": completion_verdict.verdict(gaps), "scope_cuts": [gap for gap in gaps if completion_verdict.is_a_cut(gap)]}
 
 
 def _what_the_marker_says(record: Any) -> str:

@@ -149,6 +149,8 @@ def evidence(state: Any, sprint_number: int, goal: str, heading: str = "") -> st
         lines += [f"- {cid} deferred: {why}" for cid, why in deferred.items()]
         lines.append("")
     gaps, notes = completion_verdict.split(state.get("completion_gaps"))
+    cuts = [note for note in notes if completion_verdict.is_a_cut(note)]
+    notes = [note for note in notes if not completion_verdict.is_a_cut(note)]
     if gaps:
         # The release page must carry what the release knew it did not prove,
         # beside the counts it measured - a record that says "verified" over a
@@ -160,6 +162,11 @@ def evidence(state: Any, sprint_number: int, goal: str, heading: str = "") -> st
             "",
         ]
         lines += [f"- {gap}" for gap in gaps]
+        lines.append("")
+    if cuts:
+        # A criterion shipped with no proof is a stated scope cut (LR.21): named for the reader, apart from the gaps.
+        lines += ["## Scope cuts", "", "Criteria this release ships without proof from the locked suite:", ""]
+        lines += [f"- {cut}" for cut in cuts]
         lines.append("")
     if notes:
         lines += [
@@ -474,6 +481,8 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
 
     screenshot_rubric.score(root, getattr(ctx, "judgement_model", None), config["configurable"].get(APP_RUN_ID_KEY))
     may_not_work, to_know = completion_verdict.split(gaps)
+    cut = [gap for gap in to_know if completion_verdict.is_a_cut(gap)]
+    to_know = [gap for gap in to_know if not completion_verdict.is_a_cut(gap)]
     record_decision(
         state, update, point="release",
         question="Is the product ready to release?",
@@ -484,6 +493,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             + (f", except those deferred: {', '.join(sorted(deferred))}" if deferred else "")
             + ".\n" + (f"{packaged}\n" if packaged else "") + summary
             + ("\nShips with gaps that mean it may not work:\n" + "\n".join(f"- {gap}" for gap in may_not_work) if may_not_work else "")
+            + ("\nShips with scope cuts, criteria with no proof:\n" + "\n".join(f"- {gap}" for gap in cut) if cut else "")
             + ("\nShips with notes for the reader:\n" + "\n".join(f"- {note}" for note in to_know) if to_know else "")
             # Notes, not gaps: what a text check suspected of a locked test that passes.
             + ("\nNoted, not a gap:\n" + "\n".join(f"- {note[:400]}" for note in notes) if (notes := suite.notes_kept(root)) else "")

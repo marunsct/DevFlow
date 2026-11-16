@@ -43,7 +43,6 @@ NOTES = [
 
 BLOCKING = [
     "No acceptance suite was locked; the milestone reviews were the only gate.",
-    "AC-14 ships deferred, unproven by the suite: nothing starts the service.",
     "14 of the project's own unit tests still fail and ship failing (the locked acceptance suite passes): a; b.",
     "The project setup was never proven: `stack-setup.json` cannot be used.",
     "`app/README.md` says nowhere how to run the product: name the commands that install, start and test it.",
@@ -202,6 +201,10 @@ def test_the_acceptance_document_keeps_a_note_apart_from_a_gap() -> None:
     gaps_part, notes_part = page.split("## Notes for the reader")
     assert BLOCKING[1][:40] in gaps_part
     assert NOTES[0][:40] in notes_part
+    cut = "AC-14 ships deferred, unproven by the suite: nothing starts the service."
+    page = acceptance_test_document({"completion_gaps": [cut, NOTES[0]]})
+    assert "## Scope cuts: shipped without proof" in page and "## Shipped with these gaps" not in page
+    assert cut[:40] in page.split("## Scope cuts: shipped without proof")[1].split("## Notes for the reader")[0]
 
 
 def test_what_this_adds_for_the_reader_uses_none_of_the_banned_words(tmp_path, monkeypatch) -> None:
@@ -215,7 +218,7 @@ def test_what_this_adds_for_the_reader_uses_none_of_the_banned_words(tmp_path, m
 def test_the_surfaces_of_a_run_say_which_gaps_block():
     from app.server import outcomes
 
-    blocking = "AC-2 ships deferred, unproven by the suite: no automated check"
+    blocking = "3 of the project's own unit tests still fail and ship failing (the locked acceptance suite passes): a"
     record = SimpleNamespace(
         run_id="run-g", status="completed", delivery_mode="fast", local_only=False, completion_gaps=[blocking, NOTES[0]],
         created_at="2026-10-15T00:00:00+00:00", updated_at="2026-10-15T05:00:00+00:00",

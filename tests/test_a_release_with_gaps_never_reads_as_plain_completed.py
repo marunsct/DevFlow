@@ -85,7 +85,8 @@ def test_a_deferred_criterion_is_a_named_gap(tmp_path, monkeypatch) -> None:
     gaps = update["completion_gaps"]
     assert any(gap.startswith("AC-2 ships deferred") for gap in gaps)
     rationale = update["decisions"][-1]["rationale"]
-    assert "Ships with gaps" in rationale and "AC-2" in rationale
+    # A stated scope cut since LR.21: named in its own part of the decision, not as a gap meaning it may not work.
+    assert "Ships with scope cuts" in rationale and "AC-2" in rationale
 
 
 def test_problems_the_suite_was_locked_with_are_gaps(tmp_path, monkeypatch) -> None:
@@ -155,5 +156,6 @@ def test_the_release_evidence_page_carries_the_gaps(tmp_path, monkeypatch) -> No
     _release(tmp_path, monkeypatch)
 
     page = (tmp_path / "docs" / "reviews" / "release-evidence.md").read_text()
-    assert "## Completion gaps" in page
-    assert "AC-2 ships deferred" in page
+    # A deferred criterion is a scope cut since LR.21: on the page under its own heading, not as a completion gap.
+    assert "## Scope cuts" in page and "## Completion gaps" not in page
+    assert "AC-2 ships deferred" in page.split("## Scope cuts")[1]

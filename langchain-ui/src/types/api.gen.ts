@@ -422,6 +422,8 @@ export interface RunStatusResponse {
   run_id: string;
   /** The name the person gave the run, or null. */
   run_name: string | null;
+  /** The criteria a completed run shipped deferred, unproven by its suite. */
+  scope_cuts: string[];
   /** Meaning of the current stage. */
   stage_meaning: string | null;
   /** Stage history, when available. */
@@ -434,6 +436,8 @@ export interface RunStatusResponse {
   updated_at: string;
   /** Whether this run uses the frontier model; False is the build model only. */
   use_frontier_model: boolean;
+  /** For a completed run, what its gaps say about the product: 'delivered', 'delivered_with_cuts' (criteria shipped deferred, listed in `scope_cuts`) or 'not_deliverable' (a gap means it may not work); '' otherwise. */
+  verdict: string;
 }
 
 /** A brief summary of a run. */

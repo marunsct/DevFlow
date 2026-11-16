@@ -23,7 +23,8 @@ def test_a_deferred_criterion_whose_tests_pass_is_a_note(tmp_path) -> None:
 
     note = "AC-7 was deferred during the run; its own locked tests pass at release: 26 tests failed in their setup"
     assert not completion_verdict.is_blocking(note)
-    assert completion_verdict.is_blocking("AC-9 ships deferred, unproven by the suite: no test")
+    # Still unproven, and said so - as a scope cut (LR.21), not as a sign the product fails.
+    assert completion_verdict.is_a_cut("AC-9 ships deferred, unproven by the suite: no test")
 
 
 def test_the_release_asks_each_deferred_criterion_s_own_tests() -> None:

@@ -43,7 +43,7 @@ def test_the_harness_verdict_is_read_from_the_locked_suite(tmp_path) -> None:
     assert verdict == {
         "status": "completed", "locked_passed": 8, "locked_failed": 1,
         "criteria_passed": 1, "criteria_deferred": 1, "criteria": 2,
-        "completion_gaps": [],
+        "completion_gaps": [], "verdict": "delivered",
     }
     assert score.harness_verdict(tmp_path / "missing")["status"] == "unknown"
 

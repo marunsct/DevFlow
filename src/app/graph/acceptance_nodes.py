@@ -866,6 +866,13 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         root, getattr(state.get("technical_specification"), "interface_contract", None) or ())))
     vacuous = suite.vacuous_green(root, result)
     problems.extend(check_findings.noted(root, rounds, "vacuous_green", vacuous))
+    # Tests that pass a product that is not there (LR.23): assertions made only when the answer was good, and, at the
+    # first writing before anything is built, tests that already pass.
+    problems.extend(check_findings.noted(root, rounds, "tests_guarded_by_the_answer", suite.tests_guarded_by_the_answer(root)))
+    nothing_built = (not state.get("acceptance_return_to") and not int(state.get("current_sprint_index") or 0)
+                     and not any(str(key).startswith("specialist_") for key in (state.get("specialist_outputs") or {})))
+    problems.extend(check_findings.noted(root, rounds, "tests_that_pass_before_the_product",
+                                         suite.tests_that_pass_before_the_product(result, nothing_built)))
     # Too lenient rather than impossible: a suite that passes a product it
     # should fail. The review sends these back; a test round has nothing to
     # charge for them.

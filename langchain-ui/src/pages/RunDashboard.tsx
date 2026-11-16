@@ -740,6 +740,19 @@ export const RunDashboard: React.FC = () => {
             <GapsOfTheRun blocking={run.blocking_gaps ?? []} all={run.completion_gaps ?? []} />
             {/* The workspace tells the truth after the run ends: what the
                 NON-DELIVERABLE marker says, on the run card (Initiative J.6). */}
+            {/* LR.21: a completed run says delivered, delivered with cuts, or not deliverable. Cuts are criteria
+                shipped without proof, named so the reader knows what was not delivered. */}
+            {run.status === 'completed' && run.verdict === 'delivered_with_cuts' && (
+              <div className="mt-3 rounded-xl border border-warning/30 bg-warning-bg px-3 py-2" data-testid="scope-cuts">
+                <p className="text-xs font-semibold text-warning">Delivered with cuts</p>
+                <ul className="mt-0.5 list-disc pl-4 text-xs text-text-secondary leading-relaxed">
+                  {(run.scope_cuts ?? []).map((cut: string) => <li key={cut}>{cut}</li>)}
+                </ul>
+              </div>
+            )}
+            {run.status === 'completed' && run.verdict === 'delivered' && !run.non_deliverable && (
+              <p className="mt-3 text-xs font-semibold text-success" data-testid="delivered">Delivered: no gap that means the product may not work, and no criterion cut</p>
+            )}
             {run.non_deliverable && (
               <div className="mt-3 rounded-xl border border-danger/30 bg-danger-bg px-3 py-2">
                 <p className="text-xs font-semibold text-danger">Marked non-deliverable</p>

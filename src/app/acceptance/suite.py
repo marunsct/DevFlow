@@ -5940,3 +5940,61 @@ def notes_kept(repo_root: str | Path) -> list[str]:
     except (OSError, ValueError):
         return []
     return [str(item) for item in data] if isinstance(data, list) else []
+
+
+# --- tests that pass before the product exists (LR.23) -------------------------------------------------------------
+
+#: An assertion made only when the product answered well: `if (answer.ok()) { expect(...) }`, `if resp.ok:`,
+#: `if response.status_code == 200:`. A test written so passes on a product that answers nothing.
+_GUARDED_BY_THE_ANSWER = re.compile(
+    r"^\s*(?:if\s*\(\s*!?\s*[\w.$]+\.(?:ok\s*\(\s*\)|ok)\s*\)"
+    r"|if\s*\(\s*[\w.$]+\.status\s*(?:\(\s*\))?\s*={2,3}\s*2\d\d\s*\)"
+    r"|if\s+[\w.]+\.(?:ok|status_code\s*==\s*2\d\d)\s*:)"
+)
+#: How many tests may pass on a product that is not built yet before the suite is sent back for them.
+PASSING_BEFORE_THE_PRODUCT = 3
+
+
+def tests_guarded_by_the_answer(repo_root: str | Path) -> list[str]:
+    """Each line where a test asserts only when the product answered well, once per file.
+
+    Measured on two larger briefs: 52 of 97 and 84 of 110 locked tests passed on the empty scaffold, most of them
+    because their assertions sat inside `if (response.ok()) { ... }`: an answer of 404 skipped every check, and the
+    test passed. A test that holds a product to a behaviour fails when the behaviour is missing.
+    """
+    root = Path(repo_root)
+    problems: list[str] = []
+    for path in suite_files(repo_root):
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        found = [number for number, line in enumerate(lines, 1) if _GUARDED_BY_THE_ANSWER.match(line)]
+        if found:
+            where = ", ".join(str(n) for n in found[:12]) + (" and more" if len(found) > 12 else "")
+            problems.append(
+                f"`{path.relative_to(root) if path.is_relative_to(root) else path}` line(s) {where}: the test asserts "
+                "only when the product answered well, so a product that answers nothing (404, no route) passes it. "
+                "Assert the answer itself first (its status), then what it holds, with no condition around them."
+            )
+    return problems
+
+
+def tests_that_pass_before_the_product(result: AcceptanceResult, nothing_built: bool) -> list[str]:
+    """When nothing of the product is built yet: the tests that already pass, if there are enough to mean something.
+
+    The suite is written before the product and its tests are meant to fail now. A test that passes on the scaffold
+    holds the product to nothing the scaffold does not already do (measured: more than half of two larger suites).
+    """
+    if not nothing_built or not result.ran:
+        return []
+    passing = [test.name for test in result.report.tests if getattr(test, "outcome", "") == "passed"]
+    total = len(result.report.tests)
+    if len(passing) < PASSING_BEFORE_THE_PRODUCT or len(passing) * 5 < total:
+        return []
+    shown = "; ".join(passing[:15]) + (f"; and {len(passing) - 15} more" if len(passing) > 15 else "")
+    return [
+        f"{len(passing)} of {total} test(s) pass although nothing of the product is built yet: {shown}. A test that "
+        "passes before the behaviour exists holds the product to nothing. Make each one fail until its criterion is "
+        "met: check what the criterion asks for, not only that a page or an answer came back."
+    ]

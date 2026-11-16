@@ -195,6 +195,15 @@ def harness_verdict(product: Path, status: str = "", completion_gaps: list[str] 
         "status": status or "unknown",
         "completion_gaps": [str(gap) for gap in completion_gaps or []],
     }
+    # What the harness told the reader about the product (LR.21): delivered, delivered with cuts, or not deliverable.
+    # A false acceptance the harness did not call "not deliverable" is a silent loss (`silent_loss` below).
+    if verdict["status"] == "completed":
+        try:
+            from app import completion_verdict
+
+            verdict["verdict"] = completion_verdict.verdict(verdict["completion_gaps"])
+        except ImportError:
+            pass
     try:
         locked = json.loads((product.parent / ".harness" / "acceptance-result.json").read_text())
     except (OSError, ValueError):
@@ -343,6 +352,9 @@ def score(
         not result["unscored"] and result["harness"]["status"] == "completed"
         and result["score"] < 1.0 and not result["brief_mismatch"]
     )
+    # A loss the harness's own verdict did not warn of (LR.20, LR.21): the count the release candidate is judged by.
+    result["silent_loss"] = bool(result["false_acceptance"]) and result["harness"].get("verdict") != "not_deliverable"
+    result["verdict"] = result["harness"].get("verdict", "")
     # What the release knew it did not prove, top level as well: the outcome
     # dashboard and `report.py` read the export without walking `harness`.
     result["completion_gaps"] = result["harness"]["completion_gaps"]
@@ -408,6 +420,9 @@ if __name__ == "__main__":
         print(f"{result['benchmark']}: {result['passed']}/{result['total']} hidden tests pass (score {result['score']})")
     if "quality_total" in result:
         print(f"  quality: {result['quality_passed']}/{result['quality_total']} of the brief's edges held")
+    if result.get("verdict"):
+        print(f"  verdict: {result['verdict']}" + ("  <- SILENT LOSS: a lost hidden test the verdict did not warn of"
+                                                  if result.get("silent_loss") else ""))
     if result.get("handoff_score") is not None:
         missing = [name for name, ok in result["handoff"].items() if ok is False]
         print(f"  handoff: {result['handoff_score']}" + (f" (missing: {', '.join(missing)})" if missing else ""))

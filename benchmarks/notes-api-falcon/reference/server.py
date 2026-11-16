@@ -1,6 +1,7 @@
 """Reference implementation of the notes-api benchmark (standard library only)."""
 import json
 import os
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -16,7 +17,15 @@ def store(db):
     DATA.write_text(json.dumps(db))
 
 
+#: One request at a time reads and writes the file: notes written at once must each get their own id.
+LOCK = threading.Lock()
+
+
 class Handler(BaseHTTPRequestHandler):
+    def handle_one_request(self):
+        with LOCK:
+            super().handle_one_request()
+
     def _send(self, code, body=None):
         payload = b"" if body is None else json.dumps(body).encode()
         self.send_response(code)

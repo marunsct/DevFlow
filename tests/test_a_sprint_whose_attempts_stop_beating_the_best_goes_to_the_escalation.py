@@ -53,9 +53,11 @@ def _replan_source() -> str:
 
 
 def test_the_replan_asks_and_keeps_the_history():
+    from app.graph import end_of_attempt  # the one decision since LR.26
+
     body = _replan_source()
-    assert "stalled_sprint.stalled(" in body
-    assert body.index("stalled_sprint.stalled(") < body.index("if revision_count > MAX_MILESTONE_REVISIONS:")
+    assert "stalled_sprint.stalled(" in inspect.getsource(end_of_attempt.decide)
+    assert body.index("end_of_attempt.decide(") < body.index("if revision_count > MAX_MILESTONE_REVISIONS:")
     assert "sprint_best_history=best_history" in body
     assert "sprint_best_history" in workflow.WorkflowGraphState.__annotations__
 

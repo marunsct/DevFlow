@@ -56,6 +56,7 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET') return send(res, 200, store.notes);
     if (req.method === 'POST') {
       const body = await readBody(req);
+      Object.assign(store, load()); // read again after the wait: another request may have written meanwhile
       if (!valid(body)) return send(res, 422, { error: 'title is required' });
       const note = { id: store.next, title: body.title, body: typeof body.body === 'string' ? body.body : '' };
       store.next += 1;
@@ -72,6 +73,7 @@ const server = createServer(async (req, res) => {
   if (req.method === 'GET') return index < 0 ? send(res, 404, { error: 'not found' }) : send(res, 200, store.notes[index]);
   if (req.method === 'PUT') {
     const body = await readBody(req);
+      Object.assign(store, load()); // read again after the wait: another request may have written meanwhile
     if (index < 0) return send(res, 404, { error: 'not found' });
     if (!valid(body)) return send(res, 422, { error: 'title is required' });
     store.notes[index] = { ...store.notes[index], title: body.title, body: typeof body.body === 'string' ? body.body : '' };

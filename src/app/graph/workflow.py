@@ -11563,32 +11563,15 @@ def build_workflow_graph(
         nobody had been given a chance to fix.
         """
         revision_count = state.get("sprint_replan_count", 0) + 1
-        # A fully green acceptance suite with only a unit test open is where the re-plans stop (SETTLE_WHEN_ACCEPTANCE_IS_GREEN).
-        from app.graph import settle_when_green
+        # One decision from one measurement (LR.26, `end_of_attempt`): the best attempt back first if this one is
+        # worse, then settle (green for this sprint, only unit tests open), stop (the attempts stalled), or re-plan.
+        from app.graph import end_of_attempt
 
-        if settle_when_green.applies(state["repository"].root_path, getattr(cycle, "defects", None), revision_count - 1):
-            why = f"{why}; every acceptance test passes and only the unit tests fail"
-            revision_count = MAX_MILESTONE_REVISIONS + 1
-        # Attempts that stop beating the best product end where the re-plan limit does (STALL_RULE).
-        from app.graph import stalled_sprint
-
-        best_history = stalled_sprint.record(state["repository"].root_path, state.get("sprint_best_history"))
-        if stalled_sprint.stalled(best_history):
-            why = f"{why}; the last {stalled_sprint.AFTER_FLAT_ATTEMPTS} attempts did not beat the best product"
-            revision_count = MAX_MILESTONE_REVISIONS + 1
-        # A sprint planned again starts from the best product it has had (KEEP_THE_BEST_ATTEMPT).
-        from app.graph import best_attempt
-
-        # Even one test fewer than the best is worse here: a run released at 17 of 18 criteria, with AC-14 deferred,
-        # after an earlier attempt had passed all 18.
-        put_back = best_attempt.restore_if_worse(state["repository"].root_path, margin=1)
-        # The best product back may be the green one: the settle rule above read the worse product's measurement.
-        if put_back and revision_count <= MAX_MILESTONE_REVISIONS and settle_when_green.applies(
-            state["repository"].root_path,
-            settle_when_green.open_after_the_put_back(state["repository"].root_path, getattr(cycle, "defects", None)),
-            revision_count - 1,
-        ):
-            why = f"{why}; with the best attempt put back every acceptance test passes and only the unit tests fail"
+        decision = end_of_attempt.decide(state["repository"].root_path, getattr(cycle, "defects", None),
+                                         replans=revision_count - 1, best_history=state.get("sprint_best_history"))
+        best_history = decision.best_history
+        if decision.outcome != end_of_attempt.REPLAN:
+            why = f"{why}; {decision.why}"
             revision_count = MAX_MILESTONE_REVISIONS + 1
         # Every defect still open ends its story here: the ledger had it
         # raised and nothing after, which reads like a round cut short.

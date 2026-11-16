@@ -109,7 +109,11 @@ def applies(root: str | Path, defects: Any, replans: int) -> bool:
         from app.acceptance import suite
 
         result = suite.last_result(root) or {}
-        if not result.get("ran") or int(result.get("passed") or 0) <= 0 or int(result.get("failed") or 0) > 0:
+        if not result.get("ran") or int(result.get("passed") or 0) <= 0:
+            return False
+        # Green for this sprint is enough (LR.26): found in a code review, failing tests that wait on later sprints'
+        # criteria kept sprint 1 of a multi-sprint run from ever settling.
+        if int(result.get("failed") or 0) > 0 and not the_locked_suite_is_green_for_this_sprint(root):
             return False
         if str(result.get("problem") or ""):
             return False

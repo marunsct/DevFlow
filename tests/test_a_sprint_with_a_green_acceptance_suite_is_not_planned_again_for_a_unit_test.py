@@ -63,8 +63,10 @@ def test_off_nothing_changes(tmp_path, monkeypatch):
 def test_the_replan_asks_before_it_plans_again():
     source = inspect.getsource(workflow)
     body = source[source.index("def _replan_or_escalate("):source.index("def defect_remediation_node(")]
-    assert "settle_when_green.applies(" in body
-    assert body.index("settle_when_green.applies(") < body.index("if revision_count > MAX_MILESTONE_REVISIONS:")
+    from app.graph import end_of_attempt  # the one decision since LR.26
+
+    assert "settle_when_green.applies(" in inspect.getsource(end_of_attempt.decide)
+    assert body.index("end_of_attempt.decide(") < body.index("if revision_count > MAX_MILESTONE_REVISIONS:")
 
 
 WORDED_BY_THE_ROUND = SimpleNamespace(

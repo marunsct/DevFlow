@@ -103,8 +103,10 @@ def test_a_suite_that_did_not_run_puts_nothing_back_and_a_switch_off_does_nothin
 
 def test_the_planner_puts_the_best_product_back_before_a_sprint_is_planned_again():
     """The re-plan path calls it: the wiring, read from the source, since the graph needs a whole run to build."""
-    source = (Path(__file__).resolve().parent.parent / "src" / "app" / "graph" / "workflow.py").read_text()
-    assert "best_attempt.restore_if_worse(state[\"repository\"].root_path, margin=1)" in source
+    graph = Path(__file__).resolve().parent.parent / "src" / "app" / "graph"
+    source = (graph / "workflow.py").read_text()
+    assert "end_of_attempt.decide(" in source  # the one decision since LR.26, which puts the best back first
+    assert "best_attempt.restore_if_worse(root, margin=1)" in (graph / "end_of_attempt.py").read_text()
     assert "best_attempt.note(state[\"repository\"].root_path)" in source
 
 
@@ -162,8 +164,8 @@ def test_when_a_sprint_is_about_to_be_planned_again_one_test_fewer_than_the_best
 
 
 def test_the_replan_path_asks_for_a_margin_of_one():
-    source = (Path(__file__).resolve().parent.parent / "src" / "app" / "graph" / "workflow.py").read_text()
-    assert "best_attempt.restore_if_worse(state[\"repository\"].root_path, margin=1)" in source
+    source = (Path(__file__).resolve().parent.parent / "src" / "app" / "graph" / "end_of_attempt.py").read_text()
+    assert "best_attempt.restore_if_worse(root, margin=1)" in source
 
 
 def test_the_suite_is_measured_again_once_the_best_is_put_back(tmp_path, monkeypatch):

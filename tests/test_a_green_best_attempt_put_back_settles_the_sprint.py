@@ -38,6 +38,8 @@ def test_a_defect_about_criteria_that_pass_after_the_put_back_is_not_open(tmp_pa
 
 
 def test_the_round_asks_again_after_putting_the_best_back():
-    source = inspect.getsource(workflow)
+    from app.graph import end_of_attempt  # the one decision since LR.26
+
+    source = inspect.getsource(end_of_attempt.decide)
     at = source.index("put_back = best_attempt.restore_if_worse(")
     assert "settle_when_green.open_after_the_put_back(" in source[at:at + 800]

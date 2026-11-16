@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-17 04:52 JST (written by `loop.sh state`). Harness ecd59239 committed; d0e49910 deployed (not the same).
-**Live, and stopped in the last day:** run-a99ce5d1 running at acceptance_author_3; run-657c3113 running at principal_architect; run-4db255e8 failed at failed; run-53970d86 failed at ?; run-bdf40247 failed at awaiting_approval:defect_fix_2_15; run-9831f11c failed at awaiting_approval:defect_fix_1_5
-**Last scored:** run-9c05c6e7 notes-api-java 9/9 (completed, mixed, 100 active min, handoff 1.0; scored 11-17 04:52 JST); run-d8b0e95b notes-api-rust 9/9 (completed, mixed, 50 active min, handoff 1.0; scored 11-17 04:51 JST); run-925391f7 tasks-api 10/10 (completed, mixed, 175 active min, handoff 1.0; scored 11-17 02:51 JST).
+**As of:** 11-17 05:50 JST (written by `loop.sh state`). Harness 6d4e23b1 committed; 7fb4f5f0 deployed (not the same).
+**Live, and stopped in the last day:** run-657c3113 running at defect_fix_1_0; run-281467f2 running at consult_testing; run-4db255e8 failed at failed; run-53970d86 failed at ?; run-bdf40247 failed at awaiting_approval:defect_fix_2_15; run-9831f11c failed at awaiting_approval:defect_fix_1_5
+**Last scored:** run-a99ce5d1 notes-api-csharp 9/9 (completed, mixed, 130 active min, handoff 1.0; scored 11-17 05:50 JST); run-9c05c6e7 notes-api-java 9/9 (completed, mixed, 100 active min, handoff 1.0; scored 11-17 04:52 JST); run-d8b0e95b notes-api-rust 9/9 (completed, mixed, 50 active min, handoff 1.0; scored 11-17 04:51 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -25,6 +25,8 @@ The 10 optional switches above. Hosted-model runs (LR.44) only when the owner st
 
 ## The last three runs
 Generated above. Tonight's M36 runs (hidden, quality, verdict):
+- notes-api-csharp 2 run-a99ce5d1 (:1234): 9/9, 6/8 (a POST answer without `id`; writes at once lost),
+  not_deliverable - rightly: its unit tests did not compile, now named by LF.979; handoff 1.0 after LF.988.
 - notes-api-java 1 run-9c05c6e7 (:8888): 9/9, 7/8 (`GET /notes/abc` answers 500), delivered, handoff 1.0 after the
   scorer fix LF.985 (Rust and Java each lost a handoff point for a port they read).
 - tasks-api 2 run-925391f7 (:1234): 10/10, 7/7, delivered (after the duplicate-task rewind); 13 fixes reverted for
@@ -59,9 +61,10 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   after, not a night; LR.44 (hosted-model matrix) waits for the owner.
 
 ## Next actions
-1. Live: notes-api-php 1 run-657c3113 (:8888, 04:47) and notes-api-csharp 2 run-a99ce5d1 (:1234, 03:14). Score each
+1. Live: notes-api-php 1 run-657c3113 (:8888, 04:47) and notes-api-ruby 1 run-281467f2 (:1234, 05:46). Score each
    with its full id. The status board (Claude Doc) was not updated: the docs connector was not connected.
-2. Then notes-api-ruby (shortlinks-api is held out: Measure runs only, `MEASURE=1`).
+2. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
+   LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).
 4. When no fix is pending for a full audit cycle: freeze and start the LR.20 batch.
 

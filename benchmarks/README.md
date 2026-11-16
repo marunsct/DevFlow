@@ -22,6 +22,7 @@ measured. See `docs/architecture-decisions.md ADR-0005`.
 | `notes-api-csharp` | HTTP service | C#, ASP.NET Core (LR.43 pack sweep) | 9 (`notes-api`'s) | pytest + httpx |
 | `notes-api-php` | HTTP service | PHP, Slim (LR.43 pack sweep) | 9 (`notes-api`'s) | pytest + httpx |
 | `notes-api-ruby` | HTTP service | Ruby, Sinatra (LR.43 pack sweep) | 9 (`notes-api`'s) | pytest + httpx |
+| `shortlinks-api` | HTTP service | Python (held out since 2026-11-17, LR.41: not tuned on) | 8 + 4 quality | pytest + httpx |
 | `notes-api-falcon` | HTTP service | Python, Falcon (no pack) | 9 (`notes-api`'s) | pytest + httpx |
 | `fullstack-bookmarks-py` | page + its own service | Python service, HTML/JS page | 8 (`fullstack-bookmarks`'s) | Playwright (page and API) |
 | `tasks-api` | HTTP service with accounts and per-user data | Python | 10 | pytest + httpx |

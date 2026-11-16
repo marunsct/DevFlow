@@ -190,3 +190,15 @@ def test_ship_live_pauses_at_the_boundary_and_asks_every_run_at_once():
     assert "principal_architect" not in text, "the architect-only wait loop is gone"
     loop = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()
     assert "pause${PAUSE_AT:+?at=$PAUSE_AT&ceiling=${PAUSE_CEILING:-600}}" in loop
+
+
+def test_a_boundary_pause_whose_ceiling_was_lost_is_asked_again_at_once():
+    """The ceiling lives in the app process that took the pause; a worker killed under load loses it, so the script
+    asks for a plain pause past the ceiling instead of waiting out its own limit on a stage that never ends."""
+    from pathlib import Path
+
+    loop = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()
+    block = loop[loop.index('if [ "$(status)" = "running" ] || [ "$(status)" = "queued" ]; then'):]
+    block = block[:block.index('[ "$stage" = "--pause-only" ] && exit 0')]
+    assert '$(( ${PAUSE_CEILING:-600} + 30 ))' in block
+    assert 'curl -s -X POST "$API/api/runs/$run/pause" -H' in block

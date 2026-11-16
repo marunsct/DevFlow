@@ -348,7 +348,17 @@ rewind)
     curl -s -X POST "$API/api/runs/$run/pause${PAUSE_AT:+?at=$PAUSE_AT&ceiling=${PAUSE_CEILING:-600}}" -H "Authorization: Bearer $token" >/dev/null
     waited=0
     most=$(( ${PAUSE_AT:+${PAUSE_CEILING:-600} + }600 ))
-    while [ "$(status)" != "paused" ] && [ "$waited" -lt "$most" ]; do sleep 5; waited=$((waited + 5)); done
+    # The ceiling is kept by the app process that took the pause, and is lost with it: measured, two app workers
+    # killed under load took it with them and a deploy waited 25 minutes on a stage that never ended. So past the
+    # ceiling the pause is asked again without `at`, which stops the stage now.
+    asked_again=""
+    while [ "$(status)" != "paused" ] && [ "$waited" -lt "$most" ]; do
+      sleep 5; waited=$((waited + 5))
+      if [ -n "${PAUSE_AT:-}" ] && [ -z "$asked_again" ] && [ "$waited" -ge $(( ${PAUSE_CEILING:-600} + 30 )) ] \
+         && [ "$(status)" = "running" ]; then
+        curl -s -X POST "$API/api/runs/$run/pause" -H "Authorization: Bearer $token" >/dev/null; asked_again=1
+      fi
+    done
     echo "paused $run after ${waited}s ($(jst +%H:%M) JST): $(status)"
   fi
   [ "$stage" = "--pause-only" ] && exit 0

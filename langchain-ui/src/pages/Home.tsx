@@ -339,6 +339,15 @@ export const Home: React.FC = () => {
   };
   const gatesKept = Object.values(gates).filter(([on]) => on).length;
   const server = describeServer(health);
+  // LR.32: whether the workers can run the agents' commands, said here rather than as a refusal at start.
+  const [commands, setCommands] = useState<{ ready: boolean; reason: string } | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.get<{ ready: boolean; reason: string }>('/health/commands')
+      .then((r) => live && setCommands(r.data)).catch(() => live && setCommands(null));
+    return () => { live = false; };
+  }, []);
+  const commandsOff = commands !== null && commands.ready === false;
   const estimate = typicalTime(forecast[deliveryMode], criteriaCount);
   const whyNotYet = !hasBrief ? 'Write the brief or add its documents to start.' : null;
   const summary = [
@@ -486,6 +495,12 @@ export const Home: React.FC = () => {
 
         <Step n={4} title="Model" aside={<Link to="/settings?tab=models" className="text-sm font-medium text-primary hover:underline">Change in Settings</Link>}>
           <p className={`rounded-xl border border-border bg-surface px-4 py-3 text-sm ${server.tone === 'warn' ? 'text-warning' : 'text-text-secondary'}`}>{server.said}</p>
+          {commandsOff && (
+            <p className="mt-2 rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-sm text-danger" data-testid="commands-off">
+              The agents cannot run commands here, so a run would stop at once: {commands!.reason} Allow it in the
+              server's settings (ALLOW_COMMAND_EXECUTION and SANDBOX_EXECUTION_MODE in .env; see the README), then reload.
+            </p>
+          )}
           <Checkbox
             label="Use the frontier model"
             hint="The specification, the reviews and escalated fixes run on the frontier model set in Settings. Off, every stage runs on the local model."
@@ -547,7 +562,7 @@ export const Home: React.FC = () => {
                 <p className="truncate text-text-secondary" title={summary}>{whyNotYet ?? summary}</p>
               )}
             </div>
-            <Button type="submit" variant="primary" disabled={!hasBrief || isUploading} loading={isUploading} icon={<PlayCircle className="h-5 w-5" />} className="px-6 py-2.5 text-base">
+            <Button type="submit" variant="primary" disabled={!hasBrief || isUploading || commandsOff} loading={isUploading} icon={<PlayCircle className="h-5 w-5" />} className="px-6 py-2.5 text-base">
               {isUploading ? 'Starting...' : 'Start Workflow Run'}
             </Button>
           </div>

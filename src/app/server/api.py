@@ -274,6 +274,19 @@ def create_app(
         busy = [record.run_id for record in records if record.status == "running"]
         return await run_in_threadpool(read_server_health, busy)
 
+    @application.get("/api/health/commands", tags=["health"])
+    async def health_commands(_: Any = Depends(get_current_active_user)) -> dict[str, Any]:
+        """Whether the workers can run the agents' commands, and why not (LR.32): the start form says it before a run
+        is refused for it. Unknown reads as able, as the start does."""
+        from app.server.execution_readiness import READINESS_KEY, why_commands_cannot_run
+        from app.server.redis_client import get_async_redis_client
+
+        try:
+            reason = why_commands_cannot_run(await get_async_redis_client().get(READINESS_KEY))
+        except Exception:  # noqa: BLE001 - the start decides as before
+            reason = None
+        return {"ready": reason is None, "reason": reason or ""}
+
     @application.get("/api/health/models", tags=["health"])
     async def health_models(_: Any = Depends(require_admin)) -> dict[str, Any]:
         """Provider health. Admin-only: it triggers billable model calls."""

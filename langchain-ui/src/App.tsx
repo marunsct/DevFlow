@@ -1,3 +1,4 @@
+import { Controls } from './pages/Controls';
 import { Account } from './pages/Account';
 import { NotFound } from './pages/NotFound';
 import { DevUI } from './pages/DevUI';
@@ -113,6 +114,7 @@ function App() {
             <Route path="settings" element={<Settings />} />
             <Route path="admin" element={<Admin />} />
             <Route path="account" element={<Account />} />
+            <Route path="controls" element={<Controls />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

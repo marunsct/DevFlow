@@ -4191,6 +4191,35 @@
     ]
    }
   },
+  "/api/health/commands": {
+   "get": {
+    "description": "Whether the workers can run the agents' commands, and why not (LR.32): the start form says it before a run\nis refused for it. Unknown reads as able, as the start does.",
+    "operationId": "health_commands_api_health_commands_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Health Commands Api Health Commands Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Health Commands",
+    "tags": [
+     "health"
+    ]
+   }
+  },
   "/api/health/models": {
    "get": {
     "description": "Provider health. Admin-only: it triggers billable model calls.",

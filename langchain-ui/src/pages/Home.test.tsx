@@ -73,6 +73,18 @@ describe('starting a build', () => {
   });
 });
 
+describe('a server that cannot run commands', () => {
+  it('says so and does not offer to start (LR.32)', async () => {
+    (mocks.api.get as any).mockImplementation(async (path: string) => (path === '/health/commands'
+      ? { data: { ready: false, reason: 'Command execution is off.' } } : { data: {} }) as any);
+    show();
+    expect((await screen.findByTestId('commands-off')).textContent).toContain('Command execution is off.');
+    await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a note');
+    expect((screen.getByRole('button', { name: /Start Workflow Run/ }) as HTMLButtonElement).disabled).toBe(true);
+    (mocks.api.get as any).mockImplementation(async () => ({ data: {} }));
+  });
+});
+
 describe('a change to a finished product', () => {
   it('starts from that run\'s product when opened for a change', async () => {
     render(<MemoryRouter initialEntries={['/?changeOf=run-old']}><Home /></MemoryRouter>);

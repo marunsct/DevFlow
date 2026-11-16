@@ -248,9 +248,12 @@ export const Home: React.FC = () => {
       const written = briefText.trim() ? [new File([briefText], 'brief.md', { type: 'text/markdown' })] : [];
       const runData = await createRun([...files, ...written]);
       created = runData.run_id;
-      if (codebase) await uploadCodebase(runData.run_id, codebase);
-      
+      // The upload is only stored: the run unpacks it at start when the start names it. Found in a review: the
+      // id was dropped here, so a run "from existing code" was built from an empty workspace.
+      const uploaded = codebase ? ((await uploadCodebase(runData.run_id, codebase)) as { upload_id?: string }) : null;
+
       const payload: any = {
+        source: uploaded?.upload_id ? { type: 'archive', upload_id: uploaded.upload_id } : undefined,
         // The person starting the run reviews it.
         reviewer: reviewer || undefined,
         name: runName.trim() || undefined,

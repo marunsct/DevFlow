@@ -966,6 +966,16 @@ def after_a_fix(
             stage_name, len(broken), len(gained),
         )
         return broken
+    if broken:
+        # The revert failed (git refused, timed out or found a lock) and was tried once more. Found in a code review:
+        # the fix that broke tests then fell through to here, was committed as "Fix: ..." and its measurement saved
+        # as the new baseline, so the next regression check no longer saw what it broke. It is reported as broken,
+        # neither committed nor saved, and the next measurement compares against the last good one.
+        if ci.revert_to(root, base):
+            logger.warning("Reverted %s on the second try: it broke %d test(s)", stage_name, len(broken))
+        else:
+            logger.error("Could not revert %s, which broke %d test(s): left uncommitted", stage_name, len(broken))
+        return broken
     # Committed first, and the measurement saved with the commit it measured. Found in a code review: the snapshot
     # was saved with the commit before the fix's own, so the next fix's `before_a_fix` read "the workspace moved
     # since it was measured" and ran the unit tests and the acceptance suite again on the product just measured.

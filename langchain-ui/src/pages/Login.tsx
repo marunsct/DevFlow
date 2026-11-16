@@ -121,7 +121,7 @@ export function Login() {
           </form>
 
           <p className="text-center text-xs text-text-muted mt-6">
-            Default credentials: admin / admin
+            The first administrator's password is the one set as ADMIN_PASSWORD when the server was installed.
           </p>
         </div>
       </div>

@@ -54,8 +54,44 @@ def _passed_now(root: Path) -> int | None:
     return int(result.get("passed") or 0)
 
 
+def _the_suite(root: Path) -> int:
+    """How many tests the suite's last run held: a count of passing tests compares only within one suite's size.
+
+    The count, not the files' text: a repair that reworded a test leaves a fair comparison, and one that added or
+    dropped tests (or a later sprint's suite) does not.
+    """
+    from app.acceptance import suite
+
+    result = suite.last_result(root) or {}
+    return int(result.get("passed") or 0) + int(result.get("failed") or 0)
+
+
+def _best(root: Path) -> dict[str, Any]:
+    """The record of the best, or {} when it was made against a suite of another size than the one run now.
+
+    Found in a code review: the record was never reset, so after a suite repair changed the test count, or in a
+    later sprint whose suite holds more tests, a raw count from another suite decided whether to put files back.
+    """
+    best = _read(root)
+    if best and best.get("tests") and best.get("tests") != _the_suite(root):
+        return {}
+    return best
+
+
+def forget(root: str | Path) -> None:
+    """Drop the record of the best: a new sprint starts its own (called at the sprint's advance). Never raises."""
+    try:
+        (Path(root) / _FILE).unlink(missing_ok=True)
+    except OSError:
+        logger.debug("Could not drop the best-attempt record", exc_info=True)
+
+
 def note(root: str | Path) -> None:
-    """Remember the product as it stands when it passes more acceptance tests than any before. Never raises."""
+    """Remember the product as it stands when it passes at least as many acceptance tests as any before. Never raises.
+
+    A tie keeps the newer product: found in a code review, a tie kept the oldest commit, so a put-back threw away
+    every later change that passed as many tests (unit-test and review-finding fixes among them).
+    """
     if not enabled():
         return
     try:
@@ -63,14 +99,15 @@ def note(root: str | Path) -> None:
 
         root = Path(root)
         passed = _passed_now(root)
-        best = _read(root)
-        if passed is None or passed <= int(best.get("passed") or 0):
+        best = _best(root)
+        if passed is None or (best and passed < int(best.get("passed") or 0)):
             return
         commit = ci.commit(root, f"Best attempt so far: {passed} acceptance tests pass")
         if not commit:
             return
         (root / _FILE).parent.mkdir(parents=True, exist_ok=True)
-        (root / _FILE).write_text(json.dumps({"passed": passed, "commit": commit}) + "\n", encoding="utf-8")
+        (root / _FILE).write_text(
+            json.dumps({"passed": passed, "commit": commit, "tests": _the_suite(root)}) + "\n", encoding="utf-8")
     except Exception:  # noqa: BLE001 - a record of the best is never worth a failed round
         logger.debug("Could not note the best attempt", exc_info=True)
 
@@ -121,7 +158,7 @@ def restore_if_worse(root: str | Path, *, margin: int = MARGIN) -> str:
         from app.acceptance import suite
 
         root = Path(root)
-        best = _read(root)
+        best = _best(root)
         now = _passed_now(root)
         if not best or now is None or int(best.get("passed") or 0) - now < margin:
             return ""
@@ -191,7 +228,7 @@ def files_the_best_attempt_already_has(root: str | Path, paths: list[str], *, re
         from app.acceptance import suite
 
         root = Path(root)
-        best = _read(root)
+        best = _best(root)
         passed = int(best.get("passed") or 0)
         commit = str(best.get("commit") or "")
         last = suite.last_result(root) or {}

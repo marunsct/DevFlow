@@ -50,6 +50,18 @@ describe('starting a build', () => {
     expect(JSON.stringify(mocks.startRun.mock.calls.at(-1))).toContain('"name":"second try"');
   });
 
+  it('starts a run from an uploaded codebase with that upload named as its source', async () => {
+    mocks.uploadCodebase.mockResolvedValueOnce({ upload_id: 'app_1a2b3c4d.zip' } as any);
+    const { container } = show();
+    await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a note');
+    const input = container.querySelector('#codebase-upload') as HTMLInputElement;
+    await userEvent.upload(input, new File(['zip'], 'app.zip', { type: 'application/zip' }));
+    await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
+    await waitFor(() => expect(mocks.startRun).toHaveBeenCalled());
+    const payload = (mocks.startRun.mock.calls.at(-1) as unknown as [string, Record<string, any>])[1];
+    expect(payload.source).toEqual({ type: 'archive', upload_id: 'app_1a2b3c4d.zip' });
+  });
+
   it('deletes the run it created when the run cannot start', async () => {
     mocks.startRun.mockRejectedValueOnce(new Error('the worker is down'));
     show();

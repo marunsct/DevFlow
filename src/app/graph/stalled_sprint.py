@@ -38,7 +38,7 @@ def record(root: str | Path, history: Any) -> list[int]:
     try:
         from app.graph import best_attempt
 
-        best = int(best_attempt._read(Path(root)).get("passed") or 0)
+        best = int(best_attempt._best(Path(root)).get("passed") or 0)
     except Exception:  # noqa: BLE001 - no record, no rule
         logger.debug("Could not read the best attempt", exc_info=True)
         return past

@@ -14,6 +14,7 @@ criteria every sprint can be measured by.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -727,6 +728,60 @@ def _write_the_suite_s_files(files: dict[Path, str]) -> None:
             logger.debug("Could not write %s back", path, exc_info=True)
 
 
+#: The suite as it ran before an at-the-limit send-back, kept so a send-back can never cost the run its suite.
+BEFORE_THE_SEND_BACK = ".harness/suite-before-the-send-back.json"
+#: The once-per-lock send-backs at the review's limit; cleared when the suite is locked, so a reopened suite has them.
+ONCE_AT_THE_LIMIT = ("partial_strengthened_once", "cannot_pass_repaired_once", "strengthened_once")
+
+
+def _keep_before_the_send_back(root: str | Path) -> None:
+    """Keep the suite's files as they ran, before a send-back at the review's limit."""
+    files = _the_suite_s_files(root)
+    if not files:
+        return
+    try:
+        target = Path(root) / BEFORE_THE_SEND_BACK
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({str(path): text for path, text in files.items()}), encoding="utf-8")
+    except (OSError, TypeError):
+        logger.debug("Could not keep the suite before its send-back", exc_info=True)
+
+
+def _put_back_before_the_send_back(root: str | Path) -> bool:
+    """Put back the suite as it ran before an at-the-limit send-back; whether there was one to put back.
+
+    Found in a code review: a send-back at the limit (held only in part, no product could pass, too weak) returned a
+    suite that might not run or might prove nothing, and with no rounds left the run failed, although the suite that
+    ran before the send-back was lockable. Its files are put back (files the send-back added are removed) and it is
+    reviewed again, when the once-per-lock send-backs are spent and it locks with what is open recorded.
+    """
+    target = Path(root) / BEFORE_THE_SEND_BACK
+    try:
+        kept = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(kept, dict) or not kept:
+        return False
+    for path in _the_suite_s_files(root):
+        if str(path) not in kept:
+            try:
+                path.unlink()
+            except OSError:
+                logger.debug("Could not remove %s", path, exc_info=True)
+    _write_the_suite_s_files({Path(path): text for path, text in kept.items()})
+    target.unlink(missing_ok=True)
+    logger.warning("The suite returned from a send-back at the limit could not be locked; the suite before it is back")
+    return True
+
+
+def _the_send_backs_spent(root: str | Path) -> None:
+    """At the lock: the once-per-lock send-backs are available again, and the kept suite is no longer needed."""
+    state = suite._state(root)
+    if any(key in state for key in ONCE_AT_THE_LIMIT):
+        suite._save_state(root, {key: value for key, value in state.items() if key not in ONCE_AT_THE_LIMIT})
+    (Path(root) / BEFORE_THE_SEND_BACK).unlink(missing_ok=True)
+
+
 def _the_repair_measured(root: str | Path) -> tuple[list[str], Any, str]:
     """(the suite's gaps, its measurement, what a repair lost) after the tests a repair was not sent for are put back.
 
@@ -845,6 +900,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
         if (kept := _kept_as_locked_before(state, root, f"the repaired suite cannot run: {result.problem}")) is not None:
             return kept
+        if _put_back_before_the_send_back(root):
+            return _handing_on(stage="acceptance_review", acceptance_feedback=[])
         logger.error("Acceptance suite failed to run after %d rounds: %s", rounds, result.problem)
         return _handing_on(
             stage="failed",
@@ -860,6 +917,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
         if (kept := _kept_as_locked_before(state, root, "the repaired suite proves nothing: " + "; ".join(vacuous)[:1200])) is not None:
             return kept
+        if _put_back_before_the_send_back(root):
+            return _handing_on(stage="acceptance_review", acceptance_feedback=[])
         logger.error("Acceptance suite still proves nothing after %d rounds", rounds)
         return _handing_on(
             stage="failed",
@@ -871,11 +930,13 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     sent_back = suite._state(root)
     if partial and rounds >= MAX_ACCEPTANCE_ROUNDS and not sent_back.get("partial_strengthened_once"):
         logger.info("At the review's limit, %d output(s) held only in part go back once to be strengthened", len(partial))
+        _keep_before_the_send_back(root)
         suite._save_state(root, {**sent_back, "partial_strengthened_once": True})
         return _handing_on(stage="acceptance_author", acceptance_feedback=[STRENGTHEN_ONLY, *partial])
     if repair := cannot_pass_to_lock(cannot, rounds=rounds, limit=MAX_ACCEPTANCE_ROUNDS,
                                      already_sent=bool(sent_back.get("cannot_pass_repaired_once"))):
         logger.info("At the review's limit, %d test(s) no product could pass go back once to be repaired", len(cannot))
+        _keep_before_the_send_back(root)
         suite._save_state(root, {**suite._state(root), "cannot_pass_repaired_once": True})
         return _handing_on(stage="acceptance_author", acceptance_feedback=repair)
 
@@ -965,12 +1026,14 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             sent = bool(suite._state(root).get("strengthened_once"))
             if weak := too_weak_to_lock(findings, rounds=rounds, limit=limit, already_sent=sent):
                 logger.info("At the review's limit, %d test(s) too weak to lock go back once to be strengthened", len(weak))
+                _keep_before_the_send_back(root)
                 suite._save_state(root, {**suite._state(root), "strengthened_once": True})
                 return _handing_on(**update, stage="acceptance_author", acceptance_feedback=[STRENGTHEN_ONLY, *weak])
 
     if suite.undefer_what_a_test_now_carries(root):
         logger.info("Deferred criteria a test now carries are no longer deferred")
     suite.lock(root)
+    _the_send_backs_spent(root)
     update.update(product_at_fault.settled(root, no_fault_found))
     if no_fault_found:
         logger.warning("QA found no fault in the test(s) sent for repair, and the harness's checks agree; locked, nothing charged")

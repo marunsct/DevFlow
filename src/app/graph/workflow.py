@@ -13101,6 +13101,12 @@ def build_workflow_graph(
 
     def sprint_advance_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         summary = _record_sprint_summary(state, "Completed")
+        # The best product of the sprint just accepted is not the next sprint's: found in a code review, its record
+        # stayed, and the next sprint's first batch was undone for passing fewer tests than the last one's best.
+        from app.graph import best_attempt
+
+        if state.get("repository") is not None:
+            best_attempt.forget(state["repository"].root_path)
         # What this sprint hands the next one's lead: findings it neither fixed
         # nor was blocked by, and what failed repeatedly. See `app.sprint.record`.
         latest = (summary.get("sprint_attempts") or [{}])[-1]

@@ -20,7 +20,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Callable
+from typing import Any, Callable
 import os
 from datetime import datetime, timezone
 
@@ -69,7 +69,35 @@ celery_app.conf.update(
     task_soft_time_limit=int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "43200")),
     worker_max_tasks_per_child=int(os.environ.get("CELERY_MAX_TASKS_PER_CHILD", "50")),
     broker_connection_retry_on_startup=True,
+    # A message a worker has reserved but not yet started is unacknowledged, and Redis hands it out again when the
+    # visibility timeout passes (Celery's default: one hour). Measured on one run: queued behind two long runs, its
+    # message was delivered ten times, an hour apart, and two copies then ran the whole run at once in one
+    # workspace. The timeout is above the task's own limit, and a worker reserves one message at a time.
+    broker_transport_options={"visibility_timeout": int(os.environ.get("CELERY_TASK_TIME_LIMIT", "43500")) + 3600},
+    worker_prefetch_multiplier=1,
 )
+
+#: How long a delivery is remembered as taken: longer than any redelivery could come.
+DELIVERY_REMEMBERED_SECONDS = 3 * 24 * 3600
+
+
+def first_delivery(task_id: str | None, retries: int, client: Any = None) -> bool:
+    """Whether this is the first time this dispatch (task id and retry number) reached a worker.
+
+    A redelivered copy of a message already taken returns False and is dropped; a retry (`self.retry`) has a new
+    retry number and is a new dispatch. True when the marker cannot be read, so a run is never held back by it.
+    """
+    if not task_id:
+        return True
+    try:
+        if client is None:
+            from app.server.redis_client import get_redis_client
+
+            client = get_redis_client()
+        return bool(client.set(f"delivery-taken:{task_id}:{retries}", "1", nx=True, ex=DELIVERY_REMEMBERED_SECONDS))
+    except Exception:  # noqa: BLE001 - the marker never stops a run
+        logger.debug("Could not mark delivery %s as taken", task_id, exc_info=True)
+        return True
 
 # Failures that are worth retrying: the work never started, or the infrastructure
 # blinked. Anything else is a logic or model failure that retrying will reproduce.
@@ -608,6 +636,9 @@ def execute_workflow_run(
     """Run one segment of a workflow graph."""
     from app.server.runner import _explain_failure
 
+    if not first_delivery(getattr(self.request, "id", None), int(getattr(self.request, "retries", 0) or 0)):
+        logger.warning("Run %s: dropped a second delivery of dispatch %s (already taken)", run_id, self.request.id)
+        return
     try:
         runner = _get_runner()
         record = runner.run_store.load(run_id)

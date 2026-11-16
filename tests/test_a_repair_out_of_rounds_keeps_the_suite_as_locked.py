@@ -46,4 +46,4 @@ def test_both_ways_a_suite_gives_up_try_it_before_failing_the_run():
     source = inspect.getsource(acceptance_nodes)
     for failing in ("Acceptance suite failed to run after", "Acceptance suite still proves nothing after"):
         at = source.index(failing)
-        assert "_kept_as_locked_before(" in source[at - 260:at]
+        assert "_kept_as_locked_before(" in source[at - 420:at]

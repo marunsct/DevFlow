@@ -1321,15 +1321,18 @@ def server_error_description(errors: list[tuple[Check, int]], bad_body: list[tup
     """The defect's description for `errors`: each call, the status it gave and what the contract gives; and for each of
     `bad_body`, the call that failed on a body it could not parse."""
     each = "; ".join([
-        *(f"`{_the_call(check)}` sent with no body answered {status} where the contract gives "
-          f"{' or '.join(map(str, _allowed(check)))}"
+        *(f"`{_the_call(check)}` sent with no body answered {status} where "
+          + (f"a refusal under 500 is due: `{AN_ID_THAT_IS_NOT_A_NUMBER}` names no record"
+             if AN_ID_THAT_IS_NOT_A_NUMBER in check.path else
+             f"the contract gives {' or '.join(map(str, _allowed(check)))}")
           for check, status in errors[:6]),
         *(f"`{_the_call(check)}` {SENT_WITH_A_BAD_BODY} answered {status} where a refusal under 500 was due"
           for check, status in (bad_body or [])[:6]),
     ])
     return (
         f"{SERVER_FAILED} {each}. A request the product cannot use - no body, a body that is not JSON, a record "
-        "that does not exist - is answered with the status the contract gives for it, never by the server failing."
+        "that does not exist, an id of the wrong kind - is answered with the status the contract gives for it, or a "
+        "refusal under 500 where it gives none, never by the server failing."
     )
 
 

@@ -58,3 +58,15 @@ def test_the_variants_do_not_count_as_lines_probed(tmp_path, monkeypatch):
     ic.server_errors(tmp_path, runner=lambda *a: {})
     written = json.loads((tmp_path / ".harness" / "contract-probe.json").read_text())["server_error"]
     assert written["probed"] <= written["asked"] == len(ic.checkable(_checks()))
+
+
+def test_a_fixer_is_told_a_refusal_is_due_for_an_id_that_is_not_a_number_not_the_line_s_success():
+    """Measured on the first run it fired in: the defect said `GET /notes/not-a-number` "answered 500 where the
+    contract gives 200", sending its fixers after a success; two attempts did not close it."""
+    import re
+
+    variant = ic.with_an_id_that_is_not_a_number(_checks())[0]
+    said = ic.server_error_description([(variant, 500)])
+    assert f"`{variant.method} {variant.path}` sent with no body answered 500" in said
+    assert "where the contract gives 200" not in said and "a refusal under 500" in said
+    assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", said, re.I)

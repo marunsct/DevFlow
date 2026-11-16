@@ -1,0 +1,17 @@
+# The build context holds only what the image copies (LR.40): secrets, run data and local environments never go in.
+.env
+.env.*
+!.env.example
+data/
+.langchain/
+.venv/
+**/node_modules/
+**/__pycache__/
+.git/
+reports/
+research_notes/
+benchmarks/
+tests/
+langchain-ui/dist/
+*.sqlite*
+*.db

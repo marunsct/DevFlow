@@ -1181,6 +1181,10 @@ def _a_free_port() -> int:
         return probe.getsockname()[1]
 
 
+#: The most processes and threads the worker's user may have once a command starts (`_apply_limits`, LR.40).
+MOST_PROCESSES = int(os.environ.get("SANDBOX_MOST_PROCESSES", "4096"))
+
+
 def _apply_limits(data_bytes: int | None = None) -> None:
     """Cap the child before it execs. Runs between fork and exec.
 
@@ -1216,6 +1220,9 @@ def _apply_limits(data_bytes: int | None = None) -> None:
     for limit, value in (
         (memory_limit, data_bytes or _memory_limit_bytes()),
         (resource.RLIMIT_FSIZE, MAX_WRITE_BYTES),
+        # Processes and threads of the worker's user, counted together: high enough for every build and test runner,
+        # low enough that a command forking without end stops there instead of taking every run down (LR.40).
+        (getattr(resource, "RLIMIT_NPROC", resource.RLIMIT_FSIZE), MOST_PROCESSES),
     ):
         try:
             soft, hard = resource.getrlimit(limit)

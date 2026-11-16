@@ -53,14 +53,14 @@ describe('the needs-you inbox', () => {
     expect(submitApproval).toHaveBeenCalledWith('run-gate', { action: 'approve', reason: null });
   });
 
-  it('answers a review with a review approval', async () => {
+  it('opens a review instead of approving it unread (LR.38)', async () => {
     listRuns.mockResolvedValue({ runs: [{ ...base, run_id: 'run-review', status: 'waiting_for_review' }], total: 1 });
     show();
 
     await userEvent.click(await screen.findByRole('button', { name: '1 run waiting for you' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
-
-    expect(submitReview).toHaveBeenCalledWith('run-review', { action: 'approve', comment: null });
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
+    expect(submitReview).not.toHaveBeenCalled();
   });
 
   it('hides a dismissed row, and the count with it', async () => {

@@ -34,7 +34,8 @@ describe('the inbox', () => {
 
   it('answers a gate or a review in one tap, and leaves a budget to its page', () => {
     expect(oneTapAnswer(run('a', 'waiting_for_approval'))).toBe('approval');
-    expect(oneTapAnswer(run('a', 'waiting_for_review'))).toBe('review');
+    // A review is opened and read before it is approved (LR.38): one tap approved a release review unread.
+    expect(oneTapAnswer(run('a', 'waiting_for_review'))).toBeNull();
     expect(oneTapAnswer(run('a', 'waiting_for_budget'))).toBeNull();
   });
 });

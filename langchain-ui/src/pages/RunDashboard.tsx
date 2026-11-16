@@ -428,7 +428,7 @@ export const RunDashboard: React.FC = () => {
   const handleCancel = async () => {
     if (!runId || !(await askConfirm({
       title: 'Cancel this run?',
-      message: 'It stops at the next stage boundary and cannot be resumed. Pause it instead to continue later.',
+      message: 'It stops at the next stage boundary. A cancelled run keeps its checkpoints and can be resumed later, but Pause is the way to stop for now and continue.',
       confirmLabel: 'Cancel run',
       danger: true,
     }))) return;
@@ -568,6 +568,8 @@ export const RunDashboard: React.FC = () => {
     failed: { bg: 'bg-danger-bg', text: 'text-danger', glow: 'status-danger', icon: XCircle },
     cancelled: { bg: 'bg-overlay-strong', text: 'text-text-secondary', glow: '', icon: XCircle },
     paused: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: Clock },
+    // LR.38: a run stopped at its token or cost ceiling read as a grey "created".
+    waiting_for_budget: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
   };
 
   const config = statusConfig[run.status] || statusConfig.created;

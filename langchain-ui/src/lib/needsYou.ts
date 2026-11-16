@@ -30,8 +30,9 @@ export function readInbox(runs: RunSummary[], seenAt: number, dismissed: Readonl
 
 /** What one tap answers for a waiting run, or null when only its page can (a budget needs a decision). */
 export function oneTapAnswer(run: RunSummary): 'approval' | 'review' | null {
+  // A file write or tool call may be approved from the list; a review (the specification, the acceptance tests, a
+  // sprint, the release) is opened and read first (LR.38: one tap approved a release review unread).
   if (run.status === 'waiting_for_approval') return 'approval';
-  if (run.status === 'waiting_for_review') return 'review';
   return null;
 }
 

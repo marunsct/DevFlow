@@ -15,7 +15,7 @@ every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.
 |---|---|
 | Phase | Launch review (`docs/reviews/launch-review-2026-11-16.md`, LR.1-65) built item by item; M36 measuring runs on both ports. Owner hands off 11-16 21:50 JST: all review items by the morning of 11-17. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run pinned to its port (`PIN_MODEL=1`). Never load or change them. |
-| Harness | 97c49e99 (LF.989, with LF.986-987) deployed 11-17 06:14 JST; LF.970-985 earlier tonight. Host has Pyright 1.1.414. |
+| Harness | 9264d46b (LF.990) deployed 11-17 07:04 JST; LF.970-989 earlier tonight. Host has Pyright 1.1.414. |
 | Switches | 52 fixes built in (always on; only a host env var turns one off). 11 optional switches; one on - NEAR_GREEN_REPLANNED_ONCE (Efficiency, LF.977, measuring.md M14: off at once if a run it fires in loses a hidden test). Off: Context and cost (OBSERVATION_FOLDING, STABLE_STAGE_PREFIX, BATCH_ACCEPTANCE_AUTHOR, REASONING_KEPT_AFTER_AN_ANSWER), Efficiency (EQUIVALENT_MUTANTS_REMEMBERED, MUTANT_CHECK_IN_THE_FIX_STAGE, REVIEWS_WITHOUT_REASONING, HARNESS_FINDINGS_RECHECKED), Setup scope (SETUP_SCOPE_GUARD), Review gates (MILESTONE_EVIDENCE_GATE). Admin page: Controls. |
 | Operations | Backups nightly to `data/backups` and `BACKUP_DIR` (external disk, 7 daily + 4 weekly), checked by `loop.sh backup --check`; finished runs older than `RETENTION_DAYS` (60) cleared nightly; both set in git-ignored `data/loop/ops.env`. Owner's Postgres port in git-ignored `docker-compose.override.yml`; `docker-compose.prod.yml` + `deploy/Caddyfile` for TLS. |
 | Suites | `loop.sh suite` and `loop.sh suite-production` (every built-in fix on, as shipped) both green: 17,316 passed, 0 known failures. |
@@ -59,7 +59,8 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   scaffold opens its toolchain (a C# run refused `dotnet`); LF.983 a doubled compiler path; LF.984 suite writers
   told kept files are tested by what they do (seen working in the next run); LF.986 routes probed with an id that
   is not a number (a 500 only a quality test found); LF.989 a product that listens but fails every request is
-  told so, not "did not start". Records: LF.976 real re-plan counts, LF.982, LF.987. Scorer: LF.985, LF.988.
+  told so, not "did not start"; LF.990 the LF.986 defect asks for a refusal, not the line's success (it
+  fired on PHP: `GET /notes/not-a-number` answered 500). Records: LF.976 real re-plan counts, LF.982, LF.987. Scorer: LF.985, LF.988.
 - Sweep scores: every language 9/9 hidden; quality 7/8-8/8 but C# 6/8. Recurring product defects the harness does not
   yet catch: writes made at once lost (several families) - next: pack storage guidance and a concurrent-write probe.
 - In part: LR.20 (the report is built; the frozen batch is about 5 days of runs, not started), LR.30 (isolation

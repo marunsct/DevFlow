@@ -185,6 +185,14 @@ _WORKER_STARTED = time.time()
 
 
 @worker_ready.connect
+def _keep_the_main_worker_private(**_kwargs) -> None:
+    """The main worker process too: it holds the same environment (`process_privacy`)."""
+    from app.server.process_privacy import keep_private
+
+    keep_private()
+
+
+@worker_ready.connect
 def _forget_the_calls_of_a_previous_worker(**_kwargs) -> None:
     """Drop in-flight markers a dead worker left, so a deploy does not wait on them. See `call_gate`."""
     try:
@@ -462,7 +470,10 @@ def _sweep_for_abandoned_runs() -> None:
 
 @worker_process_init.connect
 def _init_worker_process(**_kwargs) -> None:
-    """Build the per-process runner once, after fork."""
+    """Build the per-process runner once, after fork; marked private first (`process_privacy`)."""
+    from app.server.process_privacy import keep_private
+
+    keep_private()
     global _runner
 
     # This process makes every model call, so it is where a proxy origin error

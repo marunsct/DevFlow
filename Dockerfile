@@ -212,9 +212,12 @@ USER root
 COPY --from=python-builder /opt/venv /opt/venv
 
 WORKDIR /app
-COPY --chown=appuser:appuser src/ ./src/
-COPY --chown=appuser:appuser pyproject.toml ./
-COPY --from=frontend-builder --chown=appuser:appuser /app/langchain-ui/dist /app/langchain-ui/dist
+# The harness's own code and the UI are root's and read-only to `appuser` (LR.30): agent-run commands run as
+# `appuser` in in-container mode, and one that could rewrite `src/` changed what the harness itself runs next.
+COPY src/ ./src/
+COPY pyproject.toml ./
+COPY --from=frontend-builder /app/langchain-ui/dist /app/langchain-ui/dist
+RUN chmod -R a+rX,go-w /app/src /app/langchain-ui/dist /app/pyproject.toml
 
 
 RUN mkdir -p /app/data/uploads /app/data/workspaces && chown -R appuser:appuser /app/data

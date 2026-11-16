@@ -217,7 +217,8 @@ _RELEASE_OPTIONS = ["release", _FIX_THE_CRITERIA, _FIX_THE_HANDOFF]
 
 #: Said of an escalated sprint whose tests the release's run of the locked suite passes in full.
 PASSES_AT_RELEASE = "every locked test passes at release"
-_AN_UNFINISHED_SPRINT = re.compile(r"^Sprint '.*' was re-planned \d+ times and still could not be accepted", re.S)
+_AN_UNFINISHED_SPRINT = re.compile(
+    r"^Sprint '.*' was (?:re-planned \d+ times?|planned once) and still could not be accepted", re.S)
 
 
 def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:

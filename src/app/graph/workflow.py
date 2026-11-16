@@ -1252,6 +1252,16 @@ def _in_parallel_mode() -> bool:
             return False
 
 
+def an_unfinished_sprint(goal: str, replans: int, why: str, report: str) -> str:
+    """The escalation's words for a sprint that could not be accepted, with the re-plans it really had (LR.53).
+
+    It said "re-planned 3 times" - the limit - whatever the count: 105 scored results carried it, many after a sprint
+    settled or stopped on its first attempt.
+    """
+    tried = "was planned once" if replans <= 0 else f"was re-planned {replans} time{'s' if replans != 1 else ''}"
+    return f"Sprint '{goal}' {tried} and still could not be accepted: {why}.\n\n{report}"
+
+
 def _fixes_run_side_by_side() -> bool:
     """Whether defects are fixed in batches: parallel mode, with more than one agent allowed."""
     return max_parallel() > 1 and _in_parallel_mode()
@@ -11631,11 +11641,8 @@ def build_workflow_graph(
             # clears it, because the next attempt needs a fresh one.
             return _escalate_to_a_human(
                 state,
-                error=(
-                    f"Sprint '{getattr(cycle, 'sprint_goal', '?')}' was re-planned "
-                    f"{MAX_MILESTONE_REVISIONS} times and still could not be "
-                    f"accepted: {why}.\n\n{build_defect_report(cycle)}"
-                ),
+                error=an_unfinished_sprint(getattr(cycle, "sprint_goal", "?"), state.get("sprint_replan_count", 0),
+                                           why, build_defect_report(cycle)),
                 **{**base_update, **summary},
             )
         summary = _record_sprint_summary(state, "Failed", why)

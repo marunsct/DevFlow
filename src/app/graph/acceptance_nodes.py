@@ -2059,6 +2059,19 @@ ONE_CAUSE_MARK = "acceptance tests across"
 _ANY_STATUS = re.compile(r"assert ([1-5]\d\d) (?:==|in|!=)")
 
 
+#: A browser or request runner's failed "answered well" check and the status it got (`toBeOK()` ... `<- 500 ...`).
+_NOT_OK = re.compile(r"toBeOK\(\) failed.*?\u2190\s*([45]\d\d)\b", re.S)
+
+
+def _the_wrong_answer(message: str) -> str:
+    """The status a failed test got where it expected another, or ""."""
+    if (m := _A_REFUSAL.search(message)) and m.group(1) != m.group(2):
+        return m.group(1)
+    if m := _NOT_OK.search(message):
+        return m.group(1)
+    return ""
+
+
 def one_refusal_for_all(failing: list[dict]) -> tuple[str, int] | None:
     """(the status, how many tests) when nearly every failing test was refused the same way; None otherwise.
 
@@ -2070,15 +2083,20 @@ def one_refusal_for_all(failing: list[dict]) -> tuple[str, int] | None:
         tests = [t for entry in failing for t in (entry.get("tests") or []) if t.get("outcome") == "failed"]
         if len(failing) < 3 or not tests:
             return None
-        # The answer each test got where it wanted another (`assert 422 == 201`): the same wrong answer everywhere.
-        codes = [m.group(1) for t in tests if (m := _A_REFUSAL.search(str(t.get("message") or ""))) and m.group(1) != m.group(2)]
+        # The answer each test got where it wanted another (`assert 422 == 201`, or a browser runner's `toBeOK()`
+        # failing on `<- 500 ...`): the same wrong answer everywhere.
+        codes = [code for t in tests if (code := _the_wrong_answer(str(t.get("message") or "")))]
         if not codes:
             return None
         code = max(set(codes), key=codes.count)
         # Another status anywhere is another cause; a failure with none (a body read after a refused call: `KeyError:
         # 'id'`, measured beside 401s on one run) is the refusal's symptom.
-        others = [t for t in tests if (m := _ANY_STATUS.search(str(t.get("message") or ""))) and m.group(1) != code]
-        if others or codes.count(code) < 3 or codes.count(code) * 2 < len(tests):
+        others = [t for t in tests if (seen := _the_wrong_answer(str(t.get("message") or "")) or
+                                       ((m := _ANY_STATUS.search(str(t.get("message") or ""))) and m.group(1))) and seen != code]
+        # Half the failed tests for a client error; a third for a server error, which breaks what every later step
+        # reads (measured: every write answered 500 and the page tests, finding nothing saved, outnumbered them).
+        share = 3 if code.startswith("5") else 2
+        if others or codes.count(code) < 3 or codes.count(code) * share < len(tests):
             return None
         return code, len(tests)
     except Exception:  # noqa: BLE001 - each criterion keeps its own defect

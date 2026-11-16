@@ -49,3 +49,20 @@ def test_the_round_raises_it_alone_and_its_words_ban_the_product_s_nouns():
     assert "return [*installs, *defects]" in source[at:at + 2200]
     words = source[at:at + 2200]
     assert not BANNED.search(re.sub(r"#.*", "", words))
+
+
+def test_a_browser_runner_s_failed_ok_check_is_read_too():
+    # Measured on one run: every write answered `500 {"detail":"Database write failed"}`; the page tests failed after,
+    # finding nothing saved.
+    not_ok = "Error: expect(response).toBeOK() failed\n\n    Call log:\n    \u2192 POST /api/x\n    \u2190 500 Internal Server Error\n"
+    page = "Error: expect(locator).toBeVisible() failed\n    Locator: getByRole('link')"
+    assert nodes.one_refusal_for_all(_failing([not_ok] * 4 + [page] * 3)) == ("500", 7)
+
+
+def test_a_server_error_on_every_write_groups_with_fewer_of_the_failures():
+    not_ok = "Error: expect(response).toBeOK() failed\n    \u2190 500 Internal Server Error\n"
+    page = "Error: expect(locator).toBeVisible() failed"
+    assert nodes.one_refusal_for_all(_failing([not_ok] * 4 + [page] * 8)) == ("500", 12)
+    # A client error needs half.
+    refused = "Error: expect(response).toBeOK() failed\n    \u2190 404 Not Found\n"
+    assert nodes.one_refusal_for_all(_failing([refused] * 4 + [page] * 8)) is None

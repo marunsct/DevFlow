@@ -541,6 +541,18 @@ def _where_dependencies_go(project: str, record: dict[str, Any]) -> str:
     return "Declare every package the code imports in the project's manifest, in the same change that imports it."
 
 
+#: Products that answer requests from more than one client, which may arrive at the same moment.
+KINDS_THAT_SERVE = frozenset({"http_api", "fullstack"})
+#: What a service that stores data must do when two requests write at once (LR.25 follow-up). Measured: the quality
+#: sets found products that lost or merged records written at the same moment - 20 of 67 runs of one family, and the
+#: first scored run of another - and three of four benchmark references did the same, while every hidden test passed.
+WRITES_AT_ONCE = (
+    "- Requests can arrive at the same moment: each write must be kept whole. A store read, changed and written back "
+    "(a file of records, a counter for the next id) is changed by one request at a time - a lock around the read and "
+    "the write, or a database's own transaction - and a request reads the store after its body has arrived, not before."
+)
+
+
 def describe(repo_root: str | Path | None) -> str:
     """The contract as a block for every stage that writes code or tests."""
     found = the_pack(repo_root)
@@ -568,5 +580,7 @@ def describe(repo_root: str | Path | None) -> str:
         "harness's server and hung for five minutes. "
         + _where_dependencies_go(project, record)
         + " Everything else in the project is yours.\n"
-        f"{pack.filled(pack.guide, project, record.get('title') or project, record.get('package'))}\n\n"
+        f"{pack.filled(pack.guide, project, record.get('title') or project, record.get('package'))}\n"
+        + (f"{WRITES_AT_ONCE}\n" if pack.kind in KINDS_THAT_SERVE else "")
+        + "\n"
     )

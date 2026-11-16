@@ -39,6 +39,13 @@ def decide(root: str, defects: Any, *, replans: int, best_history: Any) -> Decis
                 else "every acceptance test due passes and only the unit tests fail")
         return Decision(SETTLE, said, list(best_history or ()), put_back)
     history = stalled_sprint.record(root, best_history)
+    # Planned again once already and still near green (LR.53, `NEAR_GREEN_REPLANNED_ONCE`): measured, later re-plans
+    # of a near-green sprint beat the best in 4 of 27 cases, at about 34 minutes each.
+    from app.graph import near_green_once
+
+    if near_green_once.applies(root, replans):
+        return Decision(STOP, f"{near_green_once.SAID}: it was planned again once and is still near green",
+                        history, put_back)
     if stalled_sprint.stalled(history):
         return Decision(STOP, f"the last {stalled_sprint.AFTER_FLAT_ATTEMPTS} attempts did not beat the best product",
                         history, put_back)

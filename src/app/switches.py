@@ -168,7 +168,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
                          "REASONING_KEPT_AFTER_AN_ANSWER"),
     # Fewer calls on mutation findings: time, not what the run proves.
     "Efficiency": ("EQUIVALENT_MUTANTS_REMEMBERED", "MUTANT_CHECK_IN_THE_FIX_STAGE", "REVIEWS_WITHOUT_REASONING",
-                   "HARNESS_FINDINGS_RECHECKED"),
+                   "HARNESS_FINDINGS_RECHECKED", "NEAR_GREEN_REPLANNED_ONCE"),
     # What a stack's setup stage may write (docs/measuring.md M6): measured off and on before it is kept.
     "Setup scope": ("SETUP_SCOPE_GUARD",),
     # Which review findings may send a sprint back (docs/measuring.md M7).
@@ -182,7 +182,11 @@ EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)
 #: 9 with it on shipped no failing unit test, and 3 of the 8 with it off shipped 2, 10 and 10 (quality before cost,
 #: owner 2026-11-05). Its cost stays bounded: it covers only the first attempt at a failing unit test.
 TAKEN_OFF_FOR_COST: frozenset[str] = frozenset()
-EXPERIMENTS_ON: dict[str, str] = {}
+EXPERIMENTS_ON: dict[str, str] = {
+    "NEAR_GREEN_REPLANNED_ONCE": "measured over 175 past re-plans (LR.53): later re-plans of a near-green sprint beat the "
+                                 "best in 4 of 27 cases at about 34 minutes each, 21 of 22 such runs scored every hidden "
+                                 "test; on, and kept only if live runs lose no hidden test by it (docs/measuring.md M14)",
+}
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}
 
 

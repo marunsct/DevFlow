@@ -180,6 +180,9 @@ def create_app(
     application.include_router(progress_router, prefix="/api/runs", tags=["progress"])
     application.include_router(settings_router)
     application.include_router(lessons_router)
+    from app.server.users_api import users_router
+
+    application.include_router(users_router)
 
     _mount_metrics(application)
 

@@ -1,3 +1,4 @@
+import { Account } from './pages/Account';
 import { NotFound } from './pages/NotFound';
 import { DevUI } from './pages/DevUI';
 import { adoptServerPreferences } from './lib/appearance';
@@ -111,6 +112,7 @@ function App() {
             <Route path="runs/:runId" element={<RunDashboard />} />
             <Route path="settings" element={<Settings />} />
             <Route path="admin" element={<Admin />} />
+            <Route path="account" element={<Account />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

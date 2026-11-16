@@ -923,6 +923,45 @@
     "title": "ModelSummary",
     "type": "object"
    },
+   "NewUser": {
+    "properties": {
+     "password": {
+      "anyOf": [
+       {
+        "maxLength": 512,
+        "minLength": 12,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Password"
+     },
+     "role": {
+      "default": "operator",
+      "enum": [
+       "admin",
+       "operator",
+       "viewer"
+      ],
+      "title": "Role",
+      "type": "string"
+     },
+     "username": {
+      "maxLength": 64,
+      "minLength": 2,
+      "pattern": "^[A-Za-z0-9._-]+$",
+      "title": "Username",
+      "type": "string"
+     }
+    },
+    "required": [
+     "username"
+    ],
+    "title": "NewUser",
+    "type": "object"
+   },
    "OwnerRating": {
     "additionalProperties": false,
     "description": "A rating as kept: who gave it and when.",
@@ -983,6 +1022,28 @@
      "score"
     ],
     "title": "OwnerRatingRequest",
+    "type": "object"
+   },
+   "PasswordChange": {
+    "properties": {
+     "current_password": {
+      "maxLength": 512,
+      "minLength": 1,
+      "title": "Current Password",
+      "type": "string"
+     },
+     "new_password": {
+      "maxLength": 512,
+      "minLength": 12,
+      "title": "New Password",
+      "type": "string"
+     }
+    },
+    "required": [
+     "current_password",
+     "new_password"
+    ],
+    "title": "PasswordChange",
     "type": "object"
    },
    "Preferences": {
@@ -3279,6 +3340,39 @@
     "title": "User",
     "type": "object"
    },
+   "UserChange": {
+    "properties": {
+     "disabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Disabled"
+     },
+     "role": {
+      "anyOf": [
+       {
+        "enum": [
+         "admin",
+         "operator",
+         "viewer"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Role"
+     }
+    },
+    "title": "UserChange",
+    "type": "object"
+   },
    "ValidationError": {
     "properties": {
      "ctx": {
@@ -3935,6 +4029,57 @@
     "summary": "Update My Preferences",
     "tags": [
      "auth"
+    ]
+   }
+  },
+  "/api/auth/password": {
+   "post": {
+    "description": "Change the signed-in person's own password, given the current one.",
+    "operationId": "change_password_api_auth_password_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PasswordChange"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": {
+          "type": "string"
+         },
+         "title": "Response Change Password Api Auth Password Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Change Password",
+    "tags": [
+     "users"
     ]
    }
   },
@@ -7462,6 +7607,149 @@
     "summary": "Set Switch",
     "tags": [
      "settings"
+    ]
+   }
+  },
+  "/api/users": {
+   "get": {
+    "description": "The users of the administrator's tenant.",
+    "operationId": "list_users_api_users_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "title": "Response List Users Api Users Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "List Users",
+    "tags": [
+     "users"
+    ]
+   },
+   "post": {
+    "description": "Add a user to the administrator's tenant; a password is generated and shown once when none is given.",
+    "operationId": "add_user_api_users_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NewUser"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": {
+          "type": "string"
+         },
+         "title": "Response Add User Api Users Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Add User",
+    "tags": [
+     "users"
+    ]
+   }
+  },
+  "/api/users/{username}": {
+   "patch": {
+    "description": "Change a user's role, or disable or enable them; an administrator never disables or demotes themself.",
+    "operationId": "change_user_api_users__username__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "username",
+      "required": true,
+      "schema": {
+       "title": "Username",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UserChange"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": {
+          "type": "string"
+         },
+         "title": "Response Change User Api Users  Username  Patch",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Change User",
+    "tags": [
+     "users"
     ]
    }
   },

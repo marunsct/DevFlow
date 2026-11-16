@@ -205,6 +205,12 @@ export interface ModelSummary {
   model: string;
 }
 
+export interface NewUser {
+  password?: string | null;
+  role?: "admin" | "operator" | "viewer";
+  username: string;
+}
+
 /** A rating as kept: who gave it and when. */
 export interface OwnerRating {
   /** One line on the product, optional. */
@@ -223,6 +229,11 @@ export interface OwnerRatingRequest {
   note?: string;
   /** 1 (unusable) to 5 (would hand it over as it is). */
   score: number;
+}
+
+export interface PasswordChange {
+  current_password: string;
+  new_password: string;
 }
 
 /** The owner's appearance and run defaults. Every field is optional: a patch changes only what it names. */
@@ -748,6 +759,11 @@ export interface User {
   role: string;
   tenant_id: string;
   username: string;
+}
+
+export interface UserChange {
+  disabled?: boolean | null;
+  role?: "admin" | "operator" | "viewer" | null;
 }
 
 export interface ValidationError {

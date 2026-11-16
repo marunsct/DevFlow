@@ -222,17 +222,21 @@ def _live_task_ids() -> set[str] | None:
 
         inspector = celery_app.control.inspect(timeout=5)
         live: set[str] = set()
-        seen_a_worker = False
+        workers: set[str] | None = None
         for probe in (inspector.active, inspector.reserved, inspector.scheduled):
-            replies = probe() or {}
-            if replies:
-                seen_a_worker = True
+            replies = probe()
+            # Every question answered, by the same workers (LR.1): measured, under a load spike the active list timed
+            # out while the reserved one came back empty, a run whose task was still running was taken for abandoned
+            # and resumed, and two tasks wrote it at once. One answer missing is "cannot tell", as no answer is.
+            if not replies or (workers is not None and set(replies) != workers):
+                return None
+            workers = set(replies)
             for entries in replies.values():
                 for entry in entries or []:
                     task_id = entry.get("id") or (entry.get("request") or {}).get("id")
                     if task_id:
                         live.add(task_id)
-        return live if seen_a_worker else None
+        return live
     except Exception as exc:  # noqa: BLE001 - unreachable broker must not repair anything
         print(f"Could not ask the broker which tasks are alive: {exc}")
         return None

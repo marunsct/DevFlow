@@ -53,6 +53,15 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   gone" and resumed a running run (two tasks on one run for 17 min; the second held the last worker slot, so the
   run started on :8888 never began). LF.972 - a deploy's boundary pause lost with a killed app worker is asked again.
   The load spike (load average about 2,700 at 00:45-01:00 JST) has no known cause; watch for a repeat.
+- Found on the language sweep (Go, Rust, Java, C#, PHP, Ruby, one run each) and fixed, each deployed:
+  LF.978 a false `npm test` blocker on non-Node stacks; LF.979 unit tests that do not compile now named, not taken
+  for passing; LF.980 Python writes checked by Pyright as they land (13 reverts in one run); LF.981 a pack's
+  scaffold opens its toolchain (a C# run refused `dotnet`); LF.983 a doubled compiler path; LF.984 suite writers
+  told kept files are tested by what they do (seen working in the next run); LF.986 routes probed with an id that
+  is not a number (a 500 only a quality test found); LF.989 a product that listens but fails every request is
+  told so, not "did not start". Records: LF.976 real re-plan counts, LF.982, LF.987. Scorer: LF.985, LF.988.
+- Sweep scores: every language 9/9 hidden; quality 7/8-8/8 but C# 6/8. Recurring product defects the harness does not
+  yet catch: writes made at once lost (several families) - next: pack storage guidance and a concurrent-write probe.
 - In part: LR.20 (the report is built; the frozen batch is about 5 days of runs, not started), LR.30 (isolation
   built; container mode fits Node and Python stacks only - each pack needs its own image, see the review doc), LR.52, and LR.53 (cause grouping; a green suite settles; a near-green
   sprint is planned again once - LF.977, measured on 175 past re-plans; open: a repair back to the round), LR.54 (four contradictions removed).

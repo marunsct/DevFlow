@@ -3959,6 +3959,37 @@
  },
  "openapi": "3.1.0",
  "paths": {
+  "/api/auth/logout": {
+   "post": {
+    "description": "End every session of the signed-in person, this one included (LR.36).",
+    "operationId": "sign_out_everywhere_api_auth_logout_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": {
+          "type": "string"
+         },
+         "title": "Response Sign Out Everywhere Api Auth Logout Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Sign Out Everywhere",
+    "tags": [
+     "auth"
+    ]
+   }
+  },
   "/api/auth/me": {
    "get": {
     "operationId": "read_users_me_api_auth_me_get",

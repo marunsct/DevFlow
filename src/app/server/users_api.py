@@ -56,8 +56,12 @@ async def change_password(body: PasswordChange, user: UserInDB = Depends(get_cur
     if not verify_password(body.current_password, user.hashed_password):
         raise HTTPException(status_code=403, detail="The current password is not right.")
     _set_password(user.username, body.new_password)
+    # Every session made with the old password ends, this one too (LR.36): sign in again with the new one.
+    from app.server.auth import end_every_session
+
+    end_every_session(user.username)
     record_audit(actor=user.username, tenant_id=user.tenant_id, action="user.password_change", subject=user.username)
-    return {"message": "Password changed."}
+    return {"message": "Password changed; sign in again with the new one."}
 
 
 @users_router.get("/api/users")
@@ -101,6 +105,10 @@ async def change_user(username: str, body: UserChange, admin: UserInDB = Depends
             if body.disabled is not None:
                 cur.execute("UPDATE users SET disabled = %s WHERE username = %s AND tenant_id = %s",
                             (body.disabled, username, admin.tenant_id))
+            if body.disabled or body.role is not None:
+                # A disabled or re-roled person's tokens end at once, not when they expire (LR.36).
+                cur.execute("UPDATE users SET token_version = COALESCE(token_version, 0) + 1 "
+                            "WHERE username = %s AND tenant_id = %s", (username, admin.tenant_id))
             if cur.rowcount == 0:
                 raise HTTPException(status_code=404, detail=f"No user named {username}.")
         conn.commit()

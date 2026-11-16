@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import { endSession } from '../lib/session';
 
 type Person = { username: string; role: string; disabled: boolean };
 
 /** Your account, and - for an administrator - everyone's (LR.36). Accounts were made only from the command line. */
 export function Account() {
+  const navigate = useNavigate();
   const [current, setCurrent] = useState('');
   const [fresh, setFresh] = useState('');
   const [said, setSaid] = useState('');
@@ -19,7 +22,9 @@ export function Account() {
   const change = async () => {
     try {
       await api.post('/auth/password', { current_password: current, new_password: fresh });
-      setSaid('Password changed.'); setCurrent(''); setFresh('');
+      // Every session ends with the old password (LR.36): sign in again with the new one.
+      endSession();
+      navigate('/login');
     } catch (err: any) {
       setSaid(err.response?.status === 422 ? 'The new password needs at least 12 characters.' : err.response?.data?.detail ?? 'Could not change it.');
     }
@@ -50,6 +55,8 @@ export function Account() {
           <button onClick={change} disabled={!current || !fresh} className="rounded-lg border border-primary/40 px-3 py-1.5 text-sm text-primary disabled:opacity-50">Change it</button>
         </div>
         {said && <p className="mt-2 text-sm text-text-secondary" role="status">{said}</p>}
+        <button onClick={async () => { await api.post('/auth/logout').catch(() => undefined); endSession(); navigate('/login'); }}
+          className="mt-3 text-xs text-text-secondary underline">Sign out everywhere</button>
       </section>
       {people && (
         <section data-testid="people">

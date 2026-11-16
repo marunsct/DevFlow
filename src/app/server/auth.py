@@ -193,6 +193,8 @@ def init_db():
             c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'")
             # The owner's appearance (theme, accent, density), kept per user so it follows them across devices.
             c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences TEXT NOT NULL DEFAULT '{}'")
+            # Raised to end every session a person has (LR.36): a token carries the version it was made at.
+            c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0")
             # A database created before roles existed has an 'admin' account that
             # the ADD COLUMN default would silently demote to 'operator',
             # locking every administrative action out of an upgraded install.
@@ -327,6 +329,7 @@ class Preferences(BaseModel):
 
 class UserInDB(User):
     hashed_password: str
+    token_version: int = 0
 
 
 class RefreshRequest(BaseModel):
@@ -338,7 +341,7 @@ def get_user(username: str) -> Optional[UserInDB]:
         with conn.cursor(cursor_factory=RealDictCursor) as c:
             c.execute(
                 "SELECT username, hashed_password, disabled, role, tenant_id, "
-                "COALESCE(preferences, '{}') AS preferences "
+                "COALESCE(preferences, '{}') AS preferences, COALESCE(token_version, 0) AS token_version "
                 "FROM users WHERE username = %s",
                 (username,),
             )
@@ -350,6 +353,7 @@ def get_user(username: str) -> Optional[UserInDB]:
                     disabled=bool(row["disabled"]),
                     role=row.get("role") or "operator",
                     tenant_id=row.get("tenant_id") or "default",
+                    token_version=int(row.get("token_version") or 0),
                     preferences=_read_preferences(row.get("preferences")),
                 )
     return None
@@ -386,6 +390,22 @@ def create_refresh_token(data: dict) -> str:
     return _create_token(data, timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS), "refresh")
 
 
+def token_version_of(token: str) -> int:
+    """The session version a token was made at (0 for one made before versions); -1 when it does not verify."""
+    try:
+        return int(jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("ver") or 0)
+    except (jwt.PyJWTError, TypeError, ValueError):
+        return -1
+
+
+def end_every_session(username: str) -> None:
+    """Every token issued to `username` so far stops working (LR.36): their version is raised."""
+    with get_db_connection() as conn:
+        with conn.cursor() as c:
+            c.execute("UPDATE users SET token_version = COALESCE(token_version, 0) + 1 WHERE username = %s", (username,))
+        conn.commit()
+
+
 def _decode(token: str, expected_type: str = "access") -> Optional[str]:
     """Return the subject of a valid token of the expected type, else None.
 
@@ -413,7 +433,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserInDB:
     if username is None:
         raise credentials_exception
     user = get_user(username)
-    if user is None:
+    # A token from before the person's sessions were ended - a password change, a sign-out everywhere - is refused.
+    if user is None or token_version_of(token) != user.token_version:
         raise credentials_exception
     return user
 
@@ -487,14 +508,14 @@ async def login_for_access_token(
         raise unauthorized
 
     clear_login_attempts(form_data.username, client_ip)
-    claims = {"sub": user.username, "role": user.role, "tenant": user.tenant_id}
+    claims = {"sub": user.username, "role": user.role, "tenant": user.tenant_id, "ver": user.token_version}
     record_audit(
         actor=user.username, tenant_id=user.tenant_id, action="auth.login",
         outcome="success", detail={"client_ip": client_ip},
     )
     return {
         "access_token": create_access_token(claims),
-        "refresh_token": create_refresh_token({"sub": user.username}),
+        "refresh_token": create_refresh_token({"sub": user.username, "ver": user.token_version}),
         "token_type": "bearer",
         "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     }
@@ -506,15 +527,23 @@ async def refresh_access_token(body: RefreshRequest):
     if username is None:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
     user = get_user(username)
-    if user is None or user.disabled:
+    if user is None or user.disabled or token_version_of(body.refresh_token) != user.token_version:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
-    claims = {"sub": user.username, "role": user.role, "tenant": user.tenant_id}
+    claims = {"sub": user.username, "role": user.role, "tenant": user.tenant_id, "ver": user.token_version}
     return {
         "access_token": create_access_token(claims),
-        "refresh_token": create_refresh_token({"sub": user.username}),
+        "refresh_token": create_refresh_token({"sub": user.username, "ver": user.token_version}),
         "token_type": "bearer",
         "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     }
+
+
+@auth_router.post("/api/auth/logout", tags=["auth"])
+async def sign_out_everywhere(current_user: "UserInDB" = Depends(get_current_active_user)) -> dict[str, str]:
+    """End every session of the signed-in person, this one included (LR.36)."""
+    end_every_session(current_user.username)
+    record_audit(actor=current_user.username, tenant_id=current_user.tenant_id, action="auth.logout_everywhere")
+    return {"message": "Signed out everywhere."}
 
 
 @auth_router.get("/api/auth/me", response_model=User, tags=["auth"])

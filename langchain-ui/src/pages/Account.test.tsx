@@ -8,12 +8,13 @@ const { api } = vi.hoisted(() => ({ api: {
   patch: vi.fn(async () => ({ data: {} })),
 } }));
 vi.mock('../api', () => ({ api }));
+import { MemoryRouter } from 'react-router-dom';
 import { Account } from './Account';
 
 // LR.36: accounts were made and passwords reset only from the command line.
 describe('the account page', () => {
   it('changes your own password with the current one', async () => {
-    render(<Account />);
+    render(<MemoryRouter><Account /></MemoryRouter>);
     await userEvent.type(screen.getByLabelText('Current password'), 'first-one-123');
     await userEvent.type(screen.getByLabelText('New password'), 'second-one-1234');
     await userEvent.click(screen.getByText('Change it'));
@@ -21,7 +22,7 @@ describe('the account page', () => {
   });
 
   it('lets an administrator add a person and shows their password once', async () => {
-    render(<Account />);
+    render(<MemoryRouter><Account /></MemoryRouter>);
     expect(await screen.findByTestId('people')).toBeTruthy();
     await userEvent.type(screen.getByLabelText("New person's name"), 'sam');
     await userEvent.click(screen.getByText('Add'));

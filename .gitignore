@@ -46,3 +46,6 @@ run-fd891220-3fb2-4959-a511-f42c29f957ad.jsonl
 /context/
 /workspaces/
 /uploads/
+
+# This machine's own compose additions (owner 2026-11-16)
+docker-compose.override.yml

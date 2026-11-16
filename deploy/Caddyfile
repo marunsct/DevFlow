@@ -1,0 +1,13 @@
+# The TLS front of a production deployment (docker-compose.prod.yml, LR.11). Set SITE_ADDRESS to the host name people
+# use; Caddy gets and renews its certificate. For a machine with no public name, `SITE_ADDRESS=:443` with `tls internal`
+# below serves a certificate from Caddy's own authority, which browsers must be told to trust once.
+{$SITE_ADDRESS:localhost} {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self' wss:; frame-ancestors 'none'"
+	}
+	reverse_proxy app:8000
+}

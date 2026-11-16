@@ -41,6 +41,18 @@ SANDBOX_EXECUTION_MODE=container   # each command in its own container (needs th
 
 `in-container` runs commands in the worker itself: use it only on a machine where you are the only user.
 
+## Running it for other people
+
+`docker compose up` as above is for one person on their own machine. To serve it to others:
+
+```sh
+SITE_ADDRESS=devflow.example.com docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+This runs in production mode (missing or published secrets stop the server; the API pages are off) and puts the app
+behind Caddy on ports 80 and 443 with TLS and security headers; the app itself is no longer published. Keep machine-only
+changes (an extra port, a volume) in `docker-compose.override.yml`, which Compose reads automatically and git ignores.
+
 ## Your first run
 
 1. On **Home**, write the brief: what the product does, its features as a list, and - if you know them - its

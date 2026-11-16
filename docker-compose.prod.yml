@@ -1,0 +1,32 @@
+# Production: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` (LR.11, launch review).
+# The development setup the loop uses is unchanged; this file only adds to it:
+# - ENV=production, so missing or published secrets stop the server instead of being generated, and the API pages and
+#   unguarded metrics are off;
+# - the app is no longer published on the host - only Caddy, on 80 and 443, with TLS and security headers.
+x-production: &production
+  ENV: production
+
+services:
+  app:
+    environment: *production
+    ports: !reset []
+  worker:
+    environment: *production
+  proxy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: "${SITE_ADDRESS:-localhost}"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

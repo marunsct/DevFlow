@@ -80,3 +80,11 @@ def test_each_build_is_kept_under_its_commit_and_a_rollback_retags_it():
     deploy = deploy[:deploy.index("compose_up.sh")]
     assert 'docker tag "langchain-worker:${built:0:12}" langchain-worker:latest' in deploy
     assert '"$0" deploy "${2:?usage: loop.sh rollback <commit>}"' in loop
+
+
+def test_backups_are_copied_off_the_data_disk_and_kept_seven_daily_and_four_weekly():
+    loop = (ROOT / "scripts" / "loop" / "loop.sh").read_text()
+    backup = loop[loop.index("\nbackup)"):]
+    backup = backup[:backup.index("\n  ;;")]
+    assert '"$BACKUP_DIR/daily/"' in backup and "head -n -7" in backup and "head -n -4" in backup
+    assert 'if [ -f "$STATE/ops.env" ]' in loop

@@ -80,6 +80,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HERE="$ROOT/scripts/loop"
 STATE="$ROOT/data/loop"
+# This machine's operating settings (BACKUP_DIR, RETENTION_DAYS), not in git; a value set in the environment wins.
+if [ -f "$STATE/ops.env" ]; then
+  while IFS='=' read -r key value; do
+    case "$key" in ''|\#*) continue ;; esac
+    [ -z "${!key:-}" ] && export "$key=$value"
+  done < "$STATE/ops.env"
+fi
 API="${LOOP_API:-http://localhost:8000}"
 PY="$ROOT/.venv/bin/python"
 [ -x "$PY" ] || PY=python3
@@ -695,6 +702,18 @@ backup)
   # Three days kept.
   ls -1d data/backups/*/ 2>/dev/null | sort | head -n -3 | xargs -r rm -rf
   echo "backup -> $dir ($(du -sh "$dir" | cut -f1))"
+  # A copy off the disk the database lives on (LR.61): one disk lost both the database and its backups. Seven daily
+  # copies and four weekly ones (Sundays) kept there.
+  if [ -n "${BACKUP_DIR:-}" ]; then
+    if mkdir -p "$BACKUP_DIR/daily" "$BACKUP_DIR/weekly" 2>/dev/null && cp -r "$dir" "$BACKUP_DIR/daily/" ; then
+      [ "$(date +%u)" = 7 ] && cp -r "$dir" "$BACKUP_DIR/weekly/"
+      ls -1d "$BACKUP_DIR"/daily/*/ 2>/dev/null | sort | head -n -7 | xargs -r rm -rf
+      ls -1d "$BACKUP_DIR"/weekly/*/ 2>/dev/null | sort | head -n -4 | xargs -r rm -rf
+      echo "backup copied -> $BACKUP_DIR/daily/$(basename "$dir")"
+    else
+      echo "BACKUP COPY FAILED: $BACKUP_DIR is not writable; the backup stays only on the data disk" >&2
+    fi
+  fi
   ;;
 restore)
   # Into a database of its own, never over the live one (plan OP.3):

@@ -43,7 +43,7 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   run started on :8888 never began). LF.972 - a deploy's boundary pause lost with a killed app worker is asked again.
   The load spike (load average about 2,700 at 00:45-01:00 JST) has no known cause; watch for a repeat.
 - In part: LR.20 (the report is built; the frozen batch is about 5 days of runs, not started), LR.30 (isolation
-  built; a whole run in container mode not yet tried), LR.52, and LR.53 (cause grouping; a green suite settles; a near-green
+  built; container mode fits Node and Python stacks only - each pack needs its own image, see the review doc), LR.52, and LR.53 (cause grouping; a green suite settles; a near-green
   sprint is planned again once - LF.977, measured on 175 past re-plans; open: a repair back to the round), LR.54 (four contradictions removed).
 - Not done, and why: LR.42 (scale the process to the brief), LR.46 (narrow rules behind the pack interface),
   LR.50 (lift nodes out of `build_workflow_graph`) - each a week-sized redesign that needs measured runs before and

@@ -95,6 +95,8 @@ one deploy per bundle. Effort: S under a day, M a few days, L a week or more.
 | LR.39 | Address pinning restricted to saved model profiles; private-address checks pinned to the resolved address; lessons kept per tenant; uploads bound to their run; rate limiter keyed on the verified user | S-M each |
 | LR.40 | Per-run resource limits (processes, CPU, disk); installs without lifecycle scripts where the stack allows; image digests and `.dockerignore`; untrack the virtualenv in `.langchain/` | S-M each |
 
+**LR.30 finding (11-17 02:00 JST, before any whole run in container mode):** container mode picks a command's image by its executable alone (`sandbox._image_for`: node, python, go and cargo images, else `debian:12-slim`). A stack whose acceptance suite is run by Node (Playwright) while its product needs another toolchain cannot pass there: the suite's `webServer` runs `start.sh` (e.g. `cargo build`) inside the Playwright image, and unit runners such as `cargo nextest` are not in the plain toolchain images; Java, .NET, PHP and Ruby commands fall to an image with no toolchain. Fix (design, about a week with one run per pack): each stack pack names one sandbox image holding its toolchain, its test runners, Node and the browsers, built from the pack and pinned by digest; `_image_for` takes the pack's image first. Until then container mode is fit for Node and Python stacks only, and the multi-user launch it gates waits on it.
+
 ### Phase 5 - does it generalise (three to four weeks, mostly runs)
 
 | Id | Item | Effort |

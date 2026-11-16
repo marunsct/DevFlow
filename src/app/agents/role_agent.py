@@ -504,7 +504,8 @@ _WRITING_RULES = (
     "  relocate  `move_artifact`      rename or move, bytes unchanged\n"
     "- To revise a file, read the relevant file with `read_file`, then edit with\n"
     "  `edit_artifact` or `replace_lines`. For files under 400 lines, read the\n"
-    "  entire file in one `read_file` call. Never rewrite it from memory,\n"
+    "  entire file in one `read_file` call, with `limit` set past its last line\n"
+    "  (the tool returns 100 lines unless asked for more). Never rewrite it from memory,\n"
     "  and never save a revision under a new name (`spec_v2.md`): two versions\n"
     "  contradict each other.\n"
     "- You already have permission to write; approval is handled outside this\n"
@@ -545,10 +546,12 @@ _READ_ONLY_RULES = (
     "  document from it. Do not look for a write tool, and do not report that one\n"
     "  is missing - nothing is missing.\n"
     "- Do not call tools to edit or write files. They are not offered and will fail.\n"
-    "  Any code or verification changes must be delegated or reported in your\n"
-    "  structured response.\n"
+    "  A change to code or to its tests that you find is needed goes in your\n"
+    "  structured response, for the stage that writes it.\n"
     "- You may read anything in the workspace with `ls`, `read_file`, `glob` and\n"
-    "  `grep`, and reading widely before you answer is the whole of your job.\n"
+    "  `grep`. Read what your answer rests on - the files the request names or\n"
+    "  points at, and what they lead to; a file the project memory below already\n"
+    "  holds whole is not worth reading again.\n"
 )
 
 

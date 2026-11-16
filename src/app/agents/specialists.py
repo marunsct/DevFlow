@@ -88,9 +88,10 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
         "Running the tests that check your work is how you prove it, and the "
         "way to fix a failing test is to change the interface it checks. "
         "Return your structured response when the application code is complete. "
-        "CRITICAL: Do NOT remove, disable, or 'separate' core application logic or "
-        "UI logic in order to make testing easier or to satisfy headless test framework "
-        "errors. The UI logic must be fully functional."
+        "CRITICAL: Do NOT remove or disable core application logic or UI logic, or stub "
+        "it out, to make testing easier or to satisfy headless test framework errors. The UI "
+        "logic must be fully functional. Keeping pure logic in its own functions, called by "
+        "the entry point that does the I/O, is not removing it: the product still runs it."
     ),
     "database": (
         "You are the Database specialist. You MUST write complete, executable "
@@ -125,7 +126,7 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
         "different test runner: one the stack did not choose fails on its own "
         "setup rather than on the product. If the stack names none, verify with "
         "the runner that ships with the stack's language. "
-        "CRITICAL: Do NOT remove, disable, or 'separate' core application logic or "
+        "CRITICAL: Do NOT remove, disable or stub out core application logic or "
         "UI logic to satisfy test environment limitations (e.g. headless test errors "
         "or a missing display). You must test the real UI logic end-to-end, "
         "through the real interface, with the driver the stack's own guidance "

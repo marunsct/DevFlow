@@ -14,7 +14,9 @@ from tests.test_prompt_names_only_offered_tools import rendered  # noqa: F401 - 
 
 #: Characters, today's size plus about 5%. Lower one when a prompt shrinks.
 CEILINGS = {
-    "specialist": 13_400,
+    # 13,500 since the core-logic rule says keeping pure logic in its own functions is not removing it (LF.967): it
+    # contradicted the testability rule.
+    "specialist": 13_500,
     # + the rule that the product ships every route, so none is added only for the tests (LF.757): a fixer added an
     # unauthenticated route that deletes every record, for a test's clean-up.
     # + the rule that a comparison rule also says how its values are shown (LF.780): two runs printed "The 3" where a
@@ -38,9 +40,12 @@ CEILINGS = {
     # 5,300 since a kind of input is tested with more than one member (a false acceptance: tabs never tested).
     # 5,700 since a mode whose output replaces another's is tested for the other's absence (LF.845): two false
     # acceptances of one brief, each a test that looked only for the mode's own part.
-    "acceptance_reviewer": 5_700,
+    # 5,750 since a read-only role is told where a needed change goes and what is worth reading (LF.967): it was told to
+    # delegate with no tool for it, and that reading widely was its whole job.
+    "acceptance_reviewer": 5_750,
 }
-OTHERWISE = 4_200
+# 4,300 for the same read-only wording (LF.967).
+OTHERWISE = 4_300
 
 
 def _ceiling(name: str) -> int:

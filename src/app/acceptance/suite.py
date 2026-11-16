@@ -5682,7 +5682,11 @@ def tests_whose_expected_text_breaks_their_own_length(repo_root: str | Path, res
 
 
 #: A failure that is the service refusing a record it already holds: `assert 409 == 201`, `409 Conflict`.
-_ALREADY_HELD = re.compile(r"\b409\b")
+# A 409 the service answered, not any 409 in the message (a line number, a timestamp): measured on one run, a page
+# that stores in the browser, with no service, was read as answering 409 and its suite was reopened for it.
+_ALREADY_HELD = re.compile(r"assert 409\b|Received:\s*409\b|\b409 Conflict\b|status(?:_code)?\W+409\b|\u2190\s*409\b", re.I)
+#: A call that finds something on the page by what a person sees: its argument is a label, not a value a test makes.
+_A_LOCATOR_CALL = re.compile(r"(?:getBy\w+|locator|filter|hasText|has_text|get_by_\w+)\s*$")
 #: A quoted value handed to a call: `signup(base_url, "alice", "secret")`, `create({ name: 'Docs' })`.
 _A_VALUE_IN_A_CALL = re.compile(r"""\(\s*(?:[^()'"]*?,\s*)?(?P<q>['"])(?P<value>[A-Za-z][\w.@-]{1,40})(?P=q)""")
 #: The service answered a refusal of what was presented (the credentials did not match) - received, not expected.
@@ -5694,6 +5698,13 @@ _EXPECTED_NONE_GOT_SOME = re.compile(r"assert \[.+\] == \[\]|Left contains \d+ m
 #: The value a call makes and the quoted value handed with it: `signup(base_url, "alice", "secret123")`.
 _A_VALUE_WITH_THE_NEXT = re.compile(
     r"""\(\s*(?:[^()'"]*?,\s*)?(?P<q>['"])(?P<value>[A-Za-z][\w.@-]{1,40})(?P=q)\s*,\s*(?P<r>['"])(?P<next>[^'"\n]{1,60})(?P=r)""")
+
+
+def _values_made_in(body: str) -> set[str]:
+    """The quoted values a test hands to calls, without a locator's argument (`getByLabel('Title')`): a label every
+    test of a page finds the same control by is not a record they share."""
+    return {m.group("value") for m in _A_VALUE_IN_A_CALL.finditer(body)
+            if not _A_LOCATOR_CALL.search(body[max(0, m.start() - 30):m.start()])}
 
 
 def _made_differently_elsewhere(name: str, value: str, bodies: dict[str, str]) -> bool:
@@ -5720,7 +5731,7 @@ def tests_that_make_what_other_tests_make(repo_root: str | Path, result: Accepta
                    or _EXPECTED_NONE_GOT_SOME.search(message) for message in failing.values()):
             return []
         bodies = _test_bodies(repo_root)
-        made_in = {name: {m.group("value") for m in _A_VALUE_IN_A_CALL.finditer(body)} for name, body in bodies.items()}
+        made_in = {name: _values_made_in(body) for name, body in bodies.items()}
         findings = []
         for name, body in sorted(bodies.items()):
             message = next((m for test, m in failing.items() if test == name or test.endswith(name) or name in test), None)

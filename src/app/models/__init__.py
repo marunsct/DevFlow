@@ -939,9 +939,15 @@ def with_the_reasoning_carried(messages: list[Any], dicts: list[dict]) -> None:
     from langchain_core.messages import AIMessage
 
     since = 0
+    from app.models.reasoning_kept import reasoning_kept_switch
+
+    # LR.52, behind REASONING_KEPT_AFTER_AN_ANSWER (off until measured): found in the launch review, an answer ended the
+    # stretch the reasoning belongs to, so every earlier tool-calling reply lost its carried reasoning at once and the
+    # prompt changed from there on - the largest cause of uncached input, under calls the prefix check called
+    # "stable". Kept, a message never changes once sent; it costs the reasoning's tokens, read from the cache.
     for index, message in enumerate(messages):
         # An answer ends the stretch the reasoning belongs to.
-        if isinstance(message, AIMessage) and not message.tool_calls:
+        if isinstance(message, AIMessage) and not message.tool_calls and not reasoning_kept_switch.enabled():
             since = index + 1
     for index in range(since, min(len(messages), len(dicts))):
         message = messages[index]

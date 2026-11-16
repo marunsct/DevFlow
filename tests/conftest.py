@@ -49,6 +49,11 @@ def _the_built_in_fixes_at_their_code_default(monkeypatch):
     """
     from app.switches import BUILT_IN
 
+    # LR.24: `HARNESS_TEST_PRODUCTION_DEFAULTS=1` runs the suite with every built-in fix on, as the product ships, so
+    # the combination that ships is tested too (`loop.sh suite-production`), not only each fix against all others off.
+    if os.environ.get("HARNESS_TEST_PRODUCTION_DEFAULTS") == "1":
+        yield
+        return
     for name in BUILT_IN:
         if name not in os.environ:
             monkeypatch.setenv(name, "off")

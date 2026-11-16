@@ -51,3 +51,12 @@ def test_the_suite_checks_the_ui_s_types_too():
     suite_part = loop[loop.index("\nsuite)"):]
     suite_part = suite_part[:suite_part.index("\n  ;;")]
     assert "npx tsc -b" in suite_part and "FAILED UI types" in suite_part
+
+
+def test_the_suite_runs_as_the_product_ships_on_request():
+    loop = (ROOT / "scripts" / "loop" / "loop.sh").read_text()
+    part = loop[loop.index("\nsuite-production)"):]
+    part = part[:part.index("\n  ;;")]
+    assert "HARNESS_TEST_PRODUCTION_DEFAULTS=1" in part and "production_defaults_expected.txt" in part
+    conftest = (ROOT / "tests" / "conftest.py").read_text()
+    assert 'os.environ.get("HARNESS_TEST_PRODUCTION_DEFAULTS") == "1"' in conftest

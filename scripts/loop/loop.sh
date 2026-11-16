@@ -636,6 +636,19 @@ build)
   fi
   echo "built ${built:0:7} in $(( $(date +%s) - started ))s"
   ;;
+suite-production)
+  # The suite as the product ships (LR.24): every built-in fix on together, which `suite` never runs (its tests turn
+  # each fix on alone). Fails on a failure not in tests/production_defaults_expected.txt, the triage baseline.
+  log="$STATE/suite-production.log"
+  workers=""; "$PY" -c "import xdist" 2>/dev/null && workers="-n ${SUITE_WORKERS:-12}"
+  PATH="$ROOT/.venv/bin:$PATH" ENV=development HARNESS_TEST_PRODUCTION_DEFAULTS=1 timeout 900 "$PY" -m pytest tests/ -q \
+      --no-cov -p no:cacheprovider $workers > "$log" 2>&1 || true
+  tail -1 "$log"
+  new=$(grep -E "^(FAILED|ERROR) " "$log" | sed -E 's/^(FAILED|ERROR) //; s/ - .*//' | sort -u \
+        | grep -vxF -f <(grep -v '^#' "$ROOT/tests/production_defaults_expected.txt") || true)
+  if [ -n "$new" ]; then echo "$new" | sed 's/^/NEW with production defaults: /'; exit 1; fi
+  echo "production defaults: no failure beyond the $(grep -vc '^#' "$ROOT/tests/production_defaults_expected.txt") known"
+  ;;
 freshness) "$PY" "$HERE/pack_freshness.py" ;;
 lessons) shift; in_worker lessons.py "${@:-3}" ;;
 backup)

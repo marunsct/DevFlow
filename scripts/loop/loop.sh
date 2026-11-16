@@ -697,8 +697,17 @@ nightly)
     echo "$(jst '+%F %H:%M JST') nightly: removed $freed model-server log file(s) from $logs" | tee -a "$STATE/nightly.log"
   fi
   "$PY" "$HERE/disk_ready.py" | tee -a "$STATE/nightly.log" || true
-  # The backup next, live run or not: it reads the database and touches nothing else.
+  # The backup next, live run or not: it reads the database and touches nothing else; then the restore check, which
+  # nothing ran (LR.61: a backup never restored is a hope).
   "$0" backup | tee -a "$STATE/nightly.log"
+  "$0" backup --check 2>&1 | tail -2 | sed "s/^/$(jst '+%F %H:%M JST') nightly restore check: /" | tee -a "$STATE/nightly.log" || true
+  # Old runs' checkpoints and workspaces (LR.60): reported every night; removed only when RETENTION_DAYS is set, since
+  # a workspace is the evidence a run's review reads and a removal cannot be undone.
+  if [ -n "${RETENTION_DAYS:-}" ]; then keep="--delete"; else keep=""; fi
+  for what in checkpoints workspaces; do
+    docker exec langchain-worker-1 python -m app.server.manage "$what" --older-than-days "${RETENTION_DAYS:-30}" $keep 2>&1 \
+      | tail -2 | sed "s/^/$(jst '+%F %H:%M JST') nightly $what: /" | tee -a "$STATE/nightly.log" || true
+  done
   # Not beside two live runs: scaffolding the packs competes for their memory and CPU. Beside one it runs - it uses a
   # scratch workspace and no model - since skipping whenever any run was live skipped 15 of 18 nights (HR2.O.3).
   live=$("${DB[@]}" "select count(*) from runs where status in ('running','queued','pending')")

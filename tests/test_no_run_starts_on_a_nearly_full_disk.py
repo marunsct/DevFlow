@@ -60,3 +60,12 @@ def test_the_suite_runs_as_the_product_ships_on_request():
     assert "HARNESS_TEST_PRODUCTION_DEFAULTS=1" in part and "production_defaults_expected.txt" in part
     conftest = (ROOT / "tests" / "conftest.py").read_text()
     assert 'os.environ.get("HARNESS_TEST_PRODUCTION_DEFAULTS") == "1"' in conftest
+
+
+def test_the_nightly_checks_its_backup_and_reports_old_runs_removing_them_only_when_asked():
+    loop = (ROOT / "scripts" / "loop" / "loop.sh").read_text()
+    nightly = loop[loop.index("\nnightly)"):]
+    nightly = nightly[:nightly.index("\n  ;;")]
+    assert '"$0" backup --check' in nightly
+    assert 'if [ -n "${RETENTION_DAYS:-}" ]; then keep="--delete"; else keep=""; fi' in nightly
+    assert "manage \"$what\" --older-than-days" in nightly

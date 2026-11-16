@@ -242,21 +242,59 @@ def brief_pairing(own_brief: str) -> dict:
     return found
 
 
-def _the_quality_set(bench: Path, work: Path, runner: str, env: dict, notes: list[str]) -> list[dict] | None:
+def _playwright(work: Path, specs: Path, report: Path, kind: str, target: Path, data_dir: Path,
+                notes: list[str]) -> subprocess.CompletedProcess:
+    """Run the playwright specs in `specs` against the product, served fresh on a port of its own."""
+    home = _node_runner()
+    port = _free_port()
+    if kind == "browser_app":
+        served = _browser_root(target, notes)
+        server = f"{sys.executable} -m http.server {port} --bind 127.0.0.1 --directory {served}"
+    else:
+        if not (target / "start.sh").is_file() and "no start.sh: the brief requires one" not in notes:
+            notes.append("no start.sh: the brief requires one")
+        server = f"cd {target} && PORT={port} DATA_DIR={data_dir} sh start.sh"
+    config = work / f"playwright-{specs.name}.config.mjs"
+    config.write_text(
+        "export default {\n"
+        f"  testDir: {json.dumps(str(specs))},\n"
+        "  timeout: 30000, workers: 1, retries: 0,\n"
+        f"  reporter: [['list'], ['junit', {{ outputFile: {json.dumps(str(report))} }}]],\n"
+        f"  outputDir: {json.dumps(str(work / ('results-' + specs.name)))},\n"
+        f"  use: {{ baseURL: 'http://127.0.0.1:{port}' }},\n"
+        f"  webServer: {{ command: {json.dumps(server)}, url: 'http://127.0.0.1:{port}/', "
+        "reuseExistingServer: false, timeout: 60000, ignoreHTTPSErrors: true },\n"
+        "};\n"
+    )
+    # The specs import @playwright/test from the runner's install.
+    (specs / "node_modules").symlink_to(home / "node_modules")
+    return _run(["npx", "playwright", "test", "-c", str(config)], home, timeout=1200)
+
+
+def _the_quality_set(bench: Path, work: Path, runner: str, env: dict, notes: list[str],
+                     kind: str = "") -> list[dict] | None:
     """The benchmark's quality tests (`<bench>/quality`), run beside the hidden ones; None when it has none.
 
     The hidden tests check that the product does what the brief says; on a
     benchmark every run now passes, they no longer tell one product from a
     better one. The quality set holds the same brief to its edges.
     """
-    if not (bench / "quality").is_dir() or runner == "playwright":
+    if not (bench / "quality").is_dir():
         return None
     shutil.copytree(bench / "quality", work / "quality")
-    if not (work / "quality" / "conftest.py").exists() and (bench / "hidden" / "conftest.py").exists():
-        shutil.copy(bench / "hidden" / "conftest.py", work / "quality" / "conftest.py")
     report = work / "quality.xml"
     data = work / "quality-data"
     data.mkdir(exist_ok=True)
+    if runner == "playwright":
+        # A browser product's edges, against a server of its own with fresh data (LR.25): before, the scorer
+        # skipped every playwright quality set, so the browser families had none.
+        ran = _playwright(work, work / "quality", report, kind, work / "product", data, notes)
+        found = _junit(report)
+        if not found:
+            notes.append("the quality tests produced no report: " + (ran.stdout + ran.stderr)[-800:])
+        return found
+    if not (work / "quality" / "conftest.py").exists() and (bench / "hidden" / "conftest.py").exists():
+        shutil.copy(bench / "hidden" / "conftest.py", work / "quality" / "conftest.py")
     ran = _run([str(_python_runner()), "-m", "pytest", str(work / "quality"), "-q", f"--junitxml={report}",
                 "-p", "no:cacheprovider"], work, {**env, "DATA_DIR": str(data)}, timeout=1200)
     found = _junit(report)
@@ -281,30 +319,7 @@ def score(
     data_dir.mkdir(parents=True)
 
     if runner == "playwright":
-        home = _node_runner()
-        port = _free_port()
-        if kind == "browser_app":
-            served = _browser_root(target, notes)
-            server = f"{sys.executable} -m http.server {port} --bind 127.0.0.1 --directory {served}"
-        else:
-            if not (target / "start.sh").is_file():
-                notes.append("no start.sh: the brief requires one")
-            server = f"cd {target} && PORT={port} DATA_DIR={data_dir} sh start.sh"
-        config = work / "playwright.config.mjs"
-        config.write_text(
-            "export default {\n"
-            f"  testDir: {json.dumps(str(work / 'hidden'))},\n"
-            "  timeout: 30000, workers: 1, retries: 0,\n"
-            f"  reporter: [['list'], ['junit', {{ outputFile: {json.dumps(str(report))} }}]],\n"
-            f"  outputDir: {json.dumps(str(work / 'results'))},\n"
-            f"  use: {{ baseURL: 'http://127.0.0.1:{port}' }},\n"
-            f"  webServer: {{ command: {json.dumps(server)}, url: 'http://127.0.0.1:{port}/', "
-            "reuseExistingServer: false, timeout: 60000, ignoreHTTPSErrors: true },\n"
-            "};\n"
-        )
-        # Hidden specs import @playwright/test from the runner's install.
-        (work / "hidden" / "node_modules").symlink_to(home / "node_modules")
-        ran = _run(["npx", "playwright", "test", "-c", str(config)], home, timeout=1200)
+        ran = _playwright(work, work / "hidden", report, kind, target, data_dir, notes)
     else:
         python = _python_runner()
         env = {
@@ -318,7 +333,7 @@ def score(
     tests = _junit(report)
     if not tests:
         notes.append("the hidden tests produced no report: " + (ran.stdout + ran.stderr)[-1500:])
-    quality = _the_quality_set(bench, work, runner, env if runner != "playwright" else {}, notes)
+    quality = _the_quality_set(bench, work, runner, env if runner != "playwright" else {}, notes, kind)
     passed = sum(t["outcome"] == "passed" for t in tests)
     total = len(tests) or int(spec.get("tests", 0))
     result = {

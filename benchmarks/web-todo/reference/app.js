@@ -1,5 +1,7 @@
 const KEY = 'tasks';
-let tasks = JSON.parse(localStorage.getItem(KEY) || '[]');
+let tasks;
+try { tasks = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { tasks = []; }
+if (!Array.isArray(tasks)) tasks = [];
 let filter = 'all';
 let editing = null;
 const save = () => localStorage.setItem(KEY, JSON.stringify(tasks));

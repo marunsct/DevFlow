@@ -2,12 +2,14 @@
 import json
 import os
 import re
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DATA = Path(os.environ.get("DATA_DIR", "data"))
 FILE = DATA / "bookmarks.json"
+LOCK = threading.Lock()
 
 
 def load():
@@ -47,27 +49,32 @@ class Handler(BaseHTTPRequestHandler):
         try:
             b = json.loads(raw or b"{}")
         except ValueError:
-            b = {}
-        title, url = str(b.get("title") or "").strip(), str(b.get("url") or "")
+            return self._send(400, {"error": "not JSON"})
+        fields = [b.get(name, "") for name in ("title", "url", "tag")] if isinstance(b, dict) else [None]
+        if not all(isinstance(value, str) for value in fields):
+            return self._send(422, {"error": "invalid"})
+        title, url, tag = (value.strip() for value in fields)
         if not title or not re.match(r"^https?://", url):
             return self._send(422, {"error": "invalid"})
-        db = load()
-        item = {"id": db["next"], "title": title, "url": url, "tag": str(b.get("tag") or "").strip()}
-        db["next"] += 1
-        db["items"].append(item)
-        store(db)
+        with LOCK:
+            db = load()
+            item = {"id": db["next"], "title": title, "url": url, "tag": tag}
+            db["next"] += 1
+            db["items"].append(item)
+            store(db)
         self._send(201, item)
 
     def do_DELETE(self):
         found = re.match(r"^/api/bookmarks/(\d+)$", self.path)
         if not found:
             return self._send(404, {"error": "not found"})
-        db = load()
-        kept = [i for i in db["items"] if i["id"] != int(found.group(1))]
-        if len(kept) == len(db["items"]):
-            return self._send(404, {"error": "not found"})
-        db["items"] = kept
-        store(db)
+        with LOCK:
+            db = load()
+            kept = [i for i in db["items"] if i["id"] != int(found.group(1))]
+            if len(kept) == len(db["items"]):
+                return self._send(404, {"error": "not found"})
+            db["items"] = kept
+            store(db)
         self._send(204)
 
 

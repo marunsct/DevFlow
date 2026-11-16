@@ -23,11 +23,14 @@ http.createServer((req, res) => {
     let raw = '';
     req.on('data', (c) => { raw += c; });
     return req.on('end', () => {
-      let b = {};
-      try { b = JSON.parse(raw || '{}'); } catch { b = {}; }
-      if (!String(b.title || '').trim() || !/^https?:\/\//.test(String(b.url || ''))) return send(res, 422, { error: 'invalid' });
+      let b;
+      try { b = JSON.parse(raw || '{}'); } catch { return send(res, 400, { error: 'not JSON' }); }
+      const fields = b && typeof b === 'object' && !Array.isArray(b) ? [b.title ?? '', b.url ?? '', b.tag ?? ''] : [null];
+      if (!fields.every((value) => typeof value === 'string')) return send(res, 422, { error: 'invalid' });
+      const [title, url, tag] = fields.map((value) => value.trim());
+      if (!title || !/^https?:\/\//.test(url)) return send(res, 422, { error: 'invalid' });
       const db = load();
-      const item = { id: db.next++, title: b.title.trim(), url: b.url, tag: String(b.tag || '').trim() };
+      const item = { id: db.next++, title, url, tag };
       db.items.push(item); store(db); send(res, 201, item);
     });
   }

@@ -81,8 +81,10 @@ def _sent(messages) -> _Request:
     return sent[0]
 
 
-def test_without_thinking_the_tool_is_withheld() -> None:
+def test_without_thinking_the_tool_is_withheld(monkeypatch) -> None:
     """Thinking stays off for the rest of a visit that lost two replies."""
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     lost = AIMessage(content="", response_metadata={"finish_reason": "length"})
     request = _sent([SimpleNamespace(type="human", content="Fix it."), lost, *_call(90, {"file_path": "x"}), lost, *_repeats(3)])
 
@@ -98,9 +100,11 @@ def test_with_thinking_on_the_ordinary_rungs_decide() -> None:
     assert [tool.name for tool in request.tools] == ["read_file", "edit_artifact"]
 
 
-def test_with_thinking_on_a_call_answered_the_same_four_times_running_is_withheld() -> None:
+def test_with_thinking_on_a_call_answered_the_same_four_times_running_is_withheld(monkeypatch) -> None:
     # Measured on one run: one install command twelve times in a row, each answered
     # "Requirement already satisfied", with thinking on.
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     from app.agents.settled_answer import SAME_CALL_SAME_ANSWER_RUNNING, _the_same_call_answered_the_same
 
     def install(n: int, took: str) -> list[object]:

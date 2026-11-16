@@ -56,7 +56,9 @@ def _captured(messages, tools=None):
     return request.captured
 
 
-def test_nothing_new_from_the_last_calls_leaves_only_the_answer():
+def test_nothing_new_from_the_last_calls_leaves_only_the_answer(monkeypatch):
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     captured = _captured(_stage([NEW] + [SAME] * NOTHING_NEW_BEFORE_THE_ANSWER))
 
     assert captured.get("tools") == []
@@ -75,8 +77,10 @@ def test_one_tool_repeating_is_left_to_the_repeat_rung():
     assert captured.get("tools") != []
 
 
-def test_a_withheld_tool_called_again_and_again_leaves_only_the_answer():
+def test_a_withheld_tool_called_again_and_again_leaves_only_the_answer(monkeypatch):
     """A 1-bit build model sent one withheld query 23 more times; each call still ran."""
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     again = IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL + WITHHELD_CALLS_BEFORE_THE_ANSWER
     looking = [SimpleNamespace(name=name) for name in ("glob", "ls", "read_file", "changed_since_sprint")]
     captured = _captured(_stage([SAME] * again, tools=("glob",)), looking)
@@ -86,7 +90,9 @@ def test_a_withheld_tool_called_again_and_again_leaves_only_the_answer():
     assert "`glob`" in str(captured["messages"][-1])
 
 
-def test_a_stage_that_also_writes_keeps_only_its_writers():
+def test_a_stage_that_also_writes_keeps_only_its_writers(monkeypatch):
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     again = IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL + WITHHELD_CALLS_BEFORE_THE_ANSWER
     tools = [SimpleNamespace(name=name) for name in ("glob", "read_file", "edit_artifact")]
     captured = _captured(_stage([SAME] * again, tools=("glob",)), tools)
@@ -100,8 +106,10 @@ def test_one_call_of_a_withheld_tool_is_not_yet_the_end():
     assert captured.get("tools") != []
 
 
-def test_invalid_tool_errors_repeated_leave_only_the_answer():
+def test_invalid_tool_errors_repeated_leave_only_the_answer(monkeypatch):
     """An unoffered tool returning 'is not a valid tool' yields nothing new; five in a row leaves only the answer."""
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     invalid1 = "Error: edit_file is not a valid tool, try one of [glob, ls, read_file]."
     invalid2 = "Error: SearchReplace is not a valid tool, try one of [glob, ls, read_file]."
     results = [NEW] + [invalid1 if i % 2 == 0 else invalid2 for i in range(NOTHING_NEW_BEFORE_THE_ANSWER)]
@@ -113,9 +121,11 @@ def test_invalid_tool_errors_repeated_leave_only_the_answer():
 
 
 
-def test_a_stalled_stage_that_writes_keeps_its_writers_and_is_told_to_write():
+def test_a_stalled_stage_that_writes_keeps_its_writers_and_is_told_to_write(monkeypatch):
     """Fix stages stalled on reads the memory already held lost their writers too, and
     could only answer - each claimed changes it never made."""
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     import re
 
     from app.agents.settled_answer import _STALLED_WITH_WRITERS_NOTICE

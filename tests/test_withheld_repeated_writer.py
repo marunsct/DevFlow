@@ -30,10 +30,12 @@ class _Request:
         return other
 
 
-def test_withheld_repeated_writer_is_not_restored_when_looking_tools_withheld():
+def test_withheld_repeated_writer_is_not_restored_when_looking_tools_withheld(monkeypatch):
     """When a writer tool repeats past threshold and ignored is True, the withheld tool
     must NOT be restored back into kept tools by the ignored branch.
     """
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     tools = [
         _Tool("read_file"),
         _Tool("grep"),

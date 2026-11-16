@@ -70,7 +70,9 @@ def test_what_does_not_fit_is_named_and_a_named_file_comes_first(workspace):
     assert "notes-api/src/store.ts" in memory.split("Not included here")[1]
 
 
-def test_each_call_gets_it_and_a_read_of_what_it_holds_is_a_pointer(workspace):
+def test_each_call_gets_it_and_a_read_of_what_it_holds_is_a_pointer(workspace, monkeypatch):
+    # FIRST_REREAD_ANSWERED off: with it on, the first re-read of a held file gets its lines, not the pointer.
+    monkeypatch.setenv("FIRST_REREAD_ANSWERED", "off")
     middleware = project_memory.build_project_memory_middleware(str(workspace))
     seen = []
 
@@ -125,8 +127,10 @@ def test_a_read_with_the_path_middleware_s_default_limit_is_a_pointer_too(worksp
     assert middleware.wrap_tool_call(part, lambda request: "a window") == "a window"
 
 
-def test_a_window_of_a_held_file_is_a_pointer_and_of_any_other_file_is_read(workspace):
+def test_a_window_of_a_held_file_is_a_pointer_and_of_any_other_file_is_read(workspace, monkeypatch):
     """A third of all reads were windows (`offset`); each went to disk for lines already in the conversation."""
+    # FIRST_REREAD_ANSWERED off: with it on, the first re-read of a held file gets its lines, not the pointer.
+    monkeypatch.setenv("FIRST_REREAD_ANSWERED", "off")
     (workspace / "docs" / "huge.md").write_text("x" * (project_memory.LARGEST_FILE_CHARACTERS + 10))
     middleware = project_memory.build_project_memory_middleware(str(workspace))
 

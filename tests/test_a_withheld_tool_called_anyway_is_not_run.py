@@ -29,7 +29,9 @@ class _Request:
         return _Request(changes.get("messages", self.messages), changes.get("tools", self.tools))
 
 
-def test_a_withheld_tool_is_refused_and_an_offered_one_runs():
+def test_a_withheld_tool_is_refused_and_an_offered_one_runs(monkeypatch):
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     messages: list = [HumanMessage(content="plan")]
     for n in range(IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL):
         messages.append(AIMessage(content="", id=f"a{n}", tool_calls=[{"name": "glob", "args": {"pattern": "*"}, "id": f"c{n}"}]))

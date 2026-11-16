@@ -57,7 +57,9 @@ def _kept(messages):
     return {t.name for t in request.captured.get("tools", request.tools)}
 
 
-def test_reads_held_back_as_repeats_take_the_read_tool_away():
+def test_reads_held_back_as_repeats_take_the_read_tool_away(monkeypatch):
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     kept = _kept(_held_back(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL))
 
     assert "read_file" not in kept

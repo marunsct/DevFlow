@@ -67,8 +67,10 @@ def test_a_fresh_attempt_is_handed_what_the_last_one_looked_up():
     assert "look_up_package npm hono -> package: hono, version: 1.0.0" in note
 
 
-def test_a_lookup_the_stage_has_used_its_share_of_is_no_longer_offered():
+def test_a_lookup_the_stage_has_used_its_share_of_is_no_longer_offered(monkeypatch):
     """Told it had had its share, a specification stage asked again eight times, a frontier turn each."""
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     from types import SimpleNamespace
 
     from app.agents.stage_memory import remembering

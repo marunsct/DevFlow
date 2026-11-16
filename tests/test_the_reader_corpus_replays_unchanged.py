@@ -53,10 +53,16 @@ def test_a_reader_whose_result_changed_is_named_and_accepted_only_on_purpose(tmp
     assert reader_corpus.sizes(tmp_path)["file_plan"] == 1
 
 
-def test_the_corpus_the_runs_left_replays_unchanged():
+def test_the_corpus_the_runs_left_replays_unchanged(monkeypatch):
     # The real corpus, harvested after each run (`loop.sh corpus harvest`); absent
     # on a fresh checkout. A failure names the samples a reader change altered:
     # look at each, then `loop.sh corpus accept` if the new reading is the right one.
+    # Read as the product reads: the harvest runs in the worker, where every built-in fix is on, so the replay has
+    # them on too (LR.24 found it replaying with them off, against samples a built-in reader had recorded).
+    from app.switches import BUILT_IN
+
+    for name in BUILT_IN:
+        monkeypatch.delenv(name, raising=False)
     corpus = ROOT / "data" / "corpus"
     if not any(corpus.glob("*/*.json")):
         pytest.skip("no corpus harvested on this host yet")

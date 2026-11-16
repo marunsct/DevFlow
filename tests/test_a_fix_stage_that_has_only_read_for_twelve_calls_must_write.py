@@ -68,6 +68,8 @@ def _names(captured):
 
 
 def test_twelve_calls_without_a_write_take_the_looking_tools_and_say_why(monkeypatch):
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     captured = _call(_reads(CALLS_BEFORE_A_FIX_MUST_WRITE), monkeypatch)
 
     assert _names(captured) == {"edit_artifact", "write_artifact", "run_terminal_command"}

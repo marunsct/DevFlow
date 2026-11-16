@@ -58,7 +58,9 @@ class _Request:
         return self
 
 
-def test_one_tool_asked_one_thing_after_another_with_nothing_new_leaves_the_answer():
+def test_one_tool_asked_one_thing_after_another_with_nothing_new_leaves_the_answer(monkeypatch):
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     note = "Sprint {n} has not been accepted in this run. Accepted so far: none. There is nothing to compare against."
     messages: list = [HumanMessage(content="plan the sprint")]
     for n in range(1, NOTHING_NEW_BEFORE_THE_ANSWER + 1):

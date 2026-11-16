@@ -33,8 +33,10 @@ def test_another_framework_on_the_same_runtime_gets_no_pack(framework):
     "Hono 4 served by @hono/node-server 2, bound to 127.0.0.1:$PORT",
     "Hono HTTP framework on Node.js",
 ])
-def test_hono_on_node_is_hono_s_pack_and_not_express_s(framework):
+def test_hono_on_node_is_hono_s_pack_and_not_express_s(framework, monkeypatch):
     """The stack named Hono served by @hono/node-server: the Express pack must not take it, the Hono one does."""
+    # HONO_NATIVE_TEST_RUNNER off: with it on, Hono takes that switch's arm of its pack, node-hono-native-api.
+    monkeypatch.setenv("HONO_NATIVE_TEST_RUNNER", "off")
     assert choose_pack(_stack("TypeScript on Node.js >= 20", framework), "").name == "node-hono-api"
 
 

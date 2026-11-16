@@ -93,6 +93,8 @@ def test_a_second_spiral_in_the_same_visit_keeps_the_tools_and_thinking_stays_of
 
 
 def test_where_thinking_cannot_be_switched_off_the_tools_are_withheld(monkeypatch) -> None:
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     monkeypatch.setattr(thinking, "answering_without_reasoning", lambda model: {})
     sent = _sent([*_ASKED, _spiral()])
 

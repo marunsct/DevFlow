@@ -48,6 +48,8 @@ def test_twelve_gained_and_one_unit_test_broken_stays(monkeypatch):
 
 
 def test_one_gained_for_one_broken_is_reverted_as_before(monkeypatch):
+    # UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE off: with it on, a locked test gained keeps a fix that broke only unit tests.
+    monkeypatch.setenv("UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE", "off")
     reverted = []
     _measure(monkeypatch, *_snapshots(1), reverted)
 
@@ -85,6 +87,8 @@ def test_a_fix_that_stops_the_product_starting_is_reverted_whatever_it_gained(mo
 
 
 def test_it_is_a_switch_and_off_the_fix_is_reverted_as_before(monkeypatch):
+    # UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE off: with it on, a locked test gained keeps a fix that broke only unit tests.
+    monkeypatch.setenv("UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE", "off")
     monkeypatch.setenv("KEEP_NET_GAINS", "off")
     reverted = []
     _measure(monkeypatch, *_snapshots(12), reverted)

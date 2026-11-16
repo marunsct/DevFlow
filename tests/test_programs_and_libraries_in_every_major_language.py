@@ -122,9 +122,11 @@ def test_a_framework_no_pack_knows_gets_no_pack_rather_than_another_s(language, 
 
 
 @pytest.mark.parametrize("framework", ["Hono", "Hono (web framework)", "Hono 4"])
-def test_hono_in_typescript_gets_its_own_pack_not_nest_s(framework):
+def test_hono_in_typescript_gets_its_own_pack_not_nest_s(framework, monkeypatch):
     """Measured: with no Hono pack the setup agent (a small model) invented a test API that does not exist
     (`createTestClient` in `hono/testing`) and the run could not run its acceptance suite."""
+    # HONO_NATIVE_TEST_RUNNER off: with it on, Hono takes that switch's arm of its pack, node-hono-native-api.
+    monkeypatch.setenv("HONO_NATIVE_TEST_RUNNER", "off")
     assert choose_pack(_stack("TypeScript", framework), "A small HTTP service API").name == "node-hono-api"
 
 

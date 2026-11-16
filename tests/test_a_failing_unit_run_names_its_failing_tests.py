@@ -75,8 +75,10 @@ def test_a_run_the_harness_cannot_make_says_why(tmp_path) -> None:
     assert passed is False and "the sandbox is not available" in output
 
 
-def test_a_run_the_sandbox_answers_as_text_passes(tmp_path) -> None:
+def test_a_run_the_sandbox_answers_as_text_passes(tmp_path, monkeypatch) -> None:
     """The sandbox gives the exit code as text; every harness round had said the unit tests failed."""
+    # MEASURE_ONCE off: the product does not change between these runs, so that fix would reuse the first.
+    monkeypatch.setenv("MEASURE_ONCE", "off")
     _project(tmp_path)
 
     with patch("app.stacks.scaffold.sandbox_runner",

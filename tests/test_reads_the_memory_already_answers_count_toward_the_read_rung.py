@@ -33,7 +33,9 @@ def _cycles(pointers: int) -> list:
     return messages
 
 
-def test_enough_pointers_take_the_read_tool_away() -> None:
+def test_enough_pointers_take_the_read_tool_away(monkeypatch) -> None:
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     kept = _names(_call(_cycles(POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL)))
 
     assert "read_file" not in kept and "read_repository_file" not in kept

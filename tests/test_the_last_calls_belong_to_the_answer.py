@@ -66,15 +66,19 @@ def _call_the_middleware(messages, tools=None, limit=MODEL_CALLS_PER_STAGE):
     return request.captured
 
 
-def test_the_tools_are_withheld_on_the_last_calls() -> None:
+def test_the_tools_are_withheld_on_the_last_calls(monkeypatch) -> None:
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     captured = _call_the_middleware(_conversation(MODEL_CALLS_PER_STAGE - 1))
 
     assert captured.get("tools") == []
     assert TOOLS_WITHHELD_NOTICE in str(captured["messages"][-1])
 
 
-def test_the_reserve_is_more_than_one_call() -> None:
+def test_the_reserve_is_more_than_one_call(monkeypatch) -> None:
     """A model that has just lost its tools may spend a call saying so."""
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     assert CALLS_RESERVED_FOR_THE_ANSWER >= 2
 
     first_of_the_reserve = MODEL_CALLS_PER_STAGE - CALLS_RESERVED_FOR_THE_ANSWER
@@ -100,9 +104,11 @@ def test_an_answer_already_written_leaves_the_tools_alone() -> None:
     assert "tools" not in _call_the_middleware(messages)
 
 
-def test_the_schema_errors_still_travel_with_the_notice() -> None:
+def test_the_schema_errors_still_travel_with_the_notice(monkeypatch) -> None:
     """The model is being asked to answer; it should know why its last attempt
     was refused."""
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     messages = _conversation(MODEL_CALLS_PER_STAGE - 1, last_content='{"status": "ok"}')
 
     captured = _call_the_middleware(messages)
@@ -124,7 +130,7 @@ def test_the_notice_says_what_was_done_not_what_is_wanted() -> None:
     assert "no file left to read" in TOOLS_WITHHELD_NOTICE
 
 
-def test_the_real_graph_leaves_exactly_one_tool_bound() -> None:
+def test_the_real_graph_leaves_exactly_one_tool_bound(monkeypatch) -> None:
     """The whole change rests on a detail of `create_agent`'s binding.
 
     `_get_bound_model` computes `final_tools = list(request.tools)` and then
@@ -134,6 +140,8 @@ def test_the_real_graph_leaves_exactly_one_tool_bound() -> None:
     at all, which some servers refuse - so this drives a real agent rather
     than asserting on the override.
     """
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     from langchain.agents import create_agent
     from langchain_core.callbacks import CallbackManagerForLLMRun
     from langchain_core.language_models import BaseChatModel

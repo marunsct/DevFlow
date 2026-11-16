@@ -13,6 +13,13 @@ import pytest
 from app.acceptance import junit, suite
 from app.graph import acceptance_nodes
 
+
+@pytest.fixture(autouse=True)
+def _no_dry_run(monkeypatch):
+    # SPEC_DRY_RUN off: these tests are about pattern findings; that built-in check runs the fixture's suite against
+    # a stand-in and adds its own finding, which is tested in its own file.
+    monkeypatch.setenv("SPEC_DRY_RUN", "off")
+
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 SPEC = """import { test, expect } from '@playwright/test';
 

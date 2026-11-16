@@ -52,7 +52,9 @@ def _captured(messages):
     return request.captured
 
 
-def test_the_same_failure_after_each_edit_is_named_then_leaves_the_answer():
+def test_the_same_failure_after_each_edit_is_named_then_leaves_the_answer(monkeypatch):
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     told = _captured(_stage(SAME_FAILURE_BEFORE_SAYING_SO))
     notice = str(told["messages"][-1])
     assert "failed in exactly the same way" in notice and "node --test tests/app.test.ts" in notice

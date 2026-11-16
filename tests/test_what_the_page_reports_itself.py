@@ -100,7 +100,9 @@ def test_the_suite_s_result_carries_them_and_says_them_first(tmp_path) -> None:
     assert suite.last_result(tmp_path)["runtime_problems"] == ["uncaught error: init is not defined"]
 
 
-def test_a_report_from_an_earlier_run_is_not_read_again(tmp_path) -> None:
+def test_a_report_from_an_earlier_run_is_not_read_again(tmp_path, monkeypatch) -> None:
+    # MEASURE_ONCE off: the product does not change between these runs, so that fix would reuse the first.
+    monkeypatch.setenv("MEASURE_ONCE", "off")
     pack = _locked(tmp_path)
     suite.run(tmp_path, runner=_runner(tmp_path, pack, ["uncaught error: old"]))
     result = suite.run(tmp_path, runner=_runner(tmp_path, pack, []))

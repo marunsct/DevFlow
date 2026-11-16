@@ -90,7 +90,9 @@ def test_the_harness_looks_up_and_reads_and_the_build_model_only_names_the_topic
     assert "### Hono: notFound handler\nHono notFound handler text" in notes
 
 
-def test_a_stage_whose_reading_was_done_is_offered_no_lookups():
+def test_a_stage_whose_reading_was_done_is_offered_no_lookups(monkeypatch):
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     class _Request(SimpleNamespace):
         def override(self, **changes):
             return _Request(**{**self.__dict__, **changes})

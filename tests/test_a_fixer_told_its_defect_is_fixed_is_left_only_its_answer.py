@@ -47,7 +47,9 @@ def _sent(messages):
     return sent[0]
 
 
-def test_twice_told_fixed_the_stage_is_left_only_its_answer():
+def test_twice_told_fixed_the_stage_is_left_only_its_answer(monkeypatch):
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     request = _sent(_after_writes(PASSED, PASSED))
     assert [t.name for t in request.tools] == [], "tools withheld"
     told = " ".join(str(getattr(m, "content", "") or (m.get("content") if isinstance(m, dict) else "")) for m in request.messages)

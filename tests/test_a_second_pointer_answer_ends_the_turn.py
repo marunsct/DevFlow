@@ -55,7 +55,9 @@ def _captured(messages, names):
     return request.captured
 
 
-def test_two_pointers_in_a_row_leave_a_writer_only_its_writers():
+def test_two_pointers_in_a_row_leave_a_writer_only_its_writers(monkeypatch):
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     captured = _captured(_stage(["new bytes"] + [POINTER] * POINTERS_BEFORE_THE_ANSWER),
                          ("read_file", "glob", "edit_artifact"))
 
@@ -63,7 +65,9 @@ def test_two_pointers_in_a_row_leave_a_writer_only_its_writers():
     assert _STALLED_WITH_WRITERS_NOTICE in str(captured["messages"][-1])
 
 
-def test_two_pointers_leave_a_reviewer_only_its_answer():
+def test_two_pointers_leave_a_reviewer_only_its_answer(monkeypatch):
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     captured = _captured(_stage(["new bytes"] + [POINTER] * POINTERS_BEFORE_THE_ANSWER), ("read_file", "glob"))
 
     assert captured.get("tools") == []

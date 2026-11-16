@@ -67,7 +67,9 @@ def test_a_snapshot_records_every_test(workspace) -> None:
     assert snapshot.passing() == {"unit: adds", "acceptance: [AC-1] adds"}
 
 
-def test_a_regression_is_what_passed_and_no_longer_does(workspace) -> None:
+def test_a_regression_is_what_passed_and_no_longer_does(workspace, monkeypatch) -> None:
+    # MEASURE_ONCE off: the product does not change between these runs, so that fix would reuse the first.
+    monkeypatch.setenv("MEASURE_ONCE", "off")
     before = ci.take(workspace.root, "before")
     workspace.runner.acceptance = {"[AC-1] adds": "failed", "[AC-2] deletes": "passed"}
     after = ci.take(workspace.root, "after")
@@ -82,7 +84,9 @@ def test_a_suite_that_stops_running_regresses_everything_it_passed(workspace) ->
     assert ci.regressions(before, after) == ["unit: adds"]
 
 
-def test_the_ci_gate_turns_regressions_into_defects(workspace) -> None:
+def test_the_ci_gate_turns_regressions_into_defects(workspace, monkeypatch) -> None:
+    # MEASURE_ONCE off: the product does not change between these runs, so that fix would reuse the first.
+    monkeypatch.setenv("MEASURE_ONCE", "off")
     engineering.accepted_state(str(workspace.root))
     workspace.runner.unit = {"adds": "failed"}
     state = {
@@ -276,10 +280,12 @@ def test_the_milestone_review_s_finding_about_later_criteria_is_made_minor(works
     assert moved.findings[0].description.startswith("Planned for a later sprint (AC-2)")
 
 
-def test_a_batch_that_breaks_what_passed_before_any_sprint_was_accepted_is_a_regression(workspace) -> None:
+def test_a_batch_that_breaks_what_passed_before_any_sprint_was_accepted_is_a_regression(workspace, monkeypatch) -> None:
     """One run's re-planned first sprint broke all seven acceptance tests that
     had passed; the only accepted state was the suite as locked, where nothing
     passes, so CI reported nothing."""
+    # MEASURE_ONCE off: the product does not change between these runs, so that fix would reuse the first.
+    monkeypatch.setenv("MEASURE_ONCE", "off")
     engineering.suite_locked(str(workspace.root))
     workspace.runner.acceptance = {"[AC-1] adds": "passed", "[AC-2] deletes": "passed"}
     ci.save(workspace.root, ci.take(workspace.root, "after a fix"))

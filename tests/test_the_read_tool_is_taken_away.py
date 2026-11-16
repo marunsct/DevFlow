@@ -94,17 +94,21 @@ def test_the_read_tools_go_once_the_stage_is_refused_enough(  ) -> None:
     assert "read_repository_file" not in _names(captured)
 
 
-def test_grep_and_the_listings_stay() -> None:
+def test_grep_and_the_listings_stay(monkeypatch) -> None:
     """The refusal's own words are "a range you have NOT read still works, and
     so does `grep`". A harness that says that and removes `grep` is the
     contradiction this file keeps finding elsewhere."""
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     kept = _names(_call(_conversation(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL)))
 
     assert "grep" in kept
     assert "ls" in kept
 
 
-def test_the_tools_that_change_things_stay() -> None:
+def test_the_tools_that_change_things_stay(monkeypatch) -> None:
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     kept = _names(_call(_conversation(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL)))
 
     assert "edit_artifact" in kept
@@ -143,8 +147,10 @@ def test_it_does_not_narrow_a_request_that_has_no_read_tool() -> None:
     assert "tools" not in captured
 
 
-def test_the_budget_rung_still_wins() -> None:
+def test_the_budget_rung_still_wins(monkeypatch) -> None:
     """At the end of the budget every tool goes, not just the readers."""
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     messages = _conversation(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL)
     messages += [AIMessage(content="x", id=f"b{i}") for i in range(40)]
 

@@ -341,12 +341,14 @@ def test_the_read_rung_does_not_starve_the_repeat_rung() -> None:
     assert read_rung != -1 and repeat_rung != -1
 
 
-def test_the_budget_warning_does_not_starve_the_repeat_rung() -> None:
+def test_the_budget_warning_does_not_starve_the_repeat_rung(monkeypatch) -> None:
     """Both rungs used to wait for "no correction yet", and the call-budget
     warning is due on every call from 70% of the budget on - the stretch where a
     looping stage is. One run's fix stage sent one identical `read_command_output`
     eight times running under that warning and was never stopped. The warning
     still goes out; the notice goes with it."""
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
     from types import SimpleNamespace
 
     from pydantic import BaseModel
@@ -404,7 +406,9 @@ class TestAQueryThatKeepsAnsweringTheSame:
         messages = _conversation(8, tool="ls", args={"path": "./"}, result="['/docs/', '/shop/']")
         assert _a_query_answered_identically(messages) is None
 
-    def test_the_middleware_takes_that_tool_away(self) -> None:
+    def test_the_middleware_takes_that_tool_away(self, monkeypatch) -> None:
+        # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+        monkeypatch.setenv("STABLE_TOOLS", "off")
         from types import SimpleNamespace
 
         from pydantic import BaseModel

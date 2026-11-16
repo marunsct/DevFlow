@@ -39,3 +39,22 @@ def test_the_server_error_probe_asks_them_after_the_lines_it_asked_before(tmp_pa
     assert [c.path for c in asked[:len(before)]] == [c.path for c in before]
     assert asked[-1].path.endswith(ic.AN_ID_THAT_IS_NOT_A_NUMBER)
     assert errors and errors[0][0].path.endswith(ic.AN_ID_THAT_IS_NOT_A_NUMBER) and errors[0][1] == 500
+
+
+def test_the_variants_do_not_count_as_lines_probed(tmp_path, monkeypatch):
+    """Measured on the first run after it was deployed: the coverage read "asked 12, probed 18"."""
+    import json
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(ic, "the_locked_contract", lambda root: _checks())
+    monkeypatch.setattr("app.stacks.contract.the_pack", lambda root: (SimpleNamespace(probe_runner="playwright"), {"project": "p"}))
+    monkeypatch.setitem(ic.PROBE_RUNNERS, "playwright", object())
+
+    def report(project, name, probe, web, run, *args, **kwargs):
+        return SimpleNamespace(found=True, tests=[SimpleNamespace(name=f"contract {n}: x", outcome="passed", message="")
+                                                  for n in range(1, len(web) + 1)])
+
+    monkeypatch.setattr(ic, "_the_probe_s_report", report)
+    ic.server_errors(tmp_path, runner=lambda *a: {})
+    written = json.loads((tmp_path / ".harness" / "contract-probe.json").read_text())["server_error"]
+    assert written["probed"] <= written["asked"] == len(ic.checkable(_checks()))

@@ -25,6 +25,8 @@ to be unchecked at release, never left out in silence (Initiative AU).
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import json
 import logging
 import re
@@ -1098,8 +1100,11 @@ def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Ch
         asked = [*web, *with_an_id_that_is_not_a_number(lines)]
         report = _the_probe_s_report(root / project_name, project_name, probe, asked, run,
                                      bodies=list(suite._state(root).get("interface_contract_bodies") or []))  # noqa: SLF001
+        # The lines' coverage only: the variants are not lines (measured: "asked 12, probed 18" once they were counted).
+        of_the_lines = None if report is None or not report.found else SimpleNamespace(
+            found=True, tests=[t for t in report.tests if _the_check_of(t, web) is not None])
         probe_coverage.write(root, "server_error", probe_coverage.coverage(
-            considered=len(lines), asked=web, report=report if report is not None and report.found else None,
+            considered=len(lines), asked=web, report=of_the_lines,
             not_asked=not_asked, check_of=lambda test: _the_check_of(test, web),
         ))
         if report is None or not report.found:

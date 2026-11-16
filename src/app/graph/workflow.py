@@ -2917,6 +2917,27 @@ def _first_sentence(text: Any) -> str:
     return re.split(r"(?<=[.!?])\s|\n", " ".join(str(text or "").split()), maxsplit=1)[0]
 
 
+def superseded_by_one_cause(cycle: Any, new_defects: list[Any]) -> Any:
+    """`cycle` with its open per-criterion acceptance defects closed as `superseded` when this round raised the one
+    defect for one wrong answer behind them (LR.53).
+
+    Measured on one run: the round raised the one defect, but the eleven per-criterion defects of the round before
+    stayed open beside it, so the fixers still worked through twelve and the grouping saved nothing. Each criterion's
+    own failures are measured again at the next round, which raises whatever still fails.
+    """
+    from app.graph.acceptance_nodes import ONE_CAUSE_MARK
+
+    if not any(ONE_CAUSE_MARK in str(getattr(item, "description", "")) for item in new_defects):
+        return cycle
+    closed = [
+        defect.model_copy(update={"status": "superseded"})
+        if defect.status == "open" and str(defect.description).startswith("[AC-") and ONE_CAUSE_MARK not in defect.description
+        else defect
+        for defect in cycle.defects
+    ]
+    return cycle.model_copy(update={"defects": closed})
+
+
 def _refreshed_by_the_round(cycle: Any, raised: list[Any], test_round: int) -> tuple[Any, list[Any]]:
     """`cycle` with each open defect this round raises again refreshed from it, and the ones raised again.
 
@@ -11424,6 +11445,7 @@ def build_workflow_graph(
         # earlier round - refreshes that one instead of queueing a second fixer
         # for it. Both still count as this round's findings.
         cycle, repeated = _refreshed_by_the_round(cycle, new_defects, test_round)
+        cycle = superseded_by_one_cause(cycle, new_defects)
         new_defects = [item for item in new_defects if not any(item is again for again in repeated)]
         measured = [*new_defects, *repeated]
         for again in repeated:

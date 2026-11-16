@@ -30,7 +30,8 @@ class RemediationLimitExceeded(RuntimeError):
     """Raised when a sprint's remediation loop would exceed its attempt limit."""
 
 
-DefectStatus = Literal["open", "fixed", "accepted_risk"]
+#: `superseded`: closed by a defect raised for the one cause behind it and others (LR.53); the next round measures again.
+DefectStatus = Literal["open", "fixed", "accepted_risk", "superseded"]
 
 
 class Defect(BaseModel):

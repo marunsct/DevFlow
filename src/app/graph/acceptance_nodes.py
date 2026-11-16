@@ -2054,6 +2054,8 @@ _A_QUOTED_NAME = re.compile(r"`([A-Za-z_][A-Za-z0-9_]{2,})`|\b([a-z_][a-z0-9_]*_
 
 
 _A_REFUSAL = re.compile(r"assert (4\d\d|5\d\d) (?:==|in) \(?\s*(2\d\d|4\d\d)")
+#: In the description of the one defect raised for one wrong answer behind many tests (`one_refusal_for_all`).
+ONE_CAUSE_MARK = "acceptance tests across"
 _ANY_STATUS = re.compile(r"assert ([1-5]\d\d) (?:==|in|!=)")
 
 

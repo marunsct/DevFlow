@@ -168,6 +168,8 @@ def defect_log(cycle: Any) -> list[dict[str, Any]]:
             state = "fixed, verified" if verified else "fixed, unverified"
         elif status == "accepted_risk":
             state = "accepted risk"
+        elif status == "superseded":
+            state = "superseded by one shared cause"
         else:
             state = "open"
         rows.append({

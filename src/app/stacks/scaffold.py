@@ -591,6 +591,28 @@ def make_a_script_executable(target: Path, content: str) -> None:
             pass
 
 
+#: Programs that run a project's commands through Node.
+_NODE_PROGRAMS = frozenset({"npm", "npx", "node", "yarn", "pnpm"})
+
+
+def _open_the_pack_s_toolchains(root: Path, pack: StackPack, project: str, package: str | None) -> None:
+    """Add the pack's language, and Node when its commands use it, to the toolchains pinned for this run. Never raises.
+
+    The pin was made only from an earlier stage's naming of the stack; measured on one run it left no marker, and the
+    chosen pack's own `dotnet restore` was refused by the sandbox's allowlist four times in 50 ms.
+    """
+    try:
+        from app.tools.sandbox import pin_project_stack, project_stack
+
+        commands = pack.commands(project, package)
+        argvs = [argv for value in commands.values()
+                 for argv in (value if value and isinstance(value[0], (list, tuple)) else [value]) if argv]
+        node = any(Path(str(argv[0])).name in _NODE_PROGRAMS for argv in argvs)
+        pin_project_stack(root, *project_stack(root), pack.language, *(["javascript"] if node else []))
+    except Exception:  # noqa: BLE001 - the sandbox keeps what was pinned before
+        logger.debug("Could not open %s's toolchains", pack.name, exc_info=True)
+
+
 def scaffold(
     repo_root: str | Path,
     pack: StackPack,
@@ -612,6 +634,7 @@ def scaffold(
     if already_set_up(project_root, pack) and not _this_scaffold_s_own(root, pack, project):
         result.problem = f"{project}/ already has a project manifest; it is built on as it is."
         return result
+    _open_the_pack_s_toolchains(root, pack, project, package)
     run = run or sandbox_runner(root)
 
     project_root.mkdir(parents=True, exist_ok=True)
@@ -633,7 +656,8 @@ def scaffold(
             # One retry: a registry hiccup is the commonest cause, and it passes.
             code = _step(result.steps, argv, run(argv, "install", project))
         if code != 0:
-            result.problem = f"`{' '.join(argv)}` failed in {project}/."
+            said = " ".join(str(result.steps[-1].get("output") or "").split())[-400:] if result.steps else ""
+            result.problem = f"`{' '.join(argv)}` failed in {project}/." + (f" It said: {said}" if said else "")
             return _unproven(root, pack, project, title, package, result)
     from app.stacks import contract as _contract
 

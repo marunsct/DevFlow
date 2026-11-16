@@ -15,8 +15,8 @@ every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.
 |---|---|
 | Phase | Launch review (`docs/reviews/launch-review-2026-11-16.md`, LR.1-65) built item by item; M36 measuring runs on both ports. Owner hands off 11-16 21:50 JST: all review items by the morning of 11-17. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run pinned to its port (`PIN_MODEL=1`). Never load or change them. |
-| Harness | 4d062ad0 deployed 11-17 01:27 JST (LF.970-974). |
-| Switches | 52 fixes built in (always on; only a host env var turns one off). 10 optional switches, all off: Context and cost (OBSERVATION_FOLDING, STABLE_STAGE_PREFIX, BATCH_ACCEPTANCE_AUTHOR, REASONING_KEPT_AFTER_AN_ANSWER), Efficiency (EQUIVALENT_MUTANTS_REMEMBERED, MUTANT_CHECK_IN_THE_FIX_STAGE, REVIEWS_WITHOUT_REASONING, HARNESS_FINDINGS_RECHECKED), Setup scope (SETUP_SCOPE_GUARD), Review gates (MILESTONE_EVIDENCE_GATE). Admin page: Controls. |
+| Harness | 005ce413 (LF.976-977) deploying 11-17 ~01:55 JST into the live runs; 4d062ad0 (LF.970-974) before. |
+| Switches | 52 fixes built in (always on; only a host env var turns one off). 11 optional switches; one on - NEAR_GREEN_REPLANNED_ONCE (Efficiency, LF.977, measuring.md M14: off at once if a run it fires in loses a hidden test). Off: Context and cost (OBSERVATION_FOLDING, STABLE_STAGE_PREFIX, BATCH_ACCEPTANCE_AUTHOR, REASONING_KEPT_AFTER_AN_ANSWER), Efficiency (EQUIVALENT_MUTANTS_REMEMBERED, MUTANT_CHECK_IN_THE_FIX_STAGE, REVIEWS_WITHOUT_REASONING, HARNESS_FINDINGS_RECHECKED), Setup scope (SETUP_SCOPE_GUARD), Review gates (MILESTONE_EVIDENCE_GATE). Admin page: Controls. |
 | Operations | Backups nightly to `data/backups` and `BACKUP_DIR` (external disk, 7 daily + 4 weekly), checked by `loop.sh backup --check`; finished runs older than `RETENTION_DAYS` (60) cleared nightly; both set in git-ignored `data/loop/ops.env`. Owner's Postgres port in git-ignored `docker-compose.override.yml`; `docker-compose.prod.yml` + `deploy/Caddyfile` for TLS. |
 | Suites | `loop.sh suite` and `loop.sh suite-production` (every built-in fix on, as shipped) both green: 17,316 passed, 0 known failures. |
 
@@ -43,8 +43,8 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   run started on :8888 never began). LF.972 - a deploy's boundary pause lost with a killed app worker is asked again.
   The load spike (load average about 2,700 at 00:45-01:00 JST) has no known cause; watch for a repeat.
 - In part: LR.20 (the report is built; the frozen batch is about 5 days of runs, not started), LR.30 (isolation
-  built; a whole run in container mode not yet tried), LR.52 and LR.53 (cause grouping done; stopping re-plans after
-  a green suite and bounding fix stages that close nothing are not), LR.54 (four contradictions removed).
+  built; a whole run in container mode not yet tried), LR.52, and LR.53 (cause grouping; a green suite settles; a near-green
+  sprint is planned again once - LF.977, measured on 175 past re-plans; open: a repair back to the round), LR.54 (four contradictions removed).
 - Not done, and why: LR.42 (scale the process to the brief), LR.46 (narrow rules behind the pack interface),
   LR.50 (lift nodes out of `build_workflow_graph`) - each a week-sized redesign that needs measured runs before and
   after, not a night; LR.44 (hosted-model matrix) waits for the owner.
@@ -53,7 +53,7 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
 1. Live: tasks-api 2 run-925391f7 (:1234, rewound to its 00:11 JST defect fix after the duplicate) and
    notes-api-rust 1 run-d8b0e95b (:8888, 01:28 JST). Score each with its full id when it finishes.
 2. Then shortlinks-api 1 on :1234 (held out); the language sweep on :8888: notes-api-java, -csharp, -php, -ruby.
-3. LR.53 rest, LR.52 rest, then a whole run in container mode (LR.30).
+3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).
 4. When no fix is pending for a full audit cycle: freeze and start the LR.20 batch.
 
 ## Rules that are never optional

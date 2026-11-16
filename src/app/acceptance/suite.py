@@ -2249,7 +2249,9 @@ def _where_its_data_lives(root: str | Path | None) -> str:
 #: A service's own words that it is up and taking requests, across servers and languages.
 _LISTENING = re.compile(
     r"Listening at|listening on|Uvicorn running on|Running on https?://|Server (?:is )?(?:running|listening|started)|"
-    r"Now listening on|Application startup complete|started server on|Puma starting|Started \w+ in \d",
+    r"Now listening on|Application startup complete|started server on|Puma starting|Started \w+ in \d|"
+    # A development server's own start line, and a connection it accepted: PHP's (found on the language sweep).
+    r"Development Server \(https?://[^)]*\) started|\d+\.\d+\.\d+\.\d+:\d+ Accepted\b",
     re.I,
 )
 #: An HTTP status a request was answered with, as clients and test runners print it.
@@ -2257,6 +2259,10 @@ _AN_HTTP_STATUS = re.compile(
     r"HTTP Error ([45]\d\d)|\b([45]\d\d) (?:Not Found|NOT FOUND|Method Not Allowed|Internal Server Error)\b|"
     r"\bstatus(?: code)?[\s:=]+([45]\d\d)\b",
 )
+
+
+#: What `_it_listened_and_answered` says when the product listened and its log names no status.
+NO_STATUS_SHOWN = "no status the log shows"
 
 
 def _it_listened_and_answered(text: str) -> str:
@@ -2273,7 +2279,12 @@ def _it_listened_and_answered(text: str) -> str:
     if not _LISTENING.search(text):
         return ""
     found = _AN_HTTP_STATUS.search(text)
-    return next((group for group in found.groups() if group), "") if found else ""
+    if found:
+        return next((group for group in found.groups() if group), "")
+    # Listening, and the readiness request never answered with a success, with no status in the log: measured on one
+    # run, a PHP development server accepted and closed the request every second for 60 s while every route answered
+    # 500, and the defect said only that the product did not start - two fix rounds and a re-plan.
+    return NO_STATUS_SHOWN if _NEVER_STARTED.search(text) else ""
 
 
 #: A start that failed for want of a setting: a required field, an unset variable, a missing secret.
@@ -2387,6 +2398,12 @@ def the_product_did_not_start(output: str, root: str | Path | None = None) -> st
             f"it is up was answered {answered}. How it starts is not what is wrong: the route that request asks "
             "for is not served. Check that the routes are registered with the application the start command "
             "runs; a route defined in a module nothing imports is never served."
+        ) if answered != NO_STATUS_SHOWN else (
+            "The product started - its output shows it listening and taking the suite's requests - but the request "
+            "the suite makes to see that it is up was not answered with a success. How it starts is not what is "
+            "wrong: the request fails once it arrives. Run the product and ask that route yourself to see the error "
+            "it answers; code every request runs - the entry file, the router, a connection opened per request - is "
+            "where an error fails every route at once."
         )
         return f"{PRODUCT_DID_NOT_START}: no test could reach it. {lead} Its output:\n{excerpt}"
     if _A_DATA_FILE_NOT_OPENED.search(text):

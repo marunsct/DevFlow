@@ -73,6 +73,22 @@ describe('starting a build', () => {
   });
 });
 
+describe('a first run that stops for a person', () => {
+  it('offers to tell this browser when the run needs its owner, and asks only when starting', async () => {
+    const asked = vi.fn(async () => 'granted');
+    vi.stubGlobal('Notification', Object.assign(function Notification() {}, { permission: 'default', requestPermission: asked }));
+    show();
+    await userEvent.click(screen.getByText('Review the key stages'));
+    const box = screen.getByLabelText(/Tell me in this browser/) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    expect(asked).not.toHaveBeenCalled();
+    await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a note');
+    await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
+    await waitFor(() => expect(asked).toHaveBeenCalled());
+    vi.unstubAllGlobals();
+  });
+});
+
 describe('the frontier model', () => {
   it('says it is ready when ticked', async () => {
     show();

@@ -1,3 +1,4 @@
+import { failureAdvice } from '../lib/failureAdvice';
 import { HowToRun } from '../components/HowToRun';
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -812,6 +813,13 @@ export const RunDashboard: React.FC = () => {
             on request. */}
         {run.error && (
           <div className="mt-3 rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-[13px] text-danger">
+            {!run.error.startsWith('Interrupted:') && failureAdvice(run.error) && (
+              <div className="mb-2 text-text-primary" data-testid="failure-advice">
+                <p className="font-semibold">Stopped by: {failureAdvice(run.error)!.kind.toLowerCase()}</p>
+                <p className="text-text-secondary">{failureAdvice(run.error)!.meaning}</p>
+                <p className="mt-1"><span className="font-medium">What you can do:</span> {failureAdvice(run.error)!.action}</p>
+              </div>
+            )}
             <p
               className={`whitespace-pre-wrap leading-relaxed ${
                 errorOpen ? 'max-h-64 overflow-y-auto pr-1' : 'line-clamp-2'

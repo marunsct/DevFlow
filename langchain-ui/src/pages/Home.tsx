@@ -1,3 +1,4 @@
+import { browserCanNotify, wantNotifications } from '../lib/notify';
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen } from 'lucide-react';
@@ -32,7 +33,7 @@ type Involvement = 'hands_off' | 'review_stages' | 'every_step';
 const INVOLVEMENT: { id: Involvement; title: string; text: string }[] = [
   { id: 'hands_off', title: 'Hands-off', text: 'Nothing stops for you. The run comes back when the product is done or something fails.' },
   { id: 'review_stages', title: 'Review the key stages', text: 'Every file write and tool call goes ahead; the run stops at the reviews you keep below.' },
-  { id: 'every_step', title: 'Approve every step', text: 'The reviews below, and each file write and tool call asked before it runs.' },
+  { id: 'every_step', title: 'Approve every step', text: 'The reviews below, and each file write and tool call asked before it runs: hundreds of approvals on a long build.' },
 ];
 
 const GATES = [
@@ -96,6 +97,8 @@ export const Home: React.FC = () => {
   // Minutes a review gate waits for a person before approving itself; blank
   // waits however long it takes.
   const [approvalTimeout, setApprovalTimeout] = useState<string>('');
+  // Whether this browser is told when a run that stops for a person needs them (LR.33): on unless refused before.
+  const [notifyMe, setNotifyMe] = useState<boolean>(() => browserCanNotify() && Notification.permission !== 'denied');
   // What a run of each delivery mode has typically taken here.
   const [forecast, setForecast] = useState<Record<string, RunForecast | null>>({});
   useEffect(() => {
@@ -238,6 +241,7 @@ export const Home: React.FC = () => {
       }
     }
 
+    if (notifyMe && involvement !== 'hands_off') void wantNotifications(true);
     setIsUploading(true);
     setError(null);
 
@@ -462,6 +466,12 @@ export const Home: React.FC = () => {
                 </label>
               </div>
             </details>
+          )}
+          {involvement !== 'hands_off' && browserCanNotify() && (
+            // LR.33: a run that stops for a person tells them, or a first run waits at its first review unseen.
+            <Checkbox label="Tell me in this browser when the run needs me or finishes"
+              hint="Asks the browser's permission once; turn it off any time from the bell."
+              checked={notifyMe} onChange={(e) => setNotifyMe(e.target.checked)} />
           )}
         </Step>
 

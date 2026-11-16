@@ -73,4 +73,5 @@ def test_the_release_lists_it_among_the_gaps():
     from app.graph import delivery
 
     source = inspect.getsource(delivery)
-    assert 'f"An escalation left this open{f\' ({accepted_at})\' if accepted_at else \'\'}: {issue}" for issue in left_open' in source
+    assert 'f"An escalation left this open{f\' ({accepted_at})\' if accepted_at else \'\'}: "' in source
+    assert "for issue in left_open" in source

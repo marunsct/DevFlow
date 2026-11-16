@@ -43,6 +43,8 @@ _NOTES = re.compile(
         r"(An escalation left this open(?: \(DR-\d+\))?: )?" + re.escape(SETTLED_DESIGN_FINDING),
         r"An escalation left this open(?: \(DR-\d+\))?: Design review left open:",
         r"An escalation left this open(?: \(DR-\d+\))?: The sprint plan is ",
+        # A sprint accepted unfinished whose tests the locked suite passes in full at release (LR.21).
+        r"An escalation left this open(?: \(DR-\d+\))?: every locked test passes at release: ",
         # Worth knowing about what ships beside the product, or who judged it.
         r"Code the product does not run:",
         r"The product serves through a development server:",

@@ -13,6 +13,8 @@ read once and forgotten.
 
 from __future__ import annotations
 
+import re
+
 from app.tools.version_control import git_safely  # noqa: E402
 
 import logging
@@ -211,6 +213,11 @@ def _unit_tests_failing(root: str) -> list[str]:
 _FIX_THE_CRITERIA = "fix the failing criteria first"
 _FIX_THE_HANDOFF = "fix the handoff first"
 _RELEASE_OPTIONS = ["release", _FIX_THE_CRITERIA, _FIX_THE_HANDOFF]
+
+
+#: Said of an escalated sprint whose tests the release's run of the locked suite passes in full.
+PASSES_AT_RELEASE = "every locked test passes at release"
+_AN_UNFINISHED_SPRINT = re.compile(r"^Sprint '.*' was re-planned \d+ times and still could not be accepted", re.S)
 
 
 def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
@@ -433,7 +440,16 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     gaps.extend(settled)
     # Linked to the decision that accepted them (HR2.G.8), so the release says who accepted what.
     accepted_at = _accepted_at_an_escalation({**state, **update})
-    gaps.extend(f"An escalation left this open{f' ({accepted_at})' if accepted_at else ''}: {issue}" for issue in left_open)
+    # A sprint an escalation accepted unfinished, whose tests the locked suite now passes in full: the record of how it
+    # went, not a sign the product fails (LR.21). Measured on one run: a sprint accepted after three re-plans, a later
+    # sprint made all 31 locked tests pass, 10 of 10 hidden tests and 7 of 7 quality tests passed - and the run was
+    # called not deliverable for the old sprint.
+    green_at_release = suite.is_locked(root) and not failing and bool((suite.last_result(root) or {}).get("ran"))
+    gaps.extend(
+        f"An escalation left this open{f' ({accepted_at})' if accepted_at else ''}: "
+        + (f"{PASSES_AT_RELEASE}: " if green_at_release and _AN_UNFINISHED_SPRINT.search(issue) else "") + issue
+        for issue in left_open
+    )
     gaps.extend(_findings_recorded_as_risks(state))
     gaps.extend(_reviews_that_were_not_independent(config["configurable"].get(APP_RUN_ID_KEY)))
     gaps.extend(_code_no_review_read(config["configurable"].get(APP_RUN_ID_KEY), {**state, **update}))

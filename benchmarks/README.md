@@ -16,6 +16,12 @@ measured. See `docs/architecture-decisions.md ADR-0005`.
 | `web-todo-react` | browser app | TypeScript, React | 10 (`web-todo`'s) | Playwright |
 | `notes-api-js` | HTTP service | JavaScript | 9 (`notes-api`'s) | pytest + httpx |
 | `notes-api-hono` | HTTP service | TypeScript, Hono (no pack) | 9 (`notes-api`'s) | pytest + httpx |
+| `notes-api-go` | HTTP service | Go, net/http (LR.43 pack sweep) | 9 (`notes-api`'s) | pytest + httpx |
+| `notes-api-rust` | HTTP service | Rust, axum (LR.43 pack sweep) | 9 (`notes-api`'s) | pytest + httpx |
+| `notes-api-java` | HTTP service | Java, Spring Boot (LR.43 pack sweep) | 9 (`notes-api`'s) | pytest + httpx |
+| `notes-api-csharp` | HTTP service | C#, ASP.NET Core (LR.43 pack sweep) | 9 (`notes-api`'s) | pytest + httpx |
+| `notes-api-php` | HTTP service | PHP, Slim (LR.43 pack sweep) | 9 (`notes-api`'s) | pytest + httpx |
+| `notes-api-ruby` | HTTP service | Ruby, Sinatra (LR.43 pack sweep) | 9 (`notes-api`'s) | pytest + httpx |
 | `notes-api-falcon` | HTTP service | Python, Falcon (no pack) | 9 (`notes-api`'s) | pytest + httpx |
 | `fullstack-bookmarks-py` | page + its own service | Python service, HTML/JS page | 8 (`fullstack-bookmarks`'s) | Playwright (page and API) |
 | `tasks-api` | HTTP service with accounts and per-user data | Python | 10 | pytest + httpx |

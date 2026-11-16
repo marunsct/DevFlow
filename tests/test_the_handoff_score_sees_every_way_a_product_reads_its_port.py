@@ -39,3 +39,16 @@ def test_a_spring_configuration_naming_the_port_counts(tmp_path):
 def test_a_product_that_reads_no_port_still_does_not_count(tmp_path):
     product = _product(tmp_path, "src/main.rs", 'let port = 3000;\n')
     assert _score().handoff(product)["handoff"]["start_reads_its_port"] is False
+
+
+import pytest
+
+
+@pytest.mark.parametrize("relative,text", [
+    ("src/App/Program.cs", 'var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";\n'),
+    ("app.rb", "port = ENV.fetch('PORT', 4567)\n"),
+    ("lib/app.ex", 'port = System.get_env("PORT") || "4000"\n'),
+])
+def test_dot_net_ruby_and_elixir_reading_the_port_count(tmp_path, relative, text):
+    product = _product(tmp_path, relative, text)
+    assert _score().handoff(product)["handoff"]["start_reads_its_port"] is True

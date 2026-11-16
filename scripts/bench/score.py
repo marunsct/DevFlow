@@ -127,8 +127,9 @@ _DELIBERATION = re.compile(r"^\s*(#|//|\*)\s*(wait[,.]|actually[,]|hmm\b|let me\
 #: A program reading its port from the environment, in the common spellings of each language's own call.
 _READS_PORT = re.compile(r"""(?:process\.env\.PORT|process\.env\[["']PORT["']\]|environ(?:\.get)?\(\s*["']PORT|"""
                          r"""environ\[["']PORT|getenv\(\s*["']PORT|Getenv\(\s*"PORT|ENV\[["']PORT|env\("PORT|"""
-                         r"""Deno\.env\.get\(\s*["']PORT|env::var\(\s*"PORT|\$\{PORT\b)""")
-_SOURCE = re.compile(r"\.(py|js|ts|jsx|tsx|mjs|cjs|go|rs|rb|java|kt|php|cs)$")
+                         r"""Deno\.env\.get\(\s*["']PORT|env::var\(\s*"PORT|\$\{PORT\b|"""
+                         r"""GetEnvironmentVariable\(\s*"PORT|ENV\.fetch\(\s*["']PORT|get_env\(\s*"PORT)""")
+_SOURCE = re.compile(r"\.(py|js|ts|jsx|tsx|mjs|cjs|go|rs|rb|java|kt|kts|scala|php|cs|fs|swift|ex|exs|dart)$")
 #: Where a framework's configuration names the port: Spring's `server.port=${PORT:8080}` (found on the sweep).
 _PORT_CONFIGURATION = re.compile(r"(^|/)application[^/]*\.(properties|ya?ml)$|(^|/)appsettings[^/]*\.json$")
 

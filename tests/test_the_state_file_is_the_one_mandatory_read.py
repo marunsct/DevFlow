@@ -31,3 +31,11 @@ def test_the_agent_instructions_send_a_session_there_first():
 def test_old_narratives_live_in_the_archive_not_the_handovers():
     assert (ROOT / "docs" / "archive" / "handover-before-2026-10-14.md").is_file()
     assert "### 2.1 What changed on 2026-10-12" not in (ROOT / "docs" / "HANDOVER.md").read_text(encoding="utf-8")
+
+
+def test_it_stays_short_in_characters_too():
+    """150 lines held 118,000 characters (LR.64): two lines had grown to 28,000 and 53,000 characters each, so the
+    one mandatory read was a long one again while the line count said all was well."""
+    text = STATE.read_text(encoding="utf-8")
+    assert len(text) <= 16_000, len(text)
+    assert max(len(line) for line in text.splitlines()) <= 1_000

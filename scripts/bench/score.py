@@ -127,8 +127,10 @@ _DELIBERATION = re.compile(r"^\s*(#|//|\*)\s*(wait[,.]|actually[,]|hmm\b|let me\
 #: A program reading its port from the environment, in the common spellings of each language's own call.
 _READS_PORT = re.compile(r"""(?:process\.env\.PORT|process\.env\[["']PORT["']\]|environ(?:\.get)?\(\s*["']PORT|"""
                          r"""environ\[["']PORT|getenv\(\s*["']PORT|Getenv\(\s*"PORT|ENV\[["']PORT|env\("PORT|"""
-                         r"""Deno\.env\.get\(\s*["']PORT)""")
+                         r"""Deno\.env\.get\(\s*["']PORT|env::var\(\s*"PORT|\$\{PORT\b)""")
 _SOURCE = re.compile(r"\.(py|js|ts|jsx|tsx|mjs|cjs|go|rs|rb|java|kt|php|cs)$")
+#: Where a framework's configuration names the port: Spring's `server.port=${PORT:8080}` (found on the sweep).
+_PORT_CONFIGURATION = re.compile(r"(^|/)application[^/]*\.(properties|ya?ml)$|(^|/)appsettings[^/]*\.json$")
 
 
 def _files_of(product: Path):
@@ -174,7 +176,8 @@ def handoff(product: Path) -> dict:
         # The start script, or the program it runs: one start runs `node src/main.ts`, which reads PORT itself.
         "start_reads_its_port": ("PORT" in start.read_text(encoding="utf-8", errors="replace") or any(
             _READS_PORT.search(p.read_text(encoding="utf-8", errors="replace"))
-            for p in files if _SOURCE.search(p.name) and p.stat().st_size < 400_000)) if start.is_file() else None,
+            for p in files if (_SOURCE.search(p.name) or _PORT_CONFIGURATION.search(p.as_posix()))
+            and p.stat().st_size < 400_000)) if start.is_file() else None,
         "no_shipped_data": not any(_SHIPPED_DATA.search(p.name) for p in files),
         "no_thinking_aloud_in_comments": not any(
             _DELIBERATION.match(line)

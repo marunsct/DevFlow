@@ -4368,6 +4368,29 @@ def _the_package_is_installed(importer: Path, module: str) -> bool:
     return False
 
 
+#: Pyright's finding for an import of a module it cannot find.
+_A_PYTHON_MODULE_NOT_FOUND = re.compile(r'Import "[^"]+" could not be resolved')
+
+
+def _a_planned_file_not_written_yet(root: Path) -> bool:
+    """Whether a file the milestone's work orders plan is not written yet; True when no plan is recorded.
+
+    Never in a fix stage: every file is written by then, and the table may be empty (measured on the run that found
+    this, the last plan's table was `{}` while its fixes imported modules the project did not have).
+    """
+    from app.observability.transcript import _stage_from_config
+
+    if _stage_from_config("").startswith("defect_fix"):
+        return False
+    try:
+        table = json.loads((root / WORK_ORDER_FILES).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    if not isinstance(table, dict) or not table:
+        return True
+    return any(not (root / planned).exists() for planned in table)
+
+
 def _another_file_not_written_yet(root: Path, importer: Path, message: str) -> bool:
     """Whether a finding about another file's exports is excused: that file, or a planned file, is not written yet.
 
@@ -4377,6 +4400,11 @@ def _another_file_not_written_yet(root: Path, importer: Path, message: str) -> b
     route importing `{ StorageService }` from a module that exports only a default instance; each was committed,
     broke the start, and was reverted.
     """
+    if _A_PYTHON_MODULE_NOT_FOUND.search(message):
+        # Pyright's words for a local module that is not there (TypeScript's are matched below). Excused while the
+        # milestone's planned files are still being written; refused once every one is, as in a fix stage - measured on
+        # one run, 13 fixes imported modules the project did not have, each committed, broke the start, and reverted.
+        return _a_planned_file_not_written_yet(root)
     if not _ABOUT_ANOTHER_FILE.search(message):
         return False
     if not _A_MISSING_EXPORT.search(message):

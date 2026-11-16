@@ -217,10 +217,14 @@ def test_python_code_that_is_right_is_left_alone(tmp_path) -> None:
         assert found is not None and found.here == [], (path, found.here)
 
 
-def test_python_is_answered_only_for_the_file_as_written(tmp_path) -> None:
+def test_python_content_not_yet_written_is_answered_and_leaves_the_file_as_it_was(tmp_path) -> None:
+    """It answered only for the file as written, so every Python write went unchecked (see
+    test_a_python_write_is_checked_before_it_lands.py); now it reads the content in a shadow of the project."""
     target = tmp_path / "a.py"
     target.write_text("x = 1\n")
-    assert service.python_underlined(tmp_path, target, "x = 2\n") is None
+    found = service.python_underlined(tmp_path, target, "x = 2\n")
+    assert (found is None) == (service._pyright() is None or shutil.which("node") is None)
+    assert target.read_text() == "x = 1\n"
 
 
 @needs_the_compiler

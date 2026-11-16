@@ -537,15 +537,63 @@ def python_underlined(repo_root: str | Path, target: Path, content: str, project
     """
     if target.suffix.lower() != ".py":
         return None
-    try:
-        if target.read_text(encoding="utf-8", errors="replace") != content:
-            return None
-    except OSError:
-        return None
     project = project or target.parent
+    try:
+        on_disk = target.read_text(encoding="utf-8", errors="replace") == content
+    except OSError:
+        on_disk = False
+    if not on_disk:
+        # Content about to be written: read in a shadow of the project, the file as it would be among the others as
+        # they are (found on a run: before this every Python write was waved through, and 13 fixes importing modules
+        # the project did not have were committed, broke the start, and were reverted one by one).
+        return _python_underlined_as_it_would_be(target, content, project)
     diagnostics = _pyright_diagnostics(project)
     if diagnostics is None:
         return None
+    return _python_findings(diagnostics, target, content, project)
+
+
+def _python_underlined_as_it_would_be(target: Path, content: str, project: Path) -> Underlined | None:
+    """Pyright's findings for `content` at `target`, in a shadow of `project` whose other files link to the real ones."""
+    import tempfile
+
+    try:
+        relative = target.resolve().relative_to(project.resolve())
+    except ValueError:
+        return None
+    try:
+        with tempfile.TemporaryDirectory() as scratch:
+            shadow = Path(scratch) / project.name
+            _mirror(project, shadow, relative.parts)
+            shadow_target = shadow / relative
+            shadow_target.parent.mkdir(parents=True, exist_ok=True)
+            shadow_target.write_text(content, encoding="utf-8")
+            diagnostics = _pyright_diagnostics(shadow)
+            if diagnostics is None:
+                return None
+            return _python_findings(diagnostics, shadow_target, content, shadow)
+    except OSError:
+        logger.debug("Could not shadow %s to read %s", project, target, exc_info=True)
+        return None
+
+
+def _mirror(source: Path, shadow: Path, keep_real: tuple[str, ...]) -> None:
+    """`shadow` as `source`, every entry a link but the folders on the way to the one file that will be replaced."""
+    import os
+
+    shadow.mkdir(parents=True, exist_ok=True)
+    head, rest = (keep_real[0], keep_real[1:]) if keep_real else ("", ())
+    for entry in os.scandir(source):
+        if entry.name == head and rest and entry.is_dir(follow_symlinks=False):
+            _mirror(Path(entry.path), shadow / entry.name, rest)
+        elif entry.name == head and not rest:
+            continue
+        else:
+            (shadow / entry.name).symlink_to(entry.path, target_is_directory=entry.is_dir())
+
+
+def _python_findings(diagnostics: list[dict], target: Path, content: str, project: Path) -> Underlined:
+    """`target`'s own findings among one Pyright run's, and those elsewhere about what it exports."""
     wanted = target.resolve()
     stem = target.stem
     lines = content.splitlines()

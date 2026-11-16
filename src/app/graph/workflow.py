@@ -5327,8 +5327,8 @@ def _contract_lines_nothing_can_read(state: Any) -> Any:
         description=text,
         evidence="Read by the workflow with the same reader the suite's lock and the release use.",
         required_remediation=(
-            "Rewrite each in one of the three forms: `AC-3 GET /api/notes -> 200`, `AC-1 page /login textbox \"Email\"`, "
-            "`AC-5 command notes add milk -> exit 0`. What a line is for goes before its arrow or in the other sections."
+            "Rewrite each in one of the three forms: `AC-3 GET /api/orders -> 200`, `AC-1 page /login textbox \"Email\"`, "
+            "`AC-5 command ledger add 12.50 -> exit 0`. What a line is for goes before its arrow or in the other sections."
         ),
     )
 

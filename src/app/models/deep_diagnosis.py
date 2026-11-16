@@ -210,7 +210,7 @@ def _no_repetition(model: Any, guidance: str) -> tuple[bool, str]:
     message, finish, _ = _reply(_create(model)(
         model=model.model_name, max_tokens=REPLY_TOKENS, stream=False,
         messages=[*_with(guidance, "You write acceptance test cases for a web service."),
-                  {"role": "user", "content": "List 40 different test case titles for a notes service with sign-up, "
+                  {"role": "user", "content": "List 40 different test case titles for an orders service with sign-up, "
                                               "sign-in, create, list, search and delete. One title a line, nothing else."}]))
     text = str(message.get("content") or "")
     lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -262,7 +262,7 @@ def _exact_arguments(model: Any, guidance: str) -> tuple[bool, str]:
     message, finish, _ = _reply(_create(model)(
         model=model.model_name, max_tokens=REPLY_TOKENS, stream=False, tools=[_WRITE],
         messages=[*_with(guidance, "You are a backend specialist building a product."),
-                  {"role": "user", "content": "Create the file tasks-api/notes.txt holding the word hello."}]))
+                  {"role": "user", "content": "Create the file orders-svc/notes.txt holding the word hello."}]))
     calls = _calls(message)
     if not calls:
         return False, f"no call ({finish})"
@@ -276,7 +276,7 @@ def _one_program(model: Any, guidance: str) -> tuple[bool, str]:
     message, finish, _ = _reply(_create(model)(
         model=model.model_name, max_tokens=REPLY_TOKENS, stream=False, tools=[_RUN],
         messages=[*_with(guidance, "You are a backend specialist. Commands run in the workspace."),
-                  {"role": "user", "content": "List the files in tasks-api, then show the first lines of tasks-api/app.py."}]))
+                  {"role": "user", "content": "List the files in orders-svc, then show the first lines of orders-svc/app.py."}]))
     calls = [args for name, args in _calls(message) if name == "run_terminal_command"]
     if not calls:
         return False, f"no command ({finish})"
@@ -291,24 +291,24 @@ def _one_program(model: Any, guidance: str) -> tuple[bool, str]:
 def _paths_as_given(model: Any, guidance: str) -> tuple[bool, str]:
     message, finish, _ = _reply(_create(model)(
         model=model.model_name, max_tokens=REPLY_TOKENS, stream=False, tools=[_READ],
-        messages=[*_with(guidance, "You are a backend specialist. The project is the folder tasks-api/ of the "
-                                   "workspace; its files are tasks-api/app.py and tasks-api/models.py."),
+        messages=[*_with(guidance, "You are a backend specialist. The project is the folder orders-svc/ of the "
+                                   "workspace; its files are orders-svc/app.py and orders-svc/models.py."),
                   {"role": "user", "content": "Read the project's app.py."}]))
     calls = [args for name, args in _calls(message) if name == "read_file"]
     if not calls:
         return False, f"no read ({finish})"
     path = str(calls[0].get("file_path") or "").removeprefix("./")
-    return (True, "") if path == "tasks-api/app.py" else (False, f"read `{path}`")
+    return (True, "") if path == "orders-svc/app.py" else (False, f"read `{path}`")
 
 
 def _refusal_heeded(model: Any, guidance: str) -> tuple[bool, str]:
     message, finish, _ = _reply(_create(model)(
         model=model.model_name, max_tokens=REPLY_TOKENS, stream=False, tools=[_RUN, _EDIT],
         messages=[*_with(guidance, "You are a backend specialist fixing one defect."),
-                  {"role": "user", "content": "In tasks-api/app.py change `status_code = 200` to `status_code = 201`."},
+                  {"role": "user", "content": "In orders-svc/app.py change `status_code = 200` to `status_code = 201`."},
                   {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {
                       "name": "run_terminal_command",
-                      "arguments": json.dumps({"command": ["sed", "-i", "s/200/201/", "tasks-api/app.py"]})}}]},
+                      "arguments": json.dumps({"command": ["sed", "-i", "s/200/201/", "orders-svc/app.py"]})}}]},
                   {"role": "tool", "tool_call_id": "c1", "content": "{\"error\": \"'sed' is not permitted here. To change "
                    "a file, use `edit_artifact`, which replaces one exact passage.\"}"}]))
     calls = _calls(message)
@@ -324,12 +324,12 @@ def _role_kept_while_building(model: Any, guidance: str) -> tuple[bool, str]:
     message, finish, _ = _reply(_create(model)(
         model=model.model_name, max_tokens=REPLY_TOKENS, stream=False, tools=[_READ, _WRITE],
         messages=[*_with(guidance, "You are the acceptance test author. You write only the files under "
-                                   "tasks-api/acceptance/. The product's modules are built by other roles."),
+                                   "orders-svc/acceptance/. The product's modules are built by other roles."),
                   {"role": "user", "content": "Write the acceptance test for creating an item: POST /items answers 201 "
                                               "with the item. The product's tasks_api/models.py does not exist yet."}]))
     for name, args in _calls(message):
         path = str(args.get("relative_path") or "")
-        if name == "write_artifact" and not path.startswith("tasks-api/acceptance/"):
+        if name == "write_artifact" and not path.startswith("orders-svc/acceptance/"):
             return False, f"wrote {path}"
     return True, ""
 

@@ -14,7 +14,7 @@ across this project's runs:
   the same names.
 
 The convention below is deliberately not one fixed skeleton. A single-language
-product is better flat - one run shipped `task-manager/` with five files
+product is better flat - one run shipped `invoice-tracker/` with five files
 in it and a passing suite - and forcing `ui/`, `db/`, `model/` onto it invents
 structure nobody needs. What must hold in both shapes is the last rule: one
 language per directory, because a directory is what a manifest and a test
@@ -24,20 +24,20 @@ runner address.
 PROJECT_LAYOUT = """WHERE FILES GO - this is settled; follow it rather than inventing one:
 
 - ONE top-level project directory, named after the product in
-  lowercase-with-hyphens: `task-manager/`, `todo-app/`. Never `app/`, `src/`,
+  lowercase-with-hyphens: `invoice-tracker/`, `garden-planner/`. Never `app/`, `src/`,
   `backend/` or `css/` - those name a part of a project, and a run that pins
   one as the whole project cannot then write the other parts.
 - One language and a handful of files? Keep it FLAT. A five-file product needs
   no folders:
-      task-manager/<entry file>
-      task-manager/<module files>
-      task-manager/<test files>
-      task-manager/<the language's manifest>
+      invoice-tracker/<entry file>
+      invoice-tracker/<module files>
+      invoice-tracker/<test files>
+      invoice-tracker/<the language's manifest>
 - More than one tier, or more than one language? One directory per tier, all
   inside the project:
-      task-dashboard/backend/      server code and its manifest
-      task-dashboard/frontend/     the interface and its manifest
-      task-dashboard/db/           migrations and schema
+      fleet-dashboard/backend/      server code and its manifest
+      fleet-dashboard/frontend/     the interface and its manifest
+      fleet-dashboard/db/           migrations and schema
 - ONE LANGUAGE PER DIRECTORY. A directory is what a manifest and a test runner
   address: two languages' manifests in the same folder means neither runner
   sees a complete project, and two languages' test files side by side means

@@ -46,8 +46,8 @@ def test_a_multi_tier_product_gets_one_directory_per_tier():
     flat = _flat(PROJECT_LAYOUT)
 
     assert "One directory per tier" in flat
-    assert "task-dashboard/backend/" in flat
-    assert "task-dashboard/frontend/" in flat
+    assert "fleet-dashboard/backend/" in flat
+    assert "fleet-dashboard/frontend/" in flat
 
 
 def test_the_rule_that_makes_it_checkable_is_stated():

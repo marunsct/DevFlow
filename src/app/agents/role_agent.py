@@ -363,6 +363,12 @@ def _workspace_filesystem_middleware(repo_root: str) -> FilesystemMiddleware:
     )
 
 
+def _batch_file_claims_middleware() -> Any:
+    from app.graph.batch_file_claims import build_middleware
+
+    return build_middleware()
+
+
 def _verify_after_write_middleware() -> Any:
     from app.graph.verify_after_write import build_middleware
 
@@ -726,6 +732,8 @@ def create_role_agent(
         # Inside the transcript, so it records the line this appends: a fix
         # stage's write followed by its defect's tests (plan AY step 3, off).
         _verify_after_write_middleware(),
+        # Fixers of one batch never write the same file (LR.15): a pass-through outside a batch.
+        _batch_file_claims_middleware(),
         # A stage on the judgement model gathers on the build model and writes
         # on the judgement model (fast delivery). Outside the text-tool-call
         # repair, so it judges the reply that repair produced. See

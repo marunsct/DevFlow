@@ -12150,9 +12150,11 @@ def build_workflow_graph(
         from app.graph import verify_after_write
 
         root = Path(state["repository"].root_path)
+        from app.graph import batch_file_claims
+
         with verify_after_write.watching(
             config["configurable"].get(APP_RUN_ID_KEY), stage_name, lambda: _the_defect_s_tests_pass(root, defect),
-        ):
+        ), batch_file_claims.holding(config["configurable"].get(APP_RUN_ID_KEY), stage_name):
             update = _run_gated_agent(
                 temp_state, config, stage_name=stage_name, agent=agent, initial_request=request,
                 output_key="__fix_result__", next_stage="defect_remediation",

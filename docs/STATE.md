@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-17 01:30 JST (written by `loop.sh state`). Harness 4d062ad0 committed; 4d062ad0 deployed.
-**Live, and stopped in the last day:** run-d8b0e95b running at consult_testing; run-925391f7 running at defect_remediation; run-53970d86 failed at ?; run-bdf40247 failed at awaiting_approval:defect_fix_2_15; run-9831f11c failed at awaiting_approval:defect_fix_1_5
-**Last scored:** run-ca45a144 notes-api-go 9/9 (completed, mixed, 56 active min, handoff 1.0; scored 11-17 00:37 JST); run-fdd127ff textkit-lib 8/8 (completed, 23 active min, handoff 1.0; scored 11-16 23:25 JST); run-0933e611 fullstack-bookmarks 8/8 (completed, mixed, 117 active min, handoff 1.0; scored 11-16 22:55 JST).
+**As of:** 11-17 02:26 JST (written by `loop.sh state`). Harness cf069ea7 committed; 44dbe725 deployed (not the same).
+**Live, and stopped in the last day:** run-925391f7 running at advice_review_security_reliability; run-53970d86 failed at ?; run-bdf40247 failed at awaiting_approval:defect_fix_2_15; run-9831f11c failed at awaiting_approval:defect_fix_1_5
+**Last scored:** run-d8b0e95b notes-api-rust 9/9 (completed, handoff 0.857; scored 11-17 02:26 JST); run-ca45a144 notes-api-go 9/9 (completed, mixed, 56 active min, handoff 1.0; scored 11-17 00:37 JST); run-fdd127ff textkit-lib 8/8 (completed, 23 active min, handoff 1.0; scored 11-16 23:25 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -15,7 +15,7 @@ every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.
 |---|---|
 | Phase | Launch review (`docs/reviews/launch-review-2026-11-16.md`, LR.1-65) built item by item; M36 measuring runs on both ports. Owner hands off 11-16 21:50 JST: all review items by the morning of 11-17. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run pinned to its port (`PIN_MODEL=1`). Never load or change them. |
-| Harness | 005ce413 (LF.976-977) deploying 11-17 ~01:55 JST into the live runs; 4d062ad0 (LF.970-974) before. |
+| Harness | 0216902e (LF.978-979) deploying 11-17 ~02:40 JST; 005ce413 (LF.976-977) live from 01:52; 4d062ad0 (LF.970-974) before. |
 | Switches | 52 fixes built in (always on; only a host env var turns one off). 11 optional switches; one on - NEAR_GREEN_REPLANNED_ONCE (Efficiency, LF.977, measuring.md M14: off at once if a run it fires in loses a hidden test). Off: Context and cost (OBSERVATION_FOLDING, STABLE_STAGE_PREFIX, BATCH_ACCEPTANCE_AUTHOR, REASONING_KEPT_AFTER_AN_ANSWER), Efficiency (EQUIVALENT_MUTANTS_REMEMBERED, MUTANT_CHECK_IN_THE_FIX_STAGE, REVIEWS_WITHOUT_REASONING, HARNESS_FINDINGS_RECHECKED), Setup scope (SETUP_SCOPE_GUARD), Review gates (MILESTONE_EVIDENCE_GATE). Admin page: Controls. |
 | Operations | Backups nightly to `data/backups` and `BACKUP_DIR` (external disk, 7 daily + 4 weekly), checked by `loop.sh backup --check`; finished runs older than `RETENTION_DAYS` (60) cleared nightly; both set in git-ignored `data/loop/ops.env`. Owner's Postgres port in git-ignored `docker-compose.override.yml`; `docker-compose.prod.yml` + `deploy/Caddyfile` for TLS. |
 | Suites | `loop.sh suite` and `loop.sh suite-production` (every built-in fix on, as shipped) both green: 17,316 passed, 0 known failures. |
@@ -25,7 +25,10 @@ The 10 optional switches above. Hosted-model runs (LR.44) only when the owner st
 
 ## The last three runs
 Generated above. Tonight's M36 runs (hidden, quality, verdict):
-- notes-api-go 1 run-ca45a144 (:8888): 9/9, 8/8, not_deliverable - rightly: 2 of its own Go unit tests ship failing.
+- notes-api-rust 1 run-d8b0e95b (:8888, 52 min): 9/9, 8/8, not_deliverable - wrongly, for `package.json` having no
+  `test` script (LF.978); its unit tests did not compile (an axum `TestClient` that does not exist) and no gap said so (LF.979).
+- notes-api-go 1 run-ca45a144 (:8888): 9/9, 8/8, not_deliverable - 2 Go unit tests ship failing (right), and the same
+  false `package.json` blocker (LF.978).
 - textkit-lib 2 run-fdd127ff: 8/8, 7/7, delivered. fullstack-bookmarks 1 run-0933e611: 8/8, delivered.
 - Earlier on 11-16: web-todo 10/10 delivered; notes-api-hono 9/9 8/8 delivered; notes-api-js 9/9 8/8 with cuts;
   web-todo-react 10/10 not_deliverable (663 lines against the brief's 500); fullstack-bookmarks-py 8/8 after LF.958;
@@ -50,9 +53,10 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   after, not a night; LR.44 (hosted-model matrix) waits for the owner.
 
 ## Next actions
-1. Live: tasks-api 2 run-925391f7 (:1234, rewound to its 00:11 JST defect fix after the duplicate) and
-   notes-api-rust 1 run-d8b0e95b (:8888, 01:28 JST). Score each with its full id when it finishes.
-2. Then shortlinks-api 1 on :1234 (held out); the language sweep on :8888: notes-api-java, -csharp, -php, -ruby.
+1. Live: tasks-api 2 run-925391f7 (:1234, rewound to its 00:11 JST defect fix after the duplicate, sprint 1 green 43/43).
+   Score it with its full id when it finishes. The status board (Claude Doc) was not updated: the docs connector was
+   not connected this session.
+2. Then shortlinks-api 1 on :1234 (held out); the language sweep on :8888: notes-api-java (next, after the LF.978-979 deploy), -csharp, -php, -ruby.
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).
 4. When no fix is pending for a full audit cycle: freeze and start the LR.20 batch.
 

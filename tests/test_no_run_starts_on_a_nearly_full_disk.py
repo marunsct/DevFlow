@@ -68,4 +68,4 @@ def test_the_nightly_checks_its_backup_and_reports_old_runs_removing_them_only_w
     nightly = nightly[:nightly.index("\n  ;;")]
     assert '"$0" backup --check' in nightly
     assert 'if [ -n "${RETENTION_DAYS:-}" ]; then keep="--delete"; else keep=""; fi' in nightly
-    assert "manage \"$what\" --older-than-days" in nightly
+    assert "manage \"$what\" --older-than-days" in nightly and "docker compose exec -T worker" in nightly

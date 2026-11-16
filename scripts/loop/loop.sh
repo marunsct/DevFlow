@@ -705,7 +705,7 @@ nightly)
   # a workspace is the evidence a run's review reads and a removal cannot be undone.
   if [ -n "${RETENTION_DAYS:-}" ]; then keep="--delete"; else keep=""; fi
   for what in checkpoints workspaces; do
-    docker exec langchain-worker-1 python -m app.server.manage "$what" --older-than-days "${RETENTION_DAYS:-30}" $keep 2>&1 \
+    docker compose exec -T worker python -m app.server.manage "$what" --older-than-days "${RETENTION_DAYS:-30}" $keep 2>&1 \
       | tail -2 | sed "s/^/$(jst '+%F %H:%M JST') nightly $what: /" | tee -a "$STATE/nightly.log" || true
   done
   # Not beside two live runs: scaffolding the packs competes for their memory and CPU. Beside one it runs - it uses a

@@ -27,6 +27,8 @@ STALL_MINUTES = 20
 #: Minutes a gate may wait on a person before it is told.
 GATE_MINUTES = 30
 _WAITING = {"waiting_for_approval": "approval", "waiting_for_review": "review"}
+#: How long after a run failed it is still news: a sweep after a restart does not tell of week-old failures.
+FAILED_RECENT_MINUTES = 60
 
 
 def _minutes(env: str, default: int) -> int:
@@ -66,8 +68,20 @@ def findings(records: Iterable[Any], now: datetime,
         status = str(getattr(record, "status", "") or "")
         if status == "running":
             since = activity(record.run_id)
+            kind = "stalled"
+            if since is None:
+                # No record at all yet: queued behind other runs, never picked up (LR.62). Measured: one run sat nine
+                # hours "running" with no transcript, and the sweep, reading only its activity, never told anyone.
+                since, kind = _when(getattr(record, "updated_at", None)), "queued"
             if since is not None and (now - since).total_seconds() >= stall * 60:
-                found.append({"run_id": record.run_id, "kind": "stalled", "stage": getattr(record, "current_stage", ""),
+                found.append({"run_id": record.run_id, "kind": kind, "stage": getattr(record, "current_stage", ""),
+                              "minutes": int((now - since).total_seconds() // 60), "since": since.isoformat()})
+        elif status == "failed":
+            # A stopped run is told once (LR.62): found in the launch review, a run failed overnight and nobody knew
+            # until the morning's audit.
+            since = _when(getattr(record, "updated_at", None))
+            if since is not None and (now - since).total_seconds() <= FAILED_RECENT_MINUTES * 60:
+                found.append({"run_id": record.run_id, "kind": "failed", "stage": getattr(record, "current_stage", ""),
                               "minutes": int((now - since).total_seconds() // 60), "since": since.isoformat()})
         elif status in _WAITING:
             since = _when(getattr(record, "updated_at", None))

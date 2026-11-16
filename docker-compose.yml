@@ -181,6 +181,17 @@ x-app-env: &app-env
   # Counts rejections of a stage, not failures to improve. Raise it when
   # earlier rejections were about problems fixed elsewhere.
   WORKFLOW_MAX_REVIEW_RERUNS: ${WORKFLOW_MAX_REVIEW_RERUNS:-8}
+  # Notices beyond the browser (LR.62): a stalled, queued or failed run, or a gate waiting, sent to a webhook or by
+  # email. Set in .env; empty sends nothing. Before this they never reached the containers.
+  NOTIFY_WEBHOOK_URL: "${NOTIFY_WEBHOOK_URL:-}"
+  NOTIFY_EMAIL: "${NOTIFY_EMAIL:-}"
+  SMTP_HOST: "${SMTP_HOST:-}"
+  SMTP_PORT: "${SMTP_PORT:-587}"
+  SMTP_USER: "${SMTP_USER:-}"
+  SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+  SMTP_FROM: "${SMTP_FROM:-}"
+  STALL_MINUTES: "${STALL_MINUTES:-20}"
+  GATE_NOTICE_MINUTES: "${GATE_NOTICE_MINUTES:-30}"
 
 services:
   db:

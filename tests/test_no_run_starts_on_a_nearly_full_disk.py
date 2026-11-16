@@ -44,3 +44,10 @@ def test_the_nightly_trims_only_the_model_server_s_old_or_huge_logs():
     nightly = nightly[:nightly.index("\n  ;;")]
     assert "-name '*.log'" in nightly and "-delete" in nightly and "server-logs" in nightly
     assert nightly.index("-delete") < nightly.index('"$0" backup')
+
+
+def test_the_suite_checks_the_ui_s_types_too():
+    loop = (ROOT / "scripts" / "loop" / "loop.sh").read_text()
+    suite_part = loop[loop.index("\nsuite)"):]
+    suite_part = suite_part[:suite_part.index("\n  ;;")]
+    assert "npx tsc -b" in suite_part and "FAILED UI types" in suite_part

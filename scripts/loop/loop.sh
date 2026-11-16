@@ -711,6 +711,12 @@ suite)
       $workers -o console_output_style=count > "$log" 2>&1 || true
   grep -E "^(FAILED|ERROR)" "$log" | head -20 || true
   tail -1 "$log"
+  # The UI's type check as well (LR.24): the image build runs `tsc -b` and fails on a type error a fixture left behind,
+  # which no test of the server sees - a deploy failed on one after a green suite.
+  if command -v npx >/dev/null 2>&1 && [ -d "$ROOT/langchain-ui/node_modules" ]; then
+    if (cd "$ROOT/langchain-ui" && timeout 300 npx tsc -b > "$STATE/ui-types.log" 2>&1); then echo "UI types: ok"
+    else echo "FAILED UI types: $(grep -c 'error TS' "$STATE/ui-types.log") error(s), see $STATE/ui-types.log"; fi
+  fi
   # Every other failure once more, alone and in order (plan CH.3): the known
   # flaky tests fail only beside others in the parallel run. Reported apart, so
   # a flaky test is never mistaken for a fix's breakage, nor the other way round.

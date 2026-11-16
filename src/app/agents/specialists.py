@@ -70,6 +70,15 @@ _STAGE = "implementation"
 #:
 #: The mandate to write complete, working code rather than designs is kept -
 #: that one is not in conflict with anything and the runs it fixed stay fixed.
+#: Measured on the language sweep: in three of six runs a probe found the server answering 500 to a request it should
+#: refuse - a write with no body, an id that is not a number, JSON that cannot be parsed - each costing fix rounds.
+REFUSE_WHAT_IT_CANNOT_USE = (
+    "A request the service cannot use - no body, a body that is not JSON, a field of the wrong type, an id that is "
+    "not of the kind the route takes or names no record - is refused with a 4xx before anything is read or stored; "
+    "such a request never makes the server fail."
+)
+
+
 _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
     "ui_ux": (
         "You are the UI and UX specialist. You MUST write complete, "
@@ -115,7 +124,8 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
         "iteratively. Where this run's stack has no server - storage in the "
         "browser, no backend framework - there is no service to start, and "
         "writing one creates a second data layer the product never talks to: "
-        "implement the logic in the code the page loads instead."
+        "implement the logic in the code the page loads instead. "
+        + REFUSE_WHAT_IT_CANNOT_USE
     ),
     "testing": (
         "You are the Testing and Quality Engineering specialist. You define and "

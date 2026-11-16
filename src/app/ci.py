@@ -313,6 +313,10 @@ def unit_outcomes_in_the_pack_s_report(root: str | Path) -> tuple[dict[str, str]
     return outcomes_of(parsed.tests), parsed.found
 
 
+#: The one name a unit run that failed without writing its report is recorded under.
+UNIT_TESTS_DID_NOT_RUN = "the project's unit tests did not compile or start (their runner failed and wrote no report)"
+
+
 def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], bool]:
     """Each unit test's outcome now, and whether the runner's report was found.
 
@@ -345,6 +349,11 @@ def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], 
 
     passed = _exit_code(outcome) == 0 if isinstance(outcome, dict) else False
     said = (str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "")) if isinstance(outcome, dict) else ""
+    if not parsed.found and isinstance(outcome, dict) and "returncode" in outcome and not passed:
+        # The runner ran, failed, and wrote no report: the tests did not compile or could not start. Before, that read
+        # as none failing, and a release shipped unit tests that did not compile without a word (found on a language
+        # sweep). One stable name, so an escalation's acceptance and the release compare it like any test.
+        unit = {UNIT_TESTS_DID_NOT_RUN: "failed"}
     if not passed:
         # Read as the test round's own run reads, so the record says the same whichever ran it.
         said = (said.rstrip() + "\n" + what_the_failing_unit_tests_say(parsed.tests)).strip()
@@ -356,7 +365,7 @@ def unit_failures(root: str | Path, runner: Runner | None = None) -> list[str]:
     """The project's own unit tests that do not pass now, by name; [] when all pass or none ran."""
     unit, ran = _run_unit(root, runner)
     if not ran:
-        return []
+        return [UNIT_TESTS_DID_NOT_RUN] if unit.get(UNIT_TESTS_DID_NOT_RUN) == "failed" else []
     return sorted(name for name, outcome in unit.items() if outcome != "passed")
 
 

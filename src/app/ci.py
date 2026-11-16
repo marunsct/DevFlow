@@ -492,20 +492,52 @@ def revert_to(root: str | Path, commit_id: str) -> bool:
 
 
 def restore_paths(root: str | Path, commit_id: str, paths: Sequence[str]) -> bool:
-    """Put `paths` back as they were at `commit_id`: a file it did not have is removed."""
+    """Put `paths` back as they were at `commit_id`: a file it did not have is removed. All or nothing.
+
+    Found in the launch review (LR.51): "git could not show this file at that commit" was read as "the commit did
+    not have it", so a commit id git could not read deleted every file it was asked to restore and answered done;
+    and a checkout that failed half way left the files already put back changed. Now an unreadable commit touches
+    nothing, and a failure part way puts every file back as it was before the call.
+    """
     if not commit_id:
         return False
+    readable = _git(root, "cat-file", "-e", f"{commit_id}^{{commit}}")
+    listed = _git(root, "ls-tree", "-r", "-z", "--full-tree", "--name-only", commit_id, "--", *paths) if paths else None
+    if readable is None or readable.returncode != 0 or (paths and (listed is None or listed.returncode != 0)):
+        return False
+    had = {name for name in (listed.stdout.split("\0") if listed is not None else []) if name}
+    base = Path(root)
+    before: dict[str, bytes | None] = {}
+    try:
+        for path in paths:
+            before[path] = (base / path).read_bytes() if (base / path).is_file() else None
+    except OSError:
+        return False
+
+    def put_back() -> None:
+        for path, data in before.items():
+            try:
+                if data is None:
+                    (base / path).unlink(missing_ok=True)
+                else:
+                    (base / path).parent.mkdir(parents=True, exist_ok=True)
+                    (base / path).write_bytes(data)
+            except OSError:
+                continue
+
     for path in paths:
-        existed = _git(root, "cat-file", "-e", f"{commit_id}:{path}")
-        if existed is not None and existed.returncode == 0:
+        if path in had:
             done = _git(root, "checkout", "--quiet", commit_id, "--", path)
-            if done is None or done.returncode != 0:
-                return False
+            restored = done is not None and done.returncode == 0
         else:
             try:
-                (Path(root) / path).unlink(missing_ok=True)
+                (base / path).unlink(missing_ok=True)
+                restored = True
             except OSError:
-                return False
+                restored = False
+        if not restored:
+            put_back()
+            return False
     return True
 
 

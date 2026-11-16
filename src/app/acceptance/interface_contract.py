@@ -164,6 +164,25 @@ def _a_literal_id_as_a_parameter(check: "Check") -> "Check":
     return _with(check, path=_A_LITERAL_ID.sub("{id}", check.path))
 
 
+#: A route parameter's value that is no number: any answer under 500 passes, whatever the product's id looks like.
+AN_ID_THAT_IS_NOT_A_NUMBER = "not-a-number"
+
+
+def with_an_id_that_is_not_a_number(checks: list["Check"]) -> list["Check"]:
+    """Each HTTP line with a route parameter, asked once more with a value that is not a number (for the 5xx probe).
+
+    Measured on the language sweep: `GET /notes/abc` answered 500 on a product that passed every hidden test; the
+    probe had sent only a record that does not exist, a number. A slug route answers 404 to it and passes as well.
+    """
+    from dataclasses import replace as _with
+
+    variants: list[Check] = []
+    for check in map(_a_literal_id_as_a_parameter, checks):
+        if check.kind == "http" and _A_TEMPLATE.search(check.path):
+            variants.append(_with(check, path=re.sub(r"\{[^}]*\}|:[A-Za-z_]\w*", AN_ID_THAT_IS_NOT_A_NUMBER, check.path)))
+    return variants
+
+
 def checkable(checks: list["Check"]) -> list["Check"]:
     """The HTTP and page checks a bare probe can settle, a route's parameters filled with a record that does not exist.
 
@@ -1074,7 +1093,10 @@ def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Ch
             return None
         project_name = str((found[1] or {}).get("project") or "")
         run = runner or suite._sandbox_runner(root)  # noqa: SLF001 - the suite's own runner
-        report = _the_probe_s_report(root / project_name, project_name, probe, web, run,
+        # The lines as before, then each route once more with an id that is not a number: a 5xx there is a defect too,
+        # and asked last, so the coverage of the lines reads as it did.
+        asked = [*web, *with_an_id_that_is_not_a_number(lines)]
+        report = _the_probe_s_report(root / project_name, project_name, probe, asked, run,
                                      bodies=list(suite._state(root).get("interface_contract_bodies") or []))  # noqa: SLF001
         probe_coverage.write(root, "server_error", probe_coverage.coverage(
             considered=len(lines), asked=web, report=report if report is not None and report.found else None,
@@ -1084,7 +1106,7 @@ def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Ch
             return None
         errors: list[tuple[Check, int]] = []
         for test in report.tests:
-            check, status = _the_check_of(test, web), _a_server_error(test)
+            check, status = _the_check_of(test, asked), _a_server_error(test)
             if getattr(test, "outcome", "") == "failed" and check is not None and status:
                 errors.append((check, status))
         return errors

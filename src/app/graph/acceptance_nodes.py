@@ -712,6 +712,19 @@ ACCESSIBILITY_REMEDIES = {
 }
 
 
+def what_the_lock_ran(result: Any, criteria: int) -> str:
+    """The lock's count of tests, or why none ran: a product drafted but not starting yet answers no test at all.
+
+    Measured on one run: a suite locked again after drafting read "0 test(s) over 18 criteria; every criterion is
+    covered", which reads as a suite holding no tests; its eleven tests had found no product to reach.
+    """
+    tests = len(getattr(getattr(result, "report", None), "tests", None) or [])
+    if not tests and str(getattr(result, "problem", "") or "").startswith(suite.PRODUCT_DID_NOT_START):
+        return (f"no test ran against the product at this lock: it does not start yet, and the first test round "
+                f"runs the suite against it; {criteria} criteria")
+    return f"{tests} test(s) over {criteria} criteria"
+
+
 def a_repair_left_the_sprint_green(root: str | Path, result: Any) -> bool:
     """Whether the repaired suite passes in full and the unit tests last passed on this same product. Never raises."""
     try:
@@ -1093,7 +1106,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         options=["lock it", "send it back to QA"],
         decision="lock it",
         rationale=(
-            f"{tests} test(s) over {len(suite.criteria(root))} criteria; "
+            what_the_lock_ran(result, len(suite.criteria(root))) + "; "
             + ("every criterion is covered and the QA lead approved."
                if not open_problems else
                f"locked after {rounds} round(s) with these still open: " + "; ".join(open_problems))

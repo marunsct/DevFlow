@@ -205,6 +205,28 @@ def _the_interface_contract(lines: Sequence[str]) -> str:
     )
 
 
+def kept_files_rule(repo_root: str | Path) -> str:
+    """The rule for files the harness keeps, naming them; "" when it keeps none.
+
+    Measured on the language sweep: a test read `start.sh` and asserted what it contains in two of the first four
+    families - the check that finds one fires only once it fails, after the lock - and each cost a dispute or a
+    reopened suite. The writer is told before writing.
+    """
+    from app.stacks import contract
+
+    try:
+        kept = sorted(contract.kept_paths(repo_root))
+    except Exception:  # noqa: BLE001 - no record, no rule
+        return ""
+    if not kept:
+        return ""
+    named = ", ".join(f"`{path}`" for path in kept)
+    return (f"- These files are the harness's, put back as they were before every run: {named}. A test never reads "
+            "one and checks its text, which no product can change. What such a file promises - the service it "
+            "starts answers on `PORT` and keeps its data under `DATA_DIR` - is proven by the running product the "
+            "setup gives you.\n")
+
+
 def build_author_request(
     repo_root: str | Path,
     criteria: Sequence[Criterion],
@@ -311,7 +333,8 @@ def build_author_request(
         "waits until the first is shown before it types the second, as a person does: a page that "
         "empties its form once a save has finished would otherwise empty what the test typed.\n"
         + f"- Write only inside `{project}/{acceptance_dir}/`. Product code is not yours.\n"
-        "- Never start a product that keeps running - a service, or the server a page is served "
+        + kept_files_rule(repo_root)
+        + "- Never start a product that keeps running - a service, or the server a page is served "
         "from - yourself, in a test or by a command: the suite's own setup starts it before the "
         "tests and stops it after. A test that runs its start script or its server waits for a "
         "process that never ends, and the whole suite stops there with no result for any test. "

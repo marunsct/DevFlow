@@ -109,7 +109,7 @@ def main(path):
             print(f"  {n:3d} {t}: {m}")
     # Each notice can be worded more than one way, and matching only one of
     # them reports zero for a notice that fired forty-two times. Measured on
-    # run-cac07d52: the read-repeat notice has a span form ("You have already
+    # one run: the read-repeat notice has a span form ("You have already
     # read lines 31-50 of this file") and a bytes form ("the same bytes this
     # file gave you"), and only the second was counted - so every audit in
     # this session under-reported read repeats, including the ones used to
@@ -147,7 +147,7 @@ def _the_stack_this_run_chose(workspace):
     silently skips them, so this script's verdict was milder than the
     reviewer's on exactly the findings that block.
 
-    Found on run-ed05e20e: the audit reported 3 cross-file problems and the
+    Found on one run: the audit reported 3 cross-file problems and the
     reviewer saw 4, the extra one being a `server.mjs` the product has no use
     for. Returns None when the document cannot be read, which is the old
     behaviour.

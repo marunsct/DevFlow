@@ -5,7 +5,6 @@ controls' names, the filter matched nothing on a page showing that record, and t
 """
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
 from app.acceptance import suite
@@ -16,7 +15,7 @@ STALE = ("Error: expect(locator).toBeVisible() failed\n Locator: getByRole('list
 
 
 def _result(message):
-    return SimpleNamespace(report=SimpleNamespace(tests=[
+    return SimpleNamespace(ran=True, report=SimpleNamespace(tests=[
         SimpleNamespace(name="[AC-5] filters show the right records", outcome="failed", message=message)]))
 
 
@@ -30,5 +29,7 @@ def test_a_record_the_page_does_not_show_is_the_product_s(tmp_path):
     assert suite.tests_that_match_a_record_by_its_whole_text(tmp_path, _result(message)) == []
 
 
-def test_it_is_one_of_the_cannot_pass_checks():
-    assert '"tests_that_match_a_record_by_its_whole_text"' in inspect.getsource(suite.tests_that_cannot_pass)
+def test_the_one_list_every_caller_reads_carries_it(tmp_path):
+    found = suite.tests_that_cannot_pass(tmp_path, _result(STALE))
+
+    assert any("/^Filter test active$/" in item and "[AC-5]" in item for item in found)

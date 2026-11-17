@@ -7,6 +7,7 @@ it starts, so the tests never see it. Both failed on every product and went to t
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
 
 from app.acceptance import suite
 from app.stacks import contract, pack_named
@@ -49,7 +50,8 @@ def test_the_baseurl_argument_is_left_alone(tmp_path):
     assert suite.reads_of_what_the_test_does_not_have(_suite(tmp_path, RIGHT)) == []
 
 
-def test_it_is_one_of_the_checks_that_reopen_a_locked_suite():
-    import inspect
+def test_it_is_one_of_the_checks_that_reopen_a_locked_suite(tmp_path):
+    found = suite.tests_that_cannot_pass(_suite(tmp_path, WRONG), SimpleNamespace(ran=True, report=SimpleNamespace(tests=[])))
 
-    assert "reads_of_what_the_test_does_not_have(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+    assert any("line(s) 3" in item and "`baseURL`" in item for item in found)
+    assert any("line(s) 4" in item and "PORT" in item for item in found)

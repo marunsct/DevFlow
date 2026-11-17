@@ -6,7 +6,6 @@ of them a stage finding again what an earlier one had read.
 
 from __future__ import annotations
 
-import inspect
 import os
 import re
 import time
@@ -15,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.messages import HumanMessage, ToolMessage
 
-from app.agents import project_memory, role_agent
+from app.agents import project_memory
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 
@@ -91,9 +90,13 @@ def test_each_call_gets_it_and_a_read_of_what_it_holds_is_a_pointer(workspace, m
     assert middleware.wrap_tool_call(read, lambda request: "the file again") == "the file again"
 
 
-def test_every_role_agent_has_it():
-    source = inspect.getsource(role_agent.create_role_agent)
-    assert "build_project_memory_middleware(resolved_repo_root)" in source
+def test_every_role_agent_has_it(workspace, monkeypatch):
+    from a_role_agent import the_first_request
+
+    opening = next(message for message in the_first_request(workspace, monkeypatch) if message.type == "human")
+
+    assert opening.content.startswith("[Project memory")
+    assert "=== notes-api/src/store.ts ===\nexport const store = 1;" in opening.content
 
 
 def test_it_is_on_in_every_delivery_mode_unless_switched_off(monkeypatch):

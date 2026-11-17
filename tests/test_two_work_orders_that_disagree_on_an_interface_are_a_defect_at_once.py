@@ -6,14 +6,16 @@ back rounds later as a failing test.
 """
 from __future__ import annotations
 
-import inspect
 import os
 import re
 import subprocess
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from app.agents import interface_clashes
+from app.agents.specialists import SpecialistOutput
 from app.graph import engineering
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
@@ -61,10 +63,24 @@ def test_a_role_is_read_whole_from_a_builder_s_stage():
     assert interface_clashes.role_of("defect_fix_1_0") == ""
 
 
-def test_the_ci_gate_checks_before_it_commits_and_files_them():
-    source = inspect.getsource(engineering.ci_gate)
-    assert source.index("interface_clashes.defects(") < source.index("ci.commit(root")
-    assert '*raised_by("interface clash", clashed)' in source
+def test_the_ci_gate_files_a_clash_in_the_batch_it_commits(tmp_path, monkeypatch):
+    """Asked after the commit, the batch's start is the commit itself and nothing has changed since."""
+    from app import ci
+
+    outputs = _batch(tmp_path)
+    monkeypatch.setattr(engineering, "ci_applies", lambda root: True)
+    # Running the product's tests is the sandbox's: one snapshot with nothing measured stands in for it.
+    monkeypatch.setattr(ci, "take", lambda root, label: ci.Snapshot(label=label))
+    monkeypatch.setattr(engineering, "underlined_in_the_batch", lambda state, root, since: [])
+    state = {"repository": SimpleNamespace(root_path=str(tmp_path)), "specialist_outputs": outputs,
+             "milestone_plan": SimpleNamespace(delegated_tasks=[])}
+
+    with mock.patch.dict(os.environ, ON):
+        update = engineering.ci_gate(state, {"configurable": {}}, None)
+
+    [defect] = update["review_defects"]
+    assert defect.source == "interface clash" and "`load_items` was removed from `app/store.py`" in defect.description
+    assert defect.owner == "ui_ux"
 
 
 def test_a_moved_name_or_a_name_of_another_module_is_no_clash(tmp_path):
@@ -86,12 +102,21 @@ def test_a_moved_name_or_a_name_of_another_module_is_no_clash(tmp_path):
         assert interface_clashes.clashes(tmp_path, outputs) == [], "it defines the name itself"
 
 
-def test_a_dotted_directory_keeps_its_dot():
-    from app.analysis import project_graph
-    from app.graph import localisation
+def test_a_dotted_directory_keeps_its_dot(tmp_path):
+    (tmp_path / ".lib").mkdir()
+    (tmp_path / ".lib" / "store.py").write_text("def load_items():\n    return []\n")
+    (tmp_path / ".lib" / "routes.py").write_text("x = 1\n")
+    for args in (("init", "-q"), ("add", "-A"), ("-c", "user.email=h@example.com", "-c", "user.name=h", "commit", "-qm", "base")):
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True)
+    (tmp_path / ".lib" / "store.py").write_text("def fetch_items():\n    return []\n")
+    (tmp_path / ".lib" / "routes.py").write_text("from store import load_items\n\ndef index():\n    return load_items()\n")
+    outputs = {"specialist_backend_0": SimpleNamespace(changed_files=["./.lib/store.py"]),
+               "specialist_ui_ux_1": SimpleNamespace(changed_files=[".lib/routes.py"])}
 
-    for module in (interface_clashes, project_graph, localisation):
-        assert 'lstrip("./")' not in inspect.getsource(module)
+    with mock.patch.dict(os.environ, ON):
+        [defect] = interface_clashes.defects(tmp_path, outputs, interface_clashes.role_of)
+
+    assert "`.lib/store.py`" in defect.description and defect.affected_files == [".lib/routes.py", ".lib/store.py"]
 
 
 def test_a_moved_name_still_imported_from_its_old_file_is_a_clash_and_a_name_in_a_comment_is_not(tmp_path):
@@ -108,7 +133,7 @@ def test_a_moved_name_still_imported_from_its_old_file_is_a_clash_and_a_name_in_
         assert interface_clashes.clashes(tmp_path, outputs) == []
 
 
-def test_a_clash_is_asked_again_at_settlement(tmp_path):
+def test_whether_a_clash_still_stands_is_read_from_the_using_file(tmp_path):
     """Closed on any named test and held open on none, a clash was never re-checked."""
     outputs = _batch(tmp_path)
     with mock.patch.dict(os.environ, ON):
@@ -117,6 +142,25 @@ def test_a_clash_is_asked_again_at_settlement(tmp_path):
     (tmp_path / "app" / "routes.py").write_text("from app.store import fetch_items\n\ndef index():\n    return fetch_items()\n")
     assert interface_clashes.still_clashing(tmp_path, description) is False
     assert interface_clashes.still_clashing(tmp_path, "[AC-1] sign up fails") is None
-    from app.graph import workflow
-    source = inspect.getsource(workflow._settle_the_fix)
-    assert "interface_clashes.still_clashing(" in source
+
+
+@pytest.mark.parametrize(("routes", "status"), [
+    ("from app.store import load_items\n\ndef index():\n    return load_items()\n", "open"),
+    ("from app.store import fetch_items\n\ndef index():\n    return fetch_items()\n", "fixed"),
+], ids=["still clashing", "settled"])
+def test_a_fix_settles_a_clash_only_when_the_using_file_no_longer_imports_the_removed_name(tmp_path, routes, status):
+    """Closed on any named test and held open on none, a clash was never re-checked."""
+    import the_fix_stage
+
+    outputs = _batch(tmp_path)
+    with mock.patch.dict(os.environ, ON):
+        [clash] = interface_clashes.defects(tmp_path, outputs, interface_clashes.role_of)
+    (tmp_path / "app" / "routes.py").write_text(routes)
+
+    raised = the_fix_stage.a_defect(clash.description, source="interface clash", owner="ui_ux",
+                                    affected_files=clash.affected_files)
+
+    update, _ = the_fix_stage.run(tmp_path, the_fix_stage.a_state(tmp_path, raised),
+                                  answer=SpecialistOutput(changed_files=["app/routes.py"], tests=["tests/test_routes.py"]))
+
+    assert update["remediation"].defects[0].status == status

@@ -164,9 +164,32 @@ def test_the_ladder_is_ordered_and_plausible():
     )
 
 
-def test_every_rung_asks_for_one_token(server):
+def test_every_rung_asks_for_one_token(monkeypatch):
     """This measures what the server will read, not what it will write."""
-    import inspect
+    import json
 
-    source = inspect.getsource(window_probe._accepts)
-    assert '"max_tokens": 1' in source
+    asked = []
+
+    def _urlopen(request, timeout=None):
+        body = json.loads(request.data.decode("utf-8"))
+        asked.append(body.get("max_tokens"))
+        if str(body).count("word ") > 40_000:
+            raise _refusal()
+
+        class _Response:
+            def read(self):
+                return b"{}"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        return _Response()
+
+    monkeypatch.setattr(window_probe.urllib.request, "urlopen", _urlopen)
+
+    detect_context_window("http://x/v1", "k", "m")
+
+    assert len(asked) > 1 and set(asked) == {1}

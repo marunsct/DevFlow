@@ -6,8 +6,9 @@ call threw away a reply the run had waited minutes for.
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
+
+import httpx
 
 from app.models import CompatibleChatOpenAI, call_gate
 
@@ -45,9 +46,27 @@ def test_a_hold_left_behind_does_not_stop_calls_for_good(tmp_path, monkeypatch):
     assert now[0] >= call_gate.MOST_SECONDS_HELD
 
 
-def test_every_call_of_the_model_class_goes_through_the_gate():
-    # The server it marks is the one the request goes to (the run's model pin may send it elsewhere).
-    assert "a_model_call(self._served_by()[0])" in inspect.getsource(CompatibleChatOpenAI._generate)
+def test_a_model_call_is_in_flight_while_its_request_is_on_the_wire(tmp_path, monkeypatch):
+    """What the deploy waits on: a marker for every request the model class sends, gone once it returns."""
+    monkeypatch.setenv("MODEL_CALL_GATE_DIR", str(tmp_path))
+    in_flight_when_sent = []
+
+    def server(request: httpx.Request) -> httpx.Response:
+        in_flight_when_sent.append(call_gate.in_flight())
+        return httpx.Response(200, json={
+            "id": "x", "object": "chat.completion", "created": 0, "model": "m",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+        })
+
+    model = CompatibleChatOpenAI(
+        model="m", base_url="http://gpu:9090/v1", api_key="k", max_retries=0,
+        http_client=httpx.Client(transport=httpx.MockTransport(server)),
+    )
+
+    model.invoke("hello")
+
+    assert [len(markers) for markers in in_flight_when_sent] == [1]
+    assert call_gate.in_flight() == []
 
 
 def test_the_deploy_holds_waits_and_lifts():

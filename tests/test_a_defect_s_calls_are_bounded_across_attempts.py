@@ -54,13 +54,21 @@ def test_an_attempt_s_calls_are_counted_from_the_transcript_since_it_started():
         assert defect_budget.calls_in("run", "defect_fix_1_0", "2026-10-22T01:00:00+00:00") is None
 
 
-def test_the_attempt_record_keeps_the_calls_and_the_fix_stage_checks_the_ceiling_first():
+def test_the_attempt_record_keeps_the_calls():
     cycle = workflow._with_the_attempt(_cycle(), 0, "defect_fix_1_0", None, "left open", 17)
     assert cycle.defects[0].attempts[-1]["calls"] == 17
-    from workflow_nodes import workflow_source
 
-    source = workflow_source()
-    assert source.index("defect_budget.spent_out(cycle, defect_index)") < source.index("fix_model = ctx.the_build_model(\n        state,\n        stage_name,")
+
+def test_a_defect_that_has_spent_the_ceiling_is_not_given_to_a_fixer_again(tmp_path):
+    import the_fix_stage
+
+    spent = the_fix_stage.a_defect(attempts=[{"stage": "defect_fix_1_0", "did": "changed the token check",
+                                              "outcome": "left open", "calls": 70}])
+    with mock.patch.dict(os.environ, ON):
+        update, seen = the_fix_stage.run(tmp_path, the_fix_stage.a_state(tmp_path, spent))
+
+    assert seen.requests == [] and seen.agent_models == []
+    assert update["defect_cursor"] == 1
 
 
 def test_the_start_is_carried_across_a_pause(tmp_path, monkeypatch):
@@ -115,10 +123,11 @@ def test_a_defect_re_planned_into_a_new_cycle_keeps_the_calls_it_spent_before():
         assert defect_budget.spent(_cycle(70), 0) == 70, "the cycle's own count when it is more"
 
 
-def test_each_counted_attempt_is_noted_in_the_ledger():
-    noted = []
-    with mock.patch("app.observability.defect_ledger.note",
-                    lambda event, stage, **kw: noted.append((event, stage, kw.get("detail")))):
+def test_each_counted_attempt_is_kept_in_the_run_s_ledger_for_a_later_cycle(tmp_path):
+    """Written to the run's own transcript, as a re-planned cycle reads it; an attempt never counted adds nothing."""
+    with mock.patch.dict(os.environ, {**ON, "DATA_DIR": str(tmp_path)}), \
+         mock.patch("app.observability.transcript._run_id_from_config", lambda: "run"):
         workflow._with_the_attempt(_cycle(), 0, "defect_fix_2_0", None, "left open", 17)
         workflow._with_the_attempt(_cycle(), 0, "defect_fix_2_0", None, "left open", None)
-    assert noted == [(defect_budget.ATTEMPT_EVENT, "defect_fix_2_0", "17")]
+
+        assert defect_budget.spent(_cycle(), 0) == 17

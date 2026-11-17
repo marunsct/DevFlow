@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 
+import httpx
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app import models
@@ -29,8 +30,23 @@ def test_a_list_content_is_cleaned_too():
     assert out[0].content[0]["text"] == "x�"
 
 
-def test_the_call_path_cleans_before_sending():
-    import inspect
+def test_a_conversation_carrying_one_is_still_sent(tmp_path, monkeypatch):
+    """The request that leaves for the model server: encodable, the surrogate replaced."""
+    monkeypatch.setenv("MODEL_CALL_GATE_DIR", str(tmp_path))
+    sent = []
 
-    source = inspect.getsource(models)
-    assert "messages = _without_lone_surrogates(messages)" in source
+    def server(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "id": "x", "object": "chat.completion", "created": 0, "model": "m",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+        })
+
+    model = models.CompatibleChatOpenAI(
+        model="m", base_url="http://gpu:9090/v1", api_key="k", max_retries=0,
+        http_client=httpx.Client(transport=httpx.MockTransport(server)),
+    )
+
+    model.invoke([HumanMessage(content="fine"), AIMessage(content="a\ud800b"), HumanMessage(content="go on")])
+
+    assert [message["content"] for message in sent[0]["messages"]] == ["fine", "a�b", "go on"]

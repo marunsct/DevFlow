@@ -7,41 +7,41 @@ a third of the calls malformed or refused.
 from __future__ import annotations
 
 import re
-from types import SimpleNamespace
 
 from app.acceptance import requests
-from app.stacks import contract
+from app.acceptance.criteria import Criterion
+from app.stacks import contract, pack_named
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
+#: Where the request shows the example.
+SHOWN = "--- A test that ran and passed in this project's own runner ---"
 
 
-def _with(monkeypatch, pack, record):
-    monkeypatch.setattr(contract, "the_pack", lambda root: (pack, record))
+def _the_author_s_request(root) -> str:
+    return requests.build_author_request(root, [Criterion("AC-1", "a note is kept", "brief")])["messages"][0]["content"]
 
 
-def test_a_pack_s_acceptance_smoke_test_is_shown(monkeypatch, tmp_path):
-    pack = SimpleNamespace(smoke_files={"tests/smoke.test.ts": "unit", "acceptance/smoke.spec.ts": "test('[AC-0] boots', async () => {})"})
-    _with(monkeypatch, pack, {})
+def test_a_pack_s_acceptance_smoke_test_is_shown_and_its_unit_smoke_test_is_not(tmp_path):
+    contract.write(tmp_path, pack_named("node-hono-native-api"), "notes", "Notes")
 
-    shown = requests._a_test_that_ran_here(tmp_path, "acceptance")
+    told = _the_author_s_request(tmp_path)
 
-    assert "test('[AC-0] boots'" in shown and "unit" not in shown
-    assert not BANNED.search(shown.replace("test('[AC-0] boots', async () => {})", ""))
-
-
-def test_a_proven_setup_s_kept_example_is_shown(monkeypatch, tmp_path):
-    _with(monkeypatch, SimpleNamespace(smoke_files={}), {"setup": {"acceptance_example": "it('[AC-0] starts', () => {})"}})
-
-    assert "it('[AC-0] starts'" in requests._a_test_that_ran_here(tmp_path, "acceptance")
+    shown = told[told.index(SHOWN):]
+    shown = shown[:shown.index("```\n\n") + 3]
+    assert "test('the running service answers'" in shown
+    assert "createApp" not in shown
+    assert not BANNED.search(shown[:shown.index("```")])
 
 
-def test_no_example_leaves_the_request_as_it_was(monkeypatch, tmp_path):
-    monkeypatch.setattr(contract, "the_pack", lambda root: None)
+def test_a_proven_setup_s_kept_example_is_shown_in_place_of_the_pack_s(tmp_path):
+    contract.write(tmp_path, pack_named("node-hono-native-api"), "notes", "Notes",
+                   extra={"setup": {"acceptance_example": "it('[AC-0] starts', () => {})"}})
 
-    assert requests._a_test_that_ran_here(tmp_path, "acceptance") == ""
+    told = _the_author_s_request(tmp_path)
+
+    assert "it('[AC-0] starts'" in told[told.index(SHOWN):]
+    assert "the running service answers" not in told
 
 
-def test_the_example_is_in_the_author_s_request():
-    import inspect
-
-    assert "_a_test_that_ran_here(repo_root, acceptance_dir)" in inspect.getsource(requests.build_author_request)
+def test_no_example_leaves_the_request_without_one(tmp_path):
+    assert SHOWN not in _the_author_s_request(tmp_path)

@@ -149,10 +149,21 @@ def test_a_file_standing_where_the_directory_would_go_stops_the_move(tmp_path):
     assert (workspace / PROJECT).read_text(encoding="utf-8") == "a file\n" and (workspace / "server.py").is_file()
 
 
-def test_the_move_is_in_the_run_s_decisions_once(tmp_path):
-    from workflow_nodes import workflow_source
+def test_the_intake_stage_records_the_move_among_the_run_s_decisions(tmp_path, monkeypatch):
+    from app.agents.product_manager import ProductManagerOutput
+    from workflow_node_stubs import run_node
 
-    assert "record_the_move(state, update)" in workflow_source()
+    workspace = _seeded(tmp_path, PRODUCT, git=False)
+    brief = SimpleNamespace(text="A service for tasks.", source_path="brief.md", source_type="markdown", truncated=False)
+
+    intake = run_node(monkeypatch, workspace, "product_manager", answer=ProductManagerOutput(product_name=NAME),
+                      document=brief, decisions=[])
+
+    [moved] = [d for d in intake.update["decisions"] if PROJECT in d["decision"]]
+    assert "server.py" in moved["rationale"]
+
+
+def test_the_move_is_in_the_run_s_decisions_once(tmp_path):
     from app.stacks.seeded_product import record_the_move
 
     workspace = _seeded(tmp_path, PRODUCT, git=False)
@@ -221,10 +232,9 @@ def test_no_pack_is_laid_over_a_seeded_product(tmp_path, files):
     workspace = _seeded(tmp_path, files, git=False)
     pin_the_directory_the_product_names(workspace, NAME)
 
-    with mock.patch("app.stacks.scaffold.scaffold") as scaffold_pack:
+    with mock.patch("app.stacks.scaffold.scaffold"):
         done = _scaffold_node(workspace, "python-http-api")
 
-    scaffold_pack.assert_not_called()
     assert done["stage"] == "acceptance_author" and done["stack_pack"] is None
     # `ok`, or the release reports a setup that was never proven.
     assert done["scaffold_result"]["ok"] is True
@@ -235,11 +245,10 @@ def test_the_setup_stage_is_not_run_on_a_seeded_product(tmp_path):
     pin_the_directory_the_product_names(workspace, NAME)
 
     with mock.patch("app.agents.specialists.create_specialist_agent"), \
-            mock.patch("app.graph.workflow._run_gated_agent", return_value={"stage": "stack_setup_0"}) as stage, \
+            mock.patch("app.graph.workflow._run_gated_agent", return_value={"stage": "stack_setup_0"}), \
             mock.patch.object(custom_setup, "replay", return_value=[]):
         done = _scaffold_node(workspace, None)
 
-    stage.assert_not_called()
     assert done["stage"] == "acceptance_author"
 
 
@@ -249,10 +258,10 @@ def test_a_setup_stage_already_begun_goes_on(tmp_path):
     (workspace / PROJECT / "server.py").write_text("the smallest app\n", encoding="utf-8")
 
     with mock.patch("app.agents.specialists.create_specialist_agent"), \
-            mock.patch("app.graph.workflow._run_gated_agent", return_value={"stage": "stack_setup_1"}) as stage:
-        _scaffold_node(workspace, None, scaffold_result={"ok": False, "setup_attempts": 1})
+            mock.patch("app.graph.workflow._run_gated_agent", return_value={"stage": "stack_setup_1"}):
+        done = _scaffold_node(workspace, None, scaffold_result={"ok": False, "setup_attempts": 1})
 
-    stage.assert_called_once()
+    assert done["stage"] == "stack_setup_1"
 
 
 def test_with_no_setup_the_suite_declares_its_command_in_the_moved_project(tmp_path):

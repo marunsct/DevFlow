@@ -35,10 +35,15 @@ def test_a_unit_report_with_tests_or_none_at_all_is_no_gap(tmp_path, monkeypatch
     assert delivery._no_unit_tests_ran(root) == ""
 
 
-def test_the_release_asks_for_it():
-    import inspect
+def test_a_release_whose_unit_report_reads_no_test_names_it_among_its_gaps(tmp_path, monkeypatch):
+    root = _workspace(tmp_path, monkeypatch, EMPTY)
+    monkeypatch.setattr("app.graph.workflow._stop_if_cancelled", lambda run_id: None)
+    monkeypatch.setattr(delivery, "_unit_tests_failing", lambda root: [])
 
-    assert "_no_unit_tests_ran(root)" in inspect.getsource(delivery)
+    released = delivery.release({"repository": SimpleNamespace(root_path=str(root))}, {"configurable": {}}, None)
+
+    assert released["stage"] == "complete"
+    assert any("ships no unit tests" in gap for gap in released["completion_gaps"])
 
 
 def _a_pack_with_a_unit_dir(tmp_path, monkeypatch):

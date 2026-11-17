@@ -4,8 +4,6 @@
 """
 from __future__ import annotations
 
-import inspect
-
 import pytest
 
 from app.graph import delivery
@@ -47,6 +45,18 @@ def test_a_changed_template_is_the_product_s_and_stays(workspace) -> None:
     assert main.exists()
 
 
-def test_the_release_does_it_on_the_way_out() -> None:
-    source = inspect.getsource(delivery.release)
-    assert source.index("remove_untouched_templates_nothing_loads(root)") < source.index("deferred = suite.deferred(root)")
+def test_the_release_does_it_on_the_way_out(workspace, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    page = workspace / "app" / "index.html"
+    page.write_text(page.read_text().replace("src/main.js", "app.js"))
+    (workspace / "app" / "app.js").write_text("export function start() {}\n")
+    monkeypatch.setattr("app.graph.workflow._stop_if_cancelled", lambda run_id: None)
+    monkeypatch.setattr(delivery, "_unit_tests_failing", lambda root: [])
+    monkeypatch.setattr("app.stacks.scaffold.sandbox_runner", lambda root: lambda argv, category, where: {"returncode": "0"})
+
+    released = delivery.release({"repository": SimpleNamespace(root_path=str(workspace))}, {"configurable": {}}, None)
+
+    assert released["stage"] == "complete"
+    assert not (workspace / "app" / "src" / "main.js").exists()
+    assert (workspace / "app" / "app.js").exists()

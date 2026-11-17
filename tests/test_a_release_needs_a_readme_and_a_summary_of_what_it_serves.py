@@ -16,7 +16,7 @@ import pytest
 from app.acceptance import interface_contract
 from app.graph import delivery
 from app.stacks import contract, release_docs
-from workflow_nodes import workflow_source
+from workflow_nodes import a_lead, a_plan, a_work_order
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 ON = {"RELEASE_DOCS_REQUIRED": "on"}
@@ -136,13 +136,16 @@ def test_a_route_with_a_trailing_slash_and_a_project_named_like_a_record_are_rea
         assert release_docs.what_the_handoff_lacks(tmp_path) == []
 
 
-def test_the_lead_is_told_why_the_release_was_held_back():
+@pytest.mark.parametrize(("attempts", "told"), [(1, True), (0, False)], ids=["held back", "first plan"])
+def test_the_lead_is_told_why_the_release_was_held_back(tmp_path, attempts, told):
     """The hold hands on with no milestone plan, so the lead planned afresh and the planning request
     never read the comments: two re-sprints were told nothing."""
-    source = workflow_source()
-    lead = source[source.index("def technical_lead_node("):]
-    lead = lead[:lead.index("\ndef ", 10)]
-    assert "Why the release was held back" in lead and 'state.get("release_attempts")' in lead
+    held = "The product is not ready to release. `app/README.md` says nowhere how to run the product."
+
+    plan = a_plan(a_work_order("backend", "Say how to run the product", ["app/README.md"]))
+    _, asked = a_lead(tmp_path, plan, state={"release_attempts": attempts, "revision_comments": [held]})
+
+    assert ("Why the release was held back" in asked["requests"][0] and held in asked["requests"][0]) is told
 
 
 def test_a_root_readme_names_the_project_directory_and_a_pack_without_a_start_script_names_its_start(tmp_path, monkeypatch):

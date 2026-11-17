@@ -59,6 +59,10 @@ def test_a_passing_test_is_never_named(tmp_path):
         junit.TestResult(name="items.spec.js › [AC-3] edits a title", outcome="passed"))) == []
 
 
-def test_it_is_one_of_the_cannot_pass_checks():
-    import inspect
-    assert '"tests_that_follow_a_record_by_the_text_they_change"' in inspect.getsource(suite.tests_that_cannot_pass)
+def test_the_one_list_every_caller_reads_carries_it(tmp_path):
+    _a_suite(tmp_path)
+    found = suite.tests_that_cannot_pass(tmp_path, _result(
+        junit.TestResult(name="items.spec.js › [AC-3] edits a title", outcome="failed", message=STALE.replace("\\\\n", "\n")),
+    ))
+
+    assert any("[AC-3] edits a title" in item and "'Old title'" in item for item in found)

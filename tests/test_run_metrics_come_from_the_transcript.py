@@ -140,13 +140,21 @@ class TestTheMarkersAreRealPhrases:
         missing = [mark for mark in PREVENTED_DAMAGE if mark not in joined]
         assert not missing, f"no tool emits these any more: {missing}"
 
-    def test_the_sandbox_refusals_are_covered(self):
-        for fragment in (
-            "Not running this again",
-            "it runs until it is stopped",
-            "installs system packages as root",
-        ):
-            assert fragment in PREVENTED_DAMAGE
+    @pytest.mark.parametrize("refusal", [
+        "Not running this again: it timed out the last time it ran here.",
+        "`npm start` serves the app, and it runs until it is stopped.",
+        "`apt-get install` installs system packages as root.",
+    ])
+    def test_the_sandbox_refusals_are_prevented_damage(self, refusal, monkeypatch):
+        rows = [
+            {"kind": "tool_call", "stage": "s", "tool": "run_terminal_command", "call_id": "a", "args": {}},
+            {"kind": "tool_result", "call_id": "a", "content": json.dumps({"error": refusal})},
+        ]
+        monkeypatch.setattr("app.observability.transcript.read_transcript", lambda r, kinds=None: rows)
+
+        out = transcript_metrics("run-1")
+
+        assert (out["refusals_that_prevented_damage"], out["failures_that_cost_the_run"]) == (1, 0)
 
 
 def test_it_reduces_a_real_transcript(tmp_path, monkeypatch):

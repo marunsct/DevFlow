@@ -5,11 +5,12 @@ Measured on one run: a test looped over `GET /health` and `POST /notes` assertin
 """
 from __future__ import annotations
 
-import inspect
 import re
+from types import SimpleNamespace
 
-from app.acceptance import suite
+from app.acceptance import interface_contract, suite
 from app.stacks import contract, pack_named
+from the_acceptance_review import a_service_suite, measured, reviewed
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 CONTRACT = [
@@ -78,8 +79,20 @@ def test_right_statuses_refusals_and_entries_with_their_own_status_are_left(tmp_
     assert suite.tests_whose_success_status_the_contract_does_not_give(_suite(tmp_path, RIGHT), CONTRACT) == []
 
 
-def test_the_review_and_the_rounds_ask_it():
-    from app.graph import acceptance_nodes
+def test_the_review_reads_it_against_the_specification_s_contract(tmp_path):
+    root = a_service_suite(tmp_path, LOOPED)
 
-    assert "tests_whose_success_status_the_contract_does_not_give(" in inspect.getsource(acceptance_nodes.acceptance_review)
-    assert "tests_whose_success_status_the_contract_does_not_give(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+    update, _ = reviewed(root, measured(("api.spec.js › Response headers on all endpoints", "failed")),
+                         interface_contract=CONTRACT)
+
+    assert update["stage"] == "acceptance_author"
+    assert any("`POST /notes` is given 201" in item for item in update["acceptance_feedback"])
+
+
+def test_after_the_lock_every_caller_s_list_reads_it_against_the_locked_contract(tmp_path):
+    root = _suite(tmp_path, LOOPED)
+    interface_contract.record_at_lock(root, CONTRACT)
+
+    found = suite.tests_that_cannot_pass(root, SimpleNamespace(ran=True, report=SimpleNamespace(tests=[])))
+
+    assert any("`POST /notes` is given 201" in item for item in found)

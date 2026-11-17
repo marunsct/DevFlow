@@ -7,9 +7,8 @@ product again - refused at every turn.
 """
 from __future__ import annotations
 
-import inspect
-
 from app.acceptance import suite
+from the_acceptance_review import A_FAIR_TEST, PASSED, a_service_suite, measured, qa_lead, reviewed
 
 ABOUT_THE_PRODUCT = [
     "AC-3: test_ac3_fetch_note_by_id fails with 404 because GET /notes/{id} is not implemented.",
@@ -29,10 +28,19 @@ def test_findings_about_the_unbuilt_product_are_dropped_and_the_rest_kept():
     assert suite.findings_about_the_suite(ABOUT_THE_PRODUCT + ABOUT_THE_TESTS) == ABOUT_THE_TESTS
 
 
-def test_the_review_sends_back_only_what_is_left():
-    from app.graph import acceptance_nodes
+def test_the_review_sends_back_only_what_is_about_the_tests(tmp_path):
+    root = a_service_suite(tmp_path, A_FAIR_TEST)
 
-    source = inspect.getsource(acceptance_nodes.acceptance_review)
-    filtered = source.index("findings = suite.findings_about_the_suite(")
-    sent_back = source.index('acceptance_feedback=findings)')
-    assert filtered < sent_back and "if not review.approved and findings:" in source
+    update, _ = reviewed(root, measured(PASSED), review=qa_lead(False, ABOUT_THE_PRODUCT[0], ABOUT_THE_TESTS[1]))
+
+    assert update["stage"] == "acceptance_author"
+    assert update["acceptance_feedback"] == [ABOUT_THE_TESTS[1]]
+
+
+def test_a_review_that_found_only_the_unbuilt_product_locks_the_suite(tmp_path):
+    root = a_service_suite(tmp_path, A_FAIR_TEST)
+
+    update, _ = reviewed(root, measured(PASSED), review=qa_lead(False, *ABOUT_THE_PRODUCT))
+
+    assert update["stage"] != "acceptance_author"
+    assert suite.is_locked(root)

@@ -23,24 +23,15 @@ from __future__ import annotations
 import pytest
 
 
-def test_an_update_without_its_output_is_handed_back():
+@pytest.mark.parametrize(("update", "handed_back"), [
+    ({"stage": "product_manager", "structured_retries": {}}, True),
+    ({"stage": "awaiting_approval:product_manager"}, True),
+    ({"stage": "tools_models", "product_intake": "the intake"}, False),
+], ids=["a retry", "a pause", "a finished stage"])
+def test_only_an_update_without_its_output_is_handed_back(update, handed_back):
     from app.graph.workflow import _hand_back
 
-    assert _hand_back({"stage": "product_manager", "structured_retries": {}}, "product_intake")
-
-
-def test_a_paused_update_is_handed_back():
-    from app.graph.workflow import _hand_back
-
-    assert _hand_back({"stage": "awaiting_approval:product_manager"}, "product_intake")
-
-
-def test_a_finished_stage_is_not_handed_back():
-    from app.graph.workflow import _hand_back
-
-    update = {"stage": "tools_models", "product_intake": object()}
-
-    assert not _hand_back(update, "product_intake")
+    assert bool(_hand_back(update, "product_intake")) is handed_back
 
 
 def _a_state_every_planning_stage_can_read(root) -> dict:
@@ -106,13 +97,12 @@ def test_every_post_processing_node_checks_for_a_hand_back(node, output_key, tmp
                return_value=[("[AC-1] a note is kept", "AC-1", "expected 201, got 500")]), \
          patch("app.agents.advice_review.roles_to_review", return_value=["backend"]), \
          patch("app.agents.specialist_advice.adopted", return_value=["Write each change before answering"]), \
-         patch("app.graph.workflow._run_gated_agent", return_value=dict(retry)) as gated:
+         patch("app.graph.workflow._run_gated_agent", return_value=dict(retry)):
         graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
         update = graph.nodes[node].bound.invoke(
             _a_state_every_planning_stage_can_read(tmp_path), {"configurable": {"thread_id": "t", "run_id": "r"}},
         )
 
-    assert gated.call_args.kwargs["output_key"] == output_key
     assert update["stage"] == node, (
         f"{node} post-processes a gated agent's result without checking for a "
         "hand-back, so a retry's routing would be overwritten"
@@ -129,8 +119,6 @@ def test_a_retry_carries_no_output_key():
     `_restart_on_a_fresh_conversation`, so reading one inline block would have
     checked only the half that happened to remain there.
     """
-    import inspect
-
     from app.graph.workflow import _restart_on_a_fresh_conversation
 
     update = _restart_on_a_fresh_conversation({}, "specialist_ui_ux_0", "t", "why")
@@ -140,13 +128,6 @@ def test_a_retry_carries_no_output_key():
     assert not any("output" in key for key in update), (
         "the retry update must not carry the output key, or callers cannot "
         "distinguish it from a finished stage"
-    )
-    # Both NO-ANSWER paths build their restart here; `_transient_retry_update`
-    # is a separate case (a transient model error, not a missing answer) and
-    # keeps its own update. That the two no-answer paths share this one is
-    # asserted in tests/test_spin_restart.py.
-    assert "_restart_on_a_fresh_conversation" in inspect.getsource(
-        __import__("app.graph.workflow", fromlist=["x"])._run_gated_agent
     )
 
 

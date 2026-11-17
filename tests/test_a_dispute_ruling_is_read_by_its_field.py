@@ -5,15 +5,38 @@ was filed as a reason about the product and a test no product could pass stayed 
 """
 from __future__ import annotations
 
-import inspect
 import re
+from typing import Any
+
+import pytest
+from langchain_core.language_models import BaseChatModel
 
 from app.agents import suite_dispute
-from app.agents.suite_dispute import DisputeRuling, SuiteDispute, SuiteDisputeWithRulings
+from app.agents.suite_dispute import DisputeRuling, SuiteDisputeWithRulings
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 FAILING = ["[AC-2][AC-9] list notes returns 200 with a JSON array", "[AC-4] updates a note"]
 QUOTE = "AC-2 List all notes: GET /notes answers 200 with every note"
+
+
+class _Asked(BaseChatModel):
+    """The model: records the tools it is offered and answers nothing."""
+
+    class Stopped(Exception):
+        pass
+
+    offered_tools: list = []
+
+    @property
+    def _llm_type(self) -> str:
+        return "asked"
+
+    def bind_tools(self, tools: Any, **kwargs: Any) -> "_Asked":
+        self.offered_tools.append(list(tools))
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        raise _Asked.Stopped()
 
 
 def _answer(*rulings, prose=()):
@@ -38,13 +61,29 @@ def test_a_ruling_for_the_product_or_without_a_quote_reopens_nothing(monkeypatch
     assert suite_dispute.tests_it_names(_answer(right, unquoted), FAILING) == []
 
 
-def test_off_the_prose_is_read_and_the_model_sees_no_rulings(monkeypatch):
+def test_off_the_prose_is_read_and_a_ruling_reopens_nothing(monkeypatch):
     monkeypatch.setenv("STRUCTURED_DISPUTE_VERDICT", "off")
     ruling = DisputeRuling(test=FAILING[0], the_test_is_wrong=True, the_test_asserts="two notes", the_standard_says=QUOTE)
     assert suite_dispute.tests_it_names(_answer(ruling), FAILING) == []
-    assert "rulings" not in SuiteDispute.model_fields
-    assert "SuiteDisputeWithRulings if structured_verdict_switch.enabled() else SuiteDispute" in inspect.getsource(
-        suite_dispute.create_suite_dispute_agent)
+
+
+@pytest.mark.parametrize("switch, offered", [("on", True), ("off", False)])
+def test_the_model_is_asked_for_rulings_only_with_the_switch_on(monkeypatch, tmp_path, switch, offered):
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    monkeypatch.setenv("STRUCTURED_DISPUTE_VERDICT", switch)
+    monkeypatch.setattr("app.plugins.middleware.get_plugin_instructions", lambda keys, role: "")
+    model = _Asked(offered_tools=[])
+    agent = suite_dispute.create_suite_dispute_agent(model=model, repo_root=str(tmp_path), checkpointer=InMemorySaver())
+
+    with pytest.raises(_Asked.Stopped):
+        agent.invoke({"messages": [{"role": "user", "content": "go"}]}, {"configurable": {"thread_id": "t"}})
+
+    [answer] = [tool for tool in model.offered_tools[0] if "cannot_pass" in getattr(tool, "args", {})]
+    assert ("rulings" in answer.args) is offered
+
+
+def test_what_the_model_is_told_of_a_ruling_uses_none_of_the_banned_words():
     for field in DisputeRuling.model_fields.values():
         assert not BANNED.search(field.description or "")
 
@@ -52,7 +91,6 @@ def test_off_the_prose_is_read_and_the_model_sees_no_rulings(monkeypatch):
 def test_an_answer_without_rulings_does_not_satisfy_the_schema():
     """Measured on one run: both disputes under the switch returned no rulings, so the field taught nothing."""
     import pydantic
-    import pytest
 
     with pytest.raises(pydantic.ValidationError):
         SuiteDisputeWithRulings(cannot_pass=[], rulings=[])
@@ -101,12 +139,15 @@ STANDARD = (
 )
 
 
-def _ruling_quoting(quoted):
-    return DisputeRuling(test=FAILING[0], the_test_is_wrong=True, the_test_asserts="it asks for six characters",
-                         the_standard_says=quoted)
+def _named_quoting(monkeypatch, quoted):
+    """The tests the dispute reopens when its one ruling quotes `quoted` as the standard."""
+    monkeypatch.setenv("STRUCTURED_DISPUTE_VERDICT", "on")
+    ruling = DisputeRuling(test=FAILING[0], the_test_is_wrong=True, the_test_asserts="it asks for six characters",
+                           the_standard_says=quoted)
+    return suite_dispute.tests_it_names(_answer(ruling), FAILING, standard=STANDARD)
 
 
-def test_a_quote_of_several_sentences_without_the_marks_still_counts():
+def test_a_quote_of_several_sentences_without_the_marks_still_counts(monkeypatch):
     # Measured on one run: a right ruling joined two sentences of the specification and left out its backticks, the
     # whole-string match refused it, and fixers went after a product doing what the standard says.
     quoted = (
@@ -114,24 +155,24 @@ def test_a_quote_of_several_sentences_without_the_marks_still_counts():
         "suffix (default '...'). Otherwise returns the first (limit - len(suffix)) characters of text followed by "
         "suffix, producing exactly limit characters total."
     )
-    assert suite_dispute._tests_the_rulings_name([_ruling_quoting(quoted)], FAILING, standard=STANDARD)
+    assert _named_quoting(monkeypatch, quoted)
 
 
-def test_a_quote_with_any_sentence_the_standard_does_not_hold_is_refused():
+def test_a_quote_with_any_sentence_the_standard_does_not_hold_is_refused(monkeypatch):
     made_up = "Otherwise returns the first characters of text. The result must never be shorter than ten characters."
-    assert suite_dispute._tests_the_rulings_name([_ruling_quoting(made_up)], FAILING, standard=STANDARD) == []
+    assert _named_quoting(monkeypatch, made_up) == []
 
 
-def test_a_true_sentence_with_a_signature_put_before_it_still_counts():
+def test_a_true_sentence_with_a_signature_put_before_it_still_counts(monkeypatch):
     # Measured on the same run: the next ruling put the function's signature before the specification's own sentence.
     quoted = (
         "textkit.truncate(text, limit, suffix='...') returns the original text if its length is at most limit. "
         "Otherwise returns the first (limit - len(suffix)) characters of text followed by suffix, producing exactly "
         "limit characters total."
     )
-    assert suite_dispute._tests_the_rulings_name([_ruling_quoting(quoted)], FAILING, standard=STANDARD)
+    assert _named_quoting(monkeypatch, quoted)
 
 
-def test_a_sentence_sharing_only_a_few_words_with_the_standard_is_refused():
+def test_a_sentence_sharing_only_a_few_words_with_the_standard_is_refused(monkeypatch):
     quoted = "Returns the first characters unless the caller asks for a shorter result of any length at all."
-    assert suite_dispute._tests_the_rulings_name([_ruling_quoting(quoted)], FAILING, standard=STANDARD) == []
+    assert _named_quoting(monkeypatch, quoted) == []

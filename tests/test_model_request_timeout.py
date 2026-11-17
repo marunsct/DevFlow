@@ -13,30 +13,21 @@ never produced a single event.
 
 The retry is cheap: on one run the identical request succeeded in 66
 seconds once the first attempt was abandoned.
+
+A full-length answer is 13,000 tokens and the slowest model measured makes 33
+tokens a second, so no timeout may be under 394 seconds.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
-from app.models import (
-    DEFAULT_REQUEST_TIMEOUT_SECONDS,
-    MIN_REQUEST_TIMEOUT_SECONDS,
-    _request_timeout,
-)
+from app.models import _request_timeout
 
-
-def test_the_default_is_twice_the_longest_measured_call() -> None:
-    """`principal_architect` at 162 seconds is the longest legitimate call in
-    the stored runs; everything else is well under.
-
-    That still sets the *baseline*, but it is no longer what `_request_timeout`
-    returns: httpx applies the value as a total, so it must also be long enough
-    to generate a full-length answer, which on this deployment is the larger
-    number. See `test_the_timeout_allows_a_full_length_answer`.
-    """
-    assert DEFAULT_REQUEST_TIMEOUT_SECONDS == 300.0
-    assert _request_timeout() >= DEFAULT_REQUEST_TIMEOUT_SECONDS
+#: 13,000 tokens at the slowest measured 33 tokens a second.
+A_FULL_ANSWER_ON_THE_SLOWEST_MODEL = 394
 
 
 def test_it_can_be_raised(monkeypatch) -> None:
@@ -45,42 +36,45 @@ def test_it_can_be_raised(monkeypatch) -> None:
     assert _request_timeout() == 900.0  # above the derived floor, so honoured
 
 
-def test_it_cannot_be_lowered_below_real_work(monkeypatch) -> None:
+@pytest.mark.parametrize("asked", ["10", "30", "not-a-number"])
+def test_it_cannot_be_set_below_what_an_answer_needs(monkeypatch, asked) -> None:
     """A timeout under the longest legitimate call turns real work into
-    retries, which is the more expensive mistake."""
-    monkeypatch.setenv("MODEL_REQUEST_TIMEOUT_SECONDS", "10")
+    retries, which is the more expensive mistake; garbage falls back rather than
+    raising, since this is read while building a model."""
+    monkeypatch.setenv("MODEL_REQUEST_TIMEOUT_SECONDS", asked)
 
-    assert _request_timeout() >= MIN_REQUEST_TIMEOUT_SECONDS
-
-
-def test_garbage_falls_back_rather_than_raising(monkeypatch) -> None:
-    """This is read while building a model; raising here fails the run."""
-    monkeypatch.setenv("MODEL_REQUEST_TIMEOUT_SECONDS", "not-a-number")
-
-    assert _request_timeout() >= DEFAULT_REQUEST_TIMEOUT_SECONDS
+    assert _request_timeout() >= A_FULL_ANSWER_ON_THE_SLOWEST_MODEL
 
 
-def test_every_model_built_here_carries_it() -> None:
+def _timeout_of(model) -> float | None:
+    """The client's request timeout, whichever name its library gives it."""
+    for name in ("request_timeout", "default_request_timeout", "timeout"):
+        if getattr(model, name, None) is not None:
+            return float(getattr(model, name))
+    return None
+
+
+@pytest.mark.parametrize("provider,base_url", [
+    ("local", "http://gpu:9090/v1"), ("anthropic", ""), ("gemini", ""),
+])
+def test_every_model_built_here_carries_it(provider, base_url) -> None:
     """Reaching five of six construction sites is the mistake this codebase has
-    made four times."""
-    import inspect
-
-    from app import models
-
-    source = inspect.getsource(models)
-
-    assert source.count("max_retries=") == source.count("timeout=_request_timeout(),")
-
-
-def test_the_live_model_has_a_timeout() -> None:
-    """The property that matters: not None."""
+    made four times: the primary and the fallback of every provider."""
+    from app.config import load_settings
     from app.models import build_default_chat_model
 
-    model = build_default_chat_model()
-    resolved = getattr(model, "request_timeout", None) or getattr(model, "timeout", None)
+    settings = replace(
+        load_settings({"LLM_PROVIDER": "local", "OPENAI_BASE_URL": base_url or "http://gpu:9090/v1",
+                       "OPENAI_API_KEY": "k", "MODEL_NAME": "m"}),
+        llm_provider=provider, openai_base_url=base_url, anthropic_api_key="a", google_api_key="g",
+        model_name=f"m-{provider}",
+    )
 
-    assert resolved is not None
-    assert float(resolved) >= MIN_REQUEST_TIMEOUT_SECONDS
+    model = build_default_chat_model(settings=settings)
+
+    built = [model.runnable, *model.fallbacks]
+    assert len(built) == 2
+    assert all(A_FULL_ANSWER_ON_THE_SLOWEST_MODEL <= _timeout_of(part) < 600 for part in built), built
 
 
 def test_the_timeout_allows_a_full_length_answer() -> None:
@@ -95,37 +89,11 @@ def test_the_timeout_allows_a_full_length_answer() -> None:
     seconds and a retry that could only time out the same way.
 
     A timeout shorter than a full-length answer is not a timeout, it is a
-    length limit wearing the wrong name.
+    length limit wearing the wrong name. The rate floor was once 40 tokens a
+    second, measured on one model; a model at 33 then needed 394 seconds against
+    the 325 that floor derived.
     """
-    from app.models import _request_timeout, _time_to_generate_a_full_answer
-
-    assert _request_timeout() >= _time_to_generate_a_full_answer()
-
-
-def test_an_explicit_timeout_cannot_be_set_below_what_an_answer_needs(monkeypatch) -> None:
-    """An operator may raise it; below the floor is a guarantee of failure."""
-    from app.models import _request_timeout, _time_to_generate_a_full_answer
-
-    monkeypatch.setenv("MODEL_REQUEST_TIMEOUT_SECONDS", "30")
-
-    assert _request_timeout() >= _time_to_generate_a_full_answer()
-
-    monkeypatch.setenv("MODEL_REQUEST_TIMEOUT_SECONDS", "99999")
-    assert _request_timeout() == 99999
-
-
-def test_the_floor_is_derived_not_guessed() -> None:
-    """Derived from the largest real answer and the measured generation rate,
-    so the timeout and the output it must accommodate cannot drift apart."""
-    from app.models import (
-        LARGEST_LEGITIMATE_OUTPUT_TOKENS,
-        _tokens_per_second,
-        _time_to_generate_a_full_answer,
-    )
-
-    expected = LARGEST_LEGITIMATE_OUTPUT_TOKENS / _tokens_per_second()
-
-    assert _time_to_generate_a_full_answer() == expected
+    assert _request_timeout() >= A_FULL_ANSWER_ON_THE_SLOWEST_MODEL
 
 
 def test_streaming_is_not_enabled_on_the_model() -> None:
@@ -189,22 +157,6 @@ def test_a_wedge_is_still_caught_in_minutes_not_quarter_hours() -> None:
     assert _request_timeout() <= 600
 
 
-def test_the_rate_floor_is_below_every_model_measured() -> None:
-    """A constant measured on one model is that model's rate, not a floor.
-
-    Measured on this endpoint over 800-1,200 token completions: Qwen3.5-9B at
-    40.9 tok/s, Qwen2.5-Coder-7B-128K at 51.7, North-Mini-Code-1.0 at 33.0.
-    The constant was 40.0, taken from the first, and the third broke it - at 33
-    tok/s a full-length answer needs 394 seconds against the 325 that floor
-    derived, which is exactly the mismatch this mechanism exists to prevent.
-    """
-    from app.models import DEFAULT_MIN_TOKENS_PER_SECOND
-
-    slowest_measured = 33.0
-
-    assert DEFAULT_MIN_TOKENS_PER_SECOND <= slowest_measured
-
-
 def test_a_slower_model_can_be_declared(monkeypatch) -> None:
     """Lowering it only lengthens the timeout, so a wrong value here costs
     patience rather than correctness."""
@@ -216,20 +168,12 @@ def test_a_slower_model_can_be_declared(monkeypatch) -> None:
     assert _request_timeout() >= 1300  # 13,000 tokens at 10 tok/s
 
 
-def test_a_nonsense_rate_falls_back_rather_than_dividing_by_zero(monkeypatch) -> None:
+@pytest.mark.parametrize("bad", ["0", "-5", "not-a-number"])
+def test_a_nonsense_rate_falls_back_rather_than_dividing_by_zero(monkeypatch, bad) -> None:
     """This is read while building a model; an infinite wait is worse than a
     wrong one."""
-    from app.models import DEFAULT_MIN_TOKENS_PER_SECOND, _tokens_per_second
+    from app.models import _tokens_per_second
 
-    for bad in ("0", "-5", "not-a-number"):
-        monkeypatch.setenv("MODEL_TOKENS_PER_SECOND", bad)
-        assert _tokens_per_second() == DEFAULT_MIN_TOKENS_PER_SECOND
+    monkeypatch.setenv("MODEL_TOKENS_PER_SECOND", bad)
 
-
-def test_the_timeout_now_covers_the_slowest_model_measured() -> None:
-    from app.models import LARGEST_LEGITIMATE_OUTPUT_TOKENS, _request_timeout
-
-    slowest_measured = 33.0
-    needed = LARGEST_LEGITIMATE_OUTPUT_TOKENS / slowest_measured
-
-    assert _request_timeout() >= needed
+    assert _tokens_per_second() == 30.0

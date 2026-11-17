@@ -6,7 +6,6 @@ spaces alone, a product splitting words on spaces only passed, and a hidden test
 """
 from __future__ import annotations
 
-import inspect
 import json
 import re
 from pathlib import Path
@@ -14,6 +13,7 @@ from pathlib import Path
 from app.acceptance import suite
 from app.acceptance.criteria import Criterion
 from app.graph import acceptance_nodes
+from the_acceptance_review import measured, recorded_checks, reviewed
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 SPACES = '''
@@ -55,7 +55,38 @@ def test_a_tab_or_a_line_break_in_a_test_of_it_holds(tmp_path):
         assert suite.whitespace_tested_with_spaces_only(root) == [], extra
 
 
-def test_the_lock_sends_it_back_and_once_more_at_the_limit():
-    source = inspect.getsource(acceptance_nodes.acceptance_review)
-    assert 'check_findings.noted(root, rounds, "whitespace_tested_with_spaces_only"' in source
-    assert "if partial and rounds >= MAX_ACCEPTANCE_ROUNDS and not sent_back.get(" in source
+#: Both tests of the suite, passing.
+BOTH_PASS = measured(("test_title_case.py::test_ac4_ac9_title_case_whitespace_preservation", "passed"),
+                     ("test_title_case.py::TestOther::test_ac2_slugify", "passed"))
+
+
+def test_the_review_sends_it_back_under_its_own_name(tmp_path):
+    _a_suite(tmp_path, SPACES)
+
+    update, _ = reviewed(tmp_path, BOTH_PASS, rounds=1)
+
+    assert update["stage"] == "acceptance_author"
+    assert any(item.startswith("AC-9 speaks of whitespace") for item in update["acceptance_feedback"])
+    assert "whitespace_tested_with_spaces_only" in recorded_checks(tmp_path)
+
+
+def test_past_the_review_s_limit_it_goes_back_once_more_to_be_strengthened(tmp_path):
+    """The send-back was asked only at exactly the limit; a suite whose rounds ran past it was locked with the
+    finding open (one run locked a control found by no name and lost a hidden test)."""
+    _a_suite(tmp_path, SPACES)
+
+    update, _ = reviewed(tmp_path, BOTH_PASS, rounds=acceptance_nodes.MAX_ACCEPTANCE_ROUNDS + 2)
+
+    assert update["stage"] == "acceptance_author"
+    assert update["acceptance_feedback"][0].startswith("Strengthen only the tests named below")
+    assert any(item.startswith("AC-9 speaks of whitespace") for item in update["acceptance_feedback"][1:])
+
+
+def test_once_sent_back_at_the_limit_it_is_locked_with_the_finding_open(tmp_path):
+    _a_suite(tmp_path, SPACES)
+
+    update, _ = reviewed(tmp_path, BOTH_PASS, rounds=acceptance_nodes.MAX_ACCEPTANCE_ROUNDS + 2,
+                         saved={"partial_strengthened_once": True})
+
+    assert suite.is_locked(tmp_path)
+    assert any(item.startswith("AC-9 speaks of whitespace") for item in update["acceptance_open_problems"])

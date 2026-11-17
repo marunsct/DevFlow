@@ -46,7 +46,6 @@ from app.graph.workflow import (
     _a_red_suite_the_review_called_green,
     _the_suite_the_ledger_measured,
 )
-from workflow_nodes import workflow_source
 
 
 class _Repository:
@@ -91,11 +90,6 @@ THE_MEASUREMENT = _a_test_run("2026-09-26T10:26:56+00:00", 21, 15, 6)
 
 
 class TestTheSprintThatWasAccepted:
-    def test_a_measured_failure_blocks_acceptance(self, a_ledger):
-        state = a_ledger(AN_INSTALL, THE_MEASUREMENT)
-
-        assert _a_red_suite_the_review_called_green(state) != ""
-
     def test_the_message_names_the_numbers(self, a_ledger):
         """The remedy is the measurement, not an argument about judgement."""
         state = a_ledger(AN_INSTALL, THE_MEASUREMENT)
@@ -240,16 +234,24 @@ class TestItIsWiredIntoTheReview:
 
         assert [entry["sprint"] for entry in committed] == [1]
 
-    def test_it_is_bounded_by_the_revision_limit(self):
+    def test_it_is_bounded_by_the_revision_limit(self, tmp_path, monkeypatch, a_ledger):
         """A suite that cannot be made to pass must end the run, not loop.
 
         Without the bound this would send every review back for ever, which is
         worse than the acceptance it replaces because the run never finishes.
+        An ending gets a summary like every other.
         """
+        from app.graph.workflow import MAX_MILESTONE_REVISIONS
+        from workflow_node_stubs import run_a_milestone_review
 
-        source = workflow_source()
-        start = source.index("red = _a_red_suite_the_review_called_green(state)")
-        block = source[start : start + 1800]
+        measured = a_ledger(AN_INSTALL, THE_MEASUREMENT)
 
-        assert "MAX_MILESTONE_REVISIONS" in block
-        assert "_record_sprint_summary" in block, "an ending gets a summary like every other"
+        seen = run_a_milestone_review(monkeypatch, tmp_path, repository=measured["repository"],
+                                      milestone_revision_count=MAX_MILESTONE_REVISIONS - 1, overrides={
+            "app.sprint.record.definition_of_done_gaps": lambda *a, **k: [],
+        })
+
+        assert seen.update["stage"] == "escalation"
+        assert "15 passed" in seen.update["escalation"]["error"] and "6 failed" in seen.update["escalation"]["error"]
+        [attempt] = seen.update["sprint_attempts"]
+        assert attempt["status"] == "Failed"

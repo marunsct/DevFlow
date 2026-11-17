@@ -6,6 +6,7 @@ Playwright's response has `status()` as a method, so the first compares a functi
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
 
 from app.acceptance import suite
 from app.stacks import contract, pack_named
@@ -50,7 +51,7 @@ def test_called_methods_and_a_plain_fetch_response_are_left_alone(tmp_path):
     assert suite.responses_read_without_the_call(_suite(tmp_path, RIGHT)) == []
 
 
-def test_it_is_one_of_the_checks_that_reopen_a_locked_suite():
-    import inspect
+def test_it_is_one_of_the_checks_that_reopen_a_locked_suite(tmp_path):
+    found = suite.tests_that_cannot_pass(_suite(tmp_path, WRONG), SimpleNamespace(ran=True, report=SimpleNamespace(tests=[])))
 
-    assert "responses_read_without_the_call(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+    assert any("line(s) 4, 5" in item and "res.status()" in item for item in found)

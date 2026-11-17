@@ -64,22 +64,38 @@ def test_the_injected_words_use_none_of_the_banned_ones(tmp_path):
     assert not BANNED.search(steering.as_instructions(tmp_path, "s", "r"))
 
 
-def test_a_paused_run_refuses_a_note_and_the_kpi_counts_applied_notes():
+def test_a_paused_run_refuses_a_note():
+    """Left reading the route's source: the route needs the database this file does not start (see the hand-off)."""
     import inspect
 
     from app.server import runs
 
     source = inspect.getsource(runs)
     assert 'record.status in ("paused", "waiting_for_budget")' in source and "Resume it first" in source
-    # The KPI computation lives in the application (`scripts/loop/kpi.py` imports it).
-    kpi = (__import__("pathlib").Path(__file__).resolve().parents[1] / "src/app/observability/run_kpis.py").read_text()
-    assert 'kind == "steering_applied"' in kpi and '"steering_notes"' in kpi
 
 
-def test_the_middleware_hands_it_the_stage_and_the_run():
-    import inspect
+def test_the_run_s_figures_count_the_notes_that_reached_a_call(tmp_path):
+    from app.observability.run_kpis import kpis
 
-    from app.plugins import middleware
+    steering.add(tmp_path, "Keep the sign-in page.", "owner")
+    steering.add(tmp_path, "Only this stage.", "owner", scope="next_stage")
+    steering.as_instructions(tmp_path, "defect_fix_1", "run-s")
+    steering.as_instructions(tmp_path, "defect_fix_2", "run-s")
 
-    source = inspect.getsource(middleware.build_plugin_instructions_middleware)
-    assert "_stage_from_config" in source and "APP_RUN_ID_KEY" in source
+    assert kpis(transcript.read_transcript("run-s"))["steering_notes"] == 2
+
+
+def test_a_stage_s_model_call_reads_the_note_as_that_stage_of_that_run(tmp_path, monkeypatch):
+    from a_role_agent import the_first_request
+
+    from app.tracing import APP_RUN_ID_KEY, APP_STAGE_KEY
+
+    steering.add(tmp_path, "Keep the sign-in page.", "owner")
+
+    sent = the_first_request(
+        tmp_path, monkeypatch, configurable={APP_RUN_ID_KEY: "run-s", APP_STAGE_KEY: "defect_fix_2_9"},
+    )
+
+    assert "Keep the sign-in page." in sent[0].text
+    [applied] = transcript.read_transcript("run-s", {"steering_applied"})
+    assert (applied["note_id"], applied["stage"]) == ("N-1", "defect_fix_2_9")

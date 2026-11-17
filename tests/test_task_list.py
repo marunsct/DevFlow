@@ -101,14 +101,14 @@ def test_the_prompt_is_ours_and_not_the_default():
     assert TASK_LIST_PROMPT != WRITE_TODOS_SYSTEM_PROMPT
 
 
-def test_it_goes_last_in_the_chain(monkeypatch):
-    """It must not displace anything the rest of the chain depends on."""
-    import inspect
+def test_it_goes_last_in_the_chain(tmp_path, monkeypatch):
+    """It must not displace anything the rest of the chain depends on: what it adds comes after everything else
+    the stage's instructions carry."""
+    from a_role_agent import the_first_request
 
-    from app.agents import role_agent
+    monkeypatch.setenv("HARNESS_TASK_LIST", "on")
 
-    source = inspect.getsource(role_agent)
-    settled = source.index("build_settled_answer_middleware(response_format")
-    task = source.index("*build_task_list_middleware()")
+    system = the_first_request(tmp_path, monkeypatch)[0].text
 
-    assert task > settled
+    assert system.rstrip().endswith("delivers nothing by itself.")
+    assert system.index("Container and deployment files can be WRITTEN") < system.index("The sprint plan you were given")

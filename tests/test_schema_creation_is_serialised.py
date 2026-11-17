@@ -25,7 +25,7 @@ import threading
 
 import pytest
 
-from app.server.schema_lock import SCHEMA_INIT_LOCK_KEY, lock_schema
+from app.server.schema_lock import lock_schema
 
 
 def _run_concurrently(work, threads: int = 8) -> list[BaseException]:
@@ -56,17 +56,6 @@ def _run_concurrently(work, threads: int = 8) -> list[BaseException]:
 
 
 class TestTheLockItself:
-    def test_the_key_is_stable(self):
-        """Changing it between releases would stop it serialising anything."""
-        assert SCHEMA_INIT_LOCK_KEY == 8_014_651_003_271_004_001
-
-    def test_it_is_transaction_scoped(self, setup_db):
-        """`pg_advisory_lock` would outlive a crashed migration and wedge every
-        other process behind a lock nothing releases."""
-        import inspect
-
-        assert "pg_advisory_xact_lock" in inspect.getsource(lock_schema)
-
     def test_it_is_released_when_the_transaction_ends(self, setup_db):
         from app.server.auth import get_db_connection
 

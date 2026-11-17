@@ -113,13 +113,20 @@ def test_a_clean_test_never_counts() -> None:
     assert times_warned_about_a_mock_dom("app.test.mjs") == 0
 
 
-def test_the_edit_path_refuses_too() -> None:
+def test_the_edit_path_refuses_too(tmp_path) -> None:
     """Edits are how one run's mock grew: 145 lines to 1,195, one
     `edit_artifact` at a time."""
-    import inspect
+    from app.tools.repository import edit_approved_artifact
 
-    from app.tools import repository
+    (tmp_path / "app.test.mjs").write_text(NO_MOCK, encoding="utf-8")
+    for _ in range(MOCK_DOM_WARNINGS_BEFORE_REFUSING):
+        record_mock_dom_warning("app.test.mjs")
 
-    source = inspect.getsource(repository._write_unless_it_changes_nothing)
+    with pytest.raises(RepositoryToolError) as raised:
+        edit_approved_artifact(
+            tmp_path, "app.test.mjs", "import { addTask } from './app.js';",
+            "global.document = { getElementById: (id) => ({ innerHTML: '' }) };",
+        )
 
-    assert "_refuse_a_hand_built_dom_again" in source
+    assert "told twice already" in str(raised.value)
+    assert (tmp_path / "app.test.mjs").read_text(encoding="utf-8") == NO_MOCK

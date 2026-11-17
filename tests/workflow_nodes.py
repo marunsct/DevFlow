@@ -513,3 +513,49 @@ def a_dispute(
         **(patches or {}),
     }
     return run_node("acceptance_dispute", made, str(tmp_path), every), asked
+
+
+def the_first_model_request(root: Any, **agent: Any) -> SimpleNamespace:
+    """What a role agent's model is sent on its first call: `.system` and `.messages` as text, `.tools` by name.
+
+    The agent is built by `create_role_agent` as every stage builds it (`agent` overrides its arguments); the model
+    is the edge, a stand-in that records the request and ends the stage there.
+    """
+    from langchain_core.language_models import BaseChatModel
+    from pydantic import BaseModel
+
+    from app.agents.role_agent import create_role_agent
+
+    seen = SimpleNamespace(system="", messages=[], tools=[])
+
+    class _Stop(Exception):
+        pass
+
+    class _Recording(BaseChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "recording"
+
+        def bind_tools(self, tools, **kwargs):  # noqa: ANN001, ARG002
+            seen.tools = [t.name if hasattr(t, "name") else str((t.get("function") or t).get("name")) for t in tools]
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):  # noqa: ANN001, ARG002
+            texts = [m.content if isinstance(m.content, str) else str(m.content) for m in messages]
+            seen.system = texts[0] if messages and messages[0].type == "system" else ""
+            seen.messages = texts
+            raise _Stop
+
+    class _Answer(BaseModel):
+        summary: str
+
+    built = create_role_agent(**{
+        "name": "probe", "stage": "probe", "system_prompt": "Answer the request.", "response_format": _Answer,
+        "model": _Recording(), "repo_root": str(root), **agent,
+    })
+    try:
+        built.invoke({"messages": [{"role": "user", "content": "Begin."}]},
+                     {"configurable": {"thread_id": "first-request"}, "recursion_limit": 10})
+    except _Stop:
+        pass
+    return seen

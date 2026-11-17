@@ -179,16 +179,14 @@ def test_it_can_be_switched_off(workspace: Path, monkeypatch) -> None:
     assert all("The workspace as it stands" not in str(m) for m in messages)
 
 
-def test_every_role_agent_gets_it() -> None:
+def test_every_role_agent_gets_it(workspace: Path) -> None:
     """Thirteen request builders; reaching twelve of thirteen is the mistake
     this codebase has made four times."""
-    import inspect
+    from workflow_nodes import the_first_model_request
 
-    from app.agents.role_agent import create_role_agent
+    sent = the_first_model_request(workspace)
 
-    assert "build_workspace_digest_middleware(resolved_repo_root)" in inspect.getsource(
-        create_role_agent
-    )
+    assert any("The workspace as it stands" in text and "todo-app/app.js" in text for text in sent.messages)
 
 
 def test_an_empty_workspace_says_so_rather_than_saying_nothing(tmp_path: Path) -> None:

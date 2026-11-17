@@ -263,13 +263,14 @@ def test_no_agent_is_told_not_to_write_while_holding_a_write_tool():
     )
 
 
-def test_agents_that_do_write_code_keep_their_tools():
+@pytest.mark.parametrize("role", ["ui_ux", "database", "backend", "testing", "documentation", "security_reliability"])
+def test_agents_that_do_write_code_keep_their_tools(role, tmp_path):
     """The specialists build the product; removing their tools would be absurd."""
-    import inspect
+    from app.agents.specialists import create_specialist_agent
 
-    from app.agents import specialists
+    agent = create_specialist_agent(role, model="openai:gpt-4o-mini", repo_root=str(tmp_path))
 
-    assert "can_write=False" not in inspect.getsource(specialists)
+    assert "write_artifact" in agent.nodes["tools"].bound._tools_by_name
 
 
 def test_a_read_only_agent_is_not_told_how_to_write():
@@ -293,15 +294,16 @@ def test_a_read_only_agent_is_not_told_how_to_write():
     assert "do not report that one is missing" in flat
 
 
-def test_the_rules_follow_the_tools():
+@pytest.mark.parametrize("can_write", [True, False], ids=["writes", "read-only"])
+def test_the_rules_follow_the_tools(can_write, tmp_path):
     """Whichever half an agent gets must match what it actually holds."""
-    import inspect
+    from workflow_nodes import the_first_model_request
 
-    from app.agents.role_agent import create_role_agent
+    sent = the_first_model_request(tmp_path, can_write=can_write)
 
-    source = inspect.getsource(create_role_agent)
-
-    assert "_WRITING_RULES if can_write else _READ_ONLY_RULES" in source
+    assert ("write_artifact" in sent.tools) is can_write
+    assert ("CRITICAL DIRECTORY RULES" in sent.system) is can_write
+    assert ("You have no file-writing or editing tools" in " ".join(sent.system.split())) is not can_write
 
 
 def test_a_writing_agent_still_gets_the_directory_rules():

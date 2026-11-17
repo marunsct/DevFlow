@@ -16,7 +16,7 @@ every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.
 | Phase | Launch review (`docs/reviews/launch-review-2026-11-16.md`, LR.1-65) built item by item; M36 measuring runs on both ports. Owner hands off 11-16 21:50 JST: all review items by the morning of 11-17. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs (:1234 was held 18:45-21:52 JST on 11-17); each run pinned to its port (`PIN_MODEL=1`). Never load or change them. |
 | Harness | af9aa70d deployed 11-17 11:55 JST: LF.995-1010 (owner 11-17: remaining launch items built in parallel behind switches, all ON, past runs the baseline). Host has Pyright 1.1.414. |
-| Switches | 52 fixes built in (always on; only a host env var turns one off). 11 optional switches; one on - NEAR_GREEN_REPLANNED_ONCE (Efficiency, LF.977, measuring.md M14: off at once if a run it fires in loses a hidden test). Off: Context and cost (OBSERVATION_FOLDING, STABLE_STAGE_PREFIX, BATCH_ACCEPTANCE_AUTHOR, REASONING_KEPT_AFTER_AN_ANSWER), Efficiency (EQUIVALENT_MUTANTS_REMEMBERED, MUTANT_CHECK_IN_THE_FIX_STAGE, REVIEWS_WITHOUT_REASONING, HARNESS_FINDINGS_RECHECKED), Setup scope (SETUP_SCOPE_GUARD), Review gates (MILESTONE_EVIDENCE_GATE). Admin page: Controls. |
+| Switches | 52 fixes built in (always on; only a host env var turns one off). 11 optional switches; one on - NEAR_GREEN_REPLANNED_ONCE, but off per run since 11-18 08:15 JST (`SWITCHES_OFF`): by its own rule (measuring.md M14) it should go off - Rust container 3 lost the hidden test of the criterion it left open - and the default change waits on the owner (it touches docker-compose.yml). Off: Context and cost (OBSERVATION_FOLDING, STABLE_STAGE_PREFIX, BATCH_ACCEPTANCE_AUTHOR, REASONING_KEPT_AFTER_AN_ANSWER), Efficiency (EQUIVALENT_MUTANTS_REMEMBERED, MUTANT_CHECK_IN_THE_FIX_STAGE, REVIEWS_WITHOUT_REASONING, HARNESS_FINDINGS_RECHECKED), Setup scope (SETUP_SCOPE_GUARD), Review gates (MILESTONE_EVIDENCE_GATE). Admin page: Controls. |
 | Operations | Backups nightly to `data/backups` and `BACKUP_DIR` (external disk, 7 daily + 4 weekly), checked by `loop.sh backup --check`; finished runs older than `RETENTION_DAYS` (60) cleared nightly; both set in git-ignored `data/loop/ops.env`. Owner's Postgres port in git-ignored `docker-compose.override.yml`; `docker-compose.prod.yml` + `deploy/Caddyfile` for TLS. |
 | Suites | `loop.sh suite` and `loop.sh suite-production` (every built-in fix on, as shipped) both green: 17,316 passed, 0 known failures. |
 
@@ -129,7 +129,10 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
    handoff 1.0, not_deliverable; mutation 12/12. The design held (LF.1035/1039: `app() -> Router`, state applied
    inside). Lost: an update (the near-green criterion left at acceptance), a blank title kept, a long body refused.
    Built from it: LF.1055 (a fixed compiler finding no longer kept open by another error in its file), LF.1056
-   (`oneshot` takes the router by value). :8888's model not loaded since about 00:55.
+   (`oneshot` takes the router by value). :8888's model was not loaded 00:55-08:30; the owner made it available again.
+   Live (near-green switch off per run, owner decision on the default pending): Java container run 5,
+   run-14e254a1-3dd0-454f-8597-3165efd5452b (:1234, 08:15); Rust container run 4,
+   run-db139a37-8100-4378-acb8-8bf1f16197d4 (:8888, 08:32).
 3. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).

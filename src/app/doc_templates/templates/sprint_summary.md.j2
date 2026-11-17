@@ -54,6 +54,14 @@ Every attempt at *this* sprint, oldest first. A re-run is a second attempt at on
 - {{ line }}
 {% endfor %}
 {% endif %}
+{% if scope_cuts %}
+
+## Scope cuts
+The criteria this sprint went on without, each with why:
+{% for cut in scope_cuts %}
+- {{ cut.id }}: {{ cut.why }}
+{% endfor %}
+{% endif %}
 
 ## Work Orders
 {% for w in work_orders %}

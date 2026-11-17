@@ -363,6 +363,7 @@ def render_sprint_summary(
         goal=goal,
         status=latest.get("status", "Unknown"),
         deferred=list(latest.get("deferred") or ()),
+        scope_cuts=[cut for cut in (latest.get("scope_cuts") or ()) if isinstance(cut, Mapping) and cut.get("id")],
         completed=str(latest.get("status", "")).strip().lower() == "completed",
         attempts_line=attempts_line,
         reason=latest.get("reason") or "",

@@ -491,4 +491,51 @@ def complete_the_handoff(repo_root: str | Path) -> list[str]:
         return []
 
 
-__all__ = ["ON_BY_DEFAULT", "README_NAMES", "complete_the_handoff", "enabled", "what_the_handoff_lacks"]
+#: The README section that names what the release does not deliver.
+SCOPE_CUTS_HEADING = "## Scope cuts"
+_A_SECTION = re.compile(rf"^{re.escape(SCOPE_CUTS_HEADING)}\n.*?(?=^## |\Z)", re.M | re.S)
+
+
+def name_the_scope_cuts(repo_root: str | Path, cuts: dict[str, str]) -> list[str]:
+    """Name in the README each criterion the release ships unproven, with its text and why (LR.42); the files written.
+
+    The release notes and the evidence page named them; the README a stranger reads did not, so a product shipped
+    without a criterion read as the whole brief delivered. Rewrites its own section on a later release, and removes it
+    when nothing is cut. A quality fix, always on; never raises.
+    """
+    try:
+        from app.acceptance import suite
+        from app.stacks import contract
+
+        root = Path(repo_root)
+        found = contract.the_pack(root)
+        _, record = found if found else (None, contract.read(root) or {})
+        record = record or {}
+        project = str(record.get("project") or "") or _the_pinned_project(root)
+        readme = _the_readme(root, project)
+        if readme is None and not cuts:
+            return []
+        readme = readme or (root / project / "README.md" if project else root / "README.md")
+        text = readme.read_text(encoding="utf-8", errors="replace") if readme.is_file() else (
+            f"# {record.get('title') or project or root.name}\n")
+        kept = _A_SECTION.sub("", text).rstrip("\n") + "\n"
+        if cuts:
+            said = {criterion.id: criterion.text for criterion in suite.criteria(root)}
+            lines = [f"- **{cid}**" + (f" ({' '.join(said[cid].split())[:300]})" if said.get(cid) else "")
+                     + f": {' '.join(str(why).split())[:400] or 'no reason recorded'}"
+                     for cid, why in sorted(cuts.items(), key=lambda item: (re.sub(r"\d+", "", item[0]),
+                                                                            int(re.sub(r"\D", "", item[0]) or 0)))]
+            kept += ("\n" + SCOPE_CUTS_HEADING + "\n\nThis release does not deliver these acceptance criteria of the "
+                     "brief; nothing proves them, so do not rely on them:\n\n" + "\n".join(lines) + "\n")
+        if kept == text:
+            return []
+        readme.parent.mkdir(parents=True, exist_ok=True)
+        readme.write_text(kept, encoding="utf-8")
+        return [readme.relative_to(root).as_posix()]
+    except Exception:  # noqa: BLE001 - the release notes still name them
+        logger.warning("Could not name the scope cuts in the README", exc_info=True)
+        return []
+
+
+__all__ = ["ON_BY_DEFAULT", "README_NAMES", "SCOPE_CUTS_HEADING", "complete_the_handoff", "enabled",
+           "name_the_scope_cuts", "what_the_handoff_lacks"]

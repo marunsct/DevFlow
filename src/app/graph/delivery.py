@@ -485,6 +485,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
                                                      marker.stat().st_mtime)
     except OSError:
         logger.debug("Could not clear the product's data after measuring again", exc_info=True)
+    # Each cut named in the README a stranger reads too, with its criterion and why (LR.42), not only in the notes.
+    # After the measure again: a README line is no change to the product to run the suite for.
+    release_docs.name_the_scope_cuts(root, {
+        cid: deferred[cid] for cid in deferred if f"{cid} ships deferred, unproven by the suite: {deferred[cid]}" in gaps})
     # Written before the gaps are stored: packaging that failed is a gap like
     # any other, not a line only the release decision carries (Initiative BK).
     release_outcome = release_files.write(root)

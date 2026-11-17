@@ -5749,6 +5749,21 @@ def _deferred_in_this_attempt(state: Any, since: str | None) -> list[str]:
     return deferred
 
 
+def _the_scope_cuts(state: Any, deferred_here: list[str], accepted_at_escalation: str) -> list[dict[str, str]]:
+    """Each criterion an accepted sprint went on without, with why (`app.sprint.record.scope_cuts`); never raises."""
+    try:
+        from app.acceptance import suite
+        from app.graph.acceptance_nodes import _failing_due
+        from app.sprint import record as sprint_record
+
+        root = state["repository"].root_path
+        failing = _failing_due(state)[0] if accepted_at_escalation else []
+        return sprint_record.scope_cuts(deferred_here, suite.deferred(root), failing, accepted_at_escalation)
+    except Exception:  # noqa: BLE001 - the status line still names what was deferred
+        logger.debug("Could not name the sprint's scope cuts", exc_info=True)
+        return []
+
+
 def _the_accepted_counts(root: str, which: str = "accepted") -> dict[str, int] | None:
     """Tests, passed and failed in the state the last sprint was accepted in, or None.
 
@@ -5940,11 +5955,13 @@ def _record_sprint_summary(
     except Exception:  # noqa: BLE001 - a summary without the record beats no summary
         logger.warning("Could not assemble the sprint record", exc_info=True)
 
+    deferred_here = _deferred_in_this_attempt(state, since)
     attempt = {
         "sprint_index": sprint_index,
         "number": len(already) + 1,
         "status": status,
-        "deferred": _deferred_in_this_attempt(state, since),
+        "deferred": deferred_here,
+        "scope_cuts": _the_scope_cuts(state, deferred_here, accepted_at_escalation) if status == "Completed" else [],
         "reason": failure_reason or "",
         **({"accepted_at_escalation": accepted_at_escalation} if accepted_at_escalation else {}),
         "cases": cases,

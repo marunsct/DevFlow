@@ -22,6 +22,8 @@ not from a model's account of itself, so the record cannot overstate:
   to the next sprint's technical lead, who must take or decline each one
 - `lessons_from` - the harness's own record of what failed repeatedly in this
   sprint, handed to the next lead and written into the record
+- `scope_cuts` - each criterion the sprint went on without, deferred or still
+  failing when it was accepted, with why
 
 Nothing here names a language, a framework or a kind of product.
 """
@@ -321,6 +323,31 @@ def fixes_to_keep(
     return lines[-MAX_FIXES_TO_KEEP:]
 
 
+def scope_cuts(
+    deferred_here: Iterable[str],
+    reasons: Mapping[str, str],
+    failing: Iterable[Mapping[str, Any]] = (),
+    accepted_at_escalation: str = "",
+) -> list[dict[str, str]]:
+    """Each criterion this sprint went on without, by id, with why (LR.42).
+
+    The record's status line listed the deferred ids and nothing of why; a criterion still failing when an escalation
+    accepted the sprint as it stood - a change request is accepted, not deferred - was named nowhere in it. Only an
+    accepted sprint cuts anything: one that failed is planned again or stops the run.
+    """
+    cuts: dict[str, str] = {}
+    for cid in deferred_here or ():
+        cid = str(cid)
+        cuts[cid] = _flat(reasons.get(cid)) or "deferred at an escalation; no reason recorded"
+    if accepted_at_escalation:
+        for entry in failing or ():
+            cid = str(entry.get("id") or "")
+            if cid and cid not in cuts:
+                cuts[cid] = (f"still {entry.get('status') or 'failing'} when an escalation accepted the sprint as it "
+                             f"stood ({_flat(accepted_at_escalation)})")
+    return [{"id": cid, "why": why[:400]} for cid, why in cuts.items()]
+
+
 __all__ = [
     "GATING",
     "carried_from",
@@ -329,6 +356,7 @@ __all__ = [
     "findings_of",
     "fixes_to_keep",
     "lessons_from",
+    "scope_cuts",
     "with_dispositions",
     "work_order_outcomes",
 ]

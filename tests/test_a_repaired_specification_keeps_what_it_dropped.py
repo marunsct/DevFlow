@@ -14,7 +14,6 @@ from pydantic import BaseModel
 
 from app.graph import workflow
 from app.graph.workflow import _with_the_sections_it_dropped
-from workflow_nodes import workflow_source
 
 
 class Spec(BaseModel):
@@ -59,8 +58,11 @@ def test_nothing_to_merge_with_returns_the_answer_unchanged() -> None:
     assert _with_the_sections_it_dropped(None, _full()) is None
 
 
-@pytest.mark.parametrize("repairs, merged", [(1, True), (0, False)], ids=["a-repair", "a-first-answer"])
-def test_only_a_repair_merges_and_before_the_document_is_rendered(repairs, merged, tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("repairs, comments, merged", [(1, [], True), (0, ["testing: name the data directory"], True),
+                                                     (0, [], False)],
+                         ids=["a-repair", "a-revision-after-review", "a-first-answer"])
+def test_only_a_repair_or_a_revision_merges_and_before_the_document_is_rendered(
+        repairs, comments, merged, tmp_path, monkeypatch) -> None:
     from app.agents.principal_architect import TechnicalSpecificationOutput
     from app.agents.product_manager import ProductManagerOutput
     from workflow_node_stubs import run_node
@@ -72,7 +74,7 @@ def test_only_a_repair_merges_and_before_the_document_is_rendered(repairs, merge
     seen = run_node(monkeypatch, tmp_path, "principal_architect", answer=answer,
                     product_intake=ProductManagerOutput(product_name="Notes"), tools_models={"plan": "local"},
                     document=SimpleNamespace(text="Notes."), technical_specification=previous,
-                    specification_repair_count=repairs,
+                    specification_repair_count=repairs, revision_comments=comments,
                     overrides={"app.agents.research_brief.research_notes": lambda *a, **k: "",
                                "app.graph.workflow.render_specification":
                                    lambda spec, name: rendered.append(spec.testing) or "rendered"})
@@ -98,9 +100,6 @@ def test_a_revision_after_review_sends_what_it_changes_and_keeps_the_rest() -> N
 
     assert merged.testing == ["node --test, with a temp DATA_DIR"]
     assert merged.file_plan == ["notes/src/app.ts - routes"] and merged.library_usage == ["hono - new Hono()"]
-    source = workflow_source()
-    node = source[source.index("def principal_architect_node"):source.index("def architecture_review_node")]
-    assert "or required_changes) and previous_specification is not None" in node
     request = build_architecture_revision_request(
         "{}", ["testing: name the data directory"], "intake", "tools", "stack",
         _repository("/r"), _document(),

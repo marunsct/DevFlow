@@ -6,7 +6,6 @@ write; one took 42 calls on one defect.
 """
 from __future__ import annotations
 
-import inspect
 import os
 import re
 from types import SimpleNamespace
@@ -14,9 +13,8 @@ from unittest import mock
 
 from langchain_core.messages import ToolMessage
 
-from app.agents import role_agent
 from app.graph import verify_after_write as vaw
-from workflow_nodes import workflow_source
+from workflow_nodes import a_defect, a_fix_stage
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 ON = {"VERIFY_AFTER_WRITE": "on"}
@@ -55,12 +53,30 @@ def test_the_checks_per_stage_are_bounded():
     assert len(ran) == vaw.MOST_CHECKS
 
 
-def test_the_middleware_passes_a_result_through_and_the_fix_stage_and_agents_use_it():
+def test_the_middleware_passes_a_result_through_when_nothing_is_watched():
     middleware = vaw.build_middleware()
     request = SimpleNamespace(tool_call={"name": "edit_artifact", "id": "c1"})
     assert middleware.wrap_tool_call(request, lambda r: _written()).content == "Wrote app/main.py (12 lines)."
-    assert "verify_after_write.watching(" in workflow_source()
-    assert "_verify_after_write_middleware()" in inspect.getsource(role_agent)
+
+
+def test_a_write_while_the_fix_stage_runs_is_answered_with_the_defect_s_tests(tmp_path, monkeypatch):
+    from app.agents.specialists import SpecialistOutput
+    from app.graph.workflow import APP_RUN_ID_KEY
+
+    monkeypatch.setenv("VERIFY_AFTER_WRITE", "on")
+    replies: list[str] = []
+
+    def the_fixer_writes(state, config, *, stage_name, **kwargs):
+        written = vaw.after_a_write("edit_artifact", _written(), config["configurable"].get(APP_RUN_ID_KEY), stage_name)
+        replies.append(written.content)
+        return {"__fix_result__": SpecialistOutput(changed_files=["app/main.py"])}
+
+    a_fix_stage(tmp_path, [a_defect("Saving a note loses it.")], patches={
+        "app.graph.workflow._run_gated_agent": the_fixer_writes,
+        "app.graph.workflow._the_defect_s_tests_pass": lambda root, defect: True,  # the defect's tests in the sandbox
+    })
+
+    assert len(replies) == 1 and "give your answer now" in replies[0]
 
 
 def test_a_write_that_did_not_happen_runs_no_check():

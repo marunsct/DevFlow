@@ -99,15 +99,3 @@ def test_the_repair_is_not_json_specific(workspace, name, sent, check):
     """Python is parsed with `ast`, JSON with `json.loads`; both are real grammars."""
     write_approved_artifact(workspace, name, sent)
     assert check((workspace / name).read_text(encoding="utf-8"))
-
-
-def test_the_repair_and_the_edit_path_share_one_definition():
-    """The bug was two paths and one implementation, so the fix must not fork it."""
-    import inspect
-
-    from app.tools import repository
-
-    source = inspect.getsource(repository._content_a_model_escaped_twice)
-    assert "_transcription_repairs" in source, (
-        "the write path must reuse the edit path's repairs, not copy them"
-    )

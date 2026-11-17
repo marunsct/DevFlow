@@ -53,23 +53,52 @@ def test_every_work_order_is_given_it():
         assert "The product's API" in specialists.specification_for_the_work_order(SPEC, order), role
 
 
-def test_the_fixers_reviewers_and_the_dispute_are_given_it():
-    import inspect
+def _asked(asked: list[str], output_key_answer):
+    """A stand-in for the stage's agent: records what it was asked, answers with `output_key_answer`."""
+    def gated(state, config, *, initial_request, output_key, next_stage="", **kwargs):
+        asked.append(initial_request["messages"][-1]["content"])
+        return {output_key: output_key_answer, "stage": next_stage}
+    return gated
 
-    from app.graph import acceptance_nodes, workflow
 
-    request = workflow._with_the_api({"messages": [{"role": "user", "content": "judge these"}]},
-                                     {"technical_specification": SPEC})
-    assert "The product's API" in request["messages"][-1]["content"]
-    assert workflow._with_the_api({"messages": [{"content": "x"}]}, {})["messages"][-1]["content"] == "x"
+def test_the_milestone_reviewer_is_given_it(tmp_path):
+    from workflow_nodes import a_milestone_review, a_milestone_verdict
 
-    from workflow_nodes import workflow_source
+    asked: list[str] = []
 
-    assert "_with_the_api(request, state)" in workflow_source()                 # the milestone review
-    assert 'api_reference(state.get("technical_specification"),' in inspect.getsource(acceptance_nodes)
+    a_milestone_review(tmp_path, None, state={"technical_specification": SPEC},
+                       patches={"app.graph.workflow._run_gated_agent": _asked(asked, a_milestone_verdict("accepted"))})
+
+    assert len(asked) == 1 and "The product's API" in asked[0] and "full_name" in asked[0]
+
+
+def test_a_fixer_is_given_it():
+    from app.graph import workflow
+
     fix = workflow._the_specification_for_the_fix(
         {"technical_specification": SPEC}, SimpleNamespace(affected_files=["app/auth.py"], description="x"), [])
     assert "The product's API" in fix
+
+
+EVERY_CRITERION = ("test('[AC-1] adds', async () => {});\ntest('[AC-2] deletes', async () => {});\n"
+                   "test('[AC-3] persists', async () => {});\n")
+
+
+def test_the_qa_lead_s_review_is_given_it_with_the_brief_s_names(tmp_path):
+    from workflow_nodes import an_acceptance_review
+
+    brief = 'Three buttons named "All", "Active" and "Completed" filter the list.'
+    spec = SimpleNamespace(**{**vars(SPEC), "interface_design": [
+        'Filters: control "All (0)", control "Active (0)", control "Completed"']})
+    asked: list[str] = []
+
+    an_acceptance_review(tmp_path, EVERY_CRITERION, failed=["[AC-1] adds", "[AC-2] deletes", "[AC-3] persists"],
+                         state={"technical_specification": spec, "document": SimpleNamespace(text=brief)},
+                         patches={"app.graph.workflow._run_gated_agent":
+                                  _asked(asked, SimpleNamespace(approved=True, findings=[]))})
+
+    assert len(asked) == 1 and "The product's API" in asked[0] and "full_name" in asked[0]
+    assert 'the brief says "All"; the specification has "All (0)": use "All"' in asked[0]
 
 
 def test_the_qa_lead_s_dispute_is_given_it(tmp_path):
@@ -103,10 +132,8 @@ def test_the_brief_s_quoted_names_win_over_the_specification_s():
     assert not BANNED.search(harness_words)
 
 
-def test_every_request_that_has_the_brief_passes_it(tmp_path):
-    import inspect
-
-    from app.graph import acceptance_nodes, workflow
+def test_the_author_and_the_judges_are_given_the_brief_s_names(tmp_path):
+    from app.graph import workflow
 
     brief = 'Three buttons named "All", "Active" and "Completed" filter the list.'
     spec = SimpleNamespace(interface_design=['Filters: control "All (0)", control "Active (0)", control "Completed"'])
@@ -118,5 +145,3 @@ def test_every_request_that_has_the_brief_passes_it(tmp_path):
 
     assert the_brief_wins in author["messages"][-1]["content"]
     assert the_brief_wins in judged["messages"][-1]["content"]
-    # The QA lead's review of the suite, in `acceptance_nodes` (not the graph).
-    assert inspect.getsource(acceptance_nodes).count('api_reference(\n            state.get("technical_specification"), getattr(state.get("document")') == 1

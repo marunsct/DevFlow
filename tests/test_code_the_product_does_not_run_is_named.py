@@ -13,7 +13,7 @@ import json
 from types import SimpleNamespace
 
 from app.stacks.scaffold import code_the_product_does_not_run
-from workflow_nodes import workflow_source
+from workflow_nodes import a_defect, a_fix_stage
 
 PROJECT = "board"
 
@@ -70,18 +70,28 @@ def test_unit_tests_of_the_served_code_and_one_shared_file_name_nothing(tmp_path
     assert code_the_product_does_not_run(root) == []
 
 
-def test_every_fixer_and_the_release_are_told(tmp_path, monkeypatch) -> None:
-    import inspect
+def test_every_fixer_is_told(tmp_path) -> None:
+    _workspace(tmp_path, {**SERVED, "frontend/src/App.jsx": "x", "frontend/src/api/client.jsx": "x"})
 
-    from app.graph import delivery, workflow
+    _, asked = a_fix_stage(tmp_path, [a_defect("The board does not load.")])
+
+    assert "Code the product does not run" in asked["requests"][0]
+    assert "`board/frontend/src/`" in asked["requests"][0]
+
+
+def test_the_release_names_it_as_a_gap(tmp_path, monkeypatch) -> None:
+    from app.analysis import integration_checks
+    from app.graph import delivery
 
     root = _workspace(tmp_path, {**SERVED, "frontend/src/App.jsx": "x", "frontend/src/api/client.jsx": "x"})
-    assert "Code the product does not run" in workflow._the_unserved_code_section(str(root))
-    assert "_the_unserved_code_section(state[\"repository\"].root_path)" in workflow_source()
-    gaps = delivery._code_the_product_does_not_run(str(root))
-    assert len(gaps) == 1 and gaps[0].startswith("Code the product does not run:")
-    assert "gaps.extend(_code_the_product_does_not_run(root))" in inspect.getsource(delivery.release)
-    SimpleNamespace()
+    monkeypatch.setattr(integration_checks, "problems_that_break_the_product", lambda root, stack=None, brief="": [])
+
+    update = delivery.release({"repository": SimpleNamespace(root_path=str(root))}, {"configurable": {}},
+                              SimpleNamespace(judgement_model=None, checkpointer=None, repo_root=str(root),
+                                              allow_subdirectories=True))
+
+    gaps = [gap for gap in update["completion_gaps"] if str(gap).startswith("Code the product does not run:")]
+    assert len(gaps) == 1 and "`board/frontend/src/`" in gaps[0]
 
 
 def test_what_the_fixer_is_told_avoids_the_banned_words(tmp_path) -> None:

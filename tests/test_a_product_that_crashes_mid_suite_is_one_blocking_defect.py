@@ -35,7 +35,8 @@ def test_a_crash_after_a_pass_with_later_connection_failures_is_recorded_with_it
                      ("[AC-4] updates", "failed", "apiRequestContext.put: read ECONNRESET"),
                      ("[AC-5] deletes", "failed", "apiRequestContext.post: connect ECONNREFUSED 127.0.0.1:50127"))
     found = suite.the_product_crashed_mid_suite(report, OUTPUT)
-    assert found.startswith("The product crashed while the acceptance suite ran") and "rename 'data/notes.json.tmp'" in found and "2 later test(s)" in found
+    assert found.startswith("The product crashed while the acceptance suite ran")
+    assert "rename 'data/notes.json.tmp'" in found and "2 later test(s)" in found
     assert not BANNED.search(acceptance_nodes.THE_PRODUCT_CRASHED)
 
 

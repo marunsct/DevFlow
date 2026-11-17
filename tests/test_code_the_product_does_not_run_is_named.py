@@ -13,6 +13,7 @@ import json
 from types import SimpleNamespace
 
 from app.stacks.scaffold import code_the_product_does_not_run
+from app.tools.sandbox import SandboxExecutor
 from workflow_nodes import a_defect, a_fix_stage
 
 PROJECT = "board"
@@ -85,6 +86,8 @@ def test_the_release_names_it_as_a_gap(tmp_path, monkeypatch) -> None:
 
     root = _workspace(tmp_path, {**SERVED, "frontend/src/App.jsx": "x", "frontend/src/api/client.jsx": "x"})
     monkeypatch.setattr(integration_checks, "problems_that_break_the_product", lambda root, stack=None, brief="": [])
+    # The project's unit tests and build in the sandbox: nothing runs, so nothing is held back for them.
+    monkeypatch.setattr(SandboxExecutor, "_run", classmethod(lambda cls, *args, **kwargs: {"error": "not run here"}))
 
     update = delivery.release({"repository": SimpleNamespace(root_path=str(root))}, {"configurable": {}},
                               SimpleNamespace(judgement_model=None, checkpointer=None, repo_root=str(root),

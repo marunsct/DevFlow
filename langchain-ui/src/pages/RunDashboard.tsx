@@ -803,7 +803,7 @@ export const RunDashboard: React.FC = () => {
               </div>
             )}
             {run.status === 'completed' && run.verdict === 'delivered' && !run.non_deliverable && (
-              <p className="mt-3 text-xs font-semibold text-success" data-testid="delivered">Delivered: no gap that means the product may not work, and no criterion cut</p>
+              <p className="mt-3 text-xs font-semibold text-success" data-testid="delivered">Delivered: every criterion built, and nothing left open that could stop the product working</p>
             )}
             {run.non_deliverable && (
               <div className="mt-3 rounded-xl border border-danger/30 bg-danger-bg px-3 py-2">

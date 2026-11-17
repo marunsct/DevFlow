@@ -112,6 +112,11 @@ AXUM_KNOWN_ERRORS = {
         "`app()` (from `DATA_DIR`) and end it with `.with_state(state)`; `main.rs` and the tests then use `app()` as "
         "it is."
     ),
+    "could not find `test` in `axum`": (
+        "axum has no `test` module and no test client: a test sends a request with `tower::ServiceExt::oneshot`, "
+        "importing `axum::body::Body`, `axum::http::{Request, StatusCode}`, `http_body_util::BodyExt` and "
+        "`tower::ServiceExt`, as `tests/scaffold_smoke.rs` does."
+    ),
     "Service<IncomingStream": (
         "`axum::serve` was given a `Router<AppState>`, a router still waiting for its state. Apply the state with "
         "`.with_state(state)` before serving, so the router served is a plain `Router`."

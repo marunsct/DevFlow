@@ -28,7 +28,8 @@ def _defect(text):
     ("the trait bound `for<'a> Router<AppState>: tower_service::Service<IncomingStream<'a, TcpListener>>` is not satisfied",
      "`.with_state(state)`"),
     ("mismatched types: expected `Router`, found `Router<AppState>`", "build the state inside `app()`"),
-], ids=["body-extractor-first", "router-without-its-state", "app-returns-a-router-still-waiting"])
+    ("error[E0433]: failed to resolve: could not find `test` in `axum`", "`tower::ServiceExt::oneshot`"),
+], ids=["body-extractor-first", "router-without-its-state", "app-returns-a-router-still-waiting", "no-axum-test"])
 def test_the_error_is_given_its_cause(tmp_path, error, cause):
     contract.write(tmp_path, pack_named("rust-axum-api"), "notes-api", "Notes")
 

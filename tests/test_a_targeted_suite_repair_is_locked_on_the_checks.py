@@ -5,7 +5,7 @@ four new findings about other tests, and locking again took fourteen minutes.
 """
 from __future__ import annotations
 
-import inspect
+import pytest
 
 from app.acceptance import suite
 from app.graph import acceptance_nodes
@@ -56,10 +56,45 @@ def test_nothing_under_repair_or_an_unchanged_suite_is_not_targeted(tmp_path):
     assert suite.only_the_repaired_tests_changed(tmp_path) is False  # locked, nothing under repair
 
 
-def test_the_review_skips_its_model_review_for_one(monkeypatch):
-    source = inspect.getsource(acceptance_nodes.acceptance_review)
-    assert "targeted = not problems and suite.targeted_repair_switch.enabled() and suite.only_the_repaired_tests_changed(root)" in source
-    assert "if (not problems or unread_at_the_limit) and not targeted:" in source
+ONE = "test('[AC-1] adds', async ({ request }) => {\n  expect(3).toBe(3);\n});\n"
+
+
+@pytest.mark.parametrize("repaired, reviewed", [
+    (HEAD + ONE + FIXED + OTHER, False),
+    (HEAD + "const helper = 1;\n" + ONE + FIXED + OTHER, True),
+], ids=["only-its-own-test", "the-helpers-too"])
+def test_the_review_skips_its_model_review_for_one(tmp_path, monkeypatch, repaired, reviewed):
+    from types import SimpleNamespace
+
+    from app.acceptance import junit
+    from app.acceptance.criteria import number
+
+    monkeypatch.setenv("TARGETED_SUITE_REPAIR", "on")
+    spec = _locked(tmp_path)
+    spec.write_text(HEAD + ONE + BROKEN + OTHER)
+    suite.lock(tmp_path)
+    suite.unlock(tmp_path)
+    suite.repairing(tmp_path, ["[AC-2] lists"])
+    suite.save_criteria(tmp_path, number("# Brief\n## Features\n- Add a note\n- List notes\n- Fetch a note\n"))
+    spec.write_text(repaired)
+    monkeypatch.setattr(suite, "run", lambda root: suite.AcceptanceResult(
+        ran=True, exit_code=1, command="npx playwright test", report=junit.Report(found=True, tests=[
+            junit.TestResult(name="[AC-1] adds", outcome="failed", message="no"),
+            junit.TestResult(name="[AC-2] lists", outcome="failed", message="no"),
+            junit.TestResult(name="[AC-3] fetches", outcome="failed", message="no")])))
+    asked = []
+    monkeypatch.setattr("app.graph.workflow._run_gated_agent", lambda state, config, *, stage_name, output_key, next_stage, **k: (
+        asked.append(stage_name) or {output_key: SimpleNamespace(approved=True, findings=[]), "stage": next_stage}))
+    monkeypatch.setattr("app.agents.acceptance_reviewer.create_acceptance_reviewer_agent", lambda *a, **k: object())
+
+    update = acceptance_nodes.acceptance_review(
+        {"repository": SimpleNamespace(root_path=str(tmp_path)), "acceptance_round": 1,
+         "document": SimpleNamespace(text="# Brief\n## Features\n- Add a note\n- List notes\n- Fetch a note\n")},
+        {"configurable": {"thread_id": "t"}},
+        acceptance_nodes.Context(model=None, judgement_model=None, checkpointer=None, repo_root=None))
+
+    assert bool(asked) is reviewed, update.get("acceptance_feedback")
+    assert suite.is_locked(tmp_path), update.get("acceptance_feedback")
 
 
 PY_HEAD = "import httpx\n\n\nclass TestItems:\n"

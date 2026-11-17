@@ -30,12 +30,30 @@ def test_the_first_sighting_stands_and_an_edit_still_overwrites():
     assert seen_content.changed_since_seen("app/a.js", "one\n") is True
 
 
-def test_the_memory_uses_the_first_writer_wins_call():
-    import inspect
+def test_the_next_call_s_memory_leaves_the_stage_s_own_edit_as_seen(tmp_path):
+    from types import SimpleNamespace
 
-    source = inspect.getsource(project_memory.build_project_memory_middleware)
-    assert "remember_if_unseen(held_path, held_content)" in source
-    assert "remember(held_path, held_content)" not in source.replace("remember_if_unseen(held_path, held_content)", "")
+    from langchain_core.messages import HumanMessage
+
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "a.js").write_text("one\n")
+    middleware = project_memory.build_project_memory_middleware(str(tmp_path))
+
+    class Request(SimpleNamespace):
+        def override(self, **changes):
+            return Request(**{**self.__dict__, **changes})
+
+    def a_call():
+        middleware.wrap_model_call(Request(messages=[HumanMessage(content="Build it")], model=None), lambda r: None)
+
+    a_call()
+    (tmp_path / "app" / "a.js").write_text("two\n")
+    seen_content.remember("app/a.js", "two\n")  # the stage's own edit
+
+    a_call()
+
+    assert seen_content.changed_since_seen("app/a.js", "two\n") is False
+    assert seen_content.changed_since_seen("app/a.js", "one\n") is True
 
 
 def test_a_withheld_read_tool_is_shown_what_changed_not_told_to_read(monkeypatch):

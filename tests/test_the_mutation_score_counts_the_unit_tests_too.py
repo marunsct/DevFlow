@@ -60,3 +60,22 @@ def test_the_probe_runs_the_suite_on_a_copy_beside_the_workspace_and_removes_it(
 
     assert [root.parent for root in ran_on] == [tmp_path]
     assert sorted(path.name for path in tmp_path.iterdir()) == ["out.json", "ws"]
+
+
+def test_a_socket_a_toolchain_left_in_the_workspace_does_not_stop_the_probe(tmp_path, monkeypatch):
+    """Measured on a C# run: .NET's diagnostic sockets under `.agent-home/tmp` failed the copy."""
+    import socket
+
+    mutate = _mutate_module()
+    (tmp_path / "ws" / ".agent-home" / "tmp").mkdir(parents=True)
+    held = socket.socket(socket.AF_UNIX)
+    held.bind(str(tmp_path / "ws" / ".agent-home" / "tmp" / "diagnostic-socket"))
+    monkeypatch.setattr("app.stacks.contract.the_pack", lambda root: None)
+    monkeypatch.setattr("app.acceptance.suite.location", lambda root: ("",))
+    monkeypatch.setattr("app.acceptance.suite.run", lambda root, save=False: _result())
+    try:
+        result = mutate.mutate(tmp_path / "ws", tmp_path / "out.json", 2)
+    finally:
+        held.close()
+
+    assert json.loads((tmp_path / "out.json").read_text()) == result

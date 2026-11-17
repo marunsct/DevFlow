@@ -26,6 +26,7 @@ tests it turned red, and the score (changes caught / changes tried).
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import sys
@@ -44,12 +45,32 @@ from app.acceptance.mutation import (  # noqa: E402 - run inside the worker, whe
 )
 
 
+def _neither_a_file_nor_a_folder(directory: str, names: list[str]) -> set[str]:
+    """What `copytree` leaves out: sockets and pipes a toolchain left behind, which cannot be copied.
+
+    Measured on a C# run: .NET's diagnostic sockets under `.agent-home/tmp` failed the copy, and the run had no
+    mutation score.
+    """
+    import stat
+
+    left = set()
+    for name in names:
+        try:
+            mode = os.lstat(os.path.join(directory, name)).st_mode
+        except OSError:
+            left.add(name)
+            continue
+        if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode) or stat.S_ISLNK(mode)):
+            left.add(name)
+    return left
+
+
 def mutate(workspace: Path, out: Path, count: int = 12) -> dict:
     # Beside the workspace, on the data volume: in container mode the suite runs in a sibling container that can mount
     # only that volume. Measured: a copy under the worker's /tmp could not be mounted, every container-mode run read
     # "no test passes on the unchanged product", and its mutation score went unrecorded.
     copy = workspace.parent / f".mutate-{workspace.name}-{int(time.time())}"
-    shutil.copytree(workspace, copy, symlinks=True)
+    shutil.copytree(workspace, copy, symlinks=True, ignore=_neither_a_file_nor_a_folder)
     try:
         return _mutate_the_copy(workspace, copy, out, count)
     finally:

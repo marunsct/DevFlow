@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-17 21:33 JST (written by `loop.sh state`). Harness 1def005a committed; 1def005a deployed.
-**Live, and stopped in the last day:** run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0; run-844673cd failed at failed; run-9f8188cb failed at failed; run-2db7b0a2 failed at failed; run-4db255e8 failed at failed
-**Last scored:** run-c7a00abc notes-api-rust 9/9 (completed, handoff 1.0; scored 11-17 21:33 JST); run-760be6cb notes-api-rust 0/9 (failed, mixed, 86 active min, handoff 0.429; scored 11-17 19:46 JST); run-e53e1441 notes-api-java 9/9 (completed, mixed, 89 active min, handoff 1.0; scored 11-17 17:56 JST).
+**As of:** 11-17 23:15 JST (written by `loop.sh state`). Harness 4e10332a committed; 4e10332a deployed.
+**Live, and stopped in the last day:** run-e8e3120f running at defect_fix_1_1; run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0; run-844673cd failed at failed; run-9f8188cb failed at failed; run-2db7b0a2 failed at failed
+**Last scored:** run-2a42b19c notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-17 23:15 JST); run-c7a00abc notes-api-rust 9/9 (completed, mixed, 96 active min, handoff 1.0; scored 11-17 21:33 JST); run-760be6cb notes-api-rust 0/9 (failed, mixed, 86 active min, handoff 0.429; scored 11-17 19:46 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -105,8 +105,12 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
    at 16:46 was cancelled at once; verify every pack in container mode before its first run.
    C# container run 1, run-092a40cb-21da-4853-b600-cfb137ce824b (:1234, 16:54): stopped when the owner took :1234
    (18:45 JST), left failed when the owner released the port at 21:52 (16 fixes later; C# reran fresh on :8888).
-   Live: C# container run 2, run-2a42b19c-205a-4bd5-812c-0028762cc920 (:8888, 21:46); PHP container run 1,
-   run-e8e3120f-5d67-4b47-9037-e4745c898148 (:1234, 21:52), both on f2bec757.
+   C# container run 2, run-2a42b19c-205a-4bd5-812c-0028762cc920 (:8888, 21:46-23:12): hidden 9/9, quality 8/8,
+   handoff 1.0, DELIVERED - the first C# container run delivered. Its attempt 1 failed on a fixer that wrote C# into
+   `App.csproj` (LF.1045 now reverts a fix that leaves a manifest unreadable); the re-plan built it green. Mutation
+   4/12 caught (LF.1046: the probe's copy failed on .NET's sockets). LF.1044 (one point per denial) deployed 22:11.
+   Live: PHP container run 1, run-e8e3120f-5d67-4b47-9037-e4745c898148 (:1234, 21:52; 21/21 acceptance at 23:15);
+   Ruby container run 1, run-c7b0d7ec-4406-41fe-af2f-74259ee63996 (:8888, 23:19).
 3. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).

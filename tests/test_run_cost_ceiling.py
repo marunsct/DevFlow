@@ -169,28 +169,58 @@ class TestTheParkedRunHasAWayOut:
         assert BUDGET_PAUSE_STATUS != "failed"
         assert BUDGET_PAUSE_STATUS.startswith("waiting_for_")
 
-    def test_the_resume_endpoint_accepts_it(self):
+    def test_the_resume_endpoint_accepts_it(self, tmp_path, monkeypatch):
         """Refusing here would leave the only pause in the system with no way
         out but cancel, which is the work thrown away that the pause exists to
         prevent."""
-        import inspect
+        from types import SimpleNamespace
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
 
         from app.server import runs as runs_module
+        from app.server.auth import require_operator
 
-        from app.server.runner import BUDGET_PAUSE_STATUS, RESUMABLE_STATUSES
+        resumed = []
 
-        assert BUDGET_PAUSE_STATUS in RESUMABLE_STATUSES
-        assert "resumable = RESUMABLE_STATUSES" in inspect.getsource(runs_module)
+        async def resume_run(run_id):
+            resumed.append(run_id)
 
-    def test_the_runner_resumes_it_by_the_same_path_as_a_failed_run(self):
-        import inspect
+        record = SimpleNamespace(run_id="run-1", status=BUDGET_PAUSE_STATUS, tenant_id="t")
+        runner = SimpleNamespace(run_store=SimpleNamespace(load=lambda run_id: record), resume_run=resume_run)
+        monkeypatch.setattr(runs_module, "record_audit", lambda **kwargs: None)
+        app = FastAPI()
+        app.include_router(runs_module.create_runs_router(runner, SimpleNamespace(), str(tmp_path), str(tmp_path)))
+        app.dependency_overrides[require_operator] = lambda: SimpleNamespace(username="op", role="operator", tenant_id="t")
+
+        answer = TestClient(app).post("/api/runs/run-1/resume")
+
+        assert answer.status_code == 202 and resumed == ["run-1"]
+
+    def test_the_runner_resumes_it_by_the_same_path_as_a_failed_run(self, monkeypatch):
+        import asyncio
+        from types import SimpleNamespace
 
         from app.server.runner import WorkflowRunner
 
-        from app.server.runner import BUDGET_PAUSE_STATUS, RESUMABLE_STATUSES
+        record = SimpleNamespace(run_id="run-1", status=BUDGET_PAUSE_STATUS, error="", repo_root="")
 
-        assert BUDGET_PAUSE_STATUS in RESUMABLE_STATUSES
-        assert "in RESUMABLE_STATUSES" in inspect.getsource(WorkflowRunner.resume_run)
+        def compare_and_set_status(run_id, expected, new, **kwargs):
+            if record.status != expected:
+                return False
+            record.status = new
+            return True
+
+        runner = object.__new__(WorkflowRunner)
+        runner.run_store = SimpleNamespace(load=lambda run_id: record, compare_and_set_status=compare_and_set_status,
+                                           clear_stop=lambda run_id: None)
+        queued = []
+        monkeypatch.setattr(WorkflowRunner, "_dispatch", lambda self, run_id, **kwargs: queued.append(run_id))
+        monkeypatch.setattr(WorkflowRunner, "_require_a_reachable_model", lambda self, *a, **k: None)
+
+        asyncio.run(runner.resume_run("run-1"))
+
+        assert (record.status, queued) == ("running", ["run-1"])
 
 
 class TestTheCostIsVisibleToAnOperator:

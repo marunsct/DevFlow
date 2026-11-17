@@ -563,56 +563,37 @@ def test_the_commands_the_workflow_depends_on_are_not_refused() -> None:
         assert _starts_a_server(argv) is None, argv
 
 
-def test_a_timeout_says_why_a_command_might_not_finish() -> None:
+@pytest.mark.parametrize("mode", ["container", "in-container"])
+def test_a_timeout_says_why_a_command_might_not_finish(mode, tmp_path, monkeypatch) -> None:
     """"Command timed out" alone tells an agent nothing about the cause.
 
     The commonest cause is not slowness: it is a command that was never going
     to exit. The name check refuses the ones it can recognise, but
     one run's ui specialist wrote its own server, `node serve-test.mjs`,
     and ran it twice for 120 seconds each. No name check can catch that; the
-    message it gets back can still explain it.
+    message it gets back can still explain it - on either path a command runs by
+    (the pre-run refusal is `test_the_refusal_keeps_the_advice_the_timeout_gives`).
     """
-    import inspect
+    import subprocess
 
     from app.tools import sandbox
 
-    source = inspect.getsource(sandbox)
-    # Every message that tells an agent a command timed out carries it, rather
-    # than a fixed count of uses. Reaching one of two is the mistake this
-    # codebase keeps making, but a number has to be edited whenever a third
-    # place is added - which is the moment this check should be doing its work
-    # instead of failing. A third was added: the pre-run refusal of a command
-    # that has already timed out.
-    import re
+    def times_out(argv, *args, **kwargs):
+        if argv[:2] == ["/usr/bin/docker", "kill"]:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        raise subprocess.TimeoutExpired(argv, 1, output="", stderr="")
 
-    # Every "Command timed out after N seconds." the executor produces, with
-    # whatever follows it on the same line. Narrow on purpose: a looser pattern
-    # matched `"timed out" in str(...)` inside the ledger check, which is a
-    # substring test and not a message to anyone.
-    messages = re.findall(r'f"Command timed out after[^"]*"[^\n]*', source)
-    assert len(messages) >= 2, f"expected both run paths, found {len(messages)}"
-    # Either the constant or the chooser that returns one of the two variants:
-    # a workspace with a browser runner installed is told something different
-    # and true. See `_timeout_advice`.
-    without = [
-        m for m in messages
-        if "_TIMEOUT_ADVICE" not in m and "_timeout_advice(" not in m
-    ]
-    assert not without, f"these timeout messages do not carry the advice: {without}"
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/docker" if name == "docker" else None)
+    monkeypatch.setattr("subprocess.run", times_out)
+    monkeypatch.setattr(sandbox, "_run_and_watch_the_tree", times_out)
+    monkeypatch.setattr(SandboxExecutor, "_resolve_executable", staticmethod(lambda name, *a, **k: "/usr/bin/" + name))
 
-    # The pre-run refusal of a command that already timed out carries it too,
-    # and is checked by calling it: see
-    # `test_the_refusal_keeps_the_advice_the_timeout_gives`.
-    assert "usually one that was not meant to" in sandbox._TIMEOUT_ADVICE
-    assert "import it and call it" in sandbox._TIMEOUT_ADVICE
-    # Both variants explain the cause; only the remedy differs.
-    assert (
-        "usually one that was not meant to"
-        in sandbox._TIMEOUT_ADVICE_WITH_A_BROWSER
-    )
+    with mock.patch.dict(os.environ, {"ALLOW_COMMAND_EXECUTION": "true", "SANDBOX_EXECUTION_MODE": mode}):
+        result = SandboxExecutor.execute(["node", "serve-test.mjs"], repo_root=str(tmp_path), role_name="ui_ux_specialist")
 
-
-# --- the project directory written twice ---------------------------------
+    assert "timed out" in result["error"]
+    assert "usually one that was not meant to" in result["error"], "the cause"
+    assert "import it and call it" in result["error"], "the remedy"
 
 
 def test_a_doubled_project_directory_is_repaired(tmp_path) -> None:

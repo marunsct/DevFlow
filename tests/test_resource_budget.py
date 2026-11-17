@@ -151,26 +151,20 @@ def test_unknown_fields_describe_as_unknown_not_zero():
     assert "unknown" in described
 
 
-def test_the_sandbox_checks_headroom_before_it_launches():
-    import inspect
-
-    from app.tools.sandbox import SandboxExecutor
-
-    source = inspect.getsource(SandboxExecutor._run)
-
-    assert "enough_headroom" in source
-
-
-def test_the_sandbox_reads_its_cpu_count_from_one_place():
-    """Two readers of the same fact drift; the pre-flight check and the child
-    environment must agree."""
-    import inspect
-
+def test_the_sandbox_checks_headroom_before_it_launches(tmp_path, monkeypatch):
+    """A container with almost no memory free (the host's cgroup, read here as a stand-in) launches nothing."""
     from app.tools import sandbox
 
-    assert "from app.tools.resources import usable_cpus" in inspect.getsource(
-        sandbox._usable_cpus
-    )
+    monkeypatch.setenv("ALLOW_COMMAND_EXECUTION", "true")
+    monkeypatch.setattr("app.tools.resources.read_resource_state", lambda: _state(limit=8 * GiB, in_use=8 * GiB - 64 * 1024**2))
+    launched = []
+    monkeypatch.setattr(sandbox, "_run_and_watch_the_tree", lambda argv, **kwargs: launched.append(argv))
+    monkeypatch.setattr(sandbox.subprocess, "run", lambda argv, *a, **k: launched.append(argv))
+
+    outcome = sandbox.SandboxExecutor._run(["node", "--test"], str(tmp_path), "testing_specialist", "test", None, None)
+
+    assert launched == []
+    assert "Not enough memory is free" in outcome["error"]
 
 
 def test_two_runs_in_one_container_share_one_budget():

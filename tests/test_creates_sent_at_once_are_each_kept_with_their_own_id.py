@@ -46,8 +46,8 @@ def test_the_playwright_spec_sends_the_creates_at_once_and_reads_the_list_route(
     spec = cw.playwright_concurrent_write_checks(asked, lines, [{"title": "milk"}])
     assert "Promise.all(Array.from({ length: c.at_once }" in spec
     case = json.loads(re.search(r"const c = (\{.*\});", spec).group(1))
-    assert case == {"path": "/notes", "list": "/notes", "parameter": "noteId", "bodies": [{"title": "milk"}], "at_once": 10}
-    assert "contract 1: AC-1 POST /notes -> 201 sent 10 at once" in spec
+    assert case == {"path": "/notes", "list": "/notes", "parameter": "noteId", "bodies": [{"title": "milk"}], "at_once": 16}
+    assert "contract 1: AC-1 POST /notes -> 201 sent 16 at once" in spec
     assert f"const WRITES_AT_ONCE = {json.dumps(cw.MARKER)};" in spec
     # A body object is sent as the object it is; only raw text needs bytes.
     assert "data: body, headers" in spec
@@ -125,7 +125,7 @@ def test_the_pytest_module_finds_an_unserialised_store_and_passes_a_serialised_o
     racy = _run_the_pytest_module(tmp_path / "racy", racy=True)
     assert racy.found and [t.outcome for t in racy.tests] == ["failed"]
     found = cw.what_the_test_found(racy.tests[0])
-    assert found["sent"] == 10 and found["made"] == 10 and found["same_id"] and found["listed"] < 10
+    assert found["sent"] == 16 and found["made"] == 16 and found["same_id"] and found["listed"] < 16
     safe = _run_the_pytest_module(tmp_path / "safe", racy=False)
     assert safe.found and [t.outcome for t in safe.tests] == ["passed"]
 
@@ -204,7 +204,7 @@ def test_a_green_round_raises_it_behind_its_switch(tmp_path, monkeypatch):
     monkeypatch.setenv("CONCURRENT_WRITE_PROBE", "on")
     raised = workflow._with_the_contract_s_server_errors(state, green, milestone).defects
     assert len(raised) == 1 and raised[0].description.startswith(cw.CONCURRENT_WRITES_LOST)
-    assert "10 `POST /notes` requests at the same moment" in raised[0].reproduction_steps
+    assert "16 `POST /notes` requests at the same moment" in raised[0].reproduction_steps
     assert not BANNED.search(" ".join([raised[0].description, raised[0].reproduction_steps,
                                        raised[0].expected_behavior, raised[0].actual_behavior]))
 
@@ -219,7 +219,7 @@ def test_what_it_could_not_ask_is_a_release_gap(tmp_path, monkeypatch):
     monkeypatch.setattr(ic, "_the_probe_s_report", skipped)
     assert cw.concurrent_write_errors(tmp_path, runner=lambda *a: {}) == []
     gaps = cw.what_it_did_not_ask(tmp_path)
-    assert gaps and "were not sent 10 creates at once" in gaps[0] and "AC-1 POST /notes" in gaps[0]
+    assert gaps and "were not sent 16 creates at once" in gaps[0] and "AC-1 POST /notes" in gaps[0]
     assert not BANNED.search(gaps[0])
     monkeypatch.setenv("CONCURRENT_WRITE_PROBE", "off")
     assert cw.what_it_did_not_ask(tmp_path) == []

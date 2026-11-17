@@ -87,8 +87,9 @@ SINATRA_KNOWN_ERRORS = {
     "Writes made at the same moment are not each kept": (
         "Sinatra makes a new app object for each request, so a store kept in an instance variable (`@store ||= ...`) "
         "is made, and its file read, afresh for every request. Keep one store for the whole process (`set :store, "
-        "...` read through `settings.store`, or a constant), and hold one `Mutex` across reading, changing and "
-        "writing the notes, the new note's id taken inside it - a lock around the write alone still loses writes."
+        "...` read through `settings.store`, or a constant) and have the helper every route calls return that one store, "
+        "never `NotesStore.new`; hold one `Mutex` across reading, changing and writing the notes, the new note's id "
+        "taken inside it - a lock around the write alone still loses writes."
     ),
 }
 

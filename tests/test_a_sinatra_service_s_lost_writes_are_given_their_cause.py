@@ -25,4 +25,5 @@ def test_the_probe_s_defect_is_given_the_per_request_app_object_as_its_cause(tmp
         actual_behavior=text, affected_files=[], owner="backend")])
 
     assert KNOWN_CAUSE in defect.actual_behavior and "a new app object for each request" in defect.actual_behavior
+    assert "the helper every route calls return that one store" in defect.actual_behavior  # a shared store unused
     assert not BANNED.search(defect.actual_behavior)

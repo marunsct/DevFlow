@@ -43,5 +43,10 @@ def test_anything_short_of_that_is_planned_again(tmp_path, monkeypatch):
 
 def test_the_lock_returns_to_a_test_round_then():
     source = inspect.getsource(acceptance_nodes.acceptance_review)
-    at = source.index("a_repair_left_the_sprint_green(root, result)")
+    at = source.index("why_measured_again(root, result)")
     assert 'stage = "test_and_triage"' in source[at:at + 800]
+
+
+def test_green_is_why_it_is_measured_again(tmp_path, monkeypatch):
+    _unit(tmp_path, monkeypatch, True)
+    assert acceptance_nodes.why_measured_again(tmp_path, _result("passed", "passed")) == acceptance_nodes.GREEN

@@ -742,6 +742,42 @@ def a_repair_left_the_sprint_green(root: str | Path, result: Any) -> bool:
         return False
 
 
+#: Why a suite repaired at a re-plan's entry goes back to the test round instead of the lead; "" when it does not.
+GREEN, NEAR_GREEN = "green", "near green"
+
+
+def why_measured_again(root: str | Path, result: Any) -> str:
+    """GREEN for a full pass beside passing unit tests, NEAR_GREEN for a near-green run (`NEAR_GREEN_REPAIR_TO_ROUND`),
+    "" to plan the sprint again. Never raises."""
+    if a_repair_left_the_sprint_green(root, result):
+        return GREEN
+    from app.graph import near_green_repair
+
+    return NEAR_GREEN if near_green_repair.applies(result) else ""
+
+
+#: What a test round measures against when it follows a re-plan's entry: the plan was cleared for the lead's re-plan.
+NO_NEW_PLAN = ("No new plan: the suite was repaired at the end of the last attempt, and the product is measured again "
+               "as it stands.")
+
+
+def the_plan_a_round_measures(state: Any) -> Any:
+    """The sprint's plan, or one of no work orders naming the sprint's goal when the re-plan's entry cleared it.
+
+    The round reads the plan, and finding none it sends the run back to the lead: measured in a review, a suite
+    repaired green at a re-plan's entry went to the round with no plan and from there to the lead's re-plan anyway.
+    """
+    plan = state.get("milestone_plan")
+    if plan is not None:
+        return plan
+    from app.agents.technical_lead import MilestonePlanOutput
+
+    sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+    index = int(state.get("current_sprint_index") or 0)
+    goal = str(getattr(sprints[index], "goal", "") or "") if index < len(sprints) else ""
+    return MilestonePlanOutput(selected_sprint_goal=goal, integration_notes=[NO_NEW_PLAN])
+
+
 def _the_suite_s_files(root: str | Path) -> dict[Path, str]:
     """Each file of the suite with its text now; {} when it cannot be read."""
     try:
@@ -1121,11 +1157,31 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         from app.graph.delivery import change_request_brief
 
         stage = "technical_lead" if return_to == SPRINT_REPLAN else return_to
-        if return_to == SPRINT_REPLAN and a_repair_left_the_sprint_green(root, result):
+        measured_again = why_measured_again(root, result) if return_to == SPRINT_REPLAN else ""
+        if measured_again == GREEN:
             # Measured three times in one day: a dispute at an attempt's end repaired the suite, it then passed in full
             # beside passing unit tests, and the sprint was planned again anyway - a lead's re-plan on a done product.
             logger.warning("The repaired suite passes in full and the unit tests pass: measured again, not planned again")
             stage = "test_and_triage"
+        elif measured_again == NEAR_GREEN:
+            # Of 45 near-green re-plans that beat the best, 19 got there from the repair alone, then re-planned for
+            # about 25 more minutes (LR.53, `NEAR_GREEN_REPAIR_TO_ROUND`).
+            from app.graph import near_green_repair
+
+            passed, failed = near_green_repair.counts(result)
+            logger.warning("The repaired suite passes %d of %d: measured again, not planned again", passed,
+                           passed + failed)
+            _decide(
+                state, update, point="sprint",
+                question="Is a sprint whose repaired suite is near green planned again?",
+                options=["plan it again", "measure it again in a test round"],
+                decision="measure it again in a test round",
+                rationale=f"{near_green_repair.SAID}: {passed} of {passed + failed} locked test(s) pass.",
+            )
+            stage = "test_and_triage"
+        if measured_again:
+            # The re-plan's entry cleared the plan; the round needs one (`the_plan_a_round_measures`).
+            update = {**update, "milestone_plan": the_plan_a_round_measures(state)}
         return _handing_on(
             **update,
             stage=stage,

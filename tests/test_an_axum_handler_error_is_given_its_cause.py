@@ -27,7 +27,8 @@ def _defect(text):
      "must be its last argument"),
     ("the trait bound `for<'a> Router<AppState>: tower_service::Service<IncomingStream<'a, TcpListener>>` is not satisfied",
      "`.with_state(state)`"),
-], ids=["body-extractor-first", "router-without-its-state"])
+    ("mismatched types: expected `Router`, found `Router<AppState>`", "build the state inside `app()`"),
+], ids=["body-extractor-first", "router-without-its-state", "app-returns-a-router-still-waiting"])
 def test_the_error_is_given_its_cause(tmp_path, error, cause):
     contract.write(tmp_path, pack_named("rust-axum-api"), "notes-api", "Notes")
 

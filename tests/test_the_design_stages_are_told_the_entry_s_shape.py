@@ -17,10 +17,11 @@ BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I
 def test_the_rust_specification_is_told_app_returns_a_plain_router():
     said = " ".join(what_the_setup_decides(pack_named("rust-axum-api"), "notes-api", "notes_api"))
     assert "`pub fn app() -> Router`" in said
-    assert "never `Router<AppState>`" in said and ".with_state(state)" in said
+    assert "Never `Router<AppState>`" in said and ".with_state(state)" in said
+    assert "never apply state themselves" in said  # the caller applying it was the specification's way round it
     assert not BANNED.search(said)
 
 
 def test_a_pack_with_no_design_facts_is_told_nothing_more():
-    assert not any("never `Router<AppState>`" in line
+    assert not any("Never `Router<AppState>`" in line
                    for line in what_the_setup_decides(pack_named("go-http-api"), "notes-api", "notes-api"))

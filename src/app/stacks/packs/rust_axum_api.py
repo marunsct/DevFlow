@@ -107,6 +107,11 @@ AXUM_KNOWN_ERRORS = {
         "`String`, `Bytes`) must be its last argument, after `State`, `Path` and `Query`: a body extractor earlier in "
         "the list stops the function being a `Handler`. Put it last in every handler of the file in one rewrite."
     ),
+    "expected `Router`, found `Router<": (
+        "`app()` returns a plain `Router` while its routes still wait for their state: build the state inside "
+        "`app()` (from `DATA_DIR`) and end it with `.with_state(state)`; `main.rs` and the tests then use `app()` as "
+        "it is."
+    ),
     "Service<IncomingStream": (
         "`axum::serve` was given a `Router<AppState>`, a router still waiting for its state. Apply the state with "
         "`.with_state(state)` before serving, so the router served is a plain `Router`."
@@ -137,8 +142,9 @@ PACK = service_pack(
     smoke_unit=("tests/scaffold_smoke.rs", SMOKE_UNIT),
     guide=GUIDE,
     design_facts=(
-        "`src/lib.rs`'s entry is `pub fn app() -> Router`, its state applied inside with `.with_state(state)`: "
-        "never `Router<AppState>`, which `axum::serve` cannot serve.",
+        "`src/lib.rs`'s `pub fn app() -> Router` builds its own state and applies it inside with "
+        "`.with_state(state)`; `main.rs` and the tests use `app()` as it is and never apply state themselves. "
+        "Never `Router<AppState>`: `axum::serve` cannot serve it.",
     ),
     stack={
         "language": "Rust",

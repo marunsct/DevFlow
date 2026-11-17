@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-17 16:45 JST (written by `loop.sh state`). Harness b74da3fe committed; b74da3fe deployed.
-**Live, and stopped in the last day:** run-e53e1441 running at defect_fix_1_3; run-844673cd failed at failed; run-9f8188cb failed at failed; run-2db7b0a2 failed at failed; run-4db255e8 failed at failed; run-53970d86 failed at ?
-**Last scored:** run-666e030f notes-api-go 9/9 (completed, handoff 1.0; scored 11-17 16:45 JST); run-844673cd notes-api-java 0/9 (failed, mixed, 55 active min, handoff 0.429; scored 11-17 15:53 JST); run-19ff2786 notes-api 9/9 (completed, 40 active min, handoff 1.0; scored 11-17 13:47 JST).
+**As of:** 11-17 17:56 JST (written by `loop.sh state`). Harness 70c7f383 committed; 70c7f383 deployed.
+**Live, and stopped in the last day:** run-092a40cb running at defect_fix_2_6; run-844673cd failed at failed; run-9f8188cb failed at failed; run-2db7b0a2 failed at failed; run-4db255e8 failed at failed; run-53970d86 failed at ?
+**Last scored:** run-e53e1441 notes-api-java 9/9 (completed, handoff 1.0; scored 11-17 17:56 JST); run-666e030f notes-api-go 9/9 (completed, mixed, 69 active min, handoff 1.0; scored 11-17 16:45 JST); run-844673cd notes-api-java 0/9 (failed, mixed, 55 active min, handoff 0.429; scored 11-17 15:53 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -82,8 +82,10 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
    LF.1020 (a Java test mirrors its code's package), LF.1021 (Maven has the network while building in container mode),
    LF.1023 (the product is built without compiling its tests: a test naming a missing class stopped `start.sh`, so
    nothing reached a product whose code compiled). Run 1 (run-9f8188cb) failed at its scaffold (LF.1017).
-   Live: Java run 3, run-e53e1441-f6ed-4d89-aded-8c1cdb79e0bd (:8888, 16:12), on d2ff998f (LF.1023-1024 deployed 16:11;
-   java-spring-api and go-http-api scaffold-verified).
+   Java run 3, run-e53e1441-f6ed-4d89-aded-8c1cdb79e0bd (:8888, 16:12-17:50): hidden 9/9, quality 7/8, DELIVERED,
+   handoff 1.0 - the first Java container run delivered. The quality loss is lost writes at once, which
+   CONCURRENT_WRITE_PROBE had raised in the run (the fixers did not close it): the probe was right and cost no hidden test.
+   Live: Rust container run 1 on :8888 (17:56).
 2. LR.30 container-mode Go run 1, run-666e030f-1c7d-4830-bf58-b9594f31ac4a (:1234, 15:28-16:44): hidden 9/9, quality
    8/8, handoff 1.0, verdict not_deliverable (contract lines and design points left open). LF.1022, LF.1024-1025 from it.
    C# next on :1234: its pack failed `verify_packs` in container mode (LF.1027, the .NET image's uid) - a run started on it

@@ -55,12 +55,18 @@ def test_a_file_already_broken_is_not_touched(tmp_path):
     assert et.together(reply, _root(tmp_path, "def fetch(url:\n    return url\n")) is None
 
 
-def test_every_role_agent_has_it():
-    import inspect
+def test_a_role_agent_runs_a_call_its_reply_repeats_once(tmp_path, monkeypatch):
+    from langchain_core.messages import ToolMessage
 
-    from app.agents import role_agent
+    from workflow_nodes import a_role_agent, an_answer
 
-    assert "build_edits_together_middleware(resolved_repo_root)" in inspect.getsource(role_agent)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    repeated = AIMessage(content="", tool_calls=[
+        {"name": "ls", "id": f"l{i}", "args": {"path": "/"}, "type": "tool_call"} for i in range(3)])
+
+    result, _ = a_role_agent(_root(tmp_path), repeated, an_answer())
+
+    assert len([m for m in result["messages"] if isinstance(m, ToolMessage) and m.name == "ls"]) == 1
 
 
 # Measured on one run: an intake reply ran to its output cap as 1,316 tool calls, 1,314 of them `read_file("/")`, each

@@ -6,7 +6,6 @@ thirteenth ran the product's start script, which never returns. QA was told only
 """
 from __future__ import annotations
 
-import inspect
 import json
 import re
 from pathlib import Path
@@ -40,13 +39,17 @@ def test_no_marks_or_every_test_marked_names_none(tmp_path):
     assert suite.the_test_that_did_not_finish(tmp_path, "..\n") == ""
 
 
-def test_the_review_sends_it_back_as_a_test_problem_not_a_missing_product():
-    from app.graph import acceptance_nodes
+def test_the_review_sends_it_back_as_a_test_problem_not_a_missing_product(tmp_path):
+    from workflow_nodes import an_acceptance_review_measured
 
-    source = inspect.getsource(acceptance_nodes.acceptance_review)
-    start = source.index('"The suite never finished"')
-    sentence = source[start:start + 800]
+    names = [f"test_ac{i}_x" for i in range(1, 15)]
+    timed_out = suite.AcceptanceResult(ran=False, exit_code=124, problem="timed out",
+                                       output="collecting ... collected 14 items\nFFF.F.F.FFF.\n")
 
-    assert "the_test_that_did_not_finish" in source
-    assert "suite's own setup already starts" in sentence and "nothing of the" in sentence
-    assert not BANNED.search(sentence)
+    update = an_acceptance_review_measured(tmp_path, timed_out, pack="python-http-api", files={
+        "test_acceptance.py": "".join(f"def {name}(base_url):\n    pass\n\n" for name in names)})
+
+    [said] = [problem for problem in update["acceptance_feedback"] if "never finished" in problem]
+    assert update["stage"] == "acceptance_author"
+    assert "`test_ac13_x`" in said and "not the product" in said
+    assert not BANNED.search(said)

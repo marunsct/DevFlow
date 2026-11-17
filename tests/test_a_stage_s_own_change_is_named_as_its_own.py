@@ -95,5 +95,4 @@ def test_a_file_the_stage_s_own_edit_changed_is_not_blamed_on_a_command(workspac
     said = repository._who_changed_it(workspace, "app/app.js")
 
     assert "your own edit" in said and "same batch" in said
-    source = open(repository.__file__).read()
-    assert "The passage you sent was correct for the version you had" not in source
+    assert "correct for the version you had" not in said

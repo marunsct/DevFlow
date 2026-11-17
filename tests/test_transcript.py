@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 
+from typing import Any
+
 import pytest
 
 from app.observability.transcript import (
@@ -140,16 +142,25 @@ def test_a_run_id_cannot_escape_the_transcript_directory(tmp_path) -> None:
     assert "/" not in path.name.replace(".jsonl", "")
 
 
-def test_both_halves_of_the_record_are_wired() -> None:
+def _a_listing() -> Any:
+    from langchain_core.messages import AIMessage
+
+    return AIMessage(content="", tool_calls=[{"name": "ls", "args": {"path": "/"}, "id": "ls-1", "type": "tool_call"}])
+
+
+def test_both_halves_of_the_record_are_wired(tmp_path) -> None:
     """The callback records prompts and replies; the middleware records tool
     results after the notices. Neither alone is the record."""
-    import inspect
+    from app.server.agent_stream import build_activity_callbacks
+    from app.tracing import APP_RUN_ID_KEY
+    from workflow_nodes import a_role_agent, an_answer
 
-    from app.agents import role_agent
-    from app.server import agent_stream
+    a_role_agent(tmp_path, _a_listing(), an_answer(), config={
+        "configurable": {APP_RUN_ID_KEY: "run-9"}, "callbacks": build_activity_callbacks("run-9", "specialist_backend_0")})
 
-    assert "build_transcript_callback" in inspect.getsource(agent_stream.build_activity_callbacks)
-    assert "build_transcript_middleware(stage)" in inspect.getsource(role_agent.create_role_agent)
+    entries = read_transcript("run-9")
+    assert any(entry["kind"] == "model_request" for entry in entries)
+    assert any(entry["kind"] == "tool_result" and entry.get("tool") == "ls" for entry in entries)
 
 
 def test_the_run_id_reaches_the_inner_agent() -> None:
@@ -226,26 +237,31 @@ def test_every_inner_invocation_builds_its_config_the_same_way(tmp_path) -> None
     assert agent.configs[0]["configurable"]["thread_id"] == agent.configs[1]["configurable"]["thread_id"]
 
 
-def test_the_resume_after_an_approval_carries_the_run_id_too() -> None:
+def test_the_resume_after_an_approval_carries_the_run_id_too(tmp_path) -> None:
     """Every gated tool executes on the resume, not on the turn that proposed it.
 
     write_artifact, edit_artifact and run_terminal_command all pause for a
     decision and then run when the run resumes. A resume config without the run
     id makes exactly the tools that change something invisible: on one run
     the event stream recorded 47 tool calls and the transcript 7, all read-only.
-
-    The previous fix put both *inner* invocations behind one builder and a test
-    counted them. This call site is in another module, so the count was right
-    and the gap was still there.
     """
-    import inspect
+    from langchain_core.messages import AIMessage
 
-    from app.agents import approval
+    from app.agents.approval import resume_with_decision
+    from workflow_nodes import a_role_agent, a_scripted_model, an_answer
 
-    source = inspect.getsource(approval.resume_with_decision)
+    write = AIMessage(content="", tool_calls=[{"name": "write_artifact", "id": "w-1", "type": "tool_call",
+                                               "args": {"relative_path": "notes.txt", "content": "kept\n"}}])
+    from langgraph.checkpoint.memory import InMemorySaver
 
-    assert "run_id" in inspect.signature(approval.resume_with_decision).parameters
-    assert "APP_RUN_ID_KEY" in source
+    _, agent = a_role_agent(tmp_path, model=a_scripted_model(write, an_answer()), checkpointer=InMemorySaver())
+    agent.invoke({"messages": [{"role": "user", "content": "Go."}]}, {"configurable": {"thread_id": "t"}})
+
+    resume_with_decision(agent, "t", {"type": "approve"}, run_id="run-7")
+
+    assert (tmp_path / "notes.txt").read_text() == "kept\n"
+    assert any(entry["kind"] == "tool_result" and entry.get("tool") == "write_artifact"
+               for entry in read_transcript("run-7"))
 
 
 def test_the_workflow_passes_it_when_resuming(tmp_path, monkeypatch) -> None:
@@ -259,19 +275,6 @@ def test_the_workflow_passes_it_when_resuming(tmp_path, monkeypatch) -> None:
                   pending_decision={"type": "approve"}, pending_inner_thread_id="outer:test_round_1:1")
 
     assert resumed[0]["run_id"] == "run-7"
-
-
-def test_every_place_an_agent_is_driven_carries_the_id() -> None:
-    """Three sites now: two inner invokes and the resume. Naming them here so a
-    fourth is a failing test rather than a silently half-written record."""
-    import inspect
-
-    from app.agents import approval
-    from app.graph import workflow
-
-    workflow_source = inspect.getsource(workflow)
-    assert workflow_source.count("_inner_agent_config(") == 3  # definition + two sites
-    assert "APP_RUN_ID_KEY" in inspect.getsource(approval.resume_with_decision)
 
 
 # --- which tools the call actually offered ---------------------------------

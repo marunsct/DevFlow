@@ -10,7 +10,6 @@ from types import SimpleNamespace
 
 from app.acceptance.interface_contract import commands_that_differ_only_in_order
 from app.graph import workflow
-from workflow_nodes import workflow_source
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 SPEC = (
@@ -37,5 +36,28 @@ def test_the_design_review_is_given_it_once_as_a_major_finding():
     assert finding.severity == "major" and "order of its options" in finding.description
     assert not BANNED.search(finding.description + finding.required_remediation)
     assert workflow._the_same_command_in_another_order({**state, "specification_command_order_checked": True}, SPEC) is None
-    assert 'fired.append("order")' in workflow_source()
-    assert "order" in workflow._THE_HARNESS_S_DESIGN_CHECKS
+
+
+def test_an_approving_review_is_sent_back_with_it_and_a_revision_is_asked_it_again(tmp_path, monkeypatch):
+    from app.agents.architecture_reviewer import ArchitectureReviewOutput
+    from workflow_nodes import a_specification, an_architecture_review
+
+    monkeypatch.setenv("ONE_DESIGN_REVIEW", "on")
+    the_check = {"app.graph.workflow._the_same_command_in_another_order": workflow._the_same_command_in_another_order,
+                 "app.graph.workflow._record_document": lambda *args, **kwargs: None,
+                 "app.graph.workflow._review_enabled": lambda state, point: False}
+    specification = a_specification(interface_contract=SPEC.strip().split("\n"))
+    approved = ArchitectureReviewOutput(status="approved", findings=[])
+
+    reviewed, _ = an_architecture_review(tmp_path, approved, state={"technical_specification": specification},
+                                         patches=the_check)
+    revised, _ = an_architecture_review(tmp_path, approved, state={
+        "technical_specification": specification, "architecture_revision_count": 1, "decisions": [],
+        "architecture_review": reviewed["architecture_review"]}, patches={
+        **the_check, "app.graph.workflow._decided_after_one_revision": workflow._decided_after_one_revision})
+
+    [finding] = reviewed["architecture_review"].findings
+    assert reviewed["architecture_review"].status == "changes_required"
+    assert finding.severity == "major" and "order of its options" in finding.description
+    assert revised["stage"] == "escalation"
+    assert any("order of its options" in point for point in revised["escalation"]["findings"])

@@ -54,36 +54,23 @@ class TestItCountsTheWayWcDoes:
 
 
 class TestTheCountIsReturned:
-    def test_a_write_returns_it(self):
-        import inspect
+    def test_a_write_returns_it(self, tmp_path):
+        from app.tools.repository import write_approved_artifact
 
-        from app.tools import repository
+        result = write_approved_artifact(tmp_path, "notes/style.css", "a {}\nb {}\nc {}\n")
 
-        source = inspect.getsource(repository)
-        block = source[source.index('"summary": content[:80]') :][:900]
-        assert '"lines": _line_count(content)' in block
+        assert result["lines"] == 3
 
-    def test_an_edit_returns_it(self):
-        import inspect
-
-        from app.tools import repository
-
-        source = inspect.getsource(repository)
-        # Anchor on the result dict itself: `"status": "edited"` also appears
-        # inside a docstring earlier in the module.
-        block = source[source.index('result: dict[str, Any] = {') :][:900]
-        assert '"lines": _line_count(written)' in block
-
-    def test_an_edit_counts_the_file_not_the_replacement(self):
+    def test_an_edit_counts_the_file_not_the_replacement(self, tmp_path):
         """An edit changes part of a file; only the file knows the total.
 
         Counting `replace` would report the size of the patch and read as the
         size of the file, which is a wrong number presented as a measurement.
         """
-        import inspect
+        from app.tools.repository import edit_approved_artifact, write_approved_artifact
 
-        from app.tools import repository
+        write_approved_artifact(tmp_path, "notes/style.css", "a {}\nb {}\nc {}\n")
 
-        source = inspect.getsource(repository)
-        block = source[source.index('result: dict[str, Any] = {') :][:900]
-        assert '_line_count(replace)' not in block
+        result = edit_approved_artifact(tmp_path, "notes/style.css", "b {}\n", "b {}\nb2 {}\n")
+
+        assert result["lines"] == 4

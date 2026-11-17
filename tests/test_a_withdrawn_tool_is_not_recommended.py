@@ -9,7 +9,6 @@ longer had.
 
 from __future__ import annotations
 
-import inspect
 import uuid
 from pathlib import Path
 
@@ -56,8 +55,36 @@ def test_another_stage_is_not_affected(tmp_path: Path) -> None:
     assert "read it with `read_file`" in hint
 
 
-def test_the_middleware_records_it_where_it_withholds() -> None:
-    source = inspect.getsource(settled_answer)
-    block = source.split("without_reads = _without_the_read_tools_in(kept)", 1)[1][:300]
+def test_once_the_middleware_withholds_it_the_stage_is_not_sent_back_to_it(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
 
-    assert "_remember_the_read_tool_is_withheld()" in block
+    from pydantic import BaseModel
+
+    from tests.test_a_tool_that_only_ever_fails_is_taken_away import TestTheReadOrdinalIsNotTheStages, _conversation
+
+    monkeypatch.setenv("STABLE_TOOLS", "off")  # the bound tool list is what is withheld from
+
+    class _Answer(BaseModel):
+        ok: bool = True
+
+    class _Request:
+        def __init__(self, messages, tools):
+            self.messages, self.tools, self.model, self.model_settings = messages, tools, None, {}
+
+        def override(self, **changes):
+            return _Request(changes.get("messages", self.messages), changes.get("tools", self.tools))
+
+    root = _workspace(tmp_path)
+    refusal = TestTheReadOrdinalIsNotTheStages._refusal("3rd").content
+    refused = _conversation(3, tool="read_file", args={"file_path": "app/app.js"}, result=refusal)
+    messages = [SimpleNamespace(type="human", content="Fix the defect."), *refused]
+    tools = [SimpleNamespace(name="read_file"), SimpleNamespace(name="edit_artifact")]
+    sent: list = []
+    middleware = settled_answer.build_settled_answer_middleware(_Answer, "defect_fix", step_limit=60)
+
+    with remembering(f"stage-{uuid.uuid4().hex}"):
+        middleware.wrap_model_call(_Request(messages, tools), sent.append)
+        hint = _and_a_path_is_read_with_read_file("app/app.js (1 lines)", str(root))
+
+    assert "read_file" not in [tool.name for tool in sent[0].tools]
+    assert "read it with `read_file`" not in hint

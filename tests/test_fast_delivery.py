@@ -336,12 +336,23 @@ def test_a_fast_work_order_of_more_than_three_files_is_split_into_parts():
     assert kept[3].files == ["notes/src/page.tsx"]
 
 
-def test_the_fast_build_splits_before_it_drafts():
-    from workflow_nodes import workflow_source
+def test_the_fast_build_splits_before_it_drafts(agents, fast, tmp_path, monkeypatch):
+    """A run's work order of four files is drafted, and recorded, as two parts of at most three."""
+    monkeypatch.setattr(drafting, "_draft_one", lambda *a, **k: "export const ok = true\n")
+    _script_through_architecture(agents, _approved_review())
+    agents.script("scrum_master", [responds_with(_sprint_plan())])
+    agents.script("technical_lead", [responds_with(_with_files(*(f"acme/src/f{n}.ts" for n in range(4))))])
+    agents.script("specialist_testing", [responds_with(_specialist())])
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
+    from app.graph.workflow import start_workflow
 
-    source = workflow_source()
-    assert "tasks, split = in_work_orders_of_at_most(tasks)" in source
-    assert 'if dropped or split:' in source
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-fast")
+
+    assert state["stage"] == "complete", state.get("error")
+    built = [order for order in state["milestone_plan"].delegated_tasks if order.specialist_role != "testing"]
+    assert [len(order.files) for order in built] == [3, 1]
+    assert len(list(tmp_path.rglob("f*.ts"))) == 4
 
 
 def test_a_part_carries_the_lines_about_its_own_files_and_is_told_who_has_the_rest():

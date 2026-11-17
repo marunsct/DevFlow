@@ -149,17 +149,25 @@ class TestTheUnmovedCaseIsUnaffected:
 
 
 class TestTheAgentCanActuallySendIt:
-    def test_the_tool_wrapper_accepts_expect_end(self):
-        import inspect
+    def test_the_tool_applies_a_moved_range_given_both_ends(self, project):
+        from app.tools.agent_toolkit import build_line_replace_tool
 
-        from app.tools import agent_toolkit
+        (project / "app.js").write_text("// extra\n" + (project / "app.js").read_text())
 
-        source = inspect.getsource(agent_toolkit)
-        assert "expect_end: str = \"\"" in source, "agents cannot pass what the tool omits"
+        result = build_line_replace_tool(str(project)).invoke({
+            "relative_path": "app.js", "start_line": 3, "end_line": 5, "content": "X\nY\nZ\n",
+            "expect_start": "const a = 1;", "expect_end": "const c = 3;"})
 
-    def test_the_prompt_tells_the_agent_to_send_it(self):
-        import inspect
+        assert "error" not in result
+        assert (project / "app.js").read_text() == "// extra\n// header\n// blank\nX\nY\nZ\n// tail\n"
 
-        from app.agents import role_agent
+    def test_the_prompt_tells_the_agent_to_send_it(self, project, monkeypatch):
+        from workflow_nodes import a_role_agent, an_answer
 
-        assert "expect_end" in inspect.getsource(role_agent)
+        monkeypatch.setenv("DATA_DIR", str(project / "data"))
+        monkeypatch.setenv("LINE_EDITS", "on")
+
+        _, model = a_role_agent(project, an_answer())
+
+        system = str(model.requests[0]["messages"][0].content)
+        assert "`replace_lines`" in system and "`expect_end`" in system

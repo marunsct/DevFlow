@@ -7,8 +7,6 @@ shown it: five fixers in a row changed nothing or chased the tests.
 """
 from __future__ import annotations
 
-import inspect
-
 from app.graph import acceptance_nodes
 
 OUTPUT = """Running 15 tests using 1 worker
@@ -36,9 +34,23 @@ def test_nothing_logged_is_nothing_said():
     assert acceptance_nodes.what_the_server_logged("Running 15 tests\n  1) [AC-1] x\n") == ""
 
 
-def test_each_failing_criterion_s_defect_carries_it():
-    source = inspect.getsource(acceptance_nodes.failing_due_defects)
-    assert "what_the_server_logged(" in source
+def test_each_failing_criterion_s_defect_carries_it(tmp_path):
+    from app.acceptance import junit, suite
+    from tests.test_acceptance_stages import ALL_THREE, _authored, _plan, _state
+
+    _authored(tmp_path, ALL_THREE)
+    suite.lock(tmp_path)
+    measured = suite.AcceptanceResult(ran=True, exit_code=1, command="npm run test:acceptance", output=OUTPUT,
+                                      report=junit.Report(found=True, tests=[
+                                          junit.TestResult(name="[AC-1] adds", outcome="failed", message="SyntaxError"),
+                                          junit.TestResult(name="[AC-2] deletes")]))
+    suite._judged(tmp_path, measured, True)
+    state = _state(tmp_path, sprint_plan=_plan(["AC-1", "AC-2"], ["AC-3"]), current_sprint_index=0)
+
+    [defect] = acceptance_nodes.failing_due_defects(state, [])
+
+    assert defect.description.startswith("[AC-1")
+    assert "persistence.ts:44" in defect.actual_behavior and "Error: Internal server error" in defect.actual_behavior
 
 
 def test_an_error_the_product_put_in_place_of_the_one_it_caught_is_named(tmp_path):

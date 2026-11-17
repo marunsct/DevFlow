@@ -74,15 +74,20 @@ def test_registering_twice_is_harmless() -> None:
     _disable_the_general_purpose_subagent()
 
 
-def test_every_role_agent_build_disables_it_first() -> None:
+def test_a_role_agent_built_on_a_fresh_process_has_no_task_tool(model, tmp_path, monkeypatch) -> None:
     """Reaching twelve of thirteen builders is the mistake this codebase has
-    made four times, so this asserts the call site rather than one agent."""
-    import inspect
+    made four times, so the role agent's own build must take it away - not a
+    registration some earlier build happened to leave behind."""
+    from deepagents.profiles.harness import harness_profiles
 
-    from app.agents.role_agent import create_role_agent
+    from app.agents import role_agent
+    from workflow_nodes import a_role_agent, offered_tools
 
-    source = inspect.getsource(create_role_agent)
-    assert "_disable_the_general_purpose_subagent()" in source
-    assert source.index("_disable_the_general_purpose_subagent()") < source.index(
-        "create_deep_agent("
-    )
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(harness_profiles, "_HARNESS_PROFILES", {})
+    monkeypatch.setattr(role_agent, "_SUBAGENT_PROFILE_REGISTERED", False)
+
+    _, agent = a_role_agent(tmp_path, name="scrum_master", can_write=False, model=model)
+
+    assert "task" not in offered_tools(agent)
+    assert {"ls", "read_file"} <= offered_tools(agent)

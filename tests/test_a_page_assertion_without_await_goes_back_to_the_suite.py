@@ -32,10 +32,18 @@ def test_the_suite_check_names_the_lines(tmp_path, monkeypatch):
     assert "line(s) 4, 6" in found and "await" in found
 
 
-def test_it_is_among_the_checks_that_reopen_a_suite():
-    import inspect
+def test_it_is_among_the_checks_that_reopen_a_suite(tmp_path, monkeypatch):
+    from app.acceptance import spec_dry_run
+    from app.stacks import contract, pack_named
 
-    assert "page_assertions_without_await(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+    monkeypatch.setattr(spec_dry_run, "findings", lambda root: [])  # it runs the suite's own runner
+    contract.write(tmp_path, pack_named("fullstack-node"), "notes", "Notes")
+    (tmp_path / "notes" / "acceptance").mkdir(parents=True)
+    (tmp_path / "notes" / "acceptance" / "page.spec.js").write_text(SPEC)
+
+    found = suite.tests_that_cannot_pass(tmp_path, suite.AcceptanceResult(ran=False))
+
+    assert any("line(s) 4, 6" in f and "await" in f for f in found)
 
 
 def test_every_line_is_named_so_a_failing_test_s_line_reopens_the_suite(tmp_path, monkeypatch):

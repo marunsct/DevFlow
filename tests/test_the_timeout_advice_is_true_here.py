@@ -101,22 +101,52 @@ def test_an_unreadable_manifest_is_not_a_browser(workspace: Path) -> None:
     assert not _a_browser_runner_is_installed(str(workspace), "app")
 
 
-def test_both_timeout_messages_use_it() -> None:
-    """The timeout itself and the refusal to repeat it say the same thing.
-
-    Two call sites with different parameter names - `_execute_here` holds the
-    workspace as `workspace` and its subdirectory as `run_in` - so this counts
-    calls rather than one spelling of the arguments."""
-    import inspect
+def _timed_out_in_its_own_container(monkeypatch) -> None:
+    import subprocess
 
     from app.tools import sandbox
 
-    source = inspect.getsource(sandbox)
-    calls = source.count("+ _timeout_advice(")
+    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "container")
+    monkeypatch.setattr(sandbox, "_docker_binary", lambda: "/usr/bin/docker")
 
-    # Three since the container path stopped sending the fixed text: the
-    # in-container timeout, the container timeout, and the repeat refusal.
-    assert calls == 3, f"expected every timeout message to choose the advice, found {calls}"
+    def docker(argv, *args, **kwargs):
+        if argv[1] == "run":
+            raise subprocess.TimeoutExpired(argv, kwargs.get("timeout") or 1)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(sandbox.subprocess, "run", docker)
+
+
+def _timed_out_in_this_container(monkeypatch) -> None:
+    import subprocess
+
+    from app.tools import sandbox
+
+    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "in-container")
+    monkeypatch.setattr(sandbox.SandboxExecutor, "_resolve_executable",
+                        staticmethod(lambda name, *args, **kwargs: "/usr/bin/" + name))
+
+    def runs_out(argv, **kwargs):
+        raise subprocess.TimeoutExpired(argv, kwargs.get("timeout") or 1, output="", stderr="")
+
+    monkeypatch.setattr(sandbox, "_run_and_watch_the_tree", runs_out)
+
+
+@pytest.mark.parametrize("where", [_timed_out_in_its_own_container, _timed_out_in_this_container])
+def test_a_timeout_and_the_refusal_to_repeat_it_both_say_browsers_work_here(workspace: Path, monkeypatch, where) -> None:
+    """The timeout itself and the refusal to repeat it say the same thing, wherever the command ran."""
+    from app.tools.sandbox import SandboxExecutor
+
+    _manifest(workspace / "app", {"@playwright/test": "^1.40.0"})
+    monkeypatch.setenv("ALLOW_COMMAND_EXECUTION", "true")
+    where(monkeypatch)
+    suite = ["npx", "playwright", "test"]
+
+    timed_out = SandboxExecutor.execute(suite, str(workspace), "testing_specialist", working_directory="app")
+    refused = SandboxExecutor.execute(suite, str(workspace), "testing_specialist", working_directory="app")
+
+    assert "timed out" in timed_out["error"] and "--project=" in timed_out["error"]
+    assert "Not running this again" in refused["error"] and "--project=" in refused["error"]
 
 
 def test_the_plain_advice_claims_nothing_false_about_this_environment() -> None:

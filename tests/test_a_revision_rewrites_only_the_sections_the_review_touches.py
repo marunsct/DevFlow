@@ -15,7 +15,6 @@ import pytest
 from pydantic import BaseModel, Field
 
 from app.graph import specification_parts, workflow
-from workflow_nodes import workflow_source
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 
@@ -143,18 +142,42 @@ def test_the_architect_node_revises_in_place_first_in_fast_delivery(fast, tmp_pa
         assert seen.update["technical_specification"].testing == ["unit tests for the store"]
     else:
         assert asked == [] and [stage for stage, _ in seen.requests] == ["principal_architect"]
-def test_a_run_with_no_judgement_model_named_revises_in_place_with_the_deployment_s_own(monkeypatch):
+def test_a_run_with_no_judgement_model_named_revises_in_place_with_the_deployment_s_own(tmp_path, monkeypatch):
     """Measured live: a local-only run names no judgement model, the in-place
     revision required one, and the architect rewrote the whole specification."""
     import app.models
+    from app.agents.architecture_reviewer import ArchitectureReviewFinding, ArchitectureReviewOutput
+    from app.agents.principal_architect import TechnicalSpecificationOutput
+    from app.agents.product_manager import ProductManagerOutput
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+    from langgraph.checkpoint.memory import MemorySaver
 
-    built = object()
-    monkeypatch.setattr(app.models, "build_default_chat_model", lambda: built)
+    import workflow_node_stubs
+    from workflow_node_stubs import run_node
 
-    assert workflow._a_model_to_revise_with(None) is built
-    named = object()
-    assert workflow._a_model_to_revise_with(named) is named
-    assert "_a_model_to_revise_with(ctx.judgement_model)" in workflow_source()
+    # A run that names no model of its own: the graph is built as the deployment builds it.
+    monkeypatch.setattr(workflow_node_stubs, "compiled", lambda mp, root, two_models=False: workflow.build_workflow_graph(
+        model=None, checkpointer=MemorySaver(), repo_root=str(root)))
+
+    deployment_s_own = FakeListChatModel(responses=["unused"])
+    monkeypatch.setattr(app.models, "build_default_chat_model", lambda: deployment_s_own)
+    previous = TechnicalSpecificationOutput(product_scope="Notes.", testing=["thin"])
+    revised_with = []
+    review = ArchitectureReviewOutput(status="changes_required", findings=[ArchitectureReviewFinding(
+        severity="major", description="The testing section is thin.", evidence="testing", required_remediation="More.")])
+
+    seen = run_node(monkeypatch, tmp_path, "principal_architect", answer=previous,
+                    product_intake=ProductManagerOutput(product_name="Notes"), tools_models={"plan": "local"},
+                    document=SimpleNamespace(text="Notes."), technical_specification=previous,
+                    architecture_review=review, architecture_revision_count=1, architecture_review_applied=0,
+                    overrides={"app.agents.research_brief.research_notes": lambda *a, **k: "",
+                               "app.models.roles.build_judgement_model": lambda *a, **k: None,  # none named
+                               "app.graph.workflow._fast_delivery": lambda: True,
+                               "app.graph.specification_parts.revised_in_place":
+                                   lambda spec, changes, model, context: revised_with.append(model) or spec})
+
+    assert seen.requests == [], "the architect was asked for the whole document"
+    assert revised_with == [deployment_s_own]
 
 
 class Decision(BaseModel):

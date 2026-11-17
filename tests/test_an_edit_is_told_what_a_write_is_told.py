@@ -10,10 +10,8 @@ round reported "require is not defined".
 
 from __future__ import annotations
 
-import inspect
 import json
 
-from app.tools import repository
 from app.tools.repository import edit_approved_artifact, replace_approved_lines
 
 TEST = "import { test } from 'node:test';\nimport assert from 'node:assert';\n\ntest('x', () => assert.ok(true));\n"
@@ -59,12 +57,25 @@ def test_an_edit_in_the_module_s_own_syntax_says_nothing_of_it(tmp_path) -> None
     assert "require is not defined" not in result.get("note", "")
 
 
-def test_every_module_system_note_on_the_write_path_is_on_the_edit_path() -> None:
+def test_an_edit_to_the_manifest_is_told_the_files_beside_it_no_longer_load(tmp_path) -> None:
     """The twelve-of-thirteen shape: a check on one path and not its twin."""
-    edit_path = inspect.getsource(repository._edited)
-    for note in (
-        "_the_module_type_this_declares_breaks_files_here",
-        "_the_module_type_here_rejects_this_file",
-        "_the_page_and_this_module_disagree_on_how_it_loads",
-    ):
-        assert note in edit_path, note
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(json.dumps({"name": "app", "type": "module"}, indent=2), encoding="utf-8")
+    (project / "app.js").write_text("export function add(a, b) { return a + b; }\n", encoding="utf-8")
+
+    result = edit_approved_artifact(tmp_path, "app/package.json", '"type": "module"', '"type": "commonjs"')
+
+    assert "app.js still uses ES module syntax" in result.get("note", "")
+
+
+def test_an_edit_that_makes_a_page_s_script_a_module_is_told_the_page_will_not_run_it(tmp_path) -> None:
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "index.html").write_text('<!doctype html><html><body><script src="app.js"></script></body></html>\n',
+                                        encoding="utf-8")
+    (project / "app.js").write_text("function add(a, b) { return a + b; }\n", encoding="utf-8")
+
+    result = edit_approved_artifact(tmp_path, "app/app.js", "function add", "export function add")
+
+    assert "plain `<script>` tag" in result.get("note", "") and 'type="module"' in result.get("note", "")

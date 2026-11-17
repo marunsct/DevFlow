@@ -10,7 +10,6 @@ that ends the regress and the instructions that point at it.
 
 from __future__ import annotations
 
-import re
 
 import pytest
 
@@ -137,18 +136,18 @@ def test_create_and_remove_are_handed_out_together() -> None:
     assert {"write_artifact", "delete_artifact"} <= names
 
 
-def test_a_role_agent_assembles_its_mutation_tools_from_that_one_list() -> None:
-    """So a fourth mutation tool cannot reach some roles and not others."""
-    import inspect
+def test_a_role_that_writes_gets_every_mutation_tool_and_a_reader_none(tmp_path, monkeypatch) -> None:
+    """So a mutation tool cannot reach some roles and not others."""
+    from workflow_nodes import a_role_agent, offered_tools
 
-    from app.agents.role_agent import create_role_agent
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    mutation = {"write_artifact", "edit_artifact", "delete_artifact", "move_artifact"}
 
-    source = inspect.getsource(create_role_agent)
+    _, writer = a_role_agent(tmp_path)
+    _, reader = a_role_agent(tmp_path, name="scrum_master", can_write=False)
 
-    # Matched loosely on the call, not on its argument list: the point is that
-    # one list is the only source of mutation tools, which adding a parameter
-    # does not change.
-    assert re.search(r"writing_tools\(.*\) if can_write else \[\]", source)
+    assert mutation <= offered_tools(writer)
+    assert not mutation & offered_tools(reader)
 
 
 def test_every_mutation_tool_is_gated() -> None:
@@ -354,28 +353,6 @@ def test_what_counts_as_a_test(path: str, is_test: bool) -> None:
     from app.tools.repository import looks_like_a_test
 
     assert looks_like_a_test(path) is is_test
-
-
-def test_there_is_only_one_definition_of_a_test() -> None:
-    """There used to be two, and they drifted.
-
-    `repository.looks_like_a_test` guarded deletion; `_NOT_APPLICATION` decided
-    what the size report and orphan check treated as a test. This test existed
-    to catch them disagreeing. They did: the first matched `test_*.py` and
-    `*_test.py`, the second matched neither, so every Python test file counted
-    as application code against the declared budget - unnoticed, because no
-    Python product had reached a size review. Finding 92 was a third answer,
-    written inline.
-
-    Both now call `classify_file`, so drift is not something to test for.
-    """
-    import inspect
-
-    from app.analysis import integration_checks
-    from app.tools import repository
-
-    assert "file_kinds" in inspect.getsource(repository.looks_like_a_test)
-    assert "from app.analysis.file_kinds import" in inspect.getsource(integration_checks)
 
 
 def test_the_one_definition_still_answers_both_callers() -> None:

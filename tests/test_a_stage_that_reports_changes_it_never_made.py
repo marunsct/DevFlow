@@ -107,20 +107,6 @@ def test_an_answer_of_the_wrong_shape_is_left_alone() -> None:
     assert workflow._claims_dropped_from_the_record(plain, ["app/main.js"]) is plain
 
 
-def test_no_model_call_is_sent_about_a_phantom_claim() -> None:
-    """The clarification was a full model call on the stage's own thread, and
-    the two stages measured receiving it named the same file again; the drop
-    answers it for nothing (Initiative Q.4)."""
-    import inspect
-
-    from app.graph import workflow
-
-    source = inspect.getsource(workflow)
-
-    assert "_ask_about_the_files_it_never_wrote" not in source
-    assert "dropped from the record" in source
-
-
 def test_a_report_its_test_commands_wrote_is_not_judged() -> None:
     """Measured on one run: a test round reporting the JUnit files its test
     commands wrote, at paths their configuration names, was asked what it had done."""

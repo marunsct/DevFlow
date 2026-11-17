@@ -29,8 +29,6 @@ an index build.
 
 from __future__ import annotations
 
-import inspect
-
 import pytest
 
 from app.server import schema_lock
@@ -82,43 +80,81 @@ def test_the_session_lock_can_be_released():
     assert "pg_advisory_unlock" in cursor.statements[0][0]
 
 
-def test_the_checkpointer_does_not_hold_a_transaction_across_setup():
-    """The regression itself, asserted against the source that caused it.
+class _Database:
+    """The one connection the checkpointer is lent, recording what reaches PostgreSQL in order."""
 
-    A behavioural test would need two live connections racing on a fresh
-    database, which is the thirty-minute hang this exists to prevent. The
-    property that matters is structural and is checkable without one: the
-    lock around `saver.setup()` must be the session-scoped form, and there
-    must be no transaction opened around it.
-    """
+    def __init__(self, setup_raises: bool = False) -> None:
+        self.said: list[str] = []
+        self.setup_raises = setup_raises
+
+    def connection(self):
+        from contextlib import contextmanager
+
+        database = self
+
+        class _Connection:
+            def cursor(self):
+                return _Said(database.said)
+
+            @contextmanager
+            def transaction(self):
+                database.said.append("BEGIN")
+                yield
+                database.said.append("COMMIT")
+
+        @contextmanager
+        def lent():
+            yield _Connection()
+
+        return lent()
+
+    def saver(self, pool, serde=None):
+        database = self
+
+        class _Saver:
+            def setup(self):
+                database.said.append("CREATE INDEX CONCURRENTLY")
+                if database.setup_raises:
+                    raise RuntimeError("the index build failed")
+
+        return _Saver()
+
+
+class _Said(_Cursor):
+    def __init__(self, said: list[str]) -> None:
+        super().__init__()
+        self.said = said
+
+    def execute(self, sql: str, args: tuple = ()) -> None:
+        self.said.append(sql.split("(")[0].strip())
+
+
+def _the_checkpointer_on(monkeypatch, database: _Database):
+    from types import SimpleNamespace
+
     from app.graph import checkpointing
 
-    source = inspect.getsource(checkpointing)
-    # The LAST one: the SQLite branch calls `setup()` too, and it needs no
-    # lock at all because SQLite has no advisory locks and one process owns
-    # the file. Matching the first occurrence tested the wrong branch.
-    setup = source.rindex("saver.setup()")
-    window = source[max(0, setup - 900):setup]
-
-    assert "lock_schema_for_the_session" in window
-    assert "guard.transaction()" not in window, (
-        "a transaction open here cannot coexist with CREATE INDEX CONCURRENTLY"
-    )
+    monkeypatch.setattr(checkpointing, "load_settings", lambda: SimpleNamespace(checkpointer_type="postgres"))
+    monkeypatch.setattr(checkpointing, "get_connection_pool", lambda: database)
+    monkeypatch.setattr(checkpointing, "PostgresSaver", database.saver)
+    return checkpointing.build_checkpointer()
 
 
-def test_the_lock_is_always_released():
+def test_the_checkpointer_does_not_hold_a_transaction_across_setup(monkeypatch):
+    """The regression: a transaction-scoped lock held across `setup()`, whose
+    `CREATE INDEX CONCURRENTLY` waits for every open transaction to end."""
+    database = _Database()
+
+    _the_checkpointer_on(monkeypatch, database)
+
+    assert database.said == ["SELECT pg_advisory_lock", "CREATE INDEX CONCURRENTLY", "SELECT pg_advisory_unlock"]
+
+
+def test_the_lock_is_always_released(monkeypatch):
     """A session lock is not released for you when the transaction ends."""
-    from app.graph import checkpointing
+    database = _Database(setup_raises=True)
 
-    source = inspect.getsource(checkpointing)
-    setup = source.rindex("saver.setup()")
-    after = source[setup:setup + 400]
+    with pytest.raises(RuntimeError):
+        _the_checkpointer_on(monkeypatch, database)
 
-    assert "finally" in after
-    assert "unlock_schema" in after
-
-
-@pytest.mark.parametrize("name", ["lock_schema", "lock_schema_for_the_session",
-                                  "unlock_schema", "ensure_table"])
-def test_every_helper_is_exported(name: str):
-    assert name in schema_lock.__all__
+    assert database.said[-1] == "SELECT pg_advisory_unlock"

@@ -45,8 +45,27 @@ def test_one_failure_for_another_reason_means_the_product_started():
     assert suite.every_failure_is_the_start(_report(junit.TestResult(name="t", outcome="passed"))) == ""
 
 
-def test_the_run_records_it_when_tests_ran(tmp_path, monkeypatch):
-    import inspect
+def test_the_run_records_it_when_tests_ran(tmp_path):
+    from xml.sax.saxutils import escape, quoteattr
 
-    source = inspect.getsource(suite.run)
-    assert "every_failure_is_the_start(report, repo_root)" in source
+    from app.stacks import contract, pack_named
+
+    contract.write(tmp_path, pack_named("python-http-api"), "items", "Items")
+    (tmp_path / "items" / "acceptance").mkdir(parents=True)
+    (tmp_path / "items" / "acceptance" / "test_api.py").write_text(
+        "def test_ac1_signs_up(client):\n    pass\n\n\ndef test_ac16_health(client):\n    pass\n")
+    cases = "".join(
+        f'<testcase classname="acceptance.test_api" name="{name}">'
+        f"<error message={quoteattr(CRASH)}>{escape(CRASH)}</error></testcase>"
+        for name in ("test_ac1_signs_up", "test_ac16_health"))
+
+    def the_suite_s_runner(argv, category, where):
+        (tmp_path / where / "test-results").mkdir(exist_ok=True)
+        (tmp_path / where / "test-results" / "acceptance.xml").write_text(
+            f'<testsuites><testsuite name="acceptance" tests="2">{cases}</testsuite></testsuites>')
+        return {"returncode": "1"}
+
+    result = suite.run(tmp_path, runner=the_suite_s_runner, save=False)
+
+    assert result.ran and result.problem.startswith(suite.PRODUCT_DID_NOT_START)
+    assert "get_db_sync" in result.problem

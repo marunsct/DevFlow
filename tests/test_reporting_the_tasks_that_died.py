@@ -233,10 +233,30 @@ class TestItIsReachableFromTheCommandLine:
 
         assert client.deleted == [DEAD_LETTER_KEY]
 
-    def test_the_key_matches_the_one_the_writer_uses(self):
+    def test_what_the_worker_writes_is_what_the_report_reads(self, monkeypatch, capsys):
         """Two constants for one list is how a reader stops finding the writes."""
-        import inspect
+        from types import SimpleNamespace
 
         from app.server import tasks
 
-        assert DEAD_LETTER_KEY in inspect.getsource(tasks.handle_task_failure)
+        class Lists:
+            def __init__(self):
+                self.lists: dict[str, list[str]] = {}
+
+            def lpush(self, key, value):
+                self.lists.setdefault(key, []).insert(0, value)
+
+            def ltrim(self, key, start, end):
+                self.lists[key] = self.lists.get(key, [])[start:end + 1]
+
+            def lrange(self, key, start, end):
+                return self.lists.get(key, [])
+
+        redis = Lists()
+        monkeypatch.setattr("app.server.redis_client.get_redis_client", lambda: redis)
+
+        tasks.handle_task_failure(sender=SimpleNamespace(name="execute_workflow_run"), task_id="t-1",
+                                  exception=RuntimeError("the worker fell over"), kwargs={"run_id": "run-abc12345"})
+        failed_tasks()
+
+        assert "the worker fell over" in capsys.readouterr().out

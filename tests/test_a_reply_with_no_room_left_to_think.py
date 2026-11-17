@@ -107,22 +107,31 @@ class TestWhatTheStageIsTold:
         assert "model-call budget" not in _REASONED_PAST_THE_BUDGET_NOTICE
 
 
-def test_the_spiral_withholds_tools_through_the_same_path() -> None:
-    """Both rungs end in `answer_only`, which is what empties the tool list.
+def test_the_spiral_withholds_tools_where_thinking_cannot_be_switched_off(monkeypatch) -> None:
+    """The next call after a reply spent wholly on reasoning is offered no tools, only its answer."""
+    from types import SimpleNamespace
 
-    Asserted on the source: reaching this through a real middleware call needs a
-    bound model and a provider, and what matters is that the spiral joins the
-    path that already strips the tools rather than only adding a message.
-    """
-    import inspect
+    from pydantic import BaseModel
 
-    from app.agents import settled_answer
+    from app.agents.settled_answer import build_settled_answer_middleware
 
-    source = inspect.getsource(settled_answer.build_settled_answer_middleware)
+    monkeypatch.setenv("STABLE_TOOLS", "off")  # the bound tool list is what this reads
 
-    assert "spiralled = _the_last_reply_was_all_reasoning(messages)" in source
-    # Withheld when thinking cannot be switched off, or on a second spiral in
-    # one visit; see `test_a_spiral_keeps_the_tools_when_thinking_can_be_switched_off`.
-    assert "answer_only = (spiralled and not spiral_quiet) or _nothing_left_but_the_answer(" in source
-    # `answer_only` is what sets `overrides["tools"] = []`.
-    assert 'if answer_only:\n                    # Empty here' in source
+    class _Answer(BaseModel):
+        ok: bool = True
+
+    class _Request:
+        def __init__(self, messages, tools):
+            self.messages, self.tools, self.model, self.model_settings = messages, tools, None, {}
+
+        def override(self, **changes):
+            return _Request(changes.get("messages", self.messages), changes.get("tools", self.tools))
+
+    sent: list = []
+    messages = [SimpleNamespace(type="human", content="Plan the milestone."), _Ai(finish="length")]
+    middleware = build_settled_answer_middleware(_Answer, "technical_lead", step_limit=60)
+
+    middleware.wrap_model_call(_Request(messages, [SimpleNamespace(name="ls"), SimpleNamespace(name="read_file")]),
+                               sent.append)
+
+    assert sent[0].tools == []

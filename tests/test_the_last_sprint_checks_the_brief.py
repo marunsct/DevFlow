@@ -19,7 +19,6 @@ from pathlib import Path
 import pytest
 
 from app.graph.workflow import _a_brief_requirement_the_run_never_built
-from workflow_nodes import workflow_source
 
 BRIEF = """# Product Brief
 
@@ -89,7 +88,7 @@ def test_a_missing_workspace_is_silent(tmp_path) -> None:
 # --- where it is asked ----------------------------------------------------
 
 
-def _an_accepted_sprint(tmp_path: Path, *, sprint_index: int, sprints: int = 2) -> tuple[dict, list]:
+def _an_accepted_sprint(tmp_path: Path, *, sprint_index: int, sprints: int = 2, revisions: int = 0) -> tuple[dict, list]:
     """The milestone review's node accepting sprint `sprint_index` of `sprints`, on a product without edit.
 
     Returns (the node's update, the states the brief check was asked with).
@@ -109,7 +108,7 @@ def _an_accepted_sprint(tmp_path: Path, *, sprint_index: int, sprints: int = 2) 
         **_state(tmp_path, WITHOUT_EDIT),
         "milestone_plan": types.SimpleNamespace(selected_sprint_goal="Edit", milestone_scope=[], delegated_tasks=[]),
         "sprint_plan": types.SimpleNamespace(sprints=[f"sprint {n}" for n in range(sprints)]),
-        "current_sprint_index": sprint_index, "milestone_revision_count": 0, "specialist_outputs": {},
+        "current_sprint_index": sprint_index, "milestone_revision_count": revisions, "specialist_outputs": {},
         "decisions": [],
     }
     asked = []
@@ -142,12 +141,11 @@ def test_it_is_asked_only_on_the_last_sprint(tmp_path) -> None:
     assert "edit" in update["revision_comments"][-1].lower()
 
 
-def test_it_sends_the_work_back_before_it_gives_up() -> None:
+def test_it_sends_the_work_back_before_it_gives_up(tmp_path) -> None:
     """Failing a run that built most of the product would be worse than
     building the rest of it. The existing revision ceiling bounds this."""
-    source = workflow_source()
-    block = source[source.index("unbuilt = _a_brief_requirement_the_run_never_built") :][:1400]
+    sent_back, _ = _an_accepted_sprint(tmp_path, sprint_index=1, revisions=1)
+    given_up, _ = _an_accepted_sprint(tmp_path, sprint_index=1, revisions=2)
 
-    assert "MAX_MILESTONE_REVISIONS" in block
-    assert "_escalate_to_a_human" in block
-    assert "revision_comments" in block
+    assert sent_back["stage"] == "technical_lead" and sent_back["milestone_revision_count"] == 2
+    assert given_up["stage"] == "escalation" and "edit" in given_up["escalation"]["error"].lower()

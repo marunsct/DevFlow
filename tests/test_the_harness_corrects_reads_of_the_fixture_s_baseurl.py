@@ -5,10 +5,7 @@ through three review rounds and the suite was locked with it.
 """
 from __future__ import annotations
 
-import inspect
-
 from app.acceptance import suite
-from app.graph import acceptance_nodes
 from app.stacks import contract, pack_named
 
 TEXT = """import { test, expect } from '@playwright/test';
@@ -53,6 +50,14 @@ def test_a_suite_without_the_read_is_left_alone(tmp_path):
     assert suite.correct_reads_of_the_fixture_s_baseurl(tmp_path) == [] and path.read_text() == before
 
 
-def test_the_review_makes_the_correction_before_it_checks():
-    source = inspect.getsource(acceptance_nodes.acceptance_review)
-    assert source.index("suite.correct_reads_of_the_fixture_s_baseurl(root)") < source.index("_the_repair_measured(root)")
+def test_the_review_makes_the_correction_before_it_checks(tmp_path):
+    from app.acceptance import junit
+    from workflow_nodes import an_acceptance_review_measured
+
+    failing = suite.AcceptanceResult(ran=True, exit_code=1, report=junit.Report(found=True, tests=[
+        junit.TestResult(name=f"[AC-{n}] t", outcome="failed", message="no product") for n in (3, 4, 5)]))
+
+    update = an_acceptance_review_measured(tmp_path, failing, pack="node-hono-native-api", files={"api.spec.js": TEXT})
+
+    assert "request.baseURL" not in (tmp_path / "notes" / "acceptance" / "api.spec.js").read_text()
+    assert not any("request.baseURL" in problem for problem in update.get("acceptance_feedback") or [])

@@ -135,15 +135,42 @@ def test_the_plugin_middleware_is_built_with_the_role():
     assert "build_plugin_instructions_middleware(resolved_repo_root, name)" in inspect.getsource(role_agent)
 
 
-def test_the_routes_exist_and_approving_needs_the_administrator():
-    import inspect
+def _lessons_api_as(role, tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
 
-    from app.server import lessons_api
+    from app.server.auth import UserInDB, get_current_active_user
+    from app.server.lessons_api import lessons_router
 
-    source = inspect.getsource(lessons_api)
-    # Reading too is the administrator's since LR.39: a lesson quotes the run it came from, from any tenant.
-    assert source.count("Depends(require_admin)") == 3 and "Depends(get_current_active_user)" not in source
-    assert "include_router(lessons_router)" in inspect.getsource(__import__("app.server.api", fromlist=["x"]))
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    app = FastAPI()
+    app.include_router(lessons_router)
+
+    async def _signed_in():
+        return UserInDB(username="olive", hashed_password="x", disabled=False, role=role, tenant_id="acme")
+
+    app.dependency_overrides[get_current_active_user] = _signed_in
+    return TestClient(app)
+
+
+def test_reading_approving_and_rejecting_need_the_administrator(tmp_path, monkeypatch):
+    """Reading too is the administrator's since LR.39: a lesson quotes the run it came from, from any tenant."""
+    lesson = lessons.propose("node", "shape", "A rule.", 3, path=tmp_path / "lessons.json")
+    operator = _lessons_api_as("operator", tmp_path, monkeypatch)
+
+    assert operator.get("/api/lessons").status_code == 403
+    assert operator.post(f"/api/lessons/{lesson['id']}/approve").status_code == 403
+    assert operator.post(f"/api/lessons/{lesson['id']}/reject").status_code == 403
+    assert lessons.as_instructions(["node"], tmp_path / "lessons.json") == ""
+
+
+def test_the_administrator_reads_and_approves(tmp_path, monkeypatch):
+    lesson = lessons.propose("node", "shape", "A rule.", 3, path=tmp_path / "lessons.json")
+    admin = _lessons_api_as("admin", tmp_path, monkeypatch)
+
+    assert [found["id"] for found in admin.get("/api/lessons").json()["lessons"]] == [lesson["id"]]
+    assert admin.post(f"/api/lessons/{lesson['id']}/approve").status_code == 200
+    assert "A rule." in lessons.as_instructions(["node"], tmp_path / "lessons.json")
 
 
 def test_a_lesson_filed_under_the_run_s_pack_reaches_the_prompt(tmp_path, monkeypatch):

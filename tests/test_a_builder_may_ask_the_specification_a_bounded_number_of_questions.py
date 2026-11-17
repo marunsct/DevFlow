@@ -5,9 +5,7 @@ model over-asks).
 """
 from __future__ import annotations
 
-import inspect
 import json
-import os
 import re
 from types import SimpleNamespace
 from unittest import mock
@@ -65,10 +63,17 @@ def test_the_asks_are_bounded_per_stage_and_per_run(tmp_path):
     assert "asked 12 questions" in _asking(tool, "specialist_backend_99", "tokens expire", run="run-z")["error"]
 
 
-def test_it_is_offered_only_when_on():
-    assert "ask_specification.enabled()" in inspect.getsource(specialists.create_specialist_agent)
-    with mock.patch.dict(os.environ, {"ASK_SPECIFICATION": ""}):
-        assert not ask.enabled()
+def test_it_is_offered_only_when_on(tmp_path, monkeypatch):
+    from workflow_nodes import a_scripted_model, offered_tools
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    builders = {}
+    for setting in ("on", "off"):
+        monkeypatch.setenv("ASK_SPECIFICATION", setting)
+        builders[setting] = specialists.create_specialist_agent("backend", a_scripted_model(), repo_root=str(tmp_path))
+
+    assert "ask_specification" in offered_tools(builders["on"])
+    assert "ask_specification" not in offered_tools(builders["off"])
 
 
 def test_the_architect_s_answer_is_asked_without_reasoning(tmp_path, monkeypatch):

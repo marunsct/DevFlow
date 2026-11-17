@@ -51,12 +51,18 @@ def test_a_call_with_no_system_message_gets_one_first(tmp_path, monkeypatch):
     assert isinstance(sent[0], SystemMessage) and "80 characters" in sent[0].content and sent[1].content == "brief"
 
 
-def test_the_shared_chat_model_applies_it():
-    import inspect
+def test_the_shared_chat_model_sends_it(tmp_path, monkeypatch):
+    from workflow_nodes import a_served_model
 
-    from app.models import CompatibleChatOpenAI
+    steering.add(tmp_path, "Use a dark colour scheme.", "owner")
+    monkeypatch.setattr(steering, "_the_workspace_of", lambda run_id: tmp_path)
+    monkeypatch.setattr(steering, "_this_call_s_run_and_stage", lambda: ("run-1", "drafting"))
+    model, sent = a_served_model()
 
-    assert "with_the_direction(" in inspect.getsource(CompatibleChatOpenAI._generate)
+    model.invoke([SystemMessage(content="You write files."), HumanMessage(content="app.js")])
+
+    [body] = sent
+    assert body["messages"][0]["role"] == "system" and "Use a dark colour scheme." in body["messages"][0]["content"]
 
 
 def test_notes_sent_at_once_are_all_kept(tmp_path):

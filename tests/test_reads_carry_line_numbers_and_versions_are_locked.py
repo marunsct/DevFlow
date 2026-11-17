@@ -10,7 +10,6 @@ that day - and nothing here could see it.
 from __future__ import annotations
 
 import importlib.metadata
-import inspect
 import re
 import tomllib
 from pathlib import Path
@@ -45,13 +44,18 @@ def test_both_images_install_the_lock() -> None:
                 assert "--no-deps" in line, f"{dockerfile} resolves the project's dependencies: {line}"
 
 
-def test_read_file_numbers_every_line() -> None:
+def test_read_file_numbers_every_line(tmp_path, monkeypatch) -> None:
     """`replace_lines` addresses lines by number; the reads that feed it must show them."""
-    from deepagents.backends.utils import format_content_with_line_numbers
-    from deepagents.middleware import filesystem
+    from langchain_core.messages import AIMessage, ToolMessage
 
-    assert "format_content_with_line_numbers(" in inspect.getsource(filesystem), (
-        "read_file no longer puts a line number on each line - line-addressed edits would be blind"
-    )
-    numbered = format_content_with_line_numbers("alpha\nbeta", start_line=7)
-    assert re.search(r"\b7\b.*alpha", numbered) and re.search(r"\b8\b.*beta", numbered)
+    from workflow_nodes import a_role_agent, an_answer
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    (tmp_path / "app.js").write_text("alpha\nbeta\n")
+    read = AIMessage(content="", tool_calls=[{"name": "read_file", "args": {"file_path": "/app.js", "offset": 0, "limit": 2}, "id": "r",
+                                              "type": "tool_call"}])
+
+    result, _ = a_role_agent(tmp_path, read, an_answer())
+
+    [shown] = [m.content for m in result["messages"] if isinstance(m, ToolMessage) and m.name == "read_file"]
+    assert re.search(r"\b1\b.*alpha", shown) and re.search(r"\b2\b.*beta", shown), shown

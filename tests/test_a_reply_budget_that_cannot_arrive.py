@@ -61,13 +61,20 @@ class TestItNeverBlocksAnything:
 
 
 @pytest.mark.real_endpoint_probe
-def test_the_runner_warns_rather_than_refuses():
+def test_the_runner_warns_rather_than_refuses(monkeypatch, caplog):
     """A truncating transport is the operator's trade, made knowingly."""
-    import inspect
+    import logging
+    from types import SimpleNamespace
 
     from app.server.runner import WorkflowRunner
 
-    source = inspect.getsource(WorkflowRunner._require_a_reachable_model)
-    assert "reply_budget_that_cannot_arrive" in source
-    assert "logger.warning" in source
-    assert "raise RunConflict(complaint)" not in source
+    monkeypatch.setattr("app.models._tokens_per_second", lambda: 30.0)
+    monkeypatch.setattr("app.config.load_settings", lambda environment=None: SimpleNamespace(openai_base_url=TUNNEL))
+    # The probe of the server is the network edge: the server is there.
+    monkeypatch.setattr("app.models.endpoint_probe.describe_model_endpoint",
+                        lambda settings: SimpleNamespace(reachable=True, detail=""))
+
+    with caplog.at_level(logging.WARNING, logger="app.server.runner"):
+        WorkflowRunner._require_a_reachable_model(SimpleNamespace())  # does not raise
+
+    assert any("trycloudflare.com" in record.getMessage() for record in caplog.records)

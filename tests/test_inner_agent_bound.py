@@ -226,14 +226,32 @@ def test_prose_with_no_answer_recovers_nothing():
     assert _answer_left_in_a_spinning_stage(agent, "t", _Out) is None
 
 
-def test_recovery_is_tried_before_the_stage_is_failed():
-    """Failing a stage that spent forty minutes writing the answer down, over
-    the channel it arrived on, is the waste this exists to stop."""
-    source = inspect.getsource(_run_gated_agent)
+class _SpinsWithItsAnswerWritten(_Spun):
+    """A role agent that runs to its ceiling with the answer written in its conversation."""
 
-    assert source.index("_answer_left_in_a_spinning_stage") < source.index(
-        'return _handing_on(stage="failed", error=spun)'
-    )
-    assert source.count("_answer_left_in_a_spinning_stage(") == 2, (
-        "both the first invoke and the resume must be covered"
-    )
+    workflow_response_format = _Out
+
+    def invoke(self, request, config=None):  # noqa: ARG002
+        from langgraph.errors import GraphRecursionError
+
+        raise GraphRecursionError("Recursion limit of 60 reached without hitting a stop condition")
+
+
+_WROTE_IT = [_ai('{"product_scope": "a single-page to-do list"}\n\nNow re-reading.')]
+
+
+def test_recovery_is_tried_before_the_stage_is_failed(tmp_path, monkeypatch):
+    """Failing a stage that spent forty minutes writing the answer down, over
+    the channel it arrived on, is the waste this exists to stop - on the first
+    invoke and on the resume after an approval alike."""
+    from langgraph.errors import GraphRecursionError
+
+    def spins(*args, **kwargs):
+        raise GraphRecursionError("Recursion limit of 60 reached without hitting a stop condition")
+
+    first = _stage(tmp_path, _SpinsWithItsAnswerWritten(_WROTE_IT))
+    monkeypatch.setattr("app.graph.workflow.resume_with_decision", spins)
+    resumed = _stage(tmp_path, _SpinsWithItsAnswerWritten(_WROTE_IT), **_AFTER_AN_APPROVAL)
+
+    assert first["out"].product_scope == "a single-page to-do list"
+    assert resumed["out"].product_scope == "a single-page to-do list"

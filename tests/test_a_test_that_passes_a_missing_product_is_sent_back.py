@@ -5,13 +5,11 @@ assertions sat inside `if (response.ok()) { ... }`, so an answer of 404 skipped 
 """
 from __future__ import annotations
 
-import inspect
 import re
 from types import SimpleNamespace
 from unittest import mock
 
 from app.acceptance import suite
-from app.graph import acceptance_nodes
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 
@@ -53,10 +51,19 @@ def test_tests_passing_before_anything_is_built_are_sent_back_only_then():
     assert suite.tests_that_pass_before_the_product(_result(["passed"] * 3 + ["failed"] * 27), nothing_built=True) == []
 
 
-def test_the_review_runs_both_and_their_words_ban_the_product_s_nouns():
-    source = inspect.getsource(acceptance_nodes.acceptance_review)
-    assert '"tests_guarded_by_the_answer"' in source and '"tests_that_pass_before_the_product"' in source
-    said = suite.tests_that_pass_before_the_product(_result(["passed"] * 5), nothing_built=True)[0]
-    said = said.split(": ", 1)[1].split(". A test", 1)[1]
-    assert not BANNED.search(said)
-    assert not BANNED.search(suite.tests_guarded_by_the_answer.__doc__ or "")
+def test_the_review_runs_both_and_their_words_ban_the_product_s_nouns(tmp_path):
+    from app.acceptance import junit
+    from workflow_nodes import an_acceptance_review_measured
+
+    spec = "".join(f"test('[AC-{n}] reads', async ({{ request }}) => {{\n  const r = await request.get('/x');\n"
+                   f"  if (r.ok()) {{\n    expect((await r.json()).length).toBe(0);\n  }}\n}});\n" for n in range(1, 6))
+    every_test_passes = suite.AcceptanceResult(ran=True, exit_code=0, report=junit.Report(found=True, tests=[
+        junit.TestResult(name=f"[AC-{n}] reads") for n in range(1, 6)]))
+
+    update = an_acceptance_review_measured(tmp_path, every_test_passes, pack="node-hono-native-api", files={"api.spec.js": spec})
+
+    feedback = update["acceptance_feedback"]
+    [guarded] = [problem for problem in feedback if "api.spec.js" in problem and "line(s) 3" in problem]
+    [before] = [problem for problem in feedback if "5 of 5 test(s) pass although nothing of the product is built" in problem]
+    assert update["stage"] == "acceptance_author"
+    assert not BANNED.search(re.sub(r"\[AC-\d+\] reads", "", guarded + before))

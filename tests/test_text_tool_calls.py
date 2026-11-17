@@ -175,9 +175,14 @@ def test_a_correctly_parsed_call_is_left_untouched() -> None:
     assert "sunny in Oslo" in tool_messages[0].content
 
 
-def test_every_role_agent_gets_it() -> None:
-    import inspect
+def test_a_role_agent_runs_a_tool_the_server_failed_to_parse(tmp_path, monkeypatch) -> None:
+    from workflow_nodes import a_role_agent, an_answer
 
-    from app.agents.role_agent import create_role_agent
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    (tmp_path / "notes.txt").write_text("kept\n")
 
-    assert "build_text_tool_call_middleware()" in inspect.getsource(create_role_agent)
+    result, _ = a_role_agent(
+        tmp_path, AIMessage(content='<tools>\n{"name": "ls", "arguments": {"path": "/"}}\n</tools>'), an_answer())
+
+    [listing] = [m for m in result["messages"] if isinstance(m, ToolMessage) and m.name == "ls"]
+    assert "notes.txt" in listing.content

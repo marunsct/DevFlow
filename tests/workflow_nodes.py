@@ -574,3 +574,139 @@ def an_acceptance_review(
             stack.enter_context(patch(target, replacement))
         context = acceptance_nodes.Context(model=None, judgement_model=None, checkpointer=None, repo_root=None)
         return acceptance_nodes.acceptance_review(made, {"configurable": {"thread_id": "t"}}, context)
+
+
+def an_acceptance_review_measured(
+    tmp_path,
+    measured: Any,
+    *,
+    files: dict[str, str] | None = None,
+    pack: str | None = None,
+    reviews: tuple[Any, ...] = (),
+    state: dict[str, Any] | None = None,
+    patches: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """`acceptance_review` on a suite of `files` (name -> text, under `notes/acceptance/`) that ran as `measured`.
+
+    `measured` is what running the suite gave (an `AcceptanceResult`, or a function of the root): the product's own
+    test command is the edge stood in for. The QA lead answers `reviews` in turn; nothing else is stubbed."""
+    from app.acceptance import suite
+    from app.stacks import contract, pack_named
+
+    if pack:
+        contract.write(tmp_path, pack_named(pack), "notes", "Notes")
+    else:
+        (tmp_path / ".project-directory").write_text("notes\n")
+    folder = tmp_path / "notes" / "acceptance"
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, text in (files or {}).items():
+        (folder / name).write_text(text)
+    answers = list(reviews)
+
+    def the_qa_lead(state, config, *, output_key, next_stage, **kwargs):
+        return {output_key: answers.pop(0), "stage": next_stage}
+
+    made = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "document": SimpleNamespace(text="# Brief\n## Acceptance Criteria\n- Notes are kept\n"),
+        "acceptance_round": 1,
+        **(state or {}),
+    }
+    every = {
+        "app.acceptance.suite.run": measured if callable(measured) else (lambda root: measured),
+        "app.acceptance.spec_dry_run.findings": lambda root: [],
+        "app.graph.workflow._run_gated_agent": the_qa_lead,
+        "app.agents.specialists.create_specialist_agent": lambda *args, **kwargs: object(),
+        "app.agents.acceptance_reviewer.create_acceptance_reviewer_agent": lambda *args, **kwargs: object(),
+        **(patches or {}),
+    }
+    return run_node("acceptance_review", made, str(tmp_path), every)
+
+
+
+def a_scripted_model(*replies: Any) -> Any:
+    """A chat model that answers `replies` in turn and records each request it is sent, in `requests`.
+
+    The model endpoint is a role agent's one unmanaged edge; this stands in for it, so the agent runs for real - its
+    tools, its middleware, its workspace - and a test reads what the model was offered and sent."""
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
+    class _Scripted(GenericFakeChatModel):
+        requests: list[dict[str, Any]] = []
+
+        def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
+            names = [getattr(tool, "name", None) or (tool.get("function") or tool).get("name") for tool in tools]
+            self.requests.append({"tools": names})
+            return self
+
+        def _generate(self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any) -> Any:
+            if not self.requests or "messages" in self.requests[-1]:
+                self.requests.append({})
+            self.requests[-1]["messages"] = list(messages)
+            return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+    model = _Scripted(messages=iter(replies))
+    model.requests = []
+    return model
+
+
+def an_answer(**fields: Any) -> Any:
+    """A model reply handing back a role agent's answer, as `a_role_agent` builds the agent."""
+    from langchain_core.messages import AIMessage
+
+    return AIMessage(content="", tool_calls=[{"name": "Answer", "args": {"summary": "done", **fields},
+                                              "id": "answer", "type": "tool_call"}])
+
+
+def a_role_agent(root: Any, *replies: Any, name: str = "specialist_backend_0", stage: str = "build",
+                 config: dict[str, Any] | None = None, **kwargs: Any) -> tuple[Any, Any]:
+    """A role agent built as a run builds one on `root`, driven by a model that answers `replies` in turn.
+
+    Returns what the agent ended with and the model (`requests`: the tools offered and the messages sent on each
+    call). With no `replies` it is built only, and `(None, agent)` comes back."""
+    from pydantic import BaseModel
+
+    from app.agents.role_agent import create_role_agent
+
+    class Answer(BaseModel):
+        summary: str
+
+    model = kwargs.pop("model", None) or a_scripted_model(*replies)
+    agent = create_role_agent(name=name, stage=stage, system_prompt="Do the work.", response_format=Answer,
+                              model=model, repo_root=str(root), **kwargs)
+    if not replies:
+        return None, agent
+    configurable = {"thread_id": "t", **((config or {}).get("configurable") or {})}
+    result = agent.invoke({"messages": [{"role": "user", "content": "Go."}]},
+                          {**(config or {}), "configurable": configurable, "recursion_limit": 30})
+    return result, model
+
+
+def a_served_model(name: str = "m", **kwargs: Any) -> tuple[Any, list[dict[str, Any]]]:
+    """The deployment's chat model class, its server stood in for at the HTTP edge.
+
+    Returns the model and the request bodies the server was sent, in order; every request is answered "ok"."""
+    import json
+
+    import httpx
+
+    from app.models import CompatibleChatOpenAI
+
+    sent: list[dict[str, Any]] = []
+
+    def server(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "id": "c", "object": "chat.completion", "created": 1, "model": name,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        })
+
+    model = CompatibleChatOpenAI(model=name, api_key="unused", base_url="http://model.test/v1", max_retries=0,
+                                 http_client=httpx.Client(transport=httpx.MockTransport(server)), **kwargs)
+    return model, sent
+
+
+def offered_tools(agent: Any) -> set[str]:
+    """The tools a built agent can run."""
+    return set(agent.nodes["tools"].bound._tools_by_name)

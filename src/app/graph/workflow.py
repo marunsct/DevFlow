@@ -6139,6 +6139,28 @@ def _names_in(text: str) -> set[str]:
     return names
 
 
+#: A compiler's or runtime's error location - `Program.cs(297,84)` or `server.go:10` - on a line that says error.
+_AN_ERROR_AT = re.compile(r"([\w.-]+\.[A-Za-z]{1,6})(?:\((\d+)(?:,\d+)?\)|:(\d+))")
+
+
+def _error_locations(text: str) -> set[tuple[str, str]]:
+    """The (file name, line) pairs `text` quotes on its lines that say error, lower-cased."""
+    found: set[tuple[str, str]] = set()
+    for line in str(text or "").splitlines():
+        if "error" not in line.lower():
+            continue
+        for match in _AN_ERROR_AT.finditer(line):
+            found.add((PurePosixPath(match.group(1)).name.lower(), match.group(2) or match.group(3)))
+    return found
+
+
+def _what_it_quotes(defect: Any) -> str:
+    """A defect's description, with what the product's own start wrote when the start is in it (`start_output`)."""
+    from app.acceptance import start_output
+
+    return f"{getattr(defect, 'description', '') or ''}\n{start_output.in_text(str(getattr(defect, 'actual_behavior', '') or ''))}"
+
+
 def _the_same_cause(one: Any, other: Any) -> bool:
     """Whether two defects describe one problem: in one place, about one named thing.
 
@@ -6150,6 +6172,11 @@ def _the_same_cause(one: Any, other: Any) -> bool:
     theirs = {PurePosixPath(str(f)).name.lower() for f in getattr(other, "affected_files", None) or []}
     if files and theirs and not files & theirs:
         return False
+    # One compiler error quoted by both: measured on one C# run, "the unit tests fail" quoted `Program.cs(297,84):
+    # error CS0721` and "the product does not start" carried the same error in what its start wrote; two fixers in
+    # parallel took turns at one file for half an hour.
+    if _error_locations(_what_it_quotes(one)) & _error_locations(_what_it_quotes(other)):
+        return True
     text, other_text = str(getattr(one, "description", "") or ""), str(getattr(other, "description", "") or "")
     names, other_names = _names_in(text), _names_in(other_text)
     if names & other_names:

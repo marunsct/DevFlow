@@ -1084,15 +1084,20 @@ def test_gate_exhaustion_reports_what_the_stage_kept_doing():
     the build-and-fix cycle working, and only identical *writes* count as a
     loop. So the ceiling is the right catch - it just has to say what it caught.
     """
-    import inspect
+    from types import SimpleNamespace
 
     from app.server import runner
 
-    source = " ".join(inspect.getsource(runner).split())
+    count = runner._GateCount()
+    for n in range(runner.MAX_GATES_PER_STAGE + 1):
+        verdict, signature = count.observe(SimpleNamespace(
+            artifact_path="", notes="node test.js" if n % 2 else f"edit {n}", action_kind="command"))
 
-    assert "Its most repeated request was" in source
-    assert "is not converging" in source
-    assert "a larger budget only helps the first case" in source
+    said = " ".join(runner._gate_failure_message("defect_fix_1_0", count, signature).split())
+
+    assert verdict == "fail"
+    assert "Its most repeated request was node test.js" in said
+    assert "is not converging" in said and "a larger budget only helps the first case" in said
 
 
 def test_the_repeat_guard_still_distinguishes_writes_from_commands():
@@ -1176,12 +1181,17 @@ def test_the_worker_works_a_run_on_the_models_it_was_started_with():
 
     source = Path("src/app/server/tasks.py").read_text()
     assert 'on_the_build_model_only(bool(getattr(record, "local_only", False)))' in source
-    store = Path("src/app/server/run_store.py").read_text()
-    assert "ADD COLUMN IF NOT EXISTS local_only" in store
-    # Every SELECT carries the columns the record is rebuilt from - the pin
-    # moves with the newest one (completion_gaps, Initiative J.4) so a SELECT
-    # left behind fails here rather than as a record missing a field.
-    assert store.count("delivery_mode, local_only, approval_timeout_minutes, completion_gaps FROM runs") == 3
+
+
+def test_every_way_a_run_is_read_back_keeps_its_model_choice_and_its_gaps(runner):
+    """A SELECT left behind when a column is added returns a record missing that field."""
+    record = _register(runner, local_only=True, completion_gaps=["AC-3 ships deferred"])
+    runner.run_store.save(record)
+
+    read_back = [runner.run_store.load("run-1"), *runner.run_store.list_all(),
+                 *runner.run_store.list_all(tenant_id="acme")]
+
+    assert [(r.local_only, r.completion_gaps) for r in read_back] == [(True, ["AC-3 ships deferred"])] * 3
 
 
 async def test_cancelling_a_running_run_no_worker_runs_marks_it_terminal(runner, monkeypatch):

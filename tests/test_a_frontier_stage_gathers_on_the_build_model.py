@@ -10,6 +10,7 @@ from __future__ import annotations
 import inspect
 from types import SimpleNamespace
 
+import pytest
 from langchain_core.messages import AIMessage
 from pydantic import BaseModel
 
@@ -129,23 +130,88 @@ def test_only_agents_on_a_registered_judgement_model_gather():
     assert role_agent._gathering(other, Answer) == []
 
 
-def test_fast_delivery_keeps_the_specification_and_reviews_on_the_frontier_and_moves_the_rest():
-    source = inspect.getsource(workflow)
-    assert "planning_model = judgement_model if plans_on_the_judgement_model() and not _fast_delivery() else model" in source
-    assert "gather_with(judgement_model, building_model if building_model is not model" in source
-    gathering_setup = source[source.index("# In every delivery mode, a stage on the judgement model gathers"):]
-    assert gathering_setup.index("gather_with(") < gathering_setup.index("def _the_build_model(")
-    consult = source[source.index("def specialist_consultation_node"):source.index("def principal_architect_node")]
-    assert "model=model if _fast_delivery() else judgement_model" in consult
-    assert "create_principal_architect_agent(model=judgement_model" in source
-    assert "create_architecture_reviewer_agent(model=judgement_model" in source
+def _on_two_models(monkeypatch, fast):
+    """A run on a build model and a distinct judgement model, planning on the judgement model as the owner sets it."""
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    gathered = []
+    monkeypatch.setattr("app.delivery.fast", lambda *a, **k: fast)
+    monkeypatch.setattr("app.models.roles.plans_on_the_judgement_model", lambda *a, **k: True)
+    monkeypatch.setattr("app.agents.thinking.without_reasoning",
+                        lambda model: FakeListChatModel(responses=["unused"], name=f"quiet {model.name}"))
+    monkeypatch.setattr(gathering, "gather_with", lambda judge, gatherer: gathered.append((judge.name, gatherer.name)))
+    return gathered
+
+
+def _built_on(monkeypatch, tmp_path, node, **state):
+    from workflow_node_stubs import run_node
+
+    seen = run_node(monkeypatch, tmp_path, node, two_models=True, **state)
+    return [(factory, getattr(model, "name", model)) for factory, model in seen.agents]
+
+
+@pytest.mark.parametrize("fast", [True, False], ids=["fast", "not-fast"])
+def test_fast_delivery_keeps_the_specification_and_reviews_on_the_frontier_and_moves_the_rest(fast, tmp_path, monkeypatch):
+    from app.agents.principal_architect import TechnicalSpecificationOutput
+    from app.agents.product_manager import ProductManagerOutput
+    from app.agents.specialist_advice import SpecialistAdvice
+    from workflow_node_stubs import run_node
+
+    gathered = _on_two_models(monkeypatch, fast)
+    run_node(monkeypatch, tmp_path, "complete", two_models=True)
+    # In every delivery mode, a stage on the judgement model gathers on the build model with reasoning off.
+    assert gathered == [("judge", "quiet build")]
+
+    intake = run_node(monkeypatch, tmp_path, "product_manager", two_models=True,
+                      answer=ProductManagerOutput(product_name="Notes"),
+                      document=SimpleNamespace(text="Notes.", source_path="brief.md", source_type="markdown", truncated=False))
+    assert [getattr(m, "name", m) for _, m in intake.agents] == ["build" if fast else "judge"], "planning"
+
+    consult = _built_on(monkeypatch, tmp_path, "specialist_consultation", consultation_roles=["backend"],
+                        answer=SpecialistAdvice(recommendations=["Validate the body"]), document=SimpleNamespace(text=""))
+    assert consult == [("create_specialist_advice_agent", "build" if fast else "judge")]
+
+    architect = _built_on(monkeypatch, tmp_path, "principal_architect",
+                          answer=TechnicalSpecificationOutput(product_scope="Notes."),
+                          product_intake=ProductManagerOutput(product_name="Notes"), tools_models={"plan": "local"},
+                          document=SimpleNamespace(text="Notes."))
+    assert ("create_principal_architect_agent", "judge") in architect
+
+    from app.agents.architecture_reviewer import ArchitectureReviewOutput
+
+    review = _built_on(monkeypatch, tmp_path, "architecture_review", answer=ArchitectureReviewOutput(status="approved"),
+                       technical_specification=TechnicalSpecificationOutput(product_scope="Notes."),
+                       document=SimpleNamespace(text="Notes."))
+    assert review == [("create_architecture_reviewer_agent", "judge")]
+
+
+def test_the_testing_author_moves_to_the_build_model_in_fast_delivery():
+    """In `acceptance_nodes`, not the graph."""
     author = inspect.getsource(acceptance_nodes)
     assert '"testing", model=ctx.model if delivery.fast() else ctx.judgement_model' in author
 
 
-def test_fast_delivery_sends_the_specification_and_the_suite_back_once():
-    assert "limit = _the_revision_limit()" in inspect.getsource(workflow)
-    assert "return 2 if _fast_delivery() else MAX_ARCHITECTURE_REVISIONS" in inspect.getsource(workflow._the_revision_limit)
+@pytest.mark.parametrize("fast, then", [(True, "escalation"), (False, "principal_architect")], ids=["fast", "not-fast"])
+def test_fast_delivery_sends_the_specification_back_once(fast, then, tmp_path, monkeypatch):
+    from app.agents.architecture_reviewer import ArchitectureReviewFinding, ArchitectureReviewOutput
+    from app.agents.principal_architect import TechnicalSpecificationOutput
+    from workflow_node_stubs import run_node
+
+    monkeypatch.setattr("app.delivery.fast", lambda *a, **k: fast)
+    blocking = ArchitectureReviewOutput(status="changes_required", findings=[ArchitectureReviewFinding(
+        severity="blocking", description="No authentication described.", evidence="security",
+        required_remediation="Describe it.")])
+
+    seen = run_node(monkeypatch, tmp_path, "architecture_review", answer=blocking, architecture_revision_count=1,
+                    technical_specification=TechnicalSpecificationOutput(product_scope="Notes."),
+                    document=SimpleNamespace(text="Notes."))
+
+    assert workflow._the_revision_limit() == (2 if fast else workflow.MAX_ARCHITECTURE_REVISIONS)
+    assert seen.update["stage"] == then and seen.update["architecture_revision_count"] == 2
+
+
+def test_fast_delivery_sends_the_suite_back_once():
+    """In `acceptance_nodes`, not the graph."""
     assert "limit = 2 if delivery.fast() else MAX_ACCEPTANCE_ROUNDS" in inspect.getsource(acceptance_nodes)
 
 

@@ -9,6 +9,8 @@ only user actions, and "reminders" names none.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from app.analysis.integration_checks import brief_features_the_text_defers
 
 BRIEF = """# Product Brief
@@ -100,14 +102,20 @@ def test_once_per_run_and_never_on_the_last_revision():
     assert _a_brief_feature_the_specification_defers(_state(), "## Features\n- Reminders by email\n") is None
 
 
-def test_the_review_node_adds_it():
-    import inspect
+def test_the_review_node_adds_it(tmp_path, monkeypatch):
+    from app.agents.architecture_reviewer import ArchitectureReviewOutput
+    from app.agents.principal_architect import TechnicalSpecificationOutput
+    from workflow_node_stubs import run_node
 
-    from app.graph import workflow
+    spec = TechnicalSpecificationOutput(product_scope="Tasks with due dates.\n## Deferred scope\n- Reminder system\n")
 
-    assert "deferral_finding = _a_brief_feature_the_specification_defers(state, spec_text)" in inspect.getsource(workflow)
+    seen = run_node(monkeypatch, tmp_path, "architecture_review", answer=ArchitectureReviewOutput(status="approved"),
+                    technical_specification=spec, document=SimpleNamespace(text=BRIEF), architecture_revision_count=0)
 
-
+    review = seen.update["architecture_review"]
+    assert review.status == "changes_required" and seen.update["specification_deferrals_checked"] is True
+    assert any("`reminders`" in finding.description for finding in review.findings)
+    assert seen.update["stage"] == "principal_architect"
 def test_a_signature_s_parameters_in_code_are_no_features():
     """Measured on one run: `truncate(text, limit, suffix=...)` was read as the list "text, limit and suffix", a
     "Defers:" line naming "additional text transformations" deferred the feature `text`, and an approved

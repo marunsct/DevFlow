@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-17 07:55 JST (written by `loop.sh state`). Harness 5cb26916 committed; 9264d46b deployed (not the same).
-**Live, and stopped in the last day:** run-281467f2 running at defect_fix_1_1; run-4db255e8 failed at failed; run-53970d86 failed at ?; run-bdf40247 failed at awaiting_approval:defect_fix_2_15
-**Last scored:** run-657c3113 notes-api-php 9/9 (completed, handoff 1.0; scored 11-17 07:55 JST); run-a99ce5d1 notes-api-csharp 9/9 (completed, mixed, 130 active min, handoff 1.0; scored 11-17 05:50 JST); run-9c05c6e7 notes-api-java 9/9 (completed, mixed, 100 active min, handoff 1.0; scored 11-17 04:52 JST).
+**As of:** 11-17 10:58 JST (written by `loop.sh state`). Harness 6ca893a5 committed; 6ca893a5 deployed.
+**Live, and stopped in the last day:** run-eeb96e0a failed at ?; run-4db255e8 failed at failed; run-53970d86 failed at ?
+**Last scored:** run-281467f2 notes-api-ruby 9/9 (completed, handoff 0.875; scored 11-17 10:58 JST); run-26084471 notes-api-csharp 9/9 (completed, mixed, 95 active min, handoff 1.0; scored 11-17 09:46 JST); run-657c3113 notes-api-php 9/9 (completed, mixed, 172 active min, handoff 1.0; scored 11-17 07:55 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -15,7 +15,7 @@ every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.
 |---|---|
 | Phase | Launch review (`docs/reviews/launch-review-2026-11-16.md`, LR.1-65) built item by item; M36 measuring runs on both ports. Owner hands off 11-16 21:50 JST: all review items by the morning of 11-17. |
 | Models | :8888 `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` (key); :1234 `qwen3.6-35b-a3b-mtp@iq4_nl` (no key). Both the owner's; both take runs; each run pinned to its port (`PIN_MODEL=1`). Never load or change them. |
-| Harness | 97945911 (LF.993) deployed 11-17 09:37 JST; LF.970-992 earlier tonight. Host has Pyright 1.1.414. |
+| Harness | 2dc5d8b7 deployed 11-17 11:25 JST: LF.995-1006 (owner 11-17: remaining items built in parallel behind switches, all switches ON, past runs the baseline). Host has Pyright 1.1.414. |
 | Switches | 52 fixes built in (always on; only a host env var turns one off). 11 optional switches; one on - NEAR_GREEN_REPLANNED_ONCE (Efficiency, LF.977, measuring.md M14: off at once if a run it fires in loses a hidden test). Off: Context and cost (OBSERVATION_FOLDING, STABLE_STAGE_PREFIX, BATCH_ACCEPTANCE_AUTHOR, REASONING_KEPT_AFTER_AN_ANSWER), Efficiency (EQUIVALENT_MUTANTS_REMEMBERED, MUTANT_CHECK_IN_THE_FIX_STAGE, REVIEWS_WITHOUT_REASONING, HARNESS_FINDINGS_RECHECKED), Setup scope (SETUP_SCOPE_GUARD), Review gates (MILESTONE_EVIDENCE_GATE). Admin page: Controls. |
 | Operations | Backups nightly to `data/backups` and `BACKUP_DIR` (external disk, 7 daily + 4 weekly), checked by `loop.sh backup --check`; finished runs older than `RETENTION_DAYS` (60) cleared nightly; both set in git-ignored `data/loop/ops.env`. Owner's Postgres port in git-ignored `docker-compose.override.yml`; `docker-compose.prod.yml` + `deploy/Caddyfile` for TLS. |
 | Suites | `loop.sh suite` and `loop.sh suite-production` (every built-in fix on, as shipped) both green: 17,316 passed, 0 known failures. |
@@ -76,8 +76,8 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   after, not a night; LR.44 (hosted-model matrix) waits for the owner.
 
 ## Next actions
-1. Live: notes-api-csharp 3 run-26084471 (:8888, 07:57) and notes-api-ruby 1 run-281467f2 (:1234, 05:46). Score each
-   with its full id. The status board (Claude Doc) was not updated: the docs connector was not connected.
+1. Live: notes-api-csharp 4 run-2db7b0a2 (:8888, 11:27), the first run with every switch on (M15). :1234 has no model
+   loaded since the host restart (owner's to load). Test-suite streamlining: inventory under way (owner 11-17).
 2. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).

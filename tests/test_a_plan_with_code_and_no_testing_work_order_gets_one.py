@@ -13,7 +13,6 @@ from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
 from app.analysis import work_orders
 from app.analysis.work_orders import readiness_problems, with_a_testing_work_order
 from app.stacks import contract
-from workflow_nodes import workflow_source
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 
@@ -53,12 +52,24 @@ def test_without_a_test_layout_to_name_files_the_plan_goes_back_as_before(monkey
     assert with_a_testing_work_order(plan, tmp_path) == (plan, False)
 
 
-def test_the_lead_is_told_every_rule_the_harness_checks():
-    from app.agents import technical_lead
+def test_the_lead_is_told_every_rule_the_harness_checks(tmp_path, monkeypatch):
+    from langchain_core.messages import AIMessage
 
-    source = open(technical_lead.__file__, encoding="utf-8").read()
-    assert "a file the sprint's scope names that no work order lists" in source
-    assert "one the\n  harness keeps" in source
+    from app.agents.technical_lead import create_technical_lead_agent
+    from workflow_nodes import a_scripted_model
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    model = a_scripted_model(AIMessage(content="Planning."))
+    lead = create_technical_lead_agent(model=model, repo_root=str(tmp_path))
+
+    try:
+        lead.invoke({"messages": [{"role": "user", "content": "Plan sprint 1."}]}, {"configurable": {"thread_id": "t"}})
+    except Exception:  # noqa: BLE001 - one reply is all this model has; the request it was sent is what is read
+        pass
+
+    told = " ".join(str(model.requests[0]["messages"][0].content).split())
+    assert "a file the sprint's scope names that no work order lists" in told
+    assert "a file outside the project directory or one the harness keeps" in told
 
 
 def test_each_file_s_test_is_named_by_its_own_language_s_pattern(monkeypatch, tmp_path):
@@ -71,6 +82,26 @@ def test_each_file_s_test_is_named_by_its_own_language_s_pattern(monkeypatch, tm
     plan, added = with_a_testing_work_order(_plan(_backend(["shop/shop_pkg/config.py", "shop/src/App.tsx"])), tmp_path)
 
     assert added and plan.delegated_tasks[-1].files == ["shop/tests/test_config.py", "shop/tests/App.test.tsx"]
+
+
+def test_the_lead_s_node_gives_the_named_test_files_to_the_testing_order_it_adds(monkeypatch, tmp_path):
+    from app.agents.scrum_master import SprintDefinition, SprintPlanOutput
+    from workflow_nodes import a_lead, a_specification
+
+    pack = SimpleNamespace(unit_dir="tests", unit_pattern="test_*.py", unit_test=("pytest",))
+    monkeypatch.setattr(contract, "the_pack", lambda root: (pack, {}))
+    monkeypatch.setattr(work_orders, "_pinned_project_directory", lambda root: "tool")
+    sprints = SprintPlanOutput(sprints=[SprintDefinition(
+        goal="Words are counted", user_value="v", acceptance_criteria=["AC-1 words are counted"],
+        in_scope=["Build the counter in tool/wordstats/counter.py with its tests in test_cli.py."])])
+
+    update, _ = a_lead(tmp_path, _plan(_backend(["tool/wordstats/counter.py"])), state={
+        "sprint_plan": sprints,
+        "technical_specification": a_specification(file_plan=["tool/wordstats/counter.py: counts",
+                                                              "tool/tests/test_cli.py: its tests"])})
+
+    testing = [order for order in update["milestone_plan"].delegated_tasks if order.specialist_role == "testing"]
+    assert testing and "tool/tests/test_cli.py" in testing[-1].files
 
 
 def test_a_work_order_with_nothing_to_test_from_takes_the_sprint_s_criteria() -> None:
@@ -104,6 +135,3 @@ def test_the_sprint_s_named_test_files_go_to_the_testing_order_the_harness_adds(
     after, given = with_named_tests_given_to_testing(added, tmp_path, scope, ["tool/tests/test_cli.py"])
     assert given == ["tool/tests/test_cli.py"] and "tool/tests/test_cli.py" in after.delegated_tasks[-1].files
 
-    source = workflow_source()
-    added_at = source.index('logger.info("The plan had code and no testing work order; the harness added one")')
-    assert "with_named_tests_given_to_testing(" in source[added_at:added_at + 1200]

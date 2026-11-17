@@ -107,11 +107,25 @@ def test_a_check_with_its_own_words_and_budget_is_what_watching_stores():
     assert one.content.endswith("\nno") and two.content == "Wrote src/test_calc.py"
 
 
-def test_the_fix_stage_asks_the_finding_s_own_check():
-    import inspect
+def test_the_fix_stage_asks_the_finding_s_own_check(tmp_path, monkeypatch):
+    from app.sprint import Defect
+    from workflow_node_stubs import one_defect, run_a_fixer
 
-    from app.graph import workflow
+    asked = []
 
-    source = inspect.getsource(workflow)
-    assert "mutant_check_in_stage.check_for(root, defect, lambda: _the_defect_s_tests_pass(root, defect))" in source
-    assert "**mutant_check_in_stage.how_for(defect)" in source
+    def finding_s_own(root, defect, default):
+        asked.append((Path(root), defect, default))
+        return "the finding's own check"
+
+    monkeypatch.setattr(mutant_check_in_stage, "check_for", finding_s_own)
+    monkeypatch.setattr(mutant_check_in_stage, "how_for",
+                        lambda defect: {"says": ("noticed", "not noticed"), "most": 1} if isinstance(defect, Defect) else {})
+    cycle = one_defect()
+
+    seen = run_a_fixer(monkeypatch, tmp_path, cycle=cycle)
+
+    (root, defect, default), = asked
+    assert root == tmp_path and defect == cycle.defects[0] and callable(default)
+    args, kwargs = seen.watching
+    assert args[1] == "defect_fix_1_0" and args[2] == "the finding's own check"
+    assert kwargs == {"says": ("noticed", "not noticed"), "most": 1}

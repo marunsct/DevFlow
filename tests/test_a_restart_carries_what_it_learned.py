@@ -18,6 +18,8 @@ reasoning.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from app.agents import stage_memory
@@ -114,39 +116,75 @@ class TestTheCommandsItRan:
         assert "app/app.js" in note
 
 
+class _Agent:
+    """A role agent that answers at once, answers nothing, or raises."""
+
+    def __init__(self, answer="answer", raises=None):
+        self.answer, self.raises, self.calls = answer, raises, []
+
+    def get_state(self, config):
+        return SimpleNamespace(values={}, next=())
+
+    def invoke(self, request, config=None):
+        self.calls.append((request, config["configurable"]["thread_id"]))
+        if self.raises is not None:
+            raise self.raises
+        return {"messages": [], "structured_response": self.answer}
+
+
+def _run_once(agent, root, carry_over):
+    from app.graph.workflow import _run_gated_agent
+
+    return _run_gated_agent(
+        {"stage": "principal_architect", "repository": SimpleNamespace(root_path=str(root)),
+         "stage_carry_over": carry_over},
+        {"configurable": {"thread_id": "outer"}},
+        stage_name="principal_architect", agent=agent,
+        initial_request={"messages": [{"role": "user", "content": "write"}]},
+        output_key="out", next_stage="architecture_review",
+    )
+
+
 class TestTheWorkflowWiring:
     """The note is recorded on restart, read once, and then dropped."""
 
     def test_the_restart_records_it(self):
-        import inspect
+        from app.graph.workflow import _restart_on_a_fresh_conversation
 
-        from app.graph import workflow
+        _remember_reads("t1", "app/app.js")
+        state = {"stage_carry_over": {"other_stage": "its own note"}}
 
-        source = inspect.getsource(workflow._restart_on_a_fresh_conversation)
-        assert "carry_over_note" in source
-        assert '"stage_carry_over"' in source
+        update = _restart_on_a_fresh_conversation(state, "specialist_ui_ux_0", "t1", "why")
 
-    def test_a_fresh_attempt_prepends_it(self):
-        import inspect
+        assert "app/app.js" in update["stage_carry_over"]["specialist_ui_ux_0"]
+        assert update["stage_carry_over"]["other_stage"] == "its own note"
 
-        from app.graph import workflow
+    def test_a_fresh_attempt_prepends_it(self, tmp_path):
+        """Prepended, so it is read before the stage's own instructions rather
+        than after them."""
+        agent = _Agent()
 
-        source = inspect.getsource(workflow._run_gated_agent)
-        assert 'state.get("stage_carry_over")' in source
-        # Prepended, so it is read before the stage's own instructions rather
-        # than after them.
-        assert '"messages": [\n                    {"role": "user", "content": carried},' in source
+        _run_once(agent, tmp_path, {"principal_architect": "THE NOTE"})
 
-    def test_success_drops_it(self):
+        request, _thread = agent.calls[0]
+        assert request["messages"][0] == {"role": "user", "content": "THE NOTE"}
+        assert request["messages"][-1] == {"role": "user", "content": "write"}
+
+    def test_another_stage_s_note_is_not_prepended(self, tmp_path):
+        agent = _Agent()
+
+        _run_once(agent, tmp_path, {"technical_lead": "THE NOTE"})
+
+        request, _thread = agent.calls[0]
+        assert request["messages"] == [{"role": "user", "content": "write"}]
+
+    def test_success_drops_it(self, tmp_path):
         """A stage name recurs across sprints; a stale note would describe
         files a different task had read."""
-        import inspect
+        update = _run_once(_Agent(), tmp_path, {"principal_architect": "THE NOTE", "technical_lead": "kept"})
 
-        from app.graph import workflow
-
-        source = inspect.getsource(workflow._run_gated_agent)
-        assert 'spent = dict(state.get("stage_carry_over") or {})' in source
-        assert "spent.pop(stage_name, None)" in source
+        assert update["out"] == "answer"
+        assert update["stage_carry_over"] == {"technical_lead": "kept"}
 
     def test_the_state_declares_the_field(self):
         from app.graph.workflow import WorkflowGraphState
@@ -218,19 +256,45 @@ class TestTheWorkspaceReachesTheNote:
     which no tool accepts. Only reading a live run's transcript showed it.
     """
 
-    def test_every_restart_passes_the_workspace(self):
-        import inspect
-
+    @pytest.mark.parametrize("how", ["spun on a fresh attempt", "spun on a resume", "gave no answer"])
+    def test_every_restart_passes_the_workspace(self, tmp_path, monkeypatch, how):
+        """Each of the three ways `_run_gated_agent` restarts a stage hands it the workspace."""
         from app.graph import workflow
 
-        source = inspect.getsource(workflow._run_gated_agent)
-        restarts = source.count("_restart_on_a_fresh_conversation(")
-        passed = source.count("_repository_root(state)")
-        assert restarts > 0
-        assert passed == restarts, (
-            f"{restarts} restarts but {passed} pass the workspace; a carry-over "
-            "without it names absolute paths"
+        roots = []
+
+        def restart(state, stage_name, inner_thread_id, why, repo_root=None):
+            roots.append(repo_root)
+            return {"stage": "restarted"}
+
+        monkeypatch.setattr(workflow, "_restart_on_a_fresh_conversation", restart)
+        monkeypatch.setattr(workflow, "_answer_left_in_a_spinning_stage", lambda *a, **k: None)
+        state = {"stage": "principal_architect", "repository": SimpleNamespace(root_path=str(tmp_path))}
+        if how == "spun on a fresh attempt":
+            agent = _Agent(raises=RuntimeError("GraphRecursionError: recursion limit reached"))
+        elif how == "spun on a resume":
+            agent = _Agent()
+
+            def spin(*args, **kwargs):
+                raise RuntimeError("GraphRecursionError: recursion limit reached")
+
+            monkeypatch.setattr(workflow, "resume_with_decision", spin)
+            state.update(pending_decision={"type": "approve"}, pending_inner_thread_id="outer:principal_architect:1")
+        else:
+            agent = _Agent(answer=None)
+            monkeypatch.setattr(workflow, "_answer_written_into_the_conversation", lambda *a, **k: None)
+            monkeypatch.setattr(workflow, "_nudge_for_the_structured_response", lambda *a, **k: None)
+            monkeypatch.setattr(workflow, "_the_answer_in_parts", lambda *a, **k: None)
+
+        update = workflow._run_gated_agent(
+            state, {"configurable": {"thread_id": "outer"}},
+            stage_name="principal_architect", agent=agent,
+            initial_request={"messages": [{"role": "user", "content": "write"}]},
+            output_key="out", next_stage="architecture_review",
         )
+
+        assert update == {"stage": "restarted"}
+        assert roots == [str(tmp_path)], "a carry-over without the workspace names absolute paths"
 
     def test_the_root_is_read_defensively(self):
         """A missing repository must not turn a restart into a failure."""

@@ -198,15 +198,12 @@ class TestTheLeadIsAskedToPreventIt:
 
         assert "which part of it that task owns" in flat
 
-    def test_the_workflow_passes_the_siblings(self):
-        import inspect
+    def test_the_workflow_passes_the_siblings(self, tmp_path, monkeypatch):
+        from workflow_node_stubs import run_a_builder, two_work_orders
 
-        from app.graph import workflow
+        seen = run_a_builder(monkeypatch, tmp_path, parallel=False)
 
-        source = inspect.getsource(workflow)
-        call = source.index("request = build_specialist_task_request(")
-
-        assert "other_tasks=tasks" in source[call : call + 700]
+        assert seen.kwargs["other_tasks"] == two_work_orders().delegated_tasks
 
 
 class TestBothCallSitesAreWired:
@@ -224,37 +221,23 @@ class TestBothCallSitesAreWired:
     time.
     """
 
-    def test_every_call_site_passes_the_siblings(self):
-        import ast
-        import inspect
+    @pytest.mark.parametrize("parallel", [False, True], ids=["linear", "parallel"])
+    def test_every_call_site_passes_the_siblings(self, tmp_path, monkeypatch, parallel):
+        from workflow_node_stubs import run_a_builder, two_work_orders
 
-        from app.graph import workflow
+        seen = run_a_builder(monkeypatch, tmp_path, parallel=parallel)
 
-        tree = ast.parse(inspect.getsource(workflow))
-        sites = [
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and getattr(node.func, "id", "") == "build_specialist_task_request"
-        ]
+        assert seen.kwargs is not None, "the builder did not build a work-order request"
+        assert seen.kwargs.get("other_tasks") == two_work_orders().delegated_tasks, (
+            "a call site does not pass other_tasks, so the shared-file note "
+            "cannot fire from it"
+        )
 
-        assert len(sites) == 2, f"expected two call sites, found {len(sites)}"
-        for site in sites:
-            keywords = {keyword.arg for keyword in site.keywords}
-            assert "other_tasks" in keywords, (
-                "a call site does not pass other_tasks, so the shared-file note "
-                "cannot fire from it"
-            )
-
-    def test_the_parallel_site_reads_the_plan(self):
+    @pytest.mark.parametrize("task_index", [0, 1])
+    def test_the_parallel_site_reads_the_plan(self, tmp_path, monkeypatch, task_index):
         """It is handed one task at a time, so the siblings come from the plan."""
-        import inspect
+        from workflow_node_stubs import run_a_builder
 
-        from app.graph import workflow
+        seen = run_a_builder(monkeypatch, tmp_path, parallel=True, task_index=task_index)
 
-        source = inspect.getsource(workflow.build_graph) if hasattr(workflow, "build_graph") else inspect.getsource(workflow)
-        at = source.index("def specialist_worker_node")
-        block = source[at : at + 2600]
-
-        assert "other_tasks=" in block
-        assert "delegated_tasks" in block
+        assert [task.specialist_role for task in seen.kwargs["other_tasks"]] == ["backend", "ui_ux"]

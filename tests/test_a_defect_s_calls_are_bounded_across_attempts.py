@@ -8,6 +8,7 @@ from __future__ import annotations
 import inspect
 import os
 import re
+from types import SimpleNamespace
 from unittest import mock
 
 from app.graph import defect_budget, workflow
@@ -61,12 +62,34 @@ def test_the_attempt_record_keeps_the_calls_and_the_fix_stage_checks_the_ceiling
     assert source.index("defect_budget.spent_out(cycle, defect_index)") < source.index("fix_model = _the_build_model(\n            state,\n            stage_name,")
 
 
-def test_the_start_is_carried_across_a_pause_and_a_batch_s_start_is_cleared():
-    source = inspect.getsource(workflow)
-    fix_one = source[source.index("    def _fix_one("):source.index("    def _the_next_fix_batch(")]
-    assert 'state.get("fix_started")' in fix_one and 'update["fix_started"] = started' in fix_one
-    gather = source[source.index("    def defect_fix_gather_node("):source.index("    def _the_security_review(")]
-    assert 'fix_batch_started=""' in gather
+def test_the_start_is_carried_across_a_pause(tmp_path, monkeypatch):
+    """Taken again on resume, the calls before the pause were not counted."""
+    from workflow_node_stubs import run_a_fixer
+
+    monkeypatch.setattr(defect_budget, "now", lambda: "NOW")
+
+    resumed = run_a_fixer(monkeypatch, tmp_path, fix_started="BEFORE THE PAUSE", pending_inner_thread_id="inner")
+    first = run_a_fixer(monkeypatch, tmp_path, fix_started="A STALE START")
+
+    assert resumed.update["fix_started"] == "BEFORE THE PAUSE"
+    assert first.update["fix_started"] == "NOW"
+
+
+def test_a_batch_s_start_is_cleared_when_the_batch_is_settled(tmp_path, monkeypatch):
+    from app.agents.specialists import SpecialistOutput
+    from workflow_node_stubs import CONFIG, compiled, one_defect
+
+    cycle = one_defect()
+    monkeypatch.setattr("app.graph.engineering.after_a_fix", lambda *a, **k: [])
+    monkeypatch.setattr(workflow, "_settle_the_fix", lambda state, cycle, *a, **k: (
+        {"remediation": cycle, "specialist_outputs": {}}, False))
+    graph = compiled(monkeypatch, tmp_path)
+    state = {"repository": SimpleNamespace(root_path=str(tmp_path)), "remediation": cycle, "fix_batch": [0], "fix_batch_started": "THE BATCH'S START", "test_round": 1,
+             "specialist_outputs": {"defect_fix_1_0": SpecialistOutput(changed_files=["app/store.js"])}}
+
+    update = graph.nodes["defect_fix_gather"].bound.invoke(state, CONFIG)
+
+    assert update["fix_batch"] == [] and update["fix_batch_started"] == ""
 
 
 # The attempt records live on the remediation cycle, and a re-planned sprint starts a new one: measured over 30 runs,

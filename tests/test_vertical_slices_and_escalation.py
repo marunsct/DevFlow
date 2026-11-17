@@ -159,19 +159,23 @@ def test_a_run_that_keeps_getting_stuck_stops(tmp_path) -> None:
     assert update["stage"] == "failed"
 
 
-def test_a_retried_sprint_is_built_on_the_judgement_model() -> None:
-    import inspect
+@pytest.mark.parametrize("parallel", [False, True], ids=["linear", "parallel"])
+@pytest.mark.parametrize("retried, on", [
+    ({}, "build"),
+    ({"sprint_replan_count": 1}, "judge"),
+    ({"milestone_revision_count": 1}, "build"),
+    ({"milestone_revision_count": 2}, "judge"),
+    ({"release_attempts": 1}, "judge"),
+    ({"escalation_count": 1}, "judge"),
+])
+def test_a_retried_sprint_is_built_on_the_judgement_model(tmp_path, monkeypatch, parallel, retried, on) -> None:
+    """Through `_the_build_model`, which falls back to `_the_model_for_this_attempt`
+    for a stage that has not itself failed: see `test_two_model_tiers`."""
+    from workflow_node_stubs import run_a_builder
 
-    from app.graph import workflow
+    seen = run_a_builder(monkeypatch, tmp_path, parallel=parallel, two_models=True, **retried)
 
-    source = inspect.getsource(workflow.build_workflow_graph)
-    # Through `_the_build_model`, which falls back to `_the_model_for_this_attempt`
-    # for a stage that has not itself failed: see `test_two_model_tiers`.
-    assert source.count("model=_the_build_model(state, stage_name)") == 2
-    assert "chosen = _the_model_for_this_attempt(state)" in source
-    helper = source[source.index("def _the_model_for_this_attempt"):]
-    for counter in ("sprint_replan_count", "milestone_revision_count", "release_attempts", "escalation_count"):
-        assert counter in helper[:900]
+    assert seen.model.name == on
 
 
 def test_unclaimed_criteria_go_to_the_sprint_that_names_them() -> None:

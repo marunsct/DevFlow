@@ -4,11 +4,12 @@ Behind `INTERFACE_CHANGES_NAMED`, off until measured.
 """
 from __future__ import annotations
 
-import inspect
 import os
 import subprocess
 from pathlib import Path
 from unittest import mock
+
+import pytest
 
 from app.agents import interface_changes
 from app.agents.specialists import SpecialistOutput
@@ -47,7 +48,20 @@ def test_on_a_change_its_decisions_do_not_name_is_added_and_one_they_do_is_not(t
     assert off is output
 
 
-def test_both_ways_a_builder_s_answer_is_kept_carry_it():
-    from app.graph import workflow
+@pytest.mark.parametrize("parallel", [False, True], ids=["linear", "parallel"])
+def test_both_ways_a_builder_s_answer_is_kept_carry_it(tmp_path, monkeypatch, parallel):
+    from workflow_node_stubs import run_a_builder
 
-    assert inspect.getsource(workflow.build_workflow_graph).count("interface_changes.with_them(") == 2
+    read = []
+
+    def with_them(output, root):
+        read.append((output.changed_files, root))
+        return output.model_copy(update={"decisions": ["Interface of `app/shared.js`: added `share`."]})
+
+    monkeypatch.setattr(interface_changes, "with_them", with_them)
+
+    seen = run_a_builder(monkeypatch, tmp_path, parallel=parallel)
+
+    assert read == [(["app/shared.js"], str(tmp_path))]
+    kept = seen.update["specialist_outputs"]["specialist_ui_ux_1"]
+    assert kept.decisions == ["Interface of `app/shared.js`: added `share`."]

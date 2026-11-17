@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import re
 
-import inspect
 import json
 import os
 from pathlib import Path
 from unittest import mock
+
+import pytest
 
 from app.analysis import project_graph
 
@@ -59,11 +60,27 @@ def test_a_fix_request_gets_the_neighbourhood_only_when_on(tmp_path):
     assert off == "Fix it."
 
 
-def test_both_builder_paths_and_the_fix_request_carry_it():
-    from app.graph import workflow
+@pytest.mark.parametrize("parallel", [False, True], ids=["linear", "parallel"])
+def test_both_builder_paths_carry_the_slice(tmp_path, monkeypatch, parallel):
+    from workflow_node_stubs import marking, run_a_builder
 
-    source = inspect.getsource(workflow.build_workflow_graph)
-    assert source.count("project_graph.with_the_slice(") == 2 and source.count("project_graph.with_the_neighbourhood(") == 1
+    sliced = marking(monkeypatch, "app.analysis.project_graph.with_the_slice", "the slice")
+
+    seen = run_a_builder(monkeypatch, tmp_path, parallel=parallel)
+
+    assert sliced == [((str(tmp_path), ["app/page.js", "app/shared.js"]), {})]
+    assert seen.request["messages"][-1]["content"].endswith("[the slice]")
+
+
+def test_the_fix_request_carries_the_neighbourhood(tmp_path, monkeypatch):
+    from workflow_node_stubs import marking, run_a_fixer
+
+    neighbours = marking(monkeypatch, "app.analysis.project_graph.with_the_neighbourhood", "the neighbourhood")
+
+    seen = run_a_fixer(monkeypatch, tmp_path)
+
+    assert neighbours == [((str(tmp_path), ["app/store.js"]), {})]
+    assert "[the neighbourhood]" in seen.request["messages"][-1]["content"]
 
 
 def test_a_name_the_graph_does_not_show_is_not_said_to_be_defined_nowhere(tmp_path):

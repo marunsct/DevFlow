@@ -11532,6 +11532,15 @@ def build_workflow_graph(
             )
 
         if any(defect.status == "open" for defect in cycle.defects):
+            # The fix round before closed nothing and the product is as the round before measured it: another round
+            # starts where that one did, so the attempt ends here (LR.53, `FIX_STAGES_THAT_CLOSE_NOTHING`).
+            from app.graph import unchanged_fix_round
+
+            if unchanged_fix_round.ends_the_attempt(
+                state["repository"].root_path, cycle, attempt=_this_attempt(state), test_round=test_round,
+            ):
+                logger.warning("test_round_%d: %s", test_round, unchanged_fix_round.SAID)
+                return _replan_or_escalate(state, base_update, cycle, unchanged_fix_round.SAID)
             if _only_unit_tests_open_beside_a_green_suite(state, cycle):
                 # The due criteria pass and only unit tests the model wrote fail: probe now, once an attempt, so
                 # its findings join this fix round. Measured on every run of one day: with a failing unit test

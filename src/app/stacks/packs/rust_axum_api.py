@@ -112,6 +112,11 @@ AXUM_KNOWN_ERRORS = {
         "`app()` (from `DATA_DIR`) and end it with `.with_state(state)`; `main.rs` and the tests then use `app()` as "
         "it is, sending a test's requests to it with `oneshot`."
     ) for phrase in ("expected `Router`, found `Router<", "exists for struct `Router<")},
+    **{phrase: (
+        "`oneshot` takes the router by value, so a test that sends a second request through the same router has "
+        "already given it away: build it again with `app()` for each request (or send the first through "
+        "`.clone()`)."
+    ) for phrase in ("use of moved value: `app`", "use of moved value: `router`")},
     "could not find `test` in `axum`": (
         "axum has no `test` module and no test client: a test sends a request with `tower::ServiceExt::oneshot`, "
         "importing `axum::body::Body`, `axum::http::{Request, StatusCode}`, `http_body_util::BodyExt` and "

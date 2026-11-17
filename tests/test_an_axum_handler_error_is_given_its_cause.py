@@ -31,8 +31,9 @@ def _defect(text):
     ("error[E0433]: failed to resolve: could not find `test` in `axum`", "`tower::ServiceExt::oneshot`"),
     ("error[E0599]: the method `oneshot` exists for struct `Router<AppState>`, but its trait bounds were not satisfied",
      "build the state inside `app()`"),
+    ("error[E0382]: use of moved value: `app`: value used here after move", "`oneshot` takes the router by value"),
 ], ids=["body-extractor-first", "router-without-its-state", "app-returns-a-router-still-waiting", "no-axum-test",
-        "a-test-given-a-router-still-waiting"])
+        "a-test-given-a-router-still-waiting", "a-router-sent-two-requests"])
 def test_the_error_is_given_its_cause(tmp_path, error, cause):
     contract.write(tmp_path, pack_named("rust-axum-api"), "notes-api", "Notes")
 

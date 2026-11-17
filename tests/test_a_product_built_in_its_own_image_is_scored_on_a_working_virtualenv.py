@@ -44,3 +44,34 @@ def test_a_virtualenv_that_runs_is_left_as_it_is(tmp_path):
     _score()._a_virtualenv_that_runs_here(product, notes)
     assert (product / ".venv" / "bin" / "python").readlink() == Path(sys.executable)
     assert notes == []
+
+
+def _bundle(tmp_path, monkeypatch, check_code):
+    score = _score()
+    product = tmp_path / "svc"
+    product.mkdir()
+    (product / "Gemfile").write_text('source "https://rubygems.org"\n')
+    ran = []
+
+    def run(argv, cwd, env=None, timeout=900):  # the bundler is the edge
+        ran.append(list(argv))
+        return type("Done", (), {"returncode": check_code if argv[1] == "check" else 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(score, "_run", run)
+    notes = []
+    score._a_bundle_that_runs_here(product, notes)
+    return ran, notes
+
+
+def test_a_bundle_that_does_not_load_here_is_installed_again(tmp_path, monkeypatch):
+    """Measured: gems built in the product's image for another platform were ignored as missing extensions."""
+    ran, notes = _bundle(tmp_path, monkeypatch, check_code=1)
+
+    assert ran == [["bundle", "check"], ["bundle", "install"]]
+    assert notes and "installed again" in notes[0]
+
+
+def test_a_bundle_that_loads_is_left_as_it_is(tmp_path, monkeypatch):
+    ran, notes = _bundle(tmp_path, monkeypatch, check_code=0)
+
+    assert ran == [["bundle", "check"]] and notes == []

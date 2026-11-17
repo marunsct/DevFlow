@@ -104,6 +104,23 @@ def _a_virtualenv_that_runs_here(product: Path, notes: list[str]) -> None:
                  + ("" if ok else ": " + ((installed or made).stdout + (installed or made).stderr)[-300:]))
 
 
+def _a_bundle_that_runs_here(product: Path, notes: list[str]) -> None:
+    """Install a Ruby product's gems again when its shipped bundle does not load here.
+
+    Measured on a Ruby service in container mode: its gems' native extensions (puma, nio4r) were built in the product's
+    sandbox image for platform `x86_64-linux`; the scoring container's Ruby is `x86_64-linux-gnu`, ignored them as
+    "missing extensions", and every hidden test failed at start - 0 of 9 for a product that answered once its gems were
+    installed. As with a virtualenv, the scorer builds what a stranger checking the product out would build.
+    """
+    if not (product / "Gemfile").is_file():
+        return
+    if _run(["bundle", "check"], product, timeout=120).returncode == 0:
+        return
+    installed = _run(["bundle", "install"], product, timeout=900)
+    notes.append("the product's gems did not load here (built for another platform); installed again"
+                 + ("" if installed.returncode == 0 else ": " + (installed.stdout + installed.stderr)[-300:]))
+
+
 def _browser_root(product: Path, notes: list[str]) -> Path:
     """The directory to serve for a page: a build's output when the product has a build."""
     manifest = product / "package.json"
@@ -342,6 +359,7 @@ def score(
     shutil.copytree(bench / "hidden", work / "hidden")
     target = work / "product"
     _a_virtualenv_that_runs_here(target, notes)
+    _a_bundle_that_runs_here(target, notes)
     report = work / "report.xml"
     data_dir = work / "data"
     data_dir.mkdir(parents=True)

@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-18 01:46 JST (written by `loop.sh state`). Harness 891b78dc committed; 891b78dc deployed.
-**Live, and stopped in the last day:** run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0; run-844673cd failed at failed; run-9f8188cb failed at failed; run-2db7b0a2 failed at failed; run-4db255e8 failed at failed
-**Last scored:** run-b770f08f notes-api-java 9/9 (completed, handoff 1.0; scored 11-18 01:46 JST); run-c7b0d7ec notes-api-ruby 9/9 (completed, mixed, 81 active min, handoff 0.875; scored 11-18 00:55 JST); run-e8e3120f notes-api-php 9/9 (completed, mixed, 117 active min, handoff 1.0; scored 11-17 23:55 JST).
+**As of:** 11-18 03:38 JST (written by `loop.sh state`). Harness 684cd62e committed; 684cd62e deployed.
+**Live, and stopped in the last day:** run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0; run-844673cd failed at failed; run-9f8188cb failed at failed; run-2db7b0a2 failed at failed
+**Last scored:** run-6a9c0fb9 notes-api-ruby 9/9 (completed, 88 active min, handoff 0.875; scored 11-18 03:38 JST); run-b770f08f notes-api-java 9/9 (completed, mixed, 95 active min, handoff 1.0; scored 11-18 01:46 JST); run-c7b0d7ec notes-api-ruby 9/9 (completed, mixed, 81 active min, handoff 0.875; scored 11-18 00:55 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -120,6 +120,10 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
    catch-all exception handler; Java run 1 lost the same test): LF.1052 asks the 5xx probe at near-green rounds too.
    LF.1049 (MockBean cause) and LF.1051 (the JVM's temp folder off the noexec /tmp: SQLite could not load) helped.
    :8888's model is not loaded since about 00:55 (the owner's); nothing started there.
+   Ruby container run 2, run-6a9c0fb9-4d07-42e0-9bf1-59aa5d5f91f6 (:1234, 02:01-03:33): hidden 9/9, quality 8/8,
+   handoff 0.875, delivered (first scored 0/9: the scorer's Ruby ignored gems built in the sandbox image - LF.1053).
+   Every language in the container sweep now passes 9/9 hidden. Live: tasks-api container 1,
+   run-1cef3eae-17ed-4e38-a8ae-8e97812fe352 (:1234, 03:39).
 3. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).

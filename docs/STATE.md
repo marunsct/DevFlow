@@ -68,8 +68,8 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   Ruby and C# were the probe's (both products answer 422 when asked by hand); each re-planned a sprint on it. Records: LF.976 real re-plan counts, LF.982, LF.987. Scorer: LF.985, LF.988.
 - Sweep scores: every language 9/9 hidden; quality 7/8-8/8 but C# 6/8. Recurring product defects the harness does not
   yet catch: writes made at once lost (several families) - next: pack storage guidance and a concurrent-write probe.
-- In part: LR.20 (the report is built; the frozen batch is about 5 days of runs, not started), LR.30 (isolation
-  built; container mode fits Node and Python stacks only - each pack needs its own image, see the review doc), LR.52, and LR.53 (cause grouping; a green suite settles; a near-green
+- In part: LR.20 (the report is built; the frozen batch is about 5 days of runs, not started), LR.30 (per-pack
+  images LF.1005, container environment LF.1007, the 7 images built and verified 11-17 12:30 - next: container-mode runs), LR.52, and LR.53 (cause grouping; a green suite settles; a near-green
   sprint is planned again once - LF.977, measured on 175 past re-plans; open: a repair back to the round), LR.54 (four contradictions removed).
 - Not done, and why: LR.42 (scale the process to the brief), LR.46 (narrow rules behind the pack interface),
   LR.50 (lift nodes out of `build_workflow_graph`) - each a week-sized redesign that needs measured runs before and

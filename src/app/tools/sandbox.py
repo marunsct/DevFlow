@@ -1035,7 +1035,7 @@ def _short_temporary_directory(workspace: str) -> str:
     return path
 
 
-def _the_project_virtualenv(workspace: str) -> str | None:
+def _the_project_virtualenv(workspace: str, *, follow_links: bool = True) -> str | None:
     """The project's virtualenv bin directory, when this workspace's project has one.
 
     Found through the project contract, so it is the same directory the
@@ -1046,6 +1046,10 @@ def _the_project_virtualenv(workspace: str) -> str | None:
     virtualenv only if a stage made one. None when there is no project, no
     virtualenv or no interpreter in it: a command then keeps the PATH it
     had, and nothing is claimed that is not there.
+
+    `follow_links=False` is for a command run in a container of its own: a
+    virtualenv made there links its interpreter to the image's, a path the
+    worker need not have, so only the link itself is looked for.
     """
     try:
         from app.stacks import contract
@@ -1055,7 +1059,8 @@ def _the_project_virtualenv(workspace: str) -> str | None:
         if not project:
             return None
         candidate = Path(workspace) / project / ".venv" / "bin"
-        if (candidate / "python").exists() or (candidate / "python3").exists():
+        found = os.path.exists if follow_links else os.path.lexists
+        if found(candidate / "python") or found(candidate / "python3"):
             return str(candidate)
     except Exception:  # noqa: BLE001 - a PATH that cannot be enriched stays as it is
         logger.debug("Could not look for the project's virtualenv", exc_info=True)
@@ -3368,6 +3373,125 @@ def _workspace_mount(workspace: str) -> list[str]:
     return ["-v", f"{workspace}:/workspace"]
 
 
+#: Where a command's container sees the run's workspace (`_workspace_mount`).
+CONTAINER_WORKSPACE = "/workspace"
+
+#: The worker's settings a command's container is given as they are: none is a path. The worker's proxies are
+#: not among them - they name hosts on the worker's networks, which a command's container is not on.
+_CONTAINER_PASSTHROUGH = ("LANG", "LC_ALL", "TZ")
+
+
+def _container_path(path: str, workspace: str) -> str | None:
+    """A worker path as a command's container sees it: under its workspace mount, or None for one outside the workspace."""
+    workspace = os.path.abspath(workspace)
+    absolute = os.path.abspath(path)
+    if absolute == workspace:
+        return CONTAINER_WORKSPACE
+    if absolute.startswith(workspace + os.sep):
+        return CONTAINER_WORKSPACE + "/" + os.path.relpath(absolute, workspace).replace(os.sep, "/")
+    return None
+
+
+def _as_the_container_sees_it(value: str, workspace: str, stand_ins: list[str]) -> str | None:
+    """An environment value moved into a command's container, or None when nothing of it is there to see.
+
+    A value that is not a path, or a path the worker does not have (one meant for the container's own filesystem),
+    is kept as it is. A path in the workspace moves under its mount. A path only the worker has is dropped - unless it
+    is an empty directory, a fresh place the caller made for the command (a home, a data directory): that gets an
+    empty directory of its own under the workspace's harness home, noted in `stand_ins` so it is removed afterwards.
+    A list of paths keeps the entries the container can see.
+    """
+    parts = value.split(os.pathsep)
+    if not value or not all(part.startswith("/") for part in parts):
+        return value
+    kept = []
+    for part in parts:
+        moved = _container_path(part, workspace)
+        if moved is None and not os.path.exists(part):
+            moved = part
+        elif moved is None and os.path.isdir(part) and not os.listdir(part):
+            stand_in = os.path.join(workspace, ".agent-home", "tmp", f"stand-in-{uuid.uuid4().hex[:12]}")
+            os.makedirs(stand_in, exist_ok=True)
+            stand_ins.append(stand_in)
+            moved = _container_path(stand_in, workspace)
+        if moved:
+            kept.append(moved)
+    return os.pathsep.join(kept) or None
+
+
+def _container_environment(
+    workspace: str, extra_env: Dict[str, str] | None, stand_ins: list[str]
+) -> tuple[Dict[str, str], list[str]]:
+    """What `_child_environment` gives a command run here, as a command's own container sees it; and its PATH's front.
+
+    A command's container got `HOME=/tmp` and nothing else, and its /tmp is a small tmpfs that may not hold anything
+    executed: `go test` builds its test binaries in TMPDIR, cargo, NuGet, Maven and npm keep their caches under HOME,
+    and a suite that starts the product reads ACCEPTANCE_PORT. So HOME is the workspace's harness home and TMPDIR a
+    directory in it - both on the mounted workspace, so a cache outlives the command as it does in-container - with
+    the toolchain settings, the concurrency budget, a port, and the caller's values moved into the container
+    (`_as_the_container_sees_it`). PATH is the image's own: it alone knows where its toolchain is. What goes in front
+    of it - the project's virtualenv, or a caller's PATH entries in the workspace - is returned to be put there when
+    the command starts (`_with_the_path_in_front`). The browsers are the image's (its PLAYWRIGHT_BROWSERS_PATH), and
+    otherwise land in HOME's cache, where the browser runner's own default looks.
+    """
+    temporary = os.path.join(workspace, ".agent-home", "tmp")
+    os.makedirs(temporary, exist_ok=True)
+    environment = {key: os.environ[key] for key in _CONTAINER_PASSTHROUGH if os.environ.get(key)}
+    environment["HOME"] = _container_path(os.path.join(workspace, ".agent-home"), workspace) or CONTAINER_WORKSPACE
+    environment["TMPDIR"] = _container_path(temporary, workspace) or CONTAINER_WORKSPACE
+    environment.update(TOOLCHAIN_ENVIRONMENT)
+    environment.update(_concurrency_environment())
+    environment["ACCEPTANCE_PORT"] = str(_a_free_port())
+    virtualenv = _the_project_virtualenv(workspace, follow_links=False)
+    in_front = [_container_path(virtualenv, workspace) or ""] if virtualenv else []
+    for key, value in (extra_env or {}).items():
+        if key == "PATH":
+            # The caller's PATH replaces the whole of it in-container, the virtualenv included; here only its
+            # entries in the workspace can be put in front of the image's own.
+            in_front = [entry for entry in (_container_path(part, workspace) for part in str(value).split(os.pathsep)
+                                             if part.startswith("/")) if entry]
+            continue
+        moved = _as_the_container_sees_it(str(value), workspace, stand_ins)
+        if moved is None:
+            logger.info("Not giving %s to a command's container: only the worker has %s", key, value)
+            continue
+        environment[key] = moved
+    return environment, [entry for entry in in_front if entry]
+
+
+def _with_the_path_in_front(argv: list[str], in_front: list[str]) -> list[str]:
+    """`argv`, started with `in_front` ahead of the image's own PATH - which only the container knows."""
+    if not in_front:
+        return argv
+    return ["/bin/sh", "-c", 'PATH="$1:$PATH"; export PATH; shift; exec "$@"', "sh", ":".join(in_front), *argv]
+
+
+def _a_pin_the_image_does_not_carry(workspace: str) -> str:
+    """What to say when this workspace pinned a runtime and its pack's image runs its commands; "" otherwise.
+
+    In-container, a pinned runtime is put first on every command's PATH from the cache the worker keeps
+    (`app.tools.runtimes`). That cache is the worker's own, and a pack's image is the one image holding the pack's
+    toolchain, its runners and the browsers together, so the pin is not honoured there - and said so, rather than
+    left for a version mismatch to say it later. Without a pack's image the pin chooses the image (`_image_for`).
+    """
+    try:
+        from app.stacks.contract import the_pack
+        from app.tools.runtimes import recorded
+
+        pins = recorded(workspace)
+        found = the_pack(workspace)
+    except Exception:  # noqa: BLE001 - nothing known to say
+        return ""
+    if not pins or found is None or not found[0].sandbox_image:
+        return ""
+    named = ", ".join(f"{name} {entry.get('version', '')}".strip() for name, entry in sorted(pins.items()))
+    return (
+        f"This workspace asked for {named} with use_runtime, but each command here runs in a container from the "
+        f"pack's own image (`{found[0].sandbox_image}`), which carries the pack's toolchain; the runtime asked for is "
+        "not in it and was not used. Work with the version the image has."
+    )
+
+
 def _docker_binary() -> str:
     binary = shutil.which("docker") or shutil.which("podman")
     if not binary:
@@ -5422,12 +5546,16 @@ class SandboxExecutor:
             if run_in and os.path.relpath(run_in, workspace) != "."
             else "/workspace",
             "-u", f"{os.getuid()}:{os.getgid()}",
-            "--env", "HOME=/tmp",
         ]
-        for key, value in (extra_env or {}).items():
+        # The environment an in-container command gets, as this container sees it (`_container_environment`), with
+        # this one command's data directory as in-container, and the empty stand-ins made for it, removed after it.
+        fresh_data = _a_fresh_data_directory(workspace, category)
+        stand_ins: list[str] = []
+        environment, in_front = _container_environment(workspace, {**fresh_data, **(extra_env or {})}, stand_ins)
+        for key, value in environment.items():
             docker_cmd += ["--env", f"{key}={value}"]
         docker_cmd.append(_image_for(os.path.basename(argv[0]), workspace))
-        docker_cmd.extend(argv)
+        docker_cmd.extend(_with_the_path_in_front(argv, in_front))
 
         logger.info(
             "sandbox exec role=%s category=%s argv=%s", role_name, category, argv,
@@ -5442,12 +5570,21 @@ class SandboxExecutor:
             }
         except OSError as exc:
             return {"error": f"Could not start the sandbox: {exc}"}
+        finally:
+            _remove_the_fresh_data_directories(fresh_data)
+            for stand_in in stand_ins:
+                shutil.rmtree(stand_in, ignore_errors=True)
 
-        return {
+        finished = {
             "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout", repo_root), repo_root),
             "stderr": _as_workspace_relative(_truncate(result.stderr, f"{role_name}-{argv[0]}-stderr", repo_root), repo_root),
             "returncode": str(result.returncode),
         }
+        # A key of its own: the notes later steps add replace an earlier "note".
+        unhonoured = _a_pin_the_image_does_not_carry(workspace)
+        if unhonoured:
+            finished["runtime_not_used"] = unhonoured
+        return finished
 
 
 __all__ = [

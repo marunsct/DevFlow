@@ -61,9 +61,20 @@ def test_a_suite_that_drives_a_browser_is_left_out(tmp_path, monkeypatch):
     assert source.exists()
 
 
-def test_the_release_asks_for_it():
-    import inspect
-
+def test_the_release_names_a_change_its_suite_did_not_notice(tmp_path, monkeypatch):
+    from app.acceptance import junit
     from app.graph import delivery
 
-    assert "gaps.extend(what_the_suite_does_not_notice(root))" in inspect.getsource(delivery)
+    source = _project(tmp_path, monkeypatch)
+    only_adult = _a_suite_that_checks_only_adult(source)
+
+    def the_suite(root, **kwargs):
+        tests = [junit.TestResult(name=t.name, outcome=t.outcome) for t in only_adult().report.tests]
+        return suite.AcceptanceResult(ran=True, report=junit.Report(found=True, tests=tests))
+
+    monkeypatch.setattr(suite, "run", the_suite)
+    monkeypatch.setattr("app.graph.workflow._stop_if_cancelled", lambda run_id: None)
+
+    released = delivery.release({"repository": SimpleNamespace(root_path=str(tmp_path))}, {"configurable": {}}, None)
+
+    assert any("line 2" in gap and "rules.js" in gap for gap in released["completion_gaps"])

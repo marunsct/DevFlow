@@ -48,13 +48,26 @@ def test_a_probe_interrupted_midway_is_put_back_on_entry(tmp_path, monkeypatch):
     assert mutation.restore_an_interrupted_probe(tmp_path) is False
 
 
-def test_the_release_puts_it_back_before_it_measures_anything():
-    import inspect
-
+def test_the_release_puts_it_back_before_it_measures_anything(tmp_path, monkeypatch):
+    """Orphan recovery re-entered the release on the broken tree: the suite must measure the product as written."""
+    from app.acceptance import junit
     from app.graph import delivery
 
-    source = inspect.getsource(delivery.release)
-    assert source.index("restore_an_interrupted_probe(root)") < source.index("suite.run(root)")
+    original = b"def adult(age):\n    return age >= 18\n"
+    target = _project(tmp_path, monkeypatch, original)
+    mutation._journal_before_changing(tmp_path, tmp_path / "svc", _site(target, tmp_path))
+    measured = []
+
+    def the_suite(root):
+        measured.append(target.read_bytes())
+        return suite.AcceptanceResult(ran=True, report=junit.Report(found=True, tests=[junit.TestResult(name="t")]))
+
+    monkeypatch.setattr(suite, "run", the_suite)
+    monkeypatch.setattr("app.graph.workflow._stop_if_cancelled", lambda run_id: None)
+
+    delivery.release({"repository": SimpleNamespace(root_path=str(tmp_path))}, {"configurable": {}}, None)
+
+    assert measured == [original]
 
 
 def test_a_finished_probe_leaves_no_journal_and_the_same_bytes(tmp_path, monkeypatch):

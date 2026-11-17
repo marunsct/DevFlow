@@ -8,21 +8,18 @@ the decision log, and in the release's gaps.
 """
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
 import pytest
 
 from app.acceptance import suite
 from app.acceptance.criteria import Criterion
-from app.agents.scrum_master import (
-    THE_HARNESS_S_PLAN,
-    a_plan_the_harness_writes,
-    how_much_a_plan_leaves_out,
-)
+from app.agents.scrum_master import a_plan_the_harness_writes, how_much_a_plan_leaves_out
 
 CRITERIA = [Criterion("AC-1", "A note can be created with a title and a body", "brief"),
             Criterion("AC-2", "Notes survive a restart", "brief")]
+#: How the harness's own plan says whose it is, wherever it is recorded.
+THE_HARNESS_S_PLAN = "written by the harness"
 MEASURES = ["Users can add, edit, and delete notes without errors", "Notes persist across restarts"]
 
 
@@ -54,7 +51,7 @@ def test_the_stage_goes_on_with_it_recorded_as_a_decision_and_a_gap(tmp_path):
     assert update["stage"] == "technical_lead" and update["sprint_plan"].sprints[0].criteria == ["AC-1", "AC-2"]
     assert update["known_issues"][0] == "an earlier issue"
     assert THE_HARNESS_S_PLAN in update["known_issues"][1] and "ran to the output limit" in update["known_issues"][1]
-    assert update["decisions"][-1]["decision"] == THE_HARNESS_S_PLAN
+    assert THE_HARNESS_S_PLAN in update["decisions"][-1]["decision"]
 
 
 class _NoAnswer:
@@ -113,9 +110,14 @@ def test_only_a_stage_that_gave_no_answer_falls_back_and_nothing_else_does(tmp_p
         _the_sprint_planner_raising(tmp_path, ValueError("something else went wrong"))
 
 
-def test_the_release_lists_it_among_the_gaps():
+def test_the_release_lists_it_among_the_gaps(tmp_path, monkeypatch):
     from app.graph import delivery
 
-    source = inspect.getsource(delivery)
-    assert 'f"An escalation left this open{f\' ({accepted_at})\' if accepted_at else \'\'}: "' in source
-    assert "for issue in left_open" in source
+    monkeypatch.setattr("app.graph.workflow._stop_if_cancelled", lambda run_id: None)
+    issue = "The sprint plan is one sprint for every criterion, written by the harness: the planner gave no answer"
+
+    released = delivery.release(
+        {"repository": SimpleNamespace(root_path=str(tmp_path)), "known_issues": [issue]}, {"configurable": {}}, None,
+    )
+
+    assert f"An escalation left this open: {issue}" in released["completion_gaps"]

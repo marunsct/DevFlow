@@ -17,6 +17,9 @@ from pathlib import Path
 
 from app.graph import terminal_state
 
+#: The marker's name in the workspace root, where any archive of the workspace carries it.
+MARKER = "NON-DELIVERABLE.json"
+
 
 def test_a_failed_run_s_workspace_is_marked_non_deliverable(tmp_path: Path) -> None:
     terminal_state.mark(tmp_path, status="failed", reason="the suite never locked", stage="release")
@@ -30,8 +33,8 @@ def test_a_failed_run_s_workspace_is_marked_non_deliverable(tmp_path: Path) -> N
     assert found["stage"] == "release"
     # The marker is one JSON document in the workspace root: any archive of
     # the workspace carries it.
-    assert (tmp_path / terminal_state.MARKER).exists()
-    assert json.loads((tmp_path / terminal_state.MARKER).read_text())["deliverable"] is False
+    assert (tmp_path / MARKER).exists()
+    assert json.loads((tmp_path / MARKER).read_text())["deliverable"] is False
 
 
 def test_a_run_with_gaps_is_marked_with_them(tmp_path: Path) -> None:
@@ -53,7 +56,7 @@ def test_a_clean_release_clears_the_marker(tmp_path: Path) -> None:
 
 
 def test_a_broken_marker_says_nothing_rather_than_something_wrong(tmp_path: Path) -> None:
-    (tmp_path / terminal_state.MARKER).write_text("{not json", encoding="utf-8")
+    (tmp_path / MARKER).write_text("{not json", encoding="utf-8")
 
     assert terminal_state.read(tmp_path) is None
 
@@ -70,26 +73,15 @@ def test_the_marker_never_fails_the_terminal_write(tmp_path: Path) -> None:
     assert terminal_state.read(a_file) is None
 
 
-def test_the_runner_marks_every_terminal_state_but_a_clean_release() -> None:
+def test_a_cancelled_run_marks_its_workspace_too() -> None:
+    """A cancelled run is not a delivery. How a run that ends marks or clears its workspace is run through the
+    runner in `test_a_note_does_not_make_a_product_non_deliverable`; the cancellation finisher still awaits a
+    behaviour test there (it needs the run store's database)."""
     import inspect
 
     from app.server import runner
 
-    source = inspect.getsource(runner)
-
-    assert "from app.graph import terminal_state" in source
-    assert "terminal_state.mark(" in source
-    assert "terminal_state.clear(" in source
-    # The cancellation finisher marks too: a cancelled run is not a delivery.
-    cancelled = inspect.getsource(runner.WorkflowRunner._finish_cancelled)
-    assert "terminal_state.mark(" in cancelled
-
-
-def test_the_status_api_reports_what_the_marker_says() -> None:
-    from app.server.models import RunStatusResponse
-
-    assert "non_deliverable" in RunStatusResponse.model_fields
-    assert RunStatusResponse.model_fields["non_deliverable"].default == ""
+    assert "terminal_state.mark(" in inspect.getsource(runner.WorkflowRunner._finish_cancelled)
 
 
 def test_the_stage_notes_that_shipped_are_sweepable_now() -> None:

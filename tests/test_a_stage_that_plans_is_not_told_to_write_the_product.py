@@ -7,8 +7,9 @@ writing the product and spent its attempts listing an empty directory.
 
 from __future__ import annotations
 
-import inspect
 import re
+
+import pytest
 
 from app.agents import principal_architect, project_layout, scrum_master, technical_lead
 
@@ -23,19 +24,31 @@ def test_the_planning_note_names_the_directory_and_writes_nothing():
     assert not BANNED.search(note)
 
 
-def test_the_planning_stages_use_it_and_not_the_writing_one():
-    for builder in (
-        principal_architect.build_architecture_request,
-        principal_architect.build_architecture_revision_request,
-        technical_lead.build_milestone_planning_request,
-        scrum_master.build_sprint_planning_request,
-    ):
-        source = inspect.getsource(builder)
-        assert "PLANNED_PROJECT_DIRECTORY" in source, builder.__name__
-        assert "Run `ls` FIRST" not in source, builder.__name__
+def _the_workspace_and_the_brief():
+    from app.documents import DocumentContent
+    from app.state import RepositoryContext
+
+    return (RepositoryContext(root_path="/w", branch="main", commit="abc", status="clean"),
+            DocumentContent(source_path="brief.md", source_type="markdown", text="Notes.", truncated=False))
 
 
-def test_the_sprint_plan_request_carries_it():
-    body = scrum_master.build_sprint_planning_request("spec", "/w")["messages"][0]["content"]
+def _architecture():
+    return principal_architect.build_architecture_request("intake", "tools", "stack", *_the_workspace_and_the_brief())
 
-    assert project_layout.PLANNED_PROJECT_DIRECTORY in body and "Run `ls` FIRST" not in body
+
+def _architecture_revision():
+    return principal_architect.build_architecture_revision_request(
+        "spec", ["name the routes"], "intake", "tools", "stack", *_the_workspace_and_the_brief())
+
+
+@pytest.mark.parametrize("request_of", [
+    _architecture,
+    _architecture_revision,
+    lambda: technical_lead.build_milestone_planning_request("plan", "Users can keep notes", "/w"),
+    lambda: scrum_master.build_sprint_planning_request("spec", "/w"),
+], ids=["architect", "architect's revision", "technical lead", "sprint planner"])
+def test_each_planning_stage_is_told_where_the_product_lives_and_not_to_write_it(request_of):
+    told = "\n".join(str(message["content"]) for message in request_of()["messages"])
+
+    assert "ONE project directory" in told and "writes none of the product's files" in told
+    assert "Run `ls` FIRST" not in told

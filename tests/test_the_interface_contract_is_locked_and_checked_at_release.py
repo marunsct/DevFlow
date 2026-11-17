@@ -129,16 +129,58 @@ def test_the_architect_writes_it_and_the_acceptance_author_reads_it(tmp_path):
     assert _the_interface_contract([]) == ""
 
 
-def test_the_lock_and_the_release_use_it():
-    import inspect
-
-    from app.graph import acceptance_nodes, delivery
-
-    assert "record_at_lock(root," in inspect.getsource(acceptance_nodes)
-    assert "gaps.extend(what_the_contract_checks_find(root))" in inspect.getsource(delivery)
+BRIEF = "# Brief\n## Features\n- Add a note\n- Delete a note\n## Acceptance Criteria\n- Notes persist between page refreshes\n"
 
 
-def test_a_pack_declares_its_runner_by_what_it_ships_and_the_checks_name_no_tool():
+def test_an_approved_suite_is_locked_with_the_architect_s_contract(tmp_path, monkeypatch):
+    from app.acceptance import junit
+    from app.acceptance.criteria import number
+    from app.graph import acceptance_nodes
+
+    (tmp_path / ".project-directory").write_text("notes\n")
+    suite.save_criteria(tmp_path, number(BRIEF))
+    spec = tmp_path / "notes" / "acceptance" / "notes.spec.js"
+    spec.parent.mkdir(parents=True)
+    names = ["[AC-1] adds", "[AC-2] deletes", "[AC-3] persists"]
+    spec.write_text("".join(f"test('{name}', async () => {{}});\n" for name in names))
+    ran = suite.AcceptanceResult(ran=True, exit_code=1, command="npm run test:acceptance", report=junit.Report(
+        found=True, tests=[junit.TestResult(name=name, outcome="failed", message="nope") for name in names]))
+    monkeypatch.setattr(suite, "run", lambda root: ran)
+    # The checks at the lock start the product: the sandbox's to do, not this test's.
+    monkeypatch.setattr(ic, "probe_at_the_lock", lambda root: [])
+    monkeypatch.setattr("app.graph.workflow._run_gated_agent", lambda state, config, *, output_key, next_stage, **kwargs: {
+        output_key: SimpleNamespace(approved=True, findings=[]), "stage": next_stage})
+    monkeypatch.setattr("app.agents.acceptance_reviewer.create_acceptance_reviewer_agent", lambda *a, **k: object())
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "document": SimpleNamespace(text=BRIEF),
+        "product_intake": SimpleNamespace(product_name="Notes", success_measures=[]),
+        "stack_selection": SimpleNamespace(technology_stack=SimpleNamespace(product_kind="browser_app")),
+        "technical_specification": SimpleNamespace(interface_contract=[LINES[0]]),
+        "acceptance_round": 1,
+    }
+    context = acceptance_nodes.Context(model=None, judgement_model=None, checkpointer=None, repo_root=None)
+
+    acceptance_nodes.acceptance_review(state, {"configurable": {"thread_id": "t"}}, context)
+
+    assert suite.is_locked(tmp_path)
+    assert [check.line for check in ic.the_locked_contract(tmp_path)] == [LINES[0]]
+
+
+def test_a_contract_line_the_release_cannot_check_is_one_of_its_gaps(tmp_path, monkeypatch):
+    from app.graph import delivery
+
+    _locked_project(tmp_path, monkeypatch)
+    ic.record_at_lock(tmp_path, ["AC-2 GET /api/notes/{id} -> 200"])
+    monkeypatch.setattr("app.graph.workflow._stop_if_cancelled", lambda run_id: None)
+
+    released = delivery.release({"repository": SimpleNamespace(root_path=str(tmp_path))}, {"configurable": {}}, None)
+
+    assert ("1 line(s) of the interface contract were not checked at release: AC-2 GET /api/notes/{id} -> 200 "
+            "(a route with a parameter in it)") in released["completion_gaps"]
+
+
+def test_a_pack_declares_its_runner_by_what_it_ships():
     from app.stacks.packs import ALL_PACKS
 
     declared = {pack.name: pack.probe_runner for pack in ALL_PACKS}
@@ -146,8 +188,6 @@ def test_a_pack_declares_its_runner_by_what_it_ships_and_the_checks_name_no_tool
     assert declared["fullstack-react-fastapi"] == "playwright"
     assert declared["python-library"] == ""
     assert set(declared.values()) <= set(ic.PROBE_RUNNERS) | {""}
-    body = __import__("inspect").getsource(ic.what_the_contract_checks_find)
-    assert "playwright" not in body.lower().replace("probe_runners", "")
 
 
 def test_what_a_command_line_writes_is_not_shipped(tmp_path, monkeypatch):

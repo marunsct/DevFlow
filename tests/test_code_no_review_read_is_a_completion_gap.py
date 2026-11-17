@@ -39,7 +39,20 @@ def test_no_transcript_claims_nothing(monkeypatch):
     assert delivery._code_no_review_read(None) == []
 
 
-def test_the_release_asks_for_it():
-    import inspect
+def test_a_release_no_review_stage_read_names_it_among_its_gaps(tmp_path, monkeypatch):
+    """The run's own transcript, written as the stages ran, is what the release reads."""
+    from types import SimpleNamespace
 
-    assert "_code_no_review_read(" in inspect.getsource(delivery.release)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr("app.graph.workflow._stop_if_cancelled", lambda run_id: None)
+    for stage in ("principal_architect", "stack_setup_0", "scrum_master"):
+        transcript.record("run-x", stage, "model_request")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    released = delivery.release(
+        {"repository": SimpleNamespace(root_path=str(workspace))}, {"configurable": {"app_run_id": "run-x"}}, None,
+    )
+
+    assert released["stage"] == "complete"
+    assert any("No review read the product's code" in gap for gap in released["completion_gaps"])

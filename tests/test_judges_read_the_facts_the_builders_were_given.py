@@ -9,7 +9,6 @@ One function writes the facts; each builder and judge request ends with them.
 
 from __future__ import annotations
 
-import inspect
 import json
 import re
 from pathlib import Path
@@ -36,7 +35,7 @@ def _on(monkeypatch):
 
 def test_it_is_off_until_its_before_and_after_runs_switch_it_on(tmp_path, monkeypatch):
     monkeypatch.delenv("SHARED_FACTS")
-    assert shared_facts.ON_BY_DEFAULT is False and not shared_facts.enabled()
+    assert not shared_facts.enabled()
     assert the_facts_section(_workspace(tmp_path)) == ""
 
 
@@ -121,7 +120,8 @@ def test_the_one_shot_drafts_and_rewrites_and_the_architect_read_the_same_functi
     assert "[the facts, built=True]" in rewritten
 
 
-def test_the_new_lines_name_no_ui_control_or_unit_of_work():
-    source = inspect.getsource(shared_facts)
-    said = " ".join(re.findall(r'f?"([^"\n]*)"', source))
+def test_the_new_lines_name_no_ui_control_or_unit_of_work(tmp_path):
+    root = _workspace(tmp_path)
+    said = the_facts_section(root) + "\n".join(facts_from_the_workspace(root, built=False))
+
     assert not BANNED.search(said), BANNED.findall(said)

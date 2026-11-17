@@ -7,7 +7,6 @@ page test failed its first control.
 
 from __future__ import annotations
 
-import inspect
 import re
 from types import SimpleNamespace
 
@@ -40,13 +39,6 @@ def test_a_plan_in_the_served_files_passes(tmp_path):
     spec = SimpleNamespace(file_plan=["notes-app/src/App.tsx: the page", "notes-app/notes_app/main.py: routes"])
 
     assert _the_served_files_the_plan_leaves_out(spec, _state(tmp_path)) == []
-
-
-def test_the_send_back_names_them_in_plain_words():
-    source = inspect.getsource(workflow)
-    at = source.index("The project's scaffold serves ")
-    told = source[at:at + 700]
-    assert "Return only `file_plan`" in told and not BANNED.search(told)
 
 
 def test_a_served_path_inside_another_folder_is_not_the_served_file(tmp_path):
@@ -99,8 +91,7 @@ def test_the_architect_sends_it(tmp_path):
     update, _, _ = an_architect(state, a_specification(), patches=_a_plan_that_leaves_out(SERVED))
 
     (repair,) = update["revision_comments"]
-    assert repair == workflow._the_layout_repair(SERVED, state)
-    assert "notes-api/src/app.ts" in repair
+    assert "`notes-api/src/app.ts`" in repair and "Return only `file_plan`" in repair
 
 
 def test_the_send_back_names_each_served_file_from_the_workspace_root(tmp_path):

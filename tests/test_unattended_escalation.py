@@ -64,15 +64,29 @@ def test_a_run_that_asked_for_a_reviewer_waits_for_one(tmp_path) -> None:
     assert "error" not in update
 
 
-def test_no_escalation_routes_to_a_review_unconditionally() -> None:
-    """Every call site goes through the helper, and the helper names no review."""
-    import inspect
+def test_no_escalation_routes_to_a_review_unconditionally(tmp_path) -> None:
+    """An exhausted sprint on a run with no reviewer goes to the escalation stage, which decides; never
+    straight to a review. And no node of the graph names the sprint review as where it goes next."""
+    from pathlib import Path
 
-    from app.graph import workflow
+    from app.graph.workflow import MAX_MILESTONE_REVISIONS
+    from app.sprint import Defect, RemediationCycle
+    from workflow_nodes import a_test_round, reported
 
-    source = inspect.getsource(workflow)
-    assert source.count('stage="user_review_sprint"') == 0
-    definition = source.count("def _escalate_to_a_human(")
-    calls = source.count("_escalate_to_a_human(") - definition
-    assert definition == 1
-    assert calls >= 3, f"expected every escalation to go through the helper, found {calls}"
+    still_open = Defect(description="Saving a note returns 500", severity="major", reproduction_steps="r",
+                        expected_behavior="e", actual_behavior="a", owner="backend", affected_files=["app/server.js"])
+    spent = RemediationCycle(sprint_goal="Sprint 1", defects=[still_open], attempt=3, max_attempts=3)
+
+    update, _ = a_test_round(
+        tmp_path, [reported("Deleting a note returns 500", affected_files=["app/server.js"])],
+        state={"remediation": spent, "sprint_replan_count": MAX_MILESTONE_REVISIONS, "review_policy": {}},
+    )
+
+    assert update["stage"] == "escalation"
+    assert "Sprint 1" in update["escalation"]["error"]
+
+    graph = Path(escalation.__file__).parent
+    routed = [path.name for path in graph.glob("*.py")
+              if 'stage="user_review_sprint"' in path.read_text(encoding="utf-8")
+              or '"stage": "user_review_sprint"' in path.read_text(encoding="utf-8")]
+    assert routed == []

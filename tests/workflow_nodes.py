@@ -89,6 +89,86 @@ def a_test_round(
     return run_node("test_and_triage", made, str(tmp_path), every), calls
 
 
+def an_architect_state(tmp_path, **more: Any) -> dict[str, Any]:
+    """What the principal architect's node reads, for a TypeScript service in `notes-api/`."""
+    from app.agents.stack_selector import StackSelectorOutput, TechnologyStack
+    from app.state import RepositoryContext
+
+    (tmp_path / ".project-directory").write_text("notes-api\n")
+    (tmp_path / "notes-api").mkdir(exist_ok=True)
+    stack = TechnologyStack(language="TypeScript", framework="Hono", frontend_framework="", database="SQLite",
+                            testing_framework="node:test, Playwright", product_kind="http_api", additional_tools=[])
+    return {
+        "stack_selection": StackSelectorOutput(technology_stack=stack, rationale="As the brief asks."),
+        "document": SimpleNamespace(text="Notes over HTTP."),
+        "repository": RepositoryContext(root_path=str(tmp_path), branch="main", commit="abc", status="clean"),
+        "product_intake": {"product_name": "Notes"},
+        "tools_models": {"plan": "local"},
+        **more,
+    }
+
+
+def a_specification(**fields: Any) -> Any:
+    """A complete technical specification, with `fields` in place of its defaults."""
+    from app.agents.principal_architect import TechnicalSpecificationOutput
+
+    every = {name: ["written"] for name, field in TechnicalSpecificationOutput.model_fields.items()
+             if field.annotation == list[str]}
+    return TechnicalSpecificationOutput(**{**every, "product_scope": "Notes over HTTP.",
+                                           "file_plan": ["notes-api/src/app.ts: routes"], **fields})
+
+
+def an_architect(
+    state: dict[str, Any],
+    answer: Any,
+    *,
+    fast: bool = False,
+    patches: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], list[str], list[str]]:
+    """`principal_architect` answering `answer`: (its update, what the architect agent was asked, what any
+    section-writing call was asked). Fast delivery writes the sections with the deployment's own model."""
+    from unittest.mock import MagicMock
+
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    import json
+    import re
+
+    written: list[str] = []
+    agent_requests: list[str] = []
+
+    class Writer(BaseChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "stand-in"
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            text = str(messages[-1].content)
+            written.append(text)
+            if '{"sections"' in text:
+                reply = {"sections": ["testing"]}
+            else:
+                names = re.search(r"Its keys are exactly: ([^.]+)\.", text).group(1).split(", ")
+                reply = {name: ["written"] for name in names}
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=json.dumps(reply)))])
+
+    def gated(state, config, *, initial_request, output_key, **kwargs):
+        agent_requests.append(initial_request["messages"][-1]["content"])
+        return {output_key: answer, "stage": "architecture_review"}
+
+    every = {
+        "app.models.build_default_chat_model": lambda *args, **kwargs: Writer(),
+        "app.graph.workflow.create_principal_architect_agent": lambda **kwargs: MagicMock(),
+        "app.agents.research_brief.research_notes": lambda *args, **kwargs: "",
+        "app.graph.workflow._fast_delivery": lambda: fast,
+        "app.graph.workflow._run_gated_agent": gated,
+        **(patches or {}),
+    }
+    update = run_node("principal_architect", state, state["repository"].root_path, every)
+    return update, agent_requests, written
+
+
 #: What `build_judgement_model` hands the graph in `a_dispute`, so a test can tell
 #: the judgement model from the build model by identity.
 JUDGEMENT_MODEL = SimpleNamespace(name="the judgement model")

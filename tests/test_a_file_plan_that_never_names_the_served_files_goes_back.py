@@ -55,28 +55,49 @@ def test_a_served_path_inside_another_folder_is_not_the_served_file(tmp_path):
     assert _the_served_files_the_plan_leaves_out(spec, _state(tmp_path)) == ["src/App.tsx"]
 
 
-def test_the_layout_is_checked_first_on_a_budget_of_its_own():
+SERVED = ["notes-api/src/app.ts"]
+
+
+def _a_plan_that_leaves_out(served, **owing):
+    """The checks the node runs after a draft: the served files left out, a setting it cannot start without and
+    advice it does not answer, each as given."""
+    return {
+        "app.graph.workflow._the_served_files_the_plan_leaves_out": lambda spec, state: list(served),
+        "app.graph.workflow._settings_it_cannot_start_without": lambda spec: list(owing.get("startup", [])),
+        "app.agents.specialist_advice.what_the_specification_owes": lambda spec, advice: list(owing.get("advice", [])),
+    }
+
+
+def test_the_layout_is_checked_first_on_a_budget_of_its_own(tmp_path):
     """Measured live: the check came last in a chain sharing two repairs, both
     went to earlier problems, and a plan building where nothing served it was
     approved; 28 files were drafted there."""
-    source = inspect.getsource(workflow)
-    layout = source.index("served = [] if missing else _the_served_files_the_plan_leaves_out(")
-    assert layout < source.index("elif missing and repairs < MAX_SPECIFICATION_REPAIRS:")
-    assert layout < source.index("owed = what_the_specification_owes(")
-    assert 'update["layout_repair_count"] = layout_repairs + 1' in source
-    assert "layout_repair_count: int" in source
+    from typing import get_type_hints
+
+    from workflow_nodes import a_specification, an_architect, an_architect_state
+
+    owing = _a_plan_that_leaves_out(SERVED, startup=["PORT"], advice=["the database advice is not answered"])
+    # Ahead of the other repairs, and on its own count: the specification's repairs being spent does not stop it.
+    state = an_architect_state(tmp_path, specification_repair_count=workflow.MAX_SPECIFICATION_REPAIRS)
+    update, _, _ = an_architect(state, a_specification(), patches=owing)
+
+    assert update["stage"] == "principal_architect"
+    assert update["layout_repair_count"] == 1
+    assert update.get("specification_repair_count") is None
+    # Its own repairs spent, the draft goes on to the review.
+    state = an_architect_state(tmp_path, layout_repair_count=workflow.MAX_SPECIFICATION_REPAIRS)
+    update, _, _ = an_architect(state, a_specification(), patches=_a_plan_that_leaves_out(SERVED))
+    assert update["stage"] == "architecture_review" and update.get("layout_repair_count") is None
+    # A count the graph's state does not declare is dropped between stages, and the budget would never be spent.
+    assert "layout_repair_count" in get_type_hints(workflow.WorkflowGraphState)
 
 
-def test_the_send_back_names_each_served_file_from_the_workspace_root(tmp_path):
-    """Measured live: told "the scaffold serves `src/App.tsx`, `pkg/main.py`" with no
-    folder, the architect planned `pkg/src/App.tsx` - the page inside the service's
-    package - and two repairs later the plan still built it where nothing served it."""
-    told = workflow._the_layout_repair(["src/App.tsx", "notes_app/main.py"], _state(tmp_path))
+def test_the_architect_sends_it(tmp_path):
+    from workflow_nodes import a_specification, an_architect, an_architect_state
 
-    assert "`notes-app/src/App.tsx`" in told and "`notes-app/notes_app/main.py`" in told
-    assert "workspace root" in told
-    assert "Return only `file_plan`" in told and not BANNED.search(told)
+    state = an_architect_state(tmp_path)
+    update, _, _ = an_architect(state, a_specification(), patches=_a_plan_that_leaves_out(SERVED))
 
-
-def test_the_architect_sends_it():
-    assert "_the_layout_repair(served, state)" in inspect.getsource(workflow)
+    (repair,) = update["revision_comments"]
+    assert repair == workflow._the_layout_repair(SERVED, state)
+    assert "notes-api/src/app.ts" in repair

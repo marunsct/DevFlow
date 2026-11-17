@@ -160,11 +160,3 @@ def test_the_fix_stage_notes_what_a_finding_s_fix_starts_from_and_no_other_does(
     defect_fix_modes.begin(state, config, RemediationCycle(sprint_goal="g", defects=[finding]), 0, STAGE)
     noted = mutation_retention._forget(RUN, STAGE)
     assert noted and noted["base"] == ci.head(workspace) and noted["failing"] == {"test_broken_before"}
-
-
-def test_the_finding_s_settlement_asks_the_retention_rule_first():
-    import inspect
-
-    from app.graph import workflow
-
-    assert "mutation_retention.judged(" in inspect.getsource(workflow._a_mutation_finding_settled)

@@ -6,7 +6,6 @@ tokens, 8 to 14 minutes each, and five were cut off before they ended.
 
 from __future__ import annotations
 
-import inspect
 import json
 import re
 import threading
@@ -53,11 +52,32 @@ def test_the_other_sections_are_written_at_once_from_the_core():
     assert not BANNED.search(specification_parts.CORE_NOTE)
 
 
-def test_the_architect_is_asked_for_the_core_only_in_fast_delivery_and_not_in_a_revision():
-    source = inspect.getsource(workflow)
-    node = source[source.index("    def principal_architect_node("):source.index("    def architecture_review_node(")]
-    assert "in_parts = _fast_delivery() and not (required_changes and previous_specification is not None)" in node
-    assert node.index("with_the_parts_written(") < node.index("_incomplete_specification_sections(")
+def test_the_architect_is_asked_for_the_core_only_in_fast_delivery_and_not_in_a_revision(tmp_path):
+    from app.agents.architecture_reviewer import ArchitectureReviewFinding, ArchitectureReviewOutput
+    from app.graph.specification_parts import CORE_NOTE
+    from workflow_nodes import a_specification, an_architect, an_architect_state
+
+    core = a_specification(testing=[], configuration=[], deployment=[])
+
+    # Fast delivery: the architect is asked for the core, and the rest is written before the draft is judged
+    # complete - so a core alone is not sent back for the sections the parts write.
+    update, asked, written = an_architect(an_architect_state(tmp_path), core, fast=True)
+    assert CORE_NOTE in asked[0] and written
+    assert update["stage"] == "architecture_review"
+    assert update["technical_specification"].testing == ["written"]
+
+    # Thorough delivery: the whole specification.
+    _, asked, written = an_architect(an_architect_state(tmp_path), a_specification())
+    assert CORE_NOTE not in asked[0] and not written
+
+    # A revision the architect makes itself is of the whole specification, in either mode.
+    review = ArchitectureReviewOutput(status="changes_required", findings=[ArchitectureReviewFinding(
+        severity="major", description="The testing section is thin.", evidence="testing", required_remediation="More.")])
+    revising = an_architect_state(tmp_path, technical_specification=a_specification(), architecture_review=review,
+                                  architecture_revision_count=1, architecture_review_applied=0)
+    _, asked, written = an_architect(revising, a_specification(), fast=True, patches={
+        "app.graph.specification_parts.revised_in_place": lambda *args, **kwargs: None})
+    assert CORE_NOTE not in asked[0] and not written
 
 
 def test_with_no_model_named_the_parts_are_written_on_the_deployment_s_own(monkeypatch):

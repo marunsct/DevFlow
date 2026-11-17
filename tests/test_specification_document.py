@@ -114,10 +114,13 @@ def test_the_reviewer_knows_remediations_are_field_changes():
     assert "never an instruction to edit a file" in flat
 
 
-def test_the_workflow_renders_it():
-    from pathlib import Path
+def test_the_workflow_renders_it(tmp_path):
+    """The architect's answer reaches readers as `docs/technical_specification.md`, rendered from its fields."""
+    from workflow_nodes import a_specification, an_architect, an_architect_state
 
-    workflow = (Path(__file__).resolve().parent.parent / "src/app/graph/workflow.py").read_text()
+    answer = a_specification(product_scope="A notes service that keeps every note until it is deleted.")
+    an_architect(an_architect_state(tmp_path), answer)
 
-    assert "render_specification(" in workflow
-    assert '"docs/technical_specification.md"' in workflow
+    document = (tmp_path / "docs" / "technical_specification.md").read_text(encoding="utf-8")
+    assert document == render_specification(answer, "")
+    assert "A notes service that keeps every note until it is deleted." in document

@@ -101,6 +101,11 @@ def test_with_the_switch_off_it_is_asked_once(monkeypatch):
     assert written.function_contracts == [] and len(model.asked) == 1
 
 
-def test_the_architect_s_request_carries_the_standard():
-    source = (Path(__file__).resolve().parent.parent / "src" / "app" / "graph" / "workflow.py").read_text()
-    assert "naming = standard_for(" in source
+def test_the_architect_s_request_carries_the_standard(tmp_path):
+    from workflow_nodes import a_specification, an_architect, an_architect_state
+
+    state = an_architect_state(tmp_path)
+    _, asked, _ = an_architect(state, a_specification())
+
+    standard = naming.standard_for(state["stack_selection"].technology_stack)
+    assert standard and standard in asked[0]

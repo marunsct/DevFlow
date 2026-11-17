@@ -110,15 +110,13 @@ class TestItCannotReachOutsideTheWorkspace:
 
 
 class TestItIsWiredIntoRead:
-    def test_read_tries_the_corrected_path_before_erroring(self):
-        import inspect
-
+    def test_a_read_with_an_invented_prefix_is_served_the_file(self, workspace):
         from app.agents.workspace_backend import WorkspaceBackend
 
-        source = inspect.getsource(WorkspaceBackend.read)
-        correction = source.index("_the_one_path_it_meant")
-        hint = source.index("_where_it_actually_is")
-        assert correction < hint, "the file should be read before explaining where it is"
+        read = WorkspaceBackend(str(workspace), virtual_mode=True).read("/home/user/workspace/task-manager/app.js")
+
+        assert not read.error
+        assert "export const a = 1;" in str(read.file_data)
 
 
 class TestTheHarnessesOwnRecordsAreNotCandidates:

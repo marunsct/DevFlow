@@ -124,15 +124,15 @@ def test_a_suite_that_never_settles_is_still_bounded() -> None:
     assert "the suite is not settling" in str(raised.value)
 
 
-def test_the_ceiling_is_derived_from_the_budget() -> None:
+@pytest.mark.parametrize(("attempts", "rounds_allowed"), [(2, 4), (5, 10)])
+def test_the_ceiling_follows_the_sprint_s_attempts(attempts, rounds_allowed) -> None:
     """A second copy of the number is how two limits drift apart."""
-    import inspect
+    cycle = start_remediation("a sprint", max_attempts=attempts)
+    for _ in range(rounds_allowed):
+        cycle = _round(cycle, [_defect("ui.pw.test.mjs")])
 
-    from app import sprint
-
-    source = inspect.getsource(sprint)
-
-    assert "cycle.max_attempts * ROUNDS_PER_ATTEMPT_CEILING" in source
+    with pytest.raises(RemediationLimitExceeded):
+        _round(cycle, [_defect("ui.pw.test.mjs")])
 
 
 def test_a_passing_round_still_clears_nothing_unexpected() -> None:

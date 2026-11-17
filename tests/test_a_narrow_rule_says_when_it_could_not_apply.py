@@ -190,10 +190,10 @@ def test_a_body_probe_refused_at_sign_in_is_counted(run):
 def test_a_test_run_in_a_summary_no_runner_reads_is_counted(run, tmp_path):
     workspace = tmp_path / "product-workspace"
     workspace.mkdir()
-    result = {"returncode": 0, "stdout": "[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0\n", "stderr": ""}
-    sandbox._record_execution(str(workspace), "qa", ["mvn", "test"], result, category="test")
+    result = {"returncode": 0, "stdout": "Build Summary: 3/3 steps succeeded; 5/5 tests passed\n", "stderr": ""}
+    sandbox._record_execution(str(workspace), "qa", ["zig", "build", "test"], result, category="test")
     notes = _noted(run, rule_coverage.RUNNER_TOTALS)
-    assert len(notes) == 1 and "`mvn test` printed no totals" in notes[0]["why"]
+    assert len(notes) == 1 and "`zig build test` printed no totals" in notes[0]["why"]
 
 
 def test_a_test_run_a_runner_reads_or_a_command_that_is_not_a_test_is_not_counted(run, tmp_path):
@@ -201,6 +201,8 @@ def test_a_test_run_a_runner_reads_or_a_command_that_is_not_a_test_is_not_counte
     workspace.mkdir()
     read = {"returncode": 0, "stdout": "===== 5 passed in 0.12s =====\n", "stderr": ""}
     sandbox._record_execution(str(workspace), "qa", ["pytest"], read, category="test")
+    maven = {"returncode": 0, "stdout": "[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0\n", "stderr": ""}
+    sandbox._record_execution(str(workspace), "qa", ["mvn", "test"], maven, category="test")
     sandbox._record_execution(str(workspace), "qa", ["npm", "install"], {"returncode": 0, "stdout": "added 3"},
                               category="install")
     sandbox._record_execution(str(workspace), "qa", ["mvn", "test"], {"returncode": None, "error": "not found"},

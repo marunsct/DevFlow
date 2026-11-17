@@ -3724,6 +3724,59 @@ _RUNNER_TOTALS: tuple[tuple[str, re.Pattern[str], re.Pattern[str]], ...] = (
 )
 
 
+def _maven(text: str) -> tuple[int, int] | None:
+    """Surefire's totals: the run's own line under "Results:", or, when quiet printed only the lines per class
+    (each ending "-- in <class>"), their sum. Errors are failures too; skipped tests are neither."""
+    found = [(m.group(0), [int(n) for n in m.groups()]) for m in _MAVEN.finditer(text)]
+    if not found:
+        return None
+    whole = [counts for line, counts in found if " -- in " not in line]
+    rows = whole[-1:] or [counts for _, counts in found]
+    run, failures, errors, skipped = (sum(column) for column in zip(*rows))
+    return max(run - failures - errors - skipped, 0), failures + errors
+
+
+def _dotnet(text: str) -> tuple[int, int] | None:
+    """`dotnet test`'s line per test project - "Failed!  - Failed:  1, Passed:  3, ..." - summed."""
+    found = _DOTNET.findall(text)
+    return (sum(int(p) for _, p in found), sum(int(f) for f, _ in found)) if found else None
+
+
+def _rspec(text: str) -> tuple[int, int] | None:
+    """RSpec's "23 examples, 14 failures, 2 pending"; an error outside the examples is a failure."""
+    found = _RSPEC.search(text)
+    if not found:
+        return None
+    examples, failures, pending, outside = (int(n or 0) for n in found.groups())
+    return max(examples - failures - pending, 0), failures + outside
+
+
+def _phpunit(text: str) -> tuple[int, int] | None:
+    """PHPUnit's "OK (48 tests, 90 assertions)", or "Tests: 10, Assertions: 20, Errors: 1, Failures: 2, ..."."""
+    ok = _PHPUNIT_OK.search(text)
+    if ok:
+        return int(ok.group(1)), 0
+    found = _PHPUNIT.search(text)
+    if not found:
+        return None
+    counts = {name: int(n) for name, n in re.findall(r"(\w+):\s*(\d+)", found.group(0))}
+    failed = counts.get("Errors", 0) + counts.get("Failures", 0)
+    left_out = counts.get("Skipped", 0) + counts.get("Incomplete", 0)
+    return max(counts.get("Tests", 0) - failed - left_out, 0), failed
+
+
+_MAVEN = re.compile(r"Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)[^\n]*")
+_DOTNET = re.compile(r"(?:Passed|Failed)!\s+-\s+Failed:\s+(\d+),\s+Passed:\s+(\d+)")
+_RSPEC = re.compile(r"\b(\d+) examples?, (\d+) failures?(?:, (\d+) pending)?(?:, (\d+) errors? occurred outside of examples)?")
+_PHPUNIT_OK = re.compile(r"^OK \((\d+) tests?, \d+ assertions?\)", re.M)
+_PHPUNIT = re.compile(r"^Tests: \d+, Assertions: \d+(?:, \w+: \d+)*\.", re.M)
+
+#: The runners whose summaries are counted rather than matched by one pattern each: their totals are a sum or a
+#: difference of several numbers. Read after `_RUNNER_TOTALS`, whose lines none of them prints. Measured by the
+#: rule-coverage counter (LR.46) across the language sweep: Maven and .NET runs were recorded with no counts.
+_COUNTED_RUNNERS = (("maven", _maven), ("dotnet", _dotnet), ("rspec", _rspec), ("phpunit", _phpunit))
+
+
 def _the_counts_a_test_run_reported(result: dict) -> dict:
     """`{"passed": n, "failed": n, "tests": n}` from TAP output, or `{}`.
 
@@ -3774,6 +3827,10 @@ def _the_first_runner_s_totals(text: str) -> dict:
         if ok == 0 and bad == 0:
             continue
         return {"passed": ok, "failed": bad, "tests": ok + bad}
+    for _, read in _COUNTED_RUNNERS:
+        counted = read(text)
+        if counted and any(counted):
+            return {"passed": counted[0], "failed": counted[1], "tests": counted[0] + counted[1]}
     return {}
 
 
@@ -3874,7 +3931,8 @@ def _count_a_test_run_whose_totals_were_not_read(command: Sequence[str], result:
     shown = " ".join(str(part) for part in list(command)[:3])[:80]
     rule_coverage.could_not_apply(
         rule_coverage.RUNNER_TOTALS,
-        f"`{shown}` printed no totals in a form read (TAP, {', '.join(name for name, _, _ in _RUNNER_TOTALS)})",
+        f"`{shown}` printed no totals in a form read (TAP, "
+        f"{', '.join([*(name for name, _, _ in _RUNNER_TOTALS), *(name for name, _ in _COUNTED_RUNNERS)])})",
     )
 
 

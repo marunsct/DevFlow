@@ -33,7 +33,8 @@ CHECKS: dict[str, str] = {
     ACTION_VERBS: "user actions read from a closed list of verbs in the criteria's lists",
     FIELDS_GIVEN_WITH: "fields read from the words after 'add/create/enter ... with', answered from page controls",
     CONTRACT_SIGN_IN: "the contract probes sign in by a POST path's name and send the answer's token as a Bearer header",
-    RUNNER_TOTALS: "a test run's totals read from TAP, jest, vitest, pytest, playwright, cargo and go summaries",
+    RUNNER_TOTALS: ("a test run's totals read from TAP, jest, vitest, pytest, playwright, cargo, go, Maven, .NET, RSpec "
+                    "and PHPUnit summaries"),
 }
 
 #: Characters of a reason kept: enough to name the input, short enough for an audit line.

@@ -88,26 +88,29 @@ def test_the_reconciliation_names_no_tool() -> None:
         assert tool not in lowered, f"the stack note hardcodes `{tool}`"
 
 
-@pytest.mark.parametrize(
-    "builder",
-    ("build_specialist_task_request", "build_test_run_request", "build_defect_fix_request"),
-)
-def test_every_stage_in_the_loop_is_told(builder: str) -> None:
-    """The specialist wrote it, the test round objected, the defect fix removed it.
-
-    All three take `describe_stack`, so all three must carry the reconciliation;
-    telling only the specialist would leave the objection coming back.
-    """
-    import inspect
-
+def _requests(root) -> dict[str, str]:
+    """What each stage of the loop is asked, for the `Stack` above."""
     from app.agents import specialists
 
-    source = inspect.getsource(getattr(specialists, builder))
+    made = {
+        "specialist": specialists.build_specialist_task_request("Build the list", ["It lists"], str(root), stack=Stack()),
+        "test round": specialists.build_test_run_request("The list works", ["app.js"], str(root), stack=Stack()),
+        "defect fix": specialists.build_defect_fix_request(
+            "The list is empty", "Open the page", "It lists", "Nothing", ["app.js"], False, str(root), stack=Stack()),
+    }
+    return {stage: " ".join(m["content"] for m in request["messages"]) for stage, request in made.items()}
 
-    assert "describe_stack(stack" in source, (
-        f"{builder} no longer includes the stack note, so it would not receive "
-        "the reconciliation either"
-    )
+
+@pytest.mark.parametrize("stage", ["specialist", "test round", "defect fix"])
+def test_every_stage_in_the_loop_is_told(stage: str, tmp_path) -> None:
+    """The specialist wrote it, the test round objected, the defect fix removed it.
+
+    All three carry the stack note, so all three must carry the reconciliation;
+    telling only the specialist would leave the objection coming back.
+    """
+    asked = " ".join(_requests(tmp_path)[stage].split())
+
+    assert "not a deviation from this stack" in asked and "run both suites" in asked
 
 
 def test_the_mandate_a_stage_reads_really_does_require_the_runner() -> None:
@@ -129,21 +132,16 @@ def test_the_mandate_a_stage_reads_really_does_require_the_runner() -> None:
     assert "npm i -D @playwright/test" in SEED_INSTRUCTIONS["html:setup"]
 
 
-def test_the_specialist_prompt_carries_the_mandate() -> None:
+def test_the_specialist_prompt_carries_the_mandate(tmp_path) -> None:
     """Both halves of the contradiction have to reach one stage.
 
     The rule is in the system prompt and the stack note is in the request; a
     specialist reads both, which is why the reconciliation has to be in one of
     them rather than left to inference.
     """
-    import inspect
-
     from app.agents import specialists
-
-    module = inspect.getsource(specialists)
-
     from app.agents.testability import TESTABILITY_RULE
 
     # Every builder's system prompt carries the rule (the suite writer's does not: its request owns no product code).
     assert TESTABILITY_RULE in specialists._system_prompt("backend")
-    assert "describe_stack(stack" in module
+    assert "not a deviation from this stack" in " ".join(_requests(tmp_path)["specialist"].split())

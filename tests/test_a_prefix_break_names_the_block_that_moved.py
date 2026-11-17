@@ -48,8 +48,30 @@ def test_the_diagnosis_is_said_in_the_transcript():
     assert source.count('"model_diagnostic"') >= 3
 
 
-def test_a_resume_writes_its_record_again():
-    from app.server import runner
+def test_a_resume_writes_its_record_again(tmp_path, monkeypatch):
+    """Through `resume_run` on a failed run's row (held in memory: no database here); the transcript is read back."""
+    import asyncio
+    from types import SimpleNamespace
 
-    source = inspect.getsource(runner.WorkflowRunner.resume_run)
-    assert '"resumed"' in source and "note_in_transcript(run_id" in source
+    from app.observability.transcript import read_transcript
+    from app.server.runner import WorkflowRunner
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    (tmp_path / "transcripts").mkdir()
+    record = SimpleNamespace(run_id="run-x", status="failed", error="", repo_root="")
+
+    def compare_and_set_status(run_id, expected, new, **kwargs):
+        if record.status != expected:
+            return False
+        record.status = new
+        return True
+
+    runner = object.__new__(WorkflowRunner)
+    runner.run_store = SimpleNamespace(load=lambda run_id: record, compare_and_set_status=compare_and_set_status,
+                                       clear_stop=lambda run_id: None)
+    monkeypatch.setattr(WorkflowRunner, "_dispatch", lambda self, run_id, **kwargs: None)
+    monkeypatch.setattr(WorkflowRunner, "_require_a_reachable_model", lambda self, *a, **k: None)
+
+    asyncio.run(runner.resume_run("run-x"))
+
+    assert [r["kind"] for r in read_transcript("run-x")] == ["resumed"]

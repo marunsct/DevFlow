@@ -88,7 +88,8 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
    a changed Spring Boot version left every offline build, the start too, on "Unknown host".
    The WORKER IS IN CONTAINER MODE (COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.sandbox.yml);
    a plain `loop.sh deploy` would undo it.
-2. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
+2. Live: LR.30 container-mode Go run 1, run-666e030f-1c7d-4830-bf58-b9594f31ac4a (:1234, 15:28), on eafec33a.
+3. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).
 4. When no fix is pending for a full audit cycle: freeze and start the LR.20 batch.

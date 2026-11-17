@@ -3922,6 +3922,11 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
 
         rc = _exit_code(outcome)
         output = str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "")
+        # What the sandbox said instead, when the command ended without a code of its own: measured on one Go run, a
+        # unit run held to its time limit came back as "Command timed out after 300 seconds" and nothing else, and
+        # the defect said the runner's output ended "(no output)" - no fixer was told a test never returned.
+        if outcome.get("error"):
+            output = (output.rstrip() + "\n" + str(outcome["error"])).strip()
         if rc != 0:
             output = (output.rstrip() + "\n" + _what_the_unit_reports_say(reports)).strip()
         _keep_the_unit_run(repo_root, cmd, rc == 0, output)

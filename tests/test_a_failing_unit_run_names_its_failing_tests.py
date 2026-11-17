@@ -89,3 +89,15 @@ def test_a_run_the_sandbox_answers_as_text_passes(tmp_path, monkeypatch) -> None
         failed, _ = _run_unit_tests_procedurally(str(tmp_path))
 
     assert passed is True and failed is False
+
+
+def test_a_unit_run_held_to_its_time_limit_says_so(tmp_path) -> None:
+    """Measured on one Go run: the sandbox ended a unit run that never returned, and the defect said "(no output)"."""
+    _project(tmp_path)
+    said = "Command timed out after 300 seconds. A test that starts a server and never stops it waits forever."
+
+    with patch("app.stacks.scaffold.sandbox_runner", return_value=lambda *a: {"error": said}):
+        passed, output = _run_unit_tests_procedurally(str(tmp_path))
+
+    assert passed is False
+    assert said in output

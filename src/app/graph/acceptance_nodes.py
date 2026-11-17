@@ -107,7 +107,10 @@ ACCEPTANCE_REVIEW = "acceptance_tests"
 
 @dataclass
 class Context:
-    """What every node of the run is built with."""
+    """The fields the stages here read from their context.
+
+    The graph passes them `app.graph.context.GraphContext`, which has every one;
+    this is the smaller shape a test builds by hand."""
 
     model: Any
     judgement_model: Any

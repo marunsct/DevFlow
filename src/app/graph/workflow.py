@@ -9448,9 +9448,10 @@ def build_workflow_graph(
             logger.warning("Could not set up gathering on the build model", exc_info=True)
 
     # What every node is built with. The nodes in `app.graph.nodes` take it as
-    # their last argument; see `_a_node`.
+    # their last argument (`_a_node`), and so do the stages kept in their own
+    # modules (`_a_stage`).
     from app.graph.context import GraphContext
-    from app.graph.nodes import planning, reviews
+    from app.graph.nodes import closing, gates, planning, reviews
 
     ctx = GraphContext(
         model=model,
@@ -9519,16 +9520,6 @@ def build_workflow_graph(
             or int(state.get("escalation_count") or 0) >= 1
         )
         return judgement_model if retried else model
-
-    def user_review_product_intake_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return _run_review_gate(
-            state,
-            config,
-            review_point=PRODUCT_INTAKE_REVIEW,
-            artifact_id="product-intake",
-            approved_next="tools_models",
-            changes_next="product_manager",
-        )
 
     def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         missing = _missing_upstream(state, "product_intake", "tools_models")
@@ -9915,16 +9906,6 @@ def build_workflow_graph(
             else:
                 update["stage"] = "principal_architect"
         return update
-
-    def user_review_specification_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return _run_review_gate(
-            state,
-            config,
-            review_point=SPECIFICATION_REVIEW,
-            artifact_id="technical-specification",
-            approved_next="scaffold",
-            changes_next="principal_architect",
-        )
 
     def _the_specification_s_work_orders(state: Any, goal: str) -> Any:
         """Fast delivery's plan for the sprint, made from the specification; None for the lead."""
@@ -12433,144 +12414,9 @@ def build_workflow_graph(
 
         return _handing_on(**accepted, stage=next_stage, milestone_review=review)
 
-    def user_review_sprint_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        sprint_index = state.get("current_sprint_index", 0)
-        sprints = state.get("sprint_plan").sprints if state.get("sprint_plan") else []
-        has_more_sprints = sprint_index < len(sprints) - 1
-        
-        return _run_review_gate(
-            state,
-            config,
-            review_point=SPRINT_REVIEW,
-            artifact_id="sprint-milestone",
-            approved_next="sprint_advance" if has_more_sprints else "release",
-            # A requested change becomes a change request with its own
-            # acceptance test before the sprint is planned again. See
-            # `app.graph.delivery.change_request`.
-            changes_next="change_request",
-        )
-
-    def sprint_advance_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        summary = _record_sprint_summary(state, "Completed")
-        # The best product of the sprint just accepted is not the next sprint's: found in a code review, its record
-        # stayed, and the next sprint's first batch was undone for passing fewer tests than the last one's best.
-        from app.graph import best_attempt
-
-        if state.get("repository") is not None:
-            best_attempt.forget(state["repository"].root_path)
-        # What this sprint hands the next one's lead: findings it neither fixed
-        # nor was blocked by, and what failed repeatedly. See `app.sprint.record`.
-        latest = (summary.get("sprint_attempts") or [{}])[-1]
-        return {
-            **summary,
-            "carried_forward": list(latest.get("carried_forward") or []),
-            "lessons": list(latest.get("lessons") or []),
-            "sprint_findings": [],
-            "review_advice": [],
-            "nothing_left_but_carried": None,
-            "stage": "technical_lead",
-            "current_sprint_index": state.get("current_sprint_index", 0) + 1,
-            # clear previous sprint's milestone state so it doesn't pollute the next sprint
-            "milestone_plan": None,
-            "specialist_outputs": {},
-            "remediation": None,
-            "defect_cursor": 0,
-            "test_round": 0,
-            "revision_comments": [],
-            "milestone_revision_count": 0,
-            "sprint_replan_count": 0,
-            "sprint_best_history": [],
-        }
-
-    def complete_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
-        """The run is done - and the sprint that finished it needs its summary.
-
-        Only `sprint_advance_node` recorded one, and the last sprint never
-        advances: it routes straight here. So a three-sprint plan wrote
-        `sprint_1` and `sprint_2` and stopped, and the sprint that actually
-        delivered the product was the one with nothing to show for it.
-        """
-        if _sprint_already_summarised(state):
-            _commit_the_last_records(state["repository"].root_path)
-            return {"stage": "complete"}
-        summary = _record_sprint_summary(state, "Completed")
-        _commit_the_last_records(state["repository"].root_path)
-        return {**summary, "stage": "complete"}
-
-    def failed_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
-        """Terminal failure - always with a reason, even when nothing set one.
-
-        Every deliberate route to this node carries an `error`. One route does
-        not, and cannot: `_owning_node` answers `"failed"` for a stage no node
-        owns, which is what stops an unrecognised stage raising `KeyError` inside
-        LangGraph and taking the run down. It is a router. It has no state to
-        write a reason to.
-
-        So the run arrived here with `error` unset, and the runner records
-        `record.error = state.get("error")` - leaving a row that says `failed`
-        and nothing else. One run is one of those: 73 minutes of work,
-        approvals answered every 30 seconds, then `failed` at 11:53 with a null
-        error, no event and no way to tell what had happened. Diagnosing it
-        started by ruling out the three causes it was not.
-
-        `stage` still holds whatever routed here - nothing has overwritten it yet
-        - so the reason can name it.
-        """
-        if str(state.get("error") or "").strip():
-            return {"stage": "failed"}
-
-        routed_from = str(state.get("stage") or "").strip()
-        if routed_from and routed_from != "failed":
-            reason = (
-                f"The run was routed to failure from stage '{routed_from}', which no "
-                "node owns, so nothing recorded why.\n\n"
-                "A stage value is set either by a node handing on or by a resume "
-                "reading the checkpoint. One that no node answers for means a stage "
-                "name was written that the graph has no node for - check "
-                "`_NODE_NAMES`, `_ITERATED_STAGE_OWNERS` and whatever last set "
-                "`stage`. The work already done is on disk and the checkpoint is "
-                "intact."
-            )
-        else:
-            reason = (
-                "The run reached its failure state without recording a reason. "
-                "Every deliberate failure names one, so this is a route that does "
-                "not - the stage it came from is in the run's events and its "
-                "transcript."
-            )
-        logger.error("Run failed with no reason recorded; routed from %r", routed_from)
-        return {"stage": "failed", "error": reason}
-
     # The stages between an approved architecture and the sprint plan, and the
     # QA lead's review. See `app.graph.acceptance_nodes`.
     from app.graph import acceptance_nodes
-
-    stage_context = acceptance_nodes.Context(
-        model=model,
-        judgement_model=judgement_model,
-        checkpointer=shared_checkpointer,
-        repo_root=repo_root,
-        allow_subdirectories=allow_subdirectories,
-    )
-
-    def scaffold_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return acceptance_nodes.scaffold(state, config, stage_context)
-
-    def acceptance_author_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return acceptance_nodes.acceptance_author(state, config, stage_context)
-
-    def acceptance_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return acceptance_nodes.acceptance_review(state, config, stage_context)
-
-    def user_review_acceptance_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return _run_review_gate(
-            state,
-            config,
-            review_point=ACCEPTANCE_REVIEW,
-            artifact_id="acceptance-tests",
-            approved_next="scrum_master",
-            changes_next="acceptance_author",
-        )
 
     # Shipping: the release gate and change requests. See `app.graph.delivery`.
     from app.graph import delivery
@@ -12579,49 +12425,8 @@ def build_workflow_graph(
     # `app.graph.engineering`.
     from app.graph import engineering
 
-    def ci_gate_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return engineering.ci_gate(state, config, stage_context)
-
-    def code_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return engineering.code_review(state, config, stage_context)
-
     # The last rung of the ladder. See `app.graph.escalation`.
     from app.graph import escalation as stuck
-
-    def escalation_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return stuck.escalation(state, config, stage_context)
-
-    def escalation_accept_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return stuck.accept(state, config, stage_context)
-
-    def escalation_retry_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return stuck.retry(state, config, stage_context)
-
-    def user_review_escalation_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return _run_review_gate(
-            state,
-            config,
-            review_point=ESCALATION_REVIEW,
-            artifact_id="escalation",
-            approved_next="escalation_accept",
-            changes_next="escalation_retry",
-        )
-
-    def change_request_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return delivery.change_request(state, config, stage_context)
-
-    def release_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return delivery.release(state, config, stage_context)
-
-    def user_review_release_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        return _run_review_gate(
-            state,
-            config,
-            review_point=RELEASE_REVIEW,
-            artifact_id="release",
-            approved_next="complete",
-            changes_next="change_request",
-        )
 
     graph = StateGraph(WorkflowGraphState)
     # Every stage snapshots the workspace as it starts, so a run can be
@@ -12647,17 +12452,17 @@ def build_workflow_graph(
     )
 
     graph.add_node("product_manager", _a_node(planning.product_manager_node, ctx), retry_policy=agent_retry_policy)
-    graph.add_node("user_review_product_intake", user_review_product_intake_node)
+    graph.add_node("user_review_product_intake", gates.user_review_product_intake_node)
     graph.add_node("tools_models", _a_node(planning.tools_models_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("stack_selector", _a_node(planning.stack_selector_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("specialist_consultation", _a_node(planning.specialist_consultation_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("principal_architect", principal_architect_node, retry_policy=agent_retry_policy)
     graph.add_node("architecture_review", architecture_review_node, retry_policy=agent_retry_policy)
-    graph.add_node("user_review_specification", user_review_specification_node)
-    graph.add_node("scaffold", scaffold_node, retry_policy=agent_retry_policy)
-    graph.add_node("acceptance_author", acceptance_author_node, retry_policy=agent_retry_policy)
-    graph.add_node("acceptance_review", acceptance_review_node, retry_policy=agent_retry_policy)
-    graph.add_node("user_review_acceptance", user_review_acceptance_node)
+    graph.add_node("user_review_specification", gates.user_review_specification_node)
+    graph.add_node("scaffold", _a_stage(acceptance_nodes, "scaffold", ctx), retry_policy=agent_retry_policy)
+    graph.add_node("acceptance_author", _a_stage(acceptance_nodes, "acceptance_author", ctx), retry_policy=agent_retry_policy)
+    graph.add_node("acceptance_review", _a_stage(acceptance_nodes, "acceptance_review", ctx), retry_policy=agent_retry_policy)
+    graph.add_node("user_review_acceptance", gates.user_review_acceptance_node)
     graph.add_node("scrum_master", _a_node(planning.scrum_master_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("technical_lead", technical_lead_node, retry_policy=agent_retry_policy)
     graph.add_node("specialist_dispatch", specialist_dispatch_node, retry_policy=agent_retry_policy)
@@ -12667,8 +12472,8 @@ def build_workflow_graph(
     # here and LangGraph runs the target once for the whole superstep,
     # which is what gives the fan-out a single writer for `stage`.
     graph.add_edge("specialist_worker", "specialist_gather")
-    graph.add_node("ci_gate", ci_gate_node)
-    graph.add_node("code_review", code_review_node, retry_policy=agent_retry_policy)
+    graph.add_node("ci_gate", _a_stage(engineering, "ci_gate", ctx))
+    graph.add_node("code_review", _a_stage(engineering, "code_review", ctx), retry_policy=agent_retry_policy)
     graph.add_node("test_and_triage", test_and_triage_node, retry_policy=agent_retry_policy)
     graph.add_node("defect_remediation", defect_remediation_node, retry_policy=agent_retry_policy)
     graph.add_node("defect_fix_worker", defect_fix_worker_node, retry_policy=agent_retry_policy)
@@ -12682,17 +12487,17 @@ def build_workflow_graph(
     graph.add_edge("review_worker", "review_gather")
     graph.add_node("acceptance_dispute", _a_node(reviews.acceptance_dispute_node, ctx), retry_policy=agent_retry_policy)
     graph.add_node("milestone_review", milestone_review_node, retry_policy=agent_retry_policy)
-    graph.add_node("user_review_sprint", user_review_sprint_node)
-    graph.add_node("sprint_advance", sprint_advance_node)
-    graph.add_node("change_request", change_request_node)
-    graph.add_node("escalation", escalation_node)
-    graph.add_node("user_review_escalation", user_review_escalation_node)
-    graph.add_node("escalation_accept", escalation_accept_node)
-    graph.add_node("escalation_retry", escalation_retry_node)
-    graph.add_node("release", release_node)
-    graph.add_node("user_review_release", user_review_release_node)
-    graph.add_node("complete", complete_node)
-    graph.add_node("failed", failed_node)
+    graph.add_node("user_review_sprint", gates.user_review_sprint_node)
+    graph.add_node("sprint_advance", closing.sprint_advance_node)
+    graph.add_node("change_request", _a_stage(delivery, "change_request", ctx))
+    graph.add_node("escalation", _a_stage(stuck, "escalation", ctx))
+    graph.add_node("user_review_escalation", gates.user_review_escalation_node)
+    graph.add_node("escalation_accept", _a_stage(stuck, "accept", ctx))
+    graph.add_node("escalation_retry", _a_stage(stuck, "retry", ctx))
+    graph.add_node("release", _a_stage(delivery, "release", ctx))
+    graph.add_node("user_review_release", gates.user_review_release_node)
+    graph.add_node("complete", closing.complete_node)
+    graph.add_node("failed", closing.failed_node)
 
     graph.add_conditional_edges(START, _entry_router, {name: name for name in _NODE_NAMES})
 
@@ -12873,6 +12678,23 @@ def _a_node(action: Any, ctx: Any) -> Any:
     node.__name__ = getattr(action, "__name__", "node")
     node.__qualname__ = node.__name__
     node.__doc__ = getattr(action, "__doc__", None)
+    return node
+
+
+def _a_stage(module: Any, name: str, ctx: Any) -> Any:
+    """`module.<name>(state, config, ctx)` as a graph node, the function looked up when the node runs.
+
+    For the stages kept in their own modules (`acceptance_nodes`, `engineering`,
+    `escalation`, `delivery`): looked up at each call, as the closures that
+    wrapped them did, so a patch of the module's function reaches a graph built
+    before it.
+    """
+
+    def node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return getattr(module, name)(state, config, ctx)
+
+    node.__name__ = f"{name}_node"
+    node.__qualname__ = node.__name__
     return node
 
 

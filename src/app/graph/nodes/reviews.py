@@ -77,9 +77,7 @@ def _the_security_review(state: Any, config: RunnableConfig, ctx: GraphContext) 
 
 
 def security_review_node(state: WorkflowGraphState, config: RunnableConfig, ctx: GraphContext) -> dict[str, Any]:
-    from app.graph.workflow import (
-        _handing_on, _in_parallel_mode, max_parallel,
-    )
+    from app.graph.workflow import _handing_on, _in_parallel_mode, max_parallel
 
     if state.get("reviews_in_flight"):
         # A resume after a review in the fan-out paused or retried.
@@ -176,9 +174,7 @@ def _one_advice_review(state: Any, config: RunnableConfig, role: str, ctx: Graph
 
 def advice_review_node(state: WorkflowGraphState, config: RunnableConfig, ctx: GraphContext) -> dict[str, Any]:
     """Each consulted specialist checks its adopted advice against this sprint. See `app.agents.advice_review`."""
-    from app.graph.workflow import (
-        _handing_on,
-    )
+    from app.graph.workflow import _handing_on
 
     if state.get("reviews_in_flight"):
         return {"stage": "review_parallel"}
@@ -207,9 +203,7 @@ def advice_review_node(state: WorkflowGraphState, config: RunnableConfig, ctx: G
 
 def review_worker_node(state: dict, config: RunnableConfig, ctx: GraphContext) -> dict[str, Any]:
     """One review of the finished sprint, beside the others. See `security_review_node`."""
-    from app.graph.workflow import (
-        _as_a_queued_pause, _only_this_worker_s_pause,
-    )
+    from app.graph.workflow import _as_a_queued_pause, _only_this_worker_s_pause
 
     item = state["__review_item"]
     stage_name = "security_review" if item == "security" else f"advice_review_{item}"

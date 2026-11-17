@@ -1,6 +1,7 @@
 """Run one node of the compiled workflow graph on its own, every model call stubbed.
 
-The nodes are closures inside `build_workflow_graph`, so a test reaches one through `graph.nodes[name].bound`.
+Wherever a node is defined (a closure inside `build_workflow_graph` or a function of `app.graph.nodes`), a test
+reaches it the same way: through `graph.nodes[name].bound`.
 These helpers let a test assert what a node *does* - the request its stage was handed, the model it was built on,
 what it recorded - instead of pinning the text of `workflow.py`, which moves whenever the file is restructured.
 """

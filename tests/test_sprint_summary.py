@@ -225,11 +225,9 @@ class TestEverySprintEndingIsRecorded:
     """
 
     def _workflow_source(self) -> str:
-        import inspect
+        from workflow_nodes import workflow_source
 
-        from app.graph import workflow
-
-        return inspect.getsource(workflow)
+        return workflow_source()
 
     def test_the_review_revision_limit_records_one(self):
         """The ending one run took."""
@@ -241,14 +239,22 @@ class TestEverySprintEndingIsRecorded:
             "a sprint that ends because the review ran out of revisions leaves no summary"
         )
 
-    def test_completion_records_the_final_sprint(self):
-        source = self._workflow_source()
-        complete = source[source.index("def complete_node("):]
-        complete = complete[: complete.index("def failed_node(")]
+    def test_completion_records_the_final_sprint(self, tmp_path):
+        from types import SimpleNamespace
 
-        assert "_record_sprint_summary(" in complete, (
-            "the last sprint never advances, so completion is where its summary comes from"
-        )
+        from workflow_nodes import run_node
+
+        recorded: list[str] = []
+        patches = {
+            "app.graph.workflow._sprint_already_summarised": lambda state: False,
+            "app.graph.workflow._record_sprint_summary":
+                lambda state, status: recorded.append(status) or {"sprint_attempts": [{"number": 1}]},
+            "app.graph.workflow._commit_the_last_records": lambda root: None,
+        }
+        update = run_node("complete", {"repository": SimpleNamespace(root_path=str(tmp_path))}, str(tmp_path), patches)
+
+        assert recorded == ["Completed"], "the last sprint never advances, so completion is where its summary comes from"
+        assert update == {"sprint_attempts": [{"number": 1}], "stage": "complete"}
 
     def test_every_recorded_summary_is_carried_into_the_state(self):
         """A summary that is not returned is a summary the next attempt cannot see.

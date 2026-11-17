@@ -1,9 +1,10 @@
 """Run one node of the compiled workflow graph on a made state, for behaviour tests.
 
-The nodes are closures inside `build_workflow_graph`; the compiled graph is the
-one handle on them that holds wherever they come to be defined. Tests here call
-a node through `graph.nodes[name]` rather than read its source, so a node lifted
-out of `workflow.py` keeps its tests.
+Some nodes are closures inside `build_workflow_graph`, others module-level
+functions of `app.graph.nodes`; the compiled graph is the one handle on them
+that holds wherever they come to be defined. Tests here call a node through
+`graph.nodes[name]` rather than read its source, so a node lifted out of
+`workflow.py` keeps its tests.
 """
 from __future__ import annotations
 

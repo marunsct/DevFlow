@@ -55,10 +55,25 @@ def test_a_sprint_never_revised_reads_as_before() -> None:
     assert "**Attempts:** 1 (no re-run)" in document
 
 
-def test_a_revision_keeps_the_plan_it_replaces() -> None:
-    import inspect
+def test_a_revision_keeps_the_plan_it_replaces(tmp_path, monkeypatch) -> None:
+    """What the replaced plan did, read from the cycle it ran - before the revision starts a fresh one."""
+    from workflow_node_stubs import one_sprint, run_node, two_work_orders
 
-    source = inspect.getsource(workflow)
-    keep = source.index('update["sprint_earlier_plans"] = [')
-    assert keep < source.index('update["remediation"] = start_remediation(milestone.selected_sprint_goal')
-    assert "if revising and previous_milestone is not None:" in source[keep - 200:keep]
+    previous = two_work_orders()
+    ran = _cycle("No UI rendered", "Title not saved")
+    revised = two_work_orders().model_copy(update={"review_task_assignments": ["Escape the titles -> task 2"]})
+
+    seen = run_node(monkeypatch, tmp_path, "technical_lead", answer=revised, sprint_plan=one_sprint(),
+                    milestone_plan=previous, remediation=ran, revision_comments=["Escape the titles"],
+                    sprint_earlier_plans=["an earlier one"])
+
+    assert seen.update["sprint_earlier_plans"] == ["an earlier one", workflow._what_a_plan_did(previous, ran)]
+    assert seen.update["remediation"] is not ran
+
+
+def test_a_first_plan_keeps_no_earlier_plan(tmp_path, monkeypatch) -> None:
+    from workflow_node_stubs import one_sprint, run_node, two_work_orders
+
+    seen = run_node(monkeypatch, tmp_path, "technical_lead", answer=two_work_orders(), sprint_plan=one_sprint())
+
+    assert "sprint_earlier_plans" not in seen.update

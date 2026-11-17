@@ -7,10 +7,9 @@ the harness already holds.
 
 from __future__ import annotations
 
-import inspect
+import pytest
 
 from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
-from app.graph import workflow
 
 
 def test_a_plan_with_no_sprint_goal_is_a_valid_answer():
@@ -25,9 +24,18 @@ def test_a_plan_with_no_sprint_goal_is_a_valid_answer():
     assert plan.selected_sprint_goal == ""
 
 
-def test_the_lead_s_plan_is_given_the_sprint_s_goal_when_it_has_none():
-    source = inspect.getsource(workflow)
-    node = source[source.index("    def technical_lead_node("):]
-    node = node[:node.index("\n    def ", 10)]
-    filled = node.index('model_copy(update={"selected_sprint_goal": current_goal})')
-    assert node.index('if _hand_back(update, "milestone_plan"):') < filled < node.index("readiness_problems(")
+@pytest.mark.parametrize("its_own, dispatched", [("", "Notes can be saved"), ("Save notes first", "Save notes first")])
+def test_the_lead_s_plan_is_given_the_sprint_s_goal_when_it_has_none(tmp_path, monkeypatch, its_own, dispatched):
+    """Given before the definition of ready reads the plan, so the plan is not sent back for it."""
+    from workflow_node_stubs import one_sprint, run_node, two_work_orders
+
+    checked = []
+    seen = run_node(
+        monkeypatch, tmp_path, "technical_lead", sprint_plan=one_sprint("Notes can be saved"),
+        answer=two_work_orders().model_copy(update={"selected_sprint_goal": its_own}),
+        overrides={"app.analysis.work_orders.readiness_problems":
+                   lambda plan, *a, **k: checked.append(plan.selected_sprint_goal) or []},
+    )
+
+    assert checked == [dispatched]
+    assert seen.update["milestone_plan"].selected_sprint_goal == dispatched

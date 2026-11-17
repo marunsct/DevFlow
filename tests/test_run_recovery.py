@@ -642,15 +642,36 @@ def test_the_revision_request_asks_for_assignment_not_acknowledgement():
     assert "tests/filter.test.js" in content
 
 
-def test_the_retry_budget_is_shared_with_the_structured_response_retry():
+@pytest.mark.parametrize("spent, stage", [(0, "technical_lead"), (None, "failed")], ids=["retried", "spent"])
+def test_the_retry_budget_is_shared_with_the_structured_response_retry(tmp_path, monkeypatch, spent, stage):
     """Both remedies are the same act: abandon the conversation and ask again."""
-    import inspect
+    from workflow_node_stubs import one_sprint, run_node, two_work_orders
 
-    from app.graph import workflow
+    from app.graph.workflow import _max_structured_retries
 
-    source = inspect.getsource(workflow)
-    assert "technical_lead:assignments" in source
-    assert "structured_retries" in source
+    used = _max_structured_retries() if spent is None else spent
+    unassigned = two_work_orders().model_copy(update={"review_task_assignments": []})
+
+    seen = run_node(monkeypatch, tmp_path, "technical_lead", answer=unassigned, sprint_plan=one_sprint(),
+                    milestone_plan=two_work_orders(), revision_comments=["Escape the titles"],
+                    structured_retries={"technical_lead:assignments": used, "principal_architect": 1})
+
+    assert seen.update["stage"] == stage
+    if stage == "technical_lead":
+        assert seen.update["structured_retries"] == {"technical_lead:assignments": 1, "principal_architect": 1}
+        assert seen.update["revision_comments"] == ["Escape the titles"]
+
+
+def test_a_plan_that_assigns_its_changes_clears_the_budget(tmp_path, monkeypatch):
+    from workflow_node_stubs import one_sprint, run_node, two_work_orders
+
+    assigned = two_work_orders().model_copy(update={"review_task_assignments": ["Escape the titles -> task 2"]})
+
+    seen = run_node(monkeypatch, tmp_path, "technical_lead", answer=assigned, sprint_plan=one_sprint(),
+                    milestone_plan=two_work_orders(), revision_comments=["Escape the titles"],
+                    structured_retries={"technical_lead:assignments": 1})
+
+    assert "technical_lead:assignments" not in seen.update["structured_retries"]
 
 
 class _Review:

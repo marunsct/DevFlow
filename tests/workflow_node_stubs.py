@@ -224,6 +224,43 @@ def run_a_milestone_review(monkeypatch, tmp_path, *, review: Any = None, overrid
     return seen
 
 
+def run_node(monkeypatch, tmp_path, node: str, *, answer: Any = None, overrides: dict[str, Any] | None = None,
+             two_models: bool = False, **state: Any) -> SimpleNamespace:
+    """Run graph node `node` once; every role agent it builds is a stub and every stage it runs answers `answer`.
+
+    `answer` may be a callable of the stage name. `.requests` holds (stage name, request) for each stage the node
+    ran, `.agents` (factory name, model) for each agent it built, `.update` the node's return.
+    """
+    seen = SimpleNamespace(update=None, requests=[], agents=[])
+
+    def gated(state, config, *, stage_name, initial_request, output_key, **kwargs):
+        seen.requests.append((stage_name, initial_request))
+        return {output_key: answer(stage_name) if callable(answer) else answer, "stage": kwargs.get("next_stage")}
+
+    def factory(name):
+        def build(*args, **kwargs):
+            seen.agents.append((name, kwargs.get("model")))
+            return SimpleNamespace()
+        return build
+
+    for name in dir(workflow):
+        if name.startswith("create_") and name.endswith("_agent"):
+            monkeypatch.setattr(workflow, name, factory(name))
+    monkeypatch.setattr(workflow, "_run_gated_agent", gated)
+    for target, replacement in (overrides or {}).items():
+        monkeypatch.setattr(target, replacement)
+    graph = compiled(monkeypatch, tmp_path, two_models=two_models)
+    seen.update = graph.nodes[node].bound.invoke(
+        {"repository": SimpleNamespace(root_path=str(tmp_path)), **state}, CONFIG)
+    return seen
+
+
+def one_sprint(goal: str = "Notes can be saved") -> Any:
+    from app.agents.scrum_master import SprintDefinition, SprintPlanOutput
+
+    return SprintPlanOutput(sprints=[SprintDefinition(goal=goal, user_value="v")])
+
+
 def one_defect(**extra: Any) -> Any:
     from app.sprint import Defect, RemediationCycle
 

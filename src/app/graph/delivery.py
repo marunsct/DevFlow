@@ -843,7 +843,10 @@ def _a_unit_test_file_exists(project: Any, pack: Any) -> bool:
         return True  # nothing to look for: claim nothing
     from app.analysis.walk import files_under
 
-    folder = project / unit_dir
+    mirrors = tuple(getattr(pack, "unit_mirrors", None) or ())
+    # Where the toolchain compiles tests, when it compiles only those under a root of their own: a test elsewhere in
+    # the unit directory never runs (`StackPack.unit_mirrors`).
+    folder = project / (str(mirrors[1]).strip("/") if len(mirrors) == 2 else unit_dir)
     # A pack whose unit tests sit beside the code (`unit_dir="."`) names the
     # whole project here, `node_modules` and all.
     return folder.is_dir() and any(True for _ in files_under(folder, ("node_modules",), pattern))

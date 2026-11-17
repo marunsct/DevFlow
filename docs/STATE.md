@@ -82,6 +82,8 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
    fetches its JUnit provider at the first test - LF.1017, a pack warm-up; the Java pack then verified in 38 s.
    Its scaffold passed at 14:40 through the warm-up. LF.1018 (LR.50 phase 2) and LF.1019 (Maven/.NET/RSpec/PHPUnit
    totals read) deployed into it at 14:51 (bf51313d, container mode kept; a learning run, so mixed versions are fine).
+   LF.1020 (a Java unit test mirrors its code's package; no test for a manifest) deployed and the run rewound to its
+   `technical_lead` point: every unit test had been written straight under `src/test/`, where Maven compiles nothing.
    The WORKER IS IN CONTAINER MODE (COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.sandbox.yml);
    a plain `loop.sh deploy` would undo it.
 2. The language sweep then has one run per language; next, a second run of the families that lost quality tests.

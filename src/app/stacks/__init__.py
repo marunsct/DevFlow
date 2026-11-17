@@ -290,6 +290,10 @@ class StackPack:
     #: test runs, into the run's own caches. Measured on one run: Maven's test runner fetches its JUnit provider at
     #: the first test, not at the install, and the scaffold's smoke test failed offline twice, ending the run.
     warm_up: tuple[tuple[str, ...], ...] = ()
+    #: (where the code lives, where its tests live) for a toolchain that compiles only the tests under a root of their
+    #: own: a unit test's path mirrors its code's path below these. Measured on one Java run: the testing work order
+    #: put every test straight in `src/test/`, Maven compiles only `src/test/java/`, and no unit test ever ran.
+    unit_mirrors: tuple[str, str] | tuple[()] = ()
 
 
     @property

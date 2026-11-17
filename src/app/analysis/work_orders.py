@@ -172,6 +172,19 @@ def with_named_tests_given_to_testing(
     return milestone.model_copy(update={"delegated_tasks": tasks}), given
 
 
+def _the_mirrored_folder(pack: Any, path: str, project: str) -> str:
+    """The folder a unit test of `path` goes in when the pack's tests mirror its code (`StackPack.unit_mirrors`), or ""."""
+    mirrors = tuple(getattr(pack, "unit_mirrors", None) or ())
+    if len(mirrors) != 2:
+        return ""
+    code, tests = (str(part).strip("/") for part in mirrors)
+    relative = path[len(project) + 1:] if project and path.startswith(f"{project}/") else path
+    if not relative.startswith(f"{code}/"):
+        return ""
+    below = str(PurePosixPath(relative[len(code) + 1:]).parent)
+    return tests if below == "." else f"{tests}/{below}"
+
+
 def with_a_testing_work_order(milestone: Any, repo_root: str | Path | None) -> tuple[Any, bool]:
     """The plan with a testing work order built from its code work orders when it has none; and whether one was added.
 
@@ -184,7 +197,7 @@ def with_a_testing_work_order(milestone: Any, repo_root: str | Path | None) -> t
     contract to name the test files, the plan goes back as before. Never raises.
     """
     try:
-        from app.analysis.file_kinds import classify_file
+        from app.analysis.file_kinds import BEHAVIOUR_SUFFIXES, SCRIPTED_MARKUP_SUFFIXES, classify_file
         from app.stacks import contract
 
         tasks = list(getattr(milestone, "delegated_tasks", None) or [])
@@ -215,8 +228,12 @@ def with_a_testing_work_order(milestone: Any, repo_root: str | Path | None) -> t
                     continue
                 name = PurePosixPath(str(path)).name
                 stem, suffix = name.split(".", 1)[0], PurePosixPath(name).suffix
+                # Code only: measured on one Java run, the manifest `pom.xml` was given a test, `pomTest.java`.
+                if suffix.lower() not in BEHAVIOUR_SUFFIXES | SCRIPTED_MARKUP_SUFFIXES:
+                    continue
                 mine = next((p for p in patterns if suffix and str(p).endswith(suffix)), pattern)
-                test = "/".join(part for part in (project, unit_dir, mine.replace("*", stem, 1)) if part)
+                folder = _the_mirrored_folder(pack, str(path), project) or unit_dir
+                test = "/".join(part for part in (project, folder, mine.replace("*", stem, 1)) if part)
                 if test not in files:
                     files.append(test)
         if not files:

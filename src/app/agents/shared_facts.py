@@ -65,6 +65,10 @@ def layout_facts(pack: Any, project: str, package: str | None) -> list[str]:
                      "resolves to nothing.")
     lines.append(f"- Unit tests: `{pack.unit_pattern}` in `{prefix}{pack.unit_dir}/`; acceptance tests: "
                  f"`{pack.acceptance_pattern}` in `{prefix}{pack.acceptance_dir}/`.")
+    mirrors = tuple(getattr(pack, "unit_mirrors", None) or ())
+    if len(mirrors) == 2:
+        lines.append(f"- A unit test's path mirrors its code's: the test of `{prefix}{mirrors[0]}/<folders>/<Name>` is "
+                     f"`{prefix}{mirrors[1]}/<the same folders>/` - only tests there are compiled and run.")
     if getattr(pack, "data_store", ""):
         lines.append("- Where the data lives: " + " ".join(str(pack.data_store).split()))
     started = str((getattr(pack, "files", None) or {}).get("start.sh") or "")

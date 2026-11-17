@@ -151,6 +151,7 @@ PACK = service_pack(
     warm_up=(("mvn", "-q", "-B", "-Dmaven.test.failure.ignore=true", "test"),),
     unit_report="target/surefire-reports",
     unit_dir="src/test",
+    unit_mirrors=("src/main/java", "src/test/java"),
     unit_pattern="*Test.java",
     start="mvn -q -B -DskipTests package && exec java -jar target/app.jar",
     server_timeout_ms=300_000,

@@ -265,6 +265,118 @@ def a_milestone_review(
     return run_node("milestone_review", made, str(tmp_path), every)
 
 
+def a_defect(description: str, owner: str = "backend", **fields: Any) -> Any:
+    """An open defect as the remediation cycle holds it."""
+    from app.sprint import Defect
+
+    return Defect(description=description, severity=fields.pop("severity", "major"), reproduction_steps="r",
+                  expected_behavior=fields.pop("expected_behavior", "e"), actual_behavior=fields.pop("actual_behavior", "a"),
+                  owner=owner, affected_files=fields.pop("affected_files", ["app/server.js"]), **fields)
+
+
+def a_fix_stage(
+    tmp_path,
+    defects: list[Any],
+    *,
+    answer: Any = None,
+    defect_index: int = 0,
+    state: dict[str, Any] | None = None,
+    patches: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, list[Any]]]:
+    """`defect_remediation` on `defects[defect_index]`, whose fixer answers `answer` and whose fix breaks nothing
+    unless `patches` says so. Returns the update and what was asked: the fixer's requests, the keyword arguments of
+    the fix request's builder, and each `_run_gated_agent` call."""
+    from unittest.mock import MagicMock
+
+    from app.agents.specialists import SpecialistOutput
+    from app.sprint import RemediationCycle
+
+    asked: dict[str, list[Any]] = {"requests": [], "built": [], "gated": []}
+    fixed = answer if answer is not None else SpecialistOutput(changed_files=["app/server.js"], tests=["tests/x.test.js"])
+
+    def gated(state, config, *, initial_request, **kwargs):
+        asked["gated"].append(kwargs)
+        asked["requests"].append(initial_request["messages"][-1]["content"])
+        return {"__fix_result__": fixed}
+
+    def built(*args, **kwargs):
+        asked["built"].append(kwargs)
+        return {"messages": [{"role": "user", "content": "Fix the defect."}]}
+
+    made = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "remediation": RemediationCycle(sprint_goal="g", defects=list(defects)),
+        "defect_cursor": defect_index,
+        "test_round": 2,
+        "current_sprint_index": 0,
+        "specialist_outputs": {},
+        **(state or {}),
+    }
+    every = {
+        "app.graph.workflow.create_specialist_agent": lambda *args, **kwargs: MagicMock(),
+        "app.graph.workflow.build_defect_fix_request": built,
+        "app.graph.workflow._what_the_last_failure_printed": lambda *args: "",
+        "app.graph.workflow._closed_if_an_earlier_fix_resolved_it": lambda *args: None,
+        "app.graph.workflow._what_the_ledger_confirms": lambda *args: "npm test",
+        "app.graph.acceptance_nodes.done_by_the_definition": lambda state: [],
+        "app.graph.engineering.before_a_fix": lambda *args: "",
+        "app.graph.engineering.after_a_fix": lambda *args, **kwargs: [],
+        "app.graph.workflow._run_gated_agent": gated,
+        **(patches or {}),
+    }
+    return run_node("defect_remediation", made, str(tmp_path), every), asked
+
+
+def a_work_order(role: str, description: str, files: list[str]) -> Any:
+    from app.agents.technical_lead import SpecialistTask
+
+    return SpecialistTask(specialist_role=role, task_description=description, acceptance_criteria=["works"],
+                          files=list(files))
+
+
+def a_builder(
+    tmp_path,
+    orders: list[Any],
+    *,
+    worker: int | None = None,
+    state: dict[str, Any] | None = None,
+    patches: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], list[str]]:
+    """The next work order of `orders` dispatched in linear mode - or, with `worker`, that one order run by the
+    parallel worker. Returns the update and what each builder was asked. The plan counts as drafted already
+    unless `state` says `drafted_for_plan` is False."""
+    from unittest.mock import MagicMock
+
+    from app.agents.specialists import SpecialistOutput
+
+    asked: list[str] = []
+
+    def gated(state, config, *, initial_request, output_key, **kwargs):
+        asked.append(initial_request["messages"][-1]["content"])
+        return {output_key: SpecialistOutput(changed_files=[])}
+
+    made = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "milestone_plan": SimpleNamespace(selected_sprint_goal="g", milestone_scope=[], delegated_tasks=list(orders)),
+        "specialist_outputs": {},
+        "current_sprint_index": 0,
+        "drafted_for_plan": True,
+        **(state or {}),
+    }
+    if worker is not None:
+        made.update({"__worker_task": orders[worker], "__worker_index": worker})
+    every = {
+        "app.server.runtime_settings.effective_settings": lambda: SimpleNamespace(execution_mode="linear"),
+        "app.graph.workflow.create_specialist_agent": lambda *args, **kwargs: MagicMock(),
+        "app.graph.workflow.build_specialist_task_request":
+            lambda *args, **kwargs: {"messages": [{"role": "user", "content": "Build the work order."}]},
+        "app.graph.workflow._run_gated_agent": gated,
+        **(patches or {}),
+    }
+    node = "specialist_worker" if worker is not None else "specialist_dispatch"
+    return run_node(node, made, str(tmp_path), every), asked
+
+
 #: What `build_judgement_model` hands the graph in `a_dispute`, so a test can tell
 #: the judgement model from the build model by identity.
 JUDGEMENT_MODEL = SimpleNamespace(name="the judgement model")

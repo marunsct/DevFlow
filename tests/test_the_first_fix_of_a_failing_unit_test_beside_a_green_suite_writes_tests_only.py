@@ -186,13 +186,34 @@ def test_the_suite_is_green_only_when_it_ran_passed_and_no_due_criterion_fails(m
     assert defect_fix_modes._the_suite_is_green({}, tmp_path) is False
 
 
-def test_the_fix_stage_is_wired_to_the_modes() -> None:
-    import inspect
+def test_the_fix_stage_is_wired_to_the_modes(tmp_path) -> None:
+    """The fix stage begins and ends the mode, briefs the fixer from it, and asks it before a rewrite writes."""
+    from app.agents.specialists import SpecialistOutput
+    from workflow_nodes import a_defect, a_fix_stage
 
-    from app.graph import workflow
+    calls = []
 
-    source = inspect.getsource(workflow)
-    assert "defect_fix_modes.begin(state, config, cycle, defect_index, stage_name)" in source
-    assert "defect_fix_modes.end(config, stage_name)" in source
-    assert "defect_fix_modes.briefing(state, config, defect_index)" in source
-    assert "defect_fix_modes.may_write(state, config, defect, root, path)" in source
+    def rewrite(defect, root, model, *, may_write, **kwargs):
+        calls.append(("rewrite may write", may_write("app/server.js")))
+        return None
+
+    modes = {
+        "app.graph.defect_fix_modes.begin": lambda state, config, cycle, index, stage: calls.append(("begin", index, stage)),
+        "app.graph.defect_fix_modes.end": lambda config, stage: calls.append(("end", stage)),
+        "app.graph.defect_fix_modes.briefing": lambda state, config, index: "\n[the mode's briefing]",
+        "app.graph.defect_fix_modes.may_write":
+            lambda state, config, defect, root, path: calls.append(("may write", path)) or False,
+    }
+
+    _, asked = a_fix_stage(tmp_path, [a_defect("The unit tests fail.")], patches={
+        **modes, **{
+        "app.graph.workflow._the_run_approves_its_own_writes": lambda run_id: True,
+        "app.graph.workflow._fast_delivery": lambda: True,
+        "app.graph.localisation.localised": lambda *args, **kwargs: None,
+        "app.graph.rewritten_fixes.what_failed": lambda *args, **kwargs: "",
+        "app.graph.rewritten_fixes.files_to_fix": lambda *args, **kwargs: [],
+    }, "app.graph.rewritten_fixes.fix_by_rewriting": rewrite})
+
+    assert calls[0] == ("begin", 0, "defect_fix_2_0") and calls[-1] == ("end", "defect_fix_2_0")
+    assert ("may write", "app/server.js") in calls and ("rewrite may write", False) in calls
+    assert "[the mode's briefing]" in asked["requests"][0]

@@ -7,7 +7,6 @@ first and composed across attempts where the files are independent, and measured
 """
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -189,9 +188,45 @@ def test_a_failure_of_the_look_leaves_the_revert_as_it_was(workspace, monkeypatc
     assert (workspace / "a.py").read_text() == "one = 1\ntwo = 2\nthree = 3\n"
 
 
-def test_the_fix_step_replays_before_a_fixer_and_keeps_what_it_reverts():
-    source = inspect.getsource(workflow)
-    fix_one = source[source.index("    def _fix_one("):source.index("    def defect_remediation_node(")]
+def test_the_fix_step_replays_before_a_fixer_and_keeps_what_it_reverts(tmp_path):
+    """A kept candidate is replayed before any rewrite or fixer; a rewrite comes before a fixer; and a fix the step
+    reverts is handed to be kept."""
+    from app.agents.specialists import SpecialistOutput
+    from workflow_nodes import a_defect, a_fix_stage
 
-    assert fix_one.index("kept_fix_candidates.replayed(") < fix_one.index("_fixed_by_rewriting(") < fix_one.index("create_specialist_agent(")
-    assert "on_revert=lambda lost: kept_fix_candidates.keep(" in fix_one
+    replayed = SpecialistOutput(changed_files=["app/server.js"], tests=["tests/notes.test.js"])
+    rewrites = []
+
+    def rewritten(*args, **kwargs):
+        rewrites.append(args)
+        return SpecialistOutput(changed_files=["app/server.js"])
+
+    writes = {**{
+        "app.graph.workflow._the_run_approves_its_own_writes": lambda run_id: True,
+        "app.graph.workflow._fast_delivery": lambda: True,
+        "app.graph.localisation.localised": lambda *args, **kwargs: None,
+        "app.graph.rewritten_fixes.what_failed": lambda *args, **kwargs: "",
+        "app.graph.rewritten_fixes.files_to_fix": lambda *args, **kwargs: [],
+    }, "app.graph.rewritten_fixes.fix_by_rewriting": rewritten}
+
+    _, asked = a_fix_stage(tmp_path, [a_defect("[AC-1] Creating a note fails")], patches={
+        **writes, "app.graph.kept_fix_candidates.replayed": lambda repo, defect, stage: replayed})
+    assert rewrites == [] and asked["gated"] == []
+
+    _, asked = a_fix_stage(tmp_path, [a_defect("[AC-1] Creating a note fails")], patches={
+        **writes, "app.graph.kept_fix_candidates.replayed": lambda repo, defect, stage: None})
+    assert len(rewrites) == 1 and asked["gated"] == []
+
+    kept = []
+
+    def reverted(root, base, stage, description, contested=None, on_revert=None):
+        on_revert(["app/server.js"])
+        return ["[AC-2] lists notes"]
+
+    a_fix_stage(tmp_path, [a_defect("[AC-1] Creating a note fails")], patches={
+        "app.graph.kept_fix_candidates.replayed": lambda repo, defect, stage: None,
+        "app.graph.engineering.after_a_fix": reverted,
+        "app.graph.kept_fix_candidates.keep":
+            lambda repo, base, defect, stage, passes, lost: kept.append((defect.description, stage, lost)),
+    })
+    assert kept == [("[AC-1] Creating a note fails", "defect_fix_2_0", ["app/server.js"])]

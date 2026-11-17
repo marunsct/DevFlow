@@ -6,7 +6,6 @@ actual behaviour, so it could redo the very change that had been reverted.
 
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -67,10 +66,22 @@ def test_none_and_off_are_no_block(monkeypatch):
     assert ledger.earlier_attempts(_defect("a b c", attempts=[{"stage": "s", "outcome": "fixed"}]), []) == ""
 
 
-def test_the_fix_loop_records_and_shows_them():
-    from app.graph import workflow
+def test_the_fix_loop_records_and_shows_them(tmp_path, monkeypatch):
+    """Each fix is recorded on its defect, fixed or reverted, and the next fixer is shown the attempts on its
+    defect and on the ones before it."""
+    from workflow_nodes import a_defect, a_fix_stage
 
-    source = inspect.getsource(workflow)
-    assert "noted = _with_the_attempt(noted, defect_index, stage_name, fix_result," in source
-    assert 'settled["remediation"] = _with_the_attempt(' in source
-    assert "_ledger.earlier_attempts(defect, cycle.defects[:defect_index])" in source
+    shown = []
+    monkeypatch.setattr(ledger, "earlier_attempts",
+                        lambda defect, earlier: shown.append((defect.description, [d.description for d in earlier])) or "")
+    round_ = [a_defect("Saving a note returns 500"), a_defect("Deleting a note returns 500")]
+
+    update, _ = a_fix_stage(tmp_path, round_, defect_index=1)
+    assert shown == [("Deleting a note returns 500", ["Saving a note returns 500"])]
+    (attempt,) = update["remediation"].defects[1].attempts
+    assert attempt["stage"] == "defect_fix_2_1" and attempt["outcome"] == "fixed"
+
+    update, _ = a_fix_stage(tmp_path, round_, patches={
+        "app.graph.engineering.after_a_fix": lambda *args, **kwargs: ["[AC-2] lists notes"]})
+    (attempt,) = update["remediation"].defects[0].attempts
+    assert attempt["stage"] == "defect_fix_2_0" and attempt["outcome"].startswith("reverted")

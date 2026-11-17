@@ -7,6 +7,7 @@ testing task's unit test. Nothing here names a language or a framework.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -161,7 +162,6 @@ def test_the_owners_are_the_work_orders_as_dispatched_not_as_planned(tmp_path: P
     # Measured on one run: the lead's one order of 18 files was split into
     # orders of three, the table still gave every file to the first, and each
     # later order was refused its own files - the service's entry point among them.
-    import inspect
     from types import SimpleNamespace
 
     from app.graph import workflow
@@ -183,9 +183,45 @@ def test_the_owners_are_the_work_orders_as_dispatched_not_as_planned(tmp_path: P
     with pytest.raises(RepositoryToolError, match="the plan gave it to specialist_backend_0"):
         write_approved_artifact(tmp_path, "shop/m0.py", "X = 1\n")
 
-    source = inspect.getsource(workflow)
-    assert 'done=(drafted.get("specialist_outputs") or {})' in source
-    assert source.count("_record_the_owners(") >= 4
+
+def test_the_dispatcher_records_the_owners_of_the_orders_it_dispatches(tmp_path: Path, monkeypatch) -> None:
+    """Drafted whole by the harness, the plan's work orders are the drafted ones, and an order already drafted owns
+    nothing any more; dispatched one by one, a finished order owns nothing either."""
+    from app.agents.specialists import SpecialistOutput
+    from app.graph.drafting import in_work_orders_of_at_most
+    from workflow_nodes import a_builder, a_work_order
+
+    (tmp_path / ".project-directory").write_text("shop\n", encoding="utf-8")
+    (tmp_path / "shop").mkdir()
+    lead = a_work_order("backend", "build the service", [f"shop/m{n}.py" for n in range(5)] + ["shop/main.py"])
+    parts, _ = in_work_orders_of_at_most([lead])
+
+    class _Plan(SimpleNamespace):
+        def model_copy(self, update):
+            return _Plan(**{**vars(self), **update})
+
+    # Fast delivery drafts the first part whole and splits the lead's one order into parts.
+    a_builder(tmp_path, [lead], state={
+        "drafted_for_plan": False, "technical_specification": object(),
+        "milestone_plan": _Plan(selected_sprint_goal="g", milestone_scope=[], delegated_tasks=[lead]),
+    }, patches={
+        "app.delivery.fast": lambda *args: True,
+        "app.graph.workflow._the_run_approves_its_own_writes": lambda run_id: True,
+        "app.graph.drafting.with_tests_the_specification_plans": lambda tasks, specification: (tasks, []),
+        "app.graph.drafting.draft_work_orders":
+            lambda tasks, *args, **kwargs: {0: SpecialistOutput(changed_files=list(tasks[0].files))},
+    })
+
+    _as(monkeypatch, "specialist_backend_9")
+    write_approved_artifact(tmp_path, parts[0].files[0], "X = 1\n")
+    with pytest.raises(RepositoryToolError, match="the plan gave it to specialist_backend_1"):
+        write_approved_artifact(tmp_path, parts[1].files[0], "X = 1\n")
+
+    # Linear dispatch, the first order finished: its files are free, the next order's are its own.
+    a_builder(tmp_path, parts, state={"specialist_outputs": {"specialist_backend_0": SpecialistOutput(changed_files=[])}})
+    write_approved_artifact(tmp_path, parts[0].files[1], "X = 1\n")
+    with pytest.raises(RepositoryToolError, match="the plan gave it to specialist_backend_1"):
+        write_approved_artifact(tmp_path, parts[1].files[1], "X = 1\n")
 
 
 def test_a_work_order_already_done_owns_no_file(tmp_path: Path, monkeypatch) -> None:

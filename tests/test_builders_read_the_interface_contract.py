@@ -96,7 +96,18 @@ def test_a_later_work_order_reads_what_earlier_ones_reported_about_its_files():
     assert not BANNED.search(ledger.REPORTS_HEADING)
 
 
-def test_the_linear_dispatch_routes_the_reports():
-    from app.graph import workflow
+def test_the_linear_dispatch_routes_the_reports(tmp_path):
+    from app.agents.specialists import SpecialistOutput
+    from workflow_nodes import a_builder, a_work_order
 
-    assert "ledger.with_the_reports(request, done, task, tasks, leave_out=stage_name)" in inspect.getsource(workflow)
+    orders = [a_work_order("backend", "build the service", ["app/board/auth.py"]),
+              a_work_order("frontend", "build the page", ["app/src/api.ts", "app/src/App.tsx"])]
+    done = {"specialist_backend_0": SpecialistOutput(
+        changed_files=["app/board/auth.py"],
+        blockers=["The page imports `listItems` from app/src/api.ts, which does not export it yet"])}
+
+    _, asked = a_builder(tmp_path, orders, state={"specialist_outputs": done})
+
+    (page,) = asked
+    assert "--- What earlier work orders reported about your files ---" in page
+    assert "- blocker (specialist_backend_0): The page imports `listItems`" in page

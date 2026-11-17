@@ -32,10 +32,16 @@ def test_a_fixer_is_shown_the_other_open_findings_in_its_file():
     assert "The other changes" not in mutation_guided.what_settles_it(elsewhere, [elsewhere])
 
 
-def test_the_brief_is_given_the_round_s_findings():
-    import inspect
+def test_the_brief_is_given_the_round_s_findings(tmp_path, monkeypatch):
+    from workflow_nodes import a_defect, a_fix_stage
 
-    assert "mutation_guided.what_settles_it(defect, cycle.defects)" in inspect.getsource(workflow)
+    monkeypatch.setattr(mutation_guided, "what_settles_it",
+                        lambda defect, defects: f"{defect.description} beside {len(defects)} finding(s)")
+    round_ = [a_defect("A change at src/calc.py:2 goes unnoticed"), a_defect("A change at src/calc.py:5 goes unnoticed")]
+
+    _, asked = a_fix_stage(tmp_path, round_)
+
+    assert asked["built"][0]["what_settles_it"] == "A change at src/calc.py:2 goes unnoticed beside 2 finding(s)"
 
 
 def test_a_finding_an_earlier_fix_settled_is_closed_before_a_fixer(monkeypatch, tmp_path):

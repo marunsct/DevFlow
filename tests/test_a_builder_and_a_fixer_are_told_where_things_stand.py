@@ -6,7 +6,6 @@ Behind `WHERE_THINGS_STAND`, off until measured.
 """
 from __future__ import annotations
 
-import inspect
 import os
 import re
 from types import SimpleNamespace
@@ -51,8 +50,25 @@ def test_on_the_request_opens_with_the_sprint_s_state_and_leaves_its_own_stage_o
     assert not any(BANNED.search(words) for words in fixed)
 
 
-def test_both_requests_carry_it():
-    from app.graph import workflow
+def test_both_requests_carry_it(tmp_path):
+    """The builder dispatched in linear mode, the parallel worker and the fixer: each request carries it."""
+    from workflow_nodes import a_builder, a_defect, a_fix_stage, a_work_order
 
-    source = inspect.getsource(workflow.build_workflow_graph)
-    assert source.count("where_things_stand.with_it(request, state") == 3
+    told = []
+
+    def with_it(request, state, leave_out=None):
+        told.append(leave_out)
+        request["messages"][-1]["content"] += "\n[where things stand]"
+        return request
+
+    stand = {"app.agents.where_things_stand.with_it": with_it}
+    orders = [a_work_order("backend", "build the service", ["notes-api/src/app.ts"])]
+
+    _, linear = a_builder(tmp_path, orders, patches=stand)
+    _, parallel = a_builder(tmp_path, orders, worker=0, patches=stand)
+    _, fixed = a_fix_stage(tmp_path, [a_defect("Saving a note returns 500")], patches=stand)
+
+    for asked in (linear, parallel, fixed["requests"]):
+        assert asked and asked[0].endswith("[where things stand]")
+    # A builder is not told its own stage's work as the sprint's.
+    assert told[:2] == ["specialist_backend_0", "specialist_backend_0"]

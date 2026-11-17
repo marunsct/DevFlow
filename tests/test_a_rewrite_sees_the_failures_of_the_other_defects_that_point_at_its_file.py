@@ -6,7 +6,6 @@ carries the other open defects whose failure points at the file, so one version 
 """
 from __future__ import annotations
 
-import inspect
 import re
 from types import SimpleNamespace
 
@@ -114,9 +113,35 @@ def test_off_there_are_no_other_defects_to_gather(monkeypatch):
     assert co_defect_failures.open_besides(SimpleNamespace(defects=[MINE, THEIRS]), MINE) == []
 
 
-def test_the_fix_step_hands_the_other_open_defects_to_both_rewrite_paths():
-    source = inspect.getsource(workflow)
-    helper = source[source.index("    def _fixed_by_rewriting("):source.index("    def _fix_one(")]
+def test_the_fix_step_hands_the_other_open_defects_to_both_rewrite_paths(tmp_path):
+    from app.agents.specialists import SpecialistOutput
+    from workflow_nodes import a_defect, a_fix_stage
 
-    assert "open_besides(state.get(\"remediation\"), defect)" in helper
-    assert helper.count("co_defects=co_defects") == 2
+    handed = []
+
+    def rewrite(*args, co_defects=None, **kwargs):
+        handed.append(co_defects)
+        return None
+
+    mine = a_defect("[AC-1] Creating a note fails", affected_files=["src/store.ts"], fix_attempts=1,
+                    actual_behavior="TypeError: store.add is not a function")
+    theirs = a_defect("[AC-2] Listing notes returns nothing", affected_files=["src/store.ts"],
+                      actual_behavior="expected 3 notes, got 0")
+
+    a_fix_stage(tmp_path, [mine, theirs], patches={
+        **{
+        "app.graph.workflow._the_run_approves_its_own_writes": lambda run_id: True,
+        "app.graph.workflow._fast_delivery": lambda: True,
+        "app.graph.localisation.localised": lambda *args, **kwargs: None,
+        "app.graph.rewritten_fixes.what_failed": lambda *args, **kwargs: "",
+        "app.graph.rewritten_fixes.files_to_fix": lambda *args, **kwargs: [],
+    },
+        "app.graph.bounded_fixes.the_candidate_model": lambda *args: object(),
+        "app.graph.rewritten_fixes.fix_by_candidates": rewrite,
+        "app.graph.rewritten_fixes.fix_by_rewriting": rewrite,
+    })
+
+    assert len(handed) == 2, "both the candidates and the one rewrite"
+    for co_defects in handed:
+        assert "[AC-2] Listing notes returns nothing" in str(co_defects)
+        assert "[AC-1] Creating a note fails" not in str(co_defects)

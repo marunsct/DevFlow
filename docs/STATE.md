@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-17 12:53 JST (written by `loop.sh state`). Harness 87564131 committed; 87564131 deployed.
+**As of:** 11-17 13:47 JST (written by `loop.sh state`). Harness f072b868 committed; 87564131 deployed (not the same).
 **Live, and stopped in the last day:** run-2db7b0a2 failed at failed; run-4db255e8 failed at failed; run-53970d86 failed at ?
-**Last scored:** run-2db7b0a2 notes-api-csharp 9/9 (failed, handoff 0.429; scored 11-17 12:53 JST); run-281467f2 notes-api-ruby 9/9 (completed, mixed, 240 active min, handoff 0.875; scored 11-17 10:58 JST); run-26084471 notes-api-csharp 9/9 (completed, mixed, 95 active min, handoff 1.0; scored 11-17 09:46 JST).
+**Last scored:** run-19ff2786 notes-api 9/9 (completed, 40 active min, handoff 1.0; scored 11-17 13:47 JST); run-2db7b0a2 notes-api-csharp 9/9 (failed, mixed, 76 active min, handoff 0.429; scored 11-17 12:53 JST); run-281467f2 notes-api-ruby 9/9 (completed, mixed, 240 active min, handoff 0.875; scored 11-17 10:58 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -69,15 +69,15 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
 - Sweep scores: every language 9/9 hidden; quality 7/8-8/8 but C# 6/8. Recurring product defects the harness does not
   yet catch: writes made at once lost (several families) - next: pack storage guidance and a concurrent-write probe.
 - In part: LR.20 (the report is built; the frozen batch is about 5 days of runs, not started), LR.30 (per-pack
-  images LF.1005, container environment LF.1007, 7 images built; first whole container-mode run (Python notes-api)
-  green at its first test round 13:33 - suite 14/14, unit tests pass, 64 per-command containers; next: the other toolchains), LR.52, and LR.53 (cause grouping; a green suite settles; a near-green
+  images LF.1005, container environment LF.1007, 7 images built; first whole container-mode run (Python notes-api,
+  run-19ff2786) scored 9/9 hidden, 8/8 quality, delivered (LF.1015 scorer fix); Java next, then the other toolchains), LR.52, and LR.53 (cause grouping; a green suite settles; a near-green
   sprint is planned again once - LF.977, measured on 175 past re-plans; open: a repair back to the round), LR.54 (four contradictions removed).
 - Not done, and why: LR.42 (scale the process to the brief), LR.46 (narrow rules behind the pack interface),
   LR.50 (lift nodes out of `build_workflow_graph`) - each a week-sized redesign that needs measured runs before and
   after, not a night; LR.44 (hosted-model matrix) waits for the owner.
 
 ## Next actions
-1. Live: LR.30's first whole run in container mode, run-19ff2786 notes-api (:8888, 12:56) - the WORKER IS IN CONTAINER MODE
+1. Live: LR.30 container-mode run 2, run-9f8188cb notes-api-java (:8888, 13:53) - the WORKER IS IN CONTAINER MODE
    (COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.sandbox.yml); a plain `loop.sh deploy` would undo it mid-run.
 2. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).

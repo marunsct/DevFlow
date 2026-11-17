@@ -165,18 +165,19 @@ class TestReachingTheAgent:
     def test_the_javascript_refusal_prefers_it_over_the_bracket_guess(self):
         """`Unexpected token 'delete'` used to be answered with brace advice.
 
-        Checked on the source rather than by running Node, which is not
-        guaranteed on a test host. What matters is the order: the certainty
-        before the inference.
+        Node's message is given here rather than produced, as Node is not
+        guaranteed on a test host. The file is also unbalanced, so the bracket
+        guess has something to say; the certainty comes before the inference.
         """
-        import inspect
+        from pathlib import Path
 
         from app.analysis import javascript_parse
 
-        source = inspect.getsource(javascript_parse._the_other_half)
-        assert source.index("why_the_name_cannot_work") < source.index(
-            "_confidently_unbalanced"
-        )
+        content = "const routes = {\nfunction delete(id) {\n  return id;\n}\n"
+
+        said = javascript_parse._the_other_half("Unexpected token 'delete'", content, Path("api.js"), "2")
+
+        assert "reserved word in JavaScript" in said and "`delete`" in said
 
     @pytest.mark.parametrize("name", ["class", "function", "return", "typeof"])
     def test_other_javascript_keywords_are_caught_too(self, name):

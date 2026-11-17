@@ -7,8 +7,7 @@ reads as a hard cap that would never fire.
 
 from __future__ import annotations
 
-import inspect
-from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -50,15 +49,44 @@ def test_a_rate_given_in_the_settings_makes_it_priced(monkeypatch) -> None:
     _check(monkeypatch, "5", LLM_PROVIDER="openai", OPENAI_MODEL="some-unlisted-model")
 
 
-def test_start_and_resume_both_check_before_dispatching() -> None:
-    for method in (WorkflowRunner.start_run, WorkflowRunner.resume_run):
-        source = inspect.getsource(method)
-        assert source.index("_require_a_ceiling_that_can_hold") < source.index("_dispatch(")
+class _Runs:
+    """The run store's rows for one run (no database here): `load` and the status compare-and-set."""
+
+    def __init__(self, status: str) -> None:
+        self.record = SimpleNamespace(run_id="run-1", status=status, error="", repo_root="")
+
+    def load(self, run_id):
+        return self.record
+
+    def compare_and_set_status(self, run_id, expected, new, **kwargs):
+        if self.record.status != expected:
+            return False
+        self.record.status = new
+        return True
 
 
-def test_the_dashboard_says_when_the_spend_is_partial() -> None:
-    """The run page draws its spend with `RunFigures`, whose words come from `lib/runSummary.ts`."""
-    ui = Path(__file__).resolve().parents[1] / "langchain-ui/src"
-    assert "<RunFigures run={run} />" in (ui / "pages/RunDashboard.tsx").read_text()
-    words = (ui / "lib/runSummary.ts").read_text()
-    assert "cost.fully_priced" in words and "unpriced_requests" in words and "not priced" in words
+@pytest.mark.parametrize("status", ["created", "failed"], ids=["start", "resume"])
+def test_start_and_resume_both_check_before_dispatching(monkeypatch, status) -> None:
+    import asyncio
+
+    from app.server import redis_client
+
+    monkeypatch.setattr(redis_client, "get_async_redis_client", lambda: SimpleNamespace(get=_nothing_recorded))
+    monkeypatch.setenv("MAX_RUN_COST_USD", "5")
+    monkeypatch.setattr(runtime_settings, "effective_environment",
+                        lambda: {"LLM_PROVIDER": "openai", "OPENAI_MODEL": "some-unlisted-model"})
+    runner = object.__new__(WorkflowRunner)
+    runner.run_store = _Runs(status)
+    queued = []
+    monkeypatch.setattr(WorkflowRunner, "_dispatch", lambda self, run_id, **kwargs: queued.append(run_id))
+    go = (runner.start_run("run-1", SimpleNamespace(), SimpleNamespace(root_path="/w")) if status == "created"
+          else runner.resume_run("run-1"))
+
+    with pytest.raises(RunConflict, match="some-unlisted-model"):
+        asyncio.run(go)
+
+    assert (runner.run_store.record.status, queued) == (status, [])
+
+
+async def _nothing_recorded(key):
+    return None

@@ -37,3 +37,25 @@ def test_errors_at_other_places_stay_two_defects():
 def test_a_location_on_a_line_that_is_not_an_error_joins_nothing():
     assert workflow._error_locations("at main (server.go:10)\nok  notes_api 0.4s") == set()
     assert workflow._error_locations("server.go:10:2: error: undefined: store") == {("server.go", "10")}
+
+
+RUST_START = """error[E0277]: the trait bound `for<'a> Router<AppState>: tower_service::Service<IncomingStream<'a>>` is not satisfied
+   --> src/main.rs:32:27
+    |
+32  |     axum::serve(listener, app).await.expect("Server error");
+"""
+
+
+def test_rustc_s_place_on_the_line_after_the_error_and_the_harness_s_own_wording_are_one_cause():
+    """Measured on one Rust run: "src/main.rs line 32: the trait bound ..." and a start whose output carried rustc's
+    `--> src/main.rs:32:27` went to two fixers - the place sits on the line after `error[E0277]`."""
+    compile_error = reported("notes-api/src/main.rs line 32: the trait bound `for<'a> Router<AppState>: "
+                             "tower_service::Service<IncomingStream<'a>>` is not satisfied")
+    start = reported("The product does not start for the acceptance suite, so no test can reach it.",
+                     actual_behavior=f"{START_MARK} (`sh start.sh`): it stopped by itself with exit code 101. It wrote:\n"
+                                     f"{RUST_START}")
+    assert len(workflow._one_defect_per_cause([compile_error, start])) == 1
+
+
+def test_a_warning_s_place_joins_nothing():
+    assert workflow._error_locations("warning: unused import\n  --> src/lib.rs:3:5") == set()

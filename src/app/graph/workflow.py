@@ -6143,11 +6143,32 @@ def _names_in(text: str) -> set[str]:
 _AN_ERROR_AT = re.compile(r"([\w.-]+\.[A-Za-z]{1,6})(?:\((\d+)(?:,\d+)?\)|:(\d+))")
 
 
+#: The harness's own wording of a compiler error a language service reported: `src/main.rs line 32: the trait ...`.
+_A_REPORTED_ERROR_AT = re.compile(r"([\w./-]+\.[A-Za-z]{1,6}) line (\d+):")
+#: How many lines after an error's own line still place it: rustc, Go vet and others name the place on the next lines
+#: (`error[E0277]: ...` then `  --> src/main.rs:32:27`).
+_LINES_AN_ERROR_NAMES_ITS_PLACE_IN = 3
+
+
 def _error_locations(text: str) -> set[tuple[str, str]]:
-    """The (file name, line) pairs `text` quotes on its lines that say error, lower-cased."""
+    """The (file name, line) pairs `text` quotes for an error, lower-cased.
+
+    A place counts on a line that says error, on the few lines after one (`--> file:line:col`), or in the harness's
+    own `<file> line N:` wording of a reported compiler error. A warning's place does not.
+    """
     found: set[tuple[str, str]] = set()
+    since_error = _LINES_AN_ERROR_NAMES_ITS_PLACE_IN + 1
     for line in str(text or "").splitlines():
-        if "error" not in line.lower():
+        lowered = line.lower()
+        if "error" in lowered:
+            since_error = 0
+        elif "warning" in lowered:
+            since_error = _LINES_AN_ERROR_NAMES_ITS_PLACE_IN + 1
+        else:
+            since_error += 1
+        for match in _A_REPORTED_ERROR_AT.finditer(line):
+            found.add((PurePosixPath(match.group(1)).name.lower(), match.group(2)))
+        if since_error > _LINES_AN_ERROR_NAMES_ITS_PLACE_IN:
             continue
         for match in _AN_ERROR_AT.finditer(line):
             found.add((PurePosixPath(match.group(1)).name.lower(), match.group(2) or match.group(3)))

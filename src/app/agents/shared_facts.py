@@ -220,6 +220,8 @@ def what_the_setup_decides(pack: Any, project: str, package: str | None) -> list
         lines.append(f'- `{prefix}package.json` is the setup\'s and already declares `"type": "{kind}"`: its `.js` files are '
                      + ("ES modules (`import` / `export`)" if kind == "module" else "CommonJS modules (`require`)")
                      + ". The specification needs no other module setting.")
+    for fact in getattr(pack, "design_facts", None) or ():
+        lines.append("- " + pack.filled(fact, project, "", package))
     lines.extend(_what_the_setup_already_writes(pack, project, package))
     return lines
 

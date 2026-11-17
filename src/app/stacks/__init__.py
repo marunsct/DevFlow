@@ -135,6 +135,11 @@ class StackPack:
     #: Whether the scaffold's own files call each required export with no arguments (`createApp()`), so one that
     #: needs an argument receives `undefined` (`app.stacks.entry_exports.what_the_start_file_cannot_call`).
     required_exports_called_bare: bool = False
+    #: Lines the pack states to the stages that write and judge the specification, `{{package}}` filled: what its
+    #: entry's shape must be, which a specification written without the guide can contradict. Measured on one Rust
+    #: run: the specification gave `pub fn build_router() -> Router<AppState>`, which `axum::serve` cannot serve, and
+    #: two sprint attempts built and re-planned to it while every builder's guide said a plain `Router`.
+    design_facts: tuple[str, ...] = ()
     #: ".ts" for a pack whose TypeScript Node runs as it is: the harness adds the extension to a relative import that
     #: lacks it (`app.stacks.import_extensions`). "" for every other pack.
     relative_import_extension: str = ""

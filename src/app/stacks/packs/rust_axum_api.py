@@ -120,6 +120,10 @@ PACK = service_pack(
     server_timeout_ms=600_000,
     smoke_unit=("tests/scaffold_smoke.rs", SMOKE_UNIT),
     guide=GUIDE,
+    design_facts=(
+        "`src/lib.rs`'s entry is `pub fn app() -> Router`, its state applied inside with `.with_state(state)`: "
+        "never `Router<AppState>`, which `axum::serve` cannot serve.",
+    ),
     stack={
         "language": "Rust",
         "framework": "axum",

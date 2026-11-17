@@ -68,11 +68,17 @@ async fn the_service_reports_its_health() {
 }
 """
 
+#: Measured on one Rust run: its unit tests imported `axum::test`, which does not exist, through two fix rounds, and
+#: `app()` returned a `Router<AppState>` that `axum::serve` would not serve; the guide named `oneshot` and neither.
 GUIDE = """The service is Rust on axum: `app()` in `src/lib.rs` builds its `Router` (add routes
 with `.route("/items", post(create))`), and `src/main.rs` starts it. Unit tests go in
 `tests/`, one file per area (`tests/<area>.rs`), calling `{{package}}::app()` with
-`tower::ServiceExt::oneshot` - or in a `#[cfg(test)]` module beside the code. Run
-them with `cargo nextest run` (or `cargo test`). Add a crate with `cargo add <name>`."""
+`tower::ServiceExt::oneshot` - or in a `#[cfg(test)]` module beside the code. There is no
+`axum::test`: a test imports `axum::body::Body`, `axum::http::{Request, StatusCode}`,
+`http_body_util::BodyExt` and `tower::ServiceExt`, as `tests/scaffold_smoke.rs` does. `app()`
+returns a plain `Router`: shared state is applied inside it with `.with_state(state)`, since
+`axum::serve` cannot serve a `Router<AppState>`. Run them with `cargo nextest run` (or `cargo
+test`). Add a crate with `cargo add <name>`."""
 
 DOCKERFILE = """# {{title}}: build with `docker build -t {{project}} .`, run with
 # `docker run -p 3000:3000 -v {{project}}-data:/data {{project}}`.

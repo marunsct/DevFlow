@@ -17,6 +17,20 @@ from langgraph.checkpoint.memory import MemorySaver
 CONFIG = {"configurable": {"thread_id": "t", "run_id": "r"}}
 
 
+def workflow_source() -> str:
+    """The workflow's source: `app.graph.workflow` and every module of `app.graph.nodes`, where its nodes live.
+
+    For the few tests that pin wording rather than behaviour; one place to read
+    it, so a node moving between these modules keeps its pins."""
+    from pathlib import Path
+
+    import app.graph.nodes
+    import app.graph.workflow
+
+    files = [Path(app.graph.workflow.__file__), *sorted(Path(app.graph.nodes.__file__).parent.glob("*.py"))]
+    return "\n".join(path.read_text(encoding="utf-8") for path in files)
+
+
 def run_node(name: str, state: dict[str, Any], root: str, patches: dict[str, Any] | None = None) -> dict[str, Any]:
     """The update one node returns for `state`, with `patches` (target -> replacement) applied."""
     from app.graph.workflow import build_workflow_graph

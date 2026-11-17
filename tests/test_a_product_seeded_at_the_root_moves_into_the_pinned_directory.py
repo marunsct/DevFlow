@@ -19,7 +19,6 @@ from app.stacks import custom_setup
 from app.tools.repository import pin_the_directory_the_product_names, pinned_project_directory
 from app.tools.version_control import initialise_repository
 
-ROOT = Path(__file__).resolve().parents[1]
 NAME = "Tasks API"
 PROJECT = "tasks-api"
 BANNED = re.compile(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
@@ -151,7 +150,9 @@ def test_a_file_standing_where_the_directory_would_go_stops_the_move(tmp_path):
 
 
 def test_the_move_is_in_the_run_s_decisions_once(tmp_path):
-    assert "record_the_move(state, update)" in (ROOT / "src/app/graph/workflow.py").read_text(encoding="utf-8")
+    from workflow_nodes import workflow_source
+
+    assert "record_the_move(state, update)" in workflow_source()
     from app.stacks.seeded_product import record_the_move
 
     workspace = _seeded(tmp_path, PRODUCT, git=False)

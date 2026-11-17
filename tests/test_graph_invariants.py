@@ -519,7 +519,7 @@ def _fresh_returns_after(lines: list[str], pops: list[int]) -> list[str]:
     return offenders
 
 
-def test_a_missing_product_intake_fails_with_an_explanation():
+def test_a_missing_product_intake_fails_with_an_explanation(tmp_path):
     """A stage that skipped its structured response must not raise a KeyError.
 
     Observed on one run: the product manager wrote
@@ -529,24 +529,30 @@ def test_a_missing_product_intake_fails_with_an_explanation():
     `KeyError: 'product_intake'` raised from inside LangGraph - a message that
     names neither the stage that failed nor anything to do about it.
     """
-    import json
-    import re
-    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
 
-    source = Path(__file__).resolve().parent.parent / "src/app/graph/workflow.py"
-    text = source.read_text()
+    from workflow_nodes import run_node
 
-    body = text[text.index("def tools_models_node") : text.index("def stack_selector_node")]
+    def gated(*args, **kwargs):
+        raise AssertionError("the tools stage must not be asked without an intake")
 
-    assert 'state["product_intake"]' not in body, (
-        "read `product_intake` with .get() and hand back a recoverable error; "
-        "a direct subscript raises KeyError from inside LangGraph"
-    )
-    assert 'state.get("product_intake")' in body
-    assert "without returning its structured" in body
+    patches = {
+        "app.graph.workflow.create_tools_models_agent": lambda **kwargs: MagicMock(),
+        "app.graph.workflow._run_gated_agent": gated,
+    }
+    state = {"repository": SimpleNamespace(root_path=str(tmp_path))}
     # Resuming re-enters this node, where the intake is still missing, so the
     # guard must route back to the stage that owes the output rather than tell
     # the operator to resume. One run was resumed once and failed in the
     # same place.
-    assert 'stage="product_manager"' in body
-    assert "structured_retries" in body
+    retried = run_node("tools_models", state, str(tmp_path), patches)
+    assert retried["stage"] == "product_manager"
+    assert retried["structured_retries"] == {"product_manager:intake": 1}
+
+    spent = workflow_module._max_structured_retries()
+    failed = run_node(
+        "tools_models", {**state, "structured_retries": {"product_manager:intake": spent}}, str(tmp_path), patches
+    )
+    assert failed["stage"] == "failed"
+    assert "without returning its structured" in failed["error"]

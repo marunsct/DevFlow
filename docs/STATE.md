@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-17 19:46 JST (written by `loop.sh state`). Harness 2703e4a9 committed; e4140adc deployed (not the same).
+**As of:** 11-17 21:33 JST (written by `loop.sh state`). Harness 1def005a committed; 1def005a deployed.
 **Live, and stopped in the last day:** run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0; run-844673cd failed at failed; run-9f8188cb failed at failed; run-2db7b0a2 failed at failed; run-4db255e8 failed at failed
-**Last scored:** run-760be6cb notes-api-rust 0/9 (failed, handoff 0.429; scored 11-17 19:46 JST); run-e53e1441 notes-api-java 9/9 (completed, mixed, 89 active min, handoff 1.0; scored 11-17 17:56 JST); run-666e030f notes-api-go 9/9 (completed, mixed, 69 active min, handoff 1.0; scored 11-17 16:45 JST).
+**Last scored:** run-c7a00abc notes-api-rust 9/9 (completed, handoff 1.0; scored 11-17 21:33 JST); run-760be6cb notes-api-rust 0/9 (failed, mixed, 86 active min, handoff 0.429; scored 11-17 19:46 JST); run-e53e1441 notes-api-java 9/9 (completed, mixed, 89 active min, handoff 1.0; scored 11-17 17:56 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -91,7 +91,14 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
    `axum::test`), LF.1033 (a defect's place on rustc's `-->` line), LF.1034 (no general-purpose subagent on any hosted
    provider), LF.1035 (a pack's design facts reach the design stages), LF.1036 (a fix is blamed for the install only
    when it worked where the fix started), LF.1037 (container-mode mutation scores were never recorded).
-   Live: Rust container run 2, run-c7a00abc-1f89-4d22-a153-2341b48c4641 (:8888, 19:54), on e02b0bbf.
+   Rust container run 2, run-c7a00abc-1f89-4d22-a153-2341b48c4641 (:8888, 19:54-21:32): hidden 9/9, quality 8/8,
+   handoff 1.0, verdict not_deliverable (AC-18 deferred; one unit test file did not compile). From 0/9 in run 1:
+   LF.1035 (the design gave a plain `Router`), LF.1036 (no fix reverted in four attempts, against 8), LF.1038-1041
+   (the Rust pack's known compiler errors, each given its cause; the handler-order error closed once it was).
+   LF.1042 (no check reads a toolchain's build output: its release checks and mutation probe read `target/doc`).
+   Open, measured: the design gate's "says opposite things" findings are mostly false - 43 over the last 4 runs,
+   7-12 in each ("no response body" on DELETE paired with every endpoint's body). Next: scope a denial to what it
+   is about before calling two statements opposite.
 2. LR.30 container-mode Go run 1, run-666e030f-1c7d-4830-bf58-b9594f31ac4a (:1234, 15:28-16:44): hidden 9/9, quality
    8/8, handoff 1.0, verdict not_deliverable (contract lines and design points left open). LF.1022, LF.1024-1025 from it.
    C# next on :1234: its pack failed `verify_packs` in container mode (LF.1027, the .NET image's uid) - a run started on it

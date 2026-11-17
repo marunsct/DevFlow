@@ -24,12 +24,30 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 
+#: A toolchain's build output, known by the manifest beside it (a name pattern): never a project's own files, whatever a
+#: caller's list says. Measured on a Rust run: the release checks read cargo's generated docs under `target/doc` and the
+#: mutation probe changed their JavaScript, so the run's mutation score measured nothing. A folder of the same name with
+#: no such manifest beside it is the project's own, and is walked.
+BUILD_OUTPUT_BESIDE: dict[str, tuple[str, ...]] = {
+    "target": ("Cargo.toml", "pom.xml"),
+    "bin": ("*.csproj", "*.fsproj"),
+    "obj": ("*.csproj", "*.fsproj"),
+}
+
+
+def is_build_output(name: str, siblings: Iterable[str]) -> bool:
+    """Whether a folder called `name`, beside files called `siblings`, is a toolchain's build output."""
+    markers = BUILD_OUTPUT_BESIDE.get(name)
+    return bool(markers) and any(fnmatch.fnmatchcase(sibling, marker) for sibling in siblings for marker in markers)
+
+
 def _walk(root: Path, skip: Iterable[str], skip_hidden: bool = False) -> Iterator[tuple[Path, list[str], list[str]]]:
     skipped = set(skip)
     for directory, subdirectories, files in os.walk(root, followlinks=False, onerror=lambda _: None):
         # Pruned in place: `os.walk` does not descend into what is removed here.
         subdirectories[:] = sorted(
-            d for d in subdirectories if d not in skipped and not (skip_hidden and d.startswith("."))
+            d for d in subdirectories
+            if d not in skipped and not (skip_hidden and d.startswith(".")) and not is_build_output(d, files)
         )
         yield Path(directory), subdirectories, sorted(files)
 

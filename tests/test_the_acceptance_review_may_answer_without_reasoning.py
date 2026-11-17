@@ -23,7 +23,8 @@ def test_off_by_default_and_listed_as_an_efficiency_switch(monkeypatch):
     monkeypatch.delenv("REVIEWS_WITHOUT_REASONING", raising=False)
     assert reviews_without_reasoning.ON_BY_DEFAULT is False
     assert switches.group_of("REVIEWS_WITHOUT_REASONING") == "Efficiency"
-    assert "REVIEWS_WITHOUT_REASONING" not in switches.EXPERIMENTS_ON
+    # Off in code; deployed on from 11-17 (owner: built switches on, measured against the runs before them).
+    assert "REVIEWS_WITHOUT_REASONING" in switches.EXPERIMENTS_ON
 
 
 def test_off_leaves_the_model_as_it_is(monkeypatch):

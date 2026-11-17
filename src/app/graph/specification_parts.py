@@ -351,12 +351,43 @@ def _the_form_of(parameters: dict[str, Any], names: Any) -> str:
     return "--- The form of each section (JSON schema) ---\n" + json.dumps(form, default=str) if form else ""
 
 
-def revised_in_place(specification: Any, required_changes: str, model: Any, context: str) -> Any | None:
-    """`specification` with only the sections the changes touch rewritten, or None to revise as before."""
+def revision_reply(model: Any, request: str, names: tuple[str, ...], parameters: dict[str, Any],
+                   current: dict[str, Any]) -> dict[str, Any] | None:
+    """The sections `names` as one revising call writes them for `request`, or None when the reply lacks one."""
     from langchain_core.messages import HumanMessage, SystemMessage
-    from langchain_core.utils.function_calling import convert_to_openai_tool
 
     from app.models.tool_arguments import with_structure_decoded
+
+    try:
+        reply = model.invoke([
+            SystemMessage(content="You revise sections of software technical specifications as JSON."),
+            HumanMessage(content=request),
+        ], **config_for_this_run("principal_architect"))
+        found = _the_object_in(reply) or {}
+        decoded = with_structure_decoded({k: v for k, v in found.items() if k in names}, parameters)
+        written = {k: v for k, v in decoded.items() if v not in (None, "", [], {})}
+        # A section answered with an empty value is a section left as it
+        # stands: measured, a reply wrote the one section the changes
+        # touched and answered an empty list for a second that held none,
+        # and the nine minutes it took were thrown away for a full rewrite.
+        for name in names:
+            if name not in written and name in decoded and decoded[name] is not None and not decoded[name] and name in current:
+                written[name] = current[name]
+        if len(written) < len(names):
+            logger.info("A revision of %s came back without %s", ", ".join(names),
+                        ", ".join(n for n in names if n not in written))
+            return None
+        return written
+    except Exception as error:  # noqa: BLE001 - the architect revises as before
+        logger.info("A revision of %s could not be written: %s", ", ".join(names), str(error)[:200])
+        return None
+
+
+def revised_in_place(specification: Any, required_changes: str, model: Any, context: str) -> Any | None:
+    """`specification` with only the sections the changes touch rewritten, or None to revise as before."""
+    from langchain_core.utils.function_calling import convert_to_openai_tool
+
+    from app.graph import design_revision_cross_checked as cross
 
     if model is None or not required_changes.strip():
         return None
@@ -374,6 +405,7 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
     groups = grouped_by_finding(chosen, required_changes)
     parameters = convert_to_openai_tool(type(specification))["function"]["parameters"]
     core = _sections_as_json(specification, CORE)
+    cross_checked = cross.enabled()
 
     def revise(names: tuple[str, ...]) -> dict[str, Any] | None:
         current = _sections_as_json(specification, names)
@@ -384,34 +416,14 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
             context.strip(),
             f"--- Required changes ---\n{required_changes.strip()[:20_000]}",
             "--- The specification's core, as it stands ---\n" + json.dumps(core, indent=1, default=str),
+            # What the sections left as they are say on the same subjects (DESIGN_REVISION_CROSS_CHECKED).
+            cross.related_block(specification, names, (*chosen, *CORE), required_changes) if cross_checked else "",
             _the_form_of(parameters, names),
             "--- The sections to rewrite, as they stand ---\n" + json.dumps(current, indent=1, default=str),
             "Reply with one JSON object and nothing else. Its keys are exactly: " + ", ".join(names)
             + ". Each value has the form its schema gives, whatever the section holds now.",
         ) if part)
-        try:
-            reply = model.invoke([
-                SystemMessage(content="You revise sections of software technical specifications as JSON."),
-                HumanMessage(content=request),
-            ], **config_for_this_run("principal_architect"))
-            found = _the_object_in(reply) or {}
-            decoded = with_structure_decoded({k: v for k, v in found.items() if k in names}, parameters)
-            written = {k: v for k, v in decoded.items() if v not in (None, "", [], {})}
-            # A section answered with an empty value is a section left as it
-            # stands: measured, a reply wrote the one section the changes
-            # touched and answered an empty list for a second that held none,
-            # and the nine minutes it took were thrown away for a full rewrite.
-            for name in names:
-                if name not in written and name in decoded and decoded[name] is not None and not decoded[name] and name in current:
-                    written[name] = current[name]
-            if len(written) < len(names):
-                logger.info("A revision of %s came back without %s", ", ".join(names),
-                            ", ".join(n for n in names if n not in written))
-                return None
-            return written
-        except Exception as error:  # noqa: BLE001 - the architect revises as before
-            logger.info("A revision of %s could not be written: %s", ", ".join(names), str(error)[:200])
-            return None
+        return revision_reply(model, request, names, parameters, current)
 
     with ThreadPoolExecutor(max_workers=len(groups)) as pool:
         written = mapped_in_this_context(pool, revise, groups)
@@ -423,5 +435,7 @@ def revised_in_place(specification: Any, required_changes: str, model: Any, cont
     except Exception as error:  # noqa: BLE001 - the architect revises as before
         logger.warning("A revision made in place could not be joined: %s", str(error)[:300])
         return None
+    if cross_checked:
+        revised = cross.brought_into_line(specification, revised, chosen, required_changes, model, context)
     logger.info("Specification revised in place: %s", ", ".join(chosen))
     return revised

@@ -121,5 +121,6 @@ def test_the_switch_is_an_experiment_that_ships_off():
     from app import switches
 
     assert "MUTANT_CHECK_IN_THE_FIX_STAGE" in switches.EXPERIMENTS
-    assert "MUTANT_CHECK_IN_THE_FIX_STAGE" not in switches.EXPERIMENTS_ON
+    # Off in code; deployed on from 11-17 (owner: built switches on, measured against the runs before them).
+    assert "MUTANT_CHECK_IN_THE_FIX_STAGE" in switches.EXPERIMENTS_ON
     assert mutant_check_in_stage.ON_BY_DEFAULT is False

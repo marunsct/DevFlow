@@ -14,6 +14,7 @@ from typing import Any, Iterable
 
 #: Switch -> text only that switch puts in a model request or a tool's answer.
 SIGNALS: dict[str, str] = {
+    "DESIGN_REVISION_CROSS_CHECKED": "Cross-checked against the sections left unchanged",
     "NEAR_GREEN_REPLANNED_ONCE": "a near-green suite is not planned again a second time",
     "LESSON_DISTILLER": "LESSONS FROM EARLIER RUNS",
     "ASSUMPTIONS_GATE": "Open questions, answered",

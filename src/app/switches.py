@@ -172,7 +172,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # What a stack's setup stage may write (docs/measuring.md M6): measured off and on before it is kept.
     "Setup scope": ("SETUP_SCOPE_GUARD",),
     # Which review findings may send a sprint back (docs/measuring.md M7).
-    "Review gates": ("MILESTONE_EVIDENCE_GATE",),
+    "Review gates": ("MILESTONE_EVIDENCE_GATE", "DESIGN_REVISION_CROSS_CHECKED"),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)
@@ -186,6 +186,17 @@ EXPERIMENTS_ON: dict[str, str] = {
     "NEAR_GREEN_REPLANNED_ONCE": "measured over 175 past re-plans (LR.53): later re-plans of a near-green sprint beat the "
                                  "best in 4 of 27 cases at about 34 minutes each, 21 of 22 such runs scored every hidden "
                                  "test; on, and kept only if live runs lose no hidden test by it (docs/measuring.md M14)",
+    "OBSERVATION_FOLDING": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "STABLE_STAGE_PREFIX": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "BATCH_ACCEPTANCE_AUTHOR": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "REASONING_KEPT_AFTER_AN_ANSWER": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "EQUIVALENT_MUTANTS_REMEMBERED": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "MUTANT_CHECK_IN_THE_FIX_STAGE": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "REVIEWS_WITHOUT_REASONING": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "HARNESS_FINDINGS_RECHECKED": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "SETUP_SCOPE_GUARD": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "MILESTONE_EVIDENCE_GATE": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "DESIGN_REVISION_CROSS_CHECKED": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
 }
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}
 

@@ -87,6 +87,12 @@ def source_files(project: Path, kept: set[str] | frozenset[str] = frozenset()) -
             continue
         if SKIPPED_NAME.search(path.name):
             continue
+        # The shared classifier too: measured on one run, RSpec's `spec/app_spec.rb` was changed - a test, by a
+        # language's naming this list did not know.
+        from app.analysis.file_kinds import is_test
+
+        if is_test(relative.as_posix()):
+            continue
         files.append(path)
     return files
 

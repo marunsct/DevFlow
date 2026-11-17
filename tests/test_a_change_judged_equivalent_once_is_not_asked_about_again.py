@@ -136,5 +136,6 @@ def test_the_switch_is_an_experiment_that_ships_off():
     from app import switches
 
     assert "EQUIVALENT_MUTANTS_REMEMBERED" in switches.EXPERIMENTS
-    assert "EQUIVALENT_MUTANTS_REMEMBERED" not in switches.EXPERIMENTS_ON
+    # Off in code; deployed on from 11-17 (owner: built switches on, measured against the runs before them).
+    assert "EQUIVALENT_MUTANTS_REMEMBERED" in switches.EXPERIMENTS_ON
     assert mutation_equivalents.ON_BY_DEFAULT is False

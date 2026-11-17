@@ -12,6 +12,20 @@ Status words:
 - **Owner action**: only the owner can do it. The harness never changes the owner's models, machine or accounts.
 - **Waiting**: blocked on something named.
 
+## 2026-11-17 (owner, about 10:00 JST: build the rest in parallel, behind switches, measured on the runs already made)
+"complete the partly done and pending items in parallel ... can we use past run as without measurement so that we dont
+waste time on running it again, do the development behind switch do the measured runs if find any drastic changes we can
+turn off the switch and measure to verify ... complete this product as efficiently and quickly as possible".
+- Applied: the remaining launch-review items are built in parallel (one worktree each), new behaviour behind a switch;
+  the scored runs already made are the baseline - no new "off" runs first.
+- Applied: the 10 built-but-off switches are ON from 11-17 (`EXPERIMENTS_ON`), with NEAR_GREEN_REPLANNED_ONCE; each new
+  switch goes on when deployed.
+- The rule for "drastic": a run a switch fired in loses a hidden test, or takes 1.5x its family's 5-run active minutes
+  (the KPI check already flags 1.5x). Then that switch, or its group when firing is not recorded, goes off and the next
+  run of that family verifies. Caveat kept: switches on together are told apart by their firing signals (M10: most
+  have none yet), so firing signals are added as each switch is touched.
+- Waiting on the owner: LR.44 (hosted-model runs cost money; needs an explicit yes, provider and budget).
+
 ## 2026-11-10 (owner, about 21:30 JST: "go ahead with the recommendations")
 
 Context: [backing-services plan](backing-services-plan.md) §7 and the

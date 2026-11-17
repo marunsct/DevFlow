@@ -223,6 +223,9 @@ def without_line_edits(text: str) -> str:
 
 
 _SUBAGENT_PROFILE_REGISTERED = False
+#: Every provider key a role agent's model reports (`a_chat_model`: the OpenAI-compatible client, Anthropic's and
+#: Google's own). It was `openai` alone, so a role agent on a hosted Claude or Gemini model was still offered `task`.
+_PROVIDERS_A_ROLE_AGENT_RUNS_ON = ("openai", "anthropic", "google_genai")
 
 
 def _disable_the_general_purpose_subagent() -> None:
@@ -259,12 +262,13 @@ def _disable_the_general_purpose_subagent() -> None:
             register_harness_profile,
         )
 
-        register_harness_profile(
-            "openai",
-            HarnessProfile(
-                general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)
-            ),
-        )
+        for provider in _PROVIDERS_A_ROLE_AGENT_RUNS_ON:
+            register_harness_profile(
+                provider,
+                HarnessProfile(
+                    general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)
+                ),
+            )
         _SUBAGENT_PROFILE_REGISTERED = True
     except Exception:  # noqa: BLE001 - an agent without this is the old behaviour
         logger.warning(

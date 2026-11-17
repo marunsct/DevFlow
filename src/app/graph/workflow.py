@@ -3067,15 +3067,59 @@ def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: 
         if not interface_contract.server_errors_at_a_round_switch.enabled() or not acceptance_nodes.suite.is_locked(root):
             return test_result
         if any(str(d.description or "").startswith(interface_contract.SERVER_FAILED) for d in test_result.defects):
-            return test_result
+            # Writes made at once are another probe's finding: asked whatever the server-error defect says.
+            return _with_a_concurrent_write_defect(state, test_result, milestone)
+        from app.acceptance import wrong_shape_body_probe
+
         errors = interface_contract.server_errors(root) or []
         bad_body = interface_contract.bad_body_errors(root) or []
-        if errors or bad_body:
-            logger.warning("A green round's contract checks made the server fail on %d line(s)", len(errors) + len(bad_body))
-            test_result = _with_a_server_error_defect(state, test_result, milestone, errors, bad_body)
+        wrong_shape = wrong_shape_body_probe.wrong_shape_errors(root) or []
+        if errors or bad_body or wrong_shape:
+            logger.warning("A green round's contract checks made the server fail on %d line(s)",
+                           len(errors) + len(bad_body) + len(wrong_shape))
+            test_result = _with_a_server_error_defect(state, test_result, milestone, errors, bad_body, wrong_shape)
+        test_result = _with_a_concurrent_write_defect(state, test_result, milestone)
         return _with_an_emptied_field_defect(state, test_result, milestone)
     except Exception:  # noqa: BLE001 - the round as measured stands
         logger.debug("Could not add the contract's server errors to the round", exc_info=True)
+        return test_result
+
+
+def _with_a_concurrent_write_defect(state: Any, test_result: Any, milestone: Any) -> Any:
+    """`test_result` with one defect for each create line that did not keep creates sent at once, behind its switch. Never raises.
+
+    Measured: in several benchmark families products lost writes made at the same moment, which only an external
+    quality test caught (`app.acceptance.concurrent_write_probe`).
+    """
+    try:
+        from app.acceptance import concurrent_write_probe
+        from app.agents.specialists import ReportedDefect
+
+        if not concurrent_write_probe.enabled() or any(
+            str(d.description or "").startswith(concurrent_write_probe.CONCURRENT_WRITES_LOST) for d in test_result.defects
+        ):
+            return test_result
+        found = concurrent_write_probe.concurrent_write_errors(state["repository"].root_path) or []
+        if not found:
+            return test_result
+        logger.warning("A green round's concurrent-write probe: %d create line(s) did not keep writes made at once", len(found))
+        n = concurrent_write_probe.AT_ONCE
+        defect = ReportedDefect(
+            description=concurrent_write_probe.concurrent_write_description(found),
+            severity="major",
+            reproduction_steps="; ".join(
+                f"send {n} `{c.method} {c.path}` requests at the same moment, each with one valid body"
+                + (f", then read `GET {f.get('list')}`" if f.get("list") else "") for c, f in found[:4]),
+            expected_behavior="; ".join(
+                f"each of the {n} writes to `{c.path}` is answered under 500, carries its own id, and is listed"
+                for c, _ in found[:4]),
+            actual_behavior="; ".join(f"`{c.method} {c.path}`: {concurrent_write_probe.what_came_back(f)}" for c, f in found[:4]),
+            affected_files=[],
+            owner=_the_unit_tests_fail(milestone, "").owner,
+        )
+        return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
+    except Exception:  # noqa: BLE001 - the round as measured stands
+        logger.debug("Could not add the concurrent-write defect to the round", exc_info=True)
         return test_result
 
 
@@ -3133,28 +3177,37 @@ def _with_the_lock_s_server_errors(state: Any, test_result: Any, milestone: Any)
 
 
 def _with_a_server_error_defect(state: Any, test_result: Any, milestone: Any, errors: list[Any],
-                                bad_body: list[Any] | None = None) -> Any:
-    """`test_result` with one defect for `errors`, each a contract check and the 5xx it got, and for `bad_body`, the same for a body nothing can parse."""
+                                bad_body: list[Any] | None = None, wrong_shape: list[Any] | None = None) -> Any:
+    """`test_result` with one defect for `errors`, each a contract check and the 5xx it got; for `bad_body`, the same for
+    a body nothing can parse; for `wrong_shape`, (check, status, body) for JSON that is not an object."""
     from app.acceptance import interface_contract
     from app.agents.specialists import ReportedDefect
     from app.graph import acceptance_nodes
 
     root = state["repository"].root_path
     unparsable = list(bad_body or [])
+    shaped = list(wrong_shape or [])
     defect = ReportedDefect(
-        description=interface_contract.server_error_description(errors, unparsable),
+        description=interface_contract.server_error_description(errors, unparsable, shaped),
         severity="major",
         reproduction_steps="; ".join([
             *(f"send `{check.method} {check.path}` with no body to the running service" for check, _ in errors[:6]),
             *(f"send `{check.method} {check.path}` the JSON content type and the body "
               f"`{interface_contract.A_BODY_NOTHING_CAN_PARSE}`" for check, _ in unparsable[:6]),
+            *(f"send `{check.method} {check.path}` the JSON content type and the body `{body}`"
+              for check, _, body in shaped[:6]),
         ]),
         expected_behavior="; ".join([
             *(f"`{check.method} {check.path}` answers {' or '.join(map(str, check.statuses or (check.status,)))}"
               for check, _ in errors[:6]),
             *(f"`{check.method} {check.path}` refuses a body it cannot parse with a status under 500" for check, _ in unparsable[:6]),
+            *(f"`{check.method} {check.path}` refuses a JSON body that is not an object with a status under 500"
+              for check, _, _ in shaped[:6]),
         ]),
-        actual_behavior="; ".join(f"`{check.method} {check.path}` answered {status}" for check, status in [*errors[:6], *unparsable[:6]]),
+        actual_behavior="; ".join([
+            *(f"`{check.method} {check.path}` answered {status}" for check, status in [*errors[:6], *unparsable[:6]]),
+            *(f"`{check.method} {check.path}` answered {status} to `{body}`" for check, status, body in shaped[:6]),
+        ]),
         affected_files=sorted({f for f, _ in acceptance_nodes.where_errors_become_5xx(root)}),
         owner=_the_unit_tests_fail(milestone, "").owner,
     )
@@ -3259,10 +3312,13 @@ def _settled_by_its_own_probe(root: Path, defect: Any) -> Any:
         found = interface_contract.emptied_field_errors(root)
         return None if found is None else not found
     if description.startswith(interface_contract.SERVER_FAILED):
+        from app.acceptance import wrong_shape_body_probe
+
         errors, bad_body = interface_contract.server_errors(root), interface_contract.bad_body_errors(root)
-        if errors is None and bad_body is None:
+        shaped = wrong_shape_body_probe.wrong_shape_errors(root)
+        if errors is None and bad_body is None and shaped is None:
             return None
-        return not (errors or []) and not (bad_body or [])
+        return not (errors or []) and not (bad_body or []) and not (shaped or [])
     return _NOT_A_PROBE_S
 
 

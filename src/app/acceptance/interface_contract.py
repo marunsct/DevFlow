@@ -1364,9 +1364,13 @@ def _the_call(check: Check) -> str:
     return f"{check.method} {check.path}"
 
 
-def server_error_description(errors: list[tuple[Check, int]], bad_body: list[tuple[Check, int]] | None = None) -> str:
-    """The defect's description for `errors`: each call, the status it gave and what the contract gives; and for each of
-    `bad_body`, the call that failed on a body it could not parse."""
+def server_error_description(errors: list[tuple[Check, int]], bad_body: list[tuple[Check, int]] | None = None,
+                             wrong_shape: list[tuple[Check, int, str]] | None = None) -> str:
+    """The defect's description for `errors`: each call, the status it gave and what the contract gives; for each of
+    `bad_body`, the call that failed on a body it could not parse; for each of `wrong_shape`, the call that failed on
+    valid JSON that is not an object (`wrong_shape_body_probe`)."""
+    from app.acceptance import wrong_shape_body_probe
+
     each = "; ".join([
         *(f"`{_the_call(check)}` sent with no body answered {status} where "
           + (f"a refusal under 500 is due: `{AN_ID_THAT_IS_NOT_A_NUMBER}` names no record"
@@ -1375,20 +1379,26 @@ def server_error_description(errors: list[tuple[Check, int]], bad_body: list[tup
           for check, status in errors[:6]),
         *(f"`{_the_call(check)}` {SENT_WITH_A_BAD_BODY} answered {status} where a refusal under 500 was due"
           for check, status in (bad_body or [])[:6]),
+        *wrong_shape_body_probe.described(list(wrong_shape or [])),
     ])
+    shapes = ", JSON that is not an object (a string, an array)" if wrong_shape else ""
     return (
-        f"{SERVER_FAILED} {each}. A request the product cannot use - no body, a body that is not JSON, a record "
-        "that does not exist, an id of the wrong kind - is answered with the status the contract gives for it, or a "
-        "refusal under 500 where it gives none, never by the server failing."
+        f"{SERVER_FAILED} {each}. A request the product cannot use - no body, a body that is not JSON{shapes}, a "
+        "record that does not exist, an id of the wrong kind - is answered with the status the contract gives for it, "
+        "or a refusal under 500 where it gives none, never by the server failing."
     )
 
 
 def still_raised(repo_root: str | Path, description: str, *, runner: Any = None) -> bool | None:
     """Whether a server-error defect with this description would be raised again now; None when it is not one or the checks cannot run."""
     text = str(description or "")
+    from app.acceptance import concurrent_write_probe, wrong_shape_body_probe
+
+    if text.startswith(concurrent_write_probe.CONCURRENT_WRITES_LOST):
+        return concurrent_write_probe.still_raised(repo_root, text, runner=runner)
     if not text.startswith(SERVER_FAILED):
         return None
-    # A call may be named for either request; each kind is settled by asking the same request again.
+    # A call may be named for any request; each kind is settled by asking the same request again.
     answers: list[bool] = []
     if "sent with no body" in text:
         errors = server_errors(repo_root, runner=runner)
@@ -1402,6 +1412,13 @@ def still_raised(repo_root: str | Path, description: str, *, runner: Any = None)
             errors = bad_body_errors(repo_root, runner=runner)
             if errors is not None:
                 answers.append(any(f"`{_the_call(check)}` {SENT_WITH_A_BAD_BODY}" in text for check, _ in errors))
+    if wrong_shape_body_probe.SAID in text:
+        if not wrong_shape_body_probe.enabled():
+            answers.append(False)
+        else:
+            shaped = wrong_shape_body_probe.wrong_shape_errors(repo_root, runner=runner)
+            if shaped is not None:
+                answers.append(any(f"`{_the_call(check)}` {wrong_shape_body_probe.SAID}" in text for check, _, _ in shaped))
     return any(answers) if answers else None
 
 
@@ -1456,7 +1473,9 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
     except Exception:  # noqa: BLE001 - the release says nothing it cannot measure
         logger.debug("Could not run the interface contract's checks", exc_info=True)
         return []
-    gaps: list[str] = what_the_bad_body_probe_did_not_ask(repo_root)
+    from app.acceptance import concurrent_write_probe
+
+    gaps: list[str] = [*what_the_bad_body_probe_did_not_ask(repo_root), *concurrent_write_probe.what_it_did_not_ask(repo_root)]
     if report is not None and not report.found:
         gaps.append("The interface contract's checks could not run at release: their runner wrote no report.")
     elif report is not None:

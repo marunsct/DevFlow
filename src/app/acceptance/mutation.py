@@ -57,7 +57,8 @@ OPERATORS: list[tuple[str, str]] = [
 ]
 
 #: Source a product's behaviour lives in.
-SOURCE_SUFFIXES = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".py", ".rb", ".go", ".java", ".php"}
+#: Measured on a Rust run: `.rs` was missing, so the probe found no change to make and the run had no mutation score.
+SOURCE_SUFFIXES = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".py", ".rb", ".go", ".java", ".php", ".rs", ".cs"}
 
 #: Directories that are not the product's own source.
 SKIPPED_PARTS = {"node_modules", "dist", "build", "coverage", "__pycache__", ".venv", "venv", ".harness",
@@ -150,7 +151,8 @@ def _lines_that_are_not_code(lines: list[str], suffix: str) -> set[int]:
 
 
 #: Languages where `<` and `>` also open and close markup tags or type arguments.
-_ANGLE_BRACKET_SUFFIXES = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"}
+#: Languages whose `<` also opens a tag or a type's parameters (`Vec<Note>`): changing that one only stops the build.
+_ANGLE_BRACKET_SUFFIXES = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".rs", ".cs", ".java"}
 _TAG_OR_TYPE_OPENED = re.compile(r"<[A-Za-z/>]")
 
 

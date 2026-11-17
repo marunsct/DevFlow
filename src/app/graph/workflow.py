@@ -11713,10 +11713,11 @@ def build_workflow_graph(
         revision_count = state.get("sprint_replan_count", 0) + 1
         # One decision from one measurement (LR.26, `end_of_attempt`): the best attempt back first if this one is
         # worse, then settle (green for this sprint, only unit tests open), stop (the attempts stalled), or re-plan.
-        from app.graph import end_of_attempt
+        from app.graph import end_of_attempt, sprint_time_budget
 
         decision = end_of_attempt.decide(state["repository"].root_path, getattr(cycle, "defects", None),
-                                         replans=revision_count - 1, best_history=state.get("sprint_best_history"))
+                                         replans=revision_count - 1, best_history=state.get("sprint_best_history"),
+                                         budget=sprint_time_budget.measure(state))
         best_history = decision.best_history
         if decision.outcome != end_of_attempt.REPLAN:
             why = f"{why}; {decision.why}"

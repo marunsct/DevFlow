@@ -26,8 +26,11 @@ class Decision:
     put_back: str = ""
 
 
-def decide(root: str, defects: Any, *, replans: int, best_history: Any) -> Decision:
-    """What ends this attempt: settle, stop, or plan again; with the reason added and the record of the best."""
+def decide(root: str, defects: Any, *, replans: int, best_history: Any, budget: Any = None) -> Decision:
+    """What ends this attempt: settle, stop, or plan again; with the reason added and the record of the best.
+
+    `budget` is the sprint's measured time (`sprint_time_budget.Budget`), or None when it is not measured.
+    """
     from app.graph import best_attempt, settle_when_green, stalled_sprint
 
     # Even one test fewer than the best is worse here: a run released at 17 of 18 criteria, with AC-14 deferred,
@@ -49,6 +52,10 @@ def decide(root: str, defects: Any, *, replans: int, best_history: Any) -> Decis
     if stalled_sprint.stalled(history):
         return Decision(STOP, f"the last {stalled_sprint.AFTER_FLAT_ATTEMPTS} attempts did not beat the best product",
                         history, put_back)
+    # Past the sprint's time budget (LR.42, `SPRINT_TIME_BUDGET`): stopped with the criteria still failing, not planned
+    # again. Last, so it decides only an attempt nothing else would have stopped.
+    if budget is not None and budget.past():
+        return Decision(STOP, budget.why(root), history, put_back)
     return Decision(REPLAN, "", history, put_back)
 
 

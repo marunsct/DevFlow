@@ -91,7 +91,7 @@ A program that runs and exits is run by its tests, as its user runs it.
 Do not ask for style changes, more comments, or tests of things no criterion
 asks for. Do not judge the product: whatever part of it is built, it is not the
 standard, and tests of later features are expected to fail now. Never open its
-files to decide what a test should expect.
+files, even one a test imports, to decide what a test should expect.
 
 Read the test files with your tools. Return `approved: true` only when every
 criterion that is not deferred is properly tested.

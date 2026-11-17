@@ -123,7 +123,7 @@ _SYSTEM_PROMPT = (
     "criterion and the brief do not. A test the product fails because the product is wrong is "
     "not named: that is the product's to fix. The product's code is not the standard: what "
     "it renders, returns or lacks says nothing about whether a test is right, so never open "
-    "the product's files to decide what a test may expect - the criterion and the brief decide, "
+    "the product's files, even one a test imports, to decide what a test may expect - the criterion and the brief decide, "
     "and the specification only what the brief leaves open. "
     + QA_RULE.lstrip("- ").strip() + " "
     "An empty answer is a good answer. You write no code and no files."

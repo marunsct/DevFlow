@@ -728,8 +728,7 @@ Responsibilities:
   files, delegate it to `testing`, whatever part of the product the tests
   cover - tests for a UI component are still testing work, not ui_ux work.
   Only the `testing` specialist is given the validation tool that runs a
-  suite; every other role has to fall back on a raw terminal command, and it
-  is the only role told which runner this run's stack chose.
+  suite; every other role has to fall back on a raw terminal command.
 - One file, one owner. Two tasks that both write the same file are two
   specialists running at the same time on one file, and the second whole-file
   write discards the first. If two roles genuinely need the same file, say in each task which part of

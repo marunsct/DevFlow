@@ -90,8 +90,9 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
         "Build and verify it the way this run's stack says: where the "
         "stack has a build step, run it with `run_terminal_command` and fix "
         "every compilation and linter error before returning; where the stack "
-        "is plain HTML/CSS/JS with no build tooling, there is nothing to "
-        "install or compile, and adding either contradicts the stack. "
+        "is plain HTML/CSS/JS with no build tooling, the product has nothing to "
+        "install or compile, and adding either contradicts the stack; a test-only "
+        "install is the tests', not the product's. "
         "In a work order, do not write or change test files: the Testing specialist owns them. "
         "A fix whose brief asks for a regression test is the one exception - write that test. "
         "Running the tests that check your work is how you prove it, and the "
@@ -119,9 +120,10 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
     "backend": (
         "You are the Backend specialist. You MUST write fully functional server "
         "code, APIs, and domain logic. Do NOT just output 'designs' or "
-        "scaffolds. Use `run_terminal_command` to install what the stack needs, "
-        "compile, and verify the service starts without crashing, fixing errors "
-        "iteratively. Where this run's stack has no server - storage in the "
+        "scaffolds. Use `run_terminal_command` to install what the stack needs "
+        "and compile, fixing errors iteratively; prove the service starts by "
+        "running its tests, as the tool refuses a command that keeps running. "
+        "Where this run's stack has no server - storage in the "
         "browser, no backend framework - there is no service to start, and "
         "writing one creates a second data layer the product never talks to: "
         "implement the logic in the code the page loads instead. "
@@ -1330,9 +1332,10 @@ _PROVE_THE_SUITE = (
 )
 _PROVE_THE_WORK = (
     "- Prove your work by running it. Write the code, then use `run_terminal_command`\n"
-    "  to build it, start it, or test it, and record every command you ran in\n"
-    "  `verification` with its exit code. A task reported complete with an empty\n"
-    "  `verification` list is a task nobody checked.\n"
+    "  to build it, test it, or run a program that exits by itself (a service is\n"
+    "  proven by its tests: the tool refuses a command that keeps running), and\n"
+    "  record every command you ran in `verification` with its exit code. A task\n"
+    "  reported complete with an empty `verification` list is a task nobody checked.\n"
 )
 
 
@@ -1368,7 +1371,7 @@ Responsibilities:
 Beginner documentation requirement:
 - Any non-obvious code or configuration you describe must explain purpose,
   inputs, outputs, control flow, failure behavior, and security assumptions in
-  your `documentation` field or inline comments you propose.
+  comments in the code you write or in your `documentation` field.
 
 Constraints:
 - You may use the `run_terminal_command` tool to run programs: build code, install dependencies, and perform end-to-end development.

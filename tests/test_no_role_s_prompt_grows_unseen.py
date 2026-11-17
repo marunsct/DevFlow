@@ -16,7 +16,13 @@ from tests.test_prompt_names_only_offered_tools import rendered  # noqa: F401 - 
 CEILINGS = {
     # 13,500 since the core-logic rule says keeping pure logic in its own functions is not removing it (LF.967): it
     # contradicted the testability rule.
-    "specialist": 13_500,
+    # 13,700 since the builders are told the command tool refuses a service, so its tests prove it starts, and the
+    # interface role that a test-only install is not the product's (LR.54): "start it" sent them to a refused command,
+    # and "nothing to install" contradicted the testing rule's test-only install.
+    "specialist": 13_700,
+    # 4,450 since the security review is told which of its words are blocking and major, and which is a suggestion
+    # (LR.54): the scope rule's "never a blocking or major finding" named no word of its scale, where high gates.
+    "security_reviewer": 4_450,
     # + the rule that the product ships every route, so none is added only for the tests (LF.757): a fixer added an
     # unauthenticated route that deletes every record, for a test's clean-up.
     # + the rule that a comparison rule also says how its values are shown (LF.780): two runs printed "The 3" where a

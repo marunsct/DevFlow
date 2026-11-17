@@ -541,8 +541,9 @@ _WRITING_RULES = (
     "- Files hold content a person reads or a program runs. Your result is\n"
     "  returned by calling your answer tool - never written to a file, never\n"
     "  printed as JSON text.\n"
-    "- Write each file once. A successful write is saved; do not write it again\n"
-    "  to confirm it.\n"
+    # "Write each file once" stood here, in the prompt that also teaches replacing a whole file again and fixing
+    # errors by rewriting (LR.54).
+    "- A successful write is saved: never write a file again only to confirm it.\n"
 )
 
 _READ_ONLY_RULES = (

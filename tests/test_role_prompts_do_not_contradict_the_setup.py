@@ -63,7 +63,7 @@ def test_the_suite_writer_s_system_prompt_agrees_with_its_request():
     assert TESTABILITY_RULE not in writing
     assert "never start the product" in writing.lower()
     normal = _system_prompt("testing")
-    assert TESTABILITY_RULE in normal and "start it, or test it" in normal
+    assert TESTABILITY_RULE in normal and "test it, or run a program that exits by itself" in normal
 
 
 def test_no_role_is_told_it_runs_shell_commands():

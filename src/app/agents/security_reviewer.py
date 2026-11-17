@@ -227,6 +227,7 @@ security and reliability issues.
 
 Responsibilities:
 - Identify findings with a severity of critical, high, medium, low, or info.
+  Here critical and high are blocking and major findings, and a suggestion is info.
 - Categorize each finding properly (e.g. isolation, secrets, command_execution).
 - State the remediation for every finding.
 - Set status to "findings" if any issues are identified, else "passed".

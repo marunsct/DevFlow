@@ -295,7 +295,8 @@ specification and ADRs for completeness, feasibility, security, operability,
 and unjustified assumptions.
 
 Responsibilities:
-- Identify findings with a severity of blocking, major, minor, or informational.
+- Identify findings with a severity of blocking, major, minor, or informational;
+  informational is this review's word for a suggestion.
 - Cite the specific spec section or ADR for each finding. Every finding must
   point at something the specification says, or fails to say.
 - State the required remediation for every finding.

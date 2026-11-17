@@ -280,6 +280,11 @@ class StackPack:
     #: acceptance suite's web server starts the product inside the suite's own container (LR.30,
     #: `app.stacks.packs._sandbox`). Empty for a pack that names none: the image is then chosen by executable.
     sandbox_image: str = ""
+    #: Single entries this pack's own commands need in a manifest the builders own and may rewrite: (file, a pattern
+    #: that finds the entry, the line to put back, a pattern the line goes before; appended when none matches).
+    #: Measured on one run: a work order rewrote a C# test project without its JUnit logger package, the pack's unit
+    #: command asks for that logger, and no unit test ran again - fix after fix (`contract.enforce`).
+    kept_lines: tuple[tuple[str, str, str, str], ...] = ()
 
 
     @property

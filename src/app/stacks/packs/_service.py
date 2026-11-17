@@ -227,6 +227,7 @@ def service_pack(
     list_routes: tuple[str, ...] = (),
     known_errors: Mapping[str, str] | None = None,
     sandbox_image: str = "",
+    kept_lines: tuple[tuple[str, str, str, str], ...] = (),
 ) -> StackPack:
     """A pack for an HTTP service in its own language, accepted through Playwright's `request` fixture."""
     # The brief names the service by its `start.sh`, and the suite runs that script when the project has one
@@ -285,4 +286,5 @@ def service_pack(
         list_routes=list_routes,
         known_errors=dict(known_errors or {}),
         sandbox_image=sandbox_image,
+        kept_lines=kept_lines,
     )

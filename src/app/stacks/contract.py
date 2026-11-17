@@ -424,9 +424,34 @@ def enforce(repo_root: str | Path) -> list[str]:
         repairs.extend(f"{project}: {line}" for line in import_extensions.put_the_extensions_on(root, pack.relative_import_extension))
     if pack.kept_scripts:
         repairs.extend(_put_back_the_scripts(root, project, pack))
+    repairs.extend(_put_back_the_lines(root, project, pack))
     repairs.extend(_put_back_the_toolchain(root, project, pack, rendered))
     if repairs:
         logger.warning("Project contract repaired: %s", "; ".join(repairs))
+    return repairs
+
+
+def _put_back_the_lines(root: Path, project: str, pack: StackPack) -> list[str]:
+    """Put back each single manifest entry the pack's own commands need (`StackPack.kept_lines`); the rest stays."""
+    repairs: list[str] = []
+    for relative, present, line, before in getattr(pack, "kept_lines", ()) or ():
+        target = root / relative
+        try:
+            text = target.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if re.search(present, text, re.M):
+            continue
+        lines = text.splitlines(keepends=True)
+        at = next((i for i, current in enumerate(lines) if re.search(before, current)), None)
+        added = line.rstrip("\n") + "\n"
+        if at is None:
+            text = text + ("" if text.endswith("\n") or not text else "\n") + added
+        else:
+            text = "".join(lines[:at]) + added + "".join(lines[at:])
+        target.write_text(text, encoding="utf-8")
+        repairs.append(f"{project}/{relative} had lost `{line.strip()}`, which the harness's test command needs; "
+                       "it has been put back.")
     return repairs
 
 
@@ -462,6 +487,11 @@ def _put_back_the_toolchain(root: Path, project: str, pack: StackPack, rendered:
         for relative in pack.kept_files
         for found in _IMPORTED.findall(rendered.get(relative) or "")
     }
+    # And a package a kept script names, such as a test reporter: dropped from a drafted manifest, the kept script
+    # asks for what is no longer installed.
+    named = " ".join(str(script) for script in (pack.kept_scripts or {}).values())
+    imported |= {name for section in ("dependencies", "devDependencies")
+                 for name in (wanted_manifest.get(section) or {}) if re.search(rf"(?<![\w@/-]){re.escape(name)}(?![\w-])", named)}
     sections = ("dependencies", "devDependencies")
     changed: list[str] = []
     for section in sections:

@@ -137,4 +137,6 @@ PACK = service_pack(
     ),
     release_files={"Dockerfile": DOCKERFILE, ".dockerignore": "node_modules/\ntest-results/\n**/bin/\n**/obj/\nacceptance/\ndata/\n"},
     gitignore="bin/\nobj/\n",
+    kept_lines=(("tests/UnitTests/UnitTests.csproj", r'Include="JunitXml\.TestLogger"',
+                 '    <PackageReference Include="JunitXml.TestLogger" Version="6.1.0" />', r"^\s*</ItemGroup>"),),
 )

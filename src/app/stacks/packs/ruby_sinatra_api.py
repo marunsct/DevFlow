@@ -120,4 +120,5 @@ PACK = service_pack(
     ),
     release_files={"Dockerfile": DOCKERFILE, ".dockerignore": "node_modules/\ntest-results/\nvendor/\nacceptance/\nspec/\ndata/\n"},
     gitignore="vendor/bundle/\n.bundle/\n",
+    kept_lines=(("Gemfile", r"rspec_junit_formatter", '  gem "rspec_junit_formatter", "~> 0.6"', r"^end\s*$"),),
 )

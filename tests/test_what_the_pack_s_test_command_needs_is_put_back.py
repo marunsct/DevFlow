@@ -54,3 +54,16 @@ def test_a_node_reporter_the_kept_unit_script_names_is_put_back(tmp_path):
     contract.enforce(tmp_path)
     after = json.loads(manifest.read_text())
     assert "jest-junit" in after.get("devDependencies", {}) and after["dependencies"].get("left-pad") == "^1.3.0"
+
+
+def test_the_ruby_start_command_s_rackup_gem_is_put_back_outside_the_test_group(tmp_path):
+    """Measured on one run: a work order rewrote the Gemfile without `rackup`, which the start command runs."""
+    _, root = _scaffolded(tmp_path, "ruby-sinatra-api")
+    gemfile = root / "Gemfile"
+    gemfile.write_text('source "https://rubygems.org"\n\ngem "sinatra", "~> 4.1"\ngem "puma", "~> 6.5"\n\n'
+                       'group :test do\n  gem "rspec", "~> 3.13"\n  gem "rspec_junit_formatter", "~> 0.6"\nend\n')
+
+    contract.enforce(tmp_path)
+
+    text = gemfile.read_text()
+    assert 'gem "rackup"' in text and text.index('gem "rackup"') < text.index("group :test")

@@ -120,5 +120,8 @@ PACK = service_pack(
     ),
     release_files={"Dockerfile": DOCKERFILE, ".dockerignore": "node_modules/\ntest-results/\nvendor/\nacceptance/\nspec/\ndata/\n"},
     gitignore="vendor/bundle/\n.bundle/\n",
-    kept_lines=(("Gemfile", r"rspec_junit_formatter", '  gem "rspec_junit_formatter", "~> 0.6"', r"^end\s*$"),),
+    # `rackup` too: the start command runs it. Measured on one run: a work order rewrote the Gemfile without it, bundler
+    # could not find the executable, and the product did not start until a fixer added it back.
+    kept_lines=(("Gemfile", r"rspec_junit_formatter", '  gem "rspec_junit_formatter", "~> 0.6"', r"^end\s*$"),
+                ("Gemfile", r"""^\s*gem\s+["']rackup["']""", 'gem "rackup", "~> 2.2"', r"^group\b")),
 )

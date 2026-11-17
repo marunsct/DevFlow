@@ -104,41 +104,71 @@ def test_a_review_with_no_findings_blocks_nothing() -> None:
     assert _findings_that_block(SimpleNamespace()) == []
 
 
-def test_both_reviewers_route_on_it() -> None:
+def test_both_reviewers_route_on_it(tmp_path) -> None:
     """Fixing the reviewer that happened to fail is how this codebase has
     shipped the same bug four times. Architecture failed one run;
     milestone had the identical hole and no run had reached it yet.
+
+    Each is asked for changes over minor findings only, and goes on; over a
+    major one, and sends the work back.
     """
-    import inspect
+    from workflow_nodes import (
+        a_design_finding, a_milestone_finding, a_milestone_review, a_milestone_verdict, an_architecture_review,
+    )
 
+    minor = ArchitectureReviewOutput(status="changes_required", findings=[a_design_finding("minor")])
+    major = ArchitectureReviewOutput(status="changes_required", findings=[a_design_finding("major")])
+    assert an_architecture_review(tmp_path, minor)[0]["stage"] == "scaffold"
+    assert an_architecture_review(tmp_path, major)[0]["stage"] == "principal_architect"
+
+    minor = a_milestone_verdict("changes_required", a_milestone_finding("minor"))
+    major = a_milestone_verdict("changes_required", a_milestone_finding("major"))
+    assert a_milestone_review(tmp_path, minor)["stage"] == "release"
+    assert a_milestone_review(tmp_path, major)["stage"] == "technical_lead"
+
+
+def test_the_milestone_review_routes_on_its_own_gate(tmp_path, monkeypatch) -> None:
+    """The milestone review's gate adds the evidence rule (G3): a major finding nothing shows is advice, and the
+    sprint goes on; one a test shows sends it back."""
+    from app.graph import engineering
+    from workflow_nodes import a_milestone_finding, a_milestone_review, a_milestone_verdict
+
+    monkeypatch.setenv("MILESTONE_EVIDENCE_GATE", "on")
+    unshown = a_milestone_verdict("changes_required", a_milestone_finding("major", description="load() may raise"))
+    shown = a_milestone_verdict("changes_required", a_milestone_finding("major", description="[AC-5] delete fails"))
+    monkeypatch.setattr(engineering, "what_shows_it",
+                        lambda state, f: "The suite shows AC-5 failing." if "AC-5" in f.problem else "")
+
+    assert a_milestone_review(tmp_path, unshown)["stage"] == "release"
+    assert a_milestone_review(tmp_path, shown)["stage"] == "technical_lead"
+
+
+def test_both_reviewers_are_given_the_workspace_to_judge_scope(tmp_path, monkeypatch) -> None:
+    """The gate is inert without it, and inert would look like passing.
+
+    A major finding about something this workspace's scope does not ask for is
+    capped rather than blocking, in both reviews.
+    """
+    from types import SimpleNamespace
+
+    from app.analysis import scope_attestation
     from app.graph import workflow
+    from workflow_nodes import (
+        a_design_finding, a_milestone_finding, a_milestone_review, a_milestone_verdict, an_architecture_review,
+    )
 
-    source = inspect.getsource(workflow)
-    architecture = source.index("def architecture_review_node")
-    milestone = source.index("def milestone_review_node")
+    asked_about = []
+    monkeypatch.setattr(scope_attestation, "categories_in_scope", lambda root: asked_about.append(root) or {"correctness"})
+    monkeypatch.setattr(scope_attestation, "out_of_scope_reason",
+                        lambda category, in_scope: "nobody asked for it" if category == "security" else "")
 
-    # `_findings_that_block(review, root)` since the scope gate: the root is
-    # what lets a finding about something nobody asked for be capped rather
-    # than blocking. Matched on the call rather than its exact arguments so
-    # the next argument added here does not read as the routing being lost.
-    # 5,000 since the node records which of the workflow's own checks fired (`HARNESS_FINDINGS_RECHECKED`): the
-    # window proves the node routes on the gate, it is not a limit on the node's length.
-    assert "_findings_that_block(review" in source[architecture:architecture + 5000]
-    # The milestone node routes through `_milestone_findings_that_block`, which adds the evidence gate (G3).
-    assert "_milestone_findings_that_block(state, review)" in source[milestone:milestone + 12000]
-    wrapper = source[source.index("def _milestone_findings_that_block"):][:600]
-    assert '_findings_that_block(review, state["repository"].root_path)' in wrapper
+    # A design finding carries no category: what matters is that its review asks the workspace at all.
+    design = ArchitectureReviewOutput(status="changes_required", findings=[a_design_finding("major")])
+    assert an_architecture_review(tmp_path, design)[0]["stage"] == "principal_architect"
+    assert asked_about and set(asked_about) == {str(tmp_path)}
 
-
-def test_both_reviewers_are_given_the_workspace_to_judge_scope() -> None:
-    """The gate is inert without it, and inert would look like passing."""
-    import inspect
-
-    from app.graph import workflow
-
-    source = inspect.getsource(workflow)
-    for node in ("def architecture_review_node", "def _milestone_findings_that_block"):
-        start = source.index(node)
-        window = source[start:start + 12000]
-        call = window[window.index("_findings_that_block(review"):][:120]
-        assert "root_path" in call, f"{node} judges scope without the workspace"
+    asked_about.clear()
+    milestone = a_milestone_verdict("changes_required", a_milestone_finding("major", category="security"))
+    assert a_milestone_review(tmp_path, milestone)["stage"] == "release"
+    assert asked_about and set(asked_about) == {str(tmp_path)}
+    assert workflow._milestone_findings_that_block({"repository": SimpleNamespace(root_path=str(tmp_path))}, milestone) == []

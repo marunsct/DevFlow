@@ -56,9 +56,18 @@ def test_the_files_are_read_again_at_release(release) -> None:
     assert any("styles.css, which does not exist" in gap for gap in gaps)
 
 
-def test_the_fast_path_records_its_risks_under_the_decision_release_reads() -> None:
-    import inspect
+def test_the_fast_path_records_its_risks_under_the_decision_release_reads(tmp_path, release) -> None:
+    """A fast milestone review out of revisions goes on with its findings recorded as risks - and the release
+    reads that record as a gap."""
+    from app.graph.workflow import FAST_MILESTONE_REVISIONS
+    from workflow_nodes import a_milestone_finding, a_milestone_review, a_milestone_verdict
 
-    from app.graph import workflow
+    review = a_milestone_verdict("changes_required", a_milestone_finding(
+        "major", description="Deleting a note leaves it listed."))
 
-    assert "decision=RECORDED_AS_RISKS" in inspect.getsource(workflow)
+    update = a_milestone_review(tmp_path, review, fast=True,
+                                state={"milestone_revision_count": FAST_MILESTONE_REVISIONS - 1})
+
+    assert update["stage"] != "technical_lead"
+    gaps = release(decisions=update["decisions"])
+    assert any("recorded as risks" in gap and "Deleting a note leaves it listed" in gap for gap in gaps)

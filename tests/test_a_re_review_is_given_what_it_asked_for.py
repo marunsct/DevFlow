@@ -9,7 +9,6 @@ the specification and nothing else, so every round was a first reading.
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 from app.agents.architecture_reviewer import ArchitectureReviewFinding, build_architecture_review_request
@@ -55,11 +54,21 @@ def test_a_new_finding_has_a_bar_to_clear(tmp_path: Path) -> None:
     assert "is minor" in brief
 
 
-def test_the_workflow_passes_the_previous_review_in() -> None:
-    from app.graph import workflow
+def test_the_workflow_passes_the_previous_review_in(tmp_path: Path) -> None:
+    from app.agents.architecture_reviewer import ArchitectureReviewOutput
+    from workflow_nodes import an_architecture_review
 
-    source = inspect.getsource(workflow)
-    call = source.split("request = build_architecture_review_request(", 1)[1].split("\n        )\n", 1)[0]
+    earlier = ArchitectureReviewOutput(status="changes_required", findings=[FINDING])
+    approved = ArchitectureReviewOutput(status="approved", findings=[])
 
-    assert "earlier=" in call and "previous_review" in call
-    assert 'revision=state.get("architecture_revision_count", 0)' in call
+    _, asked = an_architecture_review(tmp_path, approved, state={
+        "architecture_review": earlier, "architecture_revision_count": 2})
+
+    brief = " ".join(asked[0].split())
+    assert "What your review of the previous version asked for (revision 2)" in brief
+    assert "[major] updateTask validation contradicts partial updates." in brief
+
+    # Restored from a checkpoint as plain data, it is read the same.
+    _, asked = an_architecture_review(tmp_path, approved, state={
+        "architecture_review": earlier.model_dump(), "architecture_revision_count": 1})
+    assert "[major] updateTask validation contradicts partial updates." in " ".join(asked[0].split())

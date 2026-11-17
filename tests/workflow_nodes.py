@@ -169,6 +169,102 @@ def an_architect(
     return update, agent_requests, written
 
 
+def a_design_finding(severity: str = "major", **fields: Any) -> Any:
+    from app.agents.architecture_reviewer import ArchitectureReviewFinding
+
+    return ArchitectureReviewFinding(severity=severity, description=fields.pop("description", "The testing section is thin."),
+                                     evidence="testing", required_remediation="Say how each criterion is tested.",
+                                     **fields)
+
+
+def an_architecture_review(
+    tmp_path,
+    review: Any,
+    *,
+    state: dict[str, Any] | None = None,
+    patches: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], list[str]]:
+    """`architecture_review` whose reviewer returns `review`, with none of the workflow's own checks finding
+    anything unless `patches` says so: (the update, what the reviewer was asked)."""
+    from unittest.mock import MagicMock
+
+    asked: list[str] = []
+
+    def gated(state, config, *, initial_request, output_key, **kwargs):
+        asked.append(initial_request["messages"][-1]["content"])
+        return {output_key: review}
+
+    made = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "document": SimpleNamespace(text="Notes over HTTP."),
+        "technical_specification": a_specification(),
+        **(state or {}),
+    }
+    every = {
+        "app.graph.workflow._approved_once_the_harness_s_findings_are_settled": lambda state, spec: None,
+        "app.graph.workflow._decided_after_one_revision": lambda state, spec: None,
+        "app.graph.workflow.create_architecture_reviewer_agent": lambda **kwargs: MagicMock(),
+        "app.graph.workflow._the_setup_for_the_review": lambda state: "",
+        "app.graph.workflow._a_success_measure_the_specification_drops": lambda state, spec: None,
+        "app.graph.workflow._a_brief_feature_the_specification_defers": lambda state, spec: None,
+        "app.graph.workflow._contract_lines_nothing_can_read": lambda state: None,
+        "app.graph.workflow._the_same_command_in_another_order": lambda state, spec: None,
+        "app.graph.workflow._behaviour_the_specification_gives_kept_files": lambda state, spec: None,
+        "app.graph.workflow._run_gated_agent": gated,
+        **(patches or {}),
+    }
+    return run_node("architecture_review", made, str(tmp_path), every), asked
+
+
+def a_milestone_finding(severity: str = "major", category: str = "correctness", **fields: Any) -> Any:
+    from app.agents.milestone_reviewer import MilestoneReviewFinding
+
+    return MilestoneReviewFinding(severity=severity, category=category,
+                                  description=fields.pop("description", "Deleting a note leaves it listed."),
+                                  affected_files=fields.pop("affected_files", []), required_remediation="Remove it.",
+                                  **fields)
+
+
+def a_milestone_verdict(status: str, *findings: Any) -> Any:
+    from app.agents.milestone_reviewer import MilestoneReviewOutput
+
+    return MilestoneReviewOutput(status=status, findings=list(findings), acceptance_evidence="Ran the suite.",
+                                 documentation_reviewed=True, tests_reviewed=True)
+
+
+def a_milestone_review(
+    tmp_path,
+    review: Any,
+    *,
+    state: dict[str, Any] | None = None,
+    fast: bool = False,
+    patches: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """`milestone_review` whose reviewer returns `review` for a sprint with nothing else on record."""
+    from unittest.mock import MagicMock
+
+    made = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "milestone_plan": SimpleNamespace(selected_sprint_goal="Users can keep notes", milestone_scope=[],
+                                          delegated_tasks=[]),
+        "specialist_outputs": {},
+        "current_sprint_index": 0,
+        "milestone_revision_count": 0,
+        **(state or {}),
+    }
+    every = {
+        "app.graph.workflow.create_milestone_reviewer_agent": lambda **kwargs: MagicMock(),
+        "app.graph.workflow.build_milestone_review_request":
+            lambda *args, **kwargs: {"messages": [{"role": "user", "content": "Review the sprint."}]},
+        "app.graph.acceptance_nodes.acceptance_text_for": lambda state: "",
+        "app.models.vision.the_reviewer_reads_images": lambda: False,
+        "app.graph.workflow._fast_delivery": lambda: fast,
+        "app.graph.workflow._run_gated_agent": lambda state, config, **kwargs: {"__milestone_review__": review},
+        **(patches or {}),
+    }
+    return run_node("milestone_review", made, str(tmp_path), every)
+
+
 #: What `build_judgement_model` hands the graph in `a_dispute`, so a test can tell
 #: the judgement model from the build model by identity.
 JUDGEMENT_MODEL = SimpleNamespace(name="the judgement model")

@@ -195,5 +195,19 @@ def test_unread_lines_are_put_to_the_architect_s_review_behind_the_switch(monkey
     assert workflow._contract_lines_nothing_can_read(_spec_state(lines, architecture_revision_count=spent)) is None
 
 
-def test_the_review_node_asks_it():
-    assert "update[\"specification_contract_lines_checked\"] = True" in inspect.getsource(workflow)
+def test_the_review_node_asks_it(tmp_path, monkeypatch):
+    """The review raises the unread lines once: it records that it did, so the next review is not asked again."""
+    from workflow_nodes import a_specification, an_architecture_review
+
+    unread = workflow._contract_lines_nothing_can_read
+    lines = ["AC-1 GET /notes -> 200", "AC-2 the list is sorted"]
+    approved = workflow.ArchitectureReviewOutput(status="approved", findings=[])
+    state = {"technical_specification": a_specification(interface_contract=lines)}
+
+    monkeypatch.setenv("CONTRACT_UNREAD_LINES_AT_REVIEW", "on")
+    update, _ = an_architecture_review(tmp_path, approved, state=state, patches={
+        "app.graph.workflow._contract_lines_nothing_can_read": unread})
+
+    assert update["stage"] == "principal_architect"
+    assert update["specification_contract_lines_checked"] is True
+    assert "`AC-2 the list is sorted`" in update["architecture_review"].findings[0].description

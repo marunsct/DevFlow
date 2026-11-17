@@ -6,7 +6,6 @@ DATA_DIR" and "start.sh creates DATA_DIR"; a milestone review later sent a sprin
 """
 from __future__ import annotations
 
-import inspect
 import re
 from types import SimpleNamespace
 
@@ -42,6 +41,19 @@ def test_once_per_run_and_never_on_the_last_revision():
     assert workflow._behaviour_the_specification_gives_kept_files(_state(architecture_revision_count=last), SPEC) is None
 
 
-def test_the_review_adds_it():
-    source = inspect.getsource(workflow)
-    assert "kept_finding = _behaviour_the_specification_gives_kept_files(state, spec_text)" in source
+def test_the_review_adds_it(tmp_path, monkeypatch):
+    """The finding joins the review and sends the specification back, once per run."""
+    from workflow_nodes import an_architecture_review
+
+    monkeypatch.setenv("HONO_NATIVE_TEST_RUNNER", "on")
+    approved = workflow.ArchitectureReviewOutput(status="approved", findings=[])
+
+    update, _ = an_architecture_review(
+        tmp_path, approved, state=_state(technical_specification=SPEC),
+        patches={"app.graph.workflow._behaviour_the_specification_gives_kept_files":
+                 workflow._behaviour_the_specification_gives_kept_files},
+    )
+
+    assert update["stage"] == "principal_architect"
+    assert update["specification_kept_files_checked"] is True
+    assert any("signal handlers" in finding.description for finding in update["architecture_review"].findings)

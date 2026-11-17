@@ -66,12 +66,24 @@ def test_off_or_without_a_start_script_nothing_is_added(tmp_path, monkeypatch):
     assert start_probe.what_the_start_shows(root) == ""
 
 
-def test_the_start_defect_carries_it():
-    import inspect
-
+@pytest.mark.skipif(shutil.which("node") is None, reason="no Node here")
+def test_the_start_defect_carries_it(tmp_path):
+    from app.acceptance import suite
     from app.graph import acceptance_nodes
+    from tests.test_acceptance_stages import ALL_THREE, _authored, _plan, _state
 
-    assert "_what_the_start_shows(_root(state))" in inspect.getsource(acceptance_nodes.failing_due_defects)
+    root = _project(tmp_path, CRASHES)
+    _authored(root, ALL_THREE)
+    suite.lock(root)
+    suite._judged(root, suite.AcceptanceResult(
+        ran=False, command="npm run test:acceptance",
+        problem=f"{suite.PRODUCT_DID_NOT_START}: Timed out waiting 60000ms from config.webServer"), True)
+    state = _state(root, sprint_plan=_plan(["AC-1", "AC-2"], ["AC-3"]), current_sprint_index=0)
+
+    [defect] = acceptance_nodes.failing_due_defects(state, [])
+
+    assert "Timed out waiting" in defect.actual_behavior
+    assert "exited with code 1" in defect.actual_behavior and "is not a function" in defect.actual_behavior
 
 
 ANSWERS_404 = """const http = require('http');

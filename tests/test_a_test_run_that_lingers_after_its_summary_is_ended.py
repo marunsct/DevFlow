@@ -64,9 +64,19 @@ def test_the_summary_shapes():
     assert sandbox._what_the_summary_says("2 passed in 0.3s") == 0
 
 
-def test_the_stage_is_told_why(tmp_path):
-    import inspect
+def test_the_stage_is_told_why(tmp_path, monkeypatch):
+    """A test command run for a stage that lingers is ended at its summary, and the stage is told what keeps it alive."""
+    # `python -m pytest` run where a `pytest.py` that prints a summary and lingers shadows the real one.
+    (tmp_path / "pytest.py").write_text(LINGERS.format(summary="3 passed in 0.12s"))
+    monkeypatch.setattr(sandbox.SandboxExecutor, "_resolve_executable",
+                        staticmethod(lambda name, *args, **kwargs: sys.executable))
+    started = time.monotonic()
 
-    source = inspect.getsource(sandbox)
-    assert "ends_at_its_summary=_runs_tests(argv)" in source
-    assert "close or dispose of it when the tests end" in source
+    outcome = sandbox.SandboxExecutor._execute_here(
+        ["python3", "-m", "pytest"], str(tmp_path), "testing_specialist", "test", 60, None)
+
+    assert time.monotonic() - started < 20
+    assert outcome["returncode"] == "0" and "3 passed" in outcome["stdout"]
+    assert "close or dispose of it when the tests end" in outcome["note"]
+
+

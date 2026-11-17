@@ -668,6 +668,7 @@ def scaffold(
         target = project_root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+    _contract.warm_up(pack.commands(project, package), run, project)
     try:
         commands = pack.commands(project, package)
         for label, argv, report in (

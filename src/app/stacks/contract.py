@@ -186,11 +186,26 @@ def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) 
                         + _the_versions_that_exist(said)
                         + (f"; it ended:\n{tail}" if tail else ".")]
         installed(repo_root)
+        warm_up(record, runner, project)
         logger.info("The project's manifest changed since its last install; installed again")
         return ["The project's dependencies were installed again: a manifest changed since the last install."]
     except Exception:  # noqa: BLE001 - the measurement goes on as it would have
         logger.debug("Could not check the project's install", exc_info=True)
         return []
+
+
+def warm_up(record: dict[str, Any] | None, runner: Any, project: str) -> None:
+    """Run the recorded warm-up commands with the network, when tests run without it. Never raises; a failure is
+    ignored - a test that still cannot find what it needs says so when it runs (`StackPack.warm_up`)."""
+    try:
+        from app.tools.sandbox import CONTAINER_MODE, execution_mode
+
+        if execution_mode() != CONTAINER_MODE:
+            return
+        for argv in (record or {}).get("warm_up") or []:
+            runner([str(part) for part in argv], "install", project)
+    except Exception:  # noqa: BLE001 - the tests run as they would have
+        logger.debug("Could not warm the toolchain up", exc_info=True)
 
 
 def read(repo_root: str | Path | None) -> dict[str, Any] | None:

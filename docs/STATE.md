@@ -77,8 +77,11 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   rule-coverage counter's data; LR.44 (hosted-model matrix) waits for the owner.
 
 ## Next actions
-1. Live: LR.30 container-mode run 2, run-9f8188cb notes-api-java (:8888, 13:53) - the WORKER IS IN CONTAINER MODE
-   (COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.sandbox.yml); a plain `loop.sh deploy` would undo it mid-run.
+1. LR.30 container-mode run 2, run-9f8188cb-6da7-43cd-a6ff-dcec0f2c9d83 notes-api-java (:8888, 13:53) failed at its
+   scaffold at 14:07: tests run offline there and Maven fetches its JUnit provider at the first test (LF.1017, a pack
+   warm-up). Nothing to score. Next: deploy LF.1016-1017 with COMPOSE_FILE kept, verify the Java pack, start Java again.
+   The WORKER IS IN CONTAINER MODE (COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.sandbox.yml);
+   a plain `loop.sh deploy` would undo it.
 2. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).

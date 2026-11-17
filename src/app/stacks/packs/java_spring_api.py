@@ -146,6 +146,9 @@ PACK = service_pack(
     },
     install=(("mvn", "-q", "-B", "-DskipTests", "package"),),
     unit_test=("mvn", "-q", "-B", "test"),
+    # Surefire fetches its JUnit provider the first time a test runs, not at the install; one test run with the
+    # network, its failures ignored, puts it in the run's Maven cache before the offline test commands need it.
+    warm_up=(("mvn", "-q", "-B", "-Dmaven.test.failure.ignore=true", "test"),),
     unit_report="target/surefire-reports",
     unit_dir="src/test",
     unit_pattern="*Test.java",

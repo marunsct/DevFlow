@@ -285,6 +285,11 @@ class StackPack:
     #: Measured on one run: a work order rewrote a C# test project without its JUnit logger package, the pack's unit
     #: command asks for that logger, and no unit test ran again - fix after fix (`contract.enforce`).
     kept_lines: tuple[tuple[str, str, str, str], ...] = ()
+    #: Commands run with the network once the tests exist, when tests themselves run without it (each command in a
+    #: container of its own), whose failure is ignored: they fetch what a toolchain downloads only the first time a
+    #: test runs, into the run's own caches. Measured on one run: Maven's test runner fetches its JUnit provider at
+    #: the first test, not at the install, and the scaffold's smoke test failed offline twice, ending the run.
+    warm_up: tuple[tuple[str, ...], ...] = ()
 
 
     @property
@@ -354,6 +359,7 @@ class StackPack:
             "install": [fill(argv) for argv in self.install],
             "unit_test": fill(self.unit_test),
             "acceptance_test": fill(self.acceptance_test),
+            **({"warm_up": [fill(argv) for argv in self.warm_up]} if self.warm_up else {}),
         }
 
 

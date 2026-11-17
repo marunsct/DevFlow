@@ -363,12 +363,9 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
     from app.agents.ledger import earlier_attempts
 
     actual = str(getattr(defect, "actual_behavior", "") or "").strip()
-    return "\n\n".join(part for part in (
-        f"Correct the file `{path}` of this product so the failure below no longer happens. "
-        f"The stack: {_stack_line(stack)}.",
-        f"--- The defect ---\n{getattr(defect, 'description', '')}\n"
-        f"Expected: {getattr(defect, 'expected_behavior', '')}"
-        + (f"\nActual: {actual}" if actual else ""),
+    defect_part = (f"--- The defect ---\n{getattr(defect, 'description', '')}\n"
+                   f"Expected: {getattr(defect, 'expected_behavior', '')}" + (f"\nActual: {actual}" if actual else ""))
+    changing = (
         earlier_attempts(defect).strip(),
         f"--- What failed ---\n{failure}" if failure.strip() else "",
         co_failures,
@@ -378,18 +375,32 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
         kept.strip(),
         ("--- The compiler still reports, in the files just written ---\n" + "\n".join(diagnostics)) if diagnostics else "",
         ("--- Edits from the last pass that were not made, and why ---\n" + "\n".join(unapplied)) if unapplied else "",
-        detail.strip(),
-        f"--- The project ---\n{neighbours}" if neighbours else "",
-        (anchored_edits.in_the_memory(path) if held.get(path) == now
-         else anchored_edits.excerpt(path, now, failure, _the_defect_s_words(defect))) if long_file
-        else f"--- `{path}` as it is now ---\n{now}",
-        # The facts every builder and judge reads (plan CM.1).
-        the_facts_section(root).strip(),
-        anchored_edits.instruction(path) if long_file else
-        f"Reply with the complete corrected content of `{path}` and nothing else, in one fenced "
-        "code block. Change only what the failure needs; keep every name, signature and "
-        "message the specification gives. If this file needs no change for this failure, "
-        "reply with it unchanged.",
+    )
+    project = f"--- The project ---\n{neighbours}" if neighbours else ""
+    the_file = ((anchored_edits.in_the_memory(path) if held.get(path) == now
+                 else anchored_edits.excerpt(path, now, failure, _the_defect_s_words(defect))) if long_file
+                else f"--- `{path}` as it is now ---\n{now}")
+    # The facts every builder and judge reads (plan CM.1).
+    facts = the_facts_section(root).strip()
+    instruction = (anchored_edits.instruction(path) if long_file else
+                   f"Reply with the complete corrected content of `{path}` and nothing else, in one fenced "
+                   "code block. Change only what the failure needs; keep every name, signature and "
+                   "message the specification gives. If this file needs no change for this failure, "
+                   "reply with it unchanged.")
+    from app.agents import stable_memory_order
+
+    if stable_memory_order.enabled():
+        # What every rewrite of the sprint shares first, then what this file and this failure change (LR.52).
+        return "\n\n".join(part for part in (
+            "Correct one file of this product so the failure given below no longer happens. "
+            f"The stack: {_stack_line(stack)}.",
+            facts, project, detail.strip(),
+            f"--- The file to correct: `{path}` ---", defect_part, *changing, the_file, instruction,
+        ) if part)
+    return "\n\n".join(part for part in (
+        f"Correct the file `{path}` of this product so the failure below no longer happens. "
+        f"The stack: {_stack_line(stack)}.",
+        defect_part, *changing, detail.strip(), project, the_file, facts, instruction,
     ) if part)
 
 

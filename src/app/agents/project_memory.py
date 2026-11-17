@@ -445,6 +445,13 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
 
     canonical = canonical_order()
     after_the_rest: list[str] = []
+    # A fixer's documents ahead of its code, the same blocks in a stable order (`STABLE_MEMORY_ORDER`, off until
+    # measured): those held whole first, then the digests its defect chose.
+    from app.agents import stable_memory_order
+
+    stable = for_a_fixer and stable_memory_order.enabled()
+    whole_documents: list[str] = []
+    chosen_documents: list[str] = []
     left_out: list[str] = []
     kept_named: list[str] = []
     used = 0
@@ -477,7 +484,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
                 digest = digest_of(text, focus, min(FIXER_SPECIFICATION_CHARACTERS, max(0, budget_characters - used)))
                 if digest:
                     block = f"=== {path} (outline and the sections this defect points at; read others by line) ===\n{digest}\n"
-                    parts.append(block)
+                    (chosen_documents if stable else parts).append(block)
                     used += len(block)
                 continue
         if _RECORDS.match(path):
@@ -507,22 +514,24 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
             if digest:
                 block = f"=== {path} (outline and the sections this request points at; read others by line) ===\n{digest}\n"
                 # Chosen by the request's words, so after what every request shares (plan PX.3).
-                (after_the_rest if canonical else parts).append(block)
+                (chosen_documents if stable and path.startswith("docs/")
+                 else after_the_rest if canonical else parts).append(block)
                 used += len(block)
                 continue
         if len(text) > LARGEST_FILE_CHARACTERS or used + len(block) > budget_characters:
             left_out.append(path)
             continue
-        parts.append(block)
+        (whole_documents if stable and path.startswith("docs/") else parts).append(block)
         held[path] = text
         used += len(block)
-    parts += after_the_rest
+    stable = stable and bool(whole_documents or chosen_documents)
+    parts = whole_documents + chosen_documents + parts + after_the_rest
     if not parts:
         return "", {}
     head = (
         "[Project memory: the workflow's documents and the project's files as they are now, kept current "
         "by the harness. Use them as they are here; read a file only if it is named at the end as not "
-        "included.]\n\n"
+        "included." + (" " + stable_memory_order.SAID if stable else "") + "]\n\n"
     ) + where_things_stand(repo_root, files)
     # Named one by one only up to `MOST_NAMED_LEFT_OUT`, in the memory's own
     # order: a large project's left-out list was every path it has, larger

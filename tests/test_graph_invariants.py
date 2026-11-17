@@ -20,50 +20,53 @@ from app.graph import workflow as workflow_module
 from app.graph.workflow import _NODE_NAMES, _entry_router, _route_from_stage
 
 
-def _registered_node_names() -> set[str]:
-    """Every name passed to `graph.add_node(...)` in build_workflow_graph."""
-    source = inspect.getsource(workflow_module.build_workflow_graph)
-    tree = ast.parse(inspect.cleandoc(source))
-    names = set()
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "add_node"
-            and node.args
-            and isinstance(node.args[0], ast.Constant)
-        ):
-            names.add(node.args[0].value)
-    return names
+_GRAPH_PACKAGE = Path(workflow_module.__file__).parent
+
+
+def _graph_sources() -> dict[str, str]:
+    """Every module of the graph package, so a node lifted out of `workflow.py`
+    stays under the same checks instead of silently leaving them."""
+    return {path.name: path.read_text(encoding="utf-8") for path in sorted(_GRAPH_PACKAGE.glob("*.py"))}
+
+
+def _registered_node_names(tmp_path) -> set[str]:
+    """Every node the compiled graph actually holds (LangGraph's own entry node aside)."""
+    from langgraph.checkpoint.memory import MemorySaver
+
+    graph = workflow_module.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+    return set(graph.nodes) - {"__start__"}
 
 
 def _assigned_stage_values() -> set[str]:
     """Every literal a node assigns to `stage`, ignoring the pause prefixes."""
-    source = inspect.getsource(workflow_module)
-    values = set(re.findall(r'"stage":\s*"([a-z_]+)"', source))
-    values |= set(re.findall(r'update\["stage"\]\s*=\s*"([a-z_]+)"', source))
-    values |= set(re.findall(r'next_stage\s*=\s*"([a-z_]+)"', source))
-    values |= set(re.findall(r'approved_next="([a-z_]+)"', source))
-    values |= set(re.findall(r'changes_next="([a-z_]+)"', source))
-    values |= set(re.findall(r'next_stage="([a-z_]+)"', source))
+    values: set[str] = set()
+    for source in _graph_sources().values():
+        values |= set(re.findall(r'"stage":\s*"([a-z_]+)"', source))
+        values |= set(re.findall(r'update\["stage"\]\s*=\s*"([a-z_]+)"', source))
+        values |= set(re.findall(r'next_stage\s*=\s*"([a-z_]+)"', source))
+        values |= set(re.findall(r'approved_next="([a-z_]+)"', source))
+        values |= set(re.findall(r'changes_next="([a-z_]+)"', source))
+        values |= set(re.findall(r'next_stage="([a-z_]+)"', source))
     return values
 
 
-def test_every_registered_node_is_routable():
+def test_every_registered_node_is_routable(tmp_path):
     """A node missing from _NODE_NAMES is unreachable and raises KeyError.
 
-    This is the direct regression test for `sprint_advance`.
+    This is the direct regression test for `sprint_advance`. It reads the nodes
+    off the compiled graph rather than the `add_node` calls in the source, so it
+    holds wherever the nodes come to be defined.
     """
-    missing = _registered_node_names() - set(_NODE_NAMES)
+    missing = _registered_node_names(tmp_path) - set(_NODE_NAMES)
     assert not missing, (
         f"These nodes are registered on the graph but absent from _NODE_NAMES, "
         f"so no edge map contains them: {sorted(missing)}"
     )
 
 
-def test_node_names_does_not_list_nodes_that_do_not_exist():
+def test_node_names_does_not_list_nodes_that_do_not_exist(tmp_path):
     """The inverse: a stale entry routes to a node that was never added."""
-    phantom = set(_NODE_NAMES) - _registered_node_names()
+    phantom = set(_NODE_NAMES) - _registered_node_names(tmp_path)
     assert not phantom, f"_NODE_NAMES lists nodes that are not registered: {sorted(phantom)}"
 
 
@@ -190,11 +193,12 @@ def test_no_escaped_newlines_in_prompt_assembly():
     """`"\\\\n".join(...)` emits a literal backslash-n into the model prompt.
 
     It appeared in the milestone reviewer's evidence and findings blocks, which
-    arrived as one unbroken line.
+    arrived as one unbroken line. Every module of the graph package is read, so
+    prompt assembly moved out of `workflow.py` is still checked.
     """
-    source = Path(workflow_module.__file__).read_text(encoding="utf-8")
     offenders = [
-        line.strip()
+        f"{name}: {line.strip()}"
+        for name, source in _graph_sources().items()
         for line in source.splitlines()
         if r'"\\n"' in line or r"'\\n'" in line
     ]
@@ -278,15 +282,14 @@ def test_every_name_the_graph_calls_is_imported():
 
 
 def test_the_overflow_helpers_are_defined_once():
-    """Two identical copies means a later fix to one silently does nothing."""
-    import inspect
+    """Two identical copies means a later fix to one silently does nothing.
 
-    import app.graph.workflow as workflow_module
-
-    source = inspect.getsource(workflow_module)
-    assert source.count("def _is_context_overflow") == 1
-    assert source.count("def _context_overflow_update") == 1
-    assert source.count("_CONTEXT_OVERFLOW_MARKERS = (") == 1
+    Counted across the whole application, so a copy left behind in another
+    module when the helpers move is caught as well as one in the same file.
+    """
+    sources = [path.read_text(encoding="utf-8") for path in _GRAPH_PACKAGE.parent.rglob("*.py")]
+    for definition in ("def _is_context_overflow(", "def _context_overflow_update(", "_CONTEXT_OVERFLOW_MARKERS = ("):
+        assert sum(source.count(definition) for source in sources) == 1, definition
 
 
 # ---------------------------------------------------------------------------
@@ -482,30 +485,40 @@ def test_no_node_returns_a_bare_dict_after_consuming_an_agent_result() -> None:
     Five nodes have between two and seven such returns; one forgetting is
     invisible until two stages later. This reads the source because the defect
     is structural - a return that *looks* complete and is missing three keys.
+    Every module of the graph package is read, so a node moved out of
+    `workflow.py` is still held to it.
     """
-    import inspect
-    import re
-
-    from app.graph import workflow
-
-    lines = inspect.getsource(workflow).split("\n")
-    pops = [i for i, line in enumerate(lines) if '.pop("__' in line]
-    assert pops, "the private-result pattern has moved; update this test"
-
     offenders = []
-    for start in pops:
-        indent = len(lines[start]) - len(lines[start].lstrip())
-        for index in range(start + 1, len(lines)):
-            stripped = lines[index].lstrip()
-            if stripped.startswith("def ") and (len(lines[index]) - len(stripped)) < indent:
-                break
-            if re.match(r"return \{", stripped):
-                offenders.append(stripped[:70])
+    every_pop = 0
+    for name, source in _graph_sources().items():
+        lines = source.split("\n")
+        pops = [i for i, line in enumerate(lines) if '.pop("__' in line]
+        every_pop += len(pops)
+        offenders.extend(f"{name}: {found}" for found in _fresh_returns_after(lines, pops))
+    assert every_pop, "the private-result pattern has moved; update this test"
 
     assert not offenders, (
         "these returns follow a completed agent run and build a fresh dict, so they "
         f"drop the pause reset - use `_handing_on`: {offenders}"
     )
+
+
+def _fresh_returns_after(lines: list[str], pops: list[int]) -> list[str]:
+    """`return {` after a pop, unless the dict opens by spreading the very result
+    the pop was taken from - `{**update, ...}` carries the pause reset with it."""
+    offenders = []
+    for start in pops:
+        indent = len(lines[start]) - len(lines[start].lstrip())
+        popped = re.search(r"(\w+)\.pop\(\"__", lines[start]).group(1)
+        for index in range(start + 1, len(lines)):
+            stripped = lines[index].lstrip()
+            if stripped.startswith("def ") and (len(lines[index]) - len(stripped)) < indent:
+                break
+            if re.match(r"return \{", stripped):
+                opening = (stripped[len("return {"):].strip() or lines[index + 1].strip())
+                if not opening.startswith(f"**{popped},"):
+                    offenders.append(stripped[:70])
+    return offenders
 
 
 def test_a_missing_product_intake_fails_with_an_explanation():

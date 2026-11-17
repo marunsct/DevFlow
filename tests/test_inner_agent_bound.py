@@ -48,7 +48,36 @@ def test_the_inner_agent_has_a_ceiling():
     assert INNER_AGENT_RECURSION_LIMIT < 1000
 
 
-def test_the_first_invoke_carries_it():
+class _Recording:
+    """A role agent that answers at once, or raises what it is given, and keeps each config."""
+
+    def __init__(self, raises: Exception | None = None):
+        self.raises, self.configs = raises, []
+
+    def invoke(self, request, config=None):  # noqa: ARG002
+        self.configs.append(config)
+        if self.raises is not None:
+            raise self.raises
+        return {"messages": [], "structured_response": "answer"}
+
+    def get_state(self, config):  # noqa: ARG002
+        return SimpleNamespace(values={"messages": []}, next=())
+
+
+def _stage(root, agent, **state):
+    return _run_gated_agent(
+        {"stage": "principal_architect", "repository": SimpleNamespace(root_path=str(root)), **state},
+        {"configurable": {"thread_id": "outer"}},
+        stage_name="principal_architect", agent=agent,
+        initial_request={"messages": [{"role": "user", "content": "write"}]},
+        output_key="out", next_stage="architecture_review",
+    )
+
+
+_AFTER_AN_APPROVAL = {"pending_decision": {"type": "approve"}, "pending_inner_thread_id": "outer:principal_architect:1"}
+
+
+def test_the_first_invoke_carries_it(tmp_path, monkeypatch):
     """The spelling moved into `_inner_agent_config`; the requirement did not.
 
     The config is built by a helper now, so the limit arrives as a keyword
@@ -57,9 +86,17 @@ def test_the_first_invoke_carries_it():
     The same config serves the resume after an approval: a stage that loops
     after an approval is as unreachable as one that loops before it.
     """
-    source = inspect.getsource(_run_gated_agent)
+    agent = _Recording()
+    _stage(tmp_path, agent)
+    assert agent.configs[0]["recursion_limit"] == INNER_AGENT_RECURSION_LIMIT
 
-    assert "recursion_limit=INNER_AGENT_RECURSION_LIMIT" in source
+    resumed = []
+    monkeypatch.setattr(
+        "app.graph.workflow.resume_with_decision",
+        lambda *args, **kwargs: resumed.append(kwargs) or {"messages": [], "structured_response": "answer"},
+    )
+    _stage(tmp_path, _Recording(), **_AFTER_AN_APPROVAL)
+    assert resumed[0]["recursion_limit"] == INNER_AGENT_RECURSION_LIMIT
 
 
 def test_resume_without_a_limit_still_works():
@@ -102,14 +139,29 @@ def test_an_unrelated_error_is_not_mistaken_for_a_loop(message: str):
     assert _spun_without_finishing("x", RuntimeError(message)) is None
 
 
-def test_a_loop_fails_the_run_rather_than_raising():
-    """The operator gets the explanation, not a stack trace."""
-    source = inspect.getsource(_run_gated_agent)
+_SPUN = RuntimeError("Recursion limit of 60 reached without hitting a stop condition")
 
-    assert "_spun_without_finishing(stage_name, exc)" in source
-    assert source.count("_spun_without_finishing(stage_name, exc)") == 2, (
-        "both the first invoke and the resume must be covered"
-    )
+
+@pytest.mark.parametrize("resumed", [False, True], ids=["first-invoke", "resume"])
+def test_a_loop_fails_the_run_rather_than_raising(tmp_path, monkeypatch, resumed):
+    """The operator gets the explanation, not a stack trace.
+
+    Both the first invoke and the resume after an approval must be covered.
+    """
+    agent = _Recording(raises=None if resumed else _SPUN)
+    state = {"structured_retries": {"principal_architect": 99}}
+    if resumed:
+        state.update(_AFTER_AN_APPROVAL)
+
+        def spins(*args, **kwargs):
+            raise _SPUN
+
+        monkeypatch.setattr("app.graph.workflow.resume_with_decision", spins)
+
+    update = _stage(tmp_path, agent, **state)
+
+    assert update["stage"] == "failed"
+    assert "loop inside the stage itself" in update["error"]
 
 
 # --- the answer a spinning stage kept writing down ------------------------

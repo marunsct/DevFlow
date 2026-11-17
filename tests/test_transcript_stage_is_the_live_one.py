@@ -53,24 +53,48 @@ def test_the_inner_agent_config_omits_the_key_when_no_stage_is_given():
     assert APP_STAGE_KEY not in _inner_agent_config("t:1", "run-1", [])["configurable"]
 
 
-def test_every_role_agent_invoke_in_the_workflow_names_its_stage():
+class _AnswersOnTheReminder:
+    """No answer to the request, an answer to the reminder: both inner invokes in one stage."""
+
+    def __init__(self):
+        self.configs = []
+
+    def invoke(self, request, config=None):  # noqa: ARG002
+        self.configs.append(config)
+        return {"messages": [], "structured_response": "answer" if len(self.configs) > 1 else None}
+
+
+def _a_stage_runs(tmp_path, agent, **state):
+    from types import SimpleNamespace
+
+    from app.graph.workflow import _run_gated_agent
+
+    return _run_gated_agent(
+        {"stage": "specialist_ui_ux_0", "repository": SimpleNamespace(root_path=str(tmp_path)), **state},
+        {"configurable": {"thread_id": "outer"}},
+        stage_name="specialist_ui_ux_0", agent=agent, initial_request={"messages": [{"role": "user", "content": "build"}]},
+        output_key="out", next_stage="next",
+    )
+
+
+def test_every_role_agent_invoke_in_the_workflow_names_its_stage(tmp_path, monkeypatch):
     """The bug was a missing argument at a call site, so guard the call sites.
 
-    `_inner_agent_config` has three callers and `resume_with_decision` one.
-    A fourth written without the stage is how the transcript came to record a
-    run's calls under the wrong names in the first place.
+    `_inner_agent_config` has three callers and `resume_with_decision` one:
+    the stage's own invoke, the reminder for its answer, and the resume after
+    an approval. A fourth written without the stage is how the transcript came
+    to record a run's calls under the wrong names in the first place.
     """
-    import inspect
-    import re
+    agent = _AnswersOnTheReminder()
+    _a_stage_runs(tmp_path, agent)
+    assert len(agent.configs) == 2
+    assert [config["configurable"][APP_STAGE_KEY] for config in agent.configs] == ["specialist_ui_ux_0"] * 2
 
-    from app.graph import workflow
-
-    source = inspect.getsource(workflow)
-    calls = re.findall(
-        r"(?<!def )(?:_inner_agent_config|resume_with_decision)\(\s*(.*?)\n(?=\s*(?:\)|\S+ = |return ))",
-        source,
-        re.DOTALL,
+    resumed = []
+    monkeypatch.setattr(
+        "app.graph.workflow.resume_with_decision",
+        lambda *args, **kwargs: resumed.append(kwargs) or {"messages": [], "structured_response": "answer"},
     )
-    assert calls, "found no call sites to check - the regex needs updating"
-    without = [c for c in calls if "stage=" not in c and "stage_name" not in c]
-    assert not without, f"these invocations do not carry a stage: {without}"
+    _a_stage_runs(tmp_path, _AnswersOnTheReminder(),
+                  pending_decision={"type": "approve"}, pending_inner_thread_id="outer:specialist_ui_ux_0:1")
+    assert resumed[0]["stage"] == "specialist_ui_ux_0"

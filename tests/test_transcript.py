@@ -180,20 +180,50 @@ def test_a_run_with_no_id_still_produces_a_usable_config() -> None:
     assert config["configurable"]["thread_id"] == "thread-1"
 
 
-def test_every_inner_invocation_builds_its_config_the_same_way() -> None:
+class _AnswersOnTheReminder:
+    """A role agent that gives no answer to its request and answers the reminder:
+    both of the workflow's own invocations of an inner agent, in one stage."""
+
+    def __init__(self):
+        self.configs = []
+
+    def invoke(self, request, config=None):  # noqa: ARG002
+        self.configs.append(config)
+        return {"messages": [], "structured_response": "answer" if len(self.configs) > 1 else None}
+
+
+def _a_stage_runs(tmp_path, agent, **state):
+    from types import SimpleNamespace
+
+    from app.graph.workflow import _run_gated_agent
+    from app.tracing import APP_RUN_ID_KEY
+
+    return _run_gated_agent(
+        {"stage": "test_round_1", "repository": SimpleNamespace(root_path=str(tmp_path)), **state},
+        {"configurable": {"thread_id": "outer", APP_RUN_ID_KEY: "run-7"}},
+        stage_name="test_round_1", agent=agent, initial_request={"messages": [{"role": "user", "content": "test"}]},
+        output_key="out", next_stage="next",
+    )
+
+
+def test_every_inner_invocation_builds_its_config_the_same_way(tmp_path) -> None:
     """Two call sites, and a third would otherwise be written without the id -
-    which is how the transcript came to record half a run."""
-    import inspect
+    which is how the transcript came to record half a run.
 
-    from app.graph import workflow
+    Both the stage's own invoke and the reminder asking it for its answer carry
+    the run id and the stage's conversation. (`agent.get_state` may still take a
+    bare thread id: it reads a checkpoint and runs no middleware.)
+    """
+    from app.tracing import APP_RUN_ID_KEY
 
-    source = inspect.getsource(workflow)
+    agent = _AnswersOnTheReminder()
 
-    # Both invocations go through the builder. `agent.get_state` may still take
-    # a bare thread id: it reads a checkpoint and runs no middleware.
-    invokes = [ln for ln in source.splitlines() if "agent.invoke(" in ln]
-    assert len(invokes) == 2
-    assert source.count("_inner_agent_config(") == 3  # the definition and both sites
+    update = _a_stage_runs(tmp_path, agent)
+
+    assert update["out"] == "answer" and len(agent.configs) == 2
+    for config in agent.configs:
+        assert config["configurable"][APP_RUN_ID_KEY] == "run-7"
+    assert agent.configs[0]["configurable"]["thread_id"] == agent.configs[1]["configurable"]["thread_id"]
 
 
 def test_the_resume_after_an_approval_carries_the_run_id_too() -> None:
@@ -218,15 +248,17 @@ def test_the_resume_after_an_approval_carries_the_run_id_too() -> None:
     assert "APP_RUN_ID_KEY" in source
 
 
-def test_the_workflow_passes_it_when_resuming() -> None:
-    import inspect
+def test_the_workflow_passes_it_when_resuming(tmp_path, monkeypatch) -> None:
+    resumed = []
+    monkeypatch.setattr(
+        "app.graph.workflow.resume_with_decision",
+        lambda *args, **kwargs: resumed.append(kwargs) or {"messages": [], "structured_response": "answer"},
+    )
 
-    from app.graph import workflow
+    _a_stage_runs(tmp_path, _AnswersOnTheReminder(),
+                  pending_decision={"type": "approve"}, pending_inner_thread_id="outer:test_round_1:1")
 
-    source = inspect.getsource(workflow)
-    call = source[source.index("resume_with_decision(") :][:400]
-
-    assert "run_id=" in call
+    assert resumed[0]["run_id"] == "run-7"
 
 
 def test_every_place_an_agent_is_driven_carries_the_id() -> None:

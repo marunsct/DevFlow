@@ -4,7 +4,9 @@ Over 21 release-candidate runs the review left 30 problems open at the lock; 13 
 or never verified what the product returns, and one such gap shipped a false acceptance (an update that emptied a
 title was accepted; no test asked it). Other findings keep the limit.
 """
+from app.acceptance import suite
 from app.graph import acceptance_nodes
+from the_acceptance_review import A_FAIR_TEST, PASSED, a_service_suite, measured, qa_lead, reviewed
 
 WEAK = "AC-10: test_ac10_get_note_not_found only asserts status code 404; it does not assert the response body."
 NEVER = "AC-9: The test does not verify that GET /notes returns an empty array when no notes exist."
@@ -21,11 +23,16 @@ def test_nothing_goes_back_twice_or_before_the_limit():
     assert acceptance_nodes.too_weak_to_lock([OTHER], rounds=2, limit=2) == []
 
 
-def test_the_review_step_asks_it_at_the_limit():
-    import inspect
+def test_the_review_at_its_limit_sends_a_weak_test_back_and_keeps_other_findings_open(tmp_path):
+    root = a_service_suite(tmp_path, A_FAIR_TEST)
 
-    source = inspect.getsource(acceptance_nodes)
-    assert "too_weak_to_lock(" in source.split("def too_weak_to_lock", 1)[0] + source.split("def too_weak_to_lock", 1)[1].split("\ndef ", 1)[1]
+    update, _ = reviewed(root, measured(PASSED), rounds=acceptance_nodes.MAX_ACCEPTANCE_ROUNDS,
+                         review=qa_lead(False, WEAK, OTHER))
+
+    assert update["stage"] == "acceptance_author"
+    assert update["acceptance_feedback"][0].startswith("Strengthen only the tests named below")
+    assert update["acceptance_feedback"][1:] == [WEAK]
+    assert not suite.is_locked(root)
 
 
 def test_the_note_uses_none_of_the_banned_words():

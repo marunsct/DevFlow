@@ -6,8 +6,13 @@ round ran ten fixers in three hours.
 """
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
+from types import SimpleNamespace
 
+from app.acceptance import suite
+from app.acceptance.criteria import Criterion
 from app.graph import acceptance_nodes as nodes
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
@@ -41,14 +46,26 @@ def test_any_one_wrong_answer_everywhere_is_one_cause():
     assert nodes.one_refusal_for_all(failing) == ("422", 8)
 
 
-def test_the_round_raises_it_alone_and_its_words_ban_the_product_s_nouns():
-    import inspect
+def _measured_with(root: Path, messages: list[str]) -> dict:
+    """A locked suite whose last measurement failed one test of each criterion with each message; the round's state."""
+    suite.save_criteria(root, [Criterion(f"AC-{n}", f"criterion {n}", "brief") for n in range(1, len(messages) + 1)])
+    suite.lock(root)
+    (root / suite.RESULT_FILE).write_text(json.dumps({
+        "ran": True, "command": "npm test",
+        "criteria": {entry["id"]: {**entry, "text": "", "status": "failed"} for entry in _failing(messages)},
+    }))
+    return {"repository": SimpleNamespace(root_path=str(root))}
 
-    source = inspect.getsource(nodes.failing_due_defects)
-    at = source.index("refused = one_refusal_for_all(failing)")
-    assert "return [*installs, *defects]" in source[at:at + 2200]
-    words = source[at:at + 2200]
-    assert not BANNED.search(re.sub(r"#.*", "", words))
+
+def test_the_round_raises_it_alone_and_its_words_ban_the_product_s_nouns(tmp_path):
+    state = _measured_with(tmp_path, ["assert 401 == 201", "assert 401 == 200", "assert 401 == 201", "assert 401 == 204"])
+
+    [defect] = nodes.failing_due_defects(state, [])
+
+    assert "4 acceptance tests across 4 criteria are all answered 401" in defect.description
+    assert defect.severity == "blocking"
+    told = " ".join([defect.description, defect.reproduction_steps, defect.expected_behavior, defect.actual_behavior])
+    assert not BANNED.search(told)
 
 
 def test_a_browser_runner_s_failed_ok_check_is_read_too():

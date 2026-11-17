@@ -7,11 +7,14 @@ first service has run, so the review locked the suite and it was reopened after 
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
 
 from app.acceptance import suite
 from app.stacks import contract, pack_named
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
+#: A suite that ran with no failing test: the checks that read a test's text are what speak.
+RAN = SimpleNamespace(ran=True, report=SimpleNamespace(tests=[]))
 
 ON_THE_FIXTURE = """import { test, expect } from '@playwright/test';
 import { startService } from './service.cjs';
@@ -65,7 +68,7 @@ def test_the_imported_request_and_full_urls_are_left(tmp_path):
     assert suite.contexts_made_from_the_fixture(_suite(tmp_path, BY_FULL_URL)) == []
 
 
-def test_every_caller_of_the_cannot_pass_list_asks_it():
-    import inspect
+def test_the_one_list_every_caller_reads_carries_it(tmp_path):
+    found = suite.tests_that_cannot_pass(_suite(tmp_path, ON_THE_FIXTURE), RAN)
 
-    assert "contexts_made_from_the_fixture(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+    assert any("line(s) 8" in item and "baseURL + '/items'" in item for item in found)

@@ -130,28 +130,38 @@ def test_acceptance_review_refuses_to_lock_unrunnable_suite(tmp_path: Path, monk
         output="ReferenceError: require is not defined in ES module scope",
     )
     monkeypatch.setattr(suite, "run", lambda root: unrunnable)
-    monkeypatch.setattr(suite, "gaps", lambda root: [])
 
     update = acceptance_nodes.acceptance_review(state, config, DummyCtx())
     assert not suite.is_locked(tmp_path), "Acceptance suite must never be locked when the runner failed to execute"
     assert update.get("stage") == "acceptance_author"
 
 
-def test_prelock_suite_validation_messages_ban_product_and_interface_words() -> None:
-    import inspect
+def test_prelock_suite_validation_messages_ban_product_and_interface_words(tmp_path: Path) -> None:
+    """What the two checks tell QA, outside the test code they quote, names no product noun and no control."""
     import re
-    from app.graph import acceptance_nodes
 
-    source_suite = inspect.getsource(suite.tests_with_module_system_mismatch) + inspect.getsource(suite.tests_with_unawaited_async_helpers)
-    source_nodes = inspect.getsource(acceptance_nodes.acceptance_review)
+    from app.stacks import contract, pack_named
 
+    project_dir = tmp_path / "my-app"
+    (project_dir / "acceptance").mkdir(parents=True)
+    (project_dir / "package.json").write_text(json.dumps({"name": "my-app", "type": "module"}), encoding="utf-8")
+    (project_dir / "acceptance" / "feature.spec.js").write_text(
+        "const { test, expect } = require('@playwright/test');\n"
+        "const findElement = async (page, name) => page.getByRole('listitem');\n"
+        "test('proves [AC-1]', async ({ page }) => {\n"
+        "  const el = findElement(page, 'first');\n"
+        "  await el.click();\n"
+        "});\n",
+        encoding="utf-8",
+    )
+    contract.write(tmp_path, pack_named("browser-javascript"), "my-app", "My App")
+
+    told = [*suite.tests_with_module_system_mismatch(tmp_path), *suite.tests_with_unawaited_async_helpers(tmp_path)]
+
+    assert len(told) == 2
+    said = " ".join(re.sub(r"`[^`]*`", "", item) for item in told)
     for word in ("button", "click", "checkbox", "todo", "to-do", "task"):
-        # Match whole words (case-insensitive) in error messages / prompt strings
-        assert not re.search(rf"\b{word}s?\b", source_suite, re.IGNORECASE), f"Banned word {word} found in suite checks"
-
-
-
-
+        assert not re.search(rf"\b{word}s?\b", said, re.IGNORECASE), f"Banned word {word} in: {said}"
 
 
 class TestCorrectCodeIsNotRefused:

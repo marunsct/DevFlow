@@ -382,26 +382,20 @@ class TestATestThatLooksForAValueItNeverGave:
 
         assert expects_what_it_never_gave(text) == []
 
-    def test_the_review_and_every_round_send_it_back(self, tmp_path, monkeypatch) -> None:
+    def test_the_review_and_every_round_send_it_back(self, tmp_path) -> None:
+        """The one list the review and every round read (`tests_that_cannot_pass`) carries it."""
         acceptance = _scaffolded(tmp_path)
         (acceptance / "notes.spec.js").write_text(self._test(
             "  const second = unique();\n  await expect(page.getByText(second)).toBeVisible();\n"
         ))
 
-        [problem] = suite.tests_that_expect_what_they_never_gave(tmp_path)
+        found = suite.tests_that_cannot_pass(tmp_path, suite.AcceptanceResult(ran=True))
 
-        assert "`[AC-3] renames it` looks for `second`" in problem and "never gave the product" in problem
+        [problem] = [item for item in found if "`[AC-3] renames it` looks for `second`" in item]
+        assert "never gave the product" in problem
         outside = re.sub(r"`[^`]*`", "", problem).lower()
         for word in BANNED:
             assert not re.search(rf"\b{word}\b", outside), word
-        import inspect
-
-        # One shared list, called when the suite is reviewed and on every round.
-        assert "tests_that_expect_what_they_never_gave(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
-        review = (Path(nodes.__file__).read_text())
-        assert review.count("suite.tests_that_cannot_pass(root, result)") == 2, (
-            "checked when the suite is reviewed and on every round"
-        )
 
 
 class TestARoleLookupOfANamedControlIsExact:

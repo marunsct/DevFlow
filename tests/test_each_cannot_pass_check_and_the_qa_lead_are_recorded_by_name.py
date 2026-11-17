@@ -5,23 +5,23 @@ lock - not at all, so no check's settle rate could be told apart.
 """
 from __future__ import annotations
 
-import inspect
-
-from app.acceptance import suite
-from app.graph import acceptance_nodes
-
-
-def test_the_result_remembers_which_check_raised_each_finding(monkeypatch, tmp_path):
-    for name in ("tests_that_broke_themselves", "locators_that_do_not_exist"):
-        pass
-    monkeypatch.setattr(suite, "locators_that_do_not_exist", lambda root: ["`test_a` finds a locator nothing has"])
-    monkeypatch.setattr(suite, "tests_that_broke_themselves", lambda root, result: ["`test_b` broke itself"])
-    found = suite.tests_that_cannot_pass(tmp_path, None)
-    assert found.checks.get("`test_a` finds a locator nothing has") == "locators_that_do_not_exist"
-    assert found.checks.get("`test_b` broke itself") == "tests_that_broke_themselves"
+from the_acceptance_review import (
+    A_FAIR_TEST, FAILED, NO_PRODUCT_CAN_PASS, PASSED, a_service_suite, measured, qa_lead, recorded_checks, reviewed,
+)
 
 
-def test_the_review_records_by_check_and_records_the_qa_lead():
-    source = inspect.getsource(acceptance_nodes.acceptance_review)
-    assert 'named.get(str(f), "tests_that_cannot_pass")' in source
-    assert 'check_findings.noted(root, rounds, "qa_lead", findings)' in source
+def test_the_review_records_each_finding_under_the_check_that_raised_it(tmp_path):
+    root = a_service_suite(tmp_path, NO_PRODUCT_CAN_PASS)
+
+    reviewed(root, measured(FAILED))
+
+    assert "responses_read_without_the_call" in recorded_checks(root)
+    assert "tests_that_cannot_pass" not in recorded_checks(root)
+
+
+def test_the_qa_lead_s_findings_are_recorded_as_its_own(tmp_path):
+    root = a_service_suite(tmp_path, A_FAIR_TEST)
+
+    reviewed(root, measured(PASSED), review=qa_lead(False, "AC-1: the test never reads the created note back."))
+
+    assert recorded_checks(root) == ["qa_lead"]

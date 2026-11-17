@@ -120,7 +120,7 @@ WORKDIR /src
 COPY pom.xml ./
 RUN mvn -q -B dependency:go-offline
 COPY . .
-RUN mvn -q -B -DskipTests package
+RUN mvn -q -B -Dmaven.test.skip=true package
 
 FROM eclipse-temurin:%(java)s-jre
 ENV HOST=0.0.0.0 PORT=8080 DATA_DIR=/data
@@ -144,7 +144,10 @@ PACK = service_pack(
         "src/main/java/app/{{package}}/HealthController.java": HEALTH,
         "src/main/resources/application.properties": PROPERTIES,
     },
-    install=(("mvn", "-q", "-B", "-DskipTests", "package"),),
+    # `-Dmaven.test.skip`, not `-DskipTests`: the product is built without compiling its tests. Measured on one run, a
+    # unit test naming a class that did not exist stopped `start.sh` - every acceptance and hidden test failed on a
+    # product whose own code compiled. The unit command still compiles and runs the tests.
+    install=(("mvn", "-q", "-B", "-Dmaven.test.skip=true", "package"),),
     unit_test=("mvn", "-q", "-B", "test"),
     # Surefire fetches its JUnit provider the first time a test runs, not at the install; one test run with the
     # network, its failures ignored, puts it in the run's Maven cache before the offline test commands need it.
@@ -156,7 +159,7 @@ PACK = service_pack(
     # build or test that needs it, not by an install a compile error stopped early.
     fetches_while_building=True,
     unit_pattern="*Test.java",
-    start="mvn -q -B -DskipTests package && exec java -jar target/app.jar",
+    start="mvn -q -B -Dmaven.test.skip=true package && exec java -jar target/app.jar",
     server_timeout_ms=300_000,
     smoke_unit=("src/test/java/app/{{package}}/ScaffoldSmokeTest.java", SMOKE_UNIT),
     guide=GUIDE,

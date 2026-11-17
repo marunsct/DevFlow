@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-17 13:47 JST (written by `loop.sh state`). Harness f072b868 committed; 87564131 deployed (not the same).
-**Live, and stopped in the last day:** run-2db7b0a2 failed at failed; run-4db255e8 failed at failed; run-53970d86 failed at ?
-**Last scored:** run-19ff2786 notes-api 9/9 (completed, 40 active min, handoff 1.0; scored 11-17 13:47 JST); run-2db7b0a2 notes-api-csharp 9/9 (failed, mixed, 76 active min, handoff 0.429; scored 11-17 12:53 JST); run-281467f2 notes-api-ruby 9/9 (completed, mixed, 240 active min, handoff 0.875; scored 11-17 10:58 JST).
+**As of:** 11-17 15:53 JST (written by `loop.sh state`). Harness b7ab0400 committed; b7ab0400 deployed.
+**Live, and stopped in the last day:** run-666e030f running at technical_lead; run-844673cd failed at failed; run-9f8188cb failed at failed; run-2db7b0a2 failed at failed; run-4db255e8 failed at failed; run-53970d86 failed at ?
+**Last scored:** run-844673cd notes-api-java 0/9 (failed, handoff 0.429; scored 11-17 15:53 JST); run-19ff2786 notes-api 9/9 (completed, 40 active min, handoff 1.0; scored 11-17 13:47 JST); run-2db7b0a2 notes-api-csharp 9/9 (failed, mixed, 76 active min, handoff 0.429; scored 11-17 12:53 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -77,17 +77,11 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   (hosted-model matrix) waits for the owner.
 
 ## Next actions
-1. Live: LR.30 container-mode Java run 2, run-844673cd-1d2d-459c-aca9-7641567f9fc8 (:8888, 14:26), on eb99fe36.
-   Run 1 (run-9f8188cb-6da7-43cd-a6ff-dcec0f2c9d83) failed at its scaffold at 14:07: tests run offline there and Maven
-   fetches its JUnit provider at the first test - LF.1017, a pack warm-up; the Java pack then verified in 38 s.
-   Its scaffold passed at 14:40 through the warm-up. LF.1018 (LR.50 phase 2) and LF.1019 (Maven/.NET/RSpec/PHPUnit
-   totals read) deployed into it at 14:51 (bf51313d, container mode kept; a learning run, so mixed versions are fine).
-   LF.1020 (a Java unit test mirrors its code's package; no test for a manifest) deployed and the run rewound to its
-   `technical_lead` point: every unit test had been written straight under `src/test/`, where Maven compiles nothing.
-   LF.1021 (a toolchain that fetches while building - Maven - has the network in container mode) deployed into it:
-   a changed Spring Boot version left every offline build, the start too, on "Unknown host".
-   The WORKER IS IN CONTAINER MODE (COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.sandbox.yml);
-   a plain `loop.sh deploy` would undo it.
+1. LR.30 container-mode Java run 2, run-844673cd-1d2d-459c-aca9-7641567f9fc8 (:8888, 14:26-15:36): FAILED, hidden 0/9,
+   quality 0/8, handoff 0.43 - its one sprint re-planned 3 times. Four harness fixes from it: LF.1017 (Maven warm-up),
+   LF.1020 (a Java test mirrors its code's package), LF.1021 (Maven has the network while building in container mode),
+   LF.1023 (the product is built without compiling its tests: a test naming a missing class stopped `start.sh`, so
+   nothing reached a product whose code compiled). Run 1 (run-9f8188cb) failed at its scaffold (LF.1017). Next: Java 3.
 2. Live: LR.30 container-mode Go run 1, run-666e030f-1c7d-4830-bf58-b9594f31ac4a (:1234, 15:28), on eafec33a.
 3. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).

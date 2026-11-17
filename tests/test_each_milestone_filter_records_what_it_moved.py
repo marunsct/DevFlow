@@ -5,7 +5,6 @@ relabelled accepted with no record, so whether any filter was right could not be
 """
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 from app.acceptance import check_findings
@@ -49,11 +48,18 @@ def test_a_filter_that_changes_nothing_records_nothing(tmp_path) -> None:
     assert not (Path(tmp_path) / check_findings.FILE).exists()
 
 
-def test_every_filter_of_the_milestone_review_is_recorded() -> None:
-    source = inspect.getsource(workflow)
-    node = source[source.index("def _review_the_milestone"):]
-    node = node[:node.index("This round's findings, in the state")]
+def test_every_filter_of_the_milestone_review_is_recorded(tmp_path, monkeypatch) -> None:
+    from workflow_node_stubs import run_a_milestone_review
+
+    recorded = []
+    monkeypatch.setattr(check_findings, "filtered",
+                        lambda root, review_round, check, before, after: recorded.append((root, review_round, check)) or after)
+
+    run_a_milestone_review(monkeypatch, tmp_path, milestone_revision_count=1)
+
+    checks = [check for _, _, check in recorded]
     for name in ("a_later_sprint_builds", "security_graded_by_its_own_review", "the_dependency_check_contradicts",
                  "about_the_harness_s_files", "a_server_only_the_tests_start", "the_command_record_contradicts",
                  "no_measure_holds", "a_pass_over_its_own_findings", "nothing_in_it_gates"):
-        assert f'_through("{name}"' in node, name
+        assert f"milestone:{name}" in checks, name
+    assert {(root, review_round) for root, review_round, _ in recorded} == {(str(tmp_path), 2)}

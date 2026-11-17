@@ -184,6 +184,46 @@ def end_an_attempt(monkeypatch, tmp_path, outcome: str, **state: Any) -> tuple[d
     return seen.update, asked
 
 
+def an_accepting_review() -> Any:
+    from app.agents.milestone_reviewer import MilestoneReviewOutput
+
+    return MilestoneReviewOutput(status="accepted", findings=[], acceptance_evidence="All good",
+                                 documentation_reviewed=True, tests_reviewed=True)
+
+
+def run_a_milestone_review(monkeypatch, tmp_path, *, review: Any = None, overrides: dict[str, Any] | None = None,
+                           **state: Any) -> SimpleNamespace:
+    """Run `milestone_review` once on a reviewer that answers `review` (an accepting one by default).
+
+    `.kwargs` are the keyword arguments of `build_milestone_review_request`, `.update` the node's return.
+    """
+    seen = SimpleNamespace(kwargs=None, update=None)
+
+    def build_request(*args, **kwargs):
+        seen.kwargs = kwargs
+        return {"messages": [{"role": "user", "content": "review the sprint"}]}
+
+    def gated(state, config, *, output_key, **kwargs):
+        return {output_key: review if review is not None else an_accepting_review()}
+
+    monkeypatch.setattr(workflow, "create_milestone_reviewer_agent", lambda *a, **k: SimpleNamespace())
+    monkeypatch.setattr(workflow, "build_milestone_review_request", build_request)
+    monkeypatch.setattr(workflow, "_run_gated_agent", gated)
+    monkeypatch.setattr("app.graph.acceptance_nodes.acceptance_text_for", lambda state: "")
+    for target, replacement in (overrides or {}).items():
+        monkeypatch.setattr(target, replacement)
+    graph = compiled(monkeypatch, tmp_path)
+    base = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "milestone_plan": two_work_orders(),
+        "specialist_outputs": {},
+        "current_sprint_index": 0,
+        **state,
+    }
+    seen.update = graph.nodes["milestone_review"].bound.invoke(base, CONFIG)
+    return seen
+
+
 def one_defect(**extra: Any) -> Any:
     from app.sprint import Defect, RemediationCycle
 

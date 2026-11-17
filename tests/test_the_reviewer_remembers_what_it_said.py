@@ -19,6 +19,8 @@ that could not hear itself.
 
 from __future__ import annotations
 
+import pytest
+
 from app.agents.milestone_reviewer import (
     MilestoneReviewFinding,
     MilestoneReviewOutput,
@@ -122,15 +124,16 @@ def test_a_request_without_a_previous_review_is_unchanged(tmp_path) -> None:
     assert "What you found on this milestone last time" not in request["messages"][0]["content"]
 
 
-def test_a_new_sprints_first_review_is_not_given_the_last_sprints_findings() -> None:
+@pytest.mark.parametrize("revisions_used, given", [(0, False), (1, True)])
+def test_a_new_sprints_first_review_is_not_given_the_last_sprints_findings(tmp_path, monkeypatch, revisions_used, given) -> None:
     """`sprint_advance_node` resets `milestone_revision_count` and leaves
     `milestone_review` in state, so the workflow gates on the count."""
-    import inspect
+    from workflow_node_stubs import run_a_milestone_review
 
-    from app.graph import workflow
+    last = _review(THE_INIT_FINDING)
 
-    source = inspect.getsource(workflow)
-    call = source[source.index("previous_review=("):]
-    call = call[: call.index("revisions_allowed")]
+    seen = run_a_milestone_review(monkeypatch, tmp_path, milestone_review=last,
+                                  milestone_revision_count=revisions_used)
 
-    assert 'state.get("milestone_revision_count", 0)' in call
+    assert seen.kwargs["previous_review"] is (last if given else None)
+    assert seen.kwargs["revisions_used"] == revisions_used

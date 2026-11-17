@@ -5,7 +5,6 @@ Measured on one run: the milestone review asked for signal handlers in the pack'
 """
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
 from app.graph import workflow
@@ -33,7 +32,18 @@ def test_a_finding_about_the_kept_start_file_is_made_minor_and_a_product_finding
     assert "the harness's own" in out.findings[0].description
 
 
-def test_the_milestone_review_applies_it():
-    source = inspect.getsource(workflow)
-    applied = source.index("_findings_about_the_harness_s_files_made_minor(review, root)")
-    assert applied < source.index("_findings_about_a_server_only_the_tests_start(review, root)")
+def test_the_milestone_review_applies_it(tmp_path, monkeypatch):
+    """Before the server-only-the-tests-start filter, which reads the severities it leaves."""
+    from workflow_node_stubs import run_a_milestone_review
+
+    applied = []
+
+    def recording(name):
+        return lambda review, root: applied.append((name, root)) or review
+
+    run_a_milestone_review(monkeypatch, tmp_path, overrides={
+        "app.graph.workflow._findings_about_the_harness_s_files_made_minor": recording("harness files"),
+        "app.graph.workflow._findings_about_a_server_only_the_tests_start": recording("server only the tests start"),
+    })
+
+    assert applied == [("harness files", str(tmp_path)), ("server only the tests start", str(tmp_path))]

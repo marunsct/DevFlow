@@ -38,6 +38,7 @@ a sprint built in something it cannot parse reports no counts and is not gated.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -207,21 +208,36 @@ class TestTheWindowIsThisAttempt:
 
 
 class TestItIsWiredIntoTheReview:
-    def test_the_gate_runs_before_the_sprint_is_committed(self):
-        """Checked on the source: the node is a closure over the compiled graph.
-
-        What matters is the ordering. `commit_milestone` records the sprint as a
+    def test_the_gate_runs_before_the_sprint_is_committed(self, tmp_path, monkeypatch):
+        """What matters is the ordering. `commit_milestone` records the sprint as a
         state worth returning to, and a red suite must not reach it.
         """
-        import inspect
+        from workflow_node_stubs import run_a_milestone_review
 
-        from app.graph import workflow
+        committed = []
+        red = "The suite the ledger measured fails: 15 of 21 passed."
 
-        source = inspect.getsource(workflow)
-        gate = source.index("_a_red_suite_the_review_called_green(state)\n        if red:")
-        commit = source.index("commit_milestone(", gate)
+        seen = run_a_milestone_review(monkeypatch, tmp_path, overrides={
+            "app.graph.workflow._a_red_suite_the_review_called_green": lambda state: red,
+            "app.sprint.record.definition_of_done_gaps": lambda *a, **k: [],
+            "app.tools.version_control.commit_milestone": lambda *a, **k: committed.append(k),
+        })
 
-        assert gate < commit
+        assert committed == []
+        assert seen.update["stage"] == "technical_lead" and seen.update["revision_comments"] == [red]
+
+    def test_a_green_suite_reaches_the_commit(self, tmp_path, monkeypatch):
+        from workflow_node_stubs import run_a_milestone_review
+
+        committed = []
+
+        run_a_milestone_review(monkeypatch, tmp_path, sprint_plan=SimpleNamespace(sprints=[1, 2]), overrides={
+            "app.graph.workflow._a_red_suite_the_review_called_green": lambda state: "",
+            "app.sprint.record.definition_of_done_gaps": lambda *a, **k: [],
+            "app.tools.version_control.commit_milestone": lambda *a, **k: committed.append(k),
+        })
+
+        assert [entry["sprint"] for entry in committed] == [1]
 
     def test_it_is_bounded_by_the_revision_limit(self):
         """A suite that cannot be made to pass must end the run, not loop.

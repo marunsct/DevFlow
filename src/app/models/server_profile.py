@@ -96,7 +96,7 @@ def read(base_url: str, api_key: str = "") -> ServerProfile | None:
             return from_props(props)
         # No `/props`, or an answer without one (LM Studio says 200 with an error body, and logs an ERROR each time).
         _WITHOUT_PROPS.add(root)
-    return _from_lm_studio(_get_json(root + "/api/v0/models", headers))
+    return _from_lm_studio(_get_json(root + "/api/v0/models", headers), _get_json(root + "/api/v1/models", headers))
 
 
 #: Fields a llama.cpp `/props` body has; an answer with none of them is not one.
@@ -113,11 +113,14 @@ def _get_json(url: str, headers: dict[str, str]) -> Any:
         return None
 
 
-def _from_lm_studio(models: Any) -> ServerProfile | None:
-    """The profile from LM Studio's `/api/v0/models`: the one loaded model's context and quantisation; else None.
+def _from_lm_studio(models: Any, instances: Any = None) -> ServerProfile | None:
+    """The profile from LM Studio's `/api/v0/models`, with its slots from `/api/v1/models`; else None.
 
-    It names the context the model was loaded with, not a share per request, so `slots` stays unknown; the context
-    budget takes the smaller of this and the configured window, so it can only tighten the budget.
+    `/api/v0/models` names the one loaded model's context and quantisation. `/api/v1/models` names how many requests
+    the loaded instance serves at once (`parallel`), and those requests share the one loaded context: measured on one
+    run, seven fixers sent at once to a model loaded with 182,528 tokens and `parallel: 4` were refused "Context size
+    has been exceeded" in waves for half an hour, while the harness took the whole window for each and its slots for
+    unknown. With `parallel` read, the fan-out is held to the slots and each request to its share of the window.
     """
     entries = models.get("data") if isinstance(models, dict) else None
     loaded = [m for m in entries or [] if isinstance(m, dict) and m.get("state") == "loaded"]
@@ -125,12 +128,25 @@ def _from_lm_studio(models: Any) -> ServerProfile | None:
         return None
     model = loaded[0]
     context = model.get("loaded_context_length")
+    context = context if isinstance(context, int) and context > 0 else None
     quantisation = str(model.get("quantization") or "")
+    slots = _lm_studio_parallel(instances, str(model.get("id") or ""))
     return ServerProfile(
-        slot_context=context if isinstance(context, int) and context > 0 else None,
+        slots=slots,
+        slot_context=(context // slots if context and slots else context),
         quantisation=quantisation.upper() if _QUANT.fullmatch(quantisation) else "",
         model=str(model.get("id") or ""),
     )
+
+
+def _lm_studio_parallel(instances: Any, model_id: str) -> int | None:
+    """How many requests LM Studio's loaded instance of `model_id` serves at once, from `/api/v1/models`; else None."""
+    for entry in (instances.get("models") if isinstance(instances, dict) else None) or []:
+        for instance in (entry.get("loaded_instances") if isinstance(entry, dict) else None) or []:
+            if isinstance(instance, dict) and instance.get("id") == model_id:
+                parallel = (instance.get("config") or {}).get("parallel")
+                return parallel if isinstance(parallel, int) and parallel > 0 else None
+    return None
 
 
 _RECORDED: ServerProfile | None = None

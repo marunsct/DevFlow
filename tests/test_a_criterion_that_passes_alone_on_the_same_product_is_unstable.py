@@ -58,8 +58,30 @@ def test_the_dispatch_holds_a_dispute_for_an_unstable_criterion_and_says_why():
     assert "AC-4" in text and "pass when they run alone" in text
 
 
-def test_the_product_s_state_is_taken_before_the_probe_runs():
+def test_the_product_s_state_is_taken_before_the_probe_runs(tmp_path, monkeypatch):
     """The probe itself rewrote a committed store file, so the product had always 'changed'."""
-    source = inspect.getsource(workflow._closed_if_an_earlier_fix_resolved_it)
-    assert source.index("unchanged = unstable.unchanged_since_the_suite_measured(root)") < source.index(
-        "if _the_defect_s_tests_pass(Path(root), defect):")
+    from types import SimpleNamespace
+
+    from app.graph import acceptance_nodes, engineering
+    from app.sprint import Defect, RemediationCycle
+
+    root = _measured(tmp_path)
+
+    def the_probe_rewrites_its_store(path, defect):
+        (root / "app.py").write_text("x = 2\n")
+        return True
+
+    monkeypatch.setattr(suite, "is_locked", lambda root: True)
+    monkeypatch.setattr(acceptance_nodes, "passing_since_reported", lambda state, criteria: [])
+    monkeypatch.setattr(workflow, "_resolved_by_a_measurement", lambda state, defect, **k: ("", ""))
+    monkeypatch.setattr(engineering, "no_longer_underlined", lambda root, description: "")
+    monkeypatch.setattr(workflow, "_a_dispute_may_be_held_now", lambda state, also=None: True)
+    monkeypatch.setattr(workflow, "_the_defect_s_tests_pass", the_probe_rewrites_its_store)
+    defect = Defect(description="[AC-4] Delete removes the note", severity="major", reproduction_steps="r",
+                    expected_behavior="e", actual_behavior="a", owner="backend", failing_criteria=["AC-4"])
+    cycle = RemediationCycle(sprint_goal="g", defects=[defect])
+
+    held = workflow._closed_if_an_earlier_fix_resolved_it(
+        {"repository": SimpleNamespace(root_path=str(root)), "test_round": 1}, cycle, 0)
+
+    assert held is not None and held["stage"] == "acceptance_dispute", "unstable, not closed as fixed"

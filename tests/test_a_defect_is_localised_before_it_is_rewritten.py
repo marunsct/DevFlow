@@ -72,16 +72,18 @@ def test_the_rewrite_takes_the_localised_files(tmp_path, monkeypatch):
     assert seen == [[]]
 
 
-def test_a_retry_that_falls_from_candidates_to_a_rewrite_localises_only_once():
+def test_a_retry_that_falls_from_candidates_to_a_rewrite_localises_only_once(tmp_path):
     """A failed candidate attempt fell through to a rewrite that asked the same question again - same
     defect, same failure - and spent a second model call finding the same files."""
-    import inspect
+    import the_fix_stage
+    from app.agents.specialists import SpecialistOutput
 
-    from app.graph import workflow
+    state = the_fix_stage.a_state(tmp_path, the_fix_stage.a_defect(fix_attempts=1))
+    _, seen = the_fix_stage.run(
+        tmp_path, state, fast=True, candidate_model=SimpleNamespace(name="candidates"), candidate=None,
+        rewrite=SpecialistOutput(changed_files=["src/located.js"]), located=["src/located.js"],
+    )
 
-    source = inspect.getsource(workflow)
-    helper = source[source.index("    def _fixed_by_rewriting("):source.index("    def _fix_one(")]
-    assert helper.count("localised(") == 1, "localised once, carried into both calls"
-    assert "files=located" in helper
-    candidates_call = helper[helper.index("fix_by_candidates("):helper.index("fix_by_rewriting(")]
-    assert "files=located" in candidates_call
+    assert len(seen.localised) == 1, "localised once, carried into both calls"
+    assert seen.candidates[0]["files"] == ["src/located.js"]
+    assert seen.rewrites[0]["files"] == ["src/located.js"], "the rewrite does not localise again"

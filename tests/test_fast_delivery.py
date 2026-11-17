@@ -258,22 +258,26 @@ def test_a_failing_unit_run_is_the_product_s_defect():
     assert "FAIL store.test.ts > keeps ids" in defect.description
 
 
-def test_a_fix_reasons_as_configured_and_a_build_does_not():
+def test_a_fix_reasons_as_configured_and_a_build_does_not(tmp_path, monkeypatch):
     """One run's fixes without reasoning broke 62 passing tests in one fix and
     reported edits they never made."""
-    import inspect
+    import the_fix_stage
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
-    from app.graph import workflow
+    build = FakeListChatModel(responses=["unused"], name="build")
+    monkeypatch.setattr("app.graph.workflow.build_specialist_task_request",
+                        lambda *a, **k: {"messages": [{"role": "user", "content": "build it"}]})
 
-    source = inspect.getsource(workflow)
-    chooser = source[source.index("def _the_build_model("):source.index("def _the_model_for_this_attempt(")]
-    assert "quiet = model if reasons else building_model" in chooser
-    # Initiative L.4 folded the revert signal into both fixer dispatches, so
-    # the calls span lines now; the pin's intent stands - exactly one dispatch
-    # site of each shape, and both reason.
-    assert source.count("failed_fix_tries(cycle, defect_index),\n            reasons=True,") == 1
-    assert source.count("failed_fix_tries(cycle, index), reasons=True,") == 1
-    assert "_the_build_model(state, stage_name)," in source, "a work order still builds without reasoning"
+    def the_agent_s_model(node: str, **more):
+        state = the_fix_stage.a_state(tmp_path, __fix_index=0, **more)
+        _, seen = the_fix_stage.run(tmp_path, state, node=node, model=build, fast=True, approves=False)
+        [chosen] = seen.agent_models
+        return chosen
+
+    assert the_agent_s_model("defect_remediation") is build, "a fix alone reasons as configured"
+    assert the_agent_s_model("defect_fix_worker") is build, "and a fix in a batch"
+    built = the_agent_s_model("specialist_worker", __worker_task=_order("backend", "acme/src/app.ts"), __worker_index=0)
+    assert built == SimpleNamespace(quiet=build), "a work order still builds without reasoning"
 
 
 def test_a_draft_the_compiler_reports_an_error_in_is_drafted_again_with_it(tmp_path):

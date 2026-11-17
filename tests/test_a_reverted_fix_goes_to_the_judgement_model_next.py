@@ -13,8 +13,7 @@ revert reaches the generic rung on its own (Initiative L.4).
 
 from __future__ import annotations
 
-import inspect
-import re
+import the_fix_stage
 
 from app.graph import workflow
 from app.sprint import Defect, RemediationCycle
@@ -72,26 +71,21 @@ def test_the_index_is_respected() -> None:
     assert workflow._a_revert_escalates_this_fix(cycle, 1) is True
 
 
-def test_the_fix_stages_ask_the_question() -> None:
-    source = inspect.getsource(workflow.build_workflow_graph)
-
-    assert "after_a_revert=" in source
-    model_choice = inspect.getsource(workflow)  # the helper's own definition
-    assert "def _a_revert_escalates_this_fix" in model_choice
-    # Both fix dispatch sites - the single fixer and the batched one.
-    assert source.count("_a_revert_escalates_this_fix(") >= 2
+def _the_fixer_s_model(monkeypatch, tmp_path, node: str, defect: Defect) -> str:
+    build, judge = the_fix_stage.two_models(monkeypatch)
+    state = the_fix_stage.a_state(tmp_path, defect, __fix_index=0)
+    _, seen = the_fix_stage.run(tmp_path, state, node=node, model=build)
+    [chosen] = seen.agent_models
+    return chosen.name
 
 
-def test_the_build_model_takes_the_revert_signal() -> None:
-    source = inspect.getsource(workflow.build_workflow_graph)
+def test_the_fix_stages_ask_the_question(monkeypatch, tmp_path) -> None:
+    """Both fix dispatch sites - the single fixer and the batched one - send the fix after one revert to the
+    judgement model, though its failed tries are below the generic rung; without a revert, the build model."""
+    from app.models.roles import escalate_after
 
-    assert "after_a_revert: bool = False" in source
-    assert re.search(r"if after_a_revert\b", source)
-
-
-def test_the_escalation_words_are_plain_language() -> None:
-    """The log line and helper text carry no interface words a product model
-    is never asked about here - and no banned whole words either."""
-    helper = inspect.getsource(workflow._a_revert_escalates_this_fix)
-    for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
-        assert not re.search(rf"\b{word}\b", helper, re.IGNORECASE), word
+    assert 1 < escalate_after(), "one failed try is below the generic rung"
+    for node in ("defect_remediation", "defect_fix_worker"):
+        assert _the_fixer_s_model(monkeypatch, tmp_path, node, _defect(fix_attempts=1)) == "build", node
+        reverted = _defect(actual_behavior=f"a\n{SINGLE}", fix_attempts=1)
+        assert _the_fixer_s_model(monkeypatch, tmp_path, node, reverted) == "judge", node

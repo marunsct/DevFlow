@@ -7,13 +7,14 @@ a failed fix (candidates), never on a defect the loop gave up on. Behind `SURREN
 """
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
 import pytest
+import the_fix_stage
+from the_fix_stage import a_defect, a_state
 
 from app.agents.specialists import SpecialistOutput
-from app.graph import surrender_to_rewrite, workflow
+from app.graph import surrender_to_rewrite
 
 
 SURRENDER = SpecialistOutput(blockers=["we can't fix all of these"])
@@ -70,23 +71,21 @@ def test_what_a_surrender_is():
     assert not surrender_to_rewrite.surrendered(REWRITTEN)
 
 
-def _helper():
-    source = inspect.getsource(workflow)
-    return source[source.index("    def _fixed_by_rewriting("):source.index("    def _fix_one(")]
+def test_the_fix_step_sends_a_surrender_to_the_rewrite_before_it_is_measured(tmp_path):
+    """The agent loop's answer that changed no file goes to the rewrite, and what is measured and settled is the
+    rewrite's - in thorough delivery too, where a rewrite is otherwise never asked."""
+    _, seen = the_fix_stage.run(tmp_path, a_state(tmp_path), answer=SURRENDER, rewrite=REWRITTEN)
+
+    assert seen.events == ["agent", "agent loop", "rewrite", "measured"]
+    assert seen.settled == [REWRITTEN]
 
 
-def test_the_fix_step_sends_a_surrender_to_the_rewrite_before_it_is_measured():
-    source = inspect.getsource(workflow)
-    fix_one = source[source.index("    def _fix_one("):source.index("    def defect_remediation_node(")]
+def test_the_rewrite_after_a_surrender_is_the_single_rewrite_in_any_delivery_mode(tmp_path):
+    """After a failed fix the candidates come first; a surrender after them gets one rewrite, not a second round."""
+    failed_once = a_state(tmp_path, a_defect(fix_attempts=1))
 
-    asked = fix_one.index("after_a_surrender(fix_result")
-    assert fix_one.index('fix_result = update.pop("__fix_result__")') < asked < fix_one.index("engineering.after_a_fix(")
-    assert "after_a_surrender=True" in fix_one
+    _, seen = the_fix_stage.run(tmp_path, failed_once, answer=SURRENDER, rewrite=REWRITTEN,
+                                   candidate_model=SimpleNamespace(name="candidates"), candidate=None)
 
-
-def test_the_rewrite_after_a_surrender_is_the_single_rewrite_in_any_delivery_mode():
-    helper = _helper()
-
-    assert "after_a_surrender: bool = False" in helper
-    assert "not _fast_delivery() and not after_a_surrender" in helper, "the single rewrite is not fast delivery's alone"
-    assert "and not after_a_surrender:" in helper[:helper.index("fix_by_candidates(")], "no second round of candidates"
+    assert seen.events == ["candidates", "agent", "agent loop", "rewrite", "measured"]
+    assert seen.settled == [REWRITTEN]

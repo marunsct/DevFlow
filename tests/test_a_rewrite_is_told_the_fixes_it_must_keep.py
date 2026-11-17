@@ -5,7 +5,6 @@ an earlier fix had moved the empty-state message out of the list for another tes
 """
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
 from app.graph import rewritten_fixes, workflow
@@ -23,9 +22,25 @@ def test_the_rewrite_request_carries_the_fixes_to_keep(tmp_path):
     assert "keep these fixes" not in rewritten_fixes.fix_request(tmp_path, "app.js", defect, "rule: list", None, None, [], [])
 
 
-def test_both_rewrite_paths_are_given_them():
-    source = inspect.getsource(workflow)
-    assert source.count("kept=_the_fixes_to_keep_for(state, defect)") == 2
+EARLIER = [{"defect_log": [
+    {"state": "fixed", "owner": "ui_ux", "files": ["web/app.js"], "description": "[AC-7] An empty list shows no entries",
+     "resolution": "the message is a paragraph outside the list"}]}]
+
+
+def test_both_rewrite_paths_are_given_them(tmp_path):
+    """The candidates after a failed fix, and the single rewrite after them, are each told the fixes to keep."""
+    import the_fix_stage
+    from app.agents.specialists import SpecialistOutput
+
+    defect = the_fix_stage.a_defect(owner="ui_ux", fix_attempts=1, affected_files=["web/app.js"])
+    state = the_fix_stage.a_state(tmp_path, defect, sprint_attempts=EARLIER)
+    _, seen = the_fix_stage.run(tmp_path, state, fast=True, candidate_model=SimpleNamespace(name="candidates"),
+                                   candidate=None, rewrite=SpecialistOutput(changed_files=["web/app.js"]))
+
+    kept = workflow._the_fixes_to_keep_for(state, defect)
+    assert "[AC-7] An empty list shows no entries" in kept
+    assert seen.candidates[0]["kept"] == kept
+    assert seen.rewrites[0]["kept"] == kept
 
 
 def test_the_fixes_come_from_earlier_attempts_by_role():

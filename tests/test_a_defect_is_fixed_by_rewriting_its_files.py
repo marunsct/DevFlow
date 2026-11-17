@@ -7,11 +7,14 @@ the harness already knew - with one tool call in ten malformed.
 
 from __future__ import annotations
 
-import inspect
 import re
 from types import SimpleNamespace
 
-from app.graph import rewritten_fixes, workflow
+import the_fix_stage
+from the_fix_stage import a_defect, a_state
+
+from app.agents.specialists import SpecialistOutput
+from app.graph import rewritten_fixes
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 
@@ -96,12 +99,21 @@ def test_a_defect_with_no_file_to_rewrite_goes_to_the_agent_loop(tmp_path):
     assert rewritten_fixes.fix_by_rewriting(vague, root, _Model([])) is None
 
 
-def test_the_fix_step_tries_rewriting_before_the_agent_loop():
-    source = inspect.getsource(workflow)
-    fix_one = source[source.index("    def _fix_one("):source.index("    def defect_remediation_node(")]
-    assert fix_one.index("_fixed_by_rewriting(") < fix_one.index("create_specialist_agent(")
-    helper = source[source.index("    def _fixed_by_rewriting("):source.index("    def _fix_one(")]
-    assert "_fast_delivery()" in helper and "_the_run_approves_its_own_writes" in helper
+REWRITTEN = SpecialistOutput(changed_files=["app/count.js"], tests=["tests/count.test.js"], decisions=["Rewrote it"])
+
+
+def test_the_fix_step_tries_rewriting_before_the_agent_loop(tmp_path):
+    """In fast delivery, on a run that approves its own writes, the rewrite is tried first and its answer measured;
+    the agent loop is not built. Otherwise - thorough delivery, or writes the owner approves - the agent loop."""
+    update, seen = the_fix_stage.run(tmp_path, a_state(tmp_path), fast=True, rewrite=REWRITTEN)
+    assert seen.events == ["rewrite", "measured"], "the rewrite, not the agent loop"
+    assert seen.settled == [REWRITTEN]
+
+    _, seen = the_fix_stage.run(tmp_path, a_state(tmp_path), fast=True, approves=False, rewrite=REWRITTEN)
+    assert seen.rewrites == [] and seen.events == ["agent", "agent loop", "measured"], "the owner approves its writes"
+
+    _, seen = the_fix_stage.run(tmp_path, a_state(tmp_path), fast=False, rewrite=REWRITTEN)
+    assert seen.rewrites == [] and seen.events == ["agent", "agent loop", "measured"], "a rewrite is fast delivery's"
 
 
 class _Numbered:
@@ -148,11 +160,23 @@ def test_no_candidate_passing_puts_the_files_back_for_the_agent_loop(tmp_path):
     assert kept is None and store.read_text() == before
 
 
-def test_the_fix_step_asks_for_candidates_after_a_failed_fix():
-    source = inspect.getsource(workflow)
-    helper = source[source.index("    def _fixed_by_rewriting("):source.index("    def _fix_one(")]
-    assert "failed_tries >= 1" in helper and "fix_by_candidates(" in helper
-    assert "_the_defect_s_tests_pass(root, defect)" in helper
+def test_the_fix_step_asks_for_candidates_after_a_failed_fix(tmp_path):
+    """After one failed fix, and with a model to ask, candidates are asked - chosen by the defect's own tests - and
+    one kept stands in for the agent loop. Not on a first fix, nor with no model to ask them of."""
+    judge = SimpleNamespace(name="candidates")
+    failed_once = a_defect(fix_attempts=1)
+
+    update, seen = the_fix_stage.run(tmp_path, a_state(tmp_path, failed_once), candidate_model=judge,
+                                        candidate=REWRITTEN)
+    [asked] = seen.candidates
+    assert asked["model"] is judge
+    assert seen.tests_checked == [(str(tmp_path), failed_once)], "chosen by this defect's own tests"
+    assert seen.events == ["candidates", "measured"] and seen.settled == [REWRITTEN]
+
+    _, seen = the_fix_stage.run(tmp_path, a_state(tmp_path, a_defect()), candidate_model=judge, candidate=REWRITTEN)
+    assert seen.candidates == [], "a first fix asks for none"
+    _, seen = the_fix_stage.run(tmp_path, a_state(tmp_path, a_defect(fix_attempts=1)), candidate_model=None)
+    assert seen.candidates == [], "no model to ask them of"
 
 
 def test_fix_by_rewriting_when_model_is_none_falls_back_or_returns_none(tmp_path, monkeypatch):
@@ -169,10 +193,20 @@ def test_fix_by_rewriting_when_model_is_none_falls_back_or_returns_none(tmp_path
     assert len(calls) > 0, "fallback model was invoked when model argument is None"
 
 
-def test_the_fix_step_supplies_fallback_model_when_building_model_is_none():
-    source = inspect.getsource(workflow)
-    helper = source[source.index("    def _fixed_by_rewriting("):source.index("    def _fix_one(")]
-    assert "fix_model or model or building_model" in helper
+def test_the_fix_step_supplies_fallback_model_when_building_model_is_none(tmp_path, monkeypatch):
+    """The rewrite runs on the fix's own model: the build model as configured, the judgement model once the defect's
+    fixes have failed, and - on a graph given no model, whose fix model is None - the build model it made."""
+    from app.models.roles import escalate_after
+
+    _, seen = the_fix_stage.run(tmp_path, a_state(tmp_path), fast=True, rewrite=REWRITTEN)
+    assert seen.rewrites[0]["model"] is not None, "a model the rewrite can call"
+
+    build, judge = the_fix_stage.two_models(monkeypatch)
+    _, seen = the_fix_stage.run(tmp_path, a_state(tmp_path), fast=True, rewrite=REWRITTEN, model=build)
+    assert seen.rewrites[0]["model"] is build, "reasoning as configured, as the agent loop's fix does"
+    escalated = a_state(tmp_path, a_defect(fix_attempts=escalate_after()))
+    _, seen = the_fix_stage.run(tmp_path, escalated, fast=True, rewrite=REWRITTEN, model=build)
+    assert seen.rewrites[0]["model"] is judge
 
 
 

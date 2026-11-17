@@ -13,7 +13,6 @@ failed twice.
 
 from __future__ import annotations
 
-import inspect
 import re
 
 from app.graph import workflow
@@ -60,9 +59,18 @@ def test_a_defect_with_no_named_files_still_gets_a_rewrite_order() -> None:
     assert "each file the failure names" in section
 
 
-def test_the_shape_change_reaches_the_fix_request() -> None:
-    source = inspect.getsource(workflow)
-    assert "request[\"messages\"][-1][\"content\"] += _the_last_attempt_section(cycle, defect_index)" in source
+def test_the_shape_change_reaches_the_fix_request(tmp_path) -> None:
+    """The fixer of a defect on its last rung is given the section; one below it is not."""
+    import the_fix_stage
+    from app.models.roles import escalate_after
+
+    last = _cycle(_defect(fix_attempts=escalate_after()))
+    _, seen = the_fix_stage.run(tmp_path, the_fix_stage.a_state(tmp_path, *last.defects))
+    section = workflow._the_last_attempt_section(last, 0)
+    assert section and section in seen.requests[0]
+
+    _, seen = the_fix_stage.run(tmp_path, the_fix_stage.a_state(tmp_path, _defect(fix_attempts=1)))
+    assert "This is the attempt after" not in seen.requests[0]
 
 
 def test_the_last_attempt_order_names_no_product_word() -> None:

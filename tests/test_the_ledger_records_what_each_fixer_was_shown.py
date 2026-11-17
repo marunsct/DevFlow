@@ -5,8 +5,9 @@ given, so "why did the second try succeed" could not be answered from data.
 """
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
+
+import the_fix_stage
 
 from app.observability import defect_ledger
 
@@ -26,20 +27,21 @@ def test_what_a_fixer_was_shown_is_fingerprinted_and_summarised(monkeypatch):
     assert again["detail"].split()[1] != recorded[-1]["detail"].split()[1], "a different request, a different fingerprint"
 
 
-def test_the_fix_request_is_recorded_as_it_is_sent():
-    from app.graph import workflow
+def test_the_fix_request_is_recorded_as_it_is_sent(tmp_path):
+    """The entry is the request exactly as the fixer is given it, under the fixer's own stage."""
+    _, seen = the_fix_stage.run(tmp_path, the_fix_stage.a_state(tmp_path, test_round=3))
 
-    source = inspect.getsource(workflow)
-    body = source[source.index("def _the_fix_request("):source.index("def _fixed_by_rewriting(")]
-    assert "defect_ledger.shown(" in body
+    [sent] = seen.requests
+    assert seen.shown == [("defect_fix_3_0", sent)]
+    assert sent.startswith(the_fix_stage.BASE_REQUEST)
 
 
-def test_it_is_recorded_once_a_fixer_not_on_every_resume_of_its_stage():
+def test_it_is_recorded_once_a_fixer_not_on_every_resume_of_its_stage(tmp_path):
     """Measured on the run after it shipped: a stage that pauses for each gated tool call is built again on every
     resume, and the entry was written every 6 to 10 seconds for one fixer."""
-    from app.graph import workflow
+    resumed = the_fix_stage.a_state(tmp_path, pending_inner_thread_id="inner-1", fix_base_commit="base")
 
-    source = inspect.getsource(workflow)
-    body = source[source.index("def _the_fix_request("):source.index("def _fixed_by_rewriting(")]
-    at = body.index("defect_ledger.shown(")
-    assert 'if not state.get("pending_inner_thread_id")' in body[at - 400:at]
+    _, seen = the_fix_stage.run(tmp_path, resumed)
+
+    assert len(seen.requests) == 1, "the resumed fixer is still given its request"
+    assert seen.shown == [], "but it is not recorded again"

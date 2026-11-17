@@ -40,11 +40,21 @@ def test_another_defect_gets_nothing_from_it(tmp_path):
     assert suite.what_the_unit_tests_printed(_root(tmp_path), "[AC-3] Delete a note - the acceptance suite says ...") is None
 
 
-def test_the_fix_request_uses_it_before_the_last_command():
-    import inspect
+def test_the_fix_request_uses_it_before_the_last_command(tmp_path):
+    """The fixer - the agent loop's request, and the rewrite in fast delivery - is shown a failing criterion's own
+    tests first, then the failing unit tests', and the last failing command only when neither has anything."""
+    import the_fix_stage
 
-    from app.graph import workflow
+    from app.agents.specialists import SpecialistOutput
 
-    source = inspect.getsource(workflow)
-    at = source.index("_what_the_criteria_s_tests_printed(state[\"repository\"].root_path, defect)")
-    assert "_what_the_unit_tests_printed(" in source[at:at + 400]
+    criteria, unit, last = ({"title": which, "output": which} for which in ("criteria", "unit", "last"))
+
+    def shown(printed: dict) -> tuple:
+        _, loop = the_fix_stage.run(tmp_path, the_fix_stage.a_state(tmp_path), printed=printed)
+        _, rewrite = the_fix_stage.run(tmp_path, the_fix_stage.a_state(tmp_path), printed=printed, fast=True,
+                                          rewrite=SpecialistOutput(changed_files=["app/count.js"]))
+        return loop.request_args[0][8], rewrite.rewrites[0]["last_failure"]
+
+    assert shown({"criteria": criteria, "unit": unit, "last": last}) == (criteria, criteria)
+    assert shown({"unit": unit, "last": last}) == (unit, unit)
+    assert shown({"last": last}) == (last, last)

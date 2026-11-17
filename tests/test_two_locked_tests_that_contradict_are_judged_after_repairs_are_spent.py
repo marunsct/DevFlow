@@ -34,8 +34,18 @@ def test_once_an_attempt_still_holds(monkeypatch):
     assert workflow._a_dispute_may_be_held_now(state, also=[CONTESTED]) is False
 
 
-def test_the_revert_branch_asks_with_the_contested_test():
-    import inspect
+def test_the_revert_branch_asks_with_the_contested_test(monkeypatch, tmp_path):
+    """A second fix reverted for breaking the same passing locked test holds the dispute, though the failing tests'
+    repairs are spent: the contested test is what the dispute is asked about."""
+    import the_fix_stage
 
-    source = inspect.getsource(workflow)
-    assert "_a_dispute_may_be_held_now(state, also=[contested])" in source
+    monkeypatch.setattr(workflow, "_the_locked_tests_still_failing", lambda state: FAILING)
+    monkeypatch.setattr(workflow, "_this_attempt", lambda state: "1:2")
+    first = the_fix_stage.a_state(tmp_path, the_fix_stage.a_defect("[AC-5] DELETE answers 204"))["remediation"]
+    reverted_once = workflow._noted_as_reverted(first, [0], [CONTESTED])
+    state = {**the_fix_stage.a_state(tmp_path, *reverted_once.defects), **_state()}
+
+    update, _ = the_fix_stage.run(tmp_path, state, broke=[CONTESTED])
+
+    assert update.get("stage") == "acceptance_dispute" and update["dispute_returns_to"] == "test_and_triage"
+    assert CONTESTED in update["dispute_reason"]

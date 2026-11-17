@@ -193,17 +193,69 @@ def test_a_fixer_in_a_batch_that_pauses_resumes_its_own_defect(agents, parallel,
     assert len(agents.requests["specialist_backend"]) == 2, "the backend fixer ran once, beside the paused one"
 
 
-def test_a_batch_keeps_the_fix_cycle_s_bounds_and_records():
+def _two_apart(**first):
+    import the_fix_stage
+
+    return [the_fix_stage.a_defect("[AC-1] One is wrong", affected_files=["src/one.js"], **first),
+            the_fix_stage.a_defect("[AC-2] Two is wrong", affected_files=["src/two.js"])]
+
+
+class TestABatchKeepsTheFixCycleSBoundsAndRecords:
     """Batched fixes skipped the call cap, the check after a write and the attempt record: a defect that
     had spent its calls was still sent, and a batched attempt left nothing for the cap or the next fixer."""
-    import inspect as _inspect
 
-    from app.graph import workflow as _workflow
+    @pytest.fixture(autouse=True)
+    def _on(self, monkeypatch):
+        monkeypatch.setenv("DEFECT_CALL_CAP", "on")
+        monkeypatch.setenv("VERIFY_AFTER_WRITE", "on")
 
-    source = _inspect.getsource(_workflow)
-    batch = source[source.index("    def _the_next_fix_batch("):source.index("    def defect_fix_worker_node(")]
-    worker = source[source.index("    def defect_fix_worker_node("):source.index("    def defect_fix_gather_node(")]
-    gather = source[source.index("    def defect_fix_gather_node("):source.index("    def _the_security_review(")]
-    assert "defect_budget.spent_out(cycle, index)" in batch and '"fix_batch_started": defect_budget.now()' in batch
-    assert "verify_after_write.watching(" in worker
-    assert "_with_the_attempt(" in gather and 'state.get("fix_batch_started")' in gather
+    def test_a_defect_that_spent_its_calls_is_not_sent(self, tmp_path):
+        import the_fix_stage
+
+        spent = _two_apart(attempts=[{"stage": "defect_fix_1_0", "did": "x", "outcome": "left open", "calls": 60}])
+        update, seen = the_fix_stage.run(tmp_path, the_fix_stage.a_state(tmp_path, *spent), side_by_side=True)
+
+        assert update.get("fixes_tried") == ["defect_fix_2_0"] and "fix_batch" not in update
+        assert seen.agent_models == []
+
+    def test_a_batch_is_sent_with_its_start(self, tmp_path):
+        import the_fix_stage
+
+        update, _ = the_fix_stage.run(tmp_path, the_fix_stage.a_state(tmp_path, *_two_apart()), side_by_side=True)
+
+        assert update["stage"] == "defect_fix_parallel" and update["fix_batch"] == [0, 1]
+        assert update["fix_batch_started"], "the moment the batch's calls are counted from"
+
+    def test_each_fixer_s_writes_are_checked_by_its_own_defect_s_tests(self, tmp_path):
+        import the_fix_stage
+
+        from app.graph import verify_after_write
+
+        def the_check_after_a_write(stage_name):
+            found = verify_after_write._the_check("r", stage_name)
+            assert found is not None, "a check is watching this fixer's own stage"
+            return found[0]()
+
+        state = the_fix_stage.a_state(tmp_path, *_two_apart(), __fix_index=1)
+        _, seen = the_fix_stage.run(tmp_path, state, node="defect_fix_worker", during=the_check_after_a_write)
+
+        assert seen.tests_checked == [(str(tmp_path), state["remediation"].defects[1])]
+
+    def test_each_batched_attempt_is_recorded_with_its_calls_since_the_batch_began(self, tmp_path, monkeypatch):
+        import the_fix_stage
+
+        from app.agents.specialists import SpecialistOutput
+
+        counted = []
+        monkeypatch.setattr("app.graph.defect_budget.calls_in",
+                            lambda run_id, stage, since: counted.append((stage, since)) or 7)
+        answer = SpecialistOutput(changed_files=["src/one.js"], tests=["t"])
+        state = the_fix_stage.a_state(
+            tmp_path, *_two_apart(), fix_batch=[0, 1], fix_base_commit="base", fix_batch_started="2026-01-01T00:00:00",
+            specialist_outputs={"defect_fix_2_0": answer, "defect_fix_2_1": answer},
+        )
+
+        update, _ = the_fix_stage.run(tmp_path, state, node="defect_fix_gather")
+
+        assert [[a.get("calls") for a in d.attempts] for d in update["remediation"].defects] == [[7], [7]]
+        assert counted == [("defect_fix_2_0", "2026-01-01T00:00:00"), ("defect_fix_2_1", "2026-01-01T00:00:00")]

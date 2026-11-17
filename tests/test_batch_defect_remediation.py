@@ -117,11 +117,13 @@ class TestOneFixStage:
         assert update["defect_cursor"] == 1
 
 
-def test_the_new_words_name_no_product():
-    from pathlib import Path
+def test_the_new_words_name_no_product(tmp_path):
+    """The bundle's words, as the fixer is given them, name no product."""
+    _, asked = _the_fix_stage_runs(tmp_path, TestOneFixStage.ANSWER)
 
-    source = Path("src/app/graph/workflow.py").read_text()
-    start = source.index("Related failures owned by your role")
-    text = source[start:source.index("\n", source.index("one still failing goes to its own fix"))].lower()
+    start = asked[0].index("--- Related failures owned by your role")
+    end = asked[0].find("\n---", start + 1)
+    text = asked[0][start:end if end != -1 else None].lower()
+    assert "measures each one after your fix" in text
     for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
         assert not re.search(rf"\b{re.escape(word)}\b", text), word

@@ -37,9 +37,14 @@ def test_no_pack_and_no_root_say_nothing(monkeypatch):
     assert _the_database_section("/work") == "" and _the_database_section(None) == ""
 
 
-def test_the_fix_request_carries_it():
-    import inspect
+def test_the_fix_request_carries_it(monkeypatch, tmp_path):
+    """The section reaches the fixer of a service product, read from the product's own workspace."""
+    import the_fix_stage
 
-    from app.graph import workflow
+    asked = []
+    monkeypatch.setattr(contract, "the_pack", lambda root: asked.append(str(root)) or (SimpleNamespace(kind="http_api"), {}))
 
-    assert '_the_database_section(state["repository"].root_path)' in inspect.getsource(workflow)
+    _, seen = the_fix_stage.run(tmp_path, the_fix_stage.a_state(tmp_path))
+
+    assert "--- The database here ---" in seen.requests[0]
+    assert str(tmp_path) in asked, "read from the product's own workspace"

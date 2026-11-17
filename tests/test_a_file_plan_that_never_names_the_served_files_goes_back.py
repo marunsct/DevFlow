@@ -101,3 +101,14 @@ def test_the_architect_sends_it(tmp_path):
     (repair,) = update["revision_comments"]
     assert repair == workflow._the_layout_repair(SERVED, state)
     assert "notes-api/src/app.ts" in repair
+
+
+def test_the_send_back_names_each_served_file_from_the_workspace_root(tmp_path):
+    """Measured live: told "the scaffold serves `src/App.tsx`, `pkg/main.py`" with no
+    folder, the architect planned `pkg/src/App.tsx` - the page inside the service's
+    package - and two repairs later the plan still built it where nothing served it."""
+    told = workflow._the_layout_repair(["src/App.tsx", "notes_app/main.py"], _state(tmp_path))
+
+    assert "`notes-app/src/App.tsx`" in told and "`notes-app/notes_app/main.py`" in told
+    assert "workspace root" in told
+    assert "Return only `file_plan`" in told and not BANNED.search(told)

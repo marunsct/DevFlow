@@ -157,20 +157,39 @@ def test_the_corrected_stack_satisfies_both_checks(tmp_path) -> None:
     assert _missing_playwright_for_ui(files, tmp_path, after) == []
 
 
-def test_the_node_applies_the_repair_before_rendering_the_document() -> None:
+def _the_stack_is_chosen(tmp_path, testing_framework: str):
+    """The stack selector's node, its stage answering a vanilla page tested by `testing_framework` alone."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from app.agents.stack_selector import StackSelectorOutput, TechnologyStack
+    from workflow_nodes import run_node
+
+    chosen = StackSelectorOutput(technology_stack=TechnologyStack(
+        language="JavaScript", framework="None (vanilla HTML/CSS/JS)", frontend_framework="",
+        database="localStorage (browser-native)", testing_framework=testing_framework, product_kind="web_app",
+        additional_tools=[],
+    ), rationale="A page this small is adequately verified by manual browser verification.")
+    update = run_node("stack_selector", {
+        "repository": SimpleNamespace(root_path=str(tmp_path)), "document": SimpleNamespace(text="A notes page."),
+        "product_intake": {"product_name": "Notes"}, "tools_models": {},
+    }, str(tmp_path), {
+        "app.graph.workflow.create_stack_selector_agent": lambda **kwargs: MagicMock(),
+        "app.graph.workflow._run_gated_agent": lambda state, config, *, output_key, **kwargs: {output_key: chosen},
+        "app.graph.workflow._the_stack_pack_for": lambda state, update: {},
+    })
+    return update, (tmp_path / "docs" / "technology_stack.md").read_text(encoding="utf-8")
+
+
+def test_the_node_applies_the_repair_before_rendering_the_document(tmp_path) -> None:
     """The document readers see is rendered from the selection, so the repair
     has to happen before `_record_document`, not after."""
-    import inspect
+    update, document = _the_stack_is_chosen(tmp_path, "node --test")
 
-    from app.graph import workflow
+    corrected = "node --test for the logic, Playwright for the page"
+    assert update["stack_selection"].technology_stack.testing_framework == corrected
+    assert corrected in document
 
-    source = inspect.getsource(workflow.build_workflow_graph)
-    node = source.split("def stack_selector_node", 1)[1].split("def principal_architect_node", 1)[0]
-    repair = node.find("the_browser_runner_this_stack_forgot")
-    render = node.find("docs/technology_stack.md")
-
-    assert repair != -1 and render != -1
-    assert repair < render
 
 
 # --- the prose is corrected with the field -----------------------------------
@@ -240,13 +259,13 @@ class TestTheRationaleNoLongerArguesAgainstTheField:
         )
 
 
-def test_the_node_corrects_the_rationale_with_the_field() -> None:
-    import inspect
+def test_the_node_corrects_the_rationale_with_the_field(tmp_path) -> None:
+    from app.agents.stack_selector import the_rationale_for_the_corrected_runner
 
-    from app.graph import workflow
+    update, document = _the_stack_is_chosen(tmp_path, "node --test")
 
-    source = inspect.getsource(workflow.build_workflow_graph)
-    node = source.split("def stack_selector_node", 1)[1].split("def principal_architect_node", 1)[0]
-
-    assert "the_rationale_for_the_corrected_runner" in node
-    assert node.find("the_rationale_for_the_corrected_runner") < node.find("docs/technology_stack.md")
+    rationale = the_rationale_for_the_corrected_runner(
+        "A page this small is adequately verified by manual browser verification.",
+        "node --test for the logic, Playwright for the page")
+    assert update["stack_selection"].rationale == rationale != ""
+    assert rationale.splitlines()[0] in document

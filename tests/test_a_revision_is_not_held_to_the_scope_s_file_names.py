@@ -7,16 +7,21 @@ finding, was sent back twice for not listing `pure-functions.mjs`.
 
 from __future__ import annotations
 
-import inspect
 
 from app.graph import workflow
 
 
-def test_the_scope_check_applies_to_a_sprint_s_first_plan_only() -> None:
-    source = inspect.getsource(workflow)
-    call = source[source.index("problems = readiness_problems("):]
-    call = call[: call.index(")\n")]
-    assert 'sprint_scope="" if revising else _what_this_sprint_builds(state)' in call
+def test_the_scope_check_applies_to_a_sprint_s_first_plan_only(tmp_path) -> None:
+    from workflow_nodes import a_lead, a_plan, a_work_order
+
+    plan = a_plan(a_work_order("frontend", "build the page", ["app.mjs"]))
+
+    _, first = a_lead(tmp_path, plan)
+    _, revision = a_lead(tmp_path, plan, state={"milestone_plan": plan,
+                                               "revision_comments": ["Escape the note's title before showing it."]})
+
+    assert "Add a note" in first["readiness"][0]["sprint_scope"]
+    assert revision["readiness"][0]["sprint_scope"] == ""
 
 
 def test_an_empty_scope_names_no_file(tmp_path) -> None:

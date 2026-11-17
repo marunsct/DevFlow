@@ -5,7 +5,6 @@ locked test the other, and fixes were reverted for hours.
 """
 from __future__ import annotations
 
-import inspect
 import json
 import re
 from types import SimpleNamespace
@@ -140,9 +139,42 @@ def test_a_test_rewritten_in_one_call_is_told_the_ruling(tmp_path, on, monkeypat
     assert f'"{SAYS_JSON}" stands' in given["reference"]
 
 
-def test_the_planning_stages_are_told_it_too():
-    # Inside the graph's closures: the two nodes that plan the sprints and the work orders.
-    assert inspect.getsource(workflow).count("with_the_rulings(request,") == 2
+def test_the_planning_stages_are_told_it_too(tmp_path):
+    """The two stages that plan the sprints and the work orders are given the rulings with their requests."""
+    from unittest.mock import MagicMock
+
+    from app.agents.scrum_master import SprintDefinition, SprintPlanOutput
+    from workflow_nodes import a_lead, a_plan, a_specification, a_work_order, run_node
+
+    told = []
+
+    def with_the_rulings(request, root):
+        told.append(str(root))
+        request["messages"][-1]["content"] += "\n[the rulings]"
+        return request
+
+    rulings = {"app.agents.specification_rulings.with_the_rulings": with_the_rulings}
+    _, lead = a_lead(tmp_path, a_plan(a_work_order("backend", "build", ["app.py"])), patches=rulings)
+    assert lead["requests"][0].endswith("[the rulings]")
+
+    sprints = []
+
+    def gated(state, config, *, initial_request, output_key, **kwargs):
+        sprints.append(initial_request["messages"][-1]["content"])
+        return {output_key: SprintPlanOutput(sprints=[SprintDefinition(goal="Users can keep notes", user_value="v")])}
+
+    run_node("scrum_master", {
+        "repository": SimpleNamespace(root_path=str(tmp_path)), "technical_specification": a_specification(),
+        "product_intake": {"product_name": "Notes"},
+    }, str(tmp_path), {
+        **rulings,
+        "app.graph.workflow.create_scrum_master_agent": lambda **kwargs: MagicMock(),
+        "app.graph.workflow.build_sprint_planning_request":
+            lambda *args, **kwargs: {"messages": [{"role": "user", "content": "Plan the sprints."}]},
+        "app.graph.workflow._run_gated_agent": gated,
+    })
+    assert sprints[0].endswith("[the rulings]")
+    assert told == [str(tmp_path), str(tmp_path)]
 
 
 def test_only_one_call_is_made_in_a_run_whatever_comes_back_through_the_design_path(tmp_path, on):

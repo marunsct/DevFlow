@@ -377,6 +377,62 @@ def a_builder(
     return run_node(node, made, str(tmp_path), every), asked
 
 
+def a_lead(
+    tmp_path,
+    plan: Any,
+    *,
+    state: dict[str, Any] | None = None,
+    patches: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, list[Any]]]:
+    """`technical_lead` answering `plan` for sprint 1 of 2, in thorough delivery. Returns the update and what was
+    asked: the lead's requests, and each readiness check's plan and keyword arguments."""
+    from unittest.mock import MagicMock
+
+    asked: dict[str, list[Any]] = {"requests": [], "readiness": []}
+
+    def gated(state, config, *, initial_request, output_key, **kwargs):
+        asked["requests"].append(initial_request["messages"][-1]["content"])
+        return {output_key: plan}
+
+    def readiness(milestone, root, **kwargs):
+        asked["readiness"].append({"plan": milestone, **kwargs})
+        return []
+
+    from app.agents.scrum_master import SprintDefinition, SprintPlanOutput
+
+    request = lambda *args, **kwargs: {"messages": [{"role": "user", "content": "Plan the sprint."}]}  # noqa: E731
+    made = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "sprint_plan": SprintPlanOutput(sprints=[
+            SprintDefinition(goal="Users can keep notes", user_value="v", in_scope=["Add a note", "List the notes"],
+                             acceptance_criteria=["AC-1 a note is kept"]),
+            SprintDefinition(goal="Users can share notes", user_value="v", in_scope=["Share a note"],
+                             acceptance_criteria=["AC-9 a note is shared"]),
+        ]),
+        "current_sprint_index": 0,
+        **(state or {}),
+    }
+    every = {
+        "app.graph.workflow.create_technical_lead_agent": lambda **kwargs: MagicMock(),
+        "app.graph.workflow._a_dispute_is_due": lambda state: False,
+        "app.graph.acceptance_nodes.sprint_already_done": lambda state: "",
+        "app.graph.acceptance_nodes.criteria_brief": lambda state: "",
+        "app.graph.workflow.build_milestone_planning_request": request,
+        "app.graph.workflow.build_milestone_revision_request": request,
+        "app.graph.workflow._fast_delivery": lambda: False,
+        "app.analysis.work_orders.readiness_problems": readiness,
+        "app.graph.workflow._run_gated_agent": gated,
+        **(patches or {}),
+    }
+    return run_node("technical_lead", made, str(tmp_path), every), asked
+
+
+def a_plan(*orders: Any, goal: str = "Users can keep notes") -> Any:
+    from app.agents.technical_lead import MilestonePlanOutput
+
+    return MilestonePlanOutput(selected_sprint_goal=goal, milestone_scope=[goal], delegated_tasks=list(orders))
+
+
 #: What `build_judgement_model` hands the graph in `a_dispute`, so a test can tell
 #: the judgement model from the build model by identity.
 JUDGEMENT_MODEL = SimpleNamespace(name="the judgement model")

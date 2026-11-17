@@ -69,10 +69,14 @@ def test_without_a_project_directory_nothing_changes(tmp_path) -> None:
     assert with_the_project_directory_cd_dropped(plan, tmp_path) is plan
 
 
-def test_the_workflow_drops_it_before_the_readiness_check() -> None:
-    import inspect
+def test_the_workflow_drops_it_before_the_readiness_check(tmp_path) -> None:
+    """The readiness check reads the plan with the `cd` already dropped, so it is not sent back for it."""
+    from workflow_nodes import a_lead, a_plan, a_work_order
 
-    from app.graph import workflow
+    order = a_work_order("backend", "build the service", ["notes-app/src/app.ts"]).model_copy(
+        update={"verification": ["cd /notes-app && npm test"]})
 
-    source = inspect.getsource(workflow)
-    assert source.index("with_the_project_directory_cd_dropped(\n") < source.index("problems = readiness_problems(")
+    _, asked = a_lead(_workspace(tmp_path), a_plan(order))
+
+    (checked,) = asked["readiness"]
+    assert checked["plan"].delegated_tasks[0].verification == ["npm test"]

@@ -6,7 +6,6 @@ kept the oldest commit, so a put-back threw away every later change that passed 
 """
 from __future__ import annotations
 
-import inspect
 import json
 from unittest import mock
 
@@ -49,10 +48,15 @@ def test_a_record_made_against_a_suite_of_another_size_is_not_the_best(tmp_path)
 
 
 def test_the_record_is_dropped_when_a_sprint_is_accepted(tmp_path):
+    from types import SimpleNamespace
+
+    from workflow_nodes import run_node
+
     _workspace(tmp_path)
     _noted(tmp_path, 4, "c1")
-    best_attempt.forget(tmp_path)
+
+    update = run_node("sprint_advance", {"repository": SimpleNamespace(root_path=str(tmp_path)), "current_sprint_index": 0},
+                      str(tmp_path), {"app.graph.workflow._record_sprint_summary": lambda state, status: {}})
+
+    assert update["current_sprint_index"] == 1
     assert not (tmp_path / ".harness" / "best-attempt.json").exists()
-    source = inspect.getsource(workflow.build_workflow_graph)
-    advance = source[source.index("def sprint_advance_node"):]
-    assert "best_attempt.forget(" in advance[:800]

@@ -315,21 +315,21 @@ LF.787 already covers the out-of-scope writes but is not yet measured; only efae
 
 ## 5. Ranked fix list
 
-*Status of the "Built?" column checked again 2026-11-14 17:3x JST.*
+*Status of the "Built?" column checked again 2026-11-17 20:2x JST.*
 
 Ranked by hidden score first, then by run time.
 
 | # | Fix | Expected effect | Built? |
 |---|---|---|---|
 | 1 | The brief's literal wording wins along the whole chain: intake assumptions, consult, architect adopt step, suite writer, QA lead, dispute judge. The harness also lists brief literals the spec renders differently. | The 4 false acceptances (8 hidden tests) turn into failing tests on the build | Partly (LF.780 casing, architect; LF.792 named controls, product side) |
-| 2 | A ruling may not stand on a fragment, contradict a brief literal, keep advice the advice step declined, or let opposite sides stand | aaf136ca's lost test; the 023f2c45 and 1e6f6436 rulings | No |
+| 2 | A ruling may not stand on a fragment, contradict a brief literal, keep advice the advice step declined, or let opposite sides stand | aaf136ca's lost test; the 023f2c45 and 1e6f6436 rulings | Yes (LF.798: a ruling stands only on whole statements; LF.882, LF.890 on what a ruling may stand on) |
 | 3 | An escalated sprint still gets the milestone code review, and reclassified or deferred criteria count as unverified | 3 of the 4 false acceptances were escalated runs | Partly (LF.718, LF.778/779) |
-| 4 | The QA lead reviews every suite once before the lock | 3 runs had no QA-lead call (1 false acceptance); about 3 min per firing | No |
-| 5 | Run-wide defect call budget across re-plans | About 200–250 min per 30 runs; 5 of the 6 heaviest defects were never fixed | No (the cap exists per cycle; check `DEFECT_CALL_CAP`'s default) |
+| 4 | The QA lead reviews every suite once before the lock | 3 runs had no QA-lead call (1 false acceptance); about 3 min per firing | Yes (LF.799: a suite the QA lead never read is read once before the lock at the limit) |
+| 5 | Run-wide defect call budget across re-plans | About 200–250 min per 30 runs; 5 of the 6 heaviest defects were never fixed | Yes (LF.794: a defect's call cap counts its attempts across re-plans; LF.826 refined it) |
 | 6 | After a `cannot_pass` verdict, stop sending fixers; the re-plan text routes a wrong locked test to `blockers` | 40–60 calls per affected run; stops orders that target the suite | Partly (LF.772, LF.183; 11-14: LF.899 sends no fixer to a defect naming only deferred criteria, LF.894/895/900 add measured cannot-pass checks) |
-| 7 | Thinking off after a salvaged reply for `technical_lead` and `scrum_master` (existing switch) | At least 50 min per 30 runs | No |
+| 7 | Thinking off after a salvaged reply for `technical_lead` and `scrum_master` (existing switch) | At least 50 min per 30 runs | Yes (LF.820, `SALVAGED_PLANNING_THINKING_OFF`) |
 | 8 | The spec states counts of example text as "computed from the text" | Stops wrong counts in 3 runs and the fixer loops they cause | Partly (LF.772 suite rule; 11-14: LF.900 catches a hand-counted expected text by measurement - the spec's own contract line was miscounted too on L textkit-lib 9) |
-| 9 | Repair `verification` before the readiness check; command-line arguments are not deliverables | About 31 min per 30 runs | No |
+| 9 | Repair `verification` before the readiness check; command-line arguments are not deliverables | About 31 min per 30 runs | Yes (LF.813: a verification line refused for shell syntax alone is repaired, not sent back) |
 | 10 | One sprint limit (`fast=`) in the scrum-master request; strip stale sprint numbers | Less scrum-master output (494k tokens); clean plans in 5 runs | No |
 
 **Next tier, unranked:**

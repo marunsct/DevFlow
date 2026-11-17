@@ -55,7 +55,7 @@ def contradictions(specification: Any) -> list[str]:
     Every section is checked against every other, both ways; a pair is named once. Never raises.
     """
     try:
-        from app.graph.design_revision_cross_checked import _dumped, opposite_statements, statements
+        from app.graph.design_revision_cross_checked import _dumped, denies, opposite_statements, statements
 
         if specification is None:
             return []
@@ -64,13 +64,19 @@ def contradictions(specification: Any) -> list[str]:
         sections = {name: said for name, said in sections.items() if said}
         found: list[str] = []
         seen: set[frozenset[tuple[str, str]]] = set()
+        seen_denials: set[tuple[str, str]] = set()
         for name, said in sections.items():
             others = {other: theirs for other, theirs in sections.items() if other != name}
             for subject, section, statement, other, their in opposite_statements({name: said}, others):
                 key = frozenset({(section, statement), (other, their)})
-                if key in seen:
+                # One denial is one point, however many statements mention its subject. Measured over four runs: 7
+                # denials ("DELETE ... 204 with no response body") were named 43 times, once against each endpoint
+                # that has a body, and filled the cap.
+                denial = (subject, statement if denies(statement, subject) else their)
+                if key in seen or denial in seen_denials:
                     continue
                 seen.add(key)
+                seen_denials.add(denial)
                 found.append(
                     f"The specification says opposite things on \"{subject}\": `{section}` says: "
                     f"{statement[:STATEMENT_LIMIT]} - while `{other}` says: {their[:STATEMENT_LIMIT]}"

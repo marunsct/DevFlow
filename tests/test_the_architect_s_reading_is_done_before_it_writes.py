@@ -7,7 +7,6 @@ registry lookup.
 
 from __future__ import annotations
 
-import inspect
 import json
 from types import SimpleNamespace
 
@@ -106,9 +105,53 @@ def test_a_stage_whose_reading_was_done_is_offered_no_lookups(monkeypatch):
     assert offered == [["read_file"]]
 
 
-def test_the_architect_is_given_the_reading_and_keeps_it_for_a_retry():
-    source = inspect.getsource(workflow)
-    node = source[source.index("    def principal_architect_node("):]
-    node = node[:node.index("\n    def ", 10)]
-    assert node.index("research_notes(") < node.index("with researched(bool(research)):") < node.index('stage_name="principal_architect"')
-    assert 'state.get("architect_research")' in node and 'update["architect_research"] = research' in node
+NOTES = "### Hono: notFound handler\nHono notFound handler text"
+
+
+def _the_architect_runs(tmp_path, **state):
+    """The architect's node with the reading stood in: what it was asked, whether its reading was done, how often the
+    reading ran, and its update."""
+    from unittest.mock import MagicMock, patch
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.agents.stack_selector import StackSelectorOutput
+    from app.state import RepositoryContext
+
+    read, asked = [], []
+
+    def gated(_state, _config, *, initial_request, output_key, **_kwargs):
+        asked.append((initial_request["messages"][-1]["content"], research.spent("documentation")))
+        return {output_key: SimpleNamespace(), "stage": "architecture_review"}
+
+    full = {
+        "stack_selection": StackSelectorOutput(technology_stack=STACK, rationale="As the brief asks."),
+        "document": SimpleNamespace(text="Notes over HTTP."),
+        "repository": RepositoryContext(root_path=str(tmp_path), branch="main", commit="abc", status="clean"),
+        "product_intake": {"product_name": "Notes"},
+        "tools_models": {"plan": "local"},
+        **state,
+    }
+    with patch("app.graph.workflow.create_principal_architect_agent", return_value=MagicMock()), \
+         patch("app.agents.research_brief.research_notes", side_effect=lambda *a, **k: read.append(a) or NOTES), \
+         patch("app.graph.workflow._fast_delivery", return_value=False), \
+         patch("app.graph.workflow._run_gated_agent", side_effect=gated):
+        graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        update = graph.nodes["principal_architect"].bound.invoke(full, {"configurable": {"thread_id": "t"}})
+    return asked, len(read), update
+
+
+def test_the_architect_is_given_the_reading_and_keeps_it_for_a_retry(tmp_path):
+    """The reading is done before the architect writes, handed to it with no lookups offered, and kept for a retry
+    so it is not done again (once checked on the node's source)."""
+    asked, reads, update = _the_architect_runs(tmp_path)
+
+    assert reads == 1
+    ((request, lookups_withheld),) = asked
+    assert NOTES in request and lookups_withheld
+    assert update["architect_research"] == NOTES
+
+    asked, reads, _ = _the_architect_runs(tmp_path, architect_research=NOTES)
+
+    assert reads == 0, "the retry is given the reading kept, not a second one"
+    assert NOTES in asked[0][0] and asked[0][1]

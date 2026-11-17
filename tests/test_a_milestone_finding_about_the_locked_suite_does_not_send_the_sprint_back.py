@@ -5,7 +5,6 @@ change the locked suite, and the lead's plan was sent back twice for a work orde
 """
 from __future__ import annotations
 
-import inspect
 import json
 from pathlib import Path
 
@@ -55,6 +54,31 @@ def test_before_the_lock_it_stays(tmp_path):
     assert out.findings[0].severity == "major"
 
 
-def test_the_milestone_review_applies_it():
-    source = inspect.getsource(workflow)
-    assert 'review = _through("about_the_locked_suite", review, _findings_about_the_locked_suite_made_minor(review, root))' in source
+def _the_milestone_review_node(root: Path, review: MilestoneReviewOutput) -> dict:
+    """The milestone review's node, its reviewer answering `review`."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    state = {
+        "repository": SimpleNamespace(root_path=str(root)),
+        "milestone_plan": SimpleNamespace(selected_sprint_goal="Count words", milestone_scope=[], delegated_tasks=[]),
+        "specialist_outputs": {}, "current_sprint_index": 0, "milestone_revision_count": 0,
+    }
+    with patch("app.graph.workflow.create_milestone_reviewer_agent", return_value=MagicMock()), \
+         patch("app.graph.workflow.build_milestone_review_request", return_value={"messages": [{"role": "user", "content": ""}]}), \
+         patch("app.graph.acceptance_nodes.acceptance_text_for", return_value=""), \
+         patch("app.graph.workflow._run_gated_agent", return_value={"__milestone_review__": review}):
+        graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(root))
+        return graph.nodes["milestone_review"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+
+
+def test_the_milestone_review_applies_it(tmp_path):
+    """The review the workflow acts on carries the locked suite's finding as minor, and the sprint is not sent back."""
+    _a_suite(tmp_path)
+
+    result = _the_milestone_review_node(tmp_path, _review(SUITE))
+
+    assert [f.severity for f in result["milestone_review"].findings] == ["minor"]
+    assert result.get("stage") != "technical_lead", "no plan is sent back for a work order to change the locked suite"

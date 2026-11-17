@@ -105,24 +105,33 @@ def test_as_text_handles_every_shape():
 
 
 @pytest.mark.parametrize(
-    "node",
+    "node, producer",
     [
-        "principal_architect_node",
-        "architecture_review_node",
-        "scrum_master_node",
-        "technical_lead_node",
-        "specialist_dispatch_node",
-        "test_and_triage_node",
-        "milestone_review_node",
+        ("principal_architect", "product_manager"),
+        ("architecture_review", "principal_architect"),
+        ("scrum_master", "principal_architect"),
+        ("technical_lead", "scrum_master"),
+        ("specialist_dispatch", "technical_lead"),
+        ("test_and_triage", "technical_lead"),
+        ("milestone_review", "technical_lead"),
     ],
 )
-def test_every_consuming_node_guards_its_input(node):
-    """The guard must be the first thing the node does, before any read."""
-    text = WORKFLOW.read_text()
-    start = text.index(f"    def {node}(state")
-    head = text[start : start + 600]
+def test_every_consuming_node_guards_its_input(node, producer, tmp_path):
+    """The guard must be the first thing the node does, before any read (once checked on each node's source; now
+    each node is run with nothing upstream in state)."""
+    from types import SimpleNamespace
 
-    assert "_missing_upstream(state" in head, f"{node} reads upstream state unguarded"
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.graph.workflow import build_workflow_graph
+
+    graph = build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+    update = graph.nodes[node].bound.invoke(
+        {"repository": SimpleNamespace(root_path=str(tmp_path))}, {"configurable": {"thread_id": "t", "run_id": "r"}},
+    )
+
+    assert update["stage"] == producer, f"{node} reads upstream state unguarded"
+    assert any(key.startswith(f"{producer}:") for key in update["structured_retries"])
 
 
 def test_no_consuming_node_reads_an_artifact_before_guarding():

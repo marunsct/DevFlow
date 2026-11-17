@@ -82,9 +82,34 @@ def test_with_no_such_report_a_dispute_goes_on_as_it_was(monkeypatch, tmp_path):
     assert acceptance_nodes.tests_whose_service_stayed_up(tmp_path, [_LINE, _OTHER]) == ([_LINE, _OTHER], [])
 
 
-def test_the_dispute_asks_before_it_reopens_the_suite():
-    from pathlib import Path
+def test_the_dispute_asks_before_it_reopens_the_suite(monkeypatch, tmp_path):
+    """A test whose service stopped by itself stays locked before the cap is counted: it takes no place under it.
 
-    source = (Path(__file__).parent.parent / "src" / "app" / "graph" / "workflow.py").read_text(encoding="utf-8")
-    node = source[source.index("def acceptance_dispute_node"):]
-    assert node.index("tests_whose_service_stayed_up") < node.index("within_the_cap")
+    With room for one reclassification, the dispute calls both tests wrong; the restart test stays locked, so the
+    one place goes to the other test and the suite is reopened for that one alone.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.graph import workflow
+
+    _suite(monkeypatch, tmp_path, f"{SERVICE_STOPPED_BY_ITSELF} (code 1)")
+    failing = [(_RESTART, "AC-6 notes survive a restart", "fetch failed"), ("[AC-2] lists notes", "AC-2 lists", "x")]
+    state = {"repository": SimpleNamespace(root_path=str(tmp_path)), "current_sprint_index": 0,
+             "dispute_returns_to": "test_and_triage"}
+    with patch("app.graph.workflow._the_locked_tests_still_failing", return_value=failing), \
+         patch("app.graph.workflow.create_suite_dispute_agent", return_value=MagicMock()), \
+         patch("app.agents.suite_dispute.build_dispute_request", return_value={"messages": [{"role": "user", "content": ""}]}), \
+         patch("app.graph.workflow._run_gated_agent", return_value={"__suite_dispute__": object()}), \
+         patch("app.agents.suite_dispute.tests_it_names", return_value=[_LINE, _OTHER]), \
+         patch.object(acceptance_nodes, "tests_that_fail_alone", side_effect=lambda root, named: (named, [])), \
+         patch.object(acceptance_nodes, "reclassification_room", return_value=1), \
+         patch.object(acceptance_nodes, "defer_what_is_beyond_repair"), \
+         patch.object(acceptance_nodes, "reopen_the_suite_for", return_value={"stage": "acceptance_tests"}) as reopen:
+        graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        result = graph.nodes["acceptance_dispute"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+
+    assert reopen.call_args.args[1] == [_OTHER]
+    assert result["stage"] == "acceptance_tests"

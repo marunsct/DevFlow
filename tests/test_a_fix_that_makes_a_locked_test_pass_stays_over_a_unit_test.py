@@ -131,12 +131,112 @@ def test_a_kept_fix_is_not_also_kept_as_a_candidate_for_a_replay(monkeypatch, tm
     assert engineering.after_a_fix(str(tmp_path), "abc", "s", "d", on_revert=seen.append) == [] and seen == []
 
 
-def test_the_next_round_takes_what_was_raised_as_a_review_defect():
-    """The node's update goes where the regressions of a batch go: read by the round, cleared by it."""
-    import inspect
+# --- where the graph carries it: from a kept fix, alone or in a batch, to the next round ------------------------
 
+
+def _kept_over_a_unit_test(monkeypatch, root):
+    """`engineering.after_a_fix` measures BEFORE then GAINED: the fix stays and the unit test is recorded."""
+    monkeypatch.setattr(engineering, "ci_applies", lambda _: True)
+    monkeypatch.setattr(engineering, "before_a_fix", lambda *_a, **_k: "abc")
+    monkeypatch.setattr(ci, "load", lambda _root, _which: BEFORE)
+    monkeypatch.setattr(ci, "take", lambda _root, _label: GAINED)
+    monkeypatch.setattr(ci, "save", lambda _root, _snap, **_kw: None)
+    monkeypatch.setattr(ci, "commit", lambda _root, _message: "c0ffee")
+    monkeypatch.setattr(ci, "revert_to", lambda _root, base: pytest.fail("the fix was reverted"))
+
+
+def _a_fix_state(root, **more):
+    from app.sprint import Defect, RemediationCycle
+
+    defect = Defect(description=f"{LOCKED} fails", severity="major", reproduction_steps="r", expected_behavior="e",
+                    actual_behavior="a", owner="backend", failing_criteria=["AC-3"], affected_files=["app/health.js"])
+    return {
+        "repository": SimpleNamespace(root_path=str(root)), "remediation": RemediationCycle(sprint_goal="g", defects=[defect]),
+        "defect_cursor": 0, "test_round": 1, "current_sprint_index": 0, "specialist_outputs": {}, "review_defects": [],
+        **more,
+    }
+
+
+def _graph(root):
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.graph.workflow import build_workflow_graph
+
+    return build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(root))
+
+
+def _raised(update):
+    return [d.description for d in update.get("review_defects") or []]
+
+
+def test_a_fix_alone_hands_the_unit_test_to_the_next_round(monkeypatch, tmp_path):
+    """The node's update goes where the regressions of a batch go: read by the round, cleared by it."""
+    from unittest.mock import MagicMock, patch
+
+    from app.agents.specialists import SpecialistOutput
+
+    _kept_over_a_unit_test(monkeypatch, tmp_path)
+    answer = SpecialistOutput(changed_files=["app/health.js"], tests=["tests/health.test.js"], decisions=["JSON"])
+    with patch("app.graph.workflow._fixes_run_side_by_side", return_value=False), \
+         patch("app.graph.workflow.create_specialist_agent", return_value=MagicMock()), \
+         patch("app.graph.workflow.build_defect_fix_request", return_value={"messages": [{"role": "user", "content": ""}]}), \
+         patch("app.graph.workflow._what_the_last_failure_printed", return_value=""), \
+         patch("app.graph.workflow._closed_if_an_earlier_fix_resolved_it", return_value=None), \
+         patch("app.graph.workflow._what_the_ledger_confirms", return_value="npm test"), \
+         patch("app.graph.acceptance_nodes.done_by_the_definition", return_value=[]), \
+         patch("app.graph.workflow._run_gated_agent", return_value={"__fix_result__": answer}):
+        update = _graph(tmp_path).nodes["defect_remediation"].bound.invoke(
+            _a_fix_state(tmp_path), {"configurable": {"thread_id": "t", "run_id": "r"}})
+
+    assert _raised(update) == [f"Regression: `unit: {UNIT}` passed before a fix was kept, and fails now."]
+
+
+def test_a_batch_hands_the_unit_test_to_the_next_round(monkeypatch, tmp_path):
+    from app.agents.specialists import SpecialistOutput
+
+    _kept_over_a_unit_test(monkeypatch, tmp_path)
+    answer = SpecialistOutput(changed_files=["app/health.js"], tests=["tests/health.test.js"], decisions=["JSON"])
+    state = _a_fix_state(tmp_path, fix_batch=[0], fix_base_commit="abc",
+                         specialist_outputs={"defect_fix_1_0": answer})
+    from unittest.mock import patch
+
+    with patch("app.graph.workflow._what_the_ledger_confirms", return_value="npm test"), \
+         patch("app.graph.acceptance_nodes.done_by_the_definition", return_value=[]):
+        update = _graph(tmp_path).nodes["defect_fix_gather"].bound.invoke(
+            state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+
+    assert _raised(update) == [f"Regression: `unit: {UNIT}` passed before a fix was kept, and fails now."]
+
+
+def test_the_next_round_takes_what_was_raised_as_a_review_defect(monkeypatch, tmp_path):
+    """The next test round reads what was raised among its defects, and clears it."""
+    from unittest.mock import patch
+
+    from app.agents.specialists import SpecialistOutput
     from app.graph import workflow
 
-    source = inspect.getsource(workflow)
-    assert source.count("update.update(_the_unit_tests_a_kept_fix_broke(state))") == 2, "one fix alone, and a batch"
-    assert '*(state.get("review_defects") or [])' in source
+    _after_the_fix(monkeypatch, tmp_path, BEFORE, GAINED)
+    raised = workflow._the_unit_tests_a_kept_fix_broke(_state(tmp_path))["review_defects"]
+    milestone = SimpleNamespace(selected_sprint_goal="Build features", milestone_scope=[], delegated_tasks=[])
+    state = {
+        **_state(tmp_path), "milestone_plan": milestone, "test_round": 2, "specialist_outputs": {},
+        "review_defects": raised, "current_sprint_index": 0,
+    }
+    with patch("app.graph.acceptance_nodes.acceptance_for_round", return_value=("", [])), \
+         patch("app.graph.acceptance_nodes.reopen_the_suite_for", return_value=None), \
+         patch("app.graph.acceptance_nodes.beyond_repair", return_value=[]), \
+         patch("app.graph.acceptance_nodes._failing_due", return_value=([], "npx playwright test")), \
+         patch("app.graph.workflow._run_unit_tests_procedurally", return_value=(False, "AssertionError")), \
+         patch("app.graph.acceptance_nodes.suite.is_locked", return_value=True), \
+         patch("app.graph.acceptance_nodes.suite.last_result", return_value={"ran": True, "passed": 2, "failed": 0}), \
+         patch("app.agents.specialists.what_the_files_already_prove", return_value=[]), \
+         patch("app.graph.acceptance_nodes.interface_defects", return_value=[]), \
+         patch("app.graph.acceptance_nodes.failing_due_defects", return_value=[]), \
+         patch("app.graph.workflow._with_the_contract_s_server_errors", side_effect=lambda s, result, m: result), \
+         patch("app.acceptance.order_probe.at_a_green_round"), \
+         patch("app.graph.workflow._run_gated_agent", return_value={"__test_result__": SpecialistOutput()}):
+        result = _graph(tmp_path).nodes["test_and_triage"].bound.invoke(
+            state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+
+    assert [d.description for d in result["remediation"].defects if d.status == "open"] == [raised[0].description]
+    assert result["review_defects"] == []

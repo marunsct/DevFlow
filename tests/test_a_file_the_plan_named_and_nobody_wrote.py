@@ -258,19 +258,52 @@ class TestItReachesTheTestRound:
         assert "index.html" not in brief
         assert "Run the unit, integration" in brief
 
-    def test_the_workflow_passes_the_plan(self):
-        """Checked on the source: the node is a closure over the compiled graph."""
-        import inspect
+    def test_the_workflow_passes_the_plan(self, the_workspace_it_left):
+        """The test round's request names a file the sprint's scope and a work order planned and nobody wrote.
 
-        from app.graph import workflow
+        Once checked on the source (the node is a closure over the compiled graph); now the node is run.
+        """
+        from types import SimpleNamespace
+        from unittest.mock import patch
 
-        source = inspect.getsource(workflow)
-        call = source.index("request = build_test_run_request(")
-        block = source[call : call + 900]
+        from langgraph.checkpoint.memory import MemorySaver
 
-        assert "planned=" in block
-        assert "milestone_scope" in block
-        assert "task_description" in block
+        from app.agents.specialists import SpecialistOutput
+        from app.graph.workflow import build_workflow_graph
+
+        root = str(the_workspace_it_left)
+        state = {
+            "repository": SimpleNamespace(root_path=root),
+            "milestone_plan": SimpleNamespace(
+                selected_sprint_goal="Users can create and delete entries",
+                milestone_scope=[THE_PLAN_THAT_FAILED[1]],
+                delegated_tasks=[SimpleNamespace(task_description="Create style.css with basic responsive rules")],
+            ),
+            "test_round": 1,
+            "specialist_outputs": {},
+            "review_defects": [],
+            "current_sprint_index": 0,
+        }
+        asked = []
+
+        def gated(state, config, *, initial_request, **kwargs):
+            asked.append(initial_request["messages"][0]["content"])
+            return {"__test_result__": SpecialistOutput(changed_files=[], defects=[])}
+
+        with patch("app.graph.acceptance_nodes.acceptance_for_round", return_value=("Failing", [])), \
+             patch("app.graph.acceptance_nodes.reopen_the_suite_for", return_value=None), \
+             patch("app.graph.acceptance_nodes.beyond_repair", return_value=[]), \
+             patch("app.graph.acceptance_nodes._failing_due", return_value=(["criterion-1"], "npm test")), \
+             patch("app.graph.workflow._run_unit_tests_procedurally", return_value=(False, "error")), \
+             patch("app.graph.acceptance_nodes.interface_defects", return_value=[]), \
+             patch("app.graph.acceptance_nodes.failing_due_defects", return_value=[]), \
+             patch("app.graph.workflow._run_gated_agent", side_effect=gated):
+            graph = build_workflow_graph(checkpointer=MemorySaver(), repo_root=root)
+            graph.nodes["test_and_triage"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+
+        assert asked, "the test round ran its stage"
+        assert "index.html" in asked[0], "the sprint's scope is read"
+        assert "style.css" in asked[0], "each work order's description is read"
 
 
 class TestAJavaScriptLibraryIsNotAPlannedFile:

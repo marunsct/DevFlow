@@ -6,7 +6,6 @@ only the commands it had run, read the half-built runner, and started down the s
 """
 from __future__ import annotations
 
-import inspect
 import re
 
 import pytest
@@ -47,6 +46,19 @@ def test_a_refusal_alone_is_worth_a_note(tmp_path):
     assert "src/a.py" in carry_over_note("t2", str(tmp_path))
 
 
-def test_the_restart_passes_its_stage_and_reason():
-    assert "carry_over_note(inner_thread_id, repo_root, stage_name, why)" in inspect.getsource(
-        workflow._restart_on_a_fresh_conversation)
+def test_the_restart_passes_its_stage_and_reason(tmp_path):
+    """The restart's note is the dying conversation's, with its stage's changes and the reason it ended."""
+    stage_memory._MEMORY[("t3", "files_refused_as_another_work_order_s")] = {"notes-api/src/app.ts": 1}
+    project_memory.record(tmp_path, "notes-api/test/storage.test.ts", "specialist_testing_1")
+    project_memory.record(tmp_path, "notes-api/src/store.ts", "specialist_backend_0")
+
+    update = workflow._restart_on_a_fresh_conversation(
+        {}, "specialist_testing_1", "t3", "produced no structured response", repo_root=str(tmp_path),
+    )
+
+    note = update["stage_carry_over"]["specialist_testing_1"]
+    assert "It ended because it produced no structured response" in note
+    assert "notes-api/src/app.ts" in note, "the refusals of the conversation that ended"
+    changed = note[note.index("Files it changed"):]
+    assert "notes-api/test/storage.test.ts" in changed, "the files this stage changed"
+    assert "notes-api/src/store.ts" not in note, "not another stage's"

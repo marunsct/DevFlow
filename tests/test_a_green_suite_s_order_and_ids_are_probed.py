@@ -113,10 +113,46 @@ def test_a_probe_that_fails_costs_the_round_nothing(tmp_path, monkeypatch):
     assert order_probe.at_a_green_round(root, broken) == {}
 
 
-def test_the_round_asks_for_the_probe_when_the_suite_is_green():
-    source = (ROOT / "src" / "app" / "graph" / "workflow.py").read_text()
-    place = source.index("order_probe.at_a_green_round(")
-    assert 'int(saved_run.get("failed") or 0) == 0' in source[place - 400:place]
+def _the_round_probes(tmp_path: Path, *, failed: int) -> int:
+    """How often the test round's node asks for the order probe, its locked suite run with `failed` failures."""
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.agents.specialists import SpecialistOutput
+    from app.graph import workflow
+
+    milestone = SimpleNamespace(selected_sprint_goal="Build features", milestone_scope=[], delegated_tasks=[])
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)), "milestone_plan": milestone, "test_round": 1,
+        "specialist_outputs": {}, "review_defects": [], "current_sprint_index": 0,
+    }
+    with patch("app.graph.acceptance_nodes.acceptance_for_round", return_value=("", [])), \
+         patch("app.graph.acceptance_nodes.reopen_the_suite_for", return_value=None), \
+         patch("app.graph.acceptance_nodes.beyond_repair", return_value=[]), \
+         patch("app.graph.acceptance_nodes._failing_due", return_value=([], "npx playwright test")), \
+         patch("app.graph.workflow._run_unit_tests_procedurally", return_value=(False, "AssertionError")), \
+         patch("app.graph.acceptance_nodes.suite.is_locked", return_value=True), \
+         patch("app.graph.acceptance_nodes.suite.last_result",
+               return_value={"ran": True, "passed": 9 - failed, "failed": failed}), \
+         patch("app.agents.specialists.what_the_files_already_prove", return_value=[]), \
+         patch("app.graph.acceptance_nodes.interface_defects", return_value=[]), \
+         patch("app.graph.acceptance_nodes.failing_due_defects", return_value=[]), \
+         patch("app.graph.workflow._with_the_contract_s_server_errors", side_effect=lambda s, result, m: result), \
+         patch.object(order_probe, "at_a_green_round") as probe, \
+         patch("app.graph.workflow._run_gated_agent", return_value={"__test_result__": SpecialistOutput(
+             changed_files=[], defects=[workflow._the_unit_tests_fail(milestone, "AssertionError: 2 != 3")])}):
+        graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        graph.nodes["test_and_triage"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+    assert all(call.args == (str(tmp_path),) for call in probe.call_args_list)
+    return probe.call_count
+
+
+def test_the_round_asks_for_the_probe_when_the_suite_is_green(tmp_path):
+    """The probe is asked of a round whose locked suite failed nothing, whatever else it found; never of a red one."""
+    assert _the_round_probes(tmp_path, failed=0) == 1
+    assert _the_round_probes(tmp_path, failed=1) == 0
 
 
 def test_the_effects_report_says_what_the_probe_recorded():

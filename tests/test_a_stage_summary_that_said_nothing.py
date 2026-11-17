@@ -41,6 +41,27 @@ from app.graph.workflow import (
 )
 
 
+def _the_summary_a_stage_leaves(root, stage_name: str, answer) -> str | None:
+    """What the stage runner writes to `docs/stage_summaries/<stage>.md` for a stage answering `answer`, or None."""
+    from types import SimpleNamespace
+
+    from app.graph import workflow
+
+    class _Answering:
+        def invoke(self, request, config=None):
+            return {"structured_response": answer, "messages": []}
+
+    workflow._run_gated_agent(
+        {"stage": stage_name, "repository": SimpleNamespace(root_path=str(root))},
+        {"configurable": {"thread_id": "thread-outer"}},
+        stage_name=stage_name, agent=_Answering(),
+        initial_request={"messages": [{"role": "user", "content": "Do the work."}]},
+        output_key="answer", next_stage="next",
+    )
+    path = root / "docs" / "stage_summaries" / f"{stage_name}.md"
+    return path.read_text(encoding="utf-8") if path.exists() else None
+
+
 class TestTheSummaryASpecialistNowGets:
     def test_it_names_the_files_that_changed(self):
         body = _what_this_stage_reported(
@@ -107,17 +128,12 @@ class TestNothingIsWrittenWhenThereIsNothing:
     def test_blank_items_do_not_count(self):
         assert _what_this_stage_reported(SpecialistOutput(decisions=["", "   "])) == ""
 
-    def test_the_document_is_skipped_rather_than_written_empty(self):
+    def test_the_document_is_skipped_rather_than_written_empty(self, tmp_path):
         """A file that exists and says nothing is worse than no file."""
-        import inspect
+        assert _the_summary_a_stage_leaves(tmp_path, "specialist_backend_0", SpecialistOutput()) is None
 
-        from app.graph import workflow
-
-        source = inspect.getsource(workflow)
-        at = source.index("recorded = outcome_text or _what_this_stage_reported")
-        block = source[at : at + 420]
-
-        assert "if recorded:" in block
+        written = _the_summary_a_stage_leaves(tmp_path, "specialist_backend_1", SpecialistOutput(decisions=["Kept the list sorted"]))
+        assert "- Kept the list sorted" in written
 
     def test_an_object_with_none_of_the_fields_does_not_raise(self):
         class Bare:
@@ -138,12 +154,17 @@ class TestTheStreamIsUnchanged:
 
         assert _outcome_summary(Review()).startswith("Outcome: approved")
 
-    def test_a_reviewing_stage_keeps_its_own_summary(self):
+    def test_a_reviewing_stage_keeps_its_own_summary(self, tmp_path):
         """The verdict is the whole story for it, so the fallback must not replace it."""
-        import inspect
+        from app.agents.milestone_reviewer import MilestoneReviewOutput
 
-        from app.graph import workflow
+        review = MilestoneReviewOutput.model_validate({
+            "status": "changes_required", "acceptance_evidence": "read", "documentation_reviewed": True,
+            "tests_reviewed": True, "findings": [{"category": "testing", "severity": "major",
+                                                  "description": "The count is wrong", "required_remediation": "r",
+                                                  "affected_files": []}],
+        })
 
-        source = inspect.getsource(workflow)
+        written = _the_summary_a_stage_leaves(tmp_path, "milestone_review", review)
 
-        assert "outcome_text or _what_this_stage_reported" in source
+        assert "Outcome: changes_required" in written and "The count is wrong" in written

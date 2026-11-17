@@ -20,12 +20,7 @@ absent - so that is what is tested.
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
-
 import pytest
-
-WORKFLOW = Path(__file__).resolve().parent.parent / "src/app/graph/workflow.py"
 
 
 def test_an_update_without_its_output_is_handed_back():
@@ -48,34 +43,81 @@ def test_a_finished_stage_is_not_handed_back():
     assert not _hand_back(update, "product_intake")
 
 
+def _a_state_every_planning_stage_can_read(root) -> dict:
+    from types import SimpleNamespace
+
+    from app.agents.principal_architect import TechnicalSpecificationOutput
+    from app.agents.scrum_master import SprintDefinition, SprintPlanOutput
+    from app.agents.stack_selector import StackSelectorOutput, TechnologyStack
+    from app.state import RepositoryContext
+
+    stack = TechnologyStack(language="TypeScript", framework="Hono", frontend_framework="", database="SQLite",
+                            testing_framework="node:test", product_kind="http_api", additional_tools=[])
+    sprint = SprintDefinition(goal="Notes", user_value="v", in_scope=["notes"], out_of_scope=[],
+                              acceptance_criteria=["works"], dependencies=[])
+    return {
+        "document": SimpleNamespace(text="Notes over HTTP."),
+        "repository": RepositoryContext(root_path=str(root), branch="main", commit="abc", status="clean"),
+        "product_intake": {"product_name": "Notes"},
+        "tools_models": {"plan": "local"},
+        "stack_selection": StackSelectorOutput(technology_stack=stack, rationale="As the brief asks."),
+        "technical_specification": TechnicalSpecificationOutput(product_scope="Notes."),
+        "sprint_plan": SprintPlanOutput(sprints=[sprint], success_measure_coverage=[]),
+        "current_sprint_index": 0,
+    }
+
+
 @pytest.mark.parametrize(
     ("node", "output_key"),
     [
-        ("product_manager_node", "product_intake"),
-        ("principal_architect_node", "technical_specification"),
-        ("architecture_review_node", "architecture_review"),
-        ("scrum_master_node", "sprint_plan"),
-        ("technical_lead_node", "milestone_plan"),
+        ("product_manager", "product_intake"),
+        ("principal_architect", "technical_specification"),
+        ("architecture_review", "architecture_review"),
+        ("scrum_master", "sprint_plan"),
+        ("technical_lead", "milestone_plan"),
+        ("tools_models", "tools_models"),
+        ("stack_selector", "stack_selection"),
+        ("specialist_consultation", "__advice__"),
+        ("acceptance_dispute", "__suite_dispute__"),
+        ("advice_review", "__advice_review__"),
     ],
 )
-def test_every_post_processing_node_checks_for_a_hand_back(node, output_key):
-    text = WORKFLOW.read_text()
-    start = text.index(f"    def {node}(state")
-    end = text.index("\n    def ", start + 10)
-    body = text[start:end]
+def test_every_post_processing_node_checks_for_a_hand_back(node, output_key, tmp_path):
+    """Each node that post-processes a gated agent's result hands a retry back as it came (once checked on each
+    node's source; now each node is run with its stage asking for a retry).
 
-    assert f'_hand_back(update, "{output_key}")' in body, (
+    Every node that checks for a hand-back is here, so testing for a pause alone - `_is_paused(update["stage"])`,
+    the bug, which misses the retry shape - fails in whichever node it comes back to.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.graph import workflow
+
+    retry = {"stage": node, "structured_retries": {node: 1}, "pending_inner_thread_id": None}
+    creators = [name for name in dir(workflow) if name.startswith("create_") and name.endswith("_agent")]
+    with patch.multiple(workflow, **{name: MagicMock() for name in creators}), \
+         patch("app.agents.research_brief.research_notes", return_value=""), \
+         patch("app.graph.acceptance_nodes.sprint_already_done", return_value=""), \
+         patch("app.graph.workflow.build_intake_request", return_value={"messages": [{"role": "user", "content": ""}]}), \
+         patch("app.graph.workflow._fast_delivery", return_value=False), \
+         patch("app.graph.workflow._the_locked_tests_still_failing",
+               return_value=[("[AC-1] a note is kept", "AC-1", "expected 201, got 500")]), \
+         patch("app.agents.advice_review.roles_to_review", return_value=["backend"]), \
+         patch("app.agents.specialist_advice.adopted", return_value=["Write each change before answering"]), \
+         patch("app.graph.workflow._run_gated_agent", return_value=dict(retry)) as gated:
+        graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        update = graph.nodes[node].bound.invoke(
+            _a_state_every_planning_stage_can_read(tmp_path), {"configurable": {"thread_id": "t", "run_id": "r"}},
+        )
+
+    assert gated.call_args.kwargs["output_key"] == output_key
+    assert update["stage"] == node, (
         f"{node} post-processes a gated agent's result without checking for a "
         "hand-back, so a retry's routing would be overwritten"
     )
-
-
-def test_no_node_tests_only_for_a_pause():
-    """`_is_paused(update[...])` alone is the bug; it misses the retry shape."""
-    text = WORKFLOW.read_text()
-
-    assert '_is_paused(update["stage"])' not in text
-    assert "_is_paused(update.get" not in text
+    assert output_key not in update
 
 
 def test_a_retry_carries_no_output_key():

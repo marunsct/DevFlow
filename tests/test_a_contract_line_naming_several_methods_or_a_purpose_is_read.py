@@ -6,7 +6,7 @@ and the round's server-error checks had nothing to send.
 """
 from __future__ import annotations
 
-import inspect
+from types import SimpleNamespace
 
 from app.acceptance import interface_contract as ic
 from app.graph import workflow
@@ -65,10 +65,59 @@ def test_a_recorded_contract_without_notes_still_reads(tmp_path):
     assert check.note == ""
 
 
-def test_the_round_asks_whenever_the_suite_is_green():
-    source = inspect.getsource(workflow)
-    assert ('        if not failing_due and int(saved_run.get("failed") or 0) == 0:\n'
-            "            test_result = _with_the_contract_s_server_errors(state, test_result, milestone)") in source
+def _a_round_after_a_green_suite(tmp_path, *, failed: int):
+    """The test round's node run on a locked suite that ran with `failed` failures, its unit tests failing.
+
+    Returns how often the round asked for the contract's server errors.
+    """
+    from unittest.mock import patch
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.agents.specialists import SpecialistOutput
+
+    milestone = SimpleNamespace(selected_sprint_goal="Build features", milestone_scope=[], delegated_tasks=[])
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)), "milestone_plan": milestone, "test_round": 1,
+        "specialist_outputs": {}, "review_defects": [], "current_sprint_index": 0,
+    }
+    unit_failure = workflow._the_unit_tests_fail(milestone, "AssertionError: expected 2, got 3")
+    asked = []
+
+    def contract_checks(state, test_result, milestone):
+        asked.append(test_result)
+        return test_result
+
+    with patch("app.graph.acceptance_nodes.acceptance_for_round", return_value=("", [])), \
+         patch("app.graph.acceptance_nodes.reopen_the_suite_for", return_value=None), \
+         patch("app.graph.acceptance_nodes.beyond_repair", return_value=[]), \
+         patch("app.graph.acceptance_nodes._failing_due", return_value=([], "npx playwright test")), \
+         patch("app.graph.workflow._run_unit_tests_procedurally", return_value=(False, "AssertionError")), \
+         patch("app.graph.acceptance_nodes.suite.is_locked", return_value=True), \
+         patch("app.graph.acceptance_nodes.suite.last_result",
+               return_value={"ran": True, "passed": 9 - failed, "failed": failed}), \
+         patch("app.agents.specialists.what_the_files_already_prove", return_value=[]), \
+         patch("app.graph.acceptance_nodes.interface_defects", return_value=[]), \
+         patch("app.graph.acceptance_nodes.failing_due_defects", return_value=[]), \
+         patch("app.acceptance.order_probe.at_a_green_round"), \
+         patch("app.graph.workflow._with_the_contract_s_server_errors", side_effect=contract_checks), \
+         patch("app.graph.workflow._run_gated_agent",
+               return_value={"__test_result__": SpecialistOutput(changed_files=[], defects=[unit_failure])}):
+        graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        graph.nodes["test_and_triage"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+    return asked
+
+
+def test_the_round_asks_whenever_the_suite_is_green(tmp_path):
+    """Asked whenever the locked suite is green, whatever else the round found.
+
+    Measured on one run, failing unit tests kept every round from being clean and the checks were never asked
+    before release. A red suite has its own defects, and is not asked.
+    """
+    [asked] = _a_round_after_a_green_suite(tmp_path, failed=0)
+    assert [d.description for d in asked.defects][0].startswith(workflow.UNIT_TESTS_FAIL), "asked beside the unit failure"
+
+    assert _a_round_after_a_green_suite(tmp_path, failed=2) == []
 
 
 def test_a_note_among_the_statuses_is_no_part_of_the_check():

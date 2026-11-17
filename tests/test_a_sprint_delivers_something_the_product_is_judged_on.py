@@ -187,19 +187,52 @@ def test_how_much_a_plan_leaves_out_is_what_decides_between_two() -> None:
     assert how_much_a_plan_leaves_out(second, MEASURES) > how_much_a_plan_leaves_out(first, MEASURES)
 
 
-def test_the_workflow_keeps_the_better_plan_and_folds_before_it_checks() -> None:
-    import inspect
+def _the_sprint_planner_answers(tmp_path, answer, **state):
+    """The scrum master node's update when its stage answers `answer` (the sprint cap left out)."""
+    from unittest.mock import MagicMock, patch
 
-    from app.graph import workflow
+    from langgraph.checkpoint.memory import MemorySaver
 
-    source = inspect.getsource(workflow)
-    node = source[source.index("def scrum_master_node("):source.index("def technical_lead_node(")]
+    from app.graph.workflow import build_workflow_graph
 
-    assert "how_much_a_plan_leaves_out(earlier, measures)" in node
-    assert 'update["sprint_plan"] = earlier' in node
-    assert node.index("with_setup_folded_into_the_sprint_that_needs_it(") < node.index("unaccounted_success_measures(")
-    # The first plan is kept in state when the second is asked for.
-    assert 'sprint_plan=update["sprint_plan"]' in node
+    full = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "technical_specification": "The specification.",
+        "product_intake": SimpleNamespace(success_measures=MEASURES, mvp_candidates=[]),
+        **state,
+    }
+    with patch("app.graph.workflow.create_scrum_master_agent", return_value=MagicMock()), \
+         patch("app.agents.scrum_master.with_capped_sprint_count", lambda plan, count, fast=False: (plan, [])), \
+         patch("app.graph.workflow._run_gated_agent", return_value={"sprint_plan": answer}):
+        graph = build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        return graph.nodes["scrum_master"].bound.invoke(full, {"configurable": {"thread_id": "t", "run_id": "r"}})
+
+
+def test_the_workflow_keeps_the_better_plan_and_folds_before_it_checks(tmp_path) -> None:
+    """Asked once more, an answer that leaves out more than the plan it replaces is not kept (once checked on the
+    source of the scrum master node)."""
+    first = _real_plan(AS_THE_RUN_PLANNED_IT, ["1: Sprint 4", "2: Sprint 3", "3: Sprint 2", "4: every sprint"])
+    second = _real_plan(AS_THE_RUN_PLANNED_IT[1:], [])
+
+    update = _the_sprint_planner_answers(
+        tmp_path, second, sprint_plan=first, sprint_plan_gaps=[{"measure": "3", "missing": []}],
+    )
+
+    assert update.get("stage") != "failed", update.get("error")
+    assert update["sprint_plan"].sprints[0].goal.startswith("Establish the project foundation"), "the earlier plan"
+    assert update["sprint_plan"].success_measure_coverage, "the earlier plan's coverage lines"
+
+
+def test_a_plan_asked_for_again_is_kept_folded(tmp_path) -> None:
+    """The first plan is kept in state when the second is asked for, folded before its measures are checked."""
+    answer = _real_plan(AS_THE_RUN_PLANNED_IT, ["1: Sprint 4", "2: Sprint 3", "4: every sprint"])  # 3 left out
+    folded, _ = with_setup_folded_into_the_sprint_that_needs_it(answer, MEASURES)
+
+    update = _the_sprint_planner_answers(tmp_path, answer)
+
+    assert update["stage"] == "scrum_master" and update["sprint_plan_gaps"], "asked once more"
+    assert [s.goal for s in update["sprint_plan"].sprints] == [s.goal for s in folded.sprints]
+    assert len(folded.sprints) < len(answer.sprints)
 
 
 def test_a_plan_is_not_handed_back_for_a_verb_it_uses_in_another_person() -> None:

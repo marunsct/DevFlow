@@ -5,8 +5,9 @@ workflow check added a finding, and after the revision a whole second review rai
 """
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
+
+import pytest
 
 from app.graph import workflow
 
@@ -27,12 +28,66 @@ def test_a_finding_the_revision_settled_is_no_longer_open_and_one_it_did_not_is(
     assert workflow._the_harness_findings_still_open(state, still, ["no-such-check"]) == []
 
 
-def test_the_node_records_what_overturned_an_approval_and_rechecks_it_behind_the_switch():
-    source = inspect.getsource(workflow)
-    assert 'update["approved_but_for_the_harness"] = fired if reviewer_approved and fired else []' in source
-    assert "settled = _approved_once_the_harness_s_findings_are_settled(state, spec_text)" in source
-    for name in ("coverage", "deferrals", "contract", "kept"):
-        assert f'fired.append("{name}")' in source
+_THE_CHECKS = {
+    "coverage": "_a_success_measure_the_specification_drops",
+    "deferrals": "_a_brief_feature_the_specification_defers",
+    "contract": "_contract_lines_nothing_can_read",
+    "order": "_the_same_command_in_another_order",
+    "kept": "_behaviour_the_specification_gives_kept_files",
+}
+
+
+def _the_review_node(monkeypatch, tmp_path, *, reviewer: str, firing: tuple[str, ...] = (), **extra):
+    """The architecture review's node, its reviewer answering `reviewer` and only the `firing` checks finding anything.
+
+    Returns (the node's update, whether the reviewer was asked).
+    """
+    from unittest.mock import MagicMock
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.agents.architecture_reviewer import ArchitectureReviewFinding, ArchitectureReviewOutput
+
+    for name, function in _THE_CHECKS.items():
+        finding = ArchitectureReviewFinding(severity="major", description=f"{name} finding", evidence="e",
+                                            required_remediation="r")
+        monkeypatch.setattr(workflow, function, lambda *_a, _f=finding, _on=name in firing: _f if _on else None)
+    monkeypatch.setattr(workflow, "_record_document", lambda *a, **k: None)
+    monkeypatch.setattr(workflow, "_review_enabled", lambda state, point: False)
+    monkeypatch.setattr(workflow, "create_architecture_reviewer_agent", lambda **_k: MagicMock())
+    monkeypatch.setattr(workflow, "build_architecture_review_request", lambda *a, **k: {"messages": []})
+    asked = []
+
+    def review(*_a, **_k):
+        asked.append(True)
+        return {"architecture_review": ArchitectureReviewOutput(status=reviewer, findings=[])}
+
+    monkeypatch.setattr(workflow, "_run_gated_agent", review)
+    state = _state(repository=SimpleNamespace(root_path=str(tmp_path)), decisions=[],
+                   technical_specification="## Features\n- Notes carry tags.\n", **extra)
+    graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+    update = graph.nodes["architecture_review"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+    return update, bool(asked)
+
+
+@pytest.mark.parametrize("name", sorted(_THE_CHECKS))
+def test_the_node_records_what_overturned_an_approval_and_rechecks_it_behind_the_switch(monkeypatch, tmp_path, name):
+    """What overturned the reviewer's approval is recorded by the check's name; a review that asked for changes
+    itself records nothing. The next revision is then checked by those checks alone, behind the switch."""
+    update, _ = _the_review_node(monkeypatch, tmp_path, reviewer="approved", firing=(name,),
+                                 architecture_revision_count=0)
+    assert update["approved_but_for_the_harness"] == [name]
+    assert update["architecture_review"].status == "changes_required"
+
+    update, _ = _the_review_node(monkeypatch, tmp_path, reviewer="changes_required", firing=(name,),
+                                 architecture_revision_count=0)
+    assert update["approved_but_for_the_harness"] == []
+
+    monkeypatch.setenv("HARNESS_FINDINGS_RECHECKED", "on")
+    update, asked = _the_review_node(monkeypatch, tmp_path, reviewer="changes_required",
+                                     architecture_revision_count=1, approved_but_for_the_harness=[name])
+    assert not asked, "a revision that settled the workflow's own findings is not reviewed again"
+    assert update["architecture_review"].status == "approved" and update["stage"] == "scaffold"
 
 
 def test_the_state_declares_the_field_it_carries():

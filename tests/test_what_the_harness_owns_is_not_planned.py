@@ -167,17 +167,42 @@ def test_after_the_harness_s_own_repairs_its_files_raise_no_readiness_problem(pr
     assert not [p for p in readiness_problems(repaired, project) if "the harness keeps" in p or "locked acceptance suite" in p]
 
 
-def test_the_planner_repairs_before_it_checks() -> None:
-    import inspect
+def test_the_planner_repairs_before_it_checks(project, monkeypatch) -> None:
+    """HR2.P.1 in the lead node (once checked on its source): the harness's own repairs run before the definition of
+    ready is checked, so a plan is not sent back for what they fix - a kept file on a work order, a command the
+    sandbox refuses."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
 
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.agents.scrum_master import SprintDefinition, SprintPlanOutput
     from app.graph import workflow
 
-    source = inspect.getsource(workflow)
-    check = source.index("        problems = readiness_problems(\n            update[\"milestone_plan\"],")
-    assert source.rindex("update[\"milestone_plan\"] = with_the_harness_s_files_left_out(", 0, check) > \
-        source.rindex("with_a_testing_work_order(", 0, check)
-    assert source.rindex("update[\"milestone_plan\"] = with_refused_commands_noted(", 0, check) > \
-        source.rindex("with_a_testing_work_order(", 0, check)
+    monkeypatch.setenv("WORKFLOW_WORK_ORDER_READINESS", "on")
+    backend = _task("backend", "notes/src/app.js", "notes/scripts/serve.mjs").model_copy(
+        update={"task_description": "Build it. Then run `npx playwright install --with-deps`."})
+    answer = _plan(backend, _task("testing", "notes/tests/app.test.js"))
+    sprint = SprintDefinition(goal="Notes", user_value="v", in_scope=["notes/src/app.js"], out_of_scope=[],
+                              acceptance_criteria=["works"], dependencies=[])
+    state = {
+        "repository": SimpleNamespace(root_path=str(project)),
+        "sprint_plan": SprintPlanOutput(sprints=[sprint], success_measure_coverage=[]),
+        "current_sprint_index": 0,
+    }
+    with patch("app.graph.workflow.create_technical_lead_agent", return_value=MagicMock()), \
+         patch("app.graph.acceptance_nodes.sprint_already_done", return_value=""), \
+         patch("app.graph.workflow._run_gated_agent", return_value={"milestone_plan": answer}):
+        graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(project))
+        update = graph.nodes["technical_lead"].bound.invoke(state, {"configurable": {"thread_id": "t"}})
+
+    assert "milestone_plan" in update, f"sent back: {update.get('work_order_problems')}"
+    problems = list(update.get("work_order_problems") or []) + [
+        note for note in update["milestone_plan"].integration_notes if note.startswith("Not ready when dispatched")]
+    assert not [p for p in problems if "the harness keeps" in p or "refuse" in p or "will not run" in p], problems
+    dispatched = update["milestone_plan"].delegated_tasks[0]
+    assert dispatched.files == ["notes/src/app.js"]
+    assert "Checked against this sandbox before you started" in dispatched.task_description
 
 
 def test_a_testing_order_that_writes_nothing_is_left_to_the_test_round(project, monkeypatch) -> None:

@@ -7,8 +7,6 @@ specification already spelled out.
 
 from __future__ import annotations
 
-import inspect
-
 from app.agents.principal_architect import TechnicalSpecificationOutput
 from app.analysis.work_orders import readiness_problems
 from app.graph import workflow
@@ -48,12 +46,58 @@ def test_a_specification_that_plans_no_files_is_the_lead_s():
     assert work_orders_from_the_specification(TechnicalSpecificationOutput(product_scope="x"), "g", [], []) is None
 
 
-def test_the_lead_is_asked_only_when_the_harness_has_no_plan():
-    source = inspect.getsource(workflow)
-    node = source[source.index("    def technical_lead_node("):]
-    assert node.index("_the_specification_s_work_orders(state, current_goal)") < node.index('stage_name="technical_lead"')
-    helper = source[source.index("    def _the_specification_s_work_orders("):source.index("    def technical_lead_node(")]
-    assert "_fast_delivery()" in helper
+def _the_lead_node_runs(tmp_path, monkeypatch, *, fast: bool):
+    """The technical lead node's update, what its stage was asked and what it narrated, in either delivery mode."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app import delivery
+    from app.agents.scrum_master import SprintDefinition, SprintPlanOutput
+    from app.agents.technical_lead import MilestonePlanOutput
+
+    monkeypatch.setattr(delivery, "fast", lambda environment=None: fast)
+    narrated: list[tuple[str, str, str]] = []
+
+    class _Stream:
+        def __init__(self, run_id, stage):
+            self.run_id, self.stage = run_id, stage
+
+        def publish_outcome(self, summary):
+            narrated.append((self.run_id, self.stage, summary))
+
+    sprint = SprintDefinition(goal="Notes", user_value="notes", in_scope=["Build store.ts and app.ts"],
+                              out_of_scope=[], acceptance_criteria=["works"], dependencies=[])
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "sprint_plan": SprintPlanOutput(sprints=[sprint], success_measure_coverage=[]),
+        "technical_specification": SPEC,
+        "current_sprint_index": 0,
+    }
+    lead_s = MilestonePlanOutput(selected_sprint_goal="Notes", delegated_tasks=[])
+    with patch("app.graph.workflow.create_technical_lead_agent", return_value=MagicMock()), \
+         patch("app.graph.acceptance_nodes.sprint_already_done", return_value=""), \
+         patch("app.server.agent_stream.AgentActivityStream", _Stream), \
+         patch("app.graph.workflow._run_gated_agent", return_value={"milestone_plan": lead_s}) as asked:
+        graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        update = graph.nodes["technical_lead"].bound.invoke(
+            state, {"configurable": {"thread_id": "t", "app_run_id": "run-lead"}})
+    return update, asked.called, narrated
+
+
+def test_the_lead_is_asked_only_when_the_harness_has_no_plan(tmp_path, monkeypatch):
+    """Fast delivery plans from the specification with no planning call; thorough delivery asks the lead (once
+    checked on the source)."""
+    update, lead_asked, _ = _the_lead_node_runs(tmp_path, monkeypatch, fast=True)
+
+    assert not lead_asked
+    assert {f for task in update["milestone_plan"].delegated_tasks for f in task.files} >= {
+        "notes-api/src/store.ts", "notes-api/src/app.ts"}
+
+    _, lead_asked, _ = _the_lead_node_runs(tmp_path, monkeypatch, fast=False)
+
+    assert lead_asked
 
 
 def test_the_files_the_harness_keeps_are_no_work_order_s(tmp_path, monkeypatch):
@@ -86,13 +130,12 @@ def test_a_product_already_built_is_changed_by_the_lead_not_written_again(tmp_pa
     assert work_orders_from_the_specification(SPEC, "Notes", ["AC-1"], ["npm test"], str(tmp_path)) is not None
 
 
-def test_the_harness_made_plan_narrates_itself_so_the_sprint_it_opened_is_counted():
+def test_the_harness_made_plan_narrates_itself_so_the_sprint_it_opened_is_counted(tmp_path, monkeypatch):
     """Fast delivery's own path made no model call, so no event ever carried `stage="technical_lead"` for
     it; the UI's sprint counter (built by counting technical_lead events) silently skipped the sprint
     this opened, and the sprint that followed wore its number - shown live, sprint 1 never had a header,
     and the header that first appeared, over sprint 2's planning, read "Sprint 1"."""
-    source = inspect.getsource(workflow)
-    node = source[source.index("    def technical_lead_node("):]
-    start = node.index("if planned is not None:")
-    branch = node[start:node.index("        else:", start)]
-    assert "AgentActivityStream(" in branch and '"technical_lead"' in branch and "publish_outcome(" in branch
+    _, _, narrated = _the_lead_node_runs(tmp_path, monkeypatch, fast=True)
+
+    assert [(run_id, stage) for run_id, stage, _ in narrated] == [("run-lead", "technical_lead")]
+    assert "work order(s) made from the specification" in narrated[0][2]

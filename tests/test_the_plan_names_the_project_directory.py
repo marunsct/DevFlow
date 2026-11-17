@@ -89,16 +89,40 @@ class TestTheDigestSaysSo:
         assert "project directory is" not in render_workspace_digest(_workspace(tmp_path))
 
 
-def test_the_lead_node_pins_before_dispatch():
-    import inspect
+def test_the_lead_node_pins_before_dispatch(tmp_path):
+    """The lead node pins the directory its plan names before the plan is checked and handed out (once checked on
+    the source): a file the plan names as the project sees it is put inside it."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
 
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.agents.scrum_master import SprintDefinition, SprintPlanOutput
+    from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
     from app.graph import workflow
 
-    source = inspect.getsource(workflow)
-    pin = source.index("pin_the_directory_a_plan_names(\n")
-    dispatch = source.index('update["specialist_task_index"] = 0', pin)
+    root = _workspace(tmp_path)
+    task = SpecialistTask(
+        specialist_role="ui_ux", title="The page", task_description=PLAN, acceptance_criteria=["works"],
+        files=["index.html"], interfaces=["none"], steps=["one"], edge_cases=["none"],
+        test_cases=["Given x, when y, then z"], verification=["npm test"],
+    )
+    sprint = SprintDefinition(goal="The page", user_value="v", in_scope=["index.html"], out_of_scope=[],
+                              acceptance_criteria=["works"], dependencies=[])
+    state = {
+        "repository": SimpleNamespace(root_path=str(root)),
+        "sprint_plan": SprintPlanOutput(sprints=[sprint], success_measure_coverage=[]),
+        "current_sprint_index": 0,
+    }
+    answer = MilestonePlanOutput(selected_sprint_goal="The page", delegated_tasks=[task])
+    with patch("app.graph.workflow.create_technical_lead_agent", return_value=MagicMock()), \
+         patch("app.graph.acceptance_nodes.sprint_already_done", return_value=""), \
+         patch("app.graph.workflow._run_gated_agent", return_value={"milestone_plan": answer}):
+        graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(root))
+        update = graph.nodes["technical_lead"].bound.invoke(state, {"configurable": {"thread_id": "t"}})
 
-    assert pin < dispatch
+    assert pinned_project_directory(root) == "simple-to-do-list-app"
+    assert update["milestone_plan"].delegated_tasks[0].files == ["simple-to-do-list-app/index.html"]
 
 
 class TestTheProductNamesItFirst:

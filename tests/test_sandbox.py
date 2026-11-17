@@ -1338,24 +1338,6 @@ def test_every_language_in_the_table_can_run_something(tmp_path) -> None:
         assert executables, language
 
 
-def test_the_workflow_pins_the_stack_it_chose() -> None:
-    """The allowlist is only stack-aware if something records the stack.
-
-    Reaching the table and never writing the marker is the shape of a check
-    that is present and never fires - which this session found three times.
-    """
-    import inspect
-
-    from app.graph import workflow
-
-    source = inspect.getsource(workflow)
-    # Bounded by the next node, not by a character count that drifts with the
-    # body it is measuring.
-    node = source[source.index("def tools_models_node") : source.index("def stack_selector_node")]
-
-    assert "pin_project_stack(" in node
-
-
 def test_a_shell_redirect_is_refused_rather_than_silently_doing_nothing() -> None:
     """A silent no-op reported as success is the worst shape a result can have.
 

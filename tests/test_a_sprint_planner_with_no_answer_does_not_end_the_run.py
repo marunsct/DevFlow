@@ -57,16 +57,60 @@ def test_the_stage_goes_on_with_it_recorded_as_a_decision_and_a_gap(tmp_path):
     assert update["decisions"][-1]["decision"] == THE_HARNESS_S_PLAN
 
 
-def test_only_a_stage_that_gave_no_answer_falls_back_and_nothing_else_does():
+class _NoAnswer:
+    """Completes its turn but never fills `structured_response`."""
+
+    def invoke(self, request, config=None):
+        return {"messages": [SimpleNamespace(type="ai", content="## Structured Response\n" + "x" * 900)]}
+
+
+def test_a_stage_that_spent_every_way_to_answer_says_so_in_its_own_error(monkeypatch):
+    """Still a `ValueError`, so every handler of that is unchanged; its own class so only the sprint planner falls
+    back on it."""
     from app.graph import workflow
 
+    monkeypatch.setenv("WORKFLOW_MAX_STRUCTURED_RETRIES", "0")
+
     assert issubclass(workflow.StageGaveNoAnswer, ValueError)
-    gated = inspect.getsource(workflow._run_gated_agent)
-    assert "raise StageGaveNoAnswer(" in gated and "raise ValueError(\n                _missing_structured_response" not in gated
-    graph = inspect.getsource(workflow.build_workflow_graph)
-    planner = graph[graph.index("def scrum_master_node"):]
-    planner = planner[:planner.index("\n    def ", 10)]
-    assert "except StageGaveNoAnswer as gave_none:" in planner and "except ValueError" not in planner
+    with pytest.raises(workflow.StageGaveNoAnswer):
+        workflow._run_gated_agent(
+            {"stage": "scrum_master", "repository": SimpleNamespace(root_path="/workspace")},
+            {"configurable": {"thread_id": "thread-outer"}},
+            stage_name="scrum_master", agent=_NoAnswer(), initial_request={"messages": []},
+            output_key="sprint_plan", next_stage="technical_lead",
+        )
+
+
+def _the_sprint_planner_raising(tmp_path, error):
+    from unittest.mock import MagicMock, patch
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.graph.workflow import build_workflow_graph
+
+    suite.save_criteria(tmp_path, CRITERIA)
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "technical_specification": SimpleNamespace(
+            file_plan=["notes-api/app.py - the routes"], model_dump_json=lambda indent=None: "{}",
+        ),
+        "product_intake": SimpleNamespace(product_name="Notes API", success_measures=MEASURES, mvp_candidates=[]),
+        "decisions": [],
+    }
+    with patch("app.graph.workflow.create_scrum_master_agent", return_value=MagicMock()), \
+         patch("app.graph.workflow._run_gated_agent", side_effect=error):
+        graph = build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        return graph.nodes["scrum_master"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+
+
+def test_only_a_stage_that_gave_no_answer_falls_back_and_nothing_else_does(tmp_path):
+    from app.graph.workflow import StageGaveNoAnswer
+
+    update = _the_sprint_planner_raising(tmp_path, StageGaveNoAnswer("Agent 'scrum_master' gave no answer"))
+
+    assert THE_HARNESS_S_PLAN in update["sprint_plan"].open_questions[0]
+    with pytest.raises(ValueError, match="something else went wrong"):
+        _the_sprint_planner_raising(tmp_path, ValueError("something else went wrong"))
 
 
 def test_the_release_lists_it_among_the_gaps():

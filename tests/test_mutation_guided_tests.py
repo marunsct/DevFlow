@@ -358,11 +358,43 @@ def test_only_unit_test_failures_open_beside_a_green_suite_is_where_the_probe_al
     assert workflow._only_unit_tests_open_beside_a_green_suite(state, SimpleNamespace(defects=[])) is False
 
 
-def test_the_round_asks_for_the_probe_before_it_sends_unit_test_failures_to_a_fixer():
-    import inspect
+def test_the_round_asks_for_the_probe_before_it_sends_unit_test_failures_to_a_fixer(tmp_path, monkeypatch):
+    """A round whose suite is green and whose only open defect is a failing unit test probes before the fix round.
+
+    Its findings join that fix round, beside the unit test failure, once an attempt.
+    """
+    from langgraph.checkpoint.memory import MemorySaver
 
     from app.graph import workflow
 
-    source = inspect.getsource(workflow)
-    at = source.index("_only_unit_tests_open_beside_a_green_suite(state, cycle)")
-    assert at < source.index('return _handing_on(**base_update, stage="defect_remediation", defect_cursor=0)', at - 2000)
+    monkeypatch.setenv("MUTATION_GUIDED_TESTS", "on")
+    milestone = SimpleNamespace(selected_sprint_goal="Build features", milestone_scope=[], delegated_tasks=[])
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)), "milestone_plan": milestone, "test_round": 1,
+        "specialist_outputs": {}, "review_defects": [], "current_sprint_index": 0,
+    }
+    unit_failure = workflow._the_unit_tests_fail(milestone, "AssertionError: 2 != 3")
+    with patch("app.graph.acceptance_nodes.acceptance_for_round", return_value=("", [])), \
+         patch("app.graph.acceptance_nodes.reopen_the_suite_for", return_value=None), \
+         patch("app.graph.acceptance_nodes.beyond_repair", return_value=[]), \
+         patch("app.graph.acceptance_nodes._failing_due", return_value=([], "npx playwright test")), \
+         patch("app.graph.workflow._run_unit_tests_procedurally", return_value=(False, "AssertionError")), \
+         patch("app.graph.acceptance_nodes.suite.is_locked", return_value=True), \
+         patch("app.acceptance.suite.last_result", return_value={"ran": True, "passed": 9, "failed": 0}), \
+         patch("app.agents.specialists.what_the_files_already_prove", return_value=[]), \
+         patch("app.graph.acceptance_nodes.interface_defects", return_value=[]), \
+         patch("app.graph.acceptance_nodes.failing_due_defects", return_value=[]), \
+         patch("app.graph.workflow._with_the_contract_s_server_errors", side_effect=lambda s, result, m: result), \
+         patch("app.acceptance.order_probe.at_a_green_round"), \
+         patch("app.graph.workflow._the_files_this_milestone_changed", return_value=["src/calc.py"]), \
+         patch("app.graph.workflow._run_gated_agent",
+               return_value={"__test_result__": SpecialistOutput(changed_files=[], defects=[unit_failure])}), \
+         patch.object(mutation_guided, "probe", return_value=[_a_site(tmp_path)]) as probe:
+        graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        result = graph.nodes["test_and_triage"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+
+    assert probe.called and result["stage"] == "defect_remediation" and result["defect_cursor"] == 0
+    assert result["mutation_probed"] == ["0:0"]
+    open_ = [d for d in result["remediation"].defects if d.status == "open"]
+    assert [mutation_guided.is_a_finding(d) for d in open_] == [False, True]
+    assert open_[0].description.startswith(workflow.UNIT_TESTS_FAIL)

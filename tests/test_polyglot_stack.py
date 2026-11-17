@@ -109,17 +109,48 @@ def test_every_framework_language_names_a_real_toolchain():
     assert not unknown, f"FRAMEWORK_LANGUAGES points at missing toolchains: {unknown}"
 
 
-def test_the_pin_is_given_every_field_of_the_stack():
+def _the_tools_stage_chooses(tmp_path, stack):
+    """Run the tools-and-models node on an answer naming `stack`; what the workspace has pinned after it."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.agents.tools_models import ToolsAndModelsOutput
+    from app.graph.workflow import build_workflow_graph
+
+    state = {"repository": SimpleNamespace(root_path=str(tmp_path)),
+             "product_intake": SimpleNamespace(model_dump_json=lambda indent=None: "{}")}
+    answer = ToolsAndModelsOutput().model_copy(update={"technology_stack": stack})
+    with patch("app.graph.workflow.create_tools_models_agent", return_value=MagicMock()), \
+         patch("app.graph.workflow.build_tools_models_request", return_value={"messages": []}), \
+         patch("app.graph.workflow._run_gated_agent", return_value={"tools_models": answer}):
+        graph = build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        graph.nodes["tools_models"].bound.invoke(state, {"configurable": {"thread_id": "t"}})
+    return project_stack(tmp_path)
+
+
+def test_the_pin_is_given_every_field_of_the_stack(tmp_path):
     """The workflow must pass the frontend framework, not only the language.
 
     The bug was not in the pin; it was in the one call site handing it a
-    single field. A test on the pin alone would have passed throughout.
-    """
-    import pathlib
+    single field. A test on the pin alone would have passed throughout. Once
+    checked on the call site's source; now the stage is run.
 
-    node = pathlib.Path("src/app/graph/workflow.py").read_text(encoding="utf-8")
-    call = node[node.index("from app.tools.sandbox import pin_project_stack") :][:1200]
-    assert "frontend_framework" in call, (
+    It also proves the stack is pinned at all: the allowlist is only
+    stack-aware if something records the stack, and reaching the table and
+    never writing the marker is the shape of a check that is present and never
+    fires.
+    """
+    from app.agents.tools_models import TechnologyStack
+
+    stack = TechnologyStack(language="Go", framework="Gin", frontend_framework="React", database="SQLite",
+                            testing_framework="go test")
+
+    pinned = _the_tools_stage_chooses(tmp_path, stack)
+
+    assert "go" in pinned
+    assert "typescript" in pinned, (
         "the stack pin is called without the frontend framework, so a full-stack "
         "product gets only its backend toolchain"
     )

@@ -118,13 +118,33 @@ class TestTheWiring:
         # Before the agent is built, not after it has run.
         assert source.index("_stop_if_cancelled") < source.index("build_activity_callbacks")
 
-    def test_the_runner_treats_it_as_a_cancellation_not_a_failure(self):
-        import inspect
+    async def test_the_runner_treats_it_as_a_cancellation_not_a_failure(self, run_store, redis_container, monkeypatch):
+        """A graph that stopped for a cancellation leaves the run cancelled, with no error recorded.
 
-        from app.server import runner
+        It must be caught before the runner's generic handler, or it becomes a failed run with a traceback.
+        """
+        from app.server import runner as runner_module
+        from app.server.events import EventBus
+        from app.server.redis_client import reset_clients
 
-        source = inspect.getsource(runner.WorkflowRunner._run_loop)
-        assert "except RunCancelled:" in source
-        assert "_finish_cancelled" in source
-        # It must be caught before the generic handler, or it becomes an error.
-        assert source.index("except RunCancelled:") < source.index("except Exception as exc:")
+        reset_clients()
+        monkeypatch.setenv("CHECKPOINTER_TYPE", "memory")
+        runner = runner_module.WorkflowRunner(EventBus(), run_store=run_store)
+        record = runner.register_run(
+            run_id="run-stopped", thread_id="thread-run-stopped", document_names=["brief.md"],
+            document_paths=["/tmp/brief.md"], owner="alice", tenant_id="acme",
+        )
+        record.status = "running"
+        run_store.save(record)
+
+        def stopped(*args, **kwargs):
+            raise RunCancelled("run-stopped")
+
+        monkeypatch.setattr(runner_module, "build_workflow_graph", lambda **kwargs: object())
+        monkeypatch.setattr(runner_module, "start_workflow", stopped)
+
+        await runner._run_loop(record, document=None, repository=None)
+
+        stored = run_store.load("run-stopped")
+        assert stored.status == "cancelled"
+        assert not stored.error

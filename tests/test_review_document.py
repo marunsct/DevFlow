@@ -13,6 +13,8 @@ attempts. The findings existed; they were in the other copy.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from app.agents.review_document import render_milestone_review
 
 
@@ -217,17 +219,47 @@ def test_every_reviewer_is_read_only():
         assert "can_write=False" in inspect.getsource(module), module.__name__
 
 
-def test_every_review_has_a_rendered_document():
+def _a_review_node(tmp_path, node: str, output_key: str, answer, state_extra: dict) -> dict:
+    """One review's node, its reviewer answering `answer`; the workflow's own document writer left in place."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.agents.specialists import SpecialistOutput
+    from app.graph.workflow import build_workflow_graph
+
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)), "decisions": [], "current_sprint_index": 0,
+        "milestone_revision_count": 0, "architecture_revision_count": 0,
+        "specialist_outputs": {"specialist_backend_0": SpecialistOutput(changed_files=["app/server.py"])},
+        **state_extra,
+    }
+    with patch("app.graph.workflow.create_architecture_reviewer_agent", return_value=MagicMock()), \
+         patch("app.graph.workflow.build_architecture_review_request", return_value={"messages": []}), \
+         patch("app.graph.workflow.create_security_reviewer_agent", return_value=MagicMock()), \
+         patch("app.graph.workflow._in_parallel_mode", return_value=False), \
+         patch("app.graph.workflow._review_enabled", return_value=False), \
+         patch("app.graph.workflow._run_gated_agent", return_value={output_key: answer}):
+        graph = build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        return graph.nodes[node].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+
+
+def test_every_review_has_a_rendered_document(tmp_path):
     """If the agent cannot write one, the workflow must produce one, or the
     review leaves no record a person can read."""
-    import inspect
+    from app.agents.architecture_reviewer import ArchitectureReviewFinding, ArchitectureReviewOutput
+    from app.agents.security_reviewer import SecurityFinding, SecurityReviewOutput
 
-    from app.graph import workflow
+    architecture = ArchitectureReviewOutput(status="approved", findings=[ArchitectureReviewFinding(
+        severity="minor", description="The retry policy is unstated", evidence="section 4",
+        required_remediation="State it")])
+    _a_review_node(tmp_path, "architecture_review", "architecture_review", architecture,
+                   {"technical_specification": "## Features\n- Notes.\n", "document": SimpleNamespace(text="# Notes")})
+    security = SecurityReviewOutput(status="findings", findings=[SecurityFinding(
+        severity="medium", category="permissions", description="The title length is unbounded",
+        affected_files=["app/server.py"], remediation="Bound it")])
+    _a_review_node(tmp_path, "security_review", "__security_review__", security, {})
 
-    source = inspect.getsource(workflow)
-
-    for document in (
-        "docs/architecture_review.md",
-        "docs/security_review.md",
-    ):
-        assert document in source, document
+    assert "The retry policy is unstated" in (tmp_path / "docs" / "architecture_review.md").read_text()
+    assert "The title length is unbounded" in (tmp_path / "docs" / "security_review.md").read_text()

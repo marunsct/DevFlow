@@ -6,7 +6,6 @@ characters in one), and planning replies ran to 30-46k tokens past their 20k cap
 """
 from __future__ import annotations
 
-import inspect
 import io
 import json
 
@@ -44,9 +43,34 @@ def test_the_tag_is_read_from_the_given_server_and_kept(monkeypatch):
     assert kept["think_tag_tokens"] == "<think> = 151667"
 
 
-def test_a_run_reads_the_tag_from_the_server_it_is_pinned_to():
-    from app.server import tasks
+def test_a_run_reads_the_tag_from_the_server_it_is_pinned_to(monkeypatch):
+    """A segment reads the tag from the server the run is pinned to, read as the run sees its settings (once checked
+    on the source of `execute_workflow_run`)."""
+    from unittest import mock
 
-    source = inspect.getsource(tasks.execute_workflow_run)
-    assert "with model_pin.as_the_run(run_id):" in source
-    assert "capabilities.reasoning_tag_if_missing(" in source
+    import app.models as models
+    from app.models import model_pin, server_profile
+    from app.observability import provenance, transcript
+    from app.server import runtime_settings, tasks
+
+    run_id = "run-pinned-tag"
+    pinned = {"LLM_PROVIDER": "local", "OPENAI_BASE_URL": "http://pinned-server:8888/v1",
+              "OPENAI_MODEL": "served-model", "OPENAI_API_KEY": "k"}
+    default = {**pinned, "OPENAI_BASE_URL": "http://default-server:1234/v1", "OPENAI_MODEL": "default-model"}
+    monkeypatch.setattr(runtime_settings, "effective_environment",
+                        lambda *a, **k: pinned if model_pin.current_run_id() == run_id else default)
+    monkeypatch.setattr(model_pin, "_DESTINATIONS", {})
+    read = []
+    monkeypatch.setattr(capabilities, "reasoning_tag_if_missing", lambda *args: read.append(args) or True)
+    monkeypatch.setattr(server_profile, "record", lambda *a, **k: None)
+    monkeypatch.setattr(models, "build_default_chat_model", mock.Mock(side_effect=RuntimeError("no model here")))
+    monkeypatch.setattr(transcript, "record", lambda *a, **k: None)
+    monkeypatch.setattr(provenance, "record_the_segment", lambda *a, **k: None)
+    runner = mock.MagicMock()
+    runner.run_store.is_cancel_requested.return_value = True  # the segment stops right after the tag is read
+    with mock.patch.object(tasks, "first_delivery", return_value=True), \
+         mock.patch.object(tasks, "_get_runner", return_value=runner), \
+         mock.patch.object(tasks, "_record_a_cancellation_nothing_else_will"):
+        tasks.execute_workflow_run.run(run_id)
+
+    assert read == [("served-model", "http://pinned-server:8888/v1", "k")]

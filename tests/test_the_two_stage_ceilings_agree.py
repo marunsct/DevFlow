@@ -129,15 +129,21 @@ def test_the_ratio_covers_every_stage_measured() -> None:
     assert SUPERSTEPS_PER_MODEL_CALL > WORST_MEASURED_SUPERSTEP_RATIO
 
 
-def test_the_ceiling_is_still_derived_not_restated() -> None:
-    """A second copy of the number is how the two drifted apart before."""
-    import inspect
+def test_the_ceiling_is_still_derived_not_restated(monkeypatch) -> None:
+    """A second copy of the number is how the two drifted apart before.
 
+    The workflow is loaded afresh under another call budget: its ceiling follows the budget.
+    """
+    import importlib.util
+    import sys
+
+    from app.agents import settled_answer
     from app.graph import workflow
 
-    source = inspect.getsource(workflow)
+    monkeypatch.setattr(settled_answer, "MODEL_CALLS_PER_STAGE", MODEL_CALLS_PER_STAGE + 10)
+    spec = importlib.util.spec_from_file_location("_a_fresh_workflow", workflow.__file__)
+    fresh = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, "_a_fresh_workflow", fresh)
+    spec.loader.exec_module(fresh)
 
-    assert (
-        "INNER_AGENT_RECURSION_LIMIT = int(MODEL_CALLS_PER_STAGE * SUPERSTEPS_PER_MODEL_CALL)"
-        in source
-    )
+    assert fresh.INNER_AGENT_RECURSION_LIMIT == int((MODEL_CALLS_PER_STAGE + 10) * fresh.SUPERSTEPS_PER_MODEL_CALL)

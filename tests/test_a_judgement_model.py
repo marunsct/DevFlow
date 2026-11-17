@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from app.models.roles import build_judgement_model, judgement_environment
+from test_graph_routing import agents  # noqa: F401 - `agents` is a fixture
 
 BASE = {
     "LLM_PROVIDER": "local",
@@ -69,23 +70,107 @@ def test_a_configured_model_is_built_from_its_own_settings(monkeypatch) -> None:
     assert seen[0].model_name == "big-model"
 
 
-def test_the_judging_stages_run_on_it() -> None:
-    import inspect
+def _on_two_models(monkeypatch):
+    """A graph on a build model and a distinct judgement model, recording which model each agent was built with."""
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.graph import workflow
+    from app.graph.checkpointing import build_serializer
+
+    build = FakeListChatModel(responses=["unused"], name="build")
+    judge = FakeListChatModel(responses=["unused"], name="judge")
+    monkeypatch.setattr("app.models.roles.build_judgement_model", lambda model, *a, **k: judge)
+    seen: list[tuple[str, str]] = []
+
+    def recording(factory_name, role_of):
+        original = getattr(workflow, factory_name)
+
+        def build_agent(*args, **kwargs):
+            seen.append((role_of(args, kwargs), getattr(kwargs.get("model"), "name", "?")))
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(workflow, factory_name, build_agent)
+
+    recording("create_specialist_agent", lambda a, k: f"specialist_{a[0]}")
+    for factory, role in (
+        ("create_principal_architect_agent", "principal_architect"),
+        ("create_architecture_reviewer_agent", "architecture_review"),
+        ("create_security_reviewer_agent", "security_review"),
+        ("create_milestone_reviewer_agent", "milestone_review"),
+    ):
+        recording(factory, lambda a, k, role=role: role)
+    return workflow.build_workflow_graph(model=build, checkpointer=MemorySaver(serde=build_serializer())), seen
+
+
+def test_the_judging_stages_run_on_it(agents, monkeypatch, tmp_path) -> None:
+    """The architect, the reviews and the test rounds run on the judgement model; a work order on the build model.
+
+    The fixes run on the build model until they have failed, then on this one: see `test_two_model_tiers`.
+    """
+    from test_graph_routing import (
+        _approved_review, _document, _milestone, _milestone_review, _repository, _script_through_architecture,
+        _security_review, _specialist, _sprint_plan, responds_with,
+    )
 
     from app.graph import workflow
 
-    source = inspect.getsource(workflow.build_workflow_graph)
-    for factory in (
-        "create_principal_architect_agent",
-        "create_architecture_reviewer_agent",
-        "create_security_reviewer_agent",
-        "create_milestone_reviewer_agent",
-    ):
-        assert f"{factory}(model=judgement_model" in source, factory
-    # The test rounds. The fixes run on the build model until they have
-    # failed, then on this one: see `test_two_model_tiers`.
-    assert '"testing", model=judgement_model' in source
-    assert "defect.owner, model=_the_build_model(" in source
+    graph, seen = _on_two_models(monkeypatch)
+    _script_through_architecture(agents, _approved_review())
+    agents.script("scrum_master", [responds_with(_sprint_plan())])
+    agents.script("technical_lead", [responds_with(_milestone("backend"))])
+    agents.script("specialist_backend", [responds_with(_specialist())])
+    agents.script("specialist_testing", [responds_with(_specialist())])
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
+
+    state = workflow.start_workflow(graph, _document(), _repository(tmp_path), "run-judging-stages")
+
+    assert state["stage"] == "complete", state.get("error")
+    # A sprint whose changes no conversation wrote has no code to review for security: asked of its node directly.
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from app.agents.specialists import SpecialistOutput
+
+    with patch("app.graph.workflow._in_parallel_mode", return_value=False), \
+         patch("app.graph.workflow._run_gated_agent", return_value={"stage": "security_review"}):
+        graph.nodes["security_review"].bound.invoke(
+            {"repository": SimpleNamespace(root_path=str(tmp_path)),
+             "specialist_outputs": {"specialist_backend_0": SpecialistOutput(changed_files=["app/server.py"])}},
+            {"configurable": {"thread_id": "t", "run_id": "r"}})
+    for judging in ("principal_architect", "architecture_review", "security_review", "milestone_review",
+                    "specialist_testing"):
+        assert (judging, "judge") in seen and (judging, "build") not in seen, judging
+    assert ("specialist_backend", "build") in seen, "the work order is built on the build model"
+
+
+def test_a_fix_in_a_batch_runs_on_the_build_model_until_it_has_failed(monkeypatch, tmp_path) -> None:
+    """A batch's fixer is chosen as a fix alone is: the build model, and the judgement model once its fixes failed."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
+
+    from app.models.roles import escalate_after
+    from app.sprint import Defect, RemediationCycle
+
+    graph, seen = _on_two_models(monkeypatch)
+
+    def the_fixer_s_model(fix_attempts: int) -> str:
+        seen.clear()
+        defect = Defect(description="The count is wrong", severity="major", reproduction_steps="r",
+                        expected_behavior="e", actual_behavior="a", owner="backend", fix_attempts=fix_attempts)
+        state = {"__fix_index": 0, "remediation": RemediationCycle(sprint_goal="g", defects=[defect]),
+                 "test_round": 1, "repository": SimpleNamespace(root_path=str(tmp_path))}
+        with patch("app.graph.workflow.build_defect_fix_request", return_value={"messages": [{"role": "user", "content": ""}]}), \
+             patch("app.graph.workflow._what_the_last_failure_printed", return_value=""), \
+             patch("app.graph.workflow._run_gated_agent", return_value={"__fix_result__": MagicMock()}):
+            graph.nodes["defect_fix_worker"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+        [(role, model)] = seen
+        assert role == "specialist_backend"
+        return model
+
+    assert the_fixer_s_model(0) == "build"
+    assert the_fixer_s_model(escalate_after()) == "judge"
 
 
 @pytest.fixture

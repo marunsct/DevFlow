@@ -10,36 +10,73 @@ to fix.
 
 from __future__ import annotations
 
-import inspect
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from app.graph import workflow
+from langgraph.checkpoint.memory import MemorySaver
+
+from app.agents.specialists import SpecialistOutput
+from app.graph import end_of_attempt, workflow
+from app.sprint import RemediationCycle
 
 
-def _replan_source() -> str:
-    source = inspect.getsource(workflow)
-    start = source.index("def _replan_or_escalate(")
-    return source[start:source.index("def defect_remediation_node(", start)]
+def _a_round_that_spends_the_last_attempt(tmp_path, **counters) -> dict:
+    """The test round's node, its round failing on the attempt that exhausts the sprint's remediation."""
+    milestone = SimpleNamespace(selected_sprint_goal="Count words", milestone_scope=[], delegated_tasks=[])
+    cycle = RemediationCycle(sprint_goal="Count words", attempt=2, max_attempts=3)
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)), "milestone_plan": milestone, "test_round": 3,
+        "specialist_outputs": {}, "review_defects": [], "current_sprint_index": 0, "remediation": cycle,
+        "sprint_plan": SimpleNamespace(sprints=["s1", "s2"]), **counters,
+    }
+    failing = workflow._the_unit_tests_fail(milestone, "AssertionError: 2 != 3")
+    with patch("app.graph.acceptance_nodes.acceptance_for_round", return_value=("", [])), \
+         patch("app.graph.acceptance_nodes.reopen_the_suite_for", return_value=None), \
+         patch("app.graph.acceptance_nodes.beyond_repair", return_value=[]), \
+         patch("app.graph.acceptance_nodes._failing_due", return_value=(["AC-1"], "npx playwright test")), \
+         patch("app.graph.workflow._run_unit_tests_procedurally", return_value=(False, "AssertionError")), \
+         patch("app.graph.acceptance_nodes.suite.is_locked", return_value=True), \
+         patch("app.graph.acceptance_nodes.suite.last_result", return_value={"ran": True, "passed": 1, "failed": 1}), \
+         patch("app.agents.specialists.what_the_files_already_prove", return_value=[]), \
+         patch("app.graph.acceptance_nodes.interface_defects", return_value=[]), \
+         patch("app.graph.acceptance_nodes.failing_due_defects", return_value=[]), \
+         patch.object(end_of_attempt, "decide", return_value=end_of_attempt.Decision(end_of_attempt.REPLAN)), \
+         patch("app.graph.workflow._run_gated_agent",
+               return_value={"__test_result__": SpecialistOutput(changed_files=[], defects=[failing])}):
+        graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        return graph.nodes["test_and_triage"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
 
 
-def test_a_replan_is_counted_on_its_own_counter() -> None:
-    body = _replan_source()
+def test_a_replan_is_counted_on_its_own_counter(tmp_path) -> None:
+    update = _a_round_that_spends_the_last_attempt(tmp_path, milestone_revision_count=2, sprint_replan_count=0)
 
-    assert 'state.get("sprint_replan_count", 0) + 1' in body
-    assert "sprint_replan_count=revision_count" in body
+    assert update["stage"] == "technical_lead"
+    assert update["sprint_replan_count"] == 1
     # The review's counter is not written on this path at all.
-    assert "milestone_revision_count=" not in body
+    assert "milestone_revision_count" not in update
 
 
-def test_the_replan_is_still_bounded() -> None:
-    assert "if revision_count > MAX_MILESTONE_REVISIONS:" in _replan_source()
+def test_the_replan_is_still_bounded(tmp_path) -> None:
+    replanned = _a_round_that_spends_the_last_attempt(
+        tmp_path, sprint_replan_count=workflow.MAX_MILESTONE_REVISIONS - 1)
+    assert replanned["stage"] == "technical_lead"
+
+    update = _a_round_that_spends_the_last_attempt(tmp_path, sprint_replan_count=workflow.MAX_MILESTONE_REVISIONS)
+    assert update["stage"] == "escalation" and "re-planned 3 times" in update["escalation"]["error"]
 
 
-def test_both_counters_start_again_with_the_next_sprint() -> None:
-    source = inspect.getsource(workflow)
-    advance = source[source.index('"revision_comments": [],'):][:200]
+def test_both_counters_start_again_with_the_next_sprint(tmp_path) -> None:
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)), "current_sprint_index": 0,
+        "sprint_plan": SimpleNamespace(sprints=["s1", "s2"]), "milestone_revision_count": 2, "sprint_replan_count": 1,
+        "milestone_plan": SimpleNamespace(selected_sprint_goal="Count words", milestone_scope=[], delegated_tasks=[]),
+    }
+    graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
 
-    assert '"milestone_revision_count": 0' in advance
-    assert '"sprint_replan_count": 0' in advance
+    update = graph.nodes["sprint_advance"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+
+    assert update["current_sprint_index"] == 1
+    assert update["milestone_revision_count"] == 0 and update["sprint_replan_count"] == 0
     assert workflow._REWIND_COUNTER_RESETS["milestone_review"] == {
         "milestone_revision_count": 0, "sprint_replan_count": 0,
     }

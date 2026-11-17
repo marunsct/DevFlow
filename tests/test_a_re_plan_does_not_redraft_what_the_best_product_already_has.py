@@ -87,13 +87,40 @@ def test_a_kept_file_is_not_drafted_and_its_work_order_counts_as_done(tmp_path, 
     assert any("left as the best attempt" in d for d in done[0].decisions)
 
 
-def test_the_re_plan_s_redraft_asks_which_files_to_keep():
-    import inspect
+def test_the_re_plan_s_redraft_asks_which_files_to_keep(product, monkeypatch):
+    """The build step after a re-plan hands the drafting the files the best product already has, read with its
+    re-plan count (once checked on the source)."""
+    from unittest.mock import patch
 
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app import delivery
     from app.graph import workflow
 
-    assert "files_the_best_attempt_already_has(" in inspect.getsource(workflow)
-    assert "kept=kept" in inspect.getsource(workflow)
+    (product / "src" / "store.ts").write_text("export const store = 2;\n")  # changed since the best
+    monkeypatch.setattr(delivery, "fast", lambda environment=None: True)
+    monkeypatch.setattr(workflow, "_the_run_approves_its_own_writes", lambda run_id: True)
+    tasks = [SimpleNamespace(files=["src/app.ts", "src/store.ts"], specialist_role="backend")]
+    state = {
+        "repository": SimpleNamespace(root_path=str(product)),
+        "milestone_plan": SimpleNamespace(delegated_tasks=tasks),
+        "technical_specification": object(),
+        "specialist_outputs": {},
+        "sprint_replan_count": 1,
+    }
+    asked = []
+
+    def draft(tasks, *args, kept=None, **kwargs):
+        asked.append(kept)
+        return {}
+
+    with patch.object(drafting, "with_tests_the_specification_plans", lambda tasks, spec: (tasks, [])), \
+         patch.object(drafting, "in_work_orders_of_at_most", lambda tasks: (tasks, 0)), \
+         patch.object(drafting, "draft_work_orders", draft):
+        graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(product))
+        graph.nodes["specialist_dispatch"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+
+    assert asked == [{"src/app.ts"}]
 
 
 def test_from_the_second_re_plan_a_weak_best_keeps_its_files_too(product):

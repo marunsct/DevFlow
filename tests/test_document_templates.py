@@ -212,6 +212,10 @@ def test_the_sprint_record_keeps_every_line_the_sprint_panel_parses():
 
 
 def test_the_workflow_writes_no_document_without_a_template():
-    """`render_artifact` stays as a utility, but nothing in the workflow uses it."""
-    source = Path("src/app/graph/workflow.py").read_text(encoding="utf-8")
-    assert "render_artifact(" not in source
+    """`render_artifact` stays as a utility, but nothing in the workflow uses it.
+
+    Read across the whole graph package, not one file, so it holds wherever the workflow's code is moved.
+    """
+    calling = [path.as_posix() for path in sorted(Path("src/app/graph").rglob("*.py"))
+               if "render_artifact(" in path.read_text(encoding="utf-8")]
+    assert calling == []

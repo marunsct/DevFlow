@@ -88,19 +88,57 @@ def test_a_missing_workspace_is_silent(tmp_path) -> None:
 # --- where it is asked ----------------------------------------------------
 
 
-def test_it_is_asked_only_on_the_last_sprint() -> None:
-    """Deferring a requirement out of a middle milestone is what a sprint plan
-    is for. Asking there would turn every plan into a finding."""
-    import inspect
+def _an_accepted_sprint(tmp_path: Path, *, sprint_index: int, sprints: int = 2) -> tuple[dict, list]:
+    """The milestone review's node accepting sprint `sprint_index` of `sprints`, on a product without edit.
 
+    Returns (the node's update, the states the brief check was asked with).
+    """
+    from unittest.mock import MagicMock, patch
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.agents.milestone_reviewer import MilestoneReviewOutput
     from app.graph import workflow
 
-    source = inspect.getsource(workflow)
-    call = source[source.index("unbuilt = _a_brief_requirement_the_run_never_built") :]
-    before = source[: source.index("unbuilt = _a_brief_requirement_the_run_never_built")]
+    review = MilestoneReviewOutput.model_validate({
+        "status": "accepted", "acceptance_evidence": "every test passes", "documentation_reviewed": True,
+        "tests_reviewed": True, "findings": [],
+    })
+    state = {
+        **_state(tmp_path, WITHOUT_EDIT),
+        "milestone_plan": types.SimpleNamespace(selected_sprint_goal="Edit", milestone_scope=[], delegated_tasks=[]),
+        "sprint_plan": types.SimpleNamespace(sprints=[f"sprint {n}" for n in range(sprints)]),
+        "current_sprint_index": sprint_index, "milestone_revision_count": 0, "specialist_outputs": {},
+        "decisions": [],
+    }
+    asked = []
+    check = workflow._a_brief_requirement_the_run_never_built
 
-    assert before.rstrip().endswith("if not has_more_sprints:")
-    assert "stage=\"technical_lead\"" in call[:900]
+    def spy(state):
+        asked.append(state)
+        return check(state)
+
+    with patch("app.graph.workflow.create_milestone_reviewer_agent", return_value=MagicMock()), \
+         patch("app.graph.workflow.build_milestone_review_request", return_value={"messages": [{"role": "user", "content": ""}]}), \
+         patch("app.graph.acceptance_nodes.acceptance_text_for", return_value=""), \
+         patch("app.sprint.record.definition_of_done_gaps", return_value=[]), \
+         patch("app.graph.workflow._a_brief_requirement_the_run_never_built", side_effect=spy), \
+         patch("app.graph.workflow._run_gated_agent", return_value={"__milestone_review__": review}):
+        graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        update = graph.nodes["milestone_review"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
+    return update, asked
+
+
+def test_it_is_asked_only_on_the_last_sprint(tmp_path) -> None:
+    """Deferring a requirement out of a middle milestone is what a sprint plan
+    is for. Asking there would turn every plan into a finding."""
+    update, asked = _an_accepted_sprint(tmp_path, sprint_index=0)
+    assert asked == [] and update.get("stage") != "technical_lead"
+
+    update, asked = _an_accepted_sprint(tmp_path, sprint_index=1)
+    assert len(asked) == 1
+    assert update["stage"] == "technical_lead"
+    assert "edit" in update["revision_comments"][-1].lower()
 
 
 def test_it_sends_the_work_back_before_it_gives_up() -> None:

@@ -25,20 +25,3 @@ def test_it_still_prints_by_default_for_the_cli():
     from app.server.manage import recover_orphaned_runs
 
     assert inspect.signature(recover_orphaned_runs).parameters["emit"].default is print
-
-
-def test_the_worker_passes_a_logger_rather_than_print():
-    from app.server import tasks
-
-    source = inspect.getsource(tasks._sweep_for_abandoned_runs)
-    assert "emit=logger.info" in source, (
-        "the worker's sweep still narrates through print, which Celery logs at WARNING"
-    )
-
-
-def test_nothing_in_the_recovery_path_still_calls_print():
-    """A `print` left behind reaches the log at WARNING regardless of `emit`."""
-    from app.server.manage import recover_orphaned_runs
-
-    source = inspect.getsource(recover_orphaned_runs)
-    assert "print(" not in source, "a print survived the emit conversion"

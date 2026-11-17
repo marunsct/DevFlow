@@ -6,7 +6,6 @@ and reply - and the delete endpoint used to leave every one of them behind.
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 import pytest
@@ -90,10 +89,36 @@ def test_a_store_that_fails_does_not_stop_the_others(data, monkeypatch) -> None:
     assert not mine["transcript"].exists() and mine["product"].exists()
 
 
-def test_the_delete_endpoint_purges_them() -> None:
-    from app.server import runs
+def test_the_delete_endpoint_purges_them(data, monkeypatch) -> None:
+    """Through the real router; the signed-in user, the run store (no database here), the event history and the audit
+    trail stood in for."""
+    from types import SimpleNamespace
 
-    source = inspect.getsource(runs)
-    start = source.index("async def delete_run")
-    body = source[start:source.index("runner.run_store.delete(run_id)", start)]
-    assert "purge_run_records(run_id, record.repo_root, unshared)" in body
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.server import runs
+    from app.server.auth import require_operator
+
+    mine = _leave_records(data, RUN)
+    record = SimpleNamespace(run_id=RUN, tenant_id="t", status="completed", repo_root=str(mine["workspace"]),
+                             document_paths=[])
+    deleted = []
+    runner = SimpleNamespace(
+        run_store=SimpleNamespace(load=lambda run_id: record, document_in_use=lambda path, exclude_run_id=None: False,
+                                  delete=deleted.append),
+        discard_run_threads=lambda record: None)
+
+    async def purge(run_id):
+        return None
+
+    monkeypatch.setattr(runs, "record_audit", lambda **kwargs: None)
+    app = FastAPI()
+    app.include_router(runs.create_runs_router(runner, SimpleNamespace(purge=purge), str(data), str(data)))
+    app.dependency_overrides[require_operator] = lambda: SimpleNamespace(username="op", role="operator", tenant_id="t")
+
+    answer = TestClient(app).delete(f"/api/runs/{RUN}")
+
+    assert answer.status_code == 200 and deleted == [RUN]
+    for name in ("transcript", "ledger", "journal", "product"):
+        assert not mine[name].exists(), name

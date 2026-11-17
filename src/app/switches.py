@@ -169,7 +169,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # Fewer calls on mutation findings: time, not what the run proves.
     "Efficiency": ("EQUIVALENT_MUTANTS_REMEMBERED", "MUTANT_CHECK_IN_THE_FIX_STAGE", "REVIEWS_WITHOUT_REASONING",
                    "HARNESS_FINDINGS_RECHECKED", "NEAR_GREEN_REPLANNED_ONCE", "STABLE_MEMORY_ORDER",
-                   "NEAR_GREEN_REPAIR_TO_ROUND", "FIX_STAGES_THAT_CLOSE_NOTHING"),
+                   "NEAR_GREEN_REPAIR_TO_ROUND", "FIX_STAGES_THAT_CLOSE_NOTHING", "ONE_DESIGN_REVIEW",
+                   "SPRINT_TIME_BUDGET"),
     # What a stack's setup stage may write (docs/measuring.md M6): measured off and on before it is kept.
     "Setup scope": ("SETUP_SCOPE_GUARD",),
     # Which review findings may send a sprint back (docs/measuring.md M7).
@@ -205,6 +206,8 @@ EXPERIMENTS_ON: dict[str, str] = {
     "FIX_STAGES_THAT_CLOSE_NOTHING": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "CONCURRENT_WRITE_PROBE": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "WRONG_SHAPE_BODY_PROBE": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "ONE_DESIGN_REVIEW": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "SPRINT_TIME_BUDGET": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
 }
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}
 

@@ -72,6 +72,8 @@ SWITCHES: dict[str, str] = {
     "SALVAGED_PLANNING_THINKING_OFF": "app.agents.settled_answer:salvaged_planning_switch",
     "HARNESS_FINDINGS_RECHECKED": "app.graph.workflow:harness_findings_rechecked",
     "NEAR_GREEN_REPLANNED_ONCE": "app.graph.near_green_once",
+    "ONE_DESIGN_REVIEW": "app.graph.one_design_review",
+    "SPRINT_TIME_BUDGET": "app.graph.sprint_time_budget",
     "CONCURRENT_WRITE_PROBE": "app.acceptance.concurrent_write_probe",
     "WRONG_SHAPE_BODY_PROBE": "app.acceptance.wrong_shape_body_probe",
     "STABLE_MEMORY_ORDER": "app.agents.stable_memory_order",

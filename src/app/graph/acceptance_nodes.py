@@ -497,6 +497,33 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
 
 # --- acceptance author ---------------------------------------------------------
 
+def blockers_of_its_batch(blockers: list, group: list) -> list:
+    """A batch writer's blockers about its own batch's criteria only; one naming none of them is kept as it is.
+
+    Measured on one run: the first batch's writer listed "Part 2 and Part 3 will cover AC-7 ... AC-18" as a blocker,
+    the harness read it as twelve criteria no test can check, and deferred them; the run built six of eighteen.
+    """
+    from app.acceptance.junit import tags_in
+
+    own = {str(getattr(criterion, "id", "")) for criterion in group}
+    kept: list = []
+    for line in blockers:
+        text = str(line)
+        named = [tag for tag in tags_in(text) if tag.startswith("AC-")]
+        if not named:
+            kept.append(line)
+            continue
+        mine = [tag for tag in dict.fromkeys(named) if tag in own]
+        if not mine:
+            continue
+        if len(mine) == len(set(named)):
+            kept.append(line)
+            continue
+        reason = text.split(":", 1)[1].strip() if ":" in text else ""
+        kept.append(f"{', '.join(mine)}: {reason}" if reason else ", ".join(mine))
+    return kept
+
+
 def _written_in_batches(state, config, agent, root, criteria, batches, round_, request_for):
     """The suite written a batch of criteria at a time; (the last update, every blocker), or (the pause, None).
 
@@ -518,7 +545,7 @@ def _written_in_batches(state, config, agent, root, criteria, batches, round_, r
         )
         if "__acceptance_author__" not in done:
             return done
-        blockers.extend(getattr(done.pop("__acceptance_author__"), "blockers", None) or [])
+        blockers.extend(blockers_of_its_batch(getattr(done.pop("__acceptance_author__"), "blockers", None) or [], group))
         update = done
         return None
 

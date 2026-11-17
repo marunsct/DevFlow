@@ -45,3 +45,18 @@ def test_a_change_only_the_unit_tests_catch_counts_in_the_score_with_them(tmp_pa
     assert result["score"] == 0.0, "the suite noticed neither change"
     assert result["caught_with_unit_tests"] == 1 and result["score_with_unit_tests"] == 0.5
     assert json.loads((tmp_path / "out.json").read_text())["score_with_unit_tests"] == 0.5
+
+
+def test_the_probe_runs_the_suite_on_a_copy_beside_the_workspace_and_removes_it(tmp_path, monkeypatch):
+    """In container mode the suite runs in a sibling container that mounts only the data volume the workspace is on."""
+    mutate = _mutate_module()
+    (tmp_path / "ws").mkdir()
+    monkeypatch.setattr("app.stacks.contract.the_pack", lambda root: None)
+    monkeypatch.setattr("app.acceptance.suite.location", lambda root: ("",))
+    ran_on = []
+    monkeypatch.setattr("app.acceptance.suite.run", lambda root, save=False: ran_on.append(Path(root)) or _result())
+
+    mutate.mutate(tmp_path / "ws", tmp_path / "out.json", 2)
+
+    assert [root.parent for root in ran_on] == [tmp_path]
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["out.json", "ws"]

@@ -45,11 +45,21 @@ from app.acceptance.mutation import (  # noqa: E402 - run inside the worker, whe
 
 
 def mutate(workspace: Path, out: Path, count: int = 12) -> dict:
+    # Beside the workspace, on the data volume: in container mode the suite runs in a sibling container that can mount
+    # only that volume. Measured: a copy under the worker's /tmp could not be mounted, every container-mode run read
+    # "no test passes on the unchanged product", and its mutation score went unrecorded.
+    copy = workspace.parent / f".mutate-{workspace.name}-{int(time.time())}"
+    shutil.copytree(workspace, copy, symlinks=True)
+    try:
+        return _mutate_the_copy(workspace, copy, out, count)
+    finally:
+        shutil.rmtree(copy, ignore_errors=True)
+
+
+def _mutate_the_copy(workspace: Path, copy: Path, out: Path, count: int) -> dict:
     from app.acceptance import suite
     from app.stacks import contract
 
-    copy = Path(f"/tmp/mutate-work/{workspace.name}-{int(time.time())}")
-    shutil.copytree(workspace, copy, symlinks=True)
     found = contract.the_pack(copy)
     project_name = str(found[1].get("project")) if found else (suite.location(copy) or ("",))[0]
     project = copy / project_name if project_name else copy
@@ -86,7 +96,6 @@ def mutate(workspace: Path, out: Path, count: int = 12) -> dict:
         })
     result.update(scored(result["mutants"]))
     out.write_text(json.dumps(result, indent=2))
-    shutil.rmtree(copy, ignore_errors=True)
     return result
 
 

@@ -925,6 +925,20 @@ def _process_memory(workspace: str | Path | None, argv: list[str] | None = None)
     return max(on_node, need)
 
 
+def _a_network_for(category: str, workspace: str | Path | None) -> str:
+    """The network a command's own container gets: an install's always, any other command's when the project's pack
+    says its toolchain fetches while it builds and tests (`StackPack.fetches_while_building`); none otherwise."""
+    if category in NETWORK_CATEGORIES:
+        return "bridge"
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(workspace)
+    except Exception:  # noqa: BLE001 - then no network, as before
+        return "none"
+    return "bridge" if found and getattr(found[0], "fetches_while_building", False) else "none"
+
+
 #: The data limit a toolchain that runs its tests on Node needs. Measured in the
 #: worker through the sandbox: four Node worker threads would not start under a
 #: 1 or a 2 GB data limit ("Failed to reserve virtual memory for CodeRange", in
@@ -5585,7 +5599,7 @@ class SandboxExecutor:
         docker_cmd = [
             docker, "run", "--rm",
             "--name", container,
-            "--network", "bridge" if category in NETWORK_CATEGORIES else "none",
+            "--network", _a_network_for(category, workspace),
             "--memory", f"{_process_memory(workspace) // 1024**2}m",
             "--memory-swap", f"{_process_memory(workspace) // 1024**2}m",   # equal to --memory disables swap
             "--cpus", CPU_LIMIT,

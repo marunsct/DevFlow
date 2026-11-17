@@ -84,6 +84,8 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
    totals read) deployed into it at 14:51 (bf51313d, container mode kept; a learning run, so mixed versions are fine).
    LF.1020 (a Java unit test mirrors its code's package; no test for a manifest) deployed and the run rewound to its
    `technical_lead` point: every unit test had been written straight under `src/test/`, where Maven compiles nothing.
+   LF.1021 (a toolchain that fetches while building - Maven - has the network in container mode) deployed into it:
+   a changed Spring Boot version left every offline build, the start too, on "Unknown host".
    The WORKER IS IN CONTAINER MODE (COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.sandbox.yml);
    a plain `loop.sh deploy` would undo it.
 2. The language sweep then has one run per language; next, a second run of the families that lost quality tests.

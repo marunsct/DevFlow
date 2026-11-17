@@ -294,6 +294,12 @@ class StackPack:
     #: own: a unit test's path mirrors its code's path below these. Measured on one Java run: the testing work order
     #: put every test straight in `src/test/`, Maven compiles only `src/test/java/`, and no unit test ever ran.
     unit_mirrors: tuple[str, str] | tuple[()] = ()
+    #: Whether this toolchain fetches from its registry while it builds and tests, not only at its install: every
+    #: command of a product on this pack is then given the network when each command has a container of its own
+    #: (`sandbox._a_network_for`), as it has in every other mode. Measured on one Java run: a fixer changed the
+    #: Spring Boot version, the reinstall stopped at a compile error before Maven reached its test plugin, and every
+    #: later offline build and test failed on "Unknown host" - the start too, so no acceptance test reached the product.
+    fetches_while_building: bool = False
 
 
     @property

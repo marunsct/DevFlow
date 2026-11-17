@@ -152,6 +152,9 @@ PACK = service_pack(
     unit_report="target/surefire-reports",
     unit_dir="src/test",
     unit_mirrors=("src/main/java", "src/test/java"),
+    # Maven resolves a plugin's dependencies when a build first reaches it, so a changed version is fetched by the
+    # build or test that needs it, not by an install a compile error stopped early.
+    fetches_while_building=True,
     unit_pattern="*Test.java",
     start="mvn -q -B -DskipTests package && exec java -jar target/app.jar",
     server_timeout_ms=300_000,

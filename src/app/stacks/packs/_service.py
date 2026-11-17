@@ -230,6 +230,7 @@ def service_pack(
     kept_lines: tuple[tuple[str, str, str, str], ...] = (),
     warm_up: tuple[tuple[str, ...], ...] = (),
     unit_mirrors: tuple[str, str] | tuple[()] = (),
+    fetches_while_building: bool = False,
 ) -> StackPack:
     """A pack for an HTTP service in its own language, accepted through Playwright's `request` fixture."""
     # The brief names the service by its `start.sh`, and the suite runs that script when the project has one
@@ -291,4 +292,5 @@ def service_pack(
         kept_lines=kept_lines,
         warm_up=warm_up,
         unit_mirrors=unit_mirrors,
+        fetches_while_building=fetches_while_building,
     )

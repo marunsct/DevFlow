@@ -3453,6 +3453,10 @@ def _container_environment(
     environment = {key: os.environ[key] for key in _CONTAINER_PASSTHROUGH if os.environ.get(key)}
     environment["HOME"] = _container_path(os.path.join(workspace, ".agent-home"), workspace) or CONTAINER_WORKSPACE
     environment["TMPDIR"] = _container_path(temporary, workspace) or CONTAINER_WORKSPACE
+    # A JVM reads its own temporary directory, not TMPDIR, and so wrote to the container's /tmp, which is mounted
+    # `noexec`: a native library a Java dependency unpacks there could not be loaded. Measured on a Java run: SQLite's
+    # driver failed `NativeDB._open_utf8` at start, and the product never started.
+    environment["JAVA_TOOL_OPTIONS"] = f"-Djava.io.tmpdir={environment['TMPDIR']}"
     environment.update(TOOLCHAIN_ENVIRONMENT)
     environment.update(_concurrency_environment())
     environment["ACCEPTANCE_PORT"] = str(_a_free_port())

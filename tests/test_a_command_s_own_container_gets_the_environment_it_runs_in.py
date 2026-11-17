@@ -254,3 +254,14 @@ def test_a_virtualenv_with_a_working_interpreter_is_found_either_way(tmp_path, f
     bin_dir.mkdir(parents=True)
     (bin_dir / "python").write_text("")
     assert sandbox._the_project_virtualenv(str(tmp_path), follow_links=follow_links) == str(bin_dir)
+
+
+def test_a_jvm_s_temporary_directory_is_the_workspace_s_not_the_noexec_tmp(monkeypatch, tmp_path):
+    """Measured on a Java run: SQLite's driver unpacked its native library into /tmp, mounted `noexec`, and failed to
+    load it (`NativeDB._open_utf8`); the product never started."""
+    docker_cmd, _ = _run_in_its_container(monkeypatch, tmp_path, ("java", "-jar", "target/app.jar"))
+
+    environment = _environment_of(docker_cmd)
+
+    assert environment["JAVA_TOOL_OPTIONS"] == f"-Djava.io.tmpdir={environment['TMPDIR']}"
+    assert not environment["TMPDIR"].startswith("/tmp")

@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from app.graph.workflow import _a_brief_requirement_the_run_never_built
+from workflow_nodes import workflow_source
 
 BRIEF = """# Product Brief
 
@@ -144,11 +145,7 @@ def test_it_is_asked_only_on_the_last_sprint(tmp_path) -> None:
 def test_it_sends_the_work_back_before_it_gives_up() -> None:
     """Failing a run that built most of the product would be worse than
     building the rest of it. The existing revision ceiling bounds this."""
-    import inspect
-
-    from app.graph import workflow
-
-    source = inspect.getsource(workflow)
+    source = workflow_source()
     block = source[source.index("unbuilt = _a_brief_requirement_the_run_never_built") :][:1400]
 
     assert "MAX_MILESTONE_REVISIONS" in block

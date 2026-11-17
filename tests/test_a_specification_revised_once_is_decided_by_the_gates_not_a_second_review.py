@@ -6,11 +6,11 @@ decide: nothing open approves it, anything open goes to the design escalation as
 """
 from __future__ import annotations
 
-import inspect
 import re
 from types import SimpleNamespace
 
 from app.graph import one_design_review, workflow
+from workflow_nodes import workflow_source
 
 BRIEF = "# Notes\n\n- Notes with tags.\n"
 
@@ -72,7 +72,7 @@ def test_off_or_before_any_revision_the_review_runs_as_before(monkeypatch, tmp_p
 
 
 def test_the_node_asks_the_gates_before_the_reviewer():
-    source = inspect.getsource(workflow)
+    source = workflow_source()
     gate = source.index("once = _decided_after_one_revision(state, spec_text)")
     reviewer = source.index("agent = create_architecture_reviewer_agent(", gate - 2000)
     assert gate < reviewer

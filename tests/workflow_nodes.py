@@ -18,18 +18,29 @@ from langgraph.checkpoint.memory import MemorySaver
 CONFIG = {"configurable": {"thread_id": "t", "run_id": "r"}}
 
 
-def workflow_source() -> str:
-    """The workflow's source: `app.graph.workflow` and every module of `app.graph.nodes`, where its nodes live.
+def workflow_source_files() -> list[Any]:
+    """The workflow's source files: `app.graph.workflow`, `app.graph.context` and every module of `app.graph.nodes`.
 
-    For the few tests that pin wording rather than behaviour; one place to read
-    it, so a node moving between these modules keeps its pins."""
+    For a test that parses the source (`ast`), which takes one module at a time."""
     from pathlib import Path
 
+    import app.graph.context
     import app.graph.nodes
     import app.graph.workflow
 
-    files = [Path(app.graph.workflow.__file__), *sorted(Path(app.graph.nodes.__file__).parent.glob("*.py"))]
-    return "\n".join(path.read_text(encoding="utf-8") for path in files)
+    return [
+        Path(app.graph.workflow.__file__), Path(app.graph.context.__file__),
+        *sorted(Path(app.graph.nodes.__file__).parent.glob("*.py")),
+    ]
+
+
+def workflow_source() -> str:
+    """The workflow's source: `app.graph.workflow`, `app.graph.context` and every module of `app.graph.nodes`, where
+    its nodes live.
+
+    For the few tests that pin wording rather than behaviour; one place to read
+    it, so a node moving between these modules keeps its pins."""
+    return "\n".join(path.read_text(encoding="utf-8") for path in workflow_source_files())
 
 
 def run_node(name: str, state: dict[str, Any], root: str, patches: dict[str, Any] | None = None) -> dict[str, Any]:

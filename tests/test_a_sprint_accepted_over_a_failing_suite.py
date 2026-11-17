@@ -46,6 +46,7 @@ from app.graph.workflow import (
     _a_red_suite_the_review_called_green,
     _the_suite_the_ledger_measured,
 )
+from workflow_nodes import workflow_source
 
 
 class _Repository:
@@ -245,11 +246,8 @@ class TestItIsWiredIntoTheReview:
         Without the bound this would send every review back for ever, which is
         worse than the acceptance it replaces because the run never finishes.
         """
-        import inspect
 
-        from app.graph import workflow
-
-        source = inspect.getsource(workflow)
+        source = workflow_source()
         start = source.index("red = _a_red_suite_the_review_called_green(state)")
         block = source[start : start + 1800]
 

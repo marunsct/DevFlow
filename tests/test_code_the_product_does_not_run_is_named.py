@@ -13,6 +13,7 @@ import json
 from types import SimpleNamespace
 
 from app.stacks.scaffold import code_the_product_does_not_run
+from workflow_nodes import workflow_source
 
 PROJECT = "board"
 
@@ -76,7 +77,7 @@ def test_every_fixer_and_the_release_are_told(tmp_path, monkeypatch) -> None:
 
     root = _workspace(tmp_path, {**SERVED, "frontend/src/App.jsx": "x", "frontend/src/api/client.jsx": "x"})
     assert "Code the product does not run" in workflow._the_unserved_code_section(str(root))
-    assert "_the_unserved_code_section(state[\"repository\"].root_path)" in inspect.getsource(workflow)
+    assert "_the_unserved_code_section(state[\"repository\"].root_path)" in workflow_source()
     gaps = delivery._code_the_product_does_not_run(str(root))
     assert len(gaps) == 1 and gaps[0].startswith("Code the product does not run:")
     assert "gaps.extend(_code_the_product_does_not_run(root))" in inspect.getsource(delivery.release)

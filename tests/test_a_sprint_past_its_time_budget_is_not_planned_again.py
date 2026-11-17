@@ -6,14 +6,14 @@ percentile pace); an attempt that ends past it and would be planned again stops 
 """
 from __future__ import annotations
 
-import inspect
 import json
 import re
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from app.acceptance import suite
-from app.graph import end_of_attempt, sprint_time_budget, workflow
+from app.graph import end_of_attempt, sprint_time_budget
+from workflow_nodes import workflow_source
 
 T0 = datetime(2026, 11, 1, 0, 0, tzinfo=timezone.utc)
 
@@ -82,7 +82,7 @@ def test_measured_from_the_sprint_s_first_plan_after_the_last_sprint_ended(tmp_p
 
 
 def test_the_workflow_passes_the_measured_budget():
-    source = inspect.getsource(workflow)
+    source = workflow_source()
     assert "budget=sprint_time_budget.measure(state))" in source
 
 

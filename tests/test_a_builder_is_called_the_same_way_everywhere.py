@@ -23,8 +23,6 @@ from __future__ import annotations
 
 import ast
 import collections
-import inspect
-import pathlib
 
 import pytest
 
@@ -35,20 +33,21 @@ _ALLOWED_TO_DIFFER: dict[str, str] = {}
 
 
 def _call_sites():
-    source = pathlib.Path(
-        inspect.getsourcefile(__import__("app.graph.workflow", fromlist=["x"]))
-    ).read_text()
-    tree = ast.parse(source)
+    """Every `build_*` call in the workflow's modules (`workflow_nodes.workflow_source_files`), by builder."""
+    from workflow_nodes import workflow_source_files
+
     sites = collections.defaultdict(list)
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        name = getattr(node.func, "id", "")
-        if not name.startswith("build_"):
-            continue
-        sites[name].append(
-            (node.lineno, tuple(sorted(k.arg for k in node.keywords if k.arg)))
-        )
+    for path in workflow_source_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "id", "")
+            if not name.startswith("build_"):
+                continue
+            sites[name].append(
+                (f"{path.name}:{node.lineno}", tuple(sorted(k.arg for k in node.keywords if k.arg)))
+            )
     return sites
 
 

@@ -21,6 +21,7 @@ from app.tools.version_control import (
     is_repository,
     last_good_commit,
 )
+from workflow_nodes import workflow_source
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -166,11 +167,7 @@ def test_the_repository_is_created_after_seeding_not_before() -> None:
 def test_an_accepted_milestone_commits_from_the_workflow() -> None:
     """The commit must happen where acceptance is decided, not in a helper
     someone has to remember to call."""
-    import inspect
-
-    from app.graph import workflow
-
-    source = inspect.getsource(workflow)
+    source = workflow_source()
 
     assert "commit_milestone(" in source
     assert "Could not record a commit for this sprint" in source

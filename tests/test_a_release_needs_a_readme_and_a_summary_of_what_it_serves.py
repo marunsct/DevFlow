@@ -6,7 +6,6 @@ failing criterion while attempts remain, then recorded as a gap.
 """
 from __future__ import annotations
 
-import inspect
 import os
 import re
 from types import SimpleNamespace
@@ -15,8 +14,9 @@ from unittest import mock
 import pytest
 
 from app.acceptance import interface_contract
-from app.graph import delivery, workflow
+from app.graph import delivery
 from app.stacks import contract, release_docs
+from workflow_nodes import workflow_source
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 ON = {"RELEASE_DOCS_REQUIRED": "on"}
@@ -139,9 +139,9 @@ def test_a_route_with_a_trailing_slash_and_a_project_named_like_a_record_are_rea
 def test_the_lead_is_told_why_the_release_was_held_back():
     """The hold hands on with no milestone plan, so the lead planned afresh and the planning request
     never read the comments: two re-sprints were told nothing."""
-    source = inspect.getsource(workflow)
-    lead = source[source.index("    def technical_lead_node("):]
-    lead = lead[:lead.index("\n    def ", 10)]
+    source = workflow_source()
+    lead = source[source.index("def technical_lead_node("):]
+    lead = lead[:lead.index("\ndef ", 10)]
     assert "Why the release was held back" in lead and 'state.get("release_attempts")' in lead
 
 

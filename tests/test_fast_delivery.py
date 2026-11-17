@@ -337,11 +337,9 @@ def test_a_fast_work_order_of_more_than_three_files_is_split_into_parts():
 
 
 def test_the_fast_build_splits_before_it_drafts():
-    import inspect
+    from workflow_nodes import workflow_source
 
-    from app.graph import workflow
-
-    source = inspect.getsource(workflow)
+    source = workflow_source()
     assert "tasks, split = in_work_orders_of_at_most(tasks)" in source
     assert 'if dropped or split:' in source
 

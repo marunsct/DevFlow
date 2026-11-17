@@ -7,7 +7,6 @@ two entries where there had been nine - and left `deployment` and
 
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +14,7 @@ from pydantic import BaseModel
 
 from app.graph import workflow
 from app.graph.workflow import _with_the_sections_it_dropped
+from workflow_nodes import workflow_source
 
 
 class Spec(BaseModel):
@@ -98,7 +98,7 @@ def test_a_revision_after_review_sends_what_it_changes_and_keeps_the_rest() -> N
 
     assert merged.testing == ["node --test, with a temp DATA_DIR"]
     assert merged.file_plan == ["notes/src/app.ts - routes"] and merged.library_usage == ["hono - new Hono()"]
-    source = inspect.getsource(workflow)
+    source = workflow_source()
     node = source[source.index("def principal_architect_node"):source.index("def architecture_review_node")]
     assert "or required_changes) and previous_specification is not None" in node
     request = build_architecture_revision_request(

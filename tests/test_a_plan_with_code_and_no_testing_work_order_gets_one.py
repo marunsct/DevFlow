@@ -13,6 +13,7 @@ from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
 from app.analysis import work_orders
 from app.analysis.work_orders import readiness_problems, with_a_testing_work_order
 from app.stacks import contract
+from workflow_nodes import workflow_source
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 
@@ -88,9 +89,7 @@ def test_a_work_order_with_nothing_to_test_from_takes_the_sprint_s_criteria() ->
 def test_the_sprint_s_named_test_files_go_to_the_testing_order_the_harness_adds(monkeypatch, tmp_path):
     """Measured on one run: the named test files were given out before the harness added the testing order, nobody
     was given `test_cli.py`, and the plan was sent back for it."""
-    import inspect
 
-    from app.graph import workflow
     from app.analysis.work_orders import with_named_tests_given_to_testing
 
     pack = SimpleNamespace(unit_dir="tests", unit_pattern="test_*.py", unit_test=("pytest",))
@@ -105,6 +104,6 @@ def test_the_sprint_s_named_test_files_go_to_the_testing_order_the_harness_adds(
     after, given = with_named_tests_given_to_testing(added, tmp_path, scope, ["tool/tests/test_cli.py"])
     assert given == ["tool/tests/test_cli.py"] and "tool/tests/test_cli.py" in after.delegated_tasks[-1].files
 
-    source = inspect.getsource(workflow)
+    source = workflow_source()
     added_at = source.index('logger.info("The plan had code and no testing work order; the harness added one")')
     assert "with_named_tests_given_to_testing(" in source[added_at:added_at + 1200]

@@ -4,7 +4,7 @@
 A fix round is every defect_fix stage between two test rounds. When one closes nothing and the product the next round
 measures is the one the round before measured - the same files, `app.acceptance.unstable.fingerprint` - the next fix
 round starts from exactly where the last one did, and spends its stages the same way. So the attempt ends there and
-goes where an exhausted attempt goes (`_replan_or_escalate`: settle, stop or plan again) instead of another round.
+goes where an exhausted attempt goes (`app.graph.nodes.triage._replan_or_escalate`: settle, stop or plan again) instead of another round.
 
 A round is known by its sprint attempt and its number; only two consecutive rounds of one attempt are compared. A test
 round entered again after a pause gives the answer it gave the first time.

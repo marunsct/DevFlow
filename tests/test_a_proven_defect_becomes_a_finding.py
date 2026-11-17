@@ -41,6 +41,7 @@ from app.agents.milestone_reviewer import (
     _files_named_in,
 )
 from app.analysis.integration_checks import problems_that_break_the_product
+from workflow_nodes import workflow_source
 
 
 A_PAGE_MISSING_ITS_STYLESHEET = """<!doctype html>
@@ -257,11 +258,8 @@ class TestWhereTheWorkflowAsks:
         the fix depends on - the proving happens after the retries are spent and
         before the revision count that ends the run is incremented.
         """
-        import inspect
 
-        from app.graph import workflow
-
-        source = inspect.getsource(workflow)
+        source = workflow_source()
         start = source.index("Milestone review still has no structured findings")
         end = source.index(
             'revision_count = state.get("milestone_revision_count", 0) + 1', start

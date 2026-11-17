@@ -8,9 +8,8 @@ where the product started and 2 of 13 passed - while the run page said 2.
 
 from __future__ import annotations
 
-import inspect
-
 from app.graph import workflow
+from workflow_nodes import workflow_source
 
 
 def test_the_measurement_is_counted_from_the_suite_s_last_result(tmp_path, monkeypatch):
@@ -29,6 +28,6 @@ def test_a_suite_that_did_not_run_says_so(tmp_path, monkeypatch):
 
 
 def test_the_round_logs_it_and_names_its_defects_as_defects():
-    source = inspect.getsource(workflow)
+    source = workflow_source()
     assert 'logger.info("test_round_%d: %s", test_round, the_round_s_measurement(' in source
     assert "did not report %d failing acceptance criteria" not in source

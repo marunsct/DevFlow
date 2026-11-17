@@ -7,11 +7,10 @@ times for it - returning the same plan each time - and then started over.
 
 from __future__ import annotations
 
-import inspect
-
 from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
 from app.analysis.work_orders import readiness_problems, with_named_tests_given_to_testing
 from app.graph import workflow
+from workflow_nodes import workflow_source
 
 SCOPE = ("Build the notes service: app.ts and store.ts, proven by boot-failure.test.ts, "
          "concurrency.test.ts and contract.test.ts.")
@@ -94,6 +93,6 @@ def test_the_workflow_gives_them_before_it_checks_the_plan(tmp_path, monkeypatch
 
 def test_an_earlier_plan_dispatched_instead_gets_them_too():
     """One run dispatched an earlier, better plan that had never had them assigned."""
-    source = inspect.getsource(workflow)
+    source = workflow_source()
     earlier = source[source.index("dispatching the earlier plan"):source.index("Milestone plan still not ready after")]
     assert "with_named_tests_given_to_testing(" in earlier

@@ -16,7 +16,7 @@ from langchain_core.messages import ToolMessage
 
 from app.agents import role_agent
 from app.graph import verify_after_write as vaw
-from app.graph import workflow
+from workflow_nodes import workflow_source
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 ON = {"VERIFY_AFTER_WRITE": "on"}
@@ -59,7 +59,7 @@ def test_the_middleware_passes_a_result_through_and_the_fix_stage_and_agents_use
     middleware = vaw.build_middleware()
     request = SimpleNamespace(tool_call={"name": "edit_artifact", "id": "c1"})
     assert middleware.wrap_tool_call(request, lambda r: _written()).content == "Wrote app/main.py (12 lines)."
-    assert "verify_after_write.watching(" in inspect.getsource(workflow)
+    assert "verify_after_write.watching(" in workflow_source()
     assert "_verify_after_write_middleware()" in inspect.getsource(role_agent)
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from app.graph import surrender_to_rewrite as s
+from workflow_nodes import workflow_source
 
 
 def _run(output, rewritten):
@@ -35,9 +36,5 @@ def test_nothing_is_recorded_when_the_stage_changed_files(monkeypatch):
 
 
 def test_the_fix_stage_records_it_with_the_reason():
-    import inspect
-
-    from app.graph import workflow
-
-    source = inspect.getsource(workflow)
+    source = workflow_source()
     assert '"rewrite after surrender"' in source and "why=" in source

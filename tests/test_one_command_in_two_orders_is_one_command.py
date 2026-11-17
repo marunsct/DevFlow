@@ -5,12 +5,12 @@ Measured on two runs of one brief, both false acceptances: `--top N --json` prin
 """
 from __future__ import annotations
 
-import inspect
 import re
 from types import SimpleNamespace
 
 from app.acceptance.interface_contract import commands_that_differ_only_in_order
 from app.graph import workflow
+from workflow_nodes import workflow_source
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 SPEC = (
@@ -37,5 +37,5 @@ def test_the_design_review_is_given_it_once_as_a_major_finding():
     assert finding.severity == "major" and "order of its options" in finding.description
     assert not BANNED.search(finding.description + finding.required_remediation)
     assert workflow._the_same_command_in_another_order({**state, "specification_command_order_checked": True}, SPEC) is None
-    assert 'fired.append("order")' in inspect.getsource(workflow)
+    assert 'fired.append("order")' in workflow_source()
     assert "order" in workflow._THE_HARNESS_S_DESIGN_CHECKS

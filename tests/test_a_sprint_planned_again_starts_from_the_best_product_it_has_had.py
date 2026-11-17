@@ -14,6 +14,7 @@ import pytest
 
 from app.acceptance import suite
 from app.graph import best_attempt
+from workflow_nodes import workflow_source
 
 
 @pytest.fixture(autouse=True)
@@ -146,7 +147,7 @@ def test_a_redraft_that_is_as_good_or_better_is_not_undone(tmp_path, monkeypatch
 
 
 def test_the_round_plans_the_sprint_again_at_once_when_the_best_was_put_back():
-    source = (Path(__file__).resolve().parent.parent / "src" / "app" / "graph" / "workflow.py").read_text()
+    source = workflow_source()
     assert "best_attempt.after_a_redraft(" in source
     assert "the redraft left the product worse than its best; the best was put back" in source
 

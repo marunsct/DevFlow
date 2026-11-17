@@ -8,7 +8,8 @@ from __future__ import annotations
 import inspect
 import re
 
-from app.graph import batch_file_claims as claims, workflow
+from app.graph import batch_file_claims as claims
+from workflow_nodes import workflow_source
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 WRITE = {"relative_path": "api/db.py", "content": "x"}
@@ -35,7 +36,7 @@ def test_a_stage_outside_a_batch_and_another_run_are_untouched():
 
 
 def test_the_batch_fixer_holds_and_the_refusal_bans_the_product_s_nouns():
-    source = inspect.getsource(workflow.build_workflow_graph)
+    source = workflow_source()
     worker = source[source.index("def defect_fix_worker_node"):]
     assert "batch_file_claims.holding(" in worker[:2500]
     assert not BANNED.search(claims.REFUSED + inspect.getsource(claims.build_middleware))

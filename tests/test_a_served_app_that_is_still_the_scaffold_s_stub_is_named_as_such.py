@@ -17,6 +17,7 @@ from pathlib import Path
 
 from app.stacks import contract, pack_named
 from app.stacks.scaffold import entrypoint_is_still_the_stub
+from workflow_nodes import workflow_source
 
 BANNED = ("task", "tasks", "to-do", "todo", "button", "click", "checkbox")
 
@@ -101,7 +102,7 @@ def test_the_harness_measurement_rounds_ask_the_question() -> None:
     assert "entrypoint_is_still_the_stub" in per_file
     assert "_the_served_app_is_the_scaffold_s_stub" in per_file
 
-    triage = inspect.getsource(workflow.build_workflow_graph)
+    triage = workflow_source()
     assert "entrypoint_is_still_the_stub" in triage
     assert "_the_served_app_is_the_scaffold_s_stub" in triage
 
@@ -148,4 +149,4 @@ def test_every_fixer_is_told_first_while_the_stub_is_served(tmp_path: Path) -> N
         f = root / "notes-app" / path
         f.write_text(f.read_text(encoding="utf-8") + "\n// built\n", encoding="utf-8")
     assert workflow._the_stub_still_served_section(root) == ""
-    assert "_the_stub_still_served_section(state" in inspect.getsource(workflow)
+    assert "_the_stub_still_served_section(state" in workflow_source()

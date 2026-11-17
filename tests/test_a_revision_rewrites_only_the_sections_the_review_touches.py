@@ -7,7 +7,6 @@ characters.
 
 from __future__ import annotations
 
-import inspect
 import json
 import re
 from types import SimpleNamespace
@@ -16,6 +15,7 @@ import pytest
 from pydantic import BaseModel, Field
 
 from app.graph import specification_parts, workflow
+from workflow_nodes import workflow_source
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 
@@ -154,7 +154,7 @@ def test_a_run_with_no_judgement_model_named_revises_in_place_with_the_deploymen
     assert workflow._a_model_to_revise_with(None) is built
     named = object()
     assert workflow._a_model_to_revise_with(named) is named
-    assert "_a_model_to_revise_with(judgement_model)" in inspect.getsource(workflow)
+    assert "_a_model_to_revise_with(ctx.judgement_model)" in workflow_source()
 
 
 class Decision(BaseModel):

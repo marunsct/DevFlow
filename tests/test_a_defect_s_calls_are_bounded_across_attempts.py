@@ -5,7 +5,6 @@ stage budget, so a defect fixed in three rounds cost three budgets.
 """
 from __future__ import annotations
 
-import inspect
 import os
 import re
 from types import SimpleNamespace
@@ -58,8 +57,10 @@ def test_an_attempt_s_calls_are_counted_from_the_transcript_since_it_started():
 def test_the_attempt_record_keeps_the_calls_and_the_fix_stage_checks_the_ceiling_first():
     cycle = workflow._with_the_attempt(_cycle(), 0, "defect_fix_1_0", None, "left open", 17)
     assert cycle.defects[0].attempts[-1]["calls"] == 17
-    source = inspect.getsource(workflow)
-    assert source.index("defect_budget.spent_out(cycle, defect_index)") < source.index("fix_model = _the_build_model(\n            state,\n            stage_name,")
+    from workflow_nodes import workflow_source
+
+    source = workflow_source()
+    assert source.index("defect_budget.spent_out(cycle, defect_index)") < source.index("fix_model = ctx.the_build_model(\n        state,\n        stage_name,")
 
 
 def test_the_start_is_carried_across_a_pause(tmp_path, monkeypatch):

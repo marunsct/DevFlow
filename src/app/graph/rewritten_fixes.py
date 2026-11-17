@@ -505,7 +505,7 @@ def fix_by_rewriting(
 
     `files`, when given, is used as the files to rewrite and no localisation
     call is made: a retry that already asked `fix_by_candidates` where the
-    defect lives need not ask again. See `app.graph.workflow._fixed_by_rewriting`.
+    defect lives need not ask again. See `app.graph.nodes.fixes._fixed_by_rewriting`.
     """
     from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -638,7 +638,7 @@ def fix_by_candidates(
     """A defect fixed by several candidate rewrites asked for at once, the first its tests pass kept; or None.
 
     `files`, when given, is used as the files to change and no localisation
-    call is made. See `app.graph.workflow._fixed_by_rewriting`.
+    call is made. See `app.graph.nodes.fixes._fixed_by_rewriting`.
 
     Agentless's repair and validation: one run's defect failed fix after fix
     on the build model, each an agent loop of half an hour. Here the

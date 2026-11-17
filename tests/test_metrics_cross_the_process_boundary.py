@@ -22,17 +22,10 @@ the same `appdata` volume, and `prometheus_fastapi_instrumentator` builds a
 
 from __future__ import annotations
 
-import inspect
 import os
 from pathlib import Path
 
 import pytest
-
-
-def test_the_module_prepares_the_shared_directory():
-    from app.observability import metrics
-
-    assert hasattr(metrics, "_prepare_multiprocess_dir")
 
 
 def test_it_is_a_no_op_without_the_variable(monkeypatch):
@@ -60,18 +53,22 @@ def test_an_unusable_directory_does_not_stop_the_process(monkeypatch):
     _prepare_multiprocess_dir()  # must not raise
 
 
-def test_the_directory_is_not_wiped_on_startup():
-    """Counters are cumulative; a wipe would reset the totals being reported.
+def test_the_directory_is_not_wiped_on_startup(tmp_path, monkeypatch):
+    """Counters are cumulative; a wipe would reset the totals being reported."""
+    from prometheus_client import values
+    from prometheus_client.mmap_dict import MmapedDict
 
-    `mark_process_dead` is the correct hook - it lets prometheus_client collapse
-    a dead process's gauge files while keeping its counters in the sum.
-    """
     from app.observability.metrics import _prepare_multiprocess_dir
 
-    source = inspect.getsource(_prepare_multiprocess_dir)
-    assert "mark_process_dead" in source
-    for destructive in ("rmtree", "unlink", "os.remove"):
-        assert destructive not in source, f"{destructive} would reset cumulative counters"
+    monkeypatch.setattr(values, "ValueClass", values.ValueClass)  # put back what the start replaces
+    monkeypatch.setenv("PROMETHEUS_MULTIPROC_DIR", str(tmp_path))
+    earlier = MmapedDict(str(tmp_path / "counter_4242.db"))
+    earlier.write_value("runs_total", 7.0, 0.0)
+    earlier.close()
+
+    _prepare_multiprocess_dir()
+
+    assert [value for _, value, _, _ in MmapedDict.read_all_values_from_file(str(tmp_path / "counter_4242.db"))] == [7.0]
 
 
 def test_both_services_share_the_directory():

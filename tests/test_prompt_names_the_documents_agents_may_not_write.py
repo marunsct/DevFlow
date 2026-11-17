@@ -36,6 +36,11 @@ def test_a_read_only_agent_is_not_given_write_rules():
     assert "WORKFLOW's directory" not in _READ_ONLY_RULES
 
 
+def test_a_read_only_agent_is_not_given_write_rules():
+    """It has no `write_artifact`, so a list of paths it may not write is noise."""
+    assert "WORKFLOW's directory" not in _READ_ONLY_RULES
+
+
 def test_the_list_is_derived_rather_than_restated():
     """A hand-copied list drifts from the refusal; this must not be copyable."""
     import inspect

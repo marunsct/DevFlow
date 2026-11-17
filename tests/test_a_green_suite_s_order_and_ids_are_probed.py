@@ -7,6 +7,8 @@ import runpy
 import shutil
 from pathlib import Path
 
+import pytest
+
 from app.acceptance import ids_read_without_a_create as ids
 from app.acceptance import order_probe, suite
 from app.stacks import contract, pack_named
@@ -113,8 +115,8 @@ def test_a_probe_that_fails_costs_the_round_nothing(tmp_path, monkeypatch):
     assert order_probe.at_a_green_round(root, broken) == {}
 
 
-def _the_round_probes(tmp_path: Path, *, failed: int) -> int:
-    """How often the test round's node asks for the order probe, its locked suite run with `failed` failures."""
+def _the_round_probes(tmp_path: Path, monkeypatch, *, failed: int) -> bool:
+    """Whether the test round's node probed the order of its locked suite, run with `failed` failures."""
     from types import SimpleNamespace
     from unittest.mock import patch
 
@@ -122,6 +124,15 @@ def _the_round_probes(tmp_path: Path, *, failed: int) -> int:
 
     from app.agents.specialists import SpecialistOutput
     from app.graph import workflow
+
+    root = _locked(tmp_path, monkeypatch)
+    monkeypatch.setenv("ORDER_PROBE", "on")
+    report = root / "notes" / contract.read(root)["acceptance_report"]
+
+    def one_file_in_the_sandbox(argv, kind, project):
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(_junit({"t": True}))
+        return {"returncode": 0}
 
     milestone = SimpleNamespace(selected_sprint_goal="Build features", milestone_scope=[], delegated_tasks=[])
     state = {
@@ -140,19 +151,18 @@ def _the_round_probes(tmp_path: Path, *, failed: int) -> int:
          patch("app.graph.acceptance_nodes.interface_defects", return_value=[]), \
          patch("app.graph.acceptance_nodes.failing_due_defects", return_value=[]), \
          patch("app.graph.workflow._with_the_contract_s_server_errors", side_effect=lambda s, result, m: result), \
-         patch.object(order_probe, "at_a_green_round") as probe, \
+         patch("app.acceptance.suite._sandbox_runner", return_value=one_file_in_the_sandbox), \
          patch("app.graph.workflow._run_gated_agent", return_value={"__test_result__": SpecialistOutput(
              changed_files=[], defects=[workflow._the_unit_tests_fail(milestone, "AssertionError: 2 != 3")])}):
         graph = workflow.build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
         graph.nodes["test_and_triage"].bound.invoke(state, {"configurable": {"thread_id": "t", "run_id": "r"}})
-    assert all(call.args == (str(tmp_path),) for call in probe.call_args_list)
-    return probe.call_count
+    return (root / order_probe.FILE).is_file()
 
 
-def test_the_round_asks_for_the_probe_when_the_suite_is_green(tmp_path):
-    """The probe is asked of a round whose locked suite failed nothing, whatever else it found; never of a red one."""
-    assert _the_round_probes(tmp_path, failed=0) == 1
-    assert _the_round_probes(tmp_path, failed=1) == 0
+@pytest.mark.parametrize(("failed", "probed"), [(0, True), (1, False)])
+def test_the_round_probes_the_order_only_when_the_suite_is_green(tmp_path, monkeypatch, failed, probed):
+    """The probe is run by a round whose locked suite failed nothing, whatever else it found; never by a red one."""
+    assert _the_round_probes(tmp_path, monkeypatch, failed=failed) is probed
 
 
 def test_the_effects_report_says_what_the_probe_recorded():
@@ -177,8 +187,8 @@ def test_a_literal_id_nothing_created_is_found_when_on(tmp_path, monkeypatch):
     found = ids.findings(root)
     assert len(found) == 1 and "an id the test never created" in found[0] and "line 3" in found[0]
     assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", found[0], re.I)
-    source = Path(suite.__file__).read_text()
-    assert "ids_read_without_a_create.findings(repo_root)" in source[source.index("def tests_that_cannot_pass"):]
+    cannot_pass = suite.tests_that_cannot_pass(root, suite.AcceptanceResult(ran=True))
+    assert [item for item in cannot_pass if "an id the test never created" in item]
 
 
 def test_a_test_that_creates_expects_a_refusal_or_has_a_hook_is_left_alone(tmp_path, monkeypatch):

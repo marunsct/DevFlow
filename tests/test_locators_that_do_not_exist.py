@@ -8,7 +8,6 @@ initial review unless verified mechanically before locking.
 
 from __future__ import annotations
 
-import inspect
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,7 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.acceptance import junit, suite
-from app.acceptance.criteria import number
+from app.acceptance.criteria import Criterion, number
 from app.graph import acceptance_nodes
 from app.stacks import pack_named
 from app.stacks.scaffold import scaffold
@@ -106,24 +105,25 @@ def test_suite_allows_valid_playwright_locators(tmp_path: Path) -> None:
     assert problems == []
 
 
-def test_acceptance_review_calls_locators_that_do_not_exist() -> None:
-    from app.acceptance import suite
-
-    source = inspect.getsource(acceptance_nodes.acceptance_review) + inspect.getsource(suite.tests_that_cannot_pass)
-    assert "suite.tests_that_cannot_pass(root, result)" in inspect.getsource(acceptance_nodes.acceptance_review)
-    assert "locators_that_do_not_exist" in source, (
-        "acceptance_review must check for locators_that_do_not_exist before locking"
+def test_a_test_round_reopens_a_locked_test_calling_a_locator_that_does_not_exist(tmp_path: Path, monkeypatch) -> None:
+    acceptance = _scaffolded(tmp_path)
+    acceptance.mkdir(parents=True, exist_ok=True)
+    (acceptance / "items.spec.js").write_text(
+        "test('[AC-1] displays items', async ({ page }) => {\n"
+        "  await page.goto('/');\n"
+        "  const input = page.getByLabelText('Name', { exact: true });\n"
+        "});\n"
     )
+    suite.save_criteria(tmp_path, [Criterion(id="AC-1", text="Add an item", source="brief")])
+    suite.lock(tmp_path)
+    report = junit.Report(found=True, tests=[junit.TestResult(
+        name="[AC-1] displays items", outcome="failed", message="page.getByLabelText is not a function")])
+    monkeypatch.setattr(suite, "run", lambda root, **kwargs: suite.AcceptanceResult(
+        ran=True, command="npm run test:acceptance", report=report))  # the suite's run in the sandbox
 
+    _, broken = acceptance_nodes.acceptance_for_round({"repository": SimpleNamespace(root_path=str(tmp_path))})
 
-def test_acceptance_for_round_includes_locators_that_do_not_exist() -> None:
-    from app.acceptance import suite
-
-    source = inspect.getsource(acceptance_nodes.acceptance_for_round) + inspect.getsource(suite.tests_that_cannot_pass)
-    assert "suite.tests_that_cannot_pass(root, result)" in inspect.getsource(acceptance_nodes.acceptance_for_round)
-    assert "locators_that_do_not_exist" in source, (
-        "acceptance_for_round must check locators_that_do_not_exist to reopen broken tests"
-    )
+    assert [item for item in broken if "getByLabelText" in item]
 
 
 def test_acceptance_review_rejects_nonexistent_locators(tmp_path: Path, monkeypatch) -> None:

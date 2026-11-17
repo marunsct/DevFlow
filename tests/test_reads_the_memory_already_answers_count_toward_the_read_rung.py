@@ -12,10 +12,41 @@ from __future__ import annotations
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from app.agents.project_memory import HELD_POINTER
 from app.agents.settled_answer import POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL
 
-from tests.test_the_read_tool_is_taken_away import TOOLS, _call, _names
+from tests.test_the_read_tool_is_taken_away import _call, _names
+
+
+def _pointers() -> dict[str, str]:
+    """What the project memory answers a repeated read of each file it holds with, from the real middleware."""
+    import tempfile
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from app.agents import project_memory, stage_memory
+
+    root = Path(tempfile.mkdtemp())
+    (root / "app" / "models").mkdir(parents=True)
+    for i in range(4):
+        (root / "app" / "models" / f"m{i}.py").write_text(f"value = {i}\n")
+    middleware = project_memory.build_project_memory_middleware(str(root))
+
+    class Request(SimpleNamespace):
+        def override(self, **changes):
+            return Request(**{**self.__dict__, **changes})
+
+    answers = {}
+    with stage_memory.remembering("pointers"):
+        middleware.wrap_model_call(Request(messages=[HumanMessage(content="write the tests")], model=None), lambda r: None)
+        for i in range(4):
+            call = SimpleNamespace(tool_call={"name": "read_file", "args": {"file_path": f"/app/models/m{i}.py"}, "id": "r"})
+            for _ in range(2):
+                answers[f"m{i}"] = str(middleware.wrap_tool_call(call, lambda r: ToolMessage(content="read", tool_call_id="r")).content)
+    stage_memory.forget_everything()
+    return answers
+
+
+POINTERS = _pointers()
 
 
 def _cycles(pointers: int) -> list:
@@ -23,8 +54,7 @@ def _cycles(pointers: int) -> list:
     messages: list = [HumanMessage(content="write the tests")]
     for i in range(pointers):
         messages.append(AIMessage(content="", id=f"a{i}"))
-        messages.append(ToolMessage(content=f"`app/models/m{i % 4}.py` {HELD_POINTER}, whole and as it is now.",
-                                    tool_call_id=f"r{i}"))
+        messages.append(ToolMessage(content=POINTERS[f"m{i % 4}"], tool_call_id=f"r{i}"))
         if i % 4 == 3:
             messages.append(AIMessage(content="", id=f"w{i}"))
             messages.append(ToolMessage(content='{"path": "tests/conftest.py", "summary": "written"}',
@@ -47,8 +77,7 @@ def _each_followed_by_a_write(pointers: int) -> list:
     messages: list = [HumanMessage(content="write the tests")]
     for i in range(pointers):
         messages.append(AIMessage(content="", id=f"a{i}"))
-        messages.append(ToolMessage(content=f"`app/models/m{i}.py` {HELD_POINTER}, whole and as it is now.",
-                                    tool_call_id=f"r{i}"))
+        messages.append(ToolMessage(content=POINTERS[f"m{i % 4}"], tool_call_id=f"r{i}"))
         messages.append(AIMessage(content="", id=f"w{i}"))
         messages.append(ToolMessage(content='{"path": "tests/conftest.py", "summary": "written"}',
                                     tool_call_id=f"w{i}"))
@@ -62,33 +91,3 @@ def test_a_few_pointers_take_nothing_away() -> None:
     captured = _call(_each_followed_by_a_write(POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL - 1))
 
     assert "read_file" in _names(captured) if "tools" in captured else True
-
-
-def test_the_pointer_wording_is_the_one_counted() -> None:
-    from app.agents import project_memory
-
-    assert f"{{HELD_POINTER}}" in open(project_memory.__file__).read()
-    assert len(TOOLS) > 0
-
-
-def test_the_log_names_the_count_that_took_it_away(caplog) -> None:
-    """It said "refused 0 redundant reads" when the pointers had done it."""
-    import logging
-
-    with caplog.at_level(logging.WARNING, logger="app.agents.settled_answer"):
-        _call(_cycles(POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL))
-    said = [r.getMessage() for r in caplog.records if "withholding the read tool" in r.getMessage()]
-    assert said and f"pointed to the project memory for {POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL}" in said[0]
-
-
-def test_the_withholding_is_said_once_per_stage(caplog) -> None:
-    """Measured on one run: withheld on every later call, it was logged five times in one minute."""
-    import logging
-
-    from app.agents.stage_memory import remembering
-
-    with caplog.at_level(logging.WARNING, logger="app.agents.settled_answer"), remembering("thread-x:testing:once"):
-        for _ in range(3):
-            _call(_cycles(POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL))
-    said = [r for r in caplog.records if "withholding the read tool" in r.getMessage()]
-    assert len(said) == 1

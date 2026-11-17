@@ -110,13 +110,24 @@ def test_a_live_run_is_not_cached(store):
 
 
 class TestTheWiring:
-    def test_every_stage_checks_before_its_first_model_call(self):
-        import inspect
+    def test_a_stage_of_a_cancelled_run_makes_no_model_call(self, store, tmp_path):
+        from types import SimpleNamespace
 
-        source = inspect.getsource(workflow._run_gated_agent)
-        assert "_stop_if_cancelled" in source
-        # Before the agent is built, not after it has run.
-        assert source.index("_stop_if_cancelled") < source.index("build_activity_callbacks")
+        store(requested=True)
+        asked = []
+        agent = SimpleNamespace(invoke=lambda request, config=None: asked.append(request),
+                                get_state=lambda config: SimpleNamespace(values={}, next=()))
+
+        with pytest.raises(RunCancelled):
+            workflow._run_gated_agent(
+                {"stage": "technical_lead", "repository": SimpleNamespace(root_path=str(tmp_path))},
+                {"configurable": {"thread_id": "outer", workflow.APP_RUN_ID_KEY: "run-1"}},
+                stage_name="technical_lead", agent=agent,
+                initial_request={"messages": [{"role": "user", "content": "plan"}]},
+                output_key="out", next_stage="next",
+            )
+
+        assert asked == []
 
     async def test_the_runner_treats_it_as_a_cancellation_not_a_failure(self, run_store, redis_container, monkeypatch):
         """A graph that stopped for a cancellation leaves the run cancelled, with no error recorded.

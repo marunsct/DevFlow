@@ -6,7 +6,6 @@ dispute were spent before QA repaired them. In the second run seven tests had th
 """
 from __future__ import annotations
 
-import inspect
 import re
 
 from app.acceptance import suite
@@ -98,5 +97,9 @@ def test_a_javascript_suite_is_read_too(tmp_path):
     assert "signs in as `ana`" in found
 
 
-def test_it_is_among_the_tests_that_cannot_pass():
-    assert "tests_that_sign_in_as_nobody(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+def test_it_is_among_the_tests_that_cannot_pass(tmp_path):
+    root = _suite(tmp_path, ("test_api.py", WRONG))
+
+    cannot = suite.tests_that_cannot_pass(root, suite.AcceptanceResult(ran=False))
+
+    assert any("signs in as `ana`" in item and "line 13" in item for item in cannot)

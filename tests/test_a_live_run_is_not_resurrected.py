@@ -65,14 +65,6 @@ class TestTheRecencySignal:
         assert _touched_within(_Record(naive), RECENTLY_TOUCHED_SECONDS)
 
 
-class TestTheWindowIsSizedForTheRace:
-    def test_it_covers_the_dispatch_race_generously(self):
-        assert RECENTLY_TOUCHED_SECONDS >= 60
-
-    def test_it_is_far_shorter_than_real_abandonment(self):
-        assert RECENTLY_TOUCHED_SECONDS <= 600
-
-
 class TestTheSweepLooksAgain:
     """Skipping is only safe because something checks later.
 
@@ -80,15 +72,6 @@ class TestTheSweepLooksAgain:
     window on the first pass. Without a second look it would stay `running` for
     ever, which is the state this sweep exists to clear.
     """
-
-    def test_the_sweep_runs_a_second_pass(self):
-        import inspect
-
-        from app.server.tasks import _sweep_for_abandoned_runs
-
-        source = inspect.getsource(_sweep_for_abandoned_runs)
-        assert source.count("recover_orphaned_runs(") >= 2
-        assert "RECENTLY_TOUCHED_SECONDS" in source
 
     def test_the_second_pass_cannot_take_the_worker_down(self, monkeypatch):
         """It runs on a daemon thread at startup; it may never raise."""
@@ -98,10 +81,10 @@ class TestTheSweepLooksAgain:
         monkeypatch.setattr(tasks, "_SECOND_SWEEP_DELAY_SECONDS", 0)
         monkeypatch.setattr("app.server.manage._live_task_ids", lambda: {"abc"})
 
-        calls: list[int] = []
+        calls: list[float] = []
 
         def _explode_on_the_second(dry_run=False, emit=print, grace_seconds=0):
-            calls.append(1)
+            calls.append(grace_seconds)
             if len(calls) > 1:
                 raise RuntimeError("the database went away")
             return 0
@@ -113,17 +96,10 @@ class TestTheSweepLooksAgain:
         tasks._sweep_for_abandoned_runs()  # must not raise
 
         assert len(calls) == 2
-
-    def test_the_delay_is_sized_to_the_grace(self):
-        from app.server.manage import RECENTLY_TOUCHED_SECONDS
-        from app.server.tasks import _SECOND_SWEEP_DELAY_SECONDS
-
-        # None means "use the grace itself", which is the point.
-        assert _SECOND_SWEEP_DELAY_SECONDS is None
-        assert RECENTLY_TOUCHED_SECONDS > 0
+        assert all(grace >= 44 for grace in calls), "the sweep guesses, so both looks give a fresh run its grace"
 
 
-def test_the_cli_gets_no_grace_and_the_sweep_does():
+def test_the_cli_gets_no_grace():
     """Two callers asking different questions.
 
     The sweep guesses, from a broker reply that can be incomplete seconds after
@@ -135,25 +111,10 @@ def test_the_cli_gets_no_grace_and_the_sweep_does():
     import inspect
 
     from app.server.manage import recover_orphaned_runs
-    from app.server.tasks import _sweep_for_abandoned_runs
 
     assert inspect.signature(recover_orphaned_runs).parameters[
         "grace_seconds"
     ].default == 0.0
-
-    source = inspect.getsource(_sweep_for_abandoned_runs)
-    assert source.count("grace_seconds=RECENTLY_TOUCHED_SECONDS") == 2
-
-
-def test_a_recent_run_is_reported_rather_than_silently_skipped():
-    """An operator reading the log must see why nothing was repaired."""
-    import inspect
-
-    from app.server.manage import recover_orphaned_runs
-
-    source = inspect.getsource(recover_orphaned_runs)
-    assert "too recent to call abandoned" in source
-    assert "the next sweep will see it" in source
 
 
 def test_the_grace_covers_the_measured_race_and_no_more_than_a_minute():

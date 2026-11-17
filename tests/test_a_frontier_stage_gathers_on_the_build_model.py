@@ -7,7 +7,6 @@ a package - each after 2 to 5 minutes of reasoning (77 minutes in all).
 
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -185,10 +184,22 @@ def test_fast_delivery_keeps_the_specification_and_reviews_on_the_frontier_and_m
     assert review == [("create_architecture_reviewer_agent", "judge")]
 
 
-def test_the_testing_author_moves_to_the_build_model_in_fast_delivery():
-    """In `acceptance_nodes`, not the graph."""
-    author = inspect.getsource(acceptance_nodes)
-    assert '"testing", model=ctx.model if delivery.fast() else ctx.judgement_model' in author
+@pytest.mark.parametrize("fast", [True, False], ids=["fast", "not-fast"])
+def test_the_testing_author_moves_to_the_build_model_in_fast_delivery(fast, tmp_path, monkeypatch):
+    from workflow_node_stubs import run_node
+
+    _on_two_models(monkeypatch, fast)
+    built = []
+
+    def testing_agent(role, *args, **kwargs):
+        built.append((role, getattr(kwargs.get("model"), "name", None)))
+        return SimpleNamespace()
+
+    run_node(monkeypatch, tmp_path, "acceptance_author", two_models=True,
+             overrides={"app.agents.specialists.create_specialist_agent": testing_agent},
+             document=SimpleNamespace(text="# Brief\n## Features\n- Add a note\n- Delete a note\n"))
+
+    assert built == [("testing", "build" if fast else "judge")]
 
 
 @pytest.mark.parametrize("fast, then", [(True, "escalation"), (False, "principal_architect")], ids=["fast", "not-fast"])
@@ -210,9 +221,34 @@ def test_fast_delivery_sends_the_specification_back_once(fast, then, tmp_path, m
     assert seen.update["stage"] == then and seen.update["architecture_revision_count"] == 2
 
 
-def test_fast_delivery_sends_the_suite_back_once():
-    """In `acceptance_nodes`, not the graph."""
-    assert "limit = 2 if delivery.fast() else MAX_ACCEPTANCE_ROUNDS" in inspect.getsource(acceptance_nodes)
+@pytest.mark.parametrize("fast, then", [(True, "scrum_master"), (False, "acceptance_author")], ids=["fast", "not-fast"])
+def test_fast_delivery_sends_the_suite_back_once(fast, then, tmp_path, monkeypatch):
+    """At the second round, fast delivery locks with the QA lead's finding open; otherwise it goes back."""
+    from app.acceptance import junit, suite
+    from app.acceptance.criteria import number
+
+    monkeypatch.setattr("app.delivery.fast", lambda *a, **k: fast)
+    finding = "AC-1: the test name repeats AC-2's wording, so the two read alike"
+    monkeypatch.setattr("app.graph.workflow._run_gated_agent", lambda state, config, *, output_key, next_stage, **k: {
+        output_key: SimpleNamespace(approved=False, findings=[finding]), "stage": next_stage})
+    monkeypatch.setattr("app.agents.acceptance_reviewer.create_acceptance_reviewer_agent", lambda *a, **k: object())
+    (tmp_path / ".project-directory").write_text("notes\n")
+    suite.save_criteria(tmp_path, number("# Brief\n## Features\n- Add a note\n- Delete a note\n"))
+    spec = tmp_path / "notes" / "acceptance" / "notes.spec.js"
+    spec.parent.mkdir(parents=True)
+    spec.write_text("test('[AC-1] adds', async () => {});\ntest('[AC-2] deletes', async () => {});\n")
+    monkeypatch.setattr(suite, "run", lambda root: suite.AcceptanceResult(
+        ran=True, exit_code=1, command="npm run test:acceptance", report=junit.Report(found=True, tests=[
+            junit.TestResult(name="[AC-1] adds"), junit.TestResult(name="[AC-2] deletes", outcome="failed", message="no")])))
+
+    update = acceptance_nodes.acceptance_review(
+        {"repository": SimpleNamespace(root_path=str(tmp_path)), "acceptance_round": 2,
+         "document": SimpleNamespace(text="# Brief\n## Features\n- Add a note\n- Delete a note\n"),
+         "product_intake": SimpleNamespace(product_name="Notes", success_measures=[])},
+        {"configurable": {"thread_id": "t"}},
+        acceptance_nodes.Context(model=None, judgement_model=None, checkpointer=None, repo_root=None))
+
+    assert update["stage"] == then
 
 
 def test_fast_delivery_is_read_from_the_mode_module_inside_the_graph(monkeypatch):

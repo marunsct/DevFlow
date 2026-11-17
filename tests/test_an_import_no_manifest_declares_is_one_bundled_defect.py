@@ -140,21 +140,28 @@ def test_a_pyproject_manifest_is_read(tmp_path: Path) -> None:
     assert [(name, lang) for name, _, lang in found] == [("requests", "python")]
 
 
-def test_the_gate_bundles_the_drift_into_one_defect(tmp_path: Path) -> None:
+def test_the_gate_bundles_the_drift_into_one_defect(tmp_path: Path, monkeypatch) -> None:
     """Every undeclared import of a batch rides one defect, named by package
     and file - not one defect per import, which is how thirteen defects from
     one root cause were measured."""
-    import inspect
-
+    from app.analysis import language_service as service
     from app.graph import engineering
 
-    source = inspect.getsource(engineering)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pyproject.toml").write_text('[project]\nname = "notes"\ndependencies = [\n  "flask>=3",\n]\n')
+    (project / "app.py").write_text("import flask\nimport requests\n")
+    (project / "store.py").write_text("import yaml\n")
+    monkeypatch.setattr(engineering.ci, "changed_since", lambda root, since: ["project/app.py", "project/store.py"])
+    monkeypatch.setattr("app.tools.repository.pinned_project_directory", lambda root: "project")
+    monkeypatch.setattr(service, "underlined", lambda *a, **k: service.Underlined())
+    monkeypatch.setattr(service, "_pyright_diagnostics", lambda project: [], raising=False)
 
-    assert "_what_the_manifests_do_not_declare" in source
-    bundled = inspect.getsource(engineering._what_the_manifests_do_not_declare)
-    assert "dependency_drift.undeclared" in bundled
-    gate = inspect.getsource(engineering.underlined_in_the_batch)
-    assert "_what_the_manifests_do_not_declare" in gate
+    found = engineering.underlined_in_the_batch({}, str(tmp_path), "base")
+
+    [defect] = found
+    text = f"{defect.description} {defect.actual_behavior}"
+    assert "requests" in text and "pyyaml" in text.lower() and "flask" not in defect.description
 
 
 def test_the_defect_text_is_plain_language() -> None:

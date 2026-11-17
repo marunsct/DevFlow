@@ -19,98 +19,70 @@ what keeps a genuine edit-test loop working.
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from app.tools.sandbox import SUCCESSES_BEFORE_WITHHOLDING
 
 
-def test_the_threshold_is_the_one_reads_use():
-    """Kept in step with the read path deliberately; drifting apart is confusing."""
-    from app.agents.workspace_backend import READS_BEFORE_WITHHOLDING
-
-    assert SUCCESSES_BEFORE_WITHHOLDING == READS_BEFORE_WITHHOLDING
+COMMAND = ["wc", "-l", "app.js"]
 
 
-class TestTheWithholdingIsWired:
-    def test_the_executor_checks_before_running(self):
-        """After the fact it is a note; the point is to not run the command."""
-        import inspect
+@pytest.fixture
+def executor(tmp_path, monkeypatch):
+    """`SandboxExecutor.execute` with the container run (`_run`) stood in for: every run passes, and is counted."""
+    from app.tools.sandbox import SandboxExecutor
 
-        from app.tools import sandbox
+    (tmp_path / "app.js").write_text("x\n")
+    ran = []
 
-        source = inspect.getsource(sandbox)
-        withhold = source.index("SUCCESSES_BEFORE_WITHHOLDING and not")
-        run_call = source.index("outcome = cls._run(")
-        assert withhold < run_call, "the check must come before the command runs"
+    def passes(cls, command, *args, **kwargs):
+        ran.append(list(command))
+        return {"returncode": "0", "stdout": "1 app.js\n", "stderr": ""}
 
-    def test_it_says_how_many_times_and_why(self):
-        import inspect
-
-        from app.tools import sandbox
-
-        source = inspect.getsource(sandbox)
-        block = source[source.index("Not running this again. It has already passed"):][:900]
-        assert "nothing has been written since" in block, "name the guard"
-        assert "change a file first" in block, "name the way out"
-
-    def test_it_names_that_the_notice_was_ignored(self):
-        """An agent that ignored eight notices needs to know why this is different."""
-        import inspect
-
-        from app.tools import sandbox
-
-        source = inspect.getsource(sandbox)
-        block = source[source.index("Not running this again. It has already passed"):][:900]
-        assert "withheld rather than repeated" in block
+    monkeypatch.setattr(SandboxExecutor, "_run", classmethod(passes))
+    return lambda: SandboxExecutor.execute(COMMAND, str(tmp_path), "backend_specialist"), ran
 
 
-class TestItDoesNotBreakLegitimateLoops:
-    def test_a_search_command_is_excluded(self):
-        """`_ran_and_answered` marks a grep whose exit 1 means "no match".
+def test_a_command_passed_three_times_with_nothing_written_is_not_run_again(executor):
+    execute, ran = executor
+    for _ in range(SUCCESSES_BEFORE_WITHHOLDING):
+        execute()
 
-        Those already have their own note, and withholding a search would be a
-        different and worse behaviour.
-        """
-        import inspect
+    withheld = execute()
 
-        from app.tools import sandbox
-
-        source = inspect.getsource(sandbox)
-        assert "_ran_and_answered(" in source[
-            source.index("SUCCESSES_BEFORE_WITHHOLDING and not") :
-        ][:200]
-
-    def test_the_guard_is_written_since_not_a_raw_count(self):
-        """A write must re-arm the command, or an edit-test loop would stall.
-
-        `succeeded_this_way_before` is the function that carries the
-        "nothing written since" rule; the threshold is applied to its result
-        rather than to a naive tally kept here.
-        """
-        import inspect
-
-        from app.tools import sandbox
-
-        source = inspect.getsource(sandbox)
-        line = next(
-            l for l in source.splitlines() if "settled = " in l and "succeeded_this_way_before" in l
-        )
-        assert "succeeded_this_way_before" in line
+    assert len(ran) == 3, "the fourth is withheld, not run"
+    said = withheld["error"]
+    assert "already passed 3 time(s)" in said and "nothing has been written since" in said, "how many times and why"
+    assert "change a file first" in said, "the way out"
+    assert "withheld rather than repeated" in said, "that the notice was ignored"
 
 
-class TestTheRefusalIsRecorded:
-    def test_a_withheld_command_still_reaches_the_ledger(self):
-        """A stage that was stopped is different from one that never tried.
+def test_a_write_where_it_runs_lets_it_run_again(executor, tmp_path):
+    """A write must re-arm the command, or an edit-test loop would stall."""
+    import os
+    import time
 
-        The ledger is what `refused_this_way_before` and the audit script read;
-        a withheld command that left no trace would be invisible to both.
-        """
-        import inspect
+    execute, ran = executor
+    for _ in range(SUCCESSES_BEFORE_WITHHOLDING):
+        execute()
+    edited = tmp_path / "app.js"
+    edited.write_text("y\n")
+    later = time.time() + 60
+    os.utime(edited, (later, later))
 
-        from app.tools import sandbox
+    execute()
 
-        source = inspect.getsource(sandbox)
-        block = source[source.index("withheld rather than repeated") :][:600]
-        assert "_record_execution(" in block
+    assert len(ran) == 4
+
+
+def test_a_withheld_command_still_reaches_the_ledger(executor, tmp_path):
+    """A stage that was stopped is different from one that never tried: the ledger is what the repeat checks and the
+    audit script read."""
+    from app.tools.sandbox import read_execution_ledger
+
+    execute, _ = executor
+    for _ in range(SUCCESSES_BEFORE_WITHHOLDING + 1):
+        execute()
+
+    last = read_execution_ledger(str(tmp_path))[-1]
+    assert last["command"] == COMMAND and "Not running this again" in str(last.get("error"))

@@ -62,13 +62,19 @@ def test_the_forecast_is_the_typical_completed_run_of_that_mode_and_none_with_to
     assert outcomes.forecast(rows, "other") is None
 
 
-def test_the_route_is_reached_before_a_run_id_would_take_it():
-    import inspect
+def test_the_route_is_reached_before_a_run_id_would_take_it(tmp_path):
+    """The router matches in order: `/outcomes` must be answered by its own route, not read as a run id."""
+    from types import SimpleNamespace
 
-    from app.server import runs
+    from starlette.routing import Match
 
-    source = inspect.getsource(runs)
-    assert source.index('@runs.get("/outcomes")') < source.index('@runs.get("/{run_id}", response_model')
+    from app.server.runs import create_runs_router
+
+    router = create_runs_router(SimpleNamespace(), SimpleNamespace(), str(tmp_path), str(tmp_path))
+    scope = {"type": "http", "path": "/api/runs/outcomes", "method": "GET"}
+    first = next(route for route in router.routes if route.matches(scope)[0] == Match.FULL)
+
+    assert first.path == "/api/runs/outcomes"
 
 
 def _row(mode, hours, criteria, status="completed"):
@@ -90,7 +96,7 @@ def test_the_time_per_criterion_compares_briefs_of_different_sizes():
 
     found = outcomes.forecast(rows, "fast")
 
-    assert found["hours_per_criterion"] == round(sorted([1 / 8, 4 / 16, 9 / 18, 2 / 10])[1:3][0] / 2 + sorted([1 / 8, 4 / 16, 9 / 18, 2 / 10])[1:3][1] / 2, 3)
+    assert found["hours_per_criterion"] == 0.225  # the middle two of 0.125, 0.2, 0.25 and 0.5 hours a criterion
     assert (found["fewest_criteria"], found["most_criteria"]) == (8, 18)
 
 

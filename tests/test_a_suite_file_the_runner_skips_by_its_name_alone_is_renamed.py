@@ -41,10 +41,20 @@ def test_collected_and_unrelated_files_are_left(tmp_path):
     assert suite.rename_files_the_runner_skips(root) == []
 
 
-def test_the_review_renames_before_it_judges():
-    import inspect
+def test_the_review_renames_before_it_judges(tmp_path, monkeypatch):
+    from types import SimpleNamespace
 
     from app.graph import acceptance_nodes
 
-    source = inspect.getsource(acceptance_nodes.acceptance_review)
-    assert source.index("rename_files_the_runner_skips(") < source.index("suite.run(root)")
+    root, folder = _suite(tmp_path, {"delete_spec.js": "test('[AC-5] deletes', async () => {});\n"})
+    measured = []
+    monkeypatch.setattr(suite, "run", lambda root: measured.append(sorted(p.name for p in folder.iterdir()))
+                        or suite.AcceptanceResult(ran=False, problem="stopped here"))
+
+    acceptance_nodes.acceptance_review(
+        {"repository": SimpleNamespace(root_path=str(root)), "acceptance_round": 1,
+         "document": SimpleNamespace(text="# Brief\n## Features\n- Delete a note\n")},
+        {"configurable": {"thread_id": "t"}},
+        acceptance_nodes.Context(model=None, judgement_model=None, checkpointer=None, repo_root=None))
+
+    assert measured[0] == ["delete.spec.js"]

@@ -155,18 +155,23 @@ class TestTheLadderIsUnchanged:
         assert "`blockers`" in message
         assert "`grep`" in message
 
-    def test_both_call_sites_pass_the_line_count(self):
-        """A site that forgot it would silently lose the whole answer."""
-        import inspect
+    @pytest.mark.parametrize("windows", [[{}], [{"offset": 50, "limit": 50}]], ids=["the-whole-file", "one-window"])
+    def test_a_refused_read_names_the_file_s_length(self, monkeypatch, windows):
+        """A refusal that forgot the length would silently lose the whole answer: read again and again until refused."""
+        from pathlib import Path
 
-        from app.agents import workspace_backend
+        stage_memory.forget_everything()
+        monkeypatch.setattr(stage_memory, "current_stage_key", lambda: ("t-3", "specialist_documentation_5"))
+        root = tempfile.mkdtemp()
+        (Path(root) / "app.js").write_text("".join(f"line {n}\n" for n in range(1, 215)))
+        backend = WorkspaceBackend(root_dir=root, virtual_mode=True)
 
-        source = inspect.getsource(workspace_backend)
+        backend.read("/app.js", offset=0, limit=20)
+        answers = [backend.read("/app.js", **windows[n % len(windows)]) for n in range(REPEATED_READS_BEFORE_REFUSING + 12)]
+        stage_memory.forget_everything()
 
-        assert source.count("_refuse_a_read_that_returns_nothing_new(") == 3
-        # Three: the two refusal sites, and `_the_part_it_covered`, which says
-        # whether a repeated read was the whole file or a window of it.
-        assert source.count("self._lines_in_the_file(result, content)") == 3
+        last = str(getattr(answers[-1], "error", "") or (getattr(answers[-1], "file_data", None) or {}).get("content"))
+        assert "Refusing to read" in last and "214" in last
 
 
 class TestTheLengthIsTheFileNotTheWindow:

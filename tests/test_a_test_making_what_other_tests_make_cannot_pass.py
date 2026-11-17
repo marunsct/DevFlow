@@ -3,7 +3,6 @@
 Measured on one run: 40 calls signed up "alice" against one shared service; 24 of 48 locked tests failed
 `assert 409 == 201`, and the dispute's rulings on them were refused.
 """
-import inspect
 import re
 from types import SimpleNamespace
 
@@ -45,8 +44,12 @@ def test_a_value_of_its_own_or_another_failure_is_not(tmp_path):
     assert suite.tests_that_make_what_other_tests_make(tmp_path, _failed("test_ac9_signup_success", "assert 500 == 201")) == []
 
 
-def test_it_is_one_of_the_cannot_pass_checks():
-    assert "tests_that_make_what_other_tests_make(repo_root, result)" in inspect.getsource(suite.tests_that_cannot_pass)
+def test_it_is_one_of_the_cannot_pass_checks(tmp_path):
+    _a_suite(tmp_path, SUITE)
+
+    cannot = suite.tests_that_cannot_pass(tmp_path, _failed("test_ac9_signup_success", "assert 409 == 201"))
+
+    assert any(item.startswith("`test_ac9_signup_success` makes its record with 'alice'") for item in cannot)
 
 
 REFUSED = '''

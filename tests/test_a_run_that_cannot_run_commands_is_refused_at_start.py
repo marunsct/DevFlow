@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -129,9 +130,45 @@ def test_the_runner_refuses_only_on_a_record_of_not_ready(monkeypatch, store, re
         asyncio.run(check)
 
 
-def test_start_and_resume_both_check_before_dispatching() -> None:
-    import inspect
+class _Runs:
+    """The run store's rows for one run (no database here): `load` and the status compare-and-set."""
 
-    for method in (WorkflowRunner.start_run, WorkflowRunner.resume_run):
-        source = inspect.getsource(method)
-        assert source.index("_require_command_execution") < source.index("_dispatch(")
+    def __init__(self, status: str) -> None:
+        self.record = SimpleNamespace(run_id="run-1", status=status, error="", repo_root="")
+
+    def load(self, run_id):
+        return self.record
+
+    def compare_and_set_status(self, run_id, expected, new, **kwargs):
+        if self.record.status != expected:
+            return False
+        self.record.status = new
+        return True
+
+
+def _started_or_resumed(monkeypatch, status: str, why: str):
+    """Start (a created run) or resume (a failed one); the run's status after, and what reached the queue."""
+    from types import SimpleNamespace as Namespace
+
+    runner = object.__new__(WorkflowRunner)
+    runner.run_store = _Runs(status)
+    queued = []
+    monkeypatch.setattr(WorkflowRunner, "_dispatch", lambda self, run_id, **kwargs: queued.append(run_id))
+    if status == "created":
+        go = runner.start_run("run-1", Namespace(), Namespace(root_path="/w"))
+    else:
+        go = runner.resume_run("run-1")
+    with pytest.raises(RunConflict, match=why):
+        asyncio.run(go)
+    return runner.run_store.record.status, queued
+
+
+@pytest.mark.real_execution_readiness
+@pytest.mark.parametrize("status", ["created", "failed"], ids=["start", "resume"])
+def test_start_and_resume_both_check_before_dispatching(monkeypatch, status) -> None:
+    from app.server import redis_client
+
+    monkeypatch.setattr(redis_client, "get_async_redis_client",
+                        lambda: _Store(readiness_record(False, "Command execution is turned off")))
+
+    assert _started_or_resumed(monkeypatch, status, "turned off") == (status, [])

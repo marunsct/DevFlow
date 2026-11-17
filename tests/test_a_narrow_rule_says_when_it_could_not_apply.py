@@ -72,9 +72,25 @@ def test_the_audit_lines_count_the_distinct_inputs_per_check():
     assert rule_coverage.lines([{"kind": "tool_call"}]) == []
 
 
-def test_the_ten_minute_audit_prints_them():
-    text = (SCRIPTS / "audit_live.py").read_text(encoding="utf-8")
-    assert "rule_coverage.lines(records)" in text
+def test_the_ten_minute_audit_prints_them(tmp_path, monkeypatch, capsys):
+    import glob
+    import json
+    import runpy
+    import sys
+
+    transcript = tmp_path / "run-audit.jsonl"
+    transcript.write_text("\n".join(json.dumps(r) for r in [
+        {"at": "2026-11-01T00:00:00+00:00", "stage": "test_and_triage", "kind": "rule_could_not_apply",
+         "check": "runner_totals", "why": "a summary it did not read"},
+    ]) + "\n")
+    monkeypatch.setattr(glob, "glob", lambda pattern: [str(transcript)])
+    monkeypatch.setattr(sys, "argv", ["audit_live.py", "run-audit"])
+
+    runpy.run_path(str(SCRIPTS / "audit_live.py"), run_name="__main__")
+
+    printed = capsys.readouterr().out
+    assert "rules that could not apply (distinct inputs): runner_totals 1" in printed
+    assert "  runner_totals: a summary it did not read" in printed
 
 
 # --- the closed list of user-action verbs ---------------------------------------------------------------------------
@@ -179,10 +195,6 @@ def test_a_body_probe_refused_at_sign_in_is_counted(run):
     ic._count_a_sign_in_the_probe_could_not_make(_http("POST /items -> 201", "POST", "/items", 201))
     notes = _noted(run, rule_coverage.CONTRACT_SIGN_IN)
     assert len(notes) == 1 and "`POST /items` refused the body probe at sign-in" in notes[0]["why"]
-    # Only where no record had to be made first: a skip there may be the record, not the sign-in.
-    source = inspect.getsource(ic.bad_body_errors)
-    assert "if not check.made_through:\n                            _count_a_sign_in_the_probe_could_not_make(check)" \
-        in source
 
 
 # --- the runners' totals --------------------------------------------------------------------------------------------

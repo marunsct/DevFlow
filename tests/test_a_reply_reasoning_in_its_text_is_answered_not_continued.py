@@ -5,7 +5,8 @@ was continued twice more to 29,570 tokens - more reasoning, and no answer.
 """
 from __future__ import annotations
 
-import inspect
+import pytest
+from langchain_core.messages import HumanMessage
 
 from app.models import reply_salvage
 
@@ -19,12 +20,6 @@ def test_a_closed_tag_or_plain_text_is_not():
     assert reply_salvage.reasoning_left_open("<think>done</think>\n{\"fixed\": true}") is None
     assert reply_salvage.reasoning_left_open("The fix changes the handler.") is None
     assert reply_salvage.reasoning_left_open("<|begin_of_thought|>x") is None
-
-
-def test_salvage_treats_it_as_cut_while_reasoning():
-    source = inspect.getsource(reply_salvage.salvaged)
-    assert "reasoning_left_open(str(message.content or \"\")) if cut else None" in source
-    assert "lost, cut, reasoning = True, False, unclosed" in source
 
 
 # Measured on one run: a fix stage, its thinking switched off, wrote 45,000 characters of "Wait - ...", "Actually, let me
@@ -44,7 +39,22 @@ def test_prose_that_reasons_is_reasoning_and_an_answer_is_not():
     assert reply_salvage.reasoning_in_prose(answer) is None
 
 
-def test_salvage_reads_capped_prose_without_calls_as_reasoning():
-    source = inspect.getsource(reply_salvage.salvaged)
-    assert 'unclosed = reasoning_in_prose(str(message.content or ""))' in source
-    assert 'if unclosed is None and cut and not getattr(message, "tool_calls", None):' in source
+@pytest.mark.parametrize("text, reasoning", [
+    ("<think>\nThe accessible name is the label's text.", "The accessible name is the label's text."),
+    (SPIRAL, "So what can I do? I can't modify the test."),
+], ids=["an-unclosed-tag", "prose-that-reasons"])
+def test_a_capped_reply_reasoning_in_its_text_is_answered_from_it_not_continued(tmp_path, monkeypatch, text, reasoning):
+    from tests.test_a_reply_cut_off_by_the_cap_is_salvaged_from_its_own_reasoning import (
+        _completion, _cut, _model, _Server, _supported)
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("REPLY_SALVAGE", "on")
+    reply_salvage.forget()
+    _supported()
+    server = _Server([_completion("Changed the label.")])
+
+    result = reply_salvage.salvaged(_model(server), [HumanMessage(content="Fix the defect.")], _cut(text))
+    reply_salvage.forget()
+
+    assert result.generations[0].generation_info[reply_salvage.SALVAGED] == "reasoning"
+    assert len(server.sent) == 1 and reasoning in server.sent[0]["messages"][-1]["reasoning_content"]

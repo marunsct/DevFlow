@@ -24,10 +24,28 @@ def test_the_streak_is_told_with_the_last_error_and_cleared_by_a_kept_fix(tmp_pa
     assert the_facts_section(tmp_path) == ""
 
 
-def test_the_revert_of_a_fix_that_stopped_the_start_records_it():
-    import inspect
-
+def test_the_revert_of_a_fix_that_stopped_the_start_records_it_and_a_kept_fix_clears_it(tmp_path, monkeypatch):
+    """Through `after_a_fix`, with the measurement (which runs the product) stood in for."""
+    from app import ci
     from app.graph import engineering
 
-    source = inspect.getsource(engineering.after_a_fix)
-    assert "start_breaks.record(root, stage_name" in source and "start_breaks.clear(root)" in source
+    (tmp_path / "app.py").write_text("ok = 1\n")
+    base = ci.commit(tmp_path, "base")
+    passing = ci.Snapshot(label="latest", unit={"t": "passed"}, unit_ran=True)
+    monkeypatch.setattr(engineering, "ci_applies", lambda root: True)
+    monkeypatch.setattr(ci, "load", lambda root, which: passing)
+    monkeypatch.setattr(ci, "take", lambda root, label: ci.Snapshot(
+        label=label, unit={"t": "failed"}, unit_ran=True,
+        problem="The product did not start ... TypeError: responder must be async"))
+    (tmp_path / "app.py").write_text("ok = 2\n")
+
+    engineering.after_a_fix(str(tmp_path), base, "defect_fix_1_0", "the defect")
+
+    assert "TypeError: responder must be async" in the_facts_section(tmp_path)
+
+    monkeypatch.setattr(ci, "take", lambda root, label: ci.Snapshot(label=label, unit={"t": "passed"}, unit_ran=True))
+    (tmp_path / "app.py").write_text("ok = 3\n")
+
+    engineering.after_a_fix(str(tmp_path), ci.commit(tmp_path, "again") or base, "defect_fix_1_1", "the defect")
+
+    assert the_facts_section(tmp_path) == ""

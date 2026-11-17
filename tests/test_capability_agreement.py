@@ -102,19 +102,20 @@ def test_an_unrunnable_testing_approach_is_still_refused(value):
         )
 
 
-def test_the_validator_derives_its_runners_rather_than_listing_them():
+def test_the_validator_derives_its_runners_rather_than_listing_them(monkeypatch):
     """The mechanism, not just today's outcome.
 
     `_must_be_runnable` recognises a runner by looking it up in the allowlist.
     That is what makes it correct as capabilities change - and it is why
     Playwright being absent from every allowlist silently broke it.
     """
-    import inspect
+    from app.tools import sandbox
 
-    from app.agents import tools_models
+    approach = "headless browser testing with zelda-runner"
+    with pytest.raises(Exception):
+        TechnologyStack(language="TypeScript", framework="React", database="none", testing_framework=approach)
 
-    source = inspect.getsource(tools_models.TechnologyStack._must_be_runnable.__func__)
-    assert "ROLE_EXECUTABLES" in source, (
-        "the validator must derive its runners from the allowlist, not from a "
-        "hard-coded list that drifts from what the sandbox can run"
-    )
+    monkeypatch.setitem(sandbox.ROLE_EXECUTABLES, "testing_specialist",
+                        sandbox.ROLE_EXECUTABLES["testing_specialist"] | {"zelda-runner"})
+
+    TechnologyStack(language="TypeScript", framework="React", database="none", testing_framework=approach)

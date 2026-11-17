@@ -220,24 +220,24 @@ class TestEverySprintEndingIsRecorded:
     review ran out of revisions, the run stopped, and `docs/` held the plan, the
     review and the specification with no `sprint_1_summary.md` beside them.
 
-    This counts the endings in the source instead of trusting that list, so a
-    seventh ending has to be added here too.
+    Each ending is run through its node.
     """
 
-    def _workflow_source(self) -> str:
-        from workflow_nodes import workflow_source
+    def test_the_review_revision_limit_records_one(self, monkeypatch, tmp_path):
+        """The ending one run took: the summary is written and carried into the state the next attempt reads."""
+        from app.agents.milestone_reviewer import MilestoneReviewFinding, MilestoneReviewOutput
+        from workflow_node_stubs import run_a_milestone_review
 
-        return workflow_source()
+        monkeypatch.setattr("app.delivery.fast", lambda *a, **k: False)
+        changes = MilestoneReviewOutput(status="changes_required", findings=[MilestoneReviewFinding(
+            severity="blocking", category="correctness", description="Nothing reads the filter.",
+            affected_files=["app/index.html"], required_remediation="Wire the filter to the render path.")],
+            acceptance_evidence="Filtering does not work.", documentation_reviewed=True, tests_reviewed=True)
 
-    def test_the_review_revision_limit_records_one(self):
-        """The ending one run took."""
-        source = self._workflow_source()
-        limit_block = source[source.index("revision_count >= MAX_MILESTONE_REVISIONS"):]
-        limit_block = limit_block[: limit_block.index("return _handing_on(")]
+        seen = run_a_milestone_review(monkeypatch, tmp_path, review=changes, milestone_revision_count=2)
 
-        assert "_record_sprint_summary(" in limit_block, (
-            "a sprint that ends because the review ran out of revisions leaves no summary"
-        )
+        assert seen.update["sprint_attempts"], "a sprint that ends because the review ran out of revisions leaves a summary"
+        assert (tmp_path / "docs" / "sprint_1_summary.md").is_file()
 
     def test_completion_records_the_final_sprint(self, tmp_path):
         from types import SimpleNamespace
@@ -255,30 +255,6 @@ class TestEverySprintEndingIsRecorded:
 
         assert recorded == ["Completed"], "the last sprint never advances, so completion is where its summary comes from"
         assert update == {"sprint_attempts": [{"number": 1}], "stage": "complete"}
-
-    def test_every_recorded_summary_is_carried_into_the_state(self):
-        """A summary that is not returned is a summary the next attempt cannot see.
-
-        `_record_sprint_summary` returns the `sprint_attempts` update, and an
-        attempt that is not checkpointed is one the re-run cannot append to - it
-        would overwrite the document instead, which is the fault the attempt list
-        exists to fix.
-        """
-        import re
-
-        source = self._workflow_source()
-        calls = [
-            line.strip()
-            for line in source.splitlines()
-            if "_record_sprint_summary(" in line and "def " not in line
-        ]
-        # Each call must bind its result; a bare call throws the update away.
-        unbound = [
-            line for line in calls
-            if not re.match(r"^(summary\s*=|return \{\*\*_record_sprint_summary)", line)
-        ]
-
-        assert not unbound, f"these calls discard the attempt list: {unbound}"
 
 
 class TestFeaturesReadAsAList:

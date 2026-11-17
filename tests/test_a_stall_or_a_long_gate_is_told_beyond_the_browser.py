@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -45,7 +44,31 @@ def test_nothing_is_sent_with_no_channel_set(monkeypatch):
     assert stall_notices.notify([{"run_id": "x", "kind": "stalled", "stage": "", "minutes": 1, "since": "t"}]) == []
 
 
-def test_the_api_s_sweep_runs_it():
+def test_the_api_s_sweep_runs_it(tmp_path, monkeypatch):
+    """One turn of the server's sweep sends a gate left waiting to the webhook (the network is the edge)."""
+    import asyncio
+
     from app.server import approval_timeouts
 
-    assert "await notify_what_is_stalled(runner)" in inspect.getsource(approval_timeouts.sweep_for_ever)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("NOTIFY_WEBHOOK_URL", "https://hooks.example/notify")
+    monkeypatch.delenv("NOTIFY_EMAIL", raising=False)
+    posted = []
+    monkeypatch.setattr(stall_notices, "send_webhook", lambda url, finding: posted.append(finding["run_id"]))
+    waiting = _run("run-c", "waiting_for_review", updated=datetime.now(timezone.utc) - timedelta(hours=2))
+    runner = SimpleNamespace(run_store=SimpleNamespace(list_all=lambda limit, offset: [waiting]))
+    turns = []
+
+    async def one_turn(seconds):
+        turns.append(seconds)
+        if len(turns) > 1:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(approval_timeouts.asyncio, "sleep", one_turn)
+
+    try:
+        asyncio.run(approval_timeouts.sweep_for_ever(runner))
+    except asyncio.CancelledError:
+        pass
+
+    assert posted == ["run-c"]

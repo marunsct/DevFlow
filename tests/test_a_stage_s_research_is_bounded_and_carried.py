@@ -93,10 +93,14 @@ def test_a_lookup_the_stage_has_used_its_share_of_is_no_longer_offered(monkeypat
     assert offered == [["read_docs", "look_up_package", "read_file"], ["look_up_package", "read_file"]]
 
 
-def test_every_role_agent_has_it_outside_gathering():
-    import inspect
+def test_every_role_agent_has_it(tmp_path, monkeypatch):
+    monkeypatch.setenv("STABLE_TOOLS", "off")
+    from workflow_nodes import the_first_model_request
 
-    from app.agents import role_agent
+    fresh = the_first_model_request(tmp_path, extra_tools=docs.docs_tools())
+    with stage_memory.remembering("first-request"):
+        for _ in range(research.MOST_DOCUMENTATION_READS):
+            research.over_its_share("documentation")
+        spent = the_first_model_request(tmp_path, extra_tools=docs.docs_tools())
 
-    source = inspect.getsource(role_agent.create_role_agent)
-    assert source.index("build_research_share_middleware()") < source.index("*_gathering(model, response_format)")
+    assert "read_docs" in fresh.tools and "read_docs" not in spent.tools

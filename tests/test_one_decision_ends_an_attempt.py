@@ -15,26 +15,26 @@ UNIT = SimpleNamespace(status="open", caught_by="npm test", source="", failing_c
 
 
 def _decide(*, put_back="", settles=False, stalls=False, history=(3, 3, 3)):
-    with mock.patch.object(best_attempt, "restore_if_worse", return_value=put_back) as restore, \
-            mock.patch.object(settle_when_green, "open_after_the_put_back", side_effect=lambda root, d: list(d)) as after, \
+    with mock.patch.object(best_attempt, "restore_if_worse", return_value=put_back), \
+            mock.patch.object(settle_when_green, "open_after_the_put_back", side_effect=lambda root, d: list(d)), \
             mock.patch.object(settle_when_green, "applies", return_value=settles), \
             mock.patch.object(stalled_sprint, "record", return_value=list(history)), \
             mock.patch.object(stalled_sprint, "stalled", return_value=stalls):
         decision = end_of_attempt.decide("/w", [UNIT], replans=1, best_history=[3, 3])
-    return decision, restore, after
+    return decision
 
 
 def test_the_best_is_put_back_first_and_the_decision_reads_after_it():
-    decision, restore, after = _decide(put_back="2 file(s) were put back", settles=True)
-    restore.assert_called_once_with("/w", margin=1)
-    after.assert_called_once()
+    """The margin of one test is held through `decide` on a real product: see
+    `test_the_end_of_an_attempt_puts_back_a_product_one_test_worse_than_its_best`."""
+    decision = _decide(put_back="2 file(s) were put back", settles=True)
     assert decision.outcome == end_of_attempt.SETTLE and "best attempt put back" in decision.why
 
 
 def test_settle_comes_before_stall_and_stall_before_replan():
-    assert _decide(settles=True, stalls=True)[0].outcome == end_of_attempt.SETTLE
-    assert _decide(stalls=True)[0].outcome == end_of_attempt.STOP
-    plan_again = _decide()[0]
+    assert _decide(settles=True, stalls=True).outcome == end_of_attempt.SETTLE
+    assert _decide(stalls=True).outcome == end_of_attempt.STOP
+    plan_again = _decide()
     assert plan_again.outcome == end_of_attempt.REPLAN and plan_again.best_history == [3, 3, 3]
 
 

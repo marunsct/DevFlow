@@ -14,7 +14,6 @@ import pytest
 
 from app.acceptance import suite
 from app.graph import best_attempt
-from workflow_nodes import workflow_source
 
 
 @pytest.fixture(autouse=True)
@@ -146,10 +145,23 @@ def test_a_redraft_that_is_as_good_or_better_is_not_undone(tmp_path, monkeypatch
     assert "redrafted" in (root / "src" / "app.ts").read_text()
 
 
-def test_the_round_plans_the_sprint_again_at_once_when_the_best_was_put_back():
-    source = workflow_source()
-    assert "best_attempt.after_a_redraft(" in source
-    assert "the redraft left the product worse than its best; the best was put back" in source
+def test_the_round_plans_the_sprint_again_at_once_when_the_best_was_put_back(tmp_path, monkeypatch):
+    """Not after a whole round of fixers on the wreck."""
+    from workflow_nodes import a_test_round
+
+    root = _repo(tmp_path)
+    _measured(monkeypatch, root, 14)
+    best_attempt.note(root)
+    (root / "src" / "app.ts").write_text("export const app = 'redrafted and broken';\n")
+    wrecked = {"ran": True, "passed": 0, "failed": 18}
+
+    update, _ = a_test_round(root, state={"test_round": 0, "sprint_replan_count": 1}, patches={
+        "app.graph.acceptance_nodes.suite.last_result": lambda repo: wrecked,
+        "app.graph.acceptance_nodes.suite.run": lambda repo, *a, **k: None,
+    })
+
+    assert update["stage"] == "technical_lead"
+    assert (root / "src" / "app.ts").read_text() == "export const app = 'working';\n"
 
 
 def test_when_a_sprint_is_about_to_be_planned_again_one_test_fewer_than_the_best_is_put_back(tmp_path, monkeypatch):
@@ -169,9 +181,20 @@ def test_when_a_sprint_is_about_to_be_planned_again_one_test_fewer_than_the_best
     assert (root / "src" / "app.ts").read_text() == "export const app = 'working';\n"
 
 
-def test_the_replan_path_asks_for_a_margin_of_one():
-    source = (Path(__file__).resolve().parent.parent / "src" / "app" / "graph" / "end_of_attempt.py").read_text()
-    assert "best_attempt.restore_if_worse(root, margin=1)" in source
+def test_the_end_of_an_attempt_puts_back_a_product_one_test_worse_than_its_best(tmp_path, monkeypatch):
+    from app.graph import end_of_attempt
+
+    root = _repo(tmp_path)
+    _measured(monkeypatch, root, 18)
+    best_attempt.note(root)
+    (root / "src" / "app.ts").write_text("export const app = 'one test worse';\n")
+    _measured(monkeypatch, root, 17)
+    monkeypatch.setattr(suite, "run", lambda repo, *a, **k: None)
+
+    decision = end_of_attempt.decide(str(root), [], replans=0, best_history=[])
+
+    assert "passes 17 acceptance tests now and passed 18" in decision.put_back
+    assert (root / "src" / "app.ts").read_text() == "export const app = 'working';\n"
 
 
 def test_the_suite_is_measured_again_once_the_best_is_put_back(tmp_path, monkeypatch):

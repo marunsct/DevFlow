@@ -25,7 +25,21 @@ def test_a_product_file_s_finding_goes_to_a_builder(monkeypatch):
     assert engineering.owner_of_the_file(_state(), "tasks-api/tasks_api/main.py") == "backend"
 
 
-def test_the_underlined_defects_use_it():
-    import inspect
+def test_the_gate_gives_a_test_file_s_finding_to_testing(tmp_path, monkeypatch):
+    """Through the gate, with the language service (Pyright, an outside process) answering for the test file."""
+    from app.analysis import language_service as service
 
-    assert "owner=owner_of_the_file(state, relative)" in inspect.getsource(engineering.underlined_in_the_batch)
+    test_file = tmp_path / "tasks-api" / "tests" / "test_main.py"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text("from tasks_api.main import create_task\n")
+    monkeypatch.setattr(engineering.ci, "changed_since", lambda root, since: ["tasks-api/tests/test_main.py"])
+    monkeypatch.setattr(engineering, "_tasks", lambda state: _state()["milestone_plan"].tasks)
+    monkeypatch.setattr("app.tools.repository.pinned_project_directory", lambda root: "tasks-api")
+    monkeypatch.setattr(service, "underlined", lambda *a, **k: service.Underlined())
+    monkeypatch.setattr(service, "_pyright_diagnostics", lambda project: [
+        {"file": str(test_file), "rule": "reportAttributeAccessIssue", "severity": "error",
+         "message": '"create_task" is unknown import symbol', "range": {"start": {"line": 0}}}], raising=False)
+
+    [defect] = engineering.underlined_in_the_batch(_state(), str(tmp_path), "base")
+
+    assert defect.affected_files == ["tasks-api/tests/test_main.py"] and defect.owner == "testing"

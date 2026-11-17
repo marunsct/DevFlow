@@ -78,9 +78,21 @@ def test_the_kpis_count_them():
     assert got["server_changed"] == 1 and got["server_unreachable"] == 1
 
 
-def test_every_model_call_goes_through_the_check():
-    import inspect
-
+def test_every_model_call_goes_through_the_check(tmp_path, monkeypatch):
+    """A model call of a run, through the gate every call takes; the server's /props answer (the network) stood in for."""
     from app.models import call_gate
+    from app.observability import log_context
 
-    assert "server_profile.check_again(run)" in inspect.getsource(call_gate.a_model_call)
+    monkeypatch.setenv("MODEL_CALL_GATE_DIR", str(tmp_path))
+    written = []
+    monkeypatch.setattr("app.observability.transcript.record", lambda run, stage, kind, **f: written.append(kind))
+    monkeypatch.setattr(sp, "read", lambda base_url, api_key="": sp.ServerProfile(slots=2, slot_context=63232))
+    _start(sp.ServerProfile(slots=1, slot_context=126464))
+    token = log_context._TASK_RUN.set("run-x")
+    try:
+        with call_gate.a_model_call():
+            pass
+    finally:
+        log_context._TASK_RUN.reset(token)
+
+    assert sp.current().slots == 2 and "server_changed" in written

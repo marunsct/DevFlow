@@ -17,7 +17,6 @@ from pathlib import Path
 
 from app.stacks import contract, pack_named
 from app.stacks.scaffold import entrypoint_is_still_the_stub
-from workflow_nodes import workflow_source
 
 BANNED = ("task", "tasks", "to-do", "todo", "button", "click", "checkbox")
 
@@ -91,20 +90,45 @@ def test_the_defect_names_the_wiring_gap_in_plain_language(tmp_path: Path) -> No
         assert not re.search(rf"\b{word}\b", text, re.IGNORECASE), word
 
 
-def test_the_harness_measurement_rounds_ask_the_question() -> None:
-    """Both rounds the harness runs without a model - the file-by-file
-    diagnosis and the fast-delivery round - name the stub when they find it."""
-    import inspect
+def test_the_file_by_file_round_names_the_stub(tmp_path: Path, monkeypatch) -> None:
+    """The round the harness runs without a model when the suite gave no answer names the stub when it finds it."""
+    from types import SimpleNamespace
 
+    from app.acceptance import suite
     from app.graph import workflow
+    from app.state import RepositoryContext
 
-    per_file = inspect.getsource(workflow._diagnosed_file_by_file)
-    assert "entrypoint_is_still_the_stub" in per_file
-    assert "_the_served_app_is_the_scaffold_s_stub" in per_file
+    root = _a_scaffolded_workspace(tmp_path, "node-http-api")
+    record = contract.read(root)
+    spec = root / "notes-app" / str(record.get("acceptance_dir") or "") / "notes.spec.js"
+    spec.parent.mkdir(parents=True, exist_ok=True)
+    spec.write_text("test('[AC-1] adds', async () => {});\n")
+    suite.lock(root)
+    monkeypatch.setattr("app.stacks.scaffold.sandbox_runner",
+                        lambda repo_root: lambda argv, category, project: {"returncode": "1", "stdout": "1 failed", "stderr": ""})
+    monkeypatch.setattr(workflow, "_run_unit_tests_procedurally", lambda root: (None, ""))
+    state = {"repository": RepositoryContext(root_path=str(root), branch="main", commit="0", status="clean")}
 
-    triage = workflow_source()
-    assert "entrypoint_is_still_the_stub" in triage
-    assert "_the_served_app_is_the_scaffold_s_stub" in triage
+    diagnosed = workflow._diagnosed_file_by_file(state, {}, SimpleNamespace(milestone_scope=[], delegated_tasks=[]), 1)
+
+    assert any("still the scaffold's stub" in d.description and "notes-app/src/app.js" in d.description
+               for d in diagnosed.defects)
+
+
+def test_the_fast_delivery_round_names_the_stub(tmp_path: Path) -> None:
+    """The round the harness runs itself in fast delivery, with locked criteria failing, names the stub."""
+    from workflow_nodes import a_test_round
+
+    root = _a_scaffolded_workspace(tmp_path, "node-http-api")
+
+    update, _ = a_test_round(root, patches={
+        "app.graph.acceptance_nodes.suite.is_locked": lambda root: True,
+        "app.graph.acceptance_nodes.suite.last_result": lambda root: {"ran": True, "failed": 1},
+        "app.graph.acceptance_nodes._failing_due": lambda state: (["AC-1"], "AC-1 fails"),
+        "app.delivery.fast": lambda *a, **k: True,
+    })
+
+    assert "still the scaffold's stub" in str(update) and "notes-app/src/app.js" in str(update)
 
 
 def test_a_fullstack_page_left_the_stub_is_found_though_the_app_was_drafted_elsewhere(tmp_path: Path) -> None:
@@ -135,18 +159,25 @@ def test_every_fullstack_pack_declares_its_page_and_its_service() -> None:
 
 def test_every_fixer_is_told_first_while_the_stub_is_served(tmp_path: Path) -> None:
     """A queue assembled before the stub was found went fixer after fixer, each chasing its own symptom."""
-    import inspect
-    import re
-
-    from app.graph import workflow
+    import the_fix_stage
 
     root = _a_scaffolded_workspace(tmp_path, "fullstack-react-fastapi")
-    told = workflow._the_stub_still_served_section(root)
-    assert "`notes-app/src/App.tsx` is byte-identical" in told
-    assert not re.search(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", told, re.I)
 
+    _, seen = the_fix_stage.run(root, the_fix_stage.a_state(root))
+
+    told = seen.requests[0]
+    assert "`notes-app/src/App.tsx` is byte-identical" in told
+    assert not re.search(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", told.split(the_fix_stage.BASE_REQUEST, 1)[1], re.I)
+
+
+def test_a_fixer_is_not_told_once_the_drafted_app_is_served(tmp_path: Path) -> None:
+    import the_fix_stage
+
+    root = _a_scaffolded_workspace(tmp_path, "fullstack-react-fastapi")
     for path in ("src/App.tsx", "notes_app/main.py"):
         f = root / "notes-app" / path
         f.write_text(f.read_text(encoding="utf-8") + "\n// built\n", encoding="utf-8")
-    assert workflow._the_stub_still_served_section(root) == ""
-    assert "_the_stub_still_served_section(state" in workflow_source()
+
+    _, seen = the_fix_stage.run(root, the_fix_stage.a_state(root))
+
+    assert "is byte-identical" not in seen.requests[0]

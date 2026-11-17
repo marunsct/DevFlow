@@ -7,7 +7,6 @@ and the hidden test of a word after a tab failed (7/8, a false acceptance).
 """
 from __future__ import annotations
 
-import inspect
 import re
 
 from app.acceptance import suite
@@ -49,6 +48,21 @@ def test_a_javascript_expectation_is_read_too(tmp_path):
     assert len(suite.words_broken_only_at_spaces(root)) == 1
 
 
-def test_it_sends_the_suite_back_with_the_other_partial_findings():
-    source = inspect.getsource(acceptance_nodes)
-    assert '"words_broken_only_at_spaces"' in source and "suite.words_broken_only_at_spaces(root)" in source
+def test_it_sends_the_suite_back_with_the_other_partial_findings(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.acceptance import junit
+
+    _a_suite(tmp_path, BENT)
+    monkeypatch.setattr(suite, "run", lambda root: suite.AcceptanceResult(
+        ran=True, exit_code=1, command="run", report=junit.Report(found=True, tests=[
+            junit.TestResult(name="test_ac9_irregular_whitespace_preserved", outcome="failed", message="no")])))
+
+    update = acceptance_nodes.acceptance_review(
+        {"repository": SimpleNamespace(root_path=str(tmp_path)), "acceptance_round": 1,
+         "document": SimpleNamespace(text="title_case leaves the whitespace exactly as it was.")},
+        {"configurable": {"thread_id": "t"}},
+        acceptance_nodes.Context(model=None, judgement_model=None, checkpointer=None, repo_root=None))
+
+    assert update["stage"] == "acceptance_author"
+    assert any("`test_ac9_irregular_whitespace_preserved` (AC-9)" in item for item in update["acceptance_feedback"])

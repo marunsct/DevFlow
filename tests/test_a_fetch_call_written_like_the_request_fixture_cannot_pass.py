@@ -57,7 +57,7 @@ def test_fetch_written_as_fetch_and_the_fixture_as_the_fixture_are_left_alone(tm
     assert suite.fetch_calls_written_like_the_fixture(_suite(tmp_path, RIGHT)) == []
 
 
-def test_it_is_one_of_the_checks_that_reopen_a_locked_suite():
-    import inspect
+def test_it_is_one_of_the_checks_that_reopen_a_locked_suite(tmp_path):
+    cannot = suite.tests_that_cannot_pass(_suite(tmp_path, WRONG), suite.AcceptanceResult(ran=False))
 
-    assert "fetch_calls_written_like_the_fixture(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+    assert any("line(s) 5" in item and "`data:`" in item for item in cannot)

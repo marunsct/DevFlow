@@ -98,14 +98,39 @@ def test_notes_are_kept_and_a_call_carries_the_newest(tmp_path):
         steering.add(tmp_path, "   ", "owner")
 
 
-def test_the_endpoints_exist():
-    import inspect
+def _client(root, monkeypatch, **record):
+    """The real runs router over one run in `root`; the signed-in user, the run store (no database here) and the audit
+    trail stood in for."""
+    from types import SimpleNamespace
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
 
     from app.server import runs
+    from app.server.auth import get_current_active_user, require_operator
 
-    source = inspect.getsource(runs)
-    for route in ('"/{run_id}/changes"', '"/{run_id}/changes/{sha}"', '"/{run_id}/steering"'):
-        assert route in source
+    run = SimpleNamespace(run_id="run-1", tenant_id="t", status="running", repo_root=str(root), **record)
+    runner = SimpleNamespace(run_store=SimpleNamespace(load=lambda run_id: run if run_id == "run-1" else None))
+    monkeypatch.setattr(runs, "record_audit", lambda **kwargs: None)
+    app = FastAPI()
+    app.include_router(runs.create_runs_router(runner, SimpleNamespace(), str(root), str(root)))
+    user = SimpleNamespace(username="owner", role="operator", tenant_id="t")
+    app.dependency_overrides[get_current_active_user] = lambda: user
+    app.dependency_overrides[require_operator] = lambda: user
+    return TestClient(app)
+
+
+def test_the_endpoints_exist(tmp_path, monkeypatch):
+    client = _client(_repo(tmp_path), monkeypatch)
+
+    history = client.get("/api/runs/run-1/changes").json()["commits"]
+    shown = client.get(f"/api/runs/run-1/changes/{history[0]['sha']}")
+    sent = client.post("/api/runs/run-1/steering", json={"text": "Keep the greeting short."})
+    kept = client.get("/api/runs/run-1/steering").json()["notes"]
+
+    assert [c["message"] for c in history][:1] == ["Fix: [AC-1] the greeting"]
+    assert shown.status_code == 200 and "three" in str(shown.json())
+    assert sent.status_code == 201 and "Keep the greeting short." in str(kept)
 
 
 # --- Initiative AO.8: hygiene --------------------------------------------------
@@ -135,15 +160,18 @@ def test_git_is_run_without_textconv_or_an_external_diff_and_a_timeout_is_its_ow
         changes.commits(root)
 
 
-def test_the_endpoints_read_git_off_the_event_loop_and_answer_504_on_a_timeout():
-    import inspect
+def test_the_endpoints_answer_504_on_a_timeout(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    client = _client(root, monkeypatch)
+    sha = changes.commits(root)[0]["sha"]
 
-    from app.server import runs
+    def slow(argv, **kwargs):
+        raise subprocess.TimeoutExpired(argv, 20)
 
-    source = inspect.getsource(runs)
-    assert "await asyncio.to_thread(commits, record.repo_root)" in source
-    assert "await asyncio.to_thread(diff, record.repo_root, sha)" in source
-    assert source.count("status_code=504") >= 2
+    monkeypatch.setattr(changes.subprocess, "run", slow)
+
+    assert client.get("/api/runs/run-1/changes").status_code == 504
+    assert client.get(f"/api/runs/run-1/changes/{sha}").status_code == 504
 
 
 def test_an_agent_cannot_write_into_the_workspace_s_history(tmp_path):
@@ -157,12 +185,13 @@ def test_an_agent_cannot_write_into_the_workspace_s_history(tmp_path):
     assert not (tmp_path / ".git" / "hooks" / "pre-commit").exists()
 
 
-def test_the_evidence_names_what_the_release_did_not_prove_and_how_the_stack_is_covered():
-    import inspect
-
+def test_the_evidence_names_what_the_release_did_not_prove_and_how_the_stack_is_covered(tmp_path, monkeypatch):
     from app.server import runs
 
-    source = inspect.getsource(runs)
-    assert '"completion_gaps": [str(gap) for gap in (getattr(record, "completion_gaps", None) or [])]' in source
-    assert '"support_tier": _support_tier_of(root)' in source
+    client = _client(tmp_path, monkeypatch, completion_gaps=["AC-2 ships deferred, unproven by the suite: no test"])
+
+    evidence = client.get("/api/runs/run-1/evidence").json()
+
+    assert evidence["completion_gaps"] == ["AC-2 ships deferred, unproven by the suite: no test"]
+    assert "support_tier" in evidence
     assert runs._support_tier_of("/nowhere") == ""

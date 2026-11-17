@@ -75,7 +75,11 @@ it (map endpoints with `app.MapGet`, `app.MapPost` ...; keep `public partial cla
 Program { }` at its end). Unit tests go in `tests/UnitTests/`, named `<Name>Tests.cs`,
 using xUnit (`[Fact]`) and `WebApplicationFactory<Program>` to call the endpoints in
 memory. Run them with `dotnet test tests/UnitTests`. Add a package with `dotnet add
-src/App package <name>`."""
+src/App package <name>`. The service reads its settings through `builder.Configuration`
+(`builder.Configuration["DATA_DIR"]`), which holds the environment's variables too; so a test
+that needs data of its own gives its factory a folder of its own with
+`factory.WithWebHostBuilder(b => b.UseSetting("DATA_DIR", folder)).CreateClient()`, the folder a
+new one under `Path.GetTempPath()`. No test needs a factory class of its own."""
 
 DOCKERFILE = """# {{title}}: build with `docker build -t {{project}} .`, run with
 # `docker run -p 8080:8080 -v {{project}}-data:/data {{project}}`.

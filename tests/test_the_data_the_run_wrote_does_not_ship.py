@@ -5,7 +5,6 @@ to a folder the run's own tests filled.
 """
 from __future__ import annotations
 
-import inspect
 import os
 import time
 
@@ -53,9 +52,53 @@ def test_the_declared_data_folder_is_read_from_the_specification(tmp_path) -> No
     assert release_audits.data_folders(tmp_path, "notes") == ["store", "data"]
 
 
-def test_the_release_does_it_on_the_way_out() -> None:
-    source = inspect.getsource(delivery.release)
-    assert source.index("remove_the_run_s_own_data") < source.index("deferred = suite.deferred(root)")
+def _released(tmp_path, monkeypatch, *, measured_again_writes_data: bool) -> tuple[dict, list]:
+    """A release of `notes`, whose run began an hour ago and whose suite last measured another product.
+
+    The suite run (the product's own runner, stood in for) writes the product's data, as a real run of it does; each
+    run records what the data folder held when it began."""
+    import json
+    from types import SimpleNamespace
+
+    from app.acceptance import junit, suite
+    from app.acceptance.criteria import number
+
+    root = _project(tmp_path)
+    marker = root / ".project-directory"
+    marker.write_text("notes\n")
+    began = time.time() - 3600
+    os.utime(marker, (began, began))
+    suite.save_criteria(root, number("# Brief\n## Features\n- Add a note\n"))
+    (root / "notes" / "acceptance").mkdir()
+    (root / "notes" / "acceptance" / "notes.spec.js").write_text("test('[AC-1] adds', async () => {});\n")
+    suite.lock(root)
+    result = root / suite.RESULT_FILE
+    result.parent.mkdir(parents=True, exist_ok=True)
+    result.write_text(json.dumps({"ran": True, "fingerprint": "another product", "criteria": {
+        "AC-1": {"status": "passed", "tests": [{"name": "[AC-1] adds", "outcome": "passed"}]}}}))
+    runs = []
+
+    def run(repo, *args, **kwargs):
+        runs.append(sorted(p.name for p in (root / "notes" / "data").iterdir()))
+        if measured_again_writes_data:
+            (root / "notes" / "data" / "notes.json").write_text('[{"title": "written by the suite"}]')
+        return suite.AcceptanceResult(ran=True, command="npm test", report=junit.Report(found=True, tests=[
+            junit.TestResult(name="[AC-1] adds")]))
+
+    monkeypatch.setattr(suite, "run", run)
+    monkeypatch.setattr("app.graph.workflow._stop_if_cancelled", lambda run_id: None)
+    update = delivery.release({"repository": SimpleNamespace(root_path=str(root)),
+                               "product_intake": SimpleNamespace(product_name="Notes")},
+                              {"configurable": {"thread_id": "t"}}, None)
+    return update, runs
+
+
+def test_the_release_does_it_on_the_way_out(tmp_path, monkeypatch) -> None:
+    """Before the product is measured again as it ships."""
+    _, runs = _released(tmp_path, monkeypatch, measured_again_writes_data=False)
+
+    assert len(runs) == 2 and runs[-1] == [], "measured again with the data folder already empty"
+    assert not any((tmp_path / "notes" / "data").iterdir())
 
 
 def test_a_database_the_run_wrote_beside_the_code_does_not_ship(tmp_path) -> None:
@@ -77,10 +120,11 @@ def test_a_database_the_file_plan_lists_stays(tmp_path) -> None:
     assert release_audits.remove_the_run_s_own_data(tmp_path, "api", time.time() - 60) == []
 
 
-def test_the_release_clears_the_data_again_after_measuring_again() -> None:
-    source = inspect.getsource(delivery.release)
-    measured = source.index("_measured_again_if_it_changed(root, left_out)")
-    assert source.index("remove_the_run_s_own_data", measured) > measured
+def test_the_release_clears_the_data_again_after_measuring_again(tmp_path, monkeypatch) -> None:
+    _, runs = _released(tmp_path, monkeypatch, measured_again_writes_data=True)
+
+    assert runs, "measured again"
+    assert not any((tmp_path / "notes" / "data").iterdir())
 
 
 def test_a_database_the_tests_wrote_does_not_ship_though_the_plan_names_one_like_it(tmp_path) -> None:

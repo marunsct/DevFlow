@@ -5,8 +5,6 @@ switch is an efficiency change, so it starts off and is kept only with no loss i
 """
 from __future__ import annotations
 
-import inspect
-
 from langchain_openai import ChatOpenAI
 
 from app.agents import reviews_without_reasoning
@@ -34,8 +32,40 @@ def test_on_sends_the_reasoning_switch(monkeypatch):
     assert reviewed.extra_body["reasoning_effort"] == "none"
 
 
-def test_the_acceptance_review_takes_its_model_through_the_switch():
-    assert "model=the_review_model(ctx.judgement_model)" in inspect.getsource(acceptance_nodes)
+def test_the_acceptance_review_takes_its_model_through_the_switch(tmp_path, monkeypatch):
+    """The QA lead's review, run with the switch on, is built on a model that asks for no reasoning."""
+    from types import SimpleNamespace
+
+    from app.acceptance import junit, suite
+    from app.acceptance.criteria import number
+    from app.agents import thinking
+
+    monkeypatch.setenv("REVIEWS_WITHOUT_REASONING", "on")
+    monkeypatch.setattr(thinking, "least_reasoning_effort", lambda model: "none")
+    brief = "# Brief\n## Features\n- Add a note\n- Delete a note\n"
+    (tmp_path / ".project-directory").write_text("notes\n")
+    suite.save_criteria(tmp_path, number(brief))
+    spec = tmp_path / "notes" / "acceptance" / "notes.spec.js"
+    spec.parent.mkdir(parents=True)
+    spec.write_text("test('[AC-1] adds', async () => {});\ntest('[AC-2] deletes', async () => {});\n")
+    monkeypatch.setattr(suite, "run", lambda root: suite.AcceptanceResult(
+        ran=True, exit_code=1, command="npm run test:acceptance", report=junit.Report(found=True, tests=[
+            junit.TestResult(name="[AC-1] adds", outcome="failed", message="no"),
+            junit.TestResult(name="[AC-2] deletes", outcome="failed", message="no")])))
+    built_on = []
+    monkeypatch.setattr("app.agents.acceptance_reviewer.create_acceptance_reviewer_agent",
+                        lambda *a, model=None, **k: built_on.append(model) or object())
+    monkeypatch.setattr("app.graph.workflow._run_gated_agent", lambda state, config, *, output_key, next_stage, **k: {
+        output_key: SimpleNamespace(approved=True, findings=[]), "stage": next_stage})
+
+    acceptance_nodes.acceptance_review(
+        {"repository": SimpleNamespace(root_path=str(tmp_path)), "acceptance_round": 1,
+         "document": SimpleNamespace(text=brief), "product_intake": SimpleNamespace(product_name="Notes", success_measures=[])},
+        {"configurable": {"thread_id": "t"}},
+        acceptance_nodes.Context(model=None, judgement_model=_model(), checkpointer=None, repo_root=None))
+
+    [model] = built_on
+    assert model.extra_body["chat_template_kwargs"]["enable_thinking"] is False
 
 
 def test_on_with_no_judgement_model_builds_the_default_one_without_reasoning(monkeypatch):

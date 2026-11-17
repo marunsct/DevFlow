@@ -89,14 +89,13 @@ def test_an_empty_file_is_not_a_problem() -> None:
     assert structural_problem("a.js", "   \n\n") is None
 
 
-def test_the_write_tools_use_it() -> None:
-    import inspect
+def test_a_write_that_unbalances_a_file_carries_the_note(tmp_path) -> None:
+    """Kotlin: the bracket count is the only check in play there (see `grammar_parse`), so it notes, not refuses."""
+    from app.tools.repository import write_approved_artifact
 
-    from app.tools import repository
+    result = write_approved_artifact(tmp_path, "p/app.kt", "fun init() {\n  if (x) {\n}\n")
 
-    source = inspect.getsource(repository)
-    assert "_structural_note(relative_path, content, refuse=False)" in source
-    assert source.count("_structural_note(") >= 3  # helper, write, edit
+    assert "do not balance" in result["note"]
 
 
 def test_the_forgiving_match_path_also_gets_the_note(tmp_path) -> None:
@@ -131,17 +130,15 @@ def test_the_forgiving_match_path_also_gets_the_note(tmp_path) -> None:
     assert "detail" in result
 
 
-def test_both_edit_paths_build_their_result_in_one_place() -> None:
-    """A third success path must not be able to reopen this."""
-    import inspect
+def test_the_exact_match_path_gets_the_note_too(tmp_path) -> None:
+    """A third success path must not be able to reopen this: the exact match carries the checks as the forgiving one does."""
+    from app.tools.repository import edit_approved_artifact, write_approved_artifact
 
-    from app.tools import repository
+    write_approved_artifact(tmp_path, "p/app.kt", "fun init() {\n  val f = 1\n}\n")
 
-    source = inspect.getsource(repository.edit_approved_artifact)
+    result = edit_approved_artifact(tmp_path, "p/app.kt", "  val f = 1\n", "  if (x) {\n")
 
-    # The repaired span, the addition at the end of the file (LF.338) and the exact match: each through `_edited`.
-    assert source.count("_edited(") == 3
-    assert '"status": "edited"' not in source, "the result shape belongs in _edited"
+    assert "do not balance" in result["note"]
 
 
 # --- imports that parse cleanly and fail at runtime -----------------------

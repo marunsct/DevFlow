@@ -5,14 +5,12 @@ questions as prose and chose for itself, and nothing recorded the choice.
 """
 from __future__ import annotations
 
-import inspect
 import os
 import re
 from types import SimpleNamespace
 from unittest import mock
 
 from app.agents import assumptions
-from app.graph import workflow
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 ON = {"ASSUMPTIONS_GATE": "on"}
@@ -50,8 +48,45 @@ def test_on_they_are_recorded_as_decisions_and_reach_the_architect(tmp_path):
         assert assumptions.block({**state, **update}) == ""
 
 
-def test_the_intake_and_the_architect_use_it():
-    source = inspect.getsource(workflow)
-    assert "assumptions.with_the_rule(request)" in source
-    assert "assumptions.record(state, update)" in source
-    assert "assumptions.block(state)" in source
+def _marked(monkeypatch):
+    """The rule, the record and the block replaced by markers, so a stage shows which it was given."""
+    recorded = []
+
+    def with_the_rule(request):
+        request["messages"][-1]["content"] += "\n[the rule]"
+        return request
+
+    monkeypatch.setattr(assumptions, "with_the_rule", with_the_rule)
+    monkeypatch.setattr(assumptions, "record", lambda state, update: recorded.append(update.get("product_intake")))
+    monkeypatch.setattr(assumptions, "block", lambda state: "\n[the assumed answers]")
+    return recorded
+
+
+def test_the_intake_asks_by_the_rule_and_records_its_answers(tmp_path, monkeypatch):
+    from app.agents.product_manager import ProductManagerOutput
+    from workflow_node_stubs import run_node
+
+    recorded = _marked(monkeypatch)
+    intake = ProductManagerOutput(product_name="Notes", open_questions=["Paged lists? -> assumed: 20 per page"])
+
+    seen = run_node(monkeypatch, tmp_path, "product_manager", answer=intake,
+                    document=SimpleNamespace(text="Notes.", source_path="brief.md", source_type="markdown", truncated=False))
+
+    (stage, request), = seen.requests
+    assert stage == "product_manager" and request["messages"][-1]["content"].endswith("[the rule]")
+    assert [i.open_questions for i in recorded] == [["Paged lists? -> assumed: 20 per page"]]
+
+
+def test_the_architect_is_given_the_assumed_answers(tmp_path, monkeypatch):
+    from app.agents.product_manager import ProductManagerOutput
+    from workflow_node_stubs import run_node
+
+    _marked(monkeypatch)
+
+    seen = run_node(monkeypatch, tmp_path, "principal_architect", answer=None,
+                    product_intake=ProductManagerOutput(product_name="Notes"), tools_models={"plan": "local"},
+                    document=SimpleNamespace(text="Notes."),
+                    overrides={"app.agents.research_brief.research_notes": lambda *a, **k: ""})
+
+    (stage, request), = seen.requests
+    assert stage == "principal_architect" and "[the assumed answers]" in request["messages"][-1]["content"]

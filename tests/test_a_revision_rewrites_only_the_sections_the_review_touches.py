@@ -12,6 +12,7 @@ import json
 import re
 from types import SimpleNamespace
 
+import pytest
 from pydantic import BaseModel, Field
 
 from app.graph import specification_parts, workflow
@@ -112,13 +113,36 @@ def test_a_model_that_cannot_name_the_sections_revises_every_section_in_parts():
     assert len(rewrites) == 2  # four sections, three at a time
 
 
-def test_the_architect_node_revises_in_place_first_in_fast_delivery():
-    source = inspect.getsource(workflow)
-    at = source.index("revised = revised_in_place(")
-    assert source.index("_fast_delivery() and required_changes and previous_specification is not None") < at
-    assert at < source.index('stage_name="principal_architect"')
+@pytest.mark.parametrize("fast", [True, False], ids=["fast", "not-fast"])
+def test_the_architect_node_revises_in_place_first_in_fast_delivery(fast, tmp_path, monkeypatch):
+    """In fast delivery a sent-back specification is revised in place, and the architect is not asked for the whole
+    document again; otherwise the architect revises it."""
+    from app.agents.architecture_reviewer import ArchitectureReviewFinding, ArchitectureReviewOutput
+    from app.agents.principal_architect import TechnicalSpecificationOutput
+    from app.agents.product_manager import ProductManagerOutput
+    from workflow_node_stubs import run_node
 
+    previous = TechnicalSpecificationOutput(product_scope="Notes.", testing=["thin"])
+    revised = previous.model_copy(update={"testing": ["unit tests for the store"]})
+    asked = []
+    review = ArchitectureReviewOutput(status="changes_required", findings=[ArchitectureReviewFinding(
+        severity="major", description="The testing section is thin.", evidence="testing", required_remediation="More.")])
 
+    seen = run_node(monkeypatch, tmp_path, "principal_architect", answer=previous, two_models=True,
+                    product_intake=ProductManagerOutput(product_name="Notes"), tools_models={"plan": "local"},
+                    document=SimpleNamespace(text="Notes."), technical_specification=previous,
+                    architecture_review=review, architecture_revision_count=1, architecture_review_applied=0,
+                    overrides={"app.agents.research_brief.research_notes": lambda *a, **k: "",
+                               "app.graph.workflow._fast_delivery": lambda: fast,
+                               "app.graph.specification_parts.revised_in_place":
+                                   lambda spec, changes, model, context: asked.append(changes) or revised})
+
+    if fast:
+        assert asked and "The testing section is thin." in asked[0]
+        assert seen.requests == [], "the architect was asked for the whole document as well"
+        assert seen.update["technical_specification"].testing == ["unit tests for the store"]
+    else:
+        assert asked == [] and [stage for stage, _ in seen.requests] == ["principal_architect"]
 def test_a_run_with_no_judgement_model_named_revises_in_place_with_the_deployment_s_own(monkeypatch):
     """Measured live: a local-only run names no judgement model, the in-place
     revision required one, and the architect rewrote the whole specification."""

@@ -8,7 +8,9 @@ two entries where there had been nine - and left `deployment` and
 from __future__ import annotations
 
 import inspect
+from types import SimpleNamespace
 
+import pytest
 from pydantic import BaseModel
 
 from app.graph import workflow
@@ -57,14 +59,27 @@ def test_nothing_to_merge_with_returns_the_answer_unchanged() -> None:
     assert _with_the_sections_it_dropped(None, _full()) is None
 
 
-def test_only_a_repair_merges_and_before_the_document_is_rendered() -> None:
-    source = inspect.getsource(workflow)
-    node = source[source.index("def principal_architect_node"):source.index("def architecture_review_node")]
-    merge = node.index("_with_the_sections_it_dropped(")
-    assert 'state.get("specification_repair_count", 0)' in node[merge - 200:merge]
-    assert merge < node.index('"docs/technical_specification.md"')
+@pytest.mark.parametrize("repairs, merged", [(1, True), (0, False)], ids=["a-repair", "a-first-answer"])
+def test_only_a_repair_merges_and_before_the_document_is_rendered(repairs, merged, tmp_path, monkeypatch) -> None:
+    from app.agents.principal_architect import TechnicalSpecificationOutput
+    from app.agents.product_manager import ProductManagerOutput
+    from workflow_node_stubs import run_node
 
+    previous = TechnicalSpecificationOutput(product_scope="Notes.", testing=["unit tests for the store"])
+    answer = TechnicalSpecificationOutput(product_scope="Notes.")
+    rendered = []
 
+    seen = run_node(monkeypatch, tmp_path, "principal_architect", answer=answer,
+                    product_intake=ProductManagerOutput(product_name="Notes"), tools_models={"plan": "local"},
+                    document=SimpleNamespace(text="Notes."), technical_specification=previous,
+                    specification_repair_count=repairs,
+                    overrides={"app.agents.research_brief.research_notes": lambda *a, **k: "",
+                               "app.graph.workflow.render_specification":
+                                   lambda spec, name: rendered.append(spec.testing) or "rendered"})
+
+    kept = ["unit tests for the store"] if merged else []
+    assert rendered == [kept], "the document was rendered from another specification than the one kept"
+    assert seen.update["technical_specification"].testing == kept
 def test_a_revision_after_review_sends_what_it_changes_and_keeps_the_rest() -> None:
     """One run's architect, sent back on a 60,000-character specification, read it
     out of its own saved conversation to write all of it again."""

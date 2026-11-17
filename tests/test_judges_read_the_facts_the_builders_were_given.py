@@ -99,12 +99,25 @@ def test_every_judge_and_builder_request_in_the_graph_ends_with_the_facts():
     assert not missing, missing
 
 
-def test_the_one_shot_drafts_and_rewrites_and_the_architect_read_the_same_function():
-    from app.graph import drafting, rewritten_fixes, workflow
+def test_the_one_shot_drafts_and_rewrites_and_the_architect_read_the_same_function(tmp_path, monkeypatch):
+    """A draft is told the layout of a product not built yet, a rewrite that of the product as built. The
+    architect's side (`workflow._the_scaffold_s_facts` reads `layout_facts`) is held by
+    `test_the_architect_is_told_the_scaffold_s_layout`."""
+    from types import SimpleNamespace
 
-    assert "the_facts_section(root, built=False)" in inspect.getsource(drafting.draft_request)
-    assert "the_facts_section(root)" in inspect.getsource(rewritten_fixes.fix_request)
-    assert "layout_facts(" in inspect.getsource(workflow._the_scaffold_s_facts)
+    from app.graph import drafting, rewritten_fixes
+
+    monkeypatch.setattr(shared_facts, "the_facts_section", lambda root, built=True: f"[the facts, built={built}]")
+    (tmp_path / "app.js").write_text("export const x = 1;\n", encoding="utf-8")
+    defect = SimpleNamespace(description="The unit tests fail.", expected_behavior="They pass.", actual_behavior="",
+                             affected_files=["app.js"], reproduction_steps=[], attempts=[])
+
+    drafted = drafting.draft_request(tmp_path, "app.js", SimpleNamespace(task_description="t", acceptance_criteria=[]),
+                                     None, None)
+    rewritten = rewritten_fixes.fix_request(tmp_path, "app.js", defect, "x", None, None, [], [])
+
+    assert "[the facts, built=False]" in drafted
+    assert "[the facts, built=True]" in rewritten
 
 
 def test_the_new_lines_name_no_ui_control_or_unit_of_work():

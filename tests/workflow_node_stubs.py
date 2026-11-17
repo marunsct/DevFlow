@@ -250,8 +250,10 @@ def run_node(monkeypatch, tmp_path, node: str, *, answer: Any = None, overrides:
     for target, replacement in (overrides or {}).items():
         monkeypatch.setattr(target, replacement)
     graph = compiled(monkeypatch, tmp_path, two_models=two_models)
-    seen.update = graph.nodes[node].bound.invoke(
-        {"repository": SimpleNamespace(root_path=str(tmp_path)), **state}, CONFIG)
+    from app.state import RepositoryContext
+
+    repository = RepositoryContext(root_path=str(tmp_path), branch="main", commit="0000000", status="clean")
+    seen.update = graph.nodes[node].bound.invoke({"repository": repository, **state}, CONFIG)
     return seen
 
 

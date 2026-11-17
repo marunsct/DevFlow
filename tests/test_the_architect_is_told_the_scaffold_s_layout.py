@@ -7,7 +7,6 @@ files were drafted where nothing served them.
 """
 from __future__ import annotations
 
-import inspect
 import re
 from types import SimpleNamespace
 
@@ -35,9 +34,19 @@ def test_no_pack_says_nothing():
     assert workflow._the_scaffold_s_layout({}) == ""
 
 
-def test_the_architect_s_first_request_carries_it():
-    source = inspect.getsource(workflow)
-    assert 'request["messages"][-1]["content"] += _the_scaffold_s_layout(state)' in source
+def test_the_architect_s_first_request_carries_it(tmp_path, monkeypatch):
+    """Before the file plan is written: a revision is told it too (`test_the_design_stages_are_told_what_the_setup_decides`)."""
+    from app.agents.product_manager import ProductManagerOutput
+    from workflow_node_stubs import run_node
+
+    seen = run_node(monkeypatch, tmp_path, "principal_architect", answer=None,
+                    product_intake=ProductManagerOutput(product_name="Notes"), tools_models={"plan": "local"},
+                    document=SimpleNamespace(text="Notes."),
+                    overrides={"app.agents.research_brief.research_notes": lambda *a, **k: "",
+                               "app.graph.workflow._the_scaffold_s_layout": lambda state: "\n[the layout]\n"})
+
+    (stage, request), = seen.requests
+    assert stage == "principal_architect" and "[the layout]" in request["messages"][-1]["content"]
 
 
 def _state(tmp_path, **stack):

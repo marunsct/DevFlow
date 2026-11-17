@@ -5,20 +5,35 @@ over 120 runs asked again for decisions on ids the writer was never shown.
 """
 from __future__ import annotations
 
-import inspect
 import re
+from types import SimpleNamespace
 
 from app.agents.specialist_advice import advice_block
-from app.graph import workflow
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 
 
-def test_the_parts_context_carries_the_numbered_advice() -> None:
-    source = inspect.getsource(workflow)
-    context = source[source.index("def parts_context() -> str:"):source.index("update = None", source.index("def parts_context() -> str:"))]
-    assert "advice_block(state.get(\"specialist_advice\"))" in context
-    assert '("Specialists\' advice", "specialist_advice")' not in context, "not the raw form any more"
+def test_the_parts_context_carries_the_numbered_advice(tmp_path, monkeypatch) -> None:
+    from app.agents.product_manager import ProductManagerOutput
+    from workflow_node_stubs import run_node
+
+    told = []
+    advice = {"database": ["Index the owner column"], "backend": ["Validate the body"]}
+
+    def with_the_parts_written(specification, model, context):
+        told.append(context)
+        return specification
+
+    run_node(monkeypatch, tmp_path, "principal_architect", answer=None, two_models=True,
+             product_intake=ProductManagerOutput(product_name="Notes"), tools_models={"plan": "local"},
+             document=SimpleNamespace(text="Notes."), specialist_advice=advice,
+             overrides={"app.agents.research_brief.research_notes": lambda *a, **k: "",
+                        "app.graph.workflow._fast_delivery": lambda: True,
+                        "app.graph.specification_parts.with_the_parts_written": with_the_parts_written})
+
+    (context,) = told
+    assert advice_block(advice) in context
+    assert "--- Specialists' advice ---" not in context and '"database"' not in context, "not the raw form any more"
 
 
 def test_the_numbered_advice_names_every_id_and_the_rule() -> None:

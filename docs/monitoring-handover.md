@@ -27,6 +27,8 @@ why the change answers it.
 
 ## 0. Start here: the loop as it runs now
 
+**Container mode (LR.30, 2026-11-17):** the worker runs each command in its own container with the sandbox overlay: `COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.sandbox.yml docker compose up -d worker docker-proxy` (the override keeps the owner's Postgres port). Images: `scripts/loop/build_sandbox_images.sh`. Back to the default: `docker compose up -d worker && docker compose rm -sf docker-proxy` with COMPOSE_FILE unset. `loop.sh deploy` does not read the overlay, so a deploy while it is on puts the worker back in its own container mode.
+
 **Host Pyright (2026-11-17, LF.980):** `npm install -g pyright@1.1.414` on the host's Node, the version the Dockerfile pins, so `loop.sh suite` runs the Python language-service tests instead of skipping them. Change both together.
 
 **A load spike resumes a running run (2026-11-17 00:45-01:03 JST, LF.974):** host load average about 2,700 (cause unknown); gunicorn killed two app workers (taking a deploy's boundary-pause ceiling with them, LF.972) and the worker's orphan sweep took a timed-out `active` answer beside an empty `reserved` one for "the task is gone" and resumed tasks-api 2 while its task ran: two tasks on one run for 17 min, and the run just started on :8888 had no slot. Seen as: `celery inspect active` listing one run twice; a run `running` with no stage and no transcript. Recovery: pause both, deploy, `rewind` the doubled run to its last point before the second task (its files are restored), start the starved run again. Since LF.974 a partial answer judges nothing.

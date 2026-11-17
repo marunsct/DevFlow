@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-17 10:58 JST (written by `loop.sh state`). Harness 6ca893a5 committed; 6ca893a5 deployed.
-**Live, and stopped in the last day:** run-eeb96e0a failed at ?; run-4db255e8 failed at failed; run-53970d86 failed at ?
-**Last scored:** run-281467f2 notes-api-ruby 9/9 (completed, handoff 0.875; scored 11-17 10:58 JST); run-26084471 notes-api-csharp 9/9 (completed, mixed, 95 active min, handoff 1.0; scored 11-17 09:46 JST); run-657c3113 notes-api-php 9/9 (completed, mixed, 172 active min, handoff 1.0; scored 11-17 07:55 JST).
+**As of:** 11-17 12:53 JST (written by `loop.sh state`). Harness 87564131 committed; 87564131 deployed.
+**Live, and stopped in the last day:** run-2db7b0a2 failed at failed; run-4db255e8 failed at failed; run-53970d86 failed at ?
+**Last scored:** run-2db7b0a2 notes-api-csharp 9/9 (failed, handoff 0.429; scored 11-17 12:53 JST); run-281467f2 notes-api-ruby 9/9 (completed, mixed, 240 active min, handoff 0.875; scored 11-17 10:58 JST); run-26084471 notes-api-csharp 9/9 (completed, mixed, 95 active min, handoff 1.0; scored 11-17 09:46 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -76,8 +76,8 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   after, not a night; LR.44 (hosted-model matrix) waits for the owner.
 
 ## Next actions
-1. Live: notes-api-csharp 4 run-2db7b0a2 (:8888, 11:27), the first run with every switch on (M15). :1234 has no model
-   loaded since the host restart (owner's to load). Test-suite streamlining: inventory under way (owner 11-17).
+1. Live: LR.30's first whole run in container mode, run-19ff2786 notes-api (:8888, 12:56) - the WORKER IS IN CONTAINER MODE
+   (COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.sandbox.yml); a plain `loop.sh deploy` would undo it mid-run.
 2. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).

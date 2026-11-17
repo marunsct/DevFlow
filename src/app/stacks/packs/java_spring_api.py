@@ -132,7 +132,18 @@ EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 """ % {"java": JAVA_VERSION}
 
+#: Errors a Spring Boot service is known to raise, by a phrase of the compiler's message, and their cause
+#: (`app.stacks.known_errors`). Measured on one run: a controller test imported `org.springframework.boot.test.mock.bean.
+#: MockBean`, a package that does not exist, and the first fix left it so.
+SPRING_KNOWN_ERRORS = {
+    "package org.springframework.boot.test.mock.bean does not exist": (
+        "`@MockBean` is `org.springframework.boot.test.mock.mockito.MockBean` (deprecated since Spring Boot 3.4); "
+        "its replacement is `@MockitoBean` from `org.springframework.test.context.bean.override.mockito`."
+    ),
+}
+
 PACK = service_pack(
+    known_errors=SPRING_KNOWN_ERRORS,
     sandbox_image=sandbox.JAVA,
     name="java-spring-api",
     title="HTTP service in Java on Spring Boot",

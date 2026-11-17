@@ -6,7 +6,6 @@ three samples had answered wrongly. Behind `REPEATED_REWRITE_PROMPT_STOP` (off u
 """
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -120,6 +119,11 @@ def test_a_pass_after_the_diagnostics_is_a_different_prompt_and_is_sent(tmp_path
     assert len(model.asked) == 2 and model.asked[0] != model.asked[1]
 
 
-def test_it_is_in_the_source_of_both_rewrite_paths():
-    for function in (rewritten_fixes.fix_by_rewriting, rewritten_fixes.fix_by_candidates):
-        assert "repeated_rewrite_prompts.exhausted(root, asked)" in inspect.getsource(function)
+def test_candidates_asked_again_with_a_prompt_that_failed_three_times_are_not_sent(tmp_path):
+    root, model = _workspace(tmp_path), _Model()
+    rewritten_fixes.fix_by_candidates(_defect(), root, model, lambda: False, files=["src/store.ts"], write=_write(root))
+
+    again = rewritten_fixes.fix_by_candidates(
+        _defect(), root, model, lambda: False, files=["src/store.ts"], write=_write(root))
+
+    assert again is None and len(model.asked) == 3

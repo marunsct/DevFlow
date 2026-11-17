@@ -107,22 +107,21 @@ class TestItLeavesEverythingElseAlone:
         assert note is None
 
 
-class TestItIsWiredBeforeValidation:
-    def test_the_executor_strips_before_it_validates(self):
-        """After validation the command has already been refused."""
-        import inspect
+def test_the_command_runs_without_its_cd_and_the_agent_is_told_why(tmp_path, monkeypatch):
+    """After validation the command has already been refused."""
+    from app.tools.sandbox import SandboxExecutor
 
-        from app.tools import sandbox
+    (tmp_path / "task-manager").mkdir()
+    ran: list[list[str]] = []
 
-        source = inspect.getsource(sandbox)
-        strip = source.index("command, redundant_cd = strip_a_redundant_cd(")
-        run = source.index("outcome = cls._run(")
-        assert strip < run
+    def the_container(cls, command, *args, **kwargs):
+        ran.append(list(command))
+        return {"returncode": "0", "stdout": "ok", "stderr": ""}
 
-    def test_the_note_reaches_the_agent(self):
-        import inspect
+    monkeypatch.setattr(SandboxExecutor, "_run", classmethod(the_container))
 
-        from app.tools import sandbox
+    outcome = SandboxExecutor.execute(["cd", "task-manager", "&&", "node", "--check", "app.js"], str(tmp_path),
+                                      "ui_ux_specialist", working_directory="task-manager")
 
-        source = inspect.getsource(sandbox)
-        assert "notes = [n for n in (redundant_cd, doubled, redirected" in source
+    assert ran == [["node", "--check", "app.js"]]
+    assert "task-manager" in outcome["note"]

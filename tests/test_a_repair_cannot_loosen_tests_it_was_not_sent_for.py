@@ -47,15 +47,29 @@ def test_nothing_changes_outside_a_repair(tmp_path):
     assert suite.put_back_tests_the_repair_was_not_sent_for(tmp_path) == []
 
 
-def test_the_review_puts_them_back_before_it_reads_the_suite():
-    import inspect
-
+def test_the_review_puts_them_back_before_it_runs_the_suite(tmp_path, monkeypatch):
+    from app.acceptance import junit
     from app.graph import acceptance_nodes
 
-    source = inspect.getsource(acceptance_nodes._the_repair_measured)
-    assert source.index("put_back_tests_the_repair_was_not_sent_for") < source.index("problems = suite.gaps(root)")
-    review = inspect.getsource(acceptance_nodes.acceptance_review)
-    assert review.index("_the_repair_measured(root)") < review.index("suite.put_back_the_suite_before_the_repair")
+    spec = _repairing(tmp_path, ["[AC-2] counts"])
+    spec.write_text(HEAD + CALLED_WRONG.replace("toBe(3)", "toBe(2)") + RIGHT.replace("exact: true", "exact: false"))
+    measured: list[str] = []
+
+    def the_suite_in_the_sandbox(root, **kwargs):
+        measured.append(spec.read_text())
+        return suite.AcceptanceResult(ran=True, exit_code=1, report=junit.Report(found=True, tests=[
+            junit.TestResult(name="[AC-2] counts", outcome="failed"), junit.TestResult(name="[AC-5] names")]))
+
+    monkeypatch.setattr(suite, "run", the_suite_in_the_sandbox)
+    monkeypatch.setattr("app.agents.acceptance_reviewer.create_acceptance_reviewer_agent", lambda *a, **k: object())
+    monkeypatch.setattr("app.graph.workflow._run_gated_agent", lambda state, config, *, output_key, next_stage, **k: {
+        output_key: SimpleNamespace(approved=True, findings=[]), "stage": next_stage})
+
+    acceptance_nodes.acceptance_review(
+        {"repository": SimpleNamespace(root_path=str(tmp_path)), "acceptance_round": 1}, {"configurable": {}},
+        acceptance_nodes.Context(model=None, judgement_model=None, checkpointer=None, repo_root=None))
+
+    assert measured and "exact: true" in measured[0] and "toBe(2)" in measured[0]
 
 
 BROKEN = ("test('[AC-7] isolated', async ({ page }) => {\n  const id = await made(page.request, 'x');\n"

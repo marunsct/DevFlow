@@ -81,8 +81,11 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
    quality 0/8, handoff 0.43 - its one sprint re-planned 3 times. Four harness fixes from it: LF.1017 (Maven warm-up),
    LF.1020 (a Java test mirrors its code's package), LF.1021 (Maven has the network while building in container mode),
    LF.1023 (the product is built without compiling its tests: a test naming a missing class stopped `start.sh`, so
-   nothing reached a product whose code compiled). Run 1 (run-9f8188cb) failed at its scaffold (LF.1017). Next: Java 3.
-2. Live: LR.30 container-mode Go run 1, run-666e030f-1c7d-4830-bf58-b9594f31ac4a (:1234, 15:28), on eafec33a.
+   nothing reached a product whose code compiled). Run 1 (run-9f8188cb) failed at its scaffold (LF.1017).
+   Live: Java run 3, run-e53e1441-f6ed-4d89-aded-8c1cdb79e0bd (:8888, 16:12), on d2ff998f (LF.1023-1024 deployed 16:11;
+   java-spring-api and go-http-api scaffold-verified).
+2. Live: LR.30 container-mode Go run 1, run-666e030f-1c7d-4830-bf58-b9594f31ac4a (:1234, 15:28); LF.1022 and LF.1024
+   (Go module path told) deployed into it.
 3. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).

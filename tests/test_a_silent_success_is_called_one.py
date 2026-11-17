@@ -8,37 +8,33 @@ existed - until the harness refused it.
 
 from __future__ import annotations
 
-import inspect
+import pytest
 
-from app.tools import sandbox
-from app.tools.sandbox import _a_silent_success
+from app.tools.sandbox import SandboxExecutor
 
-
-def test_a_silent_exit_zero_is_called_a_success():
-    note = _a_silent_success({"stdout": "", "stderr": "", "returncode": "0"})
-
-    assert "which is success" in note
-    assert "Running it again will print nothing again" in note
+COMMAND = ["npx", "playwright", "install", "chromium"]
 
 
-def test_whitespace_is_still_nothing():
-    assert _a_silent_success({"stdout": "\n", "stderr": "  ", "returncode": 0})
+def _the_note(tmp_path, monkeypatch, answered: dict) -> str:
+    """The note on a stage's first run of `COMMAND`, which the container answered `answered`."""
+    monkeypatch.setattr(SandboxExecutor, "_run", classmethod(lambda cls, *args, **kwargs: dict(answered)))
+    return str(SandboxExecutor.execute(COMMAND, str(tmp_path), "testing_specialist").get("note") or "")
 
 
-def test_output_gets_no_note():
-    assert _a_silent_success({"stdout": "added 3 packages", "stderr": "", "returncode": "0"}) == ""
+@pytest.mark.parametrize("answered", [
+    {"stdout": "", "stderr": "", "returncode": "0"},
+    {"stdout": "\n", "stderr": "  ", "returncode": 0},
+])
+def test_a_silent_exit_zero_is_called_a_success(tmp_path, monkeypatch, answered):
+    note = _the_note(tmp_path, monkeypatch, answered)
+
+    assert "which is success" in note and "Running it again will print nothing again" in note
 
 
-def test_a_failure_gets_no_note():
-    assert _a_silent_success({"stdout": "", "stderr": "", "returncode": "1"}) == ""
-
-
-def test_a_refusal_gets_no_note():
-    assert _a_silent_success({"error": "not permitted"}) == ""
-
-
-def test_it_is_attached_when_no_repeat_note_is():
-    """A repeat keeps its own, stronger note; the first run gets this one."""
-    source = inspect.getsource(sandbox)
-
-    assert ") or _a_silent_success(outcome)" in source
+@pytest.mark.parametrize("answered", [
+    {"stdout": "added 3 packages", "stderr": "", "returncode": "0"},
+    {"stdout": "", "stderr": "", "returncode": "1"},
+    {"error": "not permitted"},
+])
+def test_output_a_failure_or_a_refusal_is_not_called_one(tmp_path, monkeypatch, answered):
+    assert "which is success" not in _the_note(tmp_path, monkeypatch, answered)

@@ -6,8 +6,6 @@ written into the workspace the rewind had just restored.
 """
 from __future__ import annotations
 
-import inspect
-
 import pytest
 
 from app.models import call_gate as models
@@ -42,9 +40,33 @@ def test_another_run_and_no_run_are_left(monkeypatch):
         workflow.forget_the_stop("run-a")
 
 
-def test_pausing_and_cancelling_remember_the_stop_and_every_call_asks():
-    assert "_remember_the_stop(record.run_id)" in inspect.getsource(runner.RunManager._finish_paused) \
-        if hasattr(runner, "RunManager") else "_remember_the_stop(record.run_id)" in inspect.getsource(runner)
-    assert inspect.getsource(runner).count("_remember_the_stop(record.run_id)") == 2
+@pytest.fixture
+def a_runner(run_store, redis_container, monkeypatch):
+    from app.server.events import EventBus
+    from app.server.redis_client import reset_clients
+
+    reset_clients()
+    monkeypatch.setenv("CHECKPOINTER_TYPE", "memory")
+    monkeypatch.setattr("app.server.tasks.celery_app.control.revoke", lambda task_id, **kwargs: None)  # the broker
+    return runner.WorkflowRunner(EventBus(), run_store=run_store)
+
+
+@pytest.mark.parametrize("stop", ["pause_run", "cancel_run"])
+async def test_a_paused_or_cancelled_run_s_next_model_call_is_refused(a_runner, monkeypatch, stop):
+    from langchain_core.messages import HumanMessage
+
     from app.models import CompatibleChatOpenAI
-    assert "_stop_if_this_run_was_stopped()" in inspect.getsource(CompatibleChatOpenAI._generate)
+
+    record = a_runner.register_run(run_id="run-stopped", thread_id="thread-stopped", document_names=["brief.md"],
+                                   document_paths=["/tmp/brief.md"], owner="alice", tenant_id="acme")
+    record.status, record.task_id = "running", "task-1"
+    a_runner.run_store.save(record)
+    await getattr(a_runner, stop)("run-stopped")
+    await a_runner._finish_cancelled(record)  # the worker's end of the stopped task
+    _in_run(monkeypatch, "run-stopped")
+    model = CompatibleChatOpenAI(model="m", api_key="k", base_url="http://localhost:1/v1", max_retries=0)
+    try:
+        with pytest.raises(workflow.RunCancelled):
+            model._generate([HumanMessage(content="go on")])
+    finally:
+        workflow.forget_the_stop("run-stopped")

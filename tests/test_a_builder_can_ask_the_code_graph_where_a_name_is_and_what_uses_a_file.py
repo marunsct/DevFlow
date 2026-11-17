@@ -5,13 +5,13 @@ searching and reading.
 """
 from __future__ import annotations
 
-import inspect
-import os
 import re
-from unittest import mock
+
+import pytest
 
 from app.agents import specialists
 from app.analysis import project_graph
+from workflow_nodes import tool_names
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 
@@ -38,9 +38,10 @@ def test_where_a_name_is_defined_and_what_uses_a_file(tmp_path, monkeypatch):
     assert not BANNED.search(tool.description)
 
 
-def test_it_is_offered_only_when_on():
-    assert "project_graph.tool_enabled()" in inspect.getsource(specialists.create_specialist_agent)
-    with mock.patch.dict(os.environ, {"CODE_GRAPH_TOOL": ""}):
-        assert not project_graph.tool_enabled()
-    with mock.patch.dict(os.environ, {"CODE_GRAPH_TOOL": "on"}):
-        assert project_graph.tool_enabled()
+@pytest.mark.parametrize(("switch", "offered"), [("on", True), ("", False)])
+def test_a_builder_is_offered_it_only_when_on(tmp_path, monkeypatch, switch, offered):
+    monkeypatch.setenv("CODE_GRAPH_TOOL", switch)
+
+    agent = specialists.create_specialist_agent("backend", model="gpt-4o-mini", repo_root=str(tmp_path))
+
+    assert ("code_graph" in tool_names(agent)) is offered

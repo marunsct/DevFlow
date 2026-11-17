@@ -29,12 +29,18 @@ def test_a_timeout_carries_the_output_printed_before_the_limit(tmp_path):
     assert "3 tests ran" in raised.value.output and "about to hang" in raised.value.output
 
 
-def test_the_timeout_answer_says_it_was_ended_at_the_limit_and_shows_the_tail():
-    import inspect
+def test_the_timeout_answer_says_it_was_ended_at_the_limit_and_shows_what_it_printed(tmp_path, monkeypatch):
+    def hangs(argv, **kwargs):  # the command's process, held past its limit
+        raise subprocess.TimeoutExpired(argv, 3, output="3 tests ran\nabout to hang\n", stderr="")
 
-    source = inspect.getsource(sandbox)
-    assert "it was ended at the time limit. Its output so far is in stdout and stderr." in source
-    assert "expired.stdout" in source
+    monkeypatch.setenv("ALLOW_COMMAND_EXECUTION", "true")
+    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "in-container")
+    monkeypatch.setattr(sandbox, "_run_and_watch_the_tree", hangs)
+
+    outcome = sandbox.SandboxExecutor.execute(["python3", "-m", "pytest"], str(tmp_path), "testing_specialist")
+
+    assert "ended at the time limit" in outcome["error"] and outcome["returncode"] == "124"
+    assert "3 tests ran" in outcome["stdout"] and "about to hang" in outcome["stdout"]
 
 
 def test_the_python_guides_say_to_close_what_tests_open():

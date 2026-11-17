@@ -515,6 +515,13 @@ def a_dispute(
     return run_node("acceptance_dispute", made, str(tmp_path), every), asked
 
 
+def tool_names(agent: Any) -> set[str]:
+    """The tools a compiled agent will run, read off its `tools` node (the graph has no tool list of its own)."""
+    node = (getattr(agent, "nodes", None) or {}).get("tools")
+    inner = getattr(node, "bound", None) or getattr(node, "runnable", None) or node
+    return set(getattr(inner, "tools_by_name", None) or {})
+
+
 #: A brief of three features, numbered AC-1 to AC-3 by `an_acceptance_review`.
 NOTES_BRIEF = "# Brief\n## Features\n- Add a note\n- Delete a note\n- Notes persist between page refreshes\n"
 

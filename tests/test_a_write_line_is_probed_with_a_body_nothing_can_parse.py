@@ -160,7 +160,8 @@ def test_the_compiled_probe_sends_unparsable_json_and_reads_only_status():
     spec = ic.playwright_bad_body_checks(asked)
     assert "contract 1: AC-1 POST /notes -> 201" in spec and "contract 2: AC-2 PUT /notes/{id} -> 200 or 404" in spec
     assert spec.count("headers: { 'content-type': 'application/json' }") == 2
-    assert 'data: "{\\"unparsable\\": "' in spec
+    # Sent as bytes: Playwright JSON-encodes a string, which made the probe send a valid JSON string (LF.993).
+    assert 'data: Buffer.from("{\\"unparsable\\": ")' in spec
     assert spec.count("expect(answer.status()).toBeLessThan(500)") == 2
     assert spec.count("test.skip([401, 403].includes(answer.status())") == 2
     # The PUT reaches the record the POST made; the POST itself makes none.

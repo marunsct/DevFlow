@@ -552,7 +552,9 @@ def _a_bad_body_test(title: str, check: Check) -> str:
         f"test({title}, async ({{ request }}) => {{\n{made}"
         f"  const answer = await request.fetch({target}, {{ method: {_js(check.method)}, "
         "headers: { 'content-type': 'application/json' }, "
-        f"data: {_js(A_BODY_NOTHING_CAN_PARSE)}, failOnStatusCode: false }});\n"
+        # Bytes, not a string: Playwright JSON-encodes a string sent as JSON, which made the probe send a valid JSON
+        # string while its defect said the body could not be parsed (measured on two runs).
+        f"data: Buffer.from({_js(A_BODY_NOTHING_CAN_PARSE)}), failOnStatusCode: false }});\n"
         f"  test.skip([401, 403].includes(answer.status()), {_js(SIGN_IN_ANSWERED_FIRST)});\n"
         "  expect(answer.status()).toBeLessThan(500);\n"
         "});\n"
@@ -625,7 +627,7 @@ def _an_emptied_field_test(title: str, check: Check, bodies: list[Any]) -> str:
     example = next(b for b in bodies if isinstance(b, dict) and check.emptied in b)
     sent = {**example, check.emptied: _THE_EMPTIED_VALUE[check.blank]}
     plain = _with_the_bad_body(check)
-    marker = f"data: {_js(A_BODY_NOTHING_CAN_PARSE)}, "
+    marker = f"data: Buffer.from({_js(A_BODY_NOTHING_CAN_PARSE)}), "
     assert marker in plain
     asked = plain.replace(marker, f"data: {json.dumps(sent)}, ")
     line = next(l for l in asked.splitlines(keepends=True) if l.startswith("  const answer = await request.fetch("))

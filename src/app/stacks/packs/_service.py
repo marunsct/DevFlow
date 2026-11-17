@@ -174,16 +174,18 @@ option and the service would receive nothing. Do not edit the helper."""
 
 #: What "every test runs on the file database" means for the schema.
 ON_THE_FILE_DATABASE = (
-    "The schema, its column types, its queries and its migrations must work on that file "
-    "database as well as on the server: the tests never reach a database server, so a type "
-    "or a query only the server has stops the product before any test runs."
+    "Its schema, types, queries and migrations must work on that file database too: no test reaches a "
+    "server, so anything only the server has stops the product before any test runs."
 )
 
-#: The data directory may not exist when the service starts: measured on one run, the suite handed the service a fresh
+#: Writes made at the same moment (CONCURRENT_WRITE_PROBE): measured across the language sweep, products in several
+#: families lost one of two records created at once - a hidden quality test each time, and on one Java run three fix
+#: rounds that never found the read-change-write race. The data directory may not exist when the service starts: measured on one run, the suite handed the service a fresh
 #: `DATA_DIR` path, every first write failed `ENOENT`, each request answered 500, and four fixes in a row were reverted.
-DATA_GUIDE = """A service that stores data keeps it under the directory in the `DATA_DIR`
-environment variable (default `data/`), never in memory only. It may not exist yet: create it, with its parents,
-before the first write; a missing data file reads as empty. One meant for a
+DATA_GUIDE = """A service keeps its data under the directory in `DATA_DIR` (default `data/`), never in memory
+only. It may not exist yet: create it, with its parents, before the first write; a missing data file reads as empty.
+Requests arrive at once: read, change and write the store under one lock, and take a new record's id inside it.
+One meant for a
 database server reads its address from `DATABASE_URL` and, when that is unset,
 keeps a file database under `DATA_DIR`, which is what every test runs on. """ + ON_THE_FILE_DATABASE + """ The
 service listens on the port in `PORT` and the interface in `HOST`. Never start

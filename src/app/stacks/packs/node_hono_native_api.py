@@ -130,7 +130,7 @@ Unit tests go in `test/`, named `<area>.test.ts`, with Node's own runner: `impor
 `import assert from 'node:assert/strict'`, and call the application in memory - `await createApp().request('/items',
 { method: 'POST', body: JSON.stringify({ ... }), headers: { 'content-type': 'application/json' } })` returns a standard
 `Response`. Use that, not a client library: `hono/testing` exports only `testClient`, which needs the route types, and
-nothing else (no `createClient`, no `createTestClient`). Before you finish, run `npm run typecheck` and `npm test`. Check a package's exports with `module_exports` before importing a name you are unsure of."""
+nothing else (no `createClient`, no `createTestClient`). Before you finish, run `npm run typecheck` and `npm test`. Check a package's exports with `module_exports` before importing an unsure name."""
 
 DOCKERFILE = """# {{title}}: build with `docker build -t {{project}} .`, run with
 # `docker run -p 3000:3000 -v {{project}}-data:/data {{project}}`.

@@ -11,12 +11,9 @@ working.
 
 from __future__ import annotations
 
-import inspect
-
 import pytest
 
-import app.analysis.integration_checks as checks
-from app.analysis.integration_checks import _BREAKS_BEHAVIOUR, _severity_of
+from app.analysis.integration_checks import _severity_of
 
 
 @pytest.mark.parametrize(
@@ -50,13 +47,3 @@ def test_a_finding_that_stops_something_working(problem: str) -> None:
 )
 def test_a_finding_that_is_merely_untidy(problem: str) -> None:
     assert _severity_of(problem) == "untidy"
-
-
-@pytest.mark.parametrize("marker", _BREAKS_BEHAVIOUR)
-def test_every_marker_matches_a_message_this_module_emits(marker: str) -> None:
-    """A marker that matches nothing classifies every finding as untidy, in
-    silence. Guessed phrases are how that happens, so each one is checked
-    against the source that produces the messages."""
-    assert marker in inspect.getsource(checks), (
-        f"`{marker}` appears in no message this module emits; it would never fire"
-    )

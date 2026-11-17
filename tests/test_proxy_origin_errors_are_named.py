@@ -111,14 +111,25 @@ class TestItStaysOutOfTheWay:
 
 
 class TestItIsActuallyInstalled:
-    def test_the_worker_installs_it(self):
-        import inspect
+    def test_the_worker_installs_it(self, monkeypatch):
+        """The worker makes every model call; without this the diagnostic never fires.
+
+        Its process start is signalled as Celery signals it; the run store it opens (no database here) and the
+        process-privacy call are stood in for."""
+        from celery.signals import worker_process_init
 
         from app.server import tasks
 
-        assert "proxy_timeouts" in inspect.getsource(tasks._init_worker_process), (
-            "the worker makes every model call; without this the diagnostic never fires"
-        )
+        monkeypatch.setattr(tasks, "_runner", None)
+        monkeypatch.setattr("app.server.process_privacy.keep_private", lambda: None)
+        monkeypatch.setattr("app.server.run_store.RunStore.shared", classmethod(lambda cls: object()))
+        monkeypatch.setattr("app.server.runner.WorkflowRunner", lambda **kwargs: object())
+        httpx_logger = logging.getLogger("httpx")
+        monkeypatch.setattr(httpx_logger, "filters", [])
+
+        worker_process_init.send(sender=None)
+
+        assert any(isinstance(f, _ProxyErrorFilter) for f in httpx_logger.filters)
 
     def test_installing_twice_is_harmless(self):
         from app.observability.proxy_timeouts import install
@@ -220,8 +231,17 @@ class TestItIsActuallyInstalled:
             logging.getLogger().removeHandler(handler)
 
     def test_the_worker_reinstalls_once_logging_is_up(self):
-        import inspect
+        """A handler Celery adds after the process started is given the observer when a task begins."""
+        from celery.signals import task_postrun, task_prerun
 
-        from app.server import tasks
+        import app.server.tasks  # noqa: F401 - connects the worker's signal handlers
 
-        assert "task_prerun" in inspect.getsource(tasks)
+        handler = logging.StreamHandler()
+        logging.getLogger().addHandler(handler)
+        try:
+            task_prerun.send(sender=None, task_id="t", task=None, args=(), kwargs={})
+            task_postrun.send(sender=None, task_id="t", task=None, args=(), kwargs={})
+
+            assert any(isinstance(f, _ProxyErrorFilter) for f in handler.filters)
+        finally:
+            logging.getLogger().removeHandler(handler)

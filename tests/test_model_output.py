@@ -58,12 +58,29 @@ def test_stripping_leaves_text_with_no_delimiters_alone() -> None:
     assert strip_reasoning('{"a": 1}') == '{"a": 1}'
 
 
-def test_the_write_guard_and_the_answer_parser_both_use_it() -> None:
-    """Two callers, one definition - the B17 lesson applied before it bites."""
-    import inspect
+def test_a_write_carrying_a_leaked_token_is_refused(tmp_path) -> None:
+    """Two callers, one definition - the B17 lesson applied before it bites. The write is refused..."""
+    import pytest
 
-    from app.agents import settled_answer
-    from app.tools import repository
+    from app.tools.repository import RepositoryToolError, write_approved_artifact
 
-    assert "find_leaked_marker" in inspect.getsource(repository)
-    assert "strip_reasoning" in inspect.getsource(settled_answer)
+    with pytest.raises(RepositoryToolError, match="END_THINKING"):
+        write_approved_artifact(str(tmp_path), "notes/README.md", "# Notes\nKept until deleted.<|END_THINKING|>\n")
+
+    assert not (tmp_path / "notes" / "README.md").exists()
+
+
+def test_a_stage_s_answer_is_read_past_its_reasoning() -> None:
+    """...and the answer is stripped: the schema example inside `<think>` is not taken for the answer."""
+    from types import SimpleNamespace
+
+    from pydantic import BaseModel
+
+    from app.agents.settled_answer import _answer_in
+
+    class Verdict(BaseModel):
+        status: str
+
+    message = SimpleNamespace(content='<think>the shape is {"status": "example"}</think>\n{"status": "approved"}')
+
+    assert _answer_in(message, Verdict).status == "approved"

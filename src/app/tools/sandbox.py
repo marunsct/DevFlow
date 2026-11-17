@@ -3779,6 +3779,17 @@ def _phpunit(text: str) -> tuple[int, int] | None:
     return max(counts.get("Tests", 0) - failed - left_out, 0), failed
 
 
+def _gotestsum(text: str) -> tuple[int, int] | None:
+    """gotestsum's "DONE 40 tests, 2 skipped, 4 failures, 1 error in 0.5s"; a package that did not build is a failure."""
+    found = _GOTESTSUM.search(text)
+    if not found:
+        return None
+    counts = {word.rstrip("s"): int(n) for n, word in re.findall(r"(\d+) (tests?|skipped|failures?|errors?)", found.group(0))}
+    failed = counts.get("failure", 0) + counts.get("error", 0)
+    return max(counts.get("test", 0) - counts.get("failure", 0) - counts.get("skipped", 0), 0), failed
+
+
+_GOTESTSUM = re.compile(r"^DONE \d+ tests?(?:, \d+ (?:skipped|failures?|errors?))* in [\d.]+m?s", re.M)
 _MAVEN = re.compile(r"Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)[^\n]*")
 _DOTNET = re.compile(r"(?:Passed|Failed)!\s+-\s+Failed:\s+(\d+),\s+Passed:\s+(\d+)")
 _RSPEC = re.compile(r"\b(\d+) examples?, (\d+) failures?(?:, (\d+) pending)?(?:, (\d+) errors? occurred outside of examples)?")
@@ -3788,7 +3799,8 @@ _PHPUNIT = re.compile(r"^Tests: \d+, Assertions: \d+(?:, \w+: \d+)*\.", re.M)
 #: The runners whose summaries are counted rather than matched by one pattern each: their totals are a sum or a
 #: difference of several numbers. Read after `_RUNNER_TOTALS`, whose lines none of them prints. Measured by the
 #: rule-coverage counter (LR.46) across the language sweep: Maven and .NET runs were recorded with no counts.
-_COUNTED_RUNNERS = (("maven", _maven), ("dotnet", _dotnet), ("rspec", _rspec), ("phpunit", _phpunit))
+_COUNTED_RUNNERS = (("maven", _maven), ("dotnet", _dotnet), ("rspec", _rspec), ("phpunit", _phpunit),
+                    ("gotestsum", _gotestsum))
 
 
 def _the_counts_a_test_run_reported(result: dict) -> dict:

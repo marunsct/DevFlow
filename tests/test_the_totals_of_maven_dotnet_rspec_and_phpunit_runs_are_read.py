@@ -39,7 +39,10 @@ def _totals(text: str) -> dict:
     ("OK (48 tests, 90 assertions)\n", 48, 0),
     ("OK (1 test, 1 assertion)\n", 1, 0),
     ("Tests: 1, Assertions: 1, Failures: 1.\n", 0, 1),
-    ("Tests: 10, Assertions: 20, Errors: 1, Failures: 2, Skipped: 1, Incomplete: 1.\n", 5, 3),
+    ("Tests: 10, Assertions: 20, Errors: 1, Failures: 2, Skipped: 1, Incomplete: 1.\n", 5, 3),    # gotestsum (Go): its closing line; a package that did not build is an error, counted as a failure.
+    ("DONE 40 tests, 4 failures in 0.006s\n", 36, 4),
+    ("DONE 1 tests in 0.512s\n", 1, 0),
+    ("DONE 12 tests, 2 skipped, 1 failure, 1 error in 1.2s\n", 9, 2),
 ])
 def test_each_runner_s_summary_is_read(text, passed, failed):
     assert _totals(text) == {"passed": passed, "failed": failed, "tests": passed + failed}
@@ -57,5 +60,5 @@ def test_the_note_of_a_run_not_read_names_every_runner_read(monkeypatch):
 
     monkeypatch.setattr(rule_coverage, "could_not_apply", lambda rule, text: said.append(text))
     sandbox._count_a_test_run_whose_totals_were_not_read(["zig", "build", "test"], {"stdout": "All 3 tests passed."})
-    assert said and all(name in said[0] for name in ("maven", "dotnet", "rspec", "phpunit"))
+    assert said and all(name in said[0] for name in ("maven", "dotnet", "rspec", "phpunit", "gotestsum"))
     assert all(name in rule_coverage.CHECKS[rule_coverage.RUNNER_TOTALS] for name in ("Maven", ".NET", "RSpec", "PHPUnit"))

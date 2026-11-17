@@ -3962,6 +3962,35 @@ def _count_a_test_run_whose_totals_were_not_read(command: Sequence[str], result:
     )
 
 
+def _the_counts_its_report_holds(repo_root: str, command: Sequence[str], duration_seconds: float | None) -> dict:
+    """The totals of the pack's own unit or acceptance command, read from the report it wrote, when its output named
+    none; `{}` otherwise. Never raises.
+
+    Measured on three Java runs: `mvn -q` prints no summary on a green run, so every passing unit run was recorded
+    with no counts, though Surefire's reports held them. A report older than the command is not this run's.
+    """
+    try:
+        from app.acceptance import junit
+        from app.stacks import contract
+
+        record = contract.read(repo_root) or {}
+        argv = [str(part) for part in command]
+        for key, report in (("unit_test", "unit_report"), ("acceptance_test", "acceptance_report")):
+            if [str(part) for part in record.get(key) or []] != argv or not record.get(report):
+                continue
+            path = Path(repo_root) / str(record.get("project") or "") / str(record[report])
+            files = [path] if path.is_file() else list(path.glob("*.xml")) if path.is_dir() else []
+            since = time.time() - (duration_seconds or 0) - 5
+            if not files or max(f.stat().st_mtime for f in files) < since:
+                return {}
+            found = junit.read(path)
+            if found.found and (found.passed or found.failed):
+                return {"passed": found.passed, "failed": found.failed, "tests": found.passed + found.failed}
+        return {}
+    except Exception:  # noqa: BLE001 - the entry is written without counts, as before
+        return {}
+
+
 def _record_execution(
     repo_root: str,
     role_name: str,
@@ -3994,6 +4023,8 @@ def _record_execution(
         return
     try:
         totals = _the_counts_a_test_run_reported(result)
+        if category == "test" and not totals:
+            totals = _the_counts_its_report_holds(repo_root, command, duration_seconds)
         if category == "test" and not totals:
             _count_a_test_run_whose_totals_were_not_read(command, result)
         entry = {

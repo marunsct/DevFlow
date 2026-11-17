@@ -221,3 +221,47 @@ def test_the_reasons_avoid_the_banned_words():
              inspect.getsource(ic._count_a_sign_in_the_probe_could_not_make),
              inspect.getsource(sandbox._count_a_test_run_whose_totals_were_not_read)]
     assert not [t for t in texts if banned.search(t)]
+
+
+SUREFIRE = """<?xml version="1.0"?>
+<testsuite name="app.notes_api.NoteServiceTest" tests="3">
+  <testcase name="createsANote" classname="app.notes_api.NoteServiceTest"/>
+  <testcase name="listsNotes" classname="app.notes_api.NoteServiceTest"/>
+  <testcase name="refusesAnEmptyTitle" classname="app.notes_api.NoteServiceTest"><failure message="expected 400">x</failure></testcase>
+</testsuite>"""
+
+
+def _a_java_project(root: Path) -> list[str]:
+    from app.stacks import contract, pack_named
+
+    contract.write(root, pack_named("java-spring-api"), "notes-api", "Notes")
+    (root / "notes-api" / "target" / "surefire-reports").mkdir(parents=True)
+    return contract.read(root)["unit_test"]
+
+
+def test_a_quiet_green_unit_run_is_counted_from_the_report_it_wrote(run, tmp_path):
+    """Measured on three Java runs: `mvn -q` prints no summary on a green run, though Surefire's reports held it."""
+    workspace = tmp_path / "product-workspace"
+    workspace.mkdir()
+    command = _a_java_project(workspace)
+    (workspace / "notes-api/target/surefire-reports/TEST-app.notes_api.NoteServiceTest.xml").write_text(SUREFIRE)
+    quiet = {"returncode": 1, "stdout": "  .   ____          _            __ _ _\n 2026-11-17 INFO Started", "stderr": ""}
+
+    assert sandbox._the_counts_its_report_holds(str(workspace), command, 12.0) == {"passed": 2, "failed": 1, "tests": 3}
+    sandbox._record_execution(str(workspace), "qa", command, quiet, category="test", duration_seconds=12.0)
+    assert _noted(run, rule_coverage.RUNNER_TOTALS) == []
+
+
+def test_a_report_older_than_the_command_or_another_command_is_not_read(run, tmp_path):
+    import os
+    import time
+
+    workspace = tmp_path / "product-workspace"
+    workspace.mkdir()
+    command = _a_java_project(workspace)
+    report = workspace / "notes-api/target/surefire-reports/TEST-app.notes_api.NoteServiceTest.xml"
+    report.write_text(SUREFIRE)
+    os.utime(report, (time.time() - 3600, time.time() - 3600))
+    assert sandbox._the_counts_its_report_holds(str(workspace), command, 12.0) == {}
+    report.touch()
+    assert sandbox._the_counts_its_report_holds(str(workspace), ["mvn", "-q", "-B", "verify"], 12.0) == {}

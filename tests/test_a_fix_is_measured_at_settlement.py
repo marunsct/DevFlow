@@ -176,15 +176,18 @@ def test_a_finding_the_language_service_still_reports_is_left_open(tmp_path, mon
     unmeasured, and the routers' missing name it should have defined stopped the product a round later."""
     from app.graph import engineering
 
-    (tmp_path / "shop").mkdir()
+    (tmp_path / "shop" / "routers").mkdir(parents=True)
     (tmp_path / "shop" / "database.py").write_text("engine = 1\n")
+    (tmp_path / "shop" / "routers" / "a.py").write_text("from shop.database import get_db\n")
     monkeypatch.setattr("app.tools.repository.pinned_project_directory", lambda root: "")
     still = [{"message": '"get_db" is unknown import symbol'}]
+    # The language service is the edge: the routers' missing name is reported in the routers' own file.
     monkeypatch.setattr("app.analysis.language_service.underlined_any",
-                        lambda root, target, content, project=None: SimpleNamespace(here=still))
+                        lambda root, target, content, project=None:
+                        SimpleNamespace(here=still if target.name == "a.py" else []))
     finding = Defect(
         description=f'shop/database.py line 1: Cannot access attribute "URL"{engineering.FAILS_WHEN_IT_RUNS}'
-                    f'{engineering.SAME_PROBLEM_ELSEWHERE}- [language service] shop/routers/a.py line 3: "get_db" ...',
+                    f'{engineering.SAME_PROBLEM_ELSEWHERE}- [language service] shop/routers/a.py line 3: "get_db" is unknown',
         severity="major", reproduction_steps="read it", expected_behavior="it resolves", actual_behavior="no",
         owner="backend", regression_test_required=False, source="language service",
     )

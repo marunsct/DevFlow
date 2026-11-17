@@ -185,6 +185,9 @@ FAILS_WHEN_IT_RUNS = " - this fails when the code runs."
 #: Where a merged defect's own text ends and what other checks said begins
 #: (`workflow._one_defect_per_cause`).
 SAME_PROBLEM_ELSEWHERE = "\n\nThe same problem, as other checks reported it:\n"
+#: A merged finding the language service raised: `- [language service] <file> line N: <message>`, maybe cut short.
+_A_MERGED_UNDERLINED = re.compile(r"^- \[language service\] (?P<file>\S+) line [\d, ]+: (?P<message>.+?)"
+                                  r"(?:" + re.escape(FAILS_WHEN_IT_RUNS) + r")?$", re.M)
 _AN_UNDERLINED_DEFECT = re.compile(r"^(?P<file>\S+) line [\d, ]+: (?P<message>.+)" + re.escape(FAILS_WHEN_IT_RUNS) + "$", re.S)
 
 
@@ -207,21 +210,35 @@ def still_underlined(root: str, description: str) -> bool:
         left = dependency_drift.still_undeclared(project or Path(root), str(description or ""))
         if left is not None:
             return bool(left)
-        own, merged, _ = str(description or "").partition(SAME_PROBLEM_ELSEWHERE)
+        own, _, merged = str(description or "").partition(SAME_PROBLEM_ELSEWHERE)
         found = _AN_UNDERLINED_DEFECT.match(own.strip())
         if found is None:
             return False
         target = Path(root) / found.group("file")
         if not target.is_file():
             return False
+        # What the defect names: its own message, and each merged finding's (cut at 400 characters, so matched by its
+        # start). Measured on two Rust runs: a fixed import stayed "still reported" because any other error in the
+        # same file - a borrow error forty lines on - counted as the merged defect's.
+        named = [(found.group("file"), found.group("message"))] + [
+            (m.group("file"), m.group("message")) for m in _A_MERGED_UNDERLINED.finditer(merged)]
+
+        def holds(file: str, message: str) -> bool:
+            message = " ".join(str(message).split())
+            return any(file == f and (message == " ".join(said.split()) or message.startswith(" ".join(said.split())))
+                       for f, said in named)
+
         if target.suffix.lower() in compiler_check.SUFFIXES:
-            errors = [e for e in compiler_check.findings(root, pinned or "", [found.group("file")])
-                      if e["file"] == found.group("file")]
-            return any(e["message"] == found.group("message") for e in errors) or bool(merged and errors)
-        now = underlined_any(root, target, target.read_text(encoding="utf-8", errors="replace"), project)
-        if now is None:
-            return False
-        return any(f["message"] == found.group("message") for f in now.here) or bool(merged and now.here)
+            files = list(dict.fromkeys(f for f, _ in named))
+            return any(holds(e["file"], e["message"]) for e in compiler_check.findings(root, pinned or "", files))
+        for file in dict.fromkeys(f for f, _ in named):
+            path = Path(root) / file
+            if not path.is_file():
+                continue
+            now = underlined_any(root, path, path.read_text(encoding="utf-8", errors="replace"), project)
+            if now is not None and any(holds(file, f["message"]) for f in now.here):
+                return True
+        return False
     except Exception:  # noqa: BLE001 - settled as before
         return False
 

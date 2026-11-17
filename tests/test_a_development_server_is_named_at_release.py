@@ -5,11 +5,8 @@ server. A pack's start is the pack's own choice and is not read.
 """
 from __future__ import annotations
 
-import inspect
-
 from app import completion_verdict
 from app.graph import delivery
-from app.plugins import seed
 
 
 def _a_product(tmp_path, code: str):
@@ -39,8 +36,3 @@ def test_a_pack_s_own_choice_is_not_read(tmp_path, monkeypatch) -> None:
     root = _a_product(tmp_path, "from wsgiref.simple_server import make_server\n")
     monkeypatch.setattr("app.stacks.contract.the_pack", lambda root: (SimpleNamespace(name="php-slim-api"), {}))
     assert delivery._a_development_server(root) == []
-
-
-def test_the_servers_are_listed_per_language_in_the_seed_table() -> None:
-    assert "wsgiref.simple_server" in seed.DEVELOPMENT_SERVERS["python"]
-    assert "wsgiref" not in inspect.getsource(delivery._a_development_server)

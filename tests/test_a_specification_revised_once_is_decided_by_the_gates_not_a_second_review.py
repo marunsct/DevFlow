@@ -10,7 +10,6 @@ import re
 from types import SimpleNamespace
 
 from app.graph import one_design_review, workflow
-from workflow_nodes import workflow_source
 
 BRIEF = "# Notes\n\n- Notes with tags.\n"
 
@@ -71,11 +70,21 @@ def test_off_or_before_any_revision_the_review_runs_as_before(monkeypatch, tmp_p
     assert workflow._decided_after_one_revision(_state(tmp_path, CONTRADICTORY), "x") is None
 
 
-def test_the_node_asks_the_gates_before_the_reviewer():
-    source = workflow_source()
-    gate = source.index("once = _decided_after_one_revision(state, spec_text)")
-    reviewer = source.index("agent = create_architecture_reviewer_agent(", gate - 2000)
-    assert gate < reviewer
+def test_the_node_decides_a_revised_specification_without_asking_the_reviewer(monkeypatch, tmp_path):
+    from workflow_nodes import an_architecture_review
+
+    monkeypatch.setenv("ONE_DESIGN_REVIEW", "on")
+    decided = workflow._decided_after_one_revision
+
+    update, asked = an_architecture_review(
+        tmp_path, SimpleNamespace(status="needs_revision", findings=[]),
+        state={"architecture_revision_count": 1, "decisions": [], "document": SimpleNamespace(text=BRIEF)},
+        patches={"app.graph.workflow._decided_after_one_revision": decided,
+                 "app.graph.workflow._record_document": lambda *args, **kwargs: None,
+                 "app.graph.workflow._review_enabled": lambda state, point: False})
+
+    assert update["stage"] == "scaffold" and update["architecture_review"].status == "approved"
+    assert asked == []
 
 
 def test_the_words_it_writes_name_no_product_word(monkeypatch, tmp_path):

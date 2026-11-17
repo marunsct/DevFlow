@@ -22,9 +22,12 @@ _GRAPH_PACKAGE = Path(workflow_module.__file__).parent
 
 
 def _graph_sources() -> dict[str, str]:
-    """Every module of the graph package, so a node lifted out of `workflow.py`
-    stays under the same checks instead of silently leaving them."""
-    return {path.name: path.read_text(encoding="utf-8") for path in sorted(_GRAPH_PACKAGE.glob("*.py"))}
+    """Every module of the graph package and its subpackages (`app.graph.nodes`), so a node lifted out of
+    `workflow.py` stays under the same checks instead of silently leaving them."""
+    return {
+        path.relative_to(_GRAPH_PACKAGE).as_posix(): path.read_text(encoding="utf-8")
+        for path in sorted(_GRAPH_PACKAGE.rglob("*.py"))
+    }
 
 
 def _registered_node_names(tmp_path) -> set[str]:
@@ -604,3 +607,81 @@ def test_a_stage_kept_in_its_own_module_is_looked_up_when_it_runs(tmp_path):
 
     assert update == {"stage": "release"}
     assert isinstance(given[0], GraphContext) and given[0].repo_root == str(tmp_path)
+
+
+#: The nodes lifted out of `build_workflow_graph` in LR.50 phase 2: graph node -> (module of `app.graph.nodes`,
+#: function, whether it takes the run's `GraphContext`).
+_LIFTED_IN_PHASE_2 = {
+    "principal_architect": ("specification", "principal_architect_node", True),
+    "architecture_review": ("specification", "architecture_review_node", True),
+    "technical_lead": ("building", "technical_lead_node", True),
+    "specialist_dispatch": ("building", "specialist_dispatch_node", True),
+    "specialist_worker": ("building", "specialist_worker_node", True),
+    "specialist_gather": ("building", "specialist_gather_node", False),
+    "test_and_triage": ("triage", "test_and_triage_node", True),
+    "defect_remediation": ("fixes", "defect_remediation_node", True),
+    "defect_fix_worker": ("fixes", "defect_fix_worker_node", True),
+    "defect_fix_gather": ("fixes", "defect_fix_gather_node", False),
+    "milestone_review": ("milestone", "milestone_review_node", True),
+}
+
+
+@pytest.mark.parametrize("node", sorted(_LIFTED_IN_PHASE_2))
+def test_a_node_lifted_in_phase_2_is_its_module_s_function_given_the_run_s_context(node, tmp_path):
+    """Each graph node is the module function of `app.graph.nodes` it names, called with the run's one
+    `GraphContext` when it takes one - not a closure left inside `build_workflow_graph`, which a patch of the
+    module's function would never reach."""
+    import importlib
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.graph.context import GraphContext
+    from workflow_nodes import CONFIG
+
+    module_name, function, takes_context = _LIFTED_IN_PHASE_2[node]
+    module = importlib.import_module(f"app.graph.nodes.{module_name}")
+    given: list = []
+
+    def with_the_context(state, config, ctx):
+        given.append(ctx)
+        return {"stage": "recorded"}
+
+    def without_one(state, config):
+        given.append(None)
+        return {"stage": "recorded"}
+
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(module, function, with_the_context if takes_context else without_one)
+        graph = workflow_module.build_workflow_graph(
+            model="fake-model", checkpointer=MemorySaver(), repo_root=str(tmp_path), allow_subdirectories=False,
+        )
+        update = graph.nodes[node].bound.invoke({}, CONFIG)
+
+    assert update == {"stage": "recorded"} and len(given) == 1
+    if takes_context:
+        assert isinstance(given[0], GraphContext)
+        assert given[0].repo_root == str(tmp_path) and given[0].allow_subdirectories is False
+        assert given[0].model == "fake-model"
+
+
+def test_the_build_model_is_the_run_s_context_s_choice():
+    """`GraphContext.the_build_model`: the build model until a stage has failed, the judgement model after."""
+    from app.graph.context import GraphContext
+    from app.models.roles import escalate_after
+
+    ctx = GraphContext(model="default", judgement_model="judge", planning_model="default", building_model="quiet",
+                       checkpointer=None, repo_root=None)
+    fresh: dict = {}
+    assert ctx.the_build_model(fresh, "defect_fix_1_0") == "quiet"
+    assert ctx.the_build_model(fresh, "defect_fix_1_0", reasons=True) == "default", "a fix reasons as configured"
+    assert ctx.the_build_model(fresh, "defect_fix_1_0", after_a_revert=True) == "judge"
+    assert ctx.the_build_model(fresh, "defect_fix_1_0", escalate_after()) == "judge"
+    restarted = {"structured_retries": {"specialist_0": escalate_after()}}
+    assert ctx.the_build_model(restarted, "specialist_0") == "judge"
+    assert ctx.the_build_model({"sprint_replan_count": 1}, "specialist_0") == "judge", "a sprint tried again"
+    assert ctx.the_model_for_this_attempt({"escalation_count": 1}) == "judge"
+    assert ctx.the_model_for_this_attempt(fresh) == "default"
+
+    one_model = GraphContext(model="default", judgement_model="default", planning_model="default",
+                             building_model="quiet", checkpointer=None, repo_root=None)
+    assert one_model.the_build_model({"sprint_replan_count": 1}, "s", 99, after_a_revert=True) == "quiet"

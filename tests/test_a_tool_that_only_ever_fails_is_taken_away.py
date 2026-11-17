@@ -314,7 +314,7 @@ class TestTheReadOrdinalIsNotTheStages:
         assert _refused_reads([_ToolMessage("@@ lines 1-20 of 20 @@\nconst a = 1;")]) == 0
 
 
-def test_the_read_rung_does_not_starve_the_repeat_rung() -> None:
+def test_the_read_rung_does_not_starve_the_repeat_rung(monkeypatch) -> None:
     """Both rungs must be evaluated on the same call.
 
     `repeated` was computed only when nothing else had set a correction, and the
@@ -324,21 +324,40 @@ def test_the_read_rung_does_not_starve_the_repeat_rung() -> None:
     One run repeated an `edit_artifact` past the threshold and was never
     withheld it once.
     """
-    import inspect
+    # STABLE_TOOLS off: this checks the bound tool list, which that fix keeps whole (it refuses a withheld call).
+    monkeypatch.setenv("STABLE_TOOLS", "off")
+    from types import SimpleNamespace
 
-    from app.agents import settled_answer
+    from pydantic import BaseModel
 
-    source = inspect.getsource(settled_answer.build_settled_answer_middleware)
-    guarded = source.split("reading_nothing_new = _refused_reads(messages)", 1)[1]
+    from app.agents.settled_answer import build_settled_answer_middleware
 
-    assert "repeated = None if correction else" not in guarded, (
-        "the repeat rung is gated on no other correction existing, which the "
-        "read rung above it almost always provides"
-    )
-    read_rung = guarded.find("READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL")
-    repeat_rung = guarded.find("_a_tool_refused_identically(messages)")
+    class _Answer(BaseModel):
+        ok: bool = True
 
-    assert read_rung != -1 and repeat_rung != -1
+    class _Request:
+        def __init__(self, messages, tools):
+            self.messages, self.tools, self.model, self.model_settings = messages, tools, None, {}
+
+        def override(self, **changes):
+            return _Request(changes.get("messages", self.messages), changes.get("tools", self.tools))
+
+    refused_reads = [TestTheReadOrdinalIsNotTheStages._refusal(n) for n in ("1st", "2nd", "3rd")]
+    messages = [
+        SimpleNamespace(type="human", content="Fix the defect."),
+        *refused_reads,
+        *_conversation(IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL, tool="edit_artifact",
+                       args={"relative_path": "app.js", "find": "a", "replace": "b"}),
+    ]
+    tools = [SimpleNamespace(name="read_file"), SimpleNamespace(name="edit_artifact"),
+             SimpleNamespace(name="write_artifact")]
+    sent: list = []
+    middleware = build_settled_answer_middleware(_Answer, "defect_fix", step_limit=60)
+
+    middleware.wrap_model_call(_Request(messages, tools), sent.append)
+
+    assert "edit_artifact" not in [tool.name for tool in sent[0].tools]
+    assert "`edit_artifact` has been withheld" in str(sent[0].messages[-1]["content"])
 
 
 def test_the_budget_warning_does_not_starve_the_repeat_rung(monkeypatch) -> None:

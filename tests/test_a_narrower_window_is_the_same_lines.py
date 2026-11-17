@@ -22,7 +22,9 @@ file in this stage" on reads 12 and 13 and returned the bytes anyway.
 
 from __future__ import annotations
 
-from app.agents.workspace_backend import READS_BEFORE_WITHHOLDING, WorkspaceBackend
+import pytest
+
+from app.agents.workspace_backend import WorkspaceBackend
 
 
 def _lines(count: int) -> str:
@@ -43,7 +45,6 @@ def test_a_narrowed_window_stops_returning_the_file(tmp_path) -> None:
     # Every one of these is a subset of what the first read returned.
     sizes = [len(_read(backend, offset=0, limit=limit)) for limit in (120, 110, 100)]
 
-    assert len(sizes) == READS_BEFORE_WITHHOLDING
     assert sizes[-1] < len(whole) / 4, (
         f"the third window of already-seen lines still returned {sizes[-1]} "
         f"characters against a whole file of {len(whole)}"
@@ -71,7 +72,7 @@ def test_lines_never_served_still_come_back(tmp_path) -> None:
     backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
 
     _read(backend, offset=0, limit=100)
-    for _ in range(READS_BEFORE_WITHHOLDING + 2):
+    for _ in range(5):
         _read(backend, offset=0, limit=50)
 
     onward = _read(backend, offset=100, limit=100)
@@ -99,11 +100,18 @@ def test_a_write_resets_it(tmp_path) -> None:
     assert "line 90" in _read(backend, offset=0, limit=100)
 
 
-def test_the_two_rungs_withhold_on_the_same_count(tmp_path) -> None:
-    """One constant, so they cannot drift apart: the byte-identical ladder and
-    the already-seen-lines ladder are the same waste seen two ways."""
-    import inspect
+@pytest.mark.parametrize("window", [
+    pytest.param([{}, {}, {}, {}], id="the whole file again"),
+    pytest.param([{}, {"offset": 0, "limit": 120}, {"offset": 0, "limit": 110}, {"offset": 0, "limit": 100}],
+                 id="a narrower window"),
+])
+def test_the_two_rungs_withhold_on_the_same_read(tmp_path, window) -> None:
+    """The byte-identical ladder and the already-seen-lines ladder are the same waste seen two ways: both return
+    the lines three times and withhold them on the fourth read."""
+    (tmp_path / "app.js").write_text(_lines(391), encoding="utf-8")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
 
-    source = inspect.getsource(WorkspaceBackend._note_if_already_seen)
+    sizes = [len(_read(backend, **asked)) for asked in window]
 
-    assert "READS_BEFORE_WITHHOLDING" in source
+    assert min(sizes[:3]) > 1000
+    assert sizes[3] < 700

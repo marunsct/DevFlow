@@ -109,9 +109,11 @@ def test_edits_to_different_files_do_not_move_each_other(root: Path) -> None:
     assert "line8\nNINE\nline10" in (root / "app" / "style.css").read_text(encoding="utf-8")
 
 
-def test_every_role_agent_carries_it() -> None:
-    import inspect
+def test_every_role_agent_carries_it(root: Path, monkeypatch) -> None:
+    from a_role_agent import run_a_role_agent
 
-    from app.agents import role_agent
+    monkeypatch.setenv("LINE_EDITS", "on")
 
-    assert "build_line_batch_middleware(resolved_repo_root)" in inspect.getsource(role_agent)
+    run_a_role_agent(root, monkeypatch, [_reply(EDITS)], approve=len(EDITS))
+
+    assert (root / "app" / "style.css").read_text(encoding="utf-8") == EXPECTED

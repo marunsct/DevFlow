@@ -88,8 +88,24 @@ def test_a_run_is_started_with_its_switches_and_an_unknown_name_is_refused_first
     assert refused < started < stored
 
 
-def test_the_provenance_reads_the_switches_as_the_run_sees_them() -> None:
-    from app.observability import provenance
+def test_the_provenance_reads_the_switches_as_the_run_sees_them(tmp_path, monkeypatch) -> None:
+    """The KPI row names a run's arm from its provenance: the switch the run turned off must not read as on."""
+    from app.observability.provenance import record_the_segment
+    from app.observability.transcript import read_transcript
 
-    source = inspect.getsource(provenance.record_the_segment)
-    assert "with as_the_run(run_id):" in source and "switch_overrides" in source
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SWITCH_OVERRIDES_FROM_SETTINGS", "on")
+    monkeypatch.setenv("MILESTONE_EVIDENCE_GATE", "on")
+    monkeypatch.setattr(
+        "app.server.run_store.RunStore.shared",
+        classmethod(lambda cls: _Store({"run-off": {"MILESTONE_EVIDENCE_GATE": False}})),
+    )
+    monkeypatch.setattr(switches, "stored", lambda name: None)
+    switches._RUN_OVERRIDES.clear()
+
+    record_the_segment("run-off")
+
+    [segment] = read_transcript("run-off", {"provenance"})
+    switches._RUN_OVERRIDES.clear()
+    assert "MILESTONE_EVIDENCE_GATE" not in segment["switches_on"]
+    assert segment["switch_overrides"] == ["MILESTONE_EVIDENCE_GATE=off"]

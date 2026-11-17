@@ -65,13 +65,23 @@ def test_only_orphans_the_helper_started_in_this_workspace_are_stopped(tmp_path,
     assert killed == [101]
 
 
-def test_every_sandbox_command_looks_for_strays():
-    import inspect
+def test_every_sandbox_command_looks_for_strays(tmp_path, monkeypatch):
+    from app.tools.sandbox import SandboxExecutor
 
-    from app.tools import sandbox
+    proc = tmp_path / "proc"
+    proc.mkdir()
+    workspace = tmp_path / "ws"
+    (workspace / "notes").mkdir(parents=True)
+    _process(proc, 101, 1, {"HARNESS_SERVICE_OF": str(workspace / "notes")})
+    # The machine's process table and signals are the edge: a table of our own, and no real signal sent.
+    monkeypatch.setattr(stray_services.stop_strays, "__defaults__", (proc,))
+    killed = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
+    monkeypatch.setattr(SandboxExecutor, "_run", classmethod(lambda cls, *args, **kwargs: {"returncode": "0"}))
 
-    body = inspect.getsource(sandbox.SandboxExecutor.execute)
-    assert "stop_strays(repo_root)" in body
+    SandboxExecutor.execute(["ls"], str(workspace), "backend_specialist")
+
+    assert killed == [101]
 
 
 def test_the_helper_marks_and_tracks_what_it_starts():

@@ -13,8 +13,6 @@ on purpose - and only the schema a live agent answers with refuses `{}`.
 
 from __future__ import annotations
 
-import inspect
-
 import pytest
 from pydantic import ValidationError
 
@@ -66,13 +64,18 @@ class TestTheAgentsSchema:
         assert isinstance(AGENT_ANSWER.model_validate({"blockers": ["x"]}), SpecialistOutput)
 
 
-class TestTheBaseClassIsUnchanged:
-    def test_code_can_still_build_an_empty_one(self):
-        assert SpecialistOutput().changed_files == []
-        assert SpecialistOutput.model_validate({}).tests == []
+def test_a_specialist_s_empty_answer_is_sent_back_to_it(tmp_path, monkeypatch):
+    """Through a real specialist agent: the `{}` answer comes back to the model as a refusal, not a finished stage."""
+    from a_role_agent import Scripted, Stopped
+    from langchain_core.messages import AIMessage
 
+    monkeypatch.setattr("app.plugins.middleware.get_plugin_instructions", lambda keys, role: "")
+    model = Scripted(replies=[AIMessage(content="", tool_calls=[{"name": "SpecialistOutput", "args": {}, "id": "a1"}])],
+                     requests=[])
+    agent = specialists.create_specialist_agent("backend", model=model, repo_root=tmp_path)
 
-def test_specialist_agents_answer_with_the_strict_schema():
-    source = inspect.getsource(specialists.create_specialist_agent)
+    with pytest.raises(Stopped):
+        agent.invoke({"messages": [{"role": "user", "content": "go"}]}, {"configurable": {"thread_id": "t"}})
 
-    assert "response_format=AGENT_ANSWER" in source
+    told = [message for message in model.requests[1] if message.type == "tool"]
+    assert len(told) == 1 and "reports nothing" in told[0].content

@@ -1,23 +1,33 @@
 from __future__ import annotations
 
-import inspect
 import re
+import uuid
 
-from app.tools import repository
+import pytest
 
 
-def test_no_banned_words_in_unseen_file_refusal_prompt() -> None:
-    source = inspect.getsource(repository._refuse_a_blind_overwrite_of_another_stage_s_file)
-    banned = ("task", "tasks", "to-do", "todo", "button", "click", "checkbox")
-    found_refusal_line = False
-    for line in source.splitlines():
-        if "Refusing to write" in line or "Read it first" in line:
-            found_refusal_line = True
-            for word in banned:
-                assert not re.search(
-                    rf"\b{re.escape(word)}\b", line, re.IGNORECASE
-                ), f"Found banned word '{word}' in line: {line}"
-    assert found_refusal_line
+@pytest.mark.parametrize("lines", [3, 80], ids=["a short file, shown", "a long file, to be read"])
+def test_no_banned_words_in_unseen_file_refusal_prompt(tmp_path, monkeypatch, lines) -> None:
+    """The refusal a stage gets for writing over another stage's file it has not seen."""
+    from app.agents import stage_memory
+    from app.analysis import project_memory
+    from app.tools.repository import RepositoryToolError, write_approved_artifact
+
+    stage_memory.forget_everything()
+    monkeypatch.setattr(stage_memory, "current_stage_key", lambda: f"t-{uuid.uuid4()}:specialist_ui_ux_0")
+    monkeypatch.setattr("app.observability.transcript._stage_from_config", lambda fallback: "specialist_ui_ux_0")
+    (tmp_path / "notes-app").mkdir()
+    (tmp_path / "notes-app" / "page.html").write_text("".join(f"<p>{n}</p>\n" for n in range(lines)), encoding="utf-8")
+    project_memory.record(tmp_path, "notes-app/page.html", "specialist_backend_4")
+
+    with pytest.raises(RepositoryToolError) as refused:
+        write_approved_artifact(tmp_path, "notes-app/page.html", "<main></main>\n")
+    stage_memory.forget_everything()
+
+    message = str(refused.value)
+    assert "'specialist_backend_4' wrote the version there now" in message
+    for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
+        assert not re.search(rf"\b{re.escape(word)}\b", message, re.IGNORECASE), word
 
 
 

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from app.agents.review_document import render_milestone_review
 
 
@@ -184,16 +186,21 @@ def test_both_reviewers_are_told_to_return_rather_than_print():
         assert "a response written into the conversation is not returned" in flat
 
 
-def test_a_role_that_can_write_still_gets_its_tools():
+def test_a_role_that_can_write_still_gets_its_tools(tmp_path, monkeypatch):
     """Every other role writes artifacts and must keep the tool."""
-    import inspect
+    from functools import partial
+
+    from a_role_agent import Answer, the_tools_offered
 
     from app.agents.role_agent import create_role_agent
 
-    assert inspect.signature(create_role_agent).parameters["can_write"].default is True
+    builder = partial(create_role_agent, name="probe", stage="probe", system_prompt="p", response_format=Answer)
+
+    assert "write_artifact" in the_tools_offered(builder, tmp_path, monkeypatch)
 
 
-def test_every_reviewer_is_read_only():
+@pytest.mark.parametrize("reviewer", ["architecture_reviewer", "milestone_reviewer", "security_reviewer"])
+def test_every_reviewer_is_read_only(reviewer, tmp_path, monkeypatch):
     """A reviewer's decision is its output; a document it writes is a second
     copy that can disagree with the one the workflow routes on.
 
@@ -211,12 +218,17 @@ def test_every_reviewer_is_read_only():
     fixed: no write tool, and an explicit instruction to return the response
     rather than print it.
     """
-    import inspect
+    import importlib
 
-    from app.agents import architecture_reviewer, milestone_reviewer, security_reviewer
+    from a_role_agent import the_tools_offered
 
-    for module in (architecture_reviewer, milestone_reviewer, security_reviewer):
-        assert "can_write=False" in inspect.getsource(module), module.__name__
+    module = importlib.import_module(f"app.agents.{reviewer}")
+    create = getattr(module, f"create_{reviewer}_agent")
+
+    offered = the_tools_offered(create, tmp_path, monkeypatch)
+
+    assert "read_file" in offered
+    assert not {"write_artifact", "edit_artifact", "replace_lines", "delete_artifact", "move_artifact"} & set(offered)
 
 
 def _a_review_node(tmp_path, node: str, output_key: str, answer, state_extra: dict) -> dict:

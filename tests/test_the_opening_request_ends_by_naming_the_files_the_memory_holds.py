@@ -32,7 +32,16 @@ def test_nothing_held_adds_nothing_and_a_long_list_is_cut():
     assert "and 5 more" in project_memory.files_held_line(many)
 
 
-def test_the_middleware_passes_what_the_memory_holds():
-    import inspect
+def test_a_stage_s_opening_request_names_the_files_its_memory_holds(tmp_path, monkeypatch):
+    from a_role_agent import the_first_request
 
-    assert "_with_memory(messages, memory, list(held))" in inspect.getsource(project_memory)
+    monkeypatch.setenv("PROJECT_MEMORY", "on")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "product_intake.md").write_text("# Intake\n", encoding="utf-8")
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "main.py").write_text("print('hi')\n", encoding="utf-8")
+
+    opening = next(message for message in the_first_request(tmp_path, monkeypatch) if message.type == "human")
+
+    closing = opening.content.split("\ngo\n", 1)[1]
+    assert "`docs/product_intake.md`" in closing and "`app/main.py`" in closing

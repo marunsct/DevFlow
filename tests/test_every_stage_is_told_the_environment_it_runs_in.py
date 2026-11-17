@@ -12,10 +12,9 @@ listing (Initiative K.1).
 
 from __future__ import annotations
 
-import inspect
 import re
 
-from app.agents import environment_contract, role_agent
+from app.agents import environment_contract
 from app.agents.environment_contract import (
     build_environment_contract_middleware,
     environment_contract_text,
@@ -76,13 +75,18 @@ def test_the_middleware_can_be_switched_off(monkeypatch):
     assert request.captured == {}
 
 
-def test_every_role_agent_carries_the_contract_ahead_of_the_listing():
+def test_every_role_agent_carries_the_contract_ahead_of_the_listing(tmp_path, monkeypatch):
     """Ahead of the digest: the stable bytes come first, the listing that
     changes comes last, so the prefix cache breaks no earlier than before."""
-    source = inspect.getsource(role_agent)
-    assert source.index("build_environment_contract_middleware()") < source.index(
-        "build_workspace_digest_middleware("
-    )
+    from a_role_agent import the_first_request
+
+    (tmp_path / "README.md").write_text("# Notes\n", encoding="utf-8")
+
+    sent = the_first_request(tmp_path, monkeypatch)
+
+    assert "Container and deployment files can be WRITTEN but not BUILT" in sent[0].content
+    assert "The workspace as it stands" in sent[-1].content
+    assert "Container and deployment files can be WRITTEN" not in sent[-1].content
 
 
 def test_the_contract_names_no_product_word():

@@ -33,12 +33,13 @@ def test_a_workspace_no_pack_scaffolded_keeps_the_general_section(tmp_path) -> N
     assert for_this_workspace(PROJECT_LAYOUT, tmp_path) == PROJECT_LAYOUT
 
 
-def test_every_role_agent_gets_the_workspace_s_section() -> None:
-    import inspect
+def test_every_role_agent_gets_the_workspace_s_section(tmp_path, monkeypatch) -> None:
+    from a_role_agent import the_first_request
 
-    from app.agents import role_agent
+    sent = the_first_request(_scaffolded(tmp_path), monkeypatch, system_prompt="Rules.\n" + PROJECT_LAYOUT)
 
-    assert "for_this_workspace(full_system_prompt, resolved_repo_root)" in inspect.getsource(role_agent.create_role_agent)
+    assert "`board/src/App.tsx`" in sent[0].content and "`board/board/main.py`" in sent[0].content
+    assert "task-dashboard/frontend/" not in sent[0].content
 
 
 def test_the_new_section_avoids_the_banned_words(tmp_path) -> None:

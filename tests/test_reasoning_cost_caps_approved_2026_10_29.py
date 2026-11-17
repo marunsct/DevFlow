@@ -5,8 +5,6 @@ each; nearly every defect-fix call reasoned its whole 12,000-token reply, was sa
 """
 from __future__ import annotations
 
-import inspect
-
 from langchain_core.messages import AIMessage, HumanMessage
 
 import app.models as models
@@ -28,9 +26,32 @@ def test_planning_and_review_stages_are_capped_and_the_architect_is_not(monkeypa
     assert models.plan_review_reply_cap(None) is None
 
 
-def test_the_call_asks_for_the_plan_review_cap():
-    assert "cap = fix_stage_reply_cap(ceiling) or plan_review_reply_cap(ceiling)" in inspect.getsource(
-        models.CompatibleChatOpenAI._generate_paced)
+def test_the_call_asks_for_the_plan_review_cap(tmp_path, monkeypatch):
+    """The request that leaves for the server carries the cap."""
+    import json
+
+    import httpx
+
+    monkeypatch.setenv("MODEL_CALL_GATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PLAN_REVIEW_REPLY_CAP", "on")
+    monkeypatch.setattr(transcript, "_stage_from_config", lambda fallback: "technical_lead")
+    sent = []
+
+    def server(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "id": "x", "object": "chat.completion", "created": 0, "model": "m",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+        })
+
+    model = models.CompatibleChatOpenAI(
+        model="m", base_url="http://gpu:9090/v1", api_key="k", max_retries=0,
+        http_client=httpx.Client(transport=httpx.MockTransport(server)),
+    )
+
+    model.invoke("plan the sprint")
+
+    assert [body.get("max_tokens") for body in sent] == [20_000]
 
 
 def _salvaged(text="calling a tool"):

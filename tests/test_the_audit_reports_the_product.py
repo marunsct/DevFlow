@@ -132,53 +132,25 @@ class TestASandboxRefusalIsNotACost:
     the prevented damage.
     """
 
-    def _saved(self):
-        # The list itself, from the module that now owns it. It used to be a
-        # literal in `audit_run.py`; two copies of it drifted once already -
-        # the script's was missing every sandbox refusal - so the script
-        # imports this one and there is nothing left to keep in step.
-        from app.observability.transcript_metrics import PREVENTED_DAMAGE
+    def test_the_script_counts_a_sandbox_refusal_as_prevented(self, tmp_path):
+        """The script's own copy of the markers was missing every sandbox refusal; it reads the harness's list."""
+        import json
 
-        return PREVENTED_DAMAGE
+        rows = [{"kind": "model_request", "stage": "s", "messages": []}]
+        for n, refusal in enumerate((
+            "Not running this again: it timed out the last time it ran here.",
+            "`npm start` serves the app, and it runs until it is stopped.",
+            "`apt-get install` installs system packages as root.",
+        )):
+            rows.append({"kind": "tool_call", "stage": "s", "tool": "run_terminal_command", "call_id": f"c{n}",
+                         "args": {"command": [f"step{n}"]}})
+            rows.append({"kind": "tool_result", "stage": "s", "tool": "run_terminal_command", "call_id": f"c{n}",
+                         "content": json.dumps({"error": refusal})})
+        transcript = tmp_path / "run.jsonl"
+        transcript.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
 
-    def test_the_script_reads_the_one_list(self):
-        """Not a second copy. That is what went stale before."""
-        assert SCRIPT.is_file()
-        source = SCRIPT.read_text(encoding="utf-8")
-        assert "from app.observability.transcript_metrics import PREVENTED_DAMAGE" in source
-        assert "SAVED = (" not in source, "a second copy of the markers is back"
+        done = subprocess.run([sys.executable, str(SCRIPT), str(transcript)], capture_output=True, text=True,
+                              timeout=180)
 
-    def test_the_sandbox_refusals_are_marked_as_prevented(self):
-        saved = self._saved()
-        for fragment in (
-            "Not running this again",
-            "it runs until it is stopped",
-            "installs system packages as root",
-        ):
-            assert fragment in saved, f"{fragment!r} would be counted as a cost"
-
-    def test_every_marker_is_a_phrase_the_tools_really_emit(self):
-        """A fragment that stops matching moves real refusals into the cost column.
-
-        The same staleness `_BREAKS_BEHAVIOUR` is checked for, applied to the
-        other list that decides what a number means.
-        """
-        import inspect
-        import re
-
-        # `javascript_parse` too: "Node cannot parse" is written there, not in
-        # either tool module, and a search of the two alone reported a live
-        # marker as stale.
-        from app.analysis import javascript_parse
-        from app.tools import repository, sandbox
-
-        source = "".join(
-            inspect.getsource(module)
-            for module in (repository, sandbox, javascript_parse)
-        )
-        joined = re.sub(r'"\s*\n\s*"', "", source)
-
-        missing = [
-            fragment for fragment in self._saved() if fragment not in joined
-        ]
-        assert not missing, f"no tool emits these any more: {missing}"
+        assert "refusals that prevented damage: 3" in done.stdout, done.stdout + done.stderr
+        assert "failures that cost the run:     0" in done.stdout

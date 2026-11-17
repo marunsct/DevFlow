@@ -85,11 +85,39 @@ def test_a_healthy_connection_goes_back_to_the_pool_and_is_not_checked_again_at_
         assert again is first
 
 
-def test_every_pooled_store_borrows_through_it() -> None:
-    import inspect
+def _a_run_store(pool, monkeypatch):
+    from app.server.run_store import RunStore
 
-    from app.server import auth, plugin_store, run_store
+    store = object.__new__(RunStore)  # no database: the pool is the one given
+    store._pool = pool
+    return store.get_connection
 
-    assert "borrowed(self._pool)" in inspect.getsource(run_store.RunStore.get_connection)
-    assert "borrowed(self._pool)" in inspect.getsource(plugin_store)
-    assert "borrowed(_db_pool)" in inspect.getsource(auth.get_db_connection)
+
+def _a_plugin_store(pool, monkeypatch):
+    from app.server.plugin_store import PluginStore
+
+    store = object.__new__(PluginStore)
+    store._pool = pool
+    return store.get_connection
+
+
+def _the_sign_in_store(pool, monkeypatch):
+    import os
+
+    from app.server import auth
+
+    monkeypatch.setattr(auth, "_db_pool", pool)
+    monkeypatch.setattr(auth, "_db_pool_owner", os.getpid())
+    return auth.get_db_connection
+
+
+@pytest.mark.parametrize("store", [_a_run_store, _a_plugin_store, _the_sign_in_store])
+def test_every_pooled_store_replaces_a_dead_connection(store, monkeypatch) -> None:
+    """After a Postgres restart each store's first request failed on a dead connection."""
+    dead = _Conn(dead=True)
+    pool = _Pool(dead)
+
+    with store(pool, monkeypatch)() as conn:
+        assert conn is not dead and not conn.dead
+
+    assert (dead, True) in pool.returned

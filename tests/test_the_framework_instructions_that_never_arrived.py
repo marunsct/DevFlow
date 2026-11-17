@@ -35,7 +35,6 @@ import pytest
 
 from app.plugins import middleware as plugin_middleware
 from app.plugins.middleware import (
-    _ATTEMPTS_BEFORE_GIVING_UP,
     _extract_stack_keywords,
     _where_the_extraction_model_points,
 )
@@ -81,25 +80,6 @@ class TestItUsesTheModelTheRunUses:
 
         assert "8888" in str(model.openai_api_base or model.root_client.base_url)
 
-    def test_it_does_not_read_the_environment_directly(self):
-        """The one line that caused it. `load_settings` cannot see an override.
-
-        The body only: the docstring explains `load_settings` and would match.
-        """
-        import ast
-        import inspect
-
-        body = ast.parse(inspect.getsource(plugin_middleware._extraction_model).strip())
-        function = body.body[0]
-        code = "\n".join(
-            ast.unparse(node)
-            for node in function.body
-            if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant))
-        )
-
-        assert "load_settings" not in code, code
-        assert "_runtime_settings" in code
-
     def test_the_endpoint_is_nameable_for_a_log_line(self, monkeypatch):
         from app import models
 
@@ -142,7 +122,7 @@ class TestAFailureIsRememberedNotRetriedForever:
         for _ in range(20):
             assert _extract_stack_keywords(str(a_workspace)) == []
 
-        assert len(calls) == _ATTEMPTS_BEFORE_GIVING_UP, (
+        assert len(calls) == 2, (
             f"{len(calls)} model calls for one unreachable endpoint"
         )
 
@@ -168,7 +148,7 @@ class TestAFailureIsRememberedNotRetriedForever:
         )
         _extract_stack_keywords(str(a_workspace))
 
-        assert len(calls) == _ATTEMPTS_BEFORE_GIVING_UP + 1
+        assert len(calls) == 3
 
     def test_giving_up_still_returns_no_keywords(self, a_workspace, monkeypatch):
         """An absent hint beats a failed stage, which was already the contract."""
@@ -183,7 +163,7 @@ class TestAFailureIsRememberedNotRetriedForever:
         self._always_fails(monkeypatch)
 
         with caplog.at_level("WARNING"):
-            for _ in range(_ATTEMPTS_BEFORE_GIVING_UP):
+            for _ in range(2):
                 _extract_stack_keywords(str(a_workspace))
 
         assert "attempts at" in caplog.text
@@ -191,8 +171,10 @@ class TestAFailureIsRememberedNotRetriedForever:
 
 
 class TestNothingElseChanged:
-    def test_no_stack_document_means_no_keywords_and_no_model_call(self, tmp_path):
+    def test_no_stack_document_means_no_keywords_and_no_model_call(self, tmp_path, monkeypatch):
         calls: list[int] = []
+        monkeypatch.setattr(plugin_middleware, "_extraction_model", lambda: calls.append(1))
+
         assert _extract_stack_keywords(str(tmp_path)) == []
         assert calls == []
 

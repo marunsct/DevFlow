@@ -34,7 +34,9 @@ with `router.POST("/items", create)`; group them with `router.Group`), and `main
 starts it. Unit tests sit beside the code they test, in `<name>_test.go` files of the
 same package, using `testing` and `net/http/httptest` to call the router directly.
 Run them with `gotestsum -- ./...` (or `go test ./...`). Add a module with `go get
-<module>`; keep `go.mod` and `go.sum` tidy with `go mod tidy`."""
+<module>`; keep `go.mod` and `go.sum` tidy with `go mod tidy`.
+The module path is `{{package}}` (its `go.mod`), not the project folder's name: a package in a
+subfolder `store/` is imported as `{{package}}/store`, and its files say `package store`."""
 
 PACK = service_pack(
     sandbox_image=sandbox.GO,

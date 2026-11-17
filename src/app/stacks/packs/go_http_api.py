@@ -80,7 +80,9 @@ GUIDE = """The service is Go on the standard library: `NewServer()` in `server.g
 `main.go` starts it. Unit tests sit beside the code they test, in `<name>_test.go`
 files of the same package, using `testing` and `net/http/httptest` to call the
 handler directly. Run them with `gotestsum -- ./...` (or `go test ./...`). Add a
-module with `go get <module>`; keep `go.mod` and `go.sum` tidy with `go mod tidy`."""
+module with `go get <module>`; keep `go.mod` and `go.sum` tidy with `go mod tidy`.
+The module path is `{{package}}` (its `go.mod`), not the project folder's name: a package in a
+subfolder `store/` is imported as `{{package}}/store`, and its files say `package store`."""
 
 DOCKERFILE = """# {{title}}: build with `docker build -t {{project}} .`, run with
 # `docker run -p 8080:8080 -v {{project}}-data:/data {{project}}`.

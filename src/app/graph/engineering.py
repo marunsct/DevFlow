@@ -835,10 +835,14 @@ def what_the_fix_did_to_the_install(root: str, base: str) -> str:
     """
     try:
         from app.analysis.manifests import MANIFEST_NAMES
-        from app.stacks.contract import INSTALL_FAILED
+        from app.stacks.contract import INSTALL_FAILED, was_installed_at
 
         notes = [str(line) for line in (suite.last_result(root) or {}).get("repairs") or [] if INSTALL_FAILED in str(line)]
         if not notes:
+            return ""
+        if was_installed_at(root, base) is False:
+            # Measured on a compiled stack whose install builds the code: with the build already failing, every fix that
+            # touched the manifest was reverted as "it broke the install", eight in one run, each fixer's work lost.
             return ""
         changed = ci._git(root, "diff", "--name-only", base)
         names = {Path(line.strip()).name for line in (changed.stdout.splitlines() if changed is not None else []) if line.strip()}

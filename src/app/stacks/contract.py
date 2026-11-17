@@ -90,6 +90,35 @@ def _the_manifests(repo_root: str | Path, project: str) -> str:
     return digest.hexdigest()
 
 
+def was_installed_at(repo_root: str | Path, commit: str) -> bool | None:
+    """Whether the manifests as `commit` held them are the ones last installed; None when it cannot tell. Never raises.
+
+    The record is written only by an install that succeeded, so False means the install was already failing at `commit`.
+    """
+    try:
+        import hashlib
+        import subprocess
+
+        from app.tools.repository import PACKAGE_MANIFESTS
+        from app.tools.version_control import git_safely
+
+        record = read(repo_root)
+        kept = json.loads((Path(repo_root) / INSTALLED_FILE).read_text(encoding="utf-8")).get("manifests")
+        if record is None or not kept or not commit:
+            return None
+        project = str(record.get("project") or "")
+        digest = hashlib.sha256()
+        for name in sorted(PACKAGE_MANIFESTS):
+            relative = str(PurePosixPath(project) / name) if project else name
+            shown = subprocess.run([*git_safely(), "-C", str(repo_root), "show", f"{commit}:{relative}"],
+                                   capture_output=True, timeout=30)
+            if shown.returncode == 0 and shown.stdout:
+                digest.update(name.encode() + b"\0" + shown.stdout + b"\0")
+        return digest.hexdigest() == kept
+    except Exception:  # noqa: BLE001 - unknown, as before
+        return None
+
+
 def installed(repo_root: str | Path, runner: Any = None) -> None:  # noqa: ARG001 - the same shape as the installer
     """Record the manifests as installed now: the scaffold calls it after its own install. Never raises."""
     try:

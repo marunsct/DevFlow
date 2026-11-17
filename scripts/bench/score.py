@@ -81,6 +81,29 @@ def _python_runner() -> Path:
     return python
 
 
+def _a_virtualenv_that_runs_here(product: Path, notes: list[str]) -> None:
+    """Rebuild a product's `.venv` from its own requirements when its interpreter does not run here.
+
+    Measured on the first whole run in container mode: the virtualenv was made inside the product's sandbox image and
+    linked to that image's interpreter, so in the scoring container `start.sh` failed "exec: .venv/bin/python: not
+    found" and every hidden test with it - 0 of 9 for a product that passed its suite. A stranger checking the product
+    out builds its environment from its requirements; so does the scorer, when the shipped one cannot run.
+    """
+    python = product / ".venv" / "bin" / "python"
+    if not (python.is_symlink() or python.exists()):
+        return
+    if python.exists() and _run([str(python), "-c", "pass"], product, timeout=60).returncode == 0:
+        return
+    shutil.rmtree(product / ".venv", ignore_errors=True)
+    made = _run([sys.executable, "-m", "venv", str(product / ".venv")], product, timeout=300)
+    installed = None
+    if made.returncode == 0 and (product / "requirements.txt").is_file():
+        installed = _run([str(python), "-m", "pip", "install", "--quiet", "-r", "requirements.txt"], product, timeout=900)
+    ok = made.returncode == 0 and (installed is None or installed.returncode == 0)
+    notes.append("the product's .venv did not run here (built for another interpreter); rebuilt from its requirements"
+                 + ("" if ok else ": " + ((installed or made).stdout + (installed or made).stderr)[-300:]))
+
+
 def _browser_root(product: Path, notes: list[str]) -> Path:
     """The directory to serve for a page: a build's output when the product has a build."""
     manifest = product / "package.json"
@@ -318,6 +341,7 @@ def score(
     shutil.copytree(product, work / "product", symlinks=True)
     shutil.copytree(bench / "hidden", work / "hidden")
     target = work / "product"
+    _a_virtualenv_that_runs_here(target, notes)
     report = work / "report.xml"
     data_dir = work / "data"
     data_dir.mkdir(parents=True)

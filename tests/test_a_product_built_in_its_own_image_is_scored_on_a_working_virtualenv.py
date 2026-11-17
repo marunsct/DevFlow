@@ -1,0 +1,46 @@
+"""A product whose virtualenv points at an interpreter the scorer does not have is scored on one rebuilt from its own
+requirements (found on the first whole run in container mode).
+
+Measured: a Python service built with each command in its own container passed its 14 locked tests there, then scored
+0 of 9 hidden and 0 of 8 quality, every test failing "start.sh: exec: .venv/bin/python: not found" - the virtualenv
+linked to the image's interpreter, which the scoring container lacks. The scorer reported a false acceptance and a
+silent loss for a product it never started.
+"""
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _score():
+    spec = importlib.util.spec_from_file_location("bench_score_venv", ROOT / "scripts" / "bench" / "score.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _product(tmp_path, interpreter):
+    product = tmp_path / "svc"
+    (product / ".venv" / "bin").mkdir(parents=True)
+    (product / ".venv" / "bin" / "python").symlink_to(interpreter)
+    (product / "requirements.txt").write_text("")
+    return product
+
+
+def test_a_virtualenv_whose_interpreter_is_not_here_is_rebuilt(tmp_path):
+    product = _product(tmp_path, "/nonexistent/python3")
+    notes = []
+    _score()._a_virtualenv_that_runs_here(product, notes)
+    assert (product / ".venv" / "bin" / "python").resolve().exists()
+    assert notes and "rebuilt" in notes[0]
+
+
+def test_a_virtualenv_that_runs_is_left_as_it_is(tmp_path):
+    product = _product(tmp_path, sys.executable)
+    notes = []
+    _score()._a_virtualenv_that_runs_here(product, notes)
+    assert (product / ".venv" / "bin" / "python").readlink() == Path(sys.executable)
+    assert notes == []

@@ -556,3 +556,51 @@ def test_a_missing_product_intake_fails_with_an_explanation(tmp_path):
     )
     assert failed["stage"] == "failed"
     assert "without returning its structured" in failed["error"]
+
+
+def test_a_lifted_node_is_built_with_the_run_s_context(tmp_path):
+    """A node of `app.graph.nodes` gets the builder's repository scope through its `GraphContext`."""
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.state import RepositoryContext
+    from workflow_nodes import CONFIG
+
+    built: list[dict] = []
+    retrying = {"stage": "tools_models", "structured_retries": {"tools_models": 1}}
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(workflow_module, "create_tools_models_agent", lambda **kwargs: built.append(kwargs) or object())
+        patched.setattr(workflow_module, "_run_gated_agent", lambda state, config, **kwargs: dict(retrying))
+        graph = workflow_module.build_workflow_graph(
+            model="fake-model", checkpointer=MemorySaver(), repo_root=str(tmp_path), allow_subdirectories=False,
+        )
+        repository = RepositoryContext(root_path=str(tmp_path), branch="main", commit="abc", status="clean")
+        update = graph.nodes["tools_models"].bound.invoke(
+            {"repository": repository, "product_intake": {"product_name": "Notes"}}, CONFIG,
+        )
+
+    assert update == retrying, "a stage handing back is returned as it is"
+    assert len(built) == 1
+    assert built[0]["repo_root"] == str(tmp_path) and built[0]["allow_subdirectories"] is False
+
+
+def test_a_stage_kept_in_its_own_module_is_looked_up_when_it_runs(tmp_path):
+    """The stages of `acceptance_nodes`, `engineering`, `escalation` and `delivery` are found when the node runs, as
+    the closures that called them were, so a patch made after the graph is built still reaches them."""
+    from types import SimpleNamespace
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.graph import escalation
+    from app.graph.context import GraphContext
+    from workflow_nodes import CONFIG
+
+    graph = workflow_module.build_workflow_graph(model="fake-model", checkpointer=MemorySaver(), repo_root=str(tmp_path))
+    given: list = []
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(escalation, "accept", lambda state, config, ctx: given.append(ctx) or {"stage": "release"})
+        update = graph.nodes["escalation_accept"].bound.invoke(
+            {"repository": SimpleNamespace(root_path=str(tmp_path))}, CONFIG
+        )
+
+    assert update == {"stage": "release"}
+    assert isinstance(given[0], GraphContext) and given[0].repo_root == str(tmp_path)

@@ -6,7 +6,6 @@ reach it.
 """
 from __future__ import annotations
 
-import inspect
 import re
 
 from app.acceptance import suite
@@ -53,8 +52,10 @@ def test_a_read_of_a_product_file_is_left(tmp_path):
     assert suite.tests_that_assert_a_kept_file_s_text(_suite(tmp_path, RIGHT)) == []
 
 
-def test_it_is_among_the_tests_that_cannot_pass():
-    assert "tests_that_assert_a_kept_file_s_text(repo_root, result)" in inspect.getsource(suite.tests_that_cannot_pass)
+def test_it_is_among_the_tests_that_cannot_pass(tmp_path):
+    cannot = suite.tests_that_cannot_pass(_suite(tmp_path, WRONG), suite.AcceptanceResult(ran=False))
+
+    assert any("line 3" in item and "`start.sh`" in item for item in cannot)
 
 
 def test_a_passing_read_of_the_kept_file_is_left_when_the_suite_s_result_is_known(tmp_path):
@@ -70,7 +71,6 @@ def test_a_passing_read_of_the_kept_file_is_left_when_the_suite_s_result_is_know
     failing = SimpleNamespace(ran=True, report=SimpleNamespace(tests=[
         SimpleNamespace(name="[AC-15] start.sh exists and contains expected commands", outcome="failed")]))
     assert len(suite.tests_that_assert_a_kept_file_s_text(root, failing)) == 1
-    assert "tests_that_assert_a_kept_file_s_text(repo_root, result)" in inspect.getsource(suite.tests_that_cannot_pass)
 
 
 PYTHON_WRONG = '''import httpx

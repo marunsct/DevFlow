@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from app.observability.defect_ledger import defect_id
 
 
@@ -26,31 +28,41 @@ def test_another_criterion_or_owner_is_another_defect():
     assert defect_id(base) != defect_id(_defect(base.description, owner="testing"))
 
 
-def test_a_one_file_rewrite_records_what_it_was_shown(monkeypatch):
+def _rewritten(tmp_path, monkeypatch, replies):
+    """A one-file rewrite of `app.py` answered with `replies`; the ledger's records, read back from the transcript."""
+    from app.graph import rewritten_fixes
+    from app.observability import transcript
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(transcript, "_run_id_from_config", lambda: "run-ledger")
+    (tmp_path / "data" / "transcripts").mkdir(parents=True)
+    (tmp_path / "app.py").write_text("value = 1\n")
+    defect = SimpleNamespace(description="[AC-3] Fetch one note", source="acceptance suite", owner="backend",
+                             expected_behavior="It answers", actual_behavior="app.py:1 is wrong",
+                             affected_files=["app.py"], reproduction_steps=[])
+    answers = list(replies)
+    model = SimpleNamespace(invoke=lambda messages, **_: SimpleNamespace(content=answers.pop(0)))
+
+    rewritten_fixes.fix_by_rewriting(defect, tmp_path, model, write=lambda base, path, content: None,
+                                     diagnose=lambda files: [])
+    return [(r["event"], r["detail"]) for r in transcript.read_transcript("run-ledger", {"defect"})]
+
+
+def test_a_one_file_rewrite_records_what_it_was_shown(tmp_path, monkeypatch):
     """Measured live: two rewrites ran with no `shown` record, and the ledger read as if no fixer had run."""
-    from app.graph import rewritten_fixes
-    from app.observability import defect_ledger
+    ledger = _rewritten(tmp_path, monkeypatch, ["```python\nvalue = 2\n```"])
 
-    seen = []
-    monkeypatch.setattr(defect_ledger, "shown", lambda stage, defect, request, **_: seen.append((stage, request)))
-    rewritten_fixes._note_what_the_rewrite_was_shown(_defect("[AC-3] Fetch one note"), "--- Defect ---\nfix it")
-    assert seen and seen[0][1].startswith("--- Defect ---")
-    import inspect
-
-    assert "_note_what_the_rewrite_was_shown(defect, asked)" in inspect.getsource(rewritten_fixes.fix_by_rewriting)
+    assert [event for event, _ in ledger][0] == "shown"
+    assert "fingerprint" in ledger[0][1]
 
 
-def test_each_rewrite_reply_is_recorded_by_kind(monkeypatch):
+@pytest.mark.parametrize(("reply", "kind"), [
+    ("```python\nvalue = 2\n```", "changed"),
+    ("```python\nvalue = 1\n```", "unchanged"),
+    ("```python\n```", "no block"),
+])
+def test_each_rewrite_reply_is_recorded_by_kind(tmp_path, monkeypatch, reply, kind):
     """HR2.fix.1: 42% of rewrite replies sent the file back unchanged, and nothing recorded it."""
-    from app.graph import rewritten_fixes
-    from app.observability import defect_ledger
+    ledger = _rewritten(tmp_path, monkeypatch, [reply, reply, reply])
 
-    seen = []
-    monkeypatch.setattr(defect_ledger, "note", lambda event, stage, **kw: seen.append((event, kw.get("detail"))))
-    rewritten_fixes._note_the_reply(_defect("[AC-3] Fetch one note"), "src/app.py", "unchanged")
-    assert seen == [("rewrite reply", "unchanged: src/app.py")]
-    import inspect
-
-    source = inspect.getsource(rewritten_fixes.fix_by_rewriting)
-    for kind in ('"edit not applied"', '"no block"', '"changed" if content != current else "unchanged"'):
-        assert kind in source
+    assert ("rewrite reply", f"{kind}: app.py") in ledger

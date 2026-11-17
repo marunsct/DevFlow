@@ -78,9 +78,10 @@ def test_once_locked_only_more_than_expected_names_it(tmp_path, monkeypatch):
     assert len(suite.page_tests_that_count_a_shared_list(root, more)) == 1
 
 
-def test_it_is_one_of_the_checks_a_locked_test_cannot_pass():
-    import inspect
-    assert "page_tests_that_count_a_shared_list(" in inspect.getsource(suite.tests_that_cannot_pass)
+def test_it_is_one_of_the_checks_a_locked_test_cannot_pass(tmp_path):
+    cannot = suite.tests_that_cannot_pass(_root(tmp_path, WHOLE), suite.AcceptanceResult(ran=False))
+
+    assert any("line 5" in item and "toHaveCount(2)" in item for item in cannot)
 
 
 CLEARED = """test('[AC-4] narrows', async ({ page, request }) => {

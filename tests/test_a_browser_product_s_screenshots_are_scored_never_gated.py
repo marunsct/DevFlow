@@ -5,7 +5,6 @@ model reads images.
 """
 from __future__ import annotations
 
-import inspect
 import json
 import os
 import re
@@ -69,9 +68,29 @@ def test_off_unseen_or_without_screenshots_nothing_is_asked(tmp_path, monkeypatc
     assert kpis([])["screenshot_rubric"] is None
 
 
-def test_the_release_scores_it_and_nothing_depends_on_the_score():
-    source = inspect.getsource(delivery.release)
-    call = "screenshot_rubric.score(root"
-    assert call in source
-    line = next(l for l in source.splitlines() if call in l)
-    assert line.strip().startswith(call), "the score is never assigned, so it can never gate the release"
+def _released(root, monkeypatch, reply):
+    from app.analysis import integration_checks
+
+    monkeypatch.setattr(integration_checks, "problems_that_break_the_product", lambda root, stack=None, brief="": [])
+    model = _Model()
+    model.invoke = lambda messages, **_: SimpleNamespace(content=json.dumps(reply))
+    with mock.patch.dict(os.environ, ON):
+        update = delivery.release(
+            {"repository": SimpleNamespace(root_path=str(root))}, {"configurable": {}},
+            SimpleNamespace(judgement_model=model, checkpointer=None, repo_root=str(root), allow_subdirectories=True),
+        )
+    return update, json.loads((root / screenshot_rubric.RUBRIC_FILE).read_text())["mean"]
+
+
+def test_the_release_scores_it_and_nothing_depends_on_the_score(tmp_path, monkeypatch):
+    root = _page(tmp_path, monkeypatch)
+    low = {item: {"score": 1, "note": "poor"} for item in json.loads(REPLY)}
+    high = {item: {"score": 5, "note": "fine"} for item in json.loads(REPLY)}
+
+    worst, worst_mean = _released(root, monkeypatch, low)
+    best, best_mean = _released(root, monkeypatch, high)
+
+    assert (worst_mean, best_mean) == (1.0, 5.0)
+    assert worst["stage"] == best["stage"]
+    assert worst.get("completion_gaps") == best.get("completion_gaps")
+    assert worst["decisions"][-1]["rationale"] == best["decisions"][-1]["rationale"]

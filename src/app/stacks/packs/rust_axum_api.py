@@ -98,7 +98,23 @@ EXPOSE 3000
 ENTRYPOINT ["/usr/local/bin/service"]
 """
 
+#: Errors an axum service is known to raise, by a phrase of the compiler's message, and their cause
+#: (`app.stacks.known_errors`). Measured on two Rust runs: a handler taking `Json` before `State` failed as "`Handler<_, _>`
+#: is not satisfied" for three fix rounds, and `axum::serve` given a `Router<AppState>` failed every round of a run.
+AXUM_KNOWN_ERRORS = {
+    "Handler<_, _>` is not satisfied": (
+        "an axum handler's arguments are extractors, and the one that reads the request body (`Json<T>`, `Form<T>`, "
+        "`String`, `Bytes`) must be its last argument, after `State`, `Path` and `Query`: a body extractor earlier in "
+        "the list stops the function being a `Handler`. Put it last in every handler of the file in one rewrite."
+    ),
+    "Service<IncomingStream": (
+        "`axum::serve` was given a `Router<AppState>`, a router still waiting for its state. Apply the state with "
+        "`.with_state(state)` before serving, so the router served is a plain `Router`."
+    ),
+}
+
 PACK = service_pack(
+    known_errors=AXUM_KNOWN_ERRORS,
     sandbox_image=sandbox.RUST,
     name="rust-axum-api",
     entrypoint="src/lib.rs",

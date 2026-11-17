@@ -5,9 +5,10 @@ ran only at release, so the crash shipped as a gap no fixer was given.
 """
 from __future__ import annotations
 
-import inspect
 import re
 from types import SimpleNamespace
+
+import pytest
 
 from app.acceptance import interface_contract as ic
 from app.agents.specialists import SpecialistOutput
@@ -72,8 +73,42 @@ def test_a_green_round_adds_the_defect_behind_the_switch(tmp_path, monkeypatch):
     assert workflow._with_the_contract_s_server_errors(state, green, milestone).defects == []
 
 
-def test_the_round_and_the_settlement_ask_it():
-    source = inspect.getsource(workflow)
-    assert "test_result = _with_the_contract_s_server_errors(state, test_result, milestone)" in source
-    assert source.count("interface_contract.still_raised(root,") == 2
-    assert "description.startswith((UNIT_TESTS_FAIL, SERVER_FAILED))" in inspect.getsource(workflow._the_suite_already_guards_it)
+@pytest.mark.parametrize("failing_due, failed, asked", [([], 0, True), (["AC-2"], 1, False)], ids=["green", "red"])
+def test_the_round_asks_it_when_the_suite_is_green(tmp_path, monkeypatch, failing_due, failed, asked):
+    from workflow_node_stubs import a_reported_defect, run_a_test_round
+
+    def with_a_crash(state, result, milestone):
+        return result.model_copy(update={"defects": [*result.defects, a_reported_defect(f"{ic.SERVER_FAILED} POST /notes")]})
+
+    seen = run_a_test_round(monkeypatch, tmp_path, failing_due=failing_due, saved_run={"ran": True, "failed": failed},
+                            found=[a_reported_defect("[AC-1] The list is empty")],
+                            overrides={"app.graph.workflow._with_the_contract_s_server_errors": with_a_crash})
+
+    raised = [d.description for d in seen.update["remediation"].defects]
+    assert any(d.startswith(ic.SERVER_FAILED) for d in raised) is asked
+
+
+@pytest.mark.parametrize("raised", [True, False])
+def test_the_settlement_asks_the_checks_again(tmp_path, monkeypatch, raised):
+    """A server error at the contract's checks is settled by those checks, run again - on the fix's own re-measure and
+    on the snapshot the fix's measurement took."""
+    crash = SimpleNamespace(description=f"{ic.SERVER_FAILED} POST /notes", affected_files=[])
+    asked = []
+    monkeypatch.setattr(ic, "still_raised", lambda root, description, **k: asked.append(description) or raised)
+    monkeypatch.setattr(contract, "enforce", lambda root: None)
+    monkeypatch.setattr(workflow, "_settled_by_its_own_probe", lambda root, defect: workflow._NOT_A_PROBE_S)
+
+    assert workflow._the_defect_s_tests_pass(tmp_path, crash) is (not raised)
+    assert workflow._the_defect_s_tests_in(str(tmp_path), "after defect_fix_1_0", crash) is (not raised)
+    assert asked == [crash.description, crash.description]
+
+
+def test_the_checks_are_its_regression_test(tmp_path, monkeypatch):
+    """A fixed server error needs no named regression test: the checks run at every green round and at release."""
+    crash = SimpleNamespace(description=f"{ic.SERVER_FAILED} POST /notes", affected_files=[])
+    monkeypatch.setattr(workflow, "_the_defect_s_tests_in", lambda root, label, defect: True)
+    state = {"repository": SimpleNamespace(root_path=str(tmp_path))}
+
+    assert workflow._the_suite_already_guards_it(state, "after defect_fix_1_0", crash) is True
+    assert workflow._the_suite_already_guards_it(
+        state, "after defect_fix_1_0", SimpleNamespace(description="The page looks cramped", affected_files=[])) is False

@@ -354,15 +354,27 @@ def test_without_later_sprints_every_defect_is_kept(workspace) -> None:
     assert _defects_a_later_sprint_builds([item], state) == ([item], [])
 
 
-def test_the_round_filters_before_the_due_criteria_backstop() -> None:
-    import inspect
+def test_the_round_filters_before_the_due_criteria_backstop(tmp_path, monkeypatch) -> None:
+    """The backstop raises a defect for each failing criterion the round's report left out: handed the report before
+    the later sprints' work is taken out, it counted that work as reported and the filter undid nothing."""
+    from workflow_node_stubs import a_reported_defect, run_a_test_round
 
-    from app.graph import workflow
+    later = "[AC-9] Missing a way to archive notes"
+    backstop = []
 
-    source = inspect.getsource(workflow)
-    assert source.index("_defects_a_later_sprint_builds(reported, state)") < source.index(
-        "acceptance_nodes.failing_due_defects(state, reported)"
+    def split(reported, state):
+        return ([d for d in reported if d.description != later], [d for d in reported if d.description == later])
+
+    run_a_test_round(
+        monkeypatch, tmp_path, found=[a_reported_defect(later), a_reported_defect()], failing_due=["AC-2"],
+        overrides={
+            "app.graph.workflow._defects_a_later_sprint_builds": split,
+            "app.graph.acceptance_nodes.failing_due_defects":
+                lambda state, reported: backstop.append([d.description for d in reported]) or [],
+        },
     )
+
+    assert backstop == [["[AC-2] Saving a note fails"]]
 
 
 def test_a_review_finding_nothing_shows_is_advice(workspace, monkeypatch) -> None:

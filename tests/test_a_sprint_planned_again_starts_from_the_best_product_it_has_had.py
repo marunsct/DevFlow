@@ -101,13 +101,18 @@ def test_a_suite_that_did_not_run_puts_nothing_back_and_a_switch_off_does_nothin
     assert "changed" in (root / "src" / "app.ts").read_text()
 
 
-def test_the_planner_puts_the_best_product_back_before_a_sprint_is_planned_again():
-    """The re-plan path calls it: the wiring, read from the source, since the graph needs a whole run to build."""
-    graph = Path(__file__).resolve().parent.parent / "src" / "app" / "graph"
-    source = (graph / "workflow.py").read_text()
-    assert "end_of_attempt.decide(" in source  # the one decision since LR.26, which puts the best back first
-    assert "best_attempt.restore_if_worse(root, margin=1)" in (graph / "end_of_attempt.py").read_text()
-    assert "best_attempt.note(state[\"repository\"].root_path)" in source
+def test_the_planner_puts_the_best_product_back_before_a_sprint_is_planned_again(tmp_path, monkeypatch):
+    """The re-plan path asks the one decision (LR.26), which puts the best back first; and every round notes the best."""
+    from workflow_node_stubs import end_an_attempt
+
+    noted = []
+    monkeypatch.setattr(best_attempt, "note", lambda root: noted.append(root))
+
+    update, asked = end_an_attempt(monkeypatch, tmp_path, "REPLAN", sprint_replan_count=0)
+
+    assert noted == [str(tmp_path)]
+    assert asked and asked[0]["root"] == str(tmp_path)
+    assert update["stage"] == "technical_lead"
 
 
 def test_a_bad_redraft_is_undone_at_its_first_measurement_and_a_good_one_is_left(tmp_path, monkeypatch):

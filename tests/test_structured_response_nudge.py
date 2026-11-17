@@ -102,15 +102,25 @@ def test_the_restart_still_exists_behind_it():
     assert "structured_retries" in source
 
 
-def test_the_nudge_happens_once_per_node_execution():
+def test_the_nudge_happens_once_per_node_execution(tmp_path, monkeypatch):
     """Straight-line code, so it cannot become the loop it is meant to prevent."""
-    import inspect
+    from app.graph import workflow
 
-    from app.graph.workflow import _run_gated_agent
+    nudges = []
+    monkeypatch.setattr(workflow, "_nudge_for_the_structured_response", lambda *a, **k: nudges.append(a) or None)
+    monkeypatch.setattr(workflow, "_the_answer_in_parts", lambda *a, **k: None)
+    monkeypatch.setattr(workflow, "_restart_on_a_fresh_conversation", lambda *a, **k: {"stage": "restarted"})
+    prose = FakeAgent({"messages": [], "structured_response": None})
 
-    source = inspect.getsource(_run_gated_agent)
+    update = workflow._run_gated_agent(
+        {"stage": "test_round_0", "repository": SimpleNamespace(root_path=str(tmp_path))},
+        {"configurable": {"thread_id": "outer"}},
+        stage_name="test_round_0", agent=prose, initial_request={"messages": [{"role": "user", "content": "test"}]},
+        output_key="out", next_stage="next",
+    )
 
-    assert source.count("_nudge_for_the_structured_response(") == 1
+    assert update == {"stage": "restarted"}
+    assert len(nudges) == 1 and len(prose.calls) == 1
 
 
 def test_a_successful_nudge_is_recorded(caplog):
@@ -233,16 +243,20 @@ def test_recovery_is_tried_before_any_model_call():
     )
 
 
-def test_the_schema_travels_with_the_agent():
+def test_the_schema_travels_with_the_agent(tmp_path):
     """The compiled graph does not expose it, and threading it through the
     fifteen places that build an agent is how fourteen of fifteen get it."""
-    import inspect
-
     from app.agents.role_agent import create_role_agent
 
-    assert "agent.workflow_response_format = response_format" in inspect.getsource(
-        create_role_agent
+    class _Out(BaseModel):
+        summary: str
+
+    agent = create_role_agent(
+        name="probe", stage="probe", system_prompt="probe", response_format=_Out,
+        model="openai:gpt-4o-mini", repo_root=str(tmp_path),
     )
+
+    assert agent.workflow_response_format is _Out
 
 
 # --- the nudge that says what was wrong ----------------------------------

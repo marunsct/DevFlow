@@ -5,11 +5,9 @@ did not change that call and the sprint was planned again over a one-line fix.
 """
 from __future__ import annotations
 
-import inspect
 import re
 
 from app.agents.specialists import ReportedDefect
-from app.graph import workflow
 from app.stacks import contract, pack_named
 from app.stacks.known_errors import KNOWN_CAUSE, with_known_causes
 
@@ -39,8 +37,16 @@ def test_both_hono_packs_know_it_and_a_project_without_a_pack_is_left(tmp_path):
     assert with_known_causes(tmp_path, raw) == raw
 
 
-def test_the_round_adds_the_causes():
-    assert 'reported = with_known_causes(state["repository"].root_path, reported)' in inspect.getsource(workflow)
+def test_the_round_adds_the_causes(tmp_path, monkeypatch):
+    from workflow_node_stubs import run_a_test_round
+
+    contract.write(tmp_path, pack_named("node-hono-native-api"), "notes", "Notes")
+
+    seen = run_a_test_round(monkeypatch, tmp_path, failing_due=["AC-2"],
+                            found=[_defect("TypeError: Response constructor: Invalid response status code 204")])
+
+    (defect,) = seen.update["remediation"].defects
+    assert KNOWN_CAUSE in defect.actual_behavior and "`c.body(null, 204)`" in defect.actual_behavior
 
 
 def test_a_node_test_pack_s_unit_globals_error_is_given_its_cause(tmp_path):

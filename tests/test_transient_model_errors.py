@@ -95,11 +95,28 @@ def test_a_non_transient_error_is_not_retried():
     assert _transient_retry_update({}, "product_manager", RuntimeError("bad api key")) is None
 
 
-def test_both_model_call_sites_are_guarded():
+@pytest.mark.parametrize("on", ["the first call", "a resume"])
+def test_both_model_call_sites_are_guarded(tmp_path, monkeypatch, on):
     """The fault can arrive on the first call or on a resume; one site is half
     a fix."""
-    from pathlib import Path
+    from types import SimpleNamespace
 
-    workflow = (Path(__file__).resolve().parent.parent / "src/app/graph/workflow.py").read_text()
+    from app.graph import workflow
 
-    assert workflow.count("_transient_retry_update(state, stage_name, exc)") == 2
+    def fault(*args, **kwargs):
+        raise RuntimeError(MALFORMED)
+
+    agent = SimpleNamespace(invoke=fault, get_state=lambda config: SimpleNamespace(values={}, next=()))
+    state = {"stage": "product_manager", "repository": SimpleNamespace(root_path=str(tmp_path))}
+    if on == "a resume":
+        monkeypatch.setattr(workflow, "resume_with_decision", fault)
+        state.update(pending_decision={"type": "approve"}, pending_inner_thread_id="outer:product_manager:1")
+
+    update = workflow._run_gated_agent(
+        state, {"configurable": {"thread_id": "outer"}},
+        stage_name="product_manager", agent=agent, initial_request={"messages": [{"role": "user", "content": "go"}]},
+        output_key="out", next_stage="next",
+    )
+
+    assert update["stage"] == "product_manager"
+    assert update["structured_retries"]["product_manager:transient"] == 1

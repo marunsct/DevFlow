@@ -6,7 +6,6 @@ Behind `SETTLE_WHEN_ACCEPTANCE_IS_GREEN`.
 """
 from __future__ import annotations
 
-import inspect
 import json
 from types import SimpleNamespace
 
@@ -60,13 +59,14 @@ def test_off_nothing_changes(tmp_path, monkeypatch):
     assert settle_when_green.applies(tmp_path, [UNIT], replans=1) is False
 
 
-def test_the_replan_asks_before_it_plans_again():
-    source = inspect.getsource(workflow)
-    body = source[source.index("def _replan_or_escalate("):source.index("def defect_remediation_node(")]
-    from app.graph import end_of_attempt  # the one decision since LR.26
+def test_the_replan_asks_before_it_plans_again(tmp_path, monkeypatch):
+    """A settled sprint goes to the escalation on its first re-plan, not after the revision limit."""
+    from workflow_node_stubs import end_an_attempt  # the one decision since LR.26
 
-    assert "settle_when_green.applies(" in inspect.getsource(end_of_attempt.decide)
-    assert body.index("end_of_attempt.decide(") < body.index("if revision_count > MAX_MILESTONE_REVISIONS:")
+    update, asked = end_an_attempt(monkeypatch, tmp_path, "SETTLE", sprint_replan_count=0)
+
+    assert asked[0]["root"] == str(tmp_path) and asked[0]["replans"] == 0
+    assert update["stage"] == "escalation" and "the decision's reason" in str(update)
 
 
 WORDED_BY_THE_ROUND = SimpleNamespace(

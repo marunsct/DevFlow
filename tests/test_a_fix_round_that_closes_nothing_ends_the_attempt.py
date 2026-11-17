@@ -3,13 +3,11 @@
 """
 from __future__ import annotations
 
-import inspect
 import re
 from types import SimpleNamespace
 
 from app.acceptance import unstable
 from app.graph import unchanged_fix_round as rounds
-from app.graph import workflow
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 
@@ -59,12 +57,23 @@ def test_off_it_runs_another_round_as_before(tmp_path, monkeypatch):
     assert rounds.ON_BY_DEFAULT is False
 
 
-def test_the_test_round_ends_the_attempt_before_it_sends_defects_to_a_fix_round():
-    source = inspect.getsource(workflow)
-    node = source[source.index("def test_and_triage_node"):source.index("def _replan_or_escalate")]
-    at = node.index("unchanged_fix_round.ends_the_attempt(")
-    assert "_replan_or_escalate(state, base_update, cycle, unchanged_fix_round.SAID)" in node[at:at + 600]
-    assert at < node.index('stage="defect_remediation"')
+def test_the_test_round_ends_the_attempt_before_it_sends_defects_to_a_fix_round(tmp_path, monkeypatch):
+    from workflow_node_stubs import end_an_attempt
+
+    update, asked = end_an_attempt(monkeypatch, tmp_path, "REPLAN")
+
+    assert asked, "the attempt did not end"
+    assert update["stage"] == "technical_lead" and rounds.SAID in str(update)
+
+
+def test_a_round_that_closed_something_goes_to_the_fix_round(tmp_path, monkeypatch):
+    from workflow_node_stubs import a_reported_defect, run_a_test_round
+
+    monkeypatch.setattr(rounds, "ends_the_attempt", lambda *a, **k: False)
+
+    seen = run_a_test_round(monkeypatch, tmp_path, found=[a_reported_defect()], failing_due=["AC-2"])
+
+    assert seen.update["stage"] == "defect_remediation"
 
 
 def test_its_words_use_none_of_the_banned_ones():

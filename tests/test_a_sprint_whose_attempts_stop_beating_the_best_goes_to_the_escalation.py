@@ -5,8 +5,8 @@ while the sprint was drafted, fixed and planned again; the best product was kept
 """
 from __future__ import annotations
 
-import inspect
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -46,23 +46,34 @@ def test_the_best_count_so_far_is_written_down_each_time(tmp_path):
     assert stalled_sprint.record(tmp_path / "empty", [4]) == [4]
 
 
-def _replan_source() -> str:
-    source = inspect.getsource(workflow)
-    start = source.index("def _replan_or_escalate(")
-    return source[start:source.index("def defect_remediation_node(", start)]
+def test_the_replan_asks_and_keeps_the_history(tmp_path, monkeypatch):
+    from workflow_node_stubs import end_an_attempt
 
+    update, asked = end_an_attempt(monkeypatch, tmp_path, "REPLAN", sprint_best_history=[15], sprint_replan_count=1)
 
-def test_the_replan_asks_and_keeps_the_history():
-    from app.graph import end_of_attempt  # the one decision since LR.26
-
-    body = _replan_source()
-    assert "stalled_sprint.stalled(" in inspect.getsource(end_of_attempt.decide)
-    assert body.index("end_of_attempt.decide(") < body.index("if revision_count > MAX_MILESTONE_REVISIONS:")
-    assert "sprint_best_history=best_history" in body
+    assert asked[0]["best_history"] == [15] and asked[0]["replans"] == 1
+    assert update["stage"] == "technical_lead" and update["sprint_replan_count"] == 2
+    assert update["sprint_best_history"] == [15, 15]
     assert "sprint_best_history" in workflow.WorkflowGraphState.__annotations__
 
 
-def test_the_history_starts_again_with_the_next_sprint():
-    source = inspect.getsource(workflow)
-    advance = source[source.index('"revision_comments": [],'):][:260]
-    assert '"sprint_best_history": []' in advance
+def test_a_stalled_attempt_escalates_before_the_revision_limit(tmp_path, monkeypatch):
+    """The decision is read before the revision limit: a stop escalates on the first re-plan."""
+    from workflow_node_stubs import end_an_attempt
+
+    update, _ = end_an_attempt(monkeypatch, tmp_path, "STOP", sprint_best_history=[15, 15], sprint_replan_count=0)
+
+    assert update["stage"] == "escalation"
+    assert "the decision's reason" in str(update)
+
+
+def test_the_history_starts_again_with_the_next_sprint(tmp_path, monkeypatch):
+    from workflow_node_stubs import CONFIG, compiled, two_work_orders
+
+    graph = compiled(monkeypatch, tmp_path)
+    state = {"repository": SimpleNamespace(root_path=str(tmp_path)), "milestone_plan": two_work_orders(),
+             "sprint_best_history": [11, 15, 15], "current_sprint_index": 0}
+
+    update = graph.nodes["sprint_advance"].bound.invoke(state, CONFIG)
+
+    assert update["sprint_best_history"] == []

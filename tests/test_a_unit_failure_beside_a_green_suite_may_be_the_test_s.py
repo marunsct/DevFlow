@@ -5,8 +5,9 @@ an empty 404 body the interface does not give; the fixers changed the product fo
 """
 from __future__ import annotations
 
-import inspect
 import re
+
+import pytest
 
 from app.graph import workflow
 
@@ -24,6 +25,17 @@ def test_otherwise_it_does_not():
     assert workflow.BESIDE_A_GREEN_SUITE not in workflow._the_unit_tests_fail(None, "1 failing").actual_behavior
 
 
-def test_the_harness_round_says_it_when_nothing_due_fails():
-    source = inspect.getsource(workflow)
-    assert 'beside_a_green_suite=not failing_due and int(saved_run.get("failed") or 0) == 0' in source
+@pytest.mark.parametrize("failing_due, failed, beside", [
+    ([], 0, True),
+    (["AC-2"], 1, False),
+    ([], 2, False),  # a failure the round does not count as due: the suite is not green
+])
+def test_the_harness_round_says_it_when_nothing_due_fails(tmp_path, monkeypatch, failing_due, failed, beside):
+    from workflow_node_stubs import run_a_test_round
+
+    seen = run_a_test_round(monkeypatch, tmp_path, failing_due=failing_due, saved_run={"ran": True, "failed": failed},
+                            overrides={"app.delivery.fast": lambda: True})
+
+    unit = [d for d in seen.update["remediation"].defects if d.description.startswith(workflow.UNIT_TESTS_FAIL)]
+    assert len(unit) == 1
+    assert (workflow.BESIDE_A_GREEN_SUITE in unit[0].actual_behavior) is beside

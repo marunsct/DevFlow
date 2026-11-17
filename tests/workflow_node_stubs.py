@@ -106,6 +106,84 @@ def marking(monkeypatch, target: str, marker: str) -> list[tuple[tuple, dict]]:
     return calls
 
 
+def a_reported_defect(description: str = "[AC-2] Saving a note fails", **extra: Any) -> Any:
+    from app.agents.specialists import ReportedDefect
+
+    return ReportedDefect(description=description, severity="major", reproduction_steps="r",
+                          expected_behavior="e", actual_behavior="a", affected_files=["app/store.js"],
+                          owner="backend", **extra)
+
+
+def run_a_test_round(monkeypatch, tmp_path, *, found: list[Any] | None = None, failing_due: list[str] | None = None,
+                     saved_run: dict[str, Any] | None = None, overrides: dict[str, Any] | None = None,
+                     **state: Any) -> SimpleNamespace:
+    """Run `test_and_triage` once: the testing stage reports `found`, the locked suite fails `failing_due`.
+
+    Every measurement the round would take of a real product is stubbed to say nothing, so what is left is the
+    round's own handling of what it was told. `overrides` maps a dotted name to what replaces it instead of the
+    stub. `.update` is the node's return, `.request` what the stage was handed.
+    """
+    seen = SimpleNamespace(update=None, request=None)
+
+    def gated(state, config, *, initial_request, output_key, **kwargs):
+        seen.request = initial_request
+        return {output_key: SpecialistOutput(changed_files=[], defects=list(found or []))}
+
+    due = list(failing_due or [])
+    monkeypatch.setattr("app.graph.acceptance_nodes.acceptance_for_round", lambda state: ("", []))
+    monkeypatch.setattr("app.graph.acceptance_nodes.reopen_the_suite_for", lambda *a, **k: None)
+    monkeypatch.setattr("app.graph.acceptance_nodes.beyond_repair", lambda *a, **k: [])
+    monkeypatch.setattr("app.graph.acceptance_nodes._failing_due", lambda state: (due, "npm test"))
+    monkeypatch.setattr("app.graph.acceptance_nodes.suite.is_locked", lambda root: True)
+    monkeypatch.setattr("app.graph.acceptance_nodes.suite.last_result",
+                        lambda root: saved_run if saved_run is not None else {"ran": True, "failed": len(due)})
+    monkeypatch.setattr("app.graph.acceptance_nodes.interface_defects", lambda state: [])
+    monkeypatch.setattr("app.graph.acceptance_nodes.pack_contract_defects", lambda state: [])
+    monkeypatch.setattr("app.graph.acceptance_nodes.failing_due_defects", lambda state, reported: [])
+    monkeypatch.setattr("app.agents.specialists.what_the_files_already_prove", lambda *a, **k: [])
+    monkeypatch.setattr(workflow, "_run_unit_tests_procedurally", lambda root: (False, "1 failing"))
+    monkeypatch.setattr(workflow, "_with_the_contract_s_server_errors", lambda state, result, milestone: result)
+    monkeypatch.setattr(workflow, "_with_the_lock_s_server_errors", lambda state, result, milestone: result)
+    monkeypatch.setattr(workflow, "_a_suite_failure_the_round_did_not_report", lambda *a, **k: None)
+    monkeypatch.setattr(workflow, "create_specialist_agent", lambda *a, **k: SimpleNamespace())
+    monkeypatch.setattr(workflow, "_run_gated_agent", gated)
+    monkeypatch.setattr("app.delivery.fast", lambda: False)
+    for target, replacement in (overrides or {}).items():
+        monkeypatch.setattr(target, replacement)
+    graph = compiled(monkeypatch, tmp_path)
+    base = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "milestone_plan": two_work_orders(),
+        "test_round": 1,
+        "specialist_outputs": {},
+        "review_defects": [],
+        "current_sprint_index": 0,
+        **state,
+    }
+    seen.update = graph.nodes["test_and_triage"].bound.invoke(base, CONFIG)
+    return seen
+
+
+def end_an_attempt(monkeypatch, tmp_path, outcome: str, **state: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """A test round whose fix round closed nothing, so the attempt ends; `end_of_attempt.decide` answers `outcome`.
+
+    Returns the round's update and the keyword arguments `decide` was asked with.
+    """
+    from app.graph import end_of_attempt, unchanged_fix_round
+
+    asked: list[dict[str, Any]] = []
+
+    def decide(root, defects, **kwargs):
+        asked.append({"root": root, **kwargs})
+        return SimpleNamespace(outcome=getattr(end_of_attempt, outcome), why="the decision's reason",
+                               best_history=[*(kwargs["best_history"] or []), 15], put_back="")
+
+    monkeypatch.setattr(unchanged_fix_round, "ends_the_attempt", lambda *a, **k: True)
+    monkeypatch.setattr(end_of_attempt, "decide", decide)
+    seen = run_a_test_round(monkeypatch, tmp_path, found=[a_reported_defect()], failing_due=["AC-2"], **state)
+    return seen.update, asked
+
+
 def one_defect(**extra: Any) -> Any:
     from app.sprint import Defect, RemediationCycle
 

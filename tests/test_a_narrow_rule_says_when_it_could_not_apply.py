@@ -265,3 +265,18 @@ def test_a_report_older_than_the_command_or_another_command_is_not_read(run, tmp
     assert sandbox._the_counts_its_report_holds(str(workspace), command, 12.0) == {}
     report.touch()
     assert sandbox._the_counts_its_report_holds(str(workspace), ["mvn", "-q", "-B", "verify"], 12.0) == {}
+
+
+def test_a_pack_command_that_ran_no_test_is_not_a_summary_left_unread(run, tmp_path):
+    """Measured on the C# and Java runs: a unit command whose tests did not compile wrote no report and named no
+    totals, and the counter called it a runner whose summary no reader knows - most of its notes."""
+    workspace = tmp_path / "product-workspace"
+    workspace.mkdir()
+    command = _a_java_project(workspace)
+    broken = {"returncode": 1, "stdout": "[ERROR] COMPILATION ERROR : cannot find symbol", "stderr": ""}
+
+    sandbox._record_execution(str(workspace), "qa", command, broken, category="test", duration_seconds=3.0)
+    assert _noted(run, rule_coverage.RUNNER_TOTALS) == []
+    sandbox._record_execution(str(workspace), "qa", ["zig", "build", "test"], {"stdout": "5/5 tests passed"},
+                              category="test")
+    assert len(_noted(run, rule_coverage.RUNNER_TOTALS)) == 1  # a command of the agent's own is still counted

@@ -3962,6 +3962,19 @@ def _count_a_test_run_whose_totals_were_not_read(command: Sequence[str], result:
     )
 
 
+def _a_command_of_the_pack_s_own(repo_root: str, command: Sequence[str]) -> bool:
+    """Whether `command` is the project's recorded unit or acceptance command, which writes a report. Never raises."""
+    try:
+        from app.stacks import contract
+
+        record = contract.read(repo_root) or {}
+        argv = [str(part) for part in command]
+        return any([str(part) for part in record.get(key) or []] == argv and record.get(report)
+                   for key, report in (("unit_test", "unit_report"), ("acceptance_test", "acceptance_report")))
+    except Exception:  # noqa: BLE001 - then it is counted, as before
+        return False
+
+
 def _the_counts_its_report_holds(repo_root: str, command: Sequence[str], duration_seconds: float | None) -> dict:
     """The totals of the pack's own unit or acceptance command, read from the report it wrote, when its output named
     none; `{}` otherwise. Never raises.
@@ -4025,7 +4038,10 @@ def _record_execution(
         totals = _the_counts_a_test_run_reported(result)
         if category == "test" and not totals:
             totals = _the_counts_its_report_holds(repo_root, command, duration_seconds)
-        if category == "test" and not totals:
+        # A pack's own command writes its report whenever a test runs, and that report was read above: one with no
+        # fresh report ran no test (it did not compile, or the product did not start), which is not a summary
+        # left unread. Measured on the C# and Java runs: those were most of the counter's notes.
+        if category == "test" and not totals and not _a_command_of_the_pack_s_own(repo_root, command):
             _count_a_test_run_whose_totals_were_not_read(command, result)
         entry = {
             "at": datetime.now(timezone.utc).isoformat(),

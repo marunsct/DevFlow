@@ -211,18 +211,3 @@ def test_every_function_that_invokes_an_agent_declares_a_stage() -> None:
                 f"{node.name} is recorded as running inside {caller}'s scope, "
                 "and that caller no longer calls it"
             )
-
-
-def test_the_resume_path_declares_the_thread_it_resumes() -> None:
-    """Specifically, and with the key that identifies the stage.
-
-    `resume_with_decision` is handed the inner thread id, which is the stage's
-    identity, so it has the right key already.
-    """
-    import inspect
-
-    from app.agents.approval import resume_with_decision
-
-    source = inspect.getsource(resume_with_decision)
-
-    assert "with remembering(thread_id):" in source

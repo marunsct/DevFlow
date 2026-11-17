@@ -216,10 +216,28 @@ def test_the_dispute_is_told(tmp_path, monkeypatch):
     assert "What the harness measured" not in plain
     assert not BANNED.search(text.split("--- The suite's code ---")[0].replace("AC-1: x", "").replace(SAID, ""))
 
-    from workflow_nodes import workflow_source
 
-    node = workflow_source()
-    assert "measured=acceptance_suite.the_suite_s_own_words_when_last_measured(root)" in node
+
+def test_the_dispute_node_tells_its_judge(tmp_path, monkeypatch):
+    from workflow_nodes import a_dispute
+
+    _make(tmp_path)
+    saved = {"passed": 0, "problem": "", "server_log": STILL_UP, "criteria": {
+        f"AC-{i}": {"tests": [{"name": f"test_ac{i}_x", "outcome": "failed", "message": f"RuntimeError: {SAID}"}]} for i in range(46)
+    }}
+    monkeypatch.setattr(suite, "last_result", lambda _: saved)
+    judged = []
+
+    def the_judge(state, config, *, initial_request, output_key, **kwargs):
+        judged.append(" ".join(str(message["content"]) for message in initial_request["messages"]))
+        return {output_key: object()}
+
+    a_dispute(tmp_path, [("test_ac1_x", "AC-1: x", f"RuntimeError: {SAID}")], [], patches={
+        "app.acceptance.suite.the_suite_s_own_words_when_last_measured": suite.the_suite_s_own_words_when_last_measured,
+        "app.acceptance.suite.suite_files": suite.suite_files,
+        "app.graph.workflow._run_gated_agent": the_judge})
+
+    assert judged and "no test reached the product" in judged[0]
 
 
 @pytest.mark.parametrize("pack", [python_http_api, python_cli, python_library])

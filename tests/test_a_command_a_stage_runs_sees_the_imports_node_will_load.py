@@ -6,10 +6,13 @@ the extension itself at its first measurement.
 """
 from __future__ import annotations
 
+import re
 import sys
 
 from app.stacks import contract, pack_named
 from app.tools.sandbox import SandboxExecutor
+
+BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 
 
 def _scaffolded(tmp_path):
@@ -41,7 +44,9 @@ def test_a_stage_s_command_runs_on_imports_that_name_the_ts_file(tmp_path, monke
     outcome = _run(tmp_path)
 
     assert test.read_text() == "import { store } from '../src/datastore.ts';\n"
-    assert "name the `.ts` file itself" in str(outcome.get("note") or "")
+    note = str(outcome.get("note") or "")
+    assert "name the `.ts` file itself" in note
+    assert not BANNED.search(note)
 
 
 def test_switched_off_or_for_the_harness_nothing_moves(tmp_path, monkeypatch):
@@ -53,14 +58,3 @@ def test_switched_off_or_for_the_harness_nothing_moves(tmp_path, monkeypatch):
     monkeypatch.setenv("EXTENSIONS_BEFORE_A_RUN", "on")
     _run(tmp_path, for_the_harness=True)
     assert test.read_text() == "import { store } from '../src/datastore.js';\n"
-
-
-def test_the_note_names_no_banned_word():
-    import re
-    from pathlib import Path
-
-    import app.stacks.imports_before_a_run as module
-
-    text = Path(module.__file__).read_text(encoding="utf-8").split("def put_right", 1)[1]
-    for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
-        assert not re.search(rf"\b{re.escape(word)}\b", text, re.IGNORECASE)

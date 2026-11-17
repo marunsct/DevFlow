@@ -84,9 +84,19 @@ def test_the_readme_names_each_cut_with_its_criterion_and_why_and_drops_the_sect
     assert "## Usage" in (tmp_path / "README.md").read_text()
 
 
-def test_the_release_names_the_cuts_in_the_readme():
-    import inspect
-
+def test_the_release_names_the_cuts_in_the_readme(tmp_path, monkeypatch):
+    from app.analysis import integration_checks
     from app.graph import delivery
 
-    assert "release_docs.name_the_scope_cuts(root," in inspect.getsource(delivery.release)
+    (tmp_path / "README.md").write_text("# Notes\n\nRun it with `make run`.\n")
+    _locked(tmp_path, [("AC-3", "Notes can be exported as CSV."), ("AC-10", "Search finds notes by tag.")])
+    suite.defer(tmp_path, {"AC-3": "needs a person to judge the file"})
+    monkeypatch.setattr(integration_checks, "problems_that_break_the_product", lambda root, stack=None, brief="": [])
+
+    delivery.release({"repository": SimpleNamespace(root_path=str(tmp_path))}, {"configurable": {}},
+                     SimpleNamespace(judgement_model=None, checkpointer=None, repo_root=str(tmp_path),
+                                     allow_subdirectories=True))
+
+    cuts = (tmp_path / "README.md").read_text().split("## Scope cuts", 1)[1]
+    assert "**AC-3** (Notes can be exported as CSV.): needs a person to judge the file" in cuts
+    assert "AC-10" not in cuts

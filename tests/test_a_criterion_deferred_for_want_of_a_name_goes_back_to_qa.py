@@ -4,9 +4,12 @@ Measured on recent runs: a criterion shipped "deferred, unproven" while what was
 """
 from __future__ import annotations
 
-import inspect
+import json
 import re
+from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from app.acceptance import suite
 from app.graph import acceptance_nodes, delivery, escalation
@@ -76,6 +79,24 @@ def test_a_repair_may_rename_a_test_but_not_drop_one(tmp_path):
     assert suite.tests_a_repair_would_drop(tmp_path, relative, "test('[AC-1] lists the notes', async () => {});\n") != []
 
 
-def test_the_prefixes_are_the_ones_the_harness_writes():
-    assert "could not be made to pass after" in inspect.getsource(escalation) and suite.DEFERRED_BY_THE_HARNESS[0] == "could not be made to pass"
-    assert suite.DEFERRED_BY_THE_HARNESS[1] in inspect.getsource(acceptance_nodes.defer_what_is_beyond_repair)
+def _accepted_at_an_escalation(state):
+    """A person accepts a sprint whose AC-1 still fails: the escalation defers it."""
+    suite.lock(state["repository"].root_path)
+    (Path(state["repository"].root_path) / suite.RESULT_FILE).write_text(json.dumps({"ran": True, "criteria": {
+        "AC-1": {"id": "AC-1", "text": "criterion 1", "status": "failed", "tests": []}}}))
+    escalation.accept({**state, "escalation": {"error": "AC-1 still fails"}}, {"configurable": {}}, SimpleNamespace())
+
+
+@pytest.mark.parametrize("deferred_by", [
+    _accepted_at_an_escalation,
+    lambda state: acceptance_nodes.defer_what_is_beyond_repair(state, ["AC-1"], []),
+])
+def test_a_deferral_the_harness_wrote_itself_goes_back_when_no_name_carries_it(tmp_path, monkeypatch, deferred_by):
+    state = _project(tmp_path, {})
+    monkeypatch.setenv("NAMING_FINDING_BEFORE_DEFERRAL", "on")
+    deferred_by(state)
+
+    back = acceptance_nodes.naming_back_to_qa(state)
+
+    assert set(suite.deferred(tmp_path)) == {"AC-1"}
+    assert [item.split(" ", 1)[0] for item in back["acceptance_feedback"] if "would ship deferred" in item] == ["AC-1"]

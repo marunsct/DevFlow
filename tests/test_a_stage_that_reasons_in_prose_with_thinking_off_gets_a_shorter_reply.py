@@ -5,6 +5,11 @@ replies that hit the 12,000 cap were prose reasoning, 344 minutes of wall time; 
 """
 from __future__ import annotations
 
+import pytest
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_openai import ChatOpenAI
+
 import app.models as models
 from app import switches
 from app.observability import provenance, transcript
@@ -50,10 +55,24 @@ def test_off_by_default_and_registered(monkeypatch, tmp_path):
     assert "THINKING_OFF_REPLY_CAP" in switches.BUNDLES["PREMIUM_MODEL_TUNING"]
 
 
-def test_the_paced_call_asks_for_it():
-    import inspect
+@pytest.mark.parametrize(("thinking", "asked_for"), [(OFF, 4_000), ({}, 12_000)])
+def test_the_request_sent_asks_for_the_shorter_reply(monkeypatch, tmp_path, thinking, asked_for):
+    _at(monkeypatch, tmp_path)
+    monkeypatch.setenv("THINKING_OFF_REPLY_CAP", "on")
+    models.note_reasoned_in_prose()
+    sent: list[dict] = []
 
-    assert "cap = thinking_off_reply_cap(cap, ceiling, kwargs)" in inspect.getsource(models.CompatibleChatOpenAI._generate_paced)
+    def the_server(self, messages, stop=None, run_manager=None, **kwargs):  # the request as it leaves
+        sent.append(self._get_request_payload(messages, stop=stop, **kwargs))
+        return ChatResult(generations=[ChatGeneration(message=AIMessage("done"))])
+
+    monkeypatch.setattr(ChatOpenAI, "_generate", the_server)
+    model = models.CompatibleChatOpenAI(model="m", api_key="k", base_url="http://localhost:1/v1", max_retries=0,
+                                        max_tokens=12_000)
+
+    model._generate([HumanMessage("fix it")], **thinking)
+
+    assert [payload.get("max_completion_tokens") or payload.get("max_tokens") for payload in sent] == [asked_for]
 
 
 def test_a_new_stage_of_the_same_family_starts_capped(monkeypatch, tmp_path):

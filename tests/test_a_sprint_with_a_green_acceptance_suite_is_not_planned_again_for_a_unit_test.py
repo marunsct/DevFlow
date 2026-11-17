@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.acceptance import suite
-from app.graph import settle_when_green, workflow
+from app.graph import settle_when_green
 
 UNIT = SimpleNamespace(status="open", description="The unit tests fail. It says: loadNotes throws on malformed JSON")
 CRITERION = SimpleNamespace(status="open", description="[AC-5] Delete a note - the acceptance suite says this does not work yet.")

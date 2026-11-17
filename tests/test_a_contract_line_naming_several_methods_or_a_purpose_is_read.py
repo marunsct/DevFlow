@@ -112,12 +112,12 @@ def test_the_round_asks_whenever_the_suite_is_green(tmp_path):
     """Asked whenever the locked suite is green, whatever else the round found.
 
     Measured on one run, failing unit tests kept every round from being clean and the checks were never asked
-    before release. A red suite has its own defects, and is not asked.
+    before release. A red suite has its own defects, and is not asked; a near-green one is (LF.1052).
     """
     [asked] = _a_round_after_a_green_suite(tmp_path, failed=0)
     assert [d.description for d in asked.defects][0].startswith(workflow.UNIT_TESTS_FAIL), "asked beside the unit failure"
 
-    assert _a_round_after_a_green_suite(tmp_path, failed=2) == []
+    assert _a_round_after_a_green_suite(tmp_path, failed=3) == []
 
 
 def test_a_note_among_the_statuses_is_no_part_of_the_check():

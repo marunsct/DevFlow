@@ -73,14 +73,19 @@ def test_a_green_round_adds_the_defect_behind_the_switch(tmp_path, monkeypatch):
     assert workflow._with_the_contract_s_server_errors(state, green, milestone).defects == []
 
 
-@pytest.mark.parametrize("failing_due, failed, asked", [([], 0, True), (["AC-2"], 1, False)], ids=["green", "red"])
-def test_the_round_asks_it_when_the_suite_is_green(tmp_path, monkeypatch, failing_due, failed, asked):
+@pytest.mark.parametrize("failing_due, failed, passed, asked", [
+    ([], 0, 10, True),
+    (["AC-2"], 1, 9, True),  # near green, the product answering: measured, a 500 shipped from a 9-of-10 round
+    (["AC-2"], 1, 0, False),
+    (["AC-2", "AC-3", "AC-4"], 3, 7, False),
+], ids=["green", "near-green", "nothing-answered", "red"])
+def test_the_round_asks_it_when_the_suite_is_green_or_near(tmp_path, monkeypatch, failing_due, failed, passed, asked):
     from workflow_node_stubs import a_reported_defect, run_a_test_round
 
     def with_a_crash(state, result, milestone):
         return result.model_copy(update={"defects": [*result.defects, a_reported_defect(f"{ic.SERVER_FAILED} POST /notes")]})
 
-    seen = run_a_test_round(monkeypatch, tmp_path, failing_due=failing_due, saved_run={"ran": True, "failed": failed},
+    seen = run_a_test_round(monkeypatch, tmp_path, failing_due=failing_due, saved_run={"ran": True, "failed": failed, "passed": passed},
                             found=[a_reported_defect("[AC-1] The list is empty")],
                             overrides={"app.graph.workflow._with_the_contract_s_server_errors": with_a_crash})
 

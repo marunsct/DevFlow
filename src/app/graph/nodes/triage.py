@@ -234,9 +234,17 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
 
     test_result: SpecialistOutput = update.pop("__test_result__")
     # Asked whenever the locked suite is green, whatever else the round found: measured on one run, failing unit
-    # tests kept every round from being clean and the checks were never asked before release.
-    if not failing_due and int(saved_run.get("failed") or 0) == 0:
+    # tests kept every round from being clean and the checks were never asked before release. And when it is near
+    # green with the product answering (a test passed): measured on a Java run, the best round was 9 of 10, the sprint
+    # was accepted from there, and `GET /notes/abc` answering 500 shipped - the check was never asked of a product
+    # that started.
+    from app.graph.near_green_once import near_green
+
+    passed, failed = int(saved_run.get("passed") or 0), int(saved_run.get("failed") or 0)
+    green = not failing_due and failed == 0
+    if green or (passed > 0 and near_green(passed, failed)):
         test_result = _with_the_contract_s_server_errors(state, test_result, milestone)
+    if green:
         from app.acceptance import order_probe
 
         order_probe.at_a_green_round(state["repository"].root_path)

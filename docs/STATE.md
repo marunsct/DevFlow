@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-18 05:55 JST (written by `loop.sh state`). Harness c498ed24 committed; 684cd62e deployed (not the same).
+**As of:** 11-18 07:25 JST (written by `loop.sh state`). Harness ca7d4712 committed; ca7d4712 deployed.
 **Live, and stopped in the last day:** run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0; run-844673cd failed at failed; run-9f8188cb failed at failed; run-2db7b0a2 failed at failed
-**Last scored:** run-1cef3eae tasks-api 10/10 (completed, handoff 1.0; scored 11-18 05:55 JST); run-6a9c0fb9 notes-api-ruby 9/9 (completed, 88 active min, handoff 1.0; scored 11-18 03:50 JST); run-b770f08f notes-api-java 9/9 (completed, mixed, 95 active min, handoff 1.0; scored 11-18 01:46 JST).
+**Last scored:** run-1badaa8f notes-api-rust 8/9 (completed, FALSE ACCEPTANCE, handoff 1.0; scored 11-18 07:25 JST); run-1cef3eae tasks-api 10/10 (completed, 127 active min, handoff 1.0; scored 11-18 05:55 JST); run-6a9c0fb9 notes-api-ruby 9/9 (completed, 88 active min, handoff 1.0; scored 11-18 03:50 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -125,7 +125,11 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
    Every language in the container sweep now passes 9/9 hidden (handoff 1.0 after LF.1054).
    tasks-api container 1, run-1cef3eae-17ed-4e38-a8ae-8e97812fe352 (:1234, 03:39-05:50): hidden 10/10, quality 7/7,
    handoff 1.0, verdict not_deliverable (a locked test reclassified under dispute; mutation 0.1 - a weak suite).
-   Live: Rust container run 3, run-1badaa8f-b4cc-425a-a27a-aa0146b7fbbd (:1234, 06:00) - confirms LF.1035-1041.
+   Rust container run 3, run-1badaa8f-b4cc-425a-a27a-aa0146b7fbbd (:1234, 06:00-07:22): hidden 8/9, quality 6/8,
+   handoff 1.0, not_deliverable; mutation 12/12. The design held (LF.1035/1039: `app() -> Router`, state applied
+   inside). Lost: an update (the near-green criterion left at acceptance), a blank title kept, a long body refused.
+   Built from it: LF.1055 (a fixed compiler finding no longer kept open by another error in its file), LF.1056
+   (`oneshot` takes the router by value). :8888's model not loaded since about 00:55.
 3. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).

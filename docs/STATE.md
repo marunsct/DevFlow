@@ -72,14 +72,15 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   images LF.1005, container environment LF.1007, 7 images built; first whole container-mode run (Python notes-api,
   run-19ff2786) scored 9/9 hidden, 8/8 quality, delivered (LF.1015 scorer fix); Java next, then the other toolchains), LR.52, and LR.53 (cause grouping; a green suite settles; a near-green
   sprint is planned again once - LF.977, measured on 175 past re-plans; open: a repair back to the round), LR.54 (four contradictions removed).
-- LR.42 done. LR.50 phase 1 done (LF.1016: 14 nodes lifted into `app.graph.nodes`, one `GraphContext`); phase 2
-  (architect, technical lead, dispatch, test and triage, the fix stage, milestone review) next. LR.46 rest waits on the
-  rule-coverage counter's data; LR.44 (hosted-model matrix) waits for the owner.
+- LR.42 done. LR.50 done (LF.1016 phase 1, LF.1018 phase 2: every node lifted into `app.graph.nodes`, one
+  `GraphContext`; workflow.py is the wiring). LR.46 rest waits on the rule-coverage counter's data; LR.44
+  (hosted-model matrix) waits for the owner.
 
 ## Next actions
-1. LR.30 container-mode run 2, run-9f8188cb-6da7-43cd-a6ff-dcec0f2c9d83 notes-api-java (:8888, 13:53) failed at its
-   scaffold at 14:07: tests run offline there and Maven fetches its JUnit provider at the first test (LF.1017, a pack
-   warm-up). Nothing to score. Next: deploy LF.1016-1017 with COMPOSE_FILE kept, verify the Java pack, start Java again.
+1. Live: LR.30 container-mode Java run 2, run-844673cd-1d2d-459c-aca9-7641567f9fc8 (:8888, 14:26), on eb99fe36.
+   Run 1 (run-9f8188cb-6da7-43cd-a6ff-dcec0f2c9d83) failed at its scaffold at 14:07: tests run offline there and Maven
+   fetches its JUnit provider at the first test - LF.1017, a pack warm-up; the Java pack then verified in 38 s.
+   LF.1018 (LR.50 phase 2) is deployed at this run's end.
    The WORKER IS IN CONTAINER MODE (COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.sandbox.yml);
    a plain `loop.sh deploy` would undo it.
 2. The language sweep then has one run per language; next, a second run of the families that lost quality tests.

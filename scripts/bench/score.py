@@ -159,7 +159,10 @@ def _junit(path: Path) -> list[dict]:
 
 
 #: Folders a handoff check never reads: installed dependencies and caches.
-_NOT_THE_PRODUCT_S = {"node_modules", ".venv", "venv", "__pycache__", ".git", "dist", "build", ".pytest_cache", "test-results"}
+#: `vendor` and `target` too: measured on three Ruby runs, the comment check read a gem installed into `vendor/bundle`
+#: ("I think what they ended up using") and each lost a handoff point for code it did not write.
+_NOT_THE_PRODUCT_S = {"node_modules", ".venv", "venv", "__pycache__", ".git", "dist", "build", ".pytest_cache", "test-results",
+                      "vendor", "target"}
 #: Files a product should not ship with: a database its own runs wrote.
 _SHIPPED_DATA = re.compile(r"\.(db|sqlite|sqlite3)$", re.IGNORECASE)
 #: A comment that is the model thinking aloud, not a note for the code's reader.

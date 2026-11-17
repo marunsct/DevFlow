@@ -75,3 +75,16 @@ def test_a_bundle_that_loads_is_left_as_it_is(tmp_path, monkeypatch):
     ran, notes = _bundle(tmp_path, monkeypatch, check_code=0)
 
     assert ran == [["bundle", "check"]] and notes == []
+
+
+def test_the_handoff_reads_the_product_s_own_comments_not_its_installed_gems(tmp_path):
+    """Measured on three Ruby runs: a gem in `vendor/bundle` said "I think ..." and each run lost a handoff point."""
+    product = tmp_path / "svc"
+    (product / "vendor" / "bundle" / "gems" / "diff-lcs" / "lib").mkdir(parents=True)
+    (product / "vendor" / "bundle" / "gems" / "diff-lcs" / "lib" / "lcs.rb").write_text("# I think what they used\n")
+    (product / "app.rb").write_text("# Serves the notes.\nputs 1\n")
+
+    assert _score().handoff(product)["handoff"]["no_thinking_aloud_in_comments"] is True
+
+    (product / "app.rb").write_text("# Hmm, let me check this again\nputs 1\n")
+    assert _score().handoff(product)["handoff"]["no_thinking_aloud_in_comments"] is False

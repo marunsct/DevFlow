@@ -45,12 +45,32 @@ def test_nothing_is_named_once_each_test_changed_or_after_the_lock(tmp_path, mon
     assert suite.tests_left_unrepaired(tmp_path) == []
 
 
-def test_the_review_of_a_repair_checks_it():
-    import inspect
+def test_the_review_of_a_repair_sends_back_a_test_it_left_as_it_was(tmp_path):
+    from app.acceptance import junit
+    from workflow_nodes import an_acceptance_review
 
-    from app.graph import acceptance_nodes
+    def repaired(root):
+        return suite.AcceptanceResult(ran=True, exit_code=1, report=junit.Report(found=True, tests=[
+            junit.TestResult(name="acceptance.test_api.test_ac7_survives_restart", outcome="failed", message="assert False"),
+            junit.TestResult(name="acceptance.test_api.test_ac21_invalid", outcome="passed")]))
 
-    assert "tests_left_unrepaired(root, result)" in inspect.getsource(acceptance_nodes.acceptance_review)
+    from app.acceptance.criteria import Criterion
+    from app.stacks import contract, pack_named
+
+    contract.write(tmp_path, pack_named("python-http-api"), "notes", "Notes")
+    (tmp_path / "notes" / "acceptance").mkdir(parents=True)
+    (tmp_path / "notes" / "acceptance" / "test_api.py").write_text(PY)
+    suite.save_criteria(tmp_path, [Criterion("AC-7", "Notes survive a restart", "brief"),
+                                   Criterion("AC-21", "An invalid note is refused", "brief")])
+    suite.repairing(tmp_path, ["test_ac7_survives_restart", "test_ac21_invalid"])
+    fixed_one = PY.replace("assert 422 == 401", "assert resp.status_code in (400, 401, 422)")
+
+    update = an_acceptance_review(tmp_path, repaired, pack="python-http-api", files={"test_api.py": fixed_one},
+                                  state={"acceptance_round": 2})
+
+    [left] = [problem for problem in update["acceptance_feedback"] if "has not changed" in problem]
+    assert update["stage"] == "acceptance_author"
+    assert "`test_ac7_survives_restart`" in left and "test_ac21_invalid" not in left
 
 
 def test_a_test_qa_vouches_for_is_not_named(tmp_path, monkeypatch):

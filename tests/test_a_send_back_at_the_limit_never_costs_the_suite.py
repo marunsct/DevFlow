@@ -6,50 +6,46 @@ before the send-back was lockable. The three "once" flags were also never cleare
 """
 from __future__ import annotations
 
-import inspect
-from unittest import mock
+import json
+from types import SimpleNamespace
 
-from app.acceptance import suite
-from app.graph import acceptance_nodes as nodes
+from app.acceptance import junit, suite
+from tests.test_an_output_given_in_place_of_another_is_held_whole import BRIEF, WEAK
+from workflow_nodes import an_acceptance_review
 
-
-def _suite(tmp_path):
-    (tmp_path / ".harness").mkdir()
-    folder = tmp_path / "acceptance"
-    folder.mkdir()
-    first = folder / "a.spec.js"
-    first.write_text("test('a', ...)")
-    return folder, first
+FAILING = suite.AcceptanceResult(ran=True, exit_code=1, report=junit.Report(found=True, tests=[
+    junit.TestResult(name="acceptance.test_cli.test_ac3_json", outcome="failed", message="no product"),
+    junit.TestResult(name="acceptance.test_cli.test_ac9_json_with_top", outcome="failed", message="no product")]))
+CANNOT_RUN = suite.AcceptanceResult(ran=False, exit_code=2, problem="the suite does not load", output="SyntaxError")
+STATE = {"document": SimpleNamespace(text=BRIEF)}
 
 
-def test_the_suite_before_the_send_back_is_put_back_whole(tmp_path):
-    folder, first = _suite(tmp_path)
-    with mock.patch.object(suite, "suite_files", side_effect=lambda root: sorted(folder.glob("*.spec.js"))):
-        nodes._keep_before_the_send_back(tmp_path)
-        first.write_text("broken(")
-        (folder / "b.spec.js").write_text("added by the send-back")
-        assert nodes._put_back_before_the_send_back(tmp_path) is True
-        assert first.read_text() == "test('a', ...)" and not (folder / "b.spec.js").exists()
-        assert nodes._put_back_before_the_send_back(tmp_path) is False
+def _sent_back_at_the_limit(tmp_path):
+    """A suite whose outputs are held only in part, sent back once at the review's limit to be strengthened."""
+    files = {"run.json": json.dumps({"command": ["run"], "report": "r.xml"}), "test_cli.py": WEAK}
+    update = an_acceptance_review(tmp_path, FAILING, files=files, state={**STATE, "acceptance_round": 3})
+    assert update["stage"] == "acceptance_author"
+    return tmp_path / "notes" / "acceptance"
 
 
-def test_the_once_flags_are_cleared_at_the_lock(tmp_path):
-    _suite(tmp_path)
-    saved = {}
-    with mock.patch.object(suite, "_state", return_value={"lock": "x", "strengthened_once": True,
-                                                           "cannot_pass_repaired_once": True}), \
-            mock.patch.object(suite, "_save_state", side_effect=lambda root, state: saved.update(state=state)):
-        nodes._the_send_backs_spent(tmp_path)
-    assert saved["state"] == {"lock": "x"}
+def test_a_send_back_that_leaves_a_suite_that_cannot_run_puts_the_suite_before_it_back(tmp_path):
+    folder = _sent_back_at_the_limit(tmp_path)
+    (folder / "test_cli.py").write_text("broken(")
+    (folder / "test_extra.py").write_text("added by the send-back")
+
+    update = an_acceptance_review(tmp_path, CANNOT_RUN, state={**STATE, "acceptance_round": 5})
+
+    assert update["stage"] == "acceptance_review"
+    assert (folder / "test_cli.py").read_text() == WEAK and not (folder / "test_extra.py").exists()
 
 
-def test_the_review_puts_the_suite_back_before_it_fails_the_run():
-    source = inspect.getsource(nodes.acceptance_review)
-    for failure in ("The acceptance suite cannot run or load after", "The acceptance suite proves nothing after"):
-        at = source.index(failure)
-        assert "_put_back_before_the_send_back(root)" in source[at - 700:at]
-    for flag in ("partial_strengthened_once", "cannot_pass_repaired_once", "strengthened_once"):
-        at = source.index(f'"{flag}": True')
-        assert "_keep_before_the_send_back(root)" in source[at - 300:at]
-    lock = source.index("suite.lock(root)")
-    assert "_the_send_backs_spent(root)" in source[lock:lock + 200]
+def test_the_once_at_the_limit_send_back_is_available_again_after_the_lock(tmp_path):
+    _sent_back_at_the_limit(tmp_path)
+    approves = SimpleNamespace(approved=True, findings=[])
+    an_acceptance_review(tmp_path, FAILING, reviews=(approves,), state={**STATE, "acceptance_round": 3})
+    assert suite.is_locked(tmp_path)
+
+    again = an_acceptance_review(tmp_path, FAILING, state={**STATE, "acceptance_round": 3})
+
+    assert again["stage"] == "acceptance_author"
+    assert again["acceptance_feedback"][0].startswith("Strengthen only the tests named below")

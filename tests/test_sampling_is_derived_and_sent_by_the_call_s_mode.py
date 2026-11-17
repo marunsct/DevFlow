@@ -116,12 +116,18 @@ def test_every_mode_says_what_it_is_for_and_what_it_does():
         assert len(mode.used_for) > 40 and len(mode.what_it_does) > 40
 
 
-def test_the_call_path_adds_the_mode_s_sampling():
-    import inspect
+def test_the_call_path_sends_the_mode_s_sampling(store):
+    from workflow_nodes import a_served_model
 
-    from app import models
+    sm.keep_found("m", sm.derive("qwen3.6", CARD))
+    sm.set_choices("m", send=True)
+    sm.forget()
+    model, sent = a_served_model("m")
 
-    assert "with_the_mode_s_sampling(payload, self._served_by()[1])" in inspect.getsource(models)
+    model.invoke("Write the module.")
+
+    [body] = sent
+    assert body["temperature"] == 0.6 and body["top_k"] == 20
 
 
 def test_the_settings_page_can_read_determine_and_set_it():

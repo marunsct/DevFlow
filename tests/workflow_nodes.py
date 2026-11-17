@@ -515,6 +515,53 @@ def a_dispute(
     return run_node("acceptance_dispute", made, str(tmp_path), every), asked
 
 
+def an_acceptance_review(
+    tmp_path,
+    measured: Any,
+    *,
+    files: dict[str, str] | None = None,
+    pack: str | None = None,
+    reviews: tuple[Any, ...] = (),
+    state: dict[str, Any] | None = None,
+    patches: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """`acceptance_review` on a suite of `files` (name -> text, under `notes/acceptance/`) that ran as `measured`.
+
+    `measured` is what running the suite gave (an `AcceptanceResult`, or a function of the root): the product's own
+    test command is the edge stood in for. The QA lead answers `reviews` in turn; nothing else is stubbed."""
+    from app.acceptance import suite
+    from app.stacks import contract, pack_named
+
+    if pack:
+        contract.write(tmp_path, pack_named(pack), "notes", "Notes")
+    else:
+        (tmp_path / ".project-directory").write_text("notes\n")
+    folder = tmp_path / "notes" / "acceptance"
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, text in (files or {}).items():
+        (folder / name).write_text(text)
+    answers = list(reviews)
+
+    def the_qa_lead(state, config, *, output_key, next_stage, **kwargs):
+        return {output_key: answers.pop(0), "stage": next_stage}
+
+    made = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "document": SimpleNamespace(text="# Brief\n## Acceptance Criteria\n- Notes are kept\n"),
+        "acceptance_round": 1,
+        **(state or {}),
+    }
+    every = {
+        "app.acceptance.suite.run": measured if callable(measured) else (lambda root: measured),
+        "app.acceptance.spec_dry_run.findings": lambda root: [],
+        "app.graph.workflow._run_gated_agent": the_qa_lead,
+        "app.agents.specialists.create_specialist_agent": lambda *args, **kwargs: object(),
+        "app.agents.acceptance_reviewer.create_acceptance_reviewer_agent": lambda *args, **kwargs: object(),
+        **(patches or {}),
+    }
+    return run_node("acceptance_review", made, str(tmp_path), every)
+
+
 def a_scripted_model(*replies: Any) -> Any:
     """A chat model that answers `replies` in turn and records each request it is sent, in `requests`.
 
@@ -571,6 +618,31 @@ def a_role_agent(root: Any, *replies: Any, name: str = "specialist_backend_0", s
     result = agent.invoke({"messages": [{"role": "user", "content": "Go."}]},
                           {**(config or {}), "configurable": configurable, "recursion_limit": 30})
     return result, model
+
+
+def a_served_model(name: str = "m", **kwargs: Any) -> tuple[Any, list[dict[str, Any]]]:
+    """The deployment's chat model class, its server stood in for at the HTTP edge.
+
+    Returns the model and the request bodies the server was sent, in order; every request is answered "ok"."""
+    import json
+
+    import httpx
+
+    from app.models import CompatibleChatOpenAI
+
+    sent: list[dict[str, Any]] = []
+
+    def server(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "id": "c", "object": "chat.completion", "created": 1, "model": name,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        })
+
+    model = CompatibleChatOpenAI(model=name, api_key="unused", base_url="http://model.test/v1", max_retries=0,
+                                 http_client=httpx.Client(transport=httpx.MockTransport(server)), **kwargs)
+    return model, sent
 
 
 def offered_tools(agent: Any) -> set[str]:

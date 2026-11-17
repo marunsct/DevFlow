@@ -7,13 +7,11 @@ test, so the harness reads it.
 """
 from __future__ import annotations
 
-import inspect
 import json
 import re
 from pathlib import Path
 
 from app.acceptance import suite
-from app.graph import acceptance_nodes
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 BRIEF = ('- `--json` prints `{"words": n, "lines": n, "characters": n}`, or with `--top N` prints '
@@ -79,8 +77,26 @@ def test_an_untested_form_is_left_to_the_coverage_checks(tmp_path):
     assert suite.outputs_held_only_in_part(tmp_path, BRIEF) == []
 
 
-def test_the_review_sends_it_back_and_once_more_at_the_limit():
-    source = inspect.getsource(acceptance_nodes.acceptance_review)
-    assert 'check_findings.noted(root, rounds, "outputs_held_only_in_part"' in source
-    assert "if partial and rounds >= MAX_ACCEPTANCE_ROUNDS and not sent_back.get(" in source
-    assert "acceptance_feedback=[STRENGTHEN_ONLY, *partial]" in source
+def test_the_review_sends_it_back_and_once_more_at_the_limit(tmp_path):
+    from types import SimpleNamespace
+
+    from app.acceptance import junit
+    from workflow_nodes import an_acceptance_review
+
+    failing = suite.AcceptanceResult(ran=True, exit_code=1, report=junit.Report(found=True, tests=[
+        junit.TestResult(name="acceptance.test_cli.test_ac3_json", outcome="failed", message="no product"),
+        junit.TestResult(name="acceptance.test_cli.test_ac9_json_with_top", outcome="failed", message="no product")]))
+    files = {"run.json": json.dumps({"command": ["run"], "report": "r.xml"}), "test_cli.py": WEAK}
+    brief = {"document": SimpleNamespace(text=BRIEF)}
+    approves = SimpleNamespace(approved=True, findings=[])
+
+    first = an_acceptance_review(tmp_path, failing, files=files, state=brief)
+    at_the_limit = an_acceptance_review(tmp_path, failing, state={**brief, "acceptance_round": 3})
+    once_more = an_acceptance_review(tmp_path, failing, reviews=(approves,), state={**brief, "acceptance_round": 3})
+
+    assert first["stage"] == "acceptance_author"
+    assert any('{"top": [{"word": w, "count": c}, ...]}' in problem for problem in first["acceptance_feedback"])
+    assert at_the_limit["stage"] == "acceptance_author"
+    assert at_the_limit["acceptance_feedback"][0].startswith("Strengthen only the tests named below")
+    assert any("would pass even if" in problem for problem in at_the_limit["acceptance_feedback"][1:])
+    assert once_more["stage"] != "acceptance_author"

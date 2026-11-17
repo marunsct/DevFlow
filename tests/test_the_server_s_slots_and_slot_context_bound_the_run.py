@@ -62,14 +62,63 @@ def test_a_fan_out_is_no_wider_than_the_server_s_slots(monkeypatch) -> None:
     assert max_parallel() == 6  # whether to fan out at all is still the owner's setting
 
 
-def test_the_fan_outs_use_the_capped_width() -> None:
-    import inspect
+def _four_apart():
+    from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
+
+    return MilestonePlanOutput(selected_sprint_goal="g", review_task_assignments=["change -> task 1"], delegated_tasks=[
+        SpecialistTask(specialist_role="backend", task_description=f"write part {n}", acceptance_criteria=["works"],
+                       files=[f"app/part{n}.js"]) for n in range(4)])
+
+
+def test_the_fan_outs_use_the_capped_width(tmp_path, monkeypatch) -> None:
+    """Work orders, reviews and fixes side by side: as many as the server has slots, not as many as allowed."""
+    from types import SimpleNamespace
 
     from app.graph import workflow
+    from app.sprint import Defect, RemediationCycle
 
-    source = inspect.getsource(workflow)
-    assert source.count("concurrent_requests()") >= 5
-    assert "pending[: max_parallel()]" not in source
+    monkeypatch.setenv("HARNESS_MAX_PARALLEL", "6")
+    _recorded(ServerProfile(slots=2))
+    root = SimpleNamespace(root_path=str(tmp_path))
+
+    builders = workflow._route_from_stage({"stage": "specialist_dispatch_parallel", "repository": root,
+                                           "milestone_plan": _four_apart(), "specialist_outputs": {}})
+    reviews = workflow._route_from_stage({"stage": "review_parallel", "repository": root,
+                                          "reviews_in_flight": ["security", "ux", "db", "backend"]})
+    cycle = RemediationCycle(sprint_goal="g", defects=[
+        Defect(description=f"part {n} fails", severity="major", reproduction_steps="r", expected_behavior="e",
+               actual_behavior="a", owner="backend", affected_files=[f"app/part{n}.js"]) for n in range(4)])
+    fixes = workflow._defects_to_fix_together(cycle, [0, 1, 2, 3])
+
+    assert [send.node for send in builders] == ["specialist_worker"] * 2
+    assert [send.node for send in reviews] == ["review_worker"] * 2
+    assert len(fixes) == 2
+
+
+def test_the_drafts_use_the_capped_width(tmp_path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from workflow_node_stubs import run_node
+
+    monkeypatch.setenv("HARNESS_MAX_PARALLEL", "6")
+    _recorded(ServerProfile(slots=2))
+    widths = []
+
+    def draft_work_orders(*args, workers: int, **kwargs):
+        widths.append(workers)
+        return {}
+
+    run_node(monkeypatch, tmp_path, "specialist_dispatch", milestone_plan=_four_apart(),
+             technical_specification=SimpleNamespace(), overrides={
+                 "app.delivery.fast": lambda *a, **k: True,
+                 "app.graph.workflow._the_run_approves_its_own_writes": lambda run_id: True,
+                 "app.graph.drafting.with_tests_the_specification_plans": lambda tasks, spec: (tasks, []),
+                 "app.graph.drafting.in_work_orders_of_at_most": lambda tasks: (tasks, 0),
+                 "app.graph.best_attempt.files_the_best_attempt_already_has": lambda *a, **k: [],
+                 "app.graph.drafting.draft_work_orders": draft_work_orders,
+             })
+
+    assert widths == [2]
 
 
 def test_each_run_segment_reads_the_profile_and_ready_prints_it() -> None:

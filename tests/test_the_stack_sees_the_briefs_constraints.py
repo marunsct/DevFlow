@@ -18,8 +18,6 @@ given `product_intake` and `tools_models`, both derived, and that run's
 model simply did not fill it. The brief was never in the room.
 """
 
-import inspect
-
 from app.agents.brief_constraints import (
     MAX_CONSTRAINT_LINES,
     constraint_lines,
@@ -139,9 +137,21 @@ def test_a_heading_ends_at_the_next_one_of_the_same_level():
     assert not any("add tasks" in line for line in lines)
 
 
-def test_the_stack_selector_is_given_them():
+def test_the_stack_selector_is_given_them(tmp_path, monkeypatch):
     """The check that matters: the text reaches the stage that decides."""
-    from app.graph import workflow
+    from types import SimpleNamespace
 
-    source = inspect.getsource(workflow.build_workflow_graph)
-    assert "constraints_note" in source, "the stack selector must read the brief's constraints"
+    from app.agents.stack_selector import StackSelectorOutput, TechnologyStack
+    from workflow_node_stubs import run_node
+
+    stack = StackSelectorOutput(technology_stack=TechnologyStack(
+        language="JavaScript", framework="none", database="localStorage", testing_framework="node:test, Playwright",
+        additional_tools=[]), rationale="As the brief asks.")
+
+    seen = run_node(monkeypatch, tmp_path, "stack_selector", answer=stack, product_intake={"product_name": "To-Do"},
+                    document=SimpleNamespace(text=BRIEF_LOW))
+
+    (stage, request), = seen.requests
+    assert stage == "stack_selector"
+    assert constraints_note(BRIEF_LOW) and constraints_note(BRIEF_LOW) in request["messages"][-1]["content"], (
+        "the stack selector must read the brief's constraints")

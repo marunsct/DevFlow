@@ -55,13 +55,22 @@ def test_a_pass_over_part_of_the_source_is_recorded_as_one() -> None:
     assert "## Status: passed\n" in whole and "shown to the reviewer in full" in whole
 
 
-def test_the_workflow_records_the_coverage() -> None:
-    import inspect
+def test_the_workflow_records_the_coverage(tmp_path, monkeypatch) -> None:
+    from app.agents.specialists import SpecialistOutput
+    from workflow_node_stubs import run_node, two_work_orders
 
-    from app.graph import workflow
+    covered = []
+    monkeypatch.setattr(security_reviewer, "source_coverage",
+                        lambda names, root: covered.append(list(names)) or (["app/a.js"], ["app/big.js"]))
 
-    source = inspect.getsource(workflow)
-    assert "render_security_review(review, shown, not_shown)" in source
+    run_node(monkeypatch, tmp_path, "security_review", answer=SecurityReviewOutput(status="passed"),
+             milestone_plan=two_work_orders(),
+             specialist_outputs={"specialist_backend_0": SpecialistOutput(changed_files=["app/a.js", "app/big.js"])},
+             overrides={"app.graph.workflow._in_parallel_mode": lambda: False})
+
+    assert covered and set(covered[0]) >= {"app/a.js", "app/big.js"}
+    document = (tmp_path / "docs" / "security_review.md").read_text()
+    assert "## Status: passed (over part of the source)" in document and "- app/big.js" in document
 
 
 def test_a_judgement_model_that_cannot_be_built_is_named(monkeypatch) -> None:

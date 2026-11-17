@@ -38,9 +38,29 @@ def test_the_first_note_stands_and_another_run_is_unaffected(tmp_path, monkeypat
     assert roles.downgrade_for("run-other") is None
 
 
-def test_the_runner_keeps_it_when_it_says_it():
-    import inspect
+def test_the_runner_keeps_it_when_it_says_it(tmp_path, monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
 
     from app.server import runner
 
-    assert "remember_the_downgrade(record.run_id, note)" in inspect.getsource(runner.WorkflowRunner._say_if_the_judgement_model_was_replaced)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    roles._DOWNGRADE.set(None)
+    note = "The judgement model 'x' could not be built, so reviews were not independent."
+    monkeypatch.setattr(roles, "judgement_downgrade", lambda: note)
+    published = []
+
+    async def publish(run_id, event):
+        published.append(event.message)
+
+    async def next_sequence(run_id):
+        return 1
+
+    the_runner = SimpleNamespace(event_bus=SimpleNamespace(publish=publish, next_sequence=next_sequence))
+    record = SimpleNamespace(run_id="run-q", current_stage="principal_architect")
+
+    asyncio.run(runner.WorkflowRunner._say_if_the_judgement_model_was_replaced(the_runner, record))
+
+    assert published == [note]
+    monkeypatch.setattr(roles, "judgement_downgrade", lambda: None)  # the next segment built it fine
+    assert roles.downgrade_for("run-q") == note

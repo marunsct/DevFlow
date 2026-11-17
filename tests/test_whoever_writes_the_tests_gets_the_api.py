@@ -88,11 +88,20 @@ def test_the_brief_s_quoted_names_win_over_the_specification_s():
     assert not BANNED.search(harness_words)
 
 
-def test_every_request_that_has_the_brief_passes_it():
+def test_every_request_that_has_the_brief_passes_it(tmp_path):
     import inspect
 
     from app.graph import acceptance_nodes, workflow
 
-    assert "api_reference(specification, brief)" in inspect.getsource(acceptance_requests)
+    brief = 'Three buttons named "All", "Active" and "Completed" filter the list.'
+    spec = SimpleNamespace(interface_design=['Filters: control "All (0)", control "Active (0)", control "Completed"'])
+    the_brief_wins = 'the brief says "All"; the specification has "All (0)": use "All"'
+
+    author = acceptance_requests.build_author_request(tmp_path, [], specification=spec, brief=brief)
+    judged = workflow._with_the_api({"messages": [{"role": "user", "content": "judge these"}]},
+                                    {"technical_specification": spec, "document": SimpleNamespace(text=brief)})
+
+    assert the_brief_wins in author["messages"][-1]["content"]
+    assert the_brief_wins in judged["messages"][-1]["content"]
+    # The QA lead's review of the suite, in `acceptance_nodes` (not the graph).
     assert inspect.getsource(acceptance_nodes).count('api_reference(\n            state.get("technical_specification"), getattr(state.get("document")') == 1
-    assert 'api_reference(state.get("technical_specification"), getattr(state.get("document"), "text", "") or "")' in inspect.getsource(workflow)

@@ -18,8 +18,6 @@ then refusing the sprint for it.
 
 from __future__ import annotations
 
-import inspect
-
 import pytest
 
 from app.analysis.document_manifest import (
@@ -46,11 +44,13 @@ def test_the_tool_and_the_manifest_cannot_disagree():
 
 def test_every_document_names_a_stage_that_exists():
     """A manifest that names a stage nothing runs is a manifest nobody checked."""
-    from app.graph import workflow
+    from langgraph.checkpoint.memory import MemorySaver
 
-    source = inspect.getsource(workflow)
+    from app.graph.workflow import build_workflow_graph
+
+    stages = set(build_workflow_graph(model="fake-model", checkpointer=MemorySaver()).nodes)
     for document in DOCUMENTS:
-        assert document.stage in source, f"{document.stem} names an unknown stage"
+        assert document.stage in stages, f"{document.stem} names an unknown stage"
 
 
 @pytest.mark.parametrize("document", DOCUMENTS, ids=lambda d: d.stem)

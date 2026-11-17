@@ -18,8 +18,12 @@ NEVER_SHOWN: set[str] = set()
 
 
 def _graph_nodes() -> set[str]:
-    source = (ROOT / "src" / "app" / "graph" / "workflow.py").read_text()
-    return set(re.findall(r'add_node\(\s*"([a-z_]+)"', source))
+    """The nodes of the compiled graph, wherever its builder adds them."""
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.graph.workflow import build_workflow_graph
+
+    return set(build_workflow_graph(model="fake-model", checkpointer=MemorySaver()).nodes) - {"__start__"}
 
 
 def _copy_keys() -> set[str]:

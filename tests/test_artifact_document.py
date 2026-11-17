@@ -111,13 +111,42 @@ def test_the_agent_is_not_told_to_write_it(agent, path):
     assert f"Write exactly one artifact, at `{path}`" not in flat
 
 
+def _the_stage_s_answer_and_state(agent):
+    """What each stage that renders a document answers, and the state it runs on."""
+    from types import SimpleNamespace
+
+    from app.agents.tools_models import ToolsAndModelsOutput
+    from workflow_node_stubs import one_sprint, two_work_orders
+
+    document = SimpleNamespace(text="A to-do list.", source_path="brief.md", source_type="markdown", truncated=False)
+    if agent == "product_manager":
+        return _intake(), {"document": document}
+    if agent == "tools_models":
+        return ToolsAndModelsOutput(), {"product_intake": _intake(), "document": document}
+    if agent == "scrum_master":
+        from app.agents.scrum_master import SprintDefinition, SprintPlanOutput
+
+        plan = SprintPlanOutput(sprints=[SprintDefinition(goal="Add a task", user_value="v", criteria=["AC-1"])])
+        criteria = [SimpleNamespace(id="AC-1", text="A task can be added")]
+        return plan, {"technical_specification": "The specification.", "_overrides": {
+            "app.acceptance.suite.criteria": lambda root: criteria,
+            "app.acceptance.suite.deferred": lambda root: {}}}
+    return two_work_orders(), {"sprint_plan": one_sprint()}
+
+
 @pytest.mark.parametrize(("agent", "path"), GENERATED)
-def test_the_workflow_renders_it(agent, path):
-    from pathlib import Path
+def test_the_workflow_renders_it(agent, path, tmp_path, monkeypatch):
+    from app.graph import workflow
+    from workflow_node_stubs import run_node
 
-    workflow = (Path(__file__).resolve().parent.parent / "src/app/graph/workflow.py").read_text()
+    written = []
+    monkeypatch.setattr(workflow, "_record_document", lambda state, relative_path, content: written.append(relative_path))
+    answer, state = _the_stage_s_answer_and_state(agent)
+    overrides = state.pop("_overrides", {})
 
-    assert f'"{path}"' in workflow, f"{path} is no longer written by anyone"
+    run_node(monkeypatch, tmp_path, agent, answer=answer, overrides=overrides, **state)
+
+    assert path in written, f"{path} is no longer written by anyone"
 
 
 def test_no_agent_both_writes_and_returns_the_same_artifact():

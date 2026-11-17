@@ -853,6 +853,68 @@ def what_the_fix_did_to_the_install(root: str, base: str) -> str:
         return ""
 
 
+#: A manifest's own format, by its name: what reading it as that format must not fail at.
+_MANIFEST_FORMATS = (
+    (("package.json", "composer.json", "deno.json", "tsconfig.json"), (), "JSON"),
+    (("Cargo.toml", "pyproject.toml"), (), "TOML"),
+    (("pom.xml",), (".csproj", ".fsproj", ".vbproj", ".props", ".targets"), "XML"),
+)
+
+
+def _the_format_of(name: str) -> str:
+    for names, endings, kind in _MANIFEST_FORMATS:
+        if name in names or name.endswith(endings or ("\0",)):
+            return kind
+    return ""
+
+
+def _unreadable_as(kind: str, text: str) -> str:
+    """Why `text` cannot be read as `kind`; "" when it can."""
+    try:
+        if kind == "JSON":
+            import json
+
+            json.loads(text)
+        elif kind == "TOML":
+            import tomllib
+
+            tomllib.loads(text)
+        elif kind == "XML":
+            import xml.etree.ElementTree as ElementTree
+
+            ElementTree.fromstring(text)
+        return ""
+    except Exception as error:  # noqa: BLE001 - what the reader said is the reason
+        return str(error).splitlines()[0][:200] or type(error).__name__
+
+
+def manifests_the_fix_left_unreadable(root: str, base: str) -> str:
+    """The manifests this fix left unreadable in their own format, readable at `base`, in one line; "". Never raises.
+
+    Measured on a C# run: a fixer wrote the program's C# into `App.csproj`, nothing had passed before it, so nothing
+    "broke", and the fix stood; every later round failed "MSB4025: The project file could not be loaded".
+    """
+    try:
+        changed = ci._git(root, "diff", "--name-only", base)
+        found = []
+        for line in (changed.stdout.splitlines() if changed is not None else []):
+            relative = line.strip()
+            kind = _the_format_of(Path(relative).name) if relative else ""
+            path = Path(root) / relative
+            if not kind or not path.is_file():
+                continue
+            why = _unreadable_as(kind, path.read_text(encoding="utf-8", errors="replace"))
+            if not why:
+                continue
+            before = ci._git(root, "show", f"{base}:{relative}")
+            if before is None or before.returncode != 0 or _unreadable_as(kind, before.stdout):
+                continue  # unreadable before this fix too: not this fix's
+            found.append(f"`{relative}` ({kind}: {why})")
+        return ("it left a manifest unreadable in its own format: " + "; ".join(found)) if found else ""
+    except Exception:  # noqa: BLE001 - a check that cannot run blames nothing
+        return ""
+
+
 def the_start_and_end_of(problem: str, limit: int = 600) -> str:
     """A start or build failure in one line, its opening and its end kept: a traceback names what was raised last.
 
@@ -882,7 +944,7 @@ def after_a_fix(
     after = ci.take(root, f"after {stage_name}")
     lost = ci.regressions(before, after)
     broken = _broken_tests(lost, before, after)
-    broke_the_install = what_the_fix_did_to_the_install(root, base)
+    broke_the_install = what_the_fix_did_to_the_install(root, base) or manifests_the_fix_left_unreadable(root, base)
     if broke_the_install:
         broken = [broke_the_install, *broken]
     if broken and after.problem:

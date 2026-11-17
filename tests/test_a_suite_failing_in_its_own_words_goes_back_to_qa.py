@@ -216,7 +216,9 @@ def test_the_dispute_is_told(tmp_path, monkeypatch):
     assert "What the harness measured" not in plain
     assert not BANNED.search(text.split("--- The suite's code ---")[0].replace("AC-1: x", "").replace(SAID, ""))
 
-    node = (Path(suite.__file__).parents[1] / "graph" / "workflow.py").read_text(encoding="utf-8")
+    from workflow_nodes import workflow_source
+
+    node = workflow_source()
     assert "measured=acceptance_suite.the_suite_s_own_words_when_last_measured(root)" in node
 
 

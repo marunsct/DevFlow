@@ -72,9 +72,9 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
   images LF.1005, container environment LF.1007, 7 images built; first whole container-mode run (Python notes-api,
   run-19ff2786) scored 9/9 hidden, 8/8 quality, delivered (LF.1015 scorer fix); Java next, then the other toolchains), LR.52, and LR.53 (cause grouping; a green suite settles; a near-green
   sprint is planned again once - LF.977, measured on 175 past re-plans; open: a repair back to the round), LR.54 (four contradictions removed).
-- Not done, and why: LR.42 (scale the process to the brief), LR.46 (narrow rules behind the pack interface),
-  LR.50 (lift nodes out of `build_workflow_graph`) - each a week-sized redesign that needs measured runs before and
-  after, not a night; LR.44 (hosted-model matrix) waits for the owner.
+- LR.42 done. LR.50 phase 1 done (LF.1016: 14 nodes lifted into `app.graph.nodes`, one `GraphContext`); phase 2
+  (architect, technical lead, dispatch, test and triage, the fix stage, milestone review) next. LR.46 rest waits on the
+  rule-coverage counter's data; LR.44 (hosted-model matrix) waits for the owner.
 
 ## Next actions
 1. Live: LR.30 container-mode run 2, run-9f8188cb notes-api-java (:8888, 13:53) - the WORKER IS IN CONTAINER MODE

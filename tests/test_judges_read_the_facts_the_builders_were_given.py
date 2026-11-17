@@ -82,7 +82,8 @@ def test_before_a_pack_is_set_up_a_request_is_left_as_it_was(tmp_path):
 
 
 def test_every_judge_and_builder_request_in_the_graph_ends_with_the_facts():
-    sources = {path.name: path.read_text(encoding="utf-8") for path in GRAPH.glob("*.py")}
+    # The graph's own modules and those of `app.graph.nodes`, where nodes lifted out of the workflow live.
+    sources = {str(path.relative_to(GRAPH)): path.read_text(encoding="utf-8") for path in GRAPH.rglob("*.py")}
     missing = []
     for name in (*JUDGES, *BUILDERS):
         calls = [

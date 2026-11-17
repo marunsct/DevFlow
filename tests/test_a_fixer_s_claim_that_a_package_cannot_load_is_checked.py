@@ -6,7 +6,6 @@ configuration" and "Unable to resolve SQLite import in ESM context", changed not
 """
 from __future__ import annotations
 
-import inspect
 import json
 from types import SimpleNamespace
 
@@ -42,7 +41,24 @@ def test_a_claim_naming_no_declared_package_is_left_alone(tmp_path, monkeypatch)
     assert workflow._what_a_claimed_unloadable_package_does(str(root), ["The route returns 404"]) == ""
 
 
-def test_the_blocked_fix_carries_the_answer_to_the_next_fixer():
-    source = inspect.getsource(workflow)
-    at = source.index('detail="the fix stage changed nothing and reported: "')
-    assert "_what_a_claimed_unloadable_package_does(" in source[at - 1500:at + 1500]
+def test_the_blocked_fix_carries_the_answer_to_the_next_fixer(tmp_path, monkeypatch):
+    from app.agents.specialists import SpecialistOutput
+    from app.sprint import Defect, RemediationCycle
+
+    root = _project(tmp_path)
+    monkeypatch.setattr("app.stacks.contract.the_pack",
+                        lambda r: (SimpleNamespace(code_runs_in="node"), {"project": "notes-api"}))
+    monkeypatch.setattr("app.stacks.scaffold.sandbox_runner",
+                        lambda r: lambda argv, category, project: {"returncode": 0, "stdout": "LOADS default"})
+    defect = Defect(description="Saving a note fails", severity="major", reproduction_steps="r",
+                    expected_behavior="e", actual_behavior="500 on save", owner="backend")
+    blocked = SpecialistOutput(changed_files=[], blockers=["Unable to resolve SQLite import in ESM context: sqlite3"])
+
+    update, _ = workflow._settle_the_fix(
+        {"repository": SimpleNamespace(root_path=str(root)), "specialist_outputs": {}},
+        RemediationCycle(sprint_goal="g", defects=[defect]), 0, "defect_fix_1_0", blocked,
+    )
+
+    told = update["remediation"].defects[0].actual_behavior
+    assert told.startswith("500 on save")
+    assert "`sqlite3` loads in this project" in told

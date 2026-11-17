@@ -83,9 +83,25 @@ class TestWhatLaterSprintsBuild:
         assert _what_later_sprints_build({}) == ""
 
 
-def test_the_test_round_is_given_the_later_sprints():
-    import inspect
+def test_the_test_round_is_given_the_later_sprints(tmp_path):
+    """The round's request is built knowing what later sprints build, so a problem
+    that is a later sprint's work is not put to it as already proven."""
+    from workflow_nodes import a_test_round
 
-    from app.graph import workflow
+    plan = SimpleNamespace(sprints=[
+        _sprint("Users can add notes", in_scope=["Add a note"]),
+        _sprint("Users can change notes", in_scope=["Inline editing of a saved note"]),
+    ])
+    later_work = "Editing a saved note is required and nothing implements it."
 
-    assert "later_sprints=_what_later_sprints_build(state)" in inspect.getsource(workflow)
+    def proven(root, stack, planned, later_sprints, brief):
+        return [] if "Inline editing of a saved note" in later_sprints else [later_work]
+
+    _, calls = a_test_round(tmp_path, [], state={"sprint_plan": plan, "current_sprint_index": 0},
+                            patches={"app.agents.specialists.what_the_files_already_prove": proven})
+
+    (round_,) = calls
+    assert later_work not in str(round_["initial_request"])
+    _, calls = a_test_round(tmp_path, [], state={"sprint_plan": None},
+                            patches={"app.agents.specialists.what_the_files_already_prove": proven})
+    assert later_work in str(calls[0]["initial_request"]), "the request shows what is proven"

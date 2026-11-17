@@ -38,7 +38,17 @@ def test_nothing_deferred_leaves_the_round_as_it_was(monkeypatch):
     assert workflow._defects_only_about_deferred(reported, "/w") == (reported, [])
 
 
-def test_the_round_sets_them_aside_before_the_backstop():
-    source = inspect.getsource(workflow)
-    assert source.index("_defects_only_about_deferred(reported, state[") < source.index(
-        "unreported_criteria = acceptance_nodes.failing_due_defects(state, reported)")
+def test_the_round_sets_them_aside_before_the_backstop(tmp_path, monkeypatch):
+    """The round's own defect about a deferred criterion goes to no fixer, and nor does the backstop's for it."""
+    from app.acceptance import suite
+    from workflow_nodes import a_test_round, reported
+
+    monkeypatch.setattr(suite, "deferred", lambda root: {"AC-19": "its locked tests cannot pass"})
+    about = "[AC-19] One record is never seen by another - the suite says this does not work yet."
+
+    update, _ = a_test_round(tmp_path, [reported(about)])
+    assert update["remediation"].defects == []
+
+    update, _ = a_test_round(tmp_path, [], patches={
+        "app.graph.acceptance_nodes.failing_due_defects": lambda state, found: [reported(about)]})
+    assert update["remediation"].defects == []

@@ -56,14 +56,40 @@ def test_a_stage_that_wrote_nothing_or_is_not_a_fix_is_started_over_as_before():
     assert _a_fix_recorded_from_its_writes("product_manager", _result(("edit_artifact", "app/a.py"))) is None
 
 
-def test_the_no_answer_path_uses_it_only_when_the_budget_stopped_the_stage():
-    import inspect
+class _Fixer:
+    """A fix stage that edits a file and gives no answer; stopped at its budget or not."""
 
-    from app.graph import workflow
+    def __init__(self, stopped: bool):
+        self.stopped, self.calls = stopped, 0
 
-    source = inspect.getsource(workflow)
-    assert "if structured_response is None and was_stopped_by_the_budget(result):" in source
-    assert "_a_fix_recorded_from_its_writes(stage_name, result)" in source
+    def invoke(self, request, config=None):  # noqa: ARG002
+        from app.agents.settled_answer import BUDGET_STOP_MARKER
+
+        self.calls += 1
+        last = AIMessage(content="Still editing.", additional_kwargs={BUDGET_STOP_MARKER: True} if self.stopped else {})
+        return {"messages": [*_result(("edit_artifact", "app/a.py"))["messages"], last], "structured_response": None}
+
+
+def _the_fix_stage_ends(tmp_path, stopped: bool) -> dict:
+    from app.graph.workflow import _run_gated_agent
+
+    return _run_gated_agent(
+        {"stage": "defect_fix_2_8", "repository": SimpleNamespace(root_path=str(tmp_path))},
+        {"configurable": {"thread_id": "outer"}},
+        stage_name="defect_fix_2_8", agent=_Fixer(stopped), initial_request={"messages": []},
+        output_key="__fix_result__", next_stage="defect_remediation",
+    )
+
+
+def test_the_no_answer_path_uses_it_only_when_the_budget_stopped_the_stage(tmp_path):
+    stopped = _the_fix_stage_ends(tmp_path, stopped=True)
+    assert stopped["__fix_result__"].changed_files == ["app/a.py"]
+    assert stopped["stage"] == "defect_remediation"
+
+    # A fix that merely ended without an answer is reminded and then started
+    # over, as before: its writes are not taken as its answer.
+    unanswered = _the_fix_stage_ends(tmp_path, stopped=False)
+    assert "__fix_result__" not in unanswered
 
 
 LABEL = "after defect_fix_1_0"

@@ -80,12 +80,18 @@ def test_a_quote_from_the_standard_reopens_the_test_whatever_its_case_and_spacin
     assert len(suite_dispute.tests_it_names(answer, FAILING, standard="AC-4 Update a note's\ntitle and body.")) == 1
 
 
-def test_the_node_gives_the_standard_to_the_reading_of_the_dispute():
-    from app.graph import workflow
+def test_the_node_gives_the_standard_to_the_reading_of_the_dispute(tmp_path):
+    """The ruling is read against the brief, the specification and the failing tests' criteria."""
+    from workflow_nodes import a_dispute
 
-    node = inspect.getsource(workflow)
-    node = node[node.index("def acceptance_dispute_node"):]
-    assert 'update.pop("__suite_dispute__"), [name for name, _, _ in failing], standard=standard' in node
+    failing = [("[AC-4] updates a note", "AC-4 PUT /notes/:id answers 200 with the changed note", "expected 200")]
+
+    _, asked = a_dispute(tmp_path, failing, [])
+
+    (reading,) = asked["rulings"]
+    assert "The brief: notes are kept until deleted." in reading["standard"]
+    assert "AC-4 PUT /notes/:id answers 200 with the changed note" in reading["standard"]
+    assert reading["names"] == ["[AC-4] updates a note"]
 
 
 STANDARD = (

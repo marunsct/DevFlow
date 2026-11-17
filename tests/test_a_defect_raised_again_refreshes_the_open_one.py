@@ -47,10 +47,29 @@ def test_a_closed_defect_or_another_check_s_is_raised_as_new():
     assert repeated == [] and cycle.defects == [fixed]
 
 
-def test_the_round_still_counts_what_it_raised_again():
+def test_the_round_still_counts_what_it_raised_again(tmp_path):
     """Merged, the round must still read as failing and still charge the budget,
     or a failure that persists would never exhaust it."""
-    source = inspect.getsource(workflow)
+    from workflow_nodes import a_test_round, reported
 
-    assert "passed=not measured" in source
-    assert "charge_the_budget=_a_round_that_found_a_product_defect(measured)" in source
+    cycle = _cycle(_defect("The unit tests fail. The runner's output ends: no such table: users (round 0)"))
+    again = reported("The unit tests fail. The runner's output ends: no such table: users (round 1, longer)",
+                     owner="testing")
+
+    update, _ = a_test_round(tmp_path, [again], state={"remediation": cycle, "test_round": 1})
+
+    after = update["remediation"]
+    assert [defect.description for defect in after.defects] == [again.description]
+    assert after.test_runs[-1].passed is False
+    assert after.attempt == cycle.attempt + 1
+
+    # Beside a new defect only in the tests, the product defect raised again is
+    # what makes the round charge the budget: a round of test defects alone would not.
+    in_the_tests = reported("The notes test expects the wrong order", owner="testing",
+                            affected_files=["tests/unit/notes.test.js"])
+    product = _defect("Saving a note returns 500. Seen in round 0").model_copy(update={"affected_files": ["app/server.js"]})
+    again = reported("Saving a note returns 500. Seen in round 1", affected_files=["app/server.js"])
+
+    update, _ = a_test_round(tmp_path, [again, in_the_tests], state={"remediation": _cycle(product), "test_round": 1})
+
+    assert update["remediation"].attempt == cycle.attempt + 1

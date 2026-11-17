@@ -57,10 +57,22 @@ def test_the_cap_counts_causes_so_a_shared_fixture_takes_one_place(tmp_path):
                                   "suite_reclassified_tests": ["a1", "a2", "a3", "a4"]}) == 1
 
 
-def test_the_dispute_groups_rulings_before_the_cap():
-    import inspect
+def test_the_dispute_groups_rulings_before_the_cap(tmp_path):
+    """Two rulings blaming one fixture and a criterion missing from the suite: two causes, not three."""
+    from workflow_nodes import a_dispute
 
-    from app.graph import workflow
-    source = inspect.getsource(workflow)
-    assert "acceptance_nodes.within_the_cap_by_cause(" in source and "acceptance_nodes.by_shared_cause(named, code)" in source
-    assert "causes=causes + len(missing)" in source
+    failing = [
+        ("test_ac6_delete", "AC-6 a record can be deleted", "409 Conflict"),
+        ("test_ac7_restart", "AC-7 records survive a restart", "409 Conflict"),
+        ("AC-8 missing from locked suite", "AC-8 records can be renamed", ""),
+    ]
+    rulings = [
+        "`test_ac6_delete` cannot pass: the test's own auth_token fixture collides with another session fixture",
+        "`test_ac7_restart` cannot pass: the auth_token fixture signs up the same username",
+    ]
+
+    _, asked = a_dispute(tmp_path, failing, rulings, suite_text=SUITE, reopened={"stage": "acceptance_author"})
+
+    (reopen,) = asked["reopen"]
+    assert reopen["broken"][:2] == rulings and "missing from the locked suite" in reopen["broken"][2]
+    assert reopen["causes"] == 2

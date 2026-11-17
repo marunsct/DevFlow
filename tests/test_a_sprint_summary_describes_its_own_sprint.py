@@ -81,23 +81,40 @@ class TestAFeatureLineNamesSomething:
 class TestTheGoalIsTheSprintsOwn:
     """`_record_sprint_summary` must prefer the sprint plan's goal."""
 
-    def test_a_revised_milestone_does_not_rename_the_sprint(self) -> None:
-        import inspect
+    def test_a_revised_milestone_does_not_rename_the_sprint(self, tmp_path, monkeypatch) -> None:
+        """A sprint sent back for revision is summarised under its own goal,
+        not whatever the last revision of the milestone plan restated."""
+        from types import SimpleNamespace
 
         from app.graph import workflow
 
-        source = inspect.getsource(workflow._record_sprint_summary)
-        # To the end of the fallback chain, not to the first `)` - that one
-        # closes the `getattr` call rather than the expression.
-        body = source.split("goal = (", 1)[1].split('"Unknown goal"', 1)[0]
-        definition = body.find('getattr(definition, "goal"')
-        milestone = body.find('getattr(plan, "selected_sprint_goal"')
+        written = {}
+        monkeypatch.setattr(workflow, "_record_document", lambda state, path, text: written.update({path: text}))
+        monkeypatch.setattr(workflow, "_the_accepted_counts", lambda root, *which: None)
+        state = {
+            "repository": SimpleNamespace(root_path=str(tmp_path)),
+            "current_sprint_index": 0,
+            "sprint_plan": SimpleNamespace(sprints=[
+                SimpleNamespace(goal="Users can add, toggle and delete tasks that persist.", in_scope=["Build the page"]),
+                SimpleNamespace(goal="Wire filter buttons and inline edit.", in_scope=["Filters"]),
+            ]),
+            "milestone_plan": SimpleNamespace(delegated_tasks=[],
+                                              selected_sprint_goal="Wire filter button functionality and inline edit UI."),
+        }
 
-        assert definition != -1 and milestone != -1
-        assert definition < milestone, (
+        workflow._record_sprint_summary(state, "Completed")
+
+        document = written["docs/sprint_1_summary.md"]
+        assert "**Goal:** Users can add, toggle and delete tasks that persist." in document
+        assert "Wire filter button" not in document, (
             "the milestone plan's goal is preferred, so a sprint sent back for "
             "revision is summarised under whatever the last revision restated"
         )
+
+        # With no sprint plan to say otherwise, the milestone's goal still names it.
+        written.clear()
+        workflow._record_sprint_summary({**state, "sprint_plan": None}, "Completed")
+        assert "**Goal:** Wire filter button functionality and inline edit UI." in written["docs/sprint_1_summary.md"]
 
     def test_the_sprint_plan_goal_is_used_when_both_exist(self, tmp_path) -> None:
         """Through the renderer, with the two goals different.

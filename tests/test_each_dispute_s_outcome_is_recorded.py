@@ -6,7 +6,6 @@ audit could not judge whether disputes were right.
 """
 from __future__ import annotations
 
-import inspect
 import json
 from types import SimpleNamespace
 
@@ -56,11 +55,24 @@ def test_a_ruling_refused_for_its_quote_is_reported(monkeypatch) -> None:
     assert refused == [("[AC-4] deletes a record", "quotes what the standard does not say")]
 
 
-def test_the_dispute_node_records_the_outcome_on_both_exits() -> None:
-    from app.graph import workflow
+def _outcomes(root) -> list[dict]:
+    return [json.loads(line) for line in (root / dispute_outcomes.OUTCOMES_FILE).read_text().splitlines()]
 
-    source = inspect.getsource(workflow)
-    node = source[source.index("def acceptance_dispute_node"):source.index("def _advice_reviews_due")]
-    assert 'point="acceptance_dispute"' in node
-    assert node.count("_the_outcome(True)") == 1 and node.count("_the_outcome(False)") == 1
-    assert "refused=refused" in node
+
+def test_the_dispute_node_records_the_outcome_on_both_exits(tmp_path) -> None:
+    from workflow_nodes import a_dispute
+
+    failing = [("[AC-4] deletes a record", "AC-4 A deleted record is gone", "expected 404"),
+               ("[AC-5] lists records", "AC-5 The list shows every record", "expected 2")]
+    wrong = "`[AC-4] deletes a record` cannot pass: it deletes a record another test made"
+    refused = [("[AC-5] lists records", "quotes what the standard does not say")]
+
+    for reopened, root in (({"stage": "acceptance_author"}, tmp_path / "reopened"), (None, tmp_path / "kept")):
+        root.mkdir()
+        update, _ = a_dispute(root, failing, [wrong], reopened=reopened, refused_for_their_quote=refused)
+
+        (row,) = _outcomes(root)
+        assert row["reopened"] is (reopened is not None)
+        assert row["called_wrong"] == ["[AC-4] deletes a record"]
+        assert row["refused"], "the ruling refused for its quote is recorded"
+        assert [decision["point"] for decision in update["decisions"]] == ["acceptance_dispute"]

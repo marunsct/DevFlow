@@ -4,7 +4,6 @@ Measured on one run: sprint 1 of 2 had 18 locked tests failing, every one waitin
 milestone review accepted it, the measured-suite gate sent it back, the lead re-planned with nothing to build, and the
 run went round review, re-plan and review three times without building anything.
 """
-import inspect
 from types import SimpleNamespace
 
 from app.acceptance import junit, sprint_scope, suite
@@ -37,5 +36,19 @@ def test_no_later_sprint_or_nothing_failing_is_not(monkeypatch):
     assert settle_when_green.the_locked_suite_is_green_for_this_sprint("/w") is False
 
 
-def test_the_measured_suite_gate_asks_it():
-    assert "the_locked_suite_is_green_for_this_sprint(" in inspect.getsource(workflow)
+def _the_gate(monkeypatch) -> str:
+    """The measured-suite gate on a sprint whose last ledger run of the suite failed six of 21."""
+    monkeypatch.setattr(settle_when_green, "enabled", lambda: True)
+    monkeypatch.setattr(workflow, "_the_suite_the_ledger_measured",
+                        lambda state: {"tests": 21, "passed": 15, "failed": 6, "returncode": 1})
+    return workflow._a_red_suite_the_review_called_green({"repository": SimpleNamespace(root_path="/w")})
+
+
+def test_the_measured_suite_gate_asks_it(monkeypatch):
+    _measured(monkeypatch, ["test_ac11_items_no_auth", "test_ac5_toggle"],
+              {"test_ac11_items_no_auth": ["AC-11"], "test_ac5_toggle": ["AC-5"]})
+    assert _the_gate(monkeypatch) == ""
+
+    # A failing test of this sprint's own still sends it back.
+    _measured(monkeypatch, ["test_ac11_items_no_auth", "test_ac1_signup"], {"test_ac11_items_no_auth": ["AC-11"]})
+    assert _the_gate(monkeypatch).startswith("MUST FIX")

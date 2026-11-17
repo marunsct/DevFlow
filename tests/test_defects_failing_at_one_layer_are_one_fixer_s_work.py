@@ -13,7 +13,6 @@ each criterion's own expectation - are never a shared layer at all.
 
 from __future__ import annotations
 
-import inspect
 import re
 
 from app.agents.specialists import ReportedDefect
@@ -110,11 +109,27 @@ def test_defects_with_no_layer_are_left_alone() -> None:
     assert _one_defect_per_root_error(reported) == reported
 
 
-def test_the_round_s_assembly_asks_for_the_clustering() -> None:
-    source = inspect.getsource(workflow.build_workflow_graph)
+def test_the_round_s_assembly_asks_for_the_clustering(tmp_path) -> None:
+    """The round's defects reach the fix stages clustered both ways: one
+    problem several checks reported, and criteria failing at one layer."""
+    from workflow_nodes import a_test_round
 
-    assert "reported = _one_defect_per_cause(reported)" in source
-    assert "reported = _one_defect_per_root_error(reported)" in source
+    one_layer = [
+        _d("[AC-1] the list shows the entries", "page.goto: net::ERR_CONNECTION_REFUSED"),
+        _d("[AC-2] a new entry appears", "page.goto: net::ERR_CONNECTION_REFUSED"),
+        _d("[AC-3] an entry can be edited", "request failed: ECONNREFUSED 127.0.0.1:8000"),
+    ]
+    one_problem = [
+        _d("Regression: `acceptance: list.spec.js › [AC-4] removing an item` passed before and fails now.")
+        .model_copy(update={"source": "regression"}),
+        _d("[AC-4] Removing items does not work yet.").model_copy(update={"source": "acceptance suite"}),
+    ]
+
+    update, _ = a_test_round(tmp_path, one_layer)
+    assert len(update["remediation"].defects) == 1
+
+    update, _ = a_test_round(tmp_path, one_problem)
+    assert len(update["remediation"].defects) == 1
 
 
 def test_the_cluster_s_words_are_plain_language() -> None:

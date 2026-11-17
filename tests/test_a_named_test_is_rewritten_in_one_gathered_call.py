@@ -190,11 +190,21 @@ def test_with_the_switch_off_the_author_restarts_and_the_model_is_not_asked(tmp_
     assert model.asked == [] and spec.read_text() == HEAD + LISTS + FETCHES + REMOVES
 
 
-def test_the_dispute_and_the_round_hand_the_judgement_model_to_the_reopening():
-    import inspect
+def test_the_dispute_and_the_round_hand_the_judgement_model_to_the_reopening(tmp_path):
+    from workflow_nodes import JUDGEMENT_MODEL, a_dispute, a_test_round
 
-    from app.graph import workflow
+    failing = [("[AC-2] lists", "AC-2 the list shows every note", "ReferenceError: mine is not defined")]
+    _, asked = a_dispute(tmp_path / "dispute", failing, [f"`[AC-2] lists` cannot pass: {MESSAGE}"],
+                         reopened={"stage": "acceptance_author"})
+    assert asked["reopen"][0]["model"] is JUDGEMENT_MODEL
 
-    source = inspect.getsource(workflow)
-    assert "reopen_the_suite_for(state, cannot_pass, model=judgement_model)" in source
-    assert "reclassifying=True, model=judgement_model," in source
+    reopened = []
+    (tmp_path / "round").mkdir()
+    update, _ = a_test_round(tmp_path / "round", patches={
+        "app.models.roles.build_judgement_model": lambda model, *args, **kwargs: JUDGEMENT_MODEL,
+        "app.graph.acceptance_nodes.acceptance_for_round": lambda state: ("", ["[AC-2] lists"]),
+        "app.graph.acceptance_nodes.reopen_the_suite_for":
+            lambda state, broken, **kwargs: reopened.append(kwargs) or {"stage": "acceptance_author"},
+    })
+    assert update["stage"] == "acceptance_author"
+    assert reopened[0]["model"] is JUDGEMENT_MODEL

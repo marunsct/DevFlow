@@ -155,9 +155,21 @@ def test_the_scaffold_s_stub_is_no_product_to_probe(tmp_path, monkeypatch):
     assert ic.probe_at_the_lock(tmp_path, runner=never) == []
 
 
-def test_the_review_and_the_round_ask_it():
+def test_the_review_and_the_round_ask_it(tmp_path):
+    """The lock's review probes; a test round, red or green, raises what the probe found."""
+    from workflow_nodes import a_test_round, reported
+
     assert "probe_at_the_lock(root)" in inspect.getsource(acceptance_nodes.acceptance_review)
-    assert "_with_the_lock_s_server_errors(state, test_result, milestone)" in inspect.getsource(workflow)
+
+    at_the_lock = reported(f"{ic.SERVER_FAILED} PUT /notes/:id answered 500")
+
+    def with_the_lock_s(state, test_result, milestone):
+        return test_result.model_copy(update={"defects": [*test_result.defects, at_the_lock]})
+
+    for found in ([], [reported("[AC-1] The list is empty")]):
+        update, _ = a_test_round(tmp_path, found, patches={
+            "app.graph.workflow._with_the_lock_s_server_errors": with_the_lock_s})
+        assert at_the_lock.description in [d.description for d in update["remediation"].defects]
 
 
 # --- unread lines at the architect's review

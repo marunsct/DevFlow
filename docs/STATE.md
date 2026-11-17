@@ -88,6 +88,8 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
    8/8, handoff 1.0, verdict not_deliverable (contract lines and design points left open). LF.1022, LF.1024-1025 from it.
    C# next on :1234: its pack failed `verify_packs` in container mode (LF.1027, the .NET image's uid) - a run started on it
    at 16:46 was cancelled at once; verify every pack in container mode before its first run.
+   Live: C# container run 1, run-092a40cb-21da-4853-b600-cfb137ce824b (:1234, 16:54), on 470047ce (all 7 toolchain
+   packs scaffold-verified in container mode).
 3. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).

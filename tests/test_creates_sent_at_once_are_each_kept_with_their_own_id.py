@@ -90,7 +90,9 @@ class _Store(BaseHTTPRequestHandler):
         cls = type(self)
         if cls.racy:
             new = len(cls.records) + 1
-            time.sleep(0.05)
+            # A window wide enough that the probe's creates, released together, all read the count before any
+            # writes even on a loaded machine: at 0.05 s a loaded suite once let them miss each other.
+            time.sleep(0.3)
             cls.records[new] = body
         else:
             with cls.lock:

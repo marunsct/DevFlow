@@ -21,8 +21,11 @@ from app.stacks import pack_named
 def test_a_service_the_test_never_stopped_ends_with_the_test(tmp_path):
     (tmp_path / "acceptance").mkdir()
     (tmp_path / "acceptance" / "service.cjs").write_text(pack_named("node-hono-native-api").files["acceptance/service.cjs"])
-    (tmp_path / "start.sh").write_text('#!/bin/sh\ncd "$(dirname "$0")" && exec node server.cjs\n')
-    (tmp_path / "server.cjs").write_text(
+    # A name of its own: the count below reads every process on the machine, and a parallel suite runs other
+    # services named `server.cjs` (it failed twice under a loaded suite for one that was not its own).
+    server = f"server-{tmp_path.name}.cjs"
+    (tmp_path / "start.sh").write_text(f'#!/bin/sh\ncd "$(dirname "$0")" && exec node {server}\n')
+    (tmp_path / server).write_text(
         "require('http').createServer((q, s) => s.end('ok')).listen(Number(process.env.PORT), process.env.HOST);\n")
     (tmp_path / "check.cjs").write_text(
         "const { startService } = require('./acceptance/service.cjs');\n"
@@ -33,7 +36,7 @@ def test_a_service_the_test_never_stopped_ends_with_the_test(tmp_path):
     port = done.stdout.strip().rsplit(":", 1)[1]
     time.sleep(0.5)
 
-    alive = subprocess.run(["sh", "-c", f"ps -eo args | grep -c '[n]ode server.cjs' || true"], capture_output=True, text=True)
+    alive = subprocess.run(["sh", "-c", f"ps -eo args | grep -c '[n]ode {server}' || true"], capture_output=True, text=True)
     assert alive.stdout.strip() == "0", f"a service is still listening on {port}"
 
 

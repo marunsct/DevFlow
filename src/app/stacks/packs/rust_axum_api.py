@@ -107,11 +107,11 @@ AXUM_KNOWN_ERRORS = {
         "`String`, `Bytes`) must be its last argument, after `State`, `Path` and `Query`: a body extractor earlier in "
         "the list stops the function being a `Handler`. Put it last in every handler of the file in one rewrite."
     ),
-    "expected `Router`, found `Router<": (
-        "`app()` returns a plain `Router` while its routes still wait for their state: build the state inside "
+    **{phrase: (
+        "`app()` must return a plain `Router` whose routes no longer wait for their state: build the state inside "
         "`app()` (from `DATA_DIR`) and end it with `.with_state(state)`; `main.rs` and the tests then use `app()` as "
-        "it is."
-    ),
+        "it is, sending a test's requests to it with `oneshot`."
+    ) for phrase in ("expected `Router`, found `Router<", "exists for struct `Router<")},
     "could not find `test` in `axum`": (
         "axum has no `test` module and no test client: a test sends a request with `tower::ServiceExt::oneshot`, "
         "importing `axum::body::Body`, `axum::http::{Request, StatusCode}`, `http_body_util::BodyExt` and "

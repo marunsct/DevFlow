@@ -16,7 +16,6 @@ from __future__ import annotations
 import re
 
 from app.agents.specialists import ReportedDefect
-from app.graph import workflow
 from app.graph.workflow import (
     _one_defect_per_root_error,
     _share_a_failing_surface,

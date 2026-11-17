@@ -8,8 +8,6 @@ finding, was sent back twice for not listing `pure-functions.mjs`.
 from __future__ import annotations
 
 
-from app.graph import workflow
-
 
 def test_the_scope_check_applies_to_a_sprint_s_first_plan_only(tmp_path) -> None:
     from workflow_nodes import a_lead, a_plan, a_work_order

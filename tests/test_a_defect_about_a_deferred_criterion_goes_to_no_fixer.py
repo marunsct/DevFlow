@@ -6,7 +6,6 @@ reverted, and the next round raised it again.
 """
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
 from app.graph import workflow

@@ -12,7 +12,7 @@ import threading
 from types import SimpleNamespace
 
 from app.agents.principal_architect import TechnicalSpecificationOutput
-from app.graph import specification_parts, workflow
+from app.graph import specification_parts
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 CORE = TechnicalSpecificationOutput(

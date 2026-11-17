@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from app import ci
-from app.graph import engineering, kept_fix_candidates, workflow
+from app.graph import engineering, kept_fix_candidates
 
 DEFECT = SimpleNamespace(description="[AC-1] Creating a note fails")
 

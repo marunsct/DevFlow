@@ -9,8 +9,6 @@ That class of bug is invisible to behavioural tests unless a run happens to take
 the affected branch, so it is asserted structurally here instead.
 """
 
-import ast
-import inspect
 import re
 from pathlib import Path
 

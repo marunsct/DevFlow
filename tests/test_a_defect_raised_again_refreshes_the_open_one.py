@@ -6,7 +6,6 @@ of forty calls each, one after the other, at the one failure.
 """
 from __future__ import annotations
 
-import inspect
 
 from app.graph import workflow
 from app.sprint import Defect, RemediationCycle

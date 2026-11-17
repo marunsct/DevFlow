@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.graph import bounded_fixes as fix_cycle, workflow
+from app.graph import bounded_fixes as fix_cycle
 
 BUILD, JUDGE, FIXER = object(), object(), object()
 

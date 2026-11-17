@@ -11,7 +11,7 @@ from unittest import mock
 
 from app import ci
 from app.acceptance import suite
-from app.graph import best_attempt, workflow
+from app.graph import best_attempt
 
 
 def _workspace(tmp_path, suite_text="test('a')"):

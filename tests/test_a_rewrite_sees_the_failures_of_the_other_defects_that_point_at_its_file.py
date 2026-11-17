@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.graph import co_defect_failures, rewritten_fixes, workflow
+from app.graph import co_defect_failures, rewritten_fixes
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 HEADING = "Other open defects whose failure points at this file"

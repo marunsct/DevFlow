@@ -63,13 +63,28 @@ def test_the_fixers_reviewers_and_the_dispute_are_given_it():
     assert "The product's API" in request["messages"][-1]["content"]
     assert workflow._with_the_api({"messages": [{"content": "x"}]}, {})["messages"][-1]["content"] == "x"
 
-    source = inspect.getsource(workflow)
-    assert "_with_the_api(_with_the_reason(" in source                          # the QA lead's dispute
-    assert "_with_the_api(request, state)" in source                            # the milestone review
+    from workflow_nodes import workflow_source
+
+    assert "_with_the_api(request, state)" in workflow_source()                 # the milestone review
     assert 'api_reference(state.get("technical_specification"),' in inspect.getsource(acceptance_nodes)
     fix = workflow._the_specification_for_the_fix(
         {"technical_specification": SPEC}, SimpleNamespace(affected_files=["app/auth.py"], description="x"), [])
     assert "The product's API" in fix
+
+
+def test_the_qa_lead_s_dispute_is_given_it(tmp_path):
+    from workflow_nodes import a_dispute
+
+    asked: list[str] = []
+
+    def gated(state, config, *, initial_request, **kwargs):
+        asked.append(initial_request["messages"][-1]["content"])
+        return {"__suite_dispute__": object()}
+
+    a_dispute(tmp_path, [("test_register [AC-1]", "AC-1 a user registers", "409 instead of 201")], [],
+              state={"technical_specification": SPEC}, patches={"app.graph.workflow._run_gated_agent": gated})
+
+    assert len(asked) == 1 and "The product's API" in asked[0]
 
 
 # Measured over 30 runs: all four false acceptances came from the brief's wording overridden on the way to the suite;

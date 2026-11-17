@@ -79,7 +79,21 @@ EXPOSE 9292
 CMD ["sh", "-c", "exec bundle exec rackup -p \\"$PORT\\" -o \\"$HOST\\""]
 """ % {"ruby": RUBY_VERSION}
 
+#: Errors a Sinatra service is known to raise, by a phrase of the defect, and their cause (`app.stacks.known_errors`).
+#: Measured on one run: the store was kept in a helper's `@store ||= NotesStore.new`; Sinatra makes a new app object for
+#: each request, so every request read the file afresh, and ten creates at once lost all but one - with only the write
+#: under a lock, through a re-plan.
+SINATRA_KNOWN_ERRORS = {
+    "Writes made at the same moment are not each kept": (
+        "Sinatra makes a new app object for each request, so a store kept in an instance variable (`@store ||= ...`) "
+        "is made, and its file read, afresh for every request. Keep one store for the whole process (`set :store, "
+        "...` read through `settings.store`, or a constant), and hold one `Mutex` across reading, changing and "
+        "writing the notes, the new note's id taken inside it - a lock around the write alone still loses writes."
+    ),
+}
+
 PACK = service_pack(
+    known_errors=SINATRA_KNOWN_ERRORS,
     sandbox_image=sandbox.RUBY,
     name="ruby-sinatra-api",
     title="HTTP service in Ruby on Sinatra",

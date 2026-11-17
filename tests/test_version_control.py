@@ -21,7 +21,6 @@ from app.tools.version_control import (
     is_repository,
     last_good_commit,
 )
-from workflow_nodes import workflow_source
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 
@@ -142,35 +141,19 @@ def test_nothing_here_raises_on_a_missing_directory() -> None:
     assert changed_since(missing, "HEAD") == []
 
 
-def test_the_repository_is_created_after_seeding_not_before() -> None:
-    """`git clone` has to own an empty directory.
-
-    Initialising at allocation meant a brownfield run cloned into a directory
-    that was already a repository, and every one of them would have failed to
-    start. Three seeding tests caught it. A seeded codebase that is already a
-    repository keeps its own history; this only adds one where there is none.
-    """
-    import inspect
-
-    from app.server import runs, workspaces
-
-    assert "initialise_repository" not in inspect.getsource(workspaces.allocate_workspace)
-
-    start = inspect.getsource(runs)
-    assert "initialise_repository" in start
-    assert start.index("seed_workspace, workspace") < start.index(
-        "await run_in_threadpool(initialise_repository, workspace)"
-    )
-
-
 @needs_git
-def test_an_accepted_milestone_commits_from_the_workflow() -> None:
+def test_an_accepted_milestone_is_committed_by_the_review(workspace: Path) -> None:
     """The commit must happen where acceptance is decided, not in a helper
     someone has to remember to call."""
-    source = workflow_source()
+    from workflow_nodes import a_milestone_review, a_milestone_verdict
 
-    assert "commit_milestone(" in source
-    assert "Could not record a commit for this sprint" in source
+    initialise_repository(workspace)
+    (workspace / "style.css").write_text("body{}\n", encoding="utf-8")
+
+    a_milestone_review(workspace, a_milestone_verdict("accepted"))
+
+    assert "Sprint 1: Users can keep notes" in _log(workspace)
+    assert "style.css" in changed_since(workspace, "HEAD~1")
 
 
 @needs_git
@@ -236,9 +219,12 @@ def test_the_history_tool_is_not_gated() -> None:
     assert build_sprint_history_tool("/tmp").name not in HUMAN_APPROVAL_TOOLS
 
 
-def test_every_role_agent_gets_it() -> None:
-    import inspect
+def test_every_role_agent_is_offered_it(tmp_path: Path, monkeypatch) -> None:
+    from workflow_nodes import a_role_agent, offered_tools
 
-    from app.agents.role_agent import create_role_agent
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
 
-    assert "build_sprint_history_tool(resolved_repo_root)" in inspect.getsource(create_role_agent)
+    _, writer = a_role_agent(tmp_path)
+    _, reader = a_role_agent(tmp_path, name="scrum_master", can_write=False)
+
+    assert "changed_since_sprint" in offered_tools(writer) & offered_tools(reader)

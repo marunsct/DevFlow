@@ -45,8 +45,13 @@ def test_a_product_that_returned_another_length_is_the_product_s(tmp_path):
     assert suite.tests_whose_expected_text_breaks_their_own_length(tmp_path, _failed("test_ac3_default_suffix", said)) == []
 
 
-def test_it_is_among_the_measured_checks():
-    import inspect
+def test_it_is_among_the_measured_checks(tmp_path, monkeypatch):
+    from app.acceptance import spec_dry_run
 
-    assert "tests_whose_expected_text_breaks_their_own_length(repo_root, result)" in inspect.getsource(
-        suite.tests_that_cannot_pass)
+    monkeypatch.setattr(spec_dry_run, "findings", lambda root: [])  # it runs the suite's own runner
+    _a_suite(tmp_path, SUITE)
+    said = "E       AssertionError: assert 'Hello, w>>' == 'Hello, wo>>'\n\nacceptance/test_truncate.py:52"
+
+    found = suite.tests_that_cannot_pass(tmp_path, _failed("test_ac3_custom_suffix", said))
+
+    assert any("'Hello, wo>>' (11)" in f for f in found)

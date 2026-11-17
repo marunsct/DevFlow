@@ -513,3 +513,66 @@ def a_dispute(
         **(patches or {}),
     }
     return run_node("acceptance_dispute", made, str(tmp_path), every), asked
+
+
+def a_scripted_model(*replies: Any) -> Any:
+    """A chat model that answers `replies` in turn and records each request it is sent, in `requests`.
+
+    The model endpoint is a role agent's one unmanaged edge; this stands in for it, so the agent runs for real - its
+    tools, its middleware, its workspace - and a test reads what the model was offered and sent."""
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
+    class _Scripted(GenericFakeChatModel):
+        requests: list[dict[str, Any]] = []
+
+        def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
+            names = [getattr(tool, "name", None) or (tool.get("function") or tool).get("name") for tool in tools]
+            self.requests.append({"tools": names})
+            return self
+
+        def _generate(self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any) -> Any:
+            if not self.requests or "messages" in self.requests[-1]:
+                self.requests.append({})
+            self.requests[-1]["messages"] = list(messages)
+            return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+    model = _Scripted(messages=iter(replies))
+    model.requests = []
+    return model
+
+
+def an_answer(**fields: Any) -> Any:
+    """A model reply handing back a role agent's answer, as `a_role_agent` builds the agent."""
+    from langchain_core.messages import AIMessage
+
+    return AIMessage(content="", tool_calls=[{"name": "Answer", "args": {"summary": "done", **fields},
+                                              "id": "answer", "type": "tool_call"}])
+
+
+def a_role_agent(root: Any, *replies: Any, name: str = "specialist_backend_0", stage: str = "build",
+                 config: dict[str, Any] | None = None, **kwargs: Any) -> tuple[Any, Any]:
+    """A role agent built as a run builds one on `root`, driven by a model that answers `replies` in turn.
+
+    Returns what the agent ended with and the model (`requests`: the tools offered and the messages sent on each
+    call). With no `replies` it is built only, and `(None, agent)` comes back."""
+    from pydantic import BaseModel
+
+    from app.agents.role_agent import create_role_agent
+
+    class Answer(BaseModel):
+        summary: str
+
+    model = kwargs.pop("model", None) or a_scripted_model(*replies)
+    agent = create_role_agent(name=name, stage=stage, system_prompt="Do the work.", response_format=Answer,
+                              model=model, repo_root=str(root), **kwargs)
+    if not replies:
+        return None, agent
+    configurable = {"thread_id": "t", **((config or {}).get("configurable") or {})}
+    result = agent.invoke({"messages": [{"role": "user", "content": "Go."}]},
+                          {**(config or {}), "configurable": configurable, "recursion_limit": 30})
+    return result, model
+
+
+def offered_tools(agent: Any) -> set[str]:
+    """The tools a built agent can run."""
+    return set(agent.nodes["tools"].bound._tools_by_name)

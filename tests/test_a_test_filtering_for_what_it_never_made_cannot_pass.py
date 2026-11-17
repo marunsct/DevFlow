@@ -5,7 +5,6 @@ Measured on one run: a test created `list-a-${slug}` and `list-b-${slug}`, kept 
 """
 from __future__ import annotations
 
-import inspect
 import re
 
 from app.acceptance import suite
@@ -54,8 +53,14 @@ def test_matching_filters_and_free_expressions_are_left(tmp_path):
     assert suite.tests_that_filter_for_what_they_never_made(_suite(tmp_path, RIGHT)) == []
 
 
-def test_every_caller_of_the_cannot_pass_list_asks_it():
-    assert "tests_that_filter_for_what_they_never_made(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+def test_it_is_one_of_the_checks_a_locked_test_cannot_pass_by(tmp_path, monkeypatch):
+    from app.acceptance import spec_dry_run
+
+    monkeypatch.setattr(spec_dry_run, "findings", lambda root: [])  # it runs the suite's own runner
+
+    found = suite.tests_that_cannot_pass(_suite(tmp_path, WRONG), suite.AcceptanceResult(ran=False))
+
+    assert any("line 7" in f and "`list-${slug}-`" in f for f in found)
 
 
 THROUGH_A_HELPER = """import { test, expect } from '@playwright/test';

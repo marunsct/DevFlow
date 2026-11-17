@@ -56,16 +56,6 @@ def test_dependencies_are_hidden_by_the_same_list(workspace: Path) -> None:
     assert not any("node_modules" in _path_of(m) for m in matches)
 
 
-def test_the_hidden_list_comes_from_the_repository_tools() -> None:
-    import inspect
-
-    from app.agents import workspace_backend
-
-    source = inspect.getsource(workspace_backend)
-
-    assert "from app.tools.repository import IGNORED_DIRECTORIES" in source
-
-
 def test_reading_a_hidden_path_still_works(workspace: Path) -> None:
     """An agent that names a path inside one of these has a reason, and a read
     that silently failed would be a worse surprise than a quiet listing."""
@@ -100,15 +90,19 @@ def test_an_entry_is_judged_by_its_path_not_its_repr(entry, hidden) -> None:
     assert _is_hidden(entry) is hidden
 
 
-def test_role_agents_use_it() -> None:
-    import inspect
+def test_a_role_agent_s_listing_leaves_out_the_cache_and_the_dependencies(workspace: Path, monkeypatch) -> None:
+    from langchain_core.messages import AIMessage, ToolMessage
 
-    from app.agents import role_agent
+    from workflow_nodes import a_role_agent, an_answer
 
-    source = inspect.getsource(role_agent._workspace_filesystem_middleware)
+    monkeypatch.setenv("DATA_DIR", str(workspace / "data"))
+    listing_call = {"name": "ls", "args": {"path": "/"}, "id": "ls", "type": "tool_call"}
 
-    assert "WorkspaceBackend(" in source
-    assert "FilesystemBackend(" not in source
+    result, _ = a_role_agent(workspace, AIMessage(content="", tool_calls=[listing_call]), an_answer())
+
+    [listing] = [m.content for m in result["messages"] if isinstance(m, ToolMessage) and m.name == "ls"]
+    assert "proj" in listing
+    assert "agent-home" not in listing and "node_modules" not in listing
 
 
 # --- "not found" that says where it actually is --------------------------

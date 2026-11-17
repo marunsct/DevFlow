@@ -34,11 +34,16 @@ def test_storage_is_still_found():
                                                       "localStorage.clear();"))[0][1] == "localStorage"
 
 
-def test_the_finding_says_what_a_blank_page_cannot_do_and_uses_no_banned_word():
-    import inspect
+def test_the_finding_says_what_a_blank_page_cannot_do_and_uses_no_banned_word(tmp_path, monkeypatch):
+    from app.acceptance import spec_dry_run, suite
+    from app.stacks import contract, pack_named
 
-    from app.acceptance import suite
+    monkeypatch.setattr(spec_dry_run, "findings", lambda root: [])  # it runs the suite's own runner
+    contract.write(tmp_path, pack_named("fullstack-node"), "marks", "Marks")
+    (tmp_path / "marks" / "acceptance").mkdir(parents=True)
+    (tmp_path / "marks" / "acceptance" / "page.spec.js").write_text(BEFORE)
 
-    source = inspect.getsource(suite.tests_that_access_storage_before_opening_the_page)
-    assert "an address starting with `/` reaches nothing" in source
-    assert not BANNED.search(source.split('"""')[-1])
+    found = [f for f in suite.tests_that_cannot_pass(tmp_path, suite.AcceptanceResult(ran=False)) if "page.spec.js" in f]
+
+    assert len(found) == 1 and "line 3" in found[0] and "`/`" in found[0] and "goto" in found[0]
+    assert not BANNED.search(found[0].replace("[AC-4] filters", ""))

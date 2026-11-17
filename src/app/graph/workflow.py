@@ -5358,6 +5358,53 @@ def _approved_once_the_harness_s_findings_are_settled(state: Any, spec_text: str
     return update
 
 
+def _decided_after_one_revision(state: Any, spec_text: str) -> dict[str, Any] | None:
+    """The update for a specification revised once, decided by the deterministic gates instead of a second review.
+
+    Behind `ONE_DESIGN_REVIEW` (`app.graph.one_design_review`); None - review it as usual - when off or not yet revised.
+    Approved when the workflow's own design checks and the contradiction check find nothing open; otherwise the design
+    escalation, which records each open point as a known risk or settles it.
+    """
+    from app.graph import one_design_review
+
+    if not one_design_review.applies(state.get("architecture_revision_count", 0)):
+        return None
+    still = _the_harness_findings_still_open(state, spec_text, list(_THE_HARNESS_S_DESIGN_CHECKS))
+    open_points = [
+        _format_finding(found) if hasattr(found, "description") else "A design check could not be asked again."
+        for found in still
+    ] + one_design_review.contradictions(state.get("technical_specification"))
+    previous = state.get("architecture_review")
+    answered = len((previous.get("findings") if isinstance(previous, dict) else getattr(previous, "findings", None)) or [])
+    logger.info("The specification was %s: %d point(s) still open", one_design_review.SAID, len(open_points))
+    if open_points:
+        return {
+            "stage": "escalation",
+            "error": None,
+            "escalation": {
+                "kind": "design",
+                "findings": open_points,
+                "error": (f"The specification was {one_design_review.SAID}: after one revision for {answered} review "
+                          f"finding(s), the workflow's checks still find {len(open_points)} point(s) open."),
+            },
+        }
+    from app.agents.architecture_reviewer import ArchitectureReviewOutput
+    from app.decisions import record_decision
+
+    approved = ArchitectureReviewOutput(status="approved", findings=[])
+    update: dict[str, Any] = {"architecture_review": approved}
+    _record_document(state, "docs/architecture_review.md", render_architecture_review(approved))
+    record_decision(
+        state, update, point="technical_specification",
+        question="Is the specification ready to build from?",
+        options=["approve", "send it back to the architect"], decision="approve",
+        rationale=(f"The specification was {one_design_review.SAID}: one revision answered the review's {answered} "
+                   "finding(s), and the workflow's design checks and the contradiction check find nothing open."),
+    )
+    update["stage"] = "user_review_specification" if _review_enabled(state, SPECIFICATION_REVIEW) else "scaffold"
+    return update
+
+
 def _the_same_command_in_another_order(state: Any, spec_text: str) -> Any:
     """A major finding for command lines that differ only in the order of their arguments and give different results.
 
@@ -9967,6 +10014,10 @@ def build_workflow_graph(
         settled = _approved_once_the_harness_s_findings_are_settled(state, spec_text)
         if settled is not None:
             return settled
+        # `ONE_DESIGN_REVIEW` (LR.42): after one revision the deterministic gates decide, not a second review.
+        once = _decided_after_one_revision(state, spec_text)
+        if once is not None:
+            return once
         agent = create_architecture_reviewer_agent(model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         previous_review = state.get("architecture_review")
         request = build_architecture_review_request(

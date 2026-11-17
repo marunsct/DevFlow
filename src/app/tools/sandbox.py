@@ -4399,9 +4399,9 @@ The guard is `nothing has been written since`, which is what makes this safe for
 a legitimate edit-test loop: a write re-arms the command immediately. A stage
 that is genuinely making changes never meets this.
 
-Search commands are excluded. `_ran_and_answered` marks a grep-like command
-whose exit 1 means "no match" - a real answer - and those already have their own
-note explaining that the text is simply not there.
+A search is withheld like any other command: with nothing written since, it
+would only give the same answer again. Its "no match" (exit 1) is never counted
+here, since only passes are; `_ran_and_answered` gives that its own note.
 """
 
 
@@ -5499,9 +5499,7 @@ class SandboxExecutor:
         # between, is withheld rather than run again. See
         # `SUCCESSES_BEFORE_WITHHOLDING` for why the note alone was not enough.
         settled = 0 if harness else succeeded_this_way_before(repo_root, command, working_directory)
-        if settled >= SUCCESSES_BEFORE_WITHHOLDING and not _ran_and_answered(
-            command, 0
-        ):
+        if settled >= SUCCESSES_BEFORE_WITHHOLDING:
             outcome = {
                 "error": (
                     f"Not running this again. It has already passed {settled} time(s) "

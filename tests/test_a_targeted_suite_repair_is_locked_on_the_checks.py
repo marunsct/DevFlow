@@ -82,6 +82,7 @@ def test_the_review_skips_its_model_review_for_one(tmp_path, monkeypatch, repair
             junit.TestResult(name="[AC-1] adds", outcome="failed", message="no"),
             junit.TestResult(name="[AC-2] lists", outcome="failed", message="no"),
             junit.TestResult(name="[AC-3] fetches", outcome="failed", message="no")])))
+    monkeypatch.setattr("app.acceptance.spec_dry_run.findings", lambda root: [])  # the dry run is a process
     asked = []
     monkeypatch.setattr("app.graph.workflow._run_gated_agent", lambda state, config, *, stage_name, output_key, next_stage, **k: (
         asked.append(stage_name) or {output_key: SimpleNamespace(approved=True, findings=[]), "stage": next_stage}))

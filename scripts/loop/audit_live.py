@@ -183,6 +183,15 @@ try:
         print(cache_line)
 except Exception:  # the cache lines are an addition; the audit does not depend on them
     pass
+# Narrow rules that met an input they could not read and so did nothing (LR.46): the count per check is where a rule
+# should move behind the pack interface first.
+try:
+    from app.observability import rule_coverage
+
+    for rule_line in rule_coverage.lines(records):
+        print(rule_line)
+except Exception:  # an addition, like the cache lines
+    pass
 
 print("\nper stage (worst failure count first):")
 print(f"  {'stage':<26}{'calls':>6}{'failed':>8}{'rate':>7}")

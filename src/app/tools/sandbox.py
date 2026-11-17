@@ -3723,6 +3723,23 @@ def _fewer_pass_than_last_time(
     return ""
 
 
+def _count_a_test_run_whose_totals_were_not_read(command: Sequence[str], result: dict) -> None:
+    """Record (LR.46) a test run that printed output in no summary `_RUNNER_TOTALS` reads; changes nothing.
+
+    Its ledger entry has no counts, so `_fewer_pass_than_last_time` and the sprint summary's totals cannot see it.
+    A run that printed nothing, or never started, is not counted: there was nothing to read.
+    """
+    if result.get("error") or not f"{result.get('stdout') or ''}{result.get('stderr') or ''}".strip():
+        return
+    from app.observability import rule_coverage
+
+    shown = " ".join(str(part) for part in list(command)[:3])[:80]
+    rule_coverage.could_not_apply(
+        rule_coverage.RUNNER_TOTALS,
+        f"`{shown}` printed no totals in a form read (TAP, {', '.join(name for name, _, _ in _RUNNER_TOTALS)})",
+    )
+
+
 def _record_execution(
     repo_root: str,
     role_name: str,
@@ -3754,6 +3771,9 @@ def _record_execution(
     if path is None:
         return
     try:
+        totals = _the_counts_a_test_run_reported(result)
+        if category == "test" and not totals:
+            _count_a_test_run_whose_totals_were_not_read(command, result)
         entry = {
             "at": datetime.now(timezone.utc).isoformat(),
             "role": role_name,
@@ -3772,7 +3792,7 @@ def _record_execution(
             "duration_seconds": (
                 round(duration_seconds, 3) if duration_seconds is not None else None
             ),
-            **_the_counts_a_test_run_reported(result),
+            **totals,
         }
         if memory_peak_bytes:
             # The most the command's process tree held while it ran

@@ -5434,12 +5434,39 @@ def _actions_required_in(text: str, required: dict[str, str]) -> dict[str, str]:
                 for piece in re.split(r"/|,|\s+and\s+|\s+or\s+", match.group(1))
             ]
             named = [piece for piece in parts if piece in _USER_ACTIONS]
+            _count_the_verbs_the_closed_list_misses(lowered, match, parts, named, line)
             # Two or more, so a single verb in prose is never a list.
             if len(named) < 2:
                 continue
             for action in named:
                 required.setdefault(action, line.strip())
     return required
+
+
+#: What comes before a list that makes it a list of things a user does: "users can borrow, return and renew".
+_BEFORE_A_LIST_OF_ACTIONS = re.compile(r"\b(?:can|to|must|should|will|may)\s+$")
+
+
+def _count_the_verbs_the_closed_list_misses(
+    lowered: str, match: re.Match[str], parts: list[str], named: list[str], line: str
+) -> None:
+    """Record (LR.46) a list of user actions with members `_USER_ACTIONS` does not hold; changes nothing.
+
+    A list counts when it names a known action beside the unknown ones ("add, tag and archive": `tag` is dropped) or
+    follows a modal or "to" ("users can borrow, return and renew": none is read, and the list is skipped whole).
+    "simple, fast and lightweight" after "is" is neither and is not counted.
+    """
+    unknown = [piece for piece in parts if piece not in _USER_ACTIONS]
+    if not unknown or not (named or _BEFORE_A_LIST_OF_ACTIONS.search(lowered[: match.start()])):
+        return
+    from app.observability import rule_coverage
+
+    rule_coverage.could_not_apply(
+        rule_coverage.ACTION_VERBS,
+        f"verbs outside the closed list ({', '.join(unknown)})"
+        + (" - the list was skipped" if len(named) < 2 else "")
+        + f': "{line.strip()[:160]}"',
+    )
 
 
 #: The workflow documents that state what the product must do. The other four -
@@ -6095,7 +6122,15 @@ def _a_field_the_brief_asks_for_that_nothing_collects(
         elif suffix not in _CLIENT_LOGIC_SUFFIXES:
             continue
         controls.extend(_A_PROMPT_OR_CONTROL_ATTRIBUTE.findall(text))
+    from app.observability import rule_coverage
+
     if not controls:
+        # A service, a command line or a library: nothing collects a value on a page, so the fields go unchecked.
+        rule_coverage.could_not_apply(
+            rule_coverage.FIELDS_GIVEN_WITH,
+            f"the brief gives a record fields ({', '.join(fields)}) and the product has no form control, label or "
+            "prompt to answer them from",
+        )
         return []
     evidence = "\n".join(controls).lower()
     # The first field named is the one a lone text box stands for. One run's
@@ -6105,6 +6140,18 @@ def _a_field_the_brief_asks_for_that_nothing_collects(
     first = next(iter(fields))
     if _A_TEXT_CONTROL.search("\n".join(free_text)):
         evidence += f"\n{first}"
+    missing = [field for field in fields if field not in evidence]
+    if missing:
+        # A word read as a field that the product names nowhere at all - not in its data, its code or its tests - may
+        # be no field: "create notes with ease and confidence" reads `ease` and `confidence` (LR.46).
+        everywhere = "\n".join(_read(path) for path in files).lower()
+        for field in missing:
+            if not re.search(rf"\b{re.escape(field)}", everywhere):
+                rule_coverage.could_not_apply(
+                    rule_coverage.FIELDS_GIVEN_WITH,
+                    f"`{field}`, read as a field from \"{fields[field][:120]}\", is named nowhere in the product: "
+                    "possibly not a field",
+                )
     return [
         f"The brief asks for a record to be added with a `{field}` (\"{line}\"), and "
         f"nothing on the page collects one: no input, textarea, select, label or "

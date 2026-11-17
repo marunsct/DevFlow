@@ -688,9 +688,19 @@ def sign_in_plan(checks: list[Check], bodies: list[Any] | None = None) -> dict[s
     record - the writes the probe exists for were never asked. Only the body probes sign in: a bare line of the
     contract ("-> 401") is about the call without one.
     """
+    from app.observability import rule_coverage
+
     writes = [c for c in checks if c.kind == "http" and c.method == "POST"]
     signin = next((c.path for c in writes if _SIGNS_IN.search(c.path)), "")
     if not signin:
+        refused = [c.line for c in checks if c.kind == "http" and any(code in (401, 403) for code in _allowed(c))]
+        if refused:
+            # Behind a sign-in the rule does not recognise: every body probe is answered 401/403 before its body is read.
+            rule_coverage.could_not_apply(
+                rule_coverage.CONTRACT_SIGN_IN,
+                f"the contract refuses unsigned calls (\"{refused[0][:100]}\") and no POST path reads as signing in "
+                f"(sign-in, login, session, token): {', '.join(sorted({c.path for c in writes}))[:120] or 'no POST'}",
+            )
         return None
     signup = next((c.path for c in writes if _SIGNS_UP.search(c.path)), "")
     given: list[Any] = list(bodies or [])
@@ -700,7 +710,25 @@ def sign_in_plan(checks: list[Check], bodies: list[Any] | None = None) -> dict[s
         except ValueError:
             pass
     body = next((b for b in given if isinstance(b, dict) and any(k in b for k in _SECRETS)), None)
-    return {"signup": signup, "signin": signin, "body": body} if body is not None else None
+    if body is None:
+        rule_coverage.could_not_apply(
+            rule_coverage.CONTRACT_SIGN_IN,
+            f"the contract signs in at POST {signin} and no example body carries a {', '.join(_SECRETS)}",
+        )
+        return None
+    other = next((c.line for c in checks if _ANOTHER_KIND_OF_SIGN_IN.search(c.line)), "")
+    if other:
+        # The probe sends only `Authorization: Bearer <token>` read from the sign-in's JSON answer.
+        rule_coverage.could_not_apply(
+            rule_coverage.CONTRACT_SIGN_IN,
+            f"the contract names a sign-in that is not a bearer token (\"{other[:120]}\"); the probe sends only "
+            "`Authorization: Bearer`",
+        )
+    return {"signup": signup, "signin": signin, "body": body}
+
+
+#: A contract line naming a way of signing in other than a bearer token: a cookie, an API key, basic credentials.
+_ANOTHER_KIND_OF_SIGN_IN = re.compile(r"cookie|set-cookie|api[-_ ]?key|x-[a-z]+-(?:key|token)|\bbasic\s+auth", re.I)
 
 
 _SIGN_IN_JS = """
@@ -1161,6 +1189,8 @@ def bad_body_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[
                     if outcome == "skipped":
                         unchecked.append(f"{check.line} ({MADE_NO_RECORD}, or {SIGN_IN_ANSWERED_FIRST})" if check.made_through
                                          else f"{check.line} ({SIGN_IN_ANSWERED_FIRST})")
+                        if not check.made_through:
+                            _count_a_sign_in_the_probe_could_not_make(check)
                     elif outcome == "failed" and status:
                         errors.append((check, status))
                     elif outcome == "failed":
@@ -1184,6 +1214,21 @@ def bad_body_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing
         logger.debug("Could not probe the contract with a bad body", exc_info=True)
         return None
+
+
+def _count_a_sign_in_the_probe_could_not_make(check: Check) -> None:
+    """Record (LR.46) a body probe the product refused 401/403 before reading it: the probe could not sign in.
+
+    Either the contract has no sign-in the plan recognises, or the product's sign-in is not a JSON answer carrying a
+    token under one of `_TOKEN_KEYS` that it then accepts as `Authorization: Bearer`. Changes nothing.
+    """
+    from app.observability import rule_coverage
+
+    rule_coverage.could_not_apply(
+        rule_coverage.CONTRACT_SIGN_IN,
+        f"`{check.method} {check.path}` refused the body probe at sign-in (401/403): the probe signs in only with a "
+        f"token from the sign-in's JSON answer ({', '.join(_TOKEN_KEYS)}) sent as `Authorization: Bearer`",
+    )
 
 
 #: What a failed refusal check reports it was given: `Received: 200`.

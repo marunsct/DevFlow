@@ -14,6 +14,11 @@ from typing import Any, Iterable
 
 #: Switch -> text only that switch puts in a model request or a tool's answer.
 SIGNALS: dict[str, str] = {
+    "CONCURRENT_WRITE_PROBE": "Writes made at the same moment are not each kept",
+    "WRONG_SHAPE_BODY_PROBE": "sent a JSON body that is not an object",
+    "STABLE_MEMORY_ORDER": "The documents that hold for every fix come first, the code after them",
+    "NEAR_GREEN_REPAIR_TO_ROUND": "the repaired suite is near green, so the sprint is measured again in a test round instead of planned again",
+    "FIX_STAGES_THAT_CLOSE_NOTHING": "a fix round closed no defect and left the product unchanged, so the attempt ends instead of another round",
     "DESIGN_REVISION_CROSS_CHECKED": "Cross-checked against the sections left unchanged",
     "NEAR_GREEN_REPLANNED_ONCE": "a near-green suite is not planned again a second time",
     "LESSON_DISTILLER": "LESSONS FROM EARLIER RUNS",

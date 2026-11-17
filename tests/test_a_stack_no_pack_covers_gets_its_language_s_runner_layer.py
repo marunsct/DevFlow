@@ -134,13 +134,60 @@ def test_a_layered_entry_replays_with_its_layer_and_the_stage_s_framework_files(
     assert "pytest.ini" in written and json.loads((empty / "stack-setup.json").read_text())["layer"] == "python-http-api"
 
 
-def test_the_proof_keeps_the_layer_s_framework_files_with_the_entry():
-    import inspect
+def _proven_on_a_layer(tmp_path, monkeypatch):
+    """A layered falcon setup, proven with the sandbox's runner stood in for: the library entry it leaves."""
+    import json
+    from types import SimpleNamespace
+
+    from app.stacks import custom_setup
+    from app.stacks.custom_setup import write_runner_layer
+
+    monkeypatch.setenv("PROVEN_SETUP_LIBRARY", str(tmp_path / "library"))
+    project = tmp_path / "first" / "notes-api"
+    project.mkdir(parents=True)
+    for name in write_runner_layer(project, pack_named("python-http-api"), "notes-api", "Notes"):
+        (project / name).parent.mkdir(parents=True, exist_ok=True)
+        (project / name).write_text(f"# {name}, as the setup stage wrote it\n")
+
+    assert custom_setup.prove(tmp_path / "first", "notes-api", SimpleNamespace(**vars(_falcon()), product_kind="http_api"),
+                              run=_smoke_tests_that_need_the_layer(project)).ok
+    [entry] = (tmp_path / "library").glob("*.json")
+    return entry, json.loads(entry.read_text())
+
+
+def _smoke_tests_that_need_the_layer(project):
+    """The project's runners: a test command passes only where the layer's `pytest.ini` is."""
+    def run(argv, category, where):
+        if category != "test":
+            return {"returncode": "0", "stdout": "", "stderr": ""}
+        if not (project / "pytest.ini").is_file():
+            return {"returncode": "4", "stdout": "", "stderr": "no pytest.ini"}
+        for report in ("test-results/unit.xml", "test-results/acceptance.xml"):
+            (project / report).parent.mkdir(parents=True, exist_ok=True)
+            (project / report).write_text("<testsuites><testcase name='smoke'/></testsuites>")
+        return {"returncode": "0", "stdout": "", "stderr": ""}
+    return run
+
+
+def test_the_proof_keeps_the_layer_s_framework_files_with_the_entry(tmp_path, monkeypatch):
+    _, record = _proven_on_a_layer(tmp_path, monkeypatch)
+
+    assert {"requirements.txt", "notes_api/main.py", "notes_api/__init__.py"} <= set(record["files"])
+
+
+def test_the_nightly_check_replays_an_entry_on_its_layer(tmp_path, monkeypatch):
+    import json
 
     from app.stacks import custom_setup
 
-    assert "_the_layer_s_framework_files(declared, project)" in inspect.getsource(custom_setup.prove)
-    assert "_the_layer_first(project_root, record[\"declaration\"])" in inspect.getsource(custom_setup.check_the_library)
+    entry, record = _proven_on_a_layer(tmp_path, monkeypatch)
+    record["files"] = {name: text for name, text in record["files"].items() if name != "pytest.ini"}
+    entry.write_text(json.dumps(record))  # an entry kept before its layer's files were
+
+    checked = custom_setup.check_the_library(
+        tmp_path / "night", run_for=lambda workspace: _smoke_tests_that_need_the_layer(workspace / "product"))
+
+    assert [(ok, problem) for _, ok, problem in checked] == [(True, "")]
 
 
 # --- the layered setup reads the setup, not the product (harness review HR2.SS.2) -----------------

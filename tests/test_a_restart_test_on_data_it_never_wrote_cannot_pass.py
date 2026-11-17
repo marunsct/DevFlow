@@ -7,7 +7,6 @@ wrote it inside a test of a file Node loads as an ES module.
 """
 from __future__ import annotations
 
-import inspect
 import re
 
 from app.acceptance import suite
@@ -60,8 +59,9 @@ def test_a_restart_test_that_writes_to_the_service_it_restarts_is_left(tmp_path)
     assert suite.tests_that_restart_on_data_they_never_wrote(_suite(tmp_path, RIGHT)) == []
 
 
-def test_it_is_among_the_tests_that_cannot_pass():
-    assert "tests_that_restart_on_data_they_never_wrote(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+def test_it_is_among_the_tests_that_cannot_pass(tmp_path):
+    found = suite.tests_that_cannot_pass(_suite(tmp_path, WRONG), suite.AcceptanceResult(ran=True))
+    assert [item for item in found if "`service1.baseURL` is not used" in item]
 
 
 def test_the_guide_loads_the_helper_as_the_file_loads_its_other_modules():

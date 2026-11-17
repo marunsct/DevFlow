@@ -7,6 +7,7 @@ body. Every fix that made delete right broke that test and was reverted - eight 
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
 
 from app.acceptance import suite
 from app.stacks import contract, pack_named
@@ -69,13 +70,32 @@ def test_a_contract_whose_delete_answers_200_says_nothing(tmp_path):
     assert suite.tests_that_want_json_from_a_204(_suite(tmp_path, DIRECT), ["AC-5 DELETE /notes/{id} -> 200"]) == []
 
 
-def test_the_review_and_the_rounds_ask_it():
-    import inspect
+def test_the_rounds_ask_it_against_the_locked_contract(tmp_path):
+    from app.acceptance import interface_contract
 
-    from app.graph import acceptance_nodes
+    root = _suite(tmp_path, DIRECT)
+    interface_contract.record_at_lock(root, CONTRACT)
 
-    assert "tests_that_want_json_from_a_204(" in inspect.getsource(acceptance_nodes.acceptance_review)
-    assert "tests_that_want_json_from_a_204(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+    found = suite.tests_that_cannot_pass(root, suite.AcceptanceResult(ran=True))
+
+    assert [item for item in found if "204" in item and "api.spec.js" in item]
+
+
+EVERY_CRITERION = ("test('[AC-1] adds', async () => {});\n" + DIRECT.replace("[AC-5]", "[AC-2]")
+                   + "test('[AC-3] persists', async () => {});\n")
+
+
+def test_the_review_asks_it_against_the_specification_s_contract(tmp_path):
+    from workflow_nodes import an_acceptance_review
+
+    contract.write(tmp_path, pack_named("node-hono-native-api"), "notes", "Notes")
+
+    update = an_acceptance_review(
+        tmp_path, EVERY_CRITERION, failed=["[AC-1] adds", "[AC-2] delete answers json", "[AC-3] persists"],
+        state={"technical_specification": SimpleNamespace(interface_contract=["AC-2 DELETE /notes/{id} -> 204 or 404"])})
+
+    assert update["stage"] == "acceptance_author"
+    assert [item for item in update["acceptance_feedback"] if "204" in item]
 
 
 AFTER_A_LOOP = """import { test, expect } from '@playwright/test';

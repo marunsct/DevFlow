@@ -115,16 +115,15 @@ def test_a_run_is_compared_with_runs_of_its_own_benchmark(tmp_path):
     assert ledger.regressions(earlier, row) == []
 
 
-def test_the_ledger_is_written_beside_itself_and_moved_into_place(tmp_path):
-    import inspect
-
-    source = inspect.getsource(ledger.append)
+def test_the_ledger_keeps_each_row_and_leaves_no_temporary_file_beside_it(tmp_path):
     path = tmp_path / "ledger.csv"
-    ledger.append(path, {"run": "r", "tool_calls": 1, "stages": [{"name": "a"}]})
+    ledger.append(path, {"run": "r1", "tool_calls": 1, "stages": [{"name": "a"}]})
+    ledger.append(path, {"run": "r2", "tool_calls": 2, "stages": [{"name": "a"}]})
 
-    assert "temporary.replace(ledger)" in source
-    assert not (tmp_path / "ledger.csv.tmp").exists()
-    assert "stages" not in path.read_text().splitlines()[0]
+    lines = path.read_text().splitlines()
+    assert "stages" not in lines[0] and len(lines) == 3
+    assert [line.split(",")[0] for line in lines[1:]] == ["r1", "r2"]
+    assert [p.name for p in tmp_path.iterdir()] == ["ledger.csv"]
 
 
 def test_a_long_model_call_is_the_model_working_not_an_orphan():

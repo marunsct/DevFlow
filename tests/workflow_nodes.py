@@ -513,3 +513,64 @@ def a_dispute(
         **(patches or {}),
     }
     return run_node("acceptance_dispute", made, str(tmp_path), every), asked
+
+
+def tool_names(agent: Any) -> set[str]:
+    """The tools a compiled agent will run, read off its `tools` node (the graph has no tool list of its own)."""
+    node = (getattr(agent, "nodes", None) or {}).get("tools")
+    inner = getattr(node, "bound", None) or getattr(node, "runnable", None) or node
+    return set(getattr(inner, "tools_by_name", None) or {})
+
+
+#: A brief of three features, numbered AC-1 to AC-3 by `an_acceptance_review`.
+NOTES_BRIEF = "# Brief\n## Features\n- Add a note\n- Delete a note\n- Notes persist between page refreshes\n"
+
+
+def an_acceptance_review(
+    tmp_path,
+    spec: str,
+    *,
+    passed: list[str] | tuple[str, ...] = (),
+    failed: list[str] | tuple[str, ...] = (),
+    deferred: dict[str, str] | None = None,
+    review: Any = None,
+    state: dict[str, Any] | None = None,
+    patches: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """`acceptance_review` of a suite holding `spec` (`notes/acceptance/notes.spec.js`) over `NOTES_BRIEF`'s criteria,
+    with `deferred` deferred. The suite's run in the sandbox reports `passed` and `failed` test titles; the QA lead
+    answers `review` (approved, no findings, when None). Returns the update."""
+    from app.acceptance import junit, suite
+    from app.acceptance.criteria import number
+    from app.graph import acceptance_nodes
+
+    (tmp_path / ".project-directory").write_text("notes\n")
+    suite.save_criteria(tmp_path, number(NOTES_BRIEF), dict(deferred or {}))
+    written = tmp_path / "notes" / "acceptance" / "notes.spec.js"
+    written.parent.mkdir(parents=True, exist_ok=True)
+    written.write_text(spec)
+    ran = suite.AcceptanceResult(ran=True, exit_code=1 if failed else 0, command="npm run test:acceptance",
+                                 report=junit.Report(found=True, tests=[
+                                     *(junit.TestResult(name=n) for n in passed),
+                                     *(junit.TestResult(name=n, outcome="failed", message="nope") for n in failed)]))
+    answer = review if review is not None else SimpleNamespace(approved=True, findings=[])
+    made = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "document": SimpleNamespace(text=NOTES_BRIEF),
+        "product_intake": SimpleNamespace(product_name="Notes", success_measures=[]),
+        "stack_selection": SimpleNamespace(technology_stack=SimpleNamespace(product_kind="browser_app")),
+        "acceptance_round": 1,
+        **(state or {}),
+    }
+    every = {
+        "app.acceptance.suite.run": lambda root, **kwargs: ran,  # the suite's run in the sandbox
+        "app.agents.acceptance_reviewer.create_acceptance_reviewer_agent": lambda *args, **kwargs: object(),
+        "app.graph.workflow._run_gated_agent":
+            lambda state, config, *, output_key, next_stage, **kwargs: {output_key: answer, "stage": next_stage},
+        **(patches or {}),
+    }
+    with ExitStack() as stack:
+        for target, replacement in every.items():
+            stack.enter_context(patch(target, replacement))
+        context = acceptance_nodes.Context(model=None, judgement_model=None, checkpointer=None, repo_root=None)
+        return acceptance_nodes.acceptance_review(made, {"configurable": {"thread_id": "t"}}, context)

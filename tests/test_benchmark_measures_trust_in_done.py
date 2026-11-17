@@ -179,8 +179,20 @@ def test_a_run_whose_hidden_tests_never_ran_is_unscored_not_a_false_acceptance(t
     assert row["scored"] == 0 and row["false_acceptances"] == 0
 
 
-def test_a_runner_is_ready_only_when_pytest_imports_not_when_its_python_exists():
-    import inspect
+def test_a_runner_is_ready_only_when_pytest_imports_not_when_its_python_exists(tmp_path, monkeypatch):
+    import subprocess
 
-    source = inspect.getsource(score._python_runner)
-    assert '"import pytest, httpx"' in source
+    (tmp_path / "py" / "bin").mkdir(parents=True)
+    (tmp_path / "py" / "bin" / "python").write_text("")  # an interpreter left by an install cut off part-way
+    ran: list[list[str]] = []
+
+    def the_shell(argv, cwd, env=None, timeout=900):
+        ran.append(list(argv)[1:])
+        return subprocess.CompletedProcess(argv, 1 if "-c" in argv else 0)  # pytest does not import
+
+    monkeypatch.setattr(score, "RUNNERS", tmp_path)
+    monkeypatch.setattr(score, "_run", the_shell)
+
+    score._python_runner()
+
+    assert ran == [["-c", "import pytest, httpx"], ["-m", "pip", "install", "--quiet", "pytest", "httpx"]]

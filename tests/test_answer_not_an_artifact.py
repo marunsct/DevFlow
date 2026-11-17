@@ -107,14 +107,18 @@ def test_the_fields_come_from_the_stage_schema() -> None:
     assert _answer_fields(None) == frozenset()
 
 
-def test_every_writing_role_gets_the_check() -> None:
-    import inspect
+@pytest.mark.parametrize("role", ["backend", "testing"])
+def test_every_writing_role_gets_the_check(tmp_path, role) -> None:
+    from app.agents.specialists import create_specialist_agent
 
-    from app.agents.role_agent import create_role_agent
+    agent = create_specialist_agent(role, model="gpt-4o-mini", repo_root=str(tmp_path))
+    node = agent.nodes["tools"]
+    write = (getattr(node, "bound", None) or node).tools_by_name["write_artifact"]
 
-    assert "writing_tools(resolved_repo_root, _answer_fields(response_format), response_format)" in (
-        inspect.getsource(create_role_agent)
-    )
+    result = write.invoke({"relative_path": "final_output.json",
+                           "content": '{"changed_files": [], "decisions": ["could not run tests"]}'})
+
+    assert "structured response" in str(result) and not (tmp_path / "final_output.json").exists()
 
 
 def test_a_truncated_answer_is_still_recognised(write) -> None:

@@ -16,7 +16,6 @@ an unconditional MUST that outranked it, and the harness paid for all four:
   add a dependency" while its role prompt said to install Jest or PyTest.
 """
 
-import inspect
 import re
 
 import pytest
@@ -91,5 +90,10 @@ def test_the_database_role_agrees_with_the_environment_on_where_data_lives():
 
 def test_the_selector_is_not_told_a_browser_is_missing():
     from app.agents import stack_selector
+    from app.state import RepositoryContext
 
-    assert "A browser is not available" not in inspect.getsource(stack_selector)
+    request = stack_selector.build_stack_selector_request(
+        "A notes page.", "Local models.", RepositoryContext(root_path="/w", branch="main", commit="abc", status="clean"))
+    told = stack_selector._SYSTEM_PROMPT + request["messages"][-1]["content"]
+
+    assert "browser is not available" not in " ".join(told.split()).lower()

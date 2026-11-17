@@ -84,19 +84,15 @@ def test_an_unreadable_cgroup_is_not_an_error():
         builtins.open = real_open
 
 
-def test_the_recovery_message_names_the_cause_and_the_fix():
+@pytest.mark.parametrize("oom_killed", [True, False])
+def test_the_recovery_message_names_the_cause_and_the_fix_only_after_an_oom_kill(oom_killed):
     """The operator needs to know it was memory, and what to change."""
-    import inspect
+    said = " ".join(_manage()._the_words_recovery_writes(oom_killed).split())
 
-    manage = _manage()
-    source = " ".join(inspect.getsource(manage._the_words_recovery_writes).split())
-
-    # The message is built from adjacent string literals, so the source carries
-    # the quote marks between them; compare on the words that matter.
-    assert "OOM-killed at least once" in source
-    assert "per-process rlimits" in source.lower()
-    assert "do not bound a process tree" in source.lower()
-    assert "node --test" in source
+    assert ("OOM-killed" in said) is oom_killed
+    assert ("per-process rlimits do not bound a process tree" in said) is oom_killed
+    assert ("`node --test` rather than vitest or jest" in said) is oom_killed
+    assert "resume continues from the last checkpoint" in said
 
 
 def test_the_sandbox_heap_leaves_room_for_a_fork_pool():
@@ -118,5 +114,5 @@ def test_the_sandbox_heap_leaves_room_for_a_fork_pool():
     assert per_process * 4 <= container, (
         f"SANDBOX_MEMORY_LIMIT={per_process}g x4 forked workers exceeds the "
         f"worker container's {container}g limit, which is what OOM-killed "
-        "run-a000000c"
+        "a measured run"
     )

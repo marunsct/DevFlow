@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 
-from app.analysis import walk
 from app.analysis.walk import directories_under, files_under
 
 
@@ -99,12 +98,19 @@ class TestWhatIsNeverEntered:
         assert "app/app.js" in found
 
 
-def test_the_product_checks_use_it() -> None:
+def test_the_product_checks_never_open_a_dependency_folder(workspace: Path, monkeypatch) -> None:
     """The walk every test round runs, over every file of the product."""
-    import inspect
-
     from app.analysis import integration_checks
 
-    assert "files_under(root, _SKIP)" in inspect.getsource(integration_checks._source_files)
-    assert "rglob" not in inspect.getsource(integration_checks._source_files)
-    assert walk.__doc__
+    opened: list[str] = []
+    scandir = os.scandir
+
+    def listing(path="."):
+        opened.append(os.fspath(path))
+        return scandir(path)
+
+    monkeypatch.setattr(os, "scandir", listing)
+
+    integration_checks.problems_that_break_the_product(workspace)
+
+    assert opened and not [path for path in opened if "node_modules" in path]

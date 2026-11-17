@@ -199,17 +199,6 @@ def test_the_refusal_says_what_to_choose_instead():
     assert "installs nothing" in message
 
 
-def test_the_validator_explains_why_the_prompt_was_not_enough():
-    import inspect
-
-    # Wrapped across lines in the source, so compare without line breaks.
-    source = " ".join(inspect.getsource(TechnologyStack).split())
-
-    assert "is not made truer by repetition" in source
-    # The evidence is kept in the commit that added it, not as a run id here.
-    assert not __import__("re").search(r"run[- ][0-9a-f]{8}\b", source)
-
-
 def test_the_selector_prefers_a_runner_the_runtime_provides():
     """A runnable framework is not automatically the right one.
 

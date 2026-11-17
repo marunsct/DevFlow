@@ -5,10 +5,11 @@ it raises it, so a report can say per check how often it was right.
 """
 from __future__ import annotations
 
-import inspect
+import pytest
 
 from app.acceptance import check_findings
-from app.graph import acceptance_nodes
+from app.stacks import contract, pack_named
+from workflow_nodes import an_acceptance_review
 
 
 def test_findings_pass_through_unchanged_and_are_recorded(tmp_path):
@@ -26,12 +27,34 @@ def test_nothing_is_recorded_for_no_finding(tmp_path):
     assert check_findings.read(tmp_path) == []
 
 
-def test_the_review_records_every_check_it_sends_back():
-    source = inspect.getsource(acceptance_nodes.acceptance_review)
-    # `tests_that_cannot_pass` is recorded per inner check since HR2.Q.1, the bucket's name only for a finding none
-    # of them raised.
-    assert 'named.get(str(f), "tests_that_cannot_pass")' in source
-    for check in ("vacuous_green", "locators_nobody_sees", "locators_that_pick_one",
-                  "controls_never_found_by_name", "records_never_found_as_the_brief_shows_them",
-                  "views_never_acted_within", "tests_that_want_json_from_a_204", "contract_lines_with_no_test"):
-        assert f'check_findings.noted(root, rounds, "{check}"' in source, check
+EVERY_CRITERION = """import { test, expect } from '@playwright/test';
+test('[AC-1] adds', async ({ request }) => {
+  const res = await request.post('/notes', {
+    headers: { 'Content-Type': 'application/json' },
+    data: { title: 'a' },
+  });
+  expect(res.status()).toBe(201);
+});
+test('[AC-2] deletes', async ({ request }) => {
+  expect((await request.delete('/notes/1')).status()).toBe(404);
+});
+test('[AC-3] persists', async ({ request }) => {
+  expect((await request.get('/notes')).status()).toBe(200);
+});
+"""
+ALL_RAN = ["[AC-1] adds", "[AC-2] deletes", "[AC-3] persists"]
+
+
+@pytest.mark.parametrize(("spec", "ran", "check"), [
+    # A check inside `tests_that_cannot_pass` is recorded under its own name, not the bucket's (HR2.Q.1).
+    (EVERY_CRITERION.replace("data: { title: 'a' },", "body: JSON.stringify({ title: 'a' }),"), ALL_RAN,
+     "requests_with_a_fetch_body"),
+    (EVERY_CRITERION, [], "vacuous_green"),
+])
+def test_the_review_records_a_finding_it_sends_back_under_its_check_s_name(tmp_path, spec, ran, check):
+    contract.write(tmp_path, pack_named("node-hono-native-api"), "notes", "Notes")
+
+    update = an_acceptance_review(tmp_path, spec, failed=ran)
+
+    assert update["stage"] == "acceptance_author"
+    assert check in {row["check"] for row in check_findings.read(tmp_path)}

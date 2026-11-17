@@ -2,20 +2,17 @@
 
 localStorage is the fast path and the server's value wins when the interface
 starts, so a choice made on one device is there on the next. The patch changes
-only what it names, and only known values are accepted.
+only what it names, and only known values are accepted. The interface's side is
+tested in `langchain-ui/src/lib/appearance.test.ts`.
 """
 from __future__ import annotations
 
-import inspect
 import json
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from app.server import auth
-
-UI = Path(__file__).resolve().parents[1] / "langchain-ui" / "src"
 
 
 def test_a_patch_names_only_what_it_changes_and_only_known_values():
@@ -33,18 +30,14 @@ def test_stored_preferences_are_read_back_and_a_bad_value_is_empty():
     assert auth._read_preferences("[1, 2]") == {}
 
 
-def test_the_user_carries_them_and_the_table_has_the_column():
-    assert auth.User(username="a").preferences == {}
-    source = inspect.getsource(auth)
-    assert "ADD COLUMN IF NOT EXISTS preferences TEXT NOT NULL DEFAULT '{}'" in source
-    assert "COALESCE(preferences, '{}')" in source
-    assert '"/api/auth/me/preferences"' in source and "preferences=current_user.preferences" in source
+def test_a_choice_saved_from_one_device_is_the_account_s_on_the_next_sign_in(client, test_db, test_user):
+    with auth.get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO users (username, hashed_password, disabled, role, tenant_id, preferences) "
+                        "VALUES ('testuser', 'x', FALSE, 'admin', 'default', '{\"theme\": \"paper\"}')")
+        conn.commit()
+    test_user.preferences = {"theme": "paper"}  # as the sign-in read it
 
+    client.patch("/api/auth/me/preferences", json={"accent": "teal"})
 
-def test_the_interface_pulls_applies_and_pushes_them():
-    store = (UI / "lib/appearance.ts").read_text()
-    assert "api.patch('/auth/me/preferences'" in store and "adoptServerPreferences" in store
-    assert "adoptServerPreferences(me.data?.preferences)" in (UI / "App.tsx").read_text()
-    assert "<ThemeToggle />" in (UI / "components/Layout.tsx").read_text()
-    assert "<AppearanceSettings />" in (UI / "pages/Settings.tsx").read_text()
-    assert "event.key !== 't'" in (UI / "components/ThemeToggle.tsx").read_text()
+    assert auth.get_user("testuser").preferences == {"theme": "paper", "accent": "teal"}

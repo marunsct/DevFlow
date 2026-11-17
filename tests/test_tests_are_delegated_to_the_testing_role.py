@@ -14,8 +14,11 @@ undoing it.
 
 from __future__ import annotations
 
-from app.agents.specialists import create_specialist_agent  # noqa: F401 - import guard
+import pytest
+
+from app.agents.specialists import create_specialist_agent
 from app.agents.technical_lead import _SYSTEM_PROMPT
+from workflow_nodes import tool_names
 
 #: The prompt is line-wrapped, so a phrase may span a newline.
 FLAT = " ".join(_SYSTEM_PROMPT.split())
@@ -39,12 +42,9 @@ def test_it_says_not_to_invent_work_for_an_absent_role():
     assert "has nothing to delegate" in FLAT
 
 
-def test_only_the_testing_role_has_the_validation_tool():
+@pytest.mark.parametrize(("role", "given"), [("testing", True), ("backend", False), ("ui_ux", False)])
+def test_only_the_testing_role_has_the_validation_tool(tmp_path, role, given):
     """The claim the prompt makes must stay true of the specialists."""
-    import inspect
+    agent = create_specialist_agent(role, model="gpt-4o-mini", repo_root=str(tmp_path))
 
-    from app.agents import specialists
-
-    source = inspect.getsource(specialists)
-    assert 'if role == "testing":' in source
-    assert "build_validation_tool" in source
+    assert ("run_validation" in tool_names(agent)) is given

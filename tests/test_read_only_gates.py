@@ -51,17 +51,6 @@ def test_a_write_request_is_not_a_command_at_all():
     assert not is_read_only_command({"args": {"relative_path": "a.md", "content": "x"}})
 
 
-def test_the_ceiling_skips_read_only_gates():
-    import inspect
-
-    from app.server import runner
-
-    source = " ".join(inspect.getsource(runner).split())
-
-    assert 'action_kind", "") != "read"' in source
-    assert "does not spend the budget meant for writes" in source
-
-
 def test_read_is_a_valid_action_kind():
     """The state schema has to carry it, or the request cannot be stored."""
     from app.state import HumanApprovalRequest

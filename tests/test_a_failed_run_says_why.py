@@ -90,35 +90,32 @@ class TestTheRunnerNeverStoresAFailureWithNothingInIt:
     how the null got into the database.
     """
 
-    @pytest.mark.parametrize("state, expected_empty", [
-        ({}, False),
-        ({"error": None}, False),
-        ({"error": ""}, False),
-        ({"error": "a real reason"}, False),
+    @pytest.fixture
+    def runner(self, run_store, redis_container, monkeypatch):
+        from app.server.events import EventBus
+        from app.server.redis_client import reset_clients
+        from app.server.runner import WorkflowRunner
+
+        reset_clients()
+        monkeypatch.setenv("CHECKPOINTER_TYPE", "memory")
+        return WorkflowRunner(EventBus(), run_store=run_store)
+
+    @pytest.mark.parametrize("state, recorded", [
+        ({}, "no reason reached the run record"),
+        ({"error": None}, "no reason reached the run record"),
+        ({"error": ""}, "no reason reached the run record"),
+        ({"error": "a real reason"}, "a real reason"),
     ])
-    def test_a_failed_row_always_carries_a_reason(self, state, expected_empty):
-        recorded = state.get("error") or (
-            "The run failed and no reason reached the run record. Its last "
-            "stage and its transcript are what remain to go on."
+    async def test_a_failed_row_always_carries_a_reason(self, runner, tmp_path, state, recorded):
+        from types import SimpleNamespace
+
+        record = runner.register_run(
+            run_id="run-1", thread_id="thread-1", document_names=["brief.md"], document_paths=["/tmp/brief.md"],
+            owner="alice", tenant_id="acme",
         )
+        record.status, record.repo_root = "running", str(tmp_path)
+        runner.run_store.save(record)
 
-        assert bool(recorded) is not expected_empty
-        assert recorded.strip()
+        await runner._handle_state(record, SimpleNamespace(invoke=lambda *_: None), {"stage": "failed", **state}, {})
 
-    def test_the_source_line_is_the_one_being_described(self):
-        """Ties this test to the code, so a rewrite there is caught here.
-
-        Asserting on a copy of an expression proves nothing about the original.
-        This checks the runner really does guard that assignment, which is what
-        the parametrised case above is standing in for.
-        """
-        import inspect
-
-        from app.server import runner
-
-        source = inspect.getsource(runner)
-
-        assert 'record.error = state.get("error") or (' in source, (
-            "the runner assigns record.error without a fallback again"
-        )
-        assert "no reason reached the run record" in source
+        assert recorded in (runner.run_store.load("run-1").error or "")

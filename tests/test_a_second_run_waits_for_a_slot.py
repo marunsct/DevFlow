@@ -144,12 +144,21 @@ def test_only_running_occupies_a_slot():
     assert "status = 'running'" in _COUNT_IN_FLIGHT_SQL
 
 
-def test_readiness_reports_the_count():
-    import inspect
+def test_readiness_reports_the_count_and_a_full_pool_is_still_ready(client, run_store, monkeypatch):
+    from app.server.events import EventBus
+    from app.server.runner import WorkflowRunner
+    from app.server.tasks import celery_app
 
-    from app.server import api
+    monkeypatch.setenv("MAX_CONCURRENT_RUNS", "1")
+    monkeypatch.setattr(celery_app.control, "ping", lambda timeout=1.0: [{"w": "pong"}])  # the broker's worker
+    record = WorkflowRunner(EventBus(), run_store=run_store).register_run(
+        run_id="run-1", thread_id="thread-1", document_names=["brief.md"], document_paths=["brief.md"],
+        owner="alice", tenant_id="acme")
+    record.status = "running"
+    run_store.save(record)
 
-    source = inspect.getsource(api)
-    assert '"in_flight"' in source
+    response = client.get("/api/health/ready")
+
     # Reported, never judged: a full pool is a healthy pool doing its job.
-    assert 'k not in ("status", "runs")' in source
+    assert response.status_code == 200
+    assert response.json()["runs"] == {"in_flight": 1, "limit": 1}

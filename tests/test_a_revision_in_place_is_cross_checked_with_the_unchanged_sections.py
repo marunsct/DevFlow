@@ -162,9 +162,11 @@ def test_a_call_that_cannot_bring_them_into_line_leaves_the_revision_as_it_was(m
     assert revised.deployment == REWRITTEN and revised.function_contracts == PREVIOUS.function_contracts
 
 
-def test_its_words_are_plain():
-    import inspect
+def test_its_words_are_plain(monkeypatch):
+    monkeypatch.setenv("DESIGN_REVISION_CROSS_CHECKED", "on")
+    model = _Model()
 
-    source = inspect.getsource(cross)
-    model_facing = [cross.SAID, *re.findall(r'"([^"\n]*(?:rewrite|rewritten|revised|statements)[^"\n]*)"', source)]
-    assert model_facing and not [text for text in model_facing if BANNED.search(text)]
+    specification_parts.revised_in_place(PREVIOUS, CHANGES, model, "")
+
+    into_line = [asked for asked in model.asked if "statements that now disagree" in asked]
+    assert into_line and not [text for text in [cross.SAID, *into_line] if BANNED.search(text)]

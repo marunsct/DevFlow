@@ -10,7 +10,6 @@ from __future__ import annotations
 from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
 from app.analysis.work_orders import readiness_problems, with_named_tests_given_to_testing
 from app.graph import workflow
-from workflow_nodes import workflow_source
 
 SCOPE = ("Build the notes service: app.ts and store.ts, proven by boot-failure.test.ts, "
          "concurrency.test.ts and contract.test.ts.")
@@ -51,7 +50,7 @@ def test_without_a_testing_work_order_the_lead_is_still_asked(tmp_path):
     assert with_named_tests_given_to_testing(plan, str(tmp_path), SCOPE) == (plan, [])
 
 
-def _the_lead_answers(tmp_path, plan):
+def _the_lead_answers(tmp_path, plan, **more):
     """The technical lead node's update when its stage answers `plan` for a sprint whose scope is SCOPE."""
     from types import SimpleNamespace
     from unittest.mock import MagicMock, patch
@@ -66,6 +65,7 @@ def _the_lead_answers(tmp_path, plan):
         "repository": SimpleNamespace(root_path=str(tmp_path)),
         "sprint_plan": SprintPlanOutput(sprints=[sprint], success_measure_coverage=[]),
         "current_sprint_index": 0,
+        **more,
     }
     with patch("app.graph.workflow.create_technical_lead_agent", return_value=MagicMock()), \
          patch("app.graph.acceptance_nodes.sprint_already_done", return_value=""), \
@@ -91,8 +91,17 @@ def test_the_workflow_gives_them_before_it_checks_the_plan(tmp_path, monkeypatch
     assert {"notes-api/tests/unit/boot-failure.test.ts", "notes-api/tests/unit/contract.test.ts"} <= set(testing.files)
 
 
-def test_an_earlier_plan_dispatched_instead_gets_them_too():
+def test_an_earlier_plan_dispatched_instead_gets_them_too(tmp_path, monkeypatch):
     """One run dispatched an earlier, better plan that had never had them assigned."""
-    source = workflow_source()
-    earlier = source[source.index("dispatching the earlier plan"):source.index("Milestone plan still not ready after")]
-    assert "with_named_tests_given_to_testing(" in earlier
+    monkeypatch.setenv("WORKFLOW_WORK_ORDER_READINESS", "on")
+    earlier = MilestonePlanOutput(selected_sprint_goal="notes", delegated_tasks=[
+        _order("backend", "notes-api/src/app.ts", "notes-api/src/store.ts"),
+        _order("testing", "notes-api/tests/unit/store.test.ts"),
+    ])
+    worse = MilestonePlanOutput(selected_sprint_goal="notes", delegated_tasks=[_order("backend", "notes-api/src/app.ts")])
+
+    update = _the_lead_answers(tmp_path, worse, structured_retries={"technical_lead:work_orders": 99},
+                               best_unready_plan=earlier.model_dump_json(), best_unready_problems=["one problem"])
+
+    testing = update["milestone_plan"].delegated_tasks[1]
+    assert {"notes-api/tests/unit/boot-failure.test.ts", "notes-api/tests/unit/contract.test.ts"} <= set(testing.files)

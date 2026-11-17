@@ -102,11 +102,18 @@ def test_the_dependency_directories_are_still_ignored():
         assert ignored in _IGNORED
 
 
-def test_it_is_written_when_a_workspace_is_initialised(tmp_path):
+def test_a_workspace_s_first_commit_holds_the_product_and_none_of_the_harness_s_files(tmp_path):
     """A list nothing writes out is a list that ignores nothing."""
-    import inspect
+    import subprocess
 
     from app.tools import version_control
 
-    source = inspect.getsource(version_control)
-    assert '.gitignore").write_text(_IGNORED' in source
+    for name in (".project-directory", ".project-stack", "app/index.html", "app/node_modules/x/index.js"):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("x")
+
+    assert version_control.initialise_repository(tmp_path)
+
+    tracked = subprocess.run(["git", "-C", str(tmp_path), "ls-files"], capture_output=True, text=True).stdout.split()
+    assert "app/index.html" in tracked
+    assert not {".project-directory", ".project-stack", "app/node_modules/x/index.js"} & set(tracked)

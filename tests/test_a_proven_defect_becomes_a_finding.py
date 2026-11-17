@@ -41,7 +41,6 @@ from app.agents.milestone_reviewer import (
     _files_named_in,
 )
 from app.analysis.integration_checks import problems_that_break_the_product
-from workflow_nodes import workflow_source
 
 
 A_PAGE_MISSING_ITS_STYLESHEET = """<!doctype html>
@@ -250,22 +249,15 @@ class TestWhatTheLeadReceives:
 
 
 class TestWhereTheWorkflowAsks:
-    def test_the_fallback_proves_before_it_settles_for_prose(self):
-        """Order matters: the prose fallback must be the last resort, not the first.
+    def test_a_review_out_of_retries_with_no_findings_is_sent_back_with_what_the_checks_proved(self, a_workspace):
+        """The prose fallback is the last resort: once the retries are spent, what the checks prove is raised as
+        findings, and the lead is sent them rather than the reviewer's paragraph."""
+        from workflow_nodes import a_milestone_review, a_milestone_verdict
 
-        Checked on the source because the node is a closure over the compiled
-        graph and cannot be called on its own. What is asserted is the ordering
-        the fix depends on - the proving happens after the retries are spent and
-        before the revision count that ends the run is incremented.
-        """
+        prose = a_milestone_verdict("changes_required")
 
-        source = workflow_source()
-        start = source.index("Milestone review still has no structured findings")
-        end = source.index(
-            'revision_count = state.get("milestone_revision_count", 0) + 1', start
-        )
-        fallback = source[start:end]
+        update = a_milestone_review(a_workspace, prose, state={"structured_retries": {"milestone_review:findings": 99}})
 
-        assert "findings_for_what_the_checks_proved" in fallback
-        assert "model_copy" in fallback, "the review must carry the findings onward"
-        assert "_milestone_changes_requested" in fallback, "the text must be re-rendered"
+        assert any("style.css" in finding.description for finding in update["milestone_review"].findings)
+        assert update["stage"] == "technical_lead"
+        assert any("style.css" in comment for comment in update["revision_comments"])

@@ -61,10 +61,9 @@ def test_a_note_whose_field_is_called_body_is_not_flagged(tmp_path):
     assert suite.requests_with_a_fetch_body(_suite(tmp_path, RIGHT)) == []
 
 
-def test_the_check_is_one_of_the_tests_that_cannot_pass():
-    import inspect
-
-    assert "requests_with_a_fetch_body(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
+def test_the_check_is_one_of_the_tests_that_cannot_pass(tmp_path):
+    found = suite.tests_that_cannot_pass(_suite(tmp_path, DIRECT), suite.AcceptanceResult(ran=True))
+    assert [item for item in found if "a request body is passed as `body:`" in item]
 
 
 def test_the_restart_guide_keeps_the_helper_to_the_restart_criterion():

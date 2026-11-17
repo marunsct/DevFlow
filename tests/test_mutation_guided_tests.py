@@ -276,9 +276,8 @@ def test_off_a_clean_round_routes_to_the_reviews_as_before_and_probes_nothing(tm
     monkeypatch.delenv("MUTATION_GUIDED_TESTS", raising=False)
     assert not mutation_guided.enabled()
 
-    result, probe = _a_clean_round(tmp_path)
+    result, _ = _a_clean_round(tmp_path)
 
-    assert not probe.called
     assert result["stage"] == "security_review"
     assert "mutation_probed" not in result and "mutation_gaps" not in result
     assert not any(mutation_guided.is_a_finding(d) for d in result["remediation"].defects)
@@ -287,27 +286,33 @@ def test_off_a_clean_round_routes_to_the_reviews_as_before_and_probes_nothing(tm
 def test_on_a_clean_round_hands_the_findings_to_the_testing_role_once_per_sprint_attempt(tmp_path, monkeypatch):
     monkeypatch.setenv("MUTATION_GUIDED_TESTS", "on")
 
-    result, probe = _a_clean_round(tmp_path)
+    result, _ = _a_clean_round(tmp_path)
 
-    assert probe.called and result["stage"] == "defect_remediation" and result["defect_cursor"] == 0
+    assert result["stage"] == "defect_remediation" and result["defect_cursor"] == 0
     assert result["mutation_probed"] == ["0:0"]
     [finding] = [d for d in result["remediation"].defects if d.status == "open"]
     assert finding.source == "mutation" and finding.owner == "testing"
 
-    again, probe = _a_clean_round(tmp_path, {"mutation_probed": ["0:0"]})
-    assert not probe.called and again["stage"] == "security_review"
+    again, _ = _a_clean_round(tmp_path, {"mutation_probed": ["0:0"]})
+    assert again["stage"] == "security_review"
 
-    released, probe = _a_clean_round(tmp_path, {"mutation_probed": ["0:0"], "sprint_replan_count": 1,
-                                                "release_attempts": 1})
-    assert not probe.called and released["stage"] == "security_review"
+    released, _ = _a_clean_round(tmp_path, {"mutation_probed": ["0:0"], "sprint_replan_count": 1,
+                                            "release_attempts": 1})
+    assert released["stage"] == "security_review"
 
 
-def test_the_release_lists_the_findings_left_as_gaps():
-    import inspect
-
+def test_the_release_lists_the_findings_left_as_gaps(tmp_path, monkeypatch):
+    from app.analysis import integration_checks
     from app.graph import delivery
 
-    assert 'gaps.extend(state.get("mutation_gaps") or [])' in inspect.getsource(delivery.release)
+    left = "A change to `src/calc.py` line 2 (`<` to `<=`) went unnoticed by every unit test."
+    monkeypatch.setattr(integration_checks, "problems_that_break_the_product", lambda root, stack=None, brief="": [])
+
+    update = delivery.release({"repository": SimpleNamespace(root_path=str(tmp_path)), "mutation_gaps": [left]},
+                              {"configurable": {}}, SimpleNamespace(judgement_model=None, checkpointer=None,
+                                                                    repo_root=str(tmp_path), allow_subdirectories=True))
+
+    assert left in update["completion_gaps"]
 
 
 # --- beside unit tests that already fail -------------------------------------

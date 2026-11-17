@@ -157,13 +157,15 @@ def test_the_budget_rung_still_wins(monkeypatch) -> None:
     assert _call(messages).get("tools") == []
 
 
-def test_the_marker_is_the_one_the_backend_writes() -> None:
+def test_every_refusal_the_backend_writes_carries_the_marker_the_count_reads(tmp_path) -> None:
     """Counting a message by a phrase written somewhere else is how a marker
     goes stale silently."""
-    import inspect
-
     from app.agents.workspace_backend import WorkspaceBackend
 
-    source = inspect.getsource(WorkspaceBackend._refuse_a_read_that_returns_nothing_new)
+    (tmp_path / "app.js").write_text("const a = 1;\n")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+    refused = [error for error in (backend.read("/app.js").error for _ in range(30)) if error]
 
-    assert "READ_REFUSED_MARKER" in source
+    # The marker is the contract between the backend that refuses and the middleware that counts refusals.
+    assert len(refused) >= READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL
+    assert all(READ_REFUSED_MARKER in error for error in refused)

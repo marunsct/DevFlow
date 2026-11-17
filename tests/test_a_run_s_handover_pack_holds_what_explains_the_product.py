@@ -31,10 +31,16 @@ def test_the_pack_holds_the_documents_decisions_and_suite(tmp_path, monkeypatch)
     ]
 
 
-def test_the_endpoint_serves_the_pack_as_a_zip():
-    import inspect
+def test_the_server_serves_a_run_s_pack_as_a_zip(client, run_store, tmp_path):
+    brief = tmp_path / "brief.md"
+    brief.write_text("A product")
+    with open(brief, "rb") as handle:
+        run_id = client.post("/api/runs", files=[("files", ("brief.md", handle, "text/plain"))]).json()["run_id"]
+    record = run_store.load(run_id)
+    record.repo_root = str(tmp_path)
+    run_store.save(record)
 
-    from app.server import runs
+    answer = client.get(f"/api/runs/{run_id}/handover")
 
-    source = inspect.getsource(runs)
-    assert '@runs.get("/{run_id}/handover")' in source and 'media_type="application/zip"' in source
+    assert answer.status_code == 200 and answer.headers["content-type"] == "application/zip"
+    assert zipfile.ZipFile(io.BytesIO(answer.content)).testzip() is None

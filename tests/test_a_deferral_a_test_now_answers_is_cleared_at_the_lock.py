@@ -6,11 +6,9 @@ release listed both criteria as shipped unproven although a locked test covered 
 """
 from __future__ import annotations
 
-import inspect
-
 from app.acceptance import suite
 from app.acceptance.criteria import number
-from app.graph import acceptance_nodes
+from workflow_nodes import an_acceptance_review
 
 BRIEF = "# Brief\n## Features\n- Add a note\n- Delete a note\n- Start it\n"
 
@@ -37,6 +35,11 @@ def test_a_deferred_criterion_no_test_carries_stays_deferred(tmp_path):
     assert set(suite.deferred(root)) == {"AC-2", "AC-3"}
 
 
-def test_the_lock_clears_them_before_it_records(tmp_path):
-    source = inspect.getsource(acceptance_nodes.acceptance_review)
-    assert source.index("undefer_what_a_test_now_carries") < source.index("suite.lock(root)")
+def test_the_lock_clears_them(tmp_path):
+    spec = "test('[AC-1] adds', async () => {});\ntest('[AC-2] deletes', async () => {});\n"
+
+    an_acceptance_review(tmp_path, spec, failed=["[AC-1] adds", "[AC-2] deletes"],
+                         deferred={"AC-2": "no test title carries this id", "AC-3": "needs a person to judge it"})
+
+    assert suite.is_locked(tmp_path)
+    assert set(suite.deferred(tmp_path)) == {"AC-3"}

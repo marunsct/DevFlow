@@ -69,7 +69,8 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
 - Sweep scores: every language 9/9 hidden; quality 7/8-8/8 but C# 6/8. Recurring product defects the harness does not
   yet catch: writes made at once lost (several families) - next: pack storage guidance and a concurrent-write probe.
 - In part: LR.20 (the report is built; the frozen batch is about 5 days of runs, not started), LR.30 (per-pack
-  images LF.1005, container environment LF.1007, the 7 images built and verified 11-17 12:30 - next: container-mode runs), LR.52, and LR.53 (cause grouping; a green suite settles; a near-green
+  images LF.1005, container environment LF.1007, 7 images built; first whole container-mode run (Python notes-api)
+  green at its first test round 13:33 - suite 14/14, unit tests pass, 64 per-command containers; next: the other toolchains), LR.52, and LR.53 (cause grouping; a green suite settles; a near-green
   sprint is planned again once - LF.977, measured on 175 past re-plans; open: a repair back to the round), LR.54 (four contradictions removed).
 - Not done, and why: LR.42 (scale the process to the brief), LR.46 (narrow rules behind the pack interface),
   LR.50 (lift nodes out of `build_workflow_graph`) - each a week-sized redesign that needs measured runs before and

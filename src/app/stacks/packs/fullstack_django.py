@@ -7,6 +7,7 @@ from app.stacks.packs._design import DESIGN_TOKENS
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
 from app.stacks.packs import _python
+from app.stacks.packs import _sandbox as sandbox
 
 REQUIREMENTS = """django>=5.1
 gunicorn>=23
@@ -259,6 +260,7 @@ CMD ["sh", "-c", "python manage.py migrate --noinput && exec gunicorn {{package}
 """ % {"python": _python.PYTHON_VERSION}
 
 PACK = StackPack(
+    sandbox_image=sandbox.PYTHON,
     name="fullstack-django",
     title="Browser app with its own HTTP service in Python on Django",
     kind="fullstack",

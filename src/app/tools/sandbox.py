@@ -1432,9 +1432,23 @@ def _run_and_watch_the_tree(
 
 
 def _image_for(executable: str, workspace: str | Path | None = None) -> str:
-    """The image a command runs in: the version this workspace pinned, else the configured one."""
+    """The image a command runs in: its pack's image, else the version this workspace pinned, else the configured one.
+
+    Only container mode asks. A pack's image comes first (LR.30): chosen by executable alone, a service whose
+    acceptance suite runs under Playwright started its product (`cargo`, `dotnet`, `mvn`, `php`, `ruby`) inside the
+    Playwright image, and a unit runner such as `cargo nextest` was in no image at all. The pack's image holds its
+    toolchain, its runners, Node and the browsers, so every command of the run - and the server its suite starts -
+    finds what it needs.
+    """
+    from app.stacks.contract import the_pack
     from app.tools.runtimes import image_tag
 
+    try:
+        found = the_pack(workspace)
+    except Exception:  # noqa: BLE001 - an unreadable record leaves the image to the executable, as before
+        found = None
+    if found is not None and found[0].sandbox_image:
+        return found[0].sandbox_image
     pinned = image_tag(workspace, executable)
     if pinned:
         return pinned

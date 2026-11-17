@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.stacks.packs import go_http_api as go
 from app.stacks.packs._service import service_pack
+from app.stacks.packs import _sandbox as sandbox
 
 SERVER = """package main
 
@@ -36,6 +37,7 @@ Run them with `gotestsum -- ./...` (or `go test ./...`). Add a module with `go g
 <module>`; keep `go.mod` and `go.sum` tidy with `go mod tidy`."""
 
 PACK = service_pack(
+    sandbox_image=sandbox.GO,
     name="go-gin-api",
     title="HTTP service in Go on Gin",
     language="go",

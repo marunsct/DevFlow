@@ -6,6 +6,7 @@ from app.stacks.packs._design import DESIGN_TOKENS
 
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
+from app.stacks.packs import _sandbox as sandbox
 
 UNIT_SCRIPT = (
     "vitest run --reporter=default --reporter=junit --outputFile.junit=test-results/unit.xml"
@@ -173,6 +174,7 @@ a small screen, `await page.setViewportSize({ width: 375, height: 667 })`.
 
 PACK = StackPack(
     name="browser-react",
+    sandbox_image=sandbox.NODE,
     title="Browser app in React and TypeScript on Vite",
     kind="browser_app",
     language="typescript",

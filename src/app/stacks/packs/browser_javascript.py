@@ -6,6 +6,7 @@ from app.stacks.packs._design import DESIGN_TOKENS
 
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
+from app.stacks.packs import _sandbox as sandbox
 
 #: The DOM the unit tests run in: the release this pack's unit tests were
 #: proven on. 26 was the last to support Node 20; on the Node the image and the
@@ -207,6 +208,7 @@ and assert what must still be usable.
 
 PACK = StackPack(
     name="browser-javascript",
+    sandbox_image=sandbox.NODE,
     title="Browser app in plain JavaScript modules",
     kind="browser_app",
     language="javascript",

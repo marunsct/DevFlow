@@ -7,6 +7,7 @@ from app.stacks.packs._design import DESIGN_TOKENS
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
 from app.stacks.packs import node_http_api as api
+from app.stacks.packs import _sandbox as sandbox
 
 APP = """import express from 'express';
 import { fileURLToPath } from 'node:url';
@@ -101,6 +102,7 @@ one after another against the same service, so a test must create what it reads.
 
 PACK = StackPack(
     name="fullstack-node",
+    sandbox_image=sandbox.NODE,
     entrypoint="src/app.js",
     wired_by_imports=True,
     title="Browser app with its own HTTP service, in JavaScript on Express",

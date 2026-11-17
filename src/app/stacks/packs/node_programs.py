@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
+from app.stacks.packs import _sandbox as sandbox
 
 TYPESCRIPT = "~6.0.2"
 TYPES_NODE = "^24.0.0"
@@ -261,6 +262,7 @@ def _pack(kind: str, typescript: bool) -> StackPack:
     title = "Command-line program" if kind == "cli" else "Library"
     return StackPack(
         name=f"{'typescript' if typescript else 'node'}-{kind}",
+        sandbox_image=sandbox.NODE,
         title=f"{title} in {named} on Node",
         kind=kind,
         language=language,

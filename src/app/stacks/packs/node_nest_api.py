@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.stacks.packs import _javascript as js
 from app.stacks.packs._service import service_pack
+from app.stacks.packs import _sandbox as sandbox
 
 UNIT_SCRIPT = "jest --ci --reporters=default --reporters=jest-junit"
 
@@ -166,6 +167,7 @@ CMD ["node", "dist/main.js"]
 """ % {"node": js.NODE_MAJOR}
 
 PACK = service_pack(
+    sandbox_image=sandbox.NODE,
     name="node-nest-api",
     entrypoint="src/app.module.ts",
     title="HTTP service in TypeScript on NestJS",

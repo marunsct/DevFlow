@@ -10,6 +10,7 @@ interface is reachable. cargo-nextest writes JUnit for each.
 from __future__ import annotations
 
 from app.stacks import StackPack
+from app.stacks.packs import _sandbox as sandbox
 
 CARGO_TOML = """[package]
 name = "{{package}}"
@@ -212,6 +213,7 @@ def _pack(kind: str) -> StackPack:
         testing = "cargo nextest for unit tests, Cargo integration tests using the crate for acceptance tests"
         frameworks = ("rust", "standard library", "std")
     return StackPack(
+        sandbox_image=sandbox.RUST,
         name=f"rust-{kind}",
         title=f"{'Command-line program' if kind == 'cli' else 'Library'} in Rust",
         kind=kind,

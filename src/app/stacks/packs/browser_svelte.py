@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
 from app.stacks.packs import browser_react as react
+from app.stacks.packs import _sandbox as sandbox
 
 UNIT_SCRIPT = react.UNIT_SCRIPT
 
@@ -126,6 +127,7 @@ a server yourself."""
 
 PACK = StackPack(
     name="browser-svelte",
+    sandbox_image=sandbox.NODE,
     title="Browser app in Svelte and TypeScript on Vite",
     kind="browser_app",
     language="typescript",

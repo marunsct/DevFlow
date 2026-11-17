@@ -6,6 +6,7 @@ from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
 from app.stacks.packs import browser_react as react
 from app.stacks.packs._service import ON_THE_FILE_DATABASE
+from app.stacks.packs import _sandbox as sandbox
 
 UNIT_SCRIPT = react.UNIT_SCRIPT
 
@@ -197,6 +198,7 @@ CMD ["sh", "-c", "exec npx next start -H \\"$HOST\\" -p \\"$PORT\\""]
 
 PACK = StackPack(
     name="fullstack-next",
+    sandbox_image=sandbox.NODE,
     title="Browser app with its own HTTP service in Next.js (React and TypeScript)",
     kind="fullstack",
     language="typescript",

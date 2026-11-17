@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.stacks.packs._service import service_pack
+from app.stacks.packs import _sandbox as sandbox
 
 DOTNET = "8.0"
 
@@ -100,6 +101,7 @@ ENTRYPOINT ["dotnet", "App.dll"]
 """ % {"dotnet": DOTNET}
 
 PACK = service_pack(
+    sandbox_image=sandbox.DOTNET,
     name="csharp-aspnet-api",
     title="HTTP service in C# on ASP.NET Core",
     language="csharp",

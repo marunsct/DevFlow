@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.stacks.packs import ruby_sinatra_api as ruby
 from app.stacks.packs._service import service_pack
+from app.stacks.packs import _sandbox as sandbox
 
 GEMFILE = """source "https://rubygems.org"
 
@@ -153,6 +154,7 @@ CMD ["sh", "-c", "bundle exec rails db:prepare && exec bundle exec rails server 
 """ % {"ruby": ruby.RUBY_VERSION}
 
 PACK = service_pack(
+    sandbox_image=sandbox.RUBY,
     name="ruby-rails-api",
     title="HTTP service in Ruby on Rails (API mode)",
     language="ruby",

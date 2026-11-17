@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.stacks.packs import php_slim_api as php
 from app.stacks.packs._service import service_pack
+from app.stacks.packs import _sandbox as sandbox
 
 COMPOSER_JSON = """{
   "name": "app/{{project}}",
@@ -198,6 +199,7 @@ CMD ["sh", "-c", "export DB_DATABASE=$DATA_DIR/database.sqlite && touch $DB_DATA
 """ % {"php": php.PHP_VERSION}
 
 PACK = service_pack(
+    sandbox_image=sandbox.PHP,
     name="php-laravel-api",
     title="HTTP service in PHP on Laravel",
     language="php",

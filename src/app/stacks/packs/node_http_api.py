@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
 from app.stacks.packs._service import FACTORY_GUIDE, RESTART_GUIDE, SERVICE_HELPER
+from app.stacks.packs import _sandbox as sandbox
 
 PACKAGE_JSON = """{
   "name": "{{project}}",
@@ -105,6 +106,7 @@ rather than counting all of them.
 
 PACK = StackPack(
     name="node-http-api",
+    sandbox_image=sandbox.NODE,
     entrypoint="src/app.js",
     wired_by_imports=True,
     title="HTTP service in JavaScript on Express",

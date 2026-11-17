@@ -22,6 +22,7 @@ from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
 from app.stacks.packs import _python
 from app.stacks.packs._service import ON_THE_FILE_DATABASE
+from app.stacks.packs import _sandbox as sandbox
 
 
 @dataclass(frozen=True)
@@ -719,6 +720,8 @@ def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
     title = f"Browser app in {frontend.label} with its own HTTP service in {service.label}"
     return StackPack(
         name=f"fullstack-{frontend.name}-{service.name}",
+        # Node and the browsers for the page, and the service's own runtime beside them.
+        sandbox_image=sandbox.PYTHON if service.language == "python" else sandbox.NODE,
         title=title,
         kind="fullstack",
         language=service.language if service.language == "python" else "typescript",

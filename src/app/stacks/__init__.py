@@ -275,6 +275,11 @@ class StackPack:
     #: A proven setup's own short product code as it was when it started and passed its smoke test - how it creates
     #: the application and how the server loads it - shown to every builder; empty for a code pack.
     proven_code: Mapping[str, str] = field(default_factory=dict)
+    #: The one image every command of a product on this pack runs in when each command has a container of its own
+    #: (`SANDBOX_EXECUTION_MODE=container`): its toolchain, its test runners, Node and the browsers together, since its
+    #: acceptance suite's web server starts the product inside the suite's own container (LR.30,
+    #: `app.stacks.packs._sandbox`). Empty for a pack that names none: the image is then chosen by executable.
+    sandbox_image: str = ""
 
 
     @property

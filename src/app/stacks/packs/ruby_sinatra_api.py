@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.stacks.packs._service import service_pack
+from app.stacks.packs import _sandbox as sandbox
 
 RUBY_VERSION = "3.3"
 
@@ -79,6 +80,7 @@ CMD ["sh", "-c", "exec bundle exec rackup -p \\"$PORT\\" -o \\"$HOST\\""]
 """ % {"ruby": RUBY_VERSION}
 
 PACK = service_pack(
+    sandbox_image=sandbox.RUBY,
     name="ruby-sinatra-api",
     title="HTTP service in Ruby on Sinatra",
     language="ruby",

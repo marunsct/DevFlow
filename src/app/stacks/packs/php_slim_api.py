@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.stacks.packs._service import service_pack
+from app.stacks.packs import _sandbox as sandbox
 
 PHP_VERSION = "8.4"
 
@@ -124,6 +125,7 @@ CMD ["sh", "-c", "exec php -S \\"$HOST:$PORT\\" -t public public/index.php"]
 """ % {"php": PHP_VERSION}
 
 PACK = service_pack(
+    sandbox_image=sandbox.PHP,
     name="php-slim-api",
     title="HTTP service in PHP on Slim",
     language="php",

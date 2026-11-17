@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.stacks.packs._service import service_pack
+from app.stacks.packs import _sandbox as sandbox
 
 GO_VERSION = "1.26"
 
@@ -99,6 +100,7 @@ ENTRYPOINT ["/server"]
 """ % {"go": GO_VERSION}
 
 PACK = service_pack(
+    sandbox_image=sandbox.GO,
     name="go-http-api",
     entrypoint="server.go",
     title="HTTP service in Go on the standard library",

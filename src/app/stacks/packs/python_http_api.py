@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.stacks import StackPack
 from app.stacks.packs import _python
+from app.stacks.packs import _sandbox as sandbox
 
 REQUIREMENTS = """fastapi>=0.115
 uvicorn>=0.30
@@ -163,6 +164,7 @@ reads, and look for its own records rather than counting all of them.
 """ + _python.NAMING + _python.SHARED_HELPERS
 
 PACK = StackPack(
+    sandbox_image=sandbox.PYTHON,
     known_errors=_python.PYTHON_KNOWN_ERRORS,
     framework_files={
         "requirements.txt": "the framework and the server that runs it, one requirement per line as pip reads them",

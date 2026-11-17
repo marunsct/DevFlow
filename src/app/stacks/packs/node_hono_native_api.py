@@ -14,6 +14,7 @@ from app.stacks.packs import _javascript as js
 from app.stacks.packs._hono import HONO_KNOWN_ERRORS
 from app.stacks.packs._service import FACTORY_GUIDE, service_pack
 from app.switches import is_on
+from app.stacks.packs import _sandbox as sandbox
 
 #: Off in code like every switch; the compose file decides whether the arm runs (`app.stacks.choose_pack`).
 ON_BY_DEFAULT = False
@@ -154,6 +155,7 @@ LIST_ROUTES = (
 )
 
 PACK = service_pack(
+    sandbox_image=sandbox.NODE,
     known_errors=HONO_KNOWN_ERRORS,
     name="node-hono-native-api",
     entrypoint="src/app.ts",

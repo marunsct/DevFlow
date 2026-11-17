@@ -12,6 +12,7 @@ from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
 from app.stacks.packs import browser_vue as vue
 from app.stacks.packs._fullstack import STYLES
+from app.stacks.packs import _sandbox as sandbox
 
 ANGULAR = "^22.2.0"
 
@@ -237,6 +238,7 @@ start a server yourself."""
 
 PACK = StackPack(
     name="browser-angular",
+    sandbox_image=sandbox.NODE,
     title="Browser app in Angular and TypeScript",
     kind="browser_app",
     language="typescript",

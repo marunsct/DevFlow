@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.stacks.packs._service import service_pack
+from app.stacks.packs import _sandbox as sandbox
 
 CARGO_TOML = """[package]
 name = "{{package}}"
@@ -92,6 +93,7 @@ ENTRYPOINT ["/usr/local/bin/service"]
 """
 
 PACK = service_pack(
+    sandbox_image=sandbox.RUST,
     name="rust-axum-api",
     entrypoint="src/lib.rs",
     title="HTTP service in Rust on axum",

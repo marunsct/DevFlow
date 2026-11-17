@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.stacks import StackPack
 from app.stacks.packs import _python
+from app.stacks.packs import _sandbox as sandbox
 
 PYPROJECT = """[project]
 name = "{{project}}"
@@ -113,6 +114,7 @@ nothing carries between tests. To prove something persists, run the program twic
 """ + _python.NAMING + _python.SHARED_HELPERS
 
 PACK = StackPack(
+    sandbox_image=sandbox.PYTHON,
     known_errors=_python.PYTHON_KNOWN_ERRORS,
     name="python-cli",
     title="Command-line program in Python",

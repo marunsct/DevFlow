@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.stacks import StackPack
 from app.stacks.packs import _python
 from app.stacks.packs import python_http_api as fastapi
+from app.stacks.packs import _sandbox as sandbox
 
 REQUIREMENTS = """flask>=3.1
 gunicorn>=23
@@ -75,6 +76,7 @@ CMD ["sh", "-c", "exec gunicorn {{package}}.wsgi:app --bind \\"$HOST:$PORT\\""]
 """ % {"python": _python.PYTHON_VERSION}
 
 PACK = StackPack(
+    sandbox_image=sandbox.PYTHON,
     known_errors=_python.PYTHON_KNOWN_ERRORS,
     name="python-flask-api",
     title="HTTP service in Python on Flask",

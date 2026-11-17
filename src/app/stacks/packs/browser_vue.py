@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
 from app.stacks.packs._fullstack import VUE
+from app.stacks.packs import _sandbox as sandbox
 
 UNIT_SCRIPT = (
     "vitest run --reporter=default --reporter=junit --outputFile.junit=test-results/unit.xml"
@@ -98,6 +99,7 @@ a small screen, `await page.setViewportSize({ width: 375, height: 667 })`.
 
 PACK = StackPack(
     name="browser-vue",
+    sandbox_image=sandbox.NODE,
     title="Browser app in Vue and TypeScript on Vite",
     kind="browser_app",
     language="typescript",

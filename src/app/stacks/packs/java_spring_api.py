@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.stacks.packs._service import service_pack
+from app.stacks.packs import _sandbox as sandbox
 
 JAVA_VERSION = "21"
 SPRING_BOOT = "3.4.5"
@@ -132,6 +133,7 @@ ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 """ % {"java": JAVA_VERSION}
 
 PACK = service_pack(
+    sandbox_image=sandbox.JAVA,
     name="java-spring-api",
     title="HTTP service in Java on Spring Boot",
     language="java",

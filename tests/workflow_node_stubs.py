@@ -263,6 +263,55 @@ def one_sprint(goal: str = "Notes can be saved") -> Any:
     return SprintPlanOutput(sprints=[SprintDefinition(goal=goal, user_value="v")])
 
 
+FAILING_LOCKED_TESTS = [
+    ("test_ac2_saves", "AC-2: A note is saved", "assert 201 == 500"),
+    ("test_ac3_lists", "AC-3: Notes are listed", "assert [] == [note]"),
+    ("test_ac6_counts", "AC-6: The count is shown", "assert 'characters: 18' in out"),
+]
+
+
+def run_a_dispute(monkeypatch, tmp_path, *, called_wrong: list[str], pass_alone: tuple[str, ...] = (),
+                  past_the_cap: tuple[str, ...] = (), **state: Any) -> SimpleNamespace:
+    """Run `acceptance_dispute` on `FAILING_LOCKED_TESTS`; the QA lead calls `called_wrong` wrong.
+
+    Of those, `pass_alone` pass when run alone and `past_the_cap` are past the run's reclassification cap. Records
+    what each leg was asked: `.alone`, `.capped`, `.deferred`, `.reopened`, `.request_kwargs`; `.update` the return.
+    """
+    seen = SimpleNamespace(alone=[], capped=[], deferred=[], reopened=[], request_kwargs=None, update=None)
+
+    def build_dispute_request(*args, **kwargs):
+        seen.request_kwargs = kwargs
+        return {"messages": [{"role": "user", "content": "judge these"}]}
+
+    def fail_alone(root, named):
+        seen.alone.append(list(named))
+        return [n for n in named if n not in pass_alone], [n for n in named if n in pass_alone]
+
+    def within_the_cap(state, named):
+        seen.capped.append(list(named))
+        return [n for n in named if n not in past_the_cap], [n for n in named if n in past_the_cap], 1
+
+    def reopen(state, to_repair, **kwargs):
+        seen.reopened.append((list(to_repair), kwargs))
+        return {"stage": "acceptance_author"}
+
+    seen.update = run_node(monkeypatch, tmp_path, "acceptance_dispute", answer="the QA lead's ruling", overrides={
+        "app.graph.workflow._the_locked_tests_still_failing": lambda state: list(FAILING_LOCKED_TESTS),
+        "app.acceptance.suite.suite_files": lambda root: [],
+        "app.acceptance.requests.shares_one_service": lambda root: "ONE SHARED SERVICE",
+        "app.agents.suite_dispute.build_dispute_request": build_dispute_request,
+        "app.agents.suite_dispute.tests_it_names": lambda answer, names, **k: list(called_wrong),
+        "app.graph.acceptance_nodes.tests_that_fail_alone": fail_alone,
+        "app.graph.acceptance_nodes.tests_whose_service_stayed_up": lambda root, named: (list(named), []),
+        "app.graph.acceptance_nodes.by_shared_cause": lambda named, code: list(named),
+        "app.graph.acceptance_nodes.within_the_cap_by_cause": within_the_cap,
+        "app.graph.acceptance_nodes.defer_what_is_beyond_repair":
+            lambda state, beyond, why: seen.deferred.append((list(beyond), list(why))),
+        "app.graph.acceptance_nodes.reopen_the_suite_for": reopen,
+    }, **state).update
+    return seen
+
+
 def one_defect(**extra: Any) -> Any:
     from app.sprint import Defect, RemediationCycle
 

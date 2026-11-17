@@ -14,7 +14,6 @@ stay as they are, and a release names every reclassification in its gaps.
 
 from __future__ import annotations
 
-import inspect
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -149,14 +148,17 @@ def test_the_tracker_rides_the_graph_state() -> None:
     assert "suite_reclassified_tests" in workflow.WorkflowGraphState.__annotations__
 
 
-def test_the_dispute_node_uses_both_legs() -> None:
-    from app.graph import workflow
+def test_the_dispute_node_uses_both_legs(tmp_path, monkeypatch) -> None:
+    """A test called wrong is run alone first, then held to the cap, and only what is left is reclassified."""
+    from workflow_node_stubs import run_a_dispute
 
-    source = inspect.getsource(workflow)
+    seen = run_a_dispute(monkeypatch, tmp_path, called_wrong=["test_ac2_saves", "test_ac3_lists", "test_ac6_counts"],
+                         pass_alone=("test_ac3_lists",), past_the_cap=("test_ac6_counts",))
 
-    assert "tests_that_fail_alone" in source
-    assert "within_the_cap" in source
-    assert "reclassifying=True" in source
+    assert seen.alone == [["test_ac2_saves", "test_ac3_lists", "test_ac6_counts"]]
+    assert seen.capped == [["test_ac2_saves", "test_ac6_counts"]]
+    ((to_repair, how),) = seen.reopened
+    assert to_repair == ["test_ac2_saves"] and how["reclassifying"] is True
 
 
 # --- the release gap: a run that reclassified says so ----------------------

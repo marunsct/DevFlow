@@ -6,12 +6,10 @@ The suite's writer and its reviewer were told the service is shared; the judge w
 """
 from __future__ import annotations
 
-import inspect
 import re
 
 from app.acceptance.requests import shares_one_service
 from app.agents.suite_dispute import ONE_SHARED_SERVICE, build_dispute_request
-from app.graph import workflow
 from app.stacks import contract, pack_named
 
 BANNED = ("task", "tasks", "to-do", "todo", "button", "click", "checkbox")
@@ -44,11 +42,12 @@ def test_which_workspaces_share_one_service(tmp_path) -> None:
     assert shares_one_service(bare) is False
 
 
-def test_the_dispute_node_says_it() -> None:
-    source = inspect.getsource(workflow)
-    assert "shared_service=shares_one_service(root)" in source
+def test_the_dispute_node_says_it(tmp_path, monkeypatch) -> None:
+    from workflow_node_stubs import run_a_dispute
 
+    seen = run_a_dispute(monkeypatch, tmp_path, called_wrong=[])
 
+    assert seen.request_kwargs["shared_service"] == "ONE SHARED SERVICE"
 def test_the_rule_names_no_product() -> None:
     for word in BANNED:
         assert not re.search(rf"\b{re.escape(word)}\b", ONE_SHARED_SERVICE.lower()), word

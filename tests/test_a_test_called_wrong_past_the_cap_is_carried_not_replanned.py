@@ -6,8 +6,6 @@ right. The cap's own words say such a test is carried to the release; deferring 
 """
 from __future__ import annotations
 
-import inspect
-
 from app.graph import workflow
 
 
@@ -29,9 +27,20 @@ def test_the_dispute_s_repair_sentences_name_their_tests():
     assert workflow.criteria_past_the_cap(failing, said) == ["AC-4"]
 
 
-def test_the_dispute_defers_them_as_beyond_repair():
-    source = inspect.getsource(workflow)
-    at = source.index("reclassification cap; they stay as they are")
-    after = source[at:at + 1600]
-    assert "criteria_past_the_cap(failing, past_the_cap)" in after
-    assert "acceptance_nodes.defer_what_is_beyond_repair(state, beyond," in after
+def test_the_dispute_defers_them_as_beyond_repair(tmp_path, monkeypatch):
+    from workflow_node_stubs import run_a_dispute
+
+    seen = run_a_dispute(monkeypatch, tmp_path, called_wrong=["test_ac2_saves", "test_ac6_counts"],
+                         past_the_cap=("test_ac6_counts",))
+
+    ((criteria, why),) = seen.deferred
+    assert criteria == ["AC-6"]
+    assert len(why) == 1 and why[0].startswith("[AC-6] `test_ac6_counts`") and "reclassify no more tests" in why[0]
+
+
+def test_nothing_past_the_cap_defers_nothing(tmp_path, monkeypatch):
+    from workflow_node_stubs import run_a_dispute
+
+    seen = run_a_dispute(monkeypatch, tmp_path, called_wrong=["test_ac2_saves"])
+
+    assert seen.deferred == []

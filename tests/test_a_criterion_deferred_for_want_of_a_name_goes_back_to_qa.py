@@ -8,7 +8,6 @@ import inspect
 import re
 from types import SimpleNamespace
 
-from app import switches
 from app.acceptance import suite
 from app.graph import acceptance_nodes, delivery, escalation
 from app.observability import provenance
@@ -80,12 +79,3 @@ def test_a_repair_may_rename_a_test_but_not_drop_one(tmp_path):
 def test_the_prefixes_are_the_ones_the_harness_writes():
     assert "could not be made to pass after" in inspect.getsource(escalation) and suite.DEFERRED_BY_THE_HARNESS[0] == "could not be made to pass"
     assert suite.DEFERRED_BY_THE_HARNESS[1] in inspect.getsource(acceptance_nodes.defer_what_is_beyond_repair)
-
-
-def test_the_switch_is_registered_and_off():
-    # Measured on in every run since release candidate 7 and moved to the built-in fixes (LR.65): no switch.
-    from app import switches
-
-    assert "NAMING_FINDING_BEFORE_DEFERRAL" in switches.BUILT_IN and "NAMING_FINDING_BEFORE_DEFERRAL" not in switches.EXPERIMENTS
-
-

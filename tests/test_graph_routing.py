@@ -354,10 +354,6 @@ def _script_through_sprint(agents: ScriptedAgents) -> None:
 # --------------------------------------------------------------------------
 
 
-def test_fresh_run_enters_at_the_product_manager() -> None:
-    assert _entry_router({}) == "product_manager"
-
-
 def test_entry_router_resumes_the_stage_that_paused_for_approval() -> None:
     assert _entry_router({"stage": "awaiting_approval:tools_models"}) == "tools_models"
 

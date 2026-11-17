@@ -71,8 +71,7 @@ def test_a_brief_with_nothing_recorded_is_unchanged(observed) -> None:
 def test_the_transcript_reader_finds_the_last_failure(tmp_path, monkeypatch) -> None:
     from app.observability import transcript
 
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(transcript, "_DATA_DIR", None, raising=False)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))  # read at each call by `transcript_path`
     run_id = "run-test-0001"
     path = tmp_path / "transcripts" / f"{run_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -114,10 +113,7 @@ def test_no_run_id_means_no_lookup() -> None:
 
 def _transcript(tmp_path, monkeypatch, *results) -> str:
     """A run whose transcript holds `(tool, command, returncode, stdout)` results in order."""
-    from app.observability import transcript
-
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(transcript, "_DATA_DIR", None, raising=False)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))  # read at each call by `transcript_path`
     run_id = "run-test-0002"
     path = tmp_path / "transcripts" / f"{run_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)

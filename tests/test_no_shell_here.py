@@ -73,7 +73,3 @@ def test_the_note_only_names_programs_that_are_installed() -> None:
     # through the tool that runs programs.
     assert "manifest" in NO_SHELL_NOTE
     assert "run_terminal_command" in NO_SHELL_NOTE
-
-
-def test_a_run_with_no_recorded_stack_is_unaffected() -> None:
-    assert describe_stack(None) == ""

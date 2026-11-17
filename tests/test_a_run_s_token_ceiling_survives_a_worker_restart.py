@@ -18,7 +18,7 @@ from app.server import runner
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("TRANSCRIPTS_ENABLED", "true")
+    monkeypatch.setenv("RUN_TRANSCRIPT", "true")
     forget_run("run-ak")
     yield
     forget_run("run-ak")

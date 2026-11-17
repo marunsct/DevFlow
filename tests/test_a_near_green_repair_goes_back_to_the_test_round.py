@@ -59,7 +59,3 @@ def test_the_round_it_goes_back_to_has_a_plan_to_measure_against():
 def test_its_words_use_none_of_the_banned_ones():
     assert not BANNED.search(near_green_repair.SAID)
     assert not BANNED.search(acceptance_nodes.NO_NEW_PLAN)
-
-
-def test_it_is_off_in_code():
-    assert near_green_repair.ON_BY_DEFAULT is False

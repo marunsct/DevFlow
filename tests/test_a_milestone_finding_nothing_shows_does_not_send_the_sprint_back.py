@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.graph import engineering, milestone_evidence, workflow
+from app.graph import engineering, workflow
 
 SHOWN = SimpleNamespace(severity="blocking", description="[AC-5] delete answers 500", recommendation="")
 UNSHOWN = SimpleNamespace(severity="blocking", description="load_notes() raises KeyError on a record missing 'id'",
@@ -35,7 +35,3 @@ def test_off_every_blocking_finding_sends_it_back_as_before(tmp_path, monkeypatc
     monkeypatch.setenv("MILESTONE_EVIDENCE_GATE", "off")
     monkeypatch.setattr(workflow, "_findings_that_block", lambda review, root=None: list(review.findings))
     assert workflow._milestone_findings_that_block(_state(tmp_path), _review()) == [SHOWN, UNSHOWN]
-
-
-def test_the_switch_is_off_in_code():
-    assert milestone_evidence.ON_BY_DEFAULT is False

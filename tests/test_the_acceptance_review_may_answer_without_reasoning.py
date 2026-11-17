@@ -9,7 +9,6 @@ import inspect
 
 from langchain_openai import ChatOpenAI
 
-from app import switches
 from app.agents import reviews_without_reasoning
 from app.graph import acceptance_nodes
 from app.observability import provenance
@@ -17,14 +16,6 @@ from app.observability import provenance
 
 def _model():
     return ChatOpenAI(model="local-model", base_url="http://localhost:9/v1", api_key="x")
-
-
-def test_off_by_default_and_listed_as_an_efficiency_switch(monkeypatch):
-    monkeypatch.delenv("REVIEWS_WITHOUT_REASONING", raising=False)
-    assert reviews_without_reasoning.ON_BY_DEFAULT is False
-    assert switches.group_of("REVIEWS_WITHOUT_REASONING") == "Efficiency"
-    # Off in code; deployed on from 11-17 (owner: built switches on, measured against the runs before them).
-    assert "REVIEWS_WITHOUT_REASONING" in switches.EXPERIMENTS_ON
 
 
 def test_off_leaves_the_model_as_it_is(monkeypatch):

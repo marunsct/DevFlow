@@ -12,7 +12,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from app import switches
 from app.acceptance import interface_contract as ic
 from app.agents.specialists import SpecialistOutput
 from app.graph import acceptance_nodes, workflow
@@ -20,9 +19,6 @@ from app.observability import provenance
 from app.stacks import contract
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
-NEW = ["CONTRACT_PROBE_AT_LOCK", "CONTRACT_UNREAD_LINES_AT_REVIEW", "CONTRACT_NON_NUMERIC_IDS", "CONTRACT_PROBE_WITH_A_RECORD"]
-
-
 def _project(tmp_path, monkeypatch, lines, specification=None):
     monkeypatch.setattr(contract, "the_pack", lambda root: (SimpleNamespace(files={"playwright.config.js": ""}, probe_runner="playwright"), {"project": "app"}))
     (tmp_path / "app").mkdir()
@@ -189,13 +185,3 @@ def test_unread_lines_are_put_to_the_architect_s_review_behind_the_switch(monkey
 
 def test_the_review_node_asks_it():
     assert "update[\"specification_contract_lines_checked\"] = True" in inspect.getsource(workflow)
-
-
-def test_the_switches_are_registered_and_off():
-    # Measured on in every run since release candidate 7 and moved to the built-in fixes (LR.65): no switch.
-    from app import switches
-
-    for name in NEW:
-        assert name in switches.BUILT_IN and name not in switches.EXPERIMENTS
-
-

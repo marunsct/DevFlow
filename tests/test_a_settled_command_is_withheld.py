@@ -26,9 +26,11 @@ import pytest
 from app.tools.sandbox import SUCCESSES_BEFORE_WITHHOLDING
 
 
-def test_three_is_the_threshold_reads_use():
+def test_the_threshold_is_the_one_reads_use():
     """Kept in step with the read path deliberately; drifting apart is confusing."""
-    assert SUCCESSES_BEFORE_WITHHOLDING == 3
+    from app.agents.workspace_backend import READS_BEFORE_WITHHOLDING
+
+    assert SUCCESSES_BEFORE_WITHHOLDING == READS_BEFORE_WITHHOLDING
 
 
 class TestTheWithholdingIsWired:

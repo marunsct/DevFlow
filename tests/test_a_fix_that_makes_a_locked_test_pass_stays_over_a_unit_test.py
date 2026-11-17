@@ -140,15 +140,3 @@ def test_the_next_round_takes_what_was_raised_as_a_review_defect():
     source = inspect.getsource(workflow)
     assert source.count("update.update(_the_unit_tests_a_kept_fix_broke(state))") == 2, "one fix alone, and a batch"
     assert '*(state.get("review_defects") or [])' in source
-
-
-def test_the_switch_ships_off_and_is_listed():
-    # Owner, 2026-11-05: a change that affects quality is always on, with no switch.
-    from pathlib import Path
-
-    from app import switches as registry
-
-    assert "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE" in registry.BUILT_IN
-    assert "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE" not in registry.EXPERIMENTS
-    compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
-    assert "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE: " not in compose

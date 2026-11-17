@@ -115,12 +115,3 @@ def test_the_fix_stage_asks_the_finding_s_own_check():
     source = inspect.getsource(workflow)
     assert "mutant_check_in_stage.check_for(root, defect, lambda: _the_defect_s_tests_pass(root, defect))" in source
     assert "**mutant_check_in_stage.how_for(defect)" in source
-
-
-def test_the_switch_is_an_experiment_that_ships_off():
-    from app import switches
-
-    assert "MUTANT_CHECK_IN_THE_FIX_STAGE" in switches.EXPERIMENTS
-    # Off in code; deployed on from 11-17 (owner: built switches on, measured against the runs before them).
-    assert "MUTANT_CHECK_IN_THE_FIX_STAGE" in switches.EXPERIMENTS_ON
-    assert mutant_check_in_stage.ON_BY_DEFAULT is False

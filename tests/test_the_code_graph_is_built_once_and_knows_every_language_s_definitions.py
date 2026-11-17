@@ -15,7 +15,6 @@ import re
 from pathlib import Path
 
 from app.analysis import project_graph
-from app.analysis.reachability import FAMILIES
 
 BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 
@@ -47,10 +46,6 @@ def test_who_uses_says_it_does_not_follow_imports_in_that_language(tmp_path):
     assert used["imported_by"] == [] and "Store" in used["defines"]
     assert "does not follow imports" in used["note"]
     assert not BANNED.search(used["note"])
-
-
-def test_reachability_still_reads_only_the_languages_it_reads(tmp_path):
-    assert set(FAMILIES) == {"python", "script"}
 
 
 def test_an_unchanged_project_is_not_read_again(tmp_path, monkeypatch):

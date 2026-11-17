@@ -81,10 +81,9 @@ def test_measured_from_the_sprint_s_first_plan_after_the_last_sprint_ended(tmp_p
     assert sprint_time_budget.measure(state, run_id="run-x") is None
 
 
-def test_the_workflow_passes_the_measured_budget_and_it_is_off_in_code():
+def test_the_workflow_passes_the_measured_budget():
     source = inspect.getsource(workflow)
     assert "budget=sprint_time_budget.measure(state))" in source
-    assert sprint_time_budget.ON_BY_DEFAULT is False
 
 
 def test_the_words_it_writes_name_no_product_word(tmp_path):

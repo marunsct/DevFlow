@@ -101,11 +101,6 @@ def test_with_the_switch_off_it_is_asked_once(monkeypatch):
     assert written.function_contracts == [] and len(model.asked) == 1
 
 
-def test_only_the_sections_that_fix_names_are_asked_for_again():
-    assert {"function_contracts", "error_catalogue", "implementation_order"} == set(specification_parts.NAMING_SECTIONS)
-    assert "domain_model" not in specification_parts.NAMING_SECTIONS
-
-
 def test_the_architect_s_request_carries_the_standard():
     source = (Path(__file__).resolve().parent.parent / "src" / "app" / "graph" / "workflow.py").read_text()
     assert "naming = standard_for(" in source

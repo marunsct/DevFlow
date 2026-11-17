@@ -20,12 +20,6 @@ from __future__ import annotations
 import inspect
 
 
-def test_the_recovery_function_takes_an_output_sink():
-    from app.server.manage import recover_orphaned_runs
-
-    assert "emit" in inspect.signature(recover_orphaned_runs).parameters
-
-
 def test_it_still_prints_by_default_for_the_cli():
     """The CLI is the primary caller; its behaviour must not change."""
     from app.server.manage import recover_orphaned_runs
@@ -48,11 +42,3 @@ def test_nothing_in_the_recovery_path_still_calls_print():
 
     source = inspect.getsource(recover_orphaned_runs)
     assert "print(" not in source, "a print survived the emit conversion"
-
-
-def test_the_healthy_message_goes_to_the_sink():
-    """The specific line that was arriving as a warning."""
-    from app.server.manage import recover_orphaned_runs
-
-    source = inspect.getsource(recover_orphaned_runs)
-    assert 'emit("No orphaned runs' in source

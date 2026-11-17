@@ -77,11 +77,3 @@ def test_the_round_and_the_settlement_ask_it():
     assert "test_result = _with_the_contract_s_server_errors(state, test_result, milestone)" in source
     assert source.count("interface_contract.still_raised(root,") == 2
     assert "description.startswith((UNIT_TESTS_FAIL, SERVER_FAILED))" in inspect.getsource(workflow._the_suite_already_guards_it)
-
-
-def test_the_switch_is_registered_and_built_in():
-    from app import switches
-    from app.observability import provenance
-
-    assert "CONTRACT_SERVER_ERRORS_AT_A_ROUND" in provenance.SWITCHES
-    assert "CONTRACT_SERVER_ERRORS_AT_A_ROUND" in switches.BUILT_IN  # a fix: always on (owner, 2026-10-29)

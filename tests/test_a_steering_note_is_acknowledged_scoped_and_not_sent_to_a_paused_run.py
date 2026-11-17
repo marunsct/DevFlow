@@ -22,7 +22,7 @@ BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I
 @pytest.fixture(autouse=True)
 def _data(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("TRANSCRIPTS_ENABLED", "true")
+    monkeypatch.setenv("RUN_TRANSCRIPT", "true")
 
 
 def test_a_note_has_an_id_and_a_scope(tmp_path):

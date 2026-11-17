@@ -71,12 +71,11 @@ def test_off_or_before_any_revision_the_review_runs_as_before(monkeypatch, tmp_p
     assert workflow._decided_after_one_revision(_state(tmp_path, CONTRADICTORY), "x") is None
 
 
-def test_the_node_asks_the_gates_before_the_reviewer_and_it_is_off_in_code():
+def test_the_node_asks_the_gates_before_the_reviewer():
     source = inspect.getsource(workflow)
     gate = source.index("once = _decided_after_one_revision(state, spec_text)")
     reviewer = source.index("agent = create_architecture_reviewer_agent(", gate - 2000)
     assert gate < reviewer
-    assert one_design_review.ON_BY_DEFAULT is False
 
 
 def test_the_words_it_writes_name_no_product_word(monkeypatch, tmp_path):

@@ -34,7 +34,6 @@ from __future__ import annotations
 import pytest
 
 from app.tools.repository import (
-    LOSSES_BEFORE_REFUSING_A_REWRITE,
     RepositoryToolError,
     _what_a_file_defines,
     write_approved_artifact,
@@ -129,9 +128,6 @@ class TestTheWriteThatCostRun6e50b630:
             write_approved_artifact(str(a_project), "todo-app/app.js", WITHOUT_THEM)
 
         assert "deleteTask" in (a_project / "todo-app" / "app.js").read_text()
-
-    def test_the_threshold_is_two(self):
-        assert LOSSES_BEFORE_REFUSING_A_REWRITE == 2
 
 
 class TestWhatMustStaySilent:

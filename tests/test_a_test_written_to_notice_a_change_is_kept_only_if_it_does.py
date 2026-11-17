@@ -168,12 +168,3 @@ def test_the_finding_s_settlement_asks_the_retention_rule_first():
     from app.graph import workflow
 
     assert "mutation_retention.judged(" in inspect.getsource(workflow._a_mutation_finding_settled)
-
-
-def test_the_switch_is_an_experiment_that_ships_off():
-    # Measured on in every run since release candidate 7 and moved to the built-in fixes (LR.65): no switch.
-    from app import switches
-
-    assert "MUTATION_TEST_RETENTION" in switches.BUILT_IN and "MUTATION_TEST_RETENTION" not in switches.EXPERIMENTS
-
-

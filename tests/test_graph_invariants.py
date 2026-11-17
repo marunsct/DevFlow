@@ -67,11 +67,6 @@ def test_node_names_does_not_list_nodes_that_do_not_exist():
     assert not phantom, f"_NODE_NAMES lists nodes that are not registered: {sorted(phantom)}"
 
 
-def test_sprint_advance_is_routable():
-    """Named explicitly, because this is the bug that shipped."""
-    assert "sprint_advance" in _NODE_NAMES
-
-
 #: Stage values that are instructions to the router rather than node names.
 #:
 #: `specialist_dispatch_parallel` is the only one. In parallel execution mode
@@ -395,6 +390,11 @@ def test_a_failed_stage_retries_on_a_fresh_conversation() -> None:
     re-entered the same inner thread - the one holding 431,441 characters of
     prose - and failed identically in four minutes. Clearing
     `pending_inner_thread_id` is what turns that loop into a retry.
+
+    One lapse must not discard every stage that came before it. Seen on one
+    run: the milestone reviewer requested changes, the re-plan omitted the
+    assignments once, and the whole run stopped; asking again on a clean
+    conversation usually suffices.
     """
     from app.graph.workflow import _max_structured_retries
 

@@ -142,6 +142,10 @@ def test_a_file_that_feature_detects_commonjs_is_left_alone(workspace):
     on Node 20.20.2: the file loads and runs, because `typeof` on an undeclared
     identifier does not throw and the branch is simply not taken. This check
     reported it as broken until the guard was recognised.
+
+    The guard is recognised by `'undefined'`, which stripping removes: matching
+    it against stripped code made every guarded file among the stored
+    workspaces report as broken again.
     """
     guarded = (
         "export const Task = 1;\n"
@@ -209,20 +213,3 @@ def test_a_real_require_survives_the_stripping(workspace):
     })
 
     assert len(contradictions(files, root)) == 1
-
-
-def test_the_feature_detect_guard_survives_the_stripping(workspace):
-    """The guard is recognised by `'undefined'`, which stripping removes.
-
-    Matching it against stripped code made every guarded file - runs 9ff00d,
-    ae4b7 and 414a6 among the stored workspaces - report as broken again.
-    """
-    guarded = (
-        "export const Task = 1;\n"
-        "if (typeof module !== 'undefined' && module.exports) {\n"
-        "  module.exports = { Task };\n"
-        "}\n"
-    )
-    files, root = workspace({"package.json": ESM_MANIFEST, "app.js": guarded})
-
-    assert contradictions(files, root) == []

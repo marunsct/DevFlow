@@ -96,7 +96,10 @@ def test_the_project_survives_the_cut(workspace: Path) -> None:
 
 
 def test_an_unreadable_workspace_produces_no_digest_rather_than_an_error() -> None:
-    """A digest that fails a stage costs far more than the calls it saves."""
+    """A digest that fails a stage costs far more than the calls it saves.
+
+    Not there and empty are different facts; only one of them is known, so it says nothing at all.
+    """
     assert render_workspace_digest("/definitely/not/here") == ""
 
 
@@ -233,11 +236,6 @@ def test_the_sentence_goes_away_once_something_is_built(tmp_path: Path) -> None:
 
     assert "Nothing has been built yet" not in digest
     assert "todo/app.js" in digest
-
-
-def test_an_unreadable_workspace_still_says_nothing_at_all() -> None:
-    """Not there and empty are different facts; only one of them is known."""
-    assert render_workspace_digest("/definitely/not/here") == ""
 
 
 def test_documents_without_code_say_nothing_is_built_yet(tmp_path: Path) -> None:

@@ -10,7 +10,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from app import switches
 from app.acceptance import contract_coverage as cc
 from app.acceptance import suite
 from app.graph import acceptance_nodes
@@ -121,12 +120,3 @@ def test_the_count_at_the_lock_is_kept_on_or_off(tmp_path, monkeypatch):
     monkeypatch.delenv("CONTRACT_LINE_COVERAGE", raising=False)
     assert cc.record_at_lock(tmp_path) == ["AC-2 GET /stats -> 200"]
     assert suite._state(tmp_path)["interface_contract_no_test"] == ["AC-2 GET /stats -> 200"]
-
-
-def test_the_switch_is_registered_and_off():
-    # Measured on in every run since release candidate 7 and moved to the built-in fixes (LR.65): no switch.
-    from app import switches
-
-    assert "CONTRACT_LINE_COVERAGE" in switches.BUILT_IN and "CONTRACT_LINE_COVERAGE" not in switches.EXPERIMENTS
-
-

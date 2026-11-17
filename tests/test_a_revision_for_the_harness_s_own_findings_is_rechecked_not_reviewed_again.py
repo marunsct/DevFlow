@@ -8,9 +8,7 @@ from __future__ import annotations
 import inspect
 from types import SimpleNamespace
 
-from app import switches
 from app.graph import workflow
-from app.observability import provenance
 
 BRIEF = "# Notes\n\n- Notes with tags, due dates and reminders.\n"
 
@@ -37,10 +35,7 @@ def test_the_node_records_what_overturned_an_approval_and_rechecks_it_behind_the
         assert f'fired.append("{name}")' in source
 
 
-def test_off_in_code_and_registered():
-    assert workflow.harness_findings_rechecked.ON_BY_DEFAULT is False
-    assert "HARNESS_FINDINGS_RECHECKED" in provenance.SWITCHES
-    assert "HARNESS_FINDINGS_RECHECKED" in switches.GROUPS["Efficiency"]
+def test_the_state_declares_the_field_it_carries():
     assert "approved_but_for_the_harness" in workflow.WorkflowGraphState.__annotations__
 
 

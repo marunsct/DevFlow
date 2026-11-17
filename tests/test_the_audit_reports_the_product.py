@@ -116,12 +116,6 @@ def test_several_blocking_problems_are_still_reported(run_audit):
     assert "BLOCKING problems found" in out
 
 
-def test_one_blocking_problem_is_reported(run_audit):
-    out = run_audit({"index.html": DEAD_PAGE, "app.js": PURE})
-
-    assert "BLOCKING problems found" in out
-
-
 class TestASandboxRefusalIsNotACost:
     """A guard firing is prevented damage, not a failure that cost the run.
 

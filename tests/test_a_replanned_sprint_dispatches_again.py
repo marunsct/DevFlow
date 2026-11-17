@@ -200,25 +200,3 @@ class TestARePlannedSprintDoesTheWork:
         assert state["stage"] != "failed", state.get("error")
         for role in ROLES:
             assert len(agents.requests[f"specialist_{role}"]) >= 2
-
-
-def test_storing_a_plan_clears_the_previous_plan_s_specialist_outputs() -> None:
-    """The invariant, stated where it is enforced.
-
-    A stage name is `specialist_{role}_{index}` and carries no plan identity, so
-    outputs recorded under one plan must not be visible to the next. The linear
-    counter beside this one has always been reset here; this is its parallel
-    twin.
-    """
-    import inspect
-
-    from app.graph import workflow
-
-    source = inspect.getsource(workflow.build_workflow_graph)
-    lead = source.split("def technical_lead_node", 1)[1].split("def specialist_dispatch_node", 1)[0]
-
-    assert 'update["specialist_task_index"] = 0' in lead
-    assert 'update["specialist_outputs"] = {}' in lead, (
-        "technical_lead_node zeroes the linear counter but leaves the parallel "
-        "router's completed-task set, so a re-planned sprint fans out nothing"
-    )

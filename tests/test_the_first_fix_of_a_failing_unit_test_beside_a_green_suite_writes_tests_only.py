@@ -196,12 +196,3 @@ def test_the_fix_stage_is_wired_to_the_modes() -> None:
     assert "defect_fix_modes.end(config, stage_name)" in source
     assert "defect_fix_modes.briefing(state, config, defect_index)" in source
     assert "defect_fix_modes.may_write(state, config, defect, root, path)" in source
-
-
-def test_the_switch_is_an_experiment_that_ships_off():
-    # Measured on in every run since release candidate 7 and moved to the built-in fixes (LR.65): no switch.
-    from app import switches
-
-    assert "TESTS_ONLY_WRITES" in switches.BUILT_IN and "TESTS_ONLY_WRITES" not in switches.EXPERIMENTS
-
-

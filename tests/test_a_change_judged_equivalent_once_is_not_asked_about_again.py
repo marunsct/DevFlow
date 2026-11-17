@@ -130,12 +130,3 @@ def test_off_only_the_one_prefix_counts_and_nothing_is_kept_or_skipped(product, 
 def test_the_record_is_kept_beside_the_harness_s_own_files_where_git_ignores_it():
     assert mutation_equivalents.FILE.startswith(".harness/")
     assert not BANNED.search(mutation_equivalents.__doc__.split("\n\n")[0])
-
-
-def test_the_switch_is_an_experiment_that_ships_off():
-    from app import switches
-
-    assert "EQUIVALENT_MUTANTS_REMEMBERED" in switches.EXPERIMENTS
-    # Off in code; deployed on from 11-17 (owner: built switches on, measured against the runs before them).
-    assert "EQUIVALENT_MUTANTS_REMEMBERED" in switches.EXPERIMENTS_ON
-    assert mutation_equivalents.ON_BY_DEFAULT is False

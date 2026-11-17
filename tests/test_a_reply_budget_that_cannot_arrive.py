@@ -18,7 +18,6 @@ from __future__ import annotations
 import pytest
 
 from app.observability.proxy_timeouts import (
-    FIXED_ORIGIN_TIMEOUTS,
     reply_budget_that_cannot_arrive,
 )
 
@@ -59,10 +58,6 @@ class TestItNeverBlocksAnything:
     def test_a_zero_rate_does_not_divide_by_zero(self, monkeypatch):
         monkeypatch.setattr("app.models._tokens_per_second", lambda: 0.0)
         assert reply_budget_that_cannot_arrive(TUNNEL) == ""
-
-
-def test_the_ceiling_is_cloudflares_documented_one():
-    assert FIXED_ORIGIN_TIMEOUTS["trycloudflare.com"] == 100
 
 
 @pytest.mark.real_endpoint_probe

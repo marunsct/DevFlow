@@ -8,7 +8,6 @@ from __future__ import annotations
 import inspect
 import json
 import re
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -260,16 +259,6 @@ def test_the_words_of_the_rule_are_plain(tmp_path, on):
     said = specification_rulings.the_request(["F"], "S", "B") + specification_rulings.explanation + specification_rulings.HEADING
     said += the_facts_section(tmp_path).replace(SAYS_EMPTY, "").replace(SAYS_JSON, "")
     assert not BANNED.search(said)
-
-
-def test_the_switch_is_off_in_the_code_and_on_as_a_measured_arm(monkeypatch):
-    # Owner, 2026-11-05: a change that affects quality is always on, with no switch.
-    from app import switches as registry
-
-    name = "SETTLE_SPEC_CONTRADICTIONS"
-    assert name in registry.BUILT_IN and name not in registry.EXPERIMENTS
-    compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
-    assert f"{name}: " not in compose
 
 
 

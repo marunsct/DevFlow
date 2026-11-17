@@ -50,14 +50,6 @@ def _blocks(text):
     return sorted(block.strip() for block in re.split(r"(?m)^(?==== )", body) if block.startswith("=== "))
 
 
-def test_the_switch_is_off_in_code_and_says_its_words(monkeypatch):
-    monkeypatch.delenv("STABLE_MEMORY_ORDER", raising=False)
-    assert stable_memory_order.ON_BY_DEFAULT is False and not stable_memory_order.enabled()
-    monkeypatch.setenv("STABLE_MEMORY_ORDER", "on")
-    assert stable_memory_order.enabled()
-    assert not BANNED.search(stable_memory_order.SAID)
-
-
 def test_on_a_fixer_s_memory_leads_with_the_documents(tmp_path):
     root = _project(tmp_path)
     text, held = _render(root, "on", focus="Storage: notes do not survive", for_a_fixer=True)

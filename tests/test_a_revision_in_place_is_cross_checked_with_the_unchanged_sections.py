@@ -162,8 +162,7 @@ def test_a_call_that_cannot_bring_them_into_line_leaves_the_revision_as_it_was(m
     assert revised.deployment == REWRITTEN and revised.function_contracts == PREVIOUS.function_contracts
 
 
-def test_the_switch_is_off_in_code_and_its_words_are_plain():
-    assert cross.ON_BY_DEFAULT is False
+def test_its_words_are_plain():
     import inspect
 
     source = inspect.getsource(cross)

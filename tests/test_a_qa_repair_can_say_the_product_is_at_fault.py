@@ -124,15 +124,6 @@ def test_a_repair_a_harness_check_sent_does_not(root, monkeypatch, tmp_path):
     assert product_at_fault.RULE not in _reopen(monkeypatch, tmp_path, reclassifying=False)["acceptance_feedback"]
 
 
-def test_the_switch_is_a_measured_arm_and_registered():
-    # Owner, 2026-11-05: a change that affects quality is always on, with no switch.
-    from app import switches as registry
-
-    assert "QA_SAYS_THE_PRODUCT_IS_AT_FAULT" in registry.BUILT_IN and "QA_SAYS_THE_PRODUCT_IS_AT_FAULT" not in registry.EXPERIMENTS
-    compose = (Path(__file__).resolve().parent.parent / "docker-compose.yml").read_text()
-    assert f"{"QA_SAYS_THE_PRODUCT_IS_AT_FAULT"}: " not in compose
-
-
 
 def test_the_rule_bans_the_words():
     assert not _BANNED.search(product_at_fault.RULE)

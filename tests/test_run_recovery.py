@@ -642,20 +642,6 @@ def test_the_revision_request_asks_for_assignment_not_acknowledgement():
     assert "tests/filter.test.js" in content
 
 
-def test_an_unassigned_revision_retries_before_failing_the_run():
-    """One lapse must not discard every stage that came before it.
-
-    The guard is right that a change nobody owns will not be made - but failing
-    the run for a single omission throws away hours of work when asking again on
-    a clean conversation usually suffices. Seen on one run: the milestone
-    reviewer requested changes, the re-plan omitted the assignments once, and
-    the whole run stopped.
-    """
-    from app.graph.workflow import _max_structured_retries
-
-    assert _max_structured_retries() >= 1
-
-
 def test_the_retry_budget_is_shared_with_the_structured_response_retry():
     """Both remedies are the same act: abandon the conversation and ask again."""
     import inspect

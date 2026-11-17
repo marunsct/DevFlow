@@ -45,11 +45,3 @@ def test_off_it_is_refused_as_before(monkeypatch):
 def test_without_the_test_s_criterion_it_is_still_refused(monkeypatch):
     named, refused = _named(monkeypatch, True, {})
     assert named == [] and refused
-
-
-def test_the_switch_is_off_in_its_code_and_built_in():
-    """Built in since 11-13 (four right rulings refused on two runs); its code default stays off, as every switch's."""
-    from app import switches
-
-    assert sd.CRITERION_QUOTED_ON_BY_DEFAULT is False
-    assert "DISPUTE_QUOTES_THE_CRITERION" in switches.BUILT_IN

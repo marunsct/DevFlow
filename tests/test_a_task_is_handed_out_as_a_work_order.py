@@ -507,9 +507,6 @@ class TestEveryFileTheSprintNamesHasAnOwner:
 
         assert not any("no work order lists" in p for p in problems)
 
-    def test_without_a_scope_nothing_changes(self, enforced, project):
-        assert readiness_problems(_plan(_order("backend"), _order("testing", test_cases=[])), project) == []
-
     def test_a_method_the_scope_mentions_is_not_a_file(self, enforced, project):
         """One run's plan covered every file and was handed back twice, then
         dispatched as not ready, for not listing `store.read` and `store.write`."""

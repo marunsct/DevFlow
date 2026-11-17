@@ -11,7 +11,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from app import switches
 from app.acceptance import interface_contract as ic
 from app.acceptance import suite
 from app.agents.specialists import SpecialistOutput
@@ -212,12 +211,3 @@ def test_a_probe_that_cannot_run_raises_nothing(project, monkeypatch):
     def broken(*_):
         raise RuntimeError("no runner")
     assert _round(project, monkeypatch, broken).defects == []
-
-
-def test_the_switch_is_registered_and_off():
-    # Measured on in every run since release candidate 7 and moved to the built-in fixes (LR.65): no switch.
-    from app import switches
-
-    assert "CONTRACT_PROBE_WITH_A_BAD_BODY" in switches.BUILT_IN and "CONTRACT_PROBE_WITH_A_BAD_BODY" not in switches.EXPERIMENTS
-
-

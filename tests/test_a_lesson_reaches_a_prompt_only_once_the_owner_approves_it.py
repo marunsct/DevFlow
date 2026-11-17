@@ -155,7 +155,7 @@ def test_a_lesson_filed_under_the_run_s_pack_reaches_the_prompt(tmp_path, monkey
     from app.stacks import contract as _contract
 
     store = tmp_path / "lessons.json"
-    monkeypatch.setattr(_lessons, "DEFAULT_PATH", store, raising=False)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))  # the default store, `lessons.store_path()`, is `store` too
     lesson = _lessons.propose("python-http-api", "code imports a package no manifest declares",
                               "Add every package the code imports to the manifest.", 1, path=store)
     _lessons.decide(lesson["id"], True, path=store)

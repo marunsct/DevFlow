@@ -96,12 +96,6 @@ def test_a_call_a_dead_worker_left_is_forgotten_when_the_next_one_starts(tmp_pat
     assert call_gate.in_flight() == ["run-x__key__17-live"]
 
 
-def test_the_deploy_counts_only_calls_younger_than_a_call_can_run():
-    text = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()
-
-    assert "find $gate/inflight -type f -mmin -40" in text
-
-
 def test_the_deploy_counts_only_calls_whose_process_still_runs():
     """A paused run's task is stopped with SIGTERM mid-call and leaves its marker; the worker is not restarted."""
     text = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()

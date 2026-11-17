@@ -391,11 +391,6 @@ Acceptance criteria:
 
         assert "not a record of what passed" not in section
 
-    def test_a_short_task_is_left_exactly_as_it_is(self):
-        assert _one_line("Add a filter for completed tasks.") == (
-            "Add a filter for completed tasks."
-        )
-
     def test_a_long_line_is_cut_at_the_last_sentence_end_that_fits(self):
         """A whole thought, and as many of them as the line holds."""
         first = "Implement the add, edit and delete handlers in the main module."

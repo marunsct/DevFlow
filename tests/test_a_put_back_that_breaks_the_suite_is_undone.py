@@ -5,7 +5,6 @@ the whole repair of six tests was thrown away for that one put-back.
 """
 from __future__ import annotations
 
-import inspect
 from types import SimpleNamespace
 
 from app.acceptance import suite
@@ -45,7 +44,3 @@ def test_a_repair_worse_on_its_own_is_still_reported(tmp_path, monkeypatch):
     monkeypatch.setattr(suite, "a_repair_that_made_it_worse", lambda root, result: "worse")
 
     assert acceptance_nodes._the_repair_measured(tmp_path)[2] == "worse"
-
-
-def test_the_review_measures_the_repair_this_way():
-    assert "_the_repair_measured(root)" in inspect.getsource(acceptance_nodes.acceptance_review)

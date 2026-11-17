@@ -124,12 +124,3 @@ def test_the_finding_s_words_keep_to_the_rule(tmp_path, monkeypatch):
     monkeypatch.setenv("SPEC_DRY_RUN", "on")
     text = spec_dry_run.findings(_workspace(tmp_path, BROKEN))[0]
     assert not re.search(r"\b(task|tasks|to-do|todo|button|click|checkbox)\b", text, re.I)
-
-
-def test_it_is_an_experiment_that_ships_off():
-    # Measured on in every run since release candidate 7 and moved to the built-in fixes (LR.65): no switch.
-    from app import switches
-
-    assert "SPEC_DRY_RUN" in switches.BUILT_IN and "SPEC_DRY_RUN" not in switches.EXPERIMENTS
-
-

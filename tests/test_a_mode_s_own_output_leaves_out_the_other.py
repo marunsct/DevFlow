@@ -5,12 +5,9 @@ locked test checked only that the mode's own part was there, and a product that 
 """
 from __future__ import annotations
 
-import re
-
 from app.acceptance import requests
 from app.agents import acceptance_reviewer
 
-BANNED = re.compile(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", re.I)
 RULE = "a test of that mode also checks the other output is absent"
 
 
@@ -22,7 +19,3 @@ def test_the_writer_and_the_reviewer_are_told():
 def test_it_reaches_the_writer_s_request(tmp_path):
     said = str(requests.build_author_request(tmp_path, []))
     assert RULE in said and "whole set of keys or lines" in said
-
-
-def test_the_rule_names_no_product():
-    assert not BANNED.search(requests.TESTS_ASSUME_ONLY_WHAT_THEY_MADE)

@@ -172,29 +172,6 @@ def test_the_architecture_reviewer_is_not_told_to_write_a_document():
     assert "Do not write a review document" in _SYSTEM_PROMPT
 
 
-def test_a_reviewer_whose_document_is_generated_holds_no_write_tool():
-    """Telling it not to write was not enough; it kept the tool and used it.
-
-    Measured on one run: the architecture reviewer was instructed "Do not
-    write a review document", still held `write_artifact`, and wrote
-    `docs/architecture_review.md` five times in a row - printing its structured
-    response into the conversation as prose between each write and never
-    returning it - until the repeat guard stopped the stage.
-
-    Removing the instruction that used to close the prompt ("once the write is
-    confirmed, immediately return your structured response") took away the cue
-    that told it when to stop. Both halves are fixed: no write tool, and an
-    explicit instruction to return the response rather than print it.
-    """
-    import inspect
-
-    from app.agents import architecture_reviewer, milestone_reviewer
-
-    for module in (architecture_reviewer, milestone_reviewer):
-        source = inspect.getsource(module)
-        assert "can_write=False" in source, module.__name__
-
-
 def test_both_reviewers_are_told_to_return_rather_than_print():
     from app.agents.architecture_reviewer import _SYSTEM_PROMPT as arch
     from app.agents.milestone_reviewer import _SYSTEM_PROMPT as milestone
@@ -222,6 +199,15 @@ def test_every_reviewer_is_read_only():
     rendered document of its own. It had never misbehaved - neither had the
     stack selector, until one run ended at stage three when it finally
     used the tool it had always had.
+
+    Telling a reviewer not to write was not enough; it kept the tool and used
+    it. Measured on one run: the architecture reviewer was instructed "Do not
+    write a review document", still held `write_artifact`, and wrote
+    `docs/architecture_review.md` five times in a row - printing its structured
+    response into the conversation as prose between each write and never
+    returning it - until the repeat guard stopped the stage. Both halves are
+    fixed: no write tool, and an explicit instruction to return the response
+    rather than print it.
     """
     import inspect
 

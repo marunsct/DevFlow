@@ -272,7 +272,7 @@ class TestTheCostSurvivesTheProcessBoundary:
         from app.observability.cost_tracker import cost_from_transcript
 
         monkeypatch.setenv("DATA_DIR", str(tmp_path))
-        monkeypatch.setenv("TRANSCRIPTS_ENABLED", "true")
+        monkeypatch.setenv("RUN_TRANSCRIPT", "true")
         transcript_module.record(
             "run-x", "product_manager", "model_response",
             usage={"input_tokens": 1_000_000, "output_tokens": 0, "total_tokens": 1_000_000},
@@ -299,7 +299,7 @@ class TestTheCostSurvivesTheProcessBoundary:
         from app.observability.cost_tracker import cost_from_transcript
 
         monkeypatch.setenv("DATA_DIR", str(tmp_path))
-        monkeypatch.setenv("TRANSCRIPTS_ENABLED", "true")
+        monkeypatch.setenv("RUN_TRANSCRIPT", "true")
         transcript_module.record(
             "run-local-t", "product_manager", "model_response",
             usage={"input_tokens": 5_000, "output_tokens": 500, "total_tokens": 5_500},

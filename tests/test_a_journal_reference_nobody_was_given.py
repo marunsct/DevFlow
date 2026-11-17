@@ -31,17 +31,17 @@ from app.tools.agent_toolkit import _and_a_path_is_read_with_read_file
 
 class TestTheDescriptionNoLongerSuppliesOne:
     def _description(self):
+        """What the model is shown of the tool: its description and its arguments."""
+        import json
+
         from app.tools.agent_toolkit import build_journal_read_tool
 
-        import inspect
-
-        return inspect.getsource(build_journal_read_tool)
+        tool = build_journal_read_tool()
+        return tool.description + json.dumps(tool.args)
 
     def test_the_fabricated_example_is_gone(self):
         """The single most-passed value across the current generation of runs."""
-        assert "1717171717-backend-specialist-pytest-stdout-a1b2c3d4.log" not in (
-            self._description().split("# What the refusal used to be")[0]
-        )
+        assert "1717171717-backend-specialist-pytest-stdout-a1b2c3d4.log" not in self._description()
 
     def test_it_says_the_reference_cannot_be_written(self):
         assert "no way to write one" in self._description()

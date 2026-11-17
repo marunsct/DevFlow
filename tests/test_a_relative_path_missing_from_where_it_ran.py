@@ -105,10 +105,13 @@ class TestItStaysQuiet:
         assert note({"stderr": stderr}, workspace, None) == ""
 
 
-def test_it_is_attached_to_a_command_s_result():
+def test_it_is_attached_to_a_command_s_result(workspace, monkeypatch):
     """Defined and called: a note nothing calls helps nobody."""
-    import inspect
+    from app.tools.sandbox import SandboxExecutor
 
-    from app.tools import sandbox
+    monkeypatch.setattr(SandboxExecutor, "_run", classmethod(
+        lambda cls, *a, **k: {"returncode": "1", "stdout": "", "stderr": NODE_ENOENT}))
 
-    assert inspect.getsource(sandbox).count("_a_relative_path_missing_from_where_it_ran(") == 2
+    outcome = SandboxExecutor.execute(["node", "todo-list/validate.mjs"], str(workspace), "ui_ux_specialist")
+
+    assert "It is at 'todo-list/style.css'" in str(outcome)

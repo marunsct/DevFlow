@@ -8,11 +8,12 @@ ran out of its budget reading.
 """
 from __future__ import annotations
 
+from unittest import mock
+
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import BaseModel
 
 from app.agents.settled_answer import READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL, build_settled_answer_middleware
-from app.agents.workspace_backend import READ_WITHHELD_MARKER
 
 
 class Verdict(BaseModel):
@@ -39,14 +40,25 @@ class _Request:
 
 
 def _held_back(times):
+    """A stage that read one unchanged file until the backend held its content back `times` times."""
+    import tempfile
+    from pathlib import Path
+
+    from app.agents import stage_memory
+    from app.agents.workspace_backend import READS_BEFORE_WITHHOLDING, WorkspaceBackend
+
+    stage_memory.forget_everything()
+    root = tempfile.mkdtemp()
+    (Path(root) / "app.py").write_text("value = 1\n")
+    backend = WorkspaceBackend(root_dir=root, virtual_mode=True)
+    with mock.patch.object(stage_memory, "current_stage_key", lambda: ("t-1", "defect_fix_1_2")):
+        answers = [backend.read("/app.py") for _ in range(READS_BEFORE_WITHHOLDING + times)]
+    stage_memory.forget_everything()
     messages = [HumanMessage(content="fix it")]
-    for i in range(times):
+    for i, answer in enumerate(answers[-times:] if times else []):
+        content = ((getattr(answer, "file_data", None) or {}).get("content") or "") + (getattr(answer, "error", None) or "")
         messages.append(AIMessage(content="", id=f"a{i}"))
-        messages.append(ToolMessage(
-            content=f"[This file {READ_WITHHELD_MARKER} {i + 3} times in this stage and has not "
-                    "changed once. The content is not repeated here.]",
-            tool_call_id=f"c{i}",
-        ))
+        messages.append(ToolMessage(content=content, tool_call_id=f"c{i}"))
     messages.append(AIMessage(content="reading again", id="last"))
     return messages
 
@@ -68,11 +80,3 @@ def test_reads_held_back_as_repeats_take_the_read_tool_away(monkeypatch):
 
 def test_fewer_than_the_threshold_keep_it():
     assert "read_file" in _kept(_held_back(READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL - 1))
-
-
-def test_the_backend_s_message_carries_the_marker():
-    import inspect
-
-    from app.agents import workspace_backend
-
-    assert "{READ_WITHHELD_MARKER}" in inspect.getsource(workspace_backend)

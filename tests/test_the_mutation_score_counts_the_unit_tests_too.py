@@ -69,7 +69,9 @@ def test_a_socket_a_toolchain_left_in_the_workspace_does_not_stop_the_probe(tmp_
     mutate = _mutate_module()
     (tmp_path / "ws" / ".agent-home" / "tmp").mkdir(parents=True)
     held = socket.socket(socket.AF_UNIX)
-    held.bind(str(tmp_path / "ws" / ".agent-home" / "tmp" / "diagnostic-socket"))
+    monkeypatch.chdir(tmp_path / "ws" / ".agent-home" / "tmp")
+    held.bind("diagnostic-socket")  # relative: a socket's path is limited to 108 characters
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("app.stacks.contract.the_pack", lambda root: None)
     monkeypatch.setattr("app.acceptance.suite.location", lambda root: ("",))
     monkeypatch.setattr("app.acceptance.suite.run", lambda root, save=False: _result())

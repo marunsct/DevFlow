@@ -117,6 +117,11 @@ AXUM_KNOWN_ERRORS = {
         "already given it away: build it again with `app()` for each request (or send the first through "
         "`.clone()`)."
     ) for phrase in ("use of moved value: `app`", "use of moved value: `router`")},
+    "in the crate root": (
+        "a module the code names is not declared where the crate starts: every file under `src/` that another uses "
+        "must be named once in `src/lib.rs` with `pub mod <name>;` (for `src/<name>.rs`), and `main.rs` reaches it "
+        "through the crate's name, never with its own `mod <name>;`."
+    ),
     "could not find `test` in `axum`": (
         "axum has no `test` module and no test client: a test sends a request with `tower::ServiceExt::oneshot`, "
         "importing `axum::body::Body`, `axum::http::{Request, StatusCode}`, `http_body_util::BodyExt` and "

@@ -20,7 +20,8 @@ const settings = {
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock('../api', () => ({
-  api: { get, post: vi.fn(async () => ({ data: {} })), put: vi.fn(async () => ({ data: {} })), patch: vi.fn(async () => ({ data: {} })) },
+  api: { get, post: vi.fn(async () => ({ data: {} })), put: vi.fn(async () => ({ data: {} })), patch: vi.fn(async () => ({ data: {} })),
+         delete: vi.fn(async () => ({ data: {} })) },
   saveLocalModelSettings: vi.fn(), saveFrontierModelSettings: vi.fn(),
 }));
 
@@ -64,5 +65,35 @@ describe('Settings', () => {
     await userEvent.click(screen.getByRole('button', { name: /Save Local Model/ }));
 
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ execution_mode: 'parallel' }));
+  });
+
+  it('puts the active frontier model back in the form after a saved one is deleted, so a save cannot restore it', async () => {
+    // Found by the owner: choosing a saved frontier model to delete it filled the form with it, and the next save
+    // brought it back as the active model.
+    let deleted = false;
+    const active = { ...settings, judgement_provider: 'anthropic', judgement_model_name: 'claude-haiku-5-5' };
+    const saved = { id: 'p1', label: 'old-frontier (local)', target: 'frontier', judgement_model_name: 'old-frontier' };
+    get.mockImplementation(async (url: string) => {
+      if (url === '/settings') return { data: active };
+      if (url === '/auth/me') return { data: { username: 'admin', role: 'admin' } };
+      if (url.startsWith('/lessons')) return { data: { lessons: [] } };
+      if (url === '/settings/models?target=frontier') return { data: deleted ? [] : [saved] };
+      return { data: [] };
+    });
+    vi.mocked(api.api.delete).mockImplementation(async () => { deleted = true; return { data: {} } as never; });
+    render(<MemoryRouter><FeedbackProvider><Settings /></FeedbackProvider></MemoryRouter>);
+
+    const list = await screen.findByLabelText('Saved Frontier Models');
+    await screen.findByRole('option', { name: /old-frontier/ });
+    await userEvent.selectOptions(list, 'p1');
+    expect(screen.getAllByLabelText('Model name').some(f => (f as HTMLInputElement).value === 'old-frontier')).toBe(true);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove this saved frontier model' }));
+
+    await vi.waitFor(() => {
+      const values = screen.getAllByLabelText('Model name').map(f => (f as HTMLInputElement).value);
+      expect(values).toContain('claude-haiku-5-5');
+      expect(values).not.toContain('old-frontier');
+    });
   });
 });

@@ -187,12 +187,19 @@ export const Settings: React.FC = () => {
     setMessage('Frontier model cleared (No model selected). Click "Save Frontier Model" to apply.');
   };
 
+  /** The form back to what is active: choosing a saved model to delete it filled the form with it, and a save after
+   *  the delete brought it back - and made it the active model. */
+  const reloadActiveSettings = () => {
+    api.get('/settings').then(res => setSettings(res.data)).catch(() => {});
+  };
+
   const forgetLocalProfile = async () => {
     if (!chosenLocalProfile) return;
     try {
       await api.delete(`/settings/models/${chosenLocalProfile}`);
       setChosenLocalProfile('');
       loadProfiles();
+      reloadActiveSettings();
       setMessage('Saved local model removed.');
     } catch (err: any) {
       setMessage(err.response?.data?.detail ?? 'Could not remove the saved model.');
@@ -205,6 +212,7 @@ export const Settings: React.FC = () => {
       await api.delete(`/settings/models/${chosenFrontierProfile}`);
       setChosenFrontierProfile('');
       loadProfiles();
+      reloadActiveSettings();
       setMessage('Saved frontier model removed.');
     } catch (err: any) {
       setMessage(err.response?.data?.detail ?? 'Could not remove the saved model.');

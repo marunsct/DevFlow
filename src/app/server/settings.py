@@ -468,9 +468,10 @@ async def update_settings(
     try:
         from app.server import model_profiles
 
+        # The build model only: the frontier model's own save remembers it (`/api/settings/frontier`). Found by the
+        # owner: a saved frontier model deleted from the list came straight back at the next local save, which sent
+        # the frontier fields still in the form - labelled with the build model's provider ("claude-haiku-5-5 (local)").
         model_profiles.remember(payload.model_dump(), target="build", actor=user.username)
-        if payload.judgement_model_name and payload.judgement_model_name.strip():
-            model_profiles.remember(payload.model_dump(), target="frontier", actor=user.username)
     except Exception:  # noqa: BLE001 - the applied settings stand either way
         logger.warning("Could not remember the model configuration", exc_info=True)
 

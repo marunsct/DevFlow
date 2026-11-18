@@ -185,3 +185,19 @@ def test_selecting_no_model_for_frontier_disables_it(client) -> None:
     assert view2["judgement_provider"] == ""
     assert view2["judgement_base_url"] == ""
 
+
+
+def test_saving_the_local_model_does_not_bring_back_a_deleted_frontier_model(client) -> None:
+    """Found by the owner: a saved frontier model deleted from the list came back at the next local save."""
+    assert client.put("/api/settings/frontier", json={
+        "judgement_provider": "openai", "judgement_base_url": "https://api.openai.com/v1",
+        "judgement_model_name": "gpt-4o", "judgement_context_window": 128000, "judgement_max_output_tokens": 16000,
+    }).status_code == 200
+    [saved] = client.get("/api/settings/models?target=frontier").json()
+    assert client.delete(f"/api/settings/models/{saved['id']}").status_code == 204
+
+    # The local save sends whatever frontier fields the form still holds.
+    assert client.put("/api/settings", json={**GPT, "judgement_model_name": "gpt-4o",
+                                             "judgement_provider": ""}).status_code == 200
+
+    assert client.get("/api/settings/models?target=frontier").json() == []

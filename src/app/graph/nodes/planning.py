@@ -85,7 +85,15 @@ def product_manager_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     record_the_move(state, update)
 
     # After product manager finishes, optionally route to review
-    next_stage = "user_review_product_intake" if _review_enabled(state, PRODUCT_INTAKE_REVIEW) else "tools_models"
+    # Or, with `INTAKE_ASKS_FIRST`, when the intake has questions and a person answers this run (deep review C8).
+    from app.graph.workflow import APP_RUN_ID_KEY
+
+    waits = assumptions.waits_for_answers(
+        getattr(update["product_intake"], "open_questions", None),
+        assumptions.asking() and assumptions.a_person_answers(config["configurable"].get(APP_RUN_ID_KEY)),
+    )
+    next_stage = ("user_review_product_intake" if _review_enabled(state, PRODUCT_INTAKE_REVIEW) or waits
+                  else "tools_models")
     update["stage"] = next_stage
     return update
 

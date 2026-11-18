@@ -175,7 +175,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # What a stack's setup stage may write (docs/measuring.md M6): measured off and on before it is kept.
     "Setup scope": ("SETUP_SCOPE_GUARD",),
     # Which review findings may send a sprint back (docs/measuring.md M7).
-    "Review gates": ("MILESTONE_EVIDENCE_GATE", "DESIGN_REVISION_CROSS_CHECKED"),
+    "Review gates": ("MILESTONE_EVIDENCE_GATE", "DESIGN_REVISION_CROSS_CHECKED", "INTAKE_ASKS_FIRST"),
     # Contract probes the release adds to a green round: what a product must survive that no locked test asks.
     "Contract probes": ("CONCURRENT_WRITE_PROBE", "WRONG_SHAPE_BODY_PROBE"),
 }
@@ -211,6 +211,7 @@ EXPERIMENTS_ON: dict[str, str] = {
     "LEAN_TOOL_LISTS": "deep review 2026-11-18 (C5): five tools never or almost never called in about 3,500 offers each over 30 runs; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "SLICED_MEMORY": "deep review 2026-11-18 (C3): fixers averaged 164k characters a request and builders 269k, most of it project memory; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "LEAN_PROMPTS_FOR_STRONG_MODELS": "deep review 2026-11-18 (C7): acts only for a model the diagnosis measured strong, which the local models are not; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "INTAKE_ASKS_FIRST": "deep review 2026-11-18 (C8): an earlier audit traced all four false acceptances it found to an intake or a specification that overrode the brief; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
 }
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}
 

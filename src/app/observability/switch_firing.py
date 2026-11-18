@@ -21,6 +21,7 @@ SIGNALS: dict[str, str] = {
     "STABLE_MEMORY_ORDER": "The documents that hold for every fix come first, the code after them",
     "LEAN_TOOL_LISTS": "so no file listing or search is offered",
     "SLICED_MEMORY": "the files this request names and the files they import",
+    "INTAKE_ASKS_FIRST": "only those whose answer would change what the product does",
     "NEAR_GREEN_REPAIR_TO_ROUND": "the repaired suite is near green, so the sprint is measured again in a test round instead of planned again",
     "FIX_STAGES_THAT_CLOSE_NOTHING": "a fix round closed no defect and left the product unchanged, so the attempt ends instead of another round",
     "DESIGN_REVISION_CROSS_CHECKED": "Cross-checked against the sections left unchanged",

@@ -92,6 +92,7 @@ SWITCHES: dict[str, str] = {
     "LEAN_TOOL_LISTS": "app.agents.stage_tools:lean_tool_lists_switch",
     "SLICED_MEMORY": "app.agents.memory_slices:sliced_memory_switch",
     "LEAN_PROMPTS_FOR_STRONG_MODELS": "app.agents.lean_prompts:lean_prompts_switch",
+    "INTAKE_ASKS_FIRST": "app.agents.assumptions:intake_asks_first_switch",
     "REASONING_KEPT_AFTER_AN_ANSWER": "app.models.reasoning_kept:reasoning_kept_switch",
     "NAMED_TEST_REWRITE": "app.graph.rewritten_tests:named_test_rewrite_switch",
     "TESTS_ONLY_WRITES": "app.tools.tests_only_writes",

@@ -84,6 +84,13 @@ def _outline(lines: list[str]) -> list[tuple[int, str]]:
     return found
 
 
+def outline(text: str) -> str:
+    """A file's definitions, one `line: definition` each and at most `MOST_OUTLINE_LINES`; "" when it has none."""
+    found = _outline(text.splitlines())
+    listed = "\n".join(f"{number}: {line}" for number, line in found[:MOST_OUTLINE_LINES])
+    return listed + (f"\n(and {len(found) - MOST_OUTLINE_LINES} more)" if len(found) > MOST_OUTLINE_LINES else "")
+
+
 def _lines_the_failure_names(path: str, failure: str) -> list[int]:
     """Line numbers the failure text gives for this file, in any of the usual frame shapes."""
     name = re.escape(path.rsplit("/", 1)[-1])

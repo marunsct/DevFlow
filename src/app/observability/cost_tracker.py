@@ -44,7 +44,7 @@ from langchain_core.outputs import LLMResult
 logger = logging.getLogger(__name__)
 
 
-PRICES_AS_OF = "2026-05"
+PRICES_AS_OF = "2026-11"
 """The month the rates below were current.
 
 Stated because a price table with no date cannot be audited: a reader has no
@@ -58,12 +58,17 @@ class Price:
 
     input_usd_per_mtok: float
     output_usd_per_mtok: float
+    #: A higher rate for a request whose prompt is longer than `long_prompt_tokens` (0: one rate for every length).
+    #: Claude Haiku 5.5 is priced this way: $0.10 / $0.50 up to 100K prompt tokens, $0.50 / $2.50 beyond.
+    long_prompt_tokens: int = 0
+    long_input_usd_per_mtok: float = 0.0
+    long_output_usd_per_mtok: float = 0.0
 
     def usd_for(self, prompt_tokens: int, completion_tokens: int) -> float:
-        return (
-            prompt_tokens * self.input_usd_per_mtok
-            + completion_tokens * self.output_usd_per_mtok
-        ) / 1_000_000
+        long = self.long_prompt_tokens and prompt_tokens > self.long_prompt_tokens
+        rate_in = self.long_input_usd_per_mtok if long else self.input_usd_per_mtok
+        rate_out = self.long_output_usd_per_mtok if long else self.output_usd_per_mtok
+        return (prompt_tokens * rate_in + completion_tokens * rate_out) / 1_000_000
 
 
 #: List prices per million tokens, keyed by the model id the provider reports.
@@ -74,7 +79,22 @@ class Price:
 #: stamp. A model that matches nothing here is counted as unpriced; it is not
 #: charged at a neighbour's rate.
 PRICES: dict[str, Price] = {
-    # Anthropic
+    # Anthropic. The current models first-party, as of 2026-11 (longest prefix wins, so `claude-opus-4-8` is not
+    # charged at the old `claude-opus-4` rate). Cache reads and writes are charged at the input rate here: an
+    # over-estimate, which is the safe side for a ceiling.
+    "claude-fable-5-2": Price(8.00, 40.00),
+    "claude-fable-5-1": Price(10.00, 50.00),
+    "claude-fable-5": Price(10.00, 50.00),
+    "claude-opus-5-5": Price(4.00, 20.00),
+    "claude-opus-5": Price(5.00, 25.00),
+    "claude-opus-4-8": Price(5.00, 25.00),
+    "claude-opus-4-7": Price(5.00, 25.00),
+    "claude-opus-4-6": Price(5.00, 25.00),
+    "claude-sonnet-5-5": Price(2.00, 10.00),
+    "claude-sonnet-5": Price(2.00, 10.00),
+    "claude-sonnet-4-6": Price(3.00, 15.00),
+    "claude-haiku-5-5": Price(0.10, 0.50, long_prompt_tokens=100_000,
+                              long_input_usd_per_mtok=0.50, long_output_usd_per_mtok=2.50),
     "claude-opus-4": Price(15.00, 75.00),
     "claude-sonnet-4": Price(3.00, 15.00),
     "claude-haiku-4-5": Price(1.00, 5.00),

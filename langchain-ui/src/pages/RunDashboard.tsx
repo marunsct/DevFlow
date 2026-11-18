@@ -144,7 +144,8 @@ export const RunDashboard: React.FC = () => {
   const [doctorOpen, setDoctorOpen] = useState(false);
   const unfinished = run?.status === 'failed' || run?.status === 'cancelled';
   useEffect(() => {
-    if (!unfinished || !runId) { setBestAttempt(null); return; }
+    // Shown only while `unfinished`, so a summary read earlier needs no clearing here.
+    if (!unfinished || !runId) return;
     let current = true;
     getProductSummary(runId).then((found) => current && setBestAttempt(found)).catch(() => current && setBestAttempt(null));
     return () => { current = false; };

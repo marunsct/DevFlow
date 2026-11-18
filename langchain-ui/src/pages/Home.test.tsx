@@ -10,6 +10,7 @@ const { mocks } = vi.hoisted(() => ({
     startRun: vi.fn(async () => ({})),
     deleteRun: vi.fn(async () => ({})),
     uploadCodebase: vi.fn(async () => ({})),
+    getOperatorHealth: vi.fn(async () => ({ runs: { waiting: [] as unknown[] } })),
     getOutcomes: vi.fn(async () => ({ runs: [], forecast: {} })),
     getFrontierStatus: vi.fn(async () => ({ configured: true, active: true, model: 'claude-x', provider: 'anthropic', problem: null as string | null })),
     previewBrief: vi.fn(async () => ({ criteria: [{ id: 'AC-1', text: 'Add a note' }, { id: 'AC-2', text: 'Delete a note' }], from_brief: true })),
@@ -94,6 +95,21 @@ describe('starting a build', () => {
 
     await waitFor(() => expect(mocks.deleteRun).toHaveBeenCalledWith('run-new'));
     expect(await screen.findByText('the worker is down')).toBeTruthy();
+  });
+});
+
+// Deep review 2026-11-18, F5: a run that waited for a worker said nothing of the runs ahead of it.
+describe('runs waiting for a worker', () => {
+  it('lists each waiting run in its place', async () => {
+    mocks.getOperatorHealth.mockResolvedValueOnce({ runs: { waiting: [
+      { run_id: 'run-aaaaaaaaaaaa1', name: 'first', since: '', minutes: 20, position: 1 },
+      { run_id: 'run-bbbbbbbbbbbb2', name: '', since: '', minutes: 5, position: 2 },
+    ] } });
+    show();
+    const queue = await screen.findByTestId('queue');
+    expect(queue.textContent).toContain('2 runs wait for a worker');
+    expect(Array.from(queue.querySelectorAll('li')).map((li) => li.textContent)).toEqual(
+      ['first, waiting 20 min', 'run-bbbbbbbb, waiting 5 min']);
   });
 });
 

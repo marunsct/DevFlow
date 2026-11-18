@@ -4321,6 +4321,35 @@
     ]
    }
   },
+  "/api/health/operator": {
+   "get": {
+    "description": "The host at a glance (deep review F5): disk, database, runs running and waiting, the model server, the newest\nbackup, the version. Read-only; never a model call.",
+    "operationId": "health_operator_api_health_operator_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Health Operator Api Health Operator Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Health Operator",
+    "tags": [
+     "health"
+    ]
+   }
+  },
   "/api/health/ready": {
    "get": {
     "description": "Readiness: every dependency this app needs is reachable.\n\nSplit from liveness so a transient database blip restarts nothing; each\ncheck runs off the event loop, because psycopg2 and Celery control calls\nare both blocking.",

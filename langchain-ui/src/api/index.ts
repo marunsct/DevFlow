@@ -443,6 +443,32 @@ export const downloadTranscript = async (runId: string): Promise<void> => {
   }
 };
 
+/** One part of the host's health (deep review F5). */
+export interface HealthPart {
+  status: 'ok' | 'warn' | 'fail' | 'unknown';
+  said: string;
+  [detail: string]: unknown;
+}
+
+export interface WaitingRun { run_id: string; name: string; since: string; minutes: number; position: number }
+
+/** The host at a glance: disk, database, runs, model server, backup, version (F5). Operators only. */
+export interface OperatorHealth {
+  status: HealthPart['status'];
+  checked_at: string;
+  version: string;
+  disk: HealthPart;
+  database: HealthPart;
+  runs: HealthPart & { running?: string[]; waiting?: WaitingRun[]; limit?: number | null; broker_queue?: number | null };
+  model: HealthPart;
+  backup: HealthPart;
+}
+
+export const getOperatorHealth = async (): Promise<OperatorHealth> => {
+  const response = await api.get<OperatorHealth>('/health/operator');
+  return response.data;
+};
+
 /** The run doctor's account of a run (deep review F1): read-only, from its records. */
 export interface RunDoctorReport {
   status: string;

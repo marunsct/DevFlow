@@ -168,7 +168,7 @@ def create_app(
 
     from fastapi import Depends
 
-    from app.server.auth import auth_router, get_current_active_user, require_admin
+    from app.server.auth import auth_router, get_current_active_user, require_admin, require_operator
     from app.server.settings import settings_router
     from app.server.lessons_api import lessons_router
 
@@ -286,6 +286,74 @@ def create_app(
         except Exception:  # noqa: BLE001 - the start decides as before
             reason = None
         return {"ready": reason is None, "reason": reason or ""}
+
+    @application.get("/api/health/operator", tags=["health"])
+    async def health_operator(user: Any = Depends(require_operator)) -> dict[str, Any]:
+        """The host at a glance (deep review F5): disk, database, runs running and waiting, the model server, the newest
+        backup, the version. Read-only; never a model call."""
+        from datetime import datetime, timezone
+
+        from starlette.concurrency import run_in_threadpool
+
+        from app.observability.provenance import harness_commit
+        from app.server import operator_health as oh
+        from app.server.stall_notices import last_activity
+
+        now = datetime.now(timezone.utc)
+        parts: dict[str, dict[str, Any]] = {}
+        parts["disk"] = await run_in_threadpool(oh.disk, oh.data_directory())
+
+        def _check_db() -> None:
+            from app.server.auth import get_db_connection
+
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+
+        try:
+            await run_in_threadpool(_check_db)
+            parts["database"] = {"status": oh.OK, "said": "The database answers."}
+        except Exception as error:  # noqa: BLE001
+            parts["database"] = {"status": oh.FAIL, "said": f"The database does not answer ({type(error).__name__})."}
+
+        records: list[Any] = []
+        try:
+            tenant = None if getattr(user, "role", "") == "admin" else getattr(user, "tenant_id", None)
+            records = await run_in_threadpool(runner.run_store.list_all, tenant_id=tenant, limit=200, offset=0)
+        except Exception:  # noqa: BLE001 - the runs part says it could not read them
+            parts["runs"] = {"status": oh.UNKNOWN, "said": "The runs could not be read."}
+        if "runs" not in parts:
+            from app.server.runner import _max_concurrent_runs
+
+            waiting = await run_in_threadpool(oh.waiting_runs, records, last_activity, now)
+            running = [r.run_id for r in records if r.status == "running" and r.run_id not in {w["run_id"] for w in waiting}]
+            broker = None
+            try:
+                from app.server.redis_client import get_async_redis_client
+
+                broker = int(await get_async_redis_client().llen("celery"))
+            except Exception:  # noqa: BLE001 - the count without the broker's queue
+                broker = None
+            limit = _max_concurrent_runs() or None
+            parts["runs"] = {"status": oh.OK, "running": running, "waiting": waiting, "limit": limit,
+                             "broker_queue": broker,
+                             "said": f"{len(running)} running" + (f" of {limit} slots" if limit else "")
+                             + (f", {len(waiting)} waiting for a worker." if waiting else ".")}
+
+        try:
+            from app.server.server_health import read_server_health
+
+            server = await run_in_threadpool(read_server_health, parts["runs"].get("running", []))
+            parts["model"] = ({"status": oh.OK, "said": "The model is a hosted API: no server of its own to check."}
+                              if server.hosted else
+                              {"status": oh.OK if server.answered else oh.FAIL, "model": server.model,
+                               "said": f"The model server answers ({server.model})." if server.answered
+                               else "The model server does not answer its status request."})
+        except Exception:  # noqa: BLE001
+            parts["model"] = {"status": oh.UNKNOWN, "said": "The model server's status could not be read."}
+
+        parts["backup"] = await run_in_threadpool(oh.newest_backup, os.environ.get("BACKUP_DIR", "").strip(), now)
+        return {"status": oh.overall(parts), "checked_at": now.isoformat(), "version": harness_commit(), **parts}
 
     @application.get("/api/support-matrix", tags=["health"])
     async def support_matrix_table(_: Any = Depends(get_current_active_user)) -> dict[str, Any]:

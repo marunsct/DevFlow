@@ -2,7 +2,7 @@ import { browserCanNotify, wantNotifications } from '../lib/notify';
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen } from 'lucide-react';
-import { api, createRun, deleteRun, startRun, getFrontierStatus, getOutcomes, uploadCodebase, type FrontierStatus, type RunForecast } from '../api';
+import { api, createRun, deleteRun, startRun, getFrontierStatus, getOperatorHealth, getOutcomes, uploadCodebase, type FrontierStatus, type RunForecast, type WaitingRun } from '../api';
 import { Link } from 'react-router-dom';
 import { typicalTime } from '../lib/runSummary';
 import { describeServer, holdingTheModel, useServerHealth } from '../lib/serverHealth';
@@ -141,6 +141,13 @@ export const Home: React.FC = () => {
   const navigate = useNavigate();
   const health = useServerHealth();
   const holder = holdingTheModel(health);
+  // F5: runs that wait for a worker, each with its place; a run started now joins the end.
+  const [waiting, setWaiting] = useState<WaitingRun[]>([]);
+  useEffect(() => {
+    let live = true;
+    getOperatorHealth().then((found) => live && setWaiting(found.runs?.waiting ?? [])).catch(() => undefined);
+    return () => { live = false; };
+  }, []);
   // The brief as text, beside or instead of its files (plan BG.10); kept as a
   // draft in this browser until a run starts from it.
   const [briefText, setBriefText] = useState<string>(readDraft);
@@ -377,6 +384,18 @@ export const Home: React.FC = () => {
           </p>
         )}
         <p className="mt-1 text-sm text-text-secondary">Describe what to build, choose how it runs, and start it.</p>
+        {waiting.length > 0 && (
+          <div role="status" className="mt-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning" data-testid="queue">
+            {waiting.length} run{waiting.length === 1 ? ' waits' : 's wait'} for a worker, in this order; a run started now waits behind them:
+            <ol className="mt-1 list-decimal pl-5">
+              {waiting.map((run) => (
+                <li key={run.run_id}>
+                  <Link to={`/runs/${run.run_id}`} className="underline">{run.name || run.run_id.slice(0, 12)}</Link>, waiting {run.minutes} min
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
         {holder && (
           <p role="status" className="mt-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
             The model serves one request at a time and {holder} is on it: a run started now waits for it to free the model.

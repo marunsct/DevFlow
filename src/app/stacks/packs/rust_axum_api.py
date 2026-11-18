@@ -320,9 +320,13 @@ PACK = service_pack(
     smoke_unit=("tests/scaffold_smoke.rs", SMOKE_UNIT),
     guide=GUIDE,
     design_facts=(
-        "`src/lib.rs`'s `pub fn app() -> Router` builds its own state and applies it inside with "
-        "`.with_state(state)`; `main.rs` and the tests use `app()` as it is and never apply state themselves. "
-        "Never `Router<AppState>`: `axum::serve` cannot serve it.",
+        # Measured on Rust runs: `app()` declared `-> Router<AppState>`, which `axum::serve` cannot serve; and the
+        # specification planned unit tests on "axum's TestClient", from the model's own memory - the builders' guide
+        # says there is no `axum::test`, but the stages writing the specification never read it.
+        "`src/lib.rs`'s `pub fn app() -> Router` applies its own state inside with `.with_state(state)`; `main.rs` and "
+        "the unit tests use `app()` as it is and never apply state themselves, the tests through "
+        "`tower::ServiceExt::oneshot`. Never "
+        "`Router<AppState>`: `axum::serve` cannot serve it. axum has no `axum::test` module and no `TestClient`.",
     ),
     stack={
         "language": "Rust",

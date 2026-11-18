@@ -15,7 +15,8 @@ be right.
 
 The compiler is the project's own when it has one (`node_modules/typescript`
 above the file), so the syntax accepted is the syntax that project's build
-accepts; otherwise the one installed beside Node. With neither, this says
+accepts; otherwise the one installed beside Node. In container mode it is always
+the one beside Node: the project's would be the project's code run in the worker. With neither, this says
 nothing, and the grammar's reading is offered as a note instead.
 """
 
@@ -77,8 +78,16 @@ def _beside_node() -> str | None:
 
 
 def compiler_for(path: Path | None) -> str | None:
-    """The TypeScript package to parse `path` with: the project's, else the global one."""
-    if path is not None:
+    """The TypeScript package to parse `path` with: the project's, else the global one.
+
+    In container mode only the global one (deep review 2026-11-18, item E1a): loading a package is running its code,
+    `node_modules` is the project's to write, and this runs in the worker on every write, where no command's own
+    container is there to hold it. The syntax the project's version accepts may differ a little; a check that cannot
+    load a compiler says nothing, as before.
+    """
+    from app.tools.sandbox import product_code_runs_in_its_own_container
+
+    if path is not None and not product_code_runs_in_its_own_container():
         for directory in (path.parent, *list(path.parent.parents)[:6]):
             candidate = directory / "node_modules" / "typescript"
             try:

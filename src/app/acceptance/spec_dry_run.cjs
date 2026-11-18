@@ -12,7 +12,9 @@ const fs = require('node:fs');
 const EventEmitter = require('node:events');
 const childProcess = require('node:child_process');
 
-const [suiteDir, reportFile, ...specs] = process.argv.slice(2);
+const [suiteArgument, reportFile, ...specs] = process.argv.slice(2);
+// Absolute: a stack frame names its file absolutely, and the sandbox gives the folder relative to where it runs.
+const suiteDir = path.resolve(suiteArgument);
 const PER_TEST_MS = 3000;
 const report = { files: 0, tests: 0, findings: [], inconclusive: [] };
 const saveReport = () => fs.writeFileSync(reportFile, JSON.stringify(report));

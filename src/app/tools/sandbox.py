@@ -716,7 +716,8 @@ MAX_OUTPUT_SIZE = _max_output_size()
 
 #: `start` is the harness's own short start of the product, to read what it writes (`acceptance.start_output`): a
 #: service never exits by itself, so this limit is what ends it.
-TIMEOUTS = {"install": 300, "build": 180, "test": 300, "default": 120, "probe": 60, "start": 20}
+#: `dry-run` is the harness's own run of a locked suite's specs with the product stood in for (`acceptance.spec_dry_run`).
+TIMEOUTS = {"install": 300, "build": 180, "test": 300, "default": 120, "probe": 60, "start": 20, "dry-run": 30}
 
 #: How much longer than the JavaScript baseline each toolchain needs.
 #:
@@ -874,6 +875,17 @@ def execution_mode() -> str:
     """
     configured = os.environ.get("SANDBOX_EXECUTION_MODE", CONTAINER_MODE).strip().lower()
     return IN_CONTAINER_MODE if configured in {IN_CONTAINER_MODE, "local", "direct"} else CONTAINER_MODE
+
+
+def product_code_runs_in_its_own_container() -> bool:
+    """Whether the harness's own runs of product code (its start script, its specs, its compiler) go through
+    `SandboxExecutor` rather than a subprocess of this process (deep review 2026-11-18, item E1a).
+
+    In container mode the worker holds the run's secrets and a route to the Docker proxy, and a command's own
+    container holds neither; a probe that ran `sh start.sh` or a model-written spec here gave that code all of it.
+    In-container mode runs every command in this process anyway, so there the probes stay as they are.
+    """
+    return execution_mode() == CONTAINER_MODE
 
 
 # Ceilings applied to a directly-executed command. Without a container to
@@ -5740,5 +5752,6 @@ __all__ = [
     "workspace_rooted_arguments",
     "execution_enabled",
     "execution_mode",
+    "product_code_runs_in_its_own_container",
     "validate_command",
 ]

@@ -179,7 +179,8 @@ def test_without_a_compiler_the_grammar_s_reading_is_a_note(tmp_path: Path, monk
     assert "may not parse as TypeScript" in str(result)
 
 
-def test_a_project_s_own_compiler_is_the_one_asked(tmp_path: Path) -> None:
+def test_a_project_s_own_compiler_is_the_one_asked(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "in-container")  # in container mode only the worker's own (E1a)
     own = tmp_path / "proj" / "node_modules" / "typescript" / "lib"
     own.mkdir(parents=True)
     (own / "typescript.js").write_text("", encoding="utf-8")

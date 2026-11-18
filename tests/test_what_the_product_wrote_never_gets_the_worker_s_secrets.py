@@ -13,6 +13,12 @@ import pytest
 SENTINEL = "worker-secret-sentinel-0x5eed"
 
 
+@pytest.fixture(autouse=True)
+def _run_here(monkeypatch):
+    """In-container mode: these run the product's code in this process, as that mode does (container mode: E1a)."""
+    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "in-container")
+
+
 @pytest.fixture
 def secret(monkeypatch):
     monkeypatch.setenv("JWT_SECRET_KEY", SENTINEL)

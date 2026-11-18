@@ -39,6 +39,8 @@ CRASHES = "console.error('TypeError: x is not a function'); process.exit(1);\n"
 @pytest.fixture(autouse=True)
 def _on(monkeypatch):
     monkeypatch.setenv("START_PROBE", "on")
+    # In-container mode: the product starts in this process, as that mode runs every command (container mode: E1a).
+    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "in-container")
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="no Node here")

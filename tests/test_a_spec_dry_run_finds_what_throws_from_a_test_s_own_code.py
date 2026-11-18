@@ -14,6 +14,12 @@ from app.stacks import contract, pack_named
 CORPUS = Path(__file__).parent / "fixtures" / "locked_suites"
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 
+@pytest.fixture(autouse=True)
+def _run_here(monkeypatch):
+    """In-container mode: these run the product's code in this process, as that mode does (container mode: E1a)."""
+    monkeypatch.setenv("SANDBOX_EXECUTION_MODE", "in-container")
+
+
 HEAD = "import { test, expect } from '@playwright/test';\n"
 
 

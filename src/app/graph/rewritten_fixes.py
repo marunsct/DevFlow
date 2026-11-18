@@ -349,7 +349,7 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
     """What one file's rewrite is asked. `co_failures`: the other open defects that point at this file (`co_defect_failures`)."""
     from app.agents.shared_facts import the_facts_section
     from app.agents.specialists import specification_for_the_work_order
-    from app.graph.drafting import _neighbours, _stack_line
+    from app.graph.drafting import _neighbours, _stack_line, the_reference_code
     from types import SimpleNamespace
 
     from app.graph import anchored_edits
@@ -393,8 +393,9 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
     the_file = ((anchored_edits.in_the_memory(path) if held.get(path) == now
                  else anchored_edits.excerpt(path, now, failure, _the_defect_s_words(defect))) if long_file
                 else f"--- `{path}` as it is now ---\n{now}")
-    # The facts every builder and judge reads (plan CM.1).
-    facts = the_facts_section(root).strip()
+    # The facts every builder and judge reads (plan CM.1), and the pack's golden example for a file in its languages
+    # (deep review 2026-11-18, item E4).
+    facts = "\n\n".join(part for part in (the_facts_section(root).strip(), the_reference_code(root, path)) if part)
     instruction = (anchored_edits.instruction(path) if long_file else
                    f"Reply with the complete corrected content of `{path}` and nothing else, in one fenced "
                    "code block. Change only what the failure needs; keep every name, signature and "

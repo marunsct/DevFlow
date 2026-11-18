@@ -1487,10 +1487,18 @@ def _image_for(executable: str, workspace: str | Path | None = None) -> str:
         return os.environ.get("SANDBOX_NODE_IMAGE", "node:24-slim")
     if executable in {"python", "python3", "pip", "pip3", "pytest", "uv", "django-admin", "alembic"}:
         return os.environ.get("SANDBOX_PYTHON_IMAGE", "python:3.12-slim")
-    if executable == "go":
-        return os.environ.get("SANDBOX_GO_IMAGE", "golang:1.22")
     if executable == "cargo":
         return os.environ.get("SANDBOX_RUST_IMAGE", "rust:1-slim")
+    # Every other toolchain's own built image, from the language table (deep review 2026-11-18): `mvn`, `dotnet`,
+    # `php`, `composer`, `ruby` and `bundle` fell to a bare Debian with no toolchain at all, and `go` to Go 1.22 while
+    # the packs and the worker are on 1.26.
+    from app.stacks.languages import image_for_executable
+
+    tabled = image_for_executable(executable)
+    if executable in {"go", "gotestsum", "gofmt"} and tabled:
+        return os.environ.get("SANDBOX_GO_IMAGE", tabled)
+    if tabled:
+        return tabled
     return os.environ.get("SANDBOX_BASE_IMAGE", "debian:12-slim")
 
 
@@ -3751,6 +3759,10 @@ _RUNNER_TOTALS: tuple[tuple[str, re.Pattern[str], re.Pattern[str]], ...] = (
               re.compile(r"test result:[^\n]*?(\d+)\s+failed")),
     # go: one "--- PASS:" / "--- FAIL:" line per test
     ("go", re.compile(r"^---\s+PASS:", re.M), re.compile(r"^---\s+FAIL:", re.M)),
+    # cargo-nextest, the Rust packs' runner: "Summary [   0.012s] 4 tests run: 3 passed, 1 failed, 0 skipped"
+    # (deep review 2026-11-18: no pattern read it, so every Rust run's ledger had no counts).
+    ("nextest", re.compile(r"Summary \[[^\]]*\][^\n]*?\btests? run:[^\n]*?(\d+)\s+passed"),
+                re.compile(r"Summary \[[^\]]*\][^\n]*?\btests? run:[^\n]*?(\d+)\s+failed")),
 )
 
 
@@ -3805,6 +3817,26 @@ def _gotestsum(text: str) -> tuple[int, int] | None:
     return max(counts.get("test", 0) - counts.get("failure", 0) - counts.get("skipped", 0), 0), failed
 
 
+def _minitest(text: str) -> tuple[int, int] | None:
+    """Minitest's (and `rails test`'s) "5 runs, 9 assertions, 1 failures, 1 errors, 0 skips"."""
+    found = _MINITEST.search(text)
+    if not found:
+        return None
+    runs, failures, errors, skips = (int(n) for n in found.groups())
+    return max(runs - failures - errors - skips, 0), failures + errors
+
+
+def _gradle(text: str) -> tuple[int, int] | None:
+    """Gradle's "5 tests completed, 1 failed, 1 skipped", which it prints when a test failed."""
+    found = _GRADLE.search(text)
+    if not found:
+        return None
+    completed, failed, skipped = (int(n or 0) for n in found.groups())
+    return max(completed - failed - skipped, 0), failed
+
+
+_MINITEST = re.compile(r"\b(\d+) runs?, \d+ assertions?, (\d+) failures?, (\d+) errors?, (\d+) skips?")
+_GRADLE = re.compile(r"\b(\d+) tests? completed, (\d+) failed(?:, (\d+) skipped)?")
 _GOTESTSUM = re.compile(r"^DONE \d+ tests?(?:, \d+ (?:skipped|failures?|errors?))* in [\d.]+m?s", re.M)
 _MAVEN = re.compile(r"Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)[^\n]*")
 _DOTNET = re.compile(r"(?:Passed|Failed)!\s+-\s+Failed:\s+(\d+),\s+Passed:\s+(\d+)")
@@ -3815,8 +3847,13 @@ _PHPUNIT = re.compile(r"^Tests: \d+, Assertions: \d+(?:, \w+: \d+)*\.", re.M)
 #: The runners whose summaries are counted rather than matched by one pattern each: their totals are a sum or a
 #: difference of several numbers. Read after `_RUNNER_TOTALS`, whose lines none of them prints. Measured by the
 #: rule-coverage counter (LR.46) across the language sweep: Maven and .NET runs were recorded with no counts.
+#: Minitest (the Rails pack's runner) and Gradle added by the deep review (2026-11-18): neither was read.
 _COUNTED_RUNNERS = (("maven", _maven), ("dotnet", _dotnet), ("rspec", _rspec), ("phpunit", _phpunit),
-                    ("gotestsum", _gotestsum))
+                    ("gotestsum", _gotestsum), ("minitest", _minitest), ("gradle", _gradle))
+
+#: Every runner whose printed totals are counted, by the name the language table's `test_totals` uses ("tap" for
+#: `node --test` and anything TAP-compatible).
+RUNNERS_COUNTED = ("tap", *(name for name, _, _ in _RUNNER_TOTALS), *(name for name, _ in _COUNTED_RUNNERS))
 
 
 def _the_counts_a_test_run_reported(result: dict) -> dict:

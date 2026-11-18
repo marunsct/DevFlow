@@ -671,8 +671,16 @@ def _reviews_that_were_not_independent(run_id: str | None = None) -> list[str]:
 _CODE_REVIEWS = ("code_review", "milestone_review", "security_review")
 
 
-#: Source files a development-server check reads, by suffix: the languages `seed.DEVELOPMENT_SERVERS` covers.
-_SERVER_SOURCES = {".py": "python", ".php": "php", ".rb": "ruby", ".js": "javascript", ".mjs": "javascript", ".sh": ""}
+def _server_sources() -> dict[str, str]:
+    from app.stacks.languages import LANGUAGES
+
+    return {**{suffix: row.development_server for row in LANGUAGES if isinstance(row.development_server, str)
+               for suffix in row.suffixes}, ".sh": ""}
+
+
+#: Source files a development-server check reads, by suffix: the languages whose row in the language table names a
+#: key of `seed.DEVELOPMENT_SERVERS`; a shell script is read for every language's.
+_SERVER_SOURCES = _server_sources()
 
 
 #: How a release gap opens when the product changed at release and the suite, run again, did not pass.
@@ -745,10 +753,13 @@ def _a_development_server(root: Any) -> list[str]:
             if (Path(root) / ".project-directory").is_file() else ""
         base = Path(root) / project if project else Path(root)
         every = tuple(marker for markers in DEVELOPMENT_SERVERS.values() for marker in markers)
-        for path in sorted(base.rglob("*")):
-            parts = set(path.relative_to(base).parts)
-            if not path.is_file() or path.suffix not in _SERVER_SOURCES or parts & {"node_modules", ".venv", "venv",
-                                                                                    "tests", "test", "acceptance"}:
+        from app.analysis.walk import files_under
+        from app.stacks.languages import NOT_THE_PRODUCT
+
+        # Never what a tool installed: a PHP product's Composer `vendor/` carries frameworks' own `php -S` commands.
+        not_read = NOT_THE_PRODUCT | {"tests", "test", "acceptance"}
+        for path in sorted(files_under(base, not_read)):
+            if path.suffix not in _SERVER_SOURCES or set(path.relative_to(base).parts) & not_read:
                 continue
             language = _SERVER_SOURCES[path.suffix]
             markers = every if not language else DEVELOPMENT_SERVERS.get(language, ())

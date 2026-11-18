@@ -93,7 +93,116 @@ SINATRA_KNOWN_ERRORS = {
     ),
 }
 
+#: The pack's golden example (`StackPack.golden_example`), on Sinatra 4.1: one store for the process held in a setting
+#: (Sinatra makes a new `App` object per request), `halt` for the 400 and 404, and an RSpec test through `Rack::Test`
+#: that gives the app a store of its own with `App.set`.
+GOLDEN_APP = r"""require "fileutils"
+require "json"
+require "sinatra/base"
+
+# The items, kept in one JSON file under DATA_DIR; one Mutex covers each read-change-write.
+class ItemStore
+  def initialize(dir)
+    @file = File.join(dir, "items.json")
+    @lock = Mutex.new
+  end
+
+  def add(name)
+    @lock.synchronize do
+      items = load
+      item = { "id" => (items.map { |i| i["id"] }.max || 0) + 1, "name" => name }
+      FileUtils.mkdir_p(File.dirname(@file))
+      File.write(@file, JSON.generate(items + [item]))
+      item
+    end
+  end
+
+  def find(id)
+    @lock.synchronize { load.find { |item| item["id"] == id } }
+  end
+
+  private
+
+  def load
+    File.exist?(@file) ? JSON.parse(File.read(@file)) : []
+  end
+end
+
+# The service. config.ru starts it; unit tests call it directly.
+class App < Sinatra::Base
+  set :host_authorization, { permitted_hosts: [] }
+  # One store for the whole process: Sinatra makes a new App object for every request.
+  set :store, ItemStore.new(ENV.fetch("DATA_DIR", "data"))
+
+  helpers do
+    def reply(code, value)
+      content_type :json
+      halt code, JSON.generate(value)
+    end
+  end
+
+  get "/health" do
+    content_type :json
+    { status: "ok" }.to_json
+  end
+
+  post "/items" do
+    data = begin
+      JSON.parse(request.body.read)
+    rescue JSON::ParserError
+      nil
+    end
+    name = data.is_a?(Hash) ? data["name"].to_s.strip : ""
+    reply 400, { error: "name is required" } if name.empty?
+    reply 201, settings.store.add(name)
+  end
+
+  get "/items/:id" do
+    item = settings.store.find(Integer(params["id"], exception: false))
+    reply 404, { error: "item not found" } unless item
+    reply 200, item
+  end
+end
+"""
+
+GOLDEN_SPEC = r"""require "json"
+require "rack/test"
+require "tmpdir"
+require_relative "../app"
+
+RSpec.describe "items" do
+  include Rack::Test::Methods
+
+  def app = App
+
+  # Each example's service keeps its data in a folder of its own.
+  around do |example|
+    Dir.mktmpdir do |dir|
+      App.set :store, ItemStore.new(dir)
+      example.run
+    end
+  end
+
+  it "stores an item and reads it back" do
+    post "/items", JSON.generate(name: "first"), "CONTENT_TYPE" => "application/json"
+    expect(last_response.status).to eq(201)
+    id = JSON.parse(last_response.body)["id"]
+    get "/items/#{id}"
+    expect(last_response.status).to eq(200)
+    expect(JSON.parse(last_response.body)["name"]).to eq("first")
+  end
+
+  it "refuses a missing name and answers 404 for an unknown id" do
+    post "/items", "{}", "CONTENT_TYPE" => "application/json"
+    expect(last_response.status).to eq(400)
+    get "/items/99"
+    expect(last_response.status).to eq(404)
+  end
+end
+"""
+
 PACK = service_pack(
+    golden_example={"app.rb": GOLDEN_APP, "spec/items_spec.rb": GOLDEN_SPEC},
     known_errors=SINATRA_KNOWN_ERRORS,
     sandbox_image=sandbox.RUBY,
     name="ruby-sinatra-api",

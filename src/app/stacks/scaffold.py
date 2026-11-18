@@ -715,3 +715,40 @@ def scaffold(
         logger.debug("Could not commit the scaffold", exc_info=True)
     result.ok = True
     return result
+
+
+def prove_the_golden_example(
+    repo_root: str | Path,
+    pack: StackPack,
+    project: str,
+    title: str,
+    *,
+    run: Runner | None = None,
+    package: str | None = None,
+) -> tuple[bool, str]:
+    """Write the pack's golden example over a scaffolded project and run its unit command: (passed, why not).
+
+    For the pack check only (`scripts/loop/verify_packs.py`), on a throwaway workspace the scaffold just proved: the
+    example is shown to every stage as code that compiles on the pinned versions (`contract.reference_code`), so a
+    version bump that breaks it must fail the check rather than teach the run a wrong API. A pack with no example
+    passes.
+    """
+    if not pack.golden_example:
+        return True, ""
+    root = Path(repo_root)
+    project_root = root / project
+    run = run or sandbox_runner(root)
+    for relative, content in pack.filled_files(pack.golden_example, project, title, package).items():
+        target = project_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    argv = pack.commands(project, package)["unit_test"]
+    junit.clear(project_root / pack.unit_report)
+    outcome = run(argv, "test", project)
+    code = _exit_code(outcome)
+    parsed = junit.read(project_root / pack.unit_report)
+    if code != 0 or not parsed.found or parsed.passed < 1 or parsed.failed:
+        return False, (f"The golden example's unit tests did not pass through `{' '.join(argv)}` (exit {code}, "
+                       f"{parsed.passed} passed, {parsed.failed} failed, report "
+                       f"{'found' if parsed.found else 'missing'}): {where_it_failed(_tail(outcome))}")
+    return True, ""

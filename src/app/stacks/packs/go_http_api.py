@@ -101,7 +101,208 @@ EXPOSE 8080
 ENTRYPOINT ["/server"]
 """ % {"go": GO_VERSION}
 
+#: The Go packs' golden example's store (`StackPack.golden_example`): one JSON file under DATA_DIR, one lock held
+#: across each read-change-write, the new id taken inside it.
+GOLDEN_STORE = r"""package main
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"sync"
+)
+
+// Item is one stored record.
+type Item struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+// Store keeps the items in one JSON file under DATA_DIR; its lock covers each read-change-write.
+type Store struct {
+	mu   sync.Mutex
+	path string
+}
+
+// NewStore reads DATA_DIR when the service is built, so a test sets it first.
+func NewStore() *Store {
+	dir := os.Getenv("DATA_DIR")
+	if dir == "" {
+		dir = "data"
+	}
+	return &Store{path: filepath.Join(dir, "items.json")}
+}
+
+// Add stores a new item, its id taken under the same lock as the write.
+func (s *Store) Add(name string) (Item, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items, err := s.load()
+	if err != nil {
+		return Item{}, err
+	}
+	item := Item{ID: 1, Name: name}
+	for _, existing := range items {
+		if existing.ID >= item.ID {
+			item.ID = existing.ID + 1
+		}
+	}
+	return item, s.save(append(items, item))
+}
+
+// Find returns the item with this id, and whether there is one.
+func (s *Store) Find(id int) (Item, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items, err := s.load()
+	if err != nil {
+		return Item{}, false, err
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return item, true, nil
+		}
+	}
+	return Item{}, false, nil
+}
+
+func (s *Store) load() ([]Item, error) {
+	data, err := os.ReadFile(s.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return []Item{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var items []Item
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (s *Store) save(items []Item) error {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.Marshal(items)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.path, data, 0o644)
+}
+"""
+
+GOLDEN_SERVER = r"""package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
+)
+
+// NewServer builds the service's handler. main.go starts it; unit tests call it directly.
+func NewServer() http.Handler {
+	store := NewStore()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	mux.HandleFunc("POST /items", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
+			return
+		}
+		item, err := store.Add(strings.TrimSpace(body.Name))
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "the item could not be stored"})
+			return
+		}
+		writeJSON(w, http.StatusCreated, item)
+	})
+	mux.HandleFunc("GET /items/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "item not found"})
+			return
+		}
+		item, found, err := store.Find(id)
+		switch {
+		case err != nil:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "the items could not be read"})
+		case !found:
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "item not found"})
+		default:
+			writeJSON(w, http.StatusOK, item)
+		}
+	})
+	return mux
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
+}
+"""
+
+GOLDEN_TEST = r"""package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+func send(server http.Handler, method, path, body string) *httptest.ResponseRecorder {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	server.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func TestAnItemIsStoredAndReadBack(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+
+	created := send(NewServer(), http.MethodPost, "/items", `{"name":"first"}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create answered %d %s", created.Code, created.Body.String())
+	}
+	var item Item
+	if err := json.Unmarshal(created.Body.Bytes(), &item); err != nil {
+		t.Fatal(err)
+	}
+	// A service built afresh reads what the first one stored.
+	found := send(NewServer(), http.MethodGet, "/items/"+strconv.Itoa(item.ID), "")
+	if found.Code != http.StatusOK || !strings.Contains(found.Body.String(), `"name":"first"`) {
+		t.Fatalf("read answered %d %s", found.Code, found.Body.String())
+	}
+}
+
+func TestAMissingNameIsRefusedAndAnUnknownIDIsNotFound(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+	server := NewServer()
+
+	if refused := send(server, http.MethodPost, "/items", `{}`); refused.Code != http.StatusBadRequest {
+		t.Fatalf("a missing name answered %d", refused.Code)
+	}
+	if missing := send(server, http.MethodGet, "/items/99", ""); missing.Code != http.StatusNotFound {
+		t.Fatalf("an unknown id answered %d", missing.Code)
+	}
+}
+"""
+
 PACK = service_pack(
+    golden_example={"server.go": GOLDEN_SERVER, "store.go": GOLDEN_STORE, "items_test.go": GOLDEN_TEST},
     sandbox_image=sandbox.GO,
     name="go-http-api",
     entrypoint="server.go",

@@ -1,4 +1,4 @@
-"""Scaffold stack packs for real: install, unit smoke test, acceptance smoke test.
+"""Scaffold stack packs for real: install, unit smoke test, acceptance smoke test, and the golden example's unit tests.
 
 Runs INSIDE the worker (or a container of a candidate image), piped in on stdin:
 
@@ -62,6 +62,20 @@ def check(names: list[str]) -> list[str]:
             failed.append(name)
             for step in result.steps:
                 print(f"--- {step['command']} -> exit {step['exit_code']}\n{step['output'][-2500:]}", flush=True)
+            continue
+        # The pack's golden example is shown to every stage as code that compiles on the pinned versions: it must
+        # compile and its unit tests pass here, on the project the scaffold just proved (deep review 2026-11-18, E4).
+        if getattr(pack, "golden_example", None):
+            from app.stacks.scaffold import prove_the_golden_example
+
+            started = time.time()
+            try:
+                ok, problem = prove_the_golden_example(root, pack, "demo-app", "Demo App", package="demo_app")
+            except Exception as error:  # noqa: BLE001 - one pack's crash is that pack's failure
+                ok, problem = False, f"the check raised: {error!r}"
+            print(f"=== {name} golden example: ok={ok} in {time.time() - started:.0f}s {problem}", flush=True)
+            if not ok:
+                failed.append(name)
     return failed
 
 

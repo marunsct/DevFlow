@@ -39,6 +39,7 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 from app.analysis.walk import files_under
+from app.stacks.languages import NOT_THE_PRODUCT
 
 #: Directories that are never the project's own source.
 #: The harness's own files, never the product's. Read from one place.
@@ -46,10 +47,10 @@ _HARNESS_BOOKKEEPING = frozenset({
     ".project-directory", ".project-stack", ".project-memory.json", ".work-order-files.json",
 })
 
-_SKIP = {
-    "node_modules", ".git", "dist", "build", "coverage", ".agent-home",
-    "large_tool_results", "__pycache__", ".venv", "vendor", ".harness",
-    "test-results",
+#: Directories that are never the project's own source: the language table's shared set (`app.stacks.languages`),
+#: and what these checks never read besides.
+_SKIP = NOT_THE_PRODUCT | {
+    "dist", "build", "coverage", "large_tool_results", "vendor", ".harness", "test-results",
 }
 
 #: Files whose job is configuration or testing, not application source.

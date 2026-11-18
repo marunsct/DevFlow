@@ -26,6 +26,7 @@ from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 from app.analysis.walk import files_under
+from app.stacks import languages as _languages
 
 logger = logging.getLogger(__name__)
 
@@ -145,29 +146,16 @@ def _repo_relative_path(repo_root: Path, relative_path: str | Path) -> Path:
     return candidate
 
 
-IGNORED_DIRECTORIES = frozenset({
-    ".git", ".hg", ".svn", ".venv", "venv", "env", "__pycache__", "node_modules",
-    ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", ".next", ".nuxt",
-    "dist", "build", ".terraform", ".gradle", "target", ".langchain", "site-packages",
-    # The sandbox points HOME here so npm, pip and cargo caches land inside the
-    # workspace instead of a directory shared by every run (see
-    # `sandbox._child_environment`). That makes them ours, and they are not the
-    # product: on one run one `npm install` left 26 `_cacache` blobs with
-    # sha512 filenames, and a listing of the workspace was mostly those rather
-    # than the application.
-    ".agent-home",
-})
-"""Directories never descended into."""
-
 #: Directories a tool fills - a package manager, an interpreter, version
-#: control, the sandbox's own caches. Nothing in them is written by hand.
-#: `dist`, `build`, `target` and a bare `env` are left out: a project may keep
-#: sources under those names.
-INSTALLED_DIRECTORIES = frozenset({
-    "node_modules", ".venv", "venv", "site-packages", "__pycache__",
-    ".git", ".hg", ".svn", ".agent-home", ".tox", ".mypy_cache", ".pytest_cache",
-    ".ruff_cache", ".gradle", ".terraform",
-})
+#: control, the sandbox's own caches (`.agent-home`: the sandbox points HOME
+#: there, see `sandbox._child_environment`). Nothing in them is written by
+#: hand. `dist`, `build`, `target` and a bare `env` are left out: a project may
+#: keep sources under those names. Read from the language table, the one list
+#: every language's installed folders are kept in (`app.stacks.languages`).
+INSTALLED_DIRECTORIES = _languages.NOT_THE_PRODUCT
+
+IGNORED_DIRECTORIES = INSTALLED_DIRECTORIES | _languages.BUILT_BY_NAME | {"env", ".langchain"}
+"""Directories never descended into: what a tool fills, and the build folders each language names."""
 
 
 def _installed_by_a_tool(root: Path, target: Path, *, done: str = "written") -> str | None:

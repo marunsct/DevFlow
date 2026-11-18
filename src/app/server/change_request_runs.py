@@ -23,6 +23,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from app.stacks.languages import INSTALLED, is_generated
 from app.switches import is_on
 
 #: `CHANGE_REQUEST_RUNS` set to on or off overrides this.
@@ -46,10 +47,10 @@ def _head(root: Path) -> str:
         return ""
 
 
-#: Folders a toolchain generates, each known by what sits beside or inside it.
-_GENERATED_BESIDE = {"target": ("Cargo.toml", "pom.xml", "build.gradle", "build.gradle.kts")}
+#: Folders a toolchain generates, each known by what sits beside it (the language table's `is_generated`: cargo's
+#: `target/`, .NET's `bin/` and `obj/`, Composer's `vendor/`) or inside it.
 _GENERATED_INSIDE = {"venv": ("pyvenv.cfg",), ".venv": ("pyvenv.cfg",)}
-_ALWAYS_GENERATED = {"node_modules", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+_ALWAYS_GENERATED = INSTALLED - set(_GENERATED_INSIDE)
 
 
 def _generated_or_outside(finished: Path):
@@ -70,7 +71,7 @@ def _generated_or_outside(finished: Path):
                 skipped.add(name)
             elif name in _ALWAYS_GENERATED:
                 skipped.add(name)
-            elif name in _GENERATED_BESIDE and any((here / marker).exists() for marker in _GENERATED_BESIDE[name]):
+            elif is_generated(name, names):
                 skipped.add(name)
             elif name in _GENERATED_INSIDE and any((path / marker).exists() for marker in _GENERATED_INSIDE[name]):
                 skipped.add(name)

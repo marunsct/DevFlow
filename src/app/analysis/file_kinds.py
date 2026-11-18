@@ -33,42 +33,14 @@ from __future__ import annotations
 import re
 from typing import Literal
 
+from app.stacks.languages import LOCKFILE_PATTERN, TEST_FILE_PATTERNS, is_manifest
+
 FileKind = Literal["test", "config", "vendored", "document", "application"]
 
-#: Test files, by the conventions each language actually uses.
+#: Test files, by the conventions each language actually uses: a directory of tests, whatever is in it, and each
+#: language's own names, kept in its row of the language table (`app.stacks.languages`).
 _TEST = re.compile(
-    # A directory of tests, whatever is in it.
-    r"(^|/)(__tests__|tests?|e2e|spec|cypress)/"
-    # JavaScript and TypeScript: foo.test.ts, foo.spec.jsx, test-helpers.mjs,
-    # and the underscore form Node's own runner collects, foo_test.mjs.
-    r"|\.(test|spec)\.([cm]?[jt]s|[jt]sx)$"
-    r"|[-_](test|spec)\.([cm]?[jt]s|[jt]sx)$"
-    r"|(^|/)test[-_][^/]*\.([cm]?[jt]s|[jt]sx)$"
-    # The bare name, which every form above assumed would never be used on
-    # its own. Measured across the stored workspaces: `simple-to-do-list-app
-    # /test.js` was classified as APPLICATION, so the size budget counted a
-    # suite as product, and the requirement checks - which exist precisely so
-    # that "a suite naming a feature is not the product having one" - could
-    # read it as evidence the feature was built.
-    r"|(^|/)(test|spec|tests|specs)\.([cm]?[jt]s|[jt]sx)$"
-    # Python: pytest and unittest both look for these.
-    r"|(^|/)test_[^/]*\.py$"
-    r"|_test\.py$"
-    # Go: the toolchain itself defines this one.
-    r"|_test\.go$"
-    # Rust: integration tests live in tests/, caught above; benches are not
-    # application code either.
-    r"|(^|/)benches/"
-    # Java, Kotlin, Scala under Maven/Gradle layout.
-    r"|(^|/)src/test/"
-    r"|Test\.(java|kt|scala)$"
-    # C#: xUnit and NUnit projects.
-    r"|Tests?\.cs$"
-    # Ruby.
-    r"|_spec\.rb$"
-    r"|_test\.rb$"
-    # PHP.
-    r"|Test\.php$",
+    "|".join((r"(^|/)(__tests__|tests?|e2e|spec|cypress)/", *TEST_FILE_PATTERNS)),
     re.IGNORECASE,
 )
 
@@ -101,8 +73,8 @@ _VENDORED = re.compile(
     r"\.min\.(js|css)$"
     r"|(^|/)(vendor|dist|build|out|target|node_modules|__pycache__)/"
     r"|(^|/)public/assets/"
-    r"|(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.ya?ml|poetry\.lock"
-    r"|Cargo\.lock|go\.sum|composer\.lock|Gemfile\.lock)$"
+    # Every language's lock files, from the language table.
+    rf"|(^|/)({LOCKFILE_PATTERN})$"
 )
 
 #: Prose. Read by people, counted against nothing.
@@ -126,7 +98,9 @@ def classify_file(relative_path: str) -> FileKind:
         return "document"
     if _TEST.search(path):
         return "test"
-    if _CONFIG.search(path):
+    # A manifest or build file of any language is build configuration: measured by the deep review, `Cargo.toml`,
+    # `pom.xml`, `*.csproj`, `Gemfile` and `phpunit.xml` were all read as the application itself.
+    if _CONFIG.search(path) or is_manifest(path):
         return "config"
     return "application"
 

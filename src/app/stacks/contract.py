@@ -639,13 +639,67 @@ WRITES_AT_ONCE = (
 )
 
 
-def describe(repo_root: str | Path | None) -> str:
-    """The contract as a block for every stage that writes code or tests."""
+#: The most characters of reference code one request carries; a file that does not fit whole is named, not cut.
+MOST_REFERENCE_CHARACTERS = 7_000
+
+#: Introduces the pack's golden example (`StackPack.golden_example`) to a stage that writes or fixes code.
+REFERENCE_CODE_HEADING = "--- Reference code for this stack, at the versions this project pins ---"
+REFERENCE_CODE_NOTE = (
+    "A small service on this project's own framework versions, compiled and its unit test passed by the harness. It is "
+    "not part of this product and is never written into it: it shows how shared state reaches a handler, how a JSON "
+    "body is read and checked, how a 404 and a 400 are answered, how data is kept in a file under `DATA_DIR`, and how "
+    "a unit test calls the service in memory. Where what you remember of the framework differs from this code, this "
+    "code is right for the installed version: use its imports, types and calls."
+)
+
+
+def reference_code(repo_root: str | Path | None, path: str | None = None) -> str:
+    """The pack's golden example as reference code for a stage's request, or "" (deep review 2026-11-18, item E4).
+
+    With `path`, only for a file in one of the example's languages: a page's stylesheet or a document gets none.
+    Bounded by `MOST_REFERENCE_CHARACTERS`. Never raises.
+    """
+    try:
+        found = the_pack(repo_root)
+        if found is None or not getattr(found[0], "golden_example", None):
+            return ""
+        pack, record = found
+        if path is not None:
+            suffixes = {Path(name).suffix.lower() for name in pack.golden_example}
+            if Path(str(path)).suffix.lower() not in suffixes:
+                return ""
+        project = record.get("project") or ""
+        files = pack.filled_files(pack.golden_example, project, record.get("title") or project, record.get("package"))
+        shown: list[str] = []
+        left_out: list[str] = []
+        used = 0
+        for name, text in files.items():
+            block = f"`{name}`:\n```\n{text.rstrip()}\n```"
+            if used + len(block) > MOST_REFERENCE_CHARACTERS:
+                left_out.append(name)
+                continue
+            shown.append(block)
+            used += len(block)
+        if not shown:
+            return ""
+        return "\n".join([REFERENCE_CODE_HEADING, REFERENCE_CODE_NOTE, *shown,
+                          *([f"(Left out for length: {', '.join(left_out)}.)"] if left_out else [])])
+    except Exception:  # noqa: BLE001 - a request without it is the request as it was
+        return ""
+
+
+def describe(repo_root: str | Path | None, *, with_reference_code: bool = True) -> str:
+    """The contract as a block for every stage that writes code or tests.
+
+    `with_reference_code`: the pack's golden example after its guide (`reference_code`); a stage that plans and
+    writes no code is given the contract without it.
+    """
     found = the_pack(repo_root)
     if found is None:
         return ""
     pack, record = found
     project = record.get("project") or ""
+    reference = reference_code(repo_root) if with_reference_code else ""
 
     def shown(argv: Any) -> str:
         return " ".join(str(part) for part in (argv or []))
@@ -668,5 +722,6 @@ def describe(repo_root: str | Path | None) -> str:
         + " Everything else in the project is yours.\n"
         f"{pack.filled(pack.guide, project, record.get('title') or project, record.get('package'))}\n"
         + (f"{WRITES_AT_ONCE}\n" if pack.kind in KINDS_THAT_SERVE else "")
+        + (f"{reference}\n" if reference else "")
         + "\n"
     )

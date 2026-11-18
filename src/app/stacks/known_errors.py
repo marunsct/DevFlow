@@ -24,17 +24,44 @@ def _runs_node_test(pack: Any) -> bool:
     return "node --test" in script or "node --test" in manifest
 
 
+def _known(repo_root: str | Path) -> dict[str, str]:
+    """The project's pack's known errors, by phrase; raises when the contract cannot be read."""
+    from app.stacks import contract
+
+    found = contract.the_pack(Path(repo_root))
+    known = dict(getattr(found[0], "known_errors", None) or {}) if found else {}
+    if found and _runs_node_test(found[0]):
+        from app.stacks.packs._javascript import NODE_TEST_KNOWN_ERRORS
+
+        known = {**NODE_TEST_KNOWN_ERRORS, **known}
+    return known
+
+
+def with_known_causes_in_lines(repo_root: str | Path, lines: list[str]) -> list[str]:
+    """`lines` - what the compiler or language service reports on a stage's own writes - each carrying an error the
+    project's pack knows followed by its cause. Never raises.
+
+    Deep review 2026-11-18, item E4: the causes were added only at triage, after a test round had failed on the error;
+    the stage that wrote it was told the compiler's message alone, at the moment it could still fix it in one change.
+    """
+    try:
+        known = _known(repo_root)
+    except Exception:  # noqa: BLE001 - the lines as reported stand
+        return lines
+    if not known:
+        return lines
+    out = []
+    for line in lines:
+        text = str(line)
+        causes = [cause for phrase, cause in known.items() if phrase.lower() in text.lower() and cause not in text]
+        out.append(text + "".join(f"\n  {KNOWN_CAUSE} {cause}" for cause in causes))
+    return out
+
+
 def with_known_causes(repo_root: str | Path, defects: list[Any]) -> list[Any]:
     """`defects`, each whose text carries an error the project's pack knows given its cause. Never raises."""
     try:
-        from app.stacks import contract
-
-        found = contract.the_pack(Path(repo_root))
-        known = dict(getattr(found[0], "known_errors", None) or {}) if found else {}
-        if found and _runs_node_test(found[0]):
-            from app.stacks.packs._javascript import NODE_TEST_KNOWN_ERRORS
-
-            known = {**NODE_TEST_KNOWN_ERRORS, **known}
+        known = _known(repo_root)
     except Exception:  # noqa: BLE001 - the defects as raised stand
         return defects
     if not known:
@@ -55,4 +82,4 @@ def with_known_causes(repo_root: str | Path, defects: list[Any]) -> list[Any]:
     return out
 
 
-__all__ = ["KNOWN_CAUSE", "with_known_causes"]
+__all__ = ["KNOWN_CAUSE", "with_known_causes", "with_known_causes_in_lines"]

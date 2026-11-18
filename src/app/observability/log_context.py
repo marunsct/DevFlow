@@ -48,6 +48,12 @@ def _from_the_graph() -> tuple[str | None, str | None]:
         return None, None
 
 
+def current_run() -> tuple[str | None, str | None]:
+    """The run and the stage the caller is working for: the running graph's, else the worker task's run."""
+    run, stage = _from_the_graph()
+    return run or _TASK_RUN.get(), stage
+
+
 class RunContextFilter(logging.Filter):
     """Sets `record.run_id` and `record.stage`; never drops a record."""
 
@@ -73,4 +79,4 @@ def install(logger: logging.Logger | None = None) -> None:
         handler.setFormatter(logging.Formatter(LOG_FORMAT))
 
 
-__all__ = ["LOG_FORMAT", "RunContextFilter", "for_the_run", "install"]
+__all__ = ["LOG_FORMAT", "RunContextFilter", "current_run", "for_the_run", "install"]

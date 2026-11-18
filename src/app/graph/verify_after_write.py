@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+from app.observability.degraded import degraded
 from app.switches import is_on
 
 logger = logging.getLogger(__name__)
@@ -98,8 +99,8 @@ def after_a_write(tool: str, result: Any, run_id: str | None, stage: str) -> Any
     check, says, checkpoints_in = found
     try:
         outcome = check()
-    except Exception:  # noqa: BLE001 - the write stands as it was
-        logger.debug("Could not run the defect's tests after a write", exc_info=True)
+    except Exception as failure:  # noqa: BLE001 - the write stands as it was
+        degraded("verify_after_write", failure)
         return result
     if outcome is None:
         return result

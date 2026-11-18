@@ -23,6 +23,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
+from app.observability.degraded import degraded
 from app.acceptance import requests as acceptance_requests
 from app.acceptance import start_output, suite
 from app.acceptance.criteria import number
@@ -216,8 +217,8 @@ def _what_the_language_service_finds(state: Any) -> list[Any]:
             defect.model_copy(update={"source": "language service"})
             for defect in engineering.underlined_in_the_batch(state, root, since)
         ]
-    except Exception:  # noqa: BLE001 - the round raises what it measured, as before
-        logger.debug("Could not ask the language service at the test round", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the round raises what it measured, as before
+        degraded("check.language_service_at_round", error)
         return []
 
 #: What opens the page snapshot in an acceptance defect's failure text
@@ -704,14 +705,14 @@ def _the_specification_on_disk(root: str) -> str:
 def _the_qa_lead_has_read_it(config: Any) -> bool:
     """Whether a QA lead's review of the suite has run in this run, from its transcript; True when unknown."""
     try:
-        from app.observability.transcript import read_transcript
+        from app.observability.transcript import read_live
         from app.tracing import APP_RUN_ID_KEY
 
         run_id = ((config or {}).get("configurable") or {}).get(APP_RUN_ID_KEY)
         if not run_id:
             return True
         return any(str(r.get("stage") or "").startswith("acceptance_review_")
-                   for r in read_transcript(run_id, {"model_request"}))
+                   for r in read_live(run_id, {"model_request"}))
     except Exception:  # noqa: BLE001 - unknown is treated as read: the lock goes on as before
         return True
 
@@ -2324,8 +2325,8 @@ def tests_that_fail_alone(repo_root: Any, names: list[str]) -> tuple[list[str], 
         disputed = {tag for name in names for tag in junit.tags_in(name)}
         runs = each_file(repo_root, contract.read(repo_root) or {}, sandbox_runner(repo_root), naming=disputed or None)
         outcome = {str(run.get("file")): str(run.get("outcome")) for run in runs}
-    except Exception:  # noqa: BLE001 - a check that cannot run re-measures nothing
-        logger.warning("Could not re-measure the disputed tests file by file", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - a check that cannot run re-measures nothing
+        degraded("measure.disputed_tests_file_by_file", error)
         return list(names), []
     if not outcome or not tagged:
         return list(names), []
@@ -2423,7 +2424,8 @@ def _due_criteria_with_no_test(root: str, due: list[str]) -> list[str]:
         return []
     try:
         return [gap for gap in suite.gaps(root) if gap.split(" ", 1)[0] in wanted]
-    except Exception:  # noqa: BLE001 - a check that cannot run reopens nothing
+    except Exception as error:  # noqa: BLE001 - a check that cannot run reopens nothing
+        degraded("check.due_criteria_without_a_test", error)
         return []
 
 
@@ -2478,8 +2480,8 @@ def _rewritten_in_one_call_each(state: Any, broken: list[str], model: Any) -> bo
                                     getattr(state.get("document"), "text", "") or "") + the_rulings_section(_root(state)),
             reason=str(state.get("dispute_reason") or ""),
         )
-    except Exception:  # noqa: BLE001 - QA's agent loop repairs, as before
-        logger.warning("Could not rewrite the named tests in place", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - QA's agent loop repairs, as before
+        degraded("repair.named_tests_rewritten_in_place", error)
         return False
     return done is not None
 
@@ -2513,8 +2515,8 @@ def reopen_the_suite_for(
         from app.acceptance import suite as _suite
 
         _suite.repairing(state["repository"].root_path, [name for item in broken for name in _which_tests(state, item)])
-    except Exception:  # noqa: BLE001 - the repair goes on without its guard
-        logger.debug("Could not record the tests under repair", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the repair goes on without its guard
+        degraded("guard.tests_under_repair", error)
     before = state.get("suite_reclassified_causes")
     before = int(before) if before is not None else len(set(state.get("suite_reclassified_tests") or []))
     reclassified = (
@@ -2590,8 +2592,8 @@ def defer_what_is_beyond_repair(state: Any, criteria: list[str], broken: list[st
             for criterion in criteria
         })
         logger.warning("Deferred %s: their locked tests cannot pass and may not be repaired", ", ".join(criteria))
-    except Exception:  # noqa: BLE001 - the round goes on with them set aside, as before
-        logger.debug("Could not defer the criteria beyond repair", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the round goes on with them set aside, as before
+        degraded("defer_beyond_repair", error)
 
 
 def beyond_repair_note(broken: list[str], criteria: list[str]) -> str:

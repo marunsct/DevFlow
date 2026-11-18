@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
+from app.observability.degraded import degraded
 from app.switches import is_on
 
 logger = logging.getLogger(__name__)
@@ -51,8 +52,8 @@ def after_a_surrender(output: Any, rewrite: Callable[[], Any | None], note: Call
 
     try:
         rewritten = rewrite()
-    except Exception:  # noqa: BLE001 - the stage's own answer stands and the defect stays open
-        logger.warning("The rewrite after a surrender failed to run", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the stage's own answer stands and the defect stays open
+        degraded("rewrite_after_surrender", error)
         said("declined")
         return output
     if rewritten is None or surrendered(rewritten):

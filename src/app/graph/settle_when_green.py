@@ -17,6 +17,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from app.observability.degraded import degraded
 from app.switches import is_on
 
 logger = logging.getLogger(__name__)
@@ -124,8 +125,8 @@ def applies(root: str | Path, defects: Any, replans: int) -> bool:
             _a_unit_test_failure(d, acceptance) or str(getattr(d, "source", "") or "") in READ_FROM_THE_FILES
             for d in still_open
         )
-    except Exception:  # noqa: BLE001 - a rule that cannot tell leaves the sprint as it was
-        logger.debug("Could not tell whether the acceptance suite is green", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - a rule that cannot tell leaves the sprint as it was
+        degraded("settle_when_green", error)
         return False
 
 

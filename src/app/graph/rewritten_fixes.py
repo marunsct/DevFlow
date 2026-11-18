@@ -456,12 +456,12 @@ def _the_last_rewrite_changed_nothing(defect: Any, files: Sequence[str], records
         from app.observability.defect_ledger import defect_id
 
         if records is None:
-            from app.observability.transcript import _run_id_from_config, read_transcript
+            from app.observability.transcript import _run_id_from_config, read_live
 
             run = _run_id_from_config()
             if not run:
                 return False
-            records = read_transcript(run, kinds={"defect"})
+            records = read_live(run, {"defect"})
         mine = [r for r in records if r.get("defect_id") == defect_id(defect)
                 and r.get("event") in ("shown", "rewrite reply")]
         replies: list[str] = []

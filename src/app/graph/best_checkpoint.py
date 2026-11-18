@@ -17,6 +17,7 @@ import tempfile
 import threading
 from pathlib import Path
 from typing import Callable
+from app.observability.degraded import degraded
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +53,8 @@ def record(root: str | Path, run_id: str | None, stage: str) -> None:
         if made:
             with _lock:
                 _best[(str(run_id or ""), stage)] = made
-    except Exception:  # noqa: BLE001 - the fix goes on without a checkpoint
-        logger.debug("Could not record a checkpoint for %s", stage, exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the fix goes on without a checkpoint
+        degraded("best_checkpoint.record", error)
 
 
 def take(run_id: str | None, stage: str) -> str:
@@ -94,6 +95,6 @@ def instead_of(
         logger.warning("%s ended with its own tests failing again; measuring its best checkpoint", stage)
         measure(end)
         return []
-    except Exception:  # noqa: BLE001 - the stage's end stands as measured
-        logger.warning("Could not measure %s's best checkpoint", stage, exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the stage's end stands as measured
+        degraded("best_checkpoint.measure", error)
         return None

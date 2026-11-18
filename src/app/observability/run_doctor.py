@@ -5,8 +5,8 @@ which read the run's transcript inside the worker. This reads the same records t
 transcript (`run_kpis.live_branch`), its stages (`stage_usage`) and its `defect` records (`defect_ledger`) - and says:
 the stages in the order they ran and the time each took, the defects raised, fixed, left open and reverted, the
 defects raised again round after round, the commands refused for want of memory or disk, the model errors and the
-restarts; then the actions that fit (resume with a direction, rewind to a stage, check the model server or the
-machine). Nothing here acts or calls a model.
+restarts, and the harness's own mechanisms that did not run (`degraded`); then the actions that fit (resume with a
+direction, rewind to a stage, check the model server or the machine). Nothing here acts or calls a model.
 """
 
 from __future__ import annotations
@@ -77,6 +77,23 @@ def defects(records: Iterable[dict]) -> dict[str, Any]:
             "deferred": counted["deferred"], "repeated": repeated}
 
 
+def degraded_mechanisms(records: Iterable[dict]) -> list[dict[str, Any]]:
+    """Each mechanism that did not run (`degraded` records), most often first: how often, where, and its last error."""
+    by_name: dict[str, list[dict]] = defaultdict(list)
+    for record in records:
+        if record.get("kind") == "degraded" and record.get("mechanism"):
+            by_name[str(record["mechanism"])].append(record)
+    found = []
+    for name, its in by_name.items():
+        last = its[-1]
+        found.append({"mechanism": name, "count": len(its),
+                      "stages": sorted({str(r.get("stage") or "") for r in its} - {""}),
+                      "last_error": (f"{last.get('error_type')}: " if last.get("error_type") else "")
+                      + _text(last.get("message"))[:200]})
+    found.sort(key=lambda d: (-d["count"], d["mechanism"]))
+    return found
+
+
 def diagnose(records: list[dict], *, status: str = "", current_stage: str = "", error: str = "",
              now: datetime | None = None) -> dict[str, Any]:
     """The doctor's account of a run from its transcript records, with the next actions that fit."""
@@ -122,6 +139,12 @@ def diagnose(records: list[dict], *, status: str = "", current_stage: str = "", 
         suggestions.append({"action": "resume_with_direction", "said": (
             "The run stopped" + (f": {error[:200]}" if error else "") + ". Resume it, with a direction if you know "
             "what it should do differently, or rewind to the stage where it went wrong.")})
+    degraded = degraded_mechanisms(live)
+    if degraded:
+        named = ", ".join(f"{d['mechanism']} ({d['count']})" for d in degraded[:5])
+        suggestions.append({"action": "report_degraded", "said": (
+            f"{len(degraded)} of the harness's own mechanisms did not run as built: {named}. The run went on "
+            "without them; send the diagnostic bundle with the run so they can be looked at.")})
     if not suggestions:
         suggestions.append({"action": "none", "said": "Nothing in the run's records calls for an action now."})
 
@@ -140,8 +163,9 @@ def diagnose(records: list[dict], *, status: str = "", current_stage: str = "", 
         "model_errors": model_errors,
         "restarts": restarts,
         "rewinds": rewinds,
+        "degraded": degraded,
         "suggestions": suggestions,
     }
 
 
-__all__ = ["diagnose", "defects", "stage_order"]
+__all__ = ["degraded_mechanisms", "diagnose", "defects", "stage_order"]

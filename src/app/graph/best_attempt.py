@@ -16,6 +16,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from app.observability.degraded import degraded
 from app.switches import is_on
 
 logger = logging.getLogger(__name__)
@@ -94,8 +95,8 @@ def better_than_now(root: str | Path) -> dict[str, Any]:
         if now is not None and now >= int(best.get("passed") or 0):
             return {}
         return dict(best)
-    except Exception:  # noqa: BLE001 - the product as it stands is offered instead
-        logger.debug("Could not read the best-attempt record", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the product as it stands is offered instead
+        degraded("best_attempt.read", error)
         return {}
 
 
@@ -129,8 +130,8 @@ def note(root: str | Path) -> None:
         (root / _FILE).parent.mkdir(parents=True, exist_ok=True)
         (root / _FILE).write_text(
             json.dumps({"passed": passed, "commit": commit, "tests": _the_suite(root)}) + "\n", encoding="utf-8")
-    except Exception:  # noqa: BLE001 - a record of the best is never worth a failed round
-        logger.debug("Could not note the best attempt", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - a record of the best is never worth a failed round
+        degraded("best_attempt.note", error)
 
 
 def after_a_redraft(root: str | Path, *, test_round: int, replans: int) -> str:
@@ -198,14 +199,14 @@ def restore_if_worse(root: str | Path, *, margin: int = MARGIN) -> str:
         # 21 failing criteria with its best product, 12 of them passing, already back on disk.
         try:
             suite.run(root)
-        except Exception:  # noqa: BLE001 - the restore stands; the next measurement corrects the record
-            logger.debug("Could not measure the product that was put back", exc_info=True)
+        except Exception as error:  # noqa: BLE001 - the restore stands; the next measurement corrects the record
+            degraded("best_attempt.measure_after_restore", error)
         said = (f"The product passes {now} acceptance tests now and passed {best['passed']} at its best; "
                 f"{len(paths)} file(s) were put back as they were then.")
         logger.warning(said)
         return said
-    except Exception:  # noqa: BLE001 - the sprint is planned again as it would have been
-        logger.debug("Could not put back the best attempt", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the sprint is planned again as it would have been
+        degraded("best_attempt.restore", error)
         return ""
 
 

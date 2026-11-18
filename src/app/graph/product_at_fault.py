@@ -25,6 +25,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from app.observability.degraded import degraded
 from app.acceptance import suite
 
 logger = logging.getLogger(__name__)
@@ -172,8 +173,8 @@ def evidence(root: str, result: Any, problems: Sequence[str], standards: Sequenc
                 return []
             lines.append(f"`{test}`: the standard says \"{claim['standard']}\"; the run shows \"{claim['failure']}\"")
         return lines
-    except Exception:  # noqa: BLE001 - unknown is no evidence
-        logger.debug("Could not check QA's product-at-fault answer", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - unknown is no evidence
+        degraded("product_at_fault.evidence", error)
         return []
 
 

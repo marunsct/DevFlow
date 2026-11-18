@@ -29,6 +29,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
+from app.observability.degraded import degraded
 from app.switches import is_on
 
 logger = logging.getLogger(__name__)
@@ -133,8 +134,8 @@ def keep(
         logger.warning("Kept %s as a candidate for its defect: its tests pass, and it broke %d test(s) that passed before",
                        stage_name, len(broke))
         return True
-    except Exception:  # noqa: BLE001 - the fix is reverted as before
-        logger.warning("Could not keep a reverted fix as a candidate", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the fix is reverted as before
+        degraded("kept_candidates.keep", error)
         return False
 
 
@@ -192,8 +193,8 @@ def replayed(root: str | Path, defect: Any, stage_name: str) -> Any | None:
             tests=["the defect's own tests passed when this change was first made; the whole suite measures it again"],
             decisions=[f"Applied the kept change(s) of {', '.join(used)}, smallest diff first, for a second measurement."],
         )
-    except Exception:  # noqa: BLE001 - a fixer is sent as before
-        logger.warning("Could not replay the kept candidates", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - a fixer is sent as before
+        degraded("kept_candidates.replay", error)
         return None
 
 

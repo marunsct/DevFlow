@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 
+from app.observability.degraded import degraded
 from app.tools.version_control import git_safely  # noqa: E402
 
 import logging
@@ -203,8 +204,8 @@ def _unit_tests_failing(root: str) -> list[str]:
         from app import ci
 
         return ci.unit_failures(root)
-    except Exception:  # noqa: BLE001 - a run that cannot be made holds nothing back
-        logger.debug("Could not run the unit tests before release", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - a run that cannot be made holds nothing back
+        degraded("release.unit_tests", error)
         return []
 
 
@@ -635,8 +636,8 @@ def _what_the_release_re_check_finds(state: Any, root: str) -> list[str]:
             getattr(state.get("stack_selection"), "technology_stack", None),
             getattr(state.get("document"), "text", "") or "",
         )
-    except Exception:  # noqa: BLE001 - a re-check that cannot run adds nothing
-        logger.debug("Could not re-check the product at release", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - a re-check that cannot run adds nothing
+        degraded("release.recheck", error)
         return []
     found = [problem for problem in found if not (locked and locked in problem)]
     return [f"At release, reading the files still finds: {problem}"[:600] for problem in found[:8]]
@@ -731,7 +732,7 @@ def _measured_again_if_it_changed(root: Any, left_out: list[str] | None = None) 
     except Exception as error:  # noqa: BLE001 - the release is not stopped; what was not measured is said (LR.27)
         # Found in the launch review: a failure here returned no gap, so a product the clean-ups changed shipped as
         # measured although nothing measured it as it shipped.
-        logger.warning("Could not measure the product again at release", exc_info=True)
+        degraded("release.measured_again", error)
         return [f"{CHANGED_AT_RELEASE} could not run: the measurement failed ({type(error).__name__})"]
 
 
@@ -793,10 +794,11 @@ def _code_no_review_read(run_id: str | None, state: Any = None) -> list[str]:
     if not run_id:
         return []
     try:
-        from app.observability.transcript import read_transcript
+        from app.observability.transcript import read_live
 
-        stages = {str(r.get("stage") or "") for r in read_transcript(run_id, kinds={"model_request"})}
-    except Exception:  # noqa: BLE001 - the release says nothing it cannot measure
+        stages = {str(r.get("stage") or "") for r in read_live(run_id, {"model_request"})}
+    except Exception as error:  # noqa: BLE001 - the release says nothing it cannot measure
+        degraded("release.code_no_review_read", error)
         return []
     if not stages or any(stage.startswith(_CODE_REVIEWS) for stage in stages):
         return []
@@ -851,7 +853,8 @@ def _no_unit_tests_ran(root: Any) -> str:
 
             _run_unit_tests_procedurally(str(root))
             parsed = junit.read(Path(root) / project / report)
-    except Exception:  # noqa: BLE001 - the release says nothing it cannot measure
+    except Exception as error:  # noqa: BLE001 - the release says nothing it cannot measure
+        degraded("release.no_unit_tests_ran", error)
         return ""
     if parsed.tests:
         return ""

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.observability.degraded import degraded
 from app.switches import is_on
 
 #: Off in code like every switch; the compose file says whether it is on.
@@ -84,7 +85,8 @@ def contradictions(specification: Any) -> list[str]:
                 if len(found) >= MOST_CONTRADICTIONS:
                     return found
         return found
-    except Exception:  # noqa: BLE001 - a gate that cannot read the document finds nothing, as without it
+    except Exception as error:  # noqa: BLE001 - a gate that cannot read the document finds nothing, as without it
+        degraded("design_check.contradictions", error)
         return []
 
 

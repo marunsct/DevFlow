@@ -14,6 +14,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
+from app.observability.degraded import degraded
 from app.graph import acceptance_nodes
 from app.graph.context import GraphContext
 from app.graph.workflow import WorkflowGraphState
@@ -197,8 +198,8 @@ def _fixed_by_rewriting(
             )
             if kept is not None:
                 return kept
-        except Exception:  # noqa: BLE001 - one rewrite, or the agent loop, takes the defect
-            logger.warning("Candidate fixes failed to run", exc_info=True)
+        except Exception as swallowed:  # noqa: BLE001 - one rewrite, or the agent loop, takes the defect
+            degraded("fix.candidates", swallowed)
     # Candidates are in every delivery mode: they are kept only when the
     # defect's tests pass. A single rewrite in place of the agent loop is
     # fast delivery's.
@@ -218,7 +219,7 @@ def _fixed_by_rewriting(
             ),
         )
     except Exception as error:  # noqa: BLE001 - the agent loop takes the defect
-        logger.warning("Fixing by rewriting failed; the agent loop takes the defect", exc_info=True)
+        degraded("fix.rewrite", error)
         declined(f"the rewrite raised {type(error).__name__}")
         return None
 

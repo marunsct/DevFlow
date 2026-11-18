@@ -547,6 +547,9 @@ def fix_by_rewriting(
     co_failures = co_defect_failures.failures_by_file(co_defects, root, may_write or (lambda _: True))
     changed: list[str] = []
     diagnostics: list[str] = []
+    from app.graph.fewest_findings import BestVersions
+
+    best = BestVersions()
     for _pass in range(MOST_PASSES):
         targets = files if not diagnostics else [f for f in files if any(f"`{f}`" in d for d in diagnostics)] or files
         for path in targets:
@@ -610,10 +613,16 @@ def fix_by_rewriting(
                     return None
         refused = [line for line in diagnostics if "language service is sure of" in line or AN_EDIT_NOT_APPLIED in line]
         diagnostics = [*refused, *(diagnose(changed) if diagnose and changed else [])]
+        best.offer_as_they_are(root, changed, diagnostics)
         if not diagnostics:
             break
     if not changed:
         return None
+    # The pass the compiler found fewest errors in is kept, not the last (A2): measured, a third pass broke what the
+    # second had made compile and was kept with "The compiler still reports ...".
+    if best.put_back(root, write):
+        refused = [line for line in diagnostics if "language service is sure of" in line or AN_EDIT_NOT_APPLIED in line]
+        diagnostics = [*refused, *(diagnose(changed) if diagnose else [])]
     logger.info("Fixed by rewriting %d file(s) from what failed: %s", len(changed), ", ".join(changed))
     return SpecialistOutput(
         changed_files=changed,

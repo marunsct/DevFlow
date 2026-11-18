@@ -406,15 +406,23 @@ def _repaired_where_the_compiler_says(
     """
     written = [path for _, path, ok in results if ok]
     tasks = {path: task for _, path, task in jobs}
-    for _pass in range(MOST_REPAIR_PASSES):
+    from app.graph.builder_facts import compiler_lines
+    from app.graph.fewest_findings import BestVersions
+
+    def reported_now() -> list[str]:
         reported = diagnose(written) if written else []
         # The compiler's own errors beside the language service's: `tsc` reports a router handed to `app.use`, the
         # service does not (BUILDER_FACTS).
-        from app.graph.builder_facts import compiler_lines
+        return [*reported, *(line for line in compiler_lines(repo_root, written) if line not in reported)]
 
-        reported = [*reported, *(line for line in compiler_lines(repo_root, written) if line not in reported)]
-        if not reported:
-            return
+    # Each file's version with the fewest errors is what stays, the draft included (A2): the last repair was kept
+    # unmeasured, even when it made the file worse than the draft before it.
+    best = BestVersions()
+    for _pass in range(MOST_REPAIR_PASSES + 1):
+        reported = reported_now()
+        best.offer_as_they_are(root, written, reported)
+        if not reported or _pass == MOST_REPAIR_PASSES:
+            break
         failing = [path for path in written if any(f"`{path}`" in line for line in reported)]
         logger.info("Drafts the compiler reports errors in, drafted again: %s", ", ".join(failing))
         for path in failing:
@@ -429,6 +437,8 @@ def _repaired_where_the_compiler_says(
             except Exception as error:  # noqa: BLE001 - the next stage meets what is there
                 logger.info("Repair of draft %s failed: %s", path, str(error)[:200])
                 _noted(path, f"repair-{_pass + 1}", f"refused; the earlier draft stays: {error}")
+    for path in best.put_back(root, write):
+        _noted(path, "repair", "an earlier version the compiler reported fewer errors in was kept")
 
 
 #: Words of a refused write that name the content, not the path: drafted once more with them.

@@ -842,6 +842,38 @@ def what_the_fix_made_certain_to_fail(root: str, base: str) -> list[str]:
         return []
 
 
+def what_the_fix_made_the_compiler_report(root: str, base: str, before_problem: str = "") -> list[str]:
+    """The compiler's errors on lines this fix wrote, in a compiled language; [] when none. Never raises.
+
+    The compiled-language half of `what_the_fix_made_certain_to_fail` (A2): the language service reads JavaScript,
+    TypeScript and Python only, so a fix in Go, Rust, Java or C# that added a call to nothing, made when nothing passed
+    before it, was kept, and every later round failed to build on it. An error the measurement before the fix already
+    named (`before_problem`) is not this fix's.
+    """
+    try:
+        from app.analysis import compiler_check
+        from app.analysis.file_kinds import is_scratch
+        from app.tools.repository import pinned_project_directory
+        from app.tools.version_control import changed_since
+
+        files = [p for p in changed_since(root, base)
+                 if p.lower().endswith(compiler_check.SUFFIXES) and not is_scratch(Path(p).name)]
+        if not files:
+            return []
+        found = []
+        for finding in compiler_check.findings(root, pinned_project_directory(Path(root)) or "", files):
+            relative, line, message = str(finding.get("file") or ""), int(finding.get("line") or 0), str(finding.get("message") or "")
+            if relative not in files or (message and message in str(before_problem or "")):
+                continue
+            added = _lines_added(root, base, relative)
+            if added is None or line in added:
+                found.append(f"`{relative}` line {line}: {message}")
+        return found
+    except Exception:  # noqa: BLE001 - a check that cannot run keeps the fix
+        logger.debug("Could not ask the compiler about the fix", exc_info=True)
+        return []
+
+
 def what_the_fix_did_to_the_install(root: str, base: str) -> str:
     """Why the project's dependencies no longer install, when this fix edited a manifest and the install now fails; "".
 
@@ -1004,6 +1036,11 @@ def after_a_fix(
         certain = what_the_fix_made_certain_to_fail(root, base)
         if certain:
             broken = ["it wrote code the language service is sure fails when it runs: " + "; ".join(certain[:3])]
+        elif after.problem or after.unit.get(ci.UNIT_TESTS_DID_NOT_RUN) == "failed":
+            # Asked only of a build that failed: a product that started compiled.
+            compiled = what_the_fix_made_the_compiler_report(root, base, before.problem if before is not None else "")
+            if compiled:
+                broken = ["it wrote code the compiler rejects: " + "; ".join(compiled[:3])]
     gained_now = after.passing() - (before.passing() if before is not None else set())
     from app.graph import net_gain, unit_tests_disagree
 

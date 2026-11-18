@@ -128,7 +128,8 @@ def _fixed_by_rewriting(
     defect's tests pass is kept (`rewritten_fixes.fix_by_candidates`).
     """
     from app.graph.workflow import (
-        APP_RUN_ID_KEY, _diagnostics_in_files_touched, _fast_delivery, _the_defect_s_tests_pass,
+        APP_RUN_ID_KEY, MOST_DIAGNOSTICS_FOR_A_PASS, _diagnostics_in_files_touched, _fast_delivery,
+        _the_defect_s_tests_pass,
         _the_fixes_to_keep_for, _the_run_approves_its_own_writes, _what_the_criteria_s_tests_printed,
         _what_the_last_failure_printed, _what_the_unit_tests_printed, defect_fix_modes, mutation_guided,
     )
@@ -213,7 +214,7 @@ def _fixed_by_rewriting(
             last_failure=last_failure, may_write=may_write, files=located, co_defects=co_defects,
             kept=_the_fixes_to_keep_for(state, defect),
             diagnose=lambda files: _diagnostics_in_files_touched(
-                state, {"messages": []}, SimpleNamespace(changed_files=files),
+                state, {"messages": []}, SimpleNamespace(changed_files=files), most=MOST_DIAGNOSTICS_FOR_A_PASS,
             ),
         )
     except Exception as error:  # noqa: BLE001 - the agent loop takes the defect

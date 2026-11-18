@@ -2795,14 +2795,22 @@ def _the_names_the_module_has(project: Path, importer: Path, finding: dict) -> s
         return ""
 
 
+#: Findings an agent stage is told of after its writes.
+MOST_DIAGNOSTICS = 4
+#: Findings a whole-file pass (a fix's rewrite, a draft's repair) is given and counted by: every one for its files,
+#: up to the compiler check's own bound. At 4, a pass saw the first four of a file's errors and the count of a pass
+#: with nine was the count of one with four (A2).
+MOST_DIAGNOSTICS_FOR_A_PASS = 12
+
+
 def _diagnostics_in_files_touched(
-    state: Any, result: dict[str, Any], structured_response: Any, stage_name: str = "",
+    state: Any, result: dict[str, Any], structured_response: Any, stage_name: str = "", most: int = MOST_DIAGNOSTICS,
 ) -> list[str]:
     """High-confidence syntax or reference diagnostics in files modified by this stage.
 
     Runs what an IDE would underline (via `language_service.underlined_any`) over the
     files touched by this stage. Only certain errors (ReferenceError, missing exports,
-    undeclared names) are reported, bounded to a maximum of 4 items - and not an
+    undeclared names) are reported, bounded to `most` items - and not an
     import of a file another work order owns (`_another_work_order_writes_it`).
     """
     from app.analysis.file_kinds import is_scratch
@@ -2859,12 +2867,12 @@ def _diagnostics_in_files_touched(
                     msg = finding.get("message", "")
                     msg += _the_names_the_module_has(project or Path(root), target, finding)
                     diagnostics.append(f"- In `{relative}` line {line}: {msg}")
-                    if len(diagnostics) >= 4:
+                    if len(diagnostics) >= most:
                         return diagnostics
         except Exception:  # noqa: BLE001
             continue
 
-    return [*diagnostics, *_what_the_compiler_says_of(root, files_to_check, stage_name, pinned or "")][:4]
+    return [*diagnostics, *_what_the_compiler_says_of(root, files_to_check, stage_name, pinned or "")][:most]
 
 
 def _the_milestone_is_unfinished(root: str, stage_name: str) -> bool:

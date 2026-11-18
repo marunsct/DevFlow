@@ -44,6 +44,8 @@ Written by `loop.sh measuring` from 412 scored runs in the ledger. On and off co
 | `SLICED_MEMORY` | Context and cost | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `STABLE_STAGE_PREFIX` | Context and cost | on | 19 | no signal | 1 | not measured: needs 0 more on and 1 more off |
 | `CONCURRENT_WRITE_PROBE` | Contract probes | on | 19 | 3 | 1 | not measured: needs 0 more on and 1 more off |
+| `EDGE_PROBE` | Contract probes | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
+| `PAGE_PROBE` | Contract probes | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `WRONG_SHAPE_BODY_PROBE` | Contract probes | on | 19 | 5 | 1 | not measured: needs 0 more on and 1 more off |
 | `EQUIVALENT_MUTANTS_REMEMBERED` | Efficiency | on | 19 | no signal | 1 | not measured: needs 0 more on and 1 more off |
 | `FIX_STAGES_THAT_CLOSE_NOTHING` | Efficiency | on | 19 | 2 | 1 | not measured: needs 0 more on and 1 more off |
@@ -59,6 +61,7 @@ Written by `loop.sh measuring` from 412 scored runs in the ledger. On and off co
 | `INTAKE_ASKS_FIRST` | Review gates | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `MILESTONE_EVIDENCE_GATE` | Review gates | on | 19 | no signal | 1 | not measured: needs 0 more on and 1 more off |
 | `SETUP_SCOPE_GUARD` | Setup scope | on | 19 | no signal | 1 | not measured: needs 0 more on and 1 more off |
+| `UNIT_TEST_QUARANTINE` | Unit test signal | on | 0 | no signal | 0 | not measured: needs 2 more on and 2 more off |
 | `CHANGE_REQUEST_RUNS` | bundle PREMIUM_CHANGE_REQUESTS | on | 403 | no signal | 1 | not measured: needs 0 more on and 1 more off |
 | `ASK_SPECIFICATION` | bundle PREMIUM_DEEP_VERIFICATION | on | 402 | no signal | 2 | measured: hidden 0.93 on / 0.70 off; minutes 88.07 / 206.75 |
 | `ASSUMPTIONS_GATE` | bundle PREMIUM_DEEP_VERIFICATION | on | 402 | 298 | 2 | measured: hidden 0.93 on / 0.70 off; minutes 88.07 / 206.75 |

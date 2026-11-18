@@ -104,12 +104,12 @@ def _serve(html: str):
     return server
 
 
-def _checked(tmp_path: Path, html: str, persists: bool) -> list[SimpleNamespace]:
+def _checked(tmp_path: Path, html: str, persists: bool, small_screens: bool = True) -> list[SimpleNamespace]:
     (tmp_path / "node_modules" / "@playwright" / "test").mkdir(parents=True)
     (tmp_path / "node_modules" / "@playwright" / "test" / "package.json").write_text(
         json.dumps({"name": "@playwright/test", "type": "module", "main": "index.mjs"}))
     (tmp_path / "node_modules" / "@playwright" / "test" / "index.mjs").write_text(SHIM)
-    (tmp_path / "spec.mjs").write_text(page_probe.playwright_page_checks([None], persists=persists))
+    (tmp_path / "spec.mjs").write_text(page_probe.playwright_page_checks([None], persists=persists, small_screens=small_screens))
     (tmp_path / "run.mjs").write_text(RUN)
     server = _serve(html)
     try:
@@ -136,6 +136,28 @@ def test_a_page_failing_each_check_is_found_and_one_keeping_them_passes(tmp_path
     safe = _checked(tmp_path / "safe", SAFE, persists=True)
 
     assert [t.outcome for t in safe] == ["passed"] * 4, safe
+
+
+@pytest.mark.skipif(shutil.which("node") is None or not CORE.is_file(), reason="no browser driver here")
+def test_a_brief_that_never_asks_for_a_phone_is_not_held_to_its_width(tmp_path):
+    found = _checked(tmp_path, UNSAFE, persists=True, small_screens=False)
+
+    kinds = {f["kind"] for t in found if (f := page_probe.what_the_test_found(t)) is not None}
+    assert "overflow" not in kinds and "markup_ran" in kinds, found
+
+
+def test_the_phone_width_is_asked_only_when_the_brief_asks_for_small_screens(tmp_path, monkeypatch):
+    monkeypatch.setenv("PAGE_PROBE", "on")
+    asked = []
+    monkeypatch.setattr(page_probe, "playwright_page_checks", lambda web, **kw: asked.append(kw) or "")
+    _a_page_project(tmp_path, monkeypatch)
+    from app.acceptance import interface_contract as ic
+    monkeypatch.setattr(ic, "_the_probe_s_report", _reporting(False))
+
+    page_probe.page_errors(tmp_path, "A list of notes kept on the page.", runner=lambda *a, **k: {})
+    page_probe.page_errors(tmp_path, "A list of notes that works on a phone screen.", runner=lambda *a, **k: {})
+
+    assert [kw["small_screens"] for kw in asked] == [False, True]
 
 
 def test_the_brief_decides_whether_a_reload_is_asked():

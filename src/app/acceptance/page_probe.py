@@ -67,6 +67,7 @@ _SPEC = """import { test, expect } from '@playwright/test';
 const MARKER = %(marker)s;
 const MARKUP = %(markup)s;
 const PERSISTS = %(persists)s;
+const SMALL_SCREENS = %(small_screens)s;
 const NOT_THE_PRODUCT = /favicon\\.ico/;
 const FIELDS = 'input:not([type]), input[type=text], input[type=search], textarea';
 
@@ -82,14 +83,10 @@ async function addAnItem(page, text) {
   for (let i = 0; i < count; i += 1) await fields.nth(i).fill(text).catch(() => {});
   const first = fields.first();
   const form = first.locator('xpath=ancestor::form[1]');
-  const submit = form.locator('[type=submit], button:not([type])').filter({ visible: true }).first();
-  if (await form.count() && await submit.count()) {
-    await submit.click().catch(() => {});
-  } else {
-    const named = page.getByRole('button', { name: /add|create|save|submit|post|send|new/i }).filter({ visible: true });
-    if (!(await form.count()) && await named.count()) await named.first().click().catch(() => {});
-    else await first.press('Enter').catch(() => {});
-  }
+  // A form is sent the way the browser sends it, through its own submit handlers; a field outside a form by Enter.
+  // A page that adds only through a pointer on a control outside a form is not driven, and its checks are skipped.
+  if (await form.count()) await form.evaluate((f) => (f.requestSubmit ? f.requestSubmit() : f.submit())).catch(() => {});
+  else await first.press('Enter').catch(() => {});
   await page.waitForTimeout(600);
   return true;
 }
@@ -125,6 +122,7 @@ test('page check 2: no console error or failed request while an item is added', 
 });
 
 test('page check 3: the page fits a %(width)spx-wide screen', async ({ page }) => {
+  test.skip(!SMALL_SCREENS, 'the brief does not ask for small screens');
   await page.setViewportSize({ width: %(width)s, height: %(height)s });
   await page.goto('/');
   await page.waitForTimeout(400);
@@ -148,10 +146,14 @@ test('page check 4: an item added is still shown after a reload', async ({ page 
 """
 
 
-def playwright_page_checks(_web: list[Any], *, persists: bool = False) -> str:
-    """The spec: the four checks, each throwing `MARKER` and its finding when the page fails it."""
+def playwright_page_checks(_web: list[Any], *, persists: bool = False, small_screens: bool = False) -> str:
+    """The spec: the four checks, each throwing `MARKER` and its finding when the page fails it.
+
+    Check 3 (the phone width) is asked only when the brief asks for small screens, as the pack's own 375px check is
+    (`interface_checks.asks_for_small_screens`): a brief that never asks for a phone is not held to one.
+    """
     return _SPEC % {"marker": json.dumps(MARKER), "markup": json.dumps(MARKUP), "persists": json.dumps(bool(persists)),
-                    "width": PHONE[0], "height": PHONE[1]}
+                    "small_screens": json.dumps(bool(small_screens)), "width": PHONE[0], "height": PHONE[1]}
 
 
 _NUMBER = re.compile(r"\bpage check (\d)\b")
@@ -199,12 +201,17 @@ def page_errors(repo_root: str | Path, brief: str | None = None, *, runner: Any 
         state = suite._state(root)  # noqa: SLF001 - one state file for the suite and its probes
         if brief is None:
             persists = bool(state.get(_PERSISTS_KEY))
+            small_screens = bool(state.get(_SMALL_SCREENS_KEY))
         else:
+            from app.analysis.interface_checks import asks_for_small_screens
+
             persists = the_brief_says_data_persists(brief)
+            small_screens = asks_for_small_screens(brief)
             state[_PERSISTS_KEY] = persists
+            state[_SMALL_SCREENS_KEY] = small_screens
             suite._save_state(root, state)  # noqa: SLF001
         probe = {**ic.PROBE_RUNNERS["playwright"],
-                 "page_checks": lambda web: playwright_page_checks(web, persists=persists)}
+                 "page_checks": lambda web: playwright_page_checks(web, persists=persists, small_screens=small_screens)}
         report = ic._the_probe_s_report(root / project_name, project_name, probe, [None], run,  # noqa: SLF001
                                         "page_checks")
         if report is None or not report.found:
@@ -221,6 +228,8 @@ def page_errors(repo_root: str | Path, brief: str | None = None, *, runner: Any 
 
 #: Where the brief's word on persistence is kept for `still_raised`.
 _PERSISTS_KEY = "page_probe_persists"
+#: And its word on small screens.
+_SMALL_SCREENS_KEY = "page_probe_small_screens"
 
 #: How each finding opens in the defect; `still_raised` reads them back.
 _OPENINGS = {

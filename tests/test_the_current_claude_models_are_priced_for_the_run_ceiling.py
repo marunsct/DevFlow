@@ -21,3 +21,14 @@ def test_haiku_5_5_is_priced_at_its_short_and_long_prompt_rates():
 
 def test_a_newer_opus_is_not_charged_at_the_old_opus_4_rate():
     assert cost_tracker._lookup("claude-opus-4-8").input_usd_per_mtok == 5.00
+
+
+def test_a_hosted_model_that_answered_is_priced_on_a_run_whose_default_is_local():
+    """Measured on the first hybrid run: its judgement calls on Haiku 5.5 were priced at $0 under the local default."""
+    price = cost_tracker.price_for("local", "claude-haiku-5-5")
+
+    assert price is not None and price.input_usd_per_mtok == 0.10
+
+
+def test_a_local_model_the_table_does_not_know_stays_free():
+    assert cost_tracker.price_for("local", "unsloth/Qwen3.6-35B-A3B-MTP-GGUF").input_usd_per_mtok == 0.0

@@ -172,9 +172,15 @@ def price_for(provider: str, model: str) -> Price | None:
     unknown model on a paid provider returns `None`, which the accumulator
     records as an unpriced request.
     """
+    # The model that answered decides when it is a hosted model the table prices. Measured on the first hybrid run: the
+    # tracker is built with the run's default provider (local), so every call its judgement model made on Claude Haiku
+    # 5.5 was priced at $0 and `MAX_RUN_COST_USD` could not stop it.
+    listed = _lookup(model)
+    if listed is not None:
+        return listed
     if (provider or "").strip().lower() in LOCAL_PROVIDERS:
         return Price(0.0, 0.0)
-    return _lookup(model)
+    return None
 
 
 @dataclass

@@ -32,3 +32,8 @@ def test_the_guide_reaches_the_builders_whole_and_uses_no_banned_word():
     guide = pack_named("rust-axum-api").guide
     assert len(guide) <= builder_facts.MOST_GUIDE_CHARACTERS
     assert not BANNED.search(guide)
+
+
+def test_a_rust_builder_is_told_the_signature_keeps_the_router_waiting():
+    """Measured: `app()` ended in `.with_state(state)` but was declared `-> Router<AppState>`."""
+    assert "declared `-> Router<AppState>`, it still waits for its state after `.with_state`" in _guide()

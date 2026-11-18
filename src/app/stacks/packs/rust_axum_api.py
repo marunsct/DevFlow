@@ -77,7 +77,8 @@ with `.route("/items", post(create))`), and `src/main.rs` starts it. Unit tests 
 `axum::test`: a test imports `axum::body::Body`, `axum::http::{Request, StatusCode}`,
 `http_body_util::BodyExt` and `tower::ServiceExt`, as `tests/scaffold_smoke.rs` does. `app()`
 returns a plain `Router`: shared state is applied inside it with `.with_state(state)`, since
-`axum::serve` cannot serve a `Router<AppState>`. Run them with `cargo nextest run` (or `cargo
+`axum::serve` cannot serve a `Router<AppState>`. Its signature is `pub fn app() -> Router`: declared
+`-> Router<AppState>`, it still waits for its state after `.with_state`. Run them with `cargo nextest run` (or `cargo
 test`). Add a crate with `cargo add <name>`."""
 
 DOCKERFILE = """# {{title}}: build with `docker build -t {{project}} .`, run with
@@ -101,6 +102,12 @@ ENTRYPOINT ["/usr/local/bin/service"]
 #: Errors an axum service is known to raise, by a phrase of the compiler's message, and their cause
 #: (`app.stacks.known_errors`). Measured on two Rust runs: a handler taking `Json` before `State` failed as "`Handler<_, _>`
 #: is not satisfied" for three fix rounds, and `axum::serve` given a `Router<AppState>` failed every round of a run.
+#: Measured on a Rust run: `app()` ended in `.with_state(state)` yet was declared `-> Router<AppState>`, so the router
+#: still waited for its state, and a fixer told to apply the state found it already applied and left the error open.
+THE_SIGNATURE_DECIDES = (
+    " The return type decides it: `.with_state(state)` gives the router the type the function names, so "
+    "`fn app() -> Router<AppState>` still waits for its state after `.with_state` - write `fn app() -> Router`."
+)
 AXUM_KNOWN_ERRORS = {
     "Handler<_, _>` is not satisfied": (
         "an axum handler's arguments are extractors, and the one that reads the request body (`Json<T>`, `Form<T>`, "
@@ -110,7 +117,7 @@ AXUM_KNOWN_ERRORS = {
     **{phrase: (
         "`app()` must return a plain `Router` whose routes no longer wait for their state: build the state inside "
         "`app()` (from `DATA_DIR`) and end it with `.with_state(state)`; `main.rs` and the tests then use `app()` as "
-        "it is, sending a test's requests to it with `oneshot`."
+        "it is, sending a test's requests to it with `oneshot`." + THE_SIGNATURE_DECIDES
     ) for phrase in ("expected `Router`, found `Router<", "exists for struct `Router<")},
     **{phrase: (
         "`oneshot` takes the router by value, so a test that sends a second request through the same router has "
@@ -137,7 +144,7 @@ AXUM_KNOWN_ERRORS = {
     ),
     "Service<IncomingStream": (
         "`axum::serve` was given a `Router<AppState>`, a router still waiting for its state. Apply the state with "
-        "`.with_state(state)` before serving, so the router served is a plain `Router`."
+        "`.with_state(state)` before serving, so the router served is a plain `Router`." + THE_SIGNATURE_DECIDES
     ),
 }
 

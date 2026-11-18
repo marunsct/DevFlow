@@ -45,3 +45,16 @@ def test_the_error_is_given_its_cause(tmp_path, error, cause):
 
     assert KNOWN_CAUSE in defect.actual_behavior and cause in defect.actual_behavior
     assert not BANNED.search(defect.actual_behavior)
+
+
+def test_a_router_error_names_the_return_type_that_keeps_it_waiting(tmp_path):
+    """Measured: `app()` ended in `.with_state(state)` but was declared `-> Router<AppState>`; told to apply the state,
+    the fixer found it applied and left the error open."""
+    contract.write(tmp_path, pack_named("rust-axum-api"), "notes-api", "Notes")
+
+    (defect,) = with_known_causes(tmp_path, [_defect(
+        "the trait bound `for<'a> Router<AppState>: tower_service::Service<IncomingStream<'a, TcpListener>>` is not "
+        "satisfied")])
+
+    assert "`fn app() -> Router<AppState>` still waits for its state after `.with_state`" in defect.actual_behavior
+    assert not BANNED.search(defect.actual_behavior)

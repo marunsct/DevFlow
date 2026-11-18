@@ -103,7 +103,9 @@ class _Store(BaseHTTPRequestHandler):
 
 def _run_the_pytest_module(tmp_path, racy):
     handler = type("Store", (_Store,), {"racy": racy, "records": {}, "lock": threading.Lock()})
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    # A listen queue for every create sent at once: the default 5 refused some of the 16 on a loaded machine, and the
+    # probe then counted 14 made where the test expects every one.
+    server = type("Server", (ThreadingHTTPServer,), {"request_queue_size": 64})(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         lines = _lines()

@@ -310,6 +310,15 @@ class StackPack:
     #: Spring Boot version, the reinstall stopped at a compile error before Maven reached its test plugin, and every
     #: later offline build and test failed on "Unknown host" - the start too, so no acceptance test reached the product.
     fetches_while_building: bool = False
+    #: A small working product on this pack, by path relative to the project, with `{{package}}` filled as the
+    #: scaffold's files are: in the framework version the pack pins, how shared state reaches a handler, one JSON body
+    #: read and checked, a 404 and a 400, data kept in a file under `DATA_DIR`, and a unit test calling the service in
+    #: memory. Shown to the stages that write and fix code as reference, never written into the product
+    #: (`contract.reference_code`); `scripts/loop/verify_packs.py` compiles it and runs its test. Deep review
+    #: 2026-11-18, item E4: the traps on a new stack were version skew - the model remembered an older API than the
+    #: pinned one (`Router<AppState>`, `axum::test`, Slim's `getErrorMiddleware`, `Results.StatusCode(int, obj)`) -
+    #: and a scaffold showing only a health route left the first thing the model had to invent to be the trap.
+    golden_example: Mapping[str, str] = field(default_factory=dict)
 
 
     @property
@@ -363,6 +372,12 @@ class StackPack:
     def rendered_smoke_files(self, project: str, title: str, package: str | None = None) -> dict[str, str]:
         """The smoke tests with this project's names filled in."""
         return _filled(self.smoke_files, project, title, package)
+
+    def filled_files(
+        self, files: Mapping[str, str], project: str, title: str = "", package: str | None = None,
+    ) -> dict[str, str]:
+        """`files` (the golden example, say) with this project's names filled in, paths and contents."""
+        return _filled(files, project, title, package)
 
     def filled(self, text: str, project: str, title: str = "", package: str | None = None) -> str:
         """`text` (a guide, say) with this project's names filled in."""

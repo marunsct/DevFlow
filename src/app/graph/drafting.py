@@ -289,6 +289,16 @@ def _the_naming_standard(stack: Any) -> str:
         return ""
 
 
+def the_reference_code(root: Path, path: str) -> str:
+    """The pack's golden example as reference code for writing or fixing `path`, or "" (`contract.reference_code`)."""
+    try:
+        from app.stacks.contract import reference_code
+
+        return reference_code(root, path)
+    except Exception:  # noqa: BLE001 - the request as it was
+        return ""
+
+
 def _the_builder_s_facts(root: Path, path: str) -> str:
     try:
         from app.graph.builder_facts import section
@@ -335,6 +345,8 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         ("--- The compiler reports, in the draft above ---\n" + "\n".join(diagnostics)) if diagnostics else "",
         # The layout every builder and judge reads (plan CM.1).
         the_facts_section(root, built=False).strip(),
+        # The pack's golden example, for a file in its languages (deep review 2026-11-18, item E4).
+        the_reference_code(root, path),
         # What a fixer is told after a failure, told before the file is written (BUILDER_FACTS).
         _the_builder_s_facts(root, path),
         _the_naming_standard(stack),
@@ -415,6 +427,10 @@ def _repaired_where_the_compiler_says(
         reported = [*reported, *(line for line in compiler_lines(repo_root, written) if line not in reported)]
         if not reported:
             return
+        # An error the pack knows carries its cause into the redraft (deep review 2026-11-18, item E4).
+        from app.stacks.known_errors import with_known_causes_in_lines
+
+        reported = with_known_causes_in_lines(repo_root, reported)
         failing = [path for path in written if any(f"`{path}`" in line for line in reported)]
         logger.info("Drafts the compiler reports errors in, drafted again: %s", ", ".join(failing))
         for path in failing:

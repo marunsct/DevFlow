@@ -596,17 +596,18 @@ def _how_the_pieces_load(stack: Any) -> str:
     )
 
 
-def project_contract(repository_root: str) -> str:
+def project_contract(repository_root: str, *, with_reference_code: bool = True) -> str:
     """How the project was set up and which parts the harness owns, or "".
 
     Every stage that writes code or tests is told the same thing: the commands,
-    where unit tests go, that the acceptance suite is locked. See
-    `app.stacks.contract`.
+    where unit tests go, that the acceptance suite is locked, and the pack's
+    reference code (`contract.reference_code`) - which a stage that only plans
+    is not given. See `app.stacks.contract`.
     """
     try:
         from app.stacks.contract import describe
 
-        return describe(repository_root)
+        return describe(repository_root, with_reference_code=with_reference_code)
     except Exception:  # noqa: BLE001 - a brief without it is the brief as it was
         return ""
 

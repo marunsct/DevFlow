@@ -38,7 +38,64 @@ Run them with `gotestsum -- ./...` (or `go test ./...`). Add a module with `go g
 The module path is `{{package}}` (its `go.mod`), not the project folder's name: a package in a
 subfolder `store/` is imported as `{{package}}/store`, and its files say `package store`."""
 
+#: The pack's golden example (`StackPack.golden_example`), in Gin 1.10: path parameters written `:id`, a body read with
+#: `ShouldBindJSON` (which answers nothing itself), and the store shared with the standard-library pack's.
+GOLDEN_SERVER = r"""package main
+
+import (
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+)
+
+// NewServer builds the service's router. main.go starts it; unit tests call it directly.
+func NewServer() http.Handler {
+	gin.SetMode(gin.ReleaseMode)
+	store := NewStore()
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+	router.POST("/items", func(c *gin.Context) {
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.Name) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+			return
+		}
+		item, err := store.Add(strings.TrimSpace(body.Name))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "the item could not be stored"})
+			return
+		}
+		c.JSON(http.StatusCreated, item)
+	})
+	router.GET("/items/:id", func(c *gin.Context) {
+		id, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "item not found"})
+			return
+		}
+		item, found, err := store.Find(id)
+		switch {
+		case err != nil:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "the items could not be read"})
+		case !found:
+			c.JSON(http.StatusNotFound, gin.H{"error": "item not found"})
+		default:
+			c.JSON(http.StatusOK, item)
+		}
+	})
+	return router
+}
+"""
+
 PACK = service_pack(
+    golden_example={"server.go": GOLDEN_SERVER, "store.go": go.GOLDEN_STORE, "items_test.go": go.GOLDEN_TEST},
     sandbox_image=sandbox.GO,
     name="go-gin-api",
     title="HTTP service in Go on Gin",

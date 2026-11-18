@@ -2860,11 +2860,22 @@ def _diagnostics_in_files_touched(
                     msg += _the_names_the_module_has(project or Path(root), target, finding)
                     diagnostics.append(f"- In `{relative}` line {line}: {msg}")
                     if len(diagnostics) >= 4:
-                        return diagnostics
+                        return _with_known_causes(root, diagnostics)
         except Exception:  # noqa: BLE001
             continue
 
-    return [*diagnostics, *_what_the_compiler_says_of(root, files_to_check, stage_name, pinned or "")][:4]
+    found = [*diagnostics, *_what_the_compiler_says_of(root, files_to_check, stage_name, pinned or "")][:4]
+    return _with_known_causes(root, found)
+
+
+def _with_known_causes(root: str, diagnostics: list[str]) -> list[str]:
+    """Each diagnostic that carries an error the stack pack knows, with its cause (`known_errors`); never raises."""
+    try:
+        from app.stacks.known_errors import with_known_causes_in_lines
+
+        return with_known_causes_in_lines(root, diagnostics)
+    except Exception:  # noqa: BLE001 - the diagnostics as found
+        return diagnostics
 
 
 def _the_milestone_is_unfinished(root: str, stage_name: str) -> bool:

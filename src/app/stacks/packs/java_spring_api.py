@@ -146,7 +146,164 @@ SPRING_KNOWN_ERRORS = {
     ),
 }
 
+#: The pack's golden example (`StackPack.golden_example`), in Spring Boot 3.4: a store bean given to the controller
+#: through its constructor, `DATA_DIR` read through `@Value` (the environment is a property source), `ResponseEntity`
+#: for 201, 400 and 404, Jackson (in the web starter) for the file, and a plain JUnit test over a standalone `MockMvc`.
+GOLDEN_STORE = r"""package app.{{package}};
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+/** The items, kept in one JSON file under DATA_DIR; one lock covers each read-change-write. */
+@Component
+public class ItemStore {
+    public record Item(long id, String name) {}
+
+    private final Path file;
+    private final ObjectMapper json = new ObjectMapper();
+
+    public ItemStore(@Value("${DATA_DIR:data}") String dataDir) {
+        this.file = Path.of(dataDir, "items.json");
+    }
+
+    public synchronized Item add(String name) {
+        List<Item> items = load();
+        long next = items.stream().mapToLong(Item::id).max().orElse(0) + 1;
+        Item item = new Item(next, name);
+        items.add(item);
+        save(items);
+        return item;
+    }
+
+    public synchronized Optional<Item> find(long id) {
+        return load().stream().filter(item -> item.id() == id).findFirst();
+    }
+
+    private List<Item> load() {
+        try {
+            if (!Files.exists(file)) {
+                return new ArrayList<>();
+            }
+            return new ArrayList<>(json.readValue(file.toFile(), new TypeReference<List<Item>>() {}));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private void save(List<Item> items) {
+        try {
+            Files.createDirectories(file.toAbsolutePath().getParent());
+            json.writeValue(file.toFile(), items);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+}
+"""
+
+GOLDEN_CONTROLLER = r"""package app.{{package}};
+
+import java.util.Map;
+import java.util.Optional;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/items")
+public class ItemController {
+    public record NewItem(String name) {}
+
+    private final ItemStore store;
+
+    public ItemController(ItemStore store) {
+        this.store = store;
+    }
+
+    @PostMapping
+    public ResponseEntity<?> create(@RequestBody(required = false) NewItem body) {
+        if (body == null || body.name() == null || body.name().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "name is required"));
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(store.add(body.name().trim()));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<?> find(@PathVariable("id") long id) {
+        Optional<ItemStore.Item> found = store.find(id);
+        if (found.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "item not found"));
+        }
+        return ResponseEntity.ok(found.get());
+    }
+}
+"""
+
+GOLDEN_TEST = r"""package app.{{package}};
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.nio.file.Path;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+class ItemControllerTest {
+    @TempDir
+    Path dataDir;
+
+    private MockMvc mvc;
+
+    @BeforeEach
+    void setUp() {
+        mvc = MockMvcBuilders.standaloneSetup(new ItemController(new ItemStore(dataDir.toString()))).build();
+    }
+
+    @Test
+    void anItemIsStoredAndReadBack() throws Exception {
+        mvc.perform(post("/items").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"first\"}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.id").value(1));
+        mvc.perform(get("/items/1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.name").value("first"));
+    }
+
+    @Test
+    void aMissingNameIsRefusedAndAnUnknownIdIsNotFound() throws Exception {
+        mvc.perform(post("/items").contentType(MediaType.APPLICATION_JSON).content("{}"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/items/99")).andExpect(status().isNotFound());
+    }
+}
+"""
+
 PACK = service_pack(
+    golden_example={
+        "src/main/java/app/{{package}}/ItemStore.java": GOLDEN_STORE,
+        "src/main/java/app/{{package}}/ItemController.java": GOLDEN_CONTROLLER,
+        "src/test/java/app/{{package}}/ItemControllerTest.java": GOLDEN_TEST,
+    },
     known_errors=SPRING_KNOWN_ERRORS,
     sandbox_image=sandbox.JAVA,
     name="java-spring-api",

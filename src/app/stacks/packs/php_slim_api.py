@@ -124,7 +124,180 @@ EXPOSE 8080
 CMD ["sh", "-c", "exec php -S \\"$HOST:$PORT\\" -t public public/index.php"]
 """ % {"php": PHP_VERSION}
 
+#: The pack's golden example (`StackPack.golden_example`), on Slim 4: the store made once in `create()` and handed to
+#: each route's closure with `use`, the body read through `addBodyParsingMiddleware`, the error middleware added with
+#: `addErrorMiddleware(bool, bool, bool)` (Slim 4 has no `getErrorMiddleware` or `setStrictRouting`), and a PHPUnit test
+#: sending a JSON request through `handle`.
+GOLDEN_SERVICE = r"""<?php
+
+declare(strict_types=1);
+
+namespace App;
+
+use Psr\Http\Message\ResponseInterface as Response;
+use Psr\Http\Message\ServerRequestInterface as Request;
+use Slim\App as SlimApp;
+use Slim\Factory\AppFactory;
+
+/** Builds the service. public/index.php runs it; unit tests call it directly. */
+final class Service
+{
+    public static function create(): SlimApp
+    {
+        // Shared state: one store, handed to each route that needs it.
+        $store = new ItemStore(getenv('DATA_DIR') ?: 'data');
+        $app = AppFactory::create();
+        $app->addBodyParsingMiddleware();
+        $app->addRoutingMiddleware();
+        $app->addErrorMiddleware(false, true, true);
+
+        $app->get('/health', function (Request $request, Response $response): Response {
+            return self::json($response, 200, ['status' => 'ok']);
+        });
+
+        $app->post('/items', function (Request $request, Response $response) use ($store): Response {
+            $body = $request->getParsedBody();
+            $name = is_array($body) ? trim((string) ($body['name'] ?? '')) : '';
+            if ($name === '') {
+                return self::json($response, 400, ['error' => 'name is required']);
+            }
+            return self::json($response, 201, $store->add($name));
+        });
+
+        $app->get('/items/{id}', function (Request $request, Response $response, array $args) use ($store): Response {
+            $item = $store->find((int) $args['id']);
+            if ($item === null) {
+                return self::json($response, 404, ['error' => 'item not found']);
+            }
+            return self::json($response, 200, $item);
+        });
+
+        return $app;
+    }
+
+    /** @param array<string, mixed> $value */
+    private static function json(Response $response, int $status, array $value): Response
+    {
+        $response->getBody()->write((string) json_encode($value));
+        return $response->withStatus($status)->withHeader('Content-Type', 'application/json');
+    }
+}
+"""
+
+GOLDEN_STORE = r"""<?php
+
+declare(strict_types=1);
+
+namespace App;
+
+/** The items, kept in one JSON file under DATA_DIR; one lock covers each read-change-write. */
+final class ItemStore
+{
+    private string $file;
+
+    public function __construct(string $dataDir)
+    {
+        $this->file = rtrim($dataDir, '/') . '/items.json';
+    }
+
+    /** @return array{id: int, name: string} */
+    public function add(string $name): array
+    {
+        return $this->locked(function (array $items) use ($name): array {
+            $item = ['id' => $items === [] ? 1 : max(array_column($items, 'id')) + 1, 'name' => $name];
+            $items[] = $item;
+            return [$items, $item];
+        });
+    }
+
+    /** @return array{id: int, name: string}|null */
+    public function find(int $id): ?array
+    {
+        return $this->locked(function (array $items) use ($id): array {
+            foreach ($items as $item) {
+                if ($item['id'] === $id) {
+                    return [null, $item];
+                }
+            }
+            return [null, null];
+        });
+    }
+
+    /** Runs $change on the items under the lock; it returns [the items to write, or null, and its result]. */
+    private function locked(callable $change): mixed
+    {
+        $dir = dirname($this->file);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+        $handle = fopen($this->file . '.lock', 'c');
+        flock($handle, LOCK_EX);
+        try {
+            $items = is_file($this->file) ? json_decode((string) file_get_contents($this->file), true) : [];
+            [$after, $result] = $change(is_array($items) ? $items : []);
+            if ($after !== null) {
+                file_put_contents($this->file, json_encode($after));
+            }
+            return $result;
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
+    }
+}
+"""
+
+GOLDEN_TEST = r"""<?php
+
+declare(strict_types=1);
+
+namespace Tests;
+
+use App\Service;
+use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\ResponseInterface;
+use Slim\Psr7\Factory\ServerRequestFactory;
+
+final class ItemsTest extends TestCase
+{
+    protected function setUp(): void
+    {
+        // Each test's service keeps its data in a folder of its own.
+        putenv('DATA_DIR=' . sys_get_temp_dir() . '/items-' . bin2hex(random_bytes(6)));
+    }
+
+    private function send(string $method, string $path, ?string $json = null): ResponseInterface
+    {
+        $request = (new ServerRequestFactory())->createServerRequest($method, $path);
+        if ($json !== null) {
+            $request->getBody()->write($json);
+            $request = $request->withHeader('Content-Type', 'application/json');
+        }
+        return Service::create()->handle($request);
+    }
+
+    public function testAnItemIsStoredAndReadBack(): void
+    {
+        $created = $this->send('POST', '/items', '{"name":"first"}');
+        $this->assertSame(201, $created->getStatusCode());
+        $item = json_decode((string) $created->getBody(), true);
+
+        $found = $this->send('GET', '/items/' . $item['id']);
+        $this->assertSame(200, $found->getStatusCode());
+        $this->assertSame('first', json_decode((string) $found->getBody(), true)['name']);
+    }
+
+    public function testAMissingNameIsRefusedAndAnUnknownIdIsNotFound(): void
+    {
+        $this->assertSame(400, $this->send('POST', '/items', '{}')->getStatusCode());
+        $this->assertSame(404, $this->send('GET', '/items/99')->getStatusCode());
+    }
+}
+"""
+
 PACK = service_pack(
+    golden_example={"src/Service.php": GOLDEN_SERVICE, "src/ItemStore.php": GOLDEN_STORE,
+                    "tests/ItemsTest.php": GOLDEN_TEST},
     sandbox_image=sandbox.PHP,
     name="php-slim-api",
     title="HTTP service in PHP on Slim",

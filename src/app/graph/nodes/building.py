@@ -151,7 +151,7 @@ def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
     # put back - the whole work order wasted.
     from app.agents.specialists import project_contract
 
-    owned = project_contract(state["repository"].root_path)
+    owned = project_contract(state["repository"].root_path, with_reference_code=False)
     if owned:
         request["messages"][-1]["content"] += (
             "\n\n" + owned

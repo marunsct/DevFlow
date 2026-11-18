@@ -153,7 +153,149 @@ AXUM_KNOWN_ERRORS = {
     ),
 }
 
+#: The pack's golden example (`StackPack.golden_example`), in axum 0.8: state applied inside `app()` with
+#: `.with_state`, `State` before the body extractor, path parameters written `{id}` (0.8; `:id` was 0.7), a body
+#: rejection answered by the handler, and a test through `oneshot`.
+GOLDEN_LIB = r"""use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use axum::extract::rejection::JsonRejection;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Item {
+    pub id: u64,
+    pub name: String,
+}
+
+#[derive(Deserialize)]
+struct NewItem {
+    name: Option<String>,
+}
+
+/// Shared by every handler: the data file under DATA_DIR and the lock each read-change-write holds.
+#[derive(Clone)]
+struct AppState {
+    file: Arc<PathBuf>,
+    lock: Arc<Mutex<()>>,
+}
+
+/// Builds the service. `main.rs` starts it; unit tests call it directly.
+pub fn app() -> Router {
+    let dir = std::env::var("DATA_DIR").unwrap_or_else(|_| "data".into());
+    let state = AppState {
+        file: Arc::new(PathBuf::from(dir).join("items.json")),
+        lock: Arc::new(Mutex::new(())),
+    };
+    Router::new()
+        .route("/health", get(health))
+        .route("/items", post(create))
+        .route("/items/{id}", get(find))
+        .with_state(state)
+}
+
+async fn health() -> Json<Value> {
+    Json(json!({ "status": "ok" }))
+}
+
+fn error(status: StatusCode, message: &str) -> Response {
+    (status, Json(json!({ "error": message }))).into_response()
+}
+
+fn load(file: &std::path::Path) -> Vec<Item> {
+    std::fs::read_to_string(file)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+fn save(file: &std::path::Path, items: &[Item]) -> std::io::Result<()> {
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(file, serde_json::to_string(items)?)
+}
+
+// The body extractor is the last argument, after `State`; a body that does not parse is this handler's 400.
+async fn create(State(state): State<AppState>, body: Result<Json<NewItem>, JsonRejection>) -> Response {
+    let name = match body {
+        Ok(Json(NewItem { name: Some(name) })) if !name.trim().is_empty() => name.trim().to_string(),
+        _ => return error(StatusCode::BAD_REQUEST, "name is required"),
+    };
+    let _held = state.lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut items = load(&state.file);
+    let item = Item { id: items.iter().map(|i| i.id).max().unwrap_or(0) + 1, name };
+    items.push(item.clone());
+    match save(&state.file, &items) {
+        Ok(()) => (StatusCode::CREATED, Json(item)).into_response(),
+        Err(_) => error(StatusCode::INTERNAL_SERVER_ERROR, "the item could not be stored"),
+    }
+}
+
+async fn find(State(state): State<AppState>, Path(id): Path<u64>) -> Response {
+    let _held = state.lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    match load(&state.file).into_iter().find(|item| item.id == id) {
+        Some(item) => Json(item).into_response(),
+        None => error(StatusCode::NOT_FOUND, "item not found"),
+    }
+}
+"""
+
+GOLDEN_TEST = r"""use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use http_body_util::BodyExt;
+use serde_json::Value;
+use tower::ServiceExt;
+
+// nextest runs each test in a process of its own, so each sets its own DATA_DIR before building the service.
+fn fresh_data_dir(name: &str) {
+    let dir = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::env::set_var("DATA_DIR", &dir);
+}
+
+async fn send(request: Request<Body>) -> (StatusCode, Value) {
+    let response = {{package}}::app().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+fn post_json(uri: &str, body: &'static str) -> Request<Body> {
+    Request::post(uri)
+        .header("content-type", "application/json")
+        .body(Body::from(body))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn an_item_is_stored_and_read_back() {
+    fresh_data_dir("stored");
+    let (status, created) = send(post_json("/items", r#"{"name":"first"}"#)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let uri = format!("/items/{}", created["id"]);
+    let (status, found) = send(Request::get(uri).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(found["name"], "first");
+}
+
+#[tokio::test]
+async fn a_missing_name_is_refused_and_an_unknown_id_is_not_found() {
+    fresh_data_dir("refused");
+    assert_eq!(send(post_json("/items", "{}")).await.0, StatusCode::BAD_REQUEST);
+    let (status, _) = send(Request::get("/items/99").body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+"""
+
 PACK = service_pack(
+    golden_example={"src/lib.rs": GOLDEN_LIB, "tests/items.rs": GOLDEN_TEST},
     known_errors=AXUM_KNOWN_ERRORS,
     required_signatures={"src/lib.rs": ((r"^\s*pub\s+fn\s+app\s*\(\s*\)\s*->\s*Router\s*\{", "pub fn app() -> Router"),)},
     sandbox_image=sandbox.RUST,

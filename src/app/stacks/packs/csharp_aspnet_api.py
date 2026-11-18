@@ -105,7 +105,123 @@ ENTRYPOINT ["dotnet", "App.dll"]
 #: failed in every file that names `HttpContext`, `IResult` or `Results`, never in the project file itself.
 APP_SDK = {"src/App/App.csproj": ((r'<Project\s+Sdk="Microsoft\.NET\.Sdk\.Web"', '<Project Sdk="Microsoft.NET.Sdk.Web">'),)}
 
+#: The pack's golden example (`StackPack.golden_example`), on .NET 8 minimal APIs: the store registered once as a
+#: service and named as an endpoint's parameter, `DATA_DIR` read from `IConfiguration` when the store is first made (so
+#: a test's `UseSetting` reaches it), `Results.BadRequest`, `Results.Created` and `Results.NotFound`, and a test
+#: through `WebApplicationFactory<Program>` with a data folder of its own.
+GOLDEN_PROGRAM = r"""using System.Text.Json;
+
+var builder = WebApplication.CreateBuilder(args);
+// Shared state: one store for the process, made the first time an endpoint asks for it.
+builder.Services.AddSingleton<ItemStore>(services =>
+    new ItemStore(services.GetRequiredService<IConfiguration>()["DATA_DIR"] ?? "data"));
+var app = builder.Build();
+
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+app.MapPost("/items", (NewItem? body, ItemStore store) =>
+{
+    if (body is null || string.IsNullOrWhiteSpace(body.Name))
+    {
+        return Results.BadRequest(new { error = "name is required" });
+    }
+    var item = store.Add(body.Name.Trim());
+    return Results.Created($"/items/{item.Id}", item);
+});
+
+app.MapGet("/items/{id:int}", (int id, ItemStore store) =>
+    store.Find(id) is { } item ? Results.Ok(item) : Results.NotFound(new { error = "item not found" }));
+
+var host = Environment.GetEnvironmentVariable("HOST") ?? "127.0.0.1";
+var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
+app.Urls.Add($"http://{host}:{port}");
+app.Run();
+
+public record NewItem(string? Name);
+
+public record Item(int Id, string Name);
+
+/// <summary>The items, kept in one JSON file under DATA_DIR; one lock covers each read-change-write.</summary>
+public class ItemStore
+{
+    private readonly string _file;
+    private readonly object _lock = new();
+
+    public ItemStore(string dataDir) => _file = Path.GetFullPath(Path.Combine(dataDir, "items.json"));
+
+    public Item Add(string name)
+    {
+        lock (_lock)
+        {
+            var items = Load();
+            var item = new Item(items.Count == 0 ? 1 : items.Max(i => i.Id) + 1, name);
+            items.Add(item);
+            Directory.CreateDirectory(Path.GetDirectoryName(_file)!);
+            File.WriteAllText(_file, JsonSerializer.Serialize(items));
+            return item;
+        }
+    }
+
+    public Item? Find(int id)
+    {
+        lock (_lock)
+        {
+            return Load().FirstOrDefault(i => i.Id == id);
+        }
+    }
+
+    private List<Item> Load() =>
+        File.Exists(_file) ? JsonSerializer.Deserialize<List<Item>>(File.ReadAllText(_file)) ?? new List<Item>() : new List<Item>();
+}
+
+// The entry point, visible to the unit tests' WebApplicationFactory.
+public partial class Program { }
+"""
+
+GOLDEN_TEST = r"""using System.Net;
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Xunit;
+
+public class ItemsTests : IClassFixture<WebApplicationFactory<Program>>
+{
+    private readonly WebApplicationFactory<Program> _factory;
+
+    public ItemsTests(WebApplicationFactory<Program> factory) => _factory = factory;
+
+    // Each test's service keeps its data in a folder of its own.
+    private HttpClient ClientWithItsOwnData()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        return _factory.WithWebHostBuilder(b => b.UseSetting("DATA_DIR", folder)).CreateClient();
+    }
+
+    [Fact]
+    public void AnItemIsStoredAndReadBack()
+    {
+        var client = ClientWithItsOwnData();
+        var created = client.PostAsJsonAsync("/items", new { name = "first" }).GetAwaiter().GetResult();
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var item = created.Content.ReadFromJsonAsync<Item>().GetAwaiter().GetResult();
+        var found = client.GetFromJsonAsync<Item>($"/items/{item!.Id}").GetAwaiter().GetResult();
+        Assert.Equal("first", found!.Name);
+    }
+
+    [Fact]
+    public void AMissingNameIsRefusedAndAnUnknownIdIsNotFound()
+    {
+        var client = ClientWithItsOwnData();
+        var refused = client.PostAsJsonAsync("/items", new { }).GetAwaiter().GetResult();
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        var missing = client.GetAsync("/items/99").GetAwaiter().GetResult();
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+    }
+}
+"""
+
 PACK = service_pack(
+    golden_example={"src/App/Program.cs": GOLDEN_PROGRAM, "tests/UnitTests/ItemsTests.cs": GOLDEN_TEST},
     sandbox_image=sandbox.DOTNET,
     required_signatures=APP_SDK,
     name="csharp-aspnet-api",

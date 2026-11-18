@@ -87,7 +87,39 @@ def _the_manifests(repo_root: str | Path, project: str) -> str:
             content = b""
         if content:
             digest.update(name.encode() + b"\0" + content + b"\0")
+    # And the dependency manifests below the project's top folder. Measured on a C# run: drafting added a package to
+    # `src/App/App.csproj`, only top-level names were read here, nothing installed it, and every start and unit run -
+    # without a network, by design - failed restoring it (NU1301): the product never started. Appended after the
+    # top-level ones, so a project with none below hashes as it did and is not installed again for this change.
+    for path in sorted(_manifests_below(folder)):
+        try:
+            digest.update(str(path.relative_to(folder)).encode() + b"\0" + path.read_bytes() + b"\0")
+        except OSError:
+            continue
     return digest.hexdigest()
+
+
+#: Dependency manifests read at any depth (`_the_manifests`): a project file per .NET project, and the per-module
+#: manifests of the ecosystems that nest them.
+_NESTED_MANIFESTS = ("*.csproj", "*.fsproj", "Directory.Packages.props", "package.json", "Cargo.toml", "pom.xml",
+                     "build.gradle", "build.gradle.kts", "go.mod", "composer.json", "Gemfile", "pyproject.toml")
+
+
+def _manifests_below(folder: Path) -> list[Path]:
+    """The dependency manifests under `folder`'s subfolders, outside installed, built and harness folders."""
+    import fnmatch
+
+    from app.analysis.walk import files_under
+    from app.stacks.languages import NOT_THE_PRODUCT
+
+    skip = {*NOT_THE_PRODUCT, "bin", "obj", "target", "vendor", "build", "dist", "test-results", ".harness"}
+    found = []
+    for path in files_under(folder, skip):
+        if path.parent == folder:
+            continue
+        if any(fnmatch.fnmatchcase(path.name, pattern) for pattern in _NESTED_MANIFESTS):
+            found.append(path)
+    return found
 
 
 def was_installed_at(repo_root: str | Path, commit: str) -> bool | None:

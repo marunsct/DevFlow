@@ -794,9 +794,9 @@ def _code_no_review_read(run_id: str | None, state: Any = None) -> list[str]:
     if not run_id:
         return []
     try:
-        from app.observability.transcript import read_transcript
+        from app.observability.transcript import read_live
 
-        stages = {str(r.get("stage") or "") for r in read_transcript(run_id, kinds={"model_request"})}
+        stages = {str(r.get("stage") or "") for r in read_live(run_id, {"model_request"})}
     except Exception as error:  # noqa: BLE001 - the release says nothing it cannot measure
         degraded("release.code_no_review_read", error)
         return []

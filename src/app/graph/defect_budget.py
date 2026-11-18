@@ -79,13 +79,13 @@ def record_calls(stage: str, defect: Any, calls: int) -> None:
 def _spent_in_the_run(ids: set[str]) -> int:
     """The calls the ledger holds for defects `ids` over the whole run; 0 when unreadable."""
     try:
-        from app.observability.transcript import _run_id_from_config, read_transcript
+        from app.observability.transcript import _run_id_from_config, read_live
 
         run_id = _run_id_from_config()
         if not run_id or not ids:
             return 0
         return sum(int(str(r.get("detail") or "0").split()[0] or 0)
-                   for r in read_transcript(run_id, {"defect"})
+                   for r in read_live(run_id, {"defect"})
                    if r.get("event") == ATTEMPT_EVENT and r.get("defect_id") in ids)
     except Exception:  # noqa: BLE001
         return 0

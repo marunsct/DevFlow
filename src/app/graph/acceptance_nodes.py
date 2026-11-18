@@ -705,14 +705,14 @@ def _the_specification_on_disk(root: str) -> str:
 def _the_qa_lead_has_read_it(config: Any) -> bool:
     """Whether a QA lead's review of the suite has run in this run, from its transcript; True when unknown."""
     try:
-        from app.observability.transcript import read_transcript
+        from app.observability.transcript import read_live
         from app.tracing import APP_RUN_ID_KEY
 
         run_id = ((config or {}).get("configurable") or {}).get(APP_RUN_ID_KEY)
         if not run_id:
             return True
         return any(str(r.get("stage") or "").startswith("acceptance_review_")
-                   for r in read_transcript(run_id, {"model_request"}))
+                   for r in read_live(run_id, {"model_request"}))
     except Exception:  # noqa: BLE001 - unknown is treated as read: the lock goes on as before
         return True
 

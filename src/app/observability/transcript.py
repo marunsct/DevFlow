@@ -161,6 +161,24 @@ def read_transcript(run_id: str, kinds: set[str] | None = None) -> list[dict]:
     return entries
 
 
+def read_live(run_id: str, kinds: set[str] | None = None) -> list[dict]:
+    """The run's entries as it stands, oldest first: what each rewind discarded left out. Never raises.
+
+    A rewind puts the checkpoint and the workspace back to the start of a
+    stage; the transcript keeps what the abandoned branch did. A rule that
+    reads attempt state from here - a defect's spent calls, whether a review
+    ran - reads this, or it counts work the run no longer has
+    (`run_kpis.live_branch`; deep review 2026-11-18, D2b).
+    """
+    try:
+        from app.observability.run_kpis import live_branch
+
+        entries = read_transcript(run_id, None if kinds is None else {*kinds, "rewound"})
+        return [e for e in live_branch(entries) if kinds is None or "rewound" in kinds or e.get("kind") != "rewound"]
+    except Exception:  # noqa: BLE001 - an unreadable cut is the whole record, as before
+        return read_transcript(run_id, kinds)
+
+
 #: Lines of command output to carry into a defect-fix brief. A test runner's
 #: last forty lines hold the failure and the summary; the rest is the passing
 #: tests above it.
@@ -719,6 +737,7 @@ __all__ = [
     "MAX_FIELD_CHARS",
     "build_transcript_callback",
     "build_transcript_middleware",
+    "read_live",
     "read_transcript",
     "record",
     "transcript_path",

@@ -209,9 +209,29 @@ def exports_of(repo_root: str | Path, module: str) -> dict:
                      "Install it first, or check the name with look_up_package."}
 
 
+#: The languages whose installed packages `exports_of` reads.
+READABLE_LANGUAGES = frozenset({"javascript", "typescript", "python"})
+
+
+def _its_packages_are_readable(repo_root: str | Path) -> bool:
+    """Whether the project's pack is in a language this tool reads; True with no pack, as before. Never raises."""
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(Path(repo_root))
+        return found is None or str(getattr(found[0], "language", "") or "").lower() in READABLE_LANGUAGES
+    except Exception:  # noqa: BLE001 - offered, as before
+        return True
+
+
 def exports_tools(repo_root: str | Path) -> list:
-    """The `module_exports` tool as a list, empty when it is switched off."""
-    if not enabled():
+    """The `module_exports` tool as a list, empty when it is switched off or the stack's packages are not ones it reads.
+
+    It reads JavaScript and Python packages only. Measured on a PHP run: asked for `Slim\\Factory\\AppFactory`, installed
+    under `vendor/`, it answered "not installed in this project ... Install it first", and the builder was sent the
+    wrong way.
+    """
+    if not enabled() or not _its_packages_are_readable(repo_root):
         return []
     from langchain_core.tools import tool
 

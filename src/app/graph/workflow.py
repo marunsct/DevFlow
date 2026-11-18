@@ -506,6 +506,7 @@ class WorkflowGraphState(TypedDict, total=False):
     specification_deferrals_checked: bool
     specification_contract_lines_checked: bool
     specification_kept_files_checked: bool
+    specification_signatures_checked: bool
     specification_command_order_checked: bool
     # The workflow's own design checks that sent back a specification the reviewer approved (`HARNESS_FINDINGS_RECHECKED`).
     approved_but_for_the_harness: list[str]
@@ -5495,10 +5496,11 @@ _THE_HARNESS_S_DESIGN_CHECKS = {
     "contract": lambda state, spec: _contract_lines_nothing_can_read(state),
     "kept": lambda state, spec: _behaviour_the_specification_gives_kept_files(state, spec),
     "order": lambda state, spec: _the_same_command_in_another_order(state, spec),
+    "signature": lambda state, spec: _a_kept_signature_the_specification_calls_otherwise(state, spec),
 }
 _THE_CHECKS_ONCE_FLAGS = ("specification_coverage_checked", "specification_deferrals_checked",
                           "specification_contract_lines_checked", "specification_kept_files_checked",
-                          "specification_command_order_checked")
+                          "specification_command_order_checked", "specification_signatures_checked")
 
 
 def _the_harness_findings_still_open(state: Any, spec_text: str, names: Sequence[str]) -> list[Any]:
@@ -5777,6 +5779,61 @@ def _behaviour_the_specification_gives_kept_files(state: Any, spec_text: str) ->
         )
     except Exception as error:  # noqa: BLE001 - the review stands as written
         degraded("spec_check.kept_files_behaviour", error)
+        return None
+
+
+def _a_kept_signature_the_specification_calls_otherwise(state: Any, spec_text: str) -> Any:
+    """A major finding when the specification calls a declaration the pack keeps with no parameters, with arguments.
+
+    Measured on two Rust runs: the stack's setup declares `pub fn app() -> Router` (its start file and tests call it
+    bare), and the specification designed "main opens the Store ... passed to app()" and "axum::serve on app(store)".
+    The builders followed the specification, the pack's contract was raised against it in every round, and two sprint
+    attempts were spent on a design that could not satisfy both. Raised once per run, like the other checks here, and
+    never on the revision that would exhaust `MAX_ARCHITECTURE_REVISIONS`. Never raises.
+    """
+    try:
+        if state.get("specification_signatures_checked"):
+            return None
+        if state.get("architecture_revision_count", 0) + 1 >= _the_revision_limit():
+            return None
+        from app.stacks import choose_pack
+
+        stack = getattr(state.get("stack_selection"), "technology_stack", None)
+        pack = choose_pack(stack, getattr(state.get("document"), "text", "") or "") if stack is not None else None
+        if pack is None:
+            return None
+        found: list[tuple[str, str, str]] = []
+        for relative, kept in (getattr(pack, "required_signatures", None) or {}).items():
+            for _pattern, written in kept:
+                named = re.search(r"(\w+)\s*\(\s*\)", written)
+                if named is None:
+                    continue
+                call = re.compile(rf"(?<![\w.])(?<!fn ){re.escape(named.group(1))}\s*\(\s*(?!\))[^)\n]{{1,80}}\)")
+                for sentence in re.split(r"(?<=[.!?])\s+|\n", spec_text or ""):
+                    if call.search(sentence):
+                        found.append((relative, written, " ".join(sentence.split())[:200]))
+                        break
+        if not found:
+            return None
+        from app.agents.architecture_reviewer import ArchitectureReviewFinding
+
+        relative, written, where = found[0]
+        return ArchitectureReviewFinding(
+            severity="major",
+            description=(
+                f"The specification calls `{written.split('(')[0].split()[-1]}` with arguments - \"{where}\" - but the "
+                f"stack's setup declares it `{written}` in `{relative}`, and its start file and tests call it with none. "
+                "The builders follow the specification, so the product is built against a declaration it cannot keep."
+            ),
+            evidence="Compared by the workflow against the declarations the stack's setup keeps.",
+            required_remediation=(
+                f"Specify `{written}` as declared: whatever the call would have been passed, the function builds for "
+                "itself inside (from the environment and the configuration it reads), and every caller - the entry "
+                "point, the tests - calls it as declared. Change every section that passes it something."
+            ),
+        )
+    except Exception as error:  # noqa: BLE001 - the review stands as written
+        degraded("spec_check.kept_signature", error)
         return None
 
 

@@ -272,6 +272,7 @@ def architecture_review_node(state: WorkflowGraphState, config: RunnableConfig, 
         SPECIFICATION_REVIEW, _GATING_SEVERITIES, _a_brief_feature_the_specification_defers,
         _a_pass_over_its_own_findings, _a_success_measure_the_specification_drops,
         _approved_once_the_harness_s_findings_are_settled, _as_text,
+        _a_kept_signature_the_specification_calls_otherwise,
         _behaviour_the_specification_gives_kept_files, _contract_lines_nothing_can_read,
         _decided_after_one_revision, _findings_that_block, _format_finding, _hand_back, _missing_upstream,
         _record_document, _review_enabled, _run_gated_agent, _the_revision_limit,
@@ -359,6 +360,14 @@ def architecture_review_node(state: WorkflowGraphState, config: RunnableConfig, 
         update["architecture_review"] = review
         update["specification_kept_files_checked"] = True
         fired.append("kept")
+    signature_finding = _a_kept_signature_the_specification_calls_otherwise(state, spec_text)
+    if signature_finding is not None:
+        review = review.model_copy(
+            update={"findings": [*review.findings, signature_finding], "status": "changes_required"}
+        )
+        update["architecture_review"] = review
+        update["specification_signatures_checked"] = True
+        fired.append("signature")
 
     review = _a_pass_over_its_own_findings(
         review, state["repository"].root_path, "approved", "architecture_review"

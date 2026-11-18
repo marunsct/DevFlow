@@ -49,9 +49,12 @@ Generated above. Today (hidden, quality, verdict):
   the harness. LF.1113 refuses that write and blocks such a release.
 - tasks-api 2 run-58e79fce-d928-4d32-a9ea-78e3c8eb9482 (:8888, 23:30-02:15, mixed): **10/10, 7/7, handoff 1.0**, mutation
   0.55, 144 active minutes; its own verdict not deliverable on four contract lines answered 401 to the unsigned bare
-  probe (a false red, LF.1116). Edge probe: all 22 checks skipped, its sign-in did not take (to look at).
+  probe (a false red, LF.1116). Root cause of both that and the edge probe's 22 skipped checks: the sign-up body was
+  written `{"username": <string>, ...}` after `— request body:` and never read, so no probe signed in (LF.1117).
 - Haiku arm: H notes-api-rust hybrid-haiku 1 run-160e0f62-7720-49e1-a831-50f5453e7484 (:1234 build, Haiku judgement,
-  01:25) - the architect's calls reach api.anthropic.com.
+  01:25): second sprint attempt at 02:40, the local fixer keeps dropping `pub fn app() -> Router`; $0.63 hosted.
+- M web-todo container 1 run-3cc0ed29-ac73-423d-bb47-ee30e36953e7 (:8888, 02:37, on 2286518d).
+- LF.1116 and LF.1117 committed, not deployed: neither live run has a sign-in; they deploy at the next boundary.
 - **Deployed 20:09 JST: 532dba3 (waves 1 and 2, LF.1073-1105).** Live on it: M notes-api-rust container 7
   run-cbf36159-b68e-4405-9440-db9797ce1aad (:1234) and M notes-api-php container 3
   run-c5d6a8a5-6f88-4247-adcf-52c0a8aaad0c (:8888), both 20:09.

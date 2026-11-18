@@ -64,8 +64,12 @@ def test_the_server_answers_every_part_without_calling_a_model(client, monkeypat
         raise ConnectionError("no broker here")
 
     monkeypatch.setattr(redis_client, "get_async_redis_client", _no_redis)
+    # The run store is shared with other tests in this process; a running record one of them left would be listed.
+    from app.server.run_store import RunStore
 
-    body = client.get("/api/health/operator").json()
+    monkeypatch.setattr(RunStore.shared(), "list_all", lambda **_: [])
+
+    body =client.get("/api/health/operator").json()
 
     assert {"status", "version", "disk", "database", "runs", "model", "backup"} <= set(body)
     assert body["model"]["status"] == "ok" and body["backup"]["status"] == "unknown"

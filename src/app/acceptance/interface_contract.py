@@ -303,8 +303,10 @@ def example_bodies(specification: Any) -> list[dict[str, Any]]:
 #: Tried in turn for one record: each refused try is one more request at a check that takes seconds.
 MOST_EXAMPLE_BODIES = 4
 
-#: One field of a body as prose writes it: `"title": ...`, `"title": "<string>"`, `"done": true`, `"count": 3`.
-_A_WRITTEN_FIELD = re.compile(r'"(?P<name>[A-Za-z_][\w-]*)"\s*:\s*(?P<value>"[^"\n]*"|\.\.\.|…|true|false|null|-?\d+(?:\.\d+)?)')
+#: One field of a body as prose writes it: `"title": ...`, `"title": "<string>"`, `"title": <string>`, `"done": true`.
+_A_WRITTEN_FIELD = re.compile(
+    r'"(?P<name>[A-Za-z_][\w-]*)"\s*:\s*(?P<value>"[^"\n]*"|<[^<>\n]*>|\.\.\.|…|true|false|null|-?\d+(?:\.\d+)?)'
+)
 
 
 def _the_fields_written(text: str) -> dict[str, Any]:
@@ -321,18 +323,31 @@ def _the_fields_written(text: str) -> dict[str, Any]:
     fields: dict[str, Any] = {}
     for match in _A_WRITTEN_FIELD.finditer(inside):
         raw = match.group("value")
-        if raw in ("...", "…") or (raw.startswith('"') and raw[1:2] == "<"):
-            fields[match.group("name")] = "example"
+        if raw in ("...", "…") or raw.startswith("<") or (raw.startswith('"') and raw[1:2] == "<"):
+            fields[match.group("name")] = PLACEHOLDER
         else:
             try:
                 fields[match.group("name")] = json.loads(raw)
             except ValueError:
-                fields[match.group("name")] = "example"
+                fields[match.group("name")] = PLACEHOLDER
     return fields
 
 
-#: A write and its path, then the body it sends: `POST /notes with {`, `PUT /notes/{id} {`.
-_A_WRITE_WITH_ITS_BODY = re.compile(r"\b(?:POST|PUT|PATCH)\s+/[^\s,;]*\s*(?:with\s+(?:a\s+)?(?:body\s+)?)?(?=\{)", re.I)
+#: The value a field written only as a placeholder (`...`, `<string>`) is given.
+PLACEHOLDER = "example"
+#: The secret a probe signs up with when the specification gave only a placeholder: long and mixed, so a sign-up that
+#: checks a secret's strength does not refuse the probe's account before any signed-in line is reached.
+A_PROBE_SECRET = "Probe-Secret-2026!"
+
+
+#: A write and its path, then the body it sends: `POST /notes with {`, `PUT /notes/{id} {`, `POST /signup — request
+#: body: {`. Measured on one run: the specification wrote the dash-and-label form for its sign-up and sign-in, nothing
+#: was read, and the release probes signed in as no one.
+_A_WRITE_WITH_ITS_BODY = re.compile(
+    r"\b(?:POST|PUT|PATCH)\s+/[^\s,;]*\s*(?:[—–:-]+\s*)?(?:with\s+)?(?:an?\s+)?(?:(?:json|request)\s+)?"
+    r"(?:body\s*:?\s*)?(?=\{)",
+    re.I,
+)
 
 
 def _a_write_that_needs_a_body(check: "Check") -> bool:
@@ -720,6 +735,8 @@ def sign_in_plan(checks: list[Check], bodies: list[Any] | None = None) -> dict[s
         except ValueError:
             pass
     body = next((b for b in given if isinstance(b, dict) and any(k in b for k in _SECRETS)), None)
+    if body is not None:
+        body = {k: A_PROBE_SECRET if k in _SECRETS and v == PLACEHOLDER else v for k, v in body.items()}
     if body is None:
         rule_coverage.could_not_apply(
             rule_coverage.CONTRACT_SIGN_IN,

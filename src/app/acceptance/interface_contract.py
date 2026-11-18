@@ -1416,10 +1416,12 @@ def server_error_description(errors: list[tuple[Check, int]], bad_body: list[tup
 def still_raised(repo_root: str | Path, description: str, *, runner: Any = None) -> bool | None:
     """Whether a server-error defect with this description would be raised again now; None when it is not one or the checks cannot run."""
     text = str(description or "")
-    from app.acceptance import concurrent_write_probe, wrong_shape_body_probe
+    from app.acceptance import concurrent_write_probe, edge_probe, wrong_shape_body_probe
 
     if text.startswith(concurrent_write_probe.CONCURRENT_WRITES_LOST):
         return concurrent_write_probe.still_raised(repo_root, text, runner=runner)
+    if text.startswith(edge_probe.EDGE_CASES_FAILED):
+        return edge_probe.still_raised(repo_root, text, runner=runner)
     if not text.startswith(SERVER_FAILED):
         return None
     # A call may be named for any request; each kind is settled by asking the same request again.

@@ -18,6 +18,7 @@ SIGNALS: dict[str, str] = {
     "SPRINT_TIME_BUDGET": "the sprint ran past its time budget",
     "CONCURRENT_WRITE_PROBE": "Writes made at the same moment are not each kept",
     "WRONG_SHAPE_BODY_PROBE": "sent a JSON body that is not an object",
+    "EDGE_PROBE": "Requests at the edges of the interface contract are not handled",
     "STABLE_MEMORY_ORDER": "The documents that hold for every fix come first, the code after them",
     "NEAR_GREEN_REPAIR_TO_ROUND": "the repaired suite is near green, so the sprint is measured again in a test round instead of planned again",
     "FIX_STAGES_THAT_CLOSE_NOTHING": "a fix round closed no defect and left the product unchanged, so the attempt ends instead of another round",

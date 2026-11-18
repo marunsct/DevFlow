@@ -46,6 +46,14 @@ def what_the_probes_still_find(repo_root: str | Path, *, runner: Any = None) -> 
             gaps.append(STILL_FINDS + concurrent_write_probe.concurrent_write_description(lost))
     except Exception:  # noqa: BLE001
         logger.debug("Could not ask the concurrent-write probe again at release", exc_info=True)
+    try:
+        from app.acceptance import edge_probe
+
+        edges = edge_probe.edge_errors(repo_root, runner=runner) or []
+        if edges:
+            gaps.append(STILL_FINDS + edge_probe.edge_description(edges))
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not ask the edge probe again at release", exc_info=True)
     if gaps:
         logger.warning("At release %d harness probe(s) still find a defect", len(gaps))
     return gaps

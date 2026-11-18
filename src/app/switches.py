@@ -176,7 +176,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # Which review findings may send a sprint back (docs/measuring.md M7).
     "Review gates": ("MILESTONE_EVIDENCE_GATE", "DESIGN_REVISION_CROSS_CHECKED"),
     # Contract probes the release adds to a green round: what a product must survive that no locked test asks.
-    "Contract probes": ("CONCURRENT_WRITE_PROBE", "WRONG_SHAPE_BODY_PROBE"),
+    "Contract probes": ("CONCURRENT_WRITE_PROBE", "WRONG_SHAPE_BODY_PROBE", "EDGE_PROBE"),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)
@@ -205,6 +205,7 @@ EXPERIMENTS_ON: dict[str, str] = {
     "FIX_STAGES_THAT_CLOSE_NOTHING": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "CONCURRENT_WRITE_PROBE": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "WRONG_SHAPE_BODY_PROBE": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "EDGE_PROBE": "deep review 11-18 (B1): built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "ONE_DESIGN_REVIEW": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "SPRINT_TIME_BUDGET": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
 }

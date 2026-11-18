@@ -2176,12 +2176,19 @@ _ANY_STATUS = re.compile(r"assert ([1-5]\d\d) (?:==|in|!=)")
 _NOT_OK = re.compile(r"toBeOK\(\) failed.*?\u2190\s*([45]\d\d)\b", re.S)
 
 
+#: A JavaScript runner's `toBe` on a status (`Expected: 201` then `Received: 500`). Measured on a Rust run: 14 of 19
+#: failing Playwright tests answered 500 on every route, none was read as one cause, and nine fixers each chased it.
+_EXPECTED_RECEIVED = re.compile(r"Expected:\s*(2\d\d|4\d\d)\s*\n\s*Received:\s*(4\d\d|5\d\d)\b")
+
+
 def _the_wrong_answer(message: str) -> str:
     """The status a failed test got where it expected another, or ""."""
     if (m := _A_REFUSAL.search(message)) and m.group(1) != m.group(2):
         return m.group(1)
     if m := _NOT_OK.search(message):
         return m.group(1)
+    if (m := _EXPECTED_RECEIVED.search(message)) and m.group(1) != m.group(2):
+        return m.group(2)
     return ""
 
 

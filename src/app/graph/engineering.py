@@ -23,7 +23,7 @@ from app.tools.version_control import git_safely  # noqa: E402
 import logging
 import re
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from langchain_core.runnables import RunnableConfig
 
@@ -862,7 +862,8 @@ def what_the_fix_made_the_compiler_report(root: str, base: str, before_problem: 
             return []
         found = []
         for finding in compiler_check.findings(root, pinned_project_directory(Path(root)) or "", files):
-            relative, line, message = str(finding.get("file") or ""), int(finding.get("line") or 0), str(finding.get("message") or "")
+            relative, message = str(finding.get("file") or ""), str(finding.get("message") or "")
+            line = int(finding.get("line") or 0)
             if relative not in files or (message and message in str(before_problem or "")):
                 continue
             added = _lines_added(root, base, relative)
@@ -1116,6 +1117,46 @@ def after_a_fix(
 
         start_breaks.clear(root)
     return []
+
+
+#: Measurements spent finding which fixer of a broken batch broke it, at most.
+MOST_ATTRIBUTION_MEASUREMENTS = 3
+
+
+def after_a_batch(
+    root: str, base: str, stage_name: str, description: str, fixers: Sequence[tuple[str, Sequence[str]]],
+    contested: str = "",
+) -> tuple[list[str], list[str]]:
+    """Measure a batch of fixes made side by side; (what it broke, the fixers whose changes were put back).
+
+    `fixers` are (fixer, the files it wrote), newest writer first. A batch that broke what passed before it has each
+    fixer's files put back in turn, newest first, and is measured again each time: the first whose putting back leaves
+    nothing broken is the culprit, and only its change is reverted. Measured (deep review 2026-11-18, A3): 8 of 37
+    recent reverts were a whole batch put back for one fixer's change. With nothing to tell the fixers apart, or no
+    single fixer to blame, the whole batch is reverted as before.
+    """
+    every = [name for name, _ in fixers]
+    kept: dict[str, str] = {}
+
+    def keep_the_batch(_broken: list[str]) -> None:
+        kept["commit"] = ci.commit(root, f"{stage_name} as written, before it is measured fixer by fixer")
+
+    broke = after_a_fix(root, base, stage_name, description, contested=contested,
+                        on_revert=keep_the_batch if len(fixers) > 1 else None)
+    whole = kept.get("commit", "")
+    if not broke:
+        return [], []
+    if not whole or not all(files for _, files in fixers):
+        return broke, every
+    for name, files in fixers[:MOST_ATTRIBUTION_MEASUREMENTS]:
+        if not ci.revert_to(root, whole) or not ci.restore_paths(root, base, [str(path) for path in files]):
+            break
+        if not after_a_fix(root, base, stage_name, description, contested=contested):
+            logger.warning("Kept %d fix(es) of %s and put back %s, whose change broke %d test(s)",
+                           len(fixers) - 1, stage_name, name, len(broke))
+            return broke, [name]
+    ci.revert_to(root, base)
+    return broke, every
 
 
 def accepted_state(root: str) -> list[str]:

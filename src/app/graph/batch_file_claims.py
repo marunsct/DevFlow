@@ -11,6 +11,7 @@ made alone, and every other stage, writes as before.
 from __future__ import annotations
 
 import threading
+import time
 from contextlib import contextmanager
 from typing import Any, Iterator
 
@@ -24,6 +25,9 @@ REFUSED = "Refusing: `{path}` is being changed by another fix running beside you
 _lock = threading.Lock()
 _active: dict[str, set[str]] = {}
 _claims: dict[tuple[str, str], str] = {}
+#: (run, fixer) -> {file: when it last wrote it}: kept after the fixer ends, so the batch's measurement can tell whose
+#: change broke it (A3) and put back that fixer's files alone.
+_written: dict[tuple[str, str], dict[str, float]] = {}
 
 
 @contextmanager
@@ -68,6 +72,26 @@ def claim(run_id: str | None, stage: str, tool: str, args: Any) -> None:
     with _lock:
         if stage in _active.get(run, set()):
             _claims.setdefault((run, path), stage)
+            _written.setdefault((run, stage), {})[path] = time.monotonic()
+
+
+def written_by(run_id: str | None, stage: str) -> list[str]:
+    """The files batch fixer `stage` wrote, as its writes named them; [] when none was recorded."""
+    with _lock:
+        return sorted(_written.get((str(run_id or ""), stage), {}))
+
+
+def last_write_at(run_id: str | None, stage: str) -> float:
+    """When batch fixer `stage` last wrote, on this process's clock; 0.0 when it wrote nothing recorded."""
+    with _lock:
+        return max(_written.get((str(run_id or ""), stage), {}).values(), default=0.0)
+
+
+def forget(run_id: str | None, stages: list[str]) -> None:
+    """Drop what these fixers wrote, once their batch is settled."""
+    with _lock:
+        for stage in stages:
+            _written.pop((str(run_id or ""), stage), None)
 
 
 def build_middleware() -> Any:
@@ -102,4 +126,5 @@ def build_middleware() -> Any:
     return BatchFileClaimsMiddleware()
 
 
-__all__ = ["REFUSED", "WRITES", "build_middleware", "claim", "holding", "owner_of"]
+__all__ = ["REFUSED", "WRITES", "build_middleware", "claim", "forget", "holding", "last_write_at", "owner_of",
+           "written_by"]

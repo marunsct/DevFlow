@@ -311,7 +311,9 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
             config["configurable"].get(APP_RUN_ID_KEY), stage_name,
             # A mutation finding's write is answered by its own change (`MUTANT_CHECK_IN_THE_FIX_STAGE`).
             mutant_check_in_stage.check_for(root, defect, lambda: _the_defect_s_tests_pass(root, defect)),
-            **mutant_check_in_stage.how_for(defect),
+            # A fix alone keeps the version its own tests passed at (A3, `best_checkpoint`); not a mutation finding's,
+            # whose check is of its own change.
+            **(mutant_check_in_stage.how_for(defect) or {"checkpoints_in": root}),
         ):
             update = _run_gated_agent(
                 state,
@@ -350,7 +352,28 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
         on_revert=lambda lost: kept_fix_candidates.keep(
             repo, fix_base, defect, stage_name, lambda: _the_defect_s_tests_pass(repo, defect), lost),
     )
+    # Ended worse than the best version it reached - reverted, or its own tests failing again: that version, measured
+    # in its place (A3).
+    from app.graph import best_checkpoint
+    from app.graph.workflow import _the_defect_s_tests_in
+
+    instead = best_checkpoint.instead_of(
+        repo, config["configurable"].get(APP_RUN_ID_KEY), stage_name, fix_base, broke,
+        lambda: _the_defect_s_tests_in(str(repo), f"after {stage_name}", defect),
+        lambda against: engineering.after_a_fix(
+            str(repo), against, stage_name, defect.description, contested=_a_contested_test_past_repair(state, cycle)),
+    )
     from app.observability import defect_ledger
+
+    if instead is not None:
+        defect_ledger.note(
+            "best checkpoint", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+            sprint=state.get("current_sprint_index", 0),
+            detail="its best version, where its own tests passed, was measured in place of how it ended: "
+                   + (f"it broke {len(instead)} test(s) too, so the stage is reverted" if instead else "kept"),
+        )
+        if broke:
+            broke = instead
 
     _note_the_bundled(
         co_defects, defect_index=defect_index, stage_name=stage_name,
@@ -611,37 +634,57 @@ def defect_fix_gather_node(state: WorkflowGraphState, config: RunnableConfig) ->
     round_ = state.get("test_round", 0)
     names = [f"defect_fix_{round_}_{index}" for index in batch]
     outputs = state.get("specialist_outputs") or {}
-    broke = engineering.after_a_fix(
+    # Each fixer's change told apart by the files it wrote, newest writer first: a broken batch is put back fixer by
+    # fixer until what is left breaks nothing, and only those put back are reverted (A3).
+    from app.graph import batch_file_claims
+
+    run_id = config["configurable"].get(APP_RUN_ID_KEY)
+    fixers = sorted(
+        ((name, batch_file_claims.written_by(run_id, name)) for name in names),
+        key=lambda fixer: -batch_file_claims.last_write_at(run_id, fixer[0]),
+    )
+    broke, put_back = engineering.after_a_batch(
         state["repository"].root_path, str(state.get("fix_base_commit") or ""),
         f"defect_fix_{round_}_batch",
-        "; ".join(str(cycle.defects[index].description)[:40] for index in batch),
+        "; ".join(str(cycle.defects[index].description)[:40] for index in batch), fixers,
     )
+    batch_file_claims.forget(run_id, names)
     tried = list(dict.fromkeys([*(state.get("fixes_tried") or []), *names]))
     for index, stage_name in zip(batch, names):
         _note_the_bundled(
             _bundle_co_defects(cycle, index), defect_index=index, stage_name=stage_name,
             round_=round_, sprint=state.get("current_sprint_index", 0),
         )
+    reverted = [(index, stage_name) for index, stage_name in zip(batch, names) if stage_name in put_back]
     if broke:
-        for index, stage_name in zip(batch, names):
+        whole = len(reverted) == len(batch)
+        for index, stage_name in reverted:
             defect_ledger.note(
                 "reverted", stage_name, defect=cycle.defects[index], round_=round_, index=index,
                 sprint=state.get("current_sprint_index", 0),
-                detail=f"its batch broke {len(broke)} test(s) that passed before it: {'; '.join(broke[:3])}; fixed alone next",
+                detail=(f"its batch broke {len(broke)} test(s) that passed before it" if whole else
+                        f"its change broke {len(broke)} test(s) that passed before the batch; the rest of the batch "
+                        "was kept") + f": {'; '.join(broke[:3])}; fixed alone next",
             )
         logger.warning(
-            "Reverted a batch of %d fixes: it broke %d test(s); fixing them one at a time", len(batch), len(broke),
+            "Reverted %d of a batch of %d fixes: it broke %d test(s); fixing them one at a time",
+            len(reverted), len(batch), len(broke),
         )
-        return _handing_on(
-            stage="defect_remediation",
-            remediation=_noted_as_reverted(cycle, batch, broke, in_a_batch=True),
-            fix_batch=[], fix_base_commit="",
-            fixes_one_at_a_time=sorted({*(state.get("fixes_one_at_a_time") or []), *names}),
-        )
+        cycle = _noted_as_reverted(cycle, [index for index, _ in reverted], broke, in_a_batch=whole)
+        alone_next = sorted({*(state.get("fixes_one_at_a_time") or []), *(name for _, name in reverted)})
+        if whole:
+            return _handing_on(
+                stage="defect_remediation", remediation=cycle, fix_batch=[], fix_base_commit="",
+                fixes_one_at_a_time=alone_next,
+            )
     settled_cycle = cycle
     blamed = False
     update: dict[str, Any] = {}
+    if broke:
+        update["fixes_one_at_a_time"] = alone_next
     for index, stage_name in zip(batch, names):
+        if stage_name in put_back:
+            continue
         result = outputs.get(stage_name)
         if result is None:
             continue

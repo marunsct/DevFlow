@@ -22,11 +22,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
+import time
 from contextlib import contextmanager
 from typing import Any, Optional
 
 import psycopg2
+import psycopg2.errors
 from psycopg2.extras import RealDictCursor
 from psycopg2.pool import ThreadedConnectionPool
 
@@ -183,6 +186,51 @@ def database_url() -> str:
     return os.environ.get("DB_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
 
 
+#: How long one schema change waits for the runs table before it gives way. A change that waits longer queues every
+#: later reader behind it: measured on the live host, an `ALTER ... IF NOT EXISTS` on a column that existed waited for
+#: the nightly backup's dump, and every read of `runs` waited behind it until the dump ended - the page answered
+#: nothing for four minutes.
+_SCHEMA_LOCK_TIMEOUT = "3s"
+_SCHEMA_ATTEMPTS = 20
+_SCHEMA_RETRY_SECONDS = 3.0
+
+#: The columns, indexes and pause-clock body the statements above leave in place, read from the statements.
+_COLUMNS = frozenset(
+    re.findall(r"^\s{4}(\w+)\s+[A-Z]", _CREATE_TABLE, re.M)
+    + [m for statement in _MIGRATIONS for m in re.findall(r"ADD COLUMN IF NOT EXISTS (\w+)", statement)]
+)
+_INDEXES = frozenset(m for statement in _MIGRATIONS for m in re.findall(r"CREATE INDEX IF NOT EXISTS (\w+)", statement))
+_CLOCK_BODY = next(statement for statement in _MIGRATIONS if "runs_pause_clock()" in statement
+                   and "$clock$" in statement).split("$clock$")[1]
+
+
+def _schema_is_current(cur: Any) -> bool:
+    """Whether the runs table already has everything the statements make, read from the catalogue alone.
+
+    The catalogue reads take no lock on `runs`, so a store opened beside a long reader (a backup's dump) neither waits
+    for it nor makes later readers wait behind its own DDL. Any doubt reads as not current: the DDL then runs.
+    """
+    try:
+        cur.execute("SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = current_schema() AND table_name = 'runs'")
+        if not _COLUMNS <= {row[0] for row in cur.fetchall()}:
+            return False
+        cur.execute("SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'runs'")
+        if not _INDEXES <= {row[0] for row in cur.fetchall()}:
+            return False
+        cur.execute("SELECT p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                    "WHERE p.proname = 'runs_pause_clock' AND n.nspname = current_schema()")
+        row = cur.fetchone()
+        if row is None or row[0] != _CLOCK_BODY:
+            return False
+        cur.execute("SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n "
+                    "ON n.oid = c.relnamespace WHERE t.tgname = 'runs_pause_clock' AND c.relname = 'runs' "
+                    "AND n.nspname = current_schema() AND NOT t.tgisinternal")
+        return cur.fetchone() is not None
+    except psycopg2.Error:
+        return False
+
+
 class RunStore:
     """Durable store for ``RunRecord`` metadata."""
 
@@ -230,11 +278,26 @@ class RunStore:
         """
         with self.get_connection() as conn:
             with conn.cursor() as cur:
-                lock_schema(cur)
-                cur.execute(_CREATE_TABLE)
-                for statement in _MIGRATIONS:
-                    cur.execute(statement)
-            conn.commit()
+                current = _schema_is_current(cur)
+            conn.rollback()
+            if current:
+                return
+            for attempt in range(1, _SCHEMA_ATTEMPTS + 1):
+                try:
+                    with conn.cursor() as cur:
+                        lock_schema(cur)
+                        cur.execute(f"SET LOCAL lock_timeout = '{_SCHEMA_LOCK_TIMEOUT}'")
+                        cur.execute(_CREATE_TABLE)
+                        for statement in _MIGRATIONS:
+                            cur.execute(statement)
+                    conn.commit()
+                    return
+                except psycopg2.errors.LockNotAvailable:
+                    conn.rollback()
+                    if attempt == _SCHEMA_ATTEMPTS:
+                        raise
+                    logger.warning("The runs table is held by a long reader; schema change attempt %d waits", attempt)
+                    time.sleep(_SCHEMA_RETRY_SECONDS)
 
     @contextmanager
     def get_connection(self):

@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-19 02:25 JST (written by `loop.sh state`). Harness 2286518d committed; 2286518d deployed.
-**Live, and stopped in the last day:** run-160e0f62 running at specialist_testing_2; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed; run-db139a37 failed at failed
-**Last scored:** run-58e79fce tasks-api 10/10 (completed, handoff 1.0; scored 11-19 02:25 JST); run-1b5b8d8e notes-api-csharp 0/9 (completed, FALSE ACCEPTANCE, mixed, 162 active min, handoff 1.0; scored 11-19 01:25 JST); run-f00ea384 notes-api-php 9/9 (completed, mixed, 125 active min, handoff 1.0; scored 11-18 23:25 JST).
+**As of:** 11-19 03:11 JST (written by `loop.sh state`). Harness 0d00096f committed; 0d00096f deployed.
+**Live, and stopped in the last day:** run-3cc0ed29 running at acceptance_author_2; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed; run-db139a37 failed at failed
+**Last scored:** run-160e0f62 notes-api-rust 9/9 (completed, handoff 1.0; scored 11-19 03:11 JST); run-58e79fce tasks-api 10/10 (completed, mixed, 144 active min, handoff 1.0; scored 11-19 02:25 JST); run-1b5b8d8e notes-api-csharp 0/9 (completed, FALSE ACCEPTANCE, mixed, 162 active min, handoff 1.0; scored 11-19 01:25 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -51,11 +51,13 @@ Generated above. Today (hidden, quality, verdict):
   0.55, 144 active minutes; its own verdict not deliverable on four contract lines answered 401 to the unsigned bare
   probe (a false red, LF.1116). Root cause of both that and the edge probe's 22 skipped checks: the sign-up body was
   written `{"username": <string>, ...}` after `— request body:` and never read, so no probe signed in (LF.1117).
-- Haiku arm: H notes-api-rust hybrid-haiku 1 run-160e0f62-7720-49e1-a831-50f5453e7484 (:1234 build, Haiku judgement,
-  01:25): sprint 1 attempts 1-4 lost to one defect - the fix restored `pub fn app() -> Router` in `lib.rs` only while
-  `main.rs` called `app(Arc::new(store))`, so each fix stopped the build and was reverted (LF.1118); <$1 hosted.
+- Haiku arm: H notes-api-rust hybrid-haiku 1 run-160e0f62-7720-49e1-a831-50f5453e7484 (:1234, 01:25-02:54, mixed):
+  **9/9 hidden, 7/8 quality**, 88 active min, 3 reverts, $0.87 hosted - the first Rust 9/9 on the new version (local-only
+  Rust 1, 4, 7: 0/9). Verdict not deliverable on a real gap: a spaces-only title accepted. Sprint 1 attempts 1-4 lost
+  to one defect (LF.1118).
 - M web-todo container 1 run-3cc0ed29-ac73-423d-bb47-ee30e36953e7 (:8888, 02:37, on 2286518d).
-- LF.1116-1118 shipped live ~03:05 JST (LF.1118 changes the Haiku run's outcome): both live runs are mixed_versions.
+- LF.1116-1118 shipped live 03:10 JST into web-todo 1 (mixed). LF.1119 (a run store opened beside the backup's dump
+  stalled the app 03:05-03:09) committed.
 - **Deployed 20:09 JST: 532dba3 (waves 1 and 2, LF.1073-1105).** Live on it: M notes-api-rust container 7
   run-cbf36159-b68e-4405-9440-db9797ce1aad (:1234) and M notes-api-php container 3
   run-c5d6a8a5-6f88-4247-adcf-52c0a8aaad0c (:8888), both 20:09.

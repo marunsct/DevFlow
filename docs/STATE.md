@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-18 12:25 JST (written by `loop.sh state`). Harness 7cd4116f committed; 7cd4116f deployed.
-**Live, and stopped in the last day:** run-1e04154a running at technical_lead; run-db139a37 failed at failed; run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0; run-844673cd failed at failed; run-9f8188cb failed at failed
-**Last scored:** run-14e254a1 notes-api-java 9/9 (completed, handoff 1.0; scored 11-18 12:25 JST); run-db139a37 notes-api-rust 0/9 (failed, mixed, 138 active min, handoff 0.571; scored 11-18 11:16 JST); run-1badaa8f notes-api-rust 8/9 (completed, FALSE ACCEPTANCE, mixed, 82 active min, handoff 1.0; scored 11-18 07:25 JST).
+**As of:** 11-18 13:47 JST (written by `loop.sh state`). Harness 90e875d8 committed; 90e875d8 deployed.
+**Live, and stopped in the last day:** run-1e04154a failed at failed; run-db139a37 failed at failed; run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0; run-844673cd failed at failed; run-9f8188cb failed at failed
+**Last scored:** run-1e04154a notes-api-rust 0/9 (failed, handoff 0.429; scored 11-18 13:47 JST); run-4886c02b notes-api-go 9/9 (completed, mixed, 47 active min, handoff 1.0; scored 11-18 13:45 JST); run-14e254a1 notes-api-java 9/9 (completed, mixed, 234 active min, handoff 1.0; scored 11-18 12:25 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -113,9 +113,12 @@ default (patch saved; off per run meanwhile). The 11-17 report is in git history
    handoff 1.0, DELIVERED - the first Java run with every quality test: lost writes and the non-numeric id 500
    both pass (LF.1030, LF.1052); LF.1049/1051/1059/1062 unblocked it. About an hour lost writing its suite
    against the unbuilt product (LF.1058 since).
-   Live (near-green switch off per run, owner decision on the default pending): Rust container run 5,
-   run-1e04154a-6c23-4b3d-8b7f-85c17fc18441 (:8888, 11:24); Go container run 2,
-   run-4886c02b-bdaf-49c8-92a6-0d41364b8ed4 (:1234, 12:29).
+   Go container run 2, run-4886c02b-bdaf-49c8-92a6-0d41364b8ed4 (:1234, 12:29-13:40): hidden 9/9, quality 8/8,
+   handoff 1.0, DELIVERED. Rust container run 5, run-1e04154a-6c23-4b3d-8b7f-85c17fc18441 (:8888, 11:24-13:42): FAILED
+   0/9 - the signature held (`-> Router`), but handlers took `Extension<AppState>` while `app()` used `.with_state`:
+   every route answered 500 "Missing request extension", a body the Playwright failures never showed the fixers.
+   LF.1066 grouped the 500s into one defect; next: that defect quotes one failing response's body.
+   Live: C# container run 3 (:1234, 13:49); PHP container run 2 (:8888) - near-green switch off per run.
 3. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).

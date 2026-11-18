@@ -56,8 +56,10 @@ Generated above. Today (hidden, quality, verdict):
   Rust 1, 4, 7: 0/9). Verdict not deliverable on a real gap: a spaces-only title accepted. Sprint 1 attempts 1-4 lost
   to one defect (LF.1118).
 - M web-todo container 1 run-3cc0ed29-ac73-423d-bb47-ee30e36953e7 (:8888, 02:37, on 2286518d).
-- LF.1116-1118 shipped live 03:10 JST into web-todo 1 (mixed). LF.1119 (a run store opened beside the backup's dump
-  stalled the app 03:05-03:09) committed.
+- LF.1116-1118 shipped live 03:10 JST, LF.1119 (a run store opened beside the backup's dump stalled the app
+  03:05-03:09) at 03:18, both into web-todo 1 (mixed).
+- H notes-api-csharp hybrid-haiku 1 run-04f2aa30-834c-4895-bab4-6e42f9dd168d (:1234, 03:19, on 9d134086) - the second
+  Haiku arm run: does the judgement tier lift C# as it lifted Rust?
 - **Deployed 20:09 JST: 532dba3 (waves 1 and 2, LF.1073-1105).** Live on it: M notes-api-rust container 7
   run-cbf36159-b68e-4405-9440-db9797ce1aad (:1234) and M notes-api-php container 3
   run-c5d6a8a5-6f88-4247-adcf-52c0a8aaad0c (:8888), both 20:09.

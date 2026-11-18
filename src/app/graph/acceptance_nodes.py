@@ -2427,8 +2427,11 @@ def _rewritten_in_one_call_each(state: Any, broken: list[str], model: Any) -> bo
         from app.acceptance.api_reference import api_reference
         from app.agents.specification_rulings import the_rulings_section
 
+        # The test at the file and line a finding names, else its first quoted name. Measured on one run: a finding
+        # named `notes.spec.js` line 142, its first quoted name was the file, no test had that title, and a one-line
+        # repair went to QA's whole agent loop - about 20 minutes, twice.
         done = rewritten_tests.repair(
-            _root(state), broken, model, which_test=_which_test,
+            _root(state), broken, model, which_test=lambda item: _which_tests(state, item)[0],
             reference=api_reference(state.get("technical_specification"),
                                     getattr(state.get("document"), "text", "") or "") + the_rulings_section(_root(state)),
             reason=str(state.get("dispute_reason") or ""),

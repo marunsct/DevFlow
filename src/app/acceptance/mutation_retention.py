@@ -72,7 +72,7 @@ def _put_back(root: str | Path, base: str, paths: list[str], why: str, stage: st
 
     if not paths or not ci.restore_paths(root, base, paths):
         return []
-    ci.commit(root, f"Retention, {stage}: {why[:60]}")
+    ci.commit(root, f"Put back what {stage} wrote: {why[:60]}")
     return paths
 
 

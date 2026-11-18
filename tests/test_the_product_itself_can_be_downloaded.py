@@ -40,8 +40,8 @@ def test_the_archive_says_how_to_run_it(tmp_path, monkeypatch):
     monkeypatch.setattr("app.stacks.contract.the_pack", lambda root: None)
     archive = zipfile.ZipFile(io.BytesIO(product_archive.build(root, "run-1")))
     names = archive.namelist()
-    assert "run-1/app/server.py" in names and "run-1/HOW-TO-RUN.txt" in names
-    assert "cd app\nsh start.sh" in archive.read("run-1/HOW-TO-RUN.txt").decode()
+    assert "run-1/app/server.py" in names and "run-1/HANDOVER.md" in names
+    assert "cd app\nsh start.sh" in archive.read("run-1/HANDOVER.md").decode()
 
 
 def test_the_server_offers_it(client):

@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-18 07:25 JST (written by `loop.sh state`). Harness ca7d4712 committed; ca7d4712 deployed.
-**Live, and stopped in the last day:** run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0; run-844673cd failed at failed; run-9f8188cb failed at failed; run-2db7b0a2 failed at failed
-**Last scored:** run-1badaa8f notes-api-rust 8/9 (completed, FALSE ACCEPTANCE, handoff 1.0; scored 11-18 07:25 JST); run-1cef3eae tasks-api 10/10 (completed, 127 active min, handoff 1.0; scored 11-18 05:55 JST); run-6a9c0fb9 notes-api-ruby 9/9 (completed, 88 active min, handoff 1.0; scored 11-18 03:50 JST).
+**As of:** 11-18 11:16 JST (written by `loop.sh state`). Harness 7ff5e346 committed; 7ff5e346 deployed.
+**Live, and stopped in the last day:** run-14e254a1 running at defect_fix_1_0; run-db139a37 failed at failed; run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0; run-844673cd failed at failed; run-9f8188cb failed at failed
+**Last scored:** run-db139a37 notes-api-rust 0/9 (failed, handoff 0.571; scored 11-18 11:16 JST); run-1badaa8f notes-api-rust 8/9 (completed, FALSE ACCEPTANCE, mixed, 82 active min, handoff 1.0; scored 11-18 07:25 JST); run-1cef3eae tasks-api 10/10 (completed, 127 active min, handoff 1.0; scored 11-18 05:55 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -130,9 +130,11 @@ Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
    inside). Lost: an update (the near-green criterion left at acceptance), a blank title kept, a long body refused.
    Built from it: LF.1055 (a fixed compiler finding no longer kept open by another error in its file), LF.1056
    (`oneshot` takes the router by value). :8888's model was not loaded 00:55-08:30; the owner made it available again.
+   Rust container run 4, run-db139a37-8100-4378-acb8-8bf1f16197d4 (:8888, 08:32-11:13): FAILED 0/9, re-planned 3
+   times; the product never started - `app()` declared `-> Router<AppState>` in every attempt, fixers editing
+   `main.rs` where the error is reported. Built from it: LF.1057, LF.1060, LF.1061, LF.1063 (Rust known errors).
    Live (near-green switch off per run, owner decision on the default pending): Java container run 5,
-   run-14e254a1-3dd0-454f-8597-3165efd5452b (:1234, 08:15); Rust container run 4,
-   run-db139a37-8100-4378-acb8-8bf1f16197d4 (:8888, 08:32).
+   run-14e254a1-3dd0-454f-8597-3165efd5452b (:1234, 08:15).
 3. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).

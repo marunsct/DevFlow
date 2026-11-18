@@ -57,4 +57,6 @@ def test_a_router_error_names_the_return_type_that_keeps_it_waiting(tmp_path):
         "satisfied")])
 
     assert "`fn app() -> Router<AppState>` still waits for its state after `.with_state`" in defect.actual_behavior
+    # Measured: the error was reported in `main.rs`, and fixers kept editing it; the signature is in `src/lib.rs`.
+    assert "change the signature in `src/lib.rs` to `pub fn app() -> Router`" in defect.actual_behavior
     assert not BANNED.search(defect.actual_behavior)

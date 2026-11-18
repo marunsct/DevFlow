@@ -106,7 +106,8 @@ ENTRYPOINT ["/usr/local/bin/service"]
 #: still waited for its state, and a fixer told to apply the state found it already applied and left the error open.
 THE_SIGNATURE_DECIDES = (
     " The return type decides it: `.with_state(state)` gives the router the type the function names, so "
-    "`fn app() -> Router<AppState>` still waits for its state after `.with_state` - write `fn app() -> Router`."
+    "`fn app() -> Router<AppState>` still waits for its state after `.with_state` - change the signature in "
+    "`src/lib.rs` to `pub fn app() -> Router`; the error shows where the router is used, not where it is typed."
 )
 AXUM_KNOWN_ERRORS = {
     "Handler<_, _>` is not satisfied": (

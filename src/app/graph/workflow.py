@@ -9938,11 +9938,15 @@ def _snapshotting(name: str, action: Any) -> Any:
         root = _repository_root(state) if isinstance(state, dict) else None
         if root:
             try:
-                from app.tools.version_control import snapshot_workspace
+                from app.tools.version_control import is_repository, snapshot_workspace
 
-                snapshot_workspace(root, name)
+                # The checkpoint this stage starts from: a rewind to it finds
+                # this snapshot by that id, not by the clock (`rewind_to`).
+                started_from = ((config or {}).get("configurable") or {}).get("checkpoint_map", {}).get("")
+                if snapshot_workspace(root, name, started_from) is None and is_repository(root):
+                    logger.warning("The workspace could not be snapshotted before %s; a rewind to it will refuse", name)
             except Exception:  # noqa: BLE001 - a snapshot is never a reason to stop a stage
-                logger.debug("No snapshot before %s", name, exc_info=True)
+                logger.warning("No snapshot before %s", name, exc_info=True)
         return action(state, config) if takes_config else action(state)
 
     if parameters and parameters[0].annotation is not inspect.Parameter.empty:
@@ -10032,15 +10036,30 @@ def rewind_to(graph: Any, thread_id: str, checkpoint_id: str, repo_root: str | N
         raise RewindError("A run is rewound only to the start of a stage.")
     restored = False
     if repo_root:
-        from app.tools.version_control import restore_snapshot, workspace_snapshots
+        from app.tools.version_control import (
+            SnapshotNotTaken,
+            restore_snapshot,
+            snapshot_for_checkpoint,
+            stage_snapshots,
+        )
 
-        since = _checkpoint_millis(target)
-        taken = [
-            commit for millis, stage, commit in workspace_snapshots(repo_root)
-            if stage == node and since is not None and millis >= since - 1000
-        ]
+        try:
+            taken = snapshot_for_checkpoint(stage_snapshots(repo_root), node, checkpoint_id, _checkpoint_millis(target))
+        except SnapshotNotTaken:
+            # No snapshot was expected of a stage with no workspace yet, nor of
+            # the point the run stands at (its stage has not started): the
+            # files as they are are that point's.
+            latest = graph.get_state(config)
+            standing = (latest.config or {}).get("configurable", {}).get("checkpoint_id") if latest else None
+            if _repository_root(target.values or {}) and standing != checkpoint_id:
+                raise RewindError(
+                    f"The workspace was not snapshotted when {node} started at this point, so its files "
+                    "cannot be put back as they were then. Rewind to an earlier point of this stage or "
+                    "to an earlier stage."
+                ) from None
+            taken = None
         if taken:
-            restored = restore_snapshot(repo_root, taken[0])
+            restored = restore_snapshot(repo_root, taken)
         # A rewound stage is a new attempt, never a conversation a stopped
         # worker cut off - whatever notes the files put back hold.
         from app.graph import abandoned_threads

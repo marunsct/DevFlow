@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
@@ -455,11 +456,14 @@ def _identity() -> list[str]:
     return ["-c", f"user.name={AUTHOR_NAME}", "-c", f"user.email={AUTHOR_EMAIL}"]
 
 
-def snapshot_workspace(repo_root: str | Path, label: str) -> str | None:
+def snapshot_workspace(repo_root: str | Path, label: str, checkpoint_id: str | None = None) -> str | None:
     """Record the workspace as it is now under `SNAPSHOT_REFS`; the ref, or None.
 
     Taken as each stage starts (`workflow._snapshotting`), so a run can be
-    rewound to that stage with its files as they were then. Never raises.
+    rewound to that stage with its files as they were then. `checkpoint_id`
+    is the run's checkpoint the stage started from, kept in the snapshot's
+    message so a rewind finds it by that id (`snapshot_for_checkpoint`).
+    Never raises.
     """
     import re
     import time
@@ -474,13 +478,77 @@ def snapshot_workspace(repo_root: str | Path, label: str) -> str | None:
         return None
     head = _git(root, "rev-parse", "--verify", "-q", "HEAD")
     parent = ["-p", head.stdout.strip()] if head is not None and head.returncode == 0 and head.stdout.strip() else []
-    commit = _git(root, *_identity(), "commit-tree", tree.stdout.strip(), *parent, "-m", f"Before {label}")
+    commit = _git(root, *_identity(), "commit-tree", tree.stdout.strip(), *parent, "-m", _snapshot_subject(label, checkpoint_id))
     if commit is None or commit.returncode != 0:
         return None
     name = re.sub(r"[^A-Za-z0-9_.-]", "-", label)[:80] or "stage"
     ref = f"{SNAPSHOT_REFS}{int(time.time() * 1000):013d}-{name}"
     updated = _git(root, "update-ref", ref, commit.stdout.strip())
     return ref if updated is not None and updated.returncode == 0 else None
+
+
+#: How a snapshot's message names the checkpoint its stage started from.
+_CHECKPOINT_IN_SUBJECT = re.compile(r" \(checkpoint ([A-Za-z0-9_.:-]+)\)$")
+
+
+def _snapshot_subject(label: str, checkpoint_id: str | None) -> str:
+    return f"Before {label}" + (f" (checkpoint {checkpoint_id})" if checkpoint_id else "")
+
+
+class StageSnapshot(NamedTuple):
+    """One stage snapshot: when it was taken, the stage, its commit, and the checkpoint the stage started from."""
+
+    millis: int
+    stage: str
+    commit: str
+    checkpoint_id: str | None
+
+
+class SnapshotNotTaken(LookupError):
+    """The workspace was not snapshotted when the stage started from that checkpoint."""
+
+
+def stage_snapshots(repo_root: str | Path) -> list[StageSnapshot]:
+    """Every stage snapshot, oldest first, with the checkpoint each stage started from (None when not recorded)."""
+    root = Path(repo_root)
+    if not is_repository(root):
+        return []
+    listed = _git(root, "for-each-ref", "--format=%(refname) %(objectname) %(contents:subject)", SNAPSHOT_REFS)
+    found = []
+    for line in (listed.stdout.splitlines() if listed is not None and listed.returncode == 0 else []):
+        ref, _, rest = line.partition(" ")
+        commit, _, subject = rest.partition(" ")
+        stamp, _, stage = ref[len(SNAPSHOT_REFS):].partition("-")
+        if stamp.isdigit():
+            named = _CHECKPOINT_IN_SUBJECT.search(subject.strip())
+            found.append(StageSnapshot(int(stamp), stage, commit, named.group(1) if named else None))
+    return sorted(found)
+
+
+def snapshot_for_checkpoint(
+    snapshots: list[StageSnapshot], stage: str, checkpoint_id: str, since_millis: int | None,
+) -> str | None:
+    """The commit of the snapshot `stage` took when it started from `checkpoint_id`, or None when there is none to take.
+
+    Found by the checkpoint's id: the first snapshot naming it (a stage retried
+    or resumed from the same checkpoint snapshots again, after some of its
+    work). A checkpoint written after the snapshots began naming their
+    checkpoint, with none naming it, is one whose snapshot failed: that raises
+    `SnapshotNotTaken`, since any other snapshot holds other files. Only a
+    checkpoint older than that is matched the old way, to the first snapshot
+    of its stage taken from its time on that names no checkpoint.
+    """
+    mine = [s for s in snapshots if s.checkpoint_id == checkpoint_id]
+    if mine:
+        return mine[0].commit
+    named = [s.millis for s in snapshots if s.checkpoint_id]
+    if named and since_millis is not None and since_millis > min(named):
+        raise SnapshotNotTaken(checkpoint_id)
+    older = [
+        s.commit for s in snapshots
+        if s.checkpoint_id is None and s.stage == stage and since_millis is not None and s.millis >= since_millis - 1000
+    ]
+    return older[0] if older else None
 
 
 def workspace_snapshots(repo_root: str | Path) -> list[tuple[int, str, str]]:

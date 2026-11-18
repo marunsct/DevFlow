@@ -31,6 +31,7 @@ from app import ci
 from app.acceptance import suite
 from app.agents.shared_facts import with_the_facts
 from app.agents.specialists import raised_by
+from app.sprint import cause as _cause
 from app.stacks import contract
 
 logger = logging.getLogger(__name__)
@@ -374,6 +375,8 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
                 # findings, one rewrite of four files.
                 affected_files=[module] if module and len(importers) > 1 else [relative],
                 owner=owner_of_the_file(state, relative),
+                kind=_cause.COMPILE_ERROR,
+                evidence=[_cause.a_compiler_error(relative, f.get("line"), f.get("code") or "", message) for f in where],
             ))
     defects.extend(_what_the_compiler_says(state, root, since, pinned or ""))
     # The bundled manifest-drift defect rides after the cap: it is one defect
@@ -490,6 +493,8 @@ def _what_the_compiler_says(state: Any, root: str, since: str, project: str) -> 
             actual_behavior=f"{message} (the compiler, as an IDE would underline it)",
             affected_files=[relative],
             owner=_owner_of(state, ""),
+            kind=_cause.COMPILE_ERROR,
+            evidence=[_cause.a_compiler_error(relative, line, finding.get("code") or "", message)],
         ))
     return defects
 

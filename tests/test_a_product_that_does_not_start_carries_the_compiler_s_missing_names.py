@@ -89,7 +89,7 @@ def test_the_start_defect_carries_the_errors(project, monkeypatch):
     monkeypatch.setattr(suite, "last_result", lambda root: saved)
     monkeypatch.setattr(acceptance_nodes, "_root", lambda state: str(project))
     monkeypatch.setattr(acceptance_nodes, "_stack", lambda state: SimpleNamespace(product_kind="http_api"))
-    monkeypatch.setattr(compiler_errors, "the_errors", lambda root, runner=None: "\n\nThe compiler also reports: X")
+    monkeypatch.setattr(compiler_errors, "the_errors_found", lambda root, runner=None: ("\n\nThe compiler also reports: X", []))
 
     defects = acceptance_nodes.failing_due_defects({}, [])
 

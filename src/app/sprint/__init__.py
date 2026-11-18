@@ -106,6 +106,27 @@ class Defect(BaseModel):
             "changed. Set by the controller from that specialist's result."
         ),
     )
+    kind: str = Field(
+        default="",
+        description=(
+            "What measured it (`app.sprint.cause.KINDS`): a failing test, a compiler's error, a start that "
+            "failed, a probe's finding, a review's finding; '' for a defect from before kinds. Set by the controller."
+        ),
+    )
+    evidence: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "What the measurement that raised it recorded: each failing test, compiler error, probe request or "
+            "start error, as a small record. Set by the controller, never by a specialist."
+        ),
+    )
+    cause_key: str = Field(
+        default="",
+        description=(
+            "The stable key of its cause, made from `kind` and `evidence` (`app.sprint.cause.cause_key`); '' when "
+            "it has no evidence. Two defects with a key are one problem exactly when their keys are equal."
+        ),
+    )
 
 
 class TestRunRecord(BaseModel):
@@ -181,11 +202,20 @@ def recurrence_of(defect: Defect, earlier: Sequence[Defect]) -> Defect | None:
     """
     if getattr(defect, "source", "") in TEMPLATED_SOURCES:
         return None
+    from app.sprint.cause import same_cause
+
     terms = _defect_terms(defect.description)
-    if len(terms) < 2:
-        return None
     for candidate in earlier:
         if candidate.status != "fixed" or getattr(candidate, "source", "") in TEMPLATED_SOURCES:
+            continue
+        # Measured causes decide when both defects have one (deep review 2026-11-18, item 1.1): two criteria raised
+        # from one template share nearly every word, and the later one was counted as the earlier coming back.
+        keyed = same_cause(defect, candidate)
+        if keyed is not None:
+            if keyed:
+                return candidate
+            continue
+        if len(terms) < 2:
             continue
         candidate_terms = _defect_terms(candidate.description)
         if not candidate_terms:

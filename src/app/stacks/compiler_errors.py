@@ -120,14 +120,19 @@ _NAMED_IMPORT = re.compile(r"""import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]"""
 
 def the_errors(repo_root: str | Path, runner: Runner | None = None) -> str:
     """The text to add to the start defect: the compiler's missing-name errors, or "" when off, undeclared or clean."""
+    return the_errors_found(repo_root, runner)[0]
+
+
+def the_errors_found(repo_root: str | Path, runner: Runner | None = None) -> tuple[str, list[tuple[str, int, int, str]]]:
+    """`the_errors`' text and the `(file, line, code, message)` it names, the start's evidence; ("", []) when none."""
     if not enabled():
-        return ""
+        return "", []
     try:
         from app.stacks import contract
 
         found = contract.the_pack(repo_root)
         if found is None or not getattr(found[0], "typecheck", ()):
-            return ""
+            return "", []
         pack, record = found
         project = str(record.get("project") or "")
         if runner is None:
@@ -138,7 +143,7 @@ def the_errors(repo_root: str | Path, runner: Runner | None = None) -> str:
         output = f"{outcome.get('stdout') or ''}\n{outcome.get('stderr') or ''}"
         errors = parse(output)[:MOST_ERRORS]
         if not errors:
-            return ""
+            return "", []
         base = Path(repo_root) / project if project else Path(repo_root)
         prefix = f"{project}/" if project else ""
         kept = contract.kept_paths(repo_root)
@@ -150,11 +155,12 @@ def the_errors(repo_root: str | Path, runner: Runner | None = None) -> str:
         return (
             f"\n\nThe compiler (`{' '.join(pack.typecheck)}`) also reports these names, modules or members that do not "
             "exist in the product's files. Each is something the product cannot run with, not only the first one the "
-            "runtime stopped on; correct all of them in this one change:\n" + "\n".join(lines)
+            "runtime stopped on; correct all of them in this one change:\n" + "\n".join(lines),
+            [(f"{prefix}{file}", line, code, message) for file, line, code, message in errors],
         )
     except Exception:  # noqa: BLE001 - a check that cannot run adds nothing
         logger.debug("Could not add the compiler's errors to the start defect", exc_info=True)
-        return ""
+        return "", []
 
 
-__all__ = ["MOST_ERRORS", "ON_BY_DEFAULT", "enabled", "parse", "the_errors"]
+__all__ = ["MOST_ERRORS", "ON_BY_DEFAULT", "enabled", "parse", "the_errors", "the_errors_found"]

@@ -228,6 +228,10 @@ class ReportedDefect(BaseModel):
     #: a model answers to. One run's round queued nine defects for four bugs,
     #: and telling which check raised each meant reading every description.
     source: SkipJsonSchema[str] = ""
+    #: What measured it and what the measurement recorded (`app.sprint.cause`): set by the harness where it raises a
+    #: defect from a measurement, and kept out of the schema a model answers to (deep review 2026-11-18, item 1.1).
+    kind: SkipJsonSchema[str] = ""
+    evidence: SkipJsonSchema[list[dict[str, Any]]] = Field(default_factory=list)
 
     # "High" is not in this vocabulary and is in two of the other three the
     # same model is asked for elsewhere in the same run. See

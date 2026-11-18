@@ -50,6 +50,7 @@ import operator
 import time
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+from collections.abc import Sequence
 from typing import Any, Mapping, TypedDict, Annotated
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -163,6 +164,7 @@ from app.sprint import (
     record_test_run,
     start_remediation,
 )
+from app.sprint import cause
 from app.state import HumanApprovalRequest, RepositoryContext, ReviewStatus, WorkflowStage
 from app.tracing import APP_RUN_ID_KEY, trace_metadata
 
@@ -2980,9 +2982,11 @@ def _refreshed_by_the_round(cycle: Any, raised: list[Any], test_round: int) -> t
     repeated: list[Any] = []
     for item in raised:
         key = (_first_sentence(getattr(item, "description", "")), str(getattr(item, "source", "") or ""))
+        # The same measured cause is raised again whatever its first sentence now says (deep review 1.1).
         at = next((index for index, defect in enumerate(defects)
                    if defect.status == "open"
-                   and (_first_sentence(defect.description), str(defect.source or "")) == key), None)
+                   and (cause.same_cause(defect, item)
+                        or (_first_sentence(defect.description), str(defect.source or "")) == key)), None)
         if at is None:
             continue
         defects[at] = defects[at].model_copy(update={
@@ -2992,6 +2996,8 @@ def _refreshed_by_the_round(cycle: Any, raised: list[Any], test_round: int) -> t
             "affected_files": list(item.affected_files or defects[at].affected_files),
             "failing_criteria": list(item.failing_criteria or defects[at].failing_criteria),
             "found_in_round": test_round,
+            **({"kind": item.kind, "evidence": list(item.evidence), "cause_key": item.cause_key}
+               if getattr(item, "cause_key", "") else {}),
         })
         repeated.append(item)
     if not repeated:
@@ -3025,12 +3031,14 @@ BESIDE_A_GREEN_SUITE = (
 )
 
 
-def _the_unit_tests_fail(milestone: Any, output: str, *, beside_a_green_suite: bool = False) -> Any:
+def _the_unit_tests_fail(milestone: Any, output: str, *, beside_a_green_suite: bool = False,
+                         failing: Sequence[str] = ()) -> Any:
     """The defect for a failing unit run, owned by the role that writes the product.
 
     Not the testing role's: a defect it owns is closed by changing the test,
     and a failing unit test is first the product's to answer. `beside_a_green_suite`: the locked suite passed in
-    full on the same product, and the fixer is told the unit test may be the one that is wrong.
+    full on the same product, and the fixer is told the unit test may be the one that is wrong. `failing`: the unit
+    tests the runner's report names failing, its evidence (deep review 2026-11-18, item 1.1).
     """
     from app.agents.specialists import ReportedDefect
 
@@ -3063,7 +3071,40 @@ def _the_unit_tests_fail(milestone: Any, output: str, *, beside_a_green_suite: b
         + (f"\n{BESIDE_A_GREEN_SUITE}" if beside_a_green_suite else ""),
         affected_files=[],
         owner=owner,
+        **_the_unit_run_s_evidence(output, failing),
     )
+
+
+def _the_failing_unit_tests(root: str) -> list[str]:
+    """The unit tests the pack's report on disk names failing, or the one name of a run that wrote none; [] when it
+    cannot say. Never raises."""
+    try:
+        from app import ci
+
+        read = ci.unit_outcomes_in_the_pack_s_report(root)
+        if read is None:
+            return []
+        outcomes, found = read
+        if not found:
+            return [ci.UNIT_TESTS_DID_NOT_RUN]
+        return sorted(name for name, outcome in outcomes.items() if outcome not in ("passed", "skipped"))
+    except Exception:  # noqa: BLE001 - a defect without evidence is compared by its words, as before
+        return []
+
+
+def _the_unit_run_s_evidence(output: str, failing: Sequence[str]) -> dict[str, Any]:
+    """The kind and evidence of a failing unit run: each failing test it names, else the error its output ends on."""
+    from app import ci
+
+    named = [str(name) for name in failing or () if str(name).strip() and str(name) != ci.UNIT_TESTS_DID_NOT_RUN]
+    if named:
+        return {"kind": cause.FAILING_TEST, "evidence": [cause.a_failing_test(name) for name in named][:cause.MOST_EVIDENCE]}
+    said = cause.an_error_line(output)
+    if not said:
+        return {}
+    # Ran and wrote no report: the tests did not compile or could not start.
+    return {"kind": cause.COMPILE_ERROR if ci.UNIT_TESTS_DID_NOT_RUN in list(failing or ()) else cause.FAILING_TEST,
+            "evidence": [said]}
 
 
 #: Files that are a page or a page's component, whatever framework draws it.
@@ -3137,6 +3178,8 @@ def _with_a_concurrent_write_defect(state: Any, test_result: Any, milestone: Any
             actual_behavior="; ".join(f"`{c.method} {c.path}`: {concurrent_write_probe.what_came_back(f)}" for c, f in found[:4]),
             affected_files=[],
             owner=_the_unit_tests_fail(milestone, "").owner,
+            kind=cause.PROBE_FINDING,
+            evidence=[cause.a_probe_request("concurrent writes", f"{c.method} {c.path}") for c, _ in found][:cause.MOST_EVIDENCE],
         )
         return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
     except Exception:  # noqa: BLE001 - the round as measured stands
@@ -3175,6 +3218,9 @@ def _with_an_edge_case_defect(state: Any, test_result: Any, milestone: Any) -> A
                 for case, f in found[:8]),
             affected_files=[],
             owner=_the_unit_tests_fail(milestone, "").owner,
+            kind=cause.PROBE_FINDING,
+            evidence=[cause.a_probe_request("edges", f"{case['method']} {case['shown']} {case['what']}")
+                      for case, _ in found][:cause.MOST_EVIDENCE],
         )
         return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
     except Exception:  # noqa: BLE001 - the round as measured stands
@@ -3308,6 +3354,14 @@ def _with_a_server_error_defect(state: Any, test_result: Any, milestone: Any, er
         ]),
         affected_files=sorted({f for f, _ in acceptance_nodes.where_errors_become_5xx(root)}),
         owner=_the_unit_tests_fail(milestone, "").owner,
+        kind=cause.PROBE_FINDING,
+        evidence=[
+            *(cause.a_probe_request("contract, no body", f"{check.method} {check.path}") for check, _ in errors),
+            *(cause.a_probe_request("contract, a body nothing can parse", f"{check.method} {check.path}")
+              for check, _ in unparsable),
+            *(cause.a_probe_request("contract, a body that is not an object", f"{check.method} {check.path}")
+              for check, _, _ in shaped),
+        ][:cause.MOST_EVIDENCE],
     )
     return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
 
@@ -6479,6 +6533,8 @@ def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
             "description": f"{item.description}{SAME_PROBLEM_ELSEWHERE}{also}",
             "affected_files": files,
             "severity": severity,
+            # What each member measured, so the merged defect's cause key is all of theirs (deep review 1.1).
+            **cause.as_merged(item, others),
         }))
         logger.warning(
             "%d defects describe one problem; merged into one: %s",
@@ -6576,32 +6632,53 @@ def _the_failure_as_met(item: Any) -> str:
 _A_CRITERION_DEFECT = re.compile(r"^\[((?:AC|CR)-\d+)\] (.*)$", re.S)
 
 
+def _the_failing_tests_it_names(item: Any, criteria: dict[str, Any]) -> frozenset[str]:
+    """The failing tests a defect is about: its measured evidence first (deep review 2026-11-18, item 1.1), else the
+    tests of the criterion its description names in the suite's result; empty when neither says."""
+    tests = frozenset(
+        " ".join(str(record.get("test")).split()) for record in getattr(item, "evidence", None) or ()
+        if isinstance(record, dict) and record.get("test")
+    )
+    if tests:
+        return tests
+    found = _A_CRITERION_DEFECT.match(str(getattr(item, "description", "") or ""))
+    return frozenset(
+        " ".join(str(t.get("name")).split()) for t in ((criteria.get(found.group(1)) or {}).get("tests") or [])
+        if t.get("outcome") == "failed"
+    ) if found else frozenset()
+
+
 def _one_defect_per_failing_tests(reported: list[Any], result: dict[str, Any]) -> list[Any]:
     """`reported` with defects for criteria whose failing tests are exactly the same set merged, in order.
 
     The same failing tests decide every criterion they carry, so one fixer settles them all. Measured on one run:
-    two criteria carried by one failing test had two fixers, about 40 and 45 minutes, both left open.
+    two criteria carried by one failing test had two fixers, about 40 and 45 minutes, both left open. The set is read
+    from what the round measured (`evidence`) where the defect carries it, and from the suite's result by the
+    criterion its description names where it does not.
     """
     criteria = (result or {}).get("criteria") or {}
-    if len(reported) < 2 or not criteria:
+    if len(reported) < 2:
         return list(reported)
     first_with: dict[frozenset[str], Any] = {}
     merged: list[Any] = []
     for item in reported:
-        found = _A_CRITERION_DEFECT.match(str(getattr(item, "description", "") or ""))
-        failing = frozenset(
-            str(t.get("name")) for t in ((criteria.get(found.group(1)) or {}).get("tests") or [])
-            if t.get("outcome") == "failed"
-        ) if found else frozenset()
+        failing = _the_failing_tests_it_names(item, criteria)
         lead = first_with.get(failing) if failing else None
         if lead is None:
             if failing:
                 first_with[failing] = item
             merged.append(item)
             continue
-        lead_found = _A_CRITERION_DEFECT.match(lead.description)
-        lead.description = f"[{lead_found.group(1)}][{found.group(1)}] {lead_found.group(2)}" if lead_found else lead.description
+        found = _A_CRITERION_DEFECT.match(str(getattr(item, "description", "") or ""))
+        lead_found = _A_CRITERION_DEFECT.match(str(getattr(lead, "description", "") or ""))
+        if lead_found and found:
+            lead.description = f"[{lead_found.group(1)}][{found.group(1)}] {lead_found.group(2)}"
+        else:
+            lead.description = (f"{lead.description}{SAME_PROBLEM_ELSEWHERE}- [{getattr(item, 'source', '') or 'reported'}] "
+                                f"{' '.join(str(getattr(item, 'description', '')).split())[:400]}")
         lead.expected_behavior = f"{getattr(lead, 'expected_behavior', '')}; {getattr(item, 'expected_behavior', '')}".strip("; ")
+        if getattr(item, "evidence", None) or getattr(lead, "evidence", None):
+            lead.evidence = cause.merged_evidence((lead, item))
     return merged
 
 
@@ -6696,6 +6773,7 @@ def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
             ),
             "affected_files": files,
             "severity": severity,
+            **cause.as_merged(item, others),
         }))
         logger.warning(
             "%d defects fail at one layer (%s); one fixer gets them all: %s",

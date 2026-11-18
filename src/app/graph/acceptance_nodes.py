@@ -167,6 +167,7 @@ def _the_install_that_failed(saved: dict[str, Any], state: Any) -> list[Any]:
         actual_behavior=failed[-1][:1500],
         affected_files=manifests,
         owner=_owner_for(state, failed[-1]),
+        **_with_its_error_line(failed[-1], "other"),
     )]
 
 
@@ -194,6 +195,7 @@ def _the_build_that_fails(state: Any, reported: list[Any]) -> list[Any]:
         actual_behavior=said,
         affected_files=production_build.files_named(root, said),
         owner=_owner_for(state, said),
+        **_with_its_error_line(said, "compile_error"),
     )]
 
 
@@ -1859,6 +1861,8 @@ def _the_start_that_fails(state: Any, reported: list[Any], command: str) -> list
         actual_behavior=said[:1500],
         affected_files=[],
         owner=_owner_for(state, said),
+        # Not a start the suite needs: the suite started it, so no other defect's fixer waits on this one.
+        **_with_its_error_line(said, "other"),
     )]
 
 
@@ -1884,6 +1888,8 @@ def _records_the_page_never_makes(state: Any, reported: list[Any]) -> list[Any]:
         actual_behavior=said[:1500],
         affected_files=[],
         owner=_owner_for(state, said),
+        kind="probe_finding",
+        evidence=[{"probe": "records drawn as the brief shows them", "request": str(item)[:300]} for item in found][:24],
     )]
 
 
@@ -1935,6 +1941,9 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     never_started = str(saved.get("problem") or "")
     if never_started.startswith(suite.PRODUCT_DID_NOT_START):
         # One defect for the one cause: nothing could be measured while it stands.
+        compiled, compiler_said = compiler_errors.the_errors_found(_root(state))
+        from app.sprint import cause as _cause
+
         defects.append(ReportedDefect(
             description=THE_PRODUCT_DOES_NOT_START,
             severity="blocking",
@@ -1942,9 +1951,15 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             expected_behavior="The product builds and starts, and the acceptance suite's tests run against it.",
             actual_behavior=(never_started[:1500] + _what_the_start_shows(_root(state))
                              + (f"\n\n{wrote}" if (wrote := start_output.in_text(str(saved.get("server_log") or ""))) else "")
-                             + compiler_errors.the_errors(_root(state))),
+                             + compiled),
             affected_files=[],
             owner=_owner_for(state, never_started),
+            kind=_cause.START_FAILURE,
+            # The error the start ended on, and each compiler error, as the start's evidence (deep review 1.1).
+            evidence=[
+                *([line] if (line := _cause.an_error_line(never_started)) else []),
+                *(_cause.a_compiler_error(file, at, code, message) for file, at, code, message in compiler_said),
+            ][:_cause.MOST_EVIDENCE],
         ))
         return defects + installs + _what_the_language_service_finds(state) + _records_the_page_never_makes(state, reported)
     if never_started.startswith(suite.PRODUCT_CRASHED):
@@ -1958,6 +1973,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             actual_behavior=never_started[:2200],
             affected_files=[],
             owner=_owner_for(state, never_started),
+            **_with_its_error_line(never_started, "failing_test"),
         ))
         failing = [entry for entry in failing if not all(
             suite._THE_SERVICE_WAS_GONE.search(t.get("message") or "")
@@ -1983,6 +1999,8 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
                             + _what_one_of_them_said(state, code),
             affected_files=[],
             owner=_owner_for(state, f"refused {code}"),
+            kind="failing_test",
+            evidence=_the_failing_tests_of(failing),
         ))
         return [*installs, *defects]
     # A page whose own script did not load, or threw while loading, is dead: every criterion on it fails for that one
@@ -2048,8 +2066,33 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             actual_behavior=detail + seen,
             affected_files=sorted({f for f, _ in where_errors_become_5xx(_root(state))}) if hid else [],
             owner=_owner_for(state, detail),
+            kind="failing_test",
+            evidence=_the_failing_tests_of([entry]),
         ))
     return [*installs, *defects]
+
+
+def _the_failing_tests_of(entries: list[dict]) -> list[dict[str, Any]]:
+    """Each failing test of these criteria as evidence (deep review 2026-11-18, item 1.1); a criterion none of whose
+    tests failed or ran is evidenced by its own id, so two such criteria are never one cause."""
+    from app.sprint import cause as _cause
+
+    found: list[dict[str, Any]] = []
+    for entry in entries:
+        tests = [t for t in entry.get("tests") or [] if t.get("outcome") == "failed"]
+        found.extend(_cause.a_failing_test(t.get("name"), t.get("file"), entry.get("id")) for t in tests)
+        if not tests:
+            found.append(_cause.a_failing_test(f"no test of {entry.get('id')} passed", "", entry.get("id")))
+    return found
+
+
+def _with_its_error_line(text: str, kind: str) -> dict[str, Any]:
+    """`kind`, and the error line `text` ends on as evidence, for a defect a failed install, build or start raised;
+    {} when the text states no error."""
+    from app.sprint import cause as _cause
+
+    line = _cause.an_error_line(text)
+    return {"kind": kind, "evidence": [line]} if line else {}
 
 
 #: A load error that leaves the page without its script: the script itself failed to load, or threw while loading.

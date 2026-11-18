@@ -135,6 +135,11 @@ class StackPack:
     #: Whether the scaffold's own files call each required export with no arguments (`createApp()`), so one that
     #: needs an argument receives `undefined` (`app.stacks.entry_exports.what_the_start_file_cannot_call`).
     required_exports_called_bare: bool = False
+    #: Declarations an entry file must keep, by file relative to the project: (a pattern the declaration matches, the
+    #: declaration as written). The pack's start file and tests use the name as that type (`entry_exports`). Measured
+    #: on five Rust runs: `app()` was declared `-> Router<AppState>` (and once `-> Router<Extension<AppState>>`), which
+    #: `axum::serve` cannot serve, while the errors pointed at `main.rs` and fixers edited it.
+    required_signatures: Mapping[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)
     #: Lines the pack states to the stages that write and judge the specification, `{{package}}` filled: what its
     #: entry's shape must be, which a specification written without the guide can contradict. Measured on one Rust
     #: run: the specification gave `pub fn build_router() -> Router<AppState>`, which `axum::serve` cannot serve, and

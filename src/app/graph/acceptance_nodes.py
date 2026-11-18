@@ -1534,9 +1534,23 @@ def pack_contract_defects(state: Any) -> list[Any]:
     root = _root(state)
     lost = entry_exports.what_the_entry_no_longer_exports(root)
     called_bare = entry_exports.what_the_start_file_cannot_call(root)
-    if not lost and not called_bare:
+    changed = entry_exports.what_the_entry_no_longer_declares(root)
+    if not lost and not called_bare and not changed:
         return []
     defects = []
+    for path, written in changed:
+        defects.append(ReportedDefect(
+            description=f"{path}{entry_exports.NO_LONGER_DECLARES}{written}`, the declaration the scaffold's start file "
+                        "and tests use it by.",
+            severity="blocking",
+            reproduction_steps=f"Read {path}: its declaration differs from `{written}`.",
+            expected_behavior=(f"{path} declares exactly `{written}`, as the scaffold wrote it; change what it does "
+                               "inside, not how it is declared. The compiler reports this where the name is used, "
+                               "not here."),
+            actual_behavior=f"{path} does not declare `{written}`.",
+            affected_files=[path],
+            owner=_owner_for(state, ""),
+        ))
     for path, name, needed in called_bare:
         defects.append(ReportedDefect(
             description=f"{path} declares `{name}({needed})`, but the scaffold's start file and unit smoke test call `{name}()` with no arguments, so `{needed}` is undefined on every request.",

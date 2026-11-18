@@ -151,6 +151,7 @@ AXUM_KNOWN_ERRORS = {
 
 PACK = service_pack(
     known_errors=AXUM_KNOWN_ERRORS,
+    required_signatures={"src/lib.rs": ((r"^\s*pub\s+fn\s+app\s*\(\s*\)\s*->\s*Router\s*\{", "pub fn app() -> Router"),)},
     sandbox_image=sandbox.RUST,
     name="rust-axum-api",
     entrypoint="src/lib.rs",

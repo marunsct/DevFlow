@@ -45,36 +45,12 @@ Generated above. Tonight's M36 runs (hidden, quality, verdict):
   tasks-api 1 10/10 7/7 (6 h, LF.951/953/956); wordstats-cli 2 6/8 (the family's recurring --top loss, warned).
 - Browser and change families had no quality set until LF.971; their runs from now on carry one.
 
-## Morning report (11-17)
-Of the 52 launch-review items, 42 are done, 5 in part, 5 not done.
-- Done tonight: LR.51 (LF.969-970: a commit, revert or restore that did not happen is reported; a restore is all or
-  nothing), LR.25 (LF.971: quality sets for every family; the old references failed 1-3 of them and were fixed),
-  LR.24 (LF.973: the 44 production-default failures were all tests of the off path; none was an on-path defect),
-  LR.15 rest (LF.968), LR.54 part (LF.967), LR.41 (shortlinks-api, held out), LR.64 (this file).
-- Found live and fixed: LF.974 - under a load spike the orphan sweep took a partial broker answer for "the task is
-  gone" and resumed a running run (two tasks on one run for 17 min; the second held the last worker slot, so the
-  run started on :8888 never began). LF.972 - a deploy's boundary pause lost with a killed app worker is asked again.
-  The load spike (load average about 2,700 at 00:45-01:00 JST) has no known cause; watch for a repeat.
-- Found on the language sweep (Go, Rust, Java, C#, PHP, Ruby, one run each) and fixed, each deployed:
-  LF.978 a false `npm test` blocker on non-Node stacks; LF.979 unit tests that do not compile now named, not taken
-  for passing; LF.980 Python writes checked by Pyright as they land (13 reverts in one run); LF.981 a pack's
-  scaffold opens its toolchain (a C# run refused `dotnet`); LF.983 a doubled compiler path; LF.984 suite writers
-  told kept files are tested by what they do (seen working in the next run); LF.986 routes probed with an id that
-  is not a number (a 500 only a quality test found); LF.989 a product that listens but fails every request is
-  told so, not "did not start"; LF.990 the LF.986 defect asks for a refusal, not the line's success (it
-  fired on PHP: `GET /notes/not-a-number` answered 500). LF.991 the backend role refuses what it cannot use with a 4xx (3 of 6 sweep runs
-  had a 500 there); LF.992 a spec making its own `require` with `createRequire` is not flagged as CommonJS; LF.993 the bad-body
-  probe sends unparsable bytes - it had sent a valid JSON string, so the "unparsable JSON answered 500" defects in
-  Ruby and C# were the probe's (both products answer 422 when asked by hand); each re-planned a sprint on it. Records: LF.976 real re-plan counts, LF.982, LF.987. Scorer: LF.985, LF.988.
-- Sweep scores: every language 9/9 hidden; quality 7/8-8/8 but C# 6/8. Recurring product defects the harness does not
-  yet catch: writes made at once lost (several families) - next: pack storage guidance and a concurrent-write probe.
-- In part: LR.20 (the report is built; the frozen batch is about 5 days of runs, not started), LR.30 (per-pack
-  images LF.1005, container environment LF.1007, 7 images built; first whole container-mode run (Python notes-api,
-  run-19ff2786) scored 9/9 hidden, 8/8 quality, delivered (LF.1015 scorer fix); Java next, then the other toolchains), LR.52, and LR.53 (cause grouping; a green suite settles; a near-green
-  sprint is planned again once - LF.977, measured on 175 past re-plans; open: a repair back to the round), LR.54 (four contradictions removed).
-- LR.42 done. LR.50 done (LF.1016 phase 1, LF.1018 phase 2: every node lifted into `app.graph.nodes`, one
-  `GraphContext`; workflow.py is the wiring). LR.46 rest waits on the rule-coverage counter's data; LR.44
-  (hosted-model matrix) waits for the owner.
+## Morning report (11-18)
+Container sweep: every language delivered 9/9 hidden at least once (Go, Java, Rust, C#, PHP, Ruby, tasks-api);
+Java run 5 the first Java with every quality test. Rust is the open family: runs 1 and 4 failed 0/9 on `app()`
+declared as a router still waiting for its state; LF.1064 now holds the declaration at every round. Fixes overnight:
+LF.1036-1064 (scorer: LF.1037/1042/1043/1046/1053/1054). Owner decision pending: `NEAR_GREEN_REPLANNED_ONCE` off by
+default (patch saved; off per run meanwhile). The 11-17 report is in git history.
 
 ## Next actions
 1. LR.30 container-mode Java run 2, run-844673cd-1d2d-459c-aca9-7641567f9fc8 (:8888, 14:26-15:36): FAILED, hidden 0/9,

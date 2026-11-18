@@ -112,6 +112,38 @@ def what_the_start_file_cannot_call(repo_root: str | Path) -> list[tuple[str, st
         return []
 
 
+def what_the_entry_no_longer_declares(repo_root: str | Path) -> list[tuple[str, str]]:
+    """(file relative to the workspace, declaration) for each declaration the pack keeps that its file no longer has.
+
+    Only a file that exists and reads: one not written yet is the drafting's to write. Never raises.
+    """
+    if not enabled():
+        return []
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(repo_root)
+        if found is None or not contract.scaffolded(found[1]):
+            return []
+        pack, record = found
+        project = str(record.get("project") or "")
+        changed: list[tuple[str, str]] = []
+        for relative, kept in (getattr(pack, "required_signatures", None) or {}).items():
+            try:
+                text = (Path(repo_root) / project / relative).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            where = f"{project}/{relative}" if project else relative
+            changed += [(where, written) for pattern, written in kept if not re.search(pattern, text, re.M)]
+        return changed
+    except Exception:  # noqa: BLE001 - a check that cannot run finds nothing
+        return []
+
+
+#: How a defect about a changed declaration begins, after its file: what `still_raised` reads back.
+NO_LONGER_DECLARES = " no longer declares `"
+
+
 def still_raised(repo_root: str | Path, description: str) -> bool | None:
     """Whether a pack-contract defect with this description would be raised again now; None when it is not one.
 
@@ -120,9 +152,10 @@ def still_raised(repo_root: str | Path, description: str) -> bool | None:
     attempt was spent and the sprint planned again over a green suite.
     """
     text = str(description or "")
-    if " no longer exports `" not in text and " but the scaffold's start file" not in text:
+    if " no longer exports `" not in text and " but the scaffold's start file" not in text and NO_LONGER_DECLARES not in text:
         return None
     current = [f"{path} no longer exports `{name}`" for path, name in what_the_entry_no_longer_exports(repo_root)]
+    current += [f"{path}{NO_LONGER_DECLARES}{written}`" for path, written in what_the_entry_no_longer_declares(repo_root)]
     current += [f"{path} declares `{name}(" for path, name, _ in what_the_start_file_cannot_call(repo_root)]
     return any(text.startswith(found) for found in current)
 

@@ -20,3 +20,15 @@ def test_the_wrong_package_is_given_the_real_one(tmp_path):
         actual_behavior=text, affected_files=[], owner="backend")])
 
     assert KNOWN_CAUSE in defect.actual_behavior and "org.springframework.boot.test.mock.mockito" in defect.actual_behavior
+
+
+def test_a_missing_validation_starter_is_named(tmp_path):
+    """Measured on one run: the code used `jakarta.validation` and the pom had no validation starter."""
+    contract.write(tmp_path, pack_named("java-spring-api"), "notes-api", "Notes")
+    text = "notes-api/src/main/java/app/notes_api/NoteController.java line 3: package jakarta.validation does not exist"
+
+    (defect,) = with_known_causes(tmp_path, [ReportedDefect(
+        description=text, severity="major", reproduction_steps="mvn test-compile", expected_behavior="it compiles",
+        actual_behavior=text, affected_files=[], owner="backend")])
+
+    assert KNOWN_CAUSE in defect.actual_behavior and "spring-boot-starter-validation" in defect.actual_behavior

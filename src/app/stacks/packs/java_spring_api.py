@@ -136,6 +136,10 @@ ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 #: (`app.stacks.known_errors`). Measured on one run: a controller test imported `org.springframework.boot.test.mock.bean.
 #: MockBean`, a package that does not exist, and the first fix left it so.
 SPRING_KNOWN_ERRORS = {
+    "package jakarta.validation does not exist": (
+        "`jakarta.validation` (`@Valid`, `@NotBlank`) comes with the `spring-boot-starter-validation` dependency, "
+        "which `pom.xml` must declare beside `spring-boot-starter-web`; the version is the parent's."
+    ),
     "package org.springframework.boot.test.mock.bean does not exist": (
         "`@MockBean` is `org.springframework.boot.test.mock.mockito.MockBean` (deprecated since Spring Boot 3.4); "
         "its replacement is `@MockitoBean` from `org.springframework.test.context.bean.override.mockito`."

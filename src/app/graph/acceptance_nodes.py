@@ -29,6 +29,7 @@ from app.acceptance.criteria import number
 from app.graph import acceptance_batches
 from app.agents.shared_facts import with_the_facts
 from app.stacks import compiler_errors, contract, pack_named
+from app.graph.start_first import DEPENDENCIES_DO_NOT_INSTALL
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +159,7 @@ def _the_install_that_failed(saved: dict[str, Any], state: Any) -> list[Any]:
         if path.is_file() and path.name in MANIFEST_NAMES
     )
     return [ReportedDefect(
-        description="The project's dependencies do not install, so nothing its manifests declare is there: "
+        description=f"{DEPENDENCIES_DO_NOT_INSTALL}, so nothing its manifests declare is there: "
                     + failed[-1][:900],
         severity="blocking",
         reproduction_steps="Run the project's install command: it fails before the product can start.",

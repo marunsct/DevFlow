@@ -493,12 +493,18 @@ def defect_remediation_node(state: WorkflowGraphState, config: RunnableConfig, c
 
     cycle = state["remediation"]
     cursor = state.get("defect_cursor", 0)
+    # While the product does not build or start, only that is fixed (deep review 1.5).
+    from app.graph import start_first
+
+    waiting = start_first.held_back(cycle.defects)
 
     # Scan forward by absolute index rather than indexing into a list of
     # open defects: marking one fixed changes which defects are open, so a
     # position in that list would shift under us and skip a defect.
     defect_index = cursor
-    while defect_index < len(cycle.defects) and cycle.defects[defect_index].status != "open":
+    while defect_index < len(cycle.defects) and (
+        cycle.defects[defect_index].status != "open" or defect_index in waiting
+    ):
         defect_index += 1
 
     if defect_index >= len(cycle.defects):
@@ -539,9 +545,16 @@ def _the_next_fix_batch(state: Any, config: RunnableConfig, ctx: GraphContext) -
     def name(index: int) -> str:
         return f"defect_fix_{state.get('test_round', 0)}_{index}"
 
+    # While the product does not build or start, only that is fixed: one fixer with every reason it does not, not one
+    # per criterion each failing the same way (deep review 1.5). The others wait for a product that starts.
+    from app.graph import start_first
+
+    waiting = start_first.held_back(cycle.defects)
+    if waiting:
+        logger.info("The product does not build or start: %d defect(s) wait for it to start", len(waiting))
     candidates = [
         index for index, defect in enumerate(cycle.defects)
-        if defect.status == "open" and name(index) not in tried
+        if defect.status == "open" and name(index) not in tried and index not in waiting
     ]
     # A defect that has spent its calls is not fixed again, side by side or
     # alone (plan AY step 4): the batch never asked, and sent it on.

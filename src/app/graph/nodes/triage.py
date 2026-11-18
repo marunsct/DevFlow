@@ -391,6 +391,10 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
                 "failed; recording that as a defect", test_round,
             )
             reported = raised_by("test command", [unreported])
+    # A product that does not build or start: what says why goes to its one start defect (deep review 1.5).
+    from app.graph import start_first
+
+    reported = start_first.folded(reported)
     # An error the stack pack knows, given its cause (`app.stacks.known_errors`).
     from app.stacks.known_errors import with_known_causes
 

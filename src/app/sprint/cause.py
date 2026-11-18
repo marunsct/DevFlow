@@ -162,10 +162,18 @@ def merged_evidence(defects: Iterable[Any]) -> list[dict[str, Any]]:
 
 
 def as_merged(lead: Any, others: Sequence[Any]) -> dict[str, Any]:
-    """The `kind` and `evidence` a merge of `others` into `lead` carries: the lead's kind, every member's evidence."""
-    if not any(getattr(member, "evidence", None) for member in (lead, *others)):
+    """The `kind` and `evidence` a merge of `others` into `lead` carries: the lead's kind, every member's evidence.
+
+    A merge that holds a product that does not start is that start failure, whichever member leads it: a
+    compiler's finding leads a merge with the start defect it explains (`workflow._one_defect_per_cause` puts the
+    finding that names a cause first), and the merge must still be dispatched first (deep review 1.5).
+    """
+    members = (lead, *others)
+    starts = any(str(getattr(member, "kind", "") or "") == START_FAILURE for member in members)
+    if not starts and not any(getattr(member, "evidence", None) for member in members):
         return {}
-    return {"kind": str(getattr(lead, "kind", "") or ""), "evidence": merged_evidence((lead, *others))}
+    return {"kind": START_FAILURE if starts else str(getattr(lead, "kind", "") or ""),
+            "evidence": merged_evidence(members)}
 
 
 __all__ = [

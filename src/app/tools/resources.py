@@ -177,6 +177,19 @@ class ResourceState:
         )
 
 
+def _reclaimable_cache() -> int:
+    """File pages in this cgroup the kernel can drop under pressure (not dirty, not being written); 0 when unread."""
+    stat = f"{_CGROUP_V2}/memory.stat"
+    active, inactive = _read_field(stat, "active_file"), _read_field(stat, "inactive_file")
+    if active is None and inactive is None:
+        stat = f"{_CGROUP_V1_MEMORY}/memory.stat"
+        active, inactive = _read_field(stat, "total_active_file"), _read_field(stat, "total_inactive_file")
+        pinned = (_read_field(stat, "total_dirty") or 0) + (_read_field(stat, "total_writeback") or 0)
+    else:
+        pinned = (_read_field(stat, "file_dirty") or 0) + (_read_field(stat, "file_writeback") or 0)
+    return max(0, (active or 0) + (inactive or 0) - pinned)
+
+
 def read_resource_state() -> ResourceState:
     """Read the cgroup now. Never raises; unknown fields come back as None."""
     limit = _read_int(f"{_CGROUP_V2}/memory.max")
@@ -188,6 +201,13 @@ def read_resource_state() -> ResourceState:
         limit = _read_int(f"{_CGROUP_V1_MEMORY}/memory.limit_in_bytes")
         in_use = _read_int(f"{_CGROUP_V1_MEMORY}/memory.usage_in_bytes")
         peak = _read_int(f"{_CGROUP_V1_MEMORY}/memory.max_usage_in_bytes")
+
+    if in_use is not None:
+        # Less the page cache the kernel drops before it kills anything: `memory.current` counts every file page the
+        # cgroup read or wrote. Measured on two live runs: a worker holding 7.45 of its 8 GiB "in use" refused every
+        # build and suite for five minutes, one round's 32 tests were blamed on a fix that was then reverted, and a
+        # recreated worker read 0.9 GiB.
+        in_use = max(0, in_use - _reclaimable_cache())
 
     # A v1 "unlimited" limit is a sentinel close to 2^63, not a real ceiling.
     if limit is not None and limit >= 2**62:

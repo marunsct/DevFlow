@@ -2795,14 +2795,22 @@ def _the_names_the_module_has(project: Path, importer: Path, finding: dict) -> s
         return ""
 
 
+#: Findings an agent stage is told of after its writes.
+MOST_DIAGNOSTICS = 4
+#: Findings a whole-file pass (a fix's rewrite, a draft's repair) is given and counted by: every one for its files,
+#: up to the compiler check's own bound. At 4, a pass saw the first four of a file's errors and the count of a pass
+#: with nine was the count of one with four (A2).
+MOST_DIAGNOSTICS_FOR_A_PASS = 12
+
+
 def _diagnostics_in_files_touched(
-    state: Any, result: dict[str, Any], structured_response: Any, stage_name: str = "",
+    state: Any, result: dict[str, Any], structured_response: Any, stage_name: str = "", most: int = MOST_DIAGNOSTICS,
 ) -> list[str]:
     """High-confidence syntax or reference diagnostics in files modified by this stage.
 
     Runs what an IDE would underline (via `language_service.underlined_any`) over the
     files touched by this stage. Only certain errors (ReferenceError, missing exports,
-    undeclared names) are reported, bounded to a maximum of 4 items - and not an
+    undeclared names) are reported, bounded to `most` items - and not an
     import of a file another work order owns (`_another_work_order_writes_it`).
     """
     from app.analysis.file_kinds import is_scratch
@@ -2859,12 +2867,12 @@ def _diagnostics_in_files_touched(
                     msg = finding.get("message", "")
                     msg += _the_names_the_module_has(project or Path(root), target, finding)
                     diagnostics.append(f"- In `{relative}` line {line}: {msg}")
-                    if len(diagnostics) >= 4:
+                    if len(diagnostics) >= most:
                         return diagnostics
         except Exception:  # noqa: BLE001
             continue
 
-    return [*diagnostics, *_what_the_compiler_says_of(root, files_to_check, stage_name, pinned or "")][:4]
+    return [*diagnostics, *_what_the_compiler_says_of(root, files_to_check, stage_name, pinned or "")][:most]
 
 
 def _the_milestone_is_unfinished(root: str, stage_name: str) -> bool:
@@ -3664,13 +3672,14 @@ def _settle_the_fix(
             sprint=state.get("current_sprint_index", 0),
             detail="the using file still imports the removed name, asked again after the fix",
         )
-    elif defect.regression_test_required and not regression_test and not _the_suite_already_guards_it(
-        state, measured, defect
-    ) and not (str(getattr(defect, "source", "") or "") == "interface clash"
-               and interface_clashes.still_clashing(state["repository"].root_path, defect.description) is False):
-        # No named regression test: the defect stays open on purpose. The
-        # next test round will count this as another failed attempt, so the
-        # bounded loop still terminates.
+    elif defect.regression_test_required and not regression_test and measured_now is not True \
+            and not _the_suite_already_guards_it(state, measured, defect) \
+            and not (str(getattr(defect, "source", "") or "") == "interface clash"
+                     and interface_clashes.still_clashing(state["repository"].root_path, defect.description) is False):
+        # No named regression test and no measurement of its own tests: the defect stays open on purpose. The next
+        # test round will count this as another failed attempt, so the bounded loop still terminates. A defect whose
+        # own tests measured passing is closed by that measurement (below): measured in the deep review of
+        # 2026-11-18, 17 defects whose tests passed were left open here after 17-19 model calls each.
         update["remediation"] = cycle
         defect_ledger.note(
             "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
@@ -3692,13 +3701,18 @@ def _settle_the_fix(
             [" ".join(str(d).split()) for d in fix_result.decisions if str(d).strip()]
             + ([f"changed {', '.join(fix_result.changed_files)}"] if fix_result.changed_files else [])
         )[:600]
+        # Closed by its measurement, the regression test the harness would like is a note, not a reason to keep it
+        # open (A7): its own tests, just measured, are what guards it.
+        unnamed = defect.regression_test_required and not regression_test
+        guarded_by = ("the locked acceptance suite, measured after the fix" if _the_suite_already_guards_it(
+            state, measured, defect) or measured_now is not True else "its own tests, measured passing after the fix")
+        if unnamed and measured_now is True:
+            resolution = (resolution + "; " if resolution else "") + "the fix named no regression test of its own"
         update["remediation"] = mark_defect_fixed(
             cycle, defect_index,
             # A criterion the suite measured green after the fix has the locked
             # suite for its regression test (`_the_suite_already_guards_it`).
-            regression_test=regression_test or (
-                "the locked acceptance suite, measured after the fix" if defect.regression_test_required else regression_test
-            ),
+            regression_test=regression_test or (guarded_by if defect.regression_test_required else regression_test),
             verified_by=verified_by, resolution=resolution,
         )
         defect_ledger.note(
@@ -3993,7 +4007,19 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
         for report in reports:
             junit.clear(report)
         runner = sandbox_runner(repo_root)
-        outcome = runner(cmd, "test", project)
+        from app.acceptance import unmeasured
+
+        def measure() -> dict[str, Any]:
+            return runner(cmd, "test", project) or {}
+
+        def not_taken(answered: dict[str, Any]) -> str:
+            return unmeasured.why(answered, reached_tests=any(junit.read(report).tests for report in reports))
+
+        outcome = unmeasured.once_more(measure, not_taken)
+        if not_taken(outcome):
+            # Not measured is unknown, not failed: no "the unit tests fail" defect from a refusal (A1). Not kept.
+            unmeasured.record(repo_root, "unit tests", not_taken(outcome))
+            return None, f"The harness could not measure the unit tests: {not_taken(outcome)}"
         # The sandbox answers as its tool does, the code as text: "0" is not 0.
         # Measured on one run: every harness test round said the unit tests
         # failed while all 109 passed, and the sprint was planned again three times.

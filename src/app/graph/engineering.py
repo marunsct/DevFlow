@@ -23,7 +23,7 @@ from app.tools.version_control import git_safely  # noqa: E402
 import logging
 import re
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from langchain_core.runnables import RunnableConfig
 
@@ -842,6 +842,39 @@ def what_the_fix_made_certain_to_fail(root: str, base: str) -> list[str]:
         return []
 
 
+def what_the_fix_made_the_compiler_report(root: str, base: str, before_problem: str = "") -> list[str]:
+    """The compiler's errors on lines this fix wrote, in a compiled language; [] when none. Never raises.
+
+    The compiled-language half of `what_the_fix_made_certain_to_fail` (A2): the language service reads JavaScript,
+    TypeScript and Python only, so a fix in Go, Rust, Java or C# that added a call to nothing, made when nothing passed
+    before it, was kept, and every later round failed to build on it. An error the measurement before the fix already
+    named (`before_problem`) is not this fix's.
+    """
+    try:
+        from app.analysis import compiler_check
+        from app.analysis.file_kinds import is_scratch
+        from app.tools.repository import pinned_project_directory
+        from app.tools.version_control import changed_since
+
+        files = [p for p in changed_since(root, base)
+                 if p.lower().endswith(compiler_check.SUFFIXES) and not is_scratch(Path(p).name)]
+        if not files:
+            return []
+        found = []
+        for finding in compiler_check.findings(root, pinned_project_directory(Path(root)) or "", files):
+            relative, message = str(finding.get("file") or ""), str(finding.get("message") or "")
+            line = int(finding.get("line") or 0)
+            if relative not in files or (message and message in str(before_problem or "")):
+                continue
+            added = _lines_added(root, base, relative)
+            if added is None or line in added:
+                found.append(f"`{relative}` line {line}: {message}")
+        return found
+    except Exception:  # noqa: BLE001 - a check that cannot run keeps the fix
+        logger.debug("Could not ask the compiler about the fix", exc_info=True)
+        return []
+
+
 def what_the_fix_did_to_the_install(root: str, base: str) -> str:
     """Why the project's dependencies no longer install, when this fix edited a manifest and the install now fails; "".
 
@@ -959,6 +992,14 @@ def after_a_fix(
         return []
     before = ci.load(root, "latest")
     after = ci.take(root, f"after {stage_name}")
+    not_measured = str(getattr(after, "unmeasured", "") or "")
+    if not_measured:
+        # The harness could not measure the fix (its own memory refusal, a registry it could not resolve), even after
+        # waiting once: nothing is judged on that. Measured: a refusal read as "broke 32 tests" reverted a fix. The fix
+        # stays and is committed; the last measurement stays the baseline, and the next measurement judges it (A1).
+        logger.warning("Kept %s unjudged: the harness could not measure it (%s)", stage_name, not_measured[:200])
+        ci.commit(root, f"Fix, not measured: {description[:50]}")
+        return []
     lost = ci.regressions(before, after)
     broken = _broken_tests(lost, before, after)
     broke_the_install = what_the_fix_did_to_the_install(root, base) or manifests_the_fix_left_unreadable(root, base)
@@ -996,6 +1037,11 @@ def after_a_fix(
         certain = what_the_fix_made_certain_to_fail(root, base)
         if certain:
             broken = ["it wrote code the language service is sure fails when it runs: " + "; ".join(certain[:3])]
+        elif after.problem or after.unit.get(ci.UNIT_TESTS_DID_NOT_RUN) == "failed":
+            # Asked only of a build that failed: a product that started compiled.
+            compiled = what_the_fix_made_the_compiler_report(root, base, before.problem if before is not None else "")
+            if compiled:
+                broken = ["it wrote code the compiler rejects: " + "; ".join(compiled[:3])]
     gained_now = after.passing() - (before.passing() if before is not None else set())
     from app.graph import net_gain, unit_tests_disagree
 
@@ -1071,6 +1117,46 @@ def after_a_fix(
 
         start_breaks.clear(root)
     return []
+
+
+#: Measurements spent finding which fixer of a broken batch broke it, at most.
+MOST_ATTRIBUTION_MEASUREMENTS = 3
+
+
+def after_a_batch(
+    root: str, base: str, stage_name: str, description: str, fixers: Sequence[tuple[str, Sequence[str]]],
+    contested: str = "",
+) -> tuple[list[str], list[str]]:
+    """Measure a batch of fixes made side by side; (what it broke, the fixers whose changes were put back).
+
+    `fixers` are (fixer, the files it wrote), newest writer first. A batch that broke what passed before it has each
+    fixer's files put back in turn, newest first, and is measured again each time: the first whose putting back leaves
+    nothing broken is the culprit, and only its change is reverted. Measured (deep review 2026-11-18, A3): 8 of 37
+    recent reverts were a whole batch put back for one fixer's change. With nothing to tell the fixers apart, or no
+    single fixer to blame, the whole batch is reverted as before.
+    """
+    every = [name for name, _ in fixers]
+    kept: dict[str, str] = {}
+
+    def keep_the_batch(_broken: list[str]) -> None:
+        kept["commit"] = ci.commit(root, f"{stage_name} as written, before it is measured fixer by fixer")
+
+    broke = after_a_fix(root, base, stage_name, description, contested=contested,
+                        on_revert=keep_the_batch if len(fixers) > 1 else None)
+    whole = kept.get("commit", "")
+    if not broke:
+        return [], []
+    if not whole or not all(files for _, files in fixers):
+        return broke, every
+    for name, files in fixers[:MOST_ATTRIBUTION_MEASUREMENTS]:
+        if not ci.revert_to(root, whole) or not ci.restore_paths(root, base, [str(path) for path in files]):
+            break
+        if not after_a_fix(root, base, stage_name, description, contested=contested):
+            logger.warning("Kept %d fix(es) of %s and put back %s, whose change broke %d test(s)",
+                           len(fixers) - 1, stage_name, name, len(broke))
+            return broke, [name]
+    ci.revert_to(root, base)
+    return broke, every
 
 
 def accepted_state(root: str) -> list[str]:

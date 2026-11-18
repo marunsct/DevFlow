@@ -69,12 +69,18 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
 
     acceptance_text = ""
     beyond_repair: list[str] = []
+    #: Why this round's measurement could not be taken, when it could not: the round then charges no attempt (A1).
+    not_measured = ""
     if not state.get("pending_inner_thread_id"):
         # Before the round, not after a pause inside it: the stages that
         # wrote these have all finished, and the round should measure the
         # product without them.
         _clear_the_throwaways(state["repository"].root_path)
+        from app.acceptance import unmeasured
+
+        unmeasured.taken(state["repository"].root_path)  # an earlier stage's record is not this round's
         acceptance_text, cannot_pass = acceptance_nodes.acceptance_for_round(state)
+        not_measured = unmeasured.last(state["repository"].root_path)
         # A locked test that cannot pass whatever is built is not a
         # product defect: no fix can close it. Repaired by QA first.
         reopened = acceptance_nodes.reopen_the_suite_for(state, cannot_pass, model=ctx.judgement_model)
@@ -447,9 +453,11 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
             summary=f"{len(measured)} defect(s) found" if measured else "all applicable tests passed",
             new_defects=new_defects,
             # A round with only mutation findings open charges nothing (plan QM.2).
+            # Nor does a round whose measurement the harness could not take (A1): measured, a memory refusal
+            # failed every criterion of a round and the sprint was planned again.
             charge_the_budget=_a_round_that_found_a_product_defect(measured) and not (
                 _only_mutation_findings_open(cycle, measured)
-            ),
+            ) and not not_measured,
         )
     except RemediationLimitExceeded as exc:
         # The same exit as every other exhausted sprint: planned again,

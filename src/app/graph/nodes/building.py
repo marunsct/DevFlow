@@ -526,8 +526,8 @@ def _drafted_from_the_specification(state: Any, config: RunnableConfig, ctx: Gra
     not put to a person.
     """
     from app.graph.workflow import (
-        APP_RUN_ID_KEY, _diagnostics_in_files_touched, _the_run_approves_its_own_writes,
-        concurrent_requests,
+        APP_RUN_ID_KEY, MOST_DIAGNOSTICS_FOR_A_PASS, _diagnostics_in_files_touched,
+        _the_run_approves_its_own_writes, concurrent_requests,
     )
 
     from app import delivery
@@ -567,6 +567,7 @@ def _drafted_from_the_specification(state: Any, config: RunnableConfig, ctx: Gra
         # The compiler's word on each draft, at once. See `drafting._repaired_where_the_compiler_says`.
         diagnose=lambda files: _diagnostics_in_files_touched(
             state, {"messages": []}, __import__("types").SimpleNamespace(changed_files=files), "drafting",
+            most=MOST_DIAGNOSTICS_FOR_A_PASS,
         ),
         kept=kept,
     )

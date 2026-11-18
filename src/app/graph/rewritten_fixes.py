@@ -176,7 +176,20 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
         from app.analysis.file_kinds import classify_file
 
         found = [*owing, *(name for name in found if name not in owing and classify_file(name) != "test")][:MOST_FILES]
-    return found
+    return _without_other_ecosystems_manifests(root, found)
+
+
+def _without_other_ecosystems_manifests(root: Path, files: list[str]) -> list[str]:
+    """`files` less the manifests of an ecosystem the project's pack does not build its product with (A5)."""
+    try:
+        from app.analysis.manifests import not_the_product_s
+        from app.stacks import contract
+
+        found = contract.the_pack(root)
+        pack = found[0] if found is not None else None
+        return [name for name in files if not not_the_product_s(name, pack)]
+    except Exception:  # noqa: BLE001 - the files as found
+        return files
 
 
 
@@ -547,8 +560,17 @@ def fix_by_rewriting(
     co_failures = co_defect_failures.failures_by_file(co_defects, root, may_write or (lambda _: True))
     changed: list[str] = []
     diagnostics: list[str] = []
+    from app.graph.fewest_findings import BestVersions
+
+    best = BestVersions()
+    # A file whose reply came back unchanged is not asked for again in this attempt (A5): measured, 194 of 462 replies
+    # returned the file as it was, and every pass asked for every file the failure named.
+    unchanged: set[str] = set()
     for _pass in range(MOST_PASSES):
         targets = files if not diagnostics else [f for f in files if any(f"`{f}`" in d for d in diagnostics)] or files
+        targets = [path for path in targets if path not in unchanged]
+        if not targets:
+            break
         for path in targets:
             try:
                 active_model = model
@@ -592,6 +614,8 @@ def fix_by_rewriting(
                     _note_the_reply(defect, path, "no block")
                     continue
                 _note_the_reply(defect, path, "changed" if content != current else "unchanged")
+                if content == current:
+                    unchanged.add(path)
                 if content != current:
                     try:
                         write(str(root), path, content)
@@ -610,10 +634,16 @@ def fix_by_rewriting(
                     return None
         refused = [line for line in diagnostics if "language service is sure of" in line or AN_EDIT_NOT_APPLIED in line]
         diagnostics = [*refused, *(diagnose(changed) if diagnose and changed else [])]
+        best.offer_as_they_are(root, changed, diagnostics)
         if not diagnostics:
             break
     if not changed:
         return None
+    # The pass the compiler found fewest errors in is kept, not the last (A2): measured, a third pass broke what the
+    # second had made compile and was kept with "The compiler still reports ...".
+    if best.put_back(root, write):
+        refused = [line for line in diagnostics if "language service is sure of" in line or AN_EDIT_NOT_APPLIED in line]
+        diagnostics = [*refused, *(diagnose(changed) if diagnose else [])]
     logger.info("Fixed by rewriting %d file(s) from what failed: %s", len(changed), ", ".join(changed))
     return SpecialistOutput(
         changed_files=changed,

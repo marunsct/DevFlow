@@ -13,6 +13,7 @@ import json
 import re
 import xml.etree.ElementTree as ElementTree
 from pathlib import Path
+from typing import Any
 
 #: Manifest file names, and the suffix a .NET project file ends in.
 MANIFEST_NAMES = frozenset({
@@ -89,4 +90,44 @@ def in_the_project(root: str | Path, *, most_files: int = 40) -> list[tuple[str,
     return pins(files)
 
 
-__all__ = ["MANIFEST_NAMES", "in_the_project", "pins"]
+#: The ecosystem each manifest belongs to, by its name; a .NET project file by its suffix.
+_ECOSYSTEM_OF_MANIFEST = {
+    "package.json": "node", "deno.json": "node",
+    "pyproject.toml": "python", "setup.cfg": "python", "requirements.txt": "python",
+    "requirements-dev.txt": "python", "Pipfile": "python",
+    "Cargo.toml": "rust", "go.mod": "go",
+    "pom.xml": "jvm", "build.gradle": "jvm", "build.gradle.kts": "jvm",
+    "Gemfile": "ruby", "composer.json": "php", "mix.exs": "elixir",
+}
+#: The ecosystem a pack's language builds with.
+_ECOSYSTEM_OF_LANGUAGE = {
+    "javascript": "node", "typescript": "node", "python": "python", "rust": "rust", "go": "go",
+    "java": "jvm", "kotlin": "jvm", "csharp": "dotnet", "ruby": "ruby", "php": "php", "elixir": "elixir",
+}
+#: Kinds of product whose page is built with the page's own ecosystem, beside the service's.
+_KINDS_WITH_A_PAGE = frozenset({"browser_app", "fullstack"})
+
+
+def ecosystem_of(name: str) -> str:
+    """The ecosystem a manifest named `name` belongs to; "" when it is not a manifest."""
+    base = Path(name).name
+    return "dotnet" if base.endswith((".csproj", ".fsproj")) else _ECOSYSTEM_OF_MANIFEST.get(base, "")
+
+
+def not_the_product_s(name: str, pack: Any) -> bool:
+    """Whether `name` is a manifest no product change of a project on `pack` should rewrite.
+
+    One of another ecosystem than the pack's language: in a project with a page it is the page's when the pack wrote
+    it; otherwise it is at most the acceptance runner's. Measured (deep review 2026-11-18, A5): a fix's rewrite was
+    offered and rewrote `package.json` in a Rust project. False without a pack, or for a name that is no manifest.
+    """
+    ecosystem = ecosystem_of(name)
+    language = _ECOSYSTEM_OF_LANGUAGE.get(str(getattr(pack, "language", "") or ""), "")
+    if pack is None or not ecosystem or not language or ecosystem == language:
+        return False
+    if getattr(pack, "kind", "") in _KINDS_WITH_A_PAGE:
+        return not any(Path(written).name == Path(name).name for written in (getattr(pack, "files", None) or {}))
+    return True
+
+
+__all__ = ["MANIFEST_NAMES", "ecosystem_of", "in_the_project", "not_the_product_s", "pins"]

@@ -15,6 +15,7 @@ from typing import Any, Iterable
 #: Switch -> text only that switch puts in a model request or a tool's answer.
 SIGNALS: dict[str, str] = {
     "ONE_DESIGN_REVIEW": "revised once and not reviewed again",
+    "DIAGNOSE_A_RECURRING_CAUSE": "A diagnosis made after the attempts above failed, before this attempt:",
     "SPRINT_TIME_BUDGET": "the sprint ran past its time budget",
     "CONCURRENT_WRITE_PROBE": "Writes made at the same moment are not each kept",
     "WRONG_SHAPE_BODY_PROBE": "sent a JSON body that is not an object",

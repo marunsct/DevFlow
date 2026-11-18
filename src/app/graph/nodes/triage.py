@@ -17,6 +17,7 @@ from langchain_core.runnables import RunnableConfig
 from app.observability.degraded import degraded
 from app.graph.context import GraphContext
 from app.graph.workflow import WorkflowGraphState
+from app.sprint import cause
 
 #: The workflow's logger: the nodes log as they did inside the builder.
 logger = logging.getLogger("app.graph.workflow")
@@ -35,7 +36,7 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
         _put_back_a_deliberate_change, _refreshed_by_the_round, _run_gated_agent,
         _run_unit_tests_procedurally, _the_files_this_milestone_changed, _the_mutation_probe,
         _the_served_app_is_the_scaffold_s_stub, _the_test_command_this_stage_left_failing,
-        _the_unit_tests_fail, _this_attempt, _what_later_sprints_build, _with_the_contract_s_server_errors,
+        _the_failing_unit_tests, _the_unit_tests_fail, _this_attempt, _what_later_sprints_build, _with_the_contract_s_server_errors,
         _with_a_page_check_defect, _with_the_lock_s_server_errors, build_test_run_request, create_specialist_agent,
         is_sprint_acceptable, raised_by, record_test_run, start_remediation, superseded_by_one_cause,
         the_round_s_measurement, with_the_facts,
@@ -168,6 +169,7 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
         harness_defects: list[Any] = (
             [] if not raised else [_the_unit_tests_fail(
                 milestone, unit_output, beside_a_green_suite=beside_a_green_suite,
+                failing=_the_failing_unit_tests(state["repository"].root_path),
             )]
         )
         if failing_due:
@@ -390,6 +392,10 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
                 "failed; recording that as a defect", test_round,
             )
             reported = raised_by("test command", [unreported])
+    # A product that does not build or start: what says why goes to its one start defect (deep review 1.5).
+    from app.graph import start_first
+
+    reported = start_first.folded(reported)
     # An error the stack pack knows, given its cause (`app.stacks.known_errors`).
     from app.stacks.known_errors import with_known_causes
 
@@ -423,6 +429,10 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
             source=str(getattr(item, "source", "") or ""),
             failing_criteria=_failing_criteria_it_names(state, item),
             found_in_round=test_round,
+            # What measured it, and the key of its cause (deep review 2026-11-18, item 1.1).
+            kind=str(getattr(item, "kind", "") or "") or cause.kind_by_source(getattr(item, "source", "")),
+            evidence=list(getattr(item, "evidence", None) or []),
+            cause_key=cause.cause_key(getattr(item, "kind", ""), getattr(item, "evidence", None)),
         )
         for item in reported
     ]

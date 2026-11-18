@@ -184,6 +184,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "Unit test signal": ("UNIT_TEST_QUARANTINE",),
     # The order the product's files are first written in: what each is shown of the files it depends on.
     "Drafting order": ("DRAFTING_IN_WAVES",),
+    # How a cause the fixes keep missing is worked: one diagnosis call before its third fix (deep review 1.4).
+    "Recurring causes": ("DIAGNOSE_A_RECURRING_CAUSE",),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)
@@ -221,6 +223,7 @@ EXPERIMENTS_ON: dict[str, str] = {
     "SLICED_MEMORY": "deep review 2026-11-18 (C3): fixers averaged 164k characters a request and builders 269k, most of it project memory; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "LEAN_PROMPTS_FOR_STRONG_MODELS": "deep review 2026-11-18 (C7): acts only for a model the diagnosis measured strong, which the local models are not; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "DRAFTING_IN_WAVES": "deep review 2026-11-18 (1.6): files drafted side by side, blind to each other, disagreed on shared state and declared one interface twice; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "DIAGNOSE_A_RECURRING_CAUSE": "deep review 2026-11-18 (1.4): the fix rate fell from 29% at a first attempt to 22% and 11%, and one run was planned again three times with the same change; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "INTAKE_ASKS_FIRST": "deep review 2026-11-18 (C8): an earlier audit traced all four false acceptances it found to an intake or a specification that overrode the brief; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
 }
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}

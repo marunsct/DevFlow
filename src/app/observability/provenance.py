@@ -80,6 +80,7 @@ SWITCHES: dict[str, str] = {
     "PAGE_PROBE": "app.acceptance.page_probe",
     "UNIT_TEST_QUARANTINE": "app.graph.unit_test_quarantine",
     "DRAFTING_IN_WAVES": "app.graph.drafting_waves",
+    "DIAGNOSE_A_RECURRING_CAUSE": "app.graph.cause_journal:diagnosis_switch",
     "STABLE_MEMORY_ORDER": "app.agents.stable_memory_order",
     "NEAR_GREEN_REPAIR_TO_ROUND": "app.graph.near_green_repair",
     "FIX_STAGES_THAT_CLOSE_NOTHING": "app.graph.unchanged_fix_round",

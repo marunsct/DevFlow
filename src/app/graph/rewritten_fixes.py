@@ -378,8 +378,13 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
     actual = str(getattr(defect, "actual_behavior", "") or "").strip()
     defect_part = (f"--- The defect ---\n{getattr(defect, 'description', '')}\n"
                    f"Expected: {getattr(defect, 'expected_behavior', '')}" + (f"\nActual: {actual}" if actual else ""))
+    from app.agents.ledger import enabled as _ledger_on
+    from app.graph.cause_journal import tried_before
+
     changing = (
         earlier_attempts(defect).strip(),
+        # What was tried on its cause in earlier cycles too (deep review 1.4).
+        tried_before(root, defect, shown=(getattr(defect, "attempts", None) or []) if _ledger_on() else ()).strip(),
         f"--- What failed ---\n{failure}" if failure.strip() else "",
         co_failures,
         # The fixes made before this one, which a rewrite must not undo (`specialists.fixes_to_keep_section`).

@@ -473,6 +473,31 @@ def _documents_the_workflow_owns() -> str:
     return ", ".join(f"`{name}`" for name in sorted(WORKFLOW_DOCUMENTS))
 
 
+# Measured on two runs of one model: 75% of all output tokens were
+# reasoning, 23 replies ran out of room while still reasoning, and one
+# stage reasoned for 20,821 tokens and then reported edits it never made
+# - it had made them in its reasoning. Left out for a model measured strong
+# under `LEAN_PROMPTS_FOR_STRONG_MODELS` (`app.agents.lean_prompts`).
+REASONING_IS_NOT_WORK = (
+    "REASONING IS NOT WORK:\n"
+    "- Keep your reasoning to deciding the next step. Write code, tests and file\n"
+    "  contents in the write and edit calls themselves - never compose a whole\n"
+    "  file in your reasoning first: a long draft there can use up the reply\n"
+    "  before any call is made, and then none of it exists.\n"
+    "- A change exists only when the call that made it succeeded. Report in your\n"
+    "  structured response only what such calls did: a file you planned,\n"
+    "  reasoned about or described has not changed.\n"
+)
+ARTIFACTS_ARE_NOT_THE_ANSWER = (
+    "ARTIFACTS ARE NOT YOUR STRUCTURED RESPONSE:\n"
+    "- Files hold content a person reads or a program runs. Your result is\n"
+    "  returned by calling your answer tool - never written to a file, never\n"
+    "  printed as JSON text.\n"
+    # "Write each file once" stood here, in the prompt that also teaches replacing a whole file again and fixing
+    # errors by rewriting (LR.54).
+    "- A successful write is saved: never write a file again only to confirm it.\n"
+)
+
 _WRITING_RULES = (
     # One section per question, each said once. It had grown to about 9,000
     # characters: the directory rules twice (here and in PROJECT_LAYOUT, which
@@ -525,31 +550,14 @@ _WRITING_RULES = (
     "\n"
     "PATHS - every path is inside the workspace:\n"
     "- `docs/NAME.md` and `/docs/NAME.md` are the same file.\n"
-    "- Shell commands already run in the workspace directory: give them relative\n"
+    "- Commands already run in the workspace directory: give them relative\n"
     "  paths, never ones starting with `/`.\n"
     "- A long absolute path quoted as the repository root is the HOST's path and\n"
     "  does not exist here. Never use it.\n"
     "\n"
-    # Measured on two runs of one model: 75% of all output tokens were
-    # reasoning, 23 replies ran out of room while still reasoning, and one
-    # stage reasoned for 20,821 tokens and then reported edits it never made
-    # - it had made them in its reasoning.
-    "REASONING IS NOT WORK:\n"
-    "- Keep your reasoning to deciding the next step. Write code, tests and file\n"
-    "  contents in the write and edit calls themselves - never compose a whole\n"
-    "  file in your reasoning first: a long draft there can use up the reply\n"
-    "  before any call is made, and then none of it exists.\n"
-    "- A change exists only when the call that made it succeeded. Report in your\n"
-    "  structured response only what such calls did: a file you planned,\n"
-    "  reasoned about or described has not changed.\n"
-    "\n"
-    "ARTIFACTS ARE NOT YOUR STRUCTURED RESPONSE:\n"
-    "- Files hold content a person reads or a program runs. Your result is\n"
-    "  returned by calling your answer tool - never written to a file, never\n"
-    "  printed as JSON text.\n"
-    # "Write each file once" stood here, in the prompt that also teaches replacing a whole file again and fixing
-    # errors by rewriting (LR.54).
-    "- A successful write is saved: never write a file again only to confirm it.\n"
+    + REASONING_IS_NOT_WORK
+    + "\n"
+    + ARTIFACTS_ARE_NOT_THE_ANSWER
 )
 
 _READ_ONLY_RULES = (
@@ -737,6 +745,10 @@ def create_role_agent(
     from app.agents.project_layout import for_this_workspace
 
     full_system_prompt = for_this_workspace(full_system_prompt, resolved_repo_root)
+    # Without the blocks written against a small model's failures, for a model measured strong (`app.agents.lean_prompts`).
+    from app.agents.lean_prompts import for_the_model
+
+    full_system_prompt = for_the_model(full_system_prompt, selected_model)
 
     # Compaction. Built here rather than at module scope so a policy change
     # takes effect on the next agent, not the next restart. The context

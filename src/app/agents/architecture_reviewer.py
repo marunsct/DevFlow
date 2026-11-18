@@ -22,7 +22,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
-from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
+from app.agents.testing_dependency_rule import RULE_FOR_REVIEWERS
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 
@@ -365,7 +365,7 @@ Acceptable risks to note (do NOT block on):
 
 {SCOPE_DISCIPLINE}
 
-{TESTING_DEPENDENCY_RULE}
+{RULE_FOR_REVIEWERS}
 
 Constraints:
 - Do not modify application source code, documents, or the specification itself;

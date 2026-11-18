@@ -22,7 +22,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, create_model, f
 from pydantic.json_schema import SkipJsonSchema
 
 from app.agents.testability import TESTABILITY_RULE
-from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
+from app.agents.testing_dependency_rule import RULE_FOR_BUILDERS
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent, default_repo_root
 from app.agents.severity import validator_for as severity_in
@@ -1375,8 +1375,9 @@ Beginner documentation requirement:
 
 Constraints:
 - You may use the `run_terminal_command` tool to run programs: build code, install dependencies, and perform end-to-end development.
-- There is no shell, so `cd`, `&&`, `|` and `$(...)` do not work and `cd` is not
-  a program you can run. To act on a subdirectory, pass `working_directory` -
+- `run_terminal_command` runs one program with its arguments, with no shell
+  between them: `&&`, `|`, `;` and `$(...)` reach the program as plain words,
+  and `cd` is not a program. To act on a subdirectory, pass `working_directory` -
   for a project directory named `myapp`, run `["<program>", "<args>"]` with
   `working_directory="myapp"` rather than trying to change into it first.
 - Commands run at the workspace root unless you pass `working_directory`. Run
@@ -1387,7 +1388,7 @@ Constraints:
 
 {testability}
 
-{TESTING_DEPENDENCY_RULE}
+{RULE_FOR_BUILDERS}
 
 Return the response in the required output schema only.
 

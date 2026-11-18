@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.agents.finding_category import validator_for as category_in
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
-from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
+from app.agents.testing_dependency_rule import RULE_FOR_REVIEWERS
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 
@@ -548,7 +548,7 @@ Responsibilities:
 
 {SCOPE_DISCIPLINE}
 
-{TESTING_DEPENDENCY_RULE}
+{RULE_FOR_REVIEWERS}
 
 A test-only dependency is not a violation, and reading one as a violation is
 the defect. Test runners, browser drivers and test helpers declared in the

@@ -1161,6 +1161,26 @@ _REWRITES_THE_PLATFORM = re.compile(
 _SCRIPT_SUFFIXES = (".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx")
 
 
+#: The harness's own home inside a command's container: a product that names it runs only inside the harness.
+HARNESS_HOME_FOLDER = ".agent-home"
+
+
+def _refuse_the_harness_s_own_folders(relative_path: str, content: str) -> None:
+    """Refuse a product file that names the harness's own home folder.
+
+    Measured on a C# run: offline restores failed, a re-planned work order had a `nuget.config` point NuGet at
+    `/workspace/.agent-home/.nuget/packages/` - the sandbox's own cache - and the product passed its whole suite inside
+    the harness and failed to restore anywhere else: 0 of 9 hidden tests, delivered.
+    """
+    if HARNESS_HOME_FOLDER not in (content or "") or relative_path.startswith((".harness/", HARNESS_HOME_FOLDER)):
+        return
+    raise RepositoryToolError(
+        f"Refusing to write '{relative_path}': it names `{HARNESS_HOME_FOLDER}`, the harness's own folder, which "
+        "exists only while the harness runs. Nothing was written. The product must build and run without it: its "
+        "dependencies come from its manifest and the public registry, installed by the harness before each measurement."
+    )
+
+
 def _refuse_a_hand_written_lock_file(relative_path: str) -> None:
     """Refuse writing or editing a lock file: the package manager writes it from the manifest.
 
@@ -5590,6 +5610,8 @@ def _write_unless_it_changes_nothing(
         # path that was actually used wide open.
         _refuse_a_hand_built_dom_again(relative_path, updated, target)
         _refuse_a_hand_written_lock_file(relative_path)
+        if HARNESS_HOME_FOLDER not in (original or ""):
+            _refuse_the_harness_s_own_folders(relative_path, updated)
         _refuse_rewriting_the_platform(relative_path, updated, original)
         _refuse_to_switch_a_suite_off(relative_path, original, updated)
         _refuse_a_test_for_another_runner(target, relative_path, updated)
@@ -6981,6 +7003,7 @@ def write_approved_artifact(
     _refuse_control_tokens(relative_path, content)
     # First of the content checks: a lock file is refused for what it is, not for how it was written.
     _refuse_a_hand_written_lock_file(relative_path)
+    _refuse_the_harness_s_own_folders(relative_path, content)
     if target.is_file():
         try:
             existing = target.read_text(encoding="utf-8")

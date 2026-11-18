@@ -466,6 +466,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     gaps.extend(_what_the_release_re_check_finds(state, root))
     gaps.extend(_code_the_product_does_not_run(root))
     gaps.extend(_a_development_server(root))
+    gaps.extend(_the_harness_s_own_folders_named(root))
     # Plan item AF: whether the suite would notice the product breaking.
     from app.acceptance.mutation import what_the_suite_does_not_notice
 
@@ -734,6 +735,42 @@ def _measured_again_if_it_changed(root: Any, left_out: list[str] | None = None) 
         # measured although nothing measured it as it shipped.
         degraded("release.measured_again", error)
         return [f"{CHANGED_AT_RELEASE} could not run: the measurement failed ({type(error).__name__})"]
+
+
+#: What a product that runs only inside the harness names: its home folder, as `repository.HARNESS_HOME_FOLDER`.
+_THE_HARNESS_S_HOME = ".agent-home"
+
+
+def _the_harness_s_own_folders_named(root: Any) -> list[str]:
+    """A blocking gap for each product file that names the harness's own home folder; [] otherwise. Never raises.
+
+    Measured on a C# run: a `nuget.config` pointing NuGet at `/workspace/.agent-home/.nuget/packages/` let the product
+    pass its whole suite inside the harness and fail to restore anywhere else - 0 of 9 hidden tests, delivered.
+    """
+    try:
+        from app.analysis.walk import files_under
+        from app.stacks.languages import NOT_THE_PRODUCT
+
+        project = (Path(root) / ".project-directory").read_text(encoding="utf-8").strip() \
+            if (Path(root) / ".project-directory").is_file() else ""
+        base = Path(root) / project if project else Path(root)
+        not_read = NOT_THE_PRODUCT | {".harness", "obj", "bin", "target", "test-results", _THE_HARNESS_S_HOME}
+        named = []
+        for path in sorted(files_under(base, not_read)):
+            try:
+                if path.stat().st_size > 1_000_000:
+                    continue
+                if _THE_HARNESS_S_HOME in path.read_text(encoding="utf-8", errors="ignore"):
+                    named.append(str(path.relative_to(Path(root))))
+            except OSError:
+                continue
+        if not named:
+            return []
+        return [f"The product depends on the harness's own folder `{_THE_HARNESS_S_HOME}`, which exists only while the "
+                f"harness runs, so it does not build or run anywhere else: {', '.join(named[:5])}"]
+    except Exception:  # noqa: BLE001 - the release says nothing it cannot read
+        logger.debug("Could not look for the harness's own folders in the product", exc_info=True)
+        return []
 
 
 def _a_development_server(root: Any) -> list[str]:

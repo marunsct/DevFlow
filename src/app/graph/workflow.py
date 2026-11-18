@@ -3593,13 +3593,14 @@ def _settle_the_fix(
             sprint=state.get("current_sprint_index", 0),
             detail="the using file still imports the removed name, asked again after the fix",
         )
-    elif defect.regression_test_required and not regression_test and not _the_suite_already_guards_it(
-        state, measured, defect
-    ) and not (str(getattr(defect, "source", "") or "") == "interface clash"
-               and interface_clashes.still_clashing(state["repository"].root_path, defect.description) is False):
-        # No named regression test: the defect stays open on purpose. The
-        # next test round will count this as another failed attempt, so the
-        # bounded loop still terminates.
+    elif defect.regression_test_required and not regression_test and measured_now is not True \
+            and not _the_suite_already_guards_it(state, measured, defect) \
+            and not (str(getattr(defect, "source", "") or "") == "interface clash"
+                     and interface_clashes.still_clashing(state["repository"].root_path, defect.description) is False):
+        # No named regression test and no measurement of its own tests: the defect stays open on purpose. The next
+        # test round will count this as another failed attempt, so the bounded loop still terminates. A defect whose
+        # own tests measured passing is closed by that measurement (below): measured in the deep review of
+        # 2026-11-18, 17 defects whose tests passed were left open here after 17-19 model calls each.
         update["remediation"] = cycle
         defect_ledger.note(
             "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
@@ -3621,13 +3622,18 @@ def _settle_the_fix(
             [" ".join(str(d).split()) for d in fix_result.decisions if str(d).strip()]
             + ([f"changed {', '.join(fix_result.changed_files)}"] if fix_result.changed_files else [])
         )[:600]
+        # Closed by its measurement, the regression test the harness would like is a note, not a reason to keep it
+        # open (A7): its own tests, just measured, are what guards it.
+        unnamed = defect.regression_test_required and not regression_test
+        guarded_by = ("the locked acceptance suite, measured after the fix" if _the_suite_already_guards_it(
+            state, measured, defect) or measured_now is not True else "its own tests, measured passing after the fix")
+        if unnamed and measured_now is True:
+            resolution = (resolution + "; " if resolution else "") + "the fix named no regression test of its own"
         update["remediation"] = mark_defect_fixed(
             cycle, defect_index,
             # A criterion the suite measured green after the fix has the locked
             # suite for its regression test (`_the_suite_already_guards_it`).
-            regression_test=regression_test or (
-                "the locked acceptance suite, measured after the fix" if defect.regression_test_required else regression_test
-            ),
+            regression_test=regression_test or (guarded_by if defect.regression_test_required else regression_test),
             verified_by=verified_by, resolution=resolution,
         )
         defect_ledger.note(

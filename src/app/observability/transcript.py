@@ -618,6 +618,11 @@ def build_transcript_callback(run_id: str | None, stage: str) -> Any:
                                 if isinstance(c, dict)
                             ],
                             usage=getattr(message, "usage_metadata", None),
+                            # Which model answered: a run's judgement calls may go to another provider than its
+                            # default, and a total rebuilt from the transcript prices each call by it (LF.1115).
+                            answered_by=str((getattr(response, "llm_output", None) or {}).get("model_name")
+                                            or (getattr(message, "response_metadata", None) or {}).get("model_name")
+                                            or ""),
                             # How long the reply's reasoning was, for a server
                             # that reports no reasoning tokens.
                             reasoning_chars=(getattr(message, "response_metadata", None) or {}).get("reasoning_chars") or 0,

@@ -465,7 +465,7 @@ def cost_from_transcript(
     if not entries:
         return None
 
-    price = price_for(provider, model)
+    configured = price_for(provider, model)
     total = RunCost()
     for entry in entries:
         usage = entry.get("usage") or {}
@@ -477,10 +477,14 @@ def cost_from_transcript(
         total.completion_tokens += c
         total.total_tokens += int(usage.get("total_tokens", 0) or 0) or (p + c)
         total.successful_requests += 1
+        # The model that answered, where the line says (LF.1115): a hybrid run's judgement calls on a hosted model were
+        # priced at the local default's $0 here, so its page showed $0.00 and a restart reset the ceiling's count.
+        answered = str(entry.get("answered_by") or "").strip()
+        price = price_for(provider, answered) if answered else configured
         if price is None:
             total.unpriced_requests += 1
-            if model:
-                total.unpriced_models.add(model)
+            if answered or model:
+                total.unpriced_models.add(answered or model)
         else:
             total.priced_requests += 1
             total.usd += price.usd_for(p, c)

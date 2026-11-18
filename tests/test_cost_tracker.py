@@ -288,6 +288,23 @@ class TestTheCostSurvivesTheProcessBoundary:
         assert total.total_tokens == 2_000_000
         assert total.usd == pytest.approx(0.30)
 
+    def test_a_call_the_line_says_a_hosted_model_answered_is_priced_by_it(self, tmp_path, monkeypatch):
+        """LF.1115: a hybrid run's judgement calls on a hosted model were priced at the local default's $0."""
+        from app.observability import transcript as transcript_module
+        from app.observability.cost_tracker import cost_from_transcript
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("RUN_TRANSCRIPT", "true")
+        transcript_module.record("run-hybrid", "principal_architect", "model_response", answered_by="claude-haiku-5-5",
+                                 usage={"input_tokens": 50_000, "output_tokens": 2_000, "total_tokens": 52_000})
+        transcript_module.record("run-hybrid", "drafting", "model_response", answered_by="local-coder",
+                                 usage={"input_tokens": 50_000, "output_tokens": 2_000, "total_tokens": 52_000})
+
+        total = cost_from_transcript("run-hybrid", "local", "local-coder")
+
+        assert total.usd == pytest.approx((50_000 * 0.10 + 2_000 * 0.50) / 1_000_000)
+        assert total.fully_priced
+
     def test_no_transcript_reports_absent_not_zero(self, tmp_path, monkeypatch):
         from app.observability.cost_tracker import cost_from_transcript
 

@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-19 03:11 JST (written by `loop.sh state`). Harness 0d00096f committed; 0d00096f deployed.
-**Live, and stopped in the last day:** run-3cc0ed29 running at acceptance_author_2; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed; run-db139a37 failed at failed
-**Last scored:** run-160e0f62 notes-api-rust 9/9 (completed, handoff 1.0; scored 11-19 03:11 JST); run-58e79fce tasks-api 10/10 (completed, mixed, 144 active min, handoff 1.0; scored 11-19 02:25 JST); run-1b5b8d8e notes-api-csharp 0/9 (completed, FALSE ACCEPTANCE, mixed, 162 active min, handoff 1.0; scored 11-19 01:25 JST).
+**As of:** 11-19 05:18 JST (written by `loop.sh state`). Harness 031e9c05 committed; 031e9c05 deployed.
+**Live, and stopped in the last day:** run-82f66a50 running at consult_testing; run-af4108e6 running at consult_testing; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed
+**Last scored:** run-3cc0ed29 web-todo 10/10 (completed, handoff 1.0; scored 11-19 05:18 JST); run-04f2aa30 notes-api-csharp 9/9 (completed, mixed, 101 active min, handoff 1.0; scored 11-19 05:15 JST); run-160e0f62 notes-api-rust 9/9 (completed, mixed, 88 active min, handoff 1.0; scored 11-19 03:11 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -56,7 +56,14 @@ Generated above. Today (hidden, quality, verdict):
   escalation moved every build stage to Haiku (LF.1123). The first Rust 9/9 on the new version (local-only
   Rust 1, 4, 7: 0/9). Verdict not deliverable on a real gap: a spaces-only title accepted. Sprint 1 attempts 1-4 lost
   to one defect (LF.1118).
-- M web-todo container 1 run-3cc0ed29-ac73-423d-bb47-ee30e36953e7 (:8888, 02:37, on 2286518d).
+- M web-todo container 1 run-3cc0ed29-ac73-423d-bb47-ee30e36953e7 (:8888, 02:37-05:10, mixed): **10/10, 6/6, delivered**,
+  handoff 1.0, mutation 1.0, 129 active min, 0 reverts. Lost ~30 min to a form-id mismatch (LF.1121) and re-run probes
+  (LF.1122) before both were fixed live.
+- H notes-api-csharp hybrid-haiku 1 run-04f2aa30-834c-4895-bab4-6e42f9dd168d (:1234, 03:19-05:10, mixed): **9/9, 8/8,
+  delivered**, handoff 1.0, mutation 0.8, 101 active min, $1.31 hosted - the first full C# score. Haiku-BUILT (design
+  escalation, LF.1123). Survived LF.1124 (reply blocks written as files) and LF.1125 (offline delivered start).
+- Live: H notes-api-rust hybrid-haiku 2 (judgement only) run-82f66a50-dafd-4ea3-81ab-69140b79189f (:1234, 05:15) and
+  M tasks-api container 3 run-af4108e6-0e1b-4287-a87c-a67f2796a1c7 (:8888, 05:16), both on 031e9c05. Hosted $2.18/$30.
 - LF.1116-1118 shipped live 03:10 JST, LF.1119 (a run store opened beside the backup's dump stalled the app
   03:05-03:09) at 03:18, both into web-todo 1 (mixed).
 - H notes-api-csharp hybrid-haiku 1 run-04f2aa30-834c-4895-bab4-6e42f9dd168d (:1234, 03:19, on 9d134086) - the second

@@ -94,6 +94,8 @@ BUILT_IN = frozenset({
     "START_DEFECT_NAMES_COMPILER_ERRORS", "SETTLE_WHEN_ACCEPTANCE_IS_GREEN", "STALL_RULE", "MEASURE_ONCE",
     "KEEP_THE_BEST_ON_A_REPLAN", "FIRST_REREAD_ANSWERED", "FIX_STAGE_CALL_CAP", "CONTRACT_SERVER_ERRORS_AT_A_ROUND",
     "LAST_TRY_ON_DEFERRED", "START_PROBE", "EXTENSIONS_BEFORE_A_RUN", "REFUSALS_FOLDED",
+    # A security fix (deep review 2026-11-18, E2): an install fetches no invented or days-old package.
+    "DEPENDENCY_GATE",
     # Measured and kept: they change what a run proves or how it repairs, so they are quality, not options (owner,
     # 2026-11-05: bug fixes and changes that affect quality are always on, with no switch).
     "TARGETED_SUITE_REPAIR",

@@ -24,6 +24,7 @@ import logging
 import shutil
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 
 from app.switches import is_on
@@ -66,11 +67,19 @@ def _specs(directory: Path) -> list[Path]:
     return found
 
 
-def run(directory: str | Path, *, limit_seconds: int = LIMIT_SECONDS) -> dict:
-    """{files, tests, findings: [{file, line, test, error}], inconclusive: [...]} for this suite; {} when it cannot be run. Never raises."""
+def run(directory: str | Path, *, limit_seconds: int = LIMIT_SECONDS, repo_root: str | Path | None = None) -> dict:
+    """{files, tests, findings: [{file, line, test, error}], inconclusive: [...]} for this suite; {} when it cannot be run. Never raises.
+
+    In container mode the specs run in a command's own container through the sandbox, never in the worker (deep
+    review 2026-11-18, item E1a): they are the suite writer's code. That needs the run's workspace (`repo_root`) for
+    the copy to be where the container sees it; without one, nothing runs there.
+    """
+    from app.tools.sandbox import product_code_runs_in_its_own_container
+
     base = Path(directory)
-    node = shutil.which("node")
-    if node is None or not base.is_dir():
+    contained = product_code_runs_in_its_own_container()
+    node = "node" if contained else shutil.which("node")
+    if node is None or not base.is_dir() or (contained and repo_root is None):
         return {}
     specs = _specs(base)
     if not specs:
@@ -84,28 +93,59 @@ def run(directory: str | Path, *, limit_seconds: int = LIMIT_SECONDS) -> dict:
     key = digest.hexdigest()
     if key in _cache:
         return _cache[key]
+    named = [p.relative_to(base).as_posix() for p in specs]
     try:
-        with tempfile.TemporaryDirectory(prefix="spec-dry-run-") as temporary:
-            copy = Path(temporary).resolve() / "suite"
-            shutil.copytree(base, copy, ignore=shutil.ignore_patterns("node_modules", "test-results"))
-            report = Path(temporary).resolve() / "report.json"
-            try:
-                subprocess.run(  # noqa: S603 - our runner over a copy, with stand-ins for the network and child processes
-                    # A loop on a stand-in's always-truthy answer allocates until stopped: bounded in memory as in time.
-                    [node, f"--max-old-space-size={MOST_HEAP_MEGABYTES}", str(RUNNER), str(copy), str(report),
-                     *[p.relative_to(base).as_posix() for p in specs]],
-                    cwd=copy, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    # The spec files are the suite writer's code: none of the worker's secrets reach them.
-                    env=product_environment(temporary), timeout=limit_seconds, check=False,
-                )
-            except subprocess.TimeoutExpired:
-                logger.info("The dry run of a suite stopped at its limit of %d s", limit_seconds)
-            result = json.loads(report.read_text(encoding="utf-8")) if report.is_file() else {}
+        if contained:
+            result = _run_in_its_container(Path(repo_root), base, named)
+        else:
+            result = _run_here(node, base, named, limit_seconds)
     except (OSError, ValueError, shutil.Error):
         logger.debug("Could not dry-run the suite", exc_info=True)
         return {}
     _cache[key] = result
     return result
+
+
+def _run_here(node: str, base: Path, specs: list[str], limit_seconds: int) -> dict:
+    """The dry run as a child of this process, on a copy in a temporary directory."""
+    with tempfile.TemporaryDirectory(prefix="spec-dry-run-") as temporary:
+        copy = Path(temporary).resolve() / "suite"
+        shutil.copytree(base, copy, ignore=shutil.ignore_patterns("node_modules", "test-results"))
+        report = Path(temporary).resolve() / "report.json"
+        try:
+            subprocess.run(  # noqa: S603 - our runner over a copy, with stand-ins for the network and child processes
+                # A loop on a stand-in's always-truthy answer allocates until stopped: bounded in memory as in time.
+                [node, f"--max-old-space-size={MOST_HEAP_MEGABYTES}", str(RUNNER), str(copy), str(report), *specs],
+                cwd=copy, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                # The spec files are the suite writer's code: none of the worker's secrets reach them.
+                env=product_environment(temporary), timeout=limit_seconds, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            logger.info("The dry run of a suite stopped at its limit of %d s", limit_seconds)
+        return json.loads(report.read_text(encoding="utf-8")) if report.is_file() else {}
+
+
+#: Where the copy, the runner and the report go in container mode, from the workspace root: a container sees only it.
+_IN_THE_WORKSPACE = ".harness/spec-dry-run"
+
+
+def _run_in_its_container(repo_root: Path, base: Path, specs: list[str]) -> dict:
+    """The dry run through the sandbox (category `dry-run`, its own time limit), on a copy inside the workspace."""
+    from app.tools.sandbox import SandboxExecutor
+
+    place = repo_root / _IN_THE_WORKSPACE / uuid.uuid4().hex[:12]
+    try:
+        shutil.copytree(base, place / "suite", ignore=shutil.ignore_patterns("node_modules", "test-results"))
+        shutil.copyfile(RUNNER, place / RUNNER.name)
+        SandboxExecutor.execute(
+            ["node", f"--max-old-space-size={MOST_HEAP_MEGABYTES}", RUNNER.name, "suite", "report.json", *specs],
+            repo_root=str(repo_root), role_name="testing_specialist", category="dry-run",
+            working_directory=place.relative_to(repo_root).as_posix(), for_the_harness=True,
+        )
+        report = place / "report.json"
+        return json.loads(report.read_text(encoding="utf-8")) if report.is_file() else {}
+    finally:
+        shutil.rmtree(place, ignore_errors=True)
 
 
 def findings(repo_root: str | Path) -> list[str]:
@@ -127,7 +167,7 @@ def findings(repo_root: str | Path) -> list[str]:
             + f": the dry run of the suite, with the product replaced by a stand-in that answers everything and every "
             f"assertion passing, stopped at `{item['test'][:80]}` on `{item['error'][:200]}`. That is the test's own "
             "code: it fails the same way on every product, before the product's answer is looked at. Correct that line."
-            for item in (run(directory).get("findings") or [])[:MOST_FINDINGS]
+            for item in (run(directory, repo_root=repo_root).get("findings") or [])[:MOST_FINDINGS]
         ]
     except Exception:  # noqa: BLE001 - the other checks stand without this one
         logger.debug("The dry run's findings could not be read", exc_info=True)

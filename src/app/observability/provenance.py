@@ -115,6 +115,7 @@ SWITCHES: dict[str, str] = {
     "UNIT_TESTS_YIELD_TO_THE_LOCKED_SUITE": "app.graph.unit_tests_disagree",
     "LAST_TRY_ON_DEFERRED": "app.graph.last_try_on_deferred",
     "START_PROBE": "app.acceptance.start_probe",
+    "DEPENDENCY_GATE": "app.tools.dependency_gate",
     "EXTENSIONS_BEFORE_A_RUN": "app.stacks.imports_before_a_run",
     "NAMING_STANDARD": "app.stacks.naming",
     "REFUSALS_FOLDED": "app.agents.refusal_folding",

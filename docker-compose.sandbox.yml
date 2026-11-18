@@ -36,3 +36,35 @@ services:
       SECRETS: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+
+# Not on yet (deep review 2026-11-18, item E1b). The proxy above filters by endpoint, not by body: a container create
+# with a bind mount of the host or `Privileged: true` passes it. The broker in deploy/sandbox-broker passes on only the
+# calls the sandbox makes and only a create shaped like the sandbox's (validator.py lists what it allows). To swap it
+# in: uncomment the `sandbox-broker` service and the `networks` block, point the worker at the broker (its
+# DOCKER_HOST and networks below replace the ones above), and remove `docker-proxy` and the worker's dependency on it.
+# Start with BROKER_ENFORCE: "0" (it logs what it would refuse and passes everything on), run one container-mode
+# run, check its log has no "would refuse", then set it to "1".
+#
+#  worker:
+#    environment:
+#      DOCKER_HOST: tcp://sandbox-broker:2375
+#    networks: [default, sandbox-broker]
+#    depends_on:
+#      - sandbox-broker
+#  sandbox-broker:
+#    build: ./deploy/sandbox-broker
+#    restart: unless-stopped
+#    environment:
+#      BROKER_WORKSPACE_VOLUME: "${COMPOSE_PROJECT_NAME:-langchain}_appdata"
+#      BROKER_ENFORCE: "0"
+#    volumes:
+#      - /var/run/docker.sock:/var/run/docker.sock
+#    # Only the worker reaches it, and it reaches nothing but the socket.
+#    networks: [sandbox-broker]
+#    read_only: true
+#    cap_drop: [ALL]
+#    security_opt: [no-new-privileges]
+#
+#networks:
+#  sandbox-broker:
+#    internal: true

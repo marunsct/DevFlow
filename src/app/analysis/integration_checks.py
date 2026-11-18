@@ -730,7 +730,7 @@ def _camel_to_dashed(name: str) -> str:
     return re.sub(r"([A-Z])", lambda m: "-" + m.group(1).lower(), name)
 
 
-def _hooks_javascript_reaches_for(files: list[Path], root: Path) -> list[str]:
+def _hooks_javascript_reaches_for(files: list[Path], root: Path, *, ids: bool = True, data: bool = True) -> list[str]:
     """Element ids and data attributes the script uses that no page declares.
 
     The counterpart to `_dangling_id_selectors`, on the side that actually
@@ -767,18 +767,23 @@ def _hooks_javascript_reaches_for(files: list[Path], root: Path) -> list[str]:
     if not declared_ids:
         return []
 
+    scripts = [path for path in files if path.suffix.lower() in {".js", ".mjs", ".cjs"} and not is_test(str(path))]
+    # An id a script writes into markup it builds - `<input id="edit-title-input">` in the template of an inline
+    # editor - is declared as surely as one in a page; any script may then look it up. Measured on one run: such an
+    # id was reported, which kept the whole check from being exact enough to block, and a real miss beside it
+    # (`add-task-form` against `<form id="add-form">`) sank every criterion after drafting.
+    written_by_scripts = {name for path in scripts for name in _HTML_ID.findall(_read(path)) if "${" not in name}
+
     problems: list[str] = []
-    for path in files:
-        if path.suffix.lower() not in {".js", ".mjs", ".cjs"} or is_test(str(path)):
-            continue
+    for path in scripts:
         text = _read(path)
         made_here = {
             name for pair in _JS_ASSIGNS_ID.findall(text) for name in pair if name
-        }
+        } | written_by_scripts
         wanted = set(_JS_BY_ID.findall(text))
         for selector in _JS_QUERY.findall(text):
             wanted.update(_ID_SELECTOR.findall(selector))
-        for identifier in sorted(wanted - declared_ids - made_here):
+        for identifier in sorted(wanted - declared_ids - made_here) if ids else ():
             problems.append(
                 f"{path.relative_to(root)} looks for the element id "
                 f"`{identifier}`, which no HTML file declares. "
@@ -799,7 +804,7 @@ def _hooks_javascript_reaches_for(files: list[Path], root: Path) -> list[str]:
         # `querySelector('[data-field="title"]')` - to put the attribute back,
         # so a script that set an attribute and then looked it up by selector
         # was still reported for reading what nothing sets.
-        for attribute in sorted(read_here - declared_data - set_here):
+        for attribute in sorted(read_here - declared_data - set_here) if data else ():
             problems.append(
                 f"{path.relative_to(root)} reads the attribute "
                 f"`data-{attribute}`, which no HTML element sets. It is "
@@ -6804,6 +6809,8 @@ def _persisted_data_parsed_without_a_guard(files: list[Path], root: Path) -> lis
 #: exists to end, so `test_every_declared_floor_names_a_real_check` fails loudly
 #: instead.
 _FLOORS: dict[str, str] = {
+    # `getElementById` returns null and the guard around it swallows that: the feature does nothing.
+    "the element ids scripts look up against the pages and the markup scripts write": "BREAKS",
     "clickable controls against the scripts that should operate them": "BREAKS",
     # A handler that never runs is a feature that does not work, which is this
     # bucket's own heading. One run's reviewer graded the same finding
@@ -6840,6 +6847,8 @@ BREAKS_WHATEVER_IT_SAYS = "BREAKS"
 #: a finding: only these checks can block. A run without one keeps every check
 #: as it was.
 _MECHANICAL = frozenset({
+    # A literal id looked up against every page and every script's own markup: exact, not inferred.
+    "the element ids scripts look up against the pages and the markup scripts write",
     "names a page calls against the import clause that should bind them",
     "suites a test file registers more than once",
     "the chosen stack against what is on disk",
@@ -6978,8 +6987,10 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack, brief: _manifest_defects(files, root, stack)),
     ("stylesheet id selectors against declared element ids",
      lambda files, root, stack, brief: _dangling_id_selectors(files, root)),
-    ("the ids and data attributes scripts reach for against the page",
-     lambda files, root, stack, brief: _hooks_javascript_reaches_for(files, root)),
+    ("the data attributes scripts reach for against the page",
+     lambda files, root, stack, brief: _hooks_javascript_reaches_for(files, root, ids=False)),
+    ("the element ids scripts look up against the pages and the markup scripts write",
+     lambda files, root, stack, brief: _hooks_javascript_reaches_for(files, root, data=False)),
     ("test files against the project's own test command",
      lambda files, root, stack, brief: _tests_the_project_never_runs(files, root)),
     ("node:test suites against a manifest that never invokes node --test",

@@ -61,7 +61,8 @@ Generated above. Today (hidden, quality, verdict):
 - H notes-api-csharp hybrid-haiku 1 run-04f2aa30-834c-4895-bab4-6e42f9dd168d (:1234, 03:19, on 9d134086) - the second
   Haiku arm run: does the judgement tier lift C# as it lifted Rust?
 - LF.1120 (a stage researched before it began is offered no lookup tool; the Haiku architect spent five paid turns on
-  refused `read_docs`) committed, deploys at the next run boundary.
+  refused `read_docs`) and LF.1121 (a script looking up an id no page declares is a proven defect - web-todo 1 lost
+  40/46 tests to `add-task-form` vs `add-form`) shipped live ~03:45 into both runs (both mixed).
 - **Deployed 20:09 JST: 532dba3 (waves 1 and 2, LF.1073-1105).** Live on it: M notes-api-rust container 7
   run-cbf36159-b68e-4405-9440-db9797ce1aad (:1234) and M notes-api-php container 3
   run-c5d6a8a5-6f88-4247-adcf-52c0a8aaad0c (:8888), both 20:09.

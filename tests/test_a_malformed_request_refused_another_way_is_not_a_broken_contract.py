@@ -46,3 +46,19 @@ def test_a_bad_input_line_answered_with_a_server_error_still_fails(tmp_path, mon
     gaps = _checked(tmp_path, monkeypatch, ["AC-3 GET /notes/{id} -> 400"], [("AC-3", 400, 500)])
 
     assert any("does not keep its interface contract" in g for g in gaps)
+
+
+def test_behind_a_sign_in_a_line_answered_401_to_the_unsigned_probe_is_noted_not_failed(tmp_path, monkeypatch):
+    """A tasks-api run: 10/10 hidden, 7/7 quality, "not deliverable" on `GET /items -> 200` answered 401 unsigned."""
+    # The sign-in write is no check of the bare probe (it needs a body): the one check is the `GET /items` line.
+    gaps = _checked(tmp_path, monkeypatch, ["AC-2 POST /signin -> 200", "AC-4 GET /items -> 200"],
+                    [("AC-4", 200, 401)])
+
+    assert not any("does not keep its interface contract" in g and "AC-4" in g for g in gaps)
+    assert any("AC-4 GET /items -> 200 (answered 401 to the probe's unsigned call" in g for g in gaps)
+
+
+def test_without_a_sign_in_a_401_still_fails_the_line(tmp_path, monkeypatch):
+    gaps = _checked(tmp_path, monkeypatch, ["AC-4 GET /items -> 200"], [("AC-4", 200, 401)])
+
+    assert any("does not keep its interface contract" in g for g in gaps)

@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-19 01:25 JST (written by `loop.sh state`). Harness 40c3307e committed; 14207a14 deployed (not the same).
-**Live, and stopped in the last day:** run-58e79fce running at defect_fix_2_0; run-160e0f62 running at tools_models; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed
-**Last scored:** run-1b5b8d8e notes-api-csharp 0/9 (completed, FALSE ACCEPTANCE, handoff 1.0; scored 11-19 01:25 JST); run-f00ea384 notes-api-php 9/9 (completed, mixed, 125 active min, handoff 1.0; scored 11-18 23:25 JST); run-cbf36159 notes-api-rust 0/9 (failed, mixed, 134 active min, handoff 0.429; scored 11-18 22:36 JST).
+**As of:** 11-19 02:25 JST (written by `loop.sh state`). Harness 2286518d committed; 2286518d deployed.
+**Live, and stopped in the last day:** run-160e0f62 running at specialist_testing_2; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed; run-db139a37 failed at failed
+**Last scored:** run-58e79fce tasks-api 10/10 (completed, handoff 1.0; scored 11-19 02:25 JST); run-1b5b8d8e notes-api-csharp 0/9 (completed, FALSE ACCEPTANCE, mixed, 162 active min, handoff 1.0; scored 11-19 01:25 JST); run-f00ea384 notes-api-php 9/9 (completed, mixed, 125 active min, handoff 1.0; scored 11-18 23:25 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -47,6 +47,9 @@ Generated above. Today (hidden, quality, verdict):
   false acceptance.** Suite 18/18 in the harness after five attempts (LF.1111 installed the nested package), but a
   re-planned work order had pointed `nuget.config` at the sandbox's own `.agent-home` cache: nothing restores outside
   the harness. LF.1113 refuses that write and blocks such a release.
+- tasks-api 2 run-58e79fce-d928-4d32-a9ea-78e3c8eb9482 (:8888, 23:30-02:15, mixed): **10/10, 7/7, handoff 1.0**, mutation
+  0.55, 144 active minutes; its own verdict not deliverable on four contract lines answered 401 to the unsigned bare
+  probe (a false red, LF.1116). Edge probe: all 22 checks skipped, its sign-in did not take (to look at).
 - Haiku arm: H notes-api-rust hybrid-haiku 1 run-160e0f62-7720-49e1-a831-50f5453e7484 (:1234 build, Haiku judgement,
   01:25) - the architect's calls reach api.anthropic.com.
 - **Deployed 20:09 JST: 532dba3 (waves 1 and 2, LF.1073-1105).** Live on it: M notes-api-rust container 7

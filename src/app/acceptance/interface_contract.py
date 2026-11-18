@@ -1377,6 +1377,11 @@ def _the_check_of(test: Any, web: list[Check]) -> Check | None:
     return web[int(number.group(1)) - 1] if number and 0 < int(number.group(1)) <= len(web) else None
 
 
+def _the_api_signs_in(checks: list[Check]) -> bool:
+    """Whether the contract has a write that signs in, so its other lines describe a signed-in caller."""
+    return any(c.kind == "http" and c.method == "POST" and _SIGNS_IN.search(c.path) for c in checks)
+
+
 #: The refusals a malformed request may get, whichever the contract names.
 _A_MALFORMED_REQUEST_S_REFUSALS = frozenset({400, 404, 422})
 
@@ -1545,6 +1550,15 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
         unchecked += list(dict.fromkeys(
             f"{c.line} (answered {_received(t)}, another refusal of a malformed request)"
             for t in refused_otherwise if (c := _the_check_of(t, web)) is not None))
+        # Behind a sign-in, a bare line answered 401 or 403 describes a signed-in caller the bare probe is not: the line
+        # names no refusal of an unsigned call. Measured on a tasks-api run: 10/10 hidden and 7/7 quality, and "not
+        # deliverable" on `GET /items -> 200` and three more lines answered 401 to the unsigned probe.
+        behind_sign_in = [t for t in failed if _the_api_signs_in(locked) and (check := _the_check_of(t, web)) is not None
+                          and _received(t) in (401, 403) and not {401, 403} & set(check.statuses or (check.status,))]
+        failed = [t for t in failed if t not in behind_sign_in]
+        unchecked += list(dict.fromkeys(
+            f"{c.line} (answered {_received(t)} to the probe's unsigned call; the line is about a signed-in caller)"
+            for t in behind_sign_in if (c := _the_check_of(t, web)) is not None))
         # A page control a bare visit cannot find, on a criterion whose own locked tests passed: the control appears
         # once the page holds a record or a person signed in, and the tests that create that state pass. Measured: 13
         # runs carried such a gap (50 lines) and 12 of them scored 1.0 on their hidden tests.

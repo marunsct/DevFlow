@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-18 22:36 JST (written by `loop.sh state`). Harness d03b4d39 committed; d03b4d39 deployed.
-**Live, and stopped in the last day:** run-f00ea384 running at defect_fix_1_0; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed; run-db139a37 failed at failed
-**Last scored:** run-cbf36159 notes-api-rust 0/9 (failed, handoff 0.429; scored 11-18 22:36 JST); run-c5d6a8a5 notes-api-php 9/9 (completed, 45 active min, handoff 1.0; scored 11-18 21:02 JST); run-1aa50e5e notes-api-rust 0/9 (failed, 100 active min, handoff 0.429; scored 11-18 20:07 JST).
+**As of:** 11-18 23:25 JST (written by `loop.sh state`). Harness d0ef2cdf committed; d03b4d39 deployed (not the same).
+**Live, and stopped in the last day:** run-1b5b8d8e running at specialist_testing_1; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed; run-db139a37 failed at failed
+**Last scored:** run-f00ea384 notes-api-php 9/9 (completed, handoff 1.0; scored 11-18 23:25 JST); run-cbf36159 notes-api-rust 0/9 (failed, mixed, 134 active min, handoff 0.429; scored 11-18 22:36 JST); run-c5d6a8a5 notes-api-php 9/9 (completed, 45 active min, handoff 1.0; scored 11-18 21:02 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -40,6 +40,9 @@ Generated above. Today (hidden, quality, verdict):
   failed after three sprint attempts, 134 active minutes, 1 revert. Each layer of manifest failure was fixed in the
   run (LF.1106 offline DNS, LF.1108 crate features, LF.1109 hand-written lock file), and then compile errors in its own
   Rust code remained - the local model's limit on Rust. Rust is the first family for the Haiku arm.
+- notes-api-php 4 run-f00ea384-9ae9-4010-b75e-ee00ff1e35ad (:8888, 21:05-23:24, mixed): **9/9, 8/8, handoff 1.0**,
+  mutation 0.3, 125 active minutes, 0 reverts - PHP 2 of 2 full on the new version (old: 0/9). Its own verdict said
+  not deliverable on a 400-vs-404 contract line for a malformed id (a false red, LF.1110 since).
 - **Deployed 20:09 JST: 532dba3 (waves 1 and 2, LF.1073-1105).** Live on it: M notes-api-rust container 7
   run-cbf36159-b68e-4405-9440-db9797ce1aad (:1234) and M notes-api-php container 3
   run-c5d6a8a5-6f88-4247-adcf-52c0a8aaad0c (:8888), both 20:09.

@@ -77,3 +77,21 @@ def test_the_nightly_check_fails_a_pack_whose_example_does_not_pass(tmp_path, mo
 
     assert verify.check(["with-example", "without"]) == ["with-example"]
     assert "=== with-example golden example: ok=False" in capsys.readouterr().out
+
+
+def test_an_example_its_compile_check_reports_on_fails_the_check(tmp_path):
+    """A passing example the stages' own compile check reports on would put that finding beside every write copying it."""
+    (tmp_path / "demo-app").mkdir()
+    (tmp_path / "demo-app" / "Cargo.toml").write_text("[package]\nname = \"demo_app\"\n")
+
+    def sandbox(argv, category, project):
+        if category == "build":
+            return {"returncode": "101", "stdout": "", "stderr": "src/lib.rs:3:5: error[E0425]: cannot find value `x`"}
+        target = tmp_path / project / RUST.unit_report
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(PASSED)
+        return {"returncode": "0", "stdout": "", "stderr": ""}
+
+    ok, problem = prove_the_golden_example(tmp_path, RUST, "demo-app", "Demo App", run=sandbox, package="demo_app")
+
+    assert not ok and "compile check reports" in problem and "cannot find value" in problem

@@ -7,6 +7,10 @@ from app.stacks.packs import _sandbox as sandbox
 
 PHP_VERSION = "8.4"
 
+#: PHPStan as a development dependency: the compile check (`app.analysis.compiler_check`) runs it at level 0 when the
+#: project has it. Measured on one Slim run: three invented `Slim\\App` methods (`setStrictRouting`, `getErrorMiddleware`,
+#: `setErrorHandler`) and a namespace declared after other code each stopped the product starting and were found only by
+#: the next test round, five reverts in all; PHPStan names each at the write.
 COMPOSER_JSON = """{
   "name": "app/{{project}}",
   "type": "project",
@@ -16,6 +20,7 @@ COMPOSER_JSON = """{
     "slim/psr7": "^1.7"
   },
   "require-dev": {
+    "phpstan/phpstan": "^2.1",
     "phpunit/phpunit": "^11.5"
   },
   "autoload": {

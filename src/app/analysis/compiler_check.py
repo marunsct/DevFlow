@@ -72,7 +72,8 @@ def _gradle(project: Path) -> list[str] | None:
 def _phpstan(project: Path) -> list[str] | None:
     if not (project / "vendor" / "bin" / "phpstan").is_file():
         return None
-    paths = [name for name in ("app", "src", "routes", "tests") if (project / name).is_dir()]
+    # `public` holds a Slim service's front controller, where its routes and middleware are wired.
+    paths = [name for name in ("app", "src", "routes", "public", "tests") if (project / name).is_dir()]
     if not paths:
         return None
     return ["vendor/bin/phpstan", "analyse", "--no-progress", "--error-format=raw", "--level=0", *paths]

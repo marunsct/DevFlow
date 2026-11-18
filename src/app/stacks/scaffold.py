@@ -751,4 +751,13 @@ def prove_the_golden_example(
         return False, (f"The golden example's unit tests did not pass through `{' '.join(argv)}` (exit {code}, "
                        f"{parsed.passed} passed, {parsed.failed} failed, report "
                        f"{'found' if parsed.found else 'missing'}): {where_it_failed(_tail(outcome))}")
+    # And clean under the compile check the stages' writes get (`compiler_check`): an example its own checker reports
+    # on would put the same finding beside every write that copies it - PHPStan, for one, reads more than its tests.
+    from app.analysis import compiler_check
+
+    written = [f"{project}/{relative}" if project else relative for relative in pack.golden_example]
+    reported = compiler_check.findings(root, project, written, run=run)
+    if reported:
+        listed = "; ".join(f"{item.get('file')}:{item.get('line')} {item.get('message')}" for item in reported[:5])
+        return False, f"The golden example passes its tests, but the compile check reports: {listed}"
     return True, ""

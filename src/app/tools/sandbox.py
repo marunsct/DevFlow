@@ -5716,11 +5716,12 @@ class SandboxExecutor:
         except SandboxUnavailable as exc:
             return {"error": str(exc)}
         container = f"sandbox-{uuid.uuid4().hex[:12]}"
+        network = _a_network_for(category, workspace)
 
         docker_cmd = [
             docker, "run", "--rm",
             "--name", container,
-            "--network", _a_network_for(category, workspace),
+            "--network", network,
             "--memory", f"{_process_memory(workspace) // 1024**2}m",
             "--memory-swap", f"{_process_memory(workspace) // 1024**2}m",   # equal to --memory disables swap
             "--cpus", CPU_LIMIT,
@@ -5772,6 +5773,9 @@ class SandboxExecutor:
             "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout", repo_root), repo_root),
             "stderr": _as_workspace_relative(_truncate(result.stderr, f"{role_name}-{argv[0]}-stderr", repo_root), repo_root),
             "returncode": str(result.returncode),
+            # The network the command had: a command with none that could not resolve a host failed because what it
+            # needed was never installed, which is the product's (`acceptance.unmeasured.why`).
+            "network": network,
         }
         # A key of its own: the notes later steps add replace an earlier "note".
         unhonoured = _a_pin_the_image_does_not_carry(workspace)

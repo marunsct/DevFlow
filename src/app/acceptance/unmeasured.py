@@ -65,7 +65,10 @@ def why(outcome: Any, *, reached_tests: bool = False) -> str:
     if _THE_HARNESS_REFUSED in said:
         return next(line for line in said.splitlines() if _THE_HARNESS_REFUSED in line).strip()[:300]
     resolved = _NAME_RESOLUTION.search(said)
-    if resolved:
+    # Only a command that had a network can be stopped by it. Measured on a Rust run: the product's manifest asked for a
+    # feature its dependency does not have, so the networked install failed (cargo exit 101) and every offline test
+    # build then "could not resolve" the registry - read as unmeasured, five measurements judged nothing.
+    if resolved and str(outcome.get("network") or "") != "none":
         return "the network could not resolve a host the build needs: " + resolved.group(0).strip()[:200]
     return ""
 

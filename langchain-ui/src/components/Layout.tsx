@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Home, Layers, List, Settings, LogOut, ToggleRight, UserRound, SlidersHorizontal } from 'lucide-react';
+import { Activity, Home, Layers, List, Settings, LogOut, ToggleRight, UserRound, SlidersHorizontal } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { NeedsYouInbox } from './NeedsYouInbox';
 import { CommandPalette } from './CommandPalette';
@@ -63,6 +63,10 @@ export const Header: React.FC = () => {
             <Link to="/controls" className={linkClass('/controls')} aria-label="Controls" aria-current={isActive('/controls') ? 'page' : undefined}>
               <SlidersHorizontal className="h-4 w-4" />
               <span className="hidden sm:inline">Controls</span>
+            </Link>
+            <Link to="/health" className={linkClass('/health')} aria-label="Health" aria-current={isActive('/health') ? 'page' : undefined}>
+              <Activity className="h-4 w-4" />
+              <span className="hidden sm:inline">Health</span>
             </Link>
             <Link to="/account" className={linkClass('/account')} aria-label="Account" aria-current={isActive('/account') ? 'page' : undefined}>
               <UserRound className="h-4 w-4" />

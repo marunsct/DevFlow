@@ -40,12 +40,12 @@ def test_the_archive_says_how_to_run_it(tmp_path, monkeypatch):
     monkeypatch.setattr("app.stacks.contract.the_pack", lambda root: None)
     archive = zipfile.ZipFile(io.BytesIO(product_archive.build(root, "run-1")))
     names = archive.namelist()
-    assert "run-1/app/server.py" in names and "run-1/HOW-TO-RUN.txt" in names
-    assert "cd app\nsh start.sh" in archive.read("run-1/HOW-TO-RUN.txt").decode()
+    assert "run-1/app/server.py" in names and "run-1/HANDOVER.md" in names
+    assert "cd app\nsh start.sh" in archive.read("run-1/HANDOVER.md").decode()
 
 
 def test_the_server_offers_it(client):
-    for path in ("/api/runs/run-none/product", "/api/runs/run-none/how-to-run"):
+    for path in ("/api/runs/run-none/product", "/api/runs/run-none/how-to-run", "/api/runs/run-none/product/summary"):
         answer = client.get(path)
         # The run is unknown, so the route answers for the run - not "Not Found" for a path it does not have.
         assert answer.status_code == 404 and "Run run-none not found" in answer.json().get("detail", ""), path

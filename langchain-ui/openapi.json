@@ -216,6 +216,17 @@
       "title": "From Brief",
       "type": "boolean"
      },
+     "stack_support": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/StackSupport"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Set when the brief's stack or the model's tier is experimental here (F1)."
+     },
      "vague_phrases": {
       "description": "Phrases that ask for a quality without saying what it is, as the brief uses them (plan IN.2).",
       "items": {
@@ -2827,6 +2838,36 @@
     "title": "SprintsResponse",
     "type": "object"
    },
+   "StackSupport": {
+    "additionalProperties": false,
+    "description": "Whether the stack a brief asks for, on the configured model, is supported or experimental (deep review F1).",
+    "properties": {
+     "languages": {
+      "description": "The languages the brief's constraints name.",
+      "items": {
+       "type": "string"
+      },
+      "title": "Languages",
+      "type": "array"
+     },
+     "said": {
+      "description": "What it means, for the person about to start the run.",
+      "title": "Said",
+      "type": "string"
+     },
+     "status": {
+      "description": "`supported` or `experimental`.",
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status",
+     "said"
+    ],
+    "title": "StackSupport",
+    "type": "object"
+   },
    "StageUsage": {
     "additionalProperties": false,
     "description": "One stage's time, tokens and failures, from the run's transcript (plan BG.7).",
@@ -4280,6 +4321,35 @@
     ]
    }
   },
+  "/api/health/operator": {
+   "get": {
+    "description": "The host at a glance (deep review F5): disk, database, runs running and waiting, the model server, the newest\nbackup, the version. Read-only; never a model call.",
+    "operationId": "health_operator_api_health_operator_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Health Operator Api Health Operator Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Health Operator",
+    "tags": [
+     "health"
+    ]
+   }
+  },
   "/api/health/ready": {
    "get": {
     "description": "Readiness: every dependency this app needs is reachable.\n\nSplit from liveness so a transient database blip restarts nothing; each\ncheck runs off the event loop, because psycopg2 and Celery control calls\nare both blocking.",
@@ -5390,6 +5460,102 @@
     ]
    }
   },
+  "/api/runs/{run_id}/diagnostic-bundle": {
+   "get": {
+    "description": "The run's transcript, doctor's account and record as one zip, secrets replaced (deep review F1).",
+    "operationId": "download_diagnostic_bundle_api_runs__run_id__diagnostic_bundle_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Download Diagnostic Bundle",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/doctor": {
+   "get": {
+    "description": "The run doctor (deep review F1): stage order and time, defects, reverts, refusals, and the next actions.\n\nRead-only, from the run's transcript and record; no model call.",
+    "operationId": "get_run_doctor_api_runs__run_id__doctor_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Run Doctor Api Runs  Run Id  Doctor Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Get Run Doctor",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
   "/api/runs/{run_id}/events": {
    "get": {
     "description": "Polling fallback: events after a cursor.",
@@ -6013,6 +6179,56 @@
      }
     ],
     "summary": "Download Product",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
+  "/api/runs/{run_id}/product/summary": {
+   "get": {
+    "description": "Which product the download holds - the latest, or a run's best attempt - and what it passed (F4a).",
+    "operationId": "get_product_summary_api_runs__run_id__product_summary_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Product Summary Api Runs  Run Id  Product Summary Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Get Product Summary",
     "tags": [
      "runs"
     ]
@@ -7667,6 +7883,35 @@
     "summary": "Set Switch",
     "tags": [
      "settings"
+    ]
+   }
+  },
+  "/api/support-matrix": {
+   "get": {
+    "description": "Each stack pack by model tier: supported or experimental, with the scored-run evidence (deep review F1).",
+    "operationId": "support_matrix_table_api_support_matrix_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Support Matrix Table Api Support Matrix Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Support Matrix Table",
+    "tags": [
+     "health"
     ]
    }
   },

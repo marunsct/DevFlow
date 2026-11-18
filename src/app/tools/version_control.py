@@ -267,6 +267,35 @@ def move_keeping_history(repo_root: str | Path, name: str, directory: str) -> No
     (root / name).rename(root / directory / name)
 
 
+#: A stage's internal name inside a commit subject, standing alone (not part of a path or an identifier).
+_A_STAGE_NAME = re.compile(
+    r"(?<![\w/.-])(?:defect_fix_(?P<fix_round>\d+)_(?P<fix>\d+)|code_review_(?P<review_a>\d+)_(?P<review_b>\d+)"
+    r"|test_round_(?P<round>\d+)|specialist_(?P<role>[a-z][a-z_]*?)_(?P<order>\d+)"
+    r"|(?P<plain>technical_lead|scrum_master|principal_architect|product_manager|milestone_review|test_and_triage"
+    r"|defect_remediation|specialist_dispatch|architecture_review|tools_models))(?![\w/.-])")
+
+
+def readable_subject(subject: str) -> str:
+    """A commit subject with the harness's internal stage names said in words (deep review 2026-11-18, F4b).
+
+    Found in a delivered product's history: subjects such as "Retention, defect_fix_3_3: its tests notice nothing"
+    read as noise to the team taking it over. Only a whole stage name is reworded; a path or an identifier that
+    contains one is left as it is, and so is every prefix the harness reads back ("Work orders:", "Scaffold:").
+    """
+    def said(found: re.Match[str]) -> str:
+        if found["fix"] is not None:
+            return f"the fix of defect {int(found['fix']) + 1} in test round {found['fix_round']}"
+        if found["review_a"] is not None:
+            return f"code review {found['review_a']}.{found['review_b']}"
+        if found["round"] is not None:
+            return f"test round {found['round']}"
+        if found["role"] is not None:
+            return f"work order {int(found['order']) + 1} ({found['role'].replace('_', ' ')})"
+        return found["plain"].replace("_", " ")
+
+    return _A_STAGE_NAME.sub(said, subject)
+
+
 def commit_all(repo_root: str | Path, message: str) -> str | None:
     """Commit everything in the workspace with `message`; the short hash, or None.
 
@@ -279,6 +308,7 @@ def commit_all(repo_root: str | Path, message: str) -> str | None:
     if _git(root, "add", "-A") is None:
         return None
     subject, _, body = message.strip().partition("\n")
+    subject = readable_subject(subject)
     if len(subject) > 72:
         subject = subject[:69].rstrip() + "..."
     result = _git(root, "commit", "--quiet", "-m", f"{subject}\n{body}".rstrip())

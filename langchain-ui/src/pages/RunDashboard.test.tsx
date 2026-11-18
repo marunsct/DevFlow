@@ -100,6 +100,16 @@ describe('the run page', () => {
     expect((await screen.findByTestId('how-to-run')).textContent).toContain('sh start.sh');
   });
 
+  // Deep review 2026-11-18, F4a: the product download showed only on a completed run.
+  it('offers a stopped run\'s best attempt, said with the criteria it passed', async () => {
+    known.getProductSummary = vi.fn(async () => ({ version: 'best', criteria_passed: 14, criteria_total: 18,
+      tests_passed: null, tests_total: null, from_an_earlier_commit: false })) as never;
+    Object.assign(run, { status: 'failed', current_stage: 'failed', error: 'Stopped: the last attempts did not beat the best' });
+    renderPage();
+    expect((await screen.findByTestId('download-best-attempt')).textContent).toContain('Download best attempt (14 of 18 criteria passed)');
+    expect(screen.queryByTestId('download-product')).toBeNull();
+  });
+
   it('resumes a failed run with the direction typed for it', async () => {
     Object.assign(run, { status: 'failed', current_stage: 'failed', error: 'The model server did not answer' });
     renderPage();

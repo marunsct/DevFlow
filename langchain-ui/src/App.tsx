@@ -12,6 +12,7 @@ import { Compare } from './pages/Compare';
 import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
 import { Admin } from './pages/Admin';
+import { Health } from './pages/Health';
 import React, { useEffect, useState } from 'react';
 import { api } from './api';
 import { FeedbackProvider } from './components/Feedback';
@@ -115,6 +116,7 @@ function App() {
             <Route path="admin" element={<Admin />} />
             <Route path="account" element={<Account />} />
             <Route path="controls" element={<Controls />} />
+            <Route path="health" element={<Health />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

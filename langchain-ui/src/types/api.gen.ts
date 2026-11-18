@@ -52,6 +52,8 @@ export interface BriefPreview {
   criteria: PreviewCriterion[];
   /** Whether the brief lists them: with fewer than two, the run draws them from its product intake instead. */
   from_brief: boolean;
+  /** Set when the brief's stack or the model's tier is experimental here (F1). */
+  stack_support: StackSupport | null;
   /** Phrases that ask for a quality without saying what it is, as the brief uses them (plan IN.2). */
   vague_phrases: string[];
   /** Criteria no line of the brief's interface section speaks to - what the run would guess (plan IN.2). */
@@ -653,6 +655,16 @@ export interface SprintView {
 export interface SprintsResponse {
   /** The sprints attempted so far. */
   sprints: SprintView[];
+}
+
+/** Whether the stack a brief asks for, on the configured model, is supported or experimental (deep review F1). */
+export interface StackSupport {
+  /** The languages the brief's constraints name. */
+  languages: string[];
+  /** What it means, for the person about to start the run. */
+  said: string;
+  /** `supported` or `experimental`. */
+  status: string;
 }
 
 /** One stage's time, tokens and failures, from the run's transcript (plan BG.7). */

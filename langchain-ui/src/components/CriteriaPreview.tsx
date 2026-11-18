@@ -69,6 +69,12 @@ export const CriteriaPreview: React.FC<{
           The run will guess those: name the routes, controls or commands to decide them yourself.
         </p>
       )}
+      {/* F1: a stack or a model the scored runs do not support is said before the run starts. */}
+      {preview.stack_support && (
+        <p role="note" className="mt-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning" data-testid="stack-experimental">
+          {preview.stack_support.said}
+        </p>
+      )}
       {(preview.vague_phrases?.length ?? 0) > 0 && (
         <p className="mt-2 text-sm text-text-secondary" data-testid="vague-phrases">
           Phrases that ask for a quality without saying what it is: {preview.vague_phrases.join(', ')}.

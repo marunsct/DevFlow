@@ -378,6 +378,21 @@ export const downloadProduct = async (runId: string): Promise<void> => {
   }
 };
 
+/** Which product the download holds - the latest, or a run's best attempt - and what it passed (F4a). */
+export interface ProductSummary {
+  version: 'latest' | 'best';
+  criteria_passed: number | null;
+  criteria_total: number | null;
+  tests_passed: number | null;
+  tests_total: number | null;
+  from_an_earlier_commit: boolean;
+}
+
+export const getProductSummary = async (runId: string): Promise<ProductSummary> => {
+  const response = await api.get<ProductSummary>(`/runs/${runId}/product/summary`);
+  return response.data;
+};
+
 /** The commands that install, test and start the product (LR.30a). */
 export const getHowToRun = async (runId: string): Promise<string[]> => {
   const response = await api.get<{ steps: string[] }>(`/runs/${runId}/how-to-run`);
@@ -420,6 +435,72 @@ export const downloadTranscript = async (runId: string): Promise<void> => {
     const link = document.createElement('a');
     link.href = url;
     link.download = `${runId}-transcript.txt`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+};
+
+/** One part of the host's health (deep review F5). */
+export interface HealthPart {
+  status: 'ok' | 'warn' | 'fail' | 'unknown';
+  said: string;
+  [detail: string]: unknown;
+}
+
+export interface WaitingRun { run_id: string; name: string; since: string; minutes: number; position: number }
+
+/** The host at a glance: disk, database, runs, model server, backup, version (F5). Operators only. */
+export interface OperatorHealth {
+  status: HealthPart['status'];
+  checked_at: string;
+  version: string;
+  disk: HealthPart;
+  database: HealthPart;
+  runs: HealthPart & { running?: string[]; waiting?: WaitingRun[]; limit?: number | null; broker_queue?: number | null };
+  model: HealthPart;
+  backup: HealthPart;
+}
+
+export const getOperatorHealth = async (): Promise<OperatorHealth> => {
+  const response = await api.get<OperatorHealth>('/health/operator');
+  return response.data;
+};
+
+/** The run doctor's account of a run (deep review F1): read-only, from its records. */
+export interface RunDoctorReport {
+  status: string;
+  current_stage: string;
+  last_record_minutes_ago: number | null;
+  stage_order: string[];
+  stage_switches: number;
+  stages: { stage: string; wall_seconds: number; model_calls: number; tool_failures: number; share: number }[];
+  defects: {
+    raised: number; fixed: number; left_open: number; reverted: number; closed: number; deferred: number;
+    repeated: { id: string; rounds: number; ending: string; description: string; first_stage: string }[];
+  };
+  resource_refusals: number;
+  model_errors: number;
+  restarts: number;
+  rewinds: number;
+  suggestions: { action: string; said: string; stage?: string }[];
+}
+
+export const getRunDoctor = async (runId: string): Promise<RunDoctorReport> => {
+  const response = await api.get<RunDoctorReport>(`/runs/${runId}/doctor`);
+  return response.data;
+};
+
+/** The run's transcript, doctor's account and record as one zip, secrets replaced (F1). Only when asked for. */
+export const downloadDiagnosticBundle = async (runId: string): Promise<void> => {
+  const response = await api.get(`/runs/${runId}/diagnostic-bundle`, { responseType: 'blob' });
+  const url = URL.createObjectURL(response.data as Blob);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${runId}-diagnostics.zip`;
     document.body.appendChild(link);
     link.click();
     link.remove();

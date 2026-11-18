@@ -443,6 +443,46 @@ export const downloadTranscript = async (runId: string): Promise<void> => {
   }
 };
 
+/** The run doctor's account of a run (deep review F1): read-only, from its records. */
+export interface RunDoctorReport {
+  status: string;
+  current_stage: string;
+  last_record_minutes_ago: number | null;
+  stage_order: string[];
+  stage_switches: number;
+  stages: { stage: string; wall_seconds: number; model_calls: number; tool_failures: number; share: number }[];
+  defects: {
+    raised: number; fixed: number; left_open: number; reverted: number; closed: number; deferred: number;
+    repeated: { id: string; rounds: number; ending: string; description: string; first_stage: string }[];
+  };
+  resource_refusals: number;
+  model_errors: number;
+  restarts: number;
+  rewinds: number;
+  suggestions: { action: string; said: string; stage?: string }[];
+}
+
+export const getRunDoctor = async (runId: string): Promise<RunDoctorReport> => {
+  const response = await api.get<RunDoctorReport>(`/runs/${runId}/doctor`);
+  return response.data;
+};
+
+/** The run's transcript, doctor's account and record as one zip, secrets replaced (F1). Only when asked for. */
+export const downloadDiagnosticBundle = async (runId: string): Promise<void> => {
+  const response = await api.get(`/runs/${runId}/diagnostic-bundle`, { responseType: 'blob' });
+  const url = URL.createObjectURL(response.data as Blob);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${runId}-diagnostics.zip`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+};
+
 export const downloadArtifact = async (runId: string, path: string): Promise<void> => {
   const response = await api.get(`/runs/${runId}/artifacts/download`, {
     params: { path },

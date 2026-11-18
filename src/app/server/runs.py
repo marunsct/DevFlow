@@ -57,6 +57,7 @@ from app.server.models import (
     RunUsage,
     EventPage,
     BriefPreview,
+    StackSupport,
     BriefPreviewRequest,
     OwnerRating,
     OwnerRatingRequest,
@@ -396,9 +397,15 @@ def create_runs_router(
 
         from app.acceptance.ambiguity import criteria_without_an_interface_line, vague_phrases
 
+        from app.stacks import support_matrix
+
         listed = len(from_brief(body.brief)) >= 2
         found = number(body.brief) if listed else []
+        # Before the run starts: a stack or a model the scored runs do not support is said now (deep review F1).
+        _, tier = await asyncio.to_thread(support_matrix.the_model_and_its_tier)
+        support = support_matrix.for_the_brief(body.brief, tier)
         return BriefPreview(
+            stack_support=StackSupport(**support) if support else None,
             criteria=[PreviewCriterion(id=c.id, text=c.text) for c in found], from_brief=listed,
             # How much the run would guess, seen before it starts (plan IN.2).
             without_an_interface_line=criteria_without_an_interface_line(body.brief, found),
@@ -864,6 +871,46 @@ def create_runs_router(
         _require_run(runner, run_id, user)
         entries = await asyncio.to_thread(read_transcript, run_id)
         return {"run": run_id, **kpis(entries)}
+
+    def _doctor(record: Any, entries: list[dict]) -> dict[str, Any]:
+        from app.observability.run_doctor import diagnose
+
+        return diagnose(entries, status=str(record.status or ""), current_stage=str(record.current_stage or ""),
+                        error=str(record.error or ""))
+
+    @runs.get("/{run_id}/doctor")
+    async def get_run_doctor(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """The run doctor (deep review F1): stage order and time, defects, reverts, refusals, and the next actions.
+
+        Read-only, from the run's transcript and record; no model call."""
+        from app.observability.transcript import read_transcript
+
+        record = _require_run(runner, run_id, user)
+        entries = await asyncio.to_thread(read_transcript, run_id)
+        return {"run_id": run_id, **_doctor(record, entries)}
+
+    @runs.get("/{run_id}/diagnostic-bundle")
+    async def download_diagnostic_bundle(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> Response:
+        """The run's transcript, doctor's account and record as one zip, secrets replaced (deep review F1)."""
+        from app.observability import diagnostic_bundle
+        from app.observability.transcript import read_transcript, render_transcript
+
+        record = _require_run(runner, run_id, user)
+        entries = await asyncio.to_thread(read_transcript, run_id)
+        text = await asyncio.to_thread(render_transcript, run_id)
+        content = await asyncio.to_thread(
+            diagnostic_bundle.build, run_id, text, _doctor(record, entries), diagnostic_bundle.the_record(record))
+        record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.diagnostic_bundle.download",
+                     subject=run_id, detail={})
+        return Response(
+            content=content,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{run_id}-diagnostics.zip"'},
+        )
 
     @runs.get("/{run_id}/transcript")
     async def download_transcript(

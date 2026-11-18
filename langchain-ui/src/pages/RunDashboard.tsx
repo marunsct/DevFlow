@@ -36,6 +36,7 @@ import {
 import { LogViewer } from '../components/LogViewer';
 import { LatestChange } from '../components/LatestChange';
 import { AuditTable } from '../components/AuditTable';
+import { RunDoctor } from '../components/RunDoctor';
 import { ModelPressure } from '../components/ModelPressure';
 import { ModelPinSwitch } from '../components/ModelPinSwitch';
 import { RunNameField } from '../components/RunNameField';
@@ -139,6 +140,8 @@ export const RunDashboard: React.FC = () => {
   }, [run?.status, run?.run_id]);
   // F4a: a run that did not finish still hands over its best attempt, said with what it passed.
   const [bestAttempt, setBestAttempt] = useState<ProductSummary | null>(null);
+  // The run doctor reads the whole transcript: in the guided view, only once it is opened.
+  const [doctorOpen, setDoctorOpen] = useState(false);
   const unfinished = run?.status === 'failed' || run?.status === 'cancelled';
   useEffect(() => {
     if (!unfinished || !runId) { setBestAttempt(null); return; }
@@ -153,9 +156,9 @@ export const RunDashboard: React.FC = () => {
   // Kept in the address, so a link or a reload opens the same view and change.
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get('view');
-  type CentreTab = 'activity' | 'results' | 'log' | 'changes' | 'audit';
+  type CentreTab = 'activity' | 'results' | 'log' | 'changes' | 'audit' | 'doctor';
   const centreTab: CentreTab =
-    viewParam === 'log' || viewParam === 'changes' || viewParam === 'results' || viewParam === 'audit' ? viewParam : 'activity';
+    viewParam === 'log' || viewParam === 'changes' || viewParam === 'results' || viewParam === 'audit' || viewParam === 'doctor' ? viewParam : 'activity';
   const selectedChange = searchParams.get('change');
   const setCentreTab = (tab: CentreTab) => {
     const next = new URLSearchParams(searchParams);
@@ -947,6 +950,10 @@ export const RunDashboard: React.FC = () => {
           <DeliveryPanel runId={runId!} refreshKey={stageKey} />
           {run?.status === 'completed' && <OwnerRating runId={runId!} />}
           <WizardDashboard run={run} model={wizard} />
+          <details className="glass-card rounded-2xl" onToggle={(e) => setDoctorOpen((e.target as HTMLDetailsElement).open)}>
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-text-primary">Run doctor</summary>
+            {doctorOpen && <RunDoctor runId={runId!} refreshKey={stageKey} />}
+          </details>
         </>
       ) : (
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_23rem] 2xl:grid-cols-[22rem_minmax(0,1fr)_28rem] min-[2200px]:grid-cols-[26rem_minmax(0,1fr)_34rem] xl:flex-1 xl:min-h-[28rem]">
@@ -1007,6 +1014,7 @@ export const RunDashboard: React.FC = () => {
                 content: <ArtifactList artifacts={run.artifacts} runId={runId!} />,
               },
               { id: 'audit', label: 'Audit', content: <AuditTable runId={runId!} refreshKey={stageKey} /> },
+              { id: 'doctor', label: 'Doctor', content: <RunDoctor runId={runId!} refreshKey={stageKey} /> },
             ]}
           />
         </div>

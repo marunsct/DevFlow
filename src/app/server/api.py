@@ -287,6 +287,17 @@ def create_app(
             reason = None
         return {"ready": reason is None, "reason": reason or ""}
 
+    @application.get("/api/support-matrix", tags=["health"])
+    async def support_matrix_table(_: Any = Depends(get_current_active_user)) -> dict[str, Any]:
+        """Each stack pack by model tier: supported or experimental, with the scored-run evidence (deep review F1)."""
+        from starlette.concurrency import run_in_threadpool
+
+        from app.stacks import support_matrix
+
+        model, tier = await run_in_threadpool(support_matrix.the_model_and_its_tier)
+        return {"as_of": support_matrix.EVIDENCE_AS_OF, "tiers": list(support_matrix.TIERS), "model": model,
+                "model_tier": tier, "rows": support_matrix.matrix()}
+
     @application.get("/api/health/models", tags=["health"])
     async def health_models(_: Any = Depends(require_admin)) -> dict[str, Any]:
         """Provider health. Admin-only: it triggers billable model calls."""

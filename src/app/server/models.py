@@ -331,9 +331,22 @@ class PreviewCriterion(BaseModel):
     text: str = Field(description="The behaviour, in the brief's own words.")
 
 
+class StackSupport(BaseModel):
+    """Whether the stack a brief asks for, on the configured model, is supported or experimental (deep review F1)."""
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = Field(description="`supported` or `experimental`.")
+    languages: list[str] = Field(default_factory=list, description="The languages the brief's constraints name.")
+    said: str = Field(description="What it means, for the person about to start the run.")
+
+
 class BriefPreview(BaseModel):
     """The acceptance criteria a brief gives a run, read without a model call (plan BG.10)."""
     model_config = ConfigDict(extra="forbid")
+
+    stack_support: StackSupport | None = Field(
+        default=None, description="Set when the brief's stack or the model's tier is experimental here (F1).",
+    )
 
     criteria: list[PreviewCriterion] = Field(default_factory=list, description="AC-1..n from the brief, in its order.")
     from_brief: bool = Field(

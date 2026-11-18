@@ -142,6 +142,9 @@ _NO_SUCH_VERSION = (
     ("npm", re.compile(r"No matching version found for (@?[^@\s]+)@")),
     ("pypi", re.compile(r"(?:No matching distribution found for|Could not find a version that satisfies the requirement) "
                         r"([A-Za-z0-9][A-Za-z0-9_.-]*)")),
+    # Measured on a Rust run: `rusqlite = "0.37.4"` had no such version, the note gave no registry line, and the
+    # fixer's next guess, 0.36, also failed to resolve.
+    ("crates", re.compile(r"failed to select a version for the requirement `([A-Za-z0-9_-]+) = ")),
 )
 
 

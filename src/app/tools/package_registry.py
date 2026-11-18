@@ -158,6 +158,31 @@ def _crates(name: str, fetch: Fetch) -> dict[str, Any]:
     }
 
 
+def features_of(ecosystem: str, name: str, version: str = "", *, fetch: Fetch | None = None) -> list[str] | None:
+    """The optional features a package version offers, sorted (`default` left out), or None when it cannot be read.
+
+    Crates only for now: crates.io lists a version's features. Measured on four Rust runs: a manifest asked `rusqlite`
+    for a `json` feature 0.37 does not have, cargo refused, and fixers guessed at it for rounds with no list to read.
+    """
+    if ecosystem != "crates" or not _A_NAME.match(name or ""):
+        return None
+    try:
+        if not version:
+            version = str(look_up("crates", name, fetch=fetch).get("version") or "")
+        if not version:
+            return None
+        status, body = (fetch or _fetch)(f"https://crates.io/api/v1/crates/{quote(name)}/{quote(version)}")
+        if status != 200:
+            return None
+        found = (_json(body).get("version") or {}).get("features")
+        if not isinstance(found, dict):
+            return None
+        return sorted(key for key in found if key != "default")
+    except Exception:  # noqa: BLE001 - an unreadable registry is no answer, not a crash
+        logger.info("Could not read the features of %s %s", name, version)
+        return None
+
+
 def _go(name: str, fetch: Fetch) -> dict[str, Any]:
     status, body = fetch(f"https://proxy.golang.org/{_go_escaped(name)}/@latest")
     if status != 200:

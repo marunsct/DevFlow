@@ -148,6 +148,30 @@ _NO_SUCH_VERSION = (
 )
 
 
+#: Cargo saying a dependency lacks a feature the manifest asks for: (package, the features asked).
+_NO_SUCH_FEATURE = re.compile(r"depends on `([A-Za-z0-9_-]+)`, with features: `([^`]+)` but `\1` does not have these "
+                              r"features")
+#: And the version it chose for that package: "versions that meet the requirements `^0.37` are: 0.37.0".
+_THE_VERSIONS_THAT_MEET = re.compile(r"versions that meet the requirements `[^`]*` are: ([0-9][^\s,]*)")
+
+
+def _the_features_that_exist(said: str) -> list[str]:
+    """For each package the installer says lacks a feature, the features its version has, one line each; []."""
+    from app.tools import package_registry
+
+    lines: list[str] = []
+    version = next(iter(_THE_VERSIONS_THAT_MEET.findall(said or "")), "")
+    for name, asked in dict.fromkeys(_NO_SUCH_FEATURE.findall(said or "")):
+        features = package_registry.features_of("crates", name, version)
+        if features is None:
+            continue
+        at = f" {version}" if version else ""
+        offered = ", ".join(f"`{feature}`" for feature in features[:40]) or "none"
+        lines.append(f"`{name}`{at} has no feature {', '.join(f'`{a.strip()}`' for a in asked.split(','))}; the features "
+                     f"it has are: {offered}. Ask only for one of those, or none.")
+    return lines
+
+
 def _the_versions_that_exist(said: str) -> str:
     """What the registry has for each package an installer says has no such version, or "".
 
@@ -168,6 +192,7 @@ def _the_versions_that_exist(said: str) -> str:
                 if found.get("version"):
                     lines.append(f"The registry's current release of `{name}` is {found['version']}: pin that, or a "
                                  "version the registry lists, not a version it does not have.")
+        lines.extend(_the_features_that_exist(said))
         return (". " + " ".join(lines[:4])) if lines else ""
     except Exception:  # noqa: BLE001 - the note goes without the lookup
         logger.debug("Could not look up the versions that exist", exc_info=True)

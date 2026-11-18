@@ -47,6 +47,7 @@ Written by `loop.sh measuring` from 412 scored runs in the ledger. On and off co
 | `EDGE_PROBE` | Contract probes | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `PAGE_PROBE` | Contract probes | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `WRONG_SHAPE_BODY_PROBE` | Contract probes | on | 19 | 5 | 1 | not measured: needs 0 more on and 1 more off |
+| `DRAFTING_IN_WAVES` | Drafting order | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `EQUIVALENT_MUTANTS_REMEMBERED` | Efficiency | on | 19 | no signal | 1 | not measured: needs 0 more on and 1 more off |
 | `FIX_STAGES_THAT_CLOSE_NOTHING` | Efficiency | on | 19 | 2 | 1 | not measured: needs 0 more on and 1 more off |
 | `HARNESS_FINDINGS_RECHECKED` | Efficiency | on | 19 | no signal | 1 | not measured: needs 0 more on and 1 more off |

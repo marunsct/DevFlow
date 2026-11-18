@@ -165,7 +165,7 @@ BUNDLES: dict[str, tuple[str, ...]] = {
 GROUPS: dict[str, tuple[str, ...]] = {
     # How much of a long conversation a model is sent: cost and cache, not what the run proves.
     "Context and cost": ("OBSERVATION_FOLDING", "STABLE_STAGE_PREFIX", "BATCH_ACCEPTANCE_AUTHOR",
-                         "REASONING_KEPT_AFTER_AN_ANSWER", "LEAN_TOOL_LISTS"),
+                         "REASONING_KEPT_AFTER_AN_ANSWER", "LEAN_TOOL_LISTS", "SLICED_MEMORY"),
     # Fewer calls on mutation findings: time, not what the run proves.
     "Efficiency": ("EQUIVALENT_MUTANTS_REMEMBERED", "MUTANT_CHECK_IN_THE_FIX_STAGE", "REVIEWS_WITHOUT_REASONING",
                    "HARNESS_FINDINGS_RECHECKED", "NEAR_GREEN_REPLANNED_ONCE", "STABLE_MEMORY_ORDER",
@@ -208,6 +208,7 @@ EXPERIMENTS_ON: dict[str, str] = {
     "ONE_DESIGN_REVIEW": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "SPRINT_TIME_BUDGET": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "LEAN_TOOL_LISTS": "deep review 2026-11-18 (C5): five tools never or almost never called in about 3,500 offers each over 30 runs; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "SLICED_MEMORY": "deep review 2026-11-18 (C3): fixers averaged 164k characters a request and builders 269k, most of it project memory; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
 }
 _GROUP_OF = {name: group for group, members in GROUPS.items() for name in members}
 

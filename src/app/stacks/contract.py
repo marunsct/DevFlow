@@ -228,6 +228,12 @@ def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) 
             runner = sandbox_runner(repo_root)
         for argv in commands:
             outcome = runner(argv, "install", project) or {}
+            dropped = _a_lock_file_the_installer_cannot_trust(repo_root, project, outcome)
+            if dropped:
+                # Written by the package manager again from the manifest: a lock file is the installer's record,
+                # and one it refuses on a checksum was not written by it.
+                logger.warning("The installer refused `%s` on a checksum; removed it and installed once more", dropped)
+                outcome = runner(argv, "install", project) or {}
             from app.acceptance import unmeasured
 
             not_taken = unmeasured.why(outcome)
@@ -258,6 +264,40 @@ def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) 
     except Exception:  # noqa: BLE001 - the measurement goes on as it would have
         logger.debug("Could not check the project's install", exc_info=True)
         return []
+
+
+#: An installer refusing its lock file's record of a package: cargo's checksum, npm's integrity, and the general
+#: "lock file ... corrupt / could not be parsed".
+_A_LOCK_FILE_REFUSED = re.compile(
+    r"checksum for `[^`]+` changed|returned a different checksum|unable to verify that `[^`]+` is the same|"
+    r"EINTEGRITY|integrity checksum failed|lock ?file[^\n]{0,80}(?:corrupt|could not be parsed|failed to parse|invalid)",
+    re.IGNORECASE,
+)
+
+
+def _a_lock_file_the_installer_cannot_trust(repo_root: str | Path, project: str, outcome: dict[str, Any]) -> str:
+    """The lock file removed when a failed install refused it on a checksum or as unreadable, as a relative path; "".
+
+    Measured on a Rust run: a re-planned work order said to "regenerate the Cargo.lock file", a model wrote one by hand
+    with invented checksums, and every install after it failed "unable to verify that ... is the same as when the
+    lockfile was generated" - the product never started. Removing it lets the installer write it from the manifest.
+    """
+    code = str(outcome.get("returncode", outcome.get("exit_code", "0")))
+    said = f"{outcome.get('stderr') or ''}\n{outcome.get('stdout') or ''}"
+    if code in ("0", "None", "") or not _A_LOCK_FILE_REFUSED.search(said):
+        return ""
+    from app.stacks.languages import LOCKFILES
+
+    root = Path(repo_root) / project if project else Path(repo_root)
+    for name in LOCKFILES:
+        lock = root / name
+        if lock.is_file():
+            try:
+                lock.unlink()
+            except OSError:
+                continue
+            return f"{project}/{name}" if project else name
+    return ""
 
 
 def warm_up(record: dict[str, Any] | None, runner: Any, project: str) -> None:

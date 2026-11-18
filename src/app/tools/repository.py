@@ -1161,6 +1161,24 @@ _REWRITES_THE_PLATFORM = re.compile(
 _SCRIPT_SUFFIXES = (".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx")
 
 
+def _refuse_a_hand_written_lock_file(relative_path: str) -> None:
+    """Refuse writing or editing a lock file: the package manager writes it from the manifest.
+
+    Measured on a Rust run: a re-planned work order said to regenerate `Cargo.lock`, a model wrote one by hand with
+    invented checksums, and every install after it was refused - the product never started.
+    """
+    from app.stacks.languages import LOCKFILES
+
+    name = PurePosixPath(relative_path).name
+    if name not in LOCKFILES:
+        return
+    raise RepositoryToolError(
+        f"Refusing to write '{relative_path}': a lock file is written by the package manager when it installs from "
+        "the manifest, with checksums only the registry can give. Nothing was changed. Change the manifest instead; "
+        "the next install writes this file again."
+    )
+
+
 def _refuse_rewriting_the_platform(relative_path: str, content: str, original: str = "") -> None:
     """Refuse product code that replaces a method the browser already defines.
 
@@ -5571,6 +5589,7 @@ def _write_unless_it_changes_nothing(
         # `edit_artifact` at a time. Refusing only the write would leave the
         # path that was actually used wide open.
         _refuse_a_hand_built_dom_again(relative_path, updated, target)
+        _refuse_a_hand_written_lock_file(relative_path)
         _refuse_rewriting_the_platform(relative_path, updated, original)
         _refuse_to_switch_a_suite_off(relative_path, original, updated)
         _refuse_a_test_for_another_runner(target, relative_path, updated)
@@ -6960,6 +6979,8 @@ def write_approved_artifact(
     # delimiters is not a document with a formatting problem, it is a
     # transcript that escaped.
     _refuse_control_tokens(relative_path, content)
+    # First of the content checks: a lock file is refused for what it is, not for how it was written.
+    _refuse_a_hand_written_lock_file(relative_path)
     if target.is_file():
         try:
             existing = target.read_text(encoding="utf-8")

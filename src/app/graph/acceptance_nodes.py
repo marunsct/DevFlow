@@ -453,7 +453,7 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
     custom_setup.record_the_setup_s_scope(Path(ctx.repo_root), project, layer_files)
     agent = create_specialist_agent(
         "testing", model=ctx.model, checkpointer=ctx.checkpointer,
-        repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
+        repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories, setting_up_the_stack=True,
     )
     update = _run_gated_agent(
         state, config,

@@ -1403,6 +1403,7 @@ def create_specialist_agent(
     repo_root: str | Path | None = None,
         allow_subdirectories: bool = True,
     writing_the_suite: bool = False,
+    setting_up_the_stack: bool = False,
 ) -> Any:
     """Create one specialist role worker.
 
@@ -1410,6 +1411,9 @@ def create_specialist_agent(
     actually execute an allowlisted test command instead of only describing
     what should be tested; every other specialist gets the same narrow
     read/write tools as any other role agent.
+
+    `setting_up_the_stack`: the setup of a stack no pack covers, whose request
+    asks for `use_runtime`; it keeps that tool when tool lists are lean.
     """
     resolved_repo_root = str(repo_root) if repo_root is not None else str(default_repo_root())
 
@@ -1463,6 +1467,7 @@ def create_specialist_agent(
         checkpointer=checkpointer,
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         extra_tools=extra_tools,
+        kept_tools=("use_runtime",) if setting_up_the_stack else (),
     )
 
 

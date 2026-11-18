@@ -89,6 +89,7 @@ SWITCHES: dict[str, str] = {
     "CO_DEFECT_FAILURES_IN_REWRITES": "app.graph.co_defect_failures",
     "REPEATED_REWRITE_PROMPT_STOP": "app.graph.repeated_rewrite_prompts",
     "STABLE_STAGE_PREFIX": "app.agents.stable_prefix:stable_stage_prefix_switch",
+    "LEAN_TOOL_LISTS": "app.agents.stage_tools:lean_tool_lists_switch",
     "REASONING_KEPT_AFTER_AN_ANSWER": "app.models.reasoning_kept:reasoning_kept_switch",
     "NAMED_TEST_REWRITE": "app.graph.rewritten_tests:named_test_rewrite_switch",
     "TESTS_ONLY_WRITES": "app.tools.tests_only_writes",

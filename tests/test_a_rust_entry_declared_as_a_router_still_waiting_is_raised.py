@@ -40,3 +40,28 @@ def test_a_changed_declaration_is_raised_against_its_own_file(tmp_path, monkeypa
     if raised:
         assert found[0].affected_files == ["notes-api/src/lib.rs"] and "`pub fn app() -> Router`" in found[0].description
         assert entry_exports.still_raised(str(tmp_path), found[0].description) is True
+
+
+def test_the_callers_that_pass_arguments_are_named_with_the_declaration(tmp_path, monkeypatch):
+    """Measured on one run: `app` took the store, `main.rs` called `app(Arc::new(store))`, and the defect named only
+    `lib.rs`. Each fix restored `pub fn app() -> Router` there alone, `main.rs` no longer compiled, the product did not
+    start, and three fixes were reverted for it."""
+    state = _a_rust_project(tmp_path, monkeypatch,
+                            "pub fn app(store: Arc<dyn Store>) -> Router {\n    Router::new().with_state(store)\n}\n")
+    main = tmp_path / "notes-api" / "src" / "main.rs"
+    main.write_text("use notes_api::app;\n// app(x) in a comment is not a call\n"
+                    "async fn main() {\n    axum::serve(listener, app(Arc::new(store))).await.unwrap();\n}\n")
+
+    found = [d for d in acceptance_nodes.pack_contract_defects(state) if entry_exports.NO_LONGER_DECLARES in d.description]
+
+    assert found[0].affected_files == ["notes-api/src/lib.rs", "notes-api/src/main.rs"]
+    assert "app(Arc::new(store))" in found[0].expected_behavior
+    assert entry_exports.still_raised(str(tmp_path), found[0].description) is True
+
+
+def test_a_caller_using_the_declaration_as_it_is_is_not_named(tmp_path, monkeypatch):
+    state = _a_rust_project(tmp_path, monkeypatch, "pub fn app(store: Store) -> Router {\n    Router::new()\n}\n")
+
+    found = [d for d in acceptance_nodes.pack_contract_defects(state) if entry_exports.NO_LONGER_DECLARES in d.description]
+
+    assert found[0].affected_files == ["notes-api/src/lib.rs"]

@@ -140,6 +140,49 @@ def what_the_entry_no_longer_declares(repo_root: str | Path) -> list[tuple[str, 
         return []
 
 
+#: Folders a project's callers are never in: build output, installed packages, the harness's own.
+_NOT_SOURCE = frozenset({".git", ".harness", ".agent-home", "node_modules", "target", "vendor", "dist", "build",
+                         "bin", "obj", "__pycache__", ".venv", "venv"})
+#: The most files read looking for callers: a project the size the harness builds has far fewer.
+_MOST_FILES = 2000
+
+
+def callers_passing_arguments(repo_root: str | Path, path: str, written: str) -> list[tuple[str, str]]:
+    """(file relative to the workspace, line) for each call that passes arguments to a declaration kept with none.
+
+    Measured on one run: `app` was changed to take the store and `main.rs` called `app(Arc::new(store))`; the defect
+    named only the declaring file, so each fix restored the declaration there alone, the caller no longer compiled,
+    the product did not start, and three fixes were reverted. [] when the declaration takes parameters. Never raises.
+    """
+    try:
+        named = re.search(r"(\w+)\s*\(\s*\)", written)
+        if named is None:
+            return []
+        name = named.group(1)
+        call = re.compile(rf"(?<![\w])(?<!fn )(?<!def )(?<!function ){re.escape(name)}\s*\(\s*(?!\))\S")
+        root = Path(repo_root)
+        declaring = (root / path).resolve()
+        suffix = Path(path).suffix
+        found: list[tuple[str, str]] = []
+        seen = 0
+        for candidate in sorted(root.rglob(f"*{suffix}")) if suffix else []:
+            relative = candidate.relative_to(root)
+            if _NOT_SOURCE & set(relative.parts[:-1]) or not candidate.is_file() or candidate.resolve() == declaring:
+                continue
+            seen += 1
+            if seen > _MOST_FILES:
+                break
+            for line in candidate.read_text(encoding="utf-8", errors="replace").splitlines():
+                code = line.strip()
+                if code.startswith(("//", "#", "*", "/*", "--")) or not call.search(code):
+                    continue
+                found.append((relative.as_posix(), code[:160]))
+                break
+        return found
+    except Exception:  # noqa: BLE001 - a search that cannot run names no one
+        return []
+
+
 #: How a defect about a changed declaration begins, after its file: what `still_raised` reads back.
 NO_LONGER_DECLARES = " no longer declares `"
 

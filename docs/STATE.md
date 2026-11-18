@@ -52,9 +52,10 @@ Generated above. Today (hidden, quality, verdict):
   probe (a false red, LF.1116). Root cause of both that and the edge probe's 22 skipped checks: the sign-up body was
   written `{"username": <string>, ...}` after `— request body:` and never read, so no probe signed in (LF.1117).
 - Haiku arm: H notes-api-rust hybrid-haiku 1 run-160e0f62-7720-49e1-a831-50f5453e7484 (:1234 build, Haiku judgement,
-  01:25): second sprint attempt at 02:40, the local fixer keeps dropping `pub fn app() -> Router`; $0.63 hosted.
+  01:25): sprint 1 attempts 1-4 lost to one defect - the fix restored `pub fn app() -> Router` in `lib.rs` only while
+  `main.rs` called `app(Arc::new(store))`, so each fix stopped the build and was reverted (LF.1118); <$1 hosted.
 - M web-todo container 1 run-3cc0ed29-ac73-423d-bb47-ee30e36953e7 (:8888, 02:37, on 2286518d).
-- LF.1116 and LF.1117 committed, not deployed: neither live run has a sign-in; they deploy at the next boundary.
+- LF.1116-1118 shipped live ~03:05 JST (LF.1118 changes the Haiku run's outcome): both live runs are mixed_versions.
 - **Deployed 20:09 JST: 532dba3 (waves 1 and 2, LF.1073-1105).** Live on it: M notes-api-rust container 7
   run-cbf36159-b68e-4405-9440-db9797ce1aad (:1234) and M notes-api-php container 3
   run-c5d6a8a5-6f88-4247-adcf-52c0a8aaad0c (:8888), both 20:09.

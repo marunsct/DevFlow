@@ -1543,6 +1543,9 @@ def pack_contract_defects(state: Any) -> list[Any]:
         return []
     defects = []
     for path, written in changed:
+        callers = entry_exports.callers_passing_arguments(root, path, written)
+        calls = ("; ".join(f"{where} calls `{line}`" for where, line in callers) + ". Change those calls in the same "
+                 f"fix to match `{written}`, or the product stops compiling and the fix is reverted.") if callers else ""
         defects.append(ReportedDefect(
             description=f"{path}{entry_exports.NO_LONGER_DECLARES}{written}`, the declaration the scaffold's build, start "
                         "file and tests rely on.",
@@ -1550,9 +1553,9 @@ def pack_contract_defects(state: Any) -> list[Any]:
             reproduction_steps=f"Read {path}: its declaration differs from `{written}`.",
             expected_behavior=(f"{path} declares exactly `{written}`, as the scaffold wrote it; change what it does "
                                "inside, not how it is declared. The compiler reports this where the name is used, "
-                               "not here."),
+                               "not here." + (f" {calls}" if calls else "")),
             actual_behavior=f"{path} does not declare `{written}`.",
-            affected_files=[path],
+            affected_files=[path, *(where for where, _ in callers)],
             owner=_owner_for(state, ""),
         ))
     for path, name, needed in called_bare:

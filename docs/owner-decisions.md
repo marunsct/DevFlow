@@ -12,6 +12,19 @@ Status words:
 - **Owner action**: only the owner can do it. The harness never changes the owner's models, machine or accounts.
 - **Waiting**: blocked on something named.
 
+## 2026-11-18 (owner, about 16:25 JST: "implement all the improvement plans as per the recent review findings")
+Context: [Harness Deep Review 2026-11-18](https://claude.ai/artifact/9nhWdxAtiiatDkDiLR5Wwx), its plan (Phases 0-3) and
+its six decisions. Read as approving the plan and decisions 1, 2, 3 and 5; 4 and 6 spend money or are owner actions.
+
+| # | Decision | Status | Trigger / where it lives |
+|---|---|---|---|
+| 1 | Pause the language sweep and the release-candidate count; work the review's Phases 1 and 2 instead. | Applied | Resumes when Phase 1 items 1.7 and 1.8 (language rows, golden examples) are built. |
+| 2 | Frozen-version measuring: no deploys into a live run except for a bug that changes its outcome; fixes ship at run boundaries in bundles. Supersedes the 2026-11-05 "deploy each verified fix at once" rule. | Applied | `AGENTS.md` mid-run deploy rule narrowed to outcome-changing bugs. |
+| 3 | Roles are removed or merged only after a measured ablation shows no score change, one at a time. Owner features (role injection, parallel/linear toggle, sprint summary, work orders, templates, Sprint Record) are not touched. | Applied | Review item 2.8. |
+| 4 | One small hosted-model test (architect contract and stuck-defect escalation on a stronger model). | **Waiting on the owner**: needs an explicit yes, provider and budget (as LR.44). The routing is built; no hosted call is made. | Owner's go. |
+| 5 | "Launch" means a private, self-hosted, single-tenant beta for 5-10 invited users on a supported matrix (Python and JavaScript small services; other stacks experimental), with the time budget stated. | Applied | Review item 3.7 (supported matrix at intake). |
+| 6 | Move the operator login out of tracked `docs/HANDOVER.md` and rotate it before any outside user. | **Owner action** for the rotation; the move is done with it. | Before the first outside user. |
+
 ## 2026-11-17 (owner, about 10:00 JST: build the rest in parallel, behind switches, measured on the runs already made)
 "complete the partly done and pending items in parallel ... can we use past run as without measurement so that we dont
 waste time on running it again, do the development behind switch do the measured runs if find any drastic changes we can

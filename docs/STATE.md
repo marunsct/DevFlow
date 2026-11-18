@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-18 13:47 JST (written by `loop.sh state`). Harness 90e875d8 committed; 90e875d8 deployed.
-**Live, and stopped in the last day:** run-1e04154a failed at failed; run-db139a37 failed at failed; run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0; run-844673cd failed at failed; run-9f8188cb failed at failed
-**Last scored:** run-1e04154a notes-api-rust 0/9 (failed, handoff 0.429; scored 11-18 13:47 JST); run-4886c02b notes-api-go 9/9 (completed, mixed, 47 active min, handoff 1.0; scored 11-18 13:45 JST); run-14e254a1 notes-api-java 9/9 (completed, mixed, 234 active min, handoff 1.0; scored 11-18 12:25 JST).
+**As of:** 11-18 16:15 JST (written by `loop.sh state`). Harness 0e092255 committed; 0e092255 deployed.
+**Live, and stopped in the last day:** run-e8053d6e running at defect_fix_2_6; run-8f1478a7 running at defect_fix_2_12; run-1e04154a failed at failed; run-db139a37 failed at failed; run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0
+**Last scored:** run-260f3fc5 tasks-api 10/10 (completed, 210 active min, handoff 1.0; scored 11-18 16:15 JST); run-1e04154a notes-api-rust 0/9 (failed, mixed, 137 active min, handoff 0.429; scored 11-18 13:47 JST); run-4886c02b notes-api-go 9/9 (completed, mixed, 47 active min, handoff 1.0; scored 11-18 13:45 JST).
 <!-- /state:generated -->
 
 ## Live now

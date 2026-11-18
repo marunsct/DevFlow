@@ -60,7 +60,7 @@ def test_an_id_that_is_not_one_of_yours_is_never_a_server_error(api):
     who = sign_up_and_in(api)
     assert api.patch("/items/999999", json={"done": True}, headers=who).status_code == 404
     assert api.delete("/items/999999", headers=who).status_code == 404
-    assert api.delete("/items/not-a-number", headers=who).status_code in (404, 422)
+    assert _status_ok_or_refused(api.delete("/items/not-a-number", headers=who).status_code)
 
 
 def test_a_long_title_is_kept_whole_or_refused_never_a_server_error(api):

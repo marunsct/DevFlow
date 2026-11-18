@@ -1979,7 +1979,8 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             reproduction_steps=f"Run `{command}`: every failing test's request is answered {code}.",
             expected_behavior="Each route answers as the interface says for a well-formed request.",
             actual_behavior=f"Every such call answers {code}. Find the one place the failing routes share that answers "
-                            f"{code}, and fix it there; each criterion's own failures are measured again after.",
+                            f"{code}, and fix it there; each criterion's own failures are measured again after."
+                            + _what_one_of_them_said(state, code),
             affected_files=[],
             owner=_owner_for(state, f"refused {code}"),
         ))
@@ -2190,6 +2191,26 @@ def _the_wrong_answer(message: str) -> str:
     if (m := _EXPECTED_RECEIVED.search(message)) and m.group(1) != m.group(2):
         return m.group(2)
     return ""
+
+
+def _what_one_of_them_said(state: Any, code: str) -> str:
+    """For a server error behind every route, what one such request is answered, asked once by the contract's probe; "".
+
+    The suite's failures name the status only. Measured on a Rust run: every route answered 500 "Missing request
+    extension: Extension of type `AppState` was not found" - the cause, in the product's own words - and three sprint
+    attempts were shown only "Expected: 201, Received: 500". Never raises.
+    """
+    if not str(code).startswith("5"):
+        return ""
+    try:
+        from app.acceptance import interface_contract
+
+        root = _root(state)
+        interface_contract.server_errors(root)
+        said = interface_contract.what_a_server_error_said(root)
+        return f" One such request, sent again by the harness: {said[:400]}" if said else ""
+    except Exception:  # noqa: BLE001 - the defect as it was
+        return ""
 
 
 def one_refusal_for_all(failing: list[dict]) -> tuple[str, int] | None:

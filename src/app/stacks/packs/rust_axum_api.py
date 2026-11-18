@@ -125,6 +125,10 @@ AXUM_KNOWN_ERRORS = {
         "already given it away: build it again with `app()` for each request (or send the first through "
         "`.clone()`)."
     ) for phrase in ("use of moved value: `app`", "use of moved value: `router`")},
+    "Missing request extension": (
+        "a handler takes `Extension<AppState>` while `app()` applies the state with `.with_state(state)`: those are two "
+        "mechanisms. Take `State(state): State<AppState>` in every handler (or add `.layer(Extension(state))`, not both)."
+    ),
     "is private: private module": (
         "a test under `tests/` sees only what the crate makes public: declare the module in `src/lib.rs` with "
         "`pub mod <name>;`, not `mod <name>;`."

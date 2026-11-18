@@ -38,7 +38,7 @@ def test_the_playwright_spec_sends_each_shape_as_the_bytes_it_names():
     assert f"Buffer.from({ic._js(ic.A_BODY_NOTHING_CAN_PARSE)})" not in spec  # the bad-body probe's bytes, not these
     titles = re.findall(r'test\("(.*?)", async', spec)
     assert [t.split(":")[0] for t in titles] == ["[AC-1] contract 1", "[AC-1] contract 2", "[AC-2] contract 3", "[AC-2] contract 4"]
-    assert "expect(answer.status()).toBeLessThan(500);" in spec
+    assert "expect(answer.status(), said).toBeLessThan(500);" in spec
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="no node to read the spec")

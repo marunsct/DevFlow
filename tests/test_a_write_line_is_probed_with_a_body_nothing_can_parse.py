@@ -161,7 +161,7 @@ def test_the_compiled_probe_sends_unparsable_json_and_reads_only_status():
     assert spec.count("headers: { 'content-type': 'application/json' }") == 2
     # Sent as bytes: Playwright JSON-encodes a string, which made the probe send a valid JSON string (LF.993).
     assert 'data: Buffer.from("{\\"unparsable\\": ")' in spec
-    assert spec.count("expect(answer.status()).toBeLessThan(500)") == 2
+    assert spec.count("expect(answer.status(), said).toBeLessThan(500)") == 2
     assert spec.count("test.skip([401, 403].includes(answer.status())") == 2
     # The PUT reaches the record the POST made; the POST itself makes none.
     assert spec.count("method: 'POST', data, failOnStatusCode: false") == 1

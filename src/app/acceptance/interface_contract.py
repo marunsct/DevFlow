@@ -460,6 +460,14 @@ def _js(text: str) -> str:
     return json.dumps(text)
 
 
+#: What a failed check says the product answered: the start of its body, as the runner prints the expectation's message.
+#: Measured on a Rust run: every route answered 500 with "Missing request extension: Extension of type `AppState` was not
+#: found", the suite's failures showed only the status, and three sprint attempts never saw the cause.
+IT_SAID = "It said: "
+_IT_SAID = re.compile(re.escape(IT_SAID) + r"([^\n]{1,300})")
+_WHAT_IT_SAID_JS = ("  const said = " + json.dumps(IT_SAID) + " + (await answer.text()).slice(0, 300).replace(/\\s+/g, ' ');\n")
+
+
 def playwright_checks(checks: list[Check], bodies: list[Any] | None = None) -> str:
     """A Playwright spec with one test per HTTP or page check; signed in as `pytest_checks` says."""
     tests = []
@@ -472,8 +480,9 @@ def playwright_checks(checks: list[Check], bodies: list[Any] | None = None) -> s
             tests.append(
                 f"test({title}, async ({{ request }}) => {{\n"
                 f"  const answer = await request.fetch({_js(check.path)}, {{ method: {_js(check.method)}, {signed}failOnStatusCode: false }});\n"
-                + (f"  expect(answer.status()).toBe({_allowed(check)[0]});\n" if len(_allowed(check)) == 1
-                   else f"  expect({_js(list(_allowed(check)))}).toContain(answer.status());\n")
+                + _WHAT_IT_SAID_JS
+                + (f"  expect(answer.status(), said).toBe({_allowed(check)[0]});\n" if len(_allowed(check)) == 1
+                   else f"  expect({_js(list(_allowed(check)))}, said).toContain(answer.status());\n")
                 + "});\n"
             )
         elif check.kind == "page":
@@ -556,7 +565,8 @@ def _a_bad_body_test(title: str, check: Check) -> str:
         # string while its defect said the body could not be parsed (measured on two runs).
         f"data: Buffer.from({_js(A_BODY_NOTHING_CAN_PARSE)}), failOnStatusCode: false }});\n"
         f"  test.skip([401, 403].includes(answer.status()), {_js(SIGN_IN_ANSWERED_FIRST)});\n"
-        "  expect(answer.status()).toBeLessThan(500);\n"
+        + _WHAT_IT_SAID_JS
+        + "  expect(answer.status(), said).toBeLessThan(500);\n"
         "});\n"
     )
 
@@ -635,8 +645,8 @@ def _an_emptied_field_test(title: str, check: Check, bodies: list[Any]) -> str:
              + f"  test.skip([401, 403].includes(plain.status()), {_js(SIGN_IN_ANSWERED_FIRST)});\n"
              + f"  test.skip(plain.status() >= 400, {_js(NOT_THIS_WRITE_S_BODY)});\n")
     return asked.replace(line, first + line, 1).replace(
-        "  expect(answer.status()).toBeLessThan(500);\n",
-        "  expect(answer.status()).toBeGreaterThanOrEqual(400);\n  expect(answer.status()).toBeLessThan(500);\n",
+        "  expect(answer.status(), said).toBeLessThan(500);\n",
+        "  expect(answer.status(), said).toBeGreaterThanOrEqual(400);\n  expect(answer.status(), said).toBeLessThan(500);\n",
     )
 
 
@@ -866,13 +876,14 @@ def test_contract(case, base_url):
             pytest.skip(%r)
         if plain >= 400:
             pytest.skip(%r)
-    status, _ = _call(base_url, case["method"], path, case["send"], extra)
+    status, raw = _call(base_url, case["method"], path, case["send"], extra)
+    said = " It said: " + " ".join((raw or b"").decode("utf-8", "replace")[:300].split())
     if case["rule"] == "allowed":
-        assert status in case["allowed"], f"Received: {status}"
+        assert status in case["allowed"], f"Received: {status}." + said
         return
     if status in (401, 403):
         pytest.skip(%r)
-    assert status < 500, f"Received: {status}"
+    assert status < 500, f"Received: {status}." + said
     if case["rule"] == "refused":
         assert status >= 400, f"Received: {status}"
 '''
@@ -1094,6 +1105,15 @@ _CHECK_NUMBER = re.compile(r"\bcontract (\d+):")
 SERVER_FAILED = "The server fails on a request it should answer or refuse:"
 
 
+#: What the last server-error probe of each workspace heard from one 5xx, read by `what_a_server_error_said`.
+_SAID: dict[str, str] = {}
+
+
+def what_a_server_error_said(repo_root: str | Path) -> str:
+    """The route and the start of the body of one 5xx the last server-error probe of this workspace got; "" for none."""
+    return _SAID.get(str(Path(repo_root)), "")
+
+
 def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Check, int]] | None:
     """Each HTTP line of the locked contract a bare request makes the product answer with a 5xx, with that status.
 
@@ -1140,10 +1160,14 @@ def server_errors(repo_root: str | Path, *, runner: Any = None) -> list[tuple[Ch
         if report is None or not report.found:
             return None
         errors: list[tuple[Check, int]] = []
+        _SAID.pop(str(root), None)
         for test in report.tests:
             check, status = _the_check_of(test, asked), _a_server_error(test)
             if getattr(test, "outcome", "") == "failed" and check is not None and status:
                 errors.append((check, status))
+                said = _IT_SAID.search(str(getattr(test, "message", "") or ""))
+                if said and str(root) not in _SAID:
+                    _SAID[str(root)] = f"`{_the_call(check)}` answered {status}: {said.group(1).strip()}"
         return errors
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing
         logger.debug("Could not probe the interface contract for server errors", exc_info=True)

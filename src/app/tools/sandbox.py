@@ -5503,6 +5503,12 @@ class SandboxExecutor:
             from app.tools.install_egress import refusal
 
             ruled_out = refusal(command, Path(repo_root) / str(working_directory or "").strip().strip("/"))
+            # What it may fetch: names its registry has, none only days old (deep review 2026-11-18, E2).
+            if not ruled_out:
+                from app.tools.dependency_gate import refusal as unvetted, with_scripts_skipped
+
+                ruled_out = unvetted(command, Path(repo_root) / str(working_directory or "").strip().strip("/"), repo_root)
+                command = with_scripts_skipped(command)
         if ruled_out:
             outcome = {"error": ruled_out}
             _record_execution(

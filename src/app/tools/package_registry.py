@@ -51,7 +51,8 @@ def enabled() -> bool:
     return os.environ.get("PACKAGE_LOOKUP_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
 
 
-def _fetch(url: str) -> tuple[int, bytes]:
+def _fetch(url: str, most_bytes: int = MAX_RESPONSE_BYTES) -> tuple[int, bytes]:
+    """(status, body) of a GET; the body stops one chunk past `most_bytes`, so a longer one says it is longer."""
     import httpx
 
     with httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=True,
@@ -60,7 +61,7 @@ def _fetch(url: str) -> tuple[int, bytes]:
             body = bytearray()
             for chunk in response.iter_bytes():
                 body.extend(chunk)
-                if len(body) > MAX_RESPONSE_BYTES:
+                if len(body) > most_bytes:
                     break
             return response.status_code, bytes(body)
 
@@ -235,6 +236,9 @@ _ECOSYSTEMS: dict[str, tuple[tuple[str, ...], Callable[[str, Fetch], dict[str, A
     "nuget": (("nuget", "dotnet", ".net", "csharp", "c#"), _nuget, ("dotnet", "--version")),
 }
 
+#: The answers that mean a registry has no package of that name: the Go proxy says 410 for a module it never had.
+_NO_SUCH_PACKAGE = frozenset({404, 410})
+
 _RUNTIMES: dict[str, str] = {}
 _CACHE: dict[tuple[str, str], dict[str, Any]] = {}
 
@@ -290,7 +294,7 @@ def look_up(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> dict[st
         logger.info("Package lookup %s %s failed: %s", which, name, exc)
         return {"error": f"The {which} registry could not be read ({type(exc).__name__}); "
                          "go on with what the project already pins."}
-    if found.get("status") == 404 and name != name.lower():
+    if found.get("status") in _NO_SUCH_PACKAGE and name != name.lower():
         # Asked by the name a person writes - `Hono`, `Playwright`,
         # `TypeScript` - where the registry's is lowercase. One run's research
         # found 1 of 7 libraries in its stack this way.
@@ -299,8 +303,10 @@ def look_up(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> dict[st
             return lowered
     if "status" in found:
         status = found["status"]
-        return {"error": f"The {which} registry has no package {name!r}." if status == 404
-                else f"The {which} registry answered {status}; go on with what the project already pins."}
+        if status in _NO_SUCH_PACKAGE:
+            # `missing`: the registry's own answer that the name is not there, which the dependency gate refuses on.
+            return {"error": f"The {which} registry has no package {name!r}.", "missing": True}
+        return {"error": f"The {which} registry answered {status}; go on with what the project already pins."}
     if "error" in found:
         return found
     result = {"ecosystem": which, "package": name, **{k: v for k, v in found.items() if v not in (None, "", {}, [])}}

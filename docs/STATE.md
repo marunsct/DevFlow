@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-18 16:45 JST (written by `loop.sh state`). Harness ce51a55c committed; 0e092255 deployed (not the same).
-**Live, and stopped in the last day:** run-8f1478a7 running at acceptance_dispute; run-1e04154a failed at failed; run-db139a37 failed at failed; run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0
-**Last scored:** run-e8053d6e notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-18 16:45 JST); run-260f3fc5 tasks-api 10/10 (completed, 210 active min, handoff 1.0; scored 11-18 16:15 JST); run-1e04154a notes-api-rust 0/9 (failed, mixed, 137 active min, handoff 0.429; scored 11-18 13:47 JST).
+**As of:** 11-18 20:07 JST (written by `loop.sh state`). Harness 532dba3b committed; 0e092255 deployed (not the same).
+**Live, and stopped in the last day:** run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed; run-db139a37 failed at failed
+**Last scored:** run-1aa50e5e notes-api-rust 0/9 (failed, handoff 0.429; scored 11-18 20:07 JST); run-8f1478a7 notes-api-php 0/9 (failed, mixed, 314 active min, handoff 0.25; scored 11-18 20:05 JST); run-e8053d6e notes-api-csharp 9/9 (completed, mixed, 159 active min, handoff 1.0; scored 11-18 16:45 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -24,17 +24,17 @@ every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.
 The 10 optional switches above. Hosted-model runs (LR.44) only when the owner starts or instructs them.
 
 ## The last three runs
-Generated above. Today's container-mode runs (hidden, quality, verdict):
-- notes-api-csharp 3 run-e8053d6e-82b7-4c00-a991-282b15beb4d2 (:1234, 13:49-16:44, mixed 90e875d8..0e092255): 9/9,
-  8/8, delivered at an escalation, handoff 1.0, mutation 0.67. A false red for most of its 3 h: four sprint attempts,
-  34 defects left open, 4 reverts (3 for a start the fixers broke), 5 min lost to false memory refusals (LF.1070) -
-  the deep review's A1-A3 and B3/B4 in one run.
-- notes-api-php 2 run-8f1478a7-72fe-4881-9efa-a932afdc7176 (:8888, live): round 2 closed nothing in 110 min; five
-  reverts for a start broken by invented Slim methods; sprint re-planned at 16:38.
-- notes-api-go 2 run-4886c02b (:1234): 9/9, 8/8, delivered. notes-api-rust 5 run-1e04154a: 0/9 (router-state trap;
-  LF.1064, LF.1067, LF.1071 since).
-- Live: notes-api-rust 6 run-1aa50e5e-a142-418f-913b-dbfe5aab83cf (:1234, 16:49, frozen 0e092255) - the first run
-  with LF.1071 (no model-written axum note).
+Generated above. Today (hidden, quality, verdict):
+- notes-api-php 2 run-8f1478a7-72fe-4881-9efa-a932afdc7176 (:8888, 13:5x-19:06, mixed): 0/9, 0/8, failed on the sprint
+  time budget (296 of 246 active minutes): never started for long - invented Slim methods and a misplaced namespace,
+  7 "no longer starts" reverts. Fixes since: LF.1098 (PHPStan), LF.1095 (golden example), LF.1104 (start first).
+- notes-api-rust 6 run-1aa50e5e-a142-418f-913b-dbfe5aab83cf (:1234, 16:49-18:29, frozen 0e092255): 0/9, 0/8, failed:
+  a local `struct State` against axum's extractor, then the handler trait bound; no axum note reached a request
+  (LF.1071) but the specification planned tests on `TestClient` (LF.1096 since).
+- notes-api-csharp 3 run-e8053d6e: 9/9, 8/8, delivered at an escalation after four sprint attempts (a false red).
+- **Deployed 20:09 JST: 532dba3 (waves 1 and 2, LF.1073-1105).** Live on it: M notes-api-rust container 7
+  run-cbf36159-b68e-4405-9440-db9797ce1aad (:1234) and M notes-api-php container 3
+  run-c5d6a8a5-6f88-4247-adcf-52c0a8aaad0c (:8888), both 20:09.
 
 ## Morning report (11-18)
 Container sweep: every language delivered 9/9 hidden at least once (Go, Java, Rust, C#, PHP, Ruby, tasks-api);
@@ -44,19 +44,14 @@ LF.1036-1064 (scorer: LF.1037/1042/1043/1046/1053/1054). Owner decision pending:
 default (patch saved; off per run meanwhile). The 11-17 report is in git history.
 
 ## Next actions
-1. **Wave 1 is merged, green and pushed (LF.1073-1096, ba23885a), not deployed.** Both suites 18,365 passed;
-   `verify_packs` compiled all seven golden examples. Deploy with `BOUNDARY_WAIT=0 loop.sh deploy` once both live runs
-   have ended (frozen-version rule), then start two runs per family on the new version: notes-api-rust, notes-api-php,
-   notes-api-csharp first (the families today's runs failed or dragged on), then tasks-api and web-todo (probes,
-   verdict). Watch: `unmeasured` records, edge/page probe false reds, best-checkpoint restores, single-culprit batch
-   reverts, the dependency gate's verdicts, start probe in its container.
-2. Wave 2 building in worktrees: 1.1 typed defects + 1.4 fix journal / end by cause + 1.5 integrator gate; 1.6
-   drafting waves; D2 rewind by snapshot id + D5 `degraded()`.
-3. Wave 3: C2 typed contract, C4 harness-driven fixer, F2 change lane, D3 transition table, 2.1 medium benchmark, 2.6
-   hidden evaluator, E1b broker live trial (`BROKER_ENFORCE=0` first), 2.8 role ablation runs. Hosted test waits on
-   the owner's yes, provider and budget. `INSTALL_SCRIPTS_SKIPPED` built, off, unregistered.
-4. Live on 0e092255: PHP container run 2 (:8888, second sprint attempt), Rust container run 6 (:1234, 16:49) - score
-   both; Rust 6 is the baseline for LF.1096 (its specification planned unit tests on axum's TestClient).
+1. **Measure waves 1 and 2 on 532dba3 (frozen; no deploys into these runs):** two runs per family - Rust and PHP now,
+   then C#, tasks-api, web-todo. Per run read: hidden/quality, `unmeasured` records, `degraded` records (run doctor),
+   start-first folding, fix journal and diagnosis calls, best-checkpoint restores, single-culprit batch reverts,
+   drafting waves and their minutes, edge/page probe false reds, dependency-gate verdicts, the verdict against the
+   hidden score. A switch whose run loses a hidden test or takes 1.5x the family's active minutes goes off (M15).
+2. Wave 3: C2 typed contract, C4 harness-driven fixer, F2 change lane, D3 transition table, 2.1 medium benchmark, 2.6
+   hidden evaluator, E1b broker log-only trial, 2.8 role ablation runs. Hosted test waits on the owner's yes,
+   provider and budget. `INSTALL_SCRIPTS_SKIPPED` built, off, unregistered.
 
 ## Rules that are never optional
 `AGENTS.md`. In short: the model is the owner's (`loop.sh ready` must say ALL READY); fixes are stack-agnostic

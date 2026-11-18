@@ -45,7 +45,7 @@ def test_the_archive_says_how_to_run_it(tmp_path, monkeypatch):
 
 
 def test_the_server_offers_it(client):
-    for path in ("/api/runs/run-none/product", "/api/runs/run-none/how-to-run"):
+    for path in ("/api/runs/run-none/product", "/api/runs/run-none/how-to-run", "/api/runs/run-none/product/summary"):
         answer = client.get(path)
         # The run is unknown, so the route answers for the run - not "Not Found" for a path it does not have.
         assert answer.status_code == 404 and "Run run-none not found" in answer.json().get("detail", ""), path

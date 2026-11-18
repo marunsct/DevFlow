@@ -62,6 +62,30 @@ describe('starting a build', () => {
     expect(payload.source).toEqual({ type: 'archive', upload_id: 'app_1a2b3c4d.zip' });
   });
 
+  // Deep review 2026-11-18, F4a: the API took a Git source with a token, the form sent only archives and runs.
+  it('starts a run from a Git repository with its branch and token as the source', async () => {
+    show();
+    await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a note');
+    await userEvent.type(screen.getByLabelText(/Or clone a Git repository/), 'https://example.com/team/app.git');
+    await userEvent.type(screen.getByLabelText(/Branch or tag/), 'release');
+    await userEvent.type(screen.getByLabelText(/Access token/), 'secret-123');
+    await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
+    await waitFor(() => expect(mocks.startRun).toHaveBeenCalled());
+    const payload = (mocks.startRun.mock.calls.at(-1) as unknown as [string, Record<string, any>])[1];
+    expect(payload.source).toEqual({ type: 'git', url: 'https://example.com/team/app.git', ref: 'release', token: 'secret-123' });
+    expect(mocks.uploadCodebase).not.toHaveBeenCalled();
+  });
+
+  it('refuses to start from both an archive and a Git repository', async () => {
+    const { container } = show();
+    await userEvent.type(screen.getByLabelText(/Write the brief/), '## Features\n- Add a note');
+    await userEvent.upload(container.querySelector('#codebase-upload') as HTMLInputElement, new File(['zip'], 'app.zip', { type: 'application/zip' }));
+    await userEvent.type(screen.getByLabelText(/Or clone a Git repository/), 'https://example.com/team/app.git');
+    await userEvent.click(screen.getByRole('button', { name: /Start Workflow Run/ }));
+    expect(await screen.findByText(/not both/)).toBeTruthy();
+    expect(mocks.createRun).not.toHaveBeenCalled();
+  });
+
   it('deletes the run it created when the run cannot start', async () => {
     mocks.startRun.mockRejectedValueOnce(new Error('the worker is down'));
     show();

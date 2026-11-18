@@ -1022,17 +1022,32 @@ def create_runs_router(
     ) -> Any:
         """The product itself as one zip (LR.30a): the workspace with its git history, without dependency folders,
         test-runner output or the harness's own files, and a `HOW-TO-RUN.txt` with the stack's commands."""
-        from app.sprint.product_archive import build
+        from app.sprint.product_archive import build, what_it_holds
 
         record = _require_run(runner, run_id, user)
         if not record.repo_root or not Path(record.repo_root).is_dir():
             raise HTTPException(status_code=404, detail="This run has no workspace.")
-        record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.product.download", subject=run_id, detail={})
+        # A run that did not finish hands over its best attempt (deep review 2026-11-18, F4a).
+        holds = what_it_holds(record.repo_root, finished=record.status == "completed")
+        record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.product.download", subject=run_id,
+                     detail={"version": holds["version"]})
         return Response(
-            content=build(record.repo_root, run_id),
+            content=build(record.repo_root, run_id, at_commit=holds["commit"]),
             media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="{run_id}-product.zip"'},
         )
+
+    @runs.get("/{run_id}/product/summary")
+    async def get_product_summary(run_id: str, user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+        """Which product the download holds - the latest, or a run's best attempt - and what it passed (F4a)."""
+        from app.sprint.product_archive import what_it_holds
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root or not Path(record.repo_root).is_dir():
+            raise HTTPException(status_code=404, detail="This run has no workspace.")
+        holds = await asyncio.to_thread(what_it_holds, record.repo_root, finished=record.status == "completed")
+        return {"run_id": run_id, **{key: value for key, value in holds.items() if key != "commit"},
+                "from_an_earlier_commit": bool(holds["commit"])}
 
     @runs.get("/{run_id}/how-to-run")
     async def get_how_to_run(run_id: str, user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:

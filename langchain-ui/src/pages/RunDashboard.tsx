@@ -24,6 +24,8 @@ import {
   cloneRun,
   downloadHandover,
   downloadProduct,
+  getProductSummary,
+  type ProductSummary,
   resumeWithDirection,
   downloadTranscript,
   startRun,
@@ -58,6 +60,12 @@ import { describeStage, describeStatus, RESUMABLE } from '../lib/activity';
 import { useNow } from '../lib/usePageVisible';
 import { useFeedback } from '../components/Feedback';
 
+/** What a best attempt passed, for its download's label: criteria when measured, else acceptance tests, else nothing. */
+function bestAttemptPassed(found: ProductSummary): string {
+  if (found.criteria_passed != null && found.criteria_total) return ` (${found.criteria_passed} of ${found.criteria_total} criteria passed)`;
+  if (found.tests_passed != null && found.tests_total) return ` (${found.tests_passed} of ${found.tests_total} acceptance tests passed)`;
+  return '';
+}
 
 
 function GapsOfTheRun({ blocking, all }: { blocking: string[]; all: string[] }) {
@@ -129,6 +137,15 @@ export const RunDashboard: React.FC = () => {
     document.title = `${mark ? mark + ' \u00B7 ' : ''}${run.run_id.slice(0, 12)} \u00B7 DevFlow.ai`;
     return () => { document.title = 'DevFlow.ai'; };
   }, [run?.status, run?.run_id]);
+  // F4a: a run that did not finish still hands over its best attempt, said with what it passed.
+  const [bestAttempt, setBestAttempt] = useState<ProductSummary | null>(null);
+  const unfinished = run?.status === 'failed' || run?.status === 'cancelled';
+  useEffect(() => {
+    if (!unfinished || !runId) { setBestAttempt(null); return; }
+    let current = true;
+    getProductSummary(runId).then((found) => current && setBestAttempt(found)).catch(() => current && setBestAttempt(null));
+    return () => { current = false; };
+  }, [unfinished, runId]);
   const [actionLoading, setActionLoading] = useState(false);
   // The centre column carries two different audiences: what the run produced,
   // and the raw event log. Tabs let each have the full width instead of
@@ -734,6 +751,15 @@ export const RunDashboard: React.FC = () => {
               title="The product's files and their git history, with how to run it, as one zip"
               className={`${actionButton} text-text-primary border-accent/40 hover:border-accent hover:bg-overlay`}>
               <Download className="h-3.5 w-3.5" /> Download product
+            </button>
+          )}
+          {unfinished && bestAttempt && (
+            <button onClick={() => void downloadProduct(runId!)} data-testid="download-best-attempt"
+              title={bestAttempt.from_an_earlier_commit
+                ? 'The product as it was at its best attempt, which passed more than it does now, as one zip'
+                : "The product's files and their git history as the run left them - its best attempt - as one zip"}
+              className={`${actionButton} text-text-primary border-accent/40 hover:border-accent hover:bg-overlay`}>
+              <Download className="h-3.5 w-3.5" /> Download best attempt{bestAttemptPassed(bestAttempt)}
             </button>
           )}
           <button onClick={() => void downloadHandover(runId!)}

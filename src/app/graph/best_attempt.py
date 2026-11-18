@@ -78,6 +78,27 @@ def _best(root: Path) -> dict[str, Any]:
     return best
 
 
+def better_than_now(root: str | Path) -> dict[str, Any]:
+    """The record of the best product when it passed more acceptance tests than the product does now; {} otherwise.
+
+    Deep review 2026-11-18 (F4a): a run cancelled mid-round, or stopped before the best was put back, can hold a worse
+    product than its best one, and a person taking away a run that did not finish wants the best. Reads the record
+    whatever the switch says now (a record exists only if it was on). Never raises.
+    """
+    try:
+        root = Path(root)
+        best = _best(root)
+        if not best or not str(best.get("commit") or ""):
+            return {}
+        now = _passed_now(root)
+        if now is not None and now >= int(best.get("passed") or 0):
+            return {}
+        return dict(best)
+    except Exception:  # noqa: BLE001 - the product as it stands is offered instead
+        logger.debug("Could not read the best-attempt record", exc_info=True)
+        return {}
+
+
 def forget(root: str | Path) -> None:
     """Drop the record of the best: a new sprint starts its own (called at the sprint's advance). Never raises."""
     try:

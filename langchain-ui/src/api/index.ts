@@ -378,6 +378,21 @@ export const downloadProduct = async (runId: string): Promise<void> => {
   }
 };
 
+/** Which product the download holds - the latest, or a run's best attempt - and what it passed (F4a). */
+export interface ProductSummary {
+  version: 'latest' | 'best';
+  criteria_passed: number | null;
+  criteria_total: number | null;
+  tests_passed: number | null;
+  tests_total: number | null;
+  from_an_earlier_commit: boolean;
+}
+
+export const getProductSummary = async (runId: string): Promise<ProductSummary> => {
+  const response = await api.get<ProductSummary>(`/runs/${runId}/product/summary`);
+  return response.data;
+};
+
 /** The commands that install, test and start the product (LR.30a). */
 export const getHowToRun = async (runId: string): Promise<string[]> => {
   const response = await api.get<{ steps: string[] }>(`/runs/${runId}/how-to-run`);

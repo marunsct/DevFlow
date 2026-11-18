@@ -196,6 +196,10 @@ export const Home: React.FC = () => {
   }, [useFrontierModel]);
   // An existing codebase to start from, as an archive (a brownfield run).
   const [codebase, setCodebase] = useState<File | null>(null);
+  // Or a Git repository to clone (F4a). The token is sent with the start only, never kept or shown again.
+  const [gitUrl, setGitUrl] = useState('');
+  const [gitRef, setGitRef] = useState('');
+  const [gitToken, setGitToken] = useState('');
   // A change to a finished run's product (LR.35): the new run starts from that product, with this brief as the change.
   const [searchParams] = useSearchParams();
   const changeOf = searchParams.get('changeOf');
@@ -236,6 +240,10 @@ export const Home: React.FC = () => {
       setError('Write the brief or add its documents.');
       return;
     }
+    if (codebase && gitUrl.trim()) {
+      setError('Start from an archive or from a Git repository, not both.');
+      return;
+    }
     if (useFrontierModel) {
       const status = frontier ?? (await getFrontierStatus().catch(() => null));
       if (status?.problem) {
@@ -261,6 +269,7 @@ export const Home: React.FC = () => {
 
       const payload: any = {
         source: uploaded?.upload_id ? { type: 'archive', upload_id: uploaded.upload_id }
+          : gitUrl.trim() ? { type: 'git', url: gitUrl.trim(), ref: gitRef.trim() || undefined, token: gitToken || undefined }
           : changeOf ? { type: 'run', run_id: changeOf } : undefined,
         // The person starting the run reviews it.
         reviewer: reviewer || undefined,
@@ -355,7 +364,7 @@ export const Home: React.FC = () => {
     estimate || null,
     INVOLVEMENT.find((choice) => choice.id === involvement)?.title,
     useFrontierModel ? `local + frontier${frontier?.model ? ` (${frontier.model})` : ''}` : 'local model only',
-    codebase ? 'from existing code' : null,
+    codebase || gitUrl.trim() ? 'from existing code' : null,
   ].filter(Boolean).join(' · ');
 
   return (
@@ -534,6 +543,39 @@ export const Home: React.FC = () => {
                 className="text-sm text-text-secondary"
               />
               <p className="text-xs text-text-muted mt-1">An archive of the repository; the run builds on it instead of starting empty.</p>
+            </div>
+            <div className="space-y-3">
+              <Input
+                label="Or clone a Git repository"
+                hint="An HTTPS URL. The run builds on that code instead of starting empty."
+                type="url"
+                maxLength={2048}
+                value={gitUrl}
+                onChange={(e) => setGitUrl(e.target.value)}
+                placeholder="https://github.com/owner/repository.git"
+              />
+              {gitUrl.trim() && (
+                <>
+                  <Input
+                    label="Branch or tag"
+                    aside={<span className="text-xs text-text-muted">optional</span>}
+                    hint="Blank clones the repository's default branch."
+                    maxLength={255}
+                    value={gitRef}
+                    onChange={(e) => setGitRef(e.target.value)}
+                  />
+                  <Input
+                    label="Access token"
+                    aside={<span className="text-xs text-text-muted">optional, for a private repository</span>}
+                    hint="Used for this clone only: it is not kept with the run, written to any log, or shown again."
+                    type="password"
+                    autoComplete="off"
+                    maxLength={512}
+                    value={gitToken}
+                    onChange={(e) => setGitToken(e.target.value)}
+                  />
+                </>
+              )}
             </div>
             <Input
               label="Workspace name"

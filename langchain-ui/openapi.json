@@ -6018,6 +6018,56 @@
     ]
    }
   },
+  "/api/runs/{run_id}/product/summary": {
+   "get": {
+    "description": "Which product the download holds - the latest, or a run's best attempt - and what it passed (F4a).",
+    "operationId": "get_product_summary_api_runs__run_id__product_summary_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "run_id",
+      "required": true,
+      "schema": {
+       "title": "Run Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Product Summary Api Runs  Run Id  Product Summary Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "security": [
+     {
+      "OAuth2PasswordBearer": []
+     }
+    ],
+    "summary": "Get Product Summary",
+    "tags": [
+     "runs"
+    ]
+   }
+  },
   "/api/runs/{run_id}/rating": {
    "get": {
     "description": "The owner's rating of the delivered run, or null (plan EV.1).",

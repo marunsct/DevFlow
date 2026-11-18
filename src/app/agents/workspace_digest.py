@@ -260,6 +260,15 @@ def _nothing_here_is_evidence(names: list[str]) -> bool:
     )
 
 
+def holds_nothing_yet(repo_root: str | Path) -> bool:
+    """Whether the workspace is empty or holds only the plumbing it was created with - the two cases the digest
+    tells a stage that the brief is the whole of the evidence. Raises when the workspace cannot be listed."""
+    from app.tools.repository import list_repository_files
+
+    names = list_repository_files(Path(repo_root))
+    return not names or _nothing_here_is_evidence(names)
+
+
 def _nothing_has_been_built(names: list[str]) -> bool:
     """Whether the listing holds documents and no application code.
 
@@ -660,5 +669,6 @@ __all__ = [
     "FIRST_CALL_MESSAGES",
     "MAX_FILES",
     "build_workspace_digest_middleware",
+    "holds_nothing_yet",
     "render_workspace_digest",
 ]

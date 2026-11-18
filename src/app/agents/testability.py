@@ -94,7 +94,8 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   that role, and test what it does now.
 - Reach storage and databases through a small adapter passed in as an
   argument, so a test can hand it a plain object. No database server runs
-  here, so code that talks to PostgreSQL directly is code no test can execute.
+  here, so code that talks to a database server directly is code no test can
+  execute.
 - Use the test tooling the stack's own guidance names under FRAMEWORK
   CAPABILITIES. For a user interface, verify it through the real interface
   with an automated driver; a mock of the rendering layer passes while it is

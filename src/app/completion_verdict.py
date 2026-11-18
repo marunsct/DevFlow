@@ -52,6 +52,8 @@ _NOTES = re.compile(
         r"CR-\d+ was deferred during the run; its own locked tests pass at release:",
         r"Ships \d+ dependenc(y|ies) under a strong-copyleft licence",
         r"The judgement model .* could not be built ",
+        # What the intake assumed where the brief does not say (deep review C8): the reader is told, nothing failed.
+        r"Assumed at intake where the brief does not say:",
     ))
 )
 

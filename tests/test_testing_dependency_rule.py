@@ -58,9 +58,10 @@ def test_the_rule_makes_a_refusal_to_test_a_blocking_finding_for_reviewers():
     """Reviewers get a distinct instruction: declining to test on dependency
     grounds is blocking, and so is recording a test-only install as a risk.
     """
-    assert "IF YOU ARE REVIEWING" in TESTING_DEPENDENCY_RULE
-    assert "BLOCKING finding" in TESTING_DEPENDENCY_RULE
-    assert "not a risk" in TESTING_DEPENDENCY_RULE
+    from app.agents.testing_dependency_rule import RULE_FOR_REVIEWERS
+
+    assert "BLOCKING finding" in RULE_FOR_REVIEWERS
+    assert "NOT A RISK" in TESTING_DEPENDENCY_RULE
 
 
 @pytest.mark.parametrize(

@@ -59,11 +59,26 @@ TESTING_DEPENDENCY_RULE = """Testing is exempt from the product's dependency con
 - THE USER MAY CHOOSE A TESTING STACK, and that choice is not overruled by a
   dependency constraint: one is about the product, the other about how it is
   verified.
-- IF YOU ARE REVIEWING: a specification, stack or plan that declines to test,
-  or picks an inadequate approach, because of a dependency constraint is a
-  BLOCKING finding - name the constraint and say it governs the shipped
-  product only. A test-only install recorded as a risk is not a risk.
-- IF YOU ARE BUILDING OR TESTING: install what the suite needs in the
+- A TEST-ONLY INSTALL IS NOT A RISK, and recording one as a risk is wrong."""
+
+#: Each role is told only its own half (deep review 2026-11-18, item C7): the rule went to every role with both an
+#: "IF YOU ARE REVIEWING" and an "IF YOU ARE BUILDING OR TESTING" line, so a builder read a reviewer's instruction and
+#: a reviewer a builder's.
+FOR_A_REVIEWER = """
+- A specification, stack or plan that declines to test, or picks an inadequate
+  approach, because of a dependency constraint is a BLOCKING finding - name the
+  constraint and say it governs the shipped product only."""
+FOR_A_DESIGNER = """
+- A specification or stack that declines to test, or picks an inadequate
+  approach, because of a dependency constraint is refused at review as a
+  BLOCKING finding: plan the test-only scope instead."""
+FOR_A_BUILDER = """
+- Where the tests need a package, install what the suite needs in the
   test-only scope and say so plainly."""
 
-__all__ = ["TESTING_DEPENDENCY_RULE"]
+#: The rule as each kind of role is given it.
+RULE_FOR_REVIEWERS = TESTING_DEPENDENCY_RULE + FOR_A_REVIEWER
+RULE_FOR_DESIGNERS = TESTING_DEPENDENCY_RULE + FOR_A_DESIGNER
+RULE_FOR_BUILDERS = TESTING_DEPENDENCY_RULE + FOR_A_BUILDER
+
+__all__ = ["RULE_FOR_BUILDERS", "RULE_FOR_DESIGNERS", "RULE_FOR_REVIEWERS", "TESTING_DEPENDENCY_RULE"]

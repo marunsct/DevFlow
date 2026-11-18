@@ -22,7 +22,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, create_model, f
 from pydantic.json_schema import SkipJsonSchema
 
 from app.agents.testability import TESTABILITY_RULE
-from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
+from app.agents.testing_dependency_rule import RULE_FOR_BUILDERS
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent, default_repo_root
 from app.agents.severity import validator_for as severity_in
@@ -1375,8 +1375,9 @@ Beginner documentation requirement:
 
 Constraints:
 - You may use the `run_terminal_command` tool to run programs: build code, install dependencies, and perform end-to-end development.
-- There is no shell, so `cd`, `&&`, `|` and `$(...)` do not work and `cd` is not
-  a program you can run. To act on a subdirectory, pass `working_directory` -
+- `run_terminal_command` runs one program with its arguments, with no shell
+  between them: `&&`, `|`, `;` and `$(...)` reach the program as plain words,
+  and `cd` is not a program. To act on a subdirectory, pass `working_directory` -
   for a project directory named `myapp`, run `["<program>", "<args>"]` with
   `working_directory="myapp"` rather than trying to change into it first.
 - Commands run at the workspace root unless you pass `working_directory`. Run
@@ -1387,7 +1388,7 @@ Constraints:
 
 {testability}
 
-{TESTING_DEPENDENCY_RULE}
+{RULE_FOR_BUILDERS}
 
 Return the response in the required output schema only.
 
@@ -1403,6 +1404,7 @@ def create_specialist_agent(
     repo_root: str | Path | None = None,
         allow_subdirectories: bool = True,
     writing_the_suite: bool = False,
+    setting_up_the_stack: bool = False,
 ) -> Any:
     """Create one specialist role worker.
 
@@ -1410,6 +1412,9 @@ def create_specialist_agent(
     actually execute an allowlisted test command instead of only describing
     what should be tested; every other specialist gets the same narrow
     read/write tools as any other role agent.
+
+    `setting_up_the_stack`: the setup of a stack no pack covers, whose request
+    asks for `use_runtime`; it keeps that tool when tool lists are lean.
     """
     resolved_repo_root = str(repo_root) if repo_root is not None else str(default_repo_root())
 
@@ -1463,6 +1468,7 @@ def create_specialist_agent(
         checkpointer=checkpointer,
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         extra_tools=extra_tools,
+        kept_tools=("use_runtime",) if setting_up_the_stack else (),
     )
 
 

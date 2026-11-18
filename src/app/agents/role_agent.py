@@ -58,6 +58,7 @@ from langchain_core.tools import BaseTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel
 
+from app.agents import stage_tools
 from app.agents.context_budget import MAX_TOOL_ARG_CHARS, ContextBudget
 from app.agents.context_policy import ContextPolicy
 from app.agents.context_store import build_context_backend
@@ -320,7 +321,7 @@ that is the call the approval gate interrupts on.
 from app.agents.edits_together import build_edits_together_middleware  # noqa: E402
 
 
-def _workspace_filesystem_middleware(repo_root: str) -> FilesystemMiddleware:
+def _workspace_filesystem_middleware(repo_root: str, readers: list[str] | None = None) -> FilesystemMiddleware:
     """Point the built-in filesystem tools at the run's real workspace.
 
     `create_deep_agent` always installs `FilesystemMiddleware`, and by default it
@@ -355,7 +356,8 @@ def _workspace_filesystem_middleware(repo_root: str) -> FilesystemMiddleware:
         # `hold_notes`: `read_file` numbers the text it is given, so a note
         # written into it shifts every line - see `held_read_note`.
         backend=WorkspaceBackend(root_dir=repo_root, virtual_mode=True, hold_notes=True),
-        tools=list(_WORKSPACE_READ_TOOLS),
+        # `readers`: none for a read-only role on a workspace that holds nothing yet (`app.agents.stage_tools`).
+        tools=list(_WORKSPACE_READ_TOOLS if readers is None else readers),
         # Never the harness's own request. Over 50,000 tokens, deepagents moves
         # a human message to `conversation_history/<uuid>.md` and leaves a
         # pointer. Measured on three runs: every architect visit's opening
@@ -471,6 +473,31 @@ def _documents_the_workflow_owns() -> str:
     return ", ".join(f"`{name}`" for name in sorted(WORKFLOW_DOCUMENTS))
 
 
+# Measured on two runs of one model: 75% of all output tokens were
+# reasoning, 23 replies ran out of room while still reasoning, and one
+# stage reasoned for 20,821 tokens and then reported edits it never made
+# - it had made them in its reasoning. Left out for a model measured strong
+# under `LEAN_PROMPTS_FOR_STRONG_MODELS` (`app.agents.lean_prompts`).
+REASONING_IS_NOT_WORK = (
+    "REASONING IS NOT WORK:\n"
+    "- Keep your reasoning to deciding the next step. Write code, tests and file\n"
+    "  contents in the write and edit calls themselves - never compose a whole\n"
+    "  file in your reasoning first: a long draft there can use up the reply\n"
+    "  before any call is made, and then none of it exists.\n"
+    "- A change exists only when the call that made it succeeded. Report in your\n"
+    "  structured response only what such calls did: a file you planned,\n"
+    "  reasoned about or described has not changed.\n"
+)
+ARTIFACTS_ARE_NOT_THE_ANSWER = (
+    "ARTIFACTS ARE NOT YOUR STRUCTURED RESPONSE:\n"
+    "- Files hold content a person reads or a program runs. Your result is\n"
+    "  returned by calling your answer tool - never written to a file, never\n"
+    "  printed as JSON text.\n"
+    # "Write each file once" stood here, in the prompt that also teaches replacing a whole file again and fixing
+    # errors by rewriting (LR.54).
+    "- A successful write is saved: never write a file again only to confirm it.\n"
+)
+
 _WRITING_RULES = (
     # One section per question, each said once. It had grown to about 9,000
     # characters: the directory rules twice (here and in PROJECT_LAYOUT, which
@@ -523,31 +550,14 @@ _WRITING_RULES = (
     "\n"
     "PATHS - every path is inside the workspace:\n"
     "- `docs/NAME.md` and `/docs/NAME.md` are the same file.\n"
-    "- Shell commands already run in the workspace directory: give them relative\n"
+    "- Commands already run in the workspace directory: give them relative\n"
     "  paths, never ones starting with `/`.\n"
     "- A long absolute path quoted as the repository root is the HOST's path and\n"
     "  does not exist here. Never use it.\n"
     "\n"
-    # Measured on two runs of one model: 75% of all output tokens were
-    # reasoning, 23 replies ran out of room while still reasoning, and one
-    # stage reasoned for 20,821 tokens and then reported edits it never made
-    # - it had made them in its reasoning.
-    "REASONING IS NOT WORK:\n"
-    "- Keep your reasoning to deciding the next step. Write code, tests and file\n"
-    "  contents in the write and edit calls themselves - never compose a whole\n"
-    "  file in your reasoning first: a long draft there can use up the reply\n"
-    "  before any call is made, and then none of it exists.\n"
-    "- A change exists only when the call that made it succeeded. Report in your\n"
-    "  structured response only what such calls did: a file you planned,\n"
-    "  reasoned about or described has not changed.\n"
-    "\n"
-    "ARTIFACTS ARE NOT YOUR STRUCTURED RESPONSE:\n"
-    "- Files hold content a person reads or a program runs. Your result is\n"
-    "  returned by calling your answer tool - never written to a file, never\n"
-    "  printed as JSON text.\n"
-    # "Write each file once" stood here, in the prompt that also teaches replacing a whole file again and fixing
-    # errors by rewriting (LR.54).
-    "- A successful write is saved: never write a file again only to confirm it.\n"
+    + REASONING_IS_NOT_WORK
+    + "\n"
+    + ARTIFACTS_ARE_NOT_THE_ANSWER
 )
 
 _READ_ONLY_RULES = (
@@ -564,6 +574,16 @@ _READ_ONLY_RULES = (
     "  points at, and what they lead to; a file the project memory below already\n"
     "  holds whole is not worth reading again.\n"
 )
+
+
+def _read_only_rules(readers: list[str]) -> str:
+    """The read-only rules, saying no file listing or search is offered where none is (`app.agents.stage_tools`)."""
+    if set(_WORKSPACE_READ_TOOLS) <= set(readers):
+        return _READ_ONLY_RULES
+    from app.agents.stage_tools import SAID
+
+    head, _, _ = _READ_ONLY_RULES.partition("- You may read anything in the workspace")
+    return head + SAID
 
 
 
@@ -651,6 +671,7 @@ def create_role_agent(
     allow_subdirectories: bool = True,
     extra_tools: list[BaseTool] | None = None,
     can_write: bool = True,
+    kept_tools: tuple[str, ...] = (),
 ) -> Any:
     """Create a narrow, safe Deep Agent for one workflow role.
 
@@ -674,6 +695,8 @@ def create_role_agent(
         allow_subdirectories: whether the agent can read files from subdirectories.
         extra_tools: additional read-only or narrow tools specific to this
             role (e.g. a validation-runner tool for the testing specialist).
+        kept_tools: names of seldom-called tools this stage's own request asks
+            for, offered even when tool lists are lean (`app.agents.stage_tools`).
 
     Returns:
         A compiled LangGraph graph (the same shape `create_deep_agent` always
@@ -703,10 +726,13 @@ def create_role_agent(
         # two tools that do one job is a choice it can get wrong.
         # Read-only, and the cheap answer to a question every stage otherwise
         # works out by re-reading the workspace.
-        build_sprint_history_tool(resolved_repo_root),
+        # Offered once a sprint has been accepted when tool lists are lean (`app.agents.stage_tools`).
+        *([build_sprint_history_tool(resolved_repo_root)] if stage_tools.sprint_history_offered(resolved_repo_root) else []),
         *(writing_tools(resolved_repo_root, _answer_fields(response_format), response_format) if can_write else []),
-        *(extra_tools or []),
+        # Less the tools almost never called, but for those this stage's request asks for (`app.agents.stage_tools`).
+        *stage_tools.without_the_seldom_called(extra_tools or [], keep=kept_tools),
     ]
+    readers = stage_tools.workspace_readers(resolved_repo_root, can_write, system_prompt)
 
     # The directory and write-tool rules are only true for an agent that has
     # workflow now renders - was handed "CRITICAL DIRECTORY RULES: Write all
@@ -715,10 +741,14 @@ def create_role_agent(
     # `write_artifact` tool or any file-writing/editing tools available"
     # instead of returning its structured response. Contradictory instructions
     # cost a stage; withholding the irrelevant half costs nothing.
-    full_system_prompt = without_line_edits(f"{system_prompt}\n\n" + (_WRITING_RULES if can_write else _READ_ONLY_RULES))
+    full_system_prompt = without_line_edits(f"{system_prompt}\n\n" + (_WRITING_RULES if can_write else _read_only_rules(readers)))
     from app.agents.project_layout import for_this_workspace
 
     full_system_prompt = for_this_workspace(full_system_prompt, resolved_repo_root)
+    # Without the blocks written against a small model's failures, for a model measured strong (`app.agents.lean_prompts`).
+    from app.agents.lean_prompts import for_the_model
+
+    full_system_prompt = for_the_model(full_system_prompt, selected_model)
 
     # Compaction. Built here rather than at module scope so a policy change
     # takes effect on the next agent, not the next restart. The context
@@ -768,7 +798,7 @@ def create_role_agent(
         # See `app.agents.project_memory`.
         build_project_memory_middleware(resolved_repo_root),
         build_plugin_instructions_middleware(resolved_repo_root, name),
-        _workspace_filesystem_middleware(resolved_repo_root),
+        _workspace_filesystem_middleware(resolved_repo_root, readers),
         # A reply's edits to one file that parse only together are made one edit (`app.agents.edits_together`).
         build_edits_together_middleware(resolved_repo_root),
         # After the filesystem middleware, so it sees the tool results the

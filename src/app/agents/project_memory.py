@@ -428,17 +428,25 @@ def kept_by_the_harness(repo_root: str | Path) -> tuple[str, ...]:
 
 
 def render(repo_root: str | Path, budget_characters: int, focus: str = "",
-           for_a_fixer: bool = False, kept_out: tuple[str, ...] = ()) -> tuple[str, dict[str, str]]:
+           for_a_fixer: bool = False, kept_out: tuple[str, ...] = (), sliced: bool = False) -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path.
 
     `for_a_fixer`: the product's code first, the acceptance criteria, and the specification as its outline and the
     sections the defect points at; the other plans named only. Measured over 64 fix attempts: every fixer opened on
     about 164k characters of plans with its failure about 2k of it, and those left open read twice as many files and
-    reasoned nearly three times as long as those that fixed their defect.
+    reasoned nearly three times as long as those that fixed their defect. A fixer's file longer than
+    `memory_slices.MOST_CHARACTERS_WHOLE` is held as the lines around those its failure names (deep review C3).
+
+    `sliced`: only the product files the request names, and what they import, held whole (`SLICED_MEMORY`).
     """
     files = current(repo_root)
     if not files or budget_characters <= 0:
         return "", {}
+    from app.agents import memory_slices
+
+    ask = memory_slices.the_ask(focus)
+    product = [path for path in files if not path.startswith(("docs/", "."))]
+    the_slice = memory_slices.the_slice(repo_root, ask, files) if sliced else None
     held: dict[str, str] = {}
     parts: list[str] = []
     from app.agents.canonical_memory import enabled as canonical_order
@@ -500,6 +508,21 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
             # back and the memory now stands in for it.
             held_back.append(f"{path} ({', '.join(later[path])})")
             continue
+        if the_slice is not None and path in product and path not in the_slice:
+            # Not named by this request, nor imported by a file it names (`SLICED_MEMORY`).
+            left_out.append(path)
+            continue
+        if for_a_fixer and path in product and len(text) > memory_slices.MOST_CHARACTERS_WHOLE:
+            # Measured: one fixer was handed a 28.7k test file its defect never named. Its failing lines, not the file.
+            lines = memory_slices.lines_named(ask, path, product)
+            block = memory_slices.windowed_block(path, text, lines) if lines else ""
+            if block and used + len(block) <= budget_characters:
+                parts.append(block)
+                used += len(block)
+                continue
+            if not memory_slices.named(ask, path, product):
+                left_out.append(path)
+                continue
         if path.endswith("technical_specification.md"):
             text, quoted = _without_the_quoted_sections(text, focus)
             if quoted:
@@ -531,7 +554,8 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "",
     head = (
         "[Project memory: the workflow's documents and the project's files as they are now, kept current "
         "by the harness. Use them as they are here; read a file only if it is named at the end as not "
-        "included." + (" " + stable_memory_order.SAID if stable else "") + "]\n\n"
+        "included." + (" " + stable_memory_order.SAID if stable else "")
+        + (" " + memory_slices.SAID if the_slice is not None else "") + "]\n\n"
     ) + where_things_stand(repo_root, files)
     # Named one by one only up to `MOST_NAMED_LEFT_OUT`, in the memory's own
     # order: a large project's left-out list was every path it has, larger
@@ -792,9 +816,13 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     from app.observability.log_context import _from_the_graph
 
                     stage = str(_from_the_graph()[1] or "")
+                    from app.agents import memory_slices
+
                     visit["snapshot"], visit["held"] = render(repo_root, budget_for(getattr(request, "model", None)), opening,
                                                               for_a_fixer=stage.startswith("defect_fix"),
-                                                              kept_out=_kept_out_for(stage, repo_root))
+                                                              kept_out=_kept_out_for(stage, repo_root),
+                                                              sliced=memory_slices.enabled() and stage.startswith(
+                                                                  ("defect_fix", "specialist_")))
                     visit["files"] = dict(current(repo_root))
                 memory = visit["snapshot"]
                 held = visit.get("held") or {}

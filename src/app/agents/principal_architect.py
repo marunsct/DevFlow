@@ -25,7 +25,7 @@ from app.agents.brief_over_spec import WHAT_THE_BRIEF_STATES
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
 from app.agents.project_layout import PROJECT_LAYOUT
 from app.agents.testability import TESTABILITY_RULE
-from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
+from app.agents.testing_dependency_rule import RULE_FOR_DESIGNERS
 from app.agents.project_layout import PLANNED_PROJECT_DIRECTORY
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
@@ -604,7 +604,7 @@ Responsibilities:
 
 {TESTABILITY_RULE}
 
-{TESTING_DEPENDENCY_RULE}
+{RULE_FOR_DESIGNERS}
 
 {PROJECT_LAYOUT}
 

@@ -279,4 +279,4 @@ def test_the_adapter_rule_covers_a_database():
 
     flat = " ".join(TESTABILITY_RULE.split())
 
-    assert "code that talks to PostgreSQL directly is code no test can execute" in flat
+    assert "code that talks to a database server directly is code no test can execute" in flat

@@ -452,6 +452,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         for issue in left_open
     )
     gaps.extend(_findings_recorded_as_risks(state))
+    # What the intake assumed where the brief does not say, with `INTAKE_ASKS_FIRST` (deep review C8): notes, not gaps.
+    from app.agents import assumptions
+
+    gaps.extend(assumptions.at_release({**state, **update}))
     gaps.extend(_reviews_that_were_not_independent(config["configurable"].get(APP_RUN_ID_KEY)))
     gaps.extend(_code_no_review_read(config["configurable"].get(APP_RUN_ID_KEY), {**state, **update}))
     gaps.extend(_what_the_release_re_check_finds(state, root))

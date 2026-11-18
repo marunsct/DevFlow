@@ -33,6 +33,7 @@ from typing import Any, Sequence
 from app.acceptance import junit
 from app.stacks import KINDS, StackPack, product_kind
 from app.stacks import contract
+from app.stacks.languages import BUILT_BY_NAME, NOT_THE_PRODUCT
 from app.stacks.scaffold import Runner, ScaffoldResult, _step, sandbox_runner, where_it_failed
 
 logger = logging.getLogger(__name__)
@@ -715,7 +716,9 @@ def _code_of(text: str) -> list[str]:
     return lines
 
 
-_NOT_WALKED = {"node_modules", "vendor", "target", "build", "dist", "__pycache__", "venv", "bin", "obj"}
+#: Folders the setup's own code is never looked for in: the language table's shared set, its build folders, and the
+#: folders a toolchain fills by convention (`app.stacks.languages`).
+_NOT_WALKED = NOT_THE_PRODUCT | BUILT_BY_NAME | {"vendor", "bin", "obj"}
 
 
 def _the_setup_s_own_code(project_root: Path, declared: Declaration) -> dict[str, str]:

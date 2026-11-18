@@ -31,6 +31,7 @@ import os
 import re
 from pathlib import Path
 from app.analysis.walk import files_under
+from app.stacks.languages import NOT_THE_PRODUCT
 
 #: `import x from './a.js'`, `import {a} from '../b.mjs'`, `export * from './c'`
 _RELATIVE = re.compile(
@@ -60,7 +61,7 @@ _MODULE_EXPORTS = re.compile(r"^\s*module\.exports\b", re.M)
 _TRIED = ("", ".js", ".mjs", ".cjs", ".json", "/index.js", "/index.mjs", "/index.cjs")
 
 #: Directories that are not the project's own source.
-_SKIP = {"node_modules", ".git", "dist", "build", "coverage", ".agent-home"}
+_SKIP = NOT_THE_PRODUCT | {"dist", "build", "coverage"}
 
 
 def _resolve(source: Path, specifier: str) -> Path | None:

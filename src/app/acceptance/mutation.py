@@ -26,6 +26,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from app.stacks.languages import NOT_THE_PRODUCT
+
 logger = logging.getLogger(__name__)
 
 #: Changes tried at release (owner's budget).
@@ -61,7 +63,7 @@ OPERATORS: list[tuple[str, str]] = [
 SOURCE_SUFFIXES = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".py", ".rb", ".go", ".java", ".php", ".rs", ".cs"}
 
 #: Directories that are not the product's own source.
-SKIPPED_PARTS = {"node_modules", "dist", "build", "coverage", "__pycache__", ".venv", "venv", ".harness",
+SKIPPED_PARTS = NOT_THE_PRODUCT | {"dist", "build", "coverage", ".harness",
                  "tests", "test", "__tests__", "e2e", "acceptance", "docs", "public", "vendor"}
 
 #: File names that are tests or configuration, not behaviour.

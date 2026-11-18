@@ -113,8 +113,20 @@ def test_without_a_pack_the_image_is_still_chosen_by_executable(tmp_path):
         assert sandbox._image_for("npm", tmp_path) == "node:24-slim"
         assert sandbox._image_for("python3", tmp_path) == "python:3.12-slim"
         assert sandbox._image_for("cargo", tmp_path) == "rust:1-slim"
-        assert sandbox._image_for("mvn", tmp_path) == "debian:12-slim"
+        assert sandbox._image_for("make", tmp_path) == "debian:12-slim"
         assert sandbox._image_for("npm") == "node:24-slim"
+
+
+@pytest.mark.parametrize("executable, toolchain", [
+    ("mvn", "java"), ("dotnet", "dotnet"), ("php", "php"), ("composer", "php"), ("bundle", "ruby"), ("ruby", "ruby"),
+    ("go", "go"),
+])
+def test_without_a_pack_a_compiled_toolchain_s_command_runs_in_its_own_image(tmp_path, executable, toolchain):
+    """Deep review 2026-11-18, item E3: with no pack, `mvn`, `dotnet`, `php` and `ruby` ran in a bare Debian with no
+    toolchain, and `go` in Go 1.22 while the packs and the worker are on 1.26."""
+    with mock.patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("SANDBOX_GO_IMAGE", None)
+        assert sandbox._image_for(executable, tmp_path) == f"harness-sandbox-{toolchain}:pw{js.PLAYWRIGHT}"
 
 
 def test_the_container_command_line_names_the_pack_s_image(monkeypatch, tmp_path):

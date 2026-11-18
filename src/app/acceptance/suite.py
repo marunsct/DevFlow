@@ -27,6 +27,8 @@ from typing import Any, Callable, Sequence
 from app.acceptance import junit
 from app.acceptance.criteria import Criterion, from_records
 from app.stacks import contract
+from app.analysis.walk import files_under
+from app.stacks.languages import NOT_THE_PRODUCT
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,7 @@ DECLARED_COMMAND_FILE = "run.json"
 
 #: Directories inside the acceptance directory that are a runner's or an
 #: interpreter's, not the suite's.
-_NOT_THE_SUITE = frozenset({"__pycache__", "node_modules", ".pytest_cache", "test-results"})
+_NOT_THE_SUITE = NOT_THE_PRODUCT | {"test-results"}
 
 OUTPUT_TAIL_CHARS = 3_000
 
@@ -1161,7 +1163,7 @@ def what_a_stopped_service_wrote(output: str) -> str:
 
 
 #: Folders whose XML is no suite's report.
-_NOT_THE_SUITE_S = frozenset({"node_modules", ".venv", "venv", ".git", "__pycache__", "site-packages"})
+_NOT_THE_SUITE_S = NOT_THE_PRODUCT
 
 
 #: A runner's own count of what it ran: `5 failed`, `2 passed`, `12 tests`.
@@ -1924,7 +1926,7 @@ def _the_product_s_own_sources(repo_root: str | Path) -> str:
         return ""
     suite_dir = directory(repo_root)
     texts = []
-    for path in project.rglob("*"):
+    for path in files_under(project, _NOT_THE_PAGE_S):
         if not path.is_file() or path.suffix.lower() not in _PAGE_SOURCES:
             continue
         relative = path.relative_to(project)
@@ -2861,8 +2863,7 @@ _MADE_BY = {
 _PAGE_SOURCES = frozenset({".html", ".htm", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".svelte", ".py",
                            ".jinja", ".j2", ".erb", ".ejs", ".hbs", ".php", ".rb", ".go", ".cs", ".java"})
 #: Folders whose files are no part of the page.
-_NOT_THE_PAGE_S = frozenset({"node_modules", ".venv", "venv", ".git", "__pycache__", "site-packages", "test-results",
-                             "dist", "build", "coverage", ".harness", "playwright-report"})
+_NOT_THE_PAGE_S = NOT_THE_PRODUCT | {"test-results", "dist", "build", "coverage", ".harness", "playwright-report"}
 
 
 def records_the_page_never_makes(repo_root: str | Path, brief_text: str) -> list[str]:
@@ -2881,7 +2882,7 @@ def records_the_page_never_makes(repo_root: str | Path, brief_text: str) -> list
     suite_dir = directory(repo_root)
     texts: list[str] = []
     has_a_page = False
-    for path in project.rglob("*"):
+    for path in files_under(project, _NOT_THE_PAGE_S):
         if not path.is_file() or path.suffix.lower() not in _PAGE_SOURCES:
             continue
         relative = path.relative_to(project)

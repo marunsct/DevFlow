@@ -23,6 +23,7 @@ import threading
 from pathlib import Path
 from typing import Any, Iterable
 
+from app.stacks.languages import BUILT_BY_NAME, NOT_THE_PRODUCT, is_generated
 from app.switches import is_on
 
 logger = logging.getLogger(__name__)
@@ -32,8 +33,7 @@ MOST_CHARACTERS = 1_500
 #: Under `.harness/`, which no commit, digest or review diff carries: at the
 #: workspace's top it was committed and led the code reviewer's capped diff.
 GRAPH_FILE = ".harness/project-graph.json"
-_SKIPPED = {"node_modules", ".venv", "venv", "__pycache__", "dist", "build", "test-results", ".git",
-            "vendor", "target", "coverage", "playwright-report", "htmlcov"}
+_SKIPPED = NOT_THE_PRODUCT | BUILT_BY_NAME | {"test-results", "vendor", "coverage", "playwright-report", "htmlcov"}
 
 
 def fixes_enabled() -> bool:
@@ -76,7 +76,8 @@ def _sources(project: Path) -> list[tuple[Path, str]]:
 
     found = []
     for directory, subdirectories, files in os.walk(project):
-        subdirectories[:] = [d for d in subdirectories if d not in _SKIPPED and not d.startswith(".")]
+        subdirectories[:] = [d for d in subdirectories
+                             if d not in _SKIPPED and not d.startswith(".") and not is_generated(d, files)]
         for name in files:
             family = family_of(name)
             if family in FAMILIES or name.endswith(_ELSEWHERE_SUFFIXES):

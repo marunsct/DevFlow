@@ -25,6 +25,7 @@ import shlex
 from pathlib import Path
 from typing import Any
 
+from app.stacks.languages import BUILT_BY_NAME, NOT_THE_PRODUCT
 from app.switches import is_on
 
 logger = logging.getLogger(__name__)
@@ -347,7 +348,7 @@ _LINE_COMMENT = {".py": "#", ".rb": "#", **{s: "//" for s in (".js", ".jsx", ".t
                                                               ".rs", ".java", ".kt", ".cs", ".php")}}
 #: A comment a tool reads: never removed.
 _A_DIRECTIVE = re.compile(r"^(?:#!|#\s*-\*-|#\s*(?:type|noqa|pragma|pylint|fmt|mypy)\b|//\s*(?:go:|@ts-|eslint|prettier|#|nolint|\+build))")
-_NOT_SOURCE = {"node_modules", ".venv", "venv", "__pycache__", ".git", "dist", "build", "vendor", "target", ".harness"}
+_NOT_SOURCE = NOT_THE_PRODUCT | BUILT_BY_NAME | {"vendor", ".harness"}
 
 
 def _python_comment_lines(text: str) -> set[int] | None:

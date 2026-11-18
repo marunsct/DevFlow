@@ -20,6 +20,7 @@ module existed.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -201,10 +202,58 @@ def initialise_repository(repo_root: str | Path) -> bool:
     # A run's history is its own; nothing here should be pushed anywhere.
     _git(root, "config", "commit.gpgsign", "false")
 
+    exclude_generated(root)
     _git(root, "add", "-A")
     _git(root, "commit", "--quiet", "--allow-empty", "-m",
          "Baseline: the workspace before the first sprint")
     return is_repository(root)
+
+
+#: Marks the lines `exclude_generated` owns in `.git/info/exclude`.
+_EXCLUDE_START = "# generated folders (harness)"
+_EXCLUDE_END = "# end generated folders (harness)"
+
+
+def exclude_generated(repo_root: str | Path) -> list[str]:
+    """Keep each toolchain's build output and installed packages out of the sprint history; the folders excluded.
+
+    `_IGNORED` can name a folder only by its name, and `target/`, `bin/`, `obj/` and `vendor/` are a product's own
+    in one language and a toolchain's in another (a Node CLI's `bin/`). So the folders the language table proves
+    generated - by the manifest beside them, `app.stacks.languages.is_generated` - are written to the repository's own
+    `.git/info/exclude`, which nothing delivers. Deep review 2026-11-18: none of them was ignored for a project whose
+    scaffold wrote no `.gitignore` (a custom stack), so cargo's and .NET's build output went into every sprint commit.
+    """
+    from app.stacks.languages import NOT_THE_PRODUCT, is_generated
+
+    root = Path(repo_root)
+    info = root / ".git" / "info"
+    if not info.parent.is_dir():
+        return []
+    found: list[str] = []
+    for directory, folders, files in os.walk(root, onerror=lambda _: None):
+        here = Path(directory)
+        kept = []
+        for name in sorted(folders):
+            if name in NOT_THE_PRODUCT or name in {".harness"}:
+                continue
+            if is_generated(name, files):
+                found.append("/" + (here / name).relative_to(root).as_posix() + "/")
+                continue
+            kept.append(name)
+        folders[:] = kept
+    exclude = info / "exclude"
+    try:
+        text = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
+        if _EXCLUDE_START in text and _EXCLUDE_END in text:
+            head, rest = text.split(_EXCLUDE_START, 1)
+            text = head + rest.split(_EXCLUDE_END, 1)[1].lstrip("\n")
+        block = "\n".join([_EXCLUDE_START, *found, _EXCLUDE_END]) + "\n" if found else ""
+        info.mkdir(exist_ok=True)
+        exclude.write_text((text.rstrip("\n") + "\n" if text.strip() else "") + block, encoding="utf-8")
+    except OSError:
+        logger.debug("could not write %s", exclude, exc_info=True)
+        return []
+    return found
 
 
 def commit_milestone(
@@ -220,6 +269,7 @@ def commit_milestone(
     if not is_repository(root) and not initialise_repository(root):
         return None
 
+    exclude_generated(root)
     if _git(root, "add", "-A") is None:
         return None
 

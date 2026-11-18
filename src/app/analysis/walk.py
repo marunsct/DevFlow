@@ -23,22 +23,21 @@ import os
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
+from app.stacks.languages import GENERATED_BESIDE, is_generated
 
-#: A toolchain's build output, known by the manifest beside it (a name pattern): never a project's own files, whatever a
-#: caller's list says. Measured on a Rust run: the release checks read cargo's generated docs under `target/doc` and the
-#: mutation probe changed their JavaScript, so the run's mutation score measured nothing. A folder of the same name with
-#: no such manifest beside it is the project's own, and is walked.
-BUILD_OUTPUT_BESIDE: dict[str, tuple[str, ...]] = {
-    "target": ("Cargo.toml", "pom.xml"),
-    "bin": ("*.csproj", "*.fsproj"),
-    "obj": ("*.csproj", "*.fsproj"),
-}
+
+#: A toolchain's build output or installed packages, known by the manifest beside it (a name pattern): never a
+#: project's own files, whatever a caller's list says. Measured on a Rust run: the release checks read cargo's generated
+#: docs under `target/doc` and the mutation probe changed their JavaScript, so the run's mutation score measured
+#: nothing. A folder of the same name with no such manifest beside it is the project's own, and is walked. Read from
+#: the language table (`app.stacks.languages`): Composer's `vendor/` beside `composer.json` and Gradle's `build/`
+#: beside `build.gradle` are pruned as cargo's `target/` is.
+BUILD_OUTPUT_BESIDE: dict[str, tuple[str, ...]] = GENERATED_BESIDE
 
 
 def is_build_output(name: str, siblings: Iterable[str]) -> bool:
-    """Whether a folder called `name`, beside files called `siblings`, is a toolchain's build output."""
-    markers = BUILD_OUTPUT_BESIDE.get(name)
-    return bool(markers) and any(fnmatch.fnmatchcase(sibling, marker) for sibling in siblings for marker in markers)
+    """Whether a folder called `name`, beside files called `siblings`, is a toolchain's build output or installs."""
+    return is_generated(name, siblings)
 
 
 def _walk(root: Path, skip: Iterable[str], skip_hidden: bool = False) -> Iterator[tuple[Path, list[str], list[str]]]:

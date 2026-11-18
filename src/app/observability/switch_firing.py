@@ -20,6 +20,7 @@ SIGNALS: dict[str, str] = {
     "WRONG_SHAPE_BODY_PROBE": "sent a JSON body that is not an object",
     "EDGE_PROBE": "Requests at the edges of the interface contract are not handled",
     "PAGE_PROBE": "A check of the page in a browser finds:",
+    "DRAFTING_IN_WAVES": "were drafted before it and are shown below as they are now",
     "STABLE_MEMORY_ORDER": "The documents that hold for every fix come first, the code after them",
     "LEAN_TOOL_LISTS": "so no file listing or search is offered",
     "SLICED_MEMORY": "the files this request names and the files they import",

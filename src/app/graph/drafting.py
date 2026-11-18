@@ -232,9 +232,15 @@ def _stack_line(stack: Any) -> str:
     return ", ".join(part for part in parts if part) or "as the specification says"
 
 
-def _neighbours(root: Path, path: str, task: Any, detail: str, code_under_test: Collection[str] = ()) -> str:
-    """The files this one works with, as they are on disk: the code a test tests first, then the work order's own and any its entries name."""
-    named = [*code_under_test, *(getattr(task, "files", None) or []), *_A_PATH.findall(detail)]
+def _neighbours(root: Path, path: str, task: Any, detail: str, code_under_test: Collection[str] = (),
+                written_before: Collection[str] = ()) -> str:
+    """The files this one works with, as they are on disk: the code a test tests first, then the work order's own and any its entries name.
+
+    `written_before` - the files of earlier drafting waves this one depends on (`drafting_waves`) - come first of
+    all; one too long for the room left is shown by its definitions, not cut off at its head.
+    """
+    named = [*written_before, *code_under_test, *(getattr(task, "files", None) or []), *_A_PATH.findall(detail)]
+    earlier = {str(p).strip().lstrip("./") for p in written_before}
     shown, used = [], 0
     for other in dict.fromkeys(named):
         other = other.strip().lstrip("./")
@@ -251,9 +257,14 @@ def _neighbours(root: Path, path: str, task: Any, detail: str, code_under_test: 
         if target is None:
             continue
         try:
-            text = target.read_text(encoding="utf-8")[:MOST_ONE_NEIGHBOUR_CHARACTERS]
+            whole = target.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
+        text = whole[:MOST_ONE_NEIGHBOUR_CHARACTERS]
+        if other in earlier and (len(whole) > len(text) or used + len(text) > MOST_NEIGHBOUR_CHARACTERS):
+            from app.graph.anchored_edits import outline
+
+            text = f"(its definitions only, by line; the file is {len(whole.splitlines())} lines)\n{outline(whole)}"
         if used + len(text) > MOST_NEIGHBOUR_CHARACTERS:
             break
         used += len(text)
@@ -308,12 +319,23 @@ def _the_builder_s_facts(root: Path, path: str) -> str:
         return ""
 
 
+#: Said to a file drafted after the files it depends on (`drafting_waves`); its own words are the switch's firing signal.
+WRITTEN_BEFORE = (
+    "The files it depends on were drafted before it and are shown below as they are now. Use the names, "
+    "signatures, types and shared state they declare, and wire to them the way they expect; do not declare "
+    "again anything they already declare. They are:"
+)
+
+
 def draft_request(root: Path, path: str, task: Any, specification: Any, stack: Any,
-                  diagnostics: list[str] | None = None, code_under_test: Collection[str] = ()) -> str:
+                  diagnostics: list[str] | None = None, code_under_test: Collection[str] = (),
+                  written_before: Collection[str] = ()) -> str:
     """What one file's draft is asked; `diagnostics` are what the compiler reported on its last draft.
 
     `code_under_test` are the product files a unit test tests, already written: shown first, so the test uses
     their real names, signatures, messages and storage set-up instead of guessing them from the specification.
+    `written_before` are the files of earlier drafting waves this file depends on (`drafting_waves`), shown first
+    of all, so it wires to what they declare instead of declaring it again.
     """
     from app.agents.shared_facts import the_facts_section
     from app.agents.specialists import specification_for_the_work_order
@@ -329,10 +351,11 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         except (OSError, UnicodeDecodeError):
             now = ""
     criteria = "\n".join(f"- {c}" for c in getattr(task, "acceptance_criteria", None) or [])
-    neighbours = _neighbours(root, path, task, detail, code_under_test)
+    neighbours = _neighbours(root, path, task, detail, code_under_test, written_before)
     return "\n\n".join(part for part in (
         f"Write the file `{path}` of this product, exactly as its specification says. "
         f"The stack: {_stack_line(stack)}.",
+        (WRITTEN_BEFORE + " " + ", ".join(f"`{p}`" for p in written_before)) if written_before else "",
         ("The code this test tests is already written and shown below. Call it by its real names and "
          "signatures, expect its real messages, and set up its data the way it stores it: where the code and "
          "the specification differ, test what the specification asks with the code's own names.")
@@ -358,7 +381,8 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
 
 
 def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any, stack: Any,
-               diagnostics: list[str] | None = None, code_under_test: Collection[str] = ()) -> str:
+               diagnostics: list[str] | None = None, code_under_test: Collection[str] = (),
+               written_before: Collection[str] = ()) -> str:
     from langchain_core.messages import HumanMessage, SystemMessage
 
     from app.observability.direct_calls import config_for_this_run
@@ -369,7 +393,7 @@ def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any,
         bounded = model.bind(max_tokens=MOST_DRAFT_TOKENS)
     except Exception:  # noqa: BLE001 - a model that takes no limit is asked as it is
         bounded = model
-    request = draft_request(root, path, task, specification, stack, diagnostics, code_under_test)
+    request = draft_request(root, path, task, specification, stack, diagnostics, code_under_test, written_before)
     for attempt in range(2):
         reply = bounded.invoke([
             SystemMessage(content="You write source files for a software product from its specification. "
@@ -402,6 +426,11 @@ def _noted(path: str, attempt: str, outcome: str) -> None:
     except Exception:  # noqa: BLE001 - a record must never cost the draft
         logger.debug("Could not record a draft", exc_info=True)
 
+#: Told to a file redrafted between drafting waves: what a later wave will write is not this file's to declare.
+STILL_TO_COME = (
+    "These files are drafted after this one and are not written yet; a name they will declare is not missing "
+    "from this file and is not to be declared here:"
+)
 #: Passes over drafted files the compiler still reports errors in.
 MOST_REPAIR_PASSES = 2
 
@@ -409,23 +438,35 @@ MOST_REPAIR_PASSES = 2
 def _repaired_where_the_compiler_says(
     results: list[tuple[int, str, bool]], jobs: list[tuple[int, str, Any]], diagnose: Callable[[list[str]], list[str]],
     model: Any, root: Path, repo_root: str, specification: Any, stack: Any, write: Write,
+    not_yet_written: Collection[str] = (), needs: dict[str, list[str]] | None = None,
 ) -> None:
     """Each drafted file the compiler reports an error in, drafted again with what it reported.
 
     One run's drafts were written in a minute and did not compile - a
     variable declared twice, a type that did not exist - and the test round
     found it half an hour later, through a model. The compiler says it at once.
+
+    After a drafting wave (`drafting_waves`), `not_yet_written` are the files later waves will draft: a report that
+    names one is theirs to answer, not this wave's, and a redraft is told they are still to come.
     """
     written = [path for _, path, ok in results if ok]
     tasks = {path: task for _, path, task in jobs}
+    needs = needs or {}
     from app.graph.builder_facts import compiler_lines
     from app.graph.fewest_findings import BestVersions
+
+    later = [str(p) for p in not_yet_written]
+    later_names = re.compile(
+        r"(?<![\w-])(?:" + "|".join(re.escape(n) for p in later for n in {PurePosixPath(p).name, PurePosixPath(p).stem}
+                                     if n) + r")(?![\w])"
+    ) if later else None
 
     def reported_now() -> list[str]:
         reported = diagnose(written) if written else []
         # The compiler's own errors beside the language service's: `tsc` reports a router handed to `app.use`, the
         # service does not (BUILDER_FACTS).
-        return [*reported, *(line for line in compiler_lines(repo_root, written) if line not in reported)]
+        found = [*reported, *(line for line in compiler_lines(repo_root, written) if line not in reported)]
+        return [line for line in found if later_names is None or not later_names.search(line)]
 
     # Each file's version with the fewest errors is what stays, the draft included (A2): the last repair was kept
     # unmeasured, even when it made the file worse than the draft before it.
@@ -444,8 +485,11 @@ def _repaired_where_the_compiler_says(
         logger.info("Drafts the compiler reports errors in, drafted again: %s", ", ".join(failing))
         for path in failing:
             mine = [line for line in reported if f"`{path}`" in line]
+            if later:
+                mine.append(STILL_TO_COME + " " + ", ".join(f"`{p}`" for p in later))
+            earlier = {"written_before": needs[path]} if needs.get(path) else {}
             try:
-                content = _draft_one(model, root, path, tasks[path], specification, stack, mine)
+                content = _draft_one(model, root, path, tasks[path], specification, stack, mine, **earlier)
                 if content.strip():
                     write(repo_root, path, content)
                     _noted(path, f"repair-{_pass + 1}", "accepted")
@@ -507,6 +551,45 @@ def _promised_but_not_written(task: Any, written: list[str], root: Path) -> list
     return not_defined_in(names, texts) if texts else []
 
 
+Job = tuple[int, str, Any]
+
+
+def _in_waves(code_jobs: list[Job], tasks: list[Any], specification: Any,
+              repo_root: str) -> tuple[list[list[Job]], dict[str, list[str]]]:
+    """The product's code drafts in the waves `drafting_waves` orders them in, and what each file depends on.
+
+    One wave of them all, as before, when `DRAFTING_IN_WAVES` is off, the product has one or two code files, or
+    nothing known before drafting orders them. Never raises.
+    """
+    if not code_jobs:
+        return [], {}
+    try:
+        from app.graph import drafting_waves
+
+        if not drafting_waves.enabled():
+            return [code_jobs], {}
+        try:
+            from app.stacks.scaffold import _served_entrypoints
+
+            project, served = _served_entrypoints(repo_root)
+            entrypoints = [f"{project}/{entry}" if project else entry for entry in served]
+        except Exception:  # noqa: BLE001 - no pack, no entry file known
+            entrypoints = []
+        planned = drafting_waves.drafting_waves([path for _, path, _ in code_jobs], tasks, specification, entrypoints)
+    except Exception:  # noqa: BLE001 - drafted in one wave, as before
+        logger.debug("Could not order the drafts in waves", exc_info=True)
+        return [code_jobs], {}
+    if len(planned.waves) <= 1:
+        return [code_jobs], {}
+    by_path: dict[str, list[Job]] = {}
+    for job in code_jobs:
+        by_path.setdefault(job[1], []).append(job)
+    waves = [[job for path in wave for job in by_path.get(path, ())] for wave in planned.waves]
+    logger.info("Drafting in %d waves: %s", len(waves),
+                " | ".join(", ".join(path for _, path, _ in wave) for wave in waves))
+    return [wave for wave in waves if wave], planned.needs
+
+
 def draft_work_orders(
     tasks: list[Any],
     specification: Any,
@@ -558,11 +641,15 @@ def draft_work_orders(
     if not jobs and not never_written and not kept:
         return {}
 
+    needs: dict[str, list[str]] = {}
+
     def run(job: tuple[int, str, Any], code_under_test: Collection[str] = ()) -> tuple[int, str, bool]:
         index, path, task = job
         attempt = "first"
+        # The files of earlier waves it depends on, those that were written (`drafting_waves`).
+        earlier = {"written_before": needs[path]} if needs.get(path) else {}
         try:
-            content = _draft_one(model, root, path, task, specification, stack, None, code_under_test)
+            content = _draft_one(model, root, path, task, specification, stack, None, code_under_test, **earlier)
             if not content.strip():
                 _noted(path, attempt, "left to the loop: the draft was empty")
                 return index, path, False
@@ -577,7 +664,8 @@ def draft_work_orders(
                     raise
                 _noted(path, attempt, f"refused for its content: {refused}")
                 attempt = "content-refusal"
-                content = _draft_one(model, root, path, task, specification, stack, [str(refused)], code_under_test)
+                content = _draft_one(model, root, path, task, specification, stack, [str(refused)], code_under_test,
+                                     **earlier)
                 write(repo_root, path, content)
             _noted(path, attempt, "accepted")
             return index, path, True
@@ -593,8 +681,22 @@ def draft_work_orders(
     # tests were left open. Each test is shown the product files drafted here, those it names first.
     code_jobs = [job for job in jobs if classify_file(job[1]) != "test"]
     test_jobs = [job for job in jobs if classify_file(job[1]) == "test"]
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        results = mapped_in_this_context(pool, run, code_jobs)
+    waves, waves_needs = _in_waves(code_jobs, tasks, specification, repo_root)
+    results: list[tuple[int, str, bool]] = []
+    for number, wave in enumerate(waves):
+        # Each wave's files drafted side by side, as the one wave was; a later wave reads what the earlier wrote.
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+            done = mapped_in_this_context(pool, run, wave)
+        results += done
+        written_so_far = {path for _, path, ok in results if ok}
+        for job in (job for later in waves[number + 1:] for job in later):
+            needs[job[1]] = [used for used in waves_needs.get(job[1], ()) if used in written_so_far]
+        if diagnose is not None and number < len(waves) - 1:
+            # A later wave builds on files that compile (deep review 2026-11-18, item 1.6).
+            _repaired_where_the_compiler_says(
+                done, wave, diagnose, model, root, repo_root, specification, stack, write,
+                not_yet_written=[job[1] for later in waves[number + 1:] for job in later], needs=needs,
+            )
     drafted_code = [path for _, path, ok in results if ok]
 
     def the_code_it_tests(path: str, task: Any) -> list[str]:
@@ -606,7 +708,8 @@ def draft_work_orders(
         with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
             results += mapped_in_this_context(pool, lambda job: run(job, the_code_it_tests(job[1], job[2])), test_jobs)
     if diagnose is not None:
-        _repaired_where_the_compiler_says(results, jobs, diagnose, model, root, repo_root, specification, stack, write)
+        _repaired_where_the_compiler_says(results, jobs, diagnose, model, root, repo_root, specification, stack, write,
+                                          needs=needs)
     drafted: dict[int, Any] = {}
     for index, task in enumerate(tasks):
         mine = [(path, ok) for i, path, ok in results if i == index]

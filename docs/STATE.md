@@ -74,7 +74,8 @@ Generated above. Today (hidden, quality, verdict):
   is run once per product while defects are dispatched; 53 runs in 20 min on one unchanged product) live 03:59.
 - LF.1124 shipped live ~04:25: a hosted reply's block list was written as its Python form into five C# source files
   (81 syntax errors on line 1; the C# Haiku run's first attempt lost to it). Every reply reader now reads text blocks.
-- LF.1126 committed, deploys at the next boundary: a specification that calls the setup's no-parameter `app()` with
+- LF.1126 live 06:50 (5cd321e); Rust hybrid 2 rewound to architecture_review at 06:52 so its specification is checked
+  and the judgement-only arm is measured on a buildable design (mixed). Was: a specification that calls the setup's no-parameter `app()` with
   arguments goes back to the architect - the root of the Rust `app()` failures, 5 of 5 recent Rust runs.
 - LF.1125 shipped live ~05:00: the delivered-product start of a toolchain that restores when it starts (C#) gets a
   network; NU1301 in every round on a C# product that started for the suite (LF.1113's run had the same root).

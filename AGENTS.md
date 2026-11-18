@@ -40,6 +40,11 @@ Rules that are never optional (details and reasons in the handover):
   not deployed. A Fix batch that moves no hidden score or MF.3 KPI is parked.
   A mid-run deploy is allowed only under the 40-minute rule below and marks the
   run `mixed_versions`. Until then, and for gate run 3:
+- **Since 2026-11-18 (owner, deep-review plan): frozen-version measuring.** Fixes
+  ship in bundles at run boundaries; a deploy into a live run only for a bug that
+  changes its outcome (it marks the run `mixed_versions`). The language sweep and
+  the release-candidate count are paused until review items 1.7 and 1.8 are built
+  (`docs/owner-decisions.md`). The rules below applied before that:
 - **Deploy a verified fix into the live run** (owner instruction 2026-10-10;
   details in `docs/HANDOVER.md`).
   - In a run's first 40 minutes, a bug means: cancel, fix, deploy, restart.

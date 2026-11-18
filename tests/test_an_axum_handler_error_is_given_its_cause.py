@@ -33,8 +33,11 @@ def _defect(text):
      "build the state inside `app()`"),
     ("error[E0382]: use of moved value: `app`: value used here after move", "`oneshot` takes the router by value"),
     ("unresolved import `crate::models`: could not find `models` in the crate root", "`pub mod <name>;`"),
+    ("module `models` is private: private module", "`pub mod <name>;`, not `mod <name>;`"),
+    ("The default runtime flavor is `multi_thread`, but the `rt-multi-thread` feature is disabled", "\"rt-multi-thread\", \"net\"]"),
 ], ids=["body-extractor-first", "router-without-its-state", "app-returns-a-router-still-waiting", "no-axum-test",
-        "a-test-given-a-router-still-waiting", "a-router-sent-two-requests", "a-module-not-declared"])
+        "a-test-given-a-router-still-waiting", "a-router-sent-two-requests", "a-module-not-declared",
+        "a-private-module", "tokio-without-its-runtime"])
 def test_the_error_is_given_its_cause(tmp_path, error, cause):
     contract.write(tmp_path, pack_named("rust-axum-api"), "notes-api", "Notes")
 

@@ -117,6 +117,14 @@ AXUM_KNOWN_ERRORS = {
         "already given it away: build it again with `app()` for each request (or send the first through "
         "`.clone()`)."
     ) for phrase in ("use of moved value: `app`", "use of moved value: `router`")},
+    "is private: private module": (
+        "a test under `tests/` sees only what the crate makes public: declare the module in `src/lib.rs` with "
+        "`pub mod <name>;`, not `mod <name>;`."
+    ),
+    "the `rt-multi-thread` feature": (
+        "`#[tokio::main]` needs tokio's `macros` and `rt-multi-thread` features: keep the scaffold's line in "
+        "`Cargo.toml`, `tokio = { version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"net\"] }`."
+    ),
     "in the crate root": (
         "a module the code names is not declared where the crate starts: every file under `src/` that another uses "
         "must be named once in `src/lib.rs` with `pub mod <name>;` (for `src/<name>.rs`), and `main.rs` reaches it "

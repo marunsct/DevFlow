@@ -39,17 +39,18 @@ NOTES = [
     "Code the product does not run: `backend/` repeats files nothing serves.",
     "Ships 1 dependency under a strong-copyleft licence, which binds the product's own licence: a (see `LICENCES.md`).",
     "The judgement model 'm' could not be built (ValueError), so the architect, QA, reviews, test rounds and fixes run on the default model.",
+    # Calibrated on hidden and quality tests (deep review 2026-11-18, B4): these lost no more often than any run.
+    "14 of the project's own unit tests still fail and ship failing (the locked acceptance suite passes): a; b.",
+    "At release, reading the files still finds: the page calls a route no server has.",
 ]
 
 BLOCKING = [
     "No acceptance suite was locked; the milestone reviews were the only gate.",
-    "14 of the project's own unit tests still fail and ship failing (the locked acceptance suite passes): a; b.",
     "The project setup was never proven: `stack-setup.json` cannot be used.",
     "`app/README.md` says nowhere how to run the product: name the commands that install, start and test it.",
     "The project has no README: someone who did not write it cannot tell how to install it.",
     "`app/config.py` line 3 holds a key: a credential must come from the environment.",
     "At release the product does not keep its interface contract: contract 6: DELETE /a/{id} -> 400",
-    "At release, reading the files still finds: the page calls a route no server has.",
     "The interface contract's checks could not run at release: their runner wrote no report.",
     "Adding the release files failed: disk full",
     "A milestone review's findings were recorded as risks, not fixed (DR-20): [blocking] correctness: the brief's limit is exceeded.",
@@ -218,7 +219,7 @@ def test_what_this_adds_for_the_reader_uses_none_of_the_banned_words(tmp_path, m
 def test_the_surfaces_of_a_run_say_which_gaps_block():
     from app.server import outcomes
 
-    blocking = "3 of the project's own unit tests still fail and ship failing (the locked acceptance suite passes): a"
+    blocking = "The project setup was never proven: `stack-setup.json` cannot be used."
     record = SimpleNamespace(
         run_id="run-g", status="completed", delivery_mode="fast", local_only=False, completion_gaps=[blocking, NOTES[0]],
         created_at="2026-10-15T00:00:00+00:00", updated_at="2026-10-15T05:00:00+00:00",

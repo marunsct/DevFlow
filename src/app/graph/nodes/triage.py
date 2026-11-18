@@ -35,7 +35,7 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
         _run_unit_tests_procedurally, _the_files_this_milestone_changed, _the_mutation_probe,
         _the_served_app_is_the_scaffold_s_stub, _the_test_command_this_stage_left_failing,
         _the_unit_tests_fail, _this_attempt, _what_later_sprints_build, _with_the_contract_s_server_errors,
-        _with_the_lock_s_server_errors, build_test_run_request, create_specialist_agent,
+        _with_a_page_check_defect, _with_the_lock_s_server_errors, build_test_run_request, create_specialist_agent,
         is_sprint_acceptable, raised_by, record_test_run, start_remediation, superseded_by_one_cause,
         the_round_s_measurement, with_the_facts,
     )
@@ -152,10 +152,15 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
             "test_round_%d: run by the harness (fast delivery); unit tests %s",
             test_round, {True: "pass", False: "fail", None: "not recorded"}[unit_ok],
         )
+        beside_a_green_suite = not failing_due and int(saved_run.get("failed") or 0) == 0
+        # Beside a green locked suite, a unit test failing in two product states is set aside, not raised (B6).
+        from app.graph import unit_test_quarantine
+
+        raised = unit_ok is False and (not beside_a_green_suite or unit_test_quarantine.raised_beside_a_green_suite(
+            state["repository"].root_path))
         harness_defects: list[Any] = (
-            [] if unit_ok is not False else [_the_unit_tests_fail(
-                milestone, unit_output,
-                beside_a_green_suite=not failing_due and int(saved_run.get("failed") or 0) == 0,
+            [] if not raised else [_the_unit_tests_fail(
+                milestone, unit_output, beside_a_green_suite=beside_a_green_suite,
             )]
         )
         if failing_due:
@@ -245,6 +250,7 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     if green or (passed > 0 and near_green(passed, failed)):
         test_result = _with_the_contract_s_server_errors(state, test_result, milestone)
     if green:
+        test_result = _with_a_page_check_defect(state, test_result, milestone)
         from app.acceptance import order_probe
 
         order_probe.at_a_green_round(state["repository"].root_path)

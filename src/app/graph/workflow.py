@@ -3067,8 +3067,9 @@ def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: 
         if not interface_contract.server_errors_at_a_round_switch.enabled() or not acceptance_nodes.suite.is_locked(root):
             return test_result
         if any(str(d.description or "").startswith(interface_contract.SERVER_FAILED) for d in test_result.defects):
-            # Writes made at once are another probe's finding: asked whatever the server-error defect says.
-            return _with_a_concurrent_write_defect(state, test_result, milestone)
+            # Writes made at once, and requests at the edges, are other probes' findings: asked whatever it says.
+            return _with_an_edge_case_defect(state, _with_a_concurrent_write_defect(state, test_result, milestone),
+                                             milestone)
         from app.acceptance import wrong_shape_body_probe
 
         errors = interface_contract.server_errors(root) or []
@@ -3079,6 +3080,7 @@ def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: 
                            len(errors) + len(bad_body) + len(wrong_shape))
             test_result = _with_a_server_error_defect(state, test_result, milestone, errors, bad_body, wrong_shape)
         test_result = _with_a_concurrent_write_defect(state, test_result, milestone)
+        test_result = _with_an_edge_case_defect(state, test_result, milestone)
         return _with_an_emptied_field_defect(state, test_result, milestone)
     except Exception:  # noqa: BLE001 - the round as measured stands
         logger.debug("Could not add the contract's server errors to the round", exc_info=True)
@@ -3120,6 +3122,83 @@ def _with_a_concurrent_write_defect(state: Any, test_result: Any, milestone: Any
         return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
     except Exception:  # noqa: BLE001 - the round as measured stands
         logger.debug("Could not add the concurrent-write defect to the round", exc_info=True)
+        return test_result
+
+
+def _with_an_edge_case_defect(state: Any, test_result: Any, milestone: Any) -> Any:
+    """`test_result` with one defect for the requests at the contract's edges the product failed, behind its switch. Never raises.
+
+    Deep review 2026-11-18, item B1: hidden quality tests lose most often on requests no locked test sends - a field
+    missing, empty, of the wrong type or very long, an id that is no number or already deleted
+    (`app.acceptance.edge_probe`).
+    """
+    try:
+        from app.acceptance import edge_probe
+        from app.agents.specialists import ReportedDefect
+
+        if not edge_probe.enabled() or any(
+            str(d.description or "").startswith(edge_probe.EDGE_CASES_FAILED) for d in test_result.defects
+        ):
+            return test_result
+        found = edge_probe.edge_errors(state["repository"].root_path) or []
+        if not found:
+            return test_result
+        logger.warning("A green round's edge probe: %d request(s) at the contract's edges were not handled", len(found))
+        defect = ReportedDefect(
+            description=edge_probe.edge_description(found),
+            severity="major",
+            reproduction_steps="; ".join(
+                f"send `{case['method']} {case['shown']}` {case['what']}" for case, _ in found[:8]),
+            expected_behavior=("a status under 500; a refused write stores and changes nothing; a record created "
+                               "is read back with each text as it was sent"),
+            actual_behavior="; ".join(
+                f"`{case['method']} {case['shown']}` {case['what']} {edge_probe.what_came_back(case, f)}"
+                for case, f in found[:8]),
+            affected_files=[],
+            owner=_the_unit_tests_fail(milestone, "").owner,
+        )
+        return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
+    except Exception:  # noqa: BLE001 - the round as measured stands
+        logger.debug("Could not add the edge-case defect to the round", exc_info=True)
+        return test_result
+
+
+def _with_a_page_check_defect(state: Any, test_result: Any, milestone: Any) -> Any:
+    """`test_result` with one defect for the harness's browser checks of a page product it fails, behind its switch.
+
+    Deep review 2026-11-18, item B5: no check typed markup into a field, watched the console while an item was added,
+    measured a 360px screen or reloaded the page (`app.acceptance.page_probe`). Never raises.
+    """
+    try:
+        from app.acceptance import page_probe
+        from app.agents.specialists import ReportedDefect
+
+        if not page_probe.enabled() or any(
+            str(d.description or "").startswith(page_probe.PAGE_CHECK_FAILED) for d in test_result.defects
+        ):
+            return test_result
+        brief = str(getattr(state.get("document"), "text", "") or "")
+        found = page_probe.page_errors(state["repository"].root_path, brief) or []
+        if not found:
+            return test_result
+        logger.warning("A green round's page checks: the page failed %d of them", len(found))
+        defect = ReportedDefect(
+            description=page_probe.page_description(found),
+            severity="major",
+            reproduction_steps=(
+                "Open the page in a browser; type text into each text field and send the form the way the page "
+                f"sends it; watch the console and the network; measure it at a {page_probe.PHONE[0]}px-wide screen; "
+                "reload it"),
+            expected_behavior=("text typed is shown as text; no console error and no request answered 500 or "
+                               f"failing; no sideways scrolling at {page_probe.PHONE[0]}px; what persists is shown "
+                               "after a reload"),
+            actual_behavior=page_probe.page_description(found)[len(page_probe.PAGE_CHECK_FAILED):].strip()[:1500],
+            affected_files=[],
+            owner="ui_ux",
+        )
+        return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
+    except Exception:  # noqa: BLE001 - the round as measured stands
+        logger.debug("Could not add the page checks' defect to the round", exc_info=True)
         return test_result
 
 

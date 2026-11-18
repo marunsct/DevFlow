@@ -179,7 +179,9 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # Which review findings may send a sprint back (docs/measuring.md M7).
     "Review gates": ("MILESTONE_EVIDENCE_GATE", "DESIGN_REVISION_CROSS_CHECKED", "INTAKE_ASKS_FIRST"),
     # Contract probes the release adds to a green round: what a product must survive that no locked test asks.
-    "Contract probes": ("CONCURRENT_WRITE_PROBE", "WRONG_SHAPE_BODY_PROBE"),
+    "Contract probes": ("CONCURRENT_WRITE_PROBE", "WRONG_SHAPE_BODY_PROBE", "EDGE_PROBE", "PAGE_PROBE"),
+    # Which of the product's own unit tests may hold a run: one that keeps failing beside a green suite is set aside.
+    "Unit test signal": ("UNIT_TEST_QUARANTINE",),
 }
 #: Every grouped switch, in the admin page's order.
 EXPERIMENTS = tuple(name for members in GROUPS.values() for name in members)
@@ -208,6 +210,9 @@ EXPERIMENTS_ON: dict[str, str] = {
     "FIX_STAGES_THAT_CLOSE_NOTHING": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "CONCURRENT_WRITE_PROBE": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "WRONG_SHAPE_BODY_PROBE": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "UNIT_TEST_QUARANTINE": "deep review 11-18 (B6): built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "PAGE_PROBE": "deep review 11-18 (B5): built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
+    "EDGE_PROBE": "deep review 11-18 (B1): built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "ONE_DESIGN_REVIEW": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "SPRINT_TIME_BUDGET": "owner 11-17: built switches go on, measured against the scored runs before them; off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",
     "LEAN_TOOL_LISTS": "deep review 2026-11-18 (C5): five tools never or almost never called in about 3,500 offers each over 30 runs; on, and off at once if a run it fires in loses a hidden test or takes 1.5x its family's 5-run active minutes (docs/measuring.md M15)",

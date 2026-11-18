@@ -283,7 +283,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # pipeline written below runs them first. Measured on one run: released
     # with every criterion passing or deferred while `npm test` failed on a
     # test a fix stage had written for a deferred criterion.
-    unit_failing = [] if failing or build_output else _unit_tests_failing(root)
+    from app.graph import unit_test_quarantine
+
+    unit_failing = [] if failing or build_output else unit_test_quarantine.without_those_set_aside(
+        root, _unit_tests_failing(root))
     project_unit_failures = list(unit_failing)
     if build_output:
         failing = unit_failing = [production_build.THE_PRODUCT_DOES_NOT_BUILD]
@@ -423,6 +426,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     if shipped_failing_unit_tests:
         gaps.append(release_with_failing_unit_tests.gap(shipped_failing_unit_tests))
     gaps.extend(release_audits.licence_gaps(root))
+    gaps.extend(unit_test_quarantine.release_note(root))
     unit_gap = _no_unit_tests_ran(root)
     if unit_gap:
         gaps.append(unit_gap)
@@ -471,6 +475,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.acceptance.interface_contract import what_the_contract_checks_find
 
     gaps.extend(what_the_contract_checks_find(root))
+    # Each probe a test round asks, asked again: a defect it raised that no fixer closed ships named, and blocks (B2).
+    from app.acceptance.probes_at_release import what_the_probes_still_find
+
+    gaps.extend(what_the_probes_still_find(root))
     # What someone who did not write it needs to test and ship it, from the
     # stack pack's own verified commands. See `app.stacks.release`.
     from app.stacks import release as release_files

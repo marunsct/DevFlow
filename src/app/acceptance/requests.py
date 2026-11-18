@@ -227,6 +227,15 @@ def kept_files_rule(repo_root: str | Path) -> str:
             "setup gives you.\n")
 
 
+#: Measured on one run: the QA engineer ran its suite against the unbuilt product, saw every test fail, and spent 59
+#: minutes and 51 replies editing tests to pass - other runs of the family wrote theirs in about 8.
+NOT_BUILT_SO_IT_FAILS = (
+    "Run against the product as it is now, every test of a feature fails: that is expected, and never a reason "
+    "to change a test. Run the suite only to see that the file loads and each test starts - an error in the test's "
+    "own code (a syntax error, a missing import, a wrong helper) is yours to fix; a feature answering wrongly is not. "
+)
+
+
 def build_author_request(
     repo_root: str | Path,
     criteria: Sequence[Criterion],
@@ -279,7 +288,7 @@ def build_author_request(
         "review names. "
         if built
         else "Nothing of the product's features is built yet. Write its acceptance suite now: "
-        "the tests that decide whether it is done. "
+        "the tests that decide whether it is done. " + NOT_BUILT_SO_IT_FAILS
     )
     content = (
         "The workspace is rooted at '/'; all paths you use are relative to it.\n\n"

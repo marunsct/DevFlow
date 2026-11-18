@@ -14,6 +14,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
+from app.observability.degraded import degraded
 from app.graph.context import GraphContext
 from app.graph.workflow import WorkflowGraphState
 
@@ -42,8 +43,8 @@ def _the_specification_s_work_orders(state: Any, goal: str) -> Any:
             state.get("technical_specification"), goal, criteria, [" ".join(map(str, unit))] if unit else [],
             root,
         )
-    except Exception:  # noqa: BLE001 - the lead writes the plan
-        logger.warning("Could not make the work orders from the specification", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the lead writes the plan
+        degraded("work_orders_from_specification", error)
         return None
 
 

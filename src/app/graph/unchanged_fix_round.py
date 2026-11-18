@@ -18,6 +18,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from app.observability.degraded import degraded
 from app.switches import is_on
 
 logger = logging.getLogger(__name__)
@@ -87,8 +88,8 @@ def ends_the_attempt(root: str | Path, cycle: Any, *, attempt: str, test_round: 
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(now), encoding="utf-8")
         return bool(now["ended"])
-    except Exception:  # noqa: BLE001 - another fix round, as before
-        logger.debug("Could not compare this fix round with the one before", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - another fix round, as before
+        degraded("unchanged_fix_round", error)
         return False
 
 

@@ -14,6 +14,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
+from app.observability.degraded import degraded
 from app.graph.context import GraphContext
 from app.graph.workflow import WorkflowGraphState
 
@@ -135,8 +136,8 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
                 _what_later_sprints_build(state),
                 getattr(state.get("document"), "text", "") or "",
             )
-        except Exception:  # noqa: BLE001 - a check that cannot answer is no evidence
-            logger.debug("Could not read what the files already prove", exc_info=True)
+        except Exception as swallowed:  # noqa: BLE001 - a check that cannot answer is no evidence
+            degraded("triage.what_the_files_prove", swallowed)
             skip_agent = False
 
     from app import delivery
@@ -290,8 +291,8 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
             getattr(state.get("document"), "text", "") or "",
         )
         left_out = _proven_problems_the_round_left_out(still_proven, reported, milestone, state["repository"].root_path)
-    except Exception:  # noqa: BLE001 - the round's own report stands
-        logger.debug("Could not compare the round's report with what is proven", exc_info=True)
+    except Exception as swallowed:  # noqa: BLE001 - the round's own report stands
+        degraded("triage.proven_problems_left_out", swallowed)
         left_out = []
     if left_out:
         logger.warning(
@@ -305,13 +306,13 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
     # that work for the sprint that builds it.
     try:
         reported = reported + raised_by("page check", acceptance_nodes.interface_defects(state))
-    except Exception:  # noqa: BLE001 - the round's own report stands
-        logger.debug("Could not check how the page is presented", exc_info=True)
+    except Exception as swallowed:  # noqa: BLE001 - the round's own report stands
+        degraded("triage.page_presentation", swallowed)
     # What the pack's scaffold depends on and a rewrite dropped (PACK_ENTRY_EXPORTS_KEPT).
     try:
         reported = reported + raised_by("pack contract", acceptance_nodes.pack_contract_defects(state))
-    except Exception:  # noqa: BLE001 - the round's own report stands
-        logger.debug("Could not check what the pack's entry file must export", exc_info=True)
+    except Exception as swallowed:  # noqa: BLE001 - the round's own report stands
+        degraded("triage.pack_entry_exports", swallowed)
     reported, later_work = _defects_a_later_sprint_builds(reported, state)
     if later_work:
         logger.warning(
@@ -340,8 +341,8 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
         # Nor the backstop's own for them: deferred above, they are no fix stage's.
         unreported_criteria, _ = _defects_only_about(unreported_criteria, beyond_repair)
         unreported_criteria, _ = _defects_only_about_deferred(unreported_criteria, state["repository"].root_path)
-    except Exception:  # noqa: BLE001 - the round's own report stands
-        logger.debug("Could not compare the round's report with the acceptance suite", exc_info=True)
+    except Exception as swallowed:  # noqa: BLE001 - the round's own report stands
+        degraded("triage.acceptance_suite_compare", swallowed)
         unreported_criteria = []
     logger.info("test_round_%d: %s", test_round, the_round_s_measurement(state["repository"].root_path))
     from app.graph import best_attempt

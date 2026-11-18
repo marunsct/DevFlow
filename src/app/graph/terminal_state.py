@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.observability.degraded import degraded
+
 logger = logging.getLogger(__name__)
 
 #: The marker file, in the workspace root.
@@ -62,8 +64,8 @@ def mark(
             + "\n",
             encoding="utf-8",
         )
-    except Exception:  # noqa: BLE001 - the sign must never cost the run its error
-        logger.warning("Could not write the non-deliverable marker", exc_info=True)
+    except Exception as failure:  # noqa: BLE001 - the sign must never cost the run its error
+        degraded("terminal_marker.write", failure)
 
 
 def _forget(root: Any, name: str) -> None:

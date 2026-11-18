@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
+from app.observability.degraded import degraded
 from app.switches import is_on
 
 logger = logging.getLogger(__name__)
@@ -102,8 +103,8 @@ def try_them(
                 ci.commit(root, f"Last try at {criterion}: put back")
                 logger.info("Last try at deferred %s did not pass it without breaking another; put back", criterion)
         return made
-    except Exception:  # noqa: BLE001 - the release goes on as it was
-        logger.warning("Could not make the last try at the deferred criteria", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the release goes on as it was
+        degraded("last_try_on_deferred", error)
         return []
 
 

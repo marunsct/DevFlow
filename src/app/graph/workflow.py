@@ -62,6 +62,7 @@ from langgraph.graph import END, START, StateGraph
 # `langgraph.types.Send`.
 from langgraph.types import Send
 
+from app.observability.degraded import degraded
 from app.agents.shared_facts import with_the_facts
 from app.agents.approval import extract_pending_approval, resume_with_decision
 from app.agents.stage_memory import remembering
@@ -2922,7 +2923,8 @@ def _what_the_compiler_says_of(root: str, touched: set[str], stage_name: str, pr
         return []
     try:
         found = compiler_check.findings(root, project, compiled)
-    except Exception:  # noqa: BLE001 - a check that cannot run says nothing
+    except Exception as error:  # noqa: BLE001 - a check that cannot run says nothing
+        degraded("check.compiler_findings_in_touched_files", error)
         return []
     found.sort(key=lambda finding: finding["file"] not in touched)
     return [f"- In `{f['file']}` line {f['line']}: {f['message']} (the compiler)" for f in found]
@@ -3101,8 +3103,8 @@ def _with_the_contract_s_server_errors(state: Any, test_result: Any, milestone: 
         test_result = _with_a_concurrent_write_defect(state, test_result, milestone)
         test_result = _with_an_edge_case_defect(state, test_result, milestone)
         return _with_an_emptied_field_defect(state, test_result, milestone)
-    except Exception:  # noqa: BLE001 - the round as measured stands
-        logger.debug("Could not add the contract's server errors to the round", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the round as measured stands
+        degraded("round_check.contract_server_errors", error)
         return test_result
 
 
@@ -3139,8 +3141,8 @@ def _with_a_concurrent_write_defect(state: Any, test_result: Any, milestone: Any
             owner=_the_unit_tests_fail(milestone, "").owner,
         )
         return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
-    except Exception:  # noqa: BLE001 - the round as measured stands
-        logger.debug("Could not add the concurrent-write defect to the round", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the round as measured stands
+        degraded("round_check.concurrent_write", error)
         return test_result
 
 
@@ -3177,8 +3179,8 @@ def _with_an_edge_case_defect(state: Any, test_result: Any, milestone: Any) -> A
             owner=_the_unit_tests_fail(milestone, "").owner,
         )
         return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
-    except Exception:  # noqa: BLE001 - the round as measured stands
-        logger.debug("Could not add the edge-case defect to the round", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the round as measured stands
+        degraded("round_check.edge_case", error)
         return test_result
 
 
@@ -3216,8 +3218,8 @@ def _with_a_page_check_defect(state: Any, test_result: Any, milestone: Any) -> A
             owner="ui_ux",
         )
         return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
-    except Exception:  # noqa: BLE001 - the round as measured stands
-        logger.debug("Could not add the page checks' defect to the round", exc_info=True)
+    except Exception as failure:  # noqa: BLE001 - the round as measured stands
+        degraded("round_check.page_checks", failure)
         return test_result
 
 
@@ -3250,8 +3252,8 @@ def _with_an_emptied_field_defect(state: Any, test_result: Any, milestone: Any) 
             owner=_the_unit_tests_fail(milestone, "").owner,
         )
         return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
-    except Exception:  # noqa: BLE001 - the round as measured stands
-        logger.debug("Could not add the emptied-field defect to the round", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the round as measured stands
+        degraded("round_check.emptied_field", error)
         return test_result
 
 
@@ -3269,8 +3271,8 @@ def _with_the_lock_s_server_errors(state: Any, test_result: Any, milestone: Any)
         ):
             return test_result
         return _with_a_server_error_defect(state, test_result, milestone, errors)
-    except Exception:  # noqa: BLE001 - the round as measured stands
-        logger.debug("Could not add the lock's server errors to the round", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the round as measured stands
+        degraded("round_check.locked_suite_server_errors", error)
         return test_result
 
 
@@ -3379,8 +3381,8 @@ def _diagnosed_file_by_file(state: Any, saved_run: dict[str, Any], milestone: An
         # name the wiring gap itself instead of only its symptoms (K.3).
         if (stubbed := entrypoint_is_still_the_stub(root)) is not None:
             defects.append(_the_served_app_is_the_scaffold_s_stub(stubbed, owner))
-    except Exception:  # noqa: BLE001 - the testing specialist's round, as before
-        logger.warning("Could not run the acceptance suite file by file", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the testing specialist's round, as before
+        degraded("measure.acceptance_file_by_file", error)
         return None
     logger.info(
         "test_round_%d: the suite gave no answer; the harness ran its %d file(s) one at a time: %s",
@@ -3473,7 +3475,8 @@ def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
             return None
         ok, _ = _run_unit_tests_procedurally(str(root))
         return ok
-    except Exception:  # noqa: BLE001 - a check that cannot answer says nothing
+    except Exception as failure:  # noqa: BLE001 - a check that cannot answer says nothing
+        degraded("measure.defect_tests_pass", failure)
         return None
 
 
@@ -3593,7 +3596,8 @@ def _the_defect_s_tests_in(root: str, label: str, defect: Any) -> bool | None:
             about = _the_unit_tests_about(defect, snapshot.unit)
             return all(outcome != "failed" for outcome in about.values()) if about else None
         return None
-    except Exception:  # noqa: BLE001 - a measurement that cannot answer says nothing
+    except Exception as swallowed:  # noqa: BLE001 - a measurement that cannot answer says nothing
+        degraded("measure.defect_tests_in_snapshot", swallowed)
         return None
 
 
@@ -3806,8 +3810,8 @@ def _put_back_a_deliberate_change(state: Any) -> None:
         from app.acceptance.mutation import restore_an_interrupted_probe
 
         restore_an_interrupted_probe(state["repository"].root_path)
-    except Exception:  # noqa: BLE001 - the probe's own entry tries again
-        logger.debug("Could not check for a deliberate change left in place", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the probe's own entry tries again
+        degraded("probe.deliberate_change_put_back", error)
 
 
 def _only_mutation_findings_open(cycle: Any, measured: list[Any]) -> bool:
@@ -4416,8 +4420,8 @@ def _stop_if_cancelled(run_id: str | None) -> None:
         from app.server.run_store import RunStore
 
         requested = RunStore.shared().is_cancel_requested(run_id)
-    except Exception:  # noqa: BLE001 - a cancel check must never fail a run
-        logger.debug("Could not read the cancel flag for %s", run_id, exc_info=True)
+    except Exception as error:  # noqa: BLE001 - a cancel check must never fail a run
+        degraded("cancel_check", error)
         return
     if requested:
         _CANCELLED_RUNS.add(run_id)
@@ -5281,8 +5285,8 @@ def _the_served_files_the_plan_leaves_out(specification: Any, state: Any) -> lis
             return re.search(rf"(?<![\w./-]){where}{re.escape(path)}(?![\w/.-])", plan) is not None
 
         return [path for path in served if not named(path)]
-    except Exception:  # noqa: BLE001 - the specification goes on as written
-        logger.debug("Could not compare the file plan with the served files", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the specification goes on as written
+        degraded("spec_check.served_files_in_plan", error)
         return []
 
 
@@ -5441,8 +5445,8 @@ def _the_harness_findings_still_open(state: Any, spec_text: str, names: Sequence
             continue
         try:
             found = check(fresh, spec_text)
-        except Exception:  # noqa: BLE001 - not known to be settled
-            logger.debug("Could not ask a design check again", exc_info=True)
+        except Exception as failure:  # noqa: BLE001 - not known to be settled
+            degraded("design_check.asked_again", failure)
             return [object()]
         if found is not None:
             still.append(found)
@@ -5705,8 +5709,8 @@ def _behaviour_the_specification_gives_kept_files(state: Any, spec_text: str) ->
                 + " - in every section that names it, and say what the kept file does only as it is."
             ),
         )
-    except Exception:  # noqa: BLE001 - the review stands as written
-        logger.debug("Could not check the specification against the kept files", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the review stands as written
+        degraded("spec_check.kept_files_behaviour", error)
         return None
 
 
@@ -6073,8 +6077,8 @@ def _record_sprint_summary(
                 read_transcript(run_id, {"tool_call", "tool_result"}) if run_id else [], since=since
             ),
         }
-    except Exception:  # noqa: BLE001 - a summary without the record beats no summary
-        logger.warning("Could not assemble the sprint record", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - a summary without the record beats no summary
+        degraded("sprint_record", error)
 
     deferred_here = _deferred_in_this_attempt(state, since)
     attempt = {
@@ -6109,8 +6113,8 @@ def _record_sprint_summary(
                 ],
             ),
         )
-    except Exception:  # noqa: BLE001 - as above
-        logger.warning("Could not render the sprint summary", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - as above
+        degraded("sprint_summary", error)
     # The attempt is recorded; the next one starts with no earlier plans.
     return {"sprint_attempts": attempts, "sprint_earlier_plans": []}
 
@@ -6186,8 +6190,8 @@ def _the_test_command_this_stage_left_failing(repo_root: str, stage: str) -> tup
         if code is not None and _ran_and_answered(argv, code):
             return "", ""
         return " ".join(argv), "timed out" if timed_out else f"exited {code}"
-    except Exception:  # noqa: BLE001 - the round as reported stands
-        logger.debug("Could not check the stage's last run of the suite", exc_info=True)
+    except Exception as failure:  # noqa: BLE001 - the round as reported stands
+        degraded("check.suite_the_stage_left_failing", failure)
         return "", ""
 
 
@@ -7302,7 +7306,8 @@ def _the_product_starts_now(root: str, defect: Any) -> str:
         if str(last.get("problem") or "").strip() or reached <= 0:
             return ""
         return f"the product starts: the suite's last run reached it ({last.get('passed') or 0} of {reached} tests passed)"
-    except Exception:  # noqa: BLE001 - a check that cannot answer says nothing
+    except Exception as error:  # noqa: BLE001 - a check that cannot answer says nothing
+        degraded("probe.product_starts", error)
         return ""
 
 
@@ -7490,8 +7495,8 @@ def _closed_if_an_earlier_fix_resolved_it(
                 ),
             ),
         )
-    except Exception:  # noqa: BLE001 - a defect not closed here goes to a fixer as before
-        logger.debug("Could not tell whether an earlier fix resolved a defect", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - a defect not closed here goes to a fixer as before
+        degraded("measure.earlier_fix_resolved", error)
         return None
 
 
@@ -7553,8 +7558,8 @@ def _closed_by_this_round_s_measurement(state: Any, cycle: Any, test_round: int)
                     f"run of the suite for test round {test_round}."
                 ),
             )
-    except Exception:  # noqa: BLE001
-        logger.debug("Could not compare open defects with the round's measurement", exc_info=True)
+    except Exception as error:  # noqa: BLE001
+        degraded("measure.round_closes_defects", error)
     return cycle
 
 
@@ -8046,8 +8051,8 @@ def _defects_a_later_sprint_builds(reported: list[Any], state: Any) -> tuple[lis
             else:
                 kept.append(item)
         return kept, moved
-    except Exception:  # noqa: BLE001 - the round's report as written stands
-        logger.debug("Could not compare the round's defects with the sprint plan", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - the round's report as written stands
+        degraded("scope_check.defects_a_later_sprint_builds", error)
         return reported, []
 
 
@@ -8261,7 +8266,8 @@ def _findings_the_command_record_contradicts(review: Any, repo_root: str) -> Any
             moved,
         )
         return review.model_copy(update={"findings": findings})
-    except Exception:  # noqa: BLE001 - the review as written stands
+    except Exception as error:  # noqa: BLE001 - the review as written stands
+        degraded("review_check.command_record", error)
         return review
 
 
@@ -8303,7 +8309,8 @@ def _findings_no_measure_holds(review: Any, repo_root: str) -> Any:
             "test passes; recorded as minor", moved,
         )
         return review.model_copy(update={"findings": findings})
-    except Exception:  # noqa: BLE001 - the review as written stands
+    except Exception as error:  # noqa: BLE001 - the review as written stands
+        degraded("review_check.no_measure_holds", error)
         return review
 
 
@@ -8369,7 +8376,8 @@ def _findings_the_dependency_check_contradicts(review: Any, state: Any) -> Any:
             moved,
         )
         return review.model_copy(update={"findings": findings})
-    except Exception:  # noqa: BLE001 - the review as written stands
+    except Exception as error:  # noqa: BLE001 - the review as written stands
+        degraded("review_check.dependency_check", error)
         return review
 
 
@@ -8418,7 +8426,8 @@ def _security_graded_by_its_own_review(review: Any, security_review: Any) -> Any
             moved,
         )
         return review.model_copy(update={"findings": findings})
-    except Exception:  # noqa: BLE001 - the review as written stands
+    except Exception as error:  # noqa: BLE001 - the review as written stands
+        degraded("review_check.security_grade", error)
         return review
 
 
@@ -8482,7 +8491,8 @@ def _findings_about_a_server_only_the_tests_start(review: Any, repo_root: str) -
             moved,
         )
         return review.model_copy(update={"findings": findings})
-    except Exception:  # noqa: BLE001 - the review as written stands
+    except Exception as error:  # noqa: BLE001 - the review as written stands
+        degraded("review_check.server_only_the_tests_start", error)
         return review
 
 
@@ -8523,8 +8533,8 @@ def _a_brief_requirement_the_run_never_built(state: Any) -> str:
         problems = _a_required_action_nothing_implements(
             _source_files(root), root, brief
         )
-    except Exception:  # noqa: BLE001 - never fail a finished run over this gate
-        logger.warning("Could not check the brief at the last sprint", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - never fail a finished run over this gate
+        degraded("gate.brief_requirements_built", error)
         return ""
     if not problems:
         return ""
@@ -8647,8 +8657,8 @@ def _the_suite_the_ledger_measured(state: WorkflowGraphState) -> dict[str, int] 
         # The ledger's own field name, so `a_suite_that_did_not_pass` reads one
         # spelling wherever it is called from.
         return {**counts, "returncode": int(code) if isinstance(code, int) else 0}
-    except Exception:  # noqa: BLE001 - a gate that cannot read must not stop a run
-        logger.warning("Could not read the measured suite for this sprint", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - a gate that cannot read must not stop a run
+        degraded("gate.suite_the_ledger_measured", error)
         return None
 
 
@@ -8948,7 +8958,8 @@ def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
         if not acceptance_suite.is_locked(root):
             return []
         saved = acceptance_suite.last_result(root) or {}
-    except Exception:  # noqa: BLE001 - nothing readable, nothing to judge
+    except Exception as error:  # noqa: BLE001 - nothing readable, nothing to judge
+        degraded("gate.locked_tests_still_failing", error)
         return []
     deferred = set(acceptance_suite.deferred(root) or {})
     # Only what this sprint answers for. A later sprint's test fails because
@@ -9141,7 +9152,8 @@ def _a_contested_test_past_repair(state: Any, cycle: Any) -> str:
         if not name or may_repair(state, [f"`{_the_test_named(name)}`"]):
             return ""
         return name
-    except Exception:  # noqa: BLE001 - the revert gate stands as it was
+    except Exception as error:  # noqa: BLE001 - the revert gate stands as it was
+        degraded("gate.contested_test_past_repair", error)
         return ""
 
 
@@ -9217,7 +9229,8 @@ def _no_review_has_read_the_code(state: Any) -> bool:
         return False
     try:
         return _changes_any_code(_the_whole_product(state["repository"].root_path))
-    except Exception:  # noqa: BLE001 - unknown: close the sprint as before
+    except Exception as error:  # noqa: BLE001 - unknown: close the sprint as before
+        degraded("gate.code_no_review_read", error)
         return False
 
 
@@ -9944,9 +9957,10 @@ def _snapshotting(name: str, action: Any) -> Any:
                 # this snapshot by that id, not by the clock (`rewind_to`).
                 started_from = ((config or {}).get("configurable") or {}).get("checkpoint_map", {}).get("")
                 if snapshot_workspace(root, name, started_from) is None and is_repository(root):
-                    logger.warning("The workspace could not be snapshotted before %s; a rewind to it will refuse", name)
-            except Exception:  # noqa: BLE001 - a snapshot is never a reason to stop a stage
-                logger.warning("No snapshot before %s", name, exc_info=True)
+                    # A rewind to this point refuses: nothing holds its files.
+                    degraded("workspace_snapshot", None, of=name)
+            except Exception as error:  # noqa: BLE001 - a snapshot is never a reason to stop a stage
+                degraded("workspace_snapshot", error, of=name)
         return action(state, config) if takes_config else action(state)
 
     if parameters and parameters[0].annotation is not inspect.Parameter.empty:
@@ -10060,6 +10074,8 @@ def rewind_to(graph: Any, thread_id: str, checkpoint_id: str, repo_root: str | N
             taken = None
         if taken:
             restored = restore_snapshot(repo_root, taken)
+            if not restored:
+                degraded("rewind.files_restored", None, of=node)
         # A rewound stage is a new attempt, never a conversation a stopped
         # worker cut off - whatever notes the files put back hold.
         from app.graph import abandoned_threads

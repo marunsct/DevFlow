@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from app.observability.degraded import degraded
 from app.switches import is_on
 
 logger = logging.getLogger(__name__)
@@ -168,8 +169,8 @@ def measure(state: Any, *, run_id: str | None = None, now: datetime | None = Non
 
         due = tuple(criteria_due(state) or own)
         return Budget(round(active_minutes(moments, now or datetime.now(timezone.utc)), 1), limit_for(size), size, due)
-    except Exception:  # noqa: BLE001 - a sprint with no measured time is planned as before
-        logger.debug("Could not measure the sprint's time", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - a sprint with no measured time is planned as before
+        degraded("measure.sprint_time", error)
         return None
 
 

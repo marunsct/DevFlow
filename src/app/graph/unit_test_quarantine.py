@@ -26,6 +26,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from app.observability.degraded import degraded
 from app.switches import is_on
 
 logger = logging.getLogger(__name__)
@@ -129,8 +130,8 @@ def after_a_green_measurement(repo_root: str | Path, outcomes: dict[str, str], f
         still = [key for key in still if key not in aside]
         _write(root, {"seen": seen, "set_aside": aside})
         return still
-    except Exception:  # noqa: BLE001 - raised as before
-        logger.debug("Could not count the unit tests failing beside a green suite", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - raised as before
+        degraded("unit_quarantine.count", error)
         return None
 
 

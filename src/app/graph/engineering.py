@@ -18,6 +18,7 @@ knows.
 
 from __future__ import annotations
 
+from app.observability.degraded import degraded
 from app.tools.version_control import git_safely  # noqa: E402
 
 import logging
@@ -450,7 +451,8 @@ def _what_the_manifests_do_not_declare(state: Any, root: str, since: str, projec
         return []
     try:
         found = dependency_drift.undeclared(directory)
-    except Exception:  # noqa: BLE001 - a check that cannot run finds nothing
+    except Exception as error:  # noqa: BLE001 - a check that cannot run finds nothing
+        degraded("check.undeclared_dependencies", error)
         return []
     if not found:
         return []
@@ -477,7 +479,8 @@ def _what_the_compiler_says(state: Any, root: str, since: str, project: str) -> 
         return []
     try:
         found = compiler_check.findings(root, project, changed)
-    except Exception:  # noqa: BLE001 - a check that cannot run finds nothing
+    except Exception as error:  # noqa: BLE001 - a check that cannot run finds nothing
+        degraded("check.compiler_at_ci", error)
         found = []
     defects = []
     for finding in found:
@@ -837,8 +840,8 @@ def what_the_fix_made_certain_to_fail(root: str, base: str) -> list[str]:
                 if added is None or int(finding.get("line") or 0) in added:
                     found.append(f"`{relative}` line {finding.get('line')}: {finding.get('message')}")
         return found
-    except Exception:  # noqa: BLE001 - a check that cannot run keeps the fix
-        logger.debug("Could not ask the language service about the fix", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - a check that cannot run keeps the fix
+        degraded("fix_check.language_service", error)
         return []
 
 
@@ -870,8 +873,8 @@ def what_the_fix_made_the_compiler_report(root: str, base: str, before_problem: 
             if added is None or line in added:
                 found.append(f"`{relative}` line {line}: {message}")
         return found
-    except Exception:  # noqa: BLE001 - a check that cannot run keeps the fix
-        logger.debug("Could not ask the compiler about the fix", exc_info=True)
+    except Exception as failure:  # noqa: BLE001 - a check that cannot run keeps the fix
+        degraded("fix_check.compiler", failure)
         return []
 
 
@@ -899,7 +902,8 @@ def what_the_fix_did_to_the_install(root: str, base: str) -> str:
         if not names & MANIFEST_NAMES:
             return ""
         return "it broke the install: " + " ".join(notes[-1].split())[:600]
-    except Exception:  # noqa: BLE001 - a check that cannot run blames nothing
+    except Exception as error:  # noqa: BLE001 - a check that cannot run blames nothing
+        degraded("fix_check.install", error)
         return ""
 
 
@@ -961,7 +965,8 @@ def manifests_the_fix_left_unreadable(root: str, base: str) -> str:
                 continue  # unreadable before this fix too: not this fix's
             found.append(f"`{relative}` ({kind}: {why})")
         return ("it left a manifest unreadable in its own format: " + "; ".join(found)) if found else ""
-    except Exception:  # noqa: BLE001 - a check that cannot run blames nothing
+    except Exception as error:  # noqa: BLE001 - a check that cannot run blames nothing
+        degraded("fix_check.manifests", error)
         return ""
 
 
@@ -1080,8 +1085,8 @@ def after_a_fix(
     if broken and on_revert is not None:
         try:
             on_revert(broken)
-        except Exception:  # noqa: BLE001 - the fix is reverted as before
-            logger.warning("Could not look at %s before it was reverted", stage_name, exc_info=True)
+        except Exception as swallowed:  # noqa: BLE001 - the fix is reverted as before
+            degraded("fix_check.before_revert", swallowed)
     if broken and ci.revert_to(root, base):
         if after.problem and any(str(item).startswith("the product no longer builds or starts") for item in broken):
             from app.agents import start_breaks
@@ -1166,8 +1171,8 @@ def accepted_state(root: str) -> list[str]:
     try:
         measured = ci.take(root, "accepted")
         ci.save(root, measured, accepted=True)
-    except Exception:  # noqa: BLE001 - a missing baseline only means fewer regressions found
-        logger.warning("Could not measure the accepted state", exc_info=True)
+    except Exception as error:  # noqa: BLE001 - a missing baseline only means fewer regressions found
+        degraded("measure.accepted_state", error)
         return []
     return sorted(name for name, outcome in measured.unit.items() if outcome != "passed")
 
@@ -1189,5 +1194,5 @@ def suite_locked(root: str) -> None:
             ci.save(root, measured, accepted=True)
             return
         ci.save(root, ci.Snapshot(label="suite locked", commit=commit_id), accepted=True)
-    except Exception:  # noqa: BLE001
-        logger.debug("Could not record the first baseline", exc_info=True)
+    except Exception as error:  # noqa: BLE001
+        degraded("measure.first_baseline", error)

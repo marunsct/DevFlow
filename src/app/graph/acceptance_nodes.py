@@ -1540,8 +1540,8 @@ def pack_contract_defects(state: Any) -> list[Any]:
     defects = []
     for path, written in changed:
         defects.append(ReportedDefect(
-            description=f"{path}{entry_exports.NO_LONGER_DECLARES}{written}`, the declaration the scaffold's start file "
-                        "and tests use it by.",
+            description=f"{path}{entry_exports.NO_LONGER_DECLARES}{written}`, the declaration the scaffold's build, start "
+                        "file and tests rely on.",
             severity="blocking",
             reproduction_steps=f"Read {path}: its declaration differs from `{written}`.",
             expected_behavior=(f"{path} declares exactly `{written}`, as the scaffold wrote it; change what it does "

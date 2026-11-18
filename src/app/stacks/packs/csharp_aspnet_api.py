@@ -100,8 +100,14 @@ EXPOSE 8080
 ENTRYPOINT ["dotnet", "App.dll"]
 """ % {"dotnet": DOTNET}
 
+#: The project file's SDK, held at every round (`StackPack.required_signatures`). Measured on two C# runs: `App.csproj`
+#: was rewritten to `Sdk="Microsoft.NET.Sdk"`, which drops ASP.NET Core and its implicit usings, and the build then
+#: failed in every file that names `HttpContext`, `IResult` or `Results`, never in the project file itself.
+APP_SDK = {"src/App/App.csproj": ((r'<Project\s+Sdk="Microsoft\.NET\.Sdk\.Web"', '<Project Sdk="Microsoft.NET.Sdk.Web">'),)}
+
 PACK = service_pack(
     sandbox_image=sandbox.DOTNET,
+    required_signatures=APP_SDK,
     name="csharp-aspnet-api",
     title="HTTP service in C# on ASP.NET Core",
     language="csharp",

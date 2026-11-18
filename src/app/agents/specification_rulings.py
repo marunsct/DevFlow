@@ -275,8 +275,9 @@ def _the_call(model: Any, request: str) -> Rulings | None:
         SystemMessage(content="You settle contradictions inside a software specification. You answer with one JSON object."),
         HumanMessage(content=request),
     ], max_tokens=MOST_OUTPUT_TOKENS, **config_for_this_run("escalation"))
-    content = getattr(reply, "content", "")
-    return _read(content if isinstance(content, str) else str(content), Rulings)
+    from app.models.reply_text import reply_text
+
+    return _read(reply_text(reply), Rulings)
 
 
 def settle(state: Any, update: dict[str, Any], model: Any, findings: list[str]) -> list[dict[str, Any]]:

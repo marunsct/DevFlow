@@ -65,6 +65,8 @@ Generated above. Today (hidden, quality, verdict):
   refused `read_docs`) and LF.1121 (a script looking up an id no page declares is a proven defect - web-todo 1 lost
   40/46 tests to `add-task-form` vs `add-form`) shipping into both runs (both mixed). LF.1122 (an acceptance file
   is run once per product while defects are dispatched; 53 runs in 20 min on one unchanged product) live 03:59.
+- LF.1124 shipped live ~04:25: a hosted reply's block list was written as its Python form into five C# source files
+  (81 syntax errors on line 1; the C# Haiku run's first attempt lost to it). Every reply reader now reads text blocks.
 - LF.1123 committed, deploys at the next boundary: the C# Haiku run is also Haiku-built (design escalation) and
   finishes as such. The judgement-only hybrid arm has not been measured yet - next Haiku run measures it.
 - **Deployed 20:09 JST: 532dba3 (waves 1 and 2, LF.1073-1105).** Live on it: M notes-api-rust container 7

@@ -105,8 +105,9 @@ def localised(defect: Any, failure: str, root: str | Path, model: Any, found: li
             SystemMessage(content="You find where in a codebase a failure is caused. You answer with one JSON object."),
             HumanMessage(content=prompt),
         ], max_tokens=MOST_OUTPUT_TOKENS, **config_for_this_run("defect_fix"))
-        content = getattr(reply, "content", "")
-        answer = _read(content if isinstance(content, str) else str(content), Localisation)
+        from app.models.reply_text import reply_text
+
+        answer = _read(reply_text(reply), Localisation)
         if answer is None:
             return found
         kept = _confirmed(base, answer, may_write)
@@ -154,8 +155,9 @@ def diagnosis(defect: Any, failure: str, root: str | Path, model: Any, tried: st
         )
         reply = model.invoke([SystemMessage(content=DIAGNOSIS_ROLE), HumanMessage(content=prompt)],
                              max_tokens=MOST_DIAGNOSIS_TOKENS, **config_for_this_run("defect_fix"))
-        content = getattr(reply, "content", "")
-        text = content if isinstance(content, str) else str(content)
+        from app.models.reply_text import reply_text
+
+        text = reply_text(reply)
         answer = _read(text, Localisation)
         if answer is None:
             return " ".join(text.split())[:600]

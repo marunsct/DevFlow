@@ -445,9 +445,11 @@ def _the_reply_s_file(path: str, original: str, reply: Any) -> str:
     from app.graph import anchored_edits
     from app.graph.drafting import the_content_in
 
-    text = getattr(reply, "content", reply) if not isinstance(reply, str) else reply
+    from app.models.reply_text import reply_text
+
+    text = reply_text(reply)
     if anchored_edits.too_long_to_rewrite(original):
-        return anchored_edits.applied(path, original, text if isinstance(text, str) else str(text))
+        return anchored_edits.applied(path, original, text)
     return the_content_in(text)
 
 

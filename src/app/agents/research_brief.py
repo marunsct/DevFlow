@@ -109,7 +109,9 @@ def _topics(libraries: list[str], brief: str, model: Any) -> list[tuple[str, str
         from app.observability.direct_calls import config_for_this_run
 
         reply = model.invoke([HumanMessage(content=request)], **config_for_this_run("research_brief"))
-        text = str(getattr(reply, "content", reply) or "")
+        from app.models.reply_text import reply_text
+
+        text = reply_text(reply)
         match = re.search(r"\{.*\}", text, re.S)
         parsed = json.loads(match.group(0)) if match else {}
         known = {name.lower(): name for name in libraries}

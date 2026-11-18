@@ -1220,7 +1220,9 @@ def _chosen_by(model: Any, stack: Any) -> Path | None:
         from app.observability.direct_calls import config_for_this_run
 
         reply = without_reasoning(model).invoke([HumanMessage(content=asked)], **config_for_this_run("stack_setup"))
-        text = reply.content if isinstance(reply.content, str) else " ".join(str(part) for part in reply.content)
+        from app.models.reply_text import reply_text
+
+        text = reply_text(reply)
         found = re.search(r"\d+", text or "")
         number = int(found.group(0)) if found else 0
         return entries[number - 1] if 1 <= number <= len(entries) else None

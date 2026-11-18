@@ -121,10 +121,10 @@ def _the_architect_s_answer(root: Path, model: Any, question: str) -> str:
         HumanMessage(content=f"The specification:\n{specification}\n\nThe question: {question}\n\n"
                              "Answer in at most five sentences."),
     ], max_tokens=800, **config_for_this_run("ask_specification"))
-    content = getattr(reply, "content", "")
     from app.agents.model_output import strip_reasoning
+    from app.models.reply_text import reply_text
 
-    return strip_reasoning(content if isinstance(content, str) else str(content)).strip()
+    return strip_reasoning(reply_text(reply)).strip()
 
 
 def build_tool(repo_root: str | Path, model: Any = None) -> Any:

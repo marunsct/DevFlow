@@ -22,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from app.observability.direct_calls import config_for_this_run, mapped_in_this_context
+from app.models.reply_text import reply_text
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ def _the_object_in(reply: Any) -> dict[str, Any] | None:
     from app.graph.workflow import _first_json_object
     from app.models.tool_arguments import _parsed_leniently
 
-    text = str(getattr(reply, "content", reply) or "")
+    text = reply_text(reply)
     if not text.strip():
         reasoning = (getattr(reply, "additional_kwargs", {}) or {}).get("reasoning_content") or ""
         if isinstance(reasoning, str) and reasoning.strip():
@@ -177,7 +178,7 @@ def with_the_parts_written(specification: Any, model: Any, context: str) -> Any:
             decoded = with_structure_decoded({k: v for k, v in found.items() if k in names}, parameters)
             written = {k: v for k, v in decoded.items() if isinstance(v, list) and v}
             if len(written) < len(names):
-                text = str(getattr(reply, "content", reply) or "")
+                text = reply_text(reply)
                 logger.info(
                     "A part of the specification (%s) came back without %s: %d characters of reply, beginning %r",
                     ", ".join(names), ", ".join(n for n in names if n not in written) or "nothing",

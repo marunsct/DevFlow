@@ -54,7 +54,7 @@ _A_PATH = re.compile(r"[\w./@-]+\.[A-Za-z0-9]{1,8}\b")
 _FENCE_LINE = re.compile(r"^[ \t]*```", re.M)
 
 
-def the_content_in(reply: str) -> str:
+def the_content_in(reply: Any) -> str:
     """The file a reply holds: its longest fenced block, or the whole reply when it has none; "" when it was cut off.
 
     A reply that reached the reply cap ends inside its block, with no closing
@@ -65,7 +65,11 @@ def the_content_in(reply: str) -> str:
     "" is what every caller already treats as no draft: nothing is written and
     the file stays as it was.
     """
-    text = str(reply or "")
+    from app.models.reply_text import reply_text
+
+    # A hosted model's content is a list of blocks (its thinking, then its text): read as its text, never as the
+    # list's Python form, which one run wrote into five source files.
+    text = reply_text(reply)
     if len(_FENCE_LINE.findall(text)) % 2:
         return ""
     blocks = _FENCE.findall(text)

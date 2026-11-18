@@ -959,6 +959,14 @@ def after_a_fix(
         return []
     before = ci.load(root, "latest")
     after = ci.take(root, f"after {stage_name}")
+    not_measured = str(getattr(after, "unmeasured", "") or "")
+    if not_measured:
+        # The harness could not measure the fix (its own memory refusal, a registry it could not resolve), even after
+        # waiting once: nothing is judged on that. Measured: a refusal read as "broke 32 tests" reverted a fix. The fix
+        # stays and is committed; the last measurement stays the baseline, and the next measurement judges it (A1).
+        logger.warning("Kept %s unjudged: the harness could not measure it (%s)", stage_name, not_measured[:200])
+        ci.commit(root, f"Fix, not measured: {description[:50]}")
+        return []
     lost = ci.regressions(before, after)
     broken = _broken_tests(lost, before, after)
     broke_the_install = what_the_fix_did_to_the_install(root, base) or manifests_the_fix_left_unreadable(root, base)

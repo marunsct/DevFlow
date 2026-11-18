@@ -911,6 +911,9 @@ class AcceptanceResult:
     #: the page as it loads - id, impact, help, count, where - from the same
     #: report; [] when none, or when it could not run.
     accessibility: list[dict[str, Any]] = field(default_factory=list)
+    #: Why the harness could not measure the product at all - its own refusal, a registry it could not resolve
+    #: (`unmeasured.why`); "" when it measured. Such a result is neither judged nor saved (A1).
+    unmeasured: str = ""
 
     def failing(self, ids: Sequence[str] | None = None) -> list[CriterionResult]:
         wanted = set(ids) if ids is not None else None
@@ -992,6 +995,7 @@ class AcceptanceResult:
             "overlaps": self.overlaps,
             "small_targets": self.small_targets,
             "accessibility": self.accessibility,
+            "unmeasured": self.unmeasured,
         }
 
 
@@ -1248,7 +1252,23 @@ def _run_each(
 
 
 def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = True) -> AcceptanceResult:
-    """Run the suite the way the harness always does, and read what it proved."""
+    """Run the suite the way the harness always does, and read what it proved.
+
+    A run the harness could not take (`AcceptanceResult.unmeasured`) is tried once more after a short wait; still not
+    taken, it is recorded for the operator, and the last measurement stands: it is not saved over it (A1).
+    """
+    from app.acceptance import unmeasured
+
+    result = unmeasured.once_more(lambda: _run_once(repo_root, runner, save), lambda measured: measured.unmeasured)
+    if save:
+        if result.unmeasured:
+            unmeasured.record(repo_root, "acceptance suite", result.unmeasured)
+        else:
+            unmeasured.taken(repo_root)
+    return result
+
+
+def _run_once(repo_root: str | Path, runner: Runner | None, save: bool) -> AcceptanceResult:
     repairs = restore(repo_root)
     try:
         repairs += contract.enforce(repo_root)
@@ -1309,6 +1329,15 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
             Path(repo_root) / project, report_path, started, unwritten_by, output
         ),
     )
+    from app.acceptance import unmeasured
+
+    result.unmeasured = unmeasured.why(outcome, reached_tests=bool(report.tests)) or unmeasured.in_the_repairs(repairs)
+    if result.unmeasured:
+        # Nothing about the product was learnt: no criterion is judged failing on it, and nothing is saved over the
+        # last measurement. Measured: a memory refusal failed every criterion of a round and a sprint was re-planned.
+        result.ran = False
+        result.problem = f"The harness could not measure the product: {result.unmeasured}"
+        return result
     if not report.tests:
         # No test ran because the product never started: the suite is not at
         # fault, and the product's own error is the defect (`the_product_did_not_start`).

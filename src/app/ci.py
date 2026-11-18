@@ -49,6 +49,9 @@ class Snapshot:
     #: Why the acceptance suite reached no test, when it reached none: the
     #: product did not build or start (`suite.the_product_did_not_start`).
     problem: str = ""
+    #: Why the harness could not measure the product at all (its own refusal, a registry it could not resolve);
+    #: "" when it measured. Such a snapshot judges no fix and replaces no baseline (A1, `unmeasured`).
+    unmeasured: str = ""
 
     def passing(self) -> set[str]:
         return {
@@ -320,6 +323,8 @@ UNIT_TESTS_DID_NOT_RUN = "the project's unit tests did not compile or start (the
 def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], bool]:
     """Each unit test's outcome now, and whether the runner's report was found.
 
+    A unit run the harness could not take raises `NotMeasured` with why, and is not kept (A1).
+
     An unchanged product's last unit run stands (MEASURE_ONCE), whichever of the test round or a snapshot ran it.
     Found in a code review: the test round kept its unit run with the product's fingerprint, and every snapshot
     still ran the unit tests again on the product they had just measured - once more per fix stage.
@@ -341,9 +346,19 @@ def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], 
         logger.info("The product is as the unit tests last measured it; that run stands")
         return {str(name): str(outcome) for name, outcome in kept["unit"].items()}, bool(kept.get("found"))
     report = Path(root) / project / pack.unit_report
-    junit.clear(report)
-    outcome = runner(command, "test", project) or {}
-    parsed = junit.read(report)
+    from app.acceptance import unmeasured
+
+    def measure() -> tuple[dict[str, Any], Any]:
+        junit.clear(report)
+        answered = runner(command, "test", project) or {}
+        return answered, junit.read(report)
+
+    not_installed = unmeasured.in_the_repairs(installed_now)
+    outcome, parsed = unmeasured.once_more(
+        measure, lambda measured: not_installed or unmeasured.why(measured[0], reached_tests=bool(measured[1].tests)))
+    not_taken = not_installed or unmeasured.why(outcome, reached_tests=bool(parsed.tests))
+    if not_taken:
+        raise NotMeasured(not_taken)
     unit = outcomes_of(parsed.tests)
     from app.stacks.scaffold import _exit_code
 
@@ -361,9 +376,16 @@ def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], 
     return unit, parsed.found
 
 
+class NotMeasured(Exception):
+    """The harness could not run the measurement at all; the message says why (`unmeasured`)."""
+
+
 def unit_failures(root: str | Path, runner: Runner | None = None) -> list[str]:
     """The project's own unit tests that do not pass now, by name; [] when all pass or none ran."""
-    unit, ran = _run_unit(root, runner)
+    try:
+        unit, ran = _run_unit(root, runner)
+    except NotMeasured:
+        return []
     if not ran:
         return [UNIT_TESTS_DID_NOT_RUN] if unit.get(UNIT_TESTS_DID_NOT_RUN) == "failed" else []
     return sorted(name for name, outcome in unit.items() if outcome != "passed")
@@ -377,10 +399,18 @@ def take(
     acceptance: suite.AcceptanceResult | None = None,
 ) -> Snapshot:
     """Run the unit and acceptance suites now. `acceptance` reuses a run just made."""
-    unit, unit_ran = _run_unit(root, runner)
+    try:
+        unit, unit_ran = _run_unit(root, runner)
+        unit_not_taken = ""
+    except NotMeasured as refused:
+        unit, unit_ran, unit_not_taken = {}, False, str(refused)
+        from app.acceptance import unmeasured
+
+        unmeasured.record(root, label, unit_not_taken)
     if acceptance is None and suite.is_locked(root):
         acceptance = suite.run(root, runner=runner)
     tests = outcomes_of(acceptance.report.tests) if acceptance is not None else {}
+    not_taken = unit_not_taken or str(getattr(acceptance, "unmeasured", "") or "")
     return Snapshot(
         label=label,
         commit=head(root),
@@ -389,6 +419,7 @@ def take(
         unit_ran=unit_ran,
         acceptance_ran=bool(acceptance is not None and acceptance.ran),
         problem=_unusable(acceptance),
+        unmeasured=not_taken,
     )
 
 
@@ -407,7 +438,14 @@ def _unusable(acceptance: Any) -> str:
 
 
 def save(root: str | Path, snapshot: Snapshot, *, accepted: bool = False) -> None:
-    """Keep this snapshot as the latest, and as the last accepted state when `accepted`."""
+    """Keep this snapshot as the latest, and as the last accepted state when `accepted`.
+
+    A snapshot the harness could not take is not kept: the last measurement stays the baseline (A1).
+    """
+    if getattr(snapshot, "unmeasured", ""):
+        logger.warning("Not keeping the measurement %r: it could not be taken (%s)", snapshot.label,
+                       snapshot.unmeasured[:200])
+        return
     path = Path(root) / CI_FILE
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -466,7 +504,8 @@ def regressions(before: Snapshot | None, after: Snapshot) -> list[str]:
     A suite that did not run at all now, having run before, counts every test
     it had passing - a broken build breaks all of them.
     """
-    if before is None:
+    if before is None or getattr(after, "unmeasured", ""):
+        # A measurement not taken says nothing broke or passed (A1).
         return []
     lost: list[str] = []
     for kind, was, now, ran in (

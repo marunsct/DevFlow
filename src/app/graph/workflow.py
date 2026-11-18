@@ -3914,7 +3914,19 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
         for report in reports:
             junit.clear(report)
         runner = sandbox_runner(repo_root)
-        outcome = runner(cmd, "test", project)
+        from app.acceptance import unmeasured
+
+        def measure() -> dict[str, Any]:
+            return runner(cmd, "test", project) or {}
+
+        def not_taken(answered: dict[str, Any]) -> str:
+            return unmeasured.why(answered, reached_tests=any(junit.read(report).tests for report in reports))
+
+        outcome = unmeasured.once_more(measure, not_taken)
+        if not_taken(outcome):
+            # Not measured is unknown, not failed: no "the unit tests fail" defect from a refusal (A1). Not kept.
+            unmeasured.record(repo_root, "unit tests", not_taken(outcome))
+            return None, f"The harness could not measure the unit tests: {not_taken(outcome)}"
         # The sandbox answers as its tool does, the code as text: "0" is not 0.
         # Measured on one run: every harness test round said the unit tests
         # failed while all 109 passed, and the sprint was planned again three times.

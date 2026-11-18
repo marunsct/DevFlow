@@ -203,6 +203,15 @@ def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) 
             runner = sandbox_runner(repo_root)
         for argv in commands:
             outcome = runner(argv, "install", project) or {}
+            from app.acceptance import unmeasured
+
+            not_taken = unmeasured.why(outcome)
+            if not_taken:
+                # Refused for memory, or the registry's name did not resolve: not the manifest's fault, so no defect,
+                # and not recorded as installed (a refusal has no exit code and once read as a success), so the
+                # next measurement installs again (A1).
+                logger.warning("The project's install was not taken: %s", not_taken[:200])
+                return [f"{unmeasured.NOT_INSTALLED}: {not_taken}"]
             code = str(outcome.get("returncode", outcome.get("exit_code", "0")))
             if code not in ("0", "None", ""):
                 said = (str(outcome.get("stderr") or "") + "\n" + str(outcome.get("stdout") or "")).strip()

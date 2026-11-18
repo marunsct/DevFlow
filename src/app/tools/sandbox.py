@@ -5640,6 +5640,11 @@ class SandboxExecutor:
                 "refusing %s: %s", argv[0], state.describe(),
                 extra={"sandbox_resource_state": state.describe()},
             )
+            if running_for_the_harness():
+                # The harness's own measurement was refused, not failed: typed, so no defect is raised from it (A1).
+                from app.acceptance.unmeasured import UNMEASURED
+
+                return {"error": why, UNMEASURED: why}
             return {"error": why}
 
         timeout = timeout_for(category, repo_root)

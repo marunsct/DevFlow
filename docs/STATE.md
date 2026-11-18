@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-18 16:15 JST (written by `loop.sh state`). Harness 0e092255 committed; 0e092255 deployed.
-**Live, and stopped in the last day:** run-e8053d6e running at defect_fix_2_6; run-8f1478a7 running at defect_fix_2_12; run-1e04154a failed at failed; run-db139a37 failed at failed; run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0
-**Last scored:** run-260f3fc5 tasks-api 10/10 (completed, 210 active min, handoff 1.0; scored 11-18 16:15 JST); run-1e04154a notes-api-rust 0/9 (failed, mixed, 137 active min, handoff 0.429; scored 11-18 13:47 JST); run-4886c02b notes-api-go 9/9 (completed, mixed, 47 active min, handoff 1.0; scored 11-18 13:45 JST).
+**As of:** 11-18 16:45 JST (written by `loop.sh state`). Harness ce51a55c committed; 0e092255 deployed (not the same).
+**Live, and stopped in the last day:** run-8f1478a7 running at acceptance_dispute; run-1e04154a failed at failed; run-db139a37 failed at failed; run-760be6cb failed at failed; run-092a40cb failed at awaiting_approval:defect_fix_1_0
+**Last scored:** run-e8053d6e notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-18 16:45 JST); run-260f3fc5 tasks-api 10/10 (completed, 210 active min, handoff 1.0; scored 11-18 16:15 JST); run-1e04154a notes-api-rust 0/9 (failed, mixed, 137 active min, handoff 0.429; scored 11-18 13:47 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -24,26 +24,17 @@ every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.
 The 10 optional switches above. Hosted-model runs (LR.44) only when the owner starts or instructs them.
 
 ## The last three runs
-Generated above. Tonight's M36 runs (hidden, quality, verdict):
-- notes-api-php 1 run-657c3113 (:8888): 9/9, 8/8, delivered, handoff 1.0; LF.986 found `GET /notes/not-a-number`
-  answering 500 and it was fixed in the run.
-- notes-api-csharp 2 run-a99ce5d1 (:1234): 9/9, 6/8 (a POST answer without `id`; writes at once lost),
-  not_deliverable - rightly: its unit tests did not compile, now named by LF.979; handoff 1.0 after LF.988.
-- notes-api-java 1 run-9c05c6e7 (:8888): 9/9, 7/8 (`GET /notes/abc` answers 500), delivered, handoff 1.0 after the
-  scorer fix LF.985 (Rust and Java each lost a handoff point for a port they read).
-- tasks-api 2 run-925391f7 (:1234): 10/10, 7/7, delivered (after the duplicate-task rewind); 13 fixes reverted for
-  imports of modules the project lacked - Python writes were never checked as written (LF.980).
-- notes-api-csharp 1 run-4db255e8 (:1234): stopped at its scaffold - `dotnet` refused, no toolchain pinned (LF.981);
-  notes-api-csharp 2 run-a99ce5d1 started 03:14 on the fix.
-- notes-api-rust 1 run-d8b0e95b (:8888, 52 min): 9/9, 8/8, not_deliverable - wrongly, for `package.json` having no
-  `test` script (LF.978); its unit tests did not compile (an axum `TestClient` that does not exist) and no gap said so (LF.979).
-- notes-api-go 1 run-ca45a144 (:8888): 9/9, 8/8, not_deliverable - 2 Go unit tests ship failing (right), and the same
-  false `package.json` blocker (LF.978).
-- textkit-lib 2 run-fdd127ff: 8/8, 7/7, delivered. fullstack-bookmarks 1 run-0933e611: 8/8, delivered.
-- Earlier on 11-16: web-todo 10/10 delivered; notes-api-hono 9/9 8/8 delivered; notes-api-js 9/9 8/8 with cuts;
-  web-todo-react 10/10 not_deliverable (663 lines against the brief's 500); fullstack-bookmarks-py 8/8 after LF.958;
-  tasks-api 1 10/10 7/7 (6 h, LF.951/953/956); wordstats-cli 2 6/8 (the family's recurring --top loss, warned).
-- Browser and change families had no quality set until LF.971; their runs from now on carry one.
+Generated above. Today's container-mode runs (hidden, quality, verdict):
+- notes-api-csharp 3 run-e8053d6e-82b7-4c00-a991-282b15beb4d2 (:1234, 13:49-16:44, mixed 90e875d8..0e092255): 9/9,
+  8/8, delivered at an escalation, handoff 1.0, mutation 0.67. A false red for most of its 3 h: four sprint attempts,
+  34 defects left open, 4 reverts (3 for a start the fixers broke), 5 min lost to false memory refusals (LF.1070) -
+  the deep review's A1-A3 and B3/B4 in one run.
+- notes-api-php 2 run-8f1478a7-72fe-4881-9efa-a932afdc7176 (:8888, live): round 2 closed nothing in 110 min; five
+  reverts for a start broken by invented Slim methods; sprint re-planned at 16:38.
+- notes-api-go 2 run-4886c02b (:1234): 9/9, 8/8, delivered. notes-api-rust 5 run-1e04154a: 0/9 (router-state trap;
+  LF.1064, LF.1067, LF.1071 since).
+- Live: notes-api-rust 6 run-1aa50e5e-a142-418f-913b-dbfe5aab83cf (:1234, 16:49, frozen 0e092255) - the first run
+  with LF.1071 (no model-written axum note).
 
 ## Morning report (11-18)
 Container sweep: every language delivered 9/9 hidden at least once (Go, Java, Rust, C#, PHP, Ruby, tasks-api);

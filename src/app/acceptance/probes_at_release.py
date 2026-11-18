@@ -54,6 +54,15 @@ def what_the_probes_still_find(repo_root: str | Path, *, runner: Any = None) -> 
             gaps.append(STILL_FINDS + edge_probe.edge_description(edges))
     except Exception:  # noqa: BLE001
         logger.debug("Could not ask the edge probe again at release", exc_info=True)
+    try:
+        from app.acceptance import page_probe
+
+        # The brief's word on persistence as the round's asking kept it.
+        pages = page_probe.page_errors(repo_root, runner=runner) or []
+        if pages:
+            gaps.append(STILL_FINDS + page_probe.page_description(pages))
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not ask the page checks again at release", exc_info=True)
     if gaps:
         logger.warning("At release %d harness probe(s) still find a defect", len(gaps))
     return gaps

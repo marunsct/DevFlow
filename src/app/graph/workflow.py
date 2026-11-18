@@ -3163,6 +3163,45 @@ def _with_an_edge_case_defect(state: Any, test_result: Any, milestone: Any) -> A
         return test_result
 
 
+def _with_a_page_check_defect(state: Any, test_result: Any, milestone: Any) -> Any:
+    """`test_result` with one defect for the harness's browser checks of a page product it fails, behind its switch.
+
+    Deep review 2026-11-18, item B5: no check typed markup into a field, watched the console while an item was added,
+    measured a 360px screen or reloaded the page (`app.acceptance.page_probe`). Never raises.
+    """
+    try:
+        from app.acceptance import page_probe
+        from app.agents.specialists import ReportedDefect
+
+        if not page_probe.enabled() or any(
+            str(d.description or "").startswith(page_probe.PAGE_CHECK_FAILED) for d in test_result.defects
+        ):
+            return test_result
+        brief = str(getattr(state.get("document"), "text", "") or "")
+        found = page_probe.page_errors(state["repository"].root_path, brief) or []
+        if not found:
+            return test_result
+        logger.warning("A green round's page checks: the page failed %d of them", len(found))
+        defect = ReportedDefect(
+            description=page_probe.page_description(found),
+            severity="major",
+            reproduction_steps=(
+                "Open the page in a browser; type text into each text field and send the form the way the page "
+                f"sends it; watch the console and the network; measure it at a {page_probe.PHONE[0]}px-wide screen; "
+                "reload it"),
+            expected_behavior=("text typed is shown as text; no console error and no request answered 500 or "
+                               f"failing; no sideways scrolling at {page_probe.PHONE[0]}px; what persists is shown "
+                               "after a reload"),
+            actual_behavior=page_probe.page_description(found)[len(page_probe.PAGE_CHECK_FAILED):].strip()[:1500],
+            affected_files=[],
+            owner="ui_ux",
+        )
+        return test_result.model_copy(update={"defects": [*test_result.defects, defect]})
+    except Exception:  # noqa: BLE001 - the round as measured stands
+        logger.debug("Could not add the page checks' defect to the round", exc_info=True)
+        return test_result
+
+
 def _with_an_emptied_field_defect(state: Any, test_result: Any, milestone: Any) -> Any:
     """`test_result` with one defect for each write that accepted a field the criteria refuse empty. Never raises.
 

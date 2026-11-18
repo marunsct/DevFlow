@@ -467,6 +467,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.acceptance.interface_contract import what_the_contract_checks_find
 
     gaps.extend(what_the_contract_checks_find(root))
+    # Each probe a test round asks, asked again: a defect it raised that no fixer closed ships named, and blocks (B2).
+    from app.acceptance.probes_at_release import what_the_probes_still_find
+
+    gaps.extend(what_the_probes_still_find(root))
     # What someone who did not write it needs to test and ship it, from the
     # stack pack's own verified commands. See `app.stacks.release`.
     from app.stacks import release as release_files

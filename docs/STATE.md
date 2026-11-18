@@ -121,6 +121,8 @@ default (patch saved; off per run meanwhile). The 11-17 report is in git history
    Live: C# container run 3 (:1234, 13:49; sprint planned again at 14:55); PHP container run 2 (:8888) - near-green
    switch off per run. LF.1069: two C# runs lost `Sdk="Microsoft.NET.Sdk.Web"` in App.csproj; now held per round.
    LF.1070: page cache counted as memory in use refused every build in both runs for 5 min (C# re-planned).
+   Deep review 2026-11-18 (doc 9nhWdxAtiiatDkDiLR5Wwx): 4 phases; Phase 0 builds unasked, 6 decisions wait on the
+   owner. LF.1071 (Phase 0.1): model-written framework notes are not shown for a framework a pack names.
 3. The language sweep then has one run per language; next, a second run of the families that lost quality tests.
    LF.987 (records only) waits for the next deploy. shortlinks-api is held out (Measure runs only, `MEASURE=1`).
 3. LR.53 rest (a suite repair that leaves the suite near green goes back to the round: M14's open part), LR.52 rest, then a whole run in container mode (LR.30).

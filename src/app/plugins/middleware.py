@@ -526,6 +526,32 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
     return keywords
 
 
+def _without_the_notes_a_model_wrote(keywords: List[str], covered: set[str] | None = None) -> List[str]:
+    """`keywords` less the frameworks whose notes a model wrote unchecked: beside a pack, its guide is what is known.
+
+    `covered`: before the scaffold, only the frameworks a pack names lose their generated note - the design stages run
+    before the pack is laid down, and the specification is where the false note did its harm.
+
+    Measured on a failed run of a compiled stack: the generated note said the framework ships a test client module,
+    the pack's guide in the same request said there is no such module, and the specification had followed the note.
+    """
+    try:
+        from app.server.plugin_store import PluginStore
+
+        generated = PluginStore.shared().get_generated_framework_names()
+    except Exception:  # noqa: BLE001 - a store that cannot answer leaves the notes as they were
+        logger.debug("Could not read which framework notes were generated", exc_info=True)
+        return list(keywords)
+    return [name for name in keywords if name.lower() not in generated or (covered is not None and name.lower() not in covered)]
+
+
+def _frameworks_a_pack_covers() -> set[str]:
+    """Every framework some stack pack names: its guide describes it once the project is scaffolded."""
+    from app.stacks.packs import ALL_PACKS
+
+    return {str(name).lower() for pack in ALL_PACKS for name in pack.frameworks}
+
+
 def _with_the_setup_notes(keywords: List[str], repo_root: str) -> List[str]:
     """`keywords`, each followed by its notes on setting test runners up -
     unless a stack pack scaffolded the project, which set them up and keeps
@@ -534,9 +560,13 @@ def _with_the_setup_notes(keywords: List[str], repo_root: str) -> List[str]:
         from app.stacks.contract import read as the_contract
 
         if the_contract(repo_root) is not None:
-            return list(keywords)
+            return _without_the_notes_a_model_wrote(keywords)
     except Exception:  # noqa: BLE001 - without a contract the notes are the help there is
         logger.debug("Could not read the stack contract", exc_info=True)
+    try:
+        keywords = _without_the_notes_a_model_wrote(keywords, _frameworks_a_pack_covers())
+    except Exception:  # noqa: BLE001 - the notes as they were
+        logger.debug("Could not read which frameworks the packs cover", exc_info=True)
     return [name for keyword in keywords for name in (keyword, keyword + SETUP)]
 
 

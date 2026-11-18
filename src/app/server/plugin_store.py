@@ -132,6 +132,13 @@ class PluginStore:
                     return text[len(GENERATED_MARKER):].lstrip("\n") if text.startswith(GENERATED_MARKER) else text
         return None
 
+    def get_generated_framework_names(self) -> set[str]:
+        """The names whose notes a model wrote (`origin = 'generated'`): nobody checked what they say."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT framework_name FROM plugin_instructions WHERE origin = 'generated'")
+                return {row[0] for row in cur.fetchall()}
+
     def get_all_framework_names(self) -> list[str]:
         with self.get_connection() as conn:
             with conn.cursor() as cur:

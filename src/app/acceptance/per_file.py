@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -21,6 +22,28 @@ logger = logging.getLogger(__name__)
 MOST_OUTPUT_CHARACTERS = 2_500
 
 Runner = Callable[[Sequence[str], str, str], dict[str, Any]]
+
+#: (workspace, product fingerprint, file) -> that file's run and the report it left. Measured on one web run: sixteen
+#: open defects were each re-measured at dispatch, and the eight browser files they shared ran 53 times in 20 minutes
+#: on a product nothing had changed, before any fixer was sent. A file asked for again of the same product is judged
+#: from its run, by the asking defect's own criteria; any change to the product changes the fingerprint.
+_RUNS: "OrderedDict[tuple[str, str, str], tuple[dict[str, Any], dict[Path, bytes]]]" = OrderedDict()
+MOST_REMEMBERED_RUNS = 256
+
+
+def forget_runs() -> None:
+    """Every remembered file run dropped."""
+    _RUNS.clear()
+
+
+def _the_product(repo_root: str | Path) -> str:
+    """The product's fingerprint, or "" when it has none (then nothing is reused)."""
+    try:
+        from app.acceptance import unstable
+
+        return str(unstable.fingerprint(repo_root) or "")
+    except Exception:  # noqa: BLE001 - a product that cannot be told apart is never reused
+        return ""
 
 
 def _the_command_for(argv: Sequence[str], file: str, directory: str, pattern: str) -> list[str]:
@@ -81,8 +104,9 @@ def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, nam
     # its own in its place. Measured on one run: a defect's re-measure ran one file, the round then read that
     # file's ten tests as the suite's thirteen, and a green suite was reopened for three tests "never run".
     kept = _the_report_as_it_is(report)
+    product = _the_product(repo_root)
     try:
-        return _each(repo_root, project, directory, pattern, argv, base, naming, report, never_started, run)
+        return _each(repo_root, project, directory, pattern, argv, base, naming, report, never_started, run, product)
     finally:
         _put_back(report, kept)
 
@@ -114,7 +138,8 @@ def _put_back(report: Path | None, kept: dict[Path, bytes]) -> None:
 
 
 def _each(repo_root: str | Path, project: str, directory: str, pattern: str, argv: list[Any], base: Path,
-          naming: set[str] | None, report: Path | None, never_started: dict[str, str], run: Runner) -> list[dict[str, str]]:
+          naming: set[str] | None, report: Path | None, never_started: dict[str, str], run: Runner,
+          product: str = "") -> list[dict[str, str]]:
     """`each_file`'s runs, one file at a time."""
     found: list[dict[str, str]] = []
     from app.analysis.walk import files_under
@@ -135,11 +160,23 @@ def _each(repo_root: str | Path, project: str, directory: str, pattern: str, arg
         if never_started:
             found.append({"file": f"{project}/{relative}" if project else relative, **never_started})
             continue
-        if naming is not None and report is not None:
-            from app.acceptance import junit
+        key = (str(Path(repo_root).resolve()), product, relative) if product else None
+        remembered = _RUNS.get(key) if key else None
+        if remembered is not None:
+            outcome, left = remembered
+            if report is not None:
+                _put_back(report, left)
+            logger.info("%s: its run on this same product reused, not run again", relative)
+        else:
+            if naming is not None and report is not None:
+                from app.acceptance import junit
 
-            junit.clear(report)
-        outcome = run(_the_command_for(argv, relative, directory, pattern), "probe", project) or {}
+                junit.clear(report)
+            outcome = run(_the_command_for(argv, relative, directory, pattern), "probe", project) or {}
+            if key:
+                _RUNS[key] = (outcome, _the_report_as_it_is(report))
+                while len(_RUNS) > MOST_REMEMBERED_RUNS:
+                    _RUNS.popitem(last=False)
         output = (str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "") + str(outcome.get("error") or ""))
         code = str(outcome.get("returncode", ""))
         hung = code == "124" or "timed out" in output.lower()

@@ -62,7 +62,8 @@ Generated above. Today (hidden, quality, verdict):
   Haiku arm run: does the judgement tier lift C# as it lifted Rust?
 - LF.1120 (a stage researched before it began is offered no lookup tool; the Haiku architect spent five paid turns on
   refused `read_docs`) and LF.1121 (a script looking up an id no page declares is a proven defect - web-todo 1 lost
-  40/46 tests to `add-task-form` vs `add-form`) shipped live ~03:45 into both runs (both mixed).
+  40/46 tests to `add-task-form` vs `add-form`) shipping into both runs (both mixed). LF.1122 (an acceptance file
+  is run once per product while defects are dispatched; 53 runs in 20 min on one unchanged product) committed.
 - **Deployed 20:09 JST: 532dba3 (waves 1 and 2, LF.1073-1105).** Live on it: M notes-api-rust container 7
   run-cbf36159-b68e-4405-9440-db9797ce1aad (:1234) and M notes-api-php container 3
   run-c5d6a8a5-6f88-4247-adcf-52c0a8aaad0c (:8888), both 20:09.

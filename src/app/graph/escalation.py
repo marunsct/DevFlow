@@ -181,6 +181,7 @@ def escalation(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     update: dict[str, Any] = {"escalation_count": count}
 
     if count <= MAX_ESCALATIONS and _kind(state) == DESIGN:
+        update["design_escalation_count"] = int(state.get("design_escalation_count") or 0) + 1
         if asks_a_person(state):
             _record_document(state, "docs/reviews/escalation.md", _design_page(error, _design_findings(state)))
             return _handing_on(**update, stage="user_review_escalation")

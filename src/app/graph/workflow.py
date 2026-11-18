@@ -651,6 +651,9 @@ class WorkflowGraphState(TypedDict, total=False):
     # The last rung: a stuck sprint's decision. See `app.graph.escalation`.
     escalation: dict[str, Any] | None
     escalation_count: int
+    # Of those, the ones about the design (an architecture review still asking for changes): they say nothing about
+    # whether the build model can build, so the build rung does not count them (`GraphContext.the_model_for_this_attempt`).
+    design_escalation_count: int
     known_issues: list[str]
     unit_failures_accepted_at_an_escalation: list[str]
     # Plan QM.2, off until measured: the sprint attempts whose sources were

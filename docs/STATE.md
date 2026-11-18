@@ -52,7 +52,8 @@ Generated above. Today (hidden, quality, verdict):
   probe (a false red, LF.1116). Root cause of both that and the edge probe's 22 skipped checks: the sign-up body was
   written `{"username": <string>, ...}` after `— request body:` and never read, so no probe signed in (LF.1117).
 - Haiku arm: H notes-api-rust hybrid-haiku 1 run-160e0f62-7720-49e1-a831-50f5453e7484 (:1234, 01:25-02:54, mixed):
-  **9/9 hidden, 7/8 quality**, 88 active min, 3 reverts, $0.87 hosted - the first Rust 9/9 on the new version (local-only
+  **9/9 hidden, 7/8 quality**, 88 active min, 3 reverts, $0.87 hosted - but Haiku-BUILT, not judgement-only: a design
+  escalation moved every build stage to Haiku (LF.1123). The first Rust 9/9 on the new version (local-only
   Rust 1, 4, 7: 0/9). Verdict not deliverable on a real gap: a spaces-only title accepted. Sprint 1 attempts 1-4 lost
   to one defect (LF.1118).
 - M web-todo container 1 run-3cc0ed29-ac73-423d-bb47-ee30e36953e7 (:8888, 02:37, on 2286518d).
@@ -63,7 +64,9 @@ Generated above. Today (hidden, quality, verdict):
 - LF.1120 (a stage researched before it began is offered no lookup tool; the Haiku architect spent five paid turns on
   refused `read_docs`) and LF.1121 (a script looking up an id no page declares is a proven defect - web-todo 1 lost
   40/46 tests to `add-task-form` vs `add-form`) shipping into both runs (both mixed). LF.1122 (an acceptance file
-  is run once per product while defects are dispatched; 53 runs in 20 min on one unchanged product) committed.
+  is run once per product while defects are dispatched; 53 runs in 20 min on one unchanged product) live 03:59.
+- LF.1123 committed, deploys at the next boundary: the C# Haiku run is also Haiku-built (design escalation) and
+  finishes as such. The judgement-only hybrid arm has not been measured yet - next Haiku run measures it.
 - **Deployed 20:09 JST: 532dba3 (waves 1 and 2, LF.1073-1105).** Live on it: M notes-api-rust container 7
   run-cbf36159-b68e-4405-9440-db9797ce1aad (:1234) and M notes-api-php container 3
   run-c5d6a8a5-6f88-4247-adcf-52c0a8aaad0c (:8888), both 20:09.

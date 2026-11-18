@@ -97,6 +97,8 @@ class GraphContext:
             int(state.get("sprint_replan_count") or 0) >= 1
             or int(state.get("milestone_revision_count") or 0) >= 2
             or int(state.get("release_attempts") or 0) >= 1
-            or int(state.get("escalation_count") or 0) >= 1
+            # Not an escalation of the design: measured on two hosted runs, an architecture review that still asked
+            # for changes moved every specialist, drafting and fix stage of every sprint to the judgement model.
+            or int(state.get("escalation_count") or 0) - int(state.get("design_escalation_count") or 0) >= 1
         )
         return self.judgement_model if retried else self.model

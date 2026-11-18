@@ -18,9 +18,11 @@ SPRINT = "Sprint 'Sign-up and sign-in' was re-planned 3 times and still could no
 NOTE = "every locked test passes at release"
 
 
-def test_it_is_a_note_when_the_suite_passes_at_release_and_blocks_otherwise():
+def test_an_escalated_sprint_is_a_note_with_or_without_the_release_s_words():
     assert not cv.is_blocking(f"An escalation left this open (DR-14): {NOTE}: {SPRINT}")
-    assert cv.is_blocking(f"An escalation left this open (DR-14): {SPRINT}")
+    # Calibrated on hidden and quality tests (deep review 2026-11-18, B4): 105 runs carried an escalated sprint and
+    # 18 lost a test, no more often than any run did.
+    assert not cv.is_blocking(f"An escalation left this open (DR-14): {SPRINT}")
 
 
 def _released(tmp_path, monkeypatch, *, locked: bool, issue: str) -> list[str]:

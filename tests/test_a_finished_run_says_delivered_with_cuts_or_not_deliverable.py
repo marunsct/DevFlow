@@ -13,7 +13,7 @@ from app import completion_verdict as cv
 from app.server import runs
 
 CUT = "AC-4 ships deferred, unproven by the suite: the export view"
-FAILS = "3 of the project's own unit tests still fail and ship failing: test_a, test_b, test_c"
+FAILS = "At release the product does not keep its interface contract: contract 2: AC-2 GET /x -> 200"
 NOTE = "2 line(s) of the interface contract were not checked at release: GET /x"
 
 

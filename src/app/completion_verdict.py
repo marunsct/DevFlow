@@ -4,7 +4,9 @@ Every gap used to make a finished run "non-deliverable", so every run with a gap
 scored full marks or almost nothing, and the verdict said nothing. A gap is one of two things:
 
 - **Blocking:** evidence the product fails, or a thing it promised that has no proof at all: a
-  failing unit test, a broken contract line, code that does not start, no suite, no way for someone else to run it.
+  broken contract line, a defect a harness probe still finds, code that does not start, no suite, no way for someone
+  else to run it. Which kinds block is calibrated on the hidden and quality tests (see `_NOTES`): a failing unit test
+  of the product's own and a sprint an escalation accepted unfinished lost no more often than any run: notes.
 - **A note:** the proof was weaker than it could be, or a worry was set aside, and every later measurement went on to
   pass: an unchecked contract line says nothing against the product, a design point is about a document, a change
   the suite did not notice may behave the same, a problem the suite was locked with was followed by a green suite.
@@ -52,6 +54,26 @@ _NOTES = re.compile(
         r"CR-\d+ was deferred during the run; its own locked tests pass at release:",
         r"Ships \d+ dependenc(y|ies) under a strong-copyleft licence",
         r"The judgement model .* could not be built ",
+        # Calibrated on the hidden and quality tests (deep review 2026-11-18, item B4): 427 scored runs, 92 of them
+        # (22%) lost a hidden or quality test, and a "not deliverable" verdict lost no more often than "delivered"
+        # (39 of 181 against 53 of 246). Each kind of gap that blocked, the runs it was in, and how many lost one:
+        #   kind                                                   runs  lost
+        #   An escalation left a sprint open (re-planned, or its     105    18   (17%)  -> a note
+        #     suite still failing), the locked suite green later
+        #   An escalation left a brief requirement unbuilt            2     0          blocks (too few)
+        #   N of the project's own unit tests still fail             94    22   (23%)  -> a note
+        #   At release the product does not keep its contract        63    14   (22%; 5 of 9 with quality tests) blocks
+        #   At release, reading the files still finds               19     4   (21%)  -> a note
+        #   A milestone review's [blocking] finding as a risk        12     4   (33%)  blocks
+        #   The project setup was never proven                       10     4   (40%)  blocks
+        #   The product changed at release, the suite failed          3     1          blocks
+        #   N write lines were not sent creates at once               1     0          -> a note (what went unasked)
+        # A kind seen in 15 runs or more that lost no more often than all runs did predicts nothing and is a note; a
+        # kind seen too seldom to say keeps blocking. A loss the verdict did not foresee is the probes' to find.
+        r"An escalation left this open(?: \(DR-\d+\))?: (?:Sprint ['\"]|The sprint's own test suite was still failing)",
+        r"\d+ of the project's own unit tests still fail and ship failing",
+        r"At release, reading the files still finds:",
+        r"\d+ write line\(s\) of the interface contract were not sent \d+ creates at once",
     ))
 )
 

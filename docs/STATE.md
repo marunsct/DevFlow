@@ -44,21 +44,19 @@ LF.1036-1064 (scorer: LF.1037/1042/1043/1046/1053/1054). Owner decision pending:
 default (patch saved; off per run meanwhile). The 11-17 report is in git history.
 
 ## Next actions
-1. Deep-review wave 1, six bundles in worktrees (each item: a fail-on-old test, an LF row on merge):
-   B1 fix-loop measurement (A1 unmeasured outcome, A2 compiler-gated rewrites, A3 checkpoints and culprit-only batch
-   revert, A5 no re-asks, A7 closure by measurement); B2 verification (B2 probes at release, B1 contract edge probe,
-   B5 browser probes, B4 verdict calibration, B6 unit-test filter); B3 agents (C5 tool lists, C3 request size, C7
-   prompt contradictions + lean profile, C8 intake questions); B4 stacks (E3 language table, E4 golden examples);
-   B5 product (best attempt, Git source, tidy handover, supported matrix, run doctor, health page); B6 sandbox (E1a no
-   product code in the worker, E2 dependency gate, E1b broker design). Merge, both suites, verify_packs, deploy at the
-   live runs' end.
-2. Wave 2 (after wave 1 merges): 1.1 typed defects, 1.4 fix journal / end attempt by cause / targeted re-plan, 1.5
-   integrator gate, 1.6 ordered drafting waves, D5 `degraded()` helper, D4 switch clean-up, D2 one attempt record.
+1. **Wave 1 is merged, green and pushed (LF.1073-1096, ba23885a), not deployed.** Both suites 18,365 passed;
+   `verify_packs` compiled all seven golden examples. Deploy with `BOUNDARY_WAIT=0 loop.sh deploy` once both live runs
+   have ended (frozen-version rule), then start two runs per family on the new version: notes-api-rust, notes-api-php,
+   notes-api-csharp first (the families today's runs failed or dragged on), then tasks-api and web-todo (probes,
+   verdict). Watch: `unmeasured` records, edge/page probe false reds, best-checkpoint restores, single-culprit batch
+   reverts, the dependency gate's verdicts, start probe in its container.
+2. Wave 2 building in worktrees: 1.1 typed defects + 1.4 fix journal / end by cause + 1.5 integrator gate; 1.6
+   drafting waves; D2 rewind by snapshot id + D5 `degraded()`.
 3. Wave 3: C2 typed contract, C4 harness-driven fixer, F2 change lane, D3 transition table, 2.1 medium benchmark, 2.6
-   hidden evaluator, E1/E2 broker and registry proxy live, 2.8 role ablation runs. Hosted test (decision 4) waits on
-   the owner's yes, provider and budget.
-4. Live: C# container run 3 (:1234) and PHP container run 2 (:8888) run to their end on 0e092255; score both, then
-   start nothing new on a port until wave 1 is deployed (frozen version, two runs per family).
+   hidden evaluator, E1b broker live trial (`BROKER_ENFORCE=0` first), 2.8 role ablation runs. Hosted test waits on
+   the owner's yes, provider and budget. `INSTALL_SCRIPTS_SKIPPED` built, off, unregistered.
+4. Live on 0e092255: PHP container run 2 (:8888, second sprint attempt), Rust container run 6 (:1234, 16:49) - score
+   both; Rust 6 is the baseline for LF.1096 (its specification planned unit tests on axum's TestClient).
 
 ## Rules that are never optional
 `AGENTS.md`. In short: the model is the owner's (`loop.sh ready` must say ALL READY); fixes are stack-agnostic

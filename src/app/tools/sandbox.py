@@ -26,6 +26,7 @@ pattern list:
 from __future__ import annotations
 
 import contextvars
+from contextlib import contextmanager
 import json
 import logging
 import os
@@ -44,7 +45,7 @@ from pathlib import Path
 from app.analysis.walk import files_under
 from app.tools.bounded_output import HeadAndTail, read_into
 from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE, pinned_project_directory
-from typing import Any, Dict, Iterable, Sequence
+from typing import Any, Dict, Iterable, Iterator, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -937,10 +938,26 @@ def _process_memory(workspace: str | Path | None, argv: list[str] | None = None)
     return max(on_node, need)
 
 
+#: True while the harness starts the product as delivered for a toolchain that restores its packages when it starts
+#: (`languages.LanguageSupport.restores_when_it_starts`): a stranger starting it has a network, as an install has.
+_A_STRANGER_S_NETWORK: contextvars.ContextVar[bool] = contextvars.ContextVar("a_stranger_s_network", default=False)
+
+
+@contextmanager
+def with_a_stranger_s_network(granted: bool = True) -> Iterator[None]:
+    """Within it, the harness's own commands get a network, as a stranger starting the delivered product has one."""
+    token = _A_STRANGER_S_NETWORK.set(bool(granted))
+    try:
+        yield
+    finally:
+        _A_STRANGER_S_NETWORK.reset(token)
+
+
 def _a_network_for(category: str, workspace: str | Path | None) -> str:
     """The network a command's own container gets: an install's always, any other command's when the project's pack
-    says its toolchain fetches while it builds and tests (`StackPack.fetches_while_building`); none otherwise."""
-    if category in NETWORK_CATEGORIES:
+    says its toolchain fetches while it builds and tests (`StackPack.fetches_while_building`), or the harness's own
+    start of the delivered product for a toolchain that restores when it starts; none otherwise."""
+    if category in NETWORK_CATEGORIES or (_A_STRANGER_S_NETWORK.get() and running_for_the_harness()):
         return "bridge"
     try:
         from app.stacks import contract

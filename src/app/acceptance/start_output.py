@@ -148,6 +148,38 @@ def _as_delivered(repo_root: Path, project: str) -> str:
     return copy.relative_to(repo_root).as_posix()
 
 
+def _the_restored_packages(repo_root: str | Path) -> dict[str, str]:
+    """{the toolchain's cache variable: the cache the install filled} when the project's language keeps one under the
+    home and the install filled it; {} otherwise. A stranger installs first, with a network; this stands for that, so
+    the start from an empty home does not restore again from a source the start has no network to reach."""
+    try:
+        from app.stacks import contract
+        from app.stacks.languages import language
+
+        found = contract.the_pack(repo_root)
+        row = language(str(getattr(found[0], "language", "") or "")) if found else None
+        if row is None or not isinstance(row.package_cache, tuple) or not row.package_cache:
+            return {}
+        variable, folder = row.package_cache
+        cache = Path(repo_root) / ".agent-home" / folder
+        return {variable: str(cache)} if cache.is_dir() else {}
+    except Exception:  # noqa: BLE001 - the start runs as it did
+        return {}
+
+
+def _it_restores_when_it_starts(repo_root: str | Path) -> bool:
+    """Whether the project's language restores its packages when its usual start command runs. Never raises."""
+    try:
+        from app.stacks import contract
+        from app.stacks.languages import language
+
+        found = contract.the_pack(repo_root)
+        row = language(str(getattr(found[0], "language", "") or "")) if found else None
+        return row is not None and row.restores_when_it_starts is True
+    except Exception:  # noqa: BLE001 - no network, as before
+        return False
+
+
 def what_it_wrote(repo_root: str | Path) -> str:
     """A paragraph for `server_log`: how the project's own start command ended and what it wrote; "" when none could run. Never raises."""
     data = ""
@@ -167,10 +199,13 @@ def what_it_wrote(repo_root: str | Path) -> str:
         # As a stranger starts it: a fresh home and the plain PATH. The sandbox puts the project's virtualenv first on
         # every command's PATH and keeps a bare install in the agent's home; measured, a `start.sh` running a bare
         # `python3` started here and nowhere else - hidden 0 of 9 with a green suite.
-        outcome = _execute(repo_root, argv, where, {
-            "PORT": str(_a_free_port()), "HOST": "127.0.0.1", _data_variable(repo_root): data,
-            "HOME": stranger, "PATH": os.environ.get("PATH", ""),
-        }) or {}
+        from app.tools.sandbox import with_a_stranger_s_network
+
+        with with_a_stranger_s_network(_it_restores_when_it_starts(repo_root)):
+            outcome = _execute(repo_root, argv, where, {
+                "PORT": str(_a_free_port()), "HOST": "127.0.0.1", _data_variable(repo_root): data,
+                "HOME": stranger, "PATH": os.environ.get("PATH", ""), **_the_restored_packages(repo_root),
+            }) or {}
         try:
             code = int(str(outcome.get("returncode")).strip())
         except ValueError:

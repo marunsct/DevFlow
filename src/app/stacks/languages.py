@@ -73,6 +73,17 @@ class LanguageSupport:
     import_graph: str | Gap
     #: The key of `app.plugins.seed.DEVELOPMENT_SERVERS` whose markers a release reads its sources for.
     development_server: str | Gap
+    #: (the variable that names its package cache, that cache's folder under a home) when its toolchain keeps what
+    #: an install restored under the user's home rather than in the project; () when it installs into the project.
+    #: The product started as delivered, from a stranger's empty home, is pointed at the restored cache: measured on
+    #: one C# run, `dotnet run` restored again from that home, with no network, failed NU1301 on a version range, and
+    #: a product that started for the suite was reported as not starting in every round.
+    package_cache: tuple[str, str] | Gap = Gap("not set for this language")
+    #: Whether its usual start command restores the project's packages before it runs (`dotnet run`): a copy of the
+    #: product started elsewhere restores again, and a version range is resolved against the package source, so the
+    #: product started as delivered is given a network, as a stranger starting it has. Measured on one C# run: with
+    #: none, NU1301 in every round on a product that started for the suite.
+    restores_when_it_starts: bool | Gap = Gap("its usual start command runs what was built or installed")
 
 
 _NODE_INSTALLED = ("node_modules",)
@@ -94,6 +105,7 @@ _JVM_TESTS = (r"(^|/)src/test/", r"Test\.(java|kt|scala)$")
 _NO_DOCS_REGISTRY = "the docs tool reads READMEs from npm, PyPI, crates.io and GitHub-hosted Go modules only"
 _NO_RUNTIME_PIN = "runtimes pins node, go, java and python; the pack's sandbox image carries this toolchain's version"
 _NO_IMPORT_GRAPH = "imports are followed for Python and JavaScript/TypeScript only; definitions alone are read"
+_INSTALLS_INTO_THE_PROJECT = "its packages are installed into the project, which the delivered copy carries"
 
 
 def _rows() -> tuple[LanguageSupport, ...]:
@@ -115,6 +127,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
         executables=("npm", "npx", "node", "yarn", "pnpm"),
         import_graph="script",
         development_server="javascript",
+        package_cache=Gap(_INSTALLS_INTO_THE_PROJECT),
     )
     typescript = replace(
         javascript, name="typescript", suffixes=(".ts", ".tsx", ".mts", ".cts"),
@@ -142,6 +155,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             executables=("python", "python3", "pip", "pip3", "pytest", "uv", "django-admin", "alembic"),
             import_graph="python",
             development_server="python",
+            package_cache=Gap(_INSTALLS_INTO_THE_PROJECT),
         ),
         LanguageSupport(
             name="go",
@@ -161,6 +175,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             executables=("go", "gotestsum", "gofmt"),
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server=Gap("Go's standard server is a production server; `go run` is read in no source"),
+            package_cache=("GOMODCACHE", "go/pkg/mod"),
         ),
         LanguageSupport(
             name="rust",
@@ -180,6 +195,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             executables=("cargo", "rustc", "cargo-nextest"),
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server=Gap("Rust's servers are production servers; `cargo run` is read in no source"),
+            package_cache=("CARGO_HOME", ".cargo"),
         ),
         LanguageSupport(
             name="java",
@@ -199,6 +215,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             executables=("java", "javac", "mvn", "gradle"),
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server=Gap("`spring-boot:run` is a build command, read in no source"),
+            package_cache=Gap("the Java pack fetches while it builds and tests, with a network (`fetches_while_building`)"),
         ),
         LanguageSupport(
             name="kotlin",
@@ -238,6 +255,8 @@ def _rows() -> tuple[LanguageSupport, ...]:
             executables=("dotnet",),
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server=Gap("Kestrel is a production server; `dotnet watch` is read in no source"),
+            package_cache=("NUGET_PACKAGES", ".nuget/packages"),
+            restores_when_it_starts=True,
         ),
         LanguageSupport(
             name="ruby",
@@ -257,6 +276,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             executables=("ruby", "bundle", "gem", "rake", "rails", "rspec"),
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server="ruby",
+            package_cache=Gap("not measured: where bundler keeps its gems is set by the pack's install"),
         ),
         LanguageSupport(
             name="php",
@@ -276,6 +296,7 @@ def _rows() -> tuple[LanguageSupport, ...]:
             executables=("php", "composer"),
             import_graph=Gap(_NO_IMPORT_GRAPH),
             development_server="php",
+            package_cache=Gap("Composer installs into `vendor/` in the project, which the delivered copy carries"),
         ),
     )
 

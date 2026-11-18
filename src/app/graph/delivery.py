@@ -283,7 +283,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # pipeline written below runs them first. Measured on one run: released
     # with every criterion passing or deferred while `npm test` failed on a
     # test a fix stage had written for a deferred criterion.
-    unit_failing = [] if failing or build_output else _unit_tests_failing(root)
+    from app.graph import unit_test_quarantine
+
+    unit_failing = [] if failing or build_output else unit_test_quarantine.without_those_set_aside(
+        root, _unit_tests_failing(root))
     project_unit_failures = list(unit_failing)
     if build_output:
         failing = unit_failing = [production_build.THE_PRODUCT_DOES_NOT_BUILD]
@@ -423,6 +426,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     if shipped_failing_unit_tests:
         gaps.append(release_with_failing_unit_tests.gap(shipped_failing_unit_tests))
     gaps.extend(release_audits.licence_gaps(root))
+    gaps.extend(unit_test_quarantine.release_note(root))
     unit_gap = _no_unit_tests_ran(root)
     if unit_gap:
         gaps.append(unit_gap)

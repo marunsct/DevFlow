@@ -77,6 +77,7 @@ SWITCHES: dict[str, str] = {
     "CONCURRENT_WRITE_PROBE": "app.acceptance.concurrent_write_probe",
     "WRONG_SHAPE_BODY_PROBE": "app.acceptance.wrong_shape_body_probe",
     "EDGE_PROBE": "app.acceptance.edge_probe",
+    "UNIT_TEST_QUARANTINE": "app.graph.unit_test_quarantine",
     "STABLE_MEMORY_ORDER": "app.agents.stable_memory_order",
     "NEAR_GREEN_REPAIR_TO_ROUND": "app.graph.near_green_repair",
     "FIX_STAGES_THAT_CLOSE_NOTHING": "app.graph.unchanged_fix_round",

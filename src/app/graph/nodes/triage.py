@@ -152,10 +152,15 @@ def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig, ctx:
             "test_round_%d: run by the harness (fast delivery); unit tests %s",
             test_round, {True: "pass", False: "fail", None: "not recorded"}[unit_ok],
         )
+        beside_a_green_suite = not failing_due and int(saved_run.get("failed") or 0) == 0
+        # Beside a green locked suite, a unit test failing in two product states is set aside, not raised (B6).
+        from app.graph import unit_test_quarantine
+
+        raised = unit_ok is False and (not beside_a_green_suite or unit_test_quarantine.raised_beside_a_green_suite(
+            state["repository"].root_path))
         harness_defects: list[Any] = (
-            [] if unit_ok is not False else [_the_unit_tests_fail(
-                milestone, unit_output,
-                beside_a_green_suite=not failing_due and int(saved_run.get("failed") or 0) == 0,
+            [] if not raised else [_the_unit_tests_fail(
+                milestone, unit_output, beside_a_green_suite=beside_a_green_suite,
             )]
         )
         if failing_due:

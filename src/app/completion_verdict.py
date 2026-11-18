@@ -39,6 +39,8 @@ _NOTES = re.compile(
         r"\d+ line\(s\) of the interface contract were not checked at release",
         r"\d+ write line\(s\) of the interface contract were not asked with an unparsable body",
         r"The product ships no unit tests:",
+        # Unit tests that kept failing beside a green locked suite, set aside and named (B6).
+        r"\d+ unit test\(s\) were set aside, not raised as defects:",
         r"No review read the product's code:",
         # About the documents the product was built from, not the product.
         r"The plan was dispatched with this noted against it:",

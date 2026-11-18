@@ -58,6 +58,7 @@ Written by `loop.sh measuring` from 412 scored runs in the ledger. On and off co
 | `REVIEWS_WITHOUT_REASONING` | Efficiency | on | 24 | no signal | 146 | measured: hidden 0.81 on / 0.98 off; minutes 88.27 / 87.95 |
 | `SPRINT_TIME_BUDGET` | Efficiency | on | 19 | 0 | 1 | not measured: needs 0 more on and 1 more off |
 | `STABLE_MEMORY_ORDER` | Efficiency | on | 19 | 17 | 1 | not measured: needs 0 more on and 1 more off |
+| `DIAGNOSE_A_RECURRING_CAUSE` | Recurring causes | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `DESIGN_REVISION_CROSS_CHECKED` | Review gates | on | 19 | 19 | 1 | not measured: needs 0 more on and 1 more off |
 | `INTAKE_ASKS_FIRST` | Review gates | on | 0 | 0 | 0 | not measured: needs 2 more on and 2 more off |
 | `MILESTONE_EVIDENCE_GATE` | Review gates | on | 19 | no signal | 1 | not measured: needs 0 more on and 1 more off |

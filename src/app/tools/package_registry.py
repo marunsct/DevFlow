@@ -240,7 +240,7 @@ _ECOSYSTEMS: dict[str, tuple[tuple[str, ...], Callable[[str, Fetch], dict[str, A
 _NO_SUCH_PACKAGE = frozenset({404, 410})
 
 _RUNTIMES: dict[str, str] = {}
-_CACHE: dict[tuple[str, str], dict[str, Any]] = {}
+_CACHE: dict[tuple[str, str, Any], dict[str, Any]] = {}
 
 
 def ecosystem_named(word: str) -> str | None:
@@ -285,7 +285,10 @@ def look_up(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> dict[st
         name = asked.group(1)
     if not _A_NAME.match(name) or ".." in name:
         return {"error": f"{name!r} is not a package name."}
-    key = (which, name)
+    # Keyed by where the answer came from as well: an answer read through a fetch the caller supplied is that fetch's
+    # alone. Found when the dependency gate (LF.1074) began asking at every install: one stub's answer for a package
+    # was handed to the next caller asking the same name through a stub of its own.
+    key = (which, name, fetch)
     if key in _CACHE:
         return _with_the_version_asked(_CACHE[key], version_asked)
     try:

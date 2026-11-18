@@ -176,7 +176,20 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
         from app.analysis.file_kinds import classify_file
 
         found = [*owing, *(name for name in found if name not in owing and classify_file(name) != "test")][:MOST_FILES]
-    return found
+    return _without_other_ecosystems_manifests(root, found)
+
+
+def _without_other_ecosystems_manifests(root: Path, files: list[str]) -> list[str]:
+    """`files` less the manifests of an ecosystem the project's pack does not build its product with (A5)."""
+    try:
+        from app.analysis.manifests import not_the_product_s
+        from app.stacks import contract
+
+        found = contract.the_pack(root)
+        pack = found[0] if found is not None else None
+        return [name for name in files if not not_the_product_s(name, pack)]
+    except Exception:  # noqa: BLE001 - the files as found
+        return files
 
 
 
@@ -550,8 +563,14 @@ def fix_by_rewriting(
     from app.graph.fewest_findings import BestVersions
 
     best = BestVersions()
+    # A file whose reply came back unchanged is not asked for again in this attempt (A5): measured, 194 of 462 replies
+    # returned the file as it was, and every pass asked for every file the failure named.
+    unchanged: set[str] = set()
     for _pass in range(MOST_PASSES):
         targets = files if not diagnostics else [f for f in files if any(f"`{f}`" in d for d in diagnostics)] or files
+        targets = [path for path in targets if path not in unchanged]
+        if not targets:
+            break
         for path in targets:
             try:
                 active_model = model
@@ -595,6 +614,8 @@ def fix_by_rewriting(
                     _note_the_reply(defect, path, "no block")
                     continue
                 _note_the_reply(defect, path, "changed" if content != current else "unchanged")
+                if content == current:
+                    unchanged.add(path)
                 if content != current:
                     try:
                         write(str(root), path, content)

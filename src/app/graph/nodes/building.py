@@ -109,6 +109,13 @@ def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig, ctx: 
             lessons=state.get("lessons") or [],
             last_attempt=_the_last_failed_attempt_at_this_sprint(state),
         )
+        if _the_last_failed_attempt_at_this_sprint(state) is not None:
+            # What the fixers of the last attempts tried on each cause, and how it ended (deep review 1.4): the cycle
+            # that held it was cleared for this plan.
+            from app.graph import cause_journal
+
+            request["messages"][-1]["content"] += cause_journal.for_a_replan(
+                state["repository"].root_path, state.get("current_sprint_index", 0))
     # The previous answer was not ready to hand out: say exactly why, with
     # the plan it was, so this attempt fixes it rather than starting over.
     from app.graph import acceptance_nodes

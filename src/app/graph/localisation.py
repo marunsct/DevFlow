@@ -120,4 +120,51 @@ def localised(defect: Any, failure: str, root: str | Path, model: Any, found: li
         return found
 
 
-__all__ = ["Localisation", "MOST_FILES", "MOST_FILES_UNASKED", "ON_BY_DEFAULT", "enabled", "localised"]
+#: A diagnosis may reason at length; its answer is one short object.
+MOST_DIAGNOSIS_TOKENS = 6_000
+#: What a diagnosis call is told it is: the audit's switch-firing check reads it in the request.
+DIAGNOSIS_ROLE = ("You diagnose why earlier attempts to fix a failure did not work. You change nothing; you answer "
+                  "with one JSON object.")
+
+
+def diagnosis(defect: Any, failure: str, root: str | Path, model: Any, tried: str) -> str:
+    """One diagnosis-only call for a cause earlier attempts did not fix (deep review 2026-11-18, item 1.4): no tools,
+    reasoning allowed, the failure, what was tried and the project's map; its hypothesis and the files it names, or "".
+
+    The localisation's question and answer, asked of a cause that has already failed twice: where it is, and why
+    what was tried did not reach it. Never raises.
+    """
+    try:
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from app.agents.answered_in_parts import _read
+        from app.observability.direct_calls import config_for_this_run
+
+        base = Path(root)
+        focus = "\n".join([str(getattr(defect, "description", "")), str(failure)])
+        prompt = (
+            f"A defect: {getattr(defect, 'description', '')}\nExpected: {getattr(defect, 'expected_behavior', '')}\n"
+            f"Actual: {getattr(defect, 'actual_behavior', '')}\n\nWhat failed:\n{str(failure)[:_MOST_FAILURE_CHARS]}\n\n"
+            f"What was tried on it before, and how each ended:\n{str(tried).strip()[:_MOST_FAILURE_CHARS]}\n\n"
+            f"What each file of the project defines:\n{_the_map(base, focus)}\n\n"
+            "Those attempts did not fix it. Say why: what they changed that could not reach the cause, and where the "
+            f"cause really is. Name at most {MOST_FILES} files and the symbols in them, and in `hypothesis` two or three "
+            "sentences a fixer can act on. Answer with one JSON object with the fields `files`, `symbols` and "
+            "`hypothesis`, nothing else."
+        )
+        reply = model.invoke([SystemMessage(content=DIAGNOSIS_ROLE), HumanMessage(content=prompt)],
+                             max_tokens=MOST_DIAGNOSIS_TOKENS, **config_for_this_run("defect_fix"))
+        content = getattr(reply, "content", "")
+        text = content if isinstance(content, str) else str(content)
+        answer = _read(text, Localisation)
+        if answer is None:
+            return " ".join(text.split())[:600]
+        where = [f for f in answer.files if (base / str(f).strip().lstrip("/")).is_file()][:MOST_FILES]
+        said = " ".join(answer.hypothesis.split())
+        return (said + (f" Files: {', '.join(where)}." if where else ""))[:600]
+    except Exception:  # noqa: BLE001 - no diagnosis, the fixer goes on as before
+        logger.debug("Could not diagnose the defect", exc_info=True)
+        return ""
+
+
+__all__ = ["Localisation", "MOST_FILES", "MOST_FILES_UNASKED", "ON_BY_DEFAULT", "diagnosis", "enabled", "localised"]

@@ -84,6 +84,11 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
     from app.agents import ledger as _ledger
 
     request["messages"][-1]["content"] += _ledger.earlier_attempts(defect, cycle.defects[:defect_index])
+    # What was tried on its cause in earlier cycles too: a re-plan clears the cycle, not the journal (deep review 1.4).
+    from app.graph import cause_journal
+
+    request["messages"][-1]["content"] += cause_journal.tried_before(
+        state["repository"].root_path, defect, shown=(defect.attempts if _ledger.enabled() else ()))
     request["messages"][-1]["content"] += _the_stub_still_served_section(state["repository"].root_path)
     request["messages"][-1]["content"] += _the_unserved_code_section(state["repository"].root_path)
     request["messages"][-1]["content"] += _the_database_section(state["repository"].root_path)
@@ -115,6 +120,20 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
             round_=state.get("test_round", 0), index=defect_index, sprint=state.get("current_sprint_index", 0),
         )
     return request, co_defects
+
+
+def _diagnosed_if_it_keeps_failing(state: Any, defect: Any, ctx: GraphContext) -> None:
+    """One diagnosis-only call before the fix of a cause that has already failed twice, kept in the fix journal for the
+    fixer to read (behind `DIAGNOSE_A_RECURRING_CAUSE`, deep review 1.4). Never raises."""
+    try:
+        from app.graph import cause_journal
+
+        cause_journal.diagnosed(
+            state["repository"].root_path, defect, str(getattr(defect, "actual_behavior", "") or ""),
+            ctx.judgement_model or ctx.model, sprint=state.get("current_sprint_index", 0),
+        )
+    except Exception:  # noqa: BLE001 - the fix goes on without it
+        logger.debug("Could not diagnose before the fix", exc_info=True)
 
 
 def _fixed_by_rewriting(
@@ -287,6 +306,8 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
     from app.graph import kept_fix_candidates
 
     repo = Path(state["repository"].root_path)
+    if not state.get("pending_inner_thread_id"):
+        _diagnosed_if_it_keeps_failing(state, defect, ctx)
     rewritten = None if state.get("pending_inner_thread_id") else (
         kept_fix_candidates.replayed(repo, defect, stage_name) or _fixed_by_rewriting(
             state, config, defect, fix_model, failed_fix_tries(cycle, defect_index), ctx=ctx,
@@ -387,7 +408,8 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
         )
         noted = _one_more_failed_fix(_noted_as_reverted(cycle, [defect_index], broke), defect_index)
         noted = _with_the_attempt(noted, defect_index, stage_name, fix_result, f"reverted: it broke {'; '.join(broke[:3])}",
-                                  defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name, started))
+                                  defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name, started),
+                                  root=state["repository"].root_path, sprint=state.get("current_sprint_index", 0))
         contested = _a_locked_test_two_fixes_broke(noted)
         if contested and _a_dispute_may_be_held_now(state, also=[contested]):
             logger.warning(
@@ -423,6 +445,7 @@ def _fix_one(state: Any, config: RunnableConfig, defect_index: int, ctx: GraphCo
             settled["remediation"], defect_index, stage_name, fix_result,
             "fixed" if str(getattr(after, "status", "")) == "fixed" else "left open: its tests still fail",
             defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name, started),
+            root=state["repository"].root_path, sprint=state.get("current_sprint_index", 0),
         )
     update.update(settled)
     update.update(_the_unit_tests_a_kept_fix_broke(state))
@@ -574,6 +597,8 @@ def defect_fix_worker_node(state: dict, config: RunnableConfig, ctx: GraphContex
         ),
         checkpointer=ctx.checkpointer, repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
     )
+    if not (state.get("queued_decisions") or {}).get(stage_name):
+        _diagnosed_if_it_keeps_failing(state, defect, ctx)
     request, _ = _the_fix_request(state, config, cycle, index)
     temp_state: Any = dict(state)
     # A worker may only answer its own approval gate: see `specialist_worker_node`.
@@ -703,6 +728,7 @@ def defect_fix_gather_node(state: WorkflowGraphState, config: RunnableConfig) ->
                 "fixed" if str(getattr(after, "status", "")) == "fixed" else "left open: its tests still fail",
                 defect_budget.calls_in(config["configurable"].get(APP_RUN_ID_KEY), stage_name,
                                        str(state.get("fix_batch_started") or "")),
+                root=state["repository"].root_path, sprint=state.get("current_sprint_index", 0),
             )
         settled_cycle = settled["remediation"]
         update["specialist_outputs"] = settled["specialist_outputs"]

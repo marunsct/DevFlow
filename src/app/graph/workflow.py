@@ -1539,13 +1539,22 @@ def _the_last_attempt_section(cycle: Any, defect_index: int) -> str:
     )
 
 
-def _with_the_attempt(cycle: Any, index: int, stage: str, fix_result: Any, outcome: str, calls: int | None = None) -> Any:
-    """The cycle with one fix attempt recorded on defect `index` (plan PH.2), with its model calls when counted (AY step 4). Never raises."""
+def _with_the_attempt(cycle: Any, index: int, stage: str, fix_result: Any, outcome: str, calls: int | None = None,
+                      *, root: str = "", sprint: Any = None) -> Any:
+    """The cycle with one fix attempt recorded on defect `index` (plan PH.2), with its model calls when counted (AY step 4).
+
+    With `root`, the attempt is kept in the run's fix journal as well (`cause_journal`, deep review 1.4), which outlives
+    this cycle: a re-plan clears the cycle, and with it every attempt recorded on its defects. Never raises.
+    """
     try:
         from app.agents.ledger import attempt_record
 
         defect = cycle.defects[index]
         record = attempt_record(stage, fix_result, outcome)
+        if root:
+            from app.graph import cause_journal
+
+            cause_journal.record(root, defect, record, sprint=sprint)
         if calls is not None:
             record["calls"] = calls
             from app.graph import defect_budget

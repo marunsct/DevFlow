@@ -69,6 +69,36 @@ def _gradle(project: Path) -> list[str] | None:
     return ["gradle", "--quiet", "--console=plain", "testClasses"]
 
 
+#: Folders a .NET build writes or a tool fills: a project file there is not the project's.
+_NOT_A_DOTNET_PROJECT = frozenset({"bin", "obj", "node_modules", ".git", ".harness", ".agent-home"})
+
+
+def _dotnet(project: Path) -> list[str] | None:
+    """`dotnet build` for the project: its solution or project file at the top, else the nearest project file that
+    references the others (a test project builds the application it references), else the nearest one.
+
+    Measured on the C# runs: the pack lays out `src/App/App.csproj` and `tests/UnitTests/UnitTests.csproj` with
+    nothing at the top, so the check never ran - three rewrites in a row each fixed one compile error and wrote the
+    next, with no compiler feedback between them.
+    """
+    build = ["dotnet", "build", "--nologo", "-v", "q", "-clp:NoSummary"]
+    if any(project.glob("*.sln")) or any(project.glob("*.slnx")) or any(project.glob("*.csproj")):
+        return build
+    found = [path for depth in ("*/*", "*/*/*") for path in project.glob(f"{depth}.csproj")
+             if not _NOT_A_DOTNET_PROJECT.intersection(path.relative_to(project).parts)]
+    if not found:
+        return None
+
+    def references(path: Path) -> int:
+        try:
+            return path.read_text(encoding="utf-8", errors="replace").count("<ProjectReference")
+        except OSError:
+            return 0
+
+    chosen = sorted(found, key=lambda path: (-references(path), len(path.parts), path.as_posix()))[0]
+    return [*build[:2], chosen.relative_to(project).as_posix(), *build[2:]]
+
+
 def _phpstan(project: Path) -> list[str] | None:
     if not (project / "vendor" / "bin" / "phpstan").is_file():
         return None
@@ -85,8 +115,7 @@ CHECKERS: tuple[Checker, ...] = (
             if _exists(p, "Cargo.toml") else None),
     Checker("java", (".java", ".kt", ".kts", ".scala"),
             lambda p: ["mvn", "--quiet", "--batch-mode", "-DskipTests", "test-compile"] if _exists(p, "pom.xml") else _gradle(p)),
-    Checker("csharp", (".cs",), lambda p: ["dotnet", "build", "--nologo", "-v", "q", "-clp:NoSummary"]
-            if any(p.glob("*.csproj")) or any(p.glob("*.sln")) else None),
+    Checker("csharp", (".cs",), _dotnet),
     Checker("swift", (".swift",), lambda p: ["swift", "build"] if _exists(p, "Package.swift") else None),
     Checker("php", (".php",), _phpstan),
 )

@@ -127,3 +127,24 @@ def test_a_cause_buried_in_a_stack_trace_is_shown(tmp_path):
     text = start_probe.what_the_start_shows(_project(tmp_path, BURIES_ITS_CAUSE))
 
     assert 'Unsupported connection setting "CLOSE_ON_EXIT_X"' in text
+
+
+NEEDS_ITS_FOLDER_MADE = """const fs = require('fs');
+try { fs.writeFileSync(process.env.DATA_DIR + '/notes.db', ''); }
+catch (e) { console.error("path to '" + process.env.DATA_DIR + "/notes.db': '" + process.env.DATA_DIR + "' does not exist"); process.exit(1); }
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="no Node here")
+def test_a_service_that_stops_on_its_missing_data_folder_is_told_to_make_it(tmp_path):
+    """Measured on one Java run: the service exited saying the DATA_DIR folder does not exist; the first fix rewrote
+    the build file."""
+    text = start_probe.what_the_start_shows(_project(tmp_path, NEEDS_ITS_FOLDER_MADE))
+
+    assert "does not exist yet" in text and "creates that folder itself at start" in text
+    assert not BANNED.search(text)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="no Node here")
+def test_a_service_that_stops_for_another_reason_is_not_told_so(tmp_path):
+    assert "creates that folder" not in start_probe.what_the_start_shows(_project(tmp_path, CRASHES))

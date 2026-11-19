@@ -144,6 +144,23 @@ def _probe_in_its_container(repo_root: Path, project: Path, env: dict, ready: st
     return status, str(said.get("output") or "").strip()
 
 
+#: How a runtime says a path it needed is not there.
+_NOT_THERE = re.compile(r"does not exist|no such file|not found|cannot find|ENOENT|could not be found", re.I)
+
+
+def _the_data_folder_it_did_not_make(output: str, data_dir: str) -> str:
+    """What to do when the service stopped on the fresh `DATA_DIR` the suite gave it not existing yet; "" otherwise.
+
+    Measured on one Java run: the service opened its database file under `DATA_DIR` without making the folder,
+    exited at start saying the folder does not exist, and the first fix rewrote the build file.
+    """
+    if not data_dir or data_dir not in str(output or "") or not _NOT_THERE.search(str(output or "")):
+        return ""
+    return (f" The folder it names is the `DATA_DIR` the suite handed it, {data_dir}, which does not exist yet - as "
+            "it will not when the service is started anywhere new. The service creates that folder itself at start, "
+            "before it opens or writes anything in it.")
+
+
 def what_the_start_shows(repo_root: str | Path) -> str:
     """A paragraph for the start defect: what the service printed and how its readiness URL answered; "" when off or unknown."""
     if not enabled():
@@ -183,6 +200,7 @@ def what_the_start_shows(repo_root: str | Path) -> str:
                     "start, and its readiness answer does not depend on data being present.")
         if re.search(r"answered 404", status):
             hint += _the_routes_it_serves(repo_root, project, env, contained=contained)
+        hint += _the_data_folder_it_did_not_make(output, env.get("DATA_DIR", ""))
         return (f"\n\nStarted the way the suite starts it (`sh start.sh`, `PORT` set, `DATA_DIR` a fresh folder), "
                 f"{status}. It printed:\n{shown}{hint}")
     except Exception:  # noqa: BLE001 - the defect goes out as it was

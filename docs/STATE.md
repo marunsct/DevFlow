@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-20 00:23 JST (written by `loop.sh state`). Harness edfd65e9 committed; bdcedefb deployed (not the same).
-**Live, and stopped in the last day:** run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
-**Last scored:** run-6d577fad notes-api-go 9/9 (completed, handoff 1.0; scored 11-20 00:23 JST); run-840dfaf1 notes-api-csharp 9/9 (completed, 53 active min, handoff 1.0; scored 11-20 00:15 JST); run-ab877193 tasks-api 10/10 (completed, mixed, 96 active min, handoff 1.0; scored 11-19 22:45 JST).
+**As of:** 11-20 01:35 JST (written by `loop.sh state`). Harness bc5dd695 committed; bc5dd695 deployed.
+**Live, and stopped in the last day:** run-e382df47 running at awaiting_approval:defect_fix_2_1; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
+**Last scored:** run-0080bed4 web-todo 10/10 (completed, handoff 1.0; scored 11-20 01:35 JST); run-6d577fad notes-api-go 9/9 (completed, 120 active min, handoff 1.0; scored 11-20 00:23 JST); run-840dfaf1 notes-api-csharp 9/9 (completed, 53 active min, handoff 1.0; scored 11-20 00:15 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,8 +26,12 @@ The 10 optional switches above. Hosted-model runs (LR.44) only when the owner st
 ## The last three runs
 Generated above. Today (hidden, quality, verdict):
 Earlier runs: git history of this file and the status board.
-- :8888 held by the owner 20 Nov ~00:25-00:30 JST, released; both ports take runs. Live: M web-todo container 3
-  run-0080bed4-34fa-4e72-9ff5-32d56e180ad6 (:8888, 00:30), M notes-api-java container 2 run-e382df47-4105-44d6-b678-9e62b4009154 (:1234, 00:28).
+- Live: M notes-api-ruby container 2 run-1a8bcfcf-2885-452a-8702-f4f5f0daf16d (:8888, 01:35, on bc5dd69).
+- Live: M notes-api-java container 2 run-e382df47-4105-44d6-b678-9e62b4009154 (:1234, 00:28; mixed: LF.1140-1145 shipped
+  live 01:33 - its product exited at start for two rounds and the start defect showed only stack frames, LF.1145).
+- M web-todo container 3 run-0080bed4-34fa-4e72-9ff5-32d56e180ad6 (:8888, 00:30-01:30): **10/10, 6/6, delivered**, handoff
+  1.0. A colour-contrast defect took four rounds: the remedy said to keep the page's colour names and the failing
+  colour was one (LF.1144 names the shade that reads). Action-verb reading fixed from its notes (LF.1141, LF.1143).
 - M notes-api-go container 2 run-6d577fad-b2a9-4525-93ee-3cb3f2f34e98 (:1234, 22:17-00:17): **9/9, 8/8, delivered**, handoff 1.0,
   120 active min. LF.1134 measured: no "go.mod needs tidy" all run (Go 1 lost an attempt to it). Redundant reads 36%, the
   highest this week - the restart re-read pattern (backlog), now in four runs.

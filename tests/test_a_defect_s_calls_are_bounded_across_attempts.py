@@ -131,3 +131,31 @@ def test_each_counted_attempt_is_kept_in_the_run_s_ledger_for_a_later_cycle(tmp_
         workflow._with_the_attempt(_cycle(), 0, "defect_fix_2_0", None, "left open", None)
 
         assert defect_budget.spent(_cycle(), 0) == 17
+
+
+def _known(cycle):
+    from app.stacks.known_errors import KNOWN_CAUSE
+
+    defect = cycle.defects[0].model_copy(update={"actual_behavior": f"a\n{KNOWN_CAUSE} the setting is not this engine's"})
+    return cycle.model_copy(update={"defects": [defect]})
+
+
+def test_a_cause_the_harness_added_after_the_ceiling_earns_one_more_attempt():
+    """Measured on one Java run: 76 calls went on two attempts shown only stack frames; the third attempt's defect
+    carried the pack's cause and was left open unseen, and the run stopped."""
+    with mock.patch.dict(os.environ, ON):
+        with mock.patch.object(defect_budget, "_attempts_in_the_run", lambda ids: ["38", "38"]):
+            assert defect_budget.spent_out(_known(_cycle(38, 38)), 0) == ""
+        with mock.patch.object(defect_budget, "_attempts_in_the_run",
+                               lambda ids: ["38", "38", f"20 {defect_budget.WITH_A_KNOWN_CAUSE}"]):
+            assert defect_budget.spent_out(_known(_cycle(38, 38, 20)), 0), "one more attempt, not more"
+        with mock.patch.object(defect_budget, "_attempts_in_the_run", lambda ids: ["38", "38"]):
+            assert defect_budget.spent_out(_cycle(38, 38), 0), "nothing new: the ceiling holds"
+
+
+def test_an_attempt_on_a_defect_with_a_known_cause_is_marked(monkeypatch):
+    noted = []
+    monkeypatch.setattr("app.observability.defect_ledger.note", lambda event, stage, defect=None, detail="": noted.append(detail))
+    defect_budget.record_calls("defect_fix_1_0", _known(_cycle()).defects[0], 20)
+    defect_budget.record_calls("defect_fix_1_0", _cycle().defects[0], 7)
+    assert noted == [f"20 {defect_budget.WITH_A_KNOWN_CAUSE}", "7"]

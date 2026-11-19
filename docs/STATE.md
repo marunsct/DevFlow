@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-20 01:35 JST (written by `loop.sh state`). Harness bc5dd695 committed; bc5dd695 deployed.
-**Live, and stopped in the last day:** run-e382df47 running at awaiting_approval:defect_fix_2_1; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
-**Last scored:** run-0080bed4 web-todo 10/10 (completed, handoff 1.0; scored 11-20 01:35 JST); run-6d577fad notes-api-go 9/9 (completed, 120 active min, handoff 1.0; scored 11-20 00:23 JST); run-840dfaf1 notes-api-csharp 9/9 (completed, 53 active min, handoff 1.0; scored 11-20 00:15 JST).
+**As of:** 11-20 02:04 JST (written by `loop.sh state`). Harness 751c6127 committed; 751c6127 deployed.
+**Live, and stopped in the last day:** run-9c875db7 running at tools_models; run-1a8bcfcf running at technical_lead; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
+**Last scored:** run-e382df47 notes-api-java 0/9 (failed, handoff 0.429; scored 11-20 02:04 JST); run-0080bed4 web-todo 10/10 (completed, 54 active min, handoff 1.0; scored 11-20 01:35 JST); run-6d577fad notes-api-go 9/9 (completed, 120 active min, handoff 1.0; scored 11-20 00:23 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -27,8 +27,12 @@ The 10 optional switches above. Hosted-model runs (LR.44) only when the owner st
 Generated above. Today (hidden, quality, verdict):
 Earlier runs: git history of this file and the status board.
 - Live: M notes-api-ruby container 2 run-1a8bcfcf-2885-452a-8702-f4f5f0daf16d (:8888, 01:35, on bc5dd69).
-- Live: M notes-api-java container 2 run-e382df47-4105-44d6-b678-9e62b4009154 (:1234, 00:28; mixed: LF.1140-1145 shipped
-  live 01:33 - its product exited at start for two rounds and the start defect showed only stack frames, LF.1145).
+- Live: M notes-api-java container 3 run-9c875db7-070c-40f5-8247-0b75c2b9973b (:1234, 02:04).
+- M notes-api-java container 2 run-e382df47-4105-44d6-b678-9e62b4009154 (:1234, 00:28-01:53, mixed): **0/9, 0/8, failed**,
+  84.6 active min. Never started: the stack was chosen as "SQLite via H2's SQLite mode" (H2 has none) and SQLite's
+  BUSY_TIMEOUT went into H2's URL. Fixers saw only stack frames (LF.1145), then no cause (LF.1146); the per-defect
+  ceiling then left the third attempt's defect, which carried the cause, unseen and the run stopped (LF.1147).
+  Open: a stack decision naming one engine "via" another's mode should go back before the specification.
 - M web-todo container 3 run-0080bed4-34fa-4e72-9ff5-32d56e180ad6 (:8888, 00:30-01:30): **10/10, 6/6, delivered**, handoff
   1.0. A colour-contrast defect took four rounds: the remedy said to keep the page's colour names and the failing
   colour was one (LF.1144 names the shade that reads). Action-verb reading fixed from its notes (LF.1141, LF.1143).

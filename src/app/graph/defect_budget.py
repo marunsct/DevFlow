@@ -66,29 +66,67 @@ def calls_in(run_id: str | None, stage: str, since: str) -> int | None:
 ATTEMPT_EVENT = "attempt calls"
 
 
+#: How an attempt record says the defect it worked on carried a cause its stack pack knows.
+WITH_A_KNOWN_CAUSE = "with a known cause"
+
+
+def _carries_a_known_cause(defect: Any) -> bool:
+    from app.stacks.known_errors import KNOWN_CAUSE
+
+    return KNOWN_CAUSE in str(getattr(defect, "actual_behavior", "") or "")
+
+
 def record_calls(stage: str, defect: Any, calls: int) -> None:
     """Note one attempt's model calls in the run's defect ledger, under the defect's id across rounds. Never raises."""
     try:
         from app.observability import defect_ledger
 
-        defect_ledger.note(ATTEMPT_EVENT, stage, defect=defect, detail=str(int(calls)))
+        detail = str(int(calls)) + (f" {WITH_A_KNOWN_CAUSE}" if _carries_a_known_cause(defect) else "")
+        defect_ledger.note(ATTEMPT_EVENT, stage, defect=defect, detail=detail)
     except Exception:  # noqa: BLE001 - a count must never fail the stage it records
         pass
 
 
-def _spent_in_the_run(ids: set[str]) -> int:
-    """The calls the ledger holds for defects `ids` over the whole run; 0 when unreadable."""
+def _attempts_in_the_run(ids: set[str]) -> list[str]:
+    """The details of the attempt records the ledger holds for defects `ids` over the whole run; [] when unreadable."""
     try:
         from app.observability.transcript import _run_id_from_config, read_live
 
         run_id = _run_id_from_config()
         if not run_id or not ids:
-            return 0
-        return sum(int(str(r.get("detail") or "0").split()[0] or 0)
-                   for r in read_live(run_id, {"defect"})
-                   if r.get("event") == ATTEMPT_EVENT and r.get("defect_id") in ids)
+            return []
+        return [str(r.get("detail") or "0") for r in read_live(run_id, {"defect"})
+                if r.get("event") == ATTEMPT_EVENT and r.get("defect_id") in ids]
     except Exception:  # noqa: BLE001
-        return 0
+        return []
+
+
+def _spent_in_the_run(ids: set[str]) -> int:
+    """The calls the ledger holds for defects `ids` over the whole run; 0 when unreadable."""
+    total = 0
+    for detail in _attempts_in_the_run(ids):
+        try:
+            total += int(detail.split()[0] or 0)
+        except (ValueError, IndexError):
+            continue
+    return total
+
+
+def _a_cause_no_attempt_has_seen(cycle: Any, index: int) -> bool:
+    """Whether defect `index` now carries a cause its stack pack knows that none of its attempts was shown.
+
+    Measured on one Java run: the start failure spent 76 calls over two attempts while the fixer was shown only stack
+    frames; the third attempt's defect carried the pack's cause for the error - and was left open unseen, the run
+    stopped. New knowledge from the harness earns one more attempt; the attempt that sees it is marked, so it is one.
+    """
+    from app.observability.defect_ledger import defect_id
+    from app.sprint import recurrence_chain
+
+    defect = cycle.defects[index]
+    if not _carries_a_known_cause(defect):
+        return False
+    chain = [defect, *recurrence_chain(defect, cycle.defects[:index])]
+    return not any(WITH_A_KNOWN_CAUSE in detail for detail in _attempts_in_the_run({defect_id(d) for d in chain}))
 
 
 def spent(cycle: Any, index: int) -> int:
@@ -112,7 +150,7 @@ def spent_out(cycle: Any, index: int) -> str:
     if not enabled():
         return ""
     used = spent(cycle, index)
-    if used < most_calls():
+    if used < most_calls() or _a_cause_no_attempt_has_seen(cycle, index):
         return ""
     did = [f"{a.get('stage')}: {a.get('did') or 'no decision recorded'} ({a.get('outcome')})"
            for a in getattr(cycle.defects[index], "attempts", None) or [] if isinstance(a, dict)]
@@ -120,5 +158,5 @@ def spent_out(cycle: Any, index: int) -> str:
             + ("; ".join(did[-3:]) or "nothing recorded"))
 
 
-__all__ = ["ATTEMPT_EVENT", "MOST_CALLS", "ON_BY_DEFAULT", "calls_in", "enabled", "most_calls", "now", "record_calls",
+__all__ = ["ATTEMPT_EVENT", "MOST_CALLS", "WITH_A_KNOWN_CAUSE", "ON_BY_DEFAULT", "calls_in", "enabled", "most_calls", "now", "record_calls",
            "spent", "spent_out"]

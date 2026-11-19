@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-20 06:53 JST (written by `loop.sh state`). Harness 93502566 committed; 0cd48eed deployed (not the same).
-**Live, and stopped in the last day:** run-09fc4306 running at acceptance_author_0; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
-**Last scored:** run-ea01f85c tasks-api 10/10 (completed, handoff 1.0; scored 11-20 06:53 JST); run-2be2b208 notes-api-go 9/9 (completed, mixed, 78 active min, handoff 1.0; scored 11-20 06:33 JST); run-f37cd853 notes-api-csharp 9/9 (completed, mixed, 87 active min, handoff 1.0; scored 11-20 05:04 JST).
+**As of:** 11-20 08:03 JST (written by `loop.sh state`). Harness b6560213 committed; b6560213 deployed.
+**Live, and stopped in the last day:** run-09fc4306 running at defect_fix_1_3; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
+**Last scored:** run-62a7d976 notes-api-ruby 9/9 (completed, handoff 1.0; scored 11-20 08:03 JST); run-ea01f85c tasks-api 10/10 (completed, mixed, 175 active min, handoff 1.0; scored 11-20 06:53 JST); run-2be2b208 notes-api-go 9/9 (completed, mixed, 78 active min, handoff 1.0; scored 11-20 06:33 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,7 +26,10 @@ The 10 optional switches above. Hosted-model runs (LR.44) only when the owner st
 ## The last three runs
 Generated above. Today (hidden, quality, verdict):
 Earlier runs: git history of this file and the status board.
-- Live: M notes-api-ruby container 3 run-62a7d976-29ee-4ee8-a61b-f89d38e45552 (:8888, 07:01, on 0cd48ee).
+- Live: M notes-api-php container 7 run-aa3693b6-2c3f-48fa-ad21-0872881abb8c (:8888, 08:05, on b656021).
+- M notes-api-ruby container 3 run-62a7d976-29ee-4ee8-a61b-f89d38e45552 (:8888, 07:01-08:01, mixed): **9/9, 8/8, delivered**,
+  handoff 1.0, mutation 1.0, 56 active min, 0 left open - Ruby 2 of 2 tonight full in about an hour. Its acceptance
+  author spent 12 minutes grepping installed Playwright source for a raw-body send (LF.1156).
 - M notes-api-php container 6 run-bf4765fa-bc55-48f4-83d1-cb197808551d (:8888, 02:56-03:39): **9/9, 8/8, delivered**, handoff
   1.0, 41.6 active min (the fastest PHP), 0 left open. Found in it: the container-mode start probe sent `../health`
   (the harness's own argument rewritten as a model's path; every probe of a started product got no answer, LF.1150)

@@ -236,6 +236,31 @@ NOT_BUILT_SO_IT_FAILS = (
 )
 
 
+def _the_product_does_not_install(repo_root: str | Path) -> str:
+    """What QA is told when the product's last install failed; "" when it did not. Never raises.
+
+    Measured on one Ruby run: the product's manifest asked for a version the registry never had, every install failed,
+    and QA - repairing one test of a reopened suite - spent a 22-minute round validating against a product that could
+    not install, and tried six times to edit the manifest, which QA may not write.
+    """
+    try:
+        from app.stacks.contract import INSTALL_FAILED
+
+        failed = [str(line) for line in (suite.last_result(repo_root) or {}).get("repairs") or []
+                  if INSTALL_FAILED in str(line)]
+        if not failed:
+            return ""
+        said = failed[-1].partition("it said:")[2].partition("; it ended")[0].strip() or failed[-1][:300]
+        return (
+            "The product's dependencies do not install at the moment - the installer said: "
+            f"{' '.join(said.split())[:300]} - which is the product's to fix: its manifest is not part of the suite, "
+            "and its own stages fix it. Until it installs, no test can be run against it, so repair the tests by "
+            "reading them against the criteria and the brief, not by running them. "
+        )
+    except Exception:  # noqa: BLE001 - the request goes as it did
+        return ""
+
+
 def build_author_request(
     repo_root: str | Path,
     criteria: Sequence[Criterion],
@@ -290,6 +315,7 @@ def build_author_request(
         else "Nothing of the product's features is built yet. Write its acceptance suite now: "
         "the tests that decide whether it is done. " + NOT_BUILT_SO_IT_FAILS
     )
+    state_of_the_product += _the_product_does_not_install(repo_root)
     content = (
         "The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         "You are the QA engineer. " + state_of_the_product + "Once "

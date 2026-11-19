@@ -2951,7 +2951,14 @@ UNIT_FAILURE_TAIL_CHARACTERS = 3_000
 
 #: A line of a runner's output that states what went wrong: an error or exception
 #: named, a failure reported - in the words runners of every language use.
-_STATES_AN_ERROR = re.compile(r"\b\w*(?:Error|Exception)\b|\berror\b|\bFAIL(?:ED|URE)?\b|\bfailed\b|panicked|\bassert", re.I)
+_STATES_AN_ERROR = re.compile(
+    r"\b\w*(?:Error|Exception)\b|\berror\b|\bFAIL(?:ED|URE)?\b|\bfailed\b|panicked|\bassert|\bcrash(?:ed|es)?\b|\babort(?:ed|s)?\b",
+    re.I,
+)
+#: A count of no failures, which says nothing went wrong: `Failed: 0`, `0 failed`, `errors=0`. Measured on one C# run:
+#: "Passed! - Failed: 0, Passed: 9" was taken as the cause, and the host's crash after it ("aborted ... crashed")
+#: was left out.
+_A_ZERO_COUNT = re.compile(r"\b(?:fail(?:ed|ures?)?|errors?)\b\s*[:=]?\s*0\b|\b0\s+(?:fail(?:ed|ures?)?|errors?)\b", re.I)
 #: A line that only says where: a stack frame, or a runner's banner around one.
 _ONLY_SAYS_WHERE = re.compile(r'^\s*(?:File "|at\s|\S+:\d+: in\b|<frozen\b|_{5,}|={5,}|-{5,}|\^+\s*$|\?\?\?)')
 #: Lines of a failure's cause kept, the last ones its output gives.
@@ -3030,7 +3037,8 @@ def _what_the_failure_says(output: str) -> str:
     new test files and left the broken one as it was.
     """
     lines = [" ".join(line.split()) for line in str(output or "").splitlines()]
-    stated = [line for line in lines if line and _STATES_AN_ERROR.search(line) and not _ONLY_SAYS_WHERE.match(line)]
+    stated = [line for line in lines if line and _STATES_AN_ERROR.search(_A_ZERO_COUNT.sub("", line))
+              and not _ONLY_SAYS_WHERE.match(line)]
     return "\n".join(dict.fromkeys(stated[-MOST_CAUSE_LINES:]))[:1_000]
 
 

@@ -66,6 +66,8 @@ Generated above. Today (hidden, quality, verdict):
   **9/9, 7/8, delivered with cuts**, handoff 0.857, mutation 1.0, 111 active min, $1.45 hosted. Judgement-only for
   attempt 1 (compile errors), then Haiku-built after the re-plan (designed rung). LF.1126 fired: `app()` kept for the
   first time. Lost the blank-title quality test: its contract was all unreadable (LF.1127), so no probe asked a write.
+- H notes-api-csharp hybrid-haiku 2 (judgement only) run-e68d3ce9-f8ef-41bb-90a2-cc37fd5e9228 (:1234, 09:10, on 48a15f74):
+  contract read in full (LF.1127); attempt 1 on the local build ran out at 09:58. LF.1128 shipped ~10:15.
 - Live: M tasks-api container 3 run-af4108e6-0e1b-4287-a87c-a67f2796a1c7 (:8888, 05:16): sprint 2. Hosted $3.10/$30.
 - LF.1116-1118 shipped live 03:10 JST, LF.1119 (a run store opened beside the backup's dump stalled the app
   03:05-03:09) at 03:18, both into web-todo 1 (mixed).

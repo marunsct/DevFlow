@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-19 15:45 JST (written by `loop.sh state`). Harness 51022b54 committed; 51022b54 deployed.
-**Live, and stopped in the last day:** run-5c68f972 running at defect_fix_1_1; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed
-**Last scored:** run-23078e72 tasks-api 10/10 (completed, handoff 0.875; scored 11-19 15:45 JST); run-7880a2c0 notes-api-go 9/9 (completed, mixed, 73 active min, handoff 1.0; scored 11-19 15:07 JST); run-d74ff9cb notes-api-csharp 9/9 (completed, mixed, 83 active min, handoff 1.0; scored 11-19 13:36 JST).
+**As of:** 11-19 17:25 JST (written by `loop.sh state`). Harness 6029b767 committed; 6029b767 deployed.
+**Live, and stopped in the last day:** run-5c68f972 running at specialist_testing_1; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed
+**Last scored:** run-34ea7163 notes-api-php 9/9 (completed, handoff 1.0; scored 11-19 17:25 JST); run-23078e72 tasks-api 10/10 (completed, mixed, 148 active min, handoff 0.875; scored 11-19 15:45 JST); run-7880a2c0 notes-api-go 9/9 (completed, mixed, 73 active min, handoff 1.0; scored 11-19 15:07 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -73,6 +73,9 @@ Generated above. Today (hidden, quality, verdict):
 - M tasks-api container 3 run-af4108e6-0e1b-4287-a87c-a67f2796a1c7 (:8888, 05:16-10:45, mixed): **10/10, 7/7, not
   deliverable** (a real defect: the product leaks SQLite connections and the locked suite's sequence hangs; hidden tests
   do not exercise it), handoff 1.0, 315 active min, 40 defects left open - the local model never closed the leak.
+- M notes-api-php container 5 run-34ea7163-aa42-4b39-b3c8-1fa619f969ca (:1234, 15:52-17:24, mixed): **9/9, 8/8, delivered**,
+  handoff 1.0, mutation 0.89, 89 active min, 0 reverts, 0 defects left open. One install failure was shown to its fixer
+  as Composer's usage text (LF.1136 since).
 - H tasks-api hybrid-haiku 1 (judgement only) run-23078e72-af18-49d4-b0b7-2d6f6faa3f92 (:1234, 13:04-15:43, mixed):
   **10/10, 7/7, delivered**, handoff 0.875, 148 active min, $1.34. Identical calls 36% (5-run mean 3%): each part of a
   review answered in parts starts a fresh conversation and re-reads the same files - a review took ~5 min of it. Hybrid

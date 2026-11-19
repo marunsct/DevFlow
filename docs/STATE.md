@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-20 08:03 JST (written by `loop.sh state`). Harness b6560213 committed; b6560213 deployed.
-**Live, and stopped in the last day:** run-09fc4306 running at defect_fix_1_3; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
-**Last scored:** run-62a7d976 notes-api-ruby 9/9 (completed, handoff 1.0; scored 11-20 08:03 JST); run-ea01f85c tasks-api 10/10 (completed, mixed, 175 active min, handoff 1.0; scored 11-20 06:53 JST); run-2be2b208 notes-api-go 9/9 (completed, mixed, 78 active min, handoff 1.0; scored 11-20 06:33 JST).
+**As of:** 11-20 08:43 JST (written by `loop.sh state`). Harness ddef93f0 committed; b6560213 deployed (not the same).
+**Live, and stopped in the last day:** run-aa3693b6 running at technical_lead; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
+**Last scored:** run-09fc4306 web-todo 10/10 (completed, handoff 1.0; scored 11-20 08:43 JST); run-62a7d976 notes-api-ruby 9/9 (completed, mixed, 56 active min, handoff 1.0; scored 11-20 08:03 JST); run-ea01f85c tasks-api 10/10 (completed, mixed, 175 active min, handoff 1.0; scored 11-20 06:53 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -37,7 +37,10 @@ Earlier runs: git history of this file and the status board.
 - M notes-api-ruby container 2 run-1a8bcfcf-2885-452a-8702-f4f5f0daf16d (:8888, 01:35-02:45, mixed): **9/9, 8/8, delivered**,
   handoff 1.0, mutation 0.86, 63.7 active min (Ruby 1: 267), 0 left open. Installed first time; LF.1148 (vendor/bundle
   out of every listing and the project memory) found in it and shipped live.
-- Live: M web-todo container 4 run-09fc4306-babd-4190-a4e4-3bb93a3194a4 (:1234, 06:34, on 0cd48ee).
+- Live: M notes-api-java container 4 run-b668a924-8ca8-4599-acb2-a1a83ac9fb7e (:1234, 08:52, on b656021).
+- M web-todo container 4 run-09fc4306-babd-4190-a4e4-3bb93a3194a4 (:1234, 06:34-08:41, mixed): **10/10, 6/6, delivered**,
+  handoff 1.0, mutation 0.83, 124.5 active min. LF.1144 measured: the contrast defect closed in one 2-call rewrite
+  (container 3: four rounds); the action-verb notes LF.1141/1143 targeted did not recur.
 - M notes-api-go container 3 run-2be2b208-2e4b-4671-a92b-811a30eaeb91 (:1234, 05:05-06:27, mixed): **9/9, 8/8, delivered**,
   handoff 1.0, 78.5 active min. Lost attempts 1-2 to one import (`notes_api/store` under `module notes-api`, LF.1155)
   and a reverted half-fix; `read_docs` found nothing for `modernc.org/sqlite` (LF.1154, pkg.go.dev).

@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-20 06:33 JST (written by `loop.sh state`). Harness 0cd48eed committed; 0cd48eed deployed.
-**Live, and stopped in the last day:** run-ea01f85c running at defect_fix_2_2; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
-**Last scored:** run-2be2b208 notes-api-go 9/9 (completed, handoff 1.0; scored 11-20 06:33 JST); run-f37cd853 notes-api-csharp 9/9 (completed, mixed, 87 active min, handoff 1.0; scored 11-20 05:04 JST); run-bf4765fa notes-api-php 9/9 (completed, 42 active min, handoff 1.0; scored 11-20 03:44 JST).
+**As of:** 11-20 06:53 JST (written by `loop.sh state`). Harness 93502566 committed; 0cd48eed deployed (not the same).
+**Live, and stopped in the last day:** run-09fc4306 running at acceptance_author_0; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
+**Last scored:** run-ea01f85c tasks-api 10/10 (completed, handoff 1.0; scored 11-20 06:53 JST); run-2be2b208 notes-api-go 9/9 (completed, mixed, 78 active min, handoff 1.0; scored 11-20 06:33 JST); run-f37cd853 notes-api-csharp 9/9 (completed, mixed, 87 active min, handoff 1.0; scored 11-20 05:04 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,7 +26,7 @@ The 10 optional switches above. Hosted-model runs (LR.44) only when the owner st
 ## The last three runs
 Generated above. Today (hidden, quality, verdict):
 Earlier runs: git history of this file and the status board.
-- Live: M tasks-api container 5 run-ea01f85c-d0a3-4a36-b1bc-9ba2798dc49a (:8888, 03:46; LF.1152 live 04:14; sprint 2).
+- Live: M notes-api-ruby container 3 run-62a7d976-29ee-4ee8-a61b-f89d38e45552 (:8888, 07:01, on 0cd48ee).
 - M notes-api-php container 6 run-bf4765fa-bc55-48f4-83d1-cb197808551d (:8888, 02:56-03:39): **9/9, 8/8, delivered**, handoff
   1.0, 41.6 active min (the fastest PHP), 0 left open. Found in it: the container-mode start probe sent `../health`
   (the harness's own argument rewritten as a model's path; every probe of a started product got no answer, LF.1150)
@@ -38,9 +38,10 @@ Earlier runs: git history of this file and the status board.
 - M notes-api-go container 3 run-2be2b208-2e4b-4671-a92b-811a30eaeb91 (:1234, 05:05-06:27, mixed): **9/9, 8/8, delivered**,
   handoff 1.0, 78.5 active min. Lost attempts 1-2 to one import (`notes_api/store` under `module notes-api`, LF.1155)
   and a reverted half-fix; `read_docs` found nothing for `modernc.org/sqlite` (LF.1154, pkg.go.dev).
-- tasks-api container 5: 20 of 21 since 05:15 - two locked tests pass the sign-in JSON dict as the bearer token
-  (verified); the dispute called them wrong but both were past the repair cap. Filed: accept with contested tests
-  only after a mechanical confirmation of the dispute's claim.
+- M tasks-api container 5 run-ea01f85c-d0a3-4a36-b1bc-9ba2798dc49a (:8888, 03:46-06:48, mixed): **10/10, 7/7, delivered
+  with cuts**, handoff 1.0, 175 active min (container 4: 96). About an hour on 20 of 21: two locked tests send the
+  sign-in JSON object as the bearer token (verified), the dispute called them wrong, both past the repair cap.
+  Filed: accept with contested tests only after a mechanical confirmation of the dispute's claim.
 - M notes-api-csharp container 7 run-f37cd853-62c8-48b1-83f5-a445f6b5f061 (:1234, 03:23-04:56, mixed): **9/9, 8/8, delivered**,
   handoff 1.0, mutation 1.0, 86.6 active min. Lost attempt 1 and half of 2 to a chain of compile errors: the compiler
   check never ran on the C# pack's layout (`src/App`, `tests/UnitTests`, nothing at the top) - LF.1152, live 04:14;

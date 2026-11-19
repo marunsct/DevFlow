@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-20 05:04 JST (written by `loop.sh state`). Harness c06f78f6 committed; c06f78f6 deployed.
-**Live, and stopped in the last day:** run-ea01f85c running at defect_fix_2_4; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
-**Last scored:** run-f37cd853 notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-20 05:04 JST); run-bf4765fa notes-api-php 9/9 (completed, 42 active min, handoff 1.0; scored 11-20 03:44 JST); run-9c875db7 notes-api-java 9/9 (completed, mixed, 63 active min, handoff 1.0; scored 11-20 03:24 JST).
+**As of:** 11-20 06:33 JST (written by `loop.sh state`). Harness 0cd48eed committed; 0cd48eed deployed.
+**Live, and stopped in the last day:** run-ea01f85c running at defect_fix_2_2; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
+**Last scored:** run-2be2b208 notes-api-go 9/9 (completed, handoff 1.0; scored 11-20 06:33 JST); run-f37cd853 notes-api-csharp 9/9 (completed, mixed, 87 active min, handoff 1.0; scored 11-20 05:04 JST); run-bf4765fa notes-api-php 9/9 (completed, 42 active min, handoff 1.0; scored 11-20 03:44 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -34,7 +34,13 @@ Earlier runs: git history of this file and the status board.
 - M notes-api-ruby container 2 run-1a8bcfcf-2885-452a-8702-f4f5f0daf16d (:8888, 01:35-02:45, mixed): **9/9, 8/8, delivered**,
   handoff 1.0, mutation 0.86, 63.7 active min (Ruby 1: 267), 0 left open. Installed first time; LF.1148 (vendor/bundle
   out of every listing and the project memory) found in it and shipped live.
-- Live: M notes-api-go container 3 run-2be2b208-2e4b-4671-a92b-811a30eaeb91 (:1234, 05:05, on c06f78f).
+- Live: M web-todo container 4 run-09fc4306-babd-4190-a4e4-3bb93a3194a4 (:1234, 06:34, on 0cd48ee).
+- M notes-api-go container 3 run-2be2b208-2e4b-4671-a92b-811a30eaeb91 (:1234, 05:05-06:27, mixed): **9/9, 8/8, delivered**,
+  handoff 1.0, 78.5 active min. Lost attempts 1-2 to one import (`notes_api/store` under `module notes-api`, LF.1155)
+  and a reverted half-fix; `read_docs` found nothing for `modernc.org/sqlite` (LF.1154, pkg.go.dev).
+- tasks-api container 5: 20 of 21 since 05:15 - two locked tests pass the sign-in JSON dict as the bearer token
+  (verified); the dispute called them wrong but both were past the repair cap. Filed: accept with contested tests
+  only after a mechanical confirmation of the dispute's claim.
 - M notes-api-csharp container 7 run-f37cd853-62c8-48b1-83f5-a445f6b5f061 (:1234, 03:23-04:56, mixed): **9/9, 8/8, delivered**,
   handoff 1.0, mutation 1.0, 86.6 active min. Lost attempt 1 and half of 2 to a chain of compile errors: the compiler
   check never ran on the C# pack's layout (`src/App`, `tests/UnitTests`, nothing at the top) - LF.1152, live 04:14;

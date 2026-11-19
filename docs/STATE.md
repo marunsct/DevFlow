@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-19 17:36 JST (written by `loop.sh state`). Harness c94cea10 committed; 6029b767 deployed (not the same).
-**Live, and stopped in the last day:** run-7a5a4556 running at principal_architect; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed
-**Last scored:** run-5c68f972 notes-api-java 9/9 (completed, handoff 1.0; scored 11-19 17:36 JST); run-34ea7163 notes-api-php 9/9 (completed, mixed, 89 active min, handoff 1.0; scored 11-19 17:25 JST); run-23078e72 tasks-api 10/10 (completed, mixed, 148 active min, handoff 0.875; scored 11-19 15:45 JST).
+**As of:** 11-19 19:05 JST (written by `loop.sh state`). Harness b8d89048 committed; b8d89048 deployed.
+**Live, and stopped in the last day:** run-7a5a4556 running at acceptance_author_1; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed; run-cbf36159 failed at failed; run-8f1478a7 failed at failed
+**Last scored:** run-686e8d70 web-todo 10/10 (completed, handoff 1.0; scored 11-19 19:05 JST); run-5c68f972 notes-api-java 9/9 (completed, mixed, 120 active min, handoff 1.0; scored 11-19 17:36 JST); run-34ea7163 notes-api-php 9/9 (completed, mixed, 89 active min, handoff 1.0; scored 11-19 17:25 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -73,6 +73,8 @@ Generated above. Today (hidden, quality, verdict):
 - M tasks-api container 3 run-af4108e6-0e1b-4287-a87c-a67f2796a1c7 (:8888, 05:16-10:45, mixed): **10/10, 7/7, not
   deliverable** (a real defect: the product leaks SQLite connections and the locked suite's sequence hangs; hidden tests
   do not exercise it), handoff 1.0, 315 active min, 40 defects left open - the local model never closed the leak.
+- M web-todo container 2 run-686e8d70-7600-49d7-afbf-2376ad5699da (:8888, 17:54-19:03, mixed): **10/10, 6/6, delivered**,
+  handoff 1.0, mutation 0.75, 64 active min, no KPI regression. The hybrid's browser-filter false acceptance did not recur.
 - M notes-api-java container 1 run-5c68f972-a08a-4531-9d2f-fdd9d0d226ca (:8888, 15:12-17:33, mixed): **9/9, 6/8, not
   deliverable - and right**: a non-numeric id answered 500, which the harness's server-error probe raised and the local
   model never fixed (malformed JSON too). Handoff 1.0, 120 active min. First full hidden score for local Java.

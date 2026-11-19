@@ -607,6 +607,12 @@ def build_research_share_middleware() -> Any:
     return built()
 
 
+def _fresh_conversation_middleware() -> Any:
+    from app.agents.workspace_backend import build_fresh_conversation_middleware
+
+    return build_fresh_conversation_middleware()
+
+
 def _gathering(model: Any, response_format: Any) -> list[Any]:
     from app.agents.gathering import build_gathering_middleware, gatherer_for
 
@@ -776,6 +782,9 @@ def create_role_agent(
         # Outside gathering, so neither model is offered a lookup the stage
         # has used its share of. See `app.tools.research`.
         build_research_share_middleware(),
+        # A new conversation of the stage holds none of what its reads gave: the read guard's record starts over.
+        # See `app.agents.workspace_backend.build_fresh_conversation_middleware`.
+        _fresh_conversation_middleware(),
         *_gathering(model, response_format),
         # Outermost of the model-call wrappers, so a call the server failed to
         # parse becomes a real tool call before anything downstream looks for

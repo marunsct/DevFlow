@@ -442,6 +442,37 @@ def _an_anchor_to_what_was_withheld(text: str) -> str:
 WHAT_THE_CONVERSATION_WAS_GIVEN = ("read_spans", "read_digests", "repeated_reads")
 
 
+def starts_a_conversation(messages: Any) -> bool:
+    """Whether a model request holds no earlier reply or tool result: a conversation that has been given nothing yet."""
+    return not any(getattr(m, "type", None) in ("ai", "tool") for m in (messages or ()))
+
+
+def build_fresh_conversation_middleware() -> Any:
+    """Middleware that forgets what the stage's reads gave when a new conversation of the stage begins.
+
+    The record of what a stage was given is the stage's, but a stage can start over on a fresh conversation - after a
+    structured answer that failed, a restart, a deploy - and that conversation holds none of it. Measured on one C#
+    technical lead: nine fresh conversations in 33 calls, and a conversation carrying one message was refused a read
+    as "already read in this stage". A compaction forgets the record for the same reason (`compaction.py`).
+    """
+    from langchain.agents.middleware import AgentMiddleware
+
+    class FreshConversationMiddleware(AgentMiddleware):
+        name = "FreshConversationMiddleware"
+
+        def wrap_model_call(self, request: Any, handler: Any) -> Any:
+            try:
+                if starts_a_conversation(getattr(request, "messages", None)):
+                    from app.agents.stage_memory import forget
+
+                    forget(*WHAT_THE_CONVERSATION_WAS_GIVEN)
+            except Exception:  # noqa: BLE001 - the call is made either way
+                pass
+            return handler(request)
+
+    return FreshConversationMiddleware()
+
+
 class _NoticingRepeats:
     """Say when a file comes back byte-identical to the last time it was read.
 

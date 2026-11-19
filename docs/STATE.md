@@ -73,7 +73,8 @@ Generated above. Today (hidden, quality, verdict):
 - M tasks-api container 3 run-af4108e6-0e1b-4287-a87c-a67f2796a1c7 (:8888, 05:16-10:45, mixed): **10/10, 7/7, not
   deliverable** (a real defect: the product leaks SQLite connections and the locked suite's sequence hangs; hidden tests
   do not exercise it), handoff 1.0, 315 active min, 40 defects left open - the local model never closed the leak.
-- **:8888 HELD by the owner from 20 Nov ~00:25 JST** - start nothing there until released; runs on :1234 only.
+- :8888 held by the owner 20 Nov ~00:25-00:30 JST, released; both ports take runs. Live: M web-todo container 3
+  run-0080bed4-34fa-4e72-9ff5-32d56e180ad6 (:8888, 00:30), M notes-api-java container 2 run-e382df47-4105-44d6-b678-9e62b4009154 (:1234, 00:28).
 - M notes-api-go container 2 run-6d577fad-b2a9-4525-93ee-3cb3f2f34e98 (:1234, 22:17-00:17): **9/9, 8/8, delivered**, handoff 1.0,
   120 active min. LF.1134 measured: no "go.mod needs tidy" all run (Go 1 lost an attempt to it). Redundant reads 36%, the
   highest this week - the restart re-read pattern (backlog), now in four runs.

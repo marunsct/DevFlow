@@ -327,6 +327,48 @@ def settle(state: Any, update: dict[str, Any], model: Any, findings: list[str]) 
         return []
 
 
+def the_setup_s_declarations_stand(state: Any, update: dict[str, Any], found: Sequence[tuple[str, str, str]]) -> list[dict[str, Any]]:
+    """A ruling for each sentence of the specification that calls a declaration the setup keeps with arguments: the
+    setup's declaration stands, the sentence gives way. Added to the rulings the builders are shown; what was added.
+
+    No model is asked: the setup's start file and tests call the declaration as it is, so there is nothing to weigh.
+    Measured on one Rust run: the review raised it, the architect's revision fixed one sentence and kept
+    `pub fn app(state: AppState) -> Router` in another, the run built from that specification, and the model's rulings
+    on the open findings did not take it up. Never raises.
+    """
+    try:
+        if not found:
+            return []
+        from app.decisions import record_decision
+
+        root = state["repository"].root_path
+        kept = _kept(root)
+        added: list[dict[str, Any]] = []
+        for relative, written, sentence in found:
+            stands = f"`{relative}` declares `{written}`, as the stack's setup keeps it; every caller calls it so."
+            if any(r.get("stands") == stands and r.get("gives_way") == sentence for r in kept + added):
+                continue
+            why = ("The setup's start file and tests call it with no arguments; whatever the sentence passes it, the "
+                   "function builds for itself inside.")
+            record = record_decision(
+                state, update, point="technical_specification",
+                question="The specification calls a declaration the setup keeps in another form: which stands?",
+                options=[stands, sentence], decision=stands, rationale=why, decided_by="auto",
+            )
+            added.append({"decision": record["id"], "finding": 0, "stands": stands, "gives_way": sentence, "why": why,
+                          "from_the_setup": True})
+        if added:
+            path = Path(root) / RULINGS_FILE
+            record_now = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"rulings": []}
+            record_now["rulings"] = [*(record_now.get("rulings") or []), *added]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(record_now, indent=2), encoding="utf-8")
+        return added
+    except Exception:  # noqa: BLE001 - the run goes on with the finding open, as it would have
+        logger.warning("Could not record the setup's declarations as rulings", exc_info=True)
+        return []
+
+
 def forget(root: str | Path) -> None:
     """The rulings no longer hold: the architect is revising the specification they quote. The call stays spent. Never raises."""
     try:
@@ -337,13 +379,15 @@ def forget(root: str | Path) -> None:
 
 
 def _kept(root: str | Path | None) -> list[dict[str, Any]]:
-    if not root or not enabled():
+    """The rulings kept: the model's while `SETTLE_SPEC_CONTRADICTIONS` is on, the setup's own always."""
+    if not root:
         return []
     try:
         path = Path(root) / RULINGS_FILE
         if not path.is_file():
             return []
-        return [r for r in json.loads(path.read_text(encoding="utf-8")).get("rulings") or [] if isinstance(r, dict)]
+        rulings = [r for r in json.loads(path.read_text(encoding="utf-8")).get("rulings") or [] if isinstance(r, dict)]
+        return rulings if enabled() else [r for r in rulings if r.get("from_the_setup")]
     except Exception:  # noqa: BLE001 - a request without the rulings is the request as it was
         logger.debug("Could not read the specification's rulings", exc_info=True)
         return []

@@ -5790,6 +5790,34 @@ def _behaviour_the_specification_gives_kept_files(state: Any, spec_text: str) ->
         return None
 
 
+def kept_signatures_called_otherwise(state: Any, spec_text: str) -> list[tuple[str, str, str]]:
+    """(file, declaration, the specification's sentence) for each declaration the setup keeps with no parameters that
+    the specification calls with arguments; [] without a pack. Never raises."""
+    try:
+        from app.stacks import choose_pack
+
+        stack = getattr(state.get("stack_selection"), "technology_stack", None)
+        pack = choose_pack(stack, getattr(state.get("document"), "text", "") or "") if stack is not None else None
+        if pack is None:
+            return []
+        found: list[tuple[str, str, str]] = []
+        for relative, kept in (getattr(pack, "required_signatures", None) or {}).items():
+            for _pattern, written in kept:
+                named = re.search(r"(\w+)\s*\(\s*\)", written)
+                if named is None:
+                    continue
+                # A declaration with parameters counts too: in a specification, `pub fn app(state: AppState)` is the
+                # contradiction itself (measured on one Rust run, the sentence a revision kept).
+                call = re.compile(rf"(?<![\w.]){re.escape(named.group(1))}\s*\(\s*(?!\))[^)\n]{{1,80}}\)")
+                for sentence in re.split(r"(?<=[.!?])\s+|\n", spec_text or ""):
+                    if call.search(sentence):
+                        found.append((relative, written, " ".join(sentence.split())[:200]))
+        return found
+    except Exception as error:  # noqa: BLE001 - nothing found is the old behaviour
+        degraded("spec_check.kept_signature_found", error)
+        return []
+
+
 def _a_kept_signature_the_specification_calls_otherwise(state: Any, spec_text: str) -> Any:
     """A major finding when the specification calls a declaration the pack keeps with no parameters, with arguments.
 
@@ -5804,23 +5832,7 @@ def _a_kept_signature_the_specification_calls_otherwise(state: Any, spec_text: s
             return None
         if state.get("architecture_revision_count", 0) + 1 >= _the_revision_limit():
             return None
-        from app.stacks import choose_pack
-
-        stack = getattr(state.get("stack_selection"), "technology_stack", None)
-        pack = choose_pack(stack, getattr(state.get("document"), "text", "") or "") if stack is not None else None
-        if pack is None:
-            return None
-        found: list[tuple[str, str, str]] = []
-        for relative, kept in (getattr(pack, "required_signatures", None) or {}).items():
-            for _pattern, written in kept:
-                named = re.search(r"(\w+)\s*\(\s*\)", written)
-                if named is None:
-                    continue
-                call = re.compile(rf"(?<![\w.])(?<!fn ){re.escape(named.group(1))}\s*\(\s*(?!\))[^)\n]{{1,80}}\)")
-                for sentence in re.split(r"(?<=[.!?])\s+|\n", spec_text or ""):
-                    if call.search(sentence):
-                        found.append((relative, written, " ".join(sentence.split())[:200]))
-                        break
+        found = kept_signatures_called_otherwise(state, spec_text)
         if not found:
             return None
         from app.agents.architecture_reviewer import ArchitectureReviewFinding

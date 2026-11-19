@@ -161,6 +161,11 @@ def _build_from_the_latest_specification(
     )
     # A contradiction settled now is no longer open; the other findings stay the risks they were.
     settled = {r["finding"]: r["decision"] for r in specification_rulings.settle(state, update, model, findings)}
+    # A declaration the setup keeps is not the model's to weigh: its rulings are recorded as they are.
+    from app.graph.workflow import _as_text, kept_signatures_called_otherwise
+
+    specification_rulings.the_setup_s_declarations_stand(
+        state, update, kept_signatures_called_otherwise(state, _as_text(state.get("technical_specification"))))
     known = [
         *(state.get("known_issues") or []),
         *((f"Design review left open: {f}" if n not in settled else f"Design review finding settled by {settled[n]}: {f}")[:600]

@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import threading
 from dataclasses import replace
 from pathlib import Path
@@ -473,6 +474,13 @@ def build_fresh_conversation_middleware() -> Any:
     return FreshConversationMiddleware()
 
 
+#: The most files read looking for where a name read as a path is defined.
+_MOST_FILES_SEARCHED_FOR_A_DEFINITION = 600
+#: The files a test or function can be defined in.
+_SOURCE_SUFFIXES = frozenset({".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt",
+                              ".cs", ".rb", ".php", ".swift", ".scala"})
+
+
 class _NoticingRepeats:
     """Say when a file comes back byte-identical to the last time it was read.
 
@@ -652,6 +660,35 @@ class _NoticingRepeats:
             f" Nothing named '{segments[-1]}' exists anywhere in the workspace yet. "
             "A directory is created by the first file written under it."
         )
+
+    def _the_file_that_defines_it(self, wanted: str) -> str:
+        """Name the file that defines a test or function, when its name was read as a path.
+
+        Measured on one hosted run: an acceptance author read
+        `tasks-api/acceptance/test_ac9_signup_missing_username` six times - a test's name from a failure report taken
+        for a file - and was told six times that no such file exists. Only for a last segment that is an identifier
+        with no extension; the definition is looked for with the keywords most languages declare one with.
+        """
+        root = getattr(self, "cwd", None)
+        name = Path(str(wanted).strip()).name
+        if not root or not re.fullmatch(r"[A-Za-z_]\w{3,}", name or ""):
+            return ""
+        defines = re.compile(
+            rf"(?:\bdef|\bfunc|\bfn|\bfunction|\bvoid|\bsub|\bTask|\btest|\bit|\bdescribe)\W{{1,12}}{re.escape(name)}\b"
+        )
+        try:
+            for seen, path in enumerate(files_under(Path(root), NOT_SEARCHED_FOR_A_STAGE)):
+                if seen >= _MOST_FILES_SEARCHED_FOR_A_DEFINITION:
+                    break
+                if path.suffix.lower() not in _SOURCE_SUFFIXES or path.stat().st_size > 400_000:
+                    continue
+                if defines.search(path.read_text(encoding="utf-8", errors="replace")):
+                    relative = path.relative_to(Path(root)).as_posix()
+                    return (f" '{name}' is not a file: it is a test or function defined in '{relative}'. "
+                            f"Read '{relative}' and find it there.")
+        except Exception:  # noqa: BLE001 - a hint must never fail the call
+            return ""
+        return ""
 
     def _no_file_of_that_name(self, wanted: str) -> str:
         """Say that no file of this name exists anywhere, when none does.
@@ -1216,6 +1253,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                 or self._where_this_stage_moved_it(file_path)
                 or self._where_it_actually_is(file_path)
                 or not_rendered_yet(str(file_path))
+                or self._the_file_that_defines_it(file_path)
                 or self._no_file_of_that_name(file_path)
             )
             # After the hint, not instead of it: where the file really is

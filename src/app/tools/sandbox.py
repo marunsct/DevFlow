@@ -5697,7 +5697,12 @@ class SandboxExecutor:
         except WorkingDirectoryRejected as exc:
             return {"error": str(exc)}
 
-        argv = workspace_rooted_arguments(argv, workspace, run_in)
+        # The model's spelling of a workspace path, read the way every tool reads it - never the harness's own
+        # command, whose arguments mean what they say. Measured: the start probe's readiness path `/health` had no
+        # file behind it and the workspace for a parent, so it went out as `../health`; the request line was
+        # malformed and every probe in a command's own container got no answer, the product's real error unshown.
+        if not running_for_the_harness():
+            argv = workspace_rooted_arguments(argv, workspace, run_in)
 
         # Ask what is free before starting, not after the kernel has answered.
         # A refusal is a tool result the model can read and work around; an OOM

@@ -300,9 +300,22 @@ final class ItemsTest extends TestCase
 }
 """
 
+#: Errors a Slim 4 service is known to raise, by a phrase of its message, and their cause (`app.stacks.known_errors`).
+SLIM_KNOWN_ERRORS = {
+    # Measured on one run: a middleware written `function ($request, callable $handler)`, Slim 3's shape, failed
+    # every request with this TypeError and the product never answered its readiness route.
+    "must be of type callable, Psr\\Http\\Server\\RequestHandlerInterface": (
+        "Slim 4 middleware takes the next handler as an object, not a callable: write it "
+        "`function (Request $request, RequestHandlerInterface $handler): Response` and continue with "
+        "`$handler->handle($request)` (`Psr\\Http\\Server\\RequestHandlerInterface`); `callable $next` and "
+        "`$next($request, $response)` are Slim 3's."
+    ),
+}
+
 PACK = service_pack(
     golden_example={"src/Service.php": GOLDEN_SERVICE, "src/ItemStore.php": GOLDEN_STORE,
                     "tests/ItemsTest.php": GOLDEN_TEST},
+    known_errors=SLIM_KNOWN_ERRORS,
     sandbox_image=sandbox.PHP,
     name="php-slim-api",
     title="HTTP service in PHP on Slim",

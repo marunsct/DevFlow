@@ -48,3 +48,35 @@ def test_an_install_refused_on_a_lock_file_checksum_removes_it_and_installs_once
     assert not (tmp_path / "notes-api" / "Cargo.lock").exists()
     assert len(calls) >= 2 and calls[0] == calls[1]
     assert not any(contract.INSTALL_FAILED in note for note in notes)
+
+
+@pytest.mark.parametrize("pack_name, project, manifest, lock, said", [
+    ("php-slim-api", "notes-api", "composer.json", "composer.lock",
+     "Your lock file does not contain a compatible set of packages. Please run composer update.\n"
+     "  Problem 1\n    - phpunit/phpunit is locked to version 11.5.58 and an update of this package was not requested."),
+    ("node-library", "shop", "package.json", "package-lock.json",
+     "npm error `npm ci` can only install packages when your package.json and package-lock.json or "
+     "npm-shrinkwrap.json are in sync. Please update your lock file with `npm install` before continuing."),
+    ("rust-axum-api", "notes-api", "Cargo.toml", "Cargo.lock",
+     "error: the lock file /workspace/notes-api/Cargo.lock needs to be updated but --locked was passed to prevent this"),
+])
+def test_an_install_refused_on_a_lock_file_out_of_step_with_its_manifest_installs_again_without_it(
+        tmp_path, pack_name, project, manifest, lock, said):
+    """Measured on one PHP run: `composer.lock` pinned phpunit 11.5.58 against `^10.0` in the manifest, every install
+    failed, and a fix round was spent before a fixer removed the lock file and installed again."""
+    contract.write(tmp_path, pack_named(pack_name), project, "Notes", "notes_api", scaffolded=True)
+    (tmp_path / project).mkdir(exist_ok=True)
+    (tmp_path / project / manifest).write_text("{}\n")
+    (tmp_path / project / lock).write_text("{}\n")
+    calls = []
+
+    def runner(argv, category, working_directory):
+        calls.append(list(argv))
+        if (tmp_path / project / lock).exists():
+            return {"returncode": "1", "network": "bridge", "stdout": "", "stderr": said}
+        return {"returncode": "0", "network": "bridge", "stdout": "", "stderr": ""}
+
+    notes = contract.install_if_the_manifests_changed(tmp_path, runner=runner)
+
+    assert not (tmp_path / project / lock).exists()
+    assert not any(contract.INSTALL_FAILED in note for note in notes)

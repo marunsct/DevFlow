@@ -323,7 +323,12 @@ def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) 
 #: "lock file ... corrupt / could not be parsed".
 _A_LOCK_FILE_REFUSED = re.compile(
     r"checksum for `[^`]+` changed|returned a different checksum|unable to verify that `[^`]+` is the same|"
-    r"EINTEGRITY|integrity checksum failed|lock ?file[^\n]{0,80}(?:corrupt|could not be parsed|failed to parse|invalid)",
+    r"EINTEGRITY|integrity checksum failed|lock ?file[^\n]{0,80}(?:corrupt|could not be parsed|failed to parse|invalid)|"
+    # Out of step with its manifest (LF.1137): measured on one PHP run, `composer.lock` pinned phpunit 11.5.58 against
+    # `^10.0` and every install failed until a fixer removed it. Composer's, npm's and Cargo's own words for it.
+    r"lock ?file does not contain a compatible set of packages|lock ?file is not up to date|"
+    r"can only install packages when your package\.json and package-lock\.json[^\n]{0,60}are in sync|"
+    r"lock ?file [^\n]{0,160}needs to be updated but --locked was passed",
     re.IGNORECASE,
 )
 

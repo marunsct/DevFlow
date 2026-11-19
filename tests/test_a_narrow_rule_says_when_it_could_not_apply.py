@@ -115,6 +115,27 @@ def test_a_list_the_closed_verbs_read_whole_or_an_adjective_list_is_not_counted(
     assert _noted(run, rule_coverage.ACTION_VERBS) == []
 
 
+def test_a_state_beside_its_opposite_is_not_counted(run):
+    """"Mark entries as complete/incomplete" names a state and its negation, not a list with an unknown verb."""
+    _actions_required_in("## Acceptance criteria\n- Mark entries as complete/incomplete\n"
+                         "- Users can mark notes read/unread\n", {})
+    assert _noted(run, rule_coverage.ACTION_VERBS) == []
+
+
+def test_a_list_with_a_comma_before_its_last_member_reads_every_member(run):
+    """"archive, sort, and duplicate": the comma before "and" ended the list at "and", dropping its last member."""
+    required = _actions_required_in("## Acceptance criteria\n- Users can archive, sort, and duplicate entries\n", {})
+    assert set(required) == {"archive", "sort", "duplicate"}
+    assert _noted(run, rule_coverage.ACTION_VERBS) == []
+
+
+def test_toggle_is_an_action_a_user_takes(run):
+    """A list app's own verb: "add, toggle and delete" required add and delete only, and noted toggle as unknown."""
+    required = _actions_required_in("## Acceptance criteria\n- Users can add, toggle and delete entries\n", {})
+    assert set(required) == {"add", "toggle", "delete"}
+    assert _noted(run, rule_coverage.ACTION_VERBS) == []
+
+
 # --- fields read from "with" ----------------------------------------------------------------------------------------
 
 def _files(root: Path, files: dict[str, str]) -> list[Path]:

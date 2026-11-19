@@ -790,10 +790,11 @@ suite)
   # Every other failure once more, alone and in order (plan CH.3): the known
   # flaky tests fail only beside others in the parallel run. Reported apart, so
   # a flaky test is never mistaken for a fix's breakage, nor the other way round.
-  again=$(grep -E "^(FAILED|ERROR) " "$log" | sed -E 's/^(FAILED|ERROR) //; s/ - .*//' | sort -u)
+  # `|| true`: a green suite has nothing to collect, and under pipefail the empty grep would end the script with 1.
+  again=$(grep -E "^(FAILED|ERROR) " "$log" | sed -E 's/^(FAILED|ERROR) //; s/ - .*//' | sort -u || true)
   if [ -n "$again" ]; then
     PATH="$ROOT/.venv/bin:$PATH" ENV=development timeout 600 "$PY" -m pytest -q --no-cov -p no:cacheprovider $again > "$STATE/suite-again.log" 2>&1 || true
-    still=$(grep -E "^(FAILED|ERROR) " "$STATE/suite-again.log" | sed -E 's/^(FAILED|ERROR) //; s/ - .*//' | sort -u)
+    still=$(grep -E "^(FAILED|ERROR) " "$STATE/suite-again.log" | sed -E 's/^(FAILED|ERROR) //; s/ - .*//' | sort -u || true)
     for t in $again; do
       if echo "$still" | grep -qxF "$t"; then echo "FAILED alone too: $t"; else echo "flaky (passed alone): $t"; fi
     done

@@ -5323,7 +5323,7 @@ def _required_arguments_only_the_tests_supply(
 #: of bare verbs counts: prose mentioning one verb is not an enumeration, and it
 #: is the enumeration that makes the omission of one member legible.
 _ACTION_LIST = re.compile(
-    r"(?<![\w-])((?:[a-z]{3,10})(?:\s*(?:/|,|\s+and\s+|\s+or\s+)\s*[a-z]{3,10}){1,5})(?![\w-])"
+    r"(?<![\w-])((?:[a-z]{3,10})(?:\s*(?:/|,\s*(?:and|or)\s+|,|\s+and\s+|\s+or\s+)\s*[a-z]{3,10}){1,5})(?![\w-])"
 )
 
 #: Verbs that name something a user does to a record. Deliberately a closed set:
@@ -5331,7 +5331,7 @@ _ACTION_LIST = re.compile(
 #: requirement, and "simple, fast and lightweight" is not a feature list.
 _USER_ACTIONS = frozenset({
     "add", "create", "edit", "update", "modify", "rename", "delete", "remove",
-    "complete", "filter", "search", "sort", "archive", "duplicate", "reorder",
+    "complete", "toggle", "filter", "search", "sort", "archive", "duplicate", "reorder",
 })
 
 #: Words that count as evidence the capability exists. Narrow on purpose: a
@@ -5357,6 +5357,7 @@ _SAME_ACTION = {
     "delete": ("delete", "destroy"),
     "remove": ("remove", "delete", "destroy"),
     "complete": ("complete", "completed", "toggle", "done"),
+    "toggle": ("toggle", "complete", "completed", "done"),
     "filter": ("filter",),
     "search": ("search", "query"),
     "sort": ("sort",),
@@ -5437,7 +5438,7 @@ def _actions_required_in(text: str, required: dict[str, str]) -> dict[str, str]:
         for match in _ACTION_LIST.finditer(lowered):
             parts = [
                 piece.strip()
-                for piece in re.split(r"/|,|\s+and\s+|\s+or\s+", match.group(1))
+                for piece in re.split(r",\s*(?:and|or)\s+|/|,|\s+and\s+|\s+or\s+", match.group(1))
             ]
             named = [piece for piece in parts if piece in _USER_ACTIONS]
             _count_the_verbs_the_closed_list_misses(lowered, match, parts, named, line)
@@ -5453,6 +5454,19 @@ def _actions_required_in(text: str, required: dict[str, str]) -> dict[str, str]:
 _BEFORE_A_LIST_OF_ACTIONS = re.compile(r"\b(?:can|to|must|should|will|may)\s+$")
 
 
+#: Prefixes that make a word the opposite of another: "complete/incomplete", "read/unread", "public/non-public".
+_NEGATING_PREFIXES: tuple[str, ...] = ("in", "un", "non-", "non", "dis")
+
+
+def _the_negation_of_another(piece: str, parts: list[str]) -> bool:
+    """Whether `piece` is another member of its list with a negating prefix: a state and its opposite, not an action.
+
+    Measured on the web-todo runs: "Mark items as complete/incomplete" was counted as a list with an unknown verb,
+    `incomplete`, in every run of that brief.
+    """
+    return any(piece == prefix + other for other in parts if other and other != piece for prefix in _NEGATING_PREFIXES)
+
+
 def _count_the_verbs_the_closed_list_misses(
     lowered: str, match: re.Match[str], parts: list[str], named: list[str], line: str
 ) -> None:
@@ -5462,7 +5476,7 @@ def _count_the_verbs_the_closed_list_misses(
     follows a modal or "to" ("users can borrow, return and renew": none is read, and the list is skipped whole).
     "simple, fast and lightweight" after "is" is neither and is not counted.
     """
-    unknown = [piece for piece in parts if piece not in _USER_ACTIONS]
+    unknown = [piece for piece in parts if piece not in _USER_ACTIONS and not _the_negation_of_another(piece, parts)]
     if not unknown or not (named or _BEFORE_A_LIST_OF_ACTIONS.search(lowered[: match.start()])):
         return
     from app.observability import rule_coverage

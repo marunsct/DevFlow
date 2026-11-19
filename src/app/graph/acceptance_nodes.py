@@ -741,9 +741,78 @@ ACCESSIBILITY_REMEDIES = {
     "aria-required-children": ("An element given a role that holds items (a list, a listbox, a menu, a table) holds "
                                "only those items: put a message shown when it is empty, or any other element, beside "
                                "it - before or after it - never inside it, and leave the items themselves as they are."),
-    "color-contrast": ("Text needs a contrast of at least 4.5 to 1 with its background: take the colour from the "
-                       "page's own colour names (its design tokens) rather than writing a lighter one by hand."),
+    "color-contrast": ("Text needs a contrast of at least 4.5 to 1 with its background. Change the failing colour "
+                       "where it is defined - in the page's own colour names (its design tokens) when it is one of "
+                       "them - to the shade named below, rather than adding a new colour beside it."),
 }
+
+#: What axe-core says of one element whose text is too faint: its two colours and the ratio it wanted.
+_A_CONTRAST_FAILURE = re.compile(
+    r"foreground colou?r:\s*(#[0-9a-f]{6}|#[0-9a-f]{3})\b.*?background colou?r:\s*(#[0-9a-f]{6}|#[0-9a-f]{3})\b"
+    r".*?expected contrast ratio of\s*([\d.]+)\s*:\s*1", re.I | re.S)
+
+
+def _rgb(colour: str) -> tuple[int, int, int]:
+    value = colour.lstrip("#")
+    if len(value) == 3:
+        value = "".join(c * 2 for c in value)
+    return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
+
+
+def _luminance(rgb: tuple[int, int, int]) -> float:
+    """WCAG relative luminance."""
+    def channel(c: int) -> float:
+        c = c / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (channel(c) for c in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast(first: str, second: str) -> float:
+    """The WCAG contrast ratio of two colours."""
+    a, b = sorted((_luminance(_rgb(first)), _luminance(_rgb(second))), reverse=True)
+    return (a + 0.05) / (b + 0.05)
+
+
+def a_shade_that_reads(foreground: str, background: str, ratio: float) -> str:
+    """The nearest shade of `background` - mixed toward black under light text, toward white under dark - that gives
+    `foreground` at least `ratio`, or "" when none does.
+
+    Measured on one run: white text on `#0d99ff` (2.99 to 1) stayed open through three fix rounds; each fix rewrote
+    the stylesheet and kept the page's own colour name, which was the failing colour.
+    """
+    fg = _rgb(foreground)
+    toward = (0, 0, 0) if _luminance(fg) > _luminance(_rgb(background)) else (255, 255, 255)
+    bg = _rgb(background)
+    for step in range(1, 101):
+        mixed = tuple(round(c + (t - c) * step / 100) for c, t in zip(bg, toward))
+        shade = "#" + "".join(f"{c:02x}" for c in mixed)
+        if contrast(foreground, shade) >= ratio + 0.05:
+            return shade
+    return ""
+
+
+def _the_shades_that_read(whys: list[str]) -> str:
+    """For each faint pairing axe-core reported, the shade that reads, said once per pairing."""
+    said: dict[tuple[str, str], str] = {}
+    for why in whys:
+        found = _A_CONTRAST_FAILURE.search(str(why or ""))
+        if not found:
+            continue
+        foreground, background, ratio = found.group(1).lower(), found.group(2).lower(), float(found.group(3))
+        if (foreground, background) in said:
+            continue
+        now = f"{foreground} on {background} reads at {contrast(foreground, background):.2f} to 1"
+        shade = a_shade_that_reads(foreground, background, ratio)
+        if shade:
+            said[(foreground, background)] = (
+                f"{now}; with the background at {shade} it reads at {contrast(foreground, shade):.2f} to 1")
+            continue
+        # A background already at black or white cannot move further: the text's colour moves instead.
+        text = a_shade_that_reads(background, foreground, ratio)
+        if text:
+            said[(foreground, background)] = f"{now}; with the text at {text} it reads at {contrast(text, background):.2f} to 1"
+    return (" The shades that read: " + "; ".join(said.values()) + ".") if said else ""
 
 
 def what_the_lock_ran(result: Any, criteria: int) -> str:
@@ -1656,6 +1725,8 @@ def interface_defects(state: Any) -> list[Any]:
                 "to read, and the page's structure is announced correctly."
                 + "".join(f" {ACCESSIBILITY_REMEDIES[rule.get('id')]}" for rule in broken
                           if rule.get("id") in ACCESSIBILITY_REMEDIES)
+                + _the_shades_that_read([why for rule in broken if rule.get("id") == "color-contrast"
+                                         for why in rule.get("why") or []])
             ),
             actual_behavior=listed[:1500] + (
                 " Where those elements are made and styled: " + "; ".join(defined) if defined else ""),

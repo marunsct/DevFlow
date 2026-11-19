@@ -301,8 +301,23 @@ func TestAMissingNameIsRefusedAndAnUnknownIDIsNotFound(t *testing.T) {
 }
 """
 
+#: Errors a Go project is known to raise, by a phrase of the compiler's message, and their cause
+#: (`app.stacks.known_errors`); every Go pack carries them.
+GO_KNOWN_ERRORS = {
+    # Measured on one Go run: `go.mod` said `module notes-api`, the files imported `notes_api/store`, and `store.go`
+    # sat beside `main.go` as `package main` - three test rounds and two rewrites left the import as it was.
+    "is not in std": (
+        "Go read that import as a standard-library package: its first part is not this module's path. A package of "
+        "this project is imported as the `module` line of `go.mod` plus its folder - `module notes-api` and a folder "
+        "`store/` holding `package store` is `import \"notes-api/store\"`. Files in the project's top folder are all "
+        "`package main` and use each other's names with no import at all: either move the code into that folder "
+        "with its own package name, or drop the import."
+    ),
+}
+
 PACK = service_pack(
     golden_example={"server.go": GOLDEN_SERVER, "store.go": GOLDEN_STORE, "items_test.go": GOLDEN_TEST},
+    known_errors=GO_KNOWN_ERRORS,
     sandbox_image=sandbox.GO,
     name="go-http-api",
     entrypoint="server.go",

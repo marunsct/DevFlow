@@ -96,6 +96,7 @@ func NewServer() http.Handler {
 
 PACK = service_pack(
     golden_example={"server.go": GOLDEN_SERVER, "store.go": go.GOLDEN_STORE, "items_test.go": go.GOLDEN_TEST},
+    known_errors=go.GO_KNOWN_ERRORS,
     sandbox_image=sandbox.GO,
     name="go-gin-api",
     title="HTTP service in Go on Gin",

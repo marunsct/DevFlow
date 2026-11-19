@@ -248,7 +248,10 @@ def _pack(kind: str) -> StackPack:
         )
         testing = "go test (reported by gotestsum) for unit tests, go test importing the module for acceptance tests"
         frameworks = ("go", "golang", "standard library", "stdlib")
+    from app.stacks.packs.go_http_api import GO_KNOWN_ERRORS
+
     return StackPack(
+        known_errors=GO_KNOWN_ERRORS,
         sandbox_image=sandbox.GO,
         name=f"go-{kind}",
         title=f"{'Command-line program' if kind == 'cli' else 'Library'} in Go",

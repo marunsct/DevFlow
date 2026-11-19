@@ -177,6 +177,11 @@ _NO_SUCH_VERSION = (
     # Measured on a Rust run: `rusqlite = "0.37.4"` had no such version, the note gave no registry line, and the
     # fixer's next guess, 0.36, also failed to resolve.
     ("crates", re.compile(r"failed to select a version for the requirement `([A-Za-z0-9_-]+) = ")),
+    # Measured on a Ruby run: the Gemfile asked `sqlite3 ~> 1.0.2`, which RubyGems never had, and no registry line was
+    # given (LF.1138). Bundler's, Composer's and NuGet's own words for a version that is not there.
+    ("rubygems", re.compile(r"Could not find gem '([A-Za-z0-9][A-Za-z0-9_.-]*)")),
+    ("packagist", re.compile(r"Could not find a matching version of package ([a-z0-9][\w.-]*/[\w-]+(?:\.[\w-]+)*)")),
+    ("nuget", re.compile(r"NU1102: Unable to find package ([A-Za-z0-9][A-Za-z0-9_.-]*) with version")),
 )
 
 

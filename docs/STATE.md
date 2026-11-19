@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-19 10:47 JST (written by `loop.sh state`). Harness 3bdd32aa committed; 3bdd32aa deployed.
-**Live, and stopped in the last day:** run-e68d3ce9 running at technical_lead; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed; run-db139a37 failed at failed
-**Last scored:** run-af4108e6 tasks-api 10/10 (completed, handoff 1.0; scored 11-19 10:47 JST); run-82f66a50 notes-api-rust 9/9 (completed, mixed, 111 active min, handoff 0.857; scored 11-19 08:56 JST); run-3cc0ed29 web-todo 10/10 (completed, mixed, 129 active min, handoff 1.0; scored 11-19 05:18 JST).
+**As of:** 11-19 10:56 JST (written by `loop.sh state`). Harness 2b4be8fe committed; 3bdd32aa deployed (not the same).
+**Live, and stopped in the last day:** run-eaed36e7 running at consult_backend; run-e68d3ce9 failed at failed; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed
+**Last scored:** run-e68d3ce9 notes-api-csharp 3/9 (failed, handoff 0.857; scored 11-19 10:56 JST); run-af4108e6 tasks-api 10/10 (completed, mixed, 315 active min, handoff 1.0; scored 11-19 10:47 JST); run-82f66a50 notes-api-rust 9/9 (completed, mixed, 111 active min, handoff 0.857; scored 11-19 08:56 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -66,8 +66,10 @@ Generated above. Today (hidden, quality, verdict):
   **9/9, 7/8, delivered with cuts**, handoff 0.857, mutation 1.0, 111 active min, $1.45 hosted. Judgement-only for
   attempt 1 (compile errors), then Haiku-built after the re-plan (designed rung). LF.1126 fired: `app()` kept for the
   first time. Lost the blank-title quality test: its contract was all unreadable (LF.1127), so no probe asked a write.
-- H notes-api-csharp hybrid-haiku 2 (judgement only) run-e68d3ce9-f8ef-41bb-90a2-cc37fd5e9228 (:1234, 09:10, on 48a15f74):
-  contract read in full (LF.1127); attempt 1 on the local build ran out at 09:58. LF.1128 shipped ~10:15.
+- H notes-api-csharp hybrid-haiku 2 (judgement only) run-e68d3ce9-f8ef-41bb-90a2-cc37fd5e9228 (:1234, 09:10-10:51,
+  mixed): **3/9, 4/8, failed** (stalled after two re-plans), 98 active min, $0.43. Hosted arms so far: Haiku-built
+  Rust 9/9 and C# 9/9; judgement-only C# 3/9 (Rust 9/9 only after its build moved to Haiku). The build model carries
+  the hard languages; judgement on Haiku over a local build does not rescue C#.
 - M tasks-api container 3 run-af4108e6-0e1b-4287-a87c-a67f2796a1c7 (:8888, 05:16-10:45, mixed): **10/10, 7/7, not
   deliverable** (a real defect: the product leaks SQLite connections and the locked suite's sequence hangs; hidden tests
   do not exercise it), handoff 1.0, 315 active min, 40 defects left open - the local model never closed the leak.

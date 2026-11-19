@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-19 05:18 JST (written by `loop.sh state`). Harness 031e9c05 committed; 031e9c05 deployed.
-**Live, and stopped in the last day:** run-82f66a50 running at consult_testing; run-af4108e6 running at consult_testing; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed
-**Last scored:** run-3cc0ed29 web-todo 10/10 (completed, handoff 1.0; scored 11-19 05:18 JST); run-04f2aa30 notes-api-csharp 9/9 (completed, mixed, 101 active min, handoff 1.0; scored 11-19 05:15 JST); run-160e0f62 notes-api-rust 9/9 (completed, mixed, 88 active min, handoff 1.0; scored 11-19 03:11 JST).
+**As of:** 11-19 08:56 JST (written by `loop.sh state`). Harness 2afbfe8a committed; 5cd321ed deployed (not the same).
+**Live, and stopped in the last day:** run-af4108e6 running at defect_fix_2_7; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed; run-db139a37 failed at failed
+**Last scored:** run-82f66a50 notes-api-rust 9/9 (completed, handoff 0.857; scored 11-19 08:56 JST); run-3cc0ed29 web-todo 10/10 (completed, mixed, 129 active min, handoff 1.0; scored 11-19 05:18 JST); run-04f2aa30 notes-api-csharp 9/9 (completed, mixed, 101 active min, handoff 1.0; scored 11-19 05:15 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -62,8 +62,11 @@ Generated above. Today (hidden, quality, verdict):
 - H notes-api-csharp hybrid-haiku 1 run-04f2aa30-834c-4895-bab4-6e42f9dd168d (:1234, 03:19-05:10, mixed): **9/9, 8/8,
   delivered**, handoff 1.0, mutation 0.8, 101 active min, $1.31 hosted - the first full C# score. Haiku-BUILT (design
   escalation, LF.1123). Survived LF.1124 (reply blocks written as files) and LF.1125 (offline delivered start).
-- Live: H notes-api-rust hybrid-haiku 2 (judgement only) run-82f66a50-dafd-4ea3-81ab-69140b79189f (:1234, 05:15) and
-  M tasks-api container 3 run-af4108e6-0e1b-4287-a87c-a67f2796a1c7 (:8888, 05:16), both on 031e9c05. Hosted $2.18/$30.
+- H notes-api-rust hybrid-haiku 2 run-82f66a50-dafd-4ea3-81ab-69140b79189f (:1234, 05:15-08:52, mixed, rewound 06:58):
+  **9/9, 7/8, delivered with cuts**, handoff 0.857, mutation 1.0, 111 active min, $1.45 hosted. Judgement-only for
+  attempt 1 (compile errors), then Haiku-built after the re-plan (designed rung). LF.1126 fired: `app()` kept for the
+  first time. Lost the blank-title quality test: its contract was all unreadable (LF.1127), so no probe asked a write.
+- Live: M tasks-api container 3 run-af4108e6-0e1b-4287-a87c-a67f2796a1c7 (:8888, 05:16): sprint 2. Hosted $3.10/$30.
 - LF.1116-1118 shipped live 03:10 JST, LF.1119 (a run store opened beside the backup's dump stalled the app
   03:05-03:09) at 03:18, both into web-todo 1 (mixed).
 - H notes-api-csharp hybrid-haiku 1 run-04f2aa30-834c-4895-bab4-6e42f9dd168d (:1234, 03:19, on 9d134086) - the second

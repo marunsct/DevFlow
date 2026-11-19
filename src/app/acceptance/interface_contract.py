@@ -121,6 +121,15 @@ def _lenient_page(line: str) -> Check | None:
 _A_NOTE_AMONG_THE_STATUSES = re.compile(r"(->\s*\d{3}(?:\s*(?:or|/|,|\|)\s*\d{3})*)\s*\([^()]*\)")
 #: A parenthesised note at the end of a line: "-> 200 (updates the field)".
 _A_TRAILING_NOTE = re.compile(r"\s+\([^()]*\)\s*$")
+#: A word naming the line's kind before its method: `AC-1 route POST /notes -> 201`. Measured on one run: told its lines
+#: followed no form, the architect wrote all sixteen so, after the review's own `page ...` and `command ...` examples,
+#: and none was read.
+_A_KIND_BEFORE_THE_METHOD = re.compile(
+    r"^(" + _CRITERION + r")\s+(?:route|http|endpoint|api|request|call)\s+(?=(?:GET|POST|PUT|PATCH|DELETE)\b)", re.I)
+#: What a line is for, said after its statuses: `-> 404 for an id no note has`. Moved before the arrow, where the
+#: several-methods form keeps it as the line's note.
+_A_REASON_AFTER_THE_STATUSES = re.compile(
+    r"(\s*->\s*\d{3}(?:\s*(?:or|/|,|\|)\s*\d{3})*)\s+((?:for|when|if|on|with|because|unless|where)\b.*)$", re.I)
 
 #: Where the compiled checks are written, inside the project, for one release run.
 CHECK_DIR = "harness-contract"
@@ -403,6 +412,8 @@ def parse(lines: list[str] | tuple[str, ...]) -> tuple[list[Check], list[str]]:
         # the check: one specification wrote "AC-11 PUT /tasks/{id} -> 200
         # (updates reminder_at field)", and the line was dropped at the lock.
         line = _A_TRAILING_NOTE.sub("", line)
+        line = _A_KIND_BEFORE_THE_METHOD.sub(lambda m: m.group(1) + " ", line)
+        line = _A_REASON_AFTER_THE_STATUSES.sub(lambda m: " " + m.group(2) + m.group(1), line)
         # And one among the statuses: "AC-1 POST /notes -> 201 (with Note object) or 400/422". Measured on one run:
         # four of six lines were written so and none was checked at release.
         while (between := _A_NOTE_AMONG_THE_STATUSES.sub(r"\1", line)) != line:

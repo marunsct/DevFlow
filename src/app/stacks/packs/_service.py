@@ -43,7 +43,10 @@ ACCEPTANCE_GUIDE = """Acceptance tests go in `acceptance/`, named `<feature>.spe
 `@playwright/test` (`import { test, expect } from '@playwright/test'`) and its
 `request` fixture, which calls the running service the way a client does:
 `const response = await request.post('/items', { data: { ... } })`, then check
-`response.status()` and `await response.json()`. The configuration builds and
+`response.status()` and `await response.json()`. A body that is not valid JSON is
+sent as a string with its content type named - `request.post('/items', { data:
+'{"title": ', headers: { 'Content-Type': 'application/json' } })` - since a string
+`data` goes out exactly as written. The configuration builds and
 starts the service with an empty `DATA_DIR`; tests run one after another against
 the same service, so a test must create what it reads and look for its own
 records rather than counting all of them.

@@ -256,7 +256,9 @@ def _pack(kind: str) -> StackPack:
         language="go",
         frameworks=frameworks,
         files={**files, ".gitignore": "test-results/\nbin/\n"},
-        install=(("go", "build", "./..."),),
+        # Tidied first, where a command has a network (LF.1134): a drafted `go.mod` that does not match the imports
+        # fails every build with "go mod tidy", and no fixer's command can fetch a module.
+        install=(("go", "mod", "tidy"), ("go", "build", "./...")),
         unit_test=UNIT_TEST,
         acceptance_test=ACCEPTANCE_TEST,
         unit_report="test-results/unit.xml",

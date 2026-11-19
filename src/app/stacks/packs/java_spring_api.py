@@ -140,6 +140,15 @@ SPRING_KNOWN_ERRORS = {
         "`jakarta.validation` (`@Valid`, `@NotBlank`) comes with the `spring-boot-starter-validation` dependency, "
         "which `pom.xml` must declare beside `spring-boot-starter-web`; the version is the parent's."
     ),
+    # Measured on one run: the stack was chosen as "SQLite via H2's SQLite compatibility mode" - H2 has no such mode -
+    # and the SQLite advice (WAL, a busy timeout) went into H2's URL; the service exited at start for two attempts.
+    "Unsupported connection setting": (
+        "H2 refused a setting written into its JDBC URL. H2 has no SQLite mode and takes none of SQLite's settings "
+        "(`BUSY_TIMEOUT`, `journal_mode`): keep H2's URL to H2's own settings, or store in SQLite itself through "
+        "`org.xerial:sqlite-jdbc` with `org.hibernate.orm:hibernate-community-dialects` "
+        "(`spring.jpa.database-platform=org.hibernate.community.dialect.SQLiteDialect`) - or in a JSON file, as the "
+        "golden example does."
+    ),
     "package org.springframework.boot.test.mock.bean does not exist": (
         "`@MockBean` is `org.springframework.boot.test.mock.mockito.MockBean` (deprecated since Spring Boot 3.4); "
         "its replacement is `@MockitoBean` from `org.springframework.test.context.bean.override.mockito`."

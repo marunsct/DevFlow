@@ -45,8 +45,10 @@ def is_a_start_defect(defect: Any) -> bool:
 
 def _part_of_the_start(defect: Any) -> bool:
     """A finding that says why a product does not build or start: a compiler's, a build's, an install's."""
+    # The setup's contract on its entry file (a declaration or an export its build and start rely on) too: measured
+    # on one Rust run, `app()` declared `-> Router<AppState>` waited three rounds behind the start defect it caused.
     return (str(getattr(defect, "kind", "") or "") == cause.COMPILE_ERROR
-            or str(getattr(defect, "source", "") or "") == "language service"
+            or str(getattr(defect, "source", "") or "") in ("language service", "pack contract")
             or str(getattr(defect, "description", "") or "").startswith(DEPENDENCIES_DO_NOT_INSTALL))
 
 

@@ -95,3 +95,17 @@ def test_one_at_a_time_the_start_fix_goes_first_and_the_criteria_wait(tmp_path):
 
 def test_the_folded_text_holds_no_product_words():
     assert not BANNED.search(start_first.ALSO_WHILE_IT_DOES_NOT_START)
+
+
+def test_the_setup_s_contract_on_the_entry_goes_to_the_start_defect_not_behind_it():
+    """Measured on one Rust run: `app()` was declared `-> Router<AppState>`, the setup's contract raised it, and it
+    waited three rounds behind the start defect it was the cause of - no fixer was ever sent to it."""
+    contract = _reported("notes-api/src/lib.rs no longer declares `pub fn app() -> Router`, the declaration the "
+                         "scaffold's build, start file and tests rely on.", source="pack contract",
+                         files=["notes-api/src/lib.rs", "notes-api/src/main.rs"])
+
+    reported = start_first.folded([_the_start(), contract])
+
+    assert len(reported) == 1
+    assert "no longer declares `pub fn app() -> Router`" in reported[0].actual_behavior
+    assert {"notes-api/src/lib.rs", "notes-api/src/main.rs"} <= set(reported[0].affected_files)

@@ -47,6 +47,18 @@ SEED_INSTRUCTIONS: dict[str, str] = {
         "- Error Handling: Always wrap async route handlers with `try/catch` or use an async wrapper to pass errors to the global error middleware.\n"
         "- Module System: Be explicit about `require()` vs `import`. The default environment may be CJS unless `type: module` is in package.json."
     ),
+    "sqlite": (
+        "You are working with SQLite.\n"
+        "- Connections: open one for a request and close it when the request ends, every time - in the framework's "
+        "scoped dependency, a `with`/`using` block or a `finally`. A connection handed out and never closed holds its "
+        "locks, and later requests wait on \"database is locked\" until they time out.\n"
+        "- Settings on every connection: journal mode WAL and a busy timeout of a few seconds, so a write waits for "
+        "another instead of failing.\n"
+        "- Writes: one transaction per change; read a new row's id on the same connection that inserted it "
+        "(`RETURNING id` or the last-insert id), never as MAX(id) + 1 - that gives two writes made at once the same id.\n"
+        "- Sharing: a connection is not shared between threads or concurrent requests without a lock; writes made at "
+        "the same moment must each be kept, with their own ids."
+    ),
     "postgres": (
         "You are working with PostgreSQL.\n"
         "- Connection Management: Connections must be pooled. Ensure every connection borrowed from the pool is returned gracefully in a `finally` block.\n"

@@ -66,8 +66,11 @@ INDEXES: dict[str, str] = {
 #: Hosts a README is read from.
 _REGISTRY_HOSTS = frozenset({
     "registry.npmjs.org", "pypi.org", "crates.io", "static.crates.io", "raw.githubusercontent.com",
-    "cdn.jsdelivr.net",
+    "cdn.jsdelivr.net", "pkg.go.dev",
 })
+
+#: A Go module's path: a host with a dot, then the path - `modernc.org/sqlite`, `golang.org/x/net`.
+_A_GO_MODULE = re.compile(r"^[a-z0-9.-]+\.[a-z]{2,}(?:/[\w.~-]+)+$", re.I)
 
 #: How an npm package's README file may be spelled. The registry's own record
 #: carries no README for many packages ("@hono/node-server"), and for a package
@@ -227,6 +230,11 @@ def _readme(ecosystem: str, name: str, fetch: Fetch) -> tuple[str, str]:
     if name.startswith("github.com/") and ecosystem in {"", "go", "golang"}:
         owner_repo = "/".join(name.split("/")[1:3])
         candidates.append((f"https://raw.githubusercontent.com/{owner_repo}/HEAD/README.md", lambda body: body))
+    # Every public Go module's documentation, wherever its source lives. Measured on one Go run: the architect asked
+    # twice how to open `modernc.org/sqlite` through `database/sql`, a module on its own domain with no README this
+    # read could reach, and was told twice that nothing was found.
+    if ecosystem in {"go", "golang"} or (ecosystem == "" and _A_GO_MODULE.match(name)):
+        candidates.append((f"https://pkg.go.dev/{name}", lambda body: _as_text(body, "text/html")))
     for url, read in candidates:
         try:
             status, body, _ = fetch(url)

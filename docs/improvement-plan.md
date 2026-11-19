@@ -5444,6 +5444,115 @@ Appendix 4's ledger becomes "absorbed by PX (Appendix 9)"; BA's acceptance
 | PX.7 slot affinity, save/restore | P2 | NOT STARTED (group 2, `SLOT_AFFINITY`, owner 2026-10-22: build now, off) | absorbs BA steps 3–4 |
 | PX.8 snapshot side-car | P3 | DECISION GATE | build only on PX.1's eviction share |
 
+## Appendix 10 (2026-11-20): internet lookups that reach the agents when they are stuck (WL)
+
+**Owner, 2026-11-20:** agents should look things up on the internet when they struggle with scaffolding or bugs. The user controls whether they may; a feature switch keeps it measurable. If SearXNG is unreliable, find a better source.
+
+### Measured state
+
+Over 18 runs on 2026-11-19/20 (4,975 tool calls):
+
+| Tool | Requests offering it | Calls |
+|---|---|---|
+| `look_up_package` | 3,058 | 10 |
+| `read_docs` | 3,058 | 6 (all from the principal architect) |
+| `search_the_web`, `read_web_page` | 0 (`LEAN_TOOL_LISTS`) | 0 |
+
+The search behind those tools returns nothing. Probed from the worker on 2026-11-20:
+
+- **General engines, all blocked.** Google answers "access denied", Bing times out, Brave says "too many requests", and DuckDuckGo shows a CAPTCHA. SearXNG then suspends an engine for 1 to 24 hours.
+- **Today's error lines found nothing.** `search()` queries the general category, so every one of them came back "Nothing was found". The lines were a Rust E0502 borrow error, a Spring 404 and NuGet NU1102.
+- **The developer category still answers.** The `it` category (Stack Overflow, GitHub, MDN, Microsoft Learn, the registries) gave 40–110 results in 1–6 seconds. Its ranking is noisy: for the Rust error, MDN glossary and Docker Hub pages came above the Stack Overflow answer.
+
+The lookups that do help are the ones the harness runs itself. An install that fails on a version the registry lacks gets the registry's real versions (LF.1132, LF.1138).
+
+### Why the reviews missed it (WL.0, a process fix)
+
+- **The C5 review read the wrong signal.** LF.1076 measured offers against calls and dropped the web tools as "never called". It did not ask why. Two reasons were possible: the model does not decide to look things up, and the answers were empty. The first is a prompting and design gap; the second is a broken backend.
+- **Nothing checked what the search answered.** The searxng container's health check tests only that HTTP is up, and no check read its results. The search died silently. It has been unused since LF.72 (owner, 2026-10-20) was built.
+- **The process fix:**
+  - Removing a tool as "uncalled" first requires probing its answers and a sample of runs where its need arose.
+  - The built-but-silent audit gains an answer probe for every outside source (WL.7).
+
+### Design
+
+Lookups are harness-driven: the harness looks up the evidence of a stuck agent and quotes what it finds into the next attempt. The model is not left to decide to search, because measured small models do not.
+
+**Sources, most reliable first.** Each source is an official API rather than scraping a search page.
+
+| # | Source | Reliability, quota, cost | Used for |
+|---|---|---|---|
+| S1 | Package registries (exists: `package_registry`) | Official APIs, no key | Versions, at failure and before a manifest is written |
+| S2 | Official docs (exists: `docs.read_docs`) | Direct pages | Framework usage |
+| S3 | Stack Exchange API `/search/advanced` (sorted by relevance, accepted answers) | Free; 300 requests a day per IP without a key, 10,000 with a free Stack Apps key | Error lines; build and compile errors |
+| S4 | GitHub issue search (`/search/issues`) | Free with a no-scope token; 30 searches a minute | Library bugs and version breaks (the passlib/bcrypt case in LF.72) |
+| S5 | A paid search API, optional, with a key the owner enters | Brave Search: about $5 per 1,000 requests, with $5 of credit a month (about 1,000 searches); Tavily, Exa and Serper are alternatives behind the same interface | General web, when S3 and S4 find nothing |
+| S6 | SearXNG, kept as the free fallback | Only the `it` category; blocked engines removed; probed | Last resort |
+| S7 | Context7, optional | Versioned library docs; free key for higher limits; hosted | Version-specific API usage, behind its own switch |
+
+Not chosen:
+
+- **DevDocs self-hosted:** offline and reliable, but it has no search API.
+- **Free browsing for agents:** small models wander.
+- **The hosted model's own web search:** frontier mode only, and paid tests only when the owner starts them.
+
+**Provider chain.** For one stuck signature, the harness queries S3 and S4 in parallel. It moves to S5, then S6, only when they return under 2 usable results. Results are merged, deduplicated and ranked:
+
+- Accepted answers and closed issues first, then by date, by the stack's version and by trusted host.
+- Cached by the cleaned query for 7 days, so the same error in a later run costs no request.
+
+**User control (Settings and each run, like the parallel/linear toggle).** The "Internet lookups" setting has three values:
+
+- **Off:** no outside request of any kind except installs.
+- **When stuck** (default): the triggers below.
+- **Always offered:** the triggers, plus the web tools offered to every stage that reads documentation.
+
+The run keeps the value it started with, and the run record shows it. The admin page holds:
+
+- the provider keys (Stack Apps, GitHub token, optional Brave);
+- a daily cap on requests;
+- the order of the providers.
+
+The switch `WEB_LOOKUP_WHEN_STUCK` turns the mechanism on or off as a whole, so it can be measured.
+
+**Triggers (WL.4).**
+
+- **T1:** the same failure signature (the defect ledger's fingerprint) survives 2 fix rounds.
+- **T2:** an install or setup step fails with an error the registry note does not explain (it is not LF.1132 or LF.1138).
+- **T3:** a build or compile error code recurs across rounds. The query adds the stack's toolchain version and the package named in the error.
+- **T4:** before the first manifest is drafted, versions are looked up from S1. This moves LF.1132 from failure time to write time.
+- **T5:** a fixer's second failed attempt on one defect is offered `search_the_web` and `read_web_page`. Only that fixer, only then.
+
+**What reaches the agent.** One block at the end of the request, so the stable prefix holds: "What others found for this error".
+
+- At most 3 sources and 1,500 characters.
+- Each entry gives the source, its date, the accepted-answer text and the URL.
+- The text is quoted and `defanged`, and labelled as leads, not instructions (SF.2).
+
+**What leaves the machine.** Only the cleaned error line and the stack's names and versions.
+
+- The cleaner removes paths, the brief's product and entity names, identifiers the product defines, hosts, ports and anything that looks like a secret.
+- A test proves that none of these leave.
+
+**Measurement.** Each lookup is a transcript record: trigger, providers asked, results, characters injected, and whether the next attempt changed the cited area or cleared the signature. `loop.sh effects` reports fired/helped. The switch is kept only if it lowers repeated-signature rounds or minutes to green without lowering the hidden score. The test families are Rust, Java and C#, where today's struggles were.
+
+### Build order
+
+| Item | What | Kind |
+|---|---|---|
+| WL.1 | SearXNG asks the `it` category, drops the blocked scraping engines, and the error-query ranking prefers Q&A, issues and docs | Bug fix, always on |
+| WL.2 | A provider interface with S3 Stack Exchange and S4 GitHub issues, the chain, the 7-day cache and the cleaner | Behind `WEB_LOOKUP_WHEN_STUCK` |
+| WL.3 | The user setting (Settings, the new-run form, the run record) and the admin keys, cap and order | UI and settings |
+| WL.4 | Triggers T1–T4 and the injected block | Behind the switch |
+| WL.5 | T5, the fixer-only tool offer | Behind its own switch |
+| WL.6 | S5, a paid provider (Brave first) and S7 Context7 | Optional; needs the owner's keys |
+| WL.7 | An answer probe for every source in `loop.sh ready` (a warning, not a block) and in the audit's built-but-silent check | Always on |
+
+**Owner actions:**
+
+- A free Stack Apps key and a GitHub token with no scopes, entered on the admin page.
+- Optional: a Brave Search API key. At an estimated 5–20 lookups a run, the $5 monthly credit covers about 50–200 runs.
+
 ## E. Earlier plans, merged into this document on 2026-10-19
 
 Two separate plan documents predate the appendices above. They are kept

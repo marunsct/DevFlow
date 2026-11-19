@@ -102,11 +102,13 @@ _A_COMMAND_LINE_S_CODE = re.compile(r"^tmp-inline-[0-9a-f]{8}\.\w+$")
 
 def _candidates(root: Path) -> list[str]:
     from app.analysis.integration_checks import _HARNESS_BOOKKEEPING
+    from app.stacks.languages import is_generated
 
     found: list[str] = []
     for folder, directories, files in os.walk(root):
         relative_folder = Path(folder).relative_to(root)
-        directories[:] = [d for d in directories if not _ignored((*relative_folder.parts, d))]
+        directories[:] = [d for d in directories
+                          if not _ignored((*relative_folder.parts, d)) and not is_generated(d, files)]
         for name in files:
             if (name in _SKIPPED_NAMES or name in _HARNESS_BOOKKEEPING or name.startswith(".project-")
                     or _A_COMMAND_LINE_S_CODE.match(name)) or not (

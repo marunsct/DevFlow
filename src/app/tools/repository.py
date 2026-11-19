@@ -367,6 +367,9 @@ def _iter_repo_files(repo_root: Path, allow_subdirectories: bool = True) -> list
             and d not in _RUNNER_OUTPUT_DIRECTORIES
             and not d.startswith(".cache")
             and not _is_harness_directory(repo_root, current / d)
+            # A folder a tool fills, known by the manifest beside it: Bundler's and Composer's `vendor/`. Measured on
+            # one Ruby run: every stage's listing named the gems under `vendor/bundle` - "... and 780 more".
+            and not _languages.is_generated(d, filenames)
         )
         for filename in sorted(filenames):
             candidate = current / filename

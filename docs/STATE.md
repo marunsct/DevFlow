@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-20 00:15 JST (written by `loop.sh state`). Harness 81540572 committed; bdcedefb deployed (not the same).
-**Live, and stopped in the last day:** run-6d577fad running at defect_fix_2_1; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
-**Last scored:** run-840dfaf1 notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-20 00:15 JST); run-ab877193 tasks-api 10/10 (completed, mixed, 96 active min, handoff 1.0; scored 11-19 22:45 JST); run-7a5a4556 notes-api-ruby 9/9 (completed, mixed, 267 active min, handoff 1.0; scored 11-19 22:15 JST).
+**As of:** 11-20 00:23 JST (written by `loop.sh state`). Harness edfd65e9 committed; bdcedefb deployed (not the same).
+**Live, and stopped in the last day:** run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
+**Last scored:** run-6d577fad notes-api-go 9/9 (completed, handoff 1.0; scored 11-20 00:23 JST); run-840dfaf1 notes-api-csharp 9/9 (completed, 53 active min, handoff 1.0; scored 11-20 00:15 JST); run-ab877193 tasks-api 10/10 (completed, mixed, 96 active min, handoff 1.0; scored 11-19 22:45 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -74,6 +74,9 @@ Generated above. Today (hidden, quality, verdict):
   deliverable** (a real defect: the product leaks SQLite connections and the locked suite's sequence hangs; hidden tests
   do not exercise it), handoff 1.0, 315 active min, 40 defects left open - the local model never closed the leak.
 - **:8888 HELD by the owner from 20 Nov ~00:25 JST** - start nothing there until released; runs on :1234 only.
+- M notes-api-go container 2 run-6d577fad-b2a9-4525-93ee-3cb3f2f34e98 (:1234, 22:17-00:17): **9/9, 8/8, delivered**, handoff 1.0,
+  120 active min. LF.1134 measured: no "go.mod needs tidy" all run (Go 1 lost an attempt to it). Redundant reads 36%, the
+  highest this week - the restart re-read pattern (backlog), now in four runs.
 - M notes-api-csharp container 6 run-840dfaf1-ce11-48d2-9bef-e12a80b24fd2 (:8888, 22:51-23:47): **9/9, 8/8, delivered**, handoff
   1.0, mutation 0.86, 53 active min - the best local C# run; the concurrent-writes quality test C# 5 lost now passes
   (LF.1133). The audit cron had expired at 23:46 (7-day limit) and was recreated 00:16; this run was scored 00:17.

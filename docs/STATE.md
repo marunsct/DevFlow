@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-19 22:45 JST (written by `loop.sh state`). Harness 46e37198 committed; bdcedefb deployed (not the same).
-**Live, and stopped in the last day:** run-6d577fad running at acceptance_author_1; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
-**Last scored:** run-ab877193 tasks-api 10/10 (completed, handoff 1.0; scored 11-19 22:45 JST); run-7a5a4556 notes-api-ruby 9/9 (completed, mixed, 267 active min, handoff 1.0; scored 11-19 22:15 JST); run-686e8d70 web-todo 10/10 (completed, mixed, 64 active min, handoff 1.0; scored 11-19 19:05 JST).
+**As of:** 11-20 00:15 JST (written by `loop.sh state`). Harness 81540572 committed; bdcedefb deployed (not the same).
+**Live, and stopped in the last day:** run-6d577fad running at defect_fix_2_1; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
+**Last scored:** run-840dfaf1 notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-20 00:15 JST); run-ab877193 tasks-api 10/10 (completed, mixed, 96 active min, handoff 1.0; scored 11-19 22:45 JST); run-7a5a4556 notes-api-ruby 9/9 (completed, mixed, 267 active min, handoff 1.0; scored 11-19 22:15 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -73,6 +73,9 @@ Generated above. Today (hidden, quality, verdict):
 - M tasks-api container 3 run-af4108e6-0e1b-4287-a87c-a67f2796a1c7 (:8888, 05:16-10:45, mixed): **10/10, 7/7, not
   deliverable** (a real defect: the product leaks SQLite connections and the locked suite's sequence hangs; hidden tests
   do not exercise it), handoff 1.0, 315 active min, 40 defects left open - the local model never closed the leak.
+- M notes-api-csharp container 6 run-840dfaf1-ce11-48d2-9bef-e12a80b24fd2 (:8888, 22:51-23:47): **9/9, 8/8, delivered**, handoff
+  1.0, mutation 0.86, 53 active min - the best local C# run; the concurrent-writes quality test C# 5 lost now passes
+  (LF.1133). The audit cron had expired at 23:46 (7-day limit) and was recreated 00:16; this run was scored 00:17.
 - M tasks-api container 4 run-ab877193-00ec-4a46-bba3-272497adde08 (:8888, 19:14-22:44, paused 20:21-20:53 for an unloaded
   model, mixed): **10/10, 7/7, delivered with cuts**, handoff 1.0, 96 active min - against container 3's 315 on the same
   brief. LF.1133 measured working: WAL, a busy timeout and a request-scoped connection closed in `finally` from the first draft.

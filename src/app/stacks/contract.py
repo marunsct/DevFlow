@@ -231,6 +231,25 @@ def _the_versions_that_exist(said: str) -> str:
         return ""
 
 
+#: A line of an installer's output that states what went wrong, in the words installers use.
+_AN_INSTALLER_ERROR = re.compile(
+    r"\b\w*(?:Error|Exception)\b|\berror\b|\bfailed\b|\bcould not\b|\bcannot\b|\bdoes not match\b|"
+    r"\bnot satisf|\bconflict|\bnot found\b|\bno matching\b|\bincompatible\b|\bunable to\b",
+    re.IGNORECASE,
+)
+
+
+def _what_the_installer_said_went_wrong(said: str) -> str:
+    """The lines of an installer's output that state an error, the last of them, once each; "" for none.
+
+    Measured on one PHP run: Composer rejected a package name in one line and then printed its usage text, the 600
+    characters kept from the end were all usage, and the fixer was shown no error at all.
+    """
+    lines = [" ".join(line.split()) for line in str(said or "").splitlines()]
+    stated = [line for line in lines if line and len(line) < 400 and _AN_INSTALLER_ERROR.search(line)]
+    return "\n".join(dict.fromkeys(stated[-6:]))[:500]
+
+
 def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) -> list[str]:
     """Install the project's dependencies again when a manifest changed since the last install. Never raises.
 
@@ -286,8 +305,10 @@ def install_if_the_manifests_changed(repo_root: str | Path, runner: Any = None) 
                 # and the note said only that the command failed.
                 # The versions that exist come first: the defect built from this note keeps its first 900
                 # characters, and an installer's warnings can fill them before its error is reached.
+                stated = _what_the_installer_said_went_wrong(said)
                 return [f"`{' '.join(argv)}` {INSTALL_FAILED}"
                         + _the_versions_that_exist(said)
+                        + (f"; it said:\n{stated}\n" if stated else "")
                         + (f"; it ended:\n{tail}" if tail else ".")]
         installed(repo_root)
         warm_up(record, runner, project)

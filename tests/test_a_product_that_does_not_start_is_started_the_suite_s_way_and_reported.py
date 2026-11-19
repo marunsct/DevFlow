@@ -111,3 +111,19 @@ def test_a_readiness_route_answered_404_is_reported_with_the_routes_the_applicat
     assert "GET /health/health" in text and "the routes it serves" in text
     assert pack.list_routes, "the native Hono pack lists its application's routes"
     assert not BANNED.search(text)
+
+
+BURIES_ITS_CAUSE = """const frames = (name, n) => Array.from({length: n}, (_, i) => '\\tat ' + name + '.call(' + name + '.java:' + i + ')');
+console.error(['APPLICATION FAILED TO START', ...frames('org.layer.Outer', 30),
+  'Caused by: org.store.SettingException: Unsupported connection setting "CLOSE_ON_EXIT_X"',
+  ...frames('org.store.Inner', 60), '\\t... 44 common frames omitted'].join('\\n'));
+process.exit(1);
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="no Node here")
+def test_a_cause_buried_in_a_stack_trace_is_shown(tmp_path):
+    """Measured on one Java run: the 1,200 characters kept from the end were frames; the cause line was cut."""
+    text = start_probe.what_the_start_shows(_project(tmp_path, BURIES_ITS_CAUSE))
+
+    assert 'Unsupported connection setting "CLOSE_ON_EXIT_X"' in text

@@ -37,6 +37,9 @@ ON_BY_DEFAULT = False
 WAIT_SECONDS = 12.0
 #: How much of the service's output goes with the defect.
 MOST_OUTPUT = 1_200
+#: Characters of the service's output read back from the end, at most: enough to hold the error a long stack trace
+#: buried, within what the sandbox returns of a command's output (its JSON line, escapes included, must stay whole).
+OUTPUT_READ = 10_000
 
 _READY_URL = re.compile(r"url:\s*`http://127\.0\.0\.1:\$\{port\}([^`]*)`")
 
@@ -100,6 +103,13 @@ def _probe_here(project: Path, env: dict, ready: str) -> tuple[str, str]:
 _RUNNER_IN_THE_WORKSPACE = ".harness/start_probe.cjs"
 
 
+def _what_the_sandbox_returns() -> int:
+    """Characters of output the container probe asks back: `OUTPUT_READ`, kept a third under the sandbox's cap."""
+    from app.tools.sandbox import MAX_OUTPUT_SIZE
+
+    return max(MOST_OUTPUT, min(OUTPUT_READ, int(MAX_OUTPUT_SIZE * 2 / 3)))
+
+
 def _probe_in_its_container(repo_root: Path, project: Path, env: dict, ready: str) -> tuple[str, str]:
     """`_probe_here` through the sandbox: in container mode none of the product's code runs in the worker (E1a).
 
@@ -113,7 +123,7 @@ def _probe_in_its_container(repo_root: Path, project: Path, env: dict, ready: st
     shutil.copyfile(Path(__file__).with_name("start_probe.cjs"), runner)
     try:
         outcome = SandboxExecutor.execute(
-            ["node", os.path.relpath(runner, project), ready, f"{WAIT_SECONDS:.0f}", str(MOST_OUTPUT)],
+            ["node", os.path.relpath(runner, project), ready, f"{WAIT_SECONDS:.0f}", str(_what_the_sandbox_returns())],
             repo_root=str(repo_root), role_name="testing_specialist", category="start",
             extra_env=env, working_directory=project.relative_to(repo_root).as_posix() or None, for_the_harness=True,
         ) or {}
@@ -162,7 +172,9 @@ def what_the_start_shows(repo_root: str | Path) -> str:
             # The suite's own start, not the worker's: none of the worker's secrets reach the product.
             env = product_environment(str(repo_root), {"PORT": str(port), "HOST": "127.0.0.1", "DATA_DIR": data})
             status, output = _probe_here(project, env, ready)
-        shown = output[-MOST_OUTPUT:] if output else "(nothing)"
+        from app.acceptance.what_went_wrong import shown as _as_a_fixer_needs_it
+
+        shown = _as_a_fixer_needs_it(output, MOST_OUTPUT) or "(nothing)"
         hint = ""
         if re.search(r"answered [45]\d\d", status):
             hint = (f" The suite waits for `{ready}` to answer with success before any test runs; a service that "

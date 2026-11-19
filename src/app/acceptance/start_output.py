@@ -213,7 +213,9 @@ def what_it_wrote(repo_root: str | Path) -> str:
         wrote = "\n".join(str(outcome.get(k) or "").strip() for k in ("stdout", "stderr") if str(outcome.get(k) or "").strip())
         how = (f"{STILL_RUNNING} {timeout_for(CATEGORY, repo_root)} seconds, when it was ended" if code == _TIMED_OUT
                else f"it stopped by itself with exit code {code}")
-        return f"{START_MARK} (`{' '.join(argv)}`): {how}. It wrote:\n{wrote[-MOST_OUTPUT:] or '(nothing)'}"
+        from app.acceptance.what_went_wrong import shown
+
+        return f"{START_MARK} (`{' '.join(argv)}`): {how}. It wrote:\n{shown(wrote, MOST_OUTPUT) or '(nothing)'}"
     except Exception:  # noqa: BLE001 - the defect goes out as it was
         logger.debug("Could not start the product to see what it writes", exc_info=True)
         return ""

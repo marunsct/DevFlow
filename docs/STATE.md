@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-19 10:56 JST (written by `loop.sh state`). Harness 2b4be8fe committed; 3bdd32aa deployed (not the same).
-**Live, and stopped in the last day:** run-eaed36e7 running at consult_backend; run-e68d3ce9 failed at failed; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed; run-1e04154a failed at failed
-**Last scored:** run-e68d3ce9 notes-api-csharp 3/9 (failed, handoff 0.857; scored 11-19 10:56 JST); run-af4108e6 tasks-api 10/10 (completed, mixed, 315 active min, handoff 1.0; scored 11-19 10:47 JST); run-82f66a50 notes-api-rust 9/9 (completed, mixed, 111 active min, handoff 0.857; scored 11-19 08:56 JST).
+**As of:** 11-19 12:05 JST (written by `loop.sh state`). Harness 4ff461ba committed; 4ff461ba deployed.
+**Live, and stopped in the last day:** run-249303db running at acceptance_author_3; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed
+**Last scored:** run-eaed36e7 notes-api-rust 0/9 (failed, handoff 0.429; scored 11-19 12:05 JST); run-e68d3ce9 notes-api-csharp 3/9 (failed, mixed, 98 active min, handoff 0.857; scored 11-19 10:56 JST); run-af4108e6 tasks-api 10/10 (completed, mixed, 315 active min, handoff 1.0; scored 11-19 10:47 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -73,7 +73,10 @@ Generated above. Today (hidden, quality, verdict):
 - M tasks-api container 3 run-af4108e6-0e1b-4287-a87c-a67f2796a1c7 (:8888, 05:16-10:45, mixed): **10/10, 7/7, not
   deliverable** (a real defect: the product leaks SQLite connections and the locked suite's sequence hangs; hidden tests
   do not exercise it), handoff 1.0, 315 active min, 40 defects left open - the local model never closed the leak.
-- Live: M notes-api-rust container 8 (:8888, 10:56) - first local-only Rust on LF.1118/1126/1127.
+- M notes-api-rust container 8 run-eaed36e7-d0cb-4ac6-8b98-4aab119efab6 (:8888, 10:55-12:00, rewound 11:21, mixed):
+  **0/9, 0/8, failed** - the product never compiled (12 borrow/ownership errors) though every fix aimed at Rust fired:
+  LF.1126 finding, LF.1130 ruling, LF.1131 folding, rusqlite pinned to a version rustc 1.85 builds. Local Rust is 0/9
+  in runs 1, 4, 7, 8, all compile failures; Haiku-built Rust 9/9 twice. The remaining limit is the local model's Rust.
 - LF.1116-1118 shipped live 03:10 JST, LF.1119 (a run store opened beside the backup's dump stalled the app
   03:05-03:09) at 03:18, both into web-todo 1 (mixed).
 - H notes-api-csharp hybrid-haiku 1 run-04f2aa30-834c-4895-bab4-6e42f9dd168d (:1234, 03:19, on 9d134086) - the second

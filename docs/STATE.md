@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-20 03:24 JST (written by `loop.sh state`). Harness 32b1ffff committed; 6ff88db3 deployed (not the same).
-**Live, and stopped in the last day:** run-bf4765fa running at specialist_testing_2; run-f37cd853 running at consult_database; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
-**Last scored:** run-9c875db7 notes-api-java 9/9 (completed, handoff 1.0; scored 11-20 03:24 JST); run-1a8bcfcf notes-api-ruby 9/9 (completed, mixed, 64 active min, handoff 1.0; scored 11-20 02:50 JST); run-e382df47 notes-api-java 0/9 (failed, mixed, 85 active min, handoff 0.429; scored 11-20 02:04 JST).
+**As of:** 11-20 03:44 JST (written by `loop.sh state`). Harness 8b3f6a16 committed; 8b3f6a16 deployed.
+**Live, and stopped in the last day:** run-f37cd853 running at acceptance_author_0; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
+**Last scored:** run-bf4765fa notes-api-php 9/9 (completed, handoff 1.0; scored 11-20 03:44 JST); run-9c875db7 notes-api-java 9/9 (completed, mixed, 63 active min, handoff 1.0; scored 11-20 03:24 JST); run-1a8bcfcf notes-api-ruby 9/9 (completed, mixed, 64 active min, handoff 1.0; scored 11-20 02:50 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -26,11 +26,15 @@ The 10 optional switches above. Hosted-model runs (LR.44) only when the owner st
 ## The last three runs
 Generated above. Today (hidden, quality, verdict):
 Earlier runs: git history of this file and the status board.
-- Live: M notes-api-php container 6 run-bf4765fa-bc55-48f4-83d1-cb197808551d (:8888, 02:56, on 6ff88db).
+- Live: M tasks-api container 5 run-ea01f85c-d0a3-4a36-b1bc-9ba2798dc49a (:8888, 03:46, on 8b3f6a1).
+- M notes-api-php container 6 run-bf4765fa-bc55-48f4-83d1-cb197808551d (:8888, 02:56-03:39): **9/9, 8/8, delivered**, handoff
+  1.0, 41.6 active min (the fastest PHP), 0 left open. Found in it: the container-mode start probe sent `../health`
+  (the harness's own argument rewritten as a model's path; every probe of a started product got no answer, LF.1150)
+  and Slim 3's middleware shape (LF.1151).
 - M notes-api-ruby container 2 run-1a8bcfcf-2885-452a-8702-f4f5f0daf16d (:8888, 01:35-02:45, mixed): **9/9, 8/8, delivered**,
   handoff 1.0, mutation 0.86, 63.7 active min (Ruby 1: 267), 0 left open. Installed first time; LF.1148 (vendor/bundle
   out of every listing and the project memory) found in it and shipped live.
-- Live: M notes-api-csharp container 7 run-f37cd853-62c8-48b1-83f5-a445f6b5f061 (:1234, 03:23, on 6ff88db).
+- Live: M notes-api-csharp container 7 run-f37cd853-62c8-48b1-83f5-a445f6b5f061 (:1234, 03:23; LF.1150-1151 live 03:44).
 - M notes-api-java container 3 run-9c875db7-070c-40f5-8247-0b75c2b9973b (:1234, 02:04-03:20, mixed): **9/9, 8/8, delivered**,
   handoff 1.0, 62.7 active min - every quality test, against Java 2's 0/9 the same night. Its start failure (a database
   folder not made) was shown with its real cause from round 1 (LF.1145) and fixed within the attempt.

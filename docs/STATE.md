@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-20 02:50 JST (written by `loop.sh state`). Harness cca41226 committed; cca41226 deployed.
-**Live, and stopped in the last day:** run-9c875db7 running at defect_fix_2_0; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
-**Last scored:** run-1a8bcfcf notes-api-ruby 9/9 (completed, handoff 1.0; scored 11-20 02:50 JST); run-e382df47 notes-api-java 0/9 (failed, mixed, 85 active min, handoff 0.429; scored 11-20 02:04 JST); run-0080bed4 web-todo 10/10 (completed, 54 active min, handoff 1.0; scored 11-20 01:35 JST).
+**As of:** 11-20 03:24 JST (written by `loop.sh state`). Harness 32b1ffff committed; 6ff88db3 deployed (not the same).
+**Live, and stopped in the last day:** run-bf4765fa running at specialist_testing_2; run-f37cd853 running at consult_database; run-e382df47 failed at failed; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed
+**Last scored:** run-9c875db7 notes-api-java 9/9 (completed, handoff 1.0; scored 11-20 03:24 JST); run-1a8bcfcf notes-api-ruby 9/9 (completed, mixed, 64 active min, handoff 1.0; scored 11-20 02:50 JST); run-e382df47 notes-api-java 0/9 (failed, mixed, 85 active min, handoff 0.429; scored 11-20 02:04 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -30,7 +30,10 @@ Earlier runs: git history of this file and the status board.
 - M notes-api-ruby container 2 run-1a8bcfcf-2885-452a-8702-f4f5f0daf16d (:8888, 01:35-02:45, mixed): **9/9, 8/8, delivered**,
   handoff 1.0, mutation 0.86, 63.7 active min (Ruby 1: 267), 0 left open. Installed first time; LF.1148 (vendor/bundle
   out of every listing and the project memory) found in it and shipped live.
-- Live: M notes-api-java container 3 run-9c875db7-070c-40f5-8247-0b75c2b9973b (:1234, 02:04; LF.1148-1149 live into it).
+- Live: M notes-api-csharp container 7 run-f37cd853-62c8-48b1-83f5-a445f6b5f061 (:1234, 03:23, on 6ff88db).
+- M notes-api-java container 3 run-9c875db7-070c-40f5-8247-0b75c2b9973b (:1234, 02:04-03:20, mixed): **9/9, 8/8, delivered**,
+  handoff 1.0, 62.7 active min - every quality test, against Java 2's 0/9 the same night. Its start failure (a database
+  folder not made) was shown with its real cause from round 1 (LF.1145) and fixed within the attempt.
 - M notes-api-java container 2 run-e382df47-4105-44d6-b678-9e62b4009154 (:1234, 00:28-01:53, mixed): **0/9, 0/8, failed**,
   84.6 active min. Never started: the stack was chosen as "SQLite via H2's SQLite mode" (H2 has none) and SQLite's
   BUSY_TIMEOUT went into H2's URL. Fixers saw only stack frames (LF.1145), then no cause (LF.1146); the per-defect

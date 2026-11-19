@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-19 12:57 JST (written by `loop.sh state`). Harness 33983690 committed; 33983690 deployed.
-**Live, and stopped in the last day:** run-d74ff9cb running at acceptance_author_2; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed
-**Last scored:** run-249303db web-todo 9/10 (completed, FALSE ACCEPTANCE, handoff 0.833; scored 11-19 12:57 JST); run-eaed36e7 notes-api-rust 0/9 (failed, mixed, 46 active min, handoff 0.429; scored 11-19 12:05 JST); run-e68d3ce9 notes-api-csharp 3/9 (failed, mixed, 98 active min, handoff 0.857; scored 11-19 10:56 JST).
+**As of:** 11-19 13:36 JST (written by `loop.sh state`). Harness 0e481fbe committed; 33983690 deployed (not the same).
+**Live, and stopped in the last day:** run-23078e72 running at acceptance_review_2; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed
+**Last scored:** run-d74ff9cb notes-api-csharp 9/9 (completed, handoff 1.0; scored 11-19 13:36 JST); run-249303db web-todo 9/10 (completed, FALSE ACCEPTANCE, mixed, 96 active min, handoff 0.833; scored 11-19 12:57 JST); run-eaed36e7 notes-api-rust 0/9 (failed, mixed, 46 active min, handoff 0.429; scored 11-19 12:05 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -73,6 +73,10 @@ Generated above. Today (hidden, quality, verdict):
 - M tasks-api container 3 run-af4108e6-0e1b-4287-a87c-a67f2796a1c7 (:8888, 05:16-10:45, mixed): **10/10, 7/7, not
   deliverable** (a real defect: the product leaks SQLite connections and the locked suite's sequence hangs; hidden tests
   do not exercise it), handoff 1.0, 315 active min, 40 defects left open - the local model never closed the leak.
+- M notes-api-csharp container 5 run-d74ff9cb-e47a-4723-9c79-1c93bd4b0be9 (:8888, 12:06-13:33, mixed): **9/9, 7/8,
+  not deliverable - and right**: the one defect left open, writes made at the same moment not each kept (the
+  concurrent-write probe), is exactly the quality test lost. Handoff 1.0, 83 active min. First full local C# score
+  (C# 4: 0/9, a false acceptance). LF.1125/1128/1131 fired; recovered from a NU1202 dependency (LF.1132 since).
 - H web-todo hybrid-haiku 1 (judgement only) run-249303db-1fb7-4b11-9ec2-2f9ccb957f83 (:1234, 11:04-12:52, mixed):
   **9/10, 6/6, delivered - a FALSE ACCEPTANCE**, 96.5 active min, $0.18. A last fix toggled a row's class in place
   instead of re-rendering, so a task completed under the "active" filter stays listed; no locked test completes a task

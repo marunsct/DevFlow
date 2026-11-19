@@ -140,6 +140,23 @@ def _pypi(name: str, fetch: Fetch) -> dict[str, Any]:
     }
 
 
+def _numbers(text: Any) -> tuple[int, ...]:
+    """The leading dotted number of a version or a runtime's banner: `rustc 1.85.1 (...)` is (1, 85, 1); () for none."""
+    found = re.search(r"(\d+(?:\.\d+)*)", str(text or ""))
+    return tuple(int(part) for part in found.group(1).split(".")) if found else ()
+
+
+def _at_most(needed: Any, here: tuple[int, ...]) -> bool:
+    """Whether a stated requirement (`1.82`, `1.89.0`) is met by this environment's version; True when either is unknown."""
+    wanted = _numbers(needed)
+    return not wanted or not here or wanted <= here[:len(wanted)] or wanted[:len(here)] < here
+
+
+#: Why the version offered is not the newest: what the newest needs, which this environment does not have.
+_NEWER_NEEDS_MORE = ("The newest release, {newest}, needs {needs}; this environment has {here}, so {version} is the "
+                     "newest it builds - pin that.")
+
+
 def _crates(name: str, fetch: Fetch) -> dict[str, Any]:
     status, body = fetch(f"https://crates.io/api/v1/crates/{quote(name)}")
     if status != 200:
@@ -147,15 +164,26 @@ def _crates(name: str, fetch: Fetch) -> dict[str, Any]:
     data = _json(body)
     crate = data.get("crate") or {}
     version = crate.get("max_stable_version") or crate.get("newest_version")
-    rust = next(
-        (v.get("rust_version") for v in data.get("versions") or [] if v.get("num") == version), None
-    )
-    return {
+    versions = [v for v in data.get("versions") or [] if isinstance(v, dict)]
+    rust = next((v.get("rust_version") for v in versions if v.get("num") == version), None)
+    found = {
         "version": version,
         "description": _short(crate.get("description")),
         "needs_runtime": {"rust": rust or "not stated"},
         "homes": _homes(crate.get("homepage"), crate.get("repository")),
     }
+    # The newest release this environment's rustc builds (measured: `rusqlite` 0.43 needs rustc 1.89, the image has
+    # 1.85, and the build failed in every round until a fixer pinned an older one).
+    here = _numbers(runtime_here("crates"))
+    if rust and here and not _at_most(rust, here):
+        fits = next((v for v in versions if not v.get("yanked") and _is_stable(str(v.get("num") or ""))
+                     and _at_most(v.get("rust_version"), here)), None)
+        if fits and fits.get("num") != version:
+            found.update(version=fits.get("num"), newest_release=version,
+                         needs_runtime={"rust": fits.get("rust_version") or "not stated"},
+                         note=_NEWER_NEEDS_MORE.format(newest=version, needs=f"rustc {rust}",
+                                                       here=runtime_here("crates"), version=fits.get("num")))
+    return found
 
 
 def features_of(ecosystem: str, name: str, version: str = "", *, fetch: Fetch | None = None) -> list[str] | None:
@@ -239,13 +267,42 @@ def _packagist(name: str, fetch: Fetch) -> dict[str, Any]:
     }
 
 
+#: Releases of one NuGet package whose frameworks are read, newest first, before the newest is offered as it is.
+MOST_NUGET_RELEASES_READ = 6
+_A_FRAMEWORK = re.compile(r'targetFramework="([^"]+)"', re.I)
+
+
+def _a_framework_this_sdk_runs(framework: str, here: tuple[int, ...]) -> bool:
+    """Whether a package's target framework (`net8.0`, `.NETCoreApp8.0`, `netstandard2.0`) runs on this SDK's major."""
+    name = framework.strip().lower()
+    if "standard" in name or not here:
+        return True
+    major = _numbers(name)
+    return bool(major) and major[0] <= here[0]
+
+
 def _nuget(name: str, fetch: Fetch) -> dict[str, Any]:
-    status, body = fetch(f"https://api.nuget.org/v3-flatcontainer/{quote(name.lower())}/index.json")
+    base = f"https://api.nuget.org/v3-flatcontainer/{quote(name.lower())}"
+    status, body = fetch(f"{base}/index.json")
     if status != 200:
         return {"status": status}
     versions = [str(v) for v in _json(body).get("versions") or []]
     stable = [v for v in versions if _is_stable(v)]
-    return {"version": (stable or versions or [None])[-1]}
+    newest = (stable or versions or [None])[-1]
+    # The newest release with a framework this SDK runs (measured: `Microsoft.Data.Sqlite` 11.0.0 targets net10.0
+    # only, the image has .NET 8, and every restore failed NU1202). A release whose frameworks cannot be read, or
+    # that names none, is taken as it is.
+    here = _numbers(runtime_here("nuget"))
+    for version in list(reversed(stable))[:MOST_NUGET_RELEASES_READ] if here else []:
+        got, spec = fetch(f"{base}/{quote(version.lower())}/{quote(name.lower())}.nuspec")
+        frameworks = _A_FRAMEWORK.findall(spec.decode("utf-8", "replace")) if got == 200 else []
+        if not frameworks or any(_a_framework_this_sdk_runs(f, here) for f in frameworks):
+            if version == newest:
+                return {"version": newest}
+            return {"version": version, "newest_release": newest,
+                    "note": _NEWER_NEEDS_MORE.format(newest=newest, needs="a newer .NET than this SDK",
+                                                     here=f".NET SDK {runtime_here('nuget')}", version=version)}
+    return {"version": newest}
 
 
 #: Each ecosystem: the words that name it, how to read its registry, and the

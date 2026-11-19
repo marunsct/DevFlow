@@ -73,6 +73,7 @@ Generated above. Today (hidden, quality, verdict):
 - M tasks-api container 3 run-af4108e6-0e1b-4287-a87c-a67f2796a1c7 (:8888, 05:16-10:45, mixed): **10/10, 7/7, not
   deliverable** (a real defect: the product leaks SQLite connections and the locked suite's sequence hangs; hidden tests
   do not exercise it), handoff 1.0, 315 active min, 40 defects left open - the local model never closed the leak.
+- **:8888 HELD by the owner from 20 Nov ~00:25 JST** - start nothing there until released; runs on :1234 only.
 - M notes-api-csharp container 6 run-840dfaf1-ce11-48d2-9bef-e12a80b24fd2 (:8888, 22:51-23:47): **9/9, 8/8, delivered**, handoff
   1.0, mutation 0.86, 53 active min - the best local C# run; the concurrent-writes quality test C# 5 lost now passes
   (LF.1133). The audit cron had expired at 23:46 (7-day limit) and was recreated 00:16; this run was scored 00:17.

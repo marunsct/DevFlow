@@ -5,9 +5,9 @@ accounts, commands), `docs/monitoring-handover.md` (mechanics, run log), `docs/i
 rows), `docs/measuring.md` (everything under measurement), `docs/owner-decisions.md`. The file this replaced, with
 every narrative up to 11-17 01:30 JST, is `docs/archive/STATE-before-2026-11-17.md`.
 <!-- state:generated -->
-**As of:** 11-19 15:07 JST (written by `loop.sh state`). Harness ec38b4cb committed; ec38b4cb deployed.
-**Live, and stopped in the last day:** run-23078e72 running at technical_lead; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed
-**Last scored:** run-7880a2c0 notes-api-go 9/9 (completed, handoff 1.0; scored 11-19 15:07 JST); run-d74ff9cb notes-api-csharp 9/9 (completed, mixed, 83 active min, handoff 1.0; scored 11-19 13:36 JST); run-249303db web-todo 9/10 (completed, FALSE ACCEPTANCE, mixed, 96 active min, handoff 0.833; scored 11-19 12:57 JST).
+**As of:** 11-19 15:45 JST (written by `loop.sh state`). Harness 51022b54 committed; 51022b54 deployed.
+**Live, and stopped in the last day:** run-5c68f972 running at defect_fix_1_1; run-eaed36e7 failed at failed; run-e68d3ce9 failed at failed; run-cbf36159 failed at failed; run-8f1478a7 failed at failed; run-1aa50e5e failed at failed
+**Last scored:** run-23078e72 tasks-api 10/10 (completed, handoff 0.875; scored 11-19 15:45 JST); run-7880a2c0 notes-api-go 9/9 (completed, mixed, 73 active min, handoff 1.0; scored 11-19 15:07 JST); run-d74ff9cb notes-api-csharp 9/9 (completed, mixed, 83 active min, handoff 1.0; scored 11-19 13:36 JST).
 <!-- /state:generated -->
 
 ## Live now
@@ -73,6 +73,10 @@ Generated above. Today (hidden, quality, verdict):
 - M tasks-api container 3 run-af4108e6-0e1b-4287-a87c-a67f2796a1c7 (:8888, 05:16-10:45, mixed): **10/10, 7/7, not
   deliverable** (a real defect: the product leaks SQLite connections and the locked suite's sequence hangs; hidden tests
   do not exercise it), handoff 1.0, 315 active min, 40 defects left open - the local model never closed the leak.
+- H tasks-api hybrid-haiku 1 (judgement only) run-23078e72-af18-49d4-b0b7-2d6f6faa3f92 (:1234, 13:04-15:43, mixed):
+  **10/10, 7/7, delivered**, handoff 0.875, 148 active min, $1.34. Identical calls 36% (5-run mean 3%): each part of a
+  review answered in parts starts a fresh conversation and re-reads the same files - a review took ~5 min of it. Hybrid
+  arms done (Rust, C#, web-todo, tasks-api); hosted total ~$4.80 of $30.
 - M notes-api-go container 1 run-7880a2c0-c41a-4827-8bfd-341529f5ce0c (:8888, 13:39-15:05, mixed): **9/9, 8/8, delivered**,
   handoff 1.0, mutation 0.9, 73 active min. Its first attempt never started (a drafted go.mod needing `go mod tidy`,
   which no fixer can run without a network - LF.1134 since); the re-plan recovered.

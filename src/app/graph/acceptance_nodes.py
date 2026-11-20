@@ -455,6 +455,11 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         write=attempt == 0 and not resuming,
     )
     custom_setup.record_the_setup_s_scope(Path(ctx.repo_root), project, layer_files)
+    # What others found for the error the last setup failed on (plan WL.4 T2, behind `WEB_LOOKUP_WHEN_STUCK`).
+    from app.graph import stuck_lookup
+
+    problem = str(previous.get("problem") or "")
+    problem += stuck_lookup.for_a_failed_setup(ctx.repo_root, problem, stack, f"stack_setup_{attempt}")
     agent = create_specialist_agent(
         "testing", model=ctx.model, checkpointer=ctx.checkpointer,
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories, setting_up_the_stack=True,
@@ -464,7 +469,7 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         stage_name=f"stack_setup_{attempt}",
         agent=agent,
         initial_request=custom_setup.build_setup_request(
-            project, stack, product_kind(stack, brief), str(previous.get("problem") or ""),
+            project, stack, product_kind(stack, brief), problem,
             specification=state.get("technical_specification"), layer_files=layer_files,
         ),
         output_key="__stack_setup__",

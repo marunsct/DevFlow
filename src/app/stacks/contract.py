@@ -236,6 +236,15 @@ def _the_versions_that_exist(said: str) -> str:
         return ""
 
 
+def the_registry_explains(said: str) -> bool:
+    """Whether an install's output, or the harness's note of it, is a failure the registry answers: a pinned version
+    or an asked-for feature that does not exist (LF.1132, LF.1138). Any other install error is one a search may help
+    with (plan WL.4, T2)."""
+    text = str(said or "")
+    return (any(pattern.search(text) for _, pattern in _NO_SUCH_VERSION) or bool(_NO_SUCH_FEATURE.search(text))
+            or "The registry's current release of" in text)
+
+
 #: A line of an installer's output that states what went wrong, in the words installers use.
 _AN_INSTALLER_ERROR = re.compile(
     r"\b\w*(?:Error|Exception)\b|\berror\b|\bfailed\b|\bcould not\b|\bcannot\b|\bdoes not match\b|"

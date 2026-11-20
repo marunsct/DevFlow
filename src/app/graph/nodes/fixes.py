@@ -81,7 +81,7 @@ def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_inde
 
     request["messages"][-1]["content"] += cause_journal.tried_before(
         state["repository"].root_path, defect, shown=(defect.attempts if _ledger.enabled() else ()))
-    request["messages"][-1]["content"] += _what_others_found(state, defect, defect_index)  # WL.4, behind its switch
+    request["messages"][-1]["content"] += _what_others_found(state, defect, defect_index, cycle)  # WL.4, its switch
     request["messages"][-1]["content"] += _the_stub_still_served_section(state["repository"].root_path)
     request["messages"][-1]["content"] += _the_unserved_code_section(state["repository"].root_path)
     request["messages"][-1]["content"] += _the_database_section(state["repository"].root_path)
@@ -136,13 +136,16 @@ def _the_bundled_section(co_defects: list[tuple[int, Any]]) -> str:
     return ("\n".join(lines) + "\n" if lines else "") + mutation_gaps_bundled.section(co_defects)
 
 
-def _what_others_found(state: Any, defect: Any, defect_index: int) -> str:
-    """What others found for the error of a defect an attempt has already failed (plan WL.4, behind its switch)."""
+def _what_others_found(state: Any, defect: Any, defect_index: int, cycle: Any = None) -> str:
+    """What others found for a fixer's error (plan WL.4, behind its switch): an install's error the registry does not
+    explain (T2), a build error the round before had too (T3), or the error of a defect an attempt left open (T1)."""
     from app.graph import stuck_lookup
 
-    return stuck_lookup.section(
-        state["repository"].root_path, defect, getattr(state.get("stack_selection"), "technology_stack", None),
-        f"defect_fix_{state.get('test_round', 0)}_{defect_index}")
+    round_ = int(state.get("test_round", 0) or 0)
+    return stuck_lookup.for_a_fixer(
+        state["repository"].root_path, defect, list(getattr(cycle, "defects", None) or [defect]),
+        getattr(state.get("stack_selection"), "technology_stack", None), round_=round_,
+        sprint=int(state.get("current_sprint_index", 0) or 0), stage_name=f"defect_fix_{round_}_{defect_index}")
 
 
 def _diagnosed_if_it_keeps_failing(state: Any, defect: Any, ctx: GraphContext) -> None:
